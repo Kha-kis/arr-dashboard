@@ -1,0 +1,48 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+README.md
+.env
+.env.local
+.env.development
+.env.production
+__backups__
+dist
+.vscode
+.idea
+*.swp
+*.swo
+*~
+*.log
+.DS_Store
+Thumbs.db
+*.bak
+*.orig
+*.old
+.nyc_output
+coverage
+.eslintcache
+
+# Docker files
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Documentation
+*.md
+LICENSE
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Development files
+.prettierrc.json
+.eslintrc.json
+tsconfig.node.json

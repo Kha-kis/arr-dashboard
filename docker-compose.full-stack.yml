@@ -1,0 +1,124 @@
+# Complete *arr Stack with Dashboard
+# This includes Sonarr, Radarr, Prowlarr, and the Dashboard
+version: '3.8'
+
+services:
+  # *arr Dashboard
+  arr-dashboard:
+    build: .
+    container_name: arr-dashboard
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - arr-network
+    depends_on:
+      - sonarr
+      - radarr
+      - prowlarr
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # Sonarr - TV Shows
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    restart: unless-stopped
+    ports:
+      - "8989:8989"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+    volumes:
+      - sonarr-config:/config
+      - downloads:/downloads
+      - tv:/tv
+    networks:
+      - arr-network
+
+  # Radarr - Movies  
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    restart: unless-stopped
+    ports:
+      - "7878:7878"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+    volumes:
+      - radarr-config:/config
+      - downloads:/downloads
+      - movies:/movies
+    networks:
+      - arr-network
+
+  # Prowlarr - Indexer Management
+  prowlarr:
+    image: lscr.io/linuxserver/prowlarr:develop
+    container_name: prowlarr
+    restart: unless-stopped
+    ports:
+      - "9696:9696"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+    volumes:
+      - prowlarr-config:/config
+    networks:
+      - arr-network
+
+  # qBittorrent - Download Client
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+      - "6881:6881"
+      - "6881:6881/udp"
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=UTC
+      - WEBUI_PORT=8080
+    volumes:
+      - qbittorrent-config:/config
+      - downloads:/downloads
+    networks:
+      - arr-network
+
+networks:
+  arr-network:
+    driver: bridge
+
+volumes:
+  sonarr-config:
+  radarr-config:
+  prowlarr-config:
+  qbittorrent-config:
+  downloads:
+  tv:
+  movies:
+
+# Usage Instructions:
+# 1. docker-compose -f docker-compose.full-stack.yml up -d
+# 2. Access services:
+#    - Dashboard: http://localhost:3000
+#    - Sonarr: http://localhost:8989
+#    - Radarr: http://localhost:7878  
+#    - Prowlarr: http://localhost:9696
+#    - qBittorrent: http://localhost:8080
+# 3. Configure each service, then add them to the dashboard

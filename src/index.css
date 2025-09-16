@@ -1,0 +1,353 @@
+@import 'tailwindcss/base';
+@import 'tailwindcss/components';
+@import 'tailwindcss/utilities';
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222.2 84% 4.9%;
+    --primary: 221.2 83.2% 53.3%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222.2 84% 4.9%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215.4 16.3% 46.9%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222.2 84% 4.9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 214.3 31.8% 91.4%;
+    --input: 214.3 31.8% 91.4%;
+    --ring: 221.2 83.2% 53.3%;
+
+    /* Service-specific colors */
+    --sonarr-primary: 221.2 83.2% 53.3%;
+    --sonarr-foreground: 210 40% 98%;
+    --sonarr-muted: 221.2 83.2% 95%;
+
+    --radarr-primary: 142.1 76.2% 36.3%;
+    --radarr-foreground: 210 40% 98%;
+    --radarr-muted: 142.1 76.2% 95%;
+
+    --prowlarr-primary: 262.1 83.3% 57.8%;
+    --prowlarr-foreground: 210 40% 98%;
+    --prowlarr-muted: 262.1 83.3% 95%;
+
+    /* Status colors */
+    --success: 142.1 76.2% 36.3%;
+    --success-foreground: 210 40% 98%;
+    --success-muted: 142.1 76.2% 95%;
+
+    --warning: 47.9 95.8% 53.1%;
+    --warning-foreground: 26.5 100% 8%;
+    --warning-muted: 47.9 95.8% 95%;
+
+    --error: 0 84.2% 60.2%;
+    --error-foreground: 210 40% 98%;
+    --error-muted: 0 84.2% 95%;
+
+    --info: 221.2 83.2% 53.3%;
+    --info-foreground: 210 40% 98%;
+    --info-muted: 221.2 83.2% 95%;
+  }
+
+  .dark {
+    --background: 222.2 84% 4.9%;
+    --foreground: 210 40% 98%;
+    --card: 222.2 84% 4.9%;
+    --card-foreground: 210 40% 98%;
+    --popover: 222.2 84% 4.9%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 217.2 91.2% 59.8%;
+    --primary-foreground: 222.2 84% 4.9%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
+    --muted: 217.2 32.6% 17.5%;
+    --muted-foreground: 215 20.2% 65.1%;
+    --accent: 217.2 32.6% 17.5%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 217.2 32.6% 17.5%;
+    --input: 217.2 32.6% 17.5%;
+    --ring: 224.3 76.3% 94.1%;
+
+    /* Service-specific colors - dark mode */
+    --sonarr-primary: 217.2 91.2% 59.8%;
+    --sonarr-foreground: 222.2 84% 4.9%;
+    --sonarr-muted: 217.2 32.6% 17.5%;
+
+    --radarr-primary: 142.1 70.6% 45.3%;
+    --radarr-foreground: 210 40% 98%;
+    --radarr-muted: 142.1 32.6% 17.5%;
+
+    --prowlarr-primary: 262.1 85% 65.8%;
+    --prowlarr-foreground: 210 40% 98%;
+    --prowlarr-muted: 262.1 32.6% 17.5%;
+
+    /* Status colors - dark mode */
+    --success: 142.1 70.6% 45.3%;
+    --success-foreground: 210 40% 98%;
+    --success-muted: 142.1 32.6% 17.5%;
+
+    --warning: 47.9 80% 60%;
+    --warning-foreground: 210 40% 98%;
+    --warning-muted: 47.9 32.6% 17.5%;
+
+    --error: 0 62.8% 65%;
+    --error-foreground: 210 40% 98%;
+    --error-muted: 0 32.6% 17.5%;
+
+    --info: 217.2 91.2% 59.8%;
+    --info-foreground: 222.2 84% 4.9%;
+    --info-muted: 217.2 32.6% 17.5%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    transition: background-color 0.3s ease;
+  }
+
+  /* Smooth scrolling */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-secondary/50;
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-muted-foreground/30 hover:bg-muted-foreground/50;
+    border-radius: 4px;
+    transition: background-color 0.2s ease;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/50;
+  }
+
+  /* Firefox scrollbar */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted-foreground) / 0.3)
+      hsl(var(--secondary) / 0.5);
+  }
+
+  /* Focus styles */
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible,
+  [role='button']:focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  /* Animation utilities */
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-out forwards;
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.3s ease-out forwards;
+  }
+
+  .animate-scale-in {
+    animation: scaleIn 0.2s ease-out forwards;
+  }
+
+  /* Custom animations */
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes scaleIn {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* Table styles */
+  .table-hover tbody tr:hover {
+    @apply bg-muted/50;
+  }
+
+  .table-sticky-header thead {
+    @apply sticky top-0 z-10 bg-background/80 backdrop-blur-sm;
+    box-shadow: inset 0 -1px 0 hsl(var(--border));
+  }
+
+  /* Grid responsive utilities */
+  .grid-responsive {
+    @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4;
+  }
+
+  /* Card hover effects */
+  .card-hover {
+    @apply transition-all duration-200 hover:shadow-lg hover:-translate-y-1;
+  }
+
+  /* Loading state */
+  .loading-skeleton {
+    @apply bg-gradient-to-r from-muted via-muted/50 to-muted;
+    background-size: 200% 100%;
+    animation: shimmer 2s infinite;
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+
+  /* Status indicators */
+  .status-online {
+    @apply text-green-600 dark:text-green-400;
+  }
+
+  .status-offline {
+    @apply text-red-600 dark:text-red-400;
+  }
+
+  .status-warning {
+    @apply text-yellow-600 dark:text-yellow-400;
+  }
+
+  /* Typography improvements */
+  .prose {
+    @apply max-w-none;
+  }
+
+  .prose h1 {
+    @apply text-3xl font-bold mb-4;
+  }
+
+  .prose h2 {
+    @apply text-2xl font-semibold mb-3;
+  }
+
+  .prose h3 {
+    @apply text-xl font-medium mb-2;
+  }
+
+  .prose p {
+    @apply mb-3 leading-relaxed;
+  }
+
+  .prose code {
+    @apply bg-muted px-1 py-0.5 rounded text-sm font-mono;
+  }
+
+  /* Standardized typography scale */
+  .text-display {
+    @apply text-4xl font-bold leading-tight;
+  }
+
+  .text-headline {
+    @apply text-3xl font-semibold leading-tight;
+  }
+
+  .text-title {
+    @apply text-xl font-medium leading-snug;
+  }
+
+  .text-body {
+    @apply text-base leading-relaxed;
+  }
+
+  .text-caption {
+    @apply text-sm text-muted-foreground;
+  }
+
+  /* Mobile-first responsive design utilities */
+  .mobile-padding {
+    @apply px-4 sm:px-6 lg:px-8;
+  }
+
+  .mobile-text {
+    @apply text-sm sm:text-base;
+  }
+
+  .mobile-header {
+    @apply text-lg sm:text-xl lg:text-2xl;
+  }
+
+  /* High contrast mode support */
+  @media (prefers-contrast: high) {
+    :root {
+      --border: 0 0% 20%;
+      --ring: 221.2 83.2% 40%;
+    }
+
+    .dark {
+      --border: 0 0% 80%;
+      --ring: 224.3 76.3% 80%;
+    }
+  }
+
+  /* Reduced motion support */
+  @media (prefers-reduced-motion: reduce) {
+    * {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
+  /* Print styles */
+  @media print {
+    .no-print {
+      display: none !important;
+    }
+
+    .print-break {
+      page-break-after: always;
+    }
+
+    * {
+      color-adjust: exact;
+    }
+  }
+}

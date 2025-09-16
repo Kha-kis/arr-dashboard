@@ -1,0 +1,26 @@
+[Unit]
+Description=*arr Dashboard - Unified Sonarr/Radarr/Prowlarr Dashboard
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USERNAME
+WorkingDirectory=/path/to/arr-dashboard
+Environment=NODE_ENV=production
+Environment=PORT=3000
+ExecStartPre=/usr/bin/npm run build
+ExecStart=/usr/bin/npm run server:prod
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=arr-dashboard
+
+# Security settings
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/path/to/arr-dashboard
+
+[Install]
+WantedBy=multi-user.target

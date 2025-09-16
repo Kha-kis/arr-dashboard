@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  arr-dashboard:
+    build: .
+    container_name: arr-dashboard
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      # Optional: Customize CORS origins if needed
+      # - CORS_ORIGIN=http://192.168.1.100:3000,https://yourdomain.com:3000
+      # Optional: Rate limiting (defaults are usually fine)
+      # - RATE_LIMIT_WINDOW_MS=900000
+      # - RATE_LIMIT_MAX_REQUESTS=100
+    volumes:
+      # Optional: Persist logs
+      - ./logs:/app/logs
+      # Optional: Custom configuration
+      # - ./.env:/app/.env:ro
+    networks:
+      - arr-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.arr-dashboard.rule=Host(`dashboard.yourdomain.com`)"
+      - "traefik.http.routers.arr-dashboard.tls=true"
+      - "traefik.http.services.arr-dashboard.loadbalancer.server.port=3000"
+
+networks:
+  arr-network:
+    driver: bridge
+    # If your *arr services are in external containers, use:
+    # external: true
+    # name: your-existing-network
+
+# Optional: If you want to run with your *arr stack
+# volumes:
+#   arr-config:
+#     driver: local

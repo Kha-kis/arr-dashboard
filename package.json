@@ -1,0 +1,50 @@
+{
+  "name": "unified-arr-dashboard",
+  "version": "1.0.0",
+  "description": "A comprehensive unified dashboard for Sonarr, Radarr, and Prowlarr",
+  "scripts": {
+    "start": "concurrently \"npm run dev\" \"npm run server\"",
+    "serve": "npm run build && npm run server:prod",
+    "dev": "vite",
+    "build": "vite build",
+    "server": "node server/index.js",
+    "server:prod": "cross-env NODE_ENV=production node server/index.js",
+    "create-shortcuts": "powershell -ExecutionPolicy Bypass -File create-shortcuts.ps1",
+    "docker:build": "docker build -t arr-dashboard .",
+    "docker:run": "docker run -d -p 3000:3000 --name arr-dashboard arr-dashboard",
+    "docker:stop": "docker stop arr-dashboard && docker rm arr-dashboard",
+    "docker:logs": "docker logs -f arr-dashboard",
+    "docker:compose": "docker-compose up -d",
+    "docker:compose:down": "docker-compose down",
+    "docker:compose:logs": "docker-compose logs -f"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^4.36.1",
+    "clsx": "^2.0.0",
+    "dotenv": "^17.2.2",
+    "express-rate-limit": "^8.1.0",
+    "framer-motion": "^10.16.5",
+    "helmet": "^8.1.0",
+    "lucide-react": "^0.293.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.18.0",
+    "recharts": "^2.8.0",
+    "sonner": "^1.2.0",
+    "zustand": "^4.4.6"
+  },
+  "devDependencies": {
+    "@tanstack/react-query-devtools": "^4.36.1",
+    "@types/node": "^20.9.0",
+    "@types/react": "^18.2.37",
+    "@types/react-dom": "^18.2.15",
+    "@vitejs/plugin-react-swc": "^3.5.0",
+    "autoprefixer": "^10.4.16",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.0.0",
+    "postcss": "^8.4.31",
+    "tailwindcss": "^3.3.5",
+    "typescript": "^5.2.2",
+    "vite": "^7.1.5"
+  }
+}
