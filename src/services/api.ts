@@ -8,6 +8,44 @@ import {
   CalendarItem,
 } from '@/types';
 
+const getBackendUrl = () => {
+  const env =
+    typeof import.meta !== 'undefined' && (import.meta as any).env
+      ? (import.meta as any).env
+      : {};
+
+  const normalize = (url: string) => url.replace(/\/$/, '');
+
+  // Highest priority: explicit environment override
+  if (env.VITE_BACKEND_URL) {
+    return normalize(env.VITE_BACKEND_URL as string);
+  }
+
+  // Server-side rendering or tests
+  if (typeof window === 'undefined') {
+    if (env.DEV) {
+      const port = (env.VITE_BACKEND_PORT as string) || '3001';
+      return `http://localhost:${port}`;
+    }
+    return 'http://localhost:3000';
+  }
+
+  const { protocol, hostname, port } = window.location;
+
+  // In development we run the API proxy on a dedicated express server
+  if (env.DEV) {
+    const devPort = (env.VITE_BACKEND_PORT as string) || '3001';
+    return `${protocol}//${hostname}:${devPort}`;
+  }
+
+  if (port) {
+    return `${protocol}//${hostname}:${port}`;
+  }
+
+  const defaultPort = protocol === 'https:' ? '443' : '80';
+  return `${protocol}//${hostname}:${defaultPort}`;
+};
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -31,9 +69,7 @@ export class BaseClient {
   protected apiKey: string;
   protected cache = new Map<string, { data: any; timestamp: number }>();
   protected cacheDuration = 5 * 60 * 1000; // 5 minutes
-  private readonly backendUrl = typeof window !== 'undefined' ? 
-    `${window.location.protocol}//${window.location.hostname}:${window.location.port || (window.location.protocol === 'https:' ? '443' : '80')}` : 
-    'http://localhost:3000';
+  private readonly backendUrl = getBackendUrl();
   private requestTimes = new Map<string, number[]>();
   private readonly rateLimitWindow = 60000; // 1 minute
   private readonly maxRequestsPerMinute = 30; // Reduced to be more conservative
