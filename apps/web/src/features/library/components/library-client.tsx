@@ -510,48 +510,48 @@ const LibraryCard = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur"
+      className="fixed inset-0 z-modal-backdrop flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl"
+        className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-bg-subtle/98 backdrop-blur-xl p-6 shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4 mb-6">
           <div className="flex gap-4">
             {item.poster && (
-              <div className="h-48 w-32 overflow-hidden rounded-lg border border-white/10 bg-gradient-to-br from-slate-700 to-slate-900 shadow-md flex-shrink-0">
+              <div className="h-48 w-32 overflow-hidden rounded-lg border border-border bg-bg-muted shadow-md flex-shrink-0">
                 <img src={item.poster} alt={item.title} className="h-full w-full object-cover" />
               </div>
             )}
             <div>
-              <h2 className="text-2xl font-semibold text-white mb-1">{item.title}</h2>
+              <h2 className="text-2xl font-semibold text-fg mb-1">{item.title}</h2>
               {item.year && item.type === "movie" && (
-                <p className="text-sm text-white/60 mb-2">{item.year}</p>
+                <p className="text-sm text-fg-muted mb-2">{item.year}</p>
               )}
-              <p className="text-sm text-white/60">{item.instanceName}</p>
+              <p className="text-sm text-fg-muted">{item.instanceName}</p>
             </div>
           </div>
-          <Button type="button" variant="ghost" className="text-white/60 hover:text-white" onClick={onClose}>
+          <Button type="button" variant="ghost" onClick={onClose}>
             Close
           </Button>
         </div>
 
         {item.overview && (
           <div className="mb-6">
-            <h3 className="text-sm font-medium text-white/80 uppercase tracking-wider mb-2">Overview</h3>
-            <p className="text-sm leading-relaxed text-white/70">{item.overview}</p>
+            <h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-2">Overview</h3>
+            <p className="text-sm leading-relaxed text-fg-muted">{item.overview}</p>
           </div>
         )}
 
         {genreEntries.length > 0 && (
           <div className="mb-6">
-            <h3 className="text-sm font-medium text-white/80 uppercase tracking-wider mb-2">Genres</h3>
+            <h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-2">Genres</h3>
             <div className="flex flex-wrap gap-2">
               {genreEntries.map((genre) => (
                 <span
                   key={genre}
-                  className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-sm text-white/70"
+                  className="rounded-full border border-border bg-bg-muted/50 px-3 py-1 text-sm text-fg-muted"
                 >
                   {genre}
                 </span>
@@ -562,7 +562,7 @@ const LibraryCard = ({
 
         {tagEntries.length > 0 && (
           <div className="mb-6">
-            <h3 className="text-sm font-medium text-white/80 uppercase tracking-wider mb-2">Tags</h3>
+            <h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-2">Tags</h3>
             <div className="flex flex-wrap gap-2">
               {tagEntries.map((tag) => (
                 <span
@@ -577,12 +577,12 @@ const LibraryCard = ({
         )}
 
         <div className="mb-6">
-          <h3 className="text-sm font-medium text-white/80 uppercase tracking-wider mb-3">Metadata</h3>
+          <h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-3">Metadata</h3>
           <div className="grid grid-cols-2 gap-4">
             {metadata.map((entry) => (
               <div key={entry.label} className="space-y-1">
-                <p className="text-xs uppercase tracking-wider text-white/40">{entry.label}</p>
-                <p className="text-sm text-white">{entry.value}</p>
+                <p className="text-xs uppercase tracking-wider text-fg-subtle">{entry.label}</p>
+                <p className="text-sm text-fg">{entry.value}</p>
               </div>
             ))}
           </div>
@@ -590,12 +590,12 @@ const LibraryCard = ({
 
         {locationEntries.length > 0 && (
           <div>
-            <h3 className="text-sm font-medium text-white/80 uppercase tracking-wider mb-3">File Information</h3>
-            <div className="space-y-3 rounded-lg border border-white/10 bg-black/20 p-4">
+            <h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-3">File Information</h3>
+            <div className="space-y-3 rounded-lg border border-border bg-bg-muted/30 p-4">
               {locationEntries.map((entry) => (
                 <div key={entry.label} className="space-y-1">
-                  <p className="text-xs uppercase tracking-wider text-white/35">{entry.label}</p>
-                  <p className="break-all font-mono text-xs text-white/70">{entry.value}</p>
+                  <p className="text-xs uppercase tracking-wider text-fg-subtle">{entry.label}</p>
+                  <p className="break-all font-mono text-xs text-fg-muted">{entry.value}</p>
                 </div>
               ))}
             </div>
