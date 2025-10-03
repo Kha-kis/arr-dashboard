@@ -1,7 +1,7 @@
 import { randomBytes, createHash } from "crypto";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import type { PrismaClient } from "@prisma/client";
-import type { ApiEnv } from "../config/env.js";
+import type { ApiEnv } from "../../config/env.js";
 
 const BASE_COOKIE_OPTIONS = (env: ApiEnv) => ({
   path: "/",
