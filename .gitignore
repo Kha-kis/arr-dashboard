@@ -16,3 +16,7 @@ apps/**/.next
 apps/**/node_modules
 packages/**/node_modules
 legacy/node_modules
+
+# Database files
+*.db
+*.db-journal

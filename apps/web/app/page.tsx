@@ -2,8 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useSetupRequired } from '../src/hooks/api/useSetup';
-import { useCurrentUser } from '../src/hooks/api/useCurrentUser';
+import { useSetupRequired, useCurrentUser } from '../src/hooks/api/useAuth';
 
 const HomePage = () => {
   const router = useRouter();

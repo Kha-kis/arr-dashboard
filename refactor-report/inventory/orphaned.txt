@@ -1,0 +1,66 @@
+# Orphaned Files Analysis
+
+## Methodology
+- Checked all .ts and .tsx files for import references
+- Verified each file is either an entry point or imported somewhere
+- Checked for dynamic imports and string-based references
+
+## Results: ✓ No Orphaned Files Detected
+
+All files are part of the active codebase:
+
+### Entry Points (Not Imported, By Design)
+- apps/web/app/**/*.tsx (13 Next.js route pages)
+- apps/api/src/index.ts (API entry point)
+- apps/web/middleware.ts (Next.js middleware)
+
+### Providers (Imported by Layout)
+- apps/web/src/providers/root-providers.tsx → imported by app/layout.tsx
+
+### Feature Components (Imported by Routes)
+- apps/web/src/features/*/components/*-client.tsx → all imported by app routes
+
+### Hooks (Imported by Components)
+- apps/web/src/hooks/api/*.ts → all imported by feature components
+
+### API Clients (Imported by Hooks)
+- apps/web/src/lib/api-client/*.ts → all imported by hooks
+
+### Layout Components (Imported by Layout Wrapper)
+- apps/web/src/components/layout/*.tsx → all imported by layout-wrapper or pages
+
+### Auth Components (Imported by Routes/Layout)
+- apps/web/src/components/auth/*.tsx → imported by pages and layout
+
+### UI Components (Imported Across Features)
+- apps/web/src/components/ui/*.tsx → heavily imported across all features
+
+### Utilities (Imported Across Features)
+- apps/web/src/lib/utils.ts → imported by 20+ components
+
+### API Routes (Registered in Server)
+- apps/api/src/routes/*.ts → all registered in server.ts
+
+### API Plugins (Registered in Server)
+- apps/api/src/plugins/*.ts → all registered in server.ts
+
+### API Utilities (Imported by Routes)
+- apps/api/src/utils/*.ts → imported by route handlers
+- apps/api/src/config/*.ts → imported by server.ts
+
+## Recent Cleanup (From Git Status)
+
+The following files were recently deleted (good cleanup):
+- ✓ apps/web/src/hooks/api/useAccountSettings.ts (removed)
+- ✓ apps/web/src/hooks/api/useCurrentUser.ts (removed - functionality merged into useAuth)
+- ✓ apps/web/src/hooks/api/useSetup.ts (removed - functionality merged into useAuth)
+- ✓ apps/web/src/lib/api-client.ts (removed - split into modular clients)
+
+These deletions indicate active refactoring and dead code removal is already in progress.
+
+## Recommendation
+
+No orphaned files found. The recent deletions show good maintenance practices. Continue this pattern:
+1. Merge redundant hooks (useCurrentUser → useAuth) ✓ Done
+2. Split god modules into domain-specific modules (api-client.ts → api-client/*) ✓ Done
+3. Remove unused features when identified

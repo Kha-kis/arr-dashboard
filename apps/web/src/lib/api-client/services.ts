@@ -1,42 +1,9 @@
 import type {
-  CurrentUser,
-  CurrentUserResponse,
   ServiceInstanceSummary,
   ServiceResponse,
   ServicesResponse,
-  ServiceTagResponse,
-  TagsResponse,
-  CreateTagResponse,
 } from "@arr/shared";
-import { apiRequest, ApiError, UnauthorizedError } from "./api-client/base";
-
-export { ApiError, UnauthorizedError };
-
-export async function fetchCurrentUser(): Promise<CurrentUser | null> {
-  try {
-    const data = await apiRequest<CurrentUserResponse>("/auth/me");
-    return data.user;
-  } catch (error) {
-    if (error instanceof UnauthorizedError) {
-      return null;
-    }
-    throw error;
-  }
-}
-
-export async function login(payload: { identifier: string; password: string }): Promise<CurrentUser> {
-  const data = await apiRequest<CurrentUserResponse>("/auth/login", {
-    method: "POST",
-    json: payload,
-  });
-  return data.user;
-}
-
-export async function logout(): Promise<void> {
-  await apiRequest<void>("/auth/logout", {
-    method: "POST",
-  });
-}
+import { apiRequest, UnauthorizedError } from "./base";
 
 export async function fetchServices(): Promise<ServiceInstanceSummary[]> {
   try {
@@ -91,32 +58,6 @@ export async function removeService(id: string): Promise<void> {
   });
 }
 
-export async function fetchTags(): Promise<ServiceTagResponse[]> {
-  try {
-    const data = await apiRequest<TagsResponse>("/api/tags");
-    return data.tags;
-  } catch (error) {
-    if (error instanceof UnauthorizedError) {
-      return [];
-    }
-    throw error;
-  }
-}
-
-export async function createTag(name: string): Promise<ServiceTagResponse> {
-  const data = await apiRequest<CreateTagResponse>("/api/tags", {
-    method: "POST",
-    json: { name },
-  });
-  return data.tag;
-}
-
-export async function deleteTag(id: string): Promise<void> {
-  await apiRequest<void>(`/api/tags/${id}`, {
-    method: "DELETE",
-  });
-}
-
 export type TestConnectionResponse = {
   success: boolean;
   message?: string;
@@ -141,7 +82,3 @@ export async function testConnectionBeforeAdd(
     json: { baseUrl, apiKey, service },
   });
 }
-
-
-
-

@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import type { ServiceInstanceSummary } from "@arr/shared";
-import { fetchServices } from "../../lib/api-client";
+import { fetchServices } from "../../lib/api-client/services";
 
 interface ServicesQueryOptions {
   enabled?: boolean;

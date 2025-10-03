@@ -2,8 +2,7 @@
 
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { useCurrentUser } from "../../hooks/api/useCurrentUser";
-import { useSetupRequired } from "../../hooks/api/useSetup";
+import { useCurrentUser, useSetupRequired } from "../../hooks/api/useAuth";
 
 const PUBLIC_ROUTES = new Set(["/login", "/setup"]);
 
