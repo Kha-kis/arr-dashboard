@@ -5,6 +5,7 @@ import type { HistoryItem } from "@arr/shared";
 import { useMultiInstanceHistoryQuery } from "../../../hooks/api/useDashboard";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
+import { Alert, AlertDescription } from "../../../components/ui";
 import { HistoryTable } from "./history-table";
 
 const SERVICE_FILTERS = [
@@ -489,9 +490,9 @@ export const HistoryClient = () => {
       )}
 
       {error && (
-        <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          Unable to load history data. Please refresh and try again.
-        </div>
+        <Alert variant="danger">
+          <AlertDescription>Unable to load history data. Please refresh and try again.</AlertDescription>
+        </Alert>
       )}
 
       <HistoryTable
