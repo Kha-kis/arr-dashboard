@@ -731,22 +731,20 @@ const SeasonEpisodeList = ({
                 <PlayCircle className="h-3 w-3" />
               )}
             </Button>
-            {!episode.hasFile && (
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => handleSearchEpisode(episode.id)}
-                disabled={pendingEpisodeSearch === episode.id}
-                title="Search for episode"
-              >
-                {pendingEpisodeSearch === episode.id ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <Search className="h-3 w-3" />
-                )}
-              </Button>
-            )}
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => handleSearchEpisode(episode.id)}
+              disabled={pendingEpisodeSearch === episode.id}
+              title="Search for episode"
+            >
+              {pendingEpisodeSearch === episode.id ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <Search className="h-3 w-3" />
+              )}
+            </Button>
           </div>
         </div>
       ))}
