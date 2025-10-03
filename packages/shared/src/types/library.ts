@@ -1,0 +1,136 @@
+import { z } from "zod";
+
+export const libraryServiceSchema = z.enum(["sonarr", "radarr"]);
+export type LibraryService = z.infer<typeof libraryServiceSchema>;
+
+export const libraryItemTypeSchema = z.enum(["movie", "series"]);
+export type LibraryItemType = z.infer<typeof libraryItemTypeSchema>;
+
+export const libraryItemStatisticsSchema = z.object({
+  seasonCount: z.number().optional(),
+  episodeCount: z.number().optional(),
+  episodeFileCount: z.number().optional(),
+  totalEpisodeCount: z.number().optional(),
+  monitoredSeasons: z.number().optional(),
+  movieFileQuality: z.string().optional(),
+  runtime: z.number().optional(),
+});
+
+export type LibraryItemStatistics = z.infer<typeof libraryItemStatisticsSchema>;
+
+export const libraryMovieFileSchema = z.object({
+  id: z.number().optional(),
+  relativePath: z.string().optional(),
+  quality: z.string().optional(),
+  size: z.number().optional(),
+  resolution: z.string().optional(),
+});
+
+export type LibraryMovieFile = z.infer<typeof libraryMovieFileSchema>;
+
+export const librarySeasonSchema = z.object({
+  seasonNumber: z.number(),
+  title: z.string().optional(),
+  monitored: z.boolean().optional(),
+  episodeCount: z.number().optional(),
+  episodeFileCount: z.number().optional(),
+  missingEpisodeCount: z.number().optional(),
+});
+
+export type LibrarySeason = z.infer<typeof librarySeasonSchema>;
+
+export const libraryItemSchema = z.object({
+  id: z.union([z.number(), z.string()]),
+  instanceId: z.string(),
+  instanceName: z.string(),
+  service: libraryServiceSchema,
+  type: libraryItemTypeSchema,
+  title: z.string(),
+  titleSlug: z.string().optional(),
+  sortTitle: z.string().optional(),
+  year: z.number().optional(),
+  monitored: z.boolean().optional(),
+  hasFile: z.boolean().optional(),
+  status: z.string().optional(),
+  qualityProfileId: z.number().optional(),
+  qualityProfileName: z.string().optional(),
+  languageProfileId: z.number().optional(),
+  languageProfileName: z.string().optional(),
+  rootFolderPath: z.string().optional(),
+  sizeOnDisk: z.number().optional(),
+  path: z.string().optional(),
+  overview: z.string().optional(),
+  runtime: z.number().optional(),
+  added: z.string().optional(),
+  updated: z.string().optional(),
+  genres: z.array(z.string()).optional(),
+  tags: z.array(z.string()).optional(),
+  poster: z.string().optional(),
+  fanart: z.string().optional(),
+  movieFile: libraryMovieFileSchema.optional(),
+  seasons: z.array(librarySeasonSchema).optional(),
+  remoteIds: z
+    .object({
+      tmdbId: z.number().optional(),
+      imdbId: z.string().optional(),
+      tvdbId: z.number().optional(),
+    })
+    .optional(),
+  statistics: libraryItemStatisticsSchema.optional(),
+});
+
+export type LibraryItem = z.infer<typeof libraryItemSchema>;
+
+export const multiInstanceLibraryResponseSchema = z.object({
+  instances: z.array(
+    z.object({
+      instanceId: z.string(),
+      instanceName: z.string(),
+      service: libraryServiceSchema,
+      data: z.array(libraryItemSchema),
+    }),
+  ),
+  aggregated: z.array(libraryItemSchema),
+  totalCount: z.number().nonnegative(),
+});
+
+export type MultiInstanceLibraryResponse = z.infer<typeof multiInstanceLibraryResponseSchema>;
+
+export const libraryToggleMonitorRequestSchema = z.object({
+  instanceId: z.string(),
+  service: libraryServiceSchema,
+  itemId: z.union([z.number(), z.string()]),
+  monitored: z.boolean(),
+  seasonNumbers: z.array(z.number()).optional(),
+});
+
+export type LibraryToggleMonitorRequest = z.infer<typeof libraryToggleMonitorRequestSchema>;
+
+
+export const librarySeasonSearchRequestSchema = z.object({
+  instanceId: z.string(),
+  service: libraryServiceSchema,
+  seriesId: z.union([z.number(), z.string()]),
+  seasonNumber: z.number().int().nonnegative(),
+});
+
+export type LibrarySeasonSearchRequest = z.infer<typeof librarySeasonSearchRequestSchema>;
+
+export const libraryMovieSearchRequestSchema = z.object({
+  instanceId: z.string(),
+  service: z.literal("radarr"),
+  movieId: z.union([z.number(), z.string()]),
+});
+
+export type LibraryMovieSearchRequest = z.infer<typeof libraryMovieSearchRequestSchema>;
+
+
+
+export const librarySeriesSearchRequestSchema = z.object({
+  instanceId: z.string(),
+  service: z.literal("sonarr"),
+  seriesId: z.union([z.number(), z.string()]),
+});
+
+export type LibrarySeriesSearchRequest = z.infer<typeof librarySeriesSearchRequestSchema>;
+
