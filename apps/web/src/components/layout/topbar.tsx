@@ -27,10 +27,10 @@ export const TopBar = () => {
   };
 
   return (
-    <header className="flex items-center justify-between border-b border-white/10 bg-white/5 px-6 py-4 text-white/80">
+    <header className="flex items-center justify-between border-b border-border/30 bg-bg/80 backdrop-blur-xl px-6 py-4 shadow-sm">
       <div>
-        <h2 className="text-lg font-semibold text-white">Arr Control Center</h2>
-        <p className="text-sm text-white/60">Manage Sonarr, Radarr, and Prowlarr from one place.</p>
+        <h2 className="text-lg font-semibold text-fg">Arr Control Center</h2>
+        <p className="text-sm text-fg-muted">Manage Sonarr, Radarr, and Prowlarr from one place.</p>
       </div>
       <div className="flex items-center gap-3">
         {showLoginCta ? (
@@ -39,10 +39,16 @@ export const TopBar = () => {
           </Button>
         ) : user ? (
           <>
-            <div className="h-10 w-10 rounded-full bg-white/10" />
-            <div className="text-right">
-              <p className="text-sm font-medium text-white">{user.username}</p>
-              <p className="text-xs text-white/60">{user.email}</p>
+            <div className="group relative flex items-center gap-3 px-3 py-2 rounded-lg bg-bg-subtle/40 backdrop-blur-sm border border-border/50 hover:border-primary/30 transition-all duration-200 cursor-pointer">
+              <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+
+              <div className="relative h-9 w-9 rounded-full bg-gradient-to-br from-primary to-accent text-white flex items-center justify-center shadow-md ring-1 ring-white/10">
+                <span className="text-sm font-semibold">{user.username[0].toUpperCase()}</span>
+              </div>
+              <div className="text-right relative">
+                <p className="text-sm font-medium text-fg">{user.username}</p>
+                <p className="text-xs text-fg-muted">{user.email}</p>
+              </div>
             </div>
             <Button
               variant="ghost"
@@ -55,8 +61,8 @@ export const TopBar = () => {
           </>
         ) : (
           <div className="text-right">
-            <p className="text-sm font-medium text-white">Guest</p>
-            <p className="text-xs text-white/60">Not signed in</p>
+            <p className="text-sm font-medium text-fg">Guest</p>
+            <p className="text-xs text-fg-muted">Not signed in</p>
           </div>
         )}
       </div>

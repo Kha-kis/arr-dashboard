@@ -7,6 +7,7 @@ import { useMultiInstanceCalendarQuery } from "../../../hooks/api/useDashboard";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
+import { Alert, AlertDescription } from "../../../components/ui";
 import { CalendarGrid } from "./calendar-grid";
 
 const SERVICE_FILTERS = [
@@ -399,9 +400,9 @@ export const CalendarClient = () => {
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          Unable to load calendar data. Please refresh and try again.
-        </div>
+        <Alert variant="danger">
+          <AlertDescription>Unable to load calendar data. Please refresh and try again.</AlertDescription>
+        </Alert>
       )}
 
       <div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">

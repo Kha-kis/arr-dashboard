@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
+import { toast } from "../../../components/ui";
 import type { LibraryItem, LibraryService, ServiceInstanceSummary } from "@arr/shared";
 import {
   AlertCircle,
@@ -15,9 +15,7 @@ import {
   Search,
   Tv,
 } from "lucide-react";
-import { Button } from "../../../components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../components/ui/card";
-import { Input } from "../../../components/ui/input";
+import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Alert, AlertTitle, AlertDescription, EmptyState } from "../../../components/ui";
 import { cn } from "../../../lib/utils";
 import {
   useLibraryMonitorMutation,
@@ -880,14 +878,11 @@ export const LibraryClient: React.FC = () => {
         ) : null}
 
         {!libraryQuery.isLoading && filteredItems.length === 0 ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>No items found</CardTitle>
-              <CardDescription>
-                Adjust your filters or add content from the Discover tab to populate your library.
-              </CardDescription>
-            </CardHeader>
-          </Card>
+          <EmptyState
+            icon={LibraryIcon}
+            title="No items found"
+            description="Adjust your filters or add content from the Discover tab to populate your library."
+          />
         ) : null}
 
         {grouped.movies.length > 0 ? (
@@ -936,10 +931,12 @@ export const LibraryClient: React.FC = () => {
         ) : null}
 
         {libraryQuery.isError ? (
-          <div className="flex items-center gap-3 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-            <AlertCircle className="h-4 w-4" />
-            {(libraryQuery.error as Error | undefined)?.message ?? "Failed to load library"}
-          </div>
+          <Alert variant="danger">
+            <AlertTitle>Failed to load library</AlertTitle>
+            <AlertDescription>
+              {(libraryQuery.error as Error | undefined)?.message ?? "An error occurred while loading your library."}
+            </AlertDescription>
+          </Alert>
         ) : null}
       </div>
 

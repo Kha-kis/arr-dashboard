@@ -4,6 +4,7 @@ import "./globals.css";
 import { RootProviders } from "../src/providers/root-providers";
 import { LayoutWrapper } from "../src/components/layout/layout-wrapper";
 import { AuthGate } from "../src/components/auth/auth-gate";
+import { Toaster } from "../src/components/ui";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -18,11 +19,12 @@ interface RootLayoutProps {
 
 const RootLayout = ({ children }: RootLayoutProps) => (
   <html lang="en" suppressHydrationWarning>
-    <body className={inter.className + " bg-slate-950 text-white min-h-screen"}>
+    <body className={inter.className}>
       <RootProviders>
         <AuthGate>
           <LayoutWrapper>{children}</LayoutWrapper>
         </AuthGate>
+        <Toaster />
       </RootProviders>
     </body>
   </html>
