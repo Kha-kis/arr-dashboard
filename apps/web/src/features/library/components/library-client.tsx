@@ -349,7 +349,7 @@ const LibraryCard = ({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="flex items-center gap-1.5 text-xs text-sky-200 hover:text-white h-8 px-2.5"
+                className="flex items-center gap-1.5 text-xs h-8 px-2.5"
                 onClick={() => onViewSeasons(item)}
               >
                 <ListTree className="h-3.5 w-3.5" />
@@ -362,7 +362,7 @@ const LibraryCard = ({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="flex items-center gap-1.5 text-xs text-sky-200 hover:text-white h-8 px-2.5"
+                className="flex items-center gap-1.5 text-xs h-8 px-2.5"
                 onClick={() => onSearchSeries(item)}
                 disabled={seriesSearchPending}
               >
@@ -380,7 +380,7 @@ const LibraryCard = ({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="flex items-center gap-1.5 text-xs text-sky-200 hover:text-white h-8 px-2.5"
+                className="flex items-center gap-1.5 text-xs h-8 px-2.5"
                 onClick={() => onSearchMovie(item)}
                 disabled={movieSearchPending}
               >
@@ -398,7 +398,7 @@ const LibraryCard = ({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="flex items-center gap-1.5 text-xs text-sky-200 hover:text-white h-8 px-2.5"
+                className="flex items-center gap-1.5 text-xs h-8 px-2.5"
                 onClick={handleOpenExternal}
               >
                 <ExternalLink className="h-3.5 w-3.5" />
@@ -411,7 +411,7 @@ const LibraryCard = ({
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="flex items-center gap-1.5 text-xs text-sky-200 hover:text-white h-8 px-2.5"
+                className="flex items-center gap-1.5 text-xs h-8 px-2.5"
                 onClick={() => onExpandDetails(item)}
               >
                 <AlertCircle className="h-3.5 w-3.5" />
