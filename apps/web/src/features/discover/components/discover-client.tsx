@@ -3,10 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { DiscoverAddRequest, DiscoverSearchResult, DiscoverSearchType } from "@arr/shared";
 import type { ServiceInstanceSummary } from "@arr/shared";
-import { Film, Loader2, PlusCircle, Search, Tv, CheckCircle2, AlertCircle } from "lucide-react";
-import { Button } from "../../../components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../components/ui/card";
-import { Input } from "../../../components/ui/input";
+import { Film, Loader2, PlusCircle, Search, Tv, CheckCircle2, AlertCircle, Inbox } from "lucide-react";
+import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Alert, AlertTitle, AlertDescription, EmptyState } from "../../../components/ui";
 import { cn } from "../../../lib/utils";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useDiscoverAddMutation, useDiscoverSearchQuery } from "../../../hooks/api/useDiscover";
@@ -139,16 +137,9 @@ export const DiscoverClient: React.FC = () => {
         </div>
 
         {feedback ? (
-          <div
-            className={cn(
-              "rounded-xl border px-4 py-3 text-sm",
-              feedback.type === "success"
-                ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
-                : "border-red-500/40 bg-red-500/10 text-red-200",
-            )}
-          >
-            {feedback.message}
-          </div>
+          <Alert variant={feedback.type === "success" ? "success" : "danger"}>
+            <AlertDescription>{feedback.message}</AlertDescription>
+          </Alert>
         ) : null}
 
         <div className="flex flex-col gap-6 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
@@ -190,40 +181,37 @@ export const DiscoverClient: React.FC = () => {
           </form>
 
           {!canSearch ? (
-            <div className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
-              Configure at least one {searchType === "movie" ? "Radarr" : "Sonarr"} instance in Settings to perform searches.
-            </div>
+            <Alert variant="warning">
+              <AlertDescription>
+                Configure at least one {searchType === "movie" ? "Radarr" : "Sonarr"} instance in Settings to perform searches.
+              </AlertDescription>
+            </Alert>
           ) : null}
         </div>
       </header>
 
       <section className="space-y-6">
         {!hasQuery && !isLoading ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>Ready when you are</CardTitle>
-              <CardDescription>
-                Use the search bar above to look up titles. Results will merge data from every configured instance so you can
-                add them with the right quality and folder.
-              </CardDescription>
-            </CardHeader>
-          </Card>
+          <EmptyState
+            icon={Inbox}
+            title="Ready when you are"
+            description="Use the search bar above to look up titles. Results will merge data from every configured instance so you can add them with the right quality and folder."
+          />
         ) : null}
 
         {hasQuery && isLoading ? (
-          <div className="flex items-center gap-3 text-white/60">
+          <div className="flex items-center gap-3 text-fg-muted">
             <Loader2 className="h-5 w-5 animate-spin" />
             Fetching {searchType === "movie" ? "movies" : "series"}...
           </div>
         ) : null}
 
         {hasQuery && !isLoading && searchResults.length === 0 ? (
-          <Card>
-            <CardHeader>
-              <CardTitle>No results found</CardTitle>
-              <CardDescription>Try a different title or adjust your search term.</CardDescription>
-            </CardHeader>
-          </Card>
+          <EmptyState
+            icon={Search}
+            title="No results found"
+            description="Try a different title or adjust your search term."
+          />
         ) : null}
 
         <div className="grid gap-6 lg:grid-cols-2">
@@ -328,10 +316,12 @@ export const DiscoverClient: React.FC = () => {
       />
 
       {searchQuery.isError ? (
-        <div className="flex items-center gap-3 rounded-xl border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          <AlertCircle className="h-4 w-4" />
-          {(searchQuery.error as Error | undefined)?.message ?? "Search failed"}
-        </div>
+        <Alert variant="danger">
+          <AlertTitle>Search failed</AlertTitle>
+          <AlertDescription>
+            {(searchQuery.error as Error | undefined)?.message ?? "An error occurred while searching."}
+          </AlertDescription>
+        </Alert>
       ) : null}
     </div>
   );

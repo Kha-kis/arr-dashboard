@@ -5,7 +5,11 @@ import { cn } from "../../lib/utils";
 const Card = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
-      "rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur transition hover:border-white/20",
+      "group relative rounded-2xl border border-border/50 p-6 transition-all duration-300",
+      "bg-bg-subtle/40 backdrop-blur-xl",
+      "shadow-lg shadow-black/10",
+      "hover:shadow-xl hover:shadow-primary/5 hover:border-border/70 hover:-translate-y-0.5",
+      "before:absolute before:inset-0 before:rounded-2xl before:bg-gradient-to-br before:from-white/5 before:to-transparent before:opacity-0 hover:before:opacity-100 before:transition-opacity before:pointer-events-none",
       className,
     )}
     {...props}
@@ -13,19 +17,19 @@ const Card = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => 
 );
 
 const CardHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("mb-4 space-y-1", className)} {...props} />
+  <div className={cn("mb-4 space-y-1.5", className)} {...props} />
 );
 
 const CardTitle = ({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
-  <h3 className={cn("text-lg font-semibold text-white", className)} {...props} />
+  <h3 className={cn("text-lg font-semibold text-fg", className)} {...props} />
 );
 
 const CardDescription = ({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) => (
-  <p className={cn("text-sm text-white/70", className)} {...props} />
+  <p className={cn("text-sm text-fg-muted", className)} {...props} />
 );
 
 const CardContent = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn("text-sm text-white/80", className)} {...props} />
+  <div className={cn("text-sm text-fg-subtle", className)} {...props} />
 );
 
 export { Card, CardHeader, CardTitle, CardDescription, CardContent };

@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useSetupRequired } from '../../src/hooks/api/useAuth';
 import { SetupClient } from "../../src/features/setup/components/setup-client";
+import { Skeleton } from "../../src/components/ui";
 
 const SetupPage = () => {
   const router = useRouter();
@@ -20,7 +21,7 @@ const SetupPage = () => {
   if (isLoading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 px-4">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-white/30 border-t-white" />
+        <Skeleton className="h-10 w-10 rounded-full" />
       </main>
     );
   }

@@ -1,18 +1,17 @@
 import type { Config } from "tailwindcss";
-import { fontFamily } from "tailwindcss/defaultTheme";
+import tokensPreset from "./src/styles/tokens/tailwind-preset";
 
 const config: Config = {
+  presets: [tokensPreset],
   content: [
     "./app/**/*.{ts,tsx}",
     "./src/**/*.{ts,tsx}",
     "../../packages/shared/src/**/*.{ts,tsx}",
   ],
-  darkMode: ["class"],
+  darkMode: ["class", '[data-theme="dark"]'],
   theme: {
     extend: {
-      fontFamily: {
-        sans: ["Inter", ...fontFamily.sans],
-      },
+      // Legacy brand colors (kept for backwards compatibility)
       colors: {
         brand: {
           DEFAULT: "#2563eb",

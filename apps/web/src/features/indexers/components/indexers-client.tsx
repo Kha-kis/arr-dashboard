@@ -11,6 +11,7 @@ import {
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../components/ui/card";
+import { Alert, AlertDescription, Skeleton } from "../../../components/ui";
 import { cn } from "../../../lib/utils";
 
 const numberFormatter = new Intl.NumberFormat();
@@ -262,18 +263,22 @@ const IndexerDetailsPanel = ({
     <div className="space-y-6 rounded-lg border border-white/10 bg-slate-950/80 p-4">
       {isLoadingState ? (
         <div className="flex items-center gap-2 text-sm text-white/60">
-          <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+          <Skeleton className="h-4 w-4 rounded-full" />
           Loading indexer settings�
         </div>
       ) : detailError ? (
-        <div className="flex flex-col gap-3 rounded-md border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-200">
-          <span>{detailError}</span>
-          <div>
-            <Button variant="ghost" onClick={() => void refetch()} disabled={isFetching}>
-              {isFetching ? "Retrying�" : "Retry"}
-            </Button>
-          </div>
-        </div>
+        <Alert variant="danger">
+          <AlertDescription>
+            <div className="flex flex-col gap-3">
+              <span>{detailError}</span>
+              <div>
+                <Button variant="ghost" onClick={() => void refetch()} disabled={isFetching}>
+                  {isFetching ? "Retrying…" : "Retry"}
+                </Button>
+              </div>
+            </div>
+          </AlertDescription>
+        </Alert>
       ) : (
         <>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -518,7 +523,7 @@ export const IndexersClient = () => {
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-white/30 border-t-white" />
+        <Skeleton className="h-10 w-10 rounded-full" />
       </div>
     );
   }
@@ -539,22 +544,15 @@ export const IndexersClient = () => {
       </header>
 
       {error && (
-        <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          Unable to load indexers. Double-check your Prowlarr settings and try again.
-        </div>
+        <Alert variant="danger">
+          <AlertDescription>Unable to load indexers. Double-check your Prowlarr settings and try again.</AlertDescription>
+        </Alert>
       )}
 
       {feedback && (
-        <div
-          className={cn(
-            "rounded-lg border px-4 py-3 text-sm",
-            feedback.type === "success"
-              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
-              : "border-red-500/40 bg-red-500/10 text-red-200",
-          )}
-        >
-          {feedback.message}
-        </div>
+        <Alert variant={feedback.type === "success" ? "success" : "danger"}>
+          <AlertDescription>{feedback.message}</AlertDescription>
+        </Alert>
       )}
 
       {noInstances ? (

@@ -1,0 +1,134 @@
+/**
+ * Design Tokens - Arr Control Center
+ *
+ * Base design tokens using CSS custom properties.
+ * These provide a single source of truth for colors, spacing, typography, etc.
+ * Theme-specific values are defined in theme.light.css and theme.dark.css
+ */
+
+@layer base {
+  :root {
+    /* ===== Color System (HSL format for easy manipulation) ===== */
+
+    /* Background Colors */
+    --color-bg: 222 47% 11%;           /* slate-950 equivalent */
+    --color-bg-subtle: 217 33% 17%;     /* slate-900 equivalent */
+    --color-bg-muted: 215 28% 27%;      /* slate-800 equivalent */
+    --color-bg-overlay: 222 47% 11%;    /* Modal/dialog backdrop base */
+
+    /* Foreground/Text Colors */
+    --color-fg: 0 0% 100%;              /* white */
+    --color-fg-muted: 0 0% 100%;        /* white with opacity via alpha */
+    --color-fg-subtle: 0 0% 100%;       /* white with opacity via alpha */
+
+    /* Brand/Primary Colors (Sky blue) */
+    --color-primary: 217 91% 60%;       /* sky-500 */
+    --color-primary-hover: 217 91% 67%; /* sky-400 */
+    --color-primary-fg: 0 0% 100%;      /* white text on primary */
+
+    /* Semantic Colors */
+    --color-success: 160 84% 39%;       /* emerald-500 */
+    --color-success-fg: 152 76% 80%;    /* emerald-200 */
+    --color-warning: 38 92% 50%;        /* amber-500 */
+    --color-warning-fg: 48 96% 89%;     /* amber-50 */
+    --color-danger: 0 84% 60%;          /* red-500 */
+    --color-danger-fg: 0 91% 71%;       /* red-200 */
+    --color-info: 199 89% 48%;          /* sky-500 */
+    --color-info-fg: 204 94% 94%;       /* sky-50 */
+
+    /* Interactive States */
+    --color-border: 0 0% 100%;          /* white with opacity */
+    --color-border-hover: 0 0% 100%;    /* white with opacity */
+    --color-border-focus: 217 91% 60%;  /* sky-500 */
+    --color-focus-ring: 217 91% 60%;    /* sky-400 */
+    --color-focus-ring-offset: 222 47% 11%; /* slate-950 */
+
+    /* Component-specific */
+    --color-input-bg: 0 0% 100%;        /* white with opacity */
+    --color-input-border: 0 0% 100%;    /* white with opacity */
+    --color-card-bg: 0 0% 100%;         /* white with opacity */
+    --color-card-border: 0 0% 100%;     /* white with opacity */
+
+    /* ===== Spacing Scale ===== */
+    --space-0: 0;
+    --space-1: 0.25rem;   /* 4px */
+    --space-2: 0.5rem;    /* 8px */
+    --space-3: 0.75rem;   /* 12px */
+    --space-4: 1rem;      /* 16px */
+    --space-5: 1.25rem;   /* 20px */
+    --space-6: 1.5rem;    /* 24px */
+    --space-8: 2rem;      /* 32px */
+    --space-10: 2.5rem;   /* 40px */
+    --space-12: 3rem;     /* 48px */
+    --space-16: 4rem;     /* 64px */
+    --space-20: 5rem;     /* 80px */
+    --space-24: 6rem;     /* 96px */
+
+    /* ===== Border Radius ===== */
+    --radius-sm: 0.25rem;   /* 4px */
+    --radius-md: 0.5rem;    /* 8px */
+    --radius-lg: 0.75rem;   /* 12px */
+    --radius-xl: 1rem;      /* 16px */
+    --radius-2xl: 1.5rem;   /* 24px */
+    --radius-full: 9999px;
+
+    /* ===== Typography ===== */
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-mono: 'Fira Code', 'Courier New', monospace;
+
+    /* Font Sizes */
+    --text-xs: 0.75rem;     /* 12px */
+    --text-sm: 0.875rem;    /* 14px */
+    --text-base: 1rem;      /* 16px */
+    --text-lg: 1.125rem;    /* 18px */
+    --text-xl: 1.25rem;     /* 20px */
+    --text-2xl: 1.5rem;     /* 24px */
+    --text-3xl: 1.875rem;   /* 30px */
+
+    /* Line Heights */
+    --leading-none: 1;
+    --leading-tight: 1.25;
+    --leading-snug: 1.375;
+    --leading-normal: 1.5;
+    --leading-relaxed: 1.625;
+    --leading-loose: 2;
+
+    /* Font Weights */
+    --font-normal: 400;
+    --font-medium: 500;
+    --font-semibold: 600;
+    --font-bold: 700;
+
+    /* ===== Shadows ===== */
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+    --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1);
+
+    /* ===== Z-Index Layers ===== */
+    --z-base: 0;
+    --z-dropdown: 1000;
+    --z-sticky: 1100;
+    --z-fixed: 1200;
+    --z-modal-backdrop: 1300;
+    --z-modal: 1400;
+    --z-popover: 1500;
+    --z-toast: 2000;
+    --z-tooltip: 3000;
+
+    /* ===== Animation ===== */
+    --duration-fast: 100ms;
+    --duration-normal: 200ms;
+    --duration-slow: 300ms;
+    --duration-slower: 500ms;
+
+    --ease-linear: linear;
+    --ease-in: cubic-bezier(0.4, 0, 1, 1);
+    --ease-out: cubic-bezier(0, 0, 0.2, 1);
+    --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* ===== Responsive Breakpoints (for reference in JS) ===== */
+  /* Use Tailwind's built-in breakpoints: sm(640px), md(768px), lg(1024px), xl(1280px), 2xl(1536px) */
+}
