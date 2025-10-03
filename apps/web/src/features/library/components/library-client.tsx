@@ -347,9 +347,9 @@ const LibraryCard = ({
             {item.type === "series" && hasSeasonProgress && onViewSeasons ? (
               <Button
                 type="button"
-                variant="ghost"
+                variant="secondary"
                 size="sm"
-                className="flex items-center gap-1.5 text-xs h-8 px-2.5"
+                className="flex items-center gap-1.5"
                 onClick={() => onViewSeasons(item)}
               >
                 <ListTree className="h-3.5 w-3.5" />
@@ -360,9 +360,9 @@ const LibraryCard = ({
             {item.service === "sonarr" && onSearchSeries ? (
               <Button
                 type="button"
-                variant="ghost"
+                variant="secondary"
                 size="sm"
-                className="flex items-center gap-1.5 text-xs h-8 px-2.5"
+                className="flex items-center gap-1.5"
                 onClick={() => onSearchSeries(item)}
                 disabled={seriesSearchPending}
               >
@@ -378,9 +378,9 @@ const LibraryCard = ({
             {item.service === "radarr" && onSearchMovie ? (
               <Button
                 type="button"
-                variant="ghost"
+                variant="secondary"
                 size="sm"
-                className="flex items-center gap-1.5 text-xs h-8 px-2.5"
+                className="flex items-center gap-1.5"
                 onClick={() => onSearchMovie(item)}
                 disabled={movieSearchPending}
               >
@@ -396,9 +396,9 @@ const LibraryCard = ({
             {externalLink ? (
               <Button
                 type="button"
-                variant="ghost"
+                variant="secondary"
                 size="sm"
-                className="flex items-center gap-1.5 text-xs h-8 px-2.5"
+                className="flex items-center gap-1.5"
                 onClick={handleOpenExternal}
               >
                 <ExternalLink className="h-3.5 w-3.5" />
@@ -409,9 +409,9 @@ const LibraryCard = ({
             {onExpandDetails ? (
               <Button
                 type="button"
-                variant="ghost"
+                variant="secondary"
                 size="sm"
-                className="flex items-center gap-1.5 text-xs h-8 px-2.5"
+                className="flex items-center gap-1.5"
                 onClick={() => onExpandDetails(item)}
               >
                 <AlertCircle className="h-3.5 w-3.5" />
@@ -424,7 +424,7 @@ const LibraryCard = ({
             type="button"
             variant={monitored ? "secondary" : "primary"}
             size="sm"
-            className="flex items-center gap-1.5 text-xs h-8 px-3"
+            className="flex items-center gap-1.5"
             onClick={() => onToggleMonitor(item)}
             disabled={pending}
           >
