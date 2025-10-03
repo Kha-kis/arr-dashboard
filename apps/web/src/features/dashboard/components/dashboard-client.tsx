@@ -7,7 +7,8 @@ import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useMultiInstanceQueueQuery } from "../../../hooks/api/useDashboard";
 import { useQueueActions } from "../../../hooks/api/useQueueActions";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
-import { Button } from "../../../components/ui/button";
+import { Button, Alert, AlertTitle, AlertDescription, EmptyState, Skeleton, SkeletonText, SkeletonCard } from "../../../components/ui";
+import { AlertCircle, User } from "lucide-react";
 import { QueueTable } from "./queue-table";
 import ManualImportModal from "../../manual-import/components/manual-import-modal";
 
@@ -142,28 +143,35 @@ export const DashboardClient = () => {
 
   if (isLoading) {
     return (
-      <div className="flex h-64 items-center justify-center">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-white/30 border-t-white" />
+      <div className="space-y-6">
+        <SkeletonText lines={2} />
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+          <SkeletonCard />
+        </div>
+        <SkeletonCard />
       </div>
     );
   }
 
   if (userError) {
     return (
-      <div className="rounded-xl border border-red-500/40 bg-red-500/10 p-6 text-red-200">
-        <p className="text-sm font-medium">Failed to load user session. Please refresh.</p>
-      </div>
+      <Alert variant="danger">
+        <AlertTitle>Failed to load user session</AlertTitle>
+        <AlertDescription>Please refresh the page and try again.</AlertDescription>
+      </Alert>
     );
   }
 
   if (!currentUser) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 rounded-2xl border border-white/10 bg-white/5 p-12 text-center text-white/80">
-        <h2 className="text-2xl font-semibold text-white">Sign in required</h2>
-        <p className="max-w-sm text-sm">
-          You are not authenticated. Log in through the dashboard API to manage Sonarr, Radarr, and Prowlarr instances.
-        </p>
-      </div>
+      <EmptyState
+        icon={AlertCircle}
+        title="Sign in required"
+        description="You are not authenticated. Log in through the dashboard API to manage Sonarr, Radarr, and Prowlarr instances."
+      />
     );
   }
 
@@ -230,9 +238,10 @@ export const DashboardClient = () => {
       <div className="space-y-4">
         <h2 className="text-xl font-semibold text-white">Configured Instances</h2>
         {services.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-white/20 p-6 text-center text-white/70">
-            Nothing here yet. Add an instance via the API to see it appear in real time.
-          </div>
+          <EmptyState
+            title="No instances configured"
+            description="Add an instance via the API to see it appear in real time."
+          />
         ) : (
           <div className="overflow-hidden rounded-xl border border-white/10 bg-white/5">
             <table className="min-w-full divide-y divide-white/10 text-sm text-white/80">
@@ -366,14 +375,16 @@ export const DashboardClient = () => {
         </div>
 
         {queueMessage && (
-          <div className="rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-            {queueMessage.message}
-          </div>
+          <Alert variant="success" dismissible onDismiss={() => setQueueMessage(null)}>
+            <AlertDescription>{queueMessage.message}</AlertDescription>
+          </Alert>
         )}
         {queueActions.error && (
-          <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-            {queueActions.error.message || "Failed to process the last queue action. Please try again."}
-          </div>
+          <Alert variant="danger">
+            <AlertDescription>
+              {queueActions.error.message || "Failed to process the last queue action. Please try again."}
+            </AlertDescription>
+          </Alert>
         )}
         <QueueTable
           items={filteredQueueItems}
