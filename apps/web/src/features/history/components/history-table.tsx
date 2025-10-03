@@ -205,7 +205,7 @@ export const HistoryTable = ({ groups, loading, emptyMessage, groupingEnabled }:
                       <span className="inline-flex w-fit rounded-full px-2 py-0.5 text-xs font-semibold bg-blue-500/20 text-blue-200">
                         indexerRss
                       </span>
-                      <span className="text-xs text-white/50 capitalize">{firstItem.instanceName}</span>
+                      <span className="text-xs text-white/50 capitalize">{firstItem?.instanceName ?? "-"}</span>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-white">
@@ -218,7 +218,7 @@ export const HistoryTable = ({ groups, loading, emptyMessage, groupingEnabled }:
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right text-white/70">-</td>
-                  <td className="px-4 py-3 text-white/70 whitespace-nowrap">{formatDateTime(firstItem.date)}</td>
+                  <td className="px-4 py-3 text-white/70 whitespace-nowrap">{firstItem?.date ? formatDateTime(firstItem.date) : "-"}</td>
                 </tr>
               );
             }

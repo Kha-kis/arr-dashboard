@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useCurrentUser } from "../../hooks/api/useCurrentUser";
-import { useLogoutMutation } from "../../hooks/api/useAuth";
+import { useCurrentUser, useLogoutMutation } from "../../hooks/api/useAuth";
 import { Button } from "../ui/button";
 
 export const TopBar = () => {
