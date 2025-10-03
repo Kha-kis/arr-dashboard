@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import type { SonarrStatistics, RadarrStatistics, ProwlarrStatistics, ProwlarrIndexerStat } from "@arr/shared";
 import { useDashboardStatisticsQuery } from "../../../hooks/api/useDashboard";
 import { Button } from "../../../components/ui/button";
+import { Alert, AlertDescription, Skeleton } from "../../../components/ui";
 
 const integer = new Intl.NumberFormat();
 const percentFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
@@ -266,7 +267,7 @@ export const StatisticsClient = () => {
   if (isLoading) {
     return (
       <div className="flex h-64 items-center justify-center">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-white/30 border-t-white" />
+        <Skeleton className="h-10 w-10 rounded-full" />
       </div>
     );
   }
@@ -292,25 +293,27 @@ export const StatisticsClient = () => {
       </header>
 
       {totalHealthIssues > 0 && (
-        <div className="rounded-lg border border-yellow-500/40 bg-yellow-500/10 px-4 py-3">
-          <div className="flex items-center gap-3">
-            <div className="text-2xl font-semibold text-yellow-200">{totalHealthIssues}</div>
-            <div className="flex-1">
-              <p className="font-medium text-yellow-200">Health Issues Detected</p>
-              <p className="text-sm text-yellow-200/70">
-                {sonarrTotals.healthIssues > 0 && `Sonarr: ${sonarrTotals.healthIssues} `}
-                {radarrTotals.healthIssues > 0 && `Radarr: ${radarrTotals.healthIssues} `}
-                {prowlarrTotals.healthIssues > 0 && `Prowlarr: ${prowlarrTotals.healthIssues}`}
-              </p>
+        <Alert variant="warning">
+          <AlertDescription>
+            <div className="flex items-center gap-3">
+              <div className="text-2xl font-semibold">{totalHealthIssues}</div>
+              <div className="flex-1">
+                <p className="font-medium">Health Issues Detected</p>
+                <p className="text-sm opacity-70">
+                  {sonarrTotals.healthIssues > 0 && `Sonarr: ${sonarrTotals.healthIssues} `}
+                  {radarrTotals.healthIssues > 0 && `Radarr: ${radarrTotals.healthIssues} `}
+                  {prowlarrTotals.healthIssues > 0 && `Prowlarr: ${prowlarrTotals.healthIssues}`}
+                </p>
+              </div>
             </div>
-          </div>
-        </div>
+          </AlertDescription>
+        </Alert>
       )}
 
       {error && (
-        <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-200">
-          Unable to refresh one or more instances. Showing last known values.
-        </div>
+        <Alert variant="danger">
+          <AlertDescription>Unable to refresh one or more instances. Showing last known values.</AlertDescription>
+        </Alert>
       )}
 
       <section className="space-y-4">

@@ -16,6 +16,7 @@ import { testServiceConnection, testConnectionBeforeAdd } from "../../../lib/api
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";
+import { Alert, AlertTitle, AlertDescription } from "../../../components/ui";
 import { cn } from "../../../lib/utils";
 
 type ServiceFormState = {
@@ -607,14 +608,9 @@ export const SettingsClient = () => {
                         </div>
                       </div>
                       {testResult && testResult.id === instance.id && (
-                        <div className={cn(
-                          "rounded-md px-3 py-2 text-sm",
-                          testResult.success
-                            ? "bg-green-500/10 text-green-300 border border-green-500/30"
-                            : "bg-red-500/10 text-red-300 border border-red-500/30"
-                        )}>
-                          {testResult.message}
-                        </div>
+                        <Alert variant={testResult.success ? "success" : "danger"}>
+                          <AlertDescription>{testResult.message}</AlertDescription>
+                        </Alert>
                       )}
                     </div>
                   ))}
@@ -702,14 +698,9 @@ export const SettingsClient = () => {
                     {testingFormConnection ? "Testing connection..." : "Test connection"}
                   </Button>
                   {formTestResult && (
-                    <div className={cn(
-                      "rounded-md px-3 py-2 text-sm",
-                      formTestResult.success
-                        ? "bg-green-500/10 text-green-300 border border-green-500/30"
-                        : "bg-red-500/10 text-red-300 border border-red-500/30"
-                    )}>
-                      {formTestResult.message}
-                    </div>
+                    <Alert variant={formTestResult.success ? "success" : "danger"}>
+                      <AlertDescription>{formTestResult.message}</AlertDescription>
+                    </Alert>
                   )}
                 </div>
                 <div className="space-y-2">
@@ -915,14 +906,9 @@ export const SettingsClient = () => {
                   </Button>
                 </div>
                 {accountUpdateResult && (
-                  <div className={cn(
-                    "rounded-md px-3 py-2 text-sm",
-                    accountUpdateResult.success
-                      ? "bg-green-500/10 text-green-300 border border-green-500/30"
-                      : "bg-red-500/10 text-red-300 border border-red-500/30"
-                  )}>
-                    {accountUpdateResult.message}
-                  </div>
+                  <Alert variant={accountUpdateResult.success ? "success" : "danger"}>
+                    <AlertDescription>{accountUpdateResult.message}</AlertDescription>
+                  </Alert>
                 )}
               </form>
             </CardContent>

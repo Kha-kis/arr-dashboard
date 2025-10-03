@@ -7,6 +7,7 @@ import type { CurrentUser } from "@arr/shared";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../components/ui/card";
+import { Alert, AlertDescription } from "../../../components/ui";
 import { cn } from "../../../lib/utils";
 
 interface RegisterResponse {
@@ -136,9 +137,9 @@ export const SetupClient = () => {
             />
           </div>
           {error && (
-            <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
-              {error}
-            </div>
+            <Alert variant="danger">
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
           )}
           <Button
             type="submit"
