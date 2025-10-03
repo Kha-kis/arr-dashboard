@@ -631,24 +631,24 @@ const SeasonBreakdownModal = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur"
+      className="fixed inset-0 z-modal-backdrop flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-3xl rounded-2xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl"
+        className="w-full max-w-3xl rounded-2xl border border-border bg-bg-subtle/98 backdrop-blur-xl p-6 shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h2 className="text-xl font-semibold text-white">{item.title}</h2>
-            <p className="text-sm text-white/60">
+            <h2 className="text-xl font-semibold text-fg">{item.title}</h2>
+            <p className="text-sm text-fg-muted">
               {item.instanceName}
               {totalMissing > 0
                 ? ` - ${totalMissing} missing episode${totalMissing === 1 ? "" : "s"}`
                 : " - All monitored episodes available"}
             </p>
           </div>
-          <Button type="button" variant="ghost" className="text-white/60 hover:text-white" onClick={onClose}>
+          <Button type="button" variant="ghost" onClick={onClose}>
             Close
           </Button>
         </div>
@@ -667,12 +667,12 @@ const SeasonBreakdownModal = ({
             const seasonSearchPending = pendingActionKey === searchKey;
 
             return (
-              <div key={season.seasonNumber} className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+              <div key={season.seasonNumber} className="rounded-xl border border-border bg-bg-muted/30 px-4 py-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-medium text-white">{label}</p>
+                    <p className="text-sm font-medium text-fg">{label}</p>
                     {season.title && season.title !== label ? (
-                      <p className="text-xs text-white/50">{season.title}</p>
+                      <p className="text-xs text-fg-muted">{season.title}</p>
                     ) : null}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -701,7 +701,7 @@ const SeasonBreakdownModal = ({
                     <Button
                       type="button"
                       variant="ghost"
-                      className="flex items-center gap-2 text-sky-200 hover:text-white"
+                      className="flex items-center gap-2"
                       disabled={seasonSearchPending}
                       onClick={() => onSearchSeason(season.seasonNumber)}
                     >

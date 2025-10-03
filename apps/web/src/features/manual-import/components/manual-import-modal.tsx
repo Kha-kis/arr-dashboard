@@ -24,8 +24,8 @@ import {
 import { useManualImportStore, getSelectionForCandidate, hasValidSelections } from "../store";
 import { cn } from "../../../lib/utils";
 
-const backdropClasses = "fixed inset-0 z-40 flex items-center justify-center bg-slate-950/85 backdrop-blur";
-const panelClasses = "relative z-50 flex max-h-[90vh] w-full max-w-5xl flex-col gap-5 overflow-hidden rounded-2xl border border-white/10 bg-slate-950/95 p-6 shadow-xl";
+const backdropClasses = "fixed inset-0 z-modal-backdrop flex items-center justify-center bg-black/60 backdrop-blur-sm";
+const panelClasses = "relative z-modal flex max-h-[90vh] w-full max-w-5xl flex-col gap-5 overflow-hidden rounded-2xl border border-border bg-bg-subtle/98 backdrop-blur-xl p-6 shadow-xl";
 
 const statusToneClasses: Record<"ready" | "warning" | "error", string> = {
   ready: "text-emerald-300",

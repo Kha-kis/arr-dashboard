@@ -28,8 +28,8 @@ const getInstanceState = (
 ): DiscoverResultInstanceState | undefined =>
   result?.instanceStates.find((state) => state.instanceId === instanceId);
 
-const SELECT_CLASS = "w-full rounded-lg border border-white/15 bg-slate-950/80 px-3 py-2 text-sm text-white hover:border-sky-500/60 focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-400 focus:ring-offset-2 focus:ring-offset-slate-950";
-const OPTION_STYLE = { backgroundColor: "rgba(2, 6, 23, 0.92)", color: "#f1f5f9" } as const;
+const SELECT_CLASS = "w-full rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg hover:border-border-hover focus:border-border-focus focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-bg";
+const OPTION_STYLE = {} as const;
 
 export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
   open,
@@ -256,24 +256,24 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
     (type === "series" && !languageProfileId);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 px-4 py-8">
-      <div className="relative w-full max-w-2xl rounded-2xl bg-slate-900/90 p-8 shadow-2xl ring-1 ring-white/5">
+    <div className="fixed inset-0 z-modal-backdrop flex items-center justify-center bg-black/60 backdrop-blur-sm px-4 py-8">
+      <div className="relative w-full max-w-2xl rounded-2xl bg-bg-subtle/98 backdrop-blur-xl p-8 shadow-2xl ring-1 ring-border">
         <button
           type="button"
-          className="absolute right-4 top-4 text-sm text-white/60 hover:text-white"
+          className="absolute right-4 top-4 text-sm text-fg-muted hover:text-fg"
           onClick={onClose}
           disabled={submitting}
         >
           Close
         </button>
         <div className="mb-6 space-y-2">
-          <p className="text-xs uppercase tracking-[0.4em] text-white/40">Add to Library</p>
-          <h2 className="text-2xl font-semibold text-white">
+          <p className="text-xs uppercase tracking-[0.4em] text-fg-subtle">Add to Library</p>
+          <h2 className="text-2xl font-semibold text-fg">
             {result.title}
-            {result.year ? <span className="ml-2 text-white/50">({result.year})</span> : null}
+            {result.year ? <span className="ml-2 text-fg-muted">({result.year})</span> : null}
           </h2>
           {result.overview ? (
-            <p className="text-sm leading-relaxed text-white/60 line-clamp-3">{result.overview}</p>
+            <p className="text-sm leading-relaxed text-fg-muted line-clamp-3">{result.overview}</p>
           ) : null}
         </div>
 
@@ -285,7 +285,7 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
           ) : null}
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <label className="text-xs uppercase tracking-widest text-white/40">Instance</label>
+              <label className="text-xs uppercase tracking-widest text-fg-subtle">Instance</label>
               <select
                 className={SELECT_CLASS}
                 value={instanceId ?? ""}
@@ -313,7 +313,7 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs uppercase tracking-widest text-white/40">Quality Profile</label>
+              <label className="text-xs uppercase tracking-widest text-fg-subtle">Quality Profile</label>
               <select
                 className={SELECT_CLASS}
                 value={qualityProfileId ?? ""}
@@ -334,7 +334,7 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 
             {type === "series" ? (
               <div className="space-y-2">
-                <label className="text-xs uppercase tracking-widest text-white/40">Language Profile</label>
+                <label className="text-xs uppercase tracking-widest text-fg-subtle">Language Profile</label>
                 <select
                   className={SELECT_CLASS}
                   value={languageProfileId ?? ""}
@@ -355,7 +355,7 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
             ) : null}
 
             <div className="space-y-2">
-              <label className="text-xs uppercase tracking-widest text-white/40">Root Folder</label>
+              <label className="text-xs uppercase tracking-widest text-fg-subtle">Root Folder</label>
               <select
                 className={SELECT_CLASS}
                 value={rootFolderPath}
@@ -376,22 +376,22 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">
-            <label className="flex items-center justify-between rounded-xl bg-white/5 px-4 py-3 text-sm text-white/80">
+            <label className="flex items-center justify-between rounded-xl bg-bg-muted/30 px-4 py-3 text-sm text-fg">
               <span className="font-medium">Monitor future releases</span>
               <input
                 type="checkbox"
-                className="h-4 w-4 rounded border-white/40 bg-white/10 accent-sky-500"
+                className="h-4 w-4 rounded border-border bg-bg-muted accent-accent"
                 checked={monitored}
                 onChange={(event) => setMonitored(event.target.checked)}
                 disabled={submitting || noInstances}
               />
             </label>
 
-            <label className="flex items-center justify-between rounded-xl bg-white/5 px-4 py-3 text-sm text-white/80">
+            <label className="flex items-center justify-between rounded-xl bg-bg-muted/30 px-4 py-3 text-sm text-fg">
               <span className="font-medium">Search on add</span>
               <input
                 type="checkbox"
-                className="h-4 w-4 rounded border-white/40 bg-white/10 accent-sky-500"
+                className="h-4 w-4 rounded border-border bg-bg-muted accent-accent"
                 checked={searchOnAdd}
                 onChange={(event) => setSearchOnAdd(event.target.checked)}
                 disabled={submitting || noInstances}
@@ -399,11 +399,11 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
             </label>
 
             {type === "series" ? (
-              <label className="flex items-center justify-between rounded-xl bg-white/5 px-4 py-3 text-sm text-white/80">
+              <label className="flex items-center justify-between rounded-xl bg-bg-muted/30 px-4 py-3 text-sm text-fg">
                 <span className="font-medium">Create season folders</span>
                 <input
                   type="checkbox"
-                  className="h-4 w-4 rounded border-white/40 bg-white/10 accent-sky-500"
+                  className="h-4 w-4 rounded border-border bg-bg-muted accent-accent"
                   checked={seasonFolder}
                   onChange={(event) => setSeasonFolder(event.target.checked)}
                   disabled={submitting || noInstances}
