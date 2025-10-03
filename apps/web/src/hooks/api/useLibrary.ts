@@ -2,6 +2,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+  LibraryEpisodeSearchRequest,
+  LibraryEpisodesResponse,
   LibraryService,
   LibraryToggleMonitorRequest,
   LibrarySeasonSearchRequest,
@@ -10,7 +12,15 @@ import type {
   MultiInstanceLibraryResponse,
 } from "@arr/shared";
 
-import { fetchLibrary, toggleLibraryMonitoring, searchLibrarySeason, searchLibraryMovie, searchLibrarySeries } from "../../lib/api-client/library";
+import {
+  fetchEpisodes,
+  fetchLibrary,
+  searchLibraryEpisode,
+  searchLibraryMovie,
+  searchLibrarySeason,
+  searchLibrarySeries,
+  toggleLibraryMonitoring
+} from "../../lib/api-client/library";
 
 interface LibraryQueryOptions {
   service?: LibraryService;
@@ -67,6 +77,40 @@ export const useLibrarySeriesSearchMutation = () => {
     mutationFn: searchLibrarySeries,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["library"] });
+    },
+  });
+};
+
+interface EpisodesQueryOptions {
+  instanceId: string;
+  seriesId: number | string;
+  seasonNumber?: number;
+  enabled?: boolean;
+}
+
+export const useEpisodesQuery = (options: EpisodesQueryOptions) =>
+  useQuery<LibraryEpisodesResponse>({
+    queryKey: ["library", "episodes", {
+      instanceId: options.instanceId,
+      seriesId: options.seriesId,
+      seasonNumber: options.seasonNumber,
+    }],
+    queryFn: () => fetchEpisodes({
+      instanceId: options.instanceId,
+      seriesId: options.seriesId,
+      seasonNumber: options.seasonNumber,
+    }),
+    enabled: options.enabled ?? true,
+    staleTime: 60 * 1000,
+  });
+
+export const useLibraryEpisodeSearchMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation<void, unknown, LibraryEpisodeSearchRequest>({
+    mutationFn: searchLibraryEpisode,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["library"] });
+      void queryClient.invalidateQueries({ queryKey: ["library", "episodes"] });
     },
   });
 };

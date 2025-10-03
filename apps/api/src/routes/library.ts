@@ -1,6 +1,10 @@
 import {
+	type LibraryEpisode,
 	type LibraryItem,
 	type LibraryService,
+	libraryEpisodeSearchRequestSchema,
+	libraryEpisodesRequestSchema,
+	libraryEpisodesResponseSchema,
 	libraryMovieSearchRequestSchema,
 	librarySeasonSearchRequestSchema,
 	librarySeriesSearchRequestSchema,
@@ -636,6 +640,132 @@ const libraryRoute: FastifyPluginCallback = (app, _opts, done) => {
 			);
 			reply.status(502);
 			return reply.send({ message: "Failed to queue movie search" });
+		}
+	});
+
+	app.get("/library/episodes", async (request, reply) => {
+		if (!request.currentUser) {
+			reply.status(401);
+			return reply.send({ message: "Unauthorized" });
+		}
+
+		const parsed = libraryEpisodesRequestSchema.parse(request.query ?? {});
+
+		const instance = await app.prisma.serviceInstance.findFirst({
+			where: {
+				id: parsed.instanceId,
+				userId: request.currentUser.id,
+				enabled: true,
+			},
+		});
+
+		if (!instance) {
+			reply.status(404);
+			return reply.send({ message: "Instance not found" });
+		}
+
+		const service = instance.service.toLowerCase() as LibraryService;
+		if (service !== "sonarr") {
+			reply.status(400);
+			return reply.send({ message: "Episodes are only available for Sonarr instances" });
+		}
+
+		const seriesId = Number(parsed.seriesId);
+		if (!Number.isFinite(seriesId)) {
+			reply.status(400);
+			return reply.send({ message: "Invalid series identifier" });
+		}
+
+		const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
+
+		try {
+			const params = new URLSearchParams({ seriesId: seriesId.toString() });
+			if (parsed.seasonNumber !== undefined) {
+				params.append("seasonNumber", parsed.seasonNumber.toString());
+			}
+
+			const response = await fetcher(`/api/v3/episode?${params.toString()}`);
+			const payload = await response.json();
+
+			const episodes: LibraryEpisode[] = Array.isArray(payload)
+				? payload.map((raw: any) => ({
+						id: toNumber(raw?.id) ?? 0,
+						seriesId,
+						episodeNumber: toNumber(raw?.episodeNumber) ?? 0,
+						seasonNumber: toNumber(raw?.seasonNumber) ?? 0,
+						title: toStringValue(raw?.title),
+						airDate: toStringValue(raw?.airDate ?? raw?.airDateUtc),
+						hasFile: Boolean(raw?.hasFile),
+						monitored: toBoolean(raw?.monitored),
+						overview: toStringValue(raw?.overview),
+						episodeFileId: toNumber(raw?.episodeFileId),
+					}))
+				: [];
+
+			return libraryEpisodesResponseSchema.parse({ episodes });
+		} catch (error) {
+			request.log.error(
+				{ err: error, instance: instance.id, seriesId },
+				"failed to fetch episodes",
+			);
+			reply.status(502);
+			return reply.send({ message: "Failed to fetch episodes" });
+		}
+	});
+
+	app.post("/library/episode/search", async (request, reply) => {
+		if (!request.currentUser) {
+			reply.status(401);
+			return reply.send({ message: "Unauthorized" });
+		}
+
+		const payload = libraryEpisodeSearchRequestSchema.parse(request.body ?? {});
+
+		const instance = await app.prisma.serviceInstance.findFirst({
+			where: {
+				id: payload.instanceId,
+				userId: request.currentUser.id,
+				enabled: true,
+			},
+		});
+
+		if (!instance) {
+			reply.status(404);
+			return reply.send({ message: "Instance not found" });
+		}
+
+		const service = instance.service.toLowerCase() as LibraryService;
+		if (service !== "sonarr") {
+			reply.status(400);
+			return reply.send({ message: "Episode search is only supported for Sonarr instances" });
+		}
+
+		if (!payload.episodeIds || payload.episodeIds.length === 0) {
+			reply.status(400);
+			return reply.send({ message: "No episode IDs provided" });
+		}
+
+		const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
+
+		try {
+			await fetcher("/api/v3/command", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					name: "EpisodeSearch",
+					episodeIds: payload.episodeIds,
+				}),
+			});
+
+			reply.status(202);
+			return reply.send({ message: "Episode search queued" });
+		} catch (error) {
+			request.log.error(
+				{ err: error, instance: instance.id, episodeIds: payload.episodeIds },
+				"failed to queue episode search",
+			);
+			reply.status(502);
+			return reply.send({ message: "Failed to queue episode search" });
 		}
 	});
 
