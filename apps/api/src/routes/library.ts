@@ -2,6 +2,7 @@ import {
 	type LibraryEpisode,
 	type LibraryItem,
 	type LibraryService,
+	libraryEpisodeMonitorRequestSchema,
 	libraryEpisodeSearchRequestSchema,
 	libraryEpisodesRequestSchema,
 	libraryEpisodesResponseSchema,
@@ -766,6 +767,86 @@ const libraryRoute: FastifyPluginCallback = (app, _opts, done) => {
 			);
 			reply.status(502);
 			return reply.send({ message: "Failed to queue episode search" });
+		}
+	});
+
+	app.post("/library/episode/monitor", async (request, reply) => {
+		if (!request.currentUser) {
+			reply.status(401);
+			return reply.send({ message: "Unauthorized" });
+		}
+
+		const payload = libraryEpisodeMonitorRequestSchema.parse(request.body ?? {});
+
+		const instance = await app.prisma.serviceInstance.findFirst({
+			where: {
+				id: payload.instanceId,
+				userId: request.currentUser.id,
+				enabled: true,
+			},
+		});
+
+		if (!instance) {
+			reply.status(404);
+			return reply.send({ message: "Instance not found" });
+		}
+
+		const service = instance.service.toLowerCase() as LibraryService;
+		if (service !== "sonarr") {
+			reply.status(400);
+			return reply.send({ message: "Episode monitoring is only supported for Sonarr instances" });
+		}
+
+		const seriesId = Number(payload.seriesId);
+		if (!Number.isFinite(seriesId)) {
+			reply.status(400);
+			return reply.send({ message: "Invalid series identifier" });
+		}
+
+		if (!payload.episodeIds || payload.episodeIds.length === 0) {
+			reply.status(400);
+			return reply.send({ message: "No episode IDs provided" });
+		}
+
+		const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
+
+		try {
+			// Fetch all episodes for the series
+			const params = new URLSearchParams({ seriesId: seriesId.toString() });
+			const response = await fetcher(`/api/v3/episode?${params.toString()}`);
+			const allEpisodes = await response.json();
+
+			if (!Array.isArray(allEpisodes)) {
+				throw new Error("Invalid response from Sonarr");
+			}
+
+			// Update the monitored status for the specified episodes
+			const updates = allEpisodes
+				.filter((ep: any) => payload.episodeIds.includes(toNumber(ep?.id) ?? -1))
+				.map((ep: any) => ({
+					...ep,
+					monitored: payload.monitored,
+				}));
+
+			// Send bulk update to Sonarr
+			await fetcher("/api/v3/episode/monitor", {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					episodeIds: payload.episodeIds,
+					monitored: payload.monitored,
+				}),
+			});
+
+			reply.status(204);
+			return reply.send();
+		} catch (error) {
+			request.log.error(
+				{ err: error, instance: instance.id, episodeIds: payload.episodeIds },
+				"failed to update episode monitoring",
+			);
+			reply.status(502);
+			return reply.send({ message: "Failed to update episode monitoring" });
 		}
 	});
 
