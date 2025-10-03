@@ -687,7 +687,7 @@ const SeasonEpisodeList = ({
       {data.episodes.map((episode) => (
         <div
           key={episode.id}
-          className="flex items-center justify-between rounded-lg border border-border/50 bg-bg/10 px-3 py-2 text-sm"
+          className="flex items-center gap-3 rounded-lg border border-border/50 bg-bg/10 px-3 py-2 text-sm"
         >
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
@@ -704,7 +704,7 @@ const SeasonEpisodeList = ({
               </div>
             )}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <LibraryBadge tone={episode.hasFile ? "green" : "blue"}>
               {episode.hasFile ? "Downloaded" : "Missing"}
             </LibraryBadge>
@@ -713,6 +713,8 @@ const SeasonEpisodeList = ({
                 {episode.monitored ? "Monitored" : "Unmonitored"}
               </LibraryBadge>
             )}
+          </div>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
             <Button
               type="button"
               variant="secondary"
