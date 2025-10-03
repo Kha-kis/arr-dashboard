@@ -1,0 +1,66 @@
+# Potentially Unused Exports Analysis
+
+Note: This is a conservative analysis. Some exports may be used dynamically or by external tooling.
+
+## Methodology
+- Searched for files with `export` statements
+- Cross-referenced with import statements
+- Flagged exports that appear unused (may have false positives for dynamic imports)
+
+## Files with Exports (45 total)
+
+### API Client Layer
+- lib/api-client/base.ts (apiRequest, UnauthorizedError - heavily used)
+- lib/api-client/auth.ts (login, logout, fetchCurrentUser, etc.)
+- lib/api-client/services.ts (service CRUD operations)
+- lib/api-client/library.ts (library operations)
+- lib/api-client/discover.ts (discover operations)
+- lib/api-client/dashboard.ts (queue, history, calendar, stats)
+- lib/api-client/search.ts (search operations)
+- lib/api-client/tags.ts (tag operations)
+
+### Hook Layer
+- hooks/api/useAuth.ts (useCurrentUser, useLoginMutation, etc.)
+- hooks/api/useServicesQuery.ts (useServicesQuery)
+- hooks/api/useServiceMutations.ts (mutations)
+- hooks/api/useTags.ts (tag hooks)
+- hooks/api/useDashboard.ts (dashboard hooks)
+- hooks/api/useQueueActions.ts (queue action hooks)
+- hooks/api/useLibrary.ts (library hooks)
+- hooks/api/useManualImport.ts (manual import hooks)
+- hooks/api/useDiscover.ts (discover hooks)
+- hooks/api/useSearch.ts (search hooks)
+
+### Component Layer - Feature Clients
+All *-client.tsx components export a default component (all used by app routes)
+
+### Shared Components
+- components/ui/button.tsx (Button - heavily used)
+- components/ui/input.tsx (Input - heavily used)
+- components/ui/card.tsx (Card, CardHeader, etc. - heavily used)
+- components/layout/sidebar.tsx (Sidebar)
+- components/layout/topbar.tsx (TopBar)
+- components/layout/layout-wrapper.tsx (LayoutWrapper)
+- components/auth/auth-gate.tsx (AuthGate)
+
+### Utilities
+- lib/utils.ts (cn - heavily used)
+- providers/root-providers.tsx (RootProviders - used in app/layout.tsx)
+
+## Potential Dead Exports
+
+None identified at this level. All exports appear to follow the standard pattern:
+- API clients → consumed by hooks
+- Hooks → consumed by feature components
+- Feature components → consumed by app routes
+- UI components → consumed across features
+- Utilities → consumed across features
+
+## Note on Manual Import Feature
+- features/manual-import/helpers.ts - exports candidateKey
+- features/manual-import/types.ts - exports types
+- features/manual-import/store.ts - exports useManualImportStore
+All are internally consumed within the manual-import feature.
+
+## Recommendation
+No obvious unused exports detected. The architecture follows a clean layered pattern with clear consumption chains.
