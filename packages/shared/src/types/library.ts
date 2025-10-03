@@ -134,3 +134,39 @@ export const librarySeriesSearchRequestSchema = z.object({
 
 export type LibrarySeriesSearchRequest = z.infer<typeof librarySeriesSearchRequestSchema>;
 
+export const libraryEpisodeSchema = z.object({
+  id: z.number(),
+  seriesId: z.number(),
+  episodeNumber: z.number(),
+  seasonNumber: z.number(),
+  title: z.string().optional(),
+  airDate: z.string().optional(),
+  hasFile: z.boolean().optional(),
+  monitored: z.boolean().optional(),
+  overview: z.string().optional(),
+  episodeFileId: z.number().optional(),
+});
+
+export type LibraryEpisode = z.infer<typeof libraryEpisodeSchema>;
+
+export const libraryEpisodesRequestSchema = z.object({
+  instanceId: z.string(),
+  seriesId: z.union([z.number(), z.string()]),
+  seasonNumber: z.number().int().nonnegative().optional(),
+});
+
+export type LibraryEpisodesRequest = z.infer<typeof libraryEpisodesRequestSchema>;
+
+export const libraryEpisodesResponseSchema = z.object({
+  episodes: z.array(libraryEpisodeSchema),
+});
+
+export type LibraryEpisodesResponse = z.infer<typeof libraryEpisodesResponseSchema>;
+
+export const libraryEpisodeSearchRequestSchema = z.object({
+  instanceId: z.string(),
+  episodeIds: z.array(z.number()),
+});
+
+export type LibraryEpisodeSearchRequest = z.infer<typeof libraryEpisodeSearchRequestSchema>;
+
