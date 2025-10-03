@@ -27,8 +27,8 @@ import {
   emptyRadarrStatistics,
   emptyProwlarrStatistics,
 } from "./dashboard-statistics.js";
-import { createInstanceFetcher } from "../utils/arr-fetcher.js";
-import { toNumber, toBoolean, toStringValue, toStringArray } from "../utils/values.js";
+import { createInstanceFetcher } from "../lib/arr/arr-fetcher.js";
+import { toNumber, toBoolean, toStringValue, toStringArray } from "../lib/data/values.js";
 import { ManualImportError, autoImportByDownloadId } from "./manual-import-utils.js";
 
 const queueApiPath = (service: "sonarr" | "radarr") => "/api/v3/queue";

@@ -1,6 +1,6 @@
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { hashPassword, verifyPassword } from "../utils/password.js";
+import { hashPassword, verifyPassword } from "../lib/auth/password.js";
 
 const passwordSchema = z.string()
   .min(8, "Password must be at least 8 characters")

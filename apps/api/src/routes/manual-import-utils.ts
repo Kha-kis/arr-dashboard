@@ -8,7 +8,7 @@ import {
   manualImportCandidateSchema,
   manualImportCandidateListSchema,
 } from "@arr/shared";
-import { toNumber, toStringValue } from "../utils/values.js";
+import { toNumber, toStringValue } from "../lib/data/values.js";
 
 export class ManualImportError extends Error {
   statusCode: number;

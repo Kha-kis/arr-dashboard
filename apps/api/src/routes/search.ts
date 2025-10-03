@@ -27,7 +27,7 @@ import {
 } from "@arr/shared";
 
 import type { ServiceInstance } from "@prisma/client";
-import { createInstanceFetcher } from "../utils/arr-fetcher.js";
+import { createInstanceFetcher } from "../lib/arr/arr-fetcher.js";
 
 const toNumber = (value: unknown): number | undefined => {
 
