@@ -1,0 +1,4 @@
+
+> @arr/web@0.1.0 typecheck C:\Users\jacob\OneDrive\Documents\Code\arr-dashboard\apps\web
+> tsc --noEmit
+

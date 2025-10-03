@@ -2,14 +2,51 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  color-scheme: light;
-}
+@layer base {
+  /* Design Tokens - Base */
+  :root {
+    /* Colors (HSL) */
+    --color-bg: 222 47% 11%;
+    --color-bg-subtle: 217 33% 17%;
+    --color-bg-muted: 215 28% 27%;
+    --color-fg: 0 0% 100%;
+    --color-primary: 217 91% 60%;
+    --color-primary-hover: 217 91% 67%;
+    --color-success: 160 84% 39%;
+    --color-success-fg: 152 76% 80%;
+    --color-warning: 38 92% 50%;
+    --color-warning-fg: 48 96% 89%;
+    --color-danger: 0 84% 60%;
+    --color-danger-fg: 0 91% 71%;
+    --color-info: 199 89% 48%;
+    --color-info-fg: 204 94% 94%;
+    --color-border: 0 0% 100%;
+    --color-focus-ring: 217 91% 60%;
 
-dark {
-  color-scheme: dark;
-}
+    /* Spacing */
+    --space-4: 1rem;
+    --space-6: 1.5rem;
 
-body {
-  min-height: 100vh;
+    /* Radius */
+    --radius-md: 0.5rem;
+    --radius-lg: 0.75rem;
+    --radius-xl: 1rem;
+    --radius-2xl: 1.5rem;
+
+    /* Z-index */
+    --z-dropdown: 1000;
+    --z-modal-backdrop: 1300;
+    --z-modal: 1400;
+    --z-toast: 2000;
+
+    /* Animation */
+    --duration-normal: 200ms;
+    --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+
+    color-scheme: dark;
+  }
+
+  body {
+    min-height: 100vh;
+  }
 }
