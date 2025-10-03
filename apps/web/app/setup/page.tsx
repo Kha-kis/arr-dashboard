@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useSetupRequired } from '../../src/hooks/api/useSetup';
+import { useSetupRequired } from '../../src/hooks/api/useAuth';
 import { SetupClient } from "../../src/features/setup/components/setup-client";
 
 const SetupPage = () => {

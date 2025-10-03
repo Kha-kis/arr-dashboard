@@ -8,7 +8,7 @@ import {
   removeService,
   type CreateServicePayload,
   type UpdateServicePayload,
-} from "../../lib/api-client";
+} from "../../lib/api-client/services";
 
 const SERVICES_QUERY_KEY = ["services"] as const;
 

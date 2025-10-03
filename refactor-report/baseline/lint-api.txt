@@ -1,0 +1,36 @@
+
+> @arr/api@0.1.0 lint
+> biome lint src
+
+C:\Users\jacob\OneDrive\Documents\Code\arr-dashboard\biome.json:2:3 deserialize ━━━━━━━━━━━━━━━━━━━━
+
+  × Found an unknown key ``.
+  
+    1 │ {
+  > 2 │   "": "https://biomejs.dev/schemas/1.5.6/schema.json",
+      │   ^^
+    3 │   "formatter": {
+    4 │     "enabled": true,
+  
+  i Known keys:
+  
+  - $schema
+  - extends
+  - vcs
+  - files
+  - formatter
+  - organizeImports
+  - linter
+  - javascript
+  - json
+  - css
+  - graphql
+  - overrides
+  - assists
+  
+
+configuration ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Biome exited because the configuration resulted in errors. Please fix them.
+  
+

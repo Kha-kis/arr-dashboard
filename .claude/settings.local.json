@@ -13,7 +13,11 @@
       "Bash(npx prisma migrate dev:*)",
       "Bash(npx prisma migrate:*)",
       "Bash(curl:*)",
-      "Bash(git init:*)"
+      "Bash(git init:*)",
+      "Bash(git checkout:*)",
+      "Bash(pnpm lint:*)",
+      "Bash(tee:*)",
+      "Bash(pnpm typecheck:*)"
     ],
     "deny": [],
     "ask": []
