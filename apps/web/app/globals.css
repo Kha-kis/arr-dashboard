@@ -3,50 +3,234 @@
 @tailwind utilities;
 
 @layer base {
-  /* Design Tokens - Base */
+  /* Design Tokens - Complete Design System */
   :root {
-    /* Colors (HSL) */
-    --color-bg: 222 47% 11%;
-    --color-bg-subtle: 217 33% 17%;
-    --color-bg-muted: 215 28% 27%;
-    --color-fg: 0 0% 100%;
+    /* Colors (HSL) - Rich dark palette */
+    --color-bg: 240 10% 3.9%;
+    --color-bg-subtle: 240 6% 10%;
+    --color-bg-muted: 240 5% 15%;
+    --color-surface: 240 6% 10%;
+    --color-fg: 0 0% 98%;
+    --color-fg-muted: 240 5% 65%;
+    --color-fg-subtle: 240 5% 84%;
+
+    /* Primary - Vibrant gradient-ready colors */
     --color-primary: 217 91% 60%;
-    --color-primary-hover: 217 91% 67%;
-    --color-success: 160 84% 39%;
-    --color-success-fg: 152 76% 80%;
+    --color-primary-hover: 217 91% 55%;
+    --color-primary-fg: 0 0% 100%;
+    --color-primary-contrast: 0 0% 100%;
+    --color-accent: 270 95% 75%;
+    --color-accent-secondary: 330 85% 65%;
+
+    /* Semantic colors */
+    --color-success: 142 76% 36%;
+    --color-success-fg: 142 76% 96%;
     --color-warning: 38 92% 50%;
     --color-warning-fg: 48 96% 89%;
     --color-danger: 0 84% 60%;
-    --color-danger-fg: 0 91% 71%;
+    --color-danger-fg: 0 91% 96%;
     --color-info: 199 89% 48%;
     --color-info-fg: 204 94% 94%;
-    --color-border: 0 0% 100%;
+
+    /* Borders */
+    --color-border: 240 3.7% 15.9%;
     --color-focus-ring: 217 91% 60%;
 
-    /* Spacing */
-    --space-4: 1rem;
-    --space-6: 1.5rem;
+    /* Shadows - Enhanced with colored shadows */
+    --shadow-none: none;
+    --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.2);
+    --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.4), 0 8px 10px -6px rgb(0 0 0 / 0.3);
+    --shadow-primary: 0 10px 40px -10px hsl(217 91% 60% / 0.4);
+    --shadow-accent: 0 10px 40px -10px hsl(270 95% 75% / 0.3);
 
-    /* Radius */
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(217 91% 60%) 0%, hsl(270 95% 75%) 100%);
+    --gradient-subtle: linear-gradient(135deg, hsl(240 6% 10%) 0%, hsl(240 5% 15%) 100%);
+    --gradient-mesh: radial-gradient(at 0% 0%, hsl(217 91% 60% / 0.15) 0px, transparent 50%),
+                     radial-gradient(at 100% 0%, hsl(270 95% 75% / 0.1) 0px, transparent 50%),
+                     radial-gradient(at 100% 100%, hsl(330 85% 65% / 0.1) 0px, transparent 50%);
+
+    /* Typography Scale */
+    --text-xs: 0.75rem;
+    --text-sm: 0.875rem;
+    --text-base: 1rem;
+    --text-lg: 1.125rem;
+    --text-xl: 1.25rem;
+    --text-2xl: 1.5rem;
+    --text-3xl: 1.875rem;
+    --text-4xl: 2.25rem;
+
+    /* Line Heights */
+    --leading-none: 1;
+    --leading-tight: 1.25;
+    --leading-snug: 1.375;
+    --leading-normal: 1.5;
+    --leading-relaxed: 1.625;
+    --leading-loose: 2;
+
+    /* Font Weights */
+    --font-normal: 400;
+    --font-medium: 500;
+    --font-semibold: 600;
+    --font-bold: 700;
+
+    /* Spacing Scale (4px base) */
+    --space-0: 0;
+    --space-1: 0.25rem;
+    --space-1-5: 0.375rem;
+    --space-2: 0.5rem;
+    --space-3: 0.75rem;
+    --space-4: 1rem;
+    --space-5: 1.25rem;
+    --space-6: 1.5rem;
+    --space-8: 2rem;
+    --space-10: 2.5rem;
+    --space-12: 3rem;
+    --space-16: 4rem;
+    --space-20: 5rem;
+    --space-24: 6rem;
+
+    /* Radius Scale */
+    --radius-none: 0;
+    --radius-sm: 0.375rem;
     --radius-md: 0.5rem;
     --radius-lg: 0.75rem;
     --radius-xl: 1rem;
     --radius-2xl: 1.5rem;
+    --radius-full: 9999px;
 
-    /* Z-index */
+    /* Z-index Scale */
+    --z-base: 0;
     --z-dropdown: 1000;
+    --z-sticky: 1100;
+    --z-fixed: 1200;
     --z-modal-backdrop: 1300;
     --z-modal: 1400;
+    --z-popover: 1500;
     --z-toast: 2000;
+    --z-tooltip: 2100;
 
-    /* Animation */
+    /* Animation/Motion */
+    --duration-instant: 0ms;
+    --duration-fast: 150ms;
     --duration-normal: 200ms;
+    --duration-slow: 300ms;
+    --duration-slower: 500ms;
+    --ease-linear: linear;
     --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-out: cubic-bezier(0, 0, 0.2, 1);
+    --ease-in: cubic-bezier(0.4, 0, 1, 1);
+    --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-bounce: cubic-bezier(0.68, -0.55, 0.265, 1.55);
 
     color-scheme: dark;
   }
 
+  /* Reduced Motion Support */
+  @media (prefers-reduced-motion: reduce) {
+    :root {
+      --duration-fast: 0ms;
+      --duration-normal: 0ms;
+      --duration-slow: 0ms;
+      --duration-slower: 0ms;
+    }
+
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
   body {
     min-height: 100vh;
+    background: hsl(var(--color-bg));
+    color: hsl(var(--color-fg));
+  }
+
+  /* Smooth scrolling */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Better focus styles */
+  *:focus-visible {
+    outline: 2px solid hsl(var(--color-focus-ring));
+    outline-offset: 2px;
+  }
+
+  /* Custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: hsl(var(--color-bg-subtle));
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--color-bg-muted));
+    border-radius: 4px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--color-primary) / 0.5);
+  }
+
+  /* Glassmorphism utility */
+  .glass {
+    background: hsl(var(--color-bg-subtle) / 0.6);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid hsl(var(--color-border) / 0.5);
+  }
+
+  /* Gradient text utility */
+  .gradient-text {
+    background: var(--gradient-primary);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Shimmer animation */
+  @keyframes shimmer {
+    0% {
+      background-position: -1000px 0;
+    }
+    100% {
+      background-position: 1000px 0;
+    }
+  }
+
+  .shimmer {
+    animation: shimmer 2s infinite linear;
+    background: linear-gradient(
+      to right,
+      hsl(var(--color-bg-subtle)) 0%,
+      hsl(var(--color-bg-muted)) 20%,
+      hsl(var(--color-bg-subtle)) 40%,
+      hsl(var(--color-bg-subtle)) 100%
+    );
+    background-size: 1000px 100%;
+  }
+
+  /* Glow effect */
+  @keyframes glow {
+    0%, 100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.5;
+    }
+  }
+
+  .glow {
+    animation: glow 2s ease-in-out infinite;
   }
 }

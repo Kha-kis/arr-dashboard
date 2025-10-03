@@ -28,6 +28,10 @@ const preset: Partial<Config> = {
           hover: "hsl(var(--color-primary-hover) / <alpha-value>)",
           fg: "hsl(var(--color-primary-fg) / <alpha-value>)",
         },
+        accent: {
+          DEFAULT: "hsl(var(--color-accent) / <alpha-value>)",
+          secondary: "hsl(var(--color-accent-secondary) / <alpha-value>)",
+        },
         success: {
           DEFAULT: "hsl(var(--color-success) / <alpha-value>)",
           fg: "hsl(var(--color-success-fg) / <alpha-value>)",
@@ -84,17 +88,31 @@ const preset: Partial<Config> = {
         xl: ["var(--text-xl)", { lineHeight: "var(--leading-normal)" }],
         "2xl": ["var(--text-2xl)", { lineHeight: "var(--leading-tight)" }],
         "3xl": ["var(--text-3xl)", { lineHeight: "var(--leading-tight)" }],
+        "4xl": ["var(--text-4xl)", { lineHeight: "var(--leading-tight)" }],
       },
-      fontFamily: {
-        sans: ["var(--font-sans)"],
-        mono: ["var(--font-mono)"],
+      fontWeight: {
+        normal: "var(--font-normal)",
+        medium: "var(--font-medium)",
+        semibold: "var(--font-semibold)",
+        bold: "var(--font-bold)",
+      },
+      lineHeight: {
+        none: "var(--leading-none)",
+        tight: "var(--leading-tight)",
+        snug: "var(--leading-snug)",
+        normal: "var(--leading-normal)",
+        relaxed: "var(--leading-relaxed)",
+        loose: "var(--leading-loose)",
       },
       boxShadow: {
+        none: "var(--shadow-none)",
         sm: "var(--shadow-sm)",
         DEFAULT: "var(--shadow-md)",
         md: "var(--shadow-md)",
         lg: "var(--shadow-lg)",
         xl: "var(--shadow-xl)",
+        primary: "var(--shadow-primary)",
+        accent: "var(--shadow-accent)",
       },
       zIndex: {
         dropdown: "var(--z-dropdown)",
