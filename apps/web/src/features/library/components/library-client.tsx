@@ -20,10 +20,12 @@ import {
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Alert, AlertTitle, AlertDescription, EmptyState } from "../../../components/ui";
 import { cn } from "../../../lib/utils";
 import {
+  useEpisodesQuery,
+  useLibraryEpisodeSearchMutation,
   useLibraryMonitorMutation,
+  useLibraryMovieSearchMutation,
   useLibraryQuery,
   useLibrarySeasonSearchMutation,
-  useLibraryMovieSearchMutation,
   useLibrarySeriesSearchMutation,
 } from "../../../hooks/api/useLibrary";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
@@ -608,6 +610,105 @@ const LibraryCard = ({
   );
 };
 
+const SeasonEpisodeList = ({
+  instanceId,
+  seriesId,
+  seasonNumber,
+}: {
+  instanceId: string;
+  seriesId: number | string;
+  seasonNumber: number;
+}) => {
+  const { data, isLoading } = useEpisodesQuery({
+    instanceId,
+    seriesId,
+    seasonNumber,
+  });
+
+  const episodeSearchMutation = useLibraryEpisodeSearchMutation();
+  const [pendingEpisodeSearch, setPendingEpisodeSearch] = useState<number | null>(null);
+
+  const handleSearchEpisode = async (episodeId: number) => {
+    setPendingEpisodeSearch(episodeId);
+    try {
+      await episodeSearchMutation.mutateAsync({
+        instanceId,
+        episodeIds: [episodeId],
+      });
+      toast.success(`Episode search queued`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      toast.error(`Failed to queue episode search: ${message}`);
+    } finally {
+      setPendingEpisodeSearch(null);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-4 text-sm text-fg-muted">
+        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+        Loading episodes...
+      </div>
+    );
+  }
+
+  if (!data?.episodes || data.episodes.length === 0) {
+    return (
+      <div className="py-4 text-center text-sm text-fg-muted">
+        No episodes found
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {data.episodes.map((episode) => (
+        <div
+          key={episode.id}
+          className="flex items-center justify-between rounded-lg border border-border/50 bg-bg/10 px-3 py-2 text-sm"
+        >
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="font-medium text-fg">
+                E{episode.episodeNumber}
+              </span>
+              <span className="text-fg-muted truncate">
+                {episode.title || "TBA"}
+              </span>
+            </div>
+            {episode.airDate && (
+              <div className="text-xs text-fg-subtle mt-0.5">
+                {new Date(episode.airDate).toLocaleDateString()}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <LibraryBadge tone={episode.hasFile ? "green" : "blue"}>
+              {episode.hasFile ? "Downloaded" : "Missing"}
+            </LibraryBadge>
+            {!episode.hasFile && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => handleSearchEpisode(episode.id)}
+                disabled={pendingEpisodeSearch === episode.id}
+              >
+                {pendingEpisodeSearch === episode.id ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <Search className="h-3 w-3" />
+                )}
+              </Button>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 const SeasonBreakdownModal = ({
   item,
   onClose,
@@ -765,7 +866,7 @@ const SeasonBreakdownModal = ({
 
                 {/* Expanded details */}
                 {isExpanded && (
-                  <div className="border-t border-border px-4 py-3 bg-bg/20 space-y-2">
+                  <div className="border-t border-border px-4 py-3 bg-bg/20 space-y-3">
                     <div className="grid grid-cols-2 gap-3 text-sm">
                       <div>
                         <span className="text-fg-subtle">Total Episodes:</span>
@@ -788,8 +889,20 @@ const SeasonBreakdownModal = ({
                         </span>
                       </div>
                     </div>
+
+                    <div className="border-t border-border/50 pt-3">
+                      <h4 className="text-xs font-medium uppercase tracking-wider text-fg-subtle mb-2">
+                        Episodes
+                      </h4>
+                      <SeasonEpisodeList
+                        instanceId={item.instanceId}
+                        seriesId={item.id}
+                        seasonNumber={season.seasonNumber}
+                      />
+                    </div>
+
                     {missing > 0 && season.monitored !== false && (
-                      <div className="mt-3 p-3 rounded-lg bg-warning/10 border border-warning/30">
+                      <div className="p-3 rounded-lg bg-warning/10 border border-warning/30">
                         <p className="text-xs text-warning">
                           {missing} episode{missing === 1 ? "" : "s"} missing. Click "Search" to look for {missing === 1 ? "it" : "them"}.
                         </p>

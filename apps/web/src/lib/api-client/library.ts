@@ -1,4 +1,6 @@
 import type {
+  LibraryEpisodeSearchRequest,
+  LibraryEpisodesResponse,
   LibraryService,
   LibraryToggleMonitorRequest,
   LibrarySeasonSearchRequest,
@@ -61,6 +63,31 @@ export async function searchLibraryMovie(payload: LibraryMovieSearchRequest): Pr
 
 export async function searchLibrarySeries(payload: LibrarySeriesSearchRequest): Promise<void> {
   await apiRequest<void>("/api/library/series/search", {
+    method: "POST",
+    json: payload,
+  });
+}
+
+export interface FetchEpisodesParams {
+  instanceId: string;
+  seriesId: number | string;
+  seasonNumber?: number;
+}
+
+export async function fetchEpisodes(params: FetchEpisodesParams): Promise<LibraryEpisodesResponse> {
+  const search = new URLSearchParams({
+    instanceId: params.instanceId,
+    seriesId: String(params.seriesId),
+  });
+  if (params.seasonNumber !== undefined) {
+    search.set("seasonNumber", String(params.seasonNumber));
+  }
+
+  return await apiRequest<LibraryEpisodesResponse>(`/api/library/episodes?${search.toString()}`);
+}
+
+export async function searchLibraryEpisode(payload: LibraryEpisodeSearchRequest): Promise<void> {
+  await apiRequest<void>("/api/library/episode/search", {
     method: "POST",
     json: payload,
   });
