@@ -130,6 +130,7 @@ const LibraryCard = ({
   movieSearchPending = false,
   onSearchSeries,
   seriesSearchPending = false,
+  onExpandDetails,
 }: {
   item: LibraryItem;
   onToggleMonitor: (item: LibraryItem) => void;
@@ -140,6 +141,7 @@ const LibraryCard = ({
   movieSearchPending?: boolean;
   onSearchSeries?: (item: LibraryItem) => void;
   seriesSearchPending?: boolean;
+  onExpandDetails?: (item: LibraryItem) => void;
 }) => {
   const monitored = item.monitored ?? false;
   const hasFile = item.hasFile ?? false;
@@ -266,10 +268,10 @@ const LibraryCard = ({
   const genreEntries = (item.genres ?? []).filter(Boolean);
 
   return (
-    <Card className="border-white/10 bg-white/5 p-5">
-      <CardContent className="flex flex-col gap-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start">
-          <div className="self-start h-44 w-32 overflow-hidden rounded-xl border border-white/10 bg-gradient-to-br from-slate-700 to-slate-900 shadow-md flex-shrink-0">
+    <Card className="border-white/10 bg-white/5 p-4">
+      <CardContent className="flex flex-col gap-3">
+        <div className="flex gap-3">
+          <div className="h-36 w-24 overflow-hidden rounded-lg border border-white/10 bg-gradient-to-br from-slate-700 to-slate-900 shadow-md flex-shrink-0">
             {item.poster ? (
               <img src={item.poster} alt={item.title} className="h-full w-full object-cover" />
             ) : (
@@ -279,35 +281,52 @@ const LibraryCard = ({
             )}
           </div>
 
-          <div className="flex-1 min-w-0 space-y-4">
-            <div className="space-y-2">
+          <div className="flex-1 min-w-0 space-y-2">
+            <div>
               <div className="flex flex-wrap items-baseline gap-2">
-                <h3 className="text-lg font-semibold text-white md:text-xl">{item.title}</h3>
+                <h3 className="text-base font-semibold text-white">{item.title}</h3>
                 {item.year && item.type === "movie" ? (
-                  <span className="text-sm text-white/50">{item.year}</span>
+                  <span className="text-xs text-white/50">{item.year}</span>
                 ) : null}
               </div>
-              <p className="text-sm text-white/50">{item.instanceName}</p>
+              <p className="text-xs text-white/50">{item.instanceName}</p>
             </div>
 
             {item.overview ? (
-              <p className="text-sm leading-6 text-white/70 md:pr-8 break-words">
-                {item.overview}
-              </p>
+              <div className="group relative">
+                <p className="text-xs leading-relaxed text-white/70 line-clamp-2">
+                  {item.overview}
+                </p>
+                {item.overview.length > 120 && onExpandDetails ? (
+                  <button
+                    onClick={() => onExpandDetails(item)}
+                    className="mt-1 text-xs text-primary hover:text-primary-hover transition-colors"
+                  >
+                    Read more...
+                  </button>
+                ) : null}
+              </div>
             ) : null}
 
-            <div className="grid min-w-0 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {metadata.map((entry) => (
-                <div key={`${item.id}-${entry.label}`} className="space-y-1 min-w-0">
-                  <p className="text-xs uppercase tracking-[0.2em] text-white/40">{entry.label}</p>
-                  <div className="text-sm text-white break-words">{entry.value}</div>
-                </div>
+            <div className="flex flex-wrap gap-2">
+              {statusBadges.map((badge, index) => (
+                <LibraryBadge key={`${item.id}-badge-${index}`} tone={badge.tone}>
+                  {badge.label}
+                </LibraryBadge>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/60">
+              {metadata.slice(0, 4).map((entry) => (
+                <span key={`${item.id}-${entry.label}`}>
+                  <span className="text-white/40">{entry.label}:</span> {entry.value}
+                </span>
               ))}
             </div>
 
             {genreEntries.length > 0 ? (
-              <div className="flex min-w-0 flex-wrap gap-2 text-xs uppercase tracking-wide text-white/50">
-                {genreEntries.map((genre) => (
+              <div className="flex flex-wrap gap-1.5 text-xs">
+                {genreEntries.slice(0, 3).map((genre) => (
                   <span
                     key={`${item.id}-genre-${genre}`}
                     className="rounded-full border border-white/10 bg-white/10 px-2 py-0.5 text-white/70"
@@ -315,54 +334,26 @@ const LibraryCard = ({
                     {genre}
                   </span>
                 ))}
-              </div>
-            ) : null}
-
-            {tagEntries.length > 0 ? (
-              <div className="flex min-w-0 flex-wrap gap-2 text-xs">
-                {tagEntries.map((tag) => (
-                  <span
-                    key={`${item.id}-tag-${tag}`}
-                    className="rounded-full border border-sky-400/40 bg-sky-500/10 px-2 py-0.5 text-sky-100"
-                  >
-                    {tag}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-
-            {locationEntries.length > 0 ? (
-              <div className="space-y-2 rounded-lg border border-white/10 bg-black/20 p-3">
-                {locationEntries.map((entry) => (
-                  <div key={`${item.id}-${entry.label}`} className="space-y-1 min-w-0">
-                    <p className="text-xs uppercase tracking-[0.2em] text-white/35">{entry.label}</p>
-                    <p className="break-all font-mono text-xs text-white/70">{entry.value}</p>
-                  </div>
-                ))}
+                {genreEntries.length > 3 && (
+                  <span className="text-white/40">+{genreEntries.length - 3} more</span>
+                )}
               </div>
             ) : null}
           </div>
         </div>
 
-        <div className="flex flex-col gap-3 border-t border-white/10 pt-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex flex-wrap gap-2">
-            {statusBadges.map((badge, index) => (
-              <LibraryBadge key={`${item.id}-badge-${index}`} tone={badge.tone}>
-                {badge.label}
-              </LibraryBadge>
-            ))}
-          </div>
-
-          <div className="flex w-full flex-wrap justify-end gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-3">
+          <div className="flex flex-wrap gap-1.5">
             {item.type === "series" && hasSeasonProgress && onViewSeasons ? (
               <Button
                 type="button"
                 variant="ghost"
-                className="flex items-center gap-2 text-sky-200 hover:text-white"
+                size="sm"
+                className="flex items-center gap-1.5 text-xs text-sky-200 hover:text-white h-8 px-2.5"
                 onClick={() => onViewSeasons(item)}
               >
-                <ListTree className="h-4 w-4" />
-                <span>Season breakdown</span>
+                <ListTree className="h-3.5 w-3.5" />
+                <span>Seasons</span>
               </Button>
             ) : null}
 
@@ -370,16 +361,17 @@ const LibraryCard = ({
               <Button
                 type="button"
                 variant="ghost"
-                className="flex items-center gap-2 text-sky-200 hover:text-white"
+                size="sm"
+                className="flex items-center gap-1.5 text-xs text-sky-200 hover:text-white h-8 px-2.5"
                 onClick={() => onSearchSeries(item)}
                 disabled={seriesSearchPending}
               >
                 {seriesSearchPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <Search className="h-4 w-4" />
+                  <Search className="h-3.5 w-3.5" />
                 )}
-                <span>Search monitored</span>
+                <span>Search</span>
               </Button>
             ) : null}
 
@@ -387,14 +379,15 @@ const LibraryCard = ({
               <Button
                 type="button"
                 variant="ghost"
-                className="flex items-center gap-2 text-sky-200 hover:text-white"
+                size="sm"
+                className="flex items-center gap-1.5 text-xs text-sky-200 hover:text-white h-8 px-2.5"
                 onClick={() => onSearchMovie(item)}
                 disabled={movieSearchPending}
               >
                 {movieSearchPending ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
-                  <Search className="h-4 w-4" />
+                  <Search className="h-3.5 w-3.5" />
                 )}
                 <span>Search</span>
               </Button>
@@ -404,36 +397,216 @@ const LibraryCard = ({
               <Button
                 type="button"
                 variant="ghost"
-                className="flex items-center gap-2 text-sky-200 hover:text-white"
+                size="sm"
+                className="flex items-center gap-1.5 text-xs text-sky-200 hover:text-white h-8 px-2.5"
                 onClick={handleOpenExternal}
               >
-                <ExternalLink className="h-4 w-4" />
-                <span>Open in {serviceLabel}</span>
+                <ExternalLink className="h-3.5 w-3.5" />
+                <span>{serviceLabel}</span>
               </Button>
             ) : null}
 
-            <Button
-              type="button"
-              variant={monitored ? "secondary" : "primary"}
-              className="flex items-center gap-2"
-              onClick={() => onToggleMonitor(item)}
-              disabled={pending}
-            >
-              {pending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : monitored ? (
-                <PauseCircle className="h-4 w-4" />
-              ) : (
-                <PlayCircle className="h-4 w-4" />
-              )}
-              {monitored ? "Unmonitor" : "Monitor"}
-            </Button>
+            {onExpandDetails ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="flex items-center gap-1.5 text-xs text-sky-200 hover:text-white h-8 px-2.5"
+                onClick={() => onExpandDetails(item)}
+              >
+                <AlertCircle className="h-3.5 w-3.5" />
+                <span>Details</span>
+              </Button>
+            ) : null}
           </div>
+
+          <Button
+            type="button"
+            variant={monitored ? "secondary" : "primary"}
+            size="sm"
+            className="flex items-center gap-1.5 text-xs h-8 px-3"
+            onClick={() => onToggleMonitor(item)}
+            disabled={pending}
+          >
+            {pending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : monitored ? (
+              <PauseCircle className="h-3.5 w-3.5" />
+            ) : (
+              <PlayCircle className="h-3.5 w-3.5" />
+            )}
+            {monitored ? "Unmonitor" : "Monitor"}
+          </Button>
         </div>
       </CardContent>
     </Card>
   );
-};const SeasonBreakdownModal = ({
+};const ItemDetailsModal = ({
+  item,
+  onClose,
+}: {
+  item: LibraryItem;
+  onClose: () => void;
+}) => {
+  const sizeLabel = formatBytes(item.sizeOnDisk);
+  const runtimeLabel = formatRuntime(item.runtime);
+  const serviceLabel = item.service === "sonarr" ? "Sonarr" : "Radarr";
+  const movieFileName =
+    item.type === "movie"
+      ? (item.movieFile?.relativePath ?? item.path)?.split(/[\\/]/g).pop()
+      : undefined;
+
+  const metadata: Array<{ label: string; value: React.ReactNode }> = [
+    { label: "Instance", value: item.instanceName },
+    { label: "Service", value: serviceLabel },
+  ];
+
+  if (item.qualityProfileName) {
+    metadata.push({ label: "Quality profile", value: item.qualityProfileName });
+  }
+
+  if (item.type === "movie") {
+    const movieQuality = item.movieFile?.quality ?? item.qualityProfileName;
+    if (movieQuality) {
+      metadata.push({ label: "Current quality", value: movieQuality });
+    }
+    if (sizeLabel) {
+      metadata.push({ label: "On disk", value: sizeLabel });
+    }
+    if (runtimeLabel) {
+      metadata.push({ label: "Runtime", value: runtimeLabel });
+    }
+  } else {
+    const seasonCount = item.seasons?.filter((s) => s.seasonNumber !== 0).length || item.statistics?.seasonCount || undefined;
+    if (seasonCount) {
+      metadata.push({ label: "Seasons", value: seasonCount });
+    }
+    const episodeFileCount = item.statistics?.episodeFileCount ?? 0;
+    const totalEpisodes = item.statistics?.episodeCount ?? item.statistics?.totalEpisodeCount ?? 0;
+    if (totalEpisodes > 0) {
+      metadata.push({ label: "Episodes", value: `${episodeFileCount}/${totalEpisodes}` });
+    }
+    if (runtimeLabel) {
+      metadata.push({ label: "Episode length", value: runtimeLabel });
+    }
+    if (sizeLabel) {
+      metadata.push({ label: "On disk", value: sizeLabel });
+    }
+  }
+
+  const locationEntries: Array<{ label: string; value: string }> = [];
+  if (item.path) {
+    locationEntries.push({ label: "Location", value: item.path });
+  }
+  if (movieFileName) {
+    locationEntries.push({ label: "File", value: movieFileName });
+  }
+  if (item.rootFolderPath && item.rootFolderPath !== item.path) {
+    locationEntries.push({ label: "Root", value: item.rootFolderPath });
+  }
+
+  const tagEntries = (item.tags ?? []).filter(Boolean);
+  const genreEntries = (item.genres ?? []).filter(Boolean);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-white/10 bg-slate-950/95 p-6 shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4 mb-6">
+          <div className="flex gap-4">
+            {item.poster && (
+              <div className="h-48 w-32 overflow-hidden rounded-lg border border-white/10 bg-gradient-to-br from-slate-700 to-slate-900 shadow-md flex-shrink-0">
+                <img src={item.poster} alt={item.title} className="h-full w-full object-cover" />
+              </div>
+            )}
+            <div>
+              <h2 className="text-2xl font-semibold text-white mb-1">{item.title}</h2>
+              {item.year && item.type === "movie" && (
+                <p className="text-sm text-white/60 mb-2">{item.year}</p>
+              )}
+              <p className="text-sm text-white/60">{item.instanceName}</p>
+            </div>
+          </div>
+          <Button type="button" variant="ghost" className="text-white/60 hover:text-white" onClick={onClose}>
+            Close
+          </Button>
+        </div>
+
+        {item.overview && (
+          <div className="mb-6">
+            <h3 className="text-sm font-medium text-white/80 uppercase tracking-wider mb-2">Overview</h3>
+            <p className="text-sm leading-relaxed text-white/70">{item.overview}</p>
+          </div>
+        )}
+
+        {genreEntries.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-sm font-medium text-white/80 uppercase tracking-wider mb-2">Genres</h3>
+            <div className="flex flex-wrap gap-2">
+              {genreEntries.map((genre) => (
+                <span
+                  key={genre}
+                  className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-sm text-white/70"
+                >
+                  {genre}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {tagEntries.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-sm font-medium text-white/80 uppercase tracking-wider mb-2">Tags</h3>
+            <div className="flex flex-wrap gap-2">
+              {tagEntries.map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded-full border border-sky-400/40 bg-sky-500/10 px-3 py-1 text-sm text-sky-100"
+                >
+                  {tag}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="mb-6">
+          <h3 className="text-sm font-medium text-white/80 uppercase tracking-wider mb-3">Metadata</h3>
+          <div className="grid grid-cols-2 gap-4">
+            {metadata.map((entry) => (
+              <div key={entry.label} className="space-y-1">
+                <p className="text-xs uppercase tracking-wider text-white/40">{entry.label}</p>
+                <p className="text-sm text-white">{entry.value}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {locationEntries.length > 0 && (
+          <div>
+            <h3 className="text-sm font-medium text-white/80 uppercase tracking-wider mb-3">File Information</h3>
+            <div className="space-y-3 rounded-lg border border-white/10 bg-black/20 p-4">
+              {locationEntries.map((entry) => (
+                <div key={entry.label} className="space-y-1">
+                  <p className="text-xs uppercase tracking-wider text-white/35">{entry.label}</p>
+                  <p className="break-all font-mono text-xs text-white/70">{entry.value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const SeasonBreakdownModal = ({
   item,
   onClose,
   onToggleSeason,
@@ -553,6 +726,7 @@ export const LibraryClient: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]["value"]>("all");
   const [fileFilter, setFileFilter] = useState<(typeof FILE_FILTERS)[number]["value"]>("all");
   const [seasonDetail, setSeasonDetail] = useState<LibraryItem | null>(null);
+  const [itemDetail, setItemDetail] = useState<LibraryItem | null>(null);
   const [pendingSeasonAction, setPendingSeasonAction] = useState<string | null>(null);
   const [pendingMovieSearch, setPendingMovieSearch] = useState<string | null>(null);
   const [pendingSeriesSearch, setPendingSeriesSearch] = useState<string | null>(null);
@@ -614,6 +788,14 @@ export const LibraryClient: React.FC = () => {
 
   const handleCloseSeasonDetail = () => {
     setSeasonDetail(null);
+  };
+
+  const handleExpandDetails = (item: LibraryItem) => {
+    setItemDetail(item);
+  };
+
+  const handleCloseItemDetail = () => {
+    setItemDetail(null);
   };
 
   const handleSeasonMonitor = async (series: LibraryItem, seasonNumber: number, nextMonitored: boolean) => {
@@ -779,17 +961,17 @@ export const LibraryClient: React.FC = () => {
 
   return (
     <>
-      <div className="space-y-12">
-        <header className="space-y-8">
-          <div className="space-y-2">
+      <div className="space-y-6">
+        <header className="space-y-4">
+          <div className="space-y-1.5">
             <p className="text-xs uppercase tracking-[0.4em] text-white/40">Library</p>
-            <h1 className="text-3xl font-semibold text-white">Everything your *arr instances manage</h1>
+            <h1 className="text-2xl font-semibold text-white">Everything your *arr instances manage</h1>
             <p className="text-sm text-white/60">
               Browse, filter, and adjust monitoring for movies and series across every connected instance.
             </p>
           </div>
 
-          <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+          <div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
             <div className="flex flex-wrap items-center gap-3">
               <div className="inline-flex rounded-full bg-white/10 p-1">
                 {SERVICE_OPTIONS.map((option) => (
@@ -891,7 +1073,7 @@ export const LibraryClient: React.FC = () => {
               <h2 className="text-xl font-semibold text-white">Movies</h2>
               <span className="text-sm text-white/50">{grouped.movies.length} items</span>
             </div>
-            <div className="grid gap-6 lg:grid-cols-2">
+            <div className="grid gap-4 lg:grid-cols-2">
               {grouped.movies.map((item) => (
                 <LibraryCard
                   key={`${item.instanceId}:${item.id}`}
@@ -901,6 +1083,7 @@ export const LibraryClient: React.FC = () => {
                   externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
                   onSearchMovie={handleMovieSearch}
                   movieSearchPending={pendingMovieSearch === `${item.instanceId}:${item.id}`}
+                  onExpandDetails={handleExpandDetails}
                 />
               ))}
             </div>
@@ -913,7 +1096,7 @@ export const LibraryClient: React.FC = () => {
               <h2 className="text-xl font-semibold text-white">Series</h2>
               <span className="text-sm text-white/50">{grouped.series.length} items</span>
             </div>
-            <div className="grid gap-6 lg:grid-cols-2">
+            <div className="grid gap-4 lg:grid-cols-2">
               {grouped.series.map((item) => (
                 <LibraryCard
                   key={`${item.instanceId}:${item.id}`}
@@ -924,6 +1107,7 @@ export const LibraryClient: React.FC = () => {
                   onViewSeasons={handleViewSeasons}
                   onSearchSeries={handleSeriesSearch}
                   seriesSearchPending={pendingSeriesSearch === `${item.instanceId}:${item.id}`}
+                  onExpandDetails={handleExpandDetails}
                 />
               ))}
             </div>
@@ -939,6 +1123,10 @@ export const LibraryClient: React.FC = () => {
           </Alert>
         ) : null}
       </div>
+
+      {itemDetail ? (
+        <ItemDetailsModal item={itemDetail} onClose={handleCloseItemDetail} />
+      ) : null}
 
       {seasonDetail ? (
         <SeasonBreakdownModal
