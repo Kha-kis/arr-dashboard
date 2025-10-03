@@ -45,6 +45,7 @@ export interface CurrentUser {
   role: "ADMIN" | "USER";
   mustChangePassword: boolean;
   createdAt: string;
+  hasTmdbApiKey?: boolean;
 }
 
 export interface CurrentUserResponse {

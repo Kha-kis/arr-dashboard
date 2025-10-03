@@ -188,6 +188,14 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(401).send({ error: "Unauthorized" });
 		}
 
+		const user = await app.prisma.user.findUnique({
+			where: { id: request.currentUser.id },
+			select: { encryptedTmdbApiKey: true },
+		});
+
+		const hasTmdbApiKey = !!user?.encryptedTmdbApiKey;
+		request.log.info({ userId: request.currentUser.id, hasTmdbApiKey }, "GET /auth/me - TMDB key status");
+
 		return reply.send({
 			user: {
 				id: request.currentUser.id,
@@ -196,6 +204,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				role: request.currentUser.role,
 				mustChangePassword: request.currentUser.mustChangePassword,
 				createdAt: request.currentUser.createdAt,
+				hasTmdbApiKey,
 			},
 		});
 	});
@@ -206,6 +215,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			username: z.string().min(3).max(50).optional(),
 			currentPassword: z.string().min(8).max(128).optional(),
 			newPassword: passwordSchema.optional(),
+			tmdbApiKey: z.string().max(255).optional(),
 		})
 		.refine(
 			(data) => {
@@ -228,10 +238,10 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
 		}
 
-		const { email, username, currentPassword, newPassword } = parsed.data;
+		const { email, username, currentPassword, newPassword, tmdbApiKey } = parsed.data;
 
 		// Check if at least one field is being updated
-		if (!email && !username && !newPassword) {
+		if (!email && !username && !newPassword && tmdbApiKey === undefined) {
 			return reply.status(400).send({ error: "No updates provided" });
 		}
 
@@ -282,6 +292,20 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		}
 		if (newPassword && currentPassword) {
 			updateData.hashedPassword = await hashPassword(newPassword);
+		}
+		if (tmdbApiKey !== undefined) {
+			request.log.info({ hasTmdbApiKey: !!tmdbApiKey, length: tmdbApiKey?.length }, "Processing TMDB API key");
+			if (tmdbApiKey) {
+				// Encrypt the TMDB API key
+				const { value, iv } = app.encryptor.encrypt(tmdbApiKey);
+				updateData.encryptedTmdbApiKey = value;
+				updateData.tmdbEncryptionIv = iv;
+				request.log.info({ hasEncrypted: !!value, hasIv: !!iv }, "Encrypted TMDB API key");
+			} else {
+				// Clear the TMDB API key if empty string provided
+				updateData.encryptedTmdbApiKey = null;
+				updateData.tmdbEncryptionIv = null;
+			}
 		}
 
 		// If changing password, clear the mustChangePassword flag

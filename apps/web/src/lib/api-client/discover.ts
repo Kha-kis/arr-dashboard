@@ -4,6 +4,8 @@ import type {
   DiscoverInstanceOptionsResponse,
   DiscoverSearchResponse,
   DiscoverSearchType,
+  RecommendationsRequest,
+  RecommendationsResponse,
 } from "@arr/shared";
 import { apiRequest, UnauthorizedError } from "./base";
 
@@ -43,4 +45,19 @@ export async function addDiscoverItem(payload: DiscoverAddRequest): Promise<Disc
     method: "POST",
     json: payload,
   });
+}
+
+export async function fetchRecommendations(params: RecommendationsRequest): Promise<RecommendationsResponse> {
+  const search = new URLSearchParams();
+  search.set("type", params.type);
+  search.set("mediaType", params.mediaType);
+
+  try {
+    return await apiRequest<RecommendationsResponse>(`/api/recommendations?${search.toString()}`);
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      return { type: params.type, mediaType: params.mediaType, items: [], totalResults: 0 };
+    }
+    throw error;
+  }
 }

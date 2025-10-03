@@ -5,3 +5,4 @@ export * from "./discover.js";
 export * from "./library.js";
 export * from "./search.js";
 export * from "./manual-import.js";
+export * from "./recommendations.js";

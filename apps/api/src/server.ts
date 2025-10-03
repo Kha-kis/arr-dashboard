@@ -12,6 +12,7 @@ import { registerDiscoverRoutes } from "./routes/discover.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerLibraryRoutes } from "./routes/library.js";
 import { registerManualImportRoutes } from "./routes/manual-import.js";
+import { registerRecommendationsRoutes } from "./routes/recommendations.js";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerServiceRoutes } from "./routes/services.js";
 
@@ -89,6 +90,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(registerLibraryRoutes, { prefix: "/api" });
 	app.register(registerSearchRoutes, { prefix: "/api" });
 	app.register(registerManualImportRoutes, { prefix: "/api" });
+	app.register(registerRecommendationsRoutes, { prefix: "/api" });
 
 	return app;
 };
