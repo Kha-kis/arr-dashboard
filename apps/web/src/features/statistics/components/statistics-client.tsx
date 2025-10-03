@@ -56,7 +56,7 @@ const StatsCard = ({ title, value, description }: StatsCardProps) => (
 );
 
 interface QualityBreakdownProps {
-  breakdown?: {
+  breakdown?: Record<string, number> | {
     uhd4k: number;
     fullHd1080p: number;
     hd720p: number;

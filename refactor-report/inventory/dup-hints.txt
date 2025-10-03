@@ -1,0 +1,11 @@
+./web/src/features/calendar/components/calendar-client.tsx
+./web/src/features/dashboard/components/dashboard-client.tsx
+./web/src/features/discover/components/discover-client.tsx
+./web/src/features/history/components/history-client.tsx
+./web/src/features/indexers/components/indexers-client.tsx
+./web/src/features/library/components/library-client.tsx
+./web/src/features/search/components/search-client.tsx
+./web/src/features/settings/components/settings-client.tsx
+./web/src/features/setup/components/setup-client.tsx
+./web/src/features/statistics/components/statistics-client.tsx
+=== Similar naming patterns ===
