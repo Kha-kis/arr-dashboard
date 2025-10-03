@@ -372,10 +372,33 @@ const discoverRoute: FastifyPluginCallback = (app, _opts, done) => {
 			}
 		}
 
+		const query = parsed.query.toLowerCase();
+
 		const results = Array.from(resultMap.values()).sort((a, b) => {
+			const aTitle = a.title.toLowerCase();
+			const bTitle = b.title.toLowerCase();
+
+			// Exact match comes first
+			const aExact = aTitle === query ? 1 : 0;
+			const bExact = bTitle === query ? 1 : 0;
+			if (aExact !== bExact) return bExact - aExact;
+
+			// Starts with query comes second
+			const aStarts = aTitle.startsWith(query) ? 1 : 0;
+			const bStarts = bTitle.startsWith(query) ? 1 : 0;
+			if (aStarts !== bStarts) return bStarts - aStarts;
+
+			// Contains query comes third
+			const aContains = aTitle.includes(query) ? 1 : 0;
+			const bContains = bTitle.includes(query) ? 1 : 0;
+			if (aContains !== bContains) return bContains - aContains;
+
+			// Then by year (newer first)
 			if (a.year && b.year && a.year !== b.year) {
 				return b.year - a.year;
 			}
+
+			// Finally alphabetically
 			return a.title.localeCompare(b.title);
 		});
 

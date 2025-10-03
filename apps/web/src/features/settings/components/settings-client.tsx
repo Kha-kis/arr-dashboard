@@ -95,6 +95,7 @@ export const SettingsClient = () => {
     currentPassword: "",
     newPassword: "",
     confirmPassword: "",
+    tmdbApiKey: "",
   });
   const [accountUpdateResult, setAccountUpdateResult] = useState<{ success: boolean; message: string } | null>(null);
 
@@ -493,6 +494,9 @@ export const SettingsClient = () => {
       payload.currentPassword = accountForm.currentPassword;
       payload.newPassword = accountForm.newPassword;
     }
+    if (accountForm.tmdbApiKey && accountForm.tmdbApiKey.trim()) {
+      payload.tmdbApiKey = accountForm.tmdbApiKey.trim();
+    }
 
     if (Object.keys(payload).length === 0) {
       setAccountUpdateResult({
@@ -508,12 +512,13 @@ export const SettingsClient = () => {
         success: true,
         message: "Account updated successfully",
       });
-      // Clear password fields
+      // Clear password and TMDB fields on success
       setAccountForm(prev => ({
         ...prev,
         currentPassword: "",
         newPassword: "",
         confirmPassword: "",
+        tmdbApiKey: "",
       }));
     } catch (error: any) {
       setAccountUpdateResult({
@@ -898,6 +903,35 @@ export const SettingsClient = () => {
                         placeholder="Re-enter new password"
                       />
                     </div>
+                  </div>
+                </div>
+                <div className="border-t border-white/10 pt-4 mt-6">
+                  <h3 className="text-sm font-semibold text-white mb-4">TMDB API Integration</h3>
+                  <div className="space-y-2">
+                    <label className="text-xs uppercase text-white/60">TMDB API Key</label>
+                    <Input
+                      type="password"
+                      value={accountForm.tmdbApiKey}
+                      onChange={(event) => setAccountForm(prev => ({ ...prev, tmdbApiKey: event.target.value }))}
+                      placeholder={currentUser?.hasTmdbApiKey ? "••••••••••••••••" : "Enter your TMDB API key"}
+                    />
+                    <p className="text-xs text-white/50">
+                      {currentUser?.hasTmdbApiKey ? (
+                        <>TMDB API key is configured. Enter a new key to update it.</>
+                      ) : (
+                        <>
+                          Get your free API key from{" "}
+                          <a
+                            href="https://www.themoviedb.org/settings/api"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-sky-400 hover:underline"
+                          >
+                            themoviedb.org/settings/api
+                          </a>
+                        </>
+                      )}
+                    </p>
                   </div>
                 </div>
                 <div className="flex gap-2">
