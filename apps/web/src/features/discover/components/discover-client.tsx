@@ -1,13 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type { DiscoverAddRequest, DiscoverSearchResult, DiscoverSearchType } from "@arr/shared";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { DiscoverAddRequest, DiscoverSearchResult, DiscoverSearchType, RecommendationItem } from "@arr/shared";
 import type { ServiceInstanceSummary } from "@arr/shared";
-import { Film, Loader2, PlusCircle, Search, Tv, CheckCircle2, AlertCircle, Inbox } from "lucide-react";
+import { Film, Loader2, PlusCircle, Search, Tv, CheckCircle2, AlertCircle, Inbox, Star, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Alert, AlertTitle, AlertDescription, EmptyState } from "../../../components/ui";
 import { cn } from "../../../lib/utils";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
-import { useDiscoverAddMutation, useDiscoverSearchQuery } from "../../../hooks/api/useDiscover";
+import { useDiscoverAddMutation, useDiscoverSearchQuery, useRecommendationsQuery } from "../../../hooks/api/useDiscover";
+import { useLibraryQuery } from "../../../hooks/api/useLibrary";
 import { AddToLibraryDialog } from "./add-to-library-dialog";
 
 const formatRuntime = (runtime?: number) => {
@@ -64,6 +65,227 @@ const renderInstanceBadge = (
 
 const iconForType = (type: DiscoverSearchType) => (type === "movie" ? <Film className="h-4 w-4" /> : <Tv className="h-4 w-4" />);
 
+const TMDBCarousel: React.FC<{
+  title: string;
+  description?: string;
+  items: RecommendationItem[];
+  onSelectItem: (item: RecommendationItem) => void;
+  isLoading?: boolean;
+}> = ({ title, description, items, onSelectItem, isLoading }) => {
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const checkScrollButtons = () => {
+    if (!scrollContainerRef.current) return;
+    const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
+    setCanScrollLeft(scrollLeft > 0);
+    setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 10);
+  };
+
+  const scroll = (direction: "left" | "right") => {
+    if (!scrollContainerRef.current) return;
+    const scrollAmount = scrollContainerRef.current.clientWidth * 0.8;
+    scrollContainerRef.current.scrollBy({
+      left: direction === "left" ? -scrollAmount : scrollAmount,
+      behavior: "smooth",
+    });
+  };
+
+  useEffect(() => {
+    checkScrollButtons();
+    const container = scrollContainerRef.current;
+    if (container) {
+      container.addEventListener("scroll", checkScrollButtons);
+      window.addEventListener("resize", checkScrollButtons);
+      return () => {
+        container.removeEventListener("scroll", checkScrollButtons);
+        window.removeEventListener("resize", checkScrollButtons);
+      };
+    }
+  }, [items]);
+
+  if (isLoading) {
+    return (
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold text-fg">{title}</h2>
+          {description && <p className="text-sm text-fg-muted">{description}</p>}
+        </div>
+        <div className="flex items-center gap-3 text-fg-muted">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          Loading recommendations...
+        </div>
+      </section>
+    );
+  }
+
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-lg font-semibold text-fg">{title}</h2>
+        {description && <p className="text-sm text-fg-muted">{description}</p>}
+      </div>
+      <div className="group/carousel relative">
+        {canScrollLeft && (
+          <button
+            onClick={() => scroll("left")}
+            className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/80 p-2 text-white shadow-lg transition-all hover:bg-black/90 hover:scale-110"
+            aria-label="Scroll left"
+          >
+            <ChevronLeft className="h-6 w-6" />
+          </button>
+        )}
+        {canScrollRight && (
+          <button
+            onClick={() => scroll("right")}
+            className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/80 p-2 text-white shadow-lg transition-all hover:bg-black/90 hover:scale-110"
+            aria-label="Scroll right"
+          >
+            <ChevronRight className="h-6 w-6" />
+          </button>
+        )}
+        <div
+          ref={scrollContainerRef}
+          className="flex gap-4 overflow-x-auto pb-4 scrollbar-none"
+        >
+          {items.slice(0, 20).map((item) => (
+            <div
+              key={item.id}
+              className="group relative w-[160px] flex-shrink-0 cursor-pointer overflow-hidden rounded-lg border border-border/50 bg-bg-subtle transition-all hover:scale-105 hover:border-border"
+              onClick={() => onSelectItem(item)}
+            >
+              <div className="relative aspect-[2/3] w-full overflow-hidden bg-gradient-to-br from-slate-700 to-slate-900">
+                {item.posterUrl ? (
+                  <img
+                    src={item.posterUrl}
+                    alt={item.title}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-xs text-white/40">
+                    No poster
+                  </div>
+                )}
+                {typeof item.rating === "number" && item.rating > 0 && (
+                  <div className="absolute right-2 top-2 flex items-center gap-1 rounded-full border border-yellow-500/40 bg-yellow-500/10 px-2 py-0.5 text-xs text-yellow-200 backdrop-blur-sm">
+                    <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+                    {item.rating.toFixed(1)}
+                  </div>
+                )}
+              </div>
+              <div className="p-2">
+                <p className="truncate text-sm font-medium text-fg">{item.title}</p>
+                {item.releaseDate && (
+                  <p className="text-xs text-fg-muted">{new Date(item.releaseDate).getFullYear()}</p>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+};
+
+const RecommendationCarousel: React.FC<{
+  title: string;
+  description?: string;
+  results: DiscoverSearchResult[];
+  relevantInstances: ServiceInstanceSummary[];
+  onSelectResult: (result: DiscoverSearchResult) => void;
+  isLoading?: boolean;
+}> = ({ title, description, results, relevantInstances, onSelectResult, isLoading }) => {
+  // Filter out items that already exist in ANY instance
+  const availableResults = results.filter((result) => {
+    const existsInAnyInstance = result.instanceStates.some((state) => state.exists);
+    return !existsInAnyInstance;
+  });
+
+  if (isLoading) {
+    return (
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold text-fg">{title}</h2>
+          {description && <p className="text-sm text-fg-muted">{description}</p>}
+        </div>
+        <div className="flex items-center gap-3 text-fg-muted">
+          <Loader2 className="h-5 w-5 animate-spin" />
+          Loading recommendations...
+        </div>
+      </section>
+    );
+  }
+
+  if (availableResults.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-lg font-semibold text-fg">{title}</h2>
+        {description && <p className="text-sm text-fg-muted">{description}</p>}
+      </div>
+      <div className="relative -mx-6 px-6">
+        <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border/50">
+          {availableResults.slice(0, 10).map((result) => {
+            const availableTargets = relevantInstances.filter((instance) => {
+              const state = result.instanceStates.find((entry) => entry.instanceId === instance.id);
+              return !state?.exists;
+            });
+            const canAdd = availableTargets.length > 0;
+            const ratingValue = result.ratings?.value;
+
+            return (
+              <div
+                key={result.id}
+                className="group relative w-[160px] flex-shrink-0 cursor-pointer overflow-hidden rounded-lg border border-border/50 bg-bg-subtle transition-all hover:scale-105 hover:border-border"
+                onClick={() => onSelectResult(result)}
+              >
+                <div className="relative aspect-[2/3] w-full overflow-hidden bg-gradient-to-br from-slate-700 to-slate-900">
+                  {result.images?.poster ? (
+                    <img
+                      src={result.images.poster}
+                      alt={result.title ?? "Poster"}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-xs text-white/40">
+                      No poster
+                    </div>
+                  )}
+                  {typeof ratingValue === "number" && (
+                    <div className="absolute right-2 top-2 rounded-full border border-yellow-500/40 bg-yellow-500/10 px-2 py-0.5 text-xs text-yellow-200 backdrop-blur-sm">
+                      {ratingValue.toFixed(1)}
+                    </div>
+                  )}
+                  {!canAdd && (
+                    <div className="absolute left-2 top-2 rounded-full border border-emerald-400/40 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-200 backdrop-blur-sm">
+                      <CheckCircle2 className="inline h-3 w-3" />
+                    </div>
+                  )}
+                </div>
+                <div className="p-2">
+                  <p className="truncate text-sm font-medium text-fg">{result.title}</p>
+                  <p className="text-xs text-fg-muted">{result.year}</p>
+                  {result.genres && result.genres.length > 0 && (
+                    <p className="mt-1 truncate text-xs text-fg-muted">{result.genres.slice(0, 2).join(", ")}</p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+};
+
 export const DiscoverClient: React.FC = () => {
   const [searchType, setSearchType] = useState<DiscoverSearchType>("movie");
   const [searchInput, setSearchInput] = useState("");
@@ -72,6 +294,7 @@ export const DiscoverClient: React.FC = () => {
   const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
 
   const { data: services = [] } = useServicesQuery();
+  const { data: libraryData } = useLibraryQuery();
 
   const relevantInstances = useMemo(
     () =>
@@ -106,6 +329,38 @@ export const DiscoverClient: React.FC = () => {
     setSubmittedQuery(trimmed);
   };
 
+  const handleSelectItem = (item: RecommendationItem) => {
+    // Convert RecommendationItem to DiscoverSearchResult format
+    const fakeResult: DiscoverSearchResult = {
+      id: `tmdb-${item.tmdbId}`,
+      title: item.title,
+      type: searchType,
+      year: item.releaseDate ? new Date(item.releaseDate).getFullYear() : undefined,
+      overview: item.overview,
+      remoteIds: {
+        tmdbId: item.tmdbId,
+      },
+      images: {
+        poster: item.posterUrl,
+        fanart: item.backdropUrl,
+      },
+      ratings: item.rating ? {
+        value: item.rating,
+        votes: item.voteCount,
+      } : undefined,
+      // Create fake instance states - all available since we don't know which instances have it
+      instanceStates: relevantInstances.map(instance => ({
+        instanceId: instance.id,
+        instanceName: instance.label,
+        service: instance.service as "sonarr" | "radarr",
+        exists: false,
+        monitored: false,
+        hasFile: false,
+      })),
+    };
+    setSelectedResult(fakeResult);
+  };
+
   const handleAdd = async (requestPayload: DiscoverAddRequest) => {
     try {
       await addMutation.mutateAsync(requestPayload);
@@ -123,6 +378,79 @@ export const DiscoverClient: React.FC = () => {
   const isLoading = searchQuery.isFetching || searchQuery.isLoading;
   const hasQuery = submittedQuery.trim().length > 0;
   const canSearch = relevantInstances.length > 0;
+
+  // Query for TMDB recommendations
+  const trendingQuery = useRecommendationsQuery({
+    type: "trending",
+    mediaType: searchType === "movie" ? "movie" : "series",
+  }, !hasQuery && canSearch);
+
+  const popularQuery = useRecommendationsQuery({
+    type: "popular",
+    mediaType: searchType === "movie" ? "movie" : "series",
+  }, !hasQuery && canSearch);
+
+  const topRatedQuery = useRecommendationsQuery({
+    type: "top_rated",
+    mediaType: searchType === "movie" ? "movie" : "series",
+  }, !hasQuery && canSearch);
+
+  const upcomingQuery = useRecommendationsQuery({
+    type: searchType === "movie" ? "upcoming" : "airing_today",
+    mediaType: searchType === "movie" ? "movie" : "series",
+  }, !hasQuery && canSearch);
+
+  // Filter out recommendations that are already in the library
+  const filterExistingItems = (items: RecommendationItem[]) => {
+    if (!libraryData?.aggregated) return items;
+
+    const libraryTitles = new Set(
+      libraryData.aggregated
+        .filter((item) =>
+          (searchType === "movie" && item.type === "movie") ||
+          (searchType === "series" && item.type === "series")
+        )
+        .map((item) => item.title.toLowerCase())
+    );
+
+    return items.filter((item) => !libraryTitles.has(item.title.toLowerCase()));
+  };
+
+  // Get recently added items from library
+  const recentlyAdded = useMemo(() => {
+    if (!libraryData?.aggregated) {
+      return [];
+    }
+
+    const matchingItems = libraryData.aggregated.filter((item) =>
+      (searchType === "movie" && item.type === "movie") || (searchType === "series" && item.type === "series")
+    );
+
+    return matchingItems
+      .filter((item) => item.added)
+      .sort((a, b) => new Date(b.added!).getTime() - new Date(a.added!).getTime())
+      .slice(0, 5);
+  }, [libraryData, searchType]);
+
+  // Get highly rated items from library
+  const topRated = useMemo(() => {
+    if (!libraryData?.aggregated) {
+      return [];
+    }
+
+    const matchingItems = libraryData.aggregated.filter((item) =>
+      (searchType === "movie" && item.type === "movie") || (searchType === "series" && item.type === "series")
+    );
+
+    return matchingItems
+      .filter((item) => item.statistics?.runtime && item.statistics.runtime > 0)
+      .sort((a, b) => {
+        const ratingA = a.statistics?.runtime || 0;
+        const ratingB = b.statistics?.runtime || 0;
+        return ratingB - ratingA;
+      })
+      .slice(0, 5);
+  }, [libraryData, searchType]);
 
   return (
     <div className="space-y-12">
@@ -190,32 +518,65 @@ export const DiscoverClient: React.FC = () => {
         </div>
       </header>
 
-      <section className="space-y-6">
-        {!hasQuery && !isLoading ? (
-          <EmptyState
-            icon={Inbox}
-            title="Ready when you are"
-            description="Use the search bar above to look up titles. Results will merge data from every configured instance so you can add them with the right quality and folder."
-          />
-        ) : null}
+      {!hasQuery && (
+        <TMDBCarousel
+          title="Trending Now"
+          description={`Popular ${searchType === "movie" ? "movies" : "series"} trending this week`}
+          items={filterExistingItems(trendingQuery.data?.items || [])}
+          onSelectItem={handleSelectItem}
+          isLoading={trendingQuery.isLoading}
+        />
+      )}
 
-        {hasQuery && isLoading ? (
-          <div className="flex items-center gap-3 text-fg-muted">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            Fetching {searchType === "movie" ? "movies" : "series"}...
-          </div>
-        ) : null}
+      {!hasQuery && (
+        <TMDBCarousel
+          title="Popular Releases"
+          description={`Most popular ${searchType === "movie" ? "movies" : "series"} right now`}
+          items={filterExistingItems(popularQuery.data?.items || [])}
+          onSelectItem={handleSelectItem}
+          isLoading={popularQuery.isLoading}
+        />
+      )}
 
-        {hasQuery && !isLoading && searchResults.length === 0 ? (
-          <EmptyState
-            icon={Search}
-            title="No results found"
-            description="Try a different title or adjust your search term."
-          />
-        ) : null}
+      {!hasQuery && (
+        <TMDBCarousel
+          title="Top Rated"
+          description={`Highest rated ${searchType === "movie" ? "movies" : "series"} of all time`}
+          items={filterExistingItems(topRatedQuery.data?.items || [])}
+          onSelectItem={handleSelectItem}
+          isLoading={topRatedQuery.isLoading}
+        />
+      )}
 
-        <div className="grid gap-6 lg:grid-cols-2">
-          {searchResults.map((result) => {
+      {!hasQuery && (
+        <TMDBCarousel
+          title={searchType === "movie" ? "Coming Soon" : "Airing Today"}
+          description={searchType === "movie" ? "Upcoming movies to watch out for" : "TV shows airing today"}
+          items={filterExistingItems(upcomingQuery.data?.items || [])}
+          onSelectItem={handleSelectItem}
+          isLoading={upcomingQuery.isLoading}
+        />
+      )}
+
+      {hasQuery && (
+        <section className="space-y-6">
+          {isLoading ? (
+            <div className="flex items-center gap-3 text-fg-muted">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              Fetching {searchType === "movie" ? "movies" : "series"}...
+            </div>
+          ) : null}
+
+          {!isLoading && searchResults.length === 0 ? (
+            <EmptyState
+              icon={Search}
+              title="No results found"
+              description="Try a different title or adjust your search term."
+            />
+          ) : null}
+
+          <div className="grid gap-6 lg:grid-cols-2">
+            {searchResults.map((result) => {
             const availableTargets = relevantInstances.filter((instance) => {
               const state = result.instanceStates.find((entry) => entry.instanceId === instance.id);
               return !state?.exists;
@@ -298,8 +659,9 @@ export const DiscoverClient: React.FC = () => {
               </Card>
             );
           })}
-        </div>
-      </section>
+          </div>
+        </section>
+      )}
 
       <AddToLibraryDialog
         open={Boolean(selectedResult)}

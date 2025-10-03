@@ -7,8 +7,10 @@ import type {
   DiscoverInstanceOptionsResponse,
   DiscoverSearchResponse,
   DiscoverSearchType,
+  RecommendationsRequest,
+  RecommendationsResponse,
 } from "@arr/shared";
-import { addDiscoverItem, fetchDiscoverOptions, fetchDiscoverResults } from "../../lib/api-client/discover";
+import { addDiscoverItem, fetchDiscoverOptions, fetchDiscoverResults, fetchRecommendations } from "../../lib/api-client/discover";
 
 interface DiscoverSearchQueryOptions {
   query: string;
@@ -46,3 +48,11 @@ export const useDiscoverAddMutation = () => {
     },
   });
 };
+
+export const useRecommendationsQuery = (params: RecommendationsRequest, enabled = true) =>
+  useQuery<RecommendationsResponse>({
+    queryKey: ["recommendations", params.type, params.mediaType],
+    queryFn: () => fetchRecommendations(params),
+    enabled,
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
