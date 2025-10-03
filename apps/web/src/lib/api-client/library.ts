@@ -1,4 +1,5 @@
 import type {
+  LibraryEpisodeMonitorRequest,
   LibraryEpisodeSearchRequest,
   LibraryEpisodesResponse,
   LibraryService,
@@ -88,6 +89,13 @@ export async function fetchEpisodes(params: FetchEpisodesParams): Promise<Librar
 
 export async function searchLibraryEpisode(payload: LibraryEpisodeSearchRequest): Promise<void> {
   await apiRequest<void>("/api/library/episode/search", {
+    method: "POST",
+    json: payload,
+  });
+}
+
+export async function toggleEpisodeMonitoring(payload: LibraryEpisodeMonitorRequest): Promise<void> {
+  await apiRequest<void>("/api/library/episode/monitor", {
     method: "POST",
     json: payload,
   });

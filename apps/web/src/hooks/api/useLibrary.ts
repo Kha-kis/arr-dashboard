@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+  LibraryEpisodeMonitorRequest,
   LibraryEpisodeSearchRequest,
   LibraryEpisodesResponse,
   LibraryService,
@@ -19,6 +20,7 @@ import {
   searchLibraryMovie,
   searchLibrarySeason,
   searchLibrarySeries,
+  toggleEpisodeMonitoring,
   toggleLibraryMonitoring
 } from "../../lib/api-client/library";
 
@@ -108,6 +110,17 @@ export const useLibraryEpisodeSearchMutation = () => {
   const queryClient = useQueryClient();
   return useMutation<void, unknown, LibraryEpisodeSearchRequest>({
     mutationFn: searchLibraryEpisode,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["library"] });
+      void queryClient.invalidateQueries({ queryKey: ["library", "episodes"] });
+    },
+  });
+};
+
+export const useLibraryEpisodeMonitorMutation = () => {
+  const queryClient = useQueryClient();
+  return useMutation<void, unknown, LibraryEpisodeMonitorRequest>({
+    mutationFn: toggleEpisodeMonitoring,
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["library"] });
       void queryClient.invalidateQueries({ queryKey: ["library", "episodes"] });

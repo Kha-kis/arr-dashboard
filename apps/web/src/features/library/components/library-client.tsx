@@ -21,6 +21,7 @@ import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Inpu
 import { cn } from "../../../lib/utils";
 import {
   useEpisodesQuery,
+  useLibraryEpisodeMonitorMutation,
   useLibraryEpisodeSearchMutation,
   useLibraryMonitorMutation,
   useLibraryMovieSearchMutation,
@@ -626,7 +627,9 @@ const SeasonEpisodeList = ({
   });
 
   const episodeSearchMutation = useLibraryEpisodeSearchMutation();
+  const episodeMonitorMutation = useLibraryEpisodeMonitorMutation();
   const [pendingEpisodeSearch, setPendingEpisodeSearch] = useState<number | null>(null);
+  const [pendingEpisodeMonitor, setPendingEpisodeMonitor] = useState<number | null>(null);
 
   const handleSearchEpisode = async (episodeId: number) => {
     setPendingEpisodeSearch(episodeId);
@@ -641,6 +644,24 @@ const SeasonEpisodeList = ({
       toast.error(`Failed to queue episode search: ${message}`);
     } finally {
       setPendingEpisodeSearch(null);
+    }
+  };
+
+  const handleToggleMonitor = async (episodeId: number, currentlyMonitored: boolean) => {
+    setPendingEpisodeMonitor(episodeId);
+    try {
+      await episodeMonitorMutation.mutateAsync({
+        instanceId,
+        seriesId,
+        episodeIds: [episodeId],
+        monitored: !currentlyMonitored,
+      });
+      toast.success(`Episode ${!currentlyMonitored ? 'monitoring enabled' : 'monitoring disabled'}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      toast.error(`Failed to toggle monitoring: ${message}`);
+    } finally {
+      setPendingEpisodeMonitor(null);
     }
   };
 
@@ -687,6 +708,27 @@ const SeasonEpisodeList = ({
             <LibraryBadge tone={episode.hasFile ? "green" : "blue"}>
               {episode.hasFile ? "Downloaded" : "Missing"}
             </LibraryBadge>
+            {episode.monitored !== undefined && (
+              <LibraryBadge tone={episode.monitored ? "green" : "yellow"}>
+                {episode.monitored ? "Monitored" : "Unmonitored"}
+              </LibraryBadge>
+            )}
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => handleToggleMonitor(episode.id, episode.monitored ?? false)}
+              disabled={pendingEpisodeMonitor === episode.id}
+              title={episode.monitored ? "Unmonitor episode" : "Monitor episode"}
+            >
+              {pendingEpisodeMonitor === episode.id ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : episode.monitored ? (
+                <PauseCircle className="h-3 w-3" />
+              ) : (
+                <PlayCircle className="h-3 w-3" />
+              )}
+            </Button>
             {!episode.hasFile && (
               <Button
                 type="button"
@@ -694,6 +736,7 @@ const SeasonEpisodeList = ({
                 size="sm"
                 onClick={() => handleSearchEpisode(episode.id)}
                 disabled={pendingEpisodeSearch === episode.id}
+                title="Search for episode"
               >
                 {pendingEpisodeSearch === episode.id ? (
                   <Loader2 className="h-3 w-3 animate-spin" />
