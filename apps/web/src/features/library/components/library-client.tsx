@@ -567,7 +567,7 @@ const LibraryCard = ({
               {tagEntries.map((tag) => (
                 <span
                   key={tag}
-                  className="rounded-full border border-sky-400/40 bg-sky-500/10 px-3 py-1 text-sm text-sky-100"
+                  className="rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-sm text-fg"
                 >
                   {tag}
                 </span>
