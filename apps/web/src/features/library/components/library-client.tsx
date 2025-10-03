@@ -5,6 +5,8 @@ import { toast } from "../../../components/ui";
 import type { LibraryItem, LibraryService, ServiceInstanceSummary } from "@arr/shared";
 import {
   AlertCircle,
+  ChevronDown,
+  ChevronRight,
   ExternalLink,
   Film,
   Library as LibraryIcon,
@@ -619,9 +621,23 @@ const SeasonBreakdownModal = ({
   onSearchSeason: (seasonNumber: number) => void;
   pendingActionKey: string | null;
 }) => {
+  const [expandedSeasons, setExpandedSeasons] = useState<Set<number>>(new Set());
+
   if (item.type !== "series" || !item.seasons?.length) {
     return null;
   }
+
+  const toggleSeasonExpanded = (seasonNumber: number) => {
+    setExpandedSeasons(prev => {
+      const next = new Set(prev);
+      if (next.has(seasonNumber)) {
+        next.delete(seasonNumber);
+      } else {
+        next.add(seasonNumber);
+      }
+      return next;
+    });
+  };
 
   const totalMissing = item.seasons.reduce(
     (total, season) =>
@@ -666,50 +682,121 @@ const SeasonBreakdownModal = ({
             const seasonMonitorPending = pendingActionKey === monitorKey;
             const seasonSearchPending = pendingActionKey === searchKey;
 
+            const isExpanded = expandedSeasons.has(season.seasonNumber);
+            const percentComplete = total > 0 ? Math.round((downloaded / total) * 100) : 0;
+
             return (
-              <div key={season.seasonNumber} className="rounded-xl border border-border bg-bg-muted/30 px-4 py-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-medium text-fg">{label}</p>
-                    {season.title && season.title !== label ? (
-                      <p className="text-xs text-fg-muted">{season.title}</p>
-                    ) : null}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <LibraryBadge tone={missing > 0 ? "yellow" : "green"}>
-                      {downloaded}/{total || "?"} episodes
-                    </LibraryBadge>
-                    {missing > 0 ? <LibraryBadge tone="red">{missing} missing</LibraryBadge> : null}
-                    {season.monitored === false ? <LibraryBadge tone="blue">Unmonitored</LibraryBadge> : null}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      className="flex items-center gap-2"
-                      disabled={seasonMonitorPending}
-                      onClick={() => onToggleSeason(season.seasonNumber, !(season.monitored ?? false))}
+              <div key={season.seasonNumber} className="rounded-xl border border-border bg-bg-muted/30">
+                <div className="px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <button
+                      onClick={() => toggleSeasonExpanded(season.seasonNumber)}
+                      className="flex items-center gap-2 text-left hover:text-fg transition-colors"
                     >
-                      {seasonMonitorPending ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : season.monitored === false ? (
-                        <span>Monitor season</span>
+                      {isExpanded ? (
+                        <ChevronDown className="h-4 w-4 flex-shrink-0" />
                       ) : (
-                        <span>Unmonitor season</span>
+                        <ChevronRight className="h-4 w-4 flex-shrink-0" />
                       )}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="flex items-center gap-2"
-                      disabled={seasonSearchPending}
-                      onClick={() => onSearchSeason(season.seasonNumber)}
-                    >
-                      {seasonSearchPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
-                      <span>Search</span>
-                    </Button>
+                      <div>
+                        <p className="text-sm font-medium text-fg">{label}</p>
+                        {season.title && season.title !== label ? (
+                          <p className="text-xs text-fg-muted">{season.title}</p>
+                        ) : null}
+                      </div>
+                    </button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <LibraryBadge tone={missing > 0 ? "yellow" : "green"}>
+                        {downloaded}/{total || "?"} episodes
+                      </LibraryBadge>
+                      {missing > 0 ? <LibraryBadge tone="red">{missing} missing</LibraryBadge> : null}
+                      {season.monitored === false ? <LibraryBadge tone="blue">Unmonitored</LibraryBadge> : null}
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="flex items-center gap-2"
+                        disabled={seasonMonitorPending}
+                        onClick={() => onToggleSeason(season.seasonNumber, !(season.monitored ?? false))}
+                      >
+                        {seasonMonitorPending ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : season.monitored === false ? (
+                          <span>Monitor</span>
+                        ) : (
+                          <span>Unmonitor</span>
+                        )}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        className="flex items-center gap-2"
+                        disabled={seasonSearchPending}
+                        onClick={() => onSearchSeason(season.seasonNumber)}
+                      >
+                        {seasonSearchPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+                        <span>Search</span>
+                      </Button>
+                    </div>
                   </div>
+
+                  {/* Progress bar */}
+                  {total > 0 && (
+                    <div className="mt-3 space-y-1.5">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-fg-subtle">Progress</span>
+                        <span className="font-medium text-fg">{percentComplete}%</span>
+                      </div>
+                      <div className="h-2 rounded-full bg-bg-muted overflow-hidden">
+                        <div
+                          className={cn(
+                            "h-full transition-all duration-300 rounded-full",
+                            missing > 0 ? "bg-warning" : "bg-success"
+                          )}
+                          style={{ width: `${percentComplete}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
+
+                {/* Expanded details */}
+                {isExpanded && (
+                  <div className="border-t border-border px-4 py-3 bg-bg/20 space-y-2">
+                    <div className="grid grid-cols-2 gap-3 text-sm">
+                      <div>
+                        <span className="text-fg-subtle">Total Episodes:</span>
+                        <span className="ml-2 font-medium text-fg">{total}</span>
+                      </div>
+                      <div>
+                        <span className="text-fg-subtle">Downloaded:</span>
+                        <span className="ml-2 font-medium text-success">{downloaded}</span>
+                      </div>
+                      {missing > 0 && (
+                        <div>
+                          <span className="text-fg-subtle">Missing:</span>
+                          <span className="ml-2 font-medium text-danger">{missing}</span>
+                        </div>
+                      )}
+                      <div>
+                        <span className="text-fg-subtle">Status:</span>
+                        <span className="ml-2 font-medium text-fg">
+                          {season.monitored === false ? "Unmonitored" : "Monitored"}
+                        </span>
+                      </div>
+                    </div>
+                    {missing > 0 && season.monitored !== false && (
+                      <div className="mt-3 p-3 rounded-lg bg-warning/10 border border-warning/30">
+                        <p className="text-xs text-warning">
+                          {missing} episode{missing === 1 ? "" : "s"} missing. Click "Search" to look for {missing === 1 ? "it" : "them"}.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
