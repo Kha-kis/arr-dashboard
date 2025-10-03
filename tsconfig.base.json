@@ -1,0 +1,27 @@
+{
+  "": "https://json.schemastore.org/tsconfig",
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "NodeNext",
+    "allowJs": false,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noImplicitOverride": true,
+    "noUncheckedIndexedAccess": true,
+    "allowSyntheticDefaultImports": true,
+    "types": [],
+    "baseUrl": ".",
+    "paths": {
+      "@arr/shared": ["packages/shared/src/index.ts"],
+      "@arr/shared/*": ["packages/shared/src/*"],
+      "@arr/api/*": ["apps/api/src/*"],
+      "@arr/web/*": ["apps/web/src/*"],
+      "@arr/types": ["packages/shared/src/types/index.ts"]
+    }
+  }
+}

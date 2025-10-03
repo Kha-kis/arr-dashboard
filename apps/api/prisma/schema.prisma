@@ -1,0 +1,91 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum ServiceType {
+  SONARR
+  RADARR
+  PROWLARR
+}
+
+model User {
+  id                  String            @id @default(cuid())
+  email               String            @unique
+  username            String            @unique
+  hashedPassword      String
+  role                UserRole          @default(USER)
+  mustChangePassword  Boolean           @default(false)
+  failedLoginAttempts Int               @default(0)
+  lockedUntil         DateTime?
+  createdAt           DateTime          @default(now())
+  updatedAt           DateTime          @updatedAt
+  sessions            Session[]
+  serviceInstances    ServiceInstance[]
+  serviceTags         ServiceTag[]
+}
+
+model Session {
+  id        String   @id
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model ServiceTag {
+  id        String            @id @default(cuid())
+  userId    String
+  name      String
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instances ServiceInstanceTag[]
+
+  @@unique([userId, name])
+}
+
+model ServiceInstance {
+  id              String              @id @default(cuid())
+  userId          String
+  service         ServiceType
+  label           String
+  baseUrl         String
+  encryptedApiKey String
+  encryptionIv    String
+  isDefault       Boolean             @default(false)
+  enabled         Boolean             @default(true)
+  defaultQualityProfileId Int?
+  defaultLanguageProfileId Int?
+  defaultRootFolderPath String?
+  defaultSeasonFolder Boolean?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tags            ServiceInstanceTag[]
+
+  @@index([userId, service])
+}
+
+model ServiceInstanceTag {
+  instanceId String
+  tagId      String
+  assignedAt DateTime @default(now())
+
+  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  tag      ServiceTag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([instanceId, tagId])
+}

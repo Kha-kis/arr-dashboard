@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:prowlarr.com)",
+      "WebFetch(domain:sonarr.tv)",
+      "WebFetch(domain:radarr.video)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebSearch",
+      "WebFetch(domain:grafana.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:wiki.servarr.com)",
+      "Bash(npm run build:*)",
+      "Bash(npx prisma migrate dev:*)",
+      "Bash(npx prisma migrate:*)",
+      "Bash(curl:*)",
+      "Bash(git init:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

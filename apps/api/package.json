@@ -1,0 +1,42 @@
+{
+  "name": "@arr/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "start": "node ./dist/index.js",
+    "lint": "biome lint src",
+    "format": "biome format src",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest",
+    "db:generate": "prisma generate --schema prisma/schema.prisma",
+    "db:migrate": "prisma migrate deploy --schema prisma/schema.prisma",
+    "db:push": "prisma db push --schema prisma/schema.prisma",
+    "reset-admin-password": "tsx scripts/reset-admin-password.ts"
+  },
+  "dependencies": {
+    "@arr/shared": "workspace:*",
+    "@fastify/cookie": "^9.3.1",
+    "@fastify/cors": "8.5.0",
+    "@fastify/helmet": "^11.1.1",
+    "@fastify/rate-limit": "^8.1.1",
+    "@prisma/client": "^6.16.2",
+    "dotenv": "^16.4.5",
+    "fastify": "4.29.1",
+    "fastify-plugin": "^4.5.1",
+    "lucia": "^3.2.2",
+    "oslo": "^1.2.1",
+    "pino": "^9.3.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.4",
+    "prisma": "^6.16.2",
+    "tsup": "^8.1.0",
+    "tsx": "^4.17.0",
+    "typescript": "^5.6.3",
+    "vitest": "^1.6.0"
+  }
+}
