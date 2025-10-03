@@ -11,7 +11,7 @@ import {
   type LibraryItem,
 } from "@arr/shared";
 import type { ServiceInstance, ServiceType } from "@prisma/client";
-import { createInstanceFetcher } from "../utils/arr-fetcher.js";
+import { createInstanceFetcher } from "../lib/arr/arr-fetcher.js";
 
 const toNumber = (value: unknown): number | undefined => {
   if (typeof value === "number" && Number.isFinite(value)) {
