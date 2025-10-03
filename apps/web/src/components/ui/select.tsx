@@ -12,12 +12,12 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
     <select
       ref={ref}
       className={cn(
-        "w-full rounded-lg border px-3 py-2 text-sm transition-colors",
-        "bg-white/10 text-fg",
-        "border-border hover:border-border/60",
-        "focus:border-primary focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-bg",
-        "disabled:cursor-not-allowed disabled:opacity-50",
-        error && "border-danger focus:border-danger focus:ring-danger",
+        "w-full rounded-xl border px-4 py-3 text-sm transition-all duration-200",
+        "bg-bg-subtle text-fg",
+        "border-border hover:border-border/80 hover:bg-bg-subtle/80",
+        "focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-bg-subtle/80",
+        "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border",
+        error && "border-danger focus:border-danger focus:ring-danger/20",
         className,
       )}
       {...props}
