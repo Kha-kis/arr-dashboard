@@ -9,11 +9,10 @@ import {
 } from "../../../hooks/api/useServiceMutations";
 import { useTagsQuery, useCreateTagMutation, useDeleteTagMutation } from "../../../hooks/api/useTags";
 import { useDiscoverOptionsQuery } from "../../../hooks/api/useDiscover";
-import { useCurrentUser } from "../../../hooks/api/useCurrentUser";
-import { useUpdateAccountMutation } from "../../../hooks/api/useAccountSettings";
+import { useCurrentUser, useUpdateAccountMutation } from "../../../hooks/api/useAuth";
 import type { ServiceInstanceSummary } from "@arr/shared";
-import type { UpdateServicePayload } from "../../../lib/api-client";
-import { testServiceConnection, testConnectionBeforeAdd } from "../../../lib/api-client";
+import type { UpdateServicePayload } from "../../../lib/api-client/services";
+import { testServiceConnection, testConnectionBeforeAdd } from "../../../lib/api-client/services";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../../../components/ui/card";

@@ -3,9 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { useCurrentUser } from "../../../hooks/api/useCurrentUser";
-import { useSetupRequired } from "../../../hooks/api/useSetup";
-import { useLoginMutation } from "../../../hooks/api/useAuth";
+import { useCurrentUser, useSetupRequired, useLoginMutation } from "../../../hooks/api/useAuth";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../components/ui/card";

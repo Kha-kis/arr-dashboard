@@ -250,8 +250,10 @@ export const HistoryClient = () => {
 
     // Sort by most recent event in each group
     const allGroups = [...grouped, ...ungroupedGroups].sort((a, b) => {
-      const dateA = a.items[a.items.length - 1]?.date ? new Date(a.items[a.items.length - 1].date!).getTime() : 0;
-      const dateB = b.items[b.items.length - 1]?.date ? new Date(b.items[b.items.length - 1].date!).getTime() : 0;
+      const lastItemA = a.items[a.items.length - 1];
+      const lastItemB = b.items[b.items.length - 1];
+      const dateA = lastItemA?.date ? new Date(lastItemA.date).getTime() : 0;
+      const dateB = lastItemB?.date ? new Date(lastItemB.date).getTime() : 0;
       return dateB - dateA; // Most recent groups first
     });
 
