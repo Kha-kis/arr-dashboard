@@ -8,9 +8,7 @@ import {
   useManualSearchMutation,
   useGrabSearchResultMutation,
 } from "../../../hooks/api/useSearch";
-import { Input } from "../../../components/ui/input";
-import { Button } from "../../../components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../components/ui/card";
+import { Input, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Alert, AlertTitle, AlertDescription, EmptyState, Skeleton } from "../../../components/ui";
 import { ApiError } from "../../../lib/api-client/base";
 import { SearchResultsTable } from "./search-results-table";
 
@@ -416,17 +414,19 @@ const handleGrab = async (result: SearchResult) => {
 
   if (indexersQuery.isLoading) {
     return (
-      <div className="flex h-64 items-center justify-center">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-white/30 border-t-white" />
+      <div className="space-y-6">
+        <Skeleton className="h-20 w-full" />
+        <Skeleton className="h-96 w-full" />
       </div>
     );
   }
 
   if (indexersQuery.error) {
     return (
-      <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-6 text-sm text-red-200">
-        Unable to load indexers. Please verify your API connection and try again.
-      </div>
+      <Alert variant="danger">
+        <AlertTitle>Unable to load indexers</AlertTitle>
+        <AlertDescription>Please verify your API connection and try again.</AlertDescription>
+      </Alert>
     );
   }
 
@@ -452,21 +452,15 @@ const handleGrab = async (result: SearchResult) => {
       </header>
 
       {feedback && (
-        <div
-          className={`rounded-lg border px-4 py-3 text-sm ${
-            feedback.type === "success"
-              ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
-              : "border-red-500/40 bg-red-500/10 text-red-200"
-          }`}
-        >
-          {feedback.message}
-        </div>
+        <Alert variant={feedback.type === "success" ? "success" : "danger"}>
+          <AlertDescription>{feedback.message}</AlertDescription>
+        </Alert>
       )}
 
       {validationError && (
-        <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-          {validationError}
-        </div>
+        <Alert variant="warning">
+          <AlertDescription>{validationError}</AlertDescription>
+        </Alert>
       )}
 
       {noIndexers ? (
