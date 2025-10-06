@@ -3,9 +3,9 @@ import {
 	calendarApiPath,
 	compareCalendarItems,
 	normalizeCalendarItem,
-} from "./calendar-utils.js";
-import { historyApiPath, normalizeHistoryItem } from "./history-utils.js";
-import { normalizeQueueItem, queueApiPath } from "./queue-utils.js";
+} from "./calendar-utils";
+import { historyApiPath, normalizeHistoryItem } from "./history-utils";
+import { normalizeQueueItem, queueApiPath } from "./queue-utils";
 
 /**
  * Fetches queue items from Sonarr or Radarr

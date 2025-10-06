@@ -1,7 +1,7 @@
 import type { FastifyPluginCallback } from "fastify";
 import { searchGrabRequestSchema } from "@arr/shared";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
-import { grabProwlarrRelease } from "../../lib/search/prowlarr-api.js";
+import { createInstanceFetcher } from "../../lib/arr/arr-fetcher";
+import { grabProwlarrRelease } from "../../lib/search/prowlarr-api";
 
 /**
  * Registers grab/download routes for Prowlarr.

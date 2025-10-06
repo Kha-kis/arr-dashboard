@@ -1,5 +1,5 @@
 import type { QueueActionCapabilities, QueueItem } from "@arr/shared";
-import { toNumber, toStringValue } from "../data/values.js";
+import { toNumber, toStringValue } from "../data/values";
 
 /**
  * Returns the API path for queue endpoints

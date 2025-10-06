@@ -6,14 +6,14 @@ import {
 import type { QueueItem } from "@arr/shared";
 import type { ServiceInstance } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
-import { fetchQueueItems } from "../../lib/dashboard/fetch-utils.js";
+import { createInstanceFetcher } from "../../lib/arr/arr-fetcher";
+import { fetchQueueItems } from "../../lib/dashboard/fetch-utils";
 import {
 	parseQueueId,
 	queueApiPath,
 	triggerQueueSearch,
-} from "../../lib/dashboard/queue-utils.js";
-import { ManualImportError, autoImportByDownloadId } from "../manual-import-utils.js";
+} from "../../lib/dashboard/queue-utils";
+import { ManualImportError, autoImportByDownloadId } from "../manual-import-utils";
 
 /**
  * Queue-related routes for the dashboard
