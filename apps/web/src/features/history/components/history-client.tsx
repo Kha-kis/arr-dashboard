@@ -1,305 +1,77 @@
 ﻿"use client";
 
-import { useMemo, useState } from "react";
-import type { HistoryItem } from "@arr/shared";
+import { useMemo } from "react";
 import { useMultiInstanceHistoryQuery } from "../../../hooks/api/useDashboard";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Alert, AlertDescription } from "../../../components/ui";
 import { HistoryTable } from "./history-table";
-
-const SERVICE_FILTERS = [
-  { value: "all" as const, label: "All services" },
-  { value: "sonarr" as const, label: "Sonarr" },
-  { value: "radarr" as const, label: "Radarr" },
-  { value: "prowlarr" as const, label: "Prowlarr" },
-];
-
-const normalizeStatus = (status?: string, eventType?: string) =>
-  (status ?? eventType ?? "Unknown").toLowerCase();
+import { SERVICE_FILTERS } from "../lib/history-utils";
+import { useHistoryState } from "../hooks/use-history-state";
+import { useHistoryData } from "../hooks/use-history-data";
 
 export const HistoryClient = () => {
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(100);
-  const [startDate, setStartDate] = useState("");
-  const [endDate, setEndDate] = useState("");
+  const { state, actions } = useHistoryState();
+  const {
+    page,
+    pageSize,
+    startDate,
+    endDate,
+    searchTerm,
+    serviceFilter,
+    instanceFilter,
+    statusFilter,
+    groupByDownload,
+  } = state;
 
   const { data, isLoading, error, refetch } = useMultiInstanceHistoryQuery({
     startDate: startDate || undefined,
     endDate: endDate || undefined,
   });
-  const allAggregated = useMemo(
-    () => data?.aggregated ?? [],
-    [data?.aggregated],
+
+  const historyData = useHistoryData(
+    data,
+    {
+      searchTerm,
+      serviceFilter,
+      instanceFilter,
+      statusFilter,
+      startDate,
+      endDate,
+    },
+    groupByDownload,
   );
-  const instances = useMemo(() => data?.instances ?? [], [data?.instances]);
 
-  const [searchTerm, setSearchTerm] = useState("");
-  const [serviceFilter, setServiceFilter] =
-    useState<(typeof SERVICE_FILTERS)[number]["value"]>("all");
-  const [instanceFilter, setInstanceFilter] = useState<string>("all");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [groupByDownload, setGroupByDownload] = useState(true);
+  const {
+    allItems,
+    groupedItems,
+    instanceOptions,
+    statusOptions,
+    serviceSummary,
+    statusSummary,
+    filtersActive,
+    emptyMessage,
+  } = historyData;
 
-  const instanceOptions = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const entry of instances) {
-      map.set(entry.instanceId, entry.instanceName);
-    }
-    return Array.from(map.entries()).map(([value, label]) => ({
-      value,
-      label,
-    }));
-  }, [instances]);
-
-  const statusOptions = useMemo(() => {
-    const seen = new Map<string, string>();
-    for (const item of allAggregated) {
-      const rawLabel = item.status ?? item.eventType ?? "Unknown";
-      const value = rawLabel.toLowerCase();
-      if (!seen.has(value)) {
-        seen.set(value, rawLabel);
-      }
-    }
-    return Array.from(seen.entries()).map(([value, label]) => ({
-      value,
-      label,
-    }));
-  }, [allAggregated]);
-
-  const filteredItems = useMemo(() => {
-    const term = searchTerm.trim().toLowerCase();
-    return allAggregated.filter((item) => {
-      if (serviceFilter !== "all" && item.service !== serviceFilter) {
-        return false;
-      }
-      if (instanceFilter !== "all" && item.instanceId !== instanceFilter) {
-        return false;
-      }
-      const currentStatus = normalizeStatus(item.status, item.eventType);
-      if (statusFilter !== "all" && currentStatus !== statusFilter) {
-        return false;
-      }
-      if (term.length > 0) {
-        const haystack = [
-          item.title,
-          item.sourceTitle,
-          item.downloadClient,
-          item.indexer,
-          item.reason,
-        ]
-          .filter(Boolean)
-          .map((value) => value!.toLowerCase());
-        if (!haystack.some((value) => value.includes(term))) {
-          return false;
-        }
-      }
-      return true;
-    });
-  }, [allAggregated, serviceFilter, instanceFilter, statusFilter, searchTerm]);
-
-  const serviceSummary = useMemo(() => {
-    const summary = new Map<HistoryItem["service"], number>();
-    for (const item of allAggregated) {
-      summary.set(item.service, (summary.get(item.service) ?? 0) + 1);
-    }
-    return summary;
-  }, [allAggregated]);
-
-  const statusSummary = useMemo(() => {
-    const summary = new Map<string, number>();
-    for (const item of filteredItems) {
-      const label = item.status ?? item.eventType ?? "Unknown";
-      summary.set(label, (summary.get(label) ?? 0) + 1);
-    }
-    return Array.from(summary.entries()).sort((a, b) => b[1] - a[1]);
-  }, [filteredItems]);
-
-  const filtersActive =
-    serviceFilter !== "all" ||
-    instanceFilter !== "all" ||
-    statusFilter !== "all" ||
-    searchTerm.trim().length > 0 ||
-    startDate ||
-    endDate;
-
-  const emptyMessage =
-    filteredItems.length === 0 && allAggregated.length > 0
-      ? "No history records match the current filters."
-      : undefined;
-
-  // Group items by downloadId when enabled
-  const groupedItems = useMemo(() => {
-    if (!groupByDownload) {
-      return filteredItems.map((item) => ({
-        items: [item],
-        downloadId: item.downloadId,
-      }));
-    }
-
-    const groups = new Map<string, HistoryItem[]>();
-    const deleteEvents: HistoryItem[] = [];
-    const ungrouped: HistoryItem[] = [];
-
-    // First pass: group all non-delete events
-    for (const item of filteredItems) {
-      const eventType = (item.eventType ?? "").toLowerCase();
-      const isDeleteEvent = eventType.includes("delete");
-
-      // Collect delete events for second pass
-      if (isDeleteEvent) {
-        deleteEvents.push(item);
-        continue;
-      }
-
-      // Group RSS feed sync events by instance + rounded timestamp (within 5 minutes)
-      if (
-        item.service === "prowlarr" &&
-        (eventType.includes("rss") || eventType === "indexerrss")
-      ) {
-        const date = item.date ? new Date(item.date) : new Date();
-        const roundedTime = Math.floor(date.getTime() / (5 * 60 * 1000)); // Round to 5 min intervals
-        const rssKey = `rss-${item.instanceId}-${roundedTime}`;
-        const existing = groups.get(rssKey) ?? [];
-        existing.push(item);
-        groups.set(rssKey, existing);
-        continue;
-      }
-
-      // For Sonarr/Radarr: use multi-tier grouping strategy
-      if (item.service === "sonarr" || item.service === "radarr") {
-        const downloadId = item.downloadId?.trim();
-        const date = item.date ? new Date(item.date) : new Date();
-        const quality = (item.quality as any)?.quality?.name ?? "unknown";
-        let groupKey = "";
-
-        // Check if downloadId looks valid (not just a number which is likely an event ID)
-        const isValidDownloadId =
-          downloadId && downloadId.length > 10 && !/^\d+$/.test(downloadId);
-
-        if (isValidDownloadId) {
-          // Use downloadId for grabbed/imported events
-          groupKey = downloadId;
-        } else if (item.service === "sonarr" && item.episodeId) {
-          // For non-delete events without valid downloadId
-          const roundedTime = Math.floor(date.getTime() / (30 * 60 * 1000));
-          groupKey = `episode-${item.instanceId}-${item.episodeId}-${quality}-${roundedTime}`;
-        } else if (item.service === "radarr" && item.movieId) {
-          const roundedTime = Math.floor(date.getTime() / (30 * 60 * 1000));
-          groupKey = `movie-${item.instanceId}-${item.movieId}-${quality}-${roundedTime}`;
-        } else {
-          // Fallback: group identical releases by sourceTitle or title + quality + exact time
-          const title = (item.sourceTitle || item.title || "").trim();
-          if (title) {
-            const exactMinute = Math.floor(date.getTime() / (60 * 1000));
-            groupKey = `release-${item.instanceId}-${title}-${quality}-${exactMinute}`;
-          }
-        }
-
-        if (groupKey) {
-          const existing = groups.get(groupKey) ?? [];
-          existing.push(item);
-          groups.set(groupKey, existing);
-          continue;
-        }
-      }
-
-      // For other services, try downloadId
-      const downloadId = item.downloadId?.trim();
-      if (downloadId) {
-        const existing = groups.get(downloadId) ?? [];
-        existing.push(item);
-        groups.set(downloadId, existing);
-        continue;
-      }
-
-      // Ungrouped
-      ungrouped.push(item);
-    }
-
-    // Second pass: attach delete events to their matching groups
-    for (const item of deleteEvents) {
-      const date = item.date ? new Date(item.date) : new Date();
-      let addedToGroup = false;
-
-      // Find a matching group for this delete event (same episode/movie, within time window)
-      for (const [key, groupItems] of groups.entries()) {
-        const firstInGroup = groupItems[0];
-        if (!firstInGroup) continue;
-
-        // Check if it's the same episode/movie and instance
-        const sameEpisode =
-          item.service === "sonarr" &&
-          item.episodeId === firstInGroup.episodeId &&
-          item.instanceId === firstInGroup.instanceId;
-        const sameMovie =
-          item.service === "radarr" &&
-          item.movieId === firstInGroup.movieId &&
-          item.instanceId === firstInGroup.instanceId;
-
-        if (sameEpisode || sameMovie) {
-          // Check if within 2 hour time window of any event in the group
-          const withinTimeWindow = groupItems.some((groupItem) => {
-            const groupDate = groupItem.date
-              ? new Date(groupItem.date).getTime()
-              : 0;
-            const deleteDate = date.getTime();
-            return Math.abs(groupDate - deleteDate) < 2 * 60 * 60 * 1000; // 2 hours
-          });
-
-          if (withinTimeWindow) {
-            groupItems.push(item);
-            addedToGroup = true;
-            break;
-          }
-        }
-      }
-
-      // If not added to any group, treat as ungrouped
-      if (!addedToGroup) {
-        ungrouped.push(item);
-      }
-    }
-
-    // Convert to array and sort groups by most recent date
-    const grouped = Array.from(groups.entries()).map(([key, items]) => ({
-      downloadId: key.startsWith("rss-") ? undefined : key,
-      groupType: key.startsWith("rss-") ? "rss" : "download",
-      items: items.sort((a, b) => {
-        const dateA = a.date ? new Date(a.date).getTime() : 0;
-        const dateB = b.date ? new Date(b.date).getTime() : 0;
-        return dateA - dateB; // Oldest first within group
-      }),
-    }));
-
-    // Add ungrouped items as single-item groups
-    const ungroupedGroups = ungrouped.map((item) => ({
-      items: [item],
-      downloadId: undefined,
-      groupType: undefined,
-    }));
-
-    // Sort by most recent event in each group
-    const allGroups = [...grouped, ...ungroupedGroups].sort((a, b) => {
-      const lastItemA = a.items[a.items.length - 1];
-      const lastItemB = b.items[b.items.length - 1];
-      const dateA = lastItemA?.date ? new Date(lastItemA.date).getTime() : 0;
-      const dateB = lastItemB?.date ? new Date(lastItemB.date).getTime() : 0;
-      return dateB - dateA; // Most recent groups first
-    });
-
-    return allGroups;
-  }, [filteredItems, groupByDownload]);
-
-  // Client-side pagination on groups
   const totalRecords = groupedItems.length;
   const totalPages = Math.ceil(totalRecords / pageSize);
   const showingFrom = totalRecords > 0 ? (page - 1) * pageSize + 1 : 0;
   const showingTo = Math.min(page * pageSize, totalRecords);
+
   const paginatedGroups = useMemo(() => {
     const startIndex = (page - 1) * pageSize;
     return groupedItems.slice(startIndex, startIndex + pageSize);
   }, [groupedItems, page, pageSize]);
+
+  const handleResetFilters = () => {
+    actions.setSearchTerm("");
+    actions.setServiceFilter("all");
+    actions.setInstanceFilter("all");
+    actions.setStatusFilter("all");
+    actions.setStartDate("");
+    actions.setEndDate("");
+    actions.setPage(1);
+  };
 
   return (
     <section className="flex flex-col gap-10">
@@ -315,9 +87,10 @@ export const HistoryClient = () => {
           </div>
           <div className="flex items-center gap-3 text-sm text-white/60">
             <span>
-              Tracking {allAggregated.length} event
-              {allAggregated.length === 1 ? "" : "s"} across {instances.length}{" "}
-              instance{instances.length === 1 ? "" : "s"}
+              Tracking {allItems.length} event
+              {allItems.length === 1 ? "" : "s"} across{" "}
+              {data?.instances?.length ?? 0} instance
+              {(data?.instances?.length ?? 0) === 1 ? "" : "s"}
             </span>
             <Button variant="ghost" onClick={() => void refetch()}>
               Refresh
@@ -362,8 +135,8 @@ export const HistoryClient = () => {
             type="date"
             value={startDate}
             onChange={(event) => {
-              setStartDate(event.target.value);
-              setPage(1);
+              actions.setStartDate(event.target.value);
+              actions.setPage(1);
             }}
             className="border-white/20 bg-white/10 text-white"
           />
@@ -380,8 +153,8 @@ export const HistoryClient = () => {
             type="date"
             value={endDate}
             onChange={(event) => {
-              setEndDate(event.target.value);
-              setPage(1);
+              actions.setEndDate(event.target.value);
+              actions.setPage(1);
             }}
             className="border-white/20 bg-white/10 text-white"
           />
@@ -396,7 +169,7 @@ export const HistoryClient = () => {
           <Input
             id="history-search"
             value={searchTerm}
-            onChange={(event) => setSearchTerm(event.target.value)}
+            onChange={(event) => actions.setSearchTerm(event.target.value)}
             placeholder="Search title, client, or indexer"
             className="border-white/20 bg-white/10 text-white placeholder:text-white/40"
           />
@@ -412,7 +185,7 @@ export const HistoryClient = () => {
             id="history-service-filter"
             value={serviceFilter}
             onChange={(event) =>
-              setServiceFilter(
+              actions.setServiceFilter(
                 event.target.value as (typeof SERVICE_FILTERS)[number]["value"],
               )
             }
@@ -435,7 +208,7 @@ export const HistoryClient = () => {
           <select
             id="history-instance-filter"
             value={instanceFilter}
-            onChange={(event) => setInstanceFilter(event.target.value)}
+            onChange={(event) => actions.setInstanceFilter(event.target.value)}
             className="rounded-md border border-white/20 bg-white/10 px-2 py-1 text-sm text-white focus:border-sky-400 focus:outline-none [&>option]:bg-slate-800 [&>option]:text-white"
           >
             <option value="all">All instances</option>
@@ -456,7 +229,7 @@ export const HistoryClient = () => {
           <select
             id="history-status-filter"
             value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
+            onChange={(event) => actions.setStatusFilter(event.target.value)}
             className="rounded-md border border-white/20 bg-white/10 px-2 py-1 text-sm text-white focus:border-sky-400 focus:outline-none [&>option]:bg-slate-800 [&>option]:text-white"
           >
             <option value="all">All statuses</option>
@@ -473,8 +246,8 @@ export const HistoryClient = () => {
               type="checkbox"
               checked={groupByDownload}
               onChange={(e) => {
-                setGroupByDownload(e.target.checked);
-                setPage(1);
+                actions.setGroupByDownload(e.target.checked);
+                actions.setPage(1);
               }}
               className="rounded border-white/20 bg-white/10 text-sky-500 focus:ring-sky-400"
             />
@@ -482,15 +255,7 @@ export const HistoryClient = () => {
           </label>
           <Button
             variant="ghost"
-            onClick={() => {
-              setSearchTerm("");
-              setServiceFilter("all");
-              setInstanceFilter("all");
-              setStatusFilter("all");
-              setStartDate("");
-              setEndDate("");
-              setPage(1);
-            }}
+            onClick={handleResetFilters}
             disabled={!filtersActive}
           >
             Reset
@@ -506,7 +271,7 @@ export const HistoryClient = () => {
           <div className="flex items-center gap-2">
             <Button
               variant="secondary"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              onClick={() => actions.setPage(Math.max(1, page - 1))}
               disabled={page === 1 || isLoading}
             >
               Previous
@@ -516,7 +281,7 @@ export const HistoryClient = () => {
             </span>
             <Button
               variant="secondary"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              onClick={() => actions.setPage(Math.min(totalPages, page + 1))}
               disabled={page === totalPages || isLoading}
             >
               Next
@@ -530,8 +295,8 @@ export const HistoryClient = () => {
               id="page-size"
               value={pageSize}
               onChange={(event) => {
-                setPageSize(Number(event.target.value));
-                setPage(1);
+                actions.setPageSize(Number(event.target.value));
+                actions.setPage(1);
               }}
               className="rounded-md border border-white/20 bg-white/10 px-2 py-1 text-sm text-white [&>option]:bg-slate-800 [&>option]:text-white"
             >
