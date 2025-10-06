@@ -191,8 +191,10 @@ export const fetchSonarrStatistics = async (
 
 			// Look up the profile name
 			if (qualityProfileId !== undefined && profileIdToName.has(qualityProfileId)) {
-				const profileName = profileIdToName.get(qualityProfileId)!;
-				qualityBreakdown[profileName] = (qualityBreakdown[profileName] ?? 0) + episodesWithFile;
+				const profileName = profileIdToName.get(qualityProfileId);
+				if (profileName !== undefined) {
+					qualityBreakdown[profileName] = (qualityBreakdown[profileName] ?? 0) + episodesWithFile;
+				}
 			} else {
 				qualityBreakdown.Unknown = (qualityBreakdown.Unknown ?? 0) + episodesWithFile;
 			}
@@ -293,8 +295,10 @@ export const fetchRadarrStatistics = async (
 
 			// Look up the profile name
 			if (qualityProfileId !== undefined && profileIdToName.has(qualityProfileId)) {
-				const profileName = profileIdToName.get(qualityProfileId)!;
-				qualityBreakdown[profileName] = (qualityBreakdown[profileName] ?? 0) + 1;
+				const profileName = profileIdToName.get(qualityProfileId);
+				if (profileName !== undefined) {
+					qualityBreakdown[profileName] = (qualityBreakdown[profileName] ?? 0) + 1;
+				}
 			} else {
 				qualityBreakdown.Unknown = (qualityBreakdown.Unknown ?? 0) + 1;
 			}
@@ -362,7 +366,7 @@ export const fetchProwlarrStatistics = async (
 
 	for (let page = 1; page <= maxPages; page++) {
 		const history =
-			(await safeRequestJson<any>(
+			(await safeRequestJson<unknown>(
 				fetcher,
 				`/api/v1/history?page=${page}&pageSize=${pageSize}&eventType=1&eventType=2&eventType=3`,
 			)) ?? {};
@@ -418,7 +422,10 @@ export const fetchProwlarrStatistics = async (
 		let indexerName = "Unknown";
 
 		if (indexerId !== undefined && indexerIdToName.has(indexerId)) {
-			indexerName = indexerIdToName.get(indexerId)!;
+			const name = indexerIdToName.get(indexerId);
+			if (name !== undefined) {
+				indexerName = name;
+			}
 		} else {
 			// Fallback to direct name field
 			indexerName =
@@ -435,7 +442,10 @@ export const fetchProwlarrStatistics = async (
 			indexerStatsMap.set(indexerName, { queries: 0, grabs: 0, successful: 0 });
 		}
 
-		const stats = indexerStatsMap.get(indexerName)!;
+		const stats = indexerStatsMap.get(indexerName);
+		if (stats === undefined) {
+			continue;
+		}
 
 		// Count queries (any event is a query)
 		stats.queries += 1;
