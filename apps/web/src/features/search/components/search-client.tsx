@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import type { SearchResult } from "@arr/shared";
 import {
@@ -20,7 +20,6 @@ import {
   AlertDescription,
   Skeleton,
 } from "../../../components/ui";
-import { ApiError } from "../../../lib/api-client/base";
 import { SearchResultsTable } from "./search-results-table";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
 import { IndexerSelector } from "./indexer-selector";
@@ -28,50 +27,43 @@ import { SearchForm } from "./search-form";
 import { FilterControls } from "./filter-controls";
 import { SortControls } from "./sort-controls";
 import { ResultsSummary } from "./results-summary";
-import {
-  buildFilters,
-  parseNumberInput,
-  getAgeHours,
-  compareBySortKey,
-  interpretGrabError,
-  type SortKey,
-  type ProtocolFilter,
-} from "../lib/search-utils";
+import { buildFilters, deriveGrabErrorMessage } from "../lib/search-utils";
+import { useSearchState } from "../hooks/use-search-state";
+import { useSearchData } from "../hooks/use-search-data";
 
 export const SearchClient = () => {
-  const [query, setQuery] = useState("");
-  const [searchType, setSearchType] = useState<
-    "all" | "movie" | "tv" | "music" | "book"
-  >("movie");
-  const [selectedIndexers, setSelectedIndexers] = useState<
-    Record<string, number[]>
-  >({});
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [feedback, setFeedback] = useState<{
-    type: "success" | "error";
-    message: string;
-  } | null>(null);
-  const [validationError, setValidationError] = useState<string | null>(null);
-  const [grabbingKey, setGrabbingKey] = useState<string | null>(null);
-  const [protocolFilter, setProtocolFilter] = useState<ProtocolFilter>("all");
-  const [minSeedersInput, setMinSeedersInput] = useState("");
-  const [maxAgeInput, setMaxAgeInput] = useState("");
-  const [hideRejected, setHideRejected] = useState(false);
-  const [sortKey, setSortKey] = useState<SortKey>("seeders");
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
-  const [hasSearched, setHasSearched] = useState(false);
+
+  const searchState = useSearchState();
+  const {
+    query,
+    searchType,
+    selectedIndexers,
+    validationError,
+    feedback,
+    grabbingKey,
+    hasSearched,
+    filters,
+    sort,
+    actions,
+  } = searchState;
 
   const indexersQuery = useSearchIndexersQuery();
   const searchMutation = useManualSearchMutation();
   const grabMutation = useGrabSearchResultMutation();
 
+  const processed = useSearchData(results, {
+    ...filters,
+    ...sort,
+  });
+
   useEffect(() => {
     if (!indexersQuery.data || indexersQuery.data.instances.length === 0) {
-      setSelectedIndexers({});
+      actions.setSelectedIndexers({});
       return;
     }
 
-    setSelectedIndexers((current) => {
+    actions.setSelectedIndexers((current) => {
       if (Object.keys(current).length > 0) {
         return current;
       }
@@ -85,122 +77,37 @@ export const SearchClient = () => {
       }
       return initial;
     });
-  }, [indexersQuery.data]);
-
-  const processed = useMemo(() => {
-    const minSeeders = parseNumberInput(minSeedersInput);
-    const maxAgeHours = parseNumberInput(maxAgeInput);
-
-    const filtered = results.filter((result) => {
-      if (hideRejected && result.rejected) {
-        return false;
-      }
-      if (protocolFilter !== "all" && result.protocol !== protocolFilter) {
-        return false;
-      }
-      if (minSeeders !== null && (result.seeders ?? 0) < minSeeders) {
-        return false;
-      }
-      if (maxAgeHours !== null) {
-        const age = getAgeHours(result);
-        if (age === null || age > maxAgeHours) {
-          return false;
-        }
-      }
-      return true;
-    });
-
-    const sorted = [...filtered].sort((a, b) => {
-      const comparison = compareBySortKey(sortKey, a, b);
-      if (comparison !== 0) {
-        return sortDirection === "asc" ? comparison : -comparison;
-      }
-
-      const seedFallback = compareBySortKey("seeders", a, b);
-      if (seedFallback !== 0) {
-        return sortDirection === "asc" ? seedFallback : -seedFallback;
-      }
-
-      const publishFallback = compareBySortKey("publishDate", a, b);
-      return sortDirection === "asc" ? publishFallback : -publishFallback;
-    });
-
-    return {
-      results: sorted,
-      hidden: results.length - filtered.length,
-      minSeeders,
-      maxAgeHours,
-    };
-  }, [
-    results,
-    hideRejected,
-    protocolFilter,
-    minSeedersInput,
-    maxAgeInput,
-    sortKey,
-    sortDirection,
-  ]);
-
-  const filtersActive =
-    hideRejected ||
-    protocolFilter !== "all" ||
-    processed.minSeeders !== null ||
-    processed.maxAgeHours !== null;
-
-  const handleToggleIndexer = (instanceId: string, indexerId: number) => {
-    setSelectedIndexers((current) => {
-      const existing = new Set(current[instanceId] ?? []);
-      if (existing.has(indexerId)) {
-        existing.delete(indexerId);
-      } else {
-        existing.add(indexerId);
-      }
-      const next = { ...current, [instanceId]: Array.from(existing) };
-      setValidationError(null);
-      return next;
-    });
-  };
-
-  const handleToggleAll = (instanceId: string, ids: number[]) => {
-    setSelectedIndexers((current) => {
-      const existing = new Set(current[instanceId] ?? []);
-      const everySelected = ids.every((id) => existing.has(id));
-      const nextIds = everySelected ? [] : ids;
-      const next = { ...current, [instanceId]: nextIds };
-      setValidationError(null);
-      return next;
-    });
-  };
+  }, [indexersQuery.data, actions]);
 
   const handleSearch = () => {
     if (!query.trim()) {
-      setValidationError("Enter a search query first.");
-      setFeedback(null);
+      actions.setValidationError("Enter a search query first.");
+      actions.setFeedback(null);
       return;
     }
 
-    const filters = buildFilters(selectedIndexers);
-    if (filters.length === 0) {
-      setValidationError("Select at least one indexer to search against.");
-      setFeedback(null);
+    const filterPayload = buildFilters(selectedIndexers);
+    if (filterPayload.length === 0) {
+      actions.setValidationError("Select at least one indexer to search against.");
+      actions.setFeedback(null);
       return;
     }
 
-    setValidationError(null);
-    setFeedback(null);
+    actions.setValidationError(null);
+    actions.setFeedback(null);
 
     searchMutation.mutate(
       {
         query: query.trim(),
         type: searchType,
-        filters,
+        filters: filterPayload,
       },
       {
         onSuccess: (data) => {
-          setHasSearched(true);
+          actions.setHasSearched(true);
           setResults(data.aggregated);
           const total = data.totalCount;
-          setFeedback({
+          actions.setFeedback({
             type: "success",
             message:
               total > 0
@@ -211,7 +118,7 @@ export const SearchClient = () => {
         onError: (error) => {
           const message =
             error instanceof Error ? error.message : "Search failed";
-          setFeedback({ type: "error", message });
+          actions.setFeedback({ type: "error", message });
         },
       },
     );
@@ -224,76 +131,24 @@ export const SearchClient = () => {
     }
   };
 
-  const deriveGrabErrorMessage = (error: unknown): string => {
-    if (error instanceof ApiError) {
-      const payload = error.payload;
-      if (payload && typeof payload === "object") {
-        const record = payload as Record<string, unknown>;
-        const primary =
-          typeof record.message === "string" ? record.message.trim() : "";
-        const secondary =
-          typeof record.description === "string"
-            ? record.description.trim()
-            : "";
-
-        const errors = record.errors as Record<string, unknown> | undefined;
-        const fieldMessages: string[] = [];
-        if (errors && typeof errors === "object") {
-          for (const value of Object.values(errors)) {
-            if (Array.isArray(value)) {
-              for (const entry of value) {
-                if (typeof entry === "string" && entry.trim().length > 0) {
-                  fieldMessages.push(entry.trim());
-                }
-              }
-            }
-          }
-        }
-
-        const combined = [primary, secondary, ...fieldMessages].filter(
-          (entry) => entry.length > 0,
-        );
-        if (combined.length > 0) {
-          const friendly = interpretGrabError(combined.join(" "));
-          return friendly ?? combined.join(" ");
-        }
-      } else if (typeof payload === "string" && payload.trim().length > 0) {
-        const friendly = interpretGrabError(payload);
-        return friendly ?? payload.trim();
-      }
-
-      if (error.message) {
-        const friendly = interpretGrabError(error.message);
-        return friendly ?? error.message;
-      }
-    }
-
-    if (error instanceof Error && error.message) {
-      const friendly = interpretGrabError(error.message);
-      return friendly ?? error.message;
-    }
-
-    return "Failed to send release to the download client.";
-  };
-
   const handleGrab = async (result: SearchResult) => {
     const rowKey = `${result.instanceId}:${result.indexerId}:${result.id}`;
-    setGrabbingKey(rowKey);
-    setFeedback(null);
+    actions.setGrabbingKey(rowKey);
+    actions.setFeedback(null);
     try {
       await grabMutation.mutateAsync({
         instanceId: result.instanceId,
         result,
       });
-      setFeedback({
+      actions.setFeedback({
         type: "success",
         message: `Sent "${result.title}" to the download client.`,
       });
     } catch (error) {
       const message = deriveGrabErrorMessage(error);
-      setFeedback({ type: "error", message });
+      actions.setFeedback({ type: "error", message });
     } finally {
-      setGrabbingKey(null);
+      actions.setGrabbingKey(null);
     }
   };
 
@@ -301,7 +156,7 @@ export const SearchClient = () => {
     async (result: SearchResult) => {
       const link = result.magnetUrl ?? result.downloadUrl ?? result.link;
       if (!link) {
-        setFeedback({
+        actions.setFeedback({
           type: "error",
           message:
             "No copyable magnet or download link is available for this release.",
@@ -311,17 +166,17 @@ export const SearchClient = () => {
 
       try {
         await navigator.clipboard.writeText(link);
-        setFeedback({ type: "success", message: "Copied link to clipboard." });
+        actions.setFeedback({ type: "success", message: "Copied link to clipboard." });
       } catch (error) {
         const message =
           error instanceof Error ? error.message : "Clipboard copy failed.";
-        setFeedback({
+        actions.setFeedback({
           type: "error",
           message: `Unable to copy link: ${message}`,
         });
       }
     },
-    [setFeedback],
+    [actions],
   );
 
   const handleOpenInfo = useCallback(
@@ -329,27 +184,18 @@ export const SearchClient = () => {
       const target =
         result.infoUrl ?? result.link ?? result.downloadUrl ?? result.magnetUrl;
       if (!target) {
-        setFeedback({
+        actions.setFeedback({
           type: "error",
           message: "This release did not provide a public info link.",
         });
         return;
       }
       if (!safeOpenUrl(target)) {
-        setFeedback({ type: "error", message: "Invalid or unsafe URL." });
+        actions.setFeedback({ type: "error", message: "Invalid or unsafe URL." });
       }
     },
-    [setFeedback],
+    [actions],
   );
-
-  const resetFilters = useCallback(() => {
-    setProtocolFilter("all");
-    setMinSeedersInput("");
-    setMaxAgeInput("");
-    setHideRejected(false);
-    setSortKey("seeders");
-    setSortDirection("desc");
-  }, []);
 
   if (indexersQuery.isLoading) {
     return (
@@ -376,7 +222,7 @@ export const SearchClient = () => {
     ? "Submit a manual search to see results across your indexers."
     : results.length === 0
       ? "No results returned from your indexers for that query."
-      : filtersActive
+      : processed.filtersActive
         ? "No results match the current filters. Adjust them to see more releases."
         : "No results to display.";
 
@@ -439,8 +285,8 @@ export const SearchClient = () => {
                 query={query}
                 searchType={searchType}
                 isSearching={searchMutation.isPending}
-                onQueryChange={setQuery}
-                onSearchTypeChange={setSearchType}
+                onQueryChange={actions.setQuery}
+                onSearchTypeChange={actions.setSearchType}
                 onSubmit={handleSubmit}
               />
 
@@ -448,28 +294,28 @@ export const SearchClient = () => {
                 <IndexerSelector
                   indexersData={indexersQuery.data}
                   selectedIndexers={selectedIndexers}
-                  onToggleIndexer={handleToggleIndexer}
-                  onToggleAll={handleToggleAll}
+                  onToggleIndexer={actions.handleToggleIndexer}
+                  onToggleAll={actions.handleToggleAll}
                 />
               )}
 
               <FilterControls
-                protocolFilter={protocolFilter}
-                minSeedersInput={minSeedersInput}
-                maxAgeInput={maxAgeInput}
-                hideRejected={hideRejected}
-                onProtocolFilterChange={setProtocolFilter}
-                onMinSeedersChange={setMinSeedersInput}
-                onMaxAgeChange={setMaxAgeInput}
-                onHideRejectedToggle={() => setHideRejected((value) => !value)}
-                onReset={resetFilters}
+                protocolFilter={filters.protocolFilter}
+                minSeedersInput={filters.minSeedersInput}
+                maxAgeInput={filters.maxAgeInput}
+                hideRejected={filters.hideRejected}
+                onProtocolFilterChange={actions.setProtocolFilter}
+                onMinSeedersChange={actions.setMinSeedersInput}
+                onMaxAgeChange={actions.setMaxAgeInput}
+                onHideRejectedToggle={() => actions.setHideRejected((value) => !value)}
+                onReset={actions.resetFilters}
               />
 
               <SortControls
-                sortKey={sortKey}
-                sortDirection={sortDirection}
-                onSortKeyChange={setSortKey}
-                onSortDirectionChange={setSortDirection}
+                sortKey={sort.sortKey}
+                sortDirection={sort.sortDirection}
+                onSortKeyChange={actions.setSortKey}
+                onSortDirectionChange={actions.setSortDirection}
               />
             </CardContent>
           </Card>
@@ -479,7 +325,7 @@ export const SearchClient = () => {
               displayedCount={processed.results.length}
               totalCount={results.length}
               hiddenCount={processed.hidden}
-              filtersActive={filtersActive}
+              filtersActive={processed.filtersActive}
             />
           )}
 
