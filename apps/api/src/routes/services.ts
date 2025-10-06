@@ -6,6 +6,10 @@ import type {
   FastifyRequest,
 } from "fastify";
 import { z } from "zod";
+import { testServiceConnection } from "../lib/services/connection-tester.js";
+import { formatServiceInstance } from "../lib/services/service-formatter.js";
+import { upsertTags, updateInstanceTags } from "../lib/services/tag-manager.js";
+import { buildUpdateData } from "../lib/services/update-builder.js";
 
 const servicePayloadSchema = z.object({
   label: z.string().min(1).max(120),
@@ -66,23 +70,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
       orderBy: { createdAt: "asc" },
     });
 
-    const formatted = instances.map((instance) => ({
-      id: instance.id,
-      service: instance.service.toLowerCase(),
-      label: instance.label,
-      baseUrl: instance.baseUrl,
-      enabled: instance.enabled,
-      isDefault: instance.isDefault,
-      createdAt: instance.createdAt,
-      updatedAt: instance.updatedAt,
-      hasApiKey: Boolean(instance.encryptedApiKey),
-      defaultQualityProfileId: instance.defaultQualityProfileId,
-      defaultLanguageProfileId: instance.defaultLanguageProfileId,
-      defaultRootFolderPath: instance.defaultRootFolderPath,
-      defaultSeasonFolder: instance.defaultSeasonFolder,
-      tags: instance.tags.map(({ tag }) => ({ id: tag.id, name: tag.name })),
-    }));
-
+    const formatted = instances.map(formatServiceInstance);
     return reply.send({ services: formatted });
   });
 
@@ -111,18 +99,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
       });
     }
 
-    const tagRecords = await Promise.all(
-      tags.map(async (name) => {
-        const tag = await app.prisma.serviceTag.upsert({
-          where: { userId_name: { userId: user.id, name } },
-          update: {},
-          create: { userId: user.id, name },
-        });
-        return {
-          tagId: tag.id,
-        };
-      }),
-    );
+    const tagRecords = await upsertTags(app.prisma, user.id, tags);
 
     const created = await app.prisma.serviceInstance.create({
       data: {
@@ -146,22 +123,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
     });
 
     return reply.status(201).send({
-      service: {
-        id: created.id,
-        service: created.service.toLowerCase(),
-        label: created.label,
-        baseUrl: created.baseUrl,
-        enabled: created.enabled,
-        isDefault: created.isDefault,
-        createdAt: created.createdAt,
-        updatedAt: created.updatedAt,
-        hasApiKey: true,
-        defaultQualityProfileId: created.defaultQualityProfileId,
-        defaultLanguageProfileId: created.defaultLanguageProfileId,
-        defaultRootFolderPath: created.defaultRootFolderPath,
-        defaultSeasonFolder: created.defaultSeasonFolder,
-        tags: created.tags.map(({ tag }) => ({ id: tag.id, name: tag.name })),
-      },
+      service: formatServiceInstance(created),
     });
   });
 
@@ -188,54 +150,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
       return reply.status(404).send({ error: "Service instance not found" });
     }
 
-    const updateData: {
-      label?: string;
-      baseUrl?: string;
-      enabled?: boolean;
-      isDefault?: boolean;
-      apiKey?: string;
-    } = {};
-    if (payload.label) {
-      updateData.label = payload.label;
-    }
-    if (payload.baseUrl) {
-      updateData.baseUrl = payload.baseUrl;
-    }
-    if (typeof payload.enabled === "boolean") {
-      updateData.enabled = payload.enabled;
-    }
-    if (typeof payload.isDefault === "boolean") {
-      updateData.isDefault = payload.isDefault;
-    }
-    if (payload.service) {
-      updateData.service = payload.service.toUpperCase() as ServiceType;
-    }
-    if (payload.apiKey) {
-      const encrypted = app.encryptor.encrypt(payload.apiKey);
-      updateData.encryptedApiKey = encrypted.value;
-      updateData.encryptionIv = encrypted.iv;
-    }
-
-    if (
-      Object.prototype.hasOwnProperty.call(payload, "defaultQualityProfileId")
-    ) {
-      updateData.defaultQualityProfileId =
-        payload.defaultQualityProfileId ?? null;
-    }
-    if (
-      Object.prototype.hasOwnProperty.call(payload, "defaultLanguageProfileId")
-    ) {
-      updateData.defaultLanguageProfileId =
-        payload.defaultLanguageProfileId ?? null;
-    }
-    if (
-      Object.prototype.hasOwnProperty.call(payload, "defaultRootFolderPath")
-    ) {
-      updateData.defaultRootFolderPath = payload.defaultRootFolderPath ?? null;
-    }
-    if (Object.prototype.hasOwnProperty.call(payload, "defaultSeasonFolder")) {
-      updateData.defaultSeasonFolder = payload.defaultSeasonFolder ?? null;
-    }
+    const updateData = buildUpdateData(payload, app.encryptor);
 
     if (payload.isDefault === true || payload.service) {
       const targetService = (
@@ -256,22 +171,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
     });
 
     if (payload.tags) {
-      await app.prisma.serviceInstanceTag.deleteMany({
-        where: { instanceId: id },
-      });
-      const connections = await Promise.all(
-        payload.tags.map(async (name) => {
-          const tag = await app.prisma.serviceTag.upsert({
-            where: { userId_name: { userId: user.id, name } },
-            update: {},
-            create: { userId: user.id, name },
-          });
-          return { instanceId: id, tagId: tag.id };
-        }),
-      );
-      if (connections.length > 0) {
-        await app.prisma.serviceInstanceTag.createMany({ data: connections });
-      }
+      await updateInstanceTags(app.prisma, user.id, id, payload.tags);
     }
 
     const fresh = await app.prisma.serviceInstance.findUnique({
@@ -279,23 +179,12 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
       include: { tags: { include: { tag: true } } },
     });
 
+    if (!fresh) {
+      return reply.status(404).send({ error: "Service instance not found" });
+    }
+
     return reply.send({
-      service: {
-        id: fresh?.id,
-        service: fresh?.service.toLowerCase(),
-        label: fresh?.label,
-        baseUrl: fresh?.baseUrl,
-        enabled: fresh?.enabled,
-        isDefault: fresh?.isDefault,
-        createdAt: fresh?.createdAt,
-        updatedAt: fresh?.updatedAt,
-        hasApiKey: Boolean(fresh?.encryptedApiKey),
-        defaultQualityProfileId: fresh?.defaultQualityProfileId,
-        defaultLanguageProfileId: fresh?.defaultLanguageProfileId,
-        defaultRootFolderPath: fresh?.defaultRootFolderPath,
-        defaultSeasonFolder: fresh?.defaultSeasonFolder,
-        tags: fresh?.tags.map(({ tag }) => ({ id: tag.id, name: tag.name })),
-      },
+      service: formatServiceInstance(fresh),
     });
   });
 
@@ -385,8 +274,10 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
       apiKey?: unknown;
       service?: unknown;
     };
-    const baseUrl = payload?.baseUrl;
-    const apiKey = payload?.apiKey;
+    const baseUrl =
+      typeof payload?.baseUrl === "string" ? payload.baseUrl : undefined;
+    const apiKey =
+      typeof payload?.apiKey === "string" ? payload.apiKey : undefined;
     const service =
       typeof payload?.service === "string"
         ? payload.service.toLowerCase()
@@ -406,102 +297,8 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
       });
     }
 
-    try {
-      const apiPath =
-        service === "prowlarr"
-          ? "/api/v1/system/status"
-          : "/api/v3/system/status";
-      const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
-      const testUrl = `${normalizedBaseUrl}${apiPath}`;
-
-      if (service === "prowlarr") {
-        const pingUrl = `${normalizedBaseUrl}/ping`;
-        try {
-          const pingResponse = await fetch(pingUrl, {
-            method: "GET",
-            signal: AbortSignal.timeout(3000),
-          });
-
-          if (!pingResponse.ok && pingResponse.status !== 404) {
-            return reply.status(200).send({
-              success: false,
-              error: `Ping failed: HTTP ${pingResponse.status}`,
-              details: `Cannot reach ${pingUrl}. Check the base URL is correct.`,
-            });
-          }
-        } catch (pingError: unknown) {
-          return reply.status(200).send({
-            success: false,
-            error: "Cannot reach Prowlarr",
-            details: `Ping to ${pingUrl} failed. ${pingError.message ?? "Check if Prowlarr is running and the base URL is correct."}`,
-          });
-        }
-      }
-
-      const response = await fetch(testUrl, {
-        headers: {
-          "X-Api-Key": apiKey,
-          Accept: "application/json",
-        },
-        signal: AbortSignal.timeout(5000),
-      });
-
-      if (!response.ok) {
-        const contentType = response.headers.get("content-type");
-        let details = "Check your base URL and API key";
-
-        if (contentType?.includes("text/html")) {
-          details =
-            "Received HTML instead of JSON. The base URL or API path might be incorrect. Ensure base URL includes the full path (e.g., http://localhost:7878 not http://localhost:7878/radarr)";
-        }
-
-        return reply.status(200).send({
-          success: false,
-          error: `HTTP ${response.status}: ${response.statusText}`,
-          details,
-        });
-      }
-
-      const contentType = response.headers.get("content-type");
-      if (!contentType?.includes("application/json")) {
-        return reply.status(200).send({
-          success: false,
-          error: "Invalid response format",
-          details:
-            "Received HTML instead of JSON. Check if the base URL is correct and includes any URL base if configured in the service (e.g., http://localhost:7878 for root, or http://localhost/radarr if using a URL base).",
-        });
-      }
-
-      const data = await response.json();
-      const version = data.version ?? "unknown";
-
-      return reply.send({
-        success: true,
-        message: `Successfully connected to ${service.charAt(0).toUpperCase() + service.slice(1)}`,
-        version,
-      });
-    } catch (error: unknown) {
-      let errorMessage = "Connection failed";
-      let details = "Unknown error";
-
-      if (error.name === "TimeoutError" || error.code === "ETIMEDOUT") {
-        errorMessage = "Connection timeout";
-        details =
-          "The service did not respond within 5 seconds. Check if the service is running and the base URL is correct.";
-      } else if (error.code === "ECONNREFUSED") {
-        errorMessage = "Connection refused";
-        details =
-          "Could not connect to the service. Verify the base URL and that the service is running.";
-      } else if (error.message) {
-        details = error.message;
-      }
-
-      return reply.status(200).send({
-        success: false,
-        error: errorMessage,
-        details,
-      });
-    }
+    const result = await testServiceConnection(baseUrl, apiKey, service);
+    return reply.status(200).send(result);
   });
 
   app.post("/services/:id/test", async (request, reply) => {
@@ -526,105 +323,12 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
     });
     const service = instance.service.toLowerCase();
 
-    try {
-      const apiPath =
-        service === "prowlarr"
-          ? "/api/v1/system/status"
-          : "/api/v3/system/status";
-
-      // Normalize base URL - remove trailing slash if present
-      const normalizedBaseUrl = instance.baseUrl.replace(/\/$/, "");
-      const testUrl = `${normalizedBaseUrl}${apiPath}`;
-
-      // Try ping endpoint first for Prowlarr to verify basic connectivity
-      if (service === "prowlarr") {
-        const pingUrl = `${normalizedBaseUrl}/ping`;
-        try {
-          const pingResponse = await fetch(pingUrl, {
-            method: "GET",
-            signal: AbortSignal.timeout(3000),
-          });
-
-          if (!pingResponse.ok && pingResponse.status !== 404) {
-            return reply.status(200).send({
-              success: false,
-              error: `Ping failed: HTTP ${pingResponse.status}`,
-              details: `Cannot reach ${pingUrl}. Check the base URL is correct.`,
-            });
-          }
-        } catch (pingError: unknown) {
-          return reply.status(200).send({
-            success: false,
-            error: "Cannot reach Prowlarr",
-            details: `Ping to ${pingUrl} failed. ${pingError.message ?? "Check if Prowlarr is running and the base URL is correct."}`,
-          });
-        }
-      }
-
-      const response = await fetch(testUrl, {
-        headers: {
-          "X-Api-Key": apiKey,
-          Accept: "application/json",
-        },
-        signal: AbortSignal.timeout(5000),
-      });
-
-      if (!response.ok) {
-        const contentType = response.headers.get("content-type");
-        let details = "Check your base URL and API key";
-
-        if (contentType?.includes("text/html")) {
-          details =
-            "Received HTML instead of JSON. The base URL or API path might be incorrect. Ensure base URL includes the full path (e.g., http://localhost:7878 not http://localhost:7878/radarr)";
-        }
-
-        return reply.status(200).send({
-          success: false,
-          error: `HTTP ${response.status}: ${response.statusText}`,
-          details,
-        });
-      }
-
-      const contentType = response.headers.get("content-type");
-      if (!contentType?.includes("application/json")) {
-        return reply.status(200).send({
-          success: false,
-          error: "Invalid response format",
-          details:
-            "Received HTML instead of JSON. Check if the base URL is correct and includes any URL base if configured in the service (e.g., http://localhost:7878 for root, or http://localhost/radarr if using a URL base).",
-        });
-      }
-
-      const data = await response.json();
-      const version = data.version ?? "unknown";
-
-      return reply.send({
-        success: true,
-        message: `Successfully connected to ${service.charAt(0).toUpperCase() + service.slice(1)}`,
-        version,
-      });
-    } catch (error: unknown) {
-      let errorMessage = "Connection failed";
-      let details = "Unknown error";
-
-      if (error.name === "TimeoutError" || error.code === "ETIMEDOUT") {
-        errorMessage = "Connection timeout";
-        details =
-          "The service did not respond within 5 seconds. Check if the service is running and the base URL is correct.";
-      } else if (error.code === "ECONNREFUSED") {
-        errorMessage = "Connection refused";
-        details =
-          "Could not connect to the service. Verify the base URL and that the service is running.";
-      } else if (error.message) {
-        details = error.message;
-      }
-
-      return reply.status(200).send({
-        success: false,
-        error: errorMessage,
-        details,
-      });
-    }
+    const result = await testServiceConnection(
+      instance.baseUrl,
+      apiKey,
+      service,
+    );
+    return reply.status(200).send(result);
   });
 
   done();
