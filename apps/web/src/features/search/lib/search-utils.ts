@@ -204,3 +204,62 @@ export const interpretGrabError = (message: string): string | null => {
   }
   return null;
 };
+
+/**
+ * Derives a grab error message from an API error object
+ * @param error - Error object from API
+ * @returns User-friendly error message
+ */
+export const deriveGrabErrorMessage = (error: unknown): string => {
+  // Check if it's an ApiError with payload
+  if (error && typeof error === "object" && "payload" in error) {
+    const payload = (error as any).payload;
+
+    if (payload && typeof payload === "object") {
+      const record = payload as Record<string, unknown>;
+      const primary =
+        typeof record.message === "string" ? record.message.trim() : "";
+      const secondary =
+        typeof record.description === "string"
+          ? record.description.trim()
+          : "";
+
+      const errors = record.errors as Record<string, unknown> | undefined;
+      const fieldMessages: string[] = [];
+      if (errors && typeof errors === "object") {
+        for (const value of Object.values(errors)) {
+          if (Array.isArray(value)) {
+            for (const entry of value) {
+              if (typeof entry === "string" && entry.trim().length > 0) {
+                fieldMessages.push(entry.trim());
+              }
+            }
+          }
+        }
+      }
+
+      const combined = [primary, secondary, ...fieldMessages].filter(
+        (entry) => entry.length > 0,
+      );
+      if (combined.length > 0) {
+        const friendly = interpretGrabError(combined.join(" "));
+        return friendly ?? combined.join(" ");
+      }
+    } else if (typeof payload === "string" && payload.trim().length > 0) {
+      const friendly = interpretGrabError(payload);
+      return friendly ?? payload.trim();
+    }
+
+    if ("message" in error && typeof (error as any).message === "string") {
+      const friendly = interpretGrabError((error as any).message);
+      return friendly ?? (error as any).message;
+    }
+  }
+
+  if (error instanceof Error && error.message) {
+    const friendly = interpretGrabError(error.message);
+    return friendly ?? error.message;
+  }
+
+  return "Failed to send release to the download client.";
+};
