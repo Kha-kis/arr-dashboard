@@ -273,7 +273,7 @@ export const SeasonBreakdownModal = ({
                       <div className="p-3 rounded-lg bg-warning/10 border border-warning/30">
                         <p className="text-xs text-warning">
                           {missing} episode{missing === 1 ? "" : "s"} missing.
-                          Click "Search" to look for{" "}
+                          Click &ldquo;Search&rdquo; to look for{" "}
                           {missing === 1 ? "it" : "them"}.
                         </p>
                       </div>
