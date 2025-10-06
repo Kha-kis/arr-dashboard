@@ -13,7 +13,7 @@ import {
   fetchProwlarrStatistics,
   fetchRadarrStatistics,
   fetchSonarrStatistics,
-} from "../dashboard-statistics";
+} from "../../lib/statistics/dashboard-statistics.js";
 
 /**
  * Statistics-related routes for the dashboard
