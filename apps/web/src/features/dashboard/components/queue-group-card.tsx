@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * Component for rendering grouped queue items with expandable details
  */

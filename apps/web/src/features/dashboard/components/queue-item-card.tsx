@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * Component for rendering individual queue items as cards
  */
