@@ -1,8 +1,16 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const SESSION_COOKIE_NAME = process.env.NEXT_PUBLIC_SESSION_COOKIE_NAME ?? "arr_session";
-const PUBLIC_PATHS = new Set(["/", "/login", "/setup", "/favicon.ico", "/robots.txt", "/sitemap.xml"]);
+const SESSION_COOKIE_NAME =
+  process.env.NEXT_PUBLIC_SESSION_COOKIE_NAME ?? "arr_session";
+const PUBLIC_PATHS = new Set([
+  "/",
+  "/login",
+  "/setup",
+  "/favicon.ico",
+  "/robots.txt",
+  "/sitemap.xml",
+]);
 const PUBLIC_FILE = /\.(.*)$/;
 
 const isPublicPath = (pathname: string) => {
@@ -25,7 +33,8 @@ export function middleware(request: NextRequest) {
   if (pathname === "/login") {
     if (hasSession) {
       const redirectTo = request.nextUrl.searchParams.get("redirectTo");
-      const target = redirectTo && redirectTo.startsWith("/") ? redirectTo : "/dashboard";
+      const target =
+        redirectTo && redirectTo.startsWith("/") ? redirectTo : "/dashboard";
       const url = request.nextUrl.clone();
       url.pathname = target;
       url.search = "";
@@ -41,7 +50,10 @@ export function middleware(request: NextRequest) {
   if (!hasSession) {
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
-    loginUrl.searchParams.set("redirectTo", `${pathname}${request.nextUrl.search}`);
+    loginUrl.searchParams.set(
+      "redirectTo",
+      `${pathname}${request.nextUrl.search}`,
+    );
     loginUrl.hash = "";
     return NextResponse.redirect(loginUrl);
   }
@@ -50,5 +62,7 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|assets|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|css|js|woff2?)).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|assets|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|css|js|woff2?)).*)",
+  ],
 };

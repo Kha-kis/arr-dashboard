@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from "crypto";
+import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from "node:crypto";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
@@ -22,7 +22,9 @@ export class Encryptor {
 
 	encrypt(plaintext: string): EncryptResult {
 		const iv = randomBytes(IV_LENGTH);
-		const cipher = createCipheriv(ALGORITHM, this.key, iv, { authTagLength: AUTH_TAG_LENGTH });
+		const cipher = createCipheriv(ALGORITHM, this.key, iv, {
+			authTagLength: AUTH_TAG_LENGTH,
+		});
 		const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
 		const authTag = cipher.getAuthTag();
 		const payload = Buffer.concat([encrypted, authTag]).toString("base64");
@@ -39,7 +41,9 @@ export class Encryptor {
 		const cipherText = buffer.slice(0, buffer.length - AUTH_TAG_LENGTH);
 		const authTag = buffer.slice(buffer.length - AUTH_TAG_LENGTH);
 
-		const decipher = createDecipheriv(ALGORITHM, this.key, iv, { authTagLength: AUTH_TAG_LENGTH });
+		const decipher = createDecipheriv(ALGORITHM, this.key, iv, {
+			authTagLength: AUTH_TAG_LENGTH,
+		});
 		decipher.setAuthTag(authTag);
 
 		const decrypted = Buffer.concat([decipher.update(cipherText), decipher.final()]);

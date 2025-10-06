@@ -33,7 +33,9 @@ export type CreateServicePayload = {
 
 export type UpdateServicePayload = Partial<CreateServicePayload>;
 
-export async function createService(payload: CreateServicePayload): Promise<ServiceInstanceSummary> {
+export async function createService(
+  payload: CreateServicePayload,
+): Promise<ServiceInstanceSummary> {
   const data = await apiRequest<ServiceResponse>("/api/services", {
     method: "POST",
     json: payload,
@@ -66,7 +68,9 @@ export type TestConnectionResponse = {
   details?: string;
 };
 
-export async function testServiceConnection(id: string): Promise<TestConnectionResponse> {
+export async function testServiceConnection(
+  id: string,
+): Promise<TestConnectionResponse> {
   return await apiRequest<TestConnectionResponse>(`/api/services/${id}/test`, {
     method: "POST",
   });
@@ -75,10 +79,13 @@ export async function testServiceConnection(id: string): Promise<TestConnectionR
 export async function testConnectionBeforeAdd(
   baseUrl: string,
   apiKey: string,
-  service: "sonarr" | "radarr" | "prowlarr"
+  service: "sonarr" | "radarr" | "prowlarr",
 ): Promise<TestConnectionResponse> {
-  return await apiRequest<TestConnectionResponse>("/api/services/test-connection", {
-    method: "POST",
-    json: { baseUrl, apiKey, service },
-  });
+  return await apiRequest<TestConnectionResponse>(
+    "/api/services/test-connection",
+    {
+      method: "POST",
+      json: { baseUrl, apiKey, service },
+    },
+  );
 }

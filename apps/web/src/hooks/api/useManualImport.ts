@@ -2,8 +2,14 @@
 
 import { useCallback, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ManualImportCandidate, ManualImportSubmission } from "@arr/shared";
-import { fetchManualImportCandidates, submitManualImport } from "../../lib/api-client/dashboard";
+import type {
+  ManualImportCandidate,
+  ManualImportSubmission,
+} from "@arr/shared";
+import {
+  fetchManualImportCandidates,
+  submitManualImport,
+} from "../../lib/api-client/dashboard";
 
 const manualImportKey = (params: {
   instanceId: string;
@@ -32,19 +38,22 @@ export const useManualImportQuery = (params: {
   enabled?: boolean;
 }) => {
   const queryKey = useMemo(
-    () => manualImportKey({
-      instanceId: params.instanceId,
-      service: params.service,
-      downloadId: params.downloadId,
-      folder: params.folder,
-      filterExistingFiles: true,
-    }),
+    () =>
+      manualImportKey({
+        instanceId: params.instanceId,
+        service: params.service,
+        downloadId: params.downloadId,
+        folder: params.folder,
+        filterExistingFiles: true,
+      }),
     [params.instanceId, params.service, params.downloadId, params.folder],
   );
 
   const query = useQuery({
     queryKey,
-    enabled: Boolean(params.instanceId && params.service && params.enabled !== false),
+    enabled: Boolean(
+      params.instanceId && params.service && params.enabled !== false,
+    ),
     queryFn: () =>
       fetchManualImportCandidates({
         instanceId: params.instanceId,
@@ -68,11 +77,13 @@ export const useManualImportMutation = () => {
   const mutation = useMutation<void, Error, ManualImportSubmission>({
     mutationFn: (payload) => submitManualImport(payload),
     onSuccess: (_data, variables) => {
-      queryClient.invalidateQueries({ queryKey: manualImportKey({
-        instanceId: variables.instanceId,
-        service: variables.service,
-        downloadId: variables.files[0]?.downloadId,
-      }) });
+      queryClient.invalidateQueries({
+        queryKey: manualImportKey({
+          instanceId: variables.instanceId,
+          service: variables.service,
+          downloadId: variables.files[0]?.downloadId,
+        }),
+      });
     },
   });
 
@@ -80,9 +91,14 @@ export const useManualImportMutation = () => {
 };
 
 export const useManualImportHelpers = () => {
-  const findInitialSelection = useCallback((candidates: ManualImportCandidate[]): ManualImportCandidate | undefined => {
-    return candidates.find((candidate) => Boolean(candidate.downloadId));
-  }, []);
+  const findInitialSelection = useCallback(
+    (
+      candidates: ManualImportCandidate[],
+    ): ManualImportCandidate | undefined => {
+      return candidates.find((candidate) => Boolean(candidate.downloadId));
+    },
+    [],
+  );
 
   return {
     findInitialSelection,

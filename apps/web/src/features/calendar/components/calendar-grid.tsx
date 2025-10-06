@@ -1,4 +1,4 @@
-﻿'use client';
+﻿"use client";
 
 import type { CalendarItem } from "@arr/shared";
 import { cn } from "../../../lib/utils";
@@ -14,12 +14,14 @@ interface CalendarGridProps {
 
 const formatDateKey = (date: Date): string => {
   const iso = date.toISOString();
-  const index = iso.indexOf('T');
+  const index = iso.indexOf("T");
   return index === -1 ? iso : iso.slice(0, index);
 };
 
 const isSameDay = (a: Date | null, b: Date): boolean => {
-  if (!a) {return false;}
+  if (!a) {
+    return false;
+  }
   return (
     a.getUTCFullYear() === b.getUTCFullYear() &&
     a.getUTCMonth() === b.getUTCMonth() &&
@@ -28,12 +30,20 @@ const isSameDay = (a: Date | null, b: Date): boolean => {
 };
 
 const isSameMonth = (a: Date, b: Date): boolean =>
-  a.getUTCFullYear() === b.getUTCFullYear() && a.getUTCMonth() === b.getUTCMonth();
+  a.getUTCFullYear() === b.getUTCFullYear() &&
+  a.getUTCMonth() === b.getUTCMonth();
 
 const formatDayNumber = (date: Date): string =>
   new Intl.DateTimeFormat(undefined, { day: "numeric" }).format(date);
 
-export const CalendarGrid = ({ days, currentMonth, selectedDate, onSelectDate, eventsByDate, className }: CalendarGridProps) => (
+export const CalendarGrid = ({
+  days,
+  currentMonth,
+  selectedDate,
+  onSelectDate,
+  eventsByDate,
+  className,
+}: CalendarGridProps) => (
   <div className={cn("grid grid-cols-7 gap-2", className)}>
     {days.map((date) => {
       const key = formatDateKey(date);
@@ -72,15 +82,21 @@ export const CalendarGrid = ({ days, currentMonth, selectedDate, onSelectDate, e
                 className="truncate rounded-md bg-white/15 px-2 py-1 text-xs text-white/80"
               >
                 <span className="font-medium text-white">
-                  {event.service === "sonarr" ? event.seriesTitle ?? event.title : event.movieTitle ?? event.title}
+                  {event.service === "sonarr"
+                    ? (event.seriesTitle ?? event.title)
+                    : (event.movieTitle ?? event.title)}
                 </span>
                 {event.type === "episode" && event.episodeTitle && (
-                  <span className="ml-1 text-white/60">{event.episodeTitle}</span>
+                  <span className="ml-1 text-white/60">
+                    {event.episodeTitle}
+                  </span>
                 )}
               </div>
             ))}
             {events.length > 3 && (
-              <p className="text-[11px] text-white/60">+{events.length - 3} more</p>
+              <p className="text-[11px] text-white/60">
+                +{events.length - 3} more
+              </p>
             )}
           </div>
         </button>

@@ -21,9 +21,16 @@ const toneClasses: Record<MessageTone, string> = {
   error: "bg-red-500/20 text-red-100",
 };
 
-export const QueueIssueBadge = ({ summary, size = "md" }: QueueIssueBadgeProps) => {
+export const QueueIssueBadge = ({
+  summary,
+  size = "md",
+}: QueueIssueBadgeProps) => {
   if (!summary.length) {
-    return <span className="text-xs uppercase tracking-wide text-white/40">No issues</span>;
+    return (
+      <span className="text-xs uppercase tracking-wide text-white/40">
+        No issues
+      </span>
+    );
   }
 
   const total = summary.reduce((acc, item) => acc + item.count, 0);

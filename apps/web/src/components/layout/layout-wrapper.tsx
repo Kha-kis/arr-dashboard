@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { usePathname } from 'next/navigation';
-import { Sidebar } from './sidebar';
-import { TopBar } from './topbar';
+import { usePathname } from "next/navigation";
+import { Sidebar } from "./sidebar";
+import { TopBar } from "./topbar";
 
-const ROUTES_WITHOUT_LAYOUT = new Set(['/login', '/setup']);
+const ROUTES_WITHOUT_LAYOUT = new Set(["/login", "/setup"]);
 
 interface LayoutWrapperProps {
   readonly children: React.ReactNode;
@@ -23,7 +23,7 @@ export const LayoutWrapper = ({ children }: LayoutWrapperProps) => {
       {/* Premium gradient mesh background */}
       <div
         className="fixed inset-0 pointer-events-none opacity-40"
-        style={{ background: 'var(--gradient-mesh)' }}
+        style={{ background: "var(--gradient-mesh)" }}
       />
 
       <Sidebar />

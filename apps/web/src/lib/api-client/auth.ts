@@ -13,7 +13,10 @@ export async function fetchCurrentUser(): Promise<CurrentUser | null> {
   }
 }
 
-export async function login(payload: { identifier: string; password: string }): Promise<CurrentUser> {
+export async function login(payload: {
+  identifier: string;
+  password: string;
+}): Promise<CurrentUser> {
   const data = await apiRequest<CurrentUserResponse>("/auth/login", {
     method: "POST",
     json: payload,
@@ -38,7 +41,9 @@ interface UpdateAccountResponse {
   user: CurrentUser;
 }
 
-export async function updateAccount(payload: UpdateAccountPayload): Promise<UpdateAccountResponse> {
+export async function updateAccount(
+  payload: UpdateAccountPayload,
+): Promise<UpdateAccountResponse> {
   return await apiRequest<UpdateAccountResponse>("/auth/account", {
     method: "PATCH",
     json: payload,
@@ -51,7 +56,9 @@ interface SetupRequiredResponse {
 
 export async function checkSetupRequired(): Promise<boolean> {
   try {
-    const data = await apiRequest<SetupRequiredResponse>("/auth/setup-required");
+    const data = await apiRequest<SetupRequiredResponse>(
+      "/auth/setup-required",
+    );
     return data.required;
   } catch (error) {
     // If the endpoint fails, assume setup is not required

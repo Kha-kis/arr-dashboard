@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -6,7 +6,13 @@ import { apiRequest } from "../../../lib/api-client/base";
 import type { CurrentUser } from "@arr/shared";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../../../components/ui/card";
 import { Alert, AlertDescription } from "../../../components/ui";
 import { cn } from "../../../lib/utils";
 
@@ -82,9 +88,12 @@ export const SetupClient = () => {
   return (
     <Card className="w-full max-w-md">
       <CardHeader>
-        <CardTitle className="text-2xl">Welcome to Arr Control Center</CardTitle>
+        <CardTitle className="text-2xl">
+          Welcome to Arr Control Center
+        </CardTitle>
         <CardDescription>
-          Create your admin account to get started. This will be the first user with full administrative access.
+          Create your admin account to get started. This will be the first user
+          with full administrative access.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -94,7 +103,9 @@ export const SetupClient = () => {
             <Input
               type="email"
               value={formState.email}
-              onChange={(e) => setFormState(prev => ({ ...prev, email: e.target.value }))}
+              onChange={(e) =>
+                setFormState((prev) => ({ ...prev, email: e.target.value }))
+              }
               placeholder="admin@example.com"
               required
               autoFocus
@@ -105,7 +116,9 @@ export const SetupClient = () => {
             <Input
               type="text"
               value={formState.username}
-              onChange={(e) => setFormState(prev => ({ ...prev, username: e.target.value }))}
+              onChange={(e) =>
+                setFormState((prev) => ({ ...prev, username: e.target.value }))
+              }
               placeholder="admin"
               required
               minLength={3}
@@ -117,7 +130,9 @@ export const SetupClient = () => {
             <Input
               type="password"
               value={formState.password}
-              onChange={(e) => setFormState(prev => ({ ...prev, password: e.target.value }))}
+              onChange={(e) =>
+                setFormState((prev) => ({ ...prev, password: e.target.value }))
+              }
               placeholder="At least 8 characters"
               required
               minLength={8}
@@ -127,11 +142,18 @@ export const SetupClient = () => {
             </p>
           </div>
           <div className="space-y-2">
-            <label className="text-xs uppercase text-white/60">Confirm Password</label>
+            <label className="text-xs uppercase text-white/60">
+              Confirm Password
+            </label>
             <Input
               type="password"
               value={formState.confirmPassword}
-              onChange={(e) => setFormState(prev => ({ ...prev, confirmPassword: e.target.value }))}
+              onChange={(e) =>
+                setFormState((prev) => ({
+                  ...prev,
+                  confirmPassword: e.target.value,
+                }))
+              }
               placeholder="Re-enter password"
               required
             />
@@ -141,11 +163,7 @@ export const SetupClient = () => {
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
-          <Button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full"
-          >
+          <Button type="submit" disabled={isSubmitting} className="w-full">
             {isSubmitting ? "Creating account..." : "Create Admin Account"}
           </Button>
         </form>

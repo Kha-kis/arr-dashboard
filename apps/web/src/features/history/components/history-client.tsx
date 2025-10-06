@@ -1,4 +1,4 @@
-﻿'use client';
+﻿"use client";
 
 import { useMemo, useState } from "react";
 import type { HistoryItem } from "@arr/shared";
@@ -28,11 +28,15 @@ export const HistoryClient = () => {
     startDate: startDate || undefined,
     endDate: endDate || undefined,
   });
-  const allAggregated = useMemo(() => data?.aggregated ?? [], [data?.aggregated]);
+  const allAggregated = useMemo(
+    () => data?.aggregated ?? [],
+    [data?.aggregated],
+  );
   const instances = useMemo(() => data?.instances ?? [], [data?.instances]);
 
   const [searchTerm, setSearchTerm] = useState("");
-  const [serviceFilter, setServiceFilter] = useState<(typeof SERVICE_FILTERS)[number]["value"]>("all");
+  const [serviceFilter, setServiceFilter] =
+    useState<(typeof SERVICE_FILTERS)[number]["value"]>("all");
   const [instanceFilter, setInstanceFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [groupByDownload, setGroupByDownload] = useState(true);
@@ -42,7 +46,10 @@ export const HistoryClient = () => {
     for (const entry of instances) {
       map.set(entry.instanceId, entry.instanceName);
     }
-    return Array.from(map.entries()).map(([value, label]) => ({ value, label }));
+    return Array.from(map.entries()).map(([value, label]) => ({
+      value,
+      label,
+    }));
   }, [instances]);
 
   const statusOptions = useMemo(() => {
@@ -54,7 +61,10 @@ export const HistoryClient = () => {
         seen.set(value, rawLabel);
       }
     }
-    return Array.from(seen.entries()).map(([value, label]) => ({ value, label }));
+    return Array.from(seen.entries()).map(([value, label]) => ({
+      value,
+      label,
+    }));
   }, [allAggregated]);
 
   const filteredItems = useMemo(() => {
@@ -106,7 +116,12 @@ export const HistoryClient = () => {
   }, [filteredItems]);
 
   const filtersActive =
-    serviceFilter !== "all" || instanceFilter !== "all" || statusFilter !== "all" || searchTerm.trim().length > 0 || startDate || endDate;
+    serviceFilter !== "all" ||
+    instanceFilter !== "all" ||
+    statusFilter !== "all" ||
+    searchTerm.trim().length > 0 ||
+    startDate ||
+    endDate;
 
   const emptyMessage =
     filteredItems.length === 0 && allAggregated.length > 0
@@ -116,7 +131,10 @@ export const HistoryClient = () => {
   // Group items by downloadId when enabled
   const groupedItems = useMemo(() => {
     if (!groupByDownload) {
-      return filteredItems.map(item => ({ items: [item], downloadId: item.downloadId }));
+      return filteredItems.map((item) => ({
+        items: [item],
+        downloadId: item.downloadId,
+      }));
     }
 
     const groups = new Map<string, HistoryItem[]>();
@@ -135,7 +153,10 @@ export const HistoryClient = () => {
       }
 
       // Group RSS feed sync events by instance + rounded timestamp (within 5 minutes)
-      if (item.service === "prowlarr" && (eventType.includes("rss") || eventType === "indexerrss")) {
+      if (
+        item.service === "prowlarr" &&
+        (eventType.includes("rss") || eventType === "indexerrss")
+      ) {
         const date = item.date ? new Date(item.date) : new Date();
         const roundedTime = Math.floor(date.getTime() / (5 * 60 * 1000)); // Round to 5 min intervals
         const rssKey = `rss-${item.instanceId}-${roundedTime}`;
@@ -153,7 +174,8 @@ export const HistoryClient = () => {
         let groupKey = "";
 
         // Check if downloadId looks valid (not just a number which is likely an event ID)
-        const isValidDownloadId = downloadId && downloadId.length > 10 && !/^\d+$/.test(downloadId);
+        const isValidDownloadId =
+          downloadId && downloadId.length > 10 && !/^\d+$/.test(downloadId);
 
         if (isValidDownloadId) {
           // Use downloadId for grabbed/imported events
@@ -206,17 +228,21 @@ export const HistoryClient = () => {
         if (!firstInGroup) continue;
 
         // Check if it's the same episode/movie and instance
-        const sameEpisode = item.service === "sonarr" &&
-                           item.episodeId === firstInGroup.episodeId &&
-                           item.instanceId === firstInGroup.instanceId;
-        const sameMovie = item.service === "radarr" &&
-                         item.movieId === firstInGroup.movieId &&
-                         item.instanceId === firstInGroup.instanceId;
+        const sameEpisode =
+          item.service === "sonarr" &&
+          item.episodeId === firstInGroup.episodeId &&
+          item.instanceId === firstInGroup.instanceId;
+        const sameMovie =
+          item.service === "radarr" &&
+          item.movieId === firstInGroup.movieId &&
+          item.instanceId === firstInGroup.instanceId;
 
         if (sameEpisode || sameMovie) {
           // Check if within 2 hour time window of any event in the group
-          const withinTimeWindow = groupItems.some(groupItem => {
-            const groupDate = groupItem.date ? new Date(groupItem.date).getTime() : 0;
+          const withinTimeWindow = groupItems.some((groupItem) => {
+            const groupDate = groupItem.date
+              ? new Date(groupItem.date).getTime()
+              : 0;
             const deleteDate = date.getTime();
             return Math.abs(groupDate - deleteDate) < 2 * 60 * 60 * 1000; // 2 hours
           });
@@ -247,7 +273,11 @@ export const HistoryClient = () => {
     }));
 
     // Add ungrouped items as single-item groups
-    const ungroupedGroups = ungrouped.map(item => ({ items: [item], downloadId: undefined, groupType: undefined }));
+    const ungroupedGroups = ungrouped.map((item) => ({
+      items: [item],
+      downloadId: undefined,
+      groupType: undefined,
+    }));
 
     // Sort by most recent event in each group
     const allGroups = [...grouped, ...ungroupedGroups].sort((a, b) => {
@@ -276,12 +306,18 @@ export const HistoryClient = () => {
       <header className="space-y-2">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
-            <p className="text-sm font-medium uppercase text-white/60">Activity</p>
-            <h1 className="text-3xl font-semibold text-white">Download History</h1>
+            <p className="text-sm font-medium uppercase text-white/60">
+              Activity
+            </p>
+            <h1 className="text-3xl font-semibold text-white">
+              Download History
+            </h1>
           </div>
           <div className="flex items-center gap-3 text-sm text-white/60">
             <span>
-              Tracking {allAggregated.length} event{allAggregated.length === 1 ? "" : "s"} across {instances.length} instance{instances.length === 1 ? "" : "s"}
+              Tracking {allAggregated.length} event
+              {allAggregated.length === 1 ? "" : "s"} across {instances.length}{" "}
+              instance{instances.length === 1 ? "" : "s"}
             </span>
             <Button variant="ghost" onClick={() => void refetch()}>
               Refresh
@@ -289,28 +325,36 @@ export const HistoryClient = () => {
           </div>
         </div>
         <p className="text-sm text-white/60">
-          Review recent activity from all configured Sonarr, Radarr, and Prowlarr instances.
+          Review recent activity from all configured Sonarr, Radarr, and
+          Prowlarr instances.
         </p>
       </header>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {SERVICE_FILTERS.filter((item) => item.value !== "all").map((service) => {
-          const count = serviceSummary.get(service.value) ?? 0;
-          return (
-            <div
-              key={service.value}
-              className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80"
-            >
-              <p className="text-xs uppercase text-white/50">{service.label}</p>
-              <p className="text-2xl font-semibold text-white">{count}</p>
-            </div>
-          );
-        })}
+        {SERVICE_FILTERS.filter((item) => item.value !== "all").map(
+          (service) => {
+            const count = serviceSummary.get(service.value) ?? 0;
+            return (
+              <div
+                key={service.value}
+                className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80"
+              >
+                <p className="text-xs uppercase text-white/50">
+                  {service.label}
+                </p>
+                <p className="text-2xl font-semibold text-white">{count}</p>
+              </div>
+            );
+          },
+        )}
       </div>
 
       <div className="flex flex-wrap items-end gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-3">
         <div className="flex min-w-[140px] flex-col gap-1 text-sm text-white/80">
-          <label className="text-xs uppercase text-white/50" htmlFor="history-start-date">
+          <label
+            className="text-xs uppercase text-white/50"
+            htmlFor="history-start-date"
+          >
             From Date
           </label>
           <Input
@@ -325,7 +369,10 @@ export const HistoryClient = () => {
           />
         </div>
         <div className="flex min-w-[140px] flex-col gap-1 text-sm text-white/80">
-          <label className="text-xs uppercase text-white/50" htmlFor="history-end-date">
+          <label
+            className="text-xs uppercase text-white/50"
+            htmlFor="history-end-date"
+          >
             To Date
           </label>
           <Input
@@ -340,7 +387,10 @@ export const HistoryClient = () => {
           />
         </div>
         <div className="flex min-w-[200px] flex-col gap-1 text-sm text-white/80">
-          <label className="text-xs uppercase text-white/50" htmlFor="history-search">
+          <label
+            className="text-xs uppercase text-white/50"
+            htmlFor="history-search"
+          >
             Search
           </label>
           <Input
@@ -352,13 +402,20 @@ export const HistoryClient = () => {
           />
         </div>
         <div className="flex min-w-[160px] flex-col gap-1 text-sm text-white/80">
-          <label className="text-xs uppercase text-white/50" htmlFor="history-service-filter">
+          <label
+            className="text-xs uppercase text-white/50"
+            htmlFor="history-service-filter"
+          >
             Service
           </label>
           <select
             id="history-service-filter"
             value={serviceFilter}
-            onChange={(event) => setServiceFilter(event.target.value as (typeof SERVICE_FILTERS)[number]["value"])}
+            onChange={(event) =>
+              setServiceFilter(
+                event.target.value as (typeof SERVICE_FILTERS)[number]["value"],
+              )
+            }
             className="rounded-md border border-white/20 bg-white/10 px-2 py-1 text-sm text-white focus:border-sky-400 focus:outline-none [&>option]:bg-slate-800 [&>option]:text-white"
           >
             {SERVICE_FILTERS.map((option) => (
@@ -369,7 +426,10 @@ export const HistoryClient = () => {
           </select>
         </div>
         <div className="flex min-w-[200px] flex-col gap-1 text-sm text-white/80">
-          <label className="text-xs uppercase text-white/50" htmlFor="history-instance-filter">
+          <label
+            className="text-xs uppercase text-white/50"
+            htmlFor="history-instance-filter"
+          >
             Instance
           </label>
           <select
@@ -387,7 +447,10 @@ export const HistoryClient = () => {
           </select>
         </div>
         <div className="flex min-w-[200px] flex-col gap-1 text-sm text-white/80">
-          <label className="text-xs uppercase text-white/50" htmlFor="history-status-filter">
+          <label
+            className="text-xs uppercase text-white/50"
+            htmlFor="history-status-filter"
+          >
             Status
           </label>
           <select
@@ -417,15 +480,19 @@ export const HistoryClient = () => {
             />
             Group by download
           </label>
-          <Button variant="ghost" onClick={() => {
-            setSearchTerm("");
-            setServiceFilter("all");
-            setInstanceFilter("all");
-            setStatusFilter("all");
-            setStartDate("");
-            setEndDate("");
-            setPage(1);
-          }} disabled={!filtersActive}>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setSearchTerm("");
+              setServiceFilter("all");
+              setInstanceFilter("all");
+              setStatusFilter("all");
+              setStartDate("");
+              setEndDate("");
+              setPage(1);
+            }}
+            disabled={!filtersActive}
+          >
             Reset
           </Button>
         </div>
@@ -456,7 +523,9 @@ export const HistoryClient = () => {
             </Button>
           </div>
           <div className="flex items-center gap-2">
-            <label htmlFor="page-size" className="text-xs">Per page:</label>
+            <label htmlFor="page-size" className="text-xs">
+              Per page:
+            </label>
             <select
               id="page-size"
               value={pageSize}
@@ -491,7 +560,9 @@ export const HistoryClient = () => {
 
       {error && (
         <Alert variant="danger">
-          <AlertDescription>Unable to load history data. Please refresh and try again.</AlertDescription>
+          <AlertDescription>
+            Unable to load history data. Please refresh and try again.
+          </AlertDescription>
         </Alert>
       )}
 

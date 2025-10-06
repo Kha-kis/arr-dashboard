@@ -650,7 +650,7 @@ const testProwlarrIndexer = async (
 	const definitionResponse = await fetcher(`/api/v1/indexer/${indexerId}`);
 	const definition = await definitionResponse.json();
 
-	await fetcher(`/api/v1/indexer/test`, {
+	await fetcher("/api/v1/indexer/test", {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify({ ...definition, id: indexerId }),
@@ -679,11 +679,11 @@ const grabProwlarrRelease = async (
 	};
 
 	if (typeof normalizedPayload.id === "string") {
-		delete normalizedPayload.id;
+		normalizedPayload.id = undefined;
 	}
 
 	if (normalizedPayload.downloadClientId === null) {
-		delete normalizedPayload.downloadClientId;
+		normalizedPayload.downloadClientId = undefined;
 	}
 
 	await fetcher("/api/v1/search", {
@@ -725,8 +725,11 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 			});
 		}
 
-		const results: Array<{ instanceId: string; instanceName: string; data: ProwlarrIndexer[] }> =
-			[];
+		const results: Array<{
+			instanceId: string;
+			instanceName: string;
+			data: ProwlarrIndexer[];
+		}> = [];
 
 		const aggregated: ProwlarrIndexer[] = [];
 
@@ -839,7 +842,10 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 	});
 
 	app.put("/search/indexers/:instanceId/:indexerId", async (request, reply) => {
-		const params = request.params as { instanceId?: string; indexerId?: string };
+		const params = request.params as {
+			instanceId?: string;
+			indexerId?: string;
+		};
 		const paramInstanceId = params.instanceId ?? "";
 		const indexerIdValue = Number(params.indexerId);
 
@@ -925,7 +931,10 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 		if (!request.currentUser) {
 			reply.status(401);
 
-			return searchIndexerTestResponseSchema.parse({ success: false, message: "Unauthorized" });
+			return searchIndexerTestResponseSchema.parse({
+				success: false,
+				message: "Unauthorized",
+			});
 		}
 
 		const payload = searchIndexerTestRequestSchema.parse(request.body ?? {});
@@ -1003,12 +1012,20 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 
 		const instanceMap = new Map(instances.map((instance) => [instance.id, instance] as const));
 
-		const filters: Array<{ instanceId: string; indexerIds?: number[]; categories?: number[] }> =
+		const filters: Array<{
+			instanceId: string;
+			indexerIds?: number[];
+			categories?: number[];
+		}> =
 			payload.filters && payload.filters.length > 0
 				? payload.filters
 				: instances.map((instance) => ({ instanceId: instance.id }));
 
-		const results: Array<{ instanceId: string; instanceName: string; data: SearchResult[] }> = [];
+		const results: Array<{
+			instanceId: string;
+			instanceName: string;
+			data: SearchResult[];
+		}> = [];
 
 		const aggregated: SearchResult[] = [];
 
@@ -1077,7 +1094,12 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 		const userId = request.currentUser.id;
 
 		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { userId, enabled: true, service: "PROWLARR", id: payload.instanceId },
+			where: {
+				userId,
+				enabled: true,
+				service: "PROWLARR",
+				id: payload.instanceId,
+			},
 		});
 
 		if (!instance) {

@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -30,7 +30,9 @@ export const TopBar = () => {
     <header className="flex items-center justify-between border-b border-border/30 bg-bg/80 backdrop-blur-xl px-6 py-4 shadow-sm">
       <div>
         <h2 className="text-lg font-semibold text-fg">Arr Control Center</h2>
-        <p className="text-sm text-fg-muted">Manage Sonarr, Radarr, and Prowlarr from one place.</p>
+        <p className="text-sm text-fg-muted">
+          Manage Sonarr, Radarr, and Prowlarr from one place.
+        </p>
       </div>
       <div className="flex items-center gap-3">
         {showLoginCta ? (
@@ -43,7 +45,9 @@ export const TopBar = () => {
               <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
 
               <div className="relative h-9 w-9 rounded-full bg-gradient-to-br from-primary to-accent text-white flex items-center justify-center shadow-md ring-1 ring-white/10">
-                <span className="text-sm font-semibold">{user.username[0].toUpperCase()}</span>
+                <span className="text-sm font-semibold">
+                  {user.username[0].toUpperCase()}
+                </span>
               </div>
               <div className="text-right relative">
                 <p className="text-sm font-medium text-fg">{user.username}</p>
@@ -69,4 +73,3 @@ export const TopBar = () => {
     </header>
   );
 };
-

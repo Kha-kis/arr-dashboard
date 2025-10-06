@@ -45,32 +45,40 @@ const manualImportBaseCandidateSchema = z.object({
   movieFileId: z.number().optional(),
 });
 
-export const manualImportSonarrCandidateSchema = manualImportBaseCandidateSchema.extend({
-  service: z.literal("sonarr"),
-  series: manualImportSeriesSchema.optional(),
-  seasonNumber: z.number().optional(),
-  episodes: z.array(manualImportEpisodeSchema).optional(),
-});
+export const manualImportSonarrCandidateSchema =
+  manualImportBaseCandidateSchema.extend({
+    service: z.literal("sonarr"),
+    series: manualImportSeriesSchema.optional(),
+    seasonNumber: z.number().optional(),
+    episodes: z.array(manualImportEpisodeSchema).optional(),
+  });
 
-export const manualImportRadarrCandidateSchema = manualImportBaseCandidateSchema.extend({
-  service: z.literal("radarr"),
-  movie: manualImportMovieSchema.optional(),
-});
+export const manualImportRadarrCandidateSchema =
+  manualImportBaseCandidateSchema.extend({
+    service: z.literal("radarr"),
+    movie: manualImportMovieSchema.optional(),
+  });
 
 export const manualImportCandidateSchema = z.union([
   manualImportSonarrCandidateSchema,
   manualImportRadarrCandidateSchema,
 ]);
 
-export const manualImportCandidateListSchema = z.array(manualImportCandidateSchema);
+export const manualImportCandidateListSchema = z.array(
+  manualImportCandidateSchema,
+);
 
 export type ManualImportRejection = z.infer<typeof manualImportRejectionSchema>;
 export type ManualImportEpisode = z.infer<typeof manualImportEpisodeSchema>;
 export type ManualImportSeries = z.infer<typeof manualImportSeriesSchema>;
 export type ManualImportMovie = z.infer<typeof manualImportMovieSchema>;
 export type ManualImportCandidate = z.infer<typeof manualImportCandidateSchema>;
-export type ManualImportCandidateSonarr = z.infer<typeof manualImportSonarrCandidateSchema>;
-export type ManualImportCandidateRadarr = z.infer<typeof manualImportRadarrCandidateSchema>;
+export type ManualImportCandidateSonarr = z.infer<
+  typeof manualImportSonarrCandidateSchema
+>;
+export type ManualImportCandidateRadarr = z.infer<
+  typeof manualImportRadarrCandidateSchema
+>;
 
 export const manualImportSubmissionFileSchema = z.object({
   path: z.string(),
@@ -95,8 +103,12 @@ export const manualImportSubmissionSchema = z.object({
   files: z.array(manualImportSubmissionFileSchema).min(1),
 });
 
-export type ManualImportSubmissionFile = z.infer<typeof manualImportSubmissionFileSchema>;
-export type ManualImportSubmission = z.infer<typeof manualImportSubmissionSchema>;
+export type ManualImportSubmissionFile = z.infer<
+  typeof manualImportSubmissionFileSchema
+>;
+export type ManualImportSubmission = z.infer<
+  typeof manualImportSubmissionSchema
+>;
 
 export const manualImportFetchQuerySchema = z.object({
   downloadId: z.string().optional(),
@@ -106,4 +118,6 @@ export const manualImportFetchQuerySchema = z.object({
   filterExistingFiles: z.coerce.boolean().optional(),
 });
 
-export type ManualImportFetchQuery = z.infer<typeof manualImportFetchQuerySchema>;
+export type ManualImportFetchQuery = z.infer<
+  typeof manualImportFetchQuerySchema
+>;

@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ServiceTagResponse } from "@arr/shared";
@@ -20,7 +20,9 @@ export const useCreateTagMutation = () => {
     mutationFn: createTag,
     onSuccess: (tag) => {
       queryClient.setQueryData<ServiceTagResponse[]>(TAGS_QUERY_KEY, (prev) => {
-        if (!prev) {return [tag];}
+        if (!prev) {
+          return [tag];
+        }
         return [...prev, tag];
       });
     },
@@ -34,7 +36,9 @@ export const useDeleteTagMutation = () => {
     mutationFn: deleteTag,
     onSuccess: (_, id) => {
       queryClient.setQueryData<ServiceTagResponse[]>(TAGS_QUERY_KEY, (prev) => {
-        if (!prev) {return prev;}
+        if (!prev) {
+          return prev;
+        }
         return prev.filter((tag) => tag.id !== id);
       });
     },

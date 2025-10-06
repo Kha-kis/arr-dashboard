@@ -1,21 +1,34 @@
 ﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { ProwlarrIndexer, ProwlarrIndexerDetails, ProwlarrIndexerField } from "@arr/shared";
+import type {
+  ProwlarrIndexer,
+  ProwlarrIndexerDetails,
+  ProwlarrIndexerField,
+} from "@arr/shared";
 import {
-    useSearchIndexersQuery,
+  useSearchIndexersQuery,
   useTestIndexerMutation,
   useIndexerDetailsQuery,
   useUpdateIndexerMutation,
 } from "../../../hooks/api/useSearch";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "../../../components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "../../../components/ui/card";
 import { Alert, AlertDescription, Skeleton } from "../../../components/ui";
 import { cn } from "../../../lib/utils";
 
 const numberFormatter = new Intl.NumberFormat();
-const percentFormatter = new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 });
+const percentFormatter = new Intl.NumberFormat(undefined, {
+  style: "percent",
+  maximumFractionDigits: 1,
+});
 
 const computeStats = (indexers: ProwlarrIndexer[]) => {
   const enabled = indexers.filter((indexer) => indexer.enable);
@@ -55,7 +68,10 @@ const isApiKeyRelatedField = (field: ProwlarrIndexerField): boolean => {
     return true;
   }
 
-  if ((name.includes("about") && name.includes("api")) || (label.includes("about") && label.includes("api"))) {
+  if (
+    (name.includes("about") && name.includes("api")) ||
+    (label.includes("about") && label.includes("api"))
+  ) {
     return true;
   }
 
@@ -63,53 +79,45 @@ const isApiKeyRelatedField = (field: ProwlarrIndexerField): boolean => {
 };
 
 const formatFieldValue = (name: string, value: unknown) => {
-
   if (value === null || typeof value === "undefined") {
-
     return "Not configured";
-
   }
-
-
 
   if (typeof value === "boolean") {
-
     return value ? "Enabled" : "Disabled";
-
   }
-
-
 
   if (Array.isArray(value)) {
-
     return value
 
-      .map((entry) => (typeof entry === "string" ? entry : typeof entry === "number" ? entry.toString() : undefined))
+      .map((entry) =>
+        typeof entry === "string"
+          ? entry
+          : typeof entry === "number"
+            ? entry.toString()
+            : undefined,
+      )
 
       .filter(Boolean)
 
       .join(", ");
-
   }
-
-
 
   if (typeof value === "object") {
-
     return Object.values(value as Record<string, unknown>)
 
-      .map((entry) => (typeof entry === "string" || typeof entry === "number" ? entry.toString() : undefined))
+      .map((entry) =>
+        typeof entry === "string" || typeof entry === "number"
+          ? entry.toString()
+          : undefined,
+      )
 
       .filter(Boolean)
 
       .join(", ");
-
   }
 
-
-
   return String(value);
-
 };
 
 const formatSuccessRate = (value?: number) => {
@@ -153,7 +161,6 @@ const DetailStat = ({ label, value }: { label: string; value?: string }) => {
   );
 };
 
-
 const IndexerDetailsPanel = ({
   instanceId,
   indexer,
@@ -163,13 +170,18 @@ const IndexerDetailsPanel = ({
   instanceId: string;
   indexer: ProwlarrIndexer;
   expanded: boolean;
-  onUpdate: (instanceId: string, indexerId: number, payload: ProwlarrIndexerDetails) => Promise<ProwlarrIndexerDetails>;
+  onUpdate: (
+    instanceId: string,
+    indexerId: number,
+    payload: ProwlarrIndexerDetails,
+  ) => Promise<ProwlarrIndexerDetails>;
 }) => {
-  const { data, isLoading, error, refetch, isFetching } = useIndexerDetailsQuery(
-    expanded ? instanceId : null,
-    expanded ? indexer.id : null,
-    expanded,
-  );
+  const { data, isLoading, error, refetch, isFetching } =
+    useIndexerDetailsQuery(
+      expanded ? instanceId : null,
+      expanded ? indexer.id : null,
+      expanded,
+    );
 
   const detail = data ?? {
     id: indexer.id,
@@ -191,7 +203,9 @@ const IndexerDetailsPanel = ({
   const [isSaving, setIsSaving] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [formEnable, setFormEnable] = useState(initialEnable);
-  const [formPriority, setFormPriority] = useState<number | undefined>(initialPriority ?? undefined);
+  const [formPriority, setFormPriority] = useState<number | undefined>(
+    initialPriority ?? undefined,
+  );
 
   useEffect(() => {
     if (!expanded) {
@@ -214,9 +228,16 @@ const IndexerDetailsPanel = ({
   const stats = detail.stats;
   const capabilities = detail.capabilities ?? indexer.capabilities ?? [];
   const categories = detail.categories ?? [];
-  const fields = (detail.fields ?? []).filter((field) => !isApiKeyRelatedField(field));
+  const fields = (detail.fields ?? []).filter(
+    (field) => !isApiKeyRelatedField(field),
+  );
 
-  const detailError = error instanceof Error ? error.message : error ? "Unable to load indexer settings." : null;
+  const detailError =
+    error instanceof Error
+      ? error.message
+      : error
+        ? "Unable to load indexer settings."
+        : null;
   const isLoadingState = isLoading && !detail.fields && !stats;
 
   const handleStartEditing = () => {
@@ -252,7 +273,8 @@ const IndexerDetailsPanel = ({
       await onUpdate(instanceId, indexer.id, payload);
       setIsEditing(false);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to update indexer";
+      const message =
+        err instanceof Error ? err.message : "Failed to update indexer";
       setLocalError(message);
     } finally {
       setIsSaving(false);
@@ -272,7 +294,11 @@ const IndexerDetailsPanel = ({
             <div className="flex flex-col gap-3">
               <span>{detailError}</span>
               <div>
-                <Button variant="ghost" onClick={() => void refetch()} disabled={isFetching}>
+                <Button
+                  variant="ghost"
+                  onClick={() => void refetch()}
+                  disabled={isFetching}
+                >
                   {isFetching ? "Retrying…" : "Retry"}
                 </Button>
               </div>
@@ -283,27 +309,54 @@ const IndexerDetailsPanel = ({
         <>
           <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="grid flex-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              <DetailStat label="Implementation" value={detail.implementationName ?? "Unknown"} />
-              <DetailStat label="Protocol" value={protocolLabel(detail.protocol ?? indexer.protocol)} />
+              <DetailStat
+                label="Implementation"
+                value={detail.implementationName ?? "Unknown"}
+              />
+              <DetailStat
+                label="Protocol"
+                value={protocolLabel(detail.protocol ?? indexer.protocol)}
+              />
               <DetailStat
                 label="Priority"
-                value={typeof detail.priority === "number" ? detail.priority.toString() : detail.priority === 0 ? "0" : undefined}
+                value={
+                  typeof detail.priority === "number"
+                    ? detail.priority.toString()
+                    : detail.priority === 0
+                      ? "0"
+                      : undefined
+                }
               />
               <DetailStat
                 label="App profile"
-                value={typeof detail.appProfileId === "number" ? detail.appProfileId.toString() : "Default"}
+                value={
+                  typeof detail.appProfileId === "number"
+                    ? detail.appProfileId.toString()
+                    : "Default"
+                }
               />
               <DetailStat label="Privacy" value={detail.privacy ?? undefined} />
-              <DetailStat label="Language" value={detail.language ?? undefined} />
+              <DetailStat
+                label="Language"
+                value={detail.language ?? undefined}
+              />
             </div>
             <div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
               <div className="flex flex-wrap items-center gap-2">
-                <Button variant="ghost" onClick={() => void refetch()} disabled={isFetching}>
+                <Button
+                  variant="ghost"
+                  onClick={() => void refetch()}
+                  disabled={isFetching}
+                >
                   {isFetching ? "Refreshing�" : "Refresh details"}
                 </Button>
                 {isEditing ? (
                   <>
-                    <Button variant="ghost" onClick={handleCancelEditing} disabled={isSaving}>
+                    <Button
+                      variant="ghost"
+                      onClick={handleCancelEditing}
+                      disabled={isSaving}
+                    >
                       Cancel
                     </Button>
                     <Button onClick={handleSaveChanges} disabled={isSaving}>
@@ -316,7 +369,9 @@ const IndexerDetailsPanel = ({
                   </Button>
                 )}
               </div>
-              {localError ? <p className="text-sm text-red-300">{localError}</p> : null}
+              {localError ? (
+                <p className="text-sm text-red-300">{localError}</p>
+              ) : null}
             </div>
           </div>
 
@@ -332,10 +387,14 @@ const IndexerDetailsPanel = ({
                 <span>{formEnable ? "Enabled" : "Disabled"}</span>
               </label>
               <div className="flex items-center gap-2">
-                <span className="text-xs uppercase tracking-widest text-white/40">Priority</span>
+                <span className="text-xs uppercase tracking-widest text-white/40">
+                  Priority
+                </span>
                 <Input
                   type="number"
-                  value={formPriority === undefined ? "" : formPriority.toString()}
+                  value={
+                    formPriority === undefined ? "" : formPriority.toString()
+                  }
                   onChange={(event) => {
                     const raw = event.target.value;
                     if (raw.trim().length === 0) {
@@ -353,25 +412,43 @@ const IndexerDetailsPanel = ({
             </div>
           ) : (
             <p className="text-xs text-white/40">
-              Advanced configuration remains read-only here. Use the Prowlarr interface for additional changes.
+              Advanced configuration remains read-only here. Use the Prowlarr
+              interface for additional changes.
             </p>
           )}
 
           {stats ? (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <DetailStat label="Success rate" value={formatSuccessRate(stats.successRate)} />
-              <DetailStat label="Average response" value={formatResponseTime(stats.averageResponseTime)} />
-              <DetailStat label="Last check" value={formatDateTime(stats.lastCheck)} />
-              <DetailStat label="Last failure" value={formatDateTime(stats.lastFailure)} />
+              <DetailStat
+                label="Success rate"
+                value={formatSuccessRate(stats.successRate)}
+              />
+              <DetailStat
+                label="Average response"
+                value={formatResponseTime(stats.averageResponseTime)}
+              />
+              <DetailStat
+                label="Last check"
+                value={formatDateTime(stats.lastCheck)}
+              />
+              <DetailStat
+                label="Last failure"
+                value={formatDateTime(stats.lastFailure)}
+              />
             </div>
           ) : null}
 
           {capabilities.length > 0 ? (
             <div className="space-y-2">
-              <p className="text-xs uppercase tracking-widest text-white/40">Capabilities</p>
+              <p className="text-xs uppercase tracking-widest text-white/40">
+                Capabilities
+              </p>
               <div className="flex flex-wrap gap-2">
                 {capabilities.map((capability) => (
-                  <span key={capability} className="rounded-full border border-white/15 px-3 py-1 text-xs text-white/70">
+                  <span
+                    key={capability}
+                    className="rounded-full border border-white/15 px-3 py-1 text-xs text-white/70"
+                  >
                     {capability}
                   </span>
                 ))}
@@ -381,10 +458,15 @@ const IndexerDetailsPanel = ({
 
           {categories.length > 0 ? (
             <div className="space-y-2">
-              <p className="text-xs uppercase tracking-widest text-white/40">Categories</p>
+              <p className="text-xs uppercase tracking-widest text-white/40">
+                Categories
+              </p>
               <div className="flex flex-wrap gap-2">
                 {categories.map((category) => (
-                  <span key={category} className="rounded-full border border-white/15 px-3 py-1 text-xs text-white/70">
+                  <span
+                    key={category}
+                    className="rounded-full border border-white/15 px-3 py-1 text-xs text-white/70"
+                  >
                     {category}
                   </span>
                 ))}
@@ -394,14 +476,25 @@ const IndexerDetailsPanel = ({
 
           {fields.length > 0 ? (
             <div className="space-y-2">
-              <p className="text-xs uppercase tracking-widest text-white/40">Configuration</p>
+              <p className="text-xs uppercase tracking-widest text-white/40">
+                Configuration
+              </p>
               <div className="grid gap-3 sm:grid-cols-2">
                 {fields.slice(0, 10).map((field) => (
-                  <div key={field.name} className="rounded-lg border border-white/10 bg-white/5 p-3">
-                    <p className="text-xs uppercase text-white/40">{field.label ?? field.name}</p>
-                    <p className="mt-1 text-sm text-white">{formatFieldValue(field.name, field.value)}</p>
+                  <div
+                    key={field.name}
+                    className="rounded-lg border border-white/10 bg-white/5 p-3"
+                  >
+                    <p className="text-xs uppercase text-white/40">
+                      {field.label ?? field.name}
+                    </p>
+                    <p className="mt-1 text-sm text-white">
+                      {formatFieldValue(field.name, field.value)}
+                    </p>
                     {field.helpText ? (
-                      <p className="mt-1 text-xs text-white/40">{field.helpText}</p>
+                      <p className="mt-1 text-xs text-white/40">
+                        {field.helpText}
+                      </p>
                     ) : null}
                   </div>
                 ))}
@@ -426,7 +519,11 @@ const IndexerRow = ({
   indexer: ProwlarrIndexer;
   instanceId: string;
   onTest: (instanceId: string, indexerId: number) => void;
-  onUpdate: (instanceId: string, indexerId: number, payload: ProwlarrIndexerDetails) => Promise<ProwlarrIndexerDetails>;
+  onUpdate: (
+    instanceId: string,
+    indexerId: number,
+    payload: ProwlarrIndexerDetails,
+  ) => Promise<ProwlarrIndexerDetails>;
   testing: boolean;
   expanded: boolean;
   onToggleDetails: () => void;
@@ -443,7 +540,8 @@ const IndexerRow = ({
             <span>{indexer.enable ? "Enabled" : "Disabled"}</span>
             {indexer.supportsSearch ? <span>Search</span> : null}
             {indexer.supportsRss ? <span>RSS</span> : null}
-            {Array.isArray(indexer.capabilities) && indexer.capabilities.length > 0 ? (
+            {Array.isArray(indexer.capabilities) &&
+            indexer.capabilities.length > 0 ? (
               <span>
                 {indexer.capabilities.slice(0, 3).join(", ")}
                 {indexer.capabilities.length > 3 ? "…" : ""}
@@ -452,7 +550,11 @@ const IndexerRow = ({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="secondary" disabled={testing} onClick={() => onTest(instanceId, indexer.id)}>
+          <Button
+            variant="secondary"
+            disabled={testing}
+            onClick={() => onTest(instanceId, indexer.id)}
+          >
             {testing ? "Testing…" : "Test"}
           </Button>
           <Button variant="ghost" onClick={onToggleDetails}>
@@ -471,11 +573,15 @@ const IndexerRow = ({
 };
 
 export const IndexersClient = () => {
-  const { data, isLoading, error, refetch, isFetching } = useSearchIndexersQuery();
+  const { data, isLoading, error, refetch, isFetching } =
+    useSearchIndexersQuery();
   const testMutation = useTestIndexerMutation();
   const updateMutation = useUpdateIndexerMutation();
   const [testingKey, setTestingKey] = useState<string | null>(null);
-  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [feedback, setFeedback] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
 
   const aggregated = useMemo(() => data?.aggregated ?? [], [data?.aggregated]);
@@ -492,26 +598,39 @@ export const IndexersClient = () => {
     setFeedback(null);
     try {
       const result = await testMutation.mutateAsync({ instanceId, indexerId });
-      setFeedback({ type: "success", message: result.message ?? "Indexer test passed" });
+      setFeedback({
+        type: "success",
+        message: result.message ?? "Indexer test passed",
+      });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Indexer test failed";
+      const message =
+        err instanceof Error ? err.message : "Indexer test failed";
       setFeedback({ type: "error", message });
     } finally {
       setTestingKey(null);
     }
   };
 
-  const handleUpdate = async (updateInstanceId: string, indexerId: number, payload: ProwlarrIndexerDetails) => {
+  const handleUpdate = async (
+    updateInstanceId: string,
+    indexerId: number,
+    payload: ProwlarrIndexerDetails,
+  ) => {
     setFeedback(null);
     try {
-      const result = await updateMutation.mutateAsync({ instanceId: updateInstanceId, indexerId, indexer: payload });
+      const result = await updateMutation.mutateAsync({
+        instanceId: updateInstanceId,
+        indexerId,
+        indexer: payload,
+      });
       setFeedback({ type: "success", message: "Indexer changes saved" });
       void refetch();
       return result;
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to update indexer";
+      const message =
+        err instanceof Error ? err.message : "Failed to update indexer";
       setFeedback({ type: "error", message });
-      throw (err instanceof Error ? err : new Error(message));
+      throw err instanceof Error ? err : new Error(message);
     }
   };
 
@@ -532,20 +651,30 @@ export const IndexersClient = () => {
     <section className="flex flex-col gap-10">
       <header className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-sm font-medium uppercase text-white/60">Indexer management</p>
+          <p className="text-sm font-medium uppercase text-white/60">
+            Indexer management
+          </p>
           <h1 className="text-3xl font-semibold text-white">Indexers</h1>
           <p className="mt-2 text-sm text-white/60">
-            Review indexers from your configured Prowlarr instances, inspect their settings, and run connectivity tests.
+            Review indexers from your configured Prowlarr instances, inspect
+            their settings, and run connectivity tests.
           </p>
         </div>
-        <Button variant="ghost" onClick={() => void refetch()} disabled={isFetching}>
+        <Button
+          variant="ghost"
+          onClick={() => void refetch()}
+          disabled={isFetching}
+        >
           {isFetching ? "Refreshing…" : "Refresh"}
         </Button>
       </header>
 
       {error && (
         <Alert variant="danger">
-          <AlertDescription>Unable to load indexers. Double-check your Prowlarr settings and try again.</AlertDescription>
+          <AlertDescription>
+            Unable to load indexers. Double-check your Prowlarr settings and try
+            again.
+          </AlertDescription>
         </Alert>
       )}
 
@@ -558,14 +687,18 @@ export const IndexersClient = () => {
       {noInstances ? (
         <Card className="border-dashed border-white/20 bg-white/5">
           <CardHeader>
-            <CardTitle className="text-xl">No Prowlarr instances configured</CardTitle>
+            <CardTitle className="text-xl">
+              No Prowlarr instances configured
+            </CardTitle>
             <CardDescription>
-              Add a Prowlarr service in Settings to manage indexers from this dashboard.
+              Add a Prowlarr service in Settings to manage indexers from this
+              dashboard.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <p className="text-sm text-white/70">
-              Once a Prowlarr instance is enabled, its indexers will appear here automatically.
+              Once a Prowlarr instance is enabled, its indexers will appear here
+              automatically.
             </p>
           </CardContent>
         </Card>
@@ -575,25 +708,33 @@ export const IndexersClient = () => {
             <Card className="border-white/10 bg-white/5">
               <CardHeader className="pb-2">
                 <CardDescription>Total indexers</CardDescription>
-                <CardTitle className="text-2xl text-white">{numberFormatter.format(stats.total)}</CardTitle>
+                <CardTitle className="text-2xl text-white">
+                  {numberFormatter.format(stats.total)}
+                </CardTitle>
               </CardHeader>
             </Card>
             <Card className="border-white/10 bg-white/5">
               <CardHeader className="pb-2">
                 <CardDescription>Enabled</CardDescription>
-                <CardTitle className="text-2xl text-white">{numberFormatter.format(stats.enabled)}</CardTitle>
+                <CardTitle className="text-2xl text-white">
+                  {numberFormatter.format(stats.enabled)}
+                </CardTitle>
               </CardHeader>
             </Card>
             <Card className="border-white/10 bg-white/5">
               <CardHeader className="pb-2">
                 <CardDescription>Torrent</CardDescription>
-                <CardTitle className="text-2xl text-white">{numberFormatter.format(stats.torrent)}</CardTitle>
+                <CardTitle className="text-2xl text-white">
+                  {numberFormatter.format(stats.torrent)}
+                </CardTitle>
               </CardHeader>
             </Card>
             <Card className="border-white/10 bg-white/5">
               <CardHeader className="pb-2">
                 <CardDescription>Usenet</CardDescription>
-                <CardTitle className="text-2xl text-white">{numberFormatter.format(stats.usenet)}</CardTitle>
+                <CardTitle className="text-2xl text-white">
+                  {numberFormatter.format(stats.usenet)}
+                </CardTitle>
               </CardHeader>
             </Card>
           </div>
@@ -602,30 +743,45 @@ export const IndexersClient = () => {
             <Card className="border-white/10 bg-white/5">
               <CardHeader className="pb-2">
                 <CardDescription>Search capable</CardDescription>
-                <CardTitle className="text-2xl text-white">{numberFormatter.format(stats.search)}</CardTitle>
+                <CardTitle className="text-2xl text-white">
+                  {numberFormatter.format(stats.search)}
+                </CardTitle>
               </CardHeader>
             </Card>
             <Card className="border-white/10 bg-white/5">
               <CardHeader className="pb-2">
                 <CardDescription>RSS capable</CardDescription>
-                <CardTitle className="text-2xl text-white">{numberFormatter.format(stats.rss)}</CardTitle>
+                <CardTitle className="text-2xl text-white">
+                  {numberFormatter.format(stats.rss)}
+                </CardTitle>
               </CardHeader>
             </Card>
           </div>
 
           <div className="space-y-8">
             {instances.map((instance) => (
-              <Card key={instance.instanceId} className="border-white/10 bg-white/5">
+              <Card
+                key={instance.instanceId}
+                className="border-white/10 bg-white/5"
+              >
                 <CardHeader className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
                   <div>
-                    <CardTitle className="text-xl text-white">{instance.instanceName}</CardTitle>
-                    <CardDescription>{instance.data.length} indexers</CardDescription>
+                    <CardTitle className="text-xl text-white">
+                      {instance.instanceName}
+                    </CardTitle>
+                    <CardDescription>
+                      {instance.data.length} indexers
+                    </CardDescription>
                   </div>
-                  <p className="text-xs text-white/40">ID: {instance.instanceId}</p>
+                  <p className="text-xs text-white/40">
+                    ID: {instance.instanceId}
+                  </p>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   {instance.data.length === 0 ? (
-                    <p className="text-sm text-white/60">No indexers configured on this instance.</p>
+                    <p className="text-sm text-white/60">
+                      No indexers configured on this instance.
+                    </p>
                   ) : (
                     instance.data.map((indexer) => {
                       const key = `${instance.instanceId}:${indexer.id}`;
@@ -638,7 +794,9 @@ export const IndexersClient = () => {
                           onUpdate={handleUpdate}
                           testing={testingKey === key && testMutation.isPending}
                           expanded={expandedKey === key}
-                          onToggleDetails={() => handleToggleDetails(instance.instanceId, indexer.id)}
+                          onToggleDetails={() =>
+                            handleToggleDetails(instance.instanceId, indexer.id)
+                          }
                         />
                       );
                     })
@@ -652,21 +810,3 @@ export const IndexersClient = () => {
     </section>
   );
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

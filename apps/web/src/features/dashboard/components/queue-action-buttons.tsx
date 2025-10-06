@@ -19,7 +19,8 @@ const REMOVE_OPTIONS: RemoveOption[] = [
   {
     id: "remove-keep-client",
     label: "Remove (keep in download client)",
-    description: "Remove from Sonarr/Radarr but leave the download in your client.",
+    description:
+      "Remove from Sonarr/Radarr but leave the download in your client.",
     options: { removeFromClient: false, blocklist: false, search: false },
   },
   {
@@ -43,7 +44,8 @@ const REMOVE_OPTIONS: RemoveOption[] = [
   {
     id: "blocklist-search",
     label: "Blocklist, delete & search again",
-    description: "Blocklist the release, delete the download, then search for an alternative.",
+    description:
+      "Blocklist the release, delete the download, then search for an alternative.",
     options: { removeFromClient: true, blocklist: true, search: true },
   },
 ];
@@ -159,8 +161,12 @@ const RemoveActionMenu = ({
                 onClick={() => handleSelect(option)}
                 className="w-full rounded-lg px-3 py-2 text-left text-xs text-white/70 transition hover:bg-white/5"
               >
-                <p className="text-sm font-semibold text-white">{option.label}</p>
-                <p className="mt-0.5 text-[11px] text-white/50">{option.description}</p>
+                <p className="text-sm font-semibold text-white">
+                  {option.label}
+                </p>
+                <p className="mt-0.5 text-[11px] text-white/50">
+                  {option.description}
+                </p>
               </button>
             ))}
           </div>
@@ -179,7 +185,8 @@ interface QueueActionButtonsProps {
   primaryDisabled?: boolean;
 }
 
-const baseButtonClass = "inline-flex h-9 items-center justify-center gap-2 rounded-full border border-white/15 px-3 text-xs font-medium text-white/80 transition hover:border-white/40";
+const baseButtonClass =
+  "inline-flex h-9 items-center justify-center gap-2 rounded-full border border-white/15 px-3 text-xs font-medium text-white/80 transition hover:border-white/40";
 
 export const QueueActionButtons = ({
   onAction,
@@ -189,21 +196,30 @@ export const QueueActionButtons = ({
   primaryAction,
   primaryDisabled,
 }: QueueActionButtonsProps) => (
-  <div className={cn("flex flex-col gap-2 sm:flex-row sm:justify-end", fullWidth && "w-full")}>
+  <div
+    className={cn(
+      "flex flex-col gap-2 sm:flex-row sm:justify-end",
+      fullWidth && "w-full",
+    )}
+  >
     {primaryAction && (
       <Button
         variant="ghost"
         className={cn(baseButtonClass, fullWidth && "w-full")}
         onClick={() => onAction(primaryAction)}
         disabled={disabled || primaryDisabled}
-        aria-label={primaryAction === "manualImport" ? "Manual import" : "Retry"}
+        aria-label={
+          primaryAction === "manualImport" ? "Manual import" : "Retry"
+        }
       >
         {primaryAction === "manualImport" ? (
           <Download className="h-4 w-4" />
         ) : (
           <RefreshCw className="h-4 w-4" />
         )}
-        <span>{primaryAction === "manualImport" ? "Manual Import" : "Retry"}</span>
+        <span>
+          {primaryAction === "manualImport" ? "Manual Import" : "Retry"}
+        </span>
       </Button>
     )}
     <RemoveActionMenu
@@ -228,6 +244,3 @@ export const QueueActionButtons = ({
 );
 
 export { RemoveActionMenu, REMOVE_OPTIONS as REMOVE_ACTION_OPTIONS };
-
-
-

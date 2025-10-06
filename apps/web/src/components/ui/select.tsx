@@ -1,9 +1,10 @@
-'use client';
+"use client";
 
 import { forwardRef } from "react";
 import { cn } from "../../lib/utils";
 
-export interface SelectProps extends React.SelectHTMLAttributes<HTMLSelectElement> {
+export interface SelectProps
+  extends React.SelectHTMLAttributes<HTMLSelectElement> {
   error?: boolean;
 }
 
@@ -29,15 +30,12 @@ export const Select = forwardRef<HTMLSelectElement, SelectProps>(
 
 Select.displayName = "Select";
 
-export interface SelectOptionProps extends React.OptionHTMLAttributes<HTMLOptionElement> {}
+export interface SelectOptionProps
+  extends React.OptionHTMLAttributes<HTMLOptionElement> {}
 
 export const SelectOption = forwardRef<HTMLOptionElement, SelectOptionProps>(
   ({ className, ...props }, ref) => (
-    <option
-      ref={ref}
-      className={cn("bg-bg text-fg", className)}
-      {...props}
-    />
+    <option ref={ref} className={cn("bg-bg text-fg", className)} {...props} />
   ),
 );
 
