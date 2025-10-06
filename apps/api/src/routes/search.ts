@@ -662,9 +662,9 @@ const grabProwlarrRelease = async (
 
 	release: SearchGrabRequest["result"],
 ): Promise<void> => {
-	const guid = toStringValue((release as any)?.guid) ?? toStringValue(release?.id);
+	const guid = toStringValue((release as unknown)?.guid) ?? toStringValue(release?.id);
 
-	const indexerId = toNumber((release as any)?.indexerId);
+	const indexerId = toNumber((release as unknown)?.indexerId);
 
 	if (typeof indexerId !== "number" || !guid) {
 		throw new Error("Release is missing required identifier information");

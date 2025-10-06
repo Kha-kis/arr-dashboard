@@ -143,7 +143,7 @@ const toLowerCase = (value: unknown): string => {
 	return "";
 };
 
-const collectStatusTexts = (item: any): string[] => {
+const collectStatusTexts = (item: unknown): string[] => {
 	const results: string[] = [];
 	if (Array.isArray(item?.statusMessages)) {
 		for (const entry of item.statusMessages) {
@@ -183,7 +183,7 @@ const pickMatchingMessage = (messages: string[], keywords: string[]): string | u
 	return undefined;
 };
 
-const deriveQueueActions = (item: any): QueueActionCapabilities => {
+const deriveQueueActions = (item: unknown): QueueActionCapabilities => {
 	const status = toLowerCase(item?.status);
 	const trackedState = toLowerCase(item?.trackedDownloadState);
 	const trackedStatus = toLowerCase(item?.trackedDownloadStatus);
@@ -249,7 +249,7 @@ const parseQueueId = (value: string | number): number | null => {
 };
 
 const normalizeQueueItem = (
-	item: any,
+	item: unknown,
 	service: "sonarr" | "radarr",
 ): Omit<QueueItem, "instanceId" | "instanceName"> => {
 	const rawId =
@@ -299,7 +299,7 @@ const normalizeQueueItem = (
 		trackedDownloadStatus: toStringValue(item.trackedDownloadStatus),
 		statusMessages: Array.isArray(item.statusMessages)
 			? item.statusMessages
-					.map((entry: any) => {
+					.map((entry: unknown) => {
 						const title = toStringValue(entry?.title ?? entry?.type ?? entry?.source);
 						const messages: string[] = [];
 						if (Array.isArray(entry?.messages)) {
@@ -315,7 +315,7 @@ const normalizeQueueItem = (
 							messages: messages.length > 0 ? messages : undefined,
 						};
 					})
-					.filter((entry: any) => entry.title || (entry.messages && entry.messages.length > 0))
+					.filter((entry: unknown) => entry.title || (entry.messages && entry.messages.length > 0))
 			: undefined,
 		errorMessage: toStringValue(item.errorMessage ?? item.error),
 		service,
@@ -327,7 +327,7 @@ const normalizeQueueItem = (
 };
 
 const normalizeHistoryItem = (
-	item: any,
+	item: unknown,
 	service: "sonarr" | "radarr" | "prowlarr",
 ): HistoryItem => {
 	const rawId =
@@ -411,7 +411,7 @@ const normalizeHistoryItem = (
 	};
 };
 
-const selectCalendarDates = (item: any, service: "sonarr" | "radarr") => {
+const selectCalendarDates = (item: unknown, service: "sonarr" | "radarr") => {
 	if (service === "sonarr") {
 		return {
 			local: toStringValue(item.airDate),
@@ -429,7 +429,7 @@ const selectCalendarDates = (item: any, service: "sonarr" | "radarr") => {
 	};
 };
 
-const normalizeCalendarItem = (item: any, service: "sonarr" | "radarr"): CalendarItem => {
+const normalizeCalendarItem = (item: unknown, service: "sonarr" | "radarr"): CalendarItem => {
 	const rawId =
 		item.id ??
 		item.eventId ??
@@ -532,7 +532,7 @@ const fetchQueueItems = async (
 	const response = await fetcher(`${queueApiPath(service)}${query}`);
 	const payload = await response.json();
 	const items = Array.isArray(payload) ? payload : (payload.records ?? []);
-	return items.map((raw: any) => normalizeQueueItem(raw, service));
+	return items.map((raw: unknown) => normalizeQueueItem(raw, service));
 };
 
 const fetchHistoryItems = async (
@@ -583,7 +583,7 @@ const fetchHistoryItems = async (
 				? payload.total
 				: records.length;
 
-	const items = records.map((raw: any) => normalizeHistoryItem(raw, service));
+	const items = records.map((raw: unknown) => normalizeHistoryItem(raw, service));
 	return { items, totalRecords };
 };
 
@@ -612,7 +612,7 @@ const fetchCalendarItems = async (
 		: Array.isArray(payload?.records)
 			? payload.records
 			: [];
-	const normalized = records.map((raw: any) => normalizeCalendarItem(raw, service));
+	const normalized = records.map((raw: unknown) => normalizeCalendarItem(raw, service));
 	normalized.sort(compareCalendarItems);
 	return normalized;
 };
@@ -715,8 +715,8 @@ const dashboardRoute: FastifyPluginCallback = (app, _opts, done) => {
 				await autoImportByDownloadId(fetcher, body.service, downloadId);
 			} catch (error) {
 				const status =
-					typeof (error as any)?.statusCode === "number"
-						? (error as any).statusCode
+					typeof (error as unknown)?.statusCode === "number"
+						? (error as unknown).statusCode
 						: error instanceof ManualImportError
 							? error.statusCode
 							: 502;
@@ -1012,17 +1012,17 @@ const dashboardRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const sonarrInstances: Array<{
 			instanceId: string;
 			instanceName: string;
-			data: any;
+			data: unknown;
 		}> = [];
 		const radarrInstances: Array<{
 			instanceId: string;
 			instanceName: string;
-			data: any;
+			data: unknown;
 		}> = [];
 		const prowlarrInstances: Array<{
 			instanceId: string;
 			instanceName: string;
-			data: any;
+			data: unknown;
 		}> = [];
 
 		for (const instance of instances) {

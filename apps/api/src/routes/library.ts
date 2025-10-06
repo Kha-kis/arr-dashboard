@@ -127,7 +127,7 @@ const normalizeImages = (
 	return result;
 };
 
-const buildMovieFile = (raw: any) => {
+const buildMovieFile = (raw: unknown) => {
 	if (!raw || typeof raw !== "object") {
 		return undefined;
 	}
@@ -162,7 +162,7 @@ const normalizeSeasons = (value: unknown) => {
 		return undefined;
 	}
 	const seasons = value
-		.map((entry: any) => {
+		.map((entry: unknown) => {
 			const seasonNumber = toNumber(entry?.seasonNumber);
 			if (seasonNumber === undefined) {
 				return null;
@@ -196,7 +196,7 @@ const normalizeSeasons = (value: unknown) => {
 	return seasons.length > 0 ? seasons : undefined;
 };
 
-const extractYear = (raw: any): number | undefined => {
+const extractYear = (raw: unknown): number | undefined => {
 	const year = toNumber(raw?.year ?? raw?.releaseYear);
 	if (typeof year === "number") {
 		return year;
@@ -216,7 +216,7 @@ const extractYear = (raw: any): number | undefined => {
 const buildLibraryItem = (
 	instance: ServiceInstance,
 	service: LibraryService,
-	raw: any,
+	raw: unknown,
 ): LibraryItem => {
 	const images = normalizeImages(raw?.images, instance.baseUrl);
 
@@ -291,7 +291,7 @@ const buildLibraryItem = (
 			episodeFileCount,
 			totalEpisodeCount: toNumber(stats?.totalEpisodeCount),
 			monitoredSeasons: Array.isArray(raw?.seasons)
-				? raw.seasons.filter((season: any) => toBoolean(season?.monitored)).length
+				? raw.seasons.filter((season: unknown) => toBoolean(season?.monitored)).length
 				: undefined,
 			runtime: toNumber(raw?.runtime),
 		},
@@ -357,7 +357,7 @@ const libraryRoute: FastifyPluginCallback = (app, _opts, done) => {
 				const response = await fetcher(path);
 				const payload = await response.json();
 				const items = Array.isArray(payload)
-					? payload.map((raw: any) => buildLibraryItem(instance as ServiceInstance, service, raw))
+					? payload.map((rawItem: unknown) => buildLibraryItem(instance as ServiceInstance, service, rawItem))
 					: [];
 				instanceResults.push({
 					instanceId: instance.id,
@@ -435,7 +435,7 @@ const libraryRoute: FastifyPluginCallback = (app, _opts, done) => {
 				const seasonNumbers = payload.seasonNumbers
 					?.map((number) => Number(number))
 					.filter((value) => Number.isFinite(value));
-				series.seasons = series.seasons.map((season: any) => {
+				series.seasons = series.seasons.map((season: unknown) => {
 					const seasonNumber = toNumber(season?.seasonNumber) ?? 0;
 					const hasSelections = Array.isArray(seasonNumbers) && seasonNumbers.length > 0;
 
@@ -701,7 +701,7 @@ const libraryRoute: FastifyPluginCallback = (app, _opts, done) => {
 			const payload = await response.json();
 
 			const episodes: LibraryEpisode[] = Array.isArray(payload)
-				? payload.map((raw: any) => ({
+				? payload.map((raw: unknown) => ({
 						id: toNumber(raw?.id) ?? 0,
 						seriesId,
 						episodeNumber: toNumber(raw?.episodeNumber) ?? 0,
@@ -838,8 +838,8 @@ const libraryRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 			// Update the monitored status for the specified episodes
 			const updates = allEpisodes
-				.filter((ep: any) => payload.episodeIds.includes(toNumber(ep?.id) ?? -1))
-				.map((ep: any) => ({
+				.filter((ep: unknown) => payload.episodeIds.includes(toNumber(ep?.id) ?? -1))
+				.map((ep: unknown) => ({
 					...ep,
 					monitored: payload.monitored,
 				}));
