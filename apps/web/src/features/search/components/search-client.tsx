@@ -9,7 +9,6 @@ import {
   useGrabSearchResultMutation,
 } from "../../../hooks/api/useSearch";
 import {
-  Input,
   Button,
   Card,
   CardContent,
@@ -19,146 +18,25 @@ import {
   Alert,
   AlertTitle,
   AlertDescription,
-  EmptyState,
   Skeleton,
 } from "../../../components/ui";
 import { ApiError } from "../../../lib/api-client/base";
 import { SearchResultsTable } from "./search-results-table";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
-
-const SEARCH_TYPES: Array<{
-  value: "all" | "movie" | "tv" | "music" | "book";
-  label: string;
-}> = [
-  { value: "movie", label: "Movies" },
-  { value: "tv", label: "Series" },
-  { value: "music", label: "Music" },
-  { value: "book", label: "Books" },
-  { value: "all", label: "All" },
-];
-
-const PROTOCOL_FILTERS: Array<{
-  value: "all" | "torrent" | "usenet";
-  label: string;
-}> = [
-  { value: "all", label: "All protocols" },
-  { value: "torrent", label: "Torrent only" },
-  { value: "usenet", label: "Usenet only" },
-];
-
-const SORT_OPTIONS: Array<{
-  value: "seeders" | "publishDate" | "age" | "size" | "title";
-  label: string;
-}> = [
-  { value: "seeders", label: "Seeders" },
-  { value: "publishDate", label: "Publish date" },
-  { value: "age", label: "Age" },
-  { value: "size", label: "Size" },
-  { value: "title", label: "Title" },
-];
-
-type SortKey = (typeof SORT_OPTIONS)[number]["value"];
-type ProtocolFilter = (typeof PROTOCOL_FILTERS)[number]["value"];
-
-const buildFilters = (
-  selected: Record<string, number[]>,
-): Array<{ instanceId: string; indexerIds: number[] }> => {
-  return Object.entries(selected)
-    .map(([instanceId, ids]) => ({
-      instanceId,
-      indexerIds: ids.filter((id) => typeof id === "number" && id > 0),
-    }))
-    .filter((entry) => entry.indexerIds.length > 0);
-};
-
-const parseNumberInput = (value: string): number | null => {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return null;
-  }
-  const parsed = Number(trimmed);
-  return Number.isFinite(parsed) ? parsed : null;
-};
-
-const getPublishTimestamp = (value?: string): number | null => {
-  if (!value) {
-    return null;
-  }
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
-};
-
-const getAgeHours = (result: SearchResult): number | null => {
-  if (typeof result.ageHours === "number" && Number.isFinite(result.ageHours)) {
-    return result.ageHours;
-  }
-  if (typeof result.age === "number" && Number.isFinite(result.age)) {
-    return result.age;
-  }
-  if (typeof result.ageDays === "number" && Number.isFinite(result.ageDays)) {
-    return result.ageDays * 24;
-  }
-  const timestamp = getPublishTimestamp(result.publishDate);
-  if (timestamp) {
-    const diffMs = Date.now() - timestamp;
-    if (diffMs > 0) {
-      return diffMs / (1000 * 60 * 60);
-    }
-  }
-  return null;
-};
-
-const compareNumbers = (a: number, b: number) => {
-  if (a === b) {
-    return 0;
-  }
-  return a > b ? 1 : -1;
-};
-
-const compareBySortKey = (
-  sortKey: SortKey,
-  a: SearchResult,
-  b: SearchResult,
-): number => {
-  switch (sortKey) {
-    case "seeders":
-      return compareNumbers(a.seeders ?? 0, b.seeders ?? 0);
-    case "size":
-      return compareNumbers(a.size ?? 0, b.size ?? 0);
-    case "publishDate": {
-      const timeA = getPublishTimestamp(a.publishDate);
-      const timeB = getPublishTimestamp(b.publishDate);
-      if (timeA === null && timeB === null) {
-        return 0;
-      }
-      if (timeA === null) {
-        return 1;
-      }
-      if (timeB === null) {
-        return -1;
-      }
-      return compareNumbers(timeA, timeB);
-    }
-    case "age": {
-      const ageA = getAgeHours(a);
-      const ageB = getAgeHours(b);
-      if (ageA === null && ageB === null) {
-        return 0;
-      }
-      if (ageA === null) {
-        return 1;
-      }
-      if (ageB === null) {
-        return -1;
-      }
-      return compareNumbers(ageA, ageB);
-    }
-    case "title":
-      return a.title.localeCompare(b.title, undefined, { sensitivity: "base" });
-    default:
-      return 0;
-  }
-};
+import { IndexerSelector } from "./indexer-selector";
+import { SearchForm } from "./search-form";
+import { FilterControls } from "./filter-controls";
+import { SortControls } from "./sort-controls";
+import { ResultsSummary } from "./results-summary";
+import {
+  buildFilters,
+  parseNumberInput,
+  getAgeHours,
+  compareBySortKey,
+  interpretGrabError,
+  type SortKey,
+  type ProtocolFilter,
+} from "../lib/search-utils";
 
 export const SearchClient = () => {
   const [query, setQuery] = useState("");
@@ -344,29 +222,6 @@ export const SearchClient = () => {
     if (!searchMutation.isPending) {
       handleSearch();
     }
-  };
-
-  const interpretGrabError = (message: string): string | null => {
-    const normalized = message.toLowerCase();
-    if (
-      normalized.includes("download client") &&
-      normalized.includes("isn't configured")
-    ) {
-      return "Configure a torrent download client in Prowlarr before grabbing releases.";
-    }
-    if (
-      normalized.includes("download client") &&
-      normalized.includes("configure")
-    ) {
-      return "Configure a torrent download client in Prowlarr before grabbing releases.";
-    }
-    if (
-      normalized.includes("validation errors") &&
-      normalized.includes("json value could not be converted")
-    ) {
-      return "Prowlarr rejected the grab payload. Try the search again or review the indexer configuration.";
-    }
-    return null;
   };
 
   const deriveGrabErrorMessage = (error: unknown): string => {
@@ -572,283 +427,60 @@ export const SearchClient = () => {
       ) : (
         <>
           <Card>
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <CardHeader className="mb-0">
-                <CardTitle>Search configuration</CardTitle>
-                <CardDescription>
-                  Choose indexers and a search type, then run a manual query.
-                  Results refresh automatically on each search.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="flex flex-col gap-4 md:flex-row">
-                  <div className="flex-1">
-                    <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-white/60">
-                      Query
-                    </label>
-                    <Input
-                      value={query}
-                      onChange={(event) => setQuery(event.target.value)}
-                      placeholder="Search for movies, series, music, or books"
-                    />
-                  </div>
-                  <div className="md:w-64">
-                    <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-white/60">
-                      Type
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {SEARCH_TYPES.map((type) => (
-                        <Button
-                          key={type.value}
-                          type="button"
-                          variant={
-                            searchType === type.value ? "primary" : "ghost"
-                          }
-                          className="flex-1"
-                          onClick={() => setSearchType(type.value)}
-                        >
-                          {type.label}
-                        </Button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
+            <CardHeader className="mb-0">
+              <CardTitle>Search configuration</CardTitle>
+              <CardDescription>
+                Choose indexers and a search type, then run a manual query.
+                Results refresh automatically on each search.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <SearchForm
+                query={query}
+                searchType={searchType}
+                isSearching={searchMutation.isPending}
+                onQueryChange={setQuery}
+                onSearchTypeChange={setSearchType}
+                onSubmit={handleSubmit}
+              />
 
-                <div className="space-y-4">
-                  {indexersQuery.data?.instances.map((instance) => {
-                    const ids = selectedIndexers[instance.instanceId] ?? [];
-                    const allIds = instance.data.map((indexer) => indexer.id);
-                    const everySelected =
-                      allIds.length > 0 &&
-                      allIds.every((id) => ids.includes(id));
-                    return (
-                      <div
-                        key={instance.instanceId}
-                        className="rounded-xl border border-white/10 bg-white/5 p-4"
-                      >
-                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <p className="text-sm font-semibold text-white">
-                              {instance.instanceName}
-                            </p>
-                            <p className="text-xs text-white/50">
-                              {ids.length} of {instance.data.length} indexers
-                              selected
-                            </p>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            onClick={() =>
-                              handleToggleAll(instance.instanceId, allIds)
-                            }
-                          >
-                            {everySelected ? "Clear" : "Select all"}
-                          </Button>
-                        </div>
-                        <div className="flex flex-wrap gap-2">
-                          {instance.data.map((indexer) => {
-                            const isSelected = ids.includes(indexer.id);
-                            return (
-                              <button
-                                key={indexer.id}
-                                type="button"
-                                onClick={() =>
-                                  handleToggleIndexer(
-                                    instance.instanceId,
-                                    indexer.id,
-                                  )
-                                }
-                                className={`rounded-full border px-3 py-1 text-xs transition ${
-                                  isSelected
-                                    ? "border-sky-400 bg-sky-500/20 text-white"
-                                    : "border-white/20 bg-transparent text-white/70 hover:border-white/40"
-                                }`}
-                              >
-                                {indexer.name}
-                              </button>
-                            );
-                          })}
-                          {instance.data.length === 0 && (
-                            <span className="text-xs text-white/50">
-                              No indexers configured on this instance.
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+              {indexersQuery.data && (
+                <IndexerSelector
+                  indexersData={indexersQuery.data}
+                  selectedIndexers={selectedIndexers}
+                  onToggleIndexer={handleToggleIndexer}
+                  onToggleAll={handleToggleAll}
+                />
+              )}
 
-                <div className="space-y-4 rounded-xl border border-white/10 bg-white/5 p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="text-sm font-semibold text-white">
-                      Result filters
-                    </h3>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="text-xs uppercase tracking-wide"
-                      onClick={resetFilters}
-                    >
-                      Reset
-                    </Button>
-                  </div>
+              <FilterControls
+                protocolFilter={protocolFilter}
+                minSeedersInput={minSeedersInput}
+                maxAgeInput={maxAgeInput}
+                hideRejected={hideRejected}
+                onProtocolFilterChange={setProtocolFilter}
+                onMinSeedersChange={setMinSeedersInput}
+                onMaxAgeChange={setMaxAgeInput}
+                onHideRejectedToggle={() => setHideRejected((value) => !value)}
+                onReset={resetFilters}
+              />
 
-                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                    <div>
-                      <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-white/60">
-                        Protocol
-                      </label>
-                      <select
-                        value={protocolFilter}
-                        onChange={(event) =>
-                          setProtocolFilter(
-                            event.target.value as ProtocolFilter,
-                          )
-                        }
-                        className="w-full rounded-md border border-white/20 bg-slate-900/80 px-3 py-2 text-sm text-white hover:border-sky-400/80 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
-                        style={{ color: "#f8fafc" }}
-                      >
-                        {PROTOCOL_FILTERS.map((option) => (
-                          <option
-                            key={option.value}
-                            value={option.value}
-                            className="bg-slate-900 text-white"
-                          >
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-white/60">
-                        Minimum seeders
-                      </label>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={minSeedersInput}
-                        onChange={(event) =>
-                          setMinSeedersInput(event.target.value)
-                        }
-                        placeholder="0"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-white/60">
-                        Maximum age (hours)
-                      </label>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={maxAgeInput}
-                        onChange={(event) => setMaxAgeInput(event.target.value)}
-                        placeholder="72"
-                      />
-                    </div>
-
-                    <div className="flex flex-col justify-end gap-2">
-                      <label className="text-xs font-semibold uppercase tracking-wide text-white/60">
-                        Visibility
-                      </label>
-                      <Button
-                        type="button"
-                        variant={hideRejected ? "primary" : "ghost"}
-                        className="justify-start"
-                        onClick={() => setHideRejected((value) => !value)}
-                        aria-pressed={hideRejected}
-                      >
-                        {hideRejected
-                          ? "Hidden rejected releases"
-                          : "Hide rejected releases"}
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-                    <div>
-                      <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-white/60">
-                        Sort results by
-                      </label>
-                      <select
-                        value={sortKey}
-                        onChange={(event) =>
-                          setSortKey(event.target.value as SortKey)
-                        }
-                        className="w-full rounded-md border border-white/20 bg-slate-900/80 px-3 py-2 text-sm text-white hover:border-sky-400/80 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
-                        style={{ color: "#f8fafc" }}
-                      >
-                        {SORT_OPTIONS.map((option) => (
-                          <option
-                            key={option.value}
-                            value={option.value}
-                            className="bg-slate-900 text-white"
-                          >
-                            {option.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div className="flex flex-col justify-end gap-2">
-                      <label className="text-xs font-semibold uppercase tracking-wide text-white/60">
-                        Sort direction
-                      </label>
-                      <div className="flex gap-2">
-                        <Button
-                          type="button"
-                          variant={
-                            sortDirection === "desc" ? "primary" : "ghost"
-                          }
-                          className="flex-1"
-                          onClick={() => setSortDirection("desc")}
-                          aria-pressed={sortDirection === "desc"}
-                        >
-                          Desc
-                        </Button>
-                        <Button
-                          type="button"
-                          variant={
-                            sortDirection === "asc" ? "primary" : "ghost"
-                          }
-                          className="flex-1"
-                          onClick={() => setSortDirection("asc")}
-                          aria-pressed={sortDirection === "asc"}
-                        >
-                          Asc
-                        </Button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex justify-end">
-                  <Button type="submit" disabled={searchMutation.isPending}>
-                    {searchMutation.isPending ? "Searching..." : "Search"}
-                  </Button>
-                </div>
-              </CardContent>
-            </form>
+              <SortControls
+                sortKey={sortKey}
+                sortDirection={sortDirection}
+                onSortKeyChange={setSortKey}
+                onSortDirectionChange={setSortDirection}
+              />
+            </CardContent>
           </Card>
 
           {(hasSearched || results.length > 0) && (
-            <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/70">
-              Showing{" "}
-              <span className="font-semibold text-white">
-                {processed.results.length}
-              </span>{" "}
-              of{" "}
-              <span className="font-semibold text-white">{results.length}</span>{" "}
-              results.
-              {filtersActive && processed.hidden > 0 ? (
-                <span className="ml-2 text-xs text-white/50">
-                  {processed.hidden} hidden by filters.
-                </span>
-              ) : null}
-            </div>
+            <ResultsSummary
+              displayedCount={processed.results.length}
+              totalCount={results.length}
+              hiddenCount={processed.hidden}
+              filtersActive={filtersActive}
+            />
           )}
 
           <SearchResultsTable

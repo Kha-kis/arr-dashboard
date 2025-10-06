@@ -46,7 +46,7 @@ export const TopBar = () => {
 
               <div className="relative h-9 w-9 rounded-full bg-gradient-to-br from-primary to-accent text-white flex items-center justify-center shadow-md ring-1 ring-white/10">
                 <span className="text-sm font-semibold">
-                  {user.username[0].toUpperCase()}
+                  {user.username[0]?.toUpperCase() ?? "U"}
                 </span>
               </div>
               <div className="text-right relative">

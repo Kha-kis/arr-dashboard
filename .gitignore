@@ -26,3 +26,4 @@ legacy/node_modules
 .pf/
 .claude/agents/
 .claude/bin/
+apps/web/nul
