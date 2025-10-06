@@ -5,7 +5,7 @@
  */
 
 import type { QueueItem } from "@arr/shared";
-import { cn } from "../../../lib/utils/index";
+import { cn } from "../../../lib/utils";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
 import type { QueueAction } from "./queue-action-buttons";
 import { QueueActionButtons } from "./queue-action-buttons";

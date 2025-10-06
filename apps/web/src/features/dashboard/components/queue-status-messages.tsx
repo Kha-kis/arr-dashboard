@@ -4,7 +4,7 @@
  * Component for rendering queue status messages in a compact format
  */
 
-import { cn } from "../../../lib/utils/index";
+import { cn } from "../../../lib/utils";
 import type { StatusLine } from "../lib/queue-utils";
 import { summarizeLines } from "../lib/queue-utils";
 
