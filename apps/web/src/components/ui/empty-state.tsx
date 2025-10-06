@@ -31,7 +31,9 @@ export interface EmptyStateProps {
   action?: {
     label: string;
     variant?: ButtonProps["variant"];
-  } & Pick<ButtonProps, "onClick" | "href">;
+    onClick?: () => void;
+    href?: string;
+  };
   /** Additional className */
   className?: string;
 }

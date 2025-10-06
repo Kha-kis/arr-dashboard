@@ -33,7 +33,7 @@ interface AccountTabProps {
     username: string;
     role: string;
     createdAt: string;
-    hasTmdbApiKey: boolean;
+    hasTmdbApiKey?: boolean;
   } | null;
   /** Account form state */
   accountForm: AccountFormState;
