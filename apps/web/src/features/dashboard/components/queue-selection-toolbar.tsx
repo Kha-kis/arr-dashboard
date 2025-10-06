@@ -6,7 +6,7 @@
 
 import type { QueueItem } from "@arr/shared";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
-import { RemoveActionMenu } from "./queue-action-buttons.js";
+import { RemoveActionMenu } from "./queue-action-buttons";
 
 interface QueueSelectionToolbarProps {
   selectedItems: QueueItem[];

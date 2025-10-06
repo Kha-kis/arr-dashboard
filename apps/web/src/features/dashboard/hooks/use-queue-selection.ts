@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import type { QueueItem } from "@arr/shared";
-import { buildKey } from "../lib/queue-utils.js";
+import { buildKey } from "../lib/queue-utils";
 
 /**
  * Manages selection state for queue items

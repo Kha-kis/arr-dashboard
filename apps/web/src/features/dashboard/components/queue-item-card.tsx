@@ -5,19 +5,19 @@
  */
 
 import type { QueueItem } from "@arr/shared";
-import { cn } from "../../../lib/utils/index.js";
+import { cn } from "../../../lib/utils/index";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
-import type { QueueAction } from "./queue-action-buttons.js";
-import { QueueActionButtons } from "./queue-action-buttons.js";
-import { QueueIssueBadge } from "./queue-issue-badge.js";
-import { QueueProgress } from "./queue-progress.js";
-import { QueueItemMetadata } from "./queue-item-metadata.js";
-import { QueueStatusMessages } from "./queue-status-messages.js";
-import type { StatusLine } from "../lib/queue-utils.js";
+import type { QueueAction } from "./queue-action-buttons";
+import { QueueActionButtons } from "./queue-action-buttons";
+import { QueueIssueBadge } from "./queue-issue-badge";
+import { QueueProgress } from "./queue-progress";
+import { QueueItemMetadata } from "./queue-item-metadata";
+import { QueueStatusMessages } from "./queue-status-messages";
+import type { StatusLine } from "../lib/queue-utils";
 import {
   summarizeIssueCounts,
   computeProgressValue,
-} from "../lib/queue-utils.js";
+} from "../lib/queue-utils";
 
 export interface QueueItemCardProps {
   item: QueueItem;
