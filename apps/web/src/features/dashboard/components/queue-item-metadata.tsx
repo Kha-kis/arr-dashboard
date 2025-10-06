@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * Component for displaying queue item metadata (service, instance, client, size, etc.)
  */

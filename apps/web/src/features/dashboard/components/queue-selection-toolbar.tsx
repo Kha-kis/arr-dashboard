@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * Component for bulk actions on selected queue items
  */
