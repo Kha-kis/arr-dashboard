@@ -20,3 +20,9 @@ legacy/node_modules
 # Database files
 *.db
 *.db-journal
+
+# Auditor tool artifacts
+.auditor_venv/
+.pf/
+.claude/agents/
+.claude/bin/
