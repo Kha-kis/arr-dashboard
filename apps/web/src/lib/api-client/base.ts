@@ -1,6 +1,7 @@
 import type { ApiErrorPayload } from "@arr/shared";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
 
 export class ApiError extends Error {
   constructor(
@@ -31,10 +32,13 @@ const resolveUrl = (path: string): string => {
   return `${base}${normalizedPath}`;
 };
 
-export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
+export async function apiRequest<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
   const { json, headers, ...rest } = options;
   const response = await fetch(resolveUrl(path), {
-    method: json ? "POST" : options.method ?? "GET",
+    method: json ? "POST" : (options.method ?? "GET"),
     credentials: "include",
     headers: {
       Accept: "application/json",
@@ -54,12 +58,18 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   }
 
   const contentType = response.headers.get("content-type");
-  const payload = contentType && contentType.includes("application/json")
-    ? await response.json().catch(() => undefined)
-    : await response.text();
+  const payload =
+    contentType && contentType.includes("application/json")
+      ? await response.json().catch(() => undefined)
+      : await response.text();
 
   const resolveErrorMessage = () => {
-    if (payload && typeof payload === "object" && "message" in payload && typeof (payload as any).message === "string") {
+    if (
+      payload &&
+      typeof payload === "object" &&
+      "message" in payload &&
+      typeof (payload as any).message === "string"
+    ) {
       return (payload as any).message as string;
     }
 
@@ -71,7 +81,11 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   };
 
   if (!response.ok) {
-    throw new ApiError(resolveErrorMessage(), response.status, payload as ApiErrorPayload);
+    throw new ApiError(
+      resolveErrorMessage(),
+      response.status,
+      payload as ApiErrorPayload,
+    );
   }
 
   return payload as T;

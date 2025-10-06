@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "../../../components/ui";
-import type { LibraryItem, LibraryService, ServiceInstanceSummary } from "@arr/shared";
+import type {
+  LibraryItem,
+  LibraryService,
+  ServiceInstanceSummary,
+} from "@arr/shared";
 import {
   AlertCircle,
   ChevronDown,
@@ -17,7 +21,20 @@ import {
   Search,
   Tv,
 } from "lucide-react";
-import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Alert, AlertTitle, AlertDescription, EmptyState } from "../../../components/ui";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Input,
+  Alert,
+  AlertTitle,
+  AlertDescription,
+  EmptyState,
+} from "../../../components/ui";
+import { safeOpenUrl } from "../../../lib/utils/url-validation";
 import { cn } from "../../../lib/utils";
 import {
   useEpisodesQuery,
@@ -31,7 +48,11 @@ import {
 } from "../../../hooks/api/useLibrary";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 
-const SERVICE_OPTIONS: Array<{ value: "all" | LibraryService; label: string; icon: JSX.Element }> = [
+const SERVICE_OPTIONS: Array<{
+  value: "all" | LibraryService;
+  label: string;
+  icon: JSX.Element;
+}> = [
   { value: "all", label: "All", icon: <LibraryIcon className="h-4 w-4" /> },
   { value: "radarr", label: "Movies", icon: <Film className="h-4 w-4" /> },
   { value: "sonarr", label: "Series", icon: <Tv className="h-4 w-4" /> },
@@ -55,7 +76,10 @@ const formatBytes = (value?: number): string | null => {
   }
 
   const units = ["B", "KB", "MB", "GB", "TB", "PB"] as const;
-  const exponent = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
+  const exponent = Math.min(
+    Math.floor(Math.log(value) / Math.log(1024)),
+    units.length - 1,
+  );
   const size = value / Math.pow(1024, exponent);
   return `${size.toFixed(size >= 10 ? 0 : 1)} ${units[exponent]}`;
 };
@@ -80,14 +104,19 @@ const formatRuntime = (value?: number | null): string | null => {
 };
 
 const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/, "");
-const buildLibraryExternalLink = (item: LibraryItem, instance?: ServiceInstanceSummary): string | null => {
+const buildLibraryExternalLink = (
+  item: LibraryItem,
+  instance?: ServiceInstanceSummary,
+): string | null => {
   if (!instance || !instance.baseUrl) {
     return null;
   }
 
   const baseUrl = normalizeBaseUrl(instance.baseUrl);
   const idSegment = encodeURIComponent(String(item.id));
-  const slugSegment = item.titleSlug ? encodeURIComponent(item.titleSlug) : idSegment;
+  const slugSegment = item.titleSlug
+    ? encodeURIComponent(item.titleSlug)
+    : idSegment;
 
   if (item.service === "sonarr") {
     return `${baseUrl}/series/${slugSegment}`;
@@ -115,10 +144,12 @@ const LibraryBadge = ({
   <span
     className={cn(
       "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs",
-      tone === "green" && "border-emerald-400/40 bg-emerald-500/10 text-emerald-200",
+      tone === "green" &&
+        "border-emerald-400/40 bg-emerald-500/10 text-emerald-200",
       tone === "blue" && "border-sky-400/40 bg-sky-500/10 text-sky-200",
       tone === "red" && "border-red-400/40 bg-red-500/10 text-red-200",
-      tone === "yellow" && "border-yellow-400/40 bg-yellow-500/10 text-yellow-200",
+      tone === "yellow" &&
+        "border-yellow-400/40 bg-yellow-500/10 text-yellow-200",
     )}
   >
     {children}
@@ -162,7 +193,7 @@ const LibraryCard = ({
     if (!externalLink) {
       return;
     }
-    window.open(externalLink, "_blank", "noopener,noreferrer");
+    safeOpenUrl(externalLink);
   };
 
   const seasonsExcludingSpecials =
@@ -170,7 +201,9 @@ const LibraryCard = ({
       ? (item.seasons?.filter((season) => season.seasonNumber !== 0) ?? [])
       : [];
 
-  const monitoredSeasons = seasonsExcludingSpecials.filter((season) => season.monitored !== false);
+  const monitoredSeasons = seasonsExcludingSpecials.filter(
+    (season) => season.monitored !== false,
+  );
 
   const downloadedEpisodes = monitoredSeasons.reduce(
     (total, season) => total + (season.episodeFileCount ?? 0),
@@ -183,33 +216,54 @@ const LibraryCard = ({
   const hasSeasonProgress = seasonsExcludingSpecials.length > 0;
   const effectiveDownloadedEpisodes = hasSeasonProgress
     ? downloadedEpisodes
-    : item.statistics?.episodeFileCount ?? 0;
+    : (item.statistics?.episodeFileCount ?? 0);
   const effectiveTotalEpisodes = hasSeasonProgress
     ? totalEpisodes
-    : item.statistics?.episodeCount ?? item.statistics?.totalEpisodeCount ?? 0;
+    : (item.statistics?.episodeCount ??
+      item.statistics?.totalEpisodeCount ??
+      0);
   const missingEpisodeTotals =
     item.type === "series" && hasSeasonProgress
       ? Math.max(totalEpisodes - downloadedEpisodes, 0)
       : 0;
-  const seasonCount = seasonsExcludingSpecials.length || item.statistics?.seasonCount || undefined;
+  const seasonCount =
+    seasonsExcludingSpecials.length ||
+    item.statistics?.seasonCount ||
+    undefined;
   const episodeRuntimeLabel =
     item.type === "series" && !runtimeLabel && item.runtime
       ? formatRuntime(item.runtime)
       : runtimeLabel;
-  const showEpisodeProgress = item.type === "series" && effectiveTotalEpisodes > 0;
+  const showEpisodeProgress =
+    item.type === "series" && effectiveTotalEpisodes > 0;
 
-  const statusBadges: Array<{ tone: "green" | "blue" | "red" | "yellow"; label: React.ReactNode }> = [
-    { tone: monitored ? "green" : "yellow", label: monitored ? "Monitored" : "Not monitored" },
+  const statusBadges: Array<{
+    tone: "green" | "blue" | "red" | "yellow";
+    label: React.ReactNode;
+  }> = [
+    {
+      tone: monitored ? "green" : "yellow",
+      label: monitored ? "Monitored" : "Not monitored",
+    },
   ];
 
   if (item.type === "movie") {
-    statusBadges.push({ tone: hasFile ? "green" : "blue", label: hasFile ? "File present" : "Awaiting file" });
+    statusBadges.push({
+      tone: hasFile ? "green" : "blue",
+      label: hasFile ? "File present" : "Awaiting file",
+    });
   }
 
   if (item.type === "series") {
-    statusBadges.push({ tone: hasFile ? "green" : "blue", label: hasFile ? "Files on disk" : "Awaiting import" });
+    statusBadges.push({
+      tone: hasFile ? "green" : "blue",
+      label: hasFile ? "Files on disk" : "Awaiting import",
+    });
     if (missingEpisodeTotals > 0) {
-      statusBadges.push({ tone: "red", label: `${missingEpisodeTotals} missing` });
+      statusBadges.push({
+        tone: "red",
+        label: `${missingEpisodeTotals} missing`,
+      });
     }
   }
 
@@ -248,7 +302,10 @@ const LibraryCard = ({
       });
     }
     if (missingEpisodeTotals > 0) {
-      metadata.push({ label: "Missing (monitored)", value: missingEpisodeTotals });
+      metadata.push({
+        label: "Missing (monitored)",
+        value: missingEpisodeTotals,
+      });
     }
     if (episodeRuntimeLabel) {
       metadata.push({ label: "Episode length", value: episodeRuntimeLabel });
@@ -278,7 +335,11 @@ const LibraryCard = ({
         <div className="flex gap-3">
           <div className="h-36 w-24 overflow-hidden rounded-lg border border-white/10 bg-gradient-to-br from-slate-700 to-slate-900 shadow-md flex-shrink-0">
             {item.poster ? (
-              <img src={item.poster} alt={item.title} className="h-full w-full object-cover" />
+              <img
+                src={item.poster}
+                alt={item.title}
+                className="h-full w-full object-cover"
+              />
             ) : (
               <div className="flex h-full w-full items-center justify-center text-xs text-white/40">
                 {item.type === "movie" ? "Poster" : "Artwork"}
@@ -289,7 +350,9 @@ const LibraryCard = ({
           <div className="flex-1 min-w-0 space-y-2">
             <div>
               <div className="flex flex-wrap items-baseline gap-2">
-                <h3 className="text-base font-semibold text-white">{item.title}</h3>
+                <h3 className="text-base font-semibold text-white">
+                  {item.title}
+                </h3>
                 {item.year && item.type === "movie" ? (
                   <span className="text-xs text-white/50">{item.year}</span>
                 ) : null}
@@ -315,7 +378,10 @@ const LibraryCard = ({
 
             <div className="flex flex-wrap gap-2">
               {statusBadges.map((badge, index) => (
-                <LibraryBadge key={`${item.id}-badge-${index}`} tone={badge.tone}>
+                <LibraryBadge
+                  key={`${item.id}-badge-${index}`}
+                  tone={badge.tone}
+                >
                   {badge.label}
                 </LibraryBadge>
               ))}
@@ -324,7 +390,8 @@ const LibraryCard = ({
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/60">
               {metadata.slice(0, 4).map((entry) => (
                 <span key={`${item.id}-${entry.label}`}>
-                  <span className="text-white/40">{entry.label}:</span> {entry.value}
+                  <span className="text-white/40">{entry.label}:</span>{" "}
+                  {entry.value}
                 </span>
               ))}
             </div>
@@ -340,7 +407,9 @@ const LibraryCard = ({
                   </span>
                 ))}
                 {genreEntries.length > 3 && (
-                  <span className="text-white/40">+{genreEntries.length - 3} more</span>
+                  <span className="text-white/40">
+                    +{genreEntries.length - 3} more
+                  </span>
                 )}
               </div>
             ) : null}
@@ -446,7 +515,8 @@ const LibraryCard = ({
       </CardContent>
     </Card>
   );
-};const ItemDetailsModal = ({
+};
+const ItemDetailsModal = ({
   item,
   onClose,
 }: {
@@ -482,14 +552,21 @@ const LibraryCard = ({
       metadata.push({ label: "Runtime", value: runtimeLabel });
     }
   } else {
-    const seasonCount = item.seasons?.filter((s) => s.seasonNumber !== 0).length || item.statistics?.seasonCount || undefined;
+    const seasonCount =
+      item.seasons?.filter((s) => s.seasonNumber !== 0).length ||
+      item.statistics?.seasonCount ||
+      undefined;
     if (seasonCount) {
       metadata.push({ label: "Seasons", value: seasonCount });
     }
     const episodeFileCount = item.statistics?.episodeFileCount ?? 0;
-    const totalEpisodes = item.statistics?.episodeCount ?? item.statistics?.totalEpisodeCount ?? 0;
+    const totalEpisodes =
+      item.statistics?.episodeCount ?? item.statistics?.totalEpisodeCount ?? 0;
     if (totalEpisodes > 0) {
-      metadata.push({ label: "Episodes", value: `${episodeFileCount}/${totalEpisodes}` });
+      metadata.push({
+        label: "Episodes",
+        value: `${episodeFileCount}/${totalEpisodes}`,
+      });
     }
     if (runtimeLabel) {
       metadata.push({ label: "Episode length", value: runtimeLabel });
@@ -526,11 +603,17 @@ const LibraryCard = ({
           <div className="flex gap-4">
             {item.poster && (
               <div className="h-48 w-32 overflow-hidden rounded-lg border border-border bg-bg-muted shadow-md flex-shrink-0">
-                <img src={item.poster} alt={item.title} className="h-full w-full object-cover" />
+                <img
+                  src={item.poster}
+                  alt={item.title}
+                  className="h-full w-full object-cover"
+                />
               </div>
             )}
             <div>
-              <h2 className="text-2xl font-semibold text-fg mb-1">{item.title}</h2>
+              <h2 className="text-2xl font-semibold text-fg mb-1">
+                {item.title}
+              </h2>
               {item.year && item.type === "movie" && (
                 <p className="text-sm text-fg-muted mb-2">{item.year}</p>
               )}
@@ -544,14 +627,20 @@ const LibraryCard = ({
 
         {item.overview && (
           <div className="mb-6">
-            <h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-2">Overview</h3>
-            <p className="text-sm leading-relaxed text-fg-muted">{item.overview}</p>
+            <h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-2">
+              Overview
+            </h3>
+            <p className="text-sm leading-relaxed text-fg-muted">
+              {item.overview}
+            </p>
           </div>
         )}
 
         {genreEntries.length > 0 && (
           <div className="mb-6">
-            <h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-2">Genres</h3>
+            <h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-2">
+              Genres
+            </h3>
             <div className="flex flex-wrap gap-2">
               {genreEntries.map((genre) => (
                 <span
@@ -567,7 +656,9 @@ const LibraryCard = ({
 
         {tagEntries.length > 0 && (
           <div className="mb-6">
-            <h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-2">Tags</h3>
+            <h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-2">
+              Tags
+            </h3>
             <div className="flex flex-wrap gap-2">
               {tagEntries.map((tag) => (
                 <span
@@ -582,11 +673,15 @@ const LibraryCard = ({
         )}
 
         <div className="mb-6">
-          <h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-3">Metadata</h3>
+          <h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-3">
+            Metadata
+          </h3>
           <div className="grid grid-cols-2 gap-4">
             {metadata.map((entry) => (
               <div key={entry.label} className="space-y-1">
-                <p className="text-xs uppercase tracking-wider text-fg-subtle">{entry.label}</p>
+                <p className="text-xs uppercase tracking-wider text-fg-subtle">
+                  {entry.label}
+                </p>
                 <p className="text-sm text-fg">{entry.value}</p>
               </div>
             ))}
@@ -595,12 +690,18 @@ const LibraryCard = ({
 
         {locationEntries.length > 0 && (
           <div>
-            <h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-3">File Information</h3>
+            <h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-3">
+              File Information
+            </h3>
             <div className="space-y-3 rounded-lg border border-border bg-bg-muted/30 p-4">
               {locationEntries.map((entry) => (
                 <div key={entry.label} className="space-y-1">
-                  <p className="text-xs uppercase tracking-wider text-fg-subtle">{entry.label}</p>
-                  <p className="break-all font-mono text-xs text-fg-muted">{entry.value}</p>
+                  <p className="text-xs uppercase tracking-wider text-fg-subtle">
+                    {entry.label}
+                  </p>
+                  <p className="break-all font-mono text-xs text-fg-muted">
+                    {entry.value}
+                  </p>
                 </div>
               ))}
             </div>
@@ -628,8 +729,12 @@ const SeasonEpisodeList = ({
 
   const episodeSearchMutation = useLibraryEpisodeSearchMutation();
   const episodeMonitorMutation = useLibraryEpisodeMonitorMutation();
-  const [pendingEpisodeSearch, setPendingEpisodeSearch] = useState<number | null>(null);
-  const [pendingEpisodeMonitor, setPendingEpisodeMonitor] = useState<number | null>(null);
+  const [pendingEpisodeSearch, setPendingEpisodeSearch] = useState<
+    number | null
+  >(null);
+  const [pendingEpisodeMonitor, setPendingEpisodeMonitor] = useState<
+    number | null
+  >(null);
 
   const handleSearchEpisode = async (episodeId: number) => {
     setPendingEpisodeSearch(episodeId);
@@ -647,7 +752,10 @@ const SeasonEpisodeList = ({
     }
   };
 
-  const handleToggleMonitor = async (episodeId: number, currentlyMonitored: boolean) => {
+  const handleToggleMonitor = async (
+    episodeId: number,
+    currentlyMonitored: boolean,
+  ) => {
     setPendingEpisodeMonitor(episodeId);
     try {
       await episodeMonitorMutation.mutateAsync({
@@ -656,7 +764,9 @@ const SeasonEpisodeList = ({
         episodeIds: [episodeId],
         monitored: !currentlyMonitored,
       });
-      toast.success(`Episode ${!currentlyMonitored ? 'monitoring enabled' : 'monitoring disabled'}`);
+      toast.success(
+        `Episode ${!currentlyMonitored ? "monitoring enabled" : "monitoring disabled"}`,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unknown error";
       toast.error(`Failed to toggle monitoring: ${message}`);
@@ -719,9 +829,13 @@ const SeasonEpisodeList = ({
               type="button"
               variant="secondary"
               size="sm"
-              onClick={() => handleToggleMonitor(episode.id, episode.monitored ?? false)}
+              onClick={() =>
+                handleToggleMonitor(episode.id, episode.monitored ?? false)
+              }
               disabled={pendingEpisodeMonitor === episode.id}
-              title={episode.monitored ? "Unmonitor episode" : "Monitor episode"}
+              title={
+                episode.monitored ? "Unmonitor episode" : "Monitor episode"
+              }
             >
               {pendingEpisodeMonitor === episode.id ? (
                 <Loader2 className="h-3 w-3 animate-spin" />
@@ -765,14 +879,16 @@ const SeasonBreakdownModal = ({
   onSearchSeason: (seasonNumber: number) => void;
   pendingActionKey: string | null;
 }) => {
-  const [expandedSeasons, setExpandedSeasons] = useState<Set<number>>(new Set());
+  const [expandedSeasons, setExpandedSeasons] = useState<Set<number>>(
+    new Set(),
+  );
 
   if (item.type !== "series" || !item.seasons?.length) {
     return null;
   }
 
   const toggleSeasonExpanded = (seasonNumber: number) => {
-    setExpandedSeasons(prev => {
+    setExpandedSeasons((prev) => {
       const next = new Set(prev);
       if (next.has(seasonNumber)) {
         next.delete(seasonNumber);
@@ -785,7 +901,12 @@ const SeasonBreakdownModal = ({
 
   const totalMissing = item.seasons.reduce(
     (total, season) =>
-      total + (season.missingEpisodeCount ?? Math.max((season.episodeCount ?? 0) - (season.episodeFileCount ?? 0), 0)),
+      total +
+      (season.missingEpisodeCount ??
+        Math.max(
+          (season.episodeCount ?? 0) - (season.episodeFileCount ?? 0),
+          0,
+        )),
     0,
   );
 
@@ -817,9 +938,15 @@ const SeasonBreakdownModal = ({
           {item.seasons.map((season) => {
             const total = season.episodeCount ?? 0;
             const downloaded = season.episodeFileCount ?? 0;
-            const missing = season.monitored === false ? 0 : season.missingEpisodeCount ?? Math.max(total - downloaded, 0);
+            const missing =
+              season.monitored === false
+                ? 0
+                : (season.missingEpisodeCount ??
+                  Math.max(total - downloaded, 0));
             const isSpecial = season.seasonNumber === 0;
-            const label = isSpecial ? "Specials" : `Season ${season.seasonNumber}`;
+            const label = isSpecial
+              ? "Specials"
+              : `Season ${season.seasonNumber}`;
             const seasonKey = `${item.instanceId}:${item.id}:${season.seasonNumber}`;
             const monitorKey = `monitor:${seasonKey}`;
             const searchKey = `search:${seasonKey}`;
@@ -827,10 +954,14 @@ const SeasonBreakdownModal = ({
             const seasonSearchPending = pendingActionKey === searchKey;
 
             const isExpanded = expandedSeasons.has(season.seasonNumber);
-            const percentComplete = total > 0 ? Math.round((downloaded / total) * 100) : 0;
+            const percentComplete =
+              total > 0 ? Math.round((downloaded / total) * 100) : 0;
 
             return (
-              <div key={season.seasonNumber} className="rounded-xl border border-border bg-bg-muted/30">
+              <div
+                key={season.seasonNumber}
+                className="rounded-xl border border-border bg-bg-muted/30"
+              >
                 <div className="px-4 py-3">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <button
@@ -845,7 +976,9 @@ const SeasonBreakdownModal = ({
                       <div>
                         <p className="text-sm font-medium text-fg">{label}</p>
                         {season.title && season.title !== label ? (
-                          <p className="text-xs text-fg-muted">{season.title}</p>
+                          <p className="text-xs text-fg-muted">
+                            {season.title}
+                          </p>
                         ) : null}
                       </div>
                     </button>
@@ -853,8 +986,14 @@ const SeasonBreakdownModal = ({
                       <LibraryBadge tone={missing > 0 ? "yellow" : "green"}>
                         {downloaded}/{total || "?"} episodes
                       </LibraryBadge>
-                      {missing > 0 ? <LibraryBadge tone="red">{missing} missing</LibraryBadge> : null}
-                      {season.monitored === false ? <LibraryBadge tone="blue">Unmonitored</LibraryBadge> : null}
+                      {missing > 0 ? (
+                        <LibraryBadge tone="red">
+                          {missing} missing
+                        </LibraryBadge>
+                      ) : null}
+                      {season.monitored === false ? (
+                        <LibraryBadge tone="blue">Unmonitored</LibraryBadge>
+                      ) : null}
                     </div>
                     <div className="flex flex-wrap items-center gap-2">
                       <Button
@@ -863,7 +1002,12 @@ const SeasonBreakdownModal = ({
                         size="sm"
                         className="flex items-center gap-2"
                         disabled={seasonMonitorPending}
-                        onClick={() => onToggleSeason(season.seasonNumber, !(season.monitored ?? false))}
+                        onClick={() =>
+                          onToggleSeason(
+                            season.seasonNumber,
+                            !(season.monitored ?? false),
+                          )
+                        }
                       >
                         {seasonMonitorPending ? (
                           <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -881,7 +1025,11 @@ const SeasonBreakdownModal = ({
                         disabled={seasonSearchPending}
                         onClick={() => onSearchSeason(season.seasonNumber)}
                       >
-                        {seasonSearchPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+                        {seasonSearchPending ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Search className="h-3.5 w-3.5" />
+                        )}
                         <span>Search</span>
                       </Button>
                     </div>
@@ -892,13 +1040,15 @@ const SeasonBreakdownModal = ({
                     <div className="mt-3 space-y-1.5">
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-fg-subtle">Progress</span>
-                        <span className="font-medium text-fg">{percentComplete}%</span>
+                        <span className="font-medium text-fg">
+                          {percentComplete}%
+                        </span>
                       </div>
                       <div className="h-2 rounded-full bg-bg-muted overflow-hidden">
                         <div
                           className={cn(
                             "h-full transition-all duration-300 rounded-full",
-                            missing > 0 ? "bg-warning" : "bg-success"
+                            missing > 0 ? "bg-warning" : "bg-success",
                           )}
                           style={{ width: `${percentComplete}%` }}
                         />
@@ -913,22 +1063,30 @@ const SeasonBreakdownModal = ({
                     <div className="grid grid-cols-2 gap-3 text-sm">
                       <div>
                         <span className="text-fg-subtle">Total Episodes:</span>
-                        <span className="ml-2 font-medium text-fg">{total}</span>
+                        <span className="ml-2 font-medium text-fg">
+                          {total}
+                        </span>
                       </div>
                       <div>
                         <span className="text-fg-subtle">Downloaded:</span>
-                        <span className="ml-2 font-medium text-success">{downloaded}</span>
+                        <span className="ml-2 font-medium text-success">
+                          {downloaded}
+                        </span>
                       </div>
                       {missing > 0 && (
                         <div>
                           <span className="text-fg-subtle">Missing:</span>
-                          <span className="ml-2 font-medium text-danger">{missing}</span>
+                          <span className="ml-2 font-medium text-danger">
+                            {missing}
+                          </span>
                         </div>
                       )}
                       <div>
                         <span className="text-fg-subtle">Status:</span>
                         <span className="ml-2 font-medium text-fg">
-                          {season.monitored === false ? "Unmonitored" : "Monitored"}
+                          {season.monitored === false
+                            ? "Unmonitored"
+                            : "Monitored"}
                         </span>
                       </div>
                     </div>
@@ -947,7 +1105,9 @@ const SeasonBreakdownModal = ({
                     {missing > 0 && season.monitored !== false && (
                       <div className="p-3 rounded-lg bg-warning/10 border border-warning/30">
                         <p className="text-xs text-warning">
-                          {missing} episode{missing === 1 ? "" : "s"} missing. Click "Search" to look for {missing === 1 ? "it" : "them"}.
+                          {missing} episode{missing === 1 ? "" : "s"} missing.
+                          Click "Search" to look for{" "}
+                          {missing === 1 ? "it" : "them"}.
                         </p>
                       </div>
                     )}
@@ -963,16 +1123,26 @@ const SeasonBreakdownModal = ({
 };
 
 export const LibraryClient: React.FC = () => {
-  const [serviceFilter, setServiceFilter] = useState<"all" | LibraryService>("all");
+  const [serviceFilter, setServiceFilter] = useState<"all" | LibraryService>(
+    "all",
+  );
   const [instanceFilter, setInstanceFilter] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState<(typeof STATUS_FILTERS)[number]["value"]>("all");
-  const [fileFilter, setFileFilter] = useState<(typeof FILE_FILTERS)[number]["value"]>("all");
+  const [statusFilter, setStatusFilter] =
+    useState<(typeof STATUS_FILTERS)[number]["value"]>("all");
+  const [fileFilter, setFileFilter] =
+    useState<(typeof FILE_FILTERS)[number]["value"]>("all");
   const [seasonDetail, setSeasonDetail] = useState<LibraryItem | null>(null);
   const [itemDetail, setItemDetail] = useState<LibraryItem | null>(null);
-  const [pendingSeasonAction, setPendingSeasonAction] = useState<string | null>(null);
-  const [pendingMovieSearch, setPendingMovieSearch] = useState<string | null>(null);
-  const [pendingSeriesSearch, setPendingSeriesSearch] = useState<string | null>(null);
+  const [pendingSeasonAction, setPendingSeasonAction] = useState<string | null>(
+    null,
+  );
+  const [pendingMovieSearch, setPendingMovieSearch] = useState<string | null>(
+    null,
+  );
+  const [pendingSeriesSearch, setPendingSeriesSearch] = useState<string | null>(
+    null,
+  );
 
   useEffect(() => {
     setInstanceFilter("all");
@@ -1041,14 +1211,21 @@ export const LibraryClient: React.FC = () => {
     setItemDetail(null);
   };
 
-  const handleSeasonMonitor = async (series: LibraryItem, seasonNumber: number, nextMonitored: boolean) => {
+  const handleSeasonMonitor = async (
+    series: LibraryItem,
+    seasonNumber: number,
+    nextMonitored: boolean,
+  ) => {
     if (series.service !== "sonarr") {
-      toast.warning('Season monitoring actions are only available for Sonarr series.');
+      toast.warning(
+        "Season monitoring actions are only available for Sonarr series.",
+      );
       return;
     }
 
-    const seasonLabel = seasonNumber === 0 ? 'Specials' : `Season ${seasonNumber}`;
-    const seriesTitle = series.title ?? 'Series';
+    const seasonLabel =
+      seasonNumber === 0 ? "Specials" : `Season ${seasonNumber}`;
+    const seriesTitle = series.title ?? "Series";
     const actionKey = `monitor:${series.instanceId}:${series.id}:${seasonNumber}`;
     setPendingSeasonAction(actionKey);
     try {
@@ -1059,23 +1236,31 @@ export const LibraryClient: React.FC = () => {
         monitored: nextMonitored,
         seasonNumbers: [seasonNumber],
       });
-      toast.success(`${seasonLabel} ${nextMonitored ? 'monitoring enabled' : 'monitoring disabled'} for ${seriesTitle}`);
+      toast.success(
+        `${seasonLabel} ${nextMonitored ? "monitoring enabled" : "monitoring disabled"} for ${seriesTitle}`,
+      );
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      toast.error(`Failed to ${nextMonitored ? 'enable' : 'disable'} ${seasonLabel}: ${message}`);
+      const message = error instanceof Error ? error.message : "Unknown error";
+      toast.error(
+        `Failed to ${nextMonitored ? "enable" : "disable"} ${seasonLabel}: ${message}`,
+      );
     } finally {
       setPendingSeasonAction(null);
     }
   };
 
-  const handleSeasonSearch = async (series: LibraryItem, seasonNumber: number) => {
+  const handleSeasonSearch = async (
+    series: LibraryItem,
+    seasonNumber: number,
+  ) => {
     if (series.service !== "sonarr") {
-      toast.warning('Season searches are only available for Sonarr series.');
+      toast.warning("Season searches are only available for Sonarr series.");
       return;
     }
 
-    const seasonLabel = seasonNumber === 0 ? 'Specials' : `Season ${seasonNumber}`;
-    const seriesTitle = series.title ?? 'Series';
+    const seasonLabel =
+      seasonNumber === 0 ? "Specials" : `Season ${seasonNumber}`;
+    const seriesTitle = series.title ?? "Series";
     const actionKey = `search:${series.instanceId}:${series.id}:${seasonNumber}`;
     setPendingSeasonAction(actionKey);
     try {
@@ -1087,7 +1272,7 @@ export const LibraryClient: React.FC = () => {
       });
       toast.success(`${seasonLabel} search queued for ${seriesTitle}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
+      const message = error instanceof Error ? error.message : "Unknown error";
       toast.error(`Failed to queue search for ${seasonLabel}: ${message}`);
     } finally {
       setPendingSeasonAction(null);
@@ -1165,7 +1350,8 @@ export const LibraryClient: React.FC = () => {
       const itemHasFile =
         item.type === "movie"
           ? Boolean(item.hasFile)
-          : Boolean(item.hasFile) || ((item.statistics?.episodeFileCount ?? 0) > 0);
+          : Boolean(item.hasFile) ||
+            (item.statistics?.episodeFileCount ?? 0) > 0;
       const matchesFile =
         fileFilter === "all" ||
         (fileFilter === "has-file" && itemHasFile) ||
@@ -1175,7 +1361,10 @@ export const LibraryClient: React.FC = () => {
     });
   }, [items, searchTerm, statusFilter, fileFilter]);
 
-  const grouped = useMemo(() => groupItemsByType(filteredItems), [filteredItems]);
+  const grouped = useMemo(
+    () => groupItemsByType(filteredItems),
+    [filteredItems],
+  );
 
   const pendingKey = monitorMutation.isPending
     ? `${monitorMutation.variables?.service ?? ""}:${monitorMutation.variables?.itemId ?? ""}`
@@ -1207,10 +1396,15 @@ export const LibraryClient: React.FC = () => {
       <div className="space-y-6">
         <header className="space-y-4">
           <div className="space-y-1.5">
-            <p className="text-xs uppercase tracking-[0.4em] text-white/40">Library</p>
-            <h1 className="text-2xl font-semibold text-white">Everything your *arr instances manage</h1>
+            <p className="text-xs uppercase tracking-[0.4em] text-white/40">
+              Library
+            </p>
+            <h1 className="text-2xl font-semibold text-white">
+              Everything your *arr instances manage
+            </h1>
             <p className="text-sm text-white/60">
-              Browse, filter, and adjust monitoring for movies and series across every connected instance.
+              Browse, filter, and adjust monitoring for movies and series across
+              every connected instance.
             </p>
           </div>
 
@@ -1221,7 +1415,9 @@ export const LibraryClient: React.FC = () => {
                   <Button
                     key={option.value}
                     type="button"
-                    variant={serviceFilter === option.value ? "primary" : "secondary"}
+                    variant={
+                      serviceFilter === option.value ? "primary" : "secondary"
+                    }
                     className="flex items-center gap-2 px-4 py-2 text-sm"
                     onClick={() => setServiceFilter(option.value)}
                   >
@@ -1232,7 +1428,9 @@ export const LibraryClient: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-3">
-                <label className="text-xs uppercase tracking-[0.3em] text-white/40">Instance</label>
+                <label className="text-xs uppercase tracking-[0.3em] text-white/40">
+                  Instance
+                </label>
                 <select
                   value={instanceFilter}
                   onChange={(event) => setInstanceFilter(event.target.value)}
@@ -1244,9 +1442,17 @@ export const LibraryClient: React.FC = () => {
                     All instances
                   </option>
                   {instanceOptions
-                    .filter((option) => serviceFilter === "all" || option.service === serviceFilter)
+                    .filter(
+                      (option) =>
+                        serviceFilter === "all" ||
+                        option.service === serviceFilter,
+                    )
                     .map((option) => (
-                      <option key={option.id} value={option.id} className="bg-slate-900 text-white">
+                      <option
+                        key={option.id}
+                        value={option.id}
+                        className="bg-slate-900 text-white"
+                      >
                         {option.label}
                       </option>
                     ))}
@@ -1254,15 +1460,26 @@ export const LibraryClient: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-3">
-                <label className="text-xs uppercase tracking-[0.3em] text-white/40">Status</label>
+                <label className="text-xs uppercase tracking-[0.3em] text-white/40">
+                  Status
+                </label>
                 <select
                   value={statusFilter}
-                  onChange={(event) => setStatusFilter(event.target.value as (typeof STATUS_FILTERS)[number]["value"])}
+                  onChange={(event) =>
+                    setStatusFilter(
+                      event.target
+                        .value as (typeof STATUS_FILTERS)[number]["value"],
+                    )
+                  }
                   className="rounded-md border border-white/20 bg-slate-900/80 px-3 py-2 text-sm text-white hover:border-sky-400/80 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
                   style={{ color: "#f8fafc" }}
                 >
                   {STATUS_FILTERS.map((option) => (
-                    <option key={option.value} value={option.value} className="bg-slate-900 text-white">
+                    <option
+                      key={option.value}
+                      value={option.value}
+                      className="bg-slate-900 text-white"
+                    >
                       {option.label}
                     </option>
                   ))}
@@ -1270,15 +1487,26 @@ export const LibraryClient: React.FC = () => {
               </div>
 
               <div className="flex items-center gap-3">
-                <label className="text-xs uppercase tracking-[0.3em] text-white/40">Files</label>
+                <label className="text-xs uppercase tracking-[0.3em] text-white/40">
+                  Files
+                </label>
                 <select
                   value={fileFilter}
-                  onChange={(event) => setFileFilter(event.target.value as (typeof FILE_FILTERS)[number]["value"])}
+                  onChange={(event) =>
+                    setFileFilter(
+                      event.target
+                        .value as (typeof FILE_FILTERS)[number]["value"],
+                    )
+                  }
                   className="rounded-md border border-white/20 bg-slate-900/80 px-3 py-2 text-sm text-white hover:border-sky-400/80 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
                   style={{ color: "#f8fafc" }}
                 >
                   {FILE_FILTERS.map((option) => (
-                    <option key={option.value} value={option.value} className="bg-slate-900 text-white">
+                    <option
+                      key={option.value}
+                      value={option.value}
+                      className="bg-slate-900 text-white"
+                    >
                       {option.label}
                     </option>
                   ))}
@@ -1298,7 +1526,8 @@ export const LibraryClient: React.FC = () => {
 
         {libraryQuery.isLoading ? (
           <div className="flex items-center gap-3 text-white/60">
-            <Loader2 className="h-5 w-5 animate-spin" /> Loading library from your instances...
+            <Loader2 className="h-5 w-5 animate-spin" /> Loading library from
+            your instances...
           </div>
         ) : null}
 
@@ -1314,7 +1543,9 @@ export const LibraryClient: React.FC = () => {
           <section className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-semibold text-white">Movies</h2>
-              <span className="text-sm text-white/50">{grouped.movies.length} items</span>
+              <span className="text-sm text-white/50">
+                {grouped.movies.length} items
+              </span>
             </div>
             <div className="grid gap-4 lg:grid-cols-2">
               {grouped.movies.map((item) => (
@@ -1322,10 +1553,18 @@ export const LibraryClient: React.FC = () => {
                   key={`${item.instanceId}:${item.id}`}
                   item={item}
                   onToggleMonitor={handleToggleMonitor}
-                  pending={pendingKey === `${item.service}:${item.id}` && monitorMutation.isPending}
-                  externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
+                  pending={
+                    pendingKey === `${item.service}:${item.id}` &&
+                    monitorMutation.isPending
+                  }
+                  externalLink={buildLibraryExternalLink(
+                    item,
+                    serviceLookup[item.instanceId],
+                  )}
                   onSearchMovie={handleMovieSearch}
-                  movieSearchPending={pendingMovieSearch === `${item.instanceId}:${item.id}`}
+                  movieSearchPending={
+                    pendingMovieSearch === `${item.instanceId}:${item.id}`
+                  }
                   onExpandDetails={handleExpandDetails}
                 />
               ))}
@@ -1337,7 +1576,9 @@ export const LibraryClient: React.FC = () => {
           <section className="space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-semibold text-white">Series</h2>
-              <span className="text-sm text-white/50">{grouped.series.length} items</span>
+              <span className="text-sm text-white/50">
+                {grouped.series.length} items
+              </span>
             </div>
             <div className="grid gap-4 lg:grid-cols-2">
               {grouped.series.map((item) => (
@@ -1345,11 +1586,19 @@ export const LibraryClient: React.FC = () => {
                   key={`${item.instanceId}:${item.id}`}
                   item={item}
                   onToggleMonitor={handleToggleMonitor}
-                  pending={pendingKey === `${item.service}:${item.id}` && monitorMutation.isPending}
-                  externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
+                  pending={
+                    pendingKey === `${item.service}:${item.id}` &&
+                    monitorMutation.isPending
+                  }
+                  externalLink={buildLibraryExternalLink(
+                    item,
+                    serviceLookup[item.instanceId],
+                  )}
                   onViewSeasons={handleViewSeasons}
                   onSearchSeries={handleSeriesSearch}
-                  seriesSearchPending={pendingSeriesSearch === `${item.instanceId}:${item.id}`}
+                  seriesSearchPending={
+                    pendingSeriesSearch === `${item.instanceId}:${item.id}`
+                  }
                   onExpandDetails={handleExpandDetails}
                 />
               ))}
@@ -1361,7 +1610,8 @@ export const LibraryClient: React.FC = () => {
           <Alert variant="danger">
             <AlertTitle>Failed to load library</AlertTitle>
             <AlertDescription>
-              {(libraryQuery.error as Error | undefined)?.message ?? "An error occurred while loading your library."}
+              {(libraryQuery.error as Error | undefined)?.message ??
+                "An error occurred while loading your library."}
             </AlertDescription>
           </Alert>
         ) : null}
@@ -1378,18 +1628,12 @@ export const LibraryClient: React.FC = () => {
           onToggleSeason={(seasonNumber, nextMonitored) =>
             handleSeasonMonitor(seasonDetail, seasonNumber, nextMonitored)
           }
-          onSearchSeason={(seasonNumber) => handleSeasonSearch(seasonDetail, seasonNumber)}
+          onSearchSeason={(seasonNumber) =>
+            handleSeasonSearch(seasonDetail, seasonNumber)
+          }
           pendingActionKey={pendingSeasonAction}
         />
       ) : null}
     </>
   );
 };
-
-
-
-
-
-
-
-

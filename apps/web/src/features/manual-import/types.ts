@@ -49,4 +49,8 @@ export type ManualImportCandidateRow = {
   rejectionReason?: string;
 };
 
-export { ManualImportCandidate, ManualImportRejection, ManualImportSubmissionFile };
+export {
+  ManualImportCandidate,
+  ManualImportRejection,
+  ManualImportSubmissionFile,
+};

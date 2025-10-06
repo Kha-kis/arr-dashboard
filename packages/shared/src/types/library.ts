@@ -94,7 +94,9 @@ export const multiInstanceLibraryResponseSchema = z.object({
   totalCount: z.number().nonnegative(),
 });
 
-export type MultiInstanceLibraryResponse = z.infer<typeof multiInstanceLibraryResponseSchema>;
+export type MultiInstanceLibraryResponse = z.infer<
+  typeof multiInstanceLibraryResponseSchema
+>;
 
 export const libraryToggleMonitorRequestSchema = z.object({
   instanceId: z.string(),
@@ -104,8 +106,9 @@ export const libraryToggleMonitorRequestSchema = z.object({
   seasonNumbers: z.array(z.number()).optional(),
 });
 
-export type LibraryToggleMonitorRequest = z.infer<typeof libraryToggleMonitorRequestSchema>;
-
+export type LibraryToggleMonitorRequest = z.infer<
+  typeof libraryToggleMonitorRequestSchema
+>;
 
 export const librarySeasonSearchRequestSchema = z.object({
   instanceId: z.string(),
@@ -114,7 +117,9 @@ export const librarySeasonSearchRequestSchema = z.object({
   seasonNumber: z.number().int().nonnegative(),
 });
 
-export type LibrarySeasonSearchRequest = z.infer<typeof librarySeasonSearchRequestSchema>;
+export type LibrarySeasonSearchRequest = z.infer<
+  typeof librarySeasonSearchRequestSchema
+>;
 
 export const libraryMovieSearchRequestSchema = z.object({
   instanceId: z.string(),
@@ -122,9 +127,9 @@ export const libraryMovieSearchRequestSchema = z.object({
   movieId: z.union([z.number(), z.string()]),
 });
 
-export type LibraryMovieSearchRequest = z.infer<typeof libraryMovieSearchRequestSchema>;
-
-
+export type LibraryMovieSearchRequest = z.infer<
+  typeof libraryMovieSearchRequestSchema
+>;
 
 export const librarySeriesSearchRequestSchema = z.object({
   instanceId: z.string(),
@@ -132,7 +137,9 @@ export const librarySeriesSearchRequestSchema = z.object({
   seriesId: z.union([z.number(), z.string()]),
 });
 
-export type LibrarySeriesSearchRequest = z.infer<typeof librarySeriesSearchRequestSchema>;
+export type LibrarySeriesSearchRequest = z.infer<
+  typeof librarySeriesSearchRequestSchema
+>;
 
 export const libraryEpisodeSchema = z.object({
   id: z.number(),
@@ -152,26 +159,35 @@ export type LibraryEpisode = z.infer<typeof libraryEpisodeSchema>;
 export const libraryEpisodesRequestSchema = z.object({
   instanceId: z.string(),
   seriesId: z.union([z.number(), z.string()]),
-  seasonNumber: z.union([z.number(), z.string()]).transform((val) => {
-    const num = typeof val === 'string' ? Number(val) : val;
-    return Number.isFinite(num) ? num : undefined;
-  }).optional(),
+  seasonNumber: z
+    .union([z.number(), z.string()])
+    .transform((val) => {
+      const num = typeof val === "string" ? Number(val) : val;
+      return Number.isFinite(num) ? num : undefined;
+    })
+    .optional(),
 });
 
-export type LibraryEpisodesRequest = z.infer<typeof libraryEpisodesRequestSchema>;
+export type LibraryEpisodesRequest = z.infer<
+  typeof libraryEpisodesRequestSchema
+>;
 
 export const libraryEpisodesResponseSchema = z.object({
   episodes: z.array(libraryEpisodeSchema),
 });
 
-export type LibraryEpisodesResponse = z.infer<typeof libraryEpisodesResponseSchema>;
+export type LibraryEpisodesResponse = z.infer<
+  typeof libraryEpisodesResponseSchema
+>;
 
 export const libraryEpisodeSearchRequestSchema = z.object({
   instanceId: z.string(),
   episodeIds: z.array(z.number()),
 });
 
-export type LibraryEpisodeSearchRequest = z.infer<typeof libraryEpisodeSearchRequestSchema>;
+export type LibraryEpisodeSearchRequest = z.infer<
+  typeof libraryEpisodeSearchRequestSchema
+>;
 
 export const libraryEpisodeMonitorRequestSchema = z.object({
   instanceId: z.string(),
@@ -180,5 +196,6 @@ export const libraryEpisodeMonitorRequestSchema = z.object({
   monitored: z.boolean(),
 });
 
-export type LibraryEpisodeMonitorRequest = z.infer<typeof libraryEpisodeMonitorRequestSchema>;
-
+export type LibraryEpisodeMonitorRequest = z.infer<
+  typeof libraryEpisodeMonitorRequestSchema
+>;

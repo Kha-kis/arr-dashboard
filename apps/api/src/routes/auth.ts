@@ -139,9 +139,9 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			await new Promise((resolve) => setTimeout(resolve, 200));
 
 			if (failedAttempts >= MAX_FAILED_ATTEMPTS) {
-				return reply
-					.status(423)
-					.send({ error: "Too many failed attempts. Account locked for 15 minutes." });
+				return reply.status(423).send({
+					error: "Too many failed attempts. Account locked for 15 minutes.",
+				});
 			}
 
 			return reply.status(401).send({ error: "Invalid credentials" });
@@ -194,7 +194,10 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		});
 
 		const hasTmdbApiKey = !!user?.encryptedTmdbApiKey;
-		request.log.info({ userId: request.currentUser.id, hasTmdbApiKey }, "GET /auth/me - TMDB key status");
+		request.log.info(
+			{ userId: request.currentUser.id, hasTmdbApiKey },
+			"GET /auth/me - TMDB key status",
+		);
 
 		return reply.send({
 			user: {
@@ -283,7 +286,13 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		// Build update data
-		const updateData: any = {};
+		const updateData: {
+			email?: string;
+			username?: string;
+			hashedPassword?: string;
+			encryptedTmdbApiKey?: string;
+			tmdbEncryptionIv?: string;
+		} = {};
 		if (email) {
 			updateData.email = email.trim().toLowerCase();
 		}
@@ -294,7 +303,10 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			updateData.hashedPassword = await hashPassword(newPassword);
 		}
 		if (tmdbApiKey !== undefined) {
-			request.log.info({ hasTmdbApiKey: !!tmdbApiKey, length: tmdbApiKey?.length }, "Processing TMDB API key");
+			request.log.info(
+				{ hasTmdbApiKey: !!tmdbApiKey, length: tmdbApiKey?.length },
+				"Processing TMDB API key",
+			);
 			if (tmdbApiKey) {
 				// Encrypt the TMDB API key
 				const { value, iv } = app.encryptor.encrypt(tmdbApiKey);

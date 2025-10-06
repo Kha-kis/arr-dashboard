@@ -27,7 +27,10 @@ export const RootProviders: React.FC<RootProvidersProps> = ({ children }) => {
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <QueryClientProvider client={queryClient}>
         {children}
-        <ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-right" />
+        <ReactQueryDevtools
+          initialIsOpen={false}
+          buttonPosition="bottom-right"
+        />
       </QueryClientProvider>
     </ThemeProvider>
   );

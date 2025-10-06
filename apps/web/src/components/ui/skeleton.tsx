@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { cn } from '../../lib/utils';
+import { cn } from "../../lib/utils";
 
 /**
  * Skeleton Component
@@ -20,7 +20,10 @@ export interface SkeletonProps extends React.HTMLAttributes<HTMLDivElement> {}
 export function Skeleton({ className, ...props }: SkeletonProps) {
   return (
     <div
-      className={cn('animate-pulse rounded-md bg-bg-muted/50 shimmer', className)}
+      className={cn(
+        "animate-pulse rounded-md bg-bg-muted/50 shimmer",
+        className,
+      )}
       role="status"
       aria-label="Loading"
       {...props}
@@ -32,13 +35,23 @@ export function Skeleton({ className, ...props }: SkeletonProps) {
  * Predefined Skeleton Patterns
  */
 
-export function SkeletonText({ lines = 3, className }: { lines?: number; className?: string }) {
+export function SkeletonText({
+  lines = 3,
+  className,
+}: {
+  lines?: number;
+  className?: string;
+}) {
   return (
-    <div className={cn('space-y-2', className)} role="status" aria-label="Loading text">
+    <div
+      className={cn("space-y-2", className)}
+      role="status"
+      aria-label="Loading text"
+    >
       {Array.from({ length: lines }).map((_, i) => (
         <Skeleton
           key={i}
-          className={cn('h-4', i === lines - 1 ? 'w-3/4' : 'w-full')}
+          className={cn("h-4", i === lines - 1 ? "w-3/4" : "w-full")}
         />
       ))}
     </div>
@@ -48,7 +61,10 @@ export function SkeletonText({ lines = 3, className }: { lines?: number; classNa
 export function SkeletonCard({ className }: { className?: string }) {
   return (
     <div
-      className={cn('rounded-2xl border border-border/50 p-6 space-y-4', className)}
+      className={cn(
+        "rounded-2xl border border-border/50 p-6 space-y-4",
+        className,
+      )}
       role="status"
       aria-label="Loading card"
     >
@@ -61,16 +77,22 @@ export function SkeletonCard({ className }: { className?: string }) {
   );
 }
 
-export function SkeletonAvatar({ size = 'md', className }: { size?: 'sm' | 'md' | 'lg'; className?: string }) {
+export function SkeletonAvatar({
+  size = "md",
+  className,
+}: {
+  size?: "sm" | "md" | "lg";
+  className?: string;
+}) {
   const sizeClasses = {
-    sm: 'h-8 w-8',
-    md: 'h-10 w-10',
-    lg: 'h-12 w-12',
+    sm: "h-8 w-8",
+    md: "h-10 w-10",
+    lg: "h-12 w-12",
   };
 
   return (
     <Skeleton
-      className={cn('rounded-full', sizeClasses[size], className)}
+      className={cn("rounded-full", sizeClasses[size], className)}
       aria-label="Loading avatar"
     />
   );

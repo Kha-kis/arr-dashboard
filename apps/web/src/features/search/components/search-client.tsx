@@ -8,11 +8,28 @@ import {
   useManualSearchMutation,
   useGrabSearchResultMutation,
 } from "../../../hooks/api/useSearch";
-import { Input, Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Alert, AlertTitle, AlertDescription, EmptyState, Skeleton } from "../../../components/ui";
+import {
+  Input,
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Alert,
+  AlertTitle,
+  AlertDescription,
+  EmptyState,
+  Skeleton,
+} from "../../../components/ui";
 import { ApiError } from "../../../lib/api-client/base";
 import { SearchResultsTable } from "./search-results-table";
+import { safeOpenUrl } from "../../../lib/utils/url-validation";
 
-const SEARCH_TYPES: Array<{ value: "all" | "movie" | "tv" | "music" | "book"; label: string }> = [
+const SEARCH_TYPES: Array<{
+  value: "all" | "movie" | "tv" | "music" | "book";
+  label: string;
+}> = [
   { value: "movie", label: "Movies" },
   { value: "tv", label: "Series" },
   { value: "music", label: "Music" },
@@ -20,13 +37,19 @@ const SEARCH_TYPES: Array<{ value: "all" | "movie" | "tv" | "music" | "book"; la
   { value: "all", label: "All" },
 ];
 
-const PROTOCOL_FILTERS: Array<{ value: "all" | "torrent" | "usenet"; label: string }> = [
+const PROTOCOL_FILTERS: Array<{
+  value: "all" | "torrent" | "usenet";
+  label: string;
+}> = [
   { value: "all", label: "All protocols" },
   { value: "torrent", label: "Torrent only" },
   { value: "usenet", label: "Usenet only" },
 ];
 
-const SORT_OPTIONS: Array<{ value: "seeders" | "publishDate" | "age" | "size" | "title"; label: string }> = [
+const SORT_OPTIONS: Array<{
+  value: "seeders" | "publishDate" | "age" | "size" | "title";
+  label: string;
+}> = [
   { value: "seeders", label: "Seeders" },
   { value: "publishDate", label: "Publish date" },
   { value: "age", label: "Age" },
@@ -37,9 +60,14 @@ const SORT_OPTIONS: Array<{ value: "seeders" | "publishDate" | "age" | "size" | 
 type SortKey = (typeof SORT_OPTIONS)[number]["value"];
 type ProtocolFilter = (typeof PROTOCOL_FILTERS)[number]["value"];
 
-const buildFilters = (selected: Record<string, number[]>): Array<{ instanceId: string; indexerIds: number[] }> => {
+const buildFilters = (
+  selected: Record<string, number[]>,
+): Array<{ instanceId: string; indexerIds: number[] }> => {
   return Object.entries(selected)
-    .map(([instanceId, ids]) => ({ instanceId, indexerIds: ids.filter((id) => typeof id === "number" && id > 0) }))
+    .map(([instanceId, ids]) => ({
+      instanceId,
+      indexerIds: ids.filter((id) => typeof id === "number" && id > 0),
+    }))
     .filter((entry) => entry.indexerIds.length > 0);
 };
 
@@ -87,7 +115,11 @@ const compareNumbers = (a: number, b: number) => {
   return a > b ? 1 : -1;
 };
 
-const compareBySortKey = (sortKey: SortKey, a: SearchResult, b: SearchResult): number => {
+const compareBySortKey = (
+  sortKey: SortKey,
+  a: SearchResult,
+  b: SearchResult,
+): number => {
   switch (sortKey) {
     case "seeders":
       return compareNumbers(a.seeders ?? 0, b.seeders ?? 0);
@@ -130,10 +162,17 @@ const compareBySortKey = (sortKey: SortKey, a: SearchResult, b: SearchResult): n
 
 export const SearchClient = () => {
   const [query, setQuery] = useState("");
-  const [searchType, setSearchType] = useState<"all" | "movie" | "tv" | "music" | "book">("movie");
-  const [selectedIndexers, setSelectedIndexers] = useState<Record<string, number[]>>({});
+  const [searchType, setSearchType] = useState<
+    "all" | "movie" | "tv" | "music" | "book"
+  >("movie");
+  const [selectedIndexers, setSelectedIndexers] = useState<
+    Record<string, number[]>
+  >({});
   const [results, setResults] = useState<SearchResult[]>([]);
-  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [feedback, setFeedback] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [grabbingKey, setGrabbingKey] = useState<string | null>(null);
   const [protocolFilter, setProtocolFilter] = useState<ProtocolFilter>("all");
@@ -161,7 +200,9 @@ export const SearchClient = () => {
 
       const initial: Record<string, number[]> = {};
       for (const instance of indexersQuery.data.instances) {
-        const enabled = instance.data.filter((indexer) => indexer.enable).map((indexer) => indexer.id);
+        const enabled = instance.data
+          .filter((indexer) => indexer.enable)
+          .map((indexer) => indexer.id);
         initial[instance.instanceId] = enabled;
       }
       return initial;
@@ -212,7 +253,15 @@ export const SearchClient = () => {
       minSeeders,
       maxAgeHours,
     };
-  }, [results, hideRejected, protocolFilter, minSeedersInput, maxAgeInput, sortKey, sortDirection]);
+  }, [
+    results,
+    hideRejected,
+    protocolFilter,
+    minSeedersInput,
+    maxAgeInput,
+    sortKey,
+    sortDirection,
+  ]);
 
   const filtersActive =
     hideRejected ||
@@ -275,11 +324,15 @@ export const SearchClient = () => {
           const total = data.totalCount;
           setFeedback({
             type: "success",
-            message: total > 0 ? `Found ${total} result${total === 1 ? "" : "s"}.` : "No results found for that query.",
+            message:
+              total > 0
+                ? `Found ${total} result${total === 1 ? "" : "s"}.`
+                : "No results found for that query.",
           });
         },
         onError: (error) => {
-          const message = error instanceof Error ? error.message : "Search failed";
+          const message =
+            error instanceof Error ? error.message : "Search failed";
           setFeedback({ type: "error", message });
         },
       },
@@ -293,68 +346,82 @@ export const SearchClient = () => {
     }
   };
 
-  
-const interpretGrabError = (message: string): string | null => {
-  const normalized = message.toLowerCase();
-  if (normalized.includes('download client') && normalized.includes("isn't configured")) {
-    return 'Configure a torrent download client in Prowlarr before grabbing releases.';
-  }
-  if (normalized.includes('download client') && normalized.includes('configure')) {
-    return 'Configure a torrent download client in Prowlarr before grabbing releases.';
-  }
-  if (normalized.includes('validation errors') && normalized.includes('json value could not be converted')) {
-    return 'Prowlarr rejected the grab payload. Try the search again or review the indexer configuration.';
-  }
-  return null;
-};
+  const interpretGrabError = (message: string): string | null => {
+    const normalized = message.toLowerCase();
+    if (
+      normalized.includes("download client") &&
+      normalized.includes("isn't configured")
+    ) {
+      return "Configure a torrent download client in Prowlarr before grabbing releases.";
+    }
+    if (
+      normalized.includes("download client") &&
+      normalized.includes("configure")
+    ) {
+      return "Configure a torrent download client in Prowlarr before grabbing releases.";
+    }
+    if (
+      normalized.includes("validation errors") &&
+      normalized.includes("json value could not be converted")
+    ) {
+      return "Prowlarr rejected the grab payload. Try the search again or review the indexer configuration.";
+    }
+    return null;
+  };
 
-const deriveGrabErrorMessage = (error: unknown): string => {
-  if (error instanceof ApiError) {
-    const payload = error.payload;
-    if (payload && typeof payload === 'object') {
-      const record = payload as Record<string, unknown>;
-      const primary = typeof record.message === 'string' ? record.message.trim() : '';
-      const secondary = typeof record.description === 'string' ? record.description.trim() : '';
+  const deriveGrabErrorMessage = (error: unknown): string => {
+    if (error instanceof ApiError) {
+      const payload = error.payload;
+      if (payload && typeof payload === "object") {
+        const record = payload as Record<string, unknown>;
+        const primary =
+          typeof record.message === "string" ? record.message.trim() : "";
+        const secondary =
+          typeof record.description === "string"
+            ? record.description.trim()
+            : "";
 
-      const errors = record.errors as Record<string, unknown> | undefined;
-      const fieldMessages: string[] = [];
-      if (errors && typeof errors === 'object') {
-        for (const value of Object.values(errors)) {
-          if (Array.isArray(value)) {
-            for (const entry of value) {
-              if (typeof entry === 'string' && entry.trim().length > 0) {
-                fieldMessages.push(entry.trim());
+        const errors = record.errors as Record<string, unknown> | undefined;
+        const fieldMessages: string[] = [];
+        if (errors && typeof errors === "object") {
+          for (const value of Object.values(errors)) {
+            if (Array.isArray(value)) {
+              for (const entry of value) {
+                if (typeof entry === "string" && entry.trim().length > 0) {
+                  fieldMessages.push(entry.trim());
+                }
               }
             }
           }
         }
+
+        const combined = [primary, secondary, ...fieldMessages].filter(
+          (entry) => entry.length > 0,
+        );
+        if (combined.length > 0) {
+          const friendly = interpretGrabError(combined.join(" "));
+          return friendly ?? combined.join(" ");
+        }
+      } else if (typeof payload === "string" && payload.trim().length > 0) {
+        const friendly = interpretGrabError(payload);
+        return friendly ?? payload.trim();
       }
 
-      const combined = [primary, secondary, ...fieldMessages].filter((entry) => entry.length > 0);
-      if (combined.length > 0) {
-        const friendly = interpretGrabError(combined.join(' '));
-        return friendly ?? combined.join(' ');
+      if (error.message) {
+        const friendly = interpretGrabError(error.message);
+        return friendly ?? error.message;
       }
-    } else if (typeof payload === 'string' && payload.trim().length > 0) {
-      const friendly = interpretGrabError(payload);
-      return friendly ?? payload.trim();
     }
 
-    if (error.message) {
+    if (error instanceof Error && error.message) {
       const friendly = interpretGrabError(error.message);
       return friendly ?? error.message;
     }
-  }
 
-  if (error instanceof Error && error.message) {
-    const friendly = interpretGrabError(error.message);
-    return friendly ?? error.message;
-  }
+    return "Failed to send release to the download client.";
+  };
 
-  return 'Failed to send release to the download client.';
-};
-
-const handleGrab = async (result: SearchResult) => {
+  const handleGrab = async (result: SearchResult) => {
     const rowKey = `${result.instanceId}:${result.indexerId}:${result.id}`;
     setGrabbingKey(rowKey);
     setFeedback(null);
@@ -363,7 +430,10 @@ const handleGrab = async (result: SearchResult) => {
         instanceId: result.instanceId,
         result,
       });
-      setFeedback({ type: "success", message: `Sent "${result.title}" to the download client.` });
+      setFeedback({
+        type: "success",
+        message: `Sent "${result.title}" to the download client.`,
+      });
     } catch (error) {
       const message = deriveGrabErrorMessage(error);
       setFeedback({ type: "error", message });
@@ -376,7 +446,11 @@ const handleGrab = async (result: SearchResult) => {
     async (result: SearchResult) => {
       const link = result.magnetUrl ?? result.downloadUrl ?? result.link;
       if (!link) {
-        setFeedback({ type: "error", message: "No copyable magnet or download link is available for this release." });
+        setFeedback({
+          type: "error",
+          message:
+            "No copyable magnet or download link is available for this release.",
+        });
         return;
       }
 
@@ -384,8 +458,12 @@ const handleGrab = async (result: SearchResult) => {
         await navigator.clipboard.writeText(link);
         setFeedback({ type: "success", message: "Copied link to clipboard." });
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Clipboard copy failed.";
-        setFeedback({ type: "error", message: `Unable to copy link: ${message}` });
+        const message =
+          error instanceof Error ? error.message : "Clipboard copy failed.";
+        setFeedback({
+          type: "error",
+          message: `Unable to copy link: ${message}`,
+        });
       }
     },
     [setFeedback],
@@ -393,12 +471,18 @@ const handleGrab = async (result: SearchResult) => {
 
   const handleOpenInfo = useCallback(
     (result: SearchResult) => {
-      const target = result.infoUrl ?? result.link ?? result.downloadUrl ?? result.magnetUrl;
+      const target =
+        result.infoUrl ?? result.link ?? result.downloadUrl ?? result.magnetUrl;
       if (!target) {
-        setFeedback({ type: "error", message: "This release did not provide a public info link." });
+        setFeedback({
+          type: "error",
+          message: "This release did not provide a public info link.",
+        });
         return;
       }
-      window.open(target, "_blank", "noopener,noreferrer");
+      if (!safeOpenUrl(target)) {
+        setFeedback({ type: "error", message: "Invalid or unsafe URL." });
+      }
     },
     [setFeedback],
   );
@@ -425,7 +509,9 @@ const handleGrab = async (result: SearchResult) => {
     return (
       <Alert variant="danger">
         <AlertTitle>Unable to load indexers</AlertTitle>
-        <AlertDescription>Please verify your API connection and try again.</AlertDescription>
+        <AlertDescription>
+          Please verify your API connection and try again.
+        </AlertDescription>
       </Alert>
     );
   }
@@ -434,19 +520,22 @@ const handleGrab = async (result: SearchResult) => {
   const emptyMessage = !hasSearched
     ? "Submit a manual search to see results across your indexers."
     : results.length === 0
-    ? "No results returned from your indexers for that query."
-    : filtersActive
-    ? "No results match the current filters. Adjust them to see more releases."
-    : "No results to display.";
+      ? "No results returned from your indexers for that query."
+      : filtersActive
+        ? "No results match the current filters. Adjust them to see more releases."
+        : "No results to display.";
 
   return (
     <section className="flex flex-col gap-10">
       <header className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
         <div>
-          <p className="text-sm font-medium uppercase text-white/60">Multi-indexer search</p>
+          <p className="text-sm font-medium uppercase text-white/60">
+            Multi-indexer search
+          </p>
           <h1 className="text-3xl font-semibold text-white">Manual Search</h1>
           <p className="mt-2 text-sm text-white/60">
-            Query your configured Prowlarr instances and send releases directly to your download clients.
+            Query your configured Prowlarr instances and send releases directly
+            to your download clients.
           </p>
         </div>
       </header>
@@ -466,9 +555,12 @@ const handleGrab = async (result: SearchResult) => {
       {noIndexers ? (
         <Card className="border-dashed border-white/20 bg-white/5">
           <CardHeader>
-            <CardTitle className="text-xl">Prowlarr configuration required</CardTitle>
+            <CardTitle className="text-xl">
+              Prowlarr configuration required
+            </CardTitle>
             <CardDescription>
-              Add at least one Prowlarr instance in Settings to enable manual searches across your indexers.
+              Add at least one Prowlarr instance in Settings to enable manual
+              searches across your indexers.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -484,7 +576,8 @@ const handleGrab = async (result: SearchResult) => {
               <CardHeader className="mb-0">
                 <CardTitle>Search configuration</CardTitle>
                 <CardDescription>
-                  Choose indexers and a search type, then run a manual query. Results refresh automatically on each search.
+                  Choose indexers and a search type, then run a manual query.
+                  Results refresh automatically on each search.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -508,7 +601,9 @@ const handleGrab = async (result: SearchResult) => {
                         <Button
                           key={type.value}
                           type="button"
-                          variant={searchType === type.value ? "primary" : "ghost"}
+                          variant={
+                            searchType === type.value ? "primary" : "ghost"
+                          }
                           className="flex-1"
                           onClick={() => setSearchType(type.value)}
                         >
@@ -523,20 +618,30 @@ const handleGrab = async (result: SearchResult) => {
                   {indexersQuery.data?.instances.map((instance) => {
                     const ids = selectedIndexers[instance.instanceId] ?? [];
                     const allIds = instance.data.map((indexer) => indexer.id);
-                    const everySelected = allIds.length > 0 && allIds.every((id) => ids.includes(id));
+                    const everySelected =
+                      allIds.length > 0 &&
+                      allIds.every((id) => ids.includes(id));
                     return (
-                      <div key={instance.instanceId} className="rounded-xl border border-white/10 bg-white/5 p-4">
+                      <div
+                        key={instance.instanceId}
+                        className="rounded-xl border border-white/10 bg-white/5 p-4"
+                      >
                         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                           <div>
-                            <p className="text-sm font-semibold text-white">{instance.instanceName}</p>
+                            <p className="text-sm font-semibold text-white">
+                              {instance.instanceName}
+                            </p>
                             <p className="text-xs text-white/50">
-                              {ids.length} of {instance.data.length} indexers selected
+                              {ids.length} of {instance.data.length} indexers
+                              selected
                             </p>
                           </div>
                           <Button
                             type="button"
                             variant="ghost"
-                            onClick={() => handleToggleAll(instance.instanceId, allIds)}
+                            onClick={() =>
+                              handleToggleAll(instance.instanceId, allIds)
+                            }
                           >
                             {everySelected ? "Clear" : "Select all"}
                           </Button>
@@ -548,7 +653,12 @@ const handleGrab = async (result: SearchResult) => {
                               <button
                                 key={indexer.id}
                                 type="button"
-                                onClick={() => handleToggleIndexer(instance.instanceId, indexer.id)}
+                                onClick={() =>
+                                  handleToggleIndexer(
+                                    instance.instanceId,
+                                    indexer.id,
+                                  )
+                                }
                                 className={`rounded-full border px-3 py-1 text-xs transition ${
                                   isSelected
                                     ? "border-sky-400 bg-sky-500/20 text-white"
@@ -560,7 +670,9 @@ const handleGrab = async (result: SearchResult) => {
                             );
                           })}
                           {instance.data.length === 0 && (
-                            <span className="text-xs text-white/50">No indexers configured on this instance.</span>
+                            <span className="text-xs text-white/50">
+                              No indexers configured on this instance.
+                            </span>
                           )}
                         </div>
                       </div>
@@ -570,8 +682,15 @@ const handleGrab = async (result: SearchResult) => {
 
                 <div className="space-y-4 rounded-xl border border-white/10 bg-white/5 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="text-sm font-semibold text-white">Result filters</h3>
-                    <Button type="button" variant="ghost" className="text-xs uppercase tracking-wide" onClick={resetFilters}>
+                    <h3 className="text-sm font-semibold text-white">
+                      Result filters
+                    </h3>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="text-xs uppercase tracking-wide"
+                      onClick={resetFilters}
+                    >
                       Reset
                     </Button>
                   </div>
@@ -583,12 +702,20 @@ const handleGrab = async (result: SearchResult) => {
                       </label>
                       <select
                         value={protocolFilter}
-                        onChange={(event) => setProtocolFilter(event.target.value as ProtocolFilter)}
+                        onChange={(event) =>
+                          setProtocolFilter(
+                            event.target.value as ProtocolFilter,
+                          )
+                        }
                         className="w-full rounded-md border border-white/20 bg-slate-900/80 px-3 py-2 text-sm text-white hover:border-sky-400/80 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
                         style={{ color: "#f8fafc" }}
                       >
                         {PROTOCOL_FILTERS.map((option) => (
-                          <option key={option.value} value={option.value} className="bg-slate-900 text-white">
+                          <option
+                            key={option.value}
+                            value={option.value}
+                            className="bg-slate-900 text-white"
+                          >
                             {option.label}
                           </option>
                         ))}
@@ -603,7 +730,9 @@ const handleGrab = async (result: SearchResult) => {
                         type="number"
                         min={0}
                         value={minSeedersInput}
-                        onChange={(event) => setMinSeedersInput(event.target.value)}
+                        onChange={(event) =>
+                          setMinSeedersInput(event.target.value)
+                        }
                         placeholder="0"
                       />
                     </div>
@@ -622,7 +751,9 @@ const handleGrab = async (result: SearchResult) => {
                     </div>
 
                     <div className="flex flex-col justify-end gap-2">
-                      <label className="text-xs font-semibold uppercase tracking-wide text-white/60">Visibility</label>
+                      <label className="text-xs font-semibold uppercase tracking-wide text-white/60">
+                        Visibility
+                      </label>
                       <Button
                         type="button"
                         variant={hideRejected ? "primary" : "ghost"}
@@ -630,7 +761,9 @@ const handleGrab = async (result: SearchResult) => {
                         onClick={() => setHideRejected((value) => !value)}
                         aria-pressed={hideRejected}
                       >
-                        {hideRejected ? "Hidden rejected releases" : "Hide rejected releases"}
+                        {hideRejected
+                          ? "Hidden rejected releases"
+                          : "Hide rejected releases"}
                       </Button>
                     </div>
                   </div>
@@ -642,12 +775,18 @@ const handleGrab = async (result: SearchResult) => {
                       </label>
                       <select
                         value={sortKey}
-                        onChange={(event) => setSortKey(event.target.value as SortKey)}
+                        onChange={(event) =>
+                          setSortKey(event.target.value as SortKey)
+                        }
                         className="w-full rounded-md border border-white/20 bg-slate-900/80 px-3 py-2 text-sm text-white hover:border-sky-400/80 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
                         style={{ color: "#f8fafc" }}
                       >
                         {SORT_OPTIONS.map((option) => (
-                          <option key={option.value} value={option.value} className="bg-slate-900 text-white">
+                          <option
+                            key={option.value}
+                            value={option.value}
+                            className="bg-slate-900 text-white"
+                          >
                             {option.label}
                           </option>
                         ))}
@@ -655,11 +794,15 @@ const handleGrab = async (result: SearchResult) => {
                     </div>
 
                     <div className="flex flex-col justify-end gap-2">
-                      <label className="text-xs font-semibold uppercase tracking-wide text-white/60">Sort direction</label>
+                      <label className="text-xs font-semibold uppercase tracking-wide text-white/60">
+                        Sort direction
+                      </label>
                       <div className="flex gap-2">
                         <Button
                           type="button"
-                          variant={sortDirection === "desc" ? "primary" : "ghost"}
+                          variant={
+                            sortDirection === "desc" ? "primary" : "ghost"
+                          }
                           className="flex-1"
                           onClick={() => setSortDirection("desc")}
                           aria-pressed={sortDirection === "desc"}
@@ -668,7 +811,9 @@ const handleGrab = async (result: SearchResult) => {
                         </Button>
                         <Button
                           type="button"
-                          variant={sortDirection === "asc" ? "primary" : "ghost"}
+                          variant={
+                            sortDirection === "asc" ? "primary" : "ghost"
+                          }
                           className="flex-1"
                           onClick={() => setSortDirection("asc")}
                           aria-pressed={sortDirection === "asc"}
@@ -691,9 +836,13 @@ const handleGrab = async (result: SearchResult) => {
 
           {(hasSearched || results.length > 0) && (
             <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/70">
-              Showing <span className="font-semibold text-white">{processed.results.length}</span> of
-              {" "}
-              <span className="font-semibold text-white">{results.length}</span> results.
+              Showing{" "}
+              <span className="font-semibold text-white">
+                {processed.results.length}
+              </span>{" "}
+              of{" "}
+              <span className="font-semibold text-white">{results.length}</span>{" "}
+              results.
               {filtersActive && processed.hidden > 0 ? (
                 <span className="ml-2 text-xs text-white/50">
                   {processed.hidden} hidden by filters.
@@ -716,5 +865,3 @@ const handleGrab = async (result: SearchResult) => {
     </section>
   );
 };
-
-

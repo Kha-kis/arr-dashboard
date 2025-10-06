@@ -28,7 +28,8 @@ const getInstanceState = (
 ): DiscoverResultInstanceState | undefined =>
   result?.instanceStates.find((state) => state.instanceId === instanceId);
 
-const SELECT_CLASS = "w-full rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg hover:border-border-hover focus:border-border-focus focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-bg";
+const SELECT_CLASS =
+  "w-full rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg hover:border-border-hover focus:border-border-focus focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-bg";
 const OPTION_STYLE = {} as const;
 
 export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
@@ -43,7 +44,9 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
   const targetInstances = useMemo(
     () =>
       instances.filter((instance) =>
-        type === "movie" ? instance.service === "radarr" : instance.service === "sonarr",
+        type === "movie"
+          ? instance.service === "radarr"
+          : instance.service === "sonarr",
       ),
     [instances, type],
   );
@@ -53,7 +56,9 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
   const [instanceId, setInstanceId] = useState<string | null>(null);
   const [qualityProfileId, setQualityProfileId] = useState<number | null>(null);
   const [rootFolderPath, setRootFolderPath] = useState<string>("");
-  const [languageProfileId, setLanguageProfileId] = useState<number | null>(null);
+  const [languageProfileId, setLanguageProfileId] = useState<number | null>(
+    null,
+  );
   const [monitored, setMonitored] = useState(true);
   const [searchOnAdd, setSearchOnAdd] = useState(true);
   const [seasonFolder, setSeasonFolder] = useState(true);
@@ -81,7 +86,9 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
       return !existing?.exists;
     });
 
-    setInstanceId((previous) => previous ?? preferred?.id ?? targetInstances[0]?.id ?? null);
+    setInstanceId(
+      (previous) => previous ?? preferred?.id ?? targetInstances[0]?.id ?? null,
+    );
   }, [open, targetInstances, result]);
 
   useEffect(() => {
@@ -146,13 +153,19 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
       }
 
       if (type === "series") {
-        const desiredLanguage = selectedInstance?.defaultLanguageProfileId ?? null;
+        const desiredLanguage =
+          selectedInstance?.defaultLanguageProfileId ?? null;
         if (
           desiredLanguage !== null &&
-          options.languageProfiles?.some((profile) => profile.id === desiredLanguage)
+          options.languageProfiles?.some(
+            (profile) => profile.id === desiredLanguage,
+          )
         ) {
           setLanguageProfileId(desiredLanguage);
-        } else if (options.languageProfiles && options.languageProfiles.length > 0) {
+        } else if (
+          options.languageProfiles &&
+          options.languageProfiles.length > 0
+        ) {
           setLanguageProfileId(options.languageProfiles[0]!.id);
         } else {
           setLanguageProfileId(null);
@@ -173,7 +186,9 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 
     if (
       qualityProfileId !== null &&
-      !options.qualityProfiles.some((profile) => profile.id === qualityProfileId)
+      !options.qualityProfiles.some(
+        (profile) => profile.id === qualityProfileId,
+      )
     ) {
       setQualityProfileId(options.qualityProfiles[0]?.id ?? null);
     }
@@ -188,7 +203,9 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
     if (
       type === "series" &&
       languageProfileId !== null &&
-      !(options.languageProfiles ?? []).some((profile) => profile.id === languageProfileId)
+      !(options.languageProfiles ?? []).some(
+        (profile) => profile.id === languageProfileId,
+      )
     ) {
       setLanguageProfileId(options.languageProfiles?.[0]?.id ?? null);
     }
@@ -208,7 +225,13 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!instanceId || !qualityProfileId || !rootFolderPath || (type === "series" && !languageProfileId) || noInstances) {
+    if (
+      !instanceId ||
+      !qualityProfileId ||
+      !rootFolderPath ||
+      (type === "series" && !languageProfileId) ||
+      noInstances
+    ) {
       return;
     }
 
@@ -244,7 +267,9 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
     await onSubmit(payload);
   };
 
-  const existingState = instanceId ? getInstanceState(result, instanceId) : undefined;
+  const existingState = instanceId
+    ? getInstanceState(result, instanceId)
+    : undefined;
   const alreadyAdded = Boolean(existingState?.exists);
   const disableSubmit =
     submitting ||
@@ -267,25 +292,34 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
           Close
         </button>
         <div className="mb-6 space-y-2">
-          <p className="text-xs uppercase tracking-[0.4em] text-fg-subtle">Add to Library</p>
+          <p className="text-xs uppercase tracking-[0.4em] text-fg-subtle">
+            Add to Library
+          </p>
           <h2 className="text-2xl font-semibold text-fg">
             {result.title}
-            {result.year ? <span className="ml-2 text-fg-muted">({result.year})</span> : null}
+            {result.year ? (
+              <span className="ml-2 text-fg-muted">({result.year})</span>
+            ) : null}
           </h2>
           {result.overview ? (
-            <p className="text-sm leading-relaxed text-fg-muted line-clamp-3">{result.overview}</p>
+            <p className="text-sm leading-relaxed text-fg-muted line-clamp-3">
+              {result.overview}
+            </p>
           ) : null}
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           {noInstances ? (
             <div className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
-              Configure a {type === "movie" ? "Radarr" : "Sonarr"} instance in Settings before adding items.
+              Configure a {type === "movie" ? "Radarr" : "Sonarr"} instance in
+              Settings before adding items.
             </div>
           ) : null}
           <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
-              <label className="text-xs uppercase tracking-widest text-fg-subtle">Instance</label>
+              <label className="text-xs uppercase tracking-widest text-fg-subtle">
+                Instance
+              </label>
               <select
                 className={SELECT_CLASS}
                 value={instanceId ?? ""}
@@ -304,8 +338,13 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
                 {targetInstances.map((instance) => {
                   const state = getInstanceState(result, instance.id);
                   return (
-                    <option key={instance.id} value={instance.id} style={OPTION_STYLE}>
-                      {instance.label} {state?.exists ? "(Already in library)" : ""}
+                    <option
+                      key={instance.id}
+                      value={instance.id}
+                      style={OPTION_STYLE}
+                    >
+                      {instance.label}{" "}
+                      {state?.exists ? "(Already in library)" : ""}
                     </option>
                   );
                 })}
@@ -313,11 +352,15 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
             </div>
 
             <div className="space-y-2">
-              <label className="text-xs uppercase tracking-widest text-fg-subtle">Quality Profile</label>
+              <label className="text-xs uppercase tracking-widest text-fg-subtle">
+                Quality Profile
+              </label>
               <select
                 className={SELECT_CLASS}
                 value={qualityProfileId ?? ""}
-                onChange={(event) => setQualityProfileId(Number(event.target.value))}
+                onChange={(event) =>
+                  setQualityProfileId(Number(event.target.value))
+                }
                 disabled={submitting || loadingOptions || !options}
                 required
               >
@@ -325,7 +368,11 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
                   {loadingOptions ? "Loading..." : "Select quality profile"}
                 </option>
                 {options?.qualityProfiles.map((profile) => (
-                  <option key={profile.id} value={profile.id} style={OPTION_STYLE}>
+                  <option
+                    key={profile.id}
+                    value={profile.id}
+                    style={OPTION_STYLE}
+                  >
                     {profile.name}
                   </option>
                 ))}
@@ -334,19 +381,33 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 
             {type === "series" ? (
               <div className="space-y-2">
-                <label className="text-xs uppercase tracking-widest text-fg-subtle">Language Profile</label>
+                <label className="text-xs uppercase tracking-widest text-fg-subtle">
+                  Language Profile
+                </label>
                 <select
                   className={SELECT_CLASS}
                   value={languageProfileId ?? ""}
-                  onChange={(event) => setLanguageProfileId(Number(event.target.value))}
-                  disabled={submitting || loadingOptions || !options?.languageProfiles?.length}
+                  onChange={(event) =>
+                    setLanguageProfileId(Number(event.target.value))
+                  }
+                  disabled={
+                    submitting ||
+                    loadingOptions ||
+                    !options?.languageProfiles?.length
+                  }
                   required
                 >
                   <option value="" disabled style={OPTION_STYLE}>
-                    {options?.languageProfiles?.length ? "Select language profile" : "No language profiles"}
+                    {options?.languageProfiles?.length
+                      ? "Select language profile"
+                      : "No language profiles"}
                   </option>
                   {options?.languageProfiles?.map((profile) => (
-                    <option key={profile.id} value={profile.id} style={OPTION_STYLE}>
+                    <option
+                      key={profile.id}
+                      value={profile.id}
+                      style={OPTION_STYLE}
+                    >
                       {profile.name}
                     </option>
                   ))}
@@ -355,7 +416,9 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
             ) : null}
 
             <div className="space-y-2">
-              <label className="text-xs uppercase tracking-widest text-fg-subtle">Root Folder</label>
+              <label className="text-xs uppercase tracking-widest text-fg-subtle">
+                Root Folder
+              </label>
               <select
                 className={SELECT_CLASS}
                 value={rootFolderPath}
@@ -367,7 +430,11 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
                   {loadingOptions ? "Loading..." : "Select root folder"}
                 </option>
                 {options?.rootFolders.map((folder) => (
-                  <option key={folder.path} value={folder.path} style={OPTION_STYLE}>
+                  <option
+                    key={folder.path}
+                    value={folder.path}
+                    style={OPTION_STYLE}
+                  >
                     {folder.path}
                   </option>
                 ))}
@@ -419,11 +486,24 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
           </div>
 
           <div className="flex items-center justify-end gap-3 pt-2">
-            <Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={onClose}
+              disabled={submitting}
+            >
               Cancel
             </Button>
-            <Button type="submit" disabled={disableSubmit} className={cn(disableSubmit && "cursor-not-allowed opacity-60")}> 
-              {submitting ? "Adding..." : alreadyAdded ? "Already Added" : "Add to Library"}
+            <Button
+              type="submit"
+              disabled={disableSubmit}
+              className={cn(disableSubmit && "cursor-not-allowed opacity-60")}
+            >
+              {submitting
+                ? "Adding..."
+                : alreadyAdded
+                  ? "Already Added"
+                  : "Add to Library"}
             </Button>
           </div>
         </form>

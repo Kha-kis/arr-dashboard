@@ -592,7 +592,10 @@ const fetchCalendarItems = async (
 	service: "sonarr" | "radarr",
 	options: { start: string; end: string; unmonitored?: boolean },
 ): Promise<CalendarItem[]> => {
-	const params = new URLSearchParams({ start: options.start, end: options.end });
+	const params = new URLSearchParams({
+		start: options.start,
+		end: options.end,
+	});
 	if (typeof options.unmonitored === "boolean") {
 		params.set("unmonitored", String(options.unmonitored));
 	}
@@ -702,7 +705,10 @@ const dashboardRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 			if (!downloadId) {
 				reply.status(400);
-				return { success: false, message: "Manual import requires a download identifier." };
+				return {
+					success: false,
+					message: "Manual import requires a download identifier.",
+				};
 			}
 
 			try {
@@ -722,7 +728,15 @@ const dashboardRoute: FastifyPluginCallback = (app, _opts, done) => {
 				return { success: false, message };
 			}
 		} else if (body.action === "retry") {
-			await fetcher(`${queueApiPath(body.service)}/${queueId}/retry`, { method: "POST" });
+			// Retry by removing from queue without blocklisting, allowing ARR to retry automatically
+			const search = new URLSearchParams({
+				removeFromClient: String(body.removeFromClient ?? true),
+				blocklist: "false",
+				changeCategory: "false",
+			});
+			await fetcher(`${queueApiPath(body.service)}/${queueId}?${search.toString()}`, {
+				method: "DELETE",
+			});
 		} else {
 			const search = new URLSearchParams({
 				removeFromClient: String(body.removeFromClient),
@@ -777,15 +791,26 @@ const dashboardRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		if (body.action === "manualImport") {
 			reply.status(400);
-			return { success: false, message: "Manual import cannot be processed as a bulk action." };
+			return {
+				success: false,
+				message: "Manual import cannot be processed as a bulk action.",
+			};
 		}
 
 		if (body.action === "retry") {
-			await Promise.all(
-				queueIds.map((id) =>
-					fetcher(`${queueApiPath(body.service)}/${id}/retry`, { method: "POST" }),
-				),
-			);
+			// Retry by removing from queue without blocklisting, allowing ARR to retry automatically
+			await fetcher(`${queueApiPath(body.service)}/bulk`, {
+				method: "DELETE",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify({
+					ids: queueIds,
+					removeFromClient: body.removeFromClient ?? true,
+					blocklist: false,
+					changeCategory: false,
+				}),
+			});
 		} else {
 			await fetcher(`${queueApiPath(body.service)}/bulk`, {
 				method: "DELETE",
@@ -939,7 +964,11 @@ const dashboardRoute: FastifyPluginCallback = (app, _opts, done) => {
 					unmonitored,
 				});
 				const validated = items
-					.map((item) => ({ ...item, instanceId: instance.id, instanceName: instance.label }))
+					.map((item) => ({
+						...item,
+						instanceId: instance.id,
+						instanceName: instance.label,
+					}))
 					.map((item) => calendarItemSchema.parse(item));
 				results.push({
 					instanceId: instance.id,
@@ -980,9 +1009,21 @@ const dashboardRoute: FastifyPluginCallback = (app, _opts, done) => {
 			where: { userId: request.currentUser.id, enabled: true },
 		});
 
-		const sonarrInstances: Array<{ instanceId: string; instanceName: string; data: any }> = [];
-		const radarrInstances: Array<{ instanceId: string; instanceName: string; data: any }> = [];
-		const prowlarrInstances: Array<{ instanceId: string; instanceName: string; data: any }> = [];
+		const sonarrInstances: Array<{
+			instanceId: string;
+			instanceName: string;
+			data: any;
+		}> = [];
+		const radarrInstances: Array<{
+			instanceId: string;
+			instanceName: string;
+			data: any;
+		}> = [];
+		const prowlarrInstances: Array<{
+			instanceId: string;
+			instanceName: string;
+			data: any;
+		}> = [];
 
 		for (const instance of instances) {
 			const service = instance.service.toLowerCase();
@@ -991,7 +1032,11 @@ const dashboardRoute: FastifyPluginCallback = (app, _opts, done) => {
 			if (service === "sonarr") {
 				try {
 					const data = await fetchSonarrStatistics(fetcher);
-					sonarrInstances.push({ instanceId: instance.id, instanceName: instance.label, data });
+					sonarrInstances.push({
+						instanceId: instance.id,
+						instanceName: instance.label,
+						data,
+					});
 				} catch (error) {
 					request.log.error(
 						{ err: error, instance: instance.id },
@@ -1009,7 +1054,11 @@ const dashboardRoute: FastifyPluginCallback = (app, _opts, done) => {
 			if (service === "radarr") {
 				try {
 					const data = await fetchRadarrStatistics(fetcher);
-					radarrInstances.push({ instanceId: instance.id, instanceName: instance.label, data });
+					radarrInstances.push({
+						instanceId: instance.id,
+						instanceName: instance.label,
+						data,
+					});
 				} catch (error) {
 					request.log.error(
 						{ err: error, instance: instance.id },
@@ -1026,7 +1075,11 @@ const dashboardRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 			try {
 				const data = await fetchProwlarrStatistics(fetcher);
-				prowlarrInstances.push({ instanceId: instance.id, instanceName: instance.label, data });
+				prowlarrInstances.push({
+					instanceId: instance.id,
+					instanceName: instance.label,
+					data,
+				});
 			} catch (error) {
 				request.log.error(
 					{ err: error, instance: instance.id },

@@ -10,7 +10,8 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: "Arr Control Center",
-  description: "Centralized management dashboard for Sonarr, Radarr, and Prowlarr",
+  description:
+    "Centralized management dashboard for Sonarr, Radarr, and Prowlarr",
 };
 
 interface RootLayoutProps {

@@ -8,24 +8,16 @@ export type ArrServiceType = z.infer<typeof arrServiceTypeSchema>;
 
 export const arrTagSchema = z.object({
   id: z.string().uuid(),
-  name: z
-    .string()
-    .trim()
-    .min(1, "Tag name is required"),
+  name: z.string().trim().min(1, "Tag name is required"),
 });
 
 export type ArrTag = z.infer<typeof arrTagSchema>;
 
 export const serviceInstanceSchema = z.object({
   id: z.string().uuid(),
-  label: z
-    .string()
-    .trim()
-    .min(1, "Instance label is required"),
+  label: z.string().trim().min(1, "Instance label is required"),
   baseUrl: z.string().url("Valid base URL is required"),
-  apiKey: z
-    .string()
-    .min(10, "API key appears too short"),
+  apiKey: z.string().min(10, "API key appears too short"),
   service: arrServiceTypeSchema,
   isDefault: z.boolean().default(false),
   enabled: z.boolean().default(true),

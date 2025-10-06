@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
@@ -20,11 +20,18 @@ export const AuthGate = ({ children }: AuthGateProps) => {
 
   // Only fetch user if setup is definitely complete (false, not undefined)
   const shouldFetchUser = setupRequired === false && !isSetupRoute;
-  const { data: user, isLoading: userLoading } = useCurrentUser(shouldFetchUser);
+  const { data: user, isLoading: userLoading } =
+    useCurrentUser(shouldFetchUser);
 
   // Handle auth redirects (but NOT setup redirects - home page handles that)
   useEffect(() => {
-    console.log('AuthGate:', { pathname, setupRequired, userLoading, user: !!user, isPublicRoute });
+    console.log("AuthGate:", {
+      pathname,
+      setupRequired,
+      userLoading,
+      user: !!user,
+      isPublicRoute,
+    });
 
     // Don't redirect anything on public routes
     if (isPublicRoute) return;

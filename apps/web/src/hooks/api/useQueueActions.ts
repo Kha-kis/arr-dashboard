@@ -1,8 +1,11 @@
-'use client';
+"use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { MultiInstanceQueueResponse, QueueItem } from "@arr/shared";
-import { performQueueAction, performQueueBulkAction } from "../../lib/api-client/dashboard";
+import {
+  performQueueAction,
+  performQueueBulkAction,
+} from "../../lib/api-client/dashboard";
 
 type QueueActionType = "retry" | "delete" | "manualImport";
 
@@ -64,7 +67,10 @@ const applyOptimisticUpdate = (
       if (key && keys.has(key)) {
         return {
           ...item,
-          status: variables.action === "manualImport" ? "Manual import requested" : "Retry requested",
+          status:
+            variables.action === "manualImport"
+              ? "Manual import requested"
+              : "Retry requested",
         };
       }
       return item;
@@ -91,7 +97,9 @@ type QueueSearchPayload = {
   movieId?: number;
 };
 
-const buildSearchPayload = (item: QueueItem): QueueSearchPayload | undefined => {
+const buildSearchPayload = (
+  item: QueueItem,
+): QueueSearchPayload | undefined => {
   if (item.service === "sonarr") {
     const payload: QueueSearchPayload = {};
     if (typeof item.seriesId === "number") {
@@ -113,7 +121,11 @@ const buildSearchPayload = (item: QueueItem): QueueSearchPayload | undefined => 
   return undefined;
 };
 
-const performActionRequests = async ({ action, items, options }: QueueActionVariables) => {
+const performActionRequests = async ({
+  action,
+  items,
+  options,
+}: QueueActionVariables) => {
   const mergedOptions = { ...defaultOptions, ...options };
 
   const relevantItems =
@@ -177,7 +189,9 @@ const performActionRequests = async ({ action, items, options }: QueueActionVari
 
     if (manualGroups.size === 0) {
       if (missingDownloadIds.length > 0) {
-        throw new Error("Selected items do not expose a download identifier for manual import.");
+        throw new Error(
+          "Selected items do not expose a download identifier for manual import.",
+        );
       }
 
       return;
@@ -297,11 +311,17 @@ const performActionRequests = async ({ action, items, options }: QueueActionVari
 export const useQueueActions = () => {
   const queryClient = useQueryClient();
 
-  const mutation = useMutation<void, Error, QueueActionVariables, QueueActionContext>({
+  const mutation = useMutation<
+    void,
+    Error,
+    QueueActionVariables,
+    QueueActionContext
+  >({
     mutationFn: performActionRequests,
     onMutate: async (variables) => {
       await queryClient.cancelQueries({ queryKey: QUEUE_QUERY_KEY });
-      const previous = queryClient.getQueryData<MultiInstanceQueueResponse>(QUEUE_QUERY_KEY);
+      const previous =
+        queryClient.getQueryData<MultiInstanceQueueResponse>(QUEUE_QUERY_KEY);
 
       if (previous) {
         const updated = applyOptimisticUpdate(previous, variables);
@@ -332,7 +352,11 @@ export const useQueueActions = () => {
     return mutation.mutateAsync({ action, items, options });
   };
 
-  const execute = (action: QueueActionType, items: QueueItem[], options?: QueueActionOptions) => {
+  const execute = (
+    action: QueueActionType,
+    items: QueueItem[],
+    options?: QueueActionOptions,
+  ) => {
     if (items.length === 0) {
       return;
     }

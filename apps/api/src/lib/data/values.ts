@@ -45,13 +45,8 @@ export const toStringArray = (value: unknown): string[] | undefined => {
 				const trimmed = entry.trim();
 				return trimmed.length > 0 ? trimmed : undefined;
 			}
-			if (
-				entry &&
-				typeof entry === "object" &&
-				"name" in entry &&
-				typeof (entry as any).name === "string"
-			) {
-				const trimmed = ((entry as any).name as string).trim();
+			if (entry && typeof entry === "object" && "name" in entry && typeof entry.name === "string") {
+				const trimmed = entry.name.trim();
 				return trimmed.length > 0 ? trimmed : undefined;
 			}
 			return undefined;

@@ -1,24 +1,31 @@
-﻿'use client';
+﻿"use client";
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { useSetupRequired, useCurrentUser } from '../src/hooks/api/useAuth';
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useSetupRequired, useCurrentUser } from "../src/hooks/api/useAuth";
 import { Skeleton } from "../src/components/ui";
 
 const HomePage = () => {
   const router = useRouter();
   const { data: setupRequired, isLoading: setupLoading } = useSetupRequired();
-  const { data: user, isLoading: userLoading } = useCurrentUser(setupRequired === false);
+  const { data: user, isLoading: userLoading } = useCurrentUser(
+    setupRequired === false,
+  );
 
   useEffect(() => {
-    console.log('HomePage redirect check:', { setupLoading, setupRequired, userLoading, user: !!user });
+    console.log("HomePage redirect check:", {
+      setupLoading,
+      setupRequired,
+      userLoading,
+      user: !!user,
+    });
 
     if (setupLoading) return;
 
     // Setup is required, go to setup page
     if (setupRequired === true) {
-      console.log('HomePage: Redirecting to /setup');
-      window.location.href = '/setup';
+      console.log("HomePage: Redirecting to /setup");
+      window.location.href = "/setup";
       return;
     }
 
@@ -28,14 +35,14 @@ const HomePage = () => {
 
       // User is logged in, go to dashboard
       if (user) {
-        console.log('HomePage: Redirecting to /dashboard');
-        router.replace('/dashboard');
+        console.log("HomePage: Redirecting to /dashboard");
+        router.replace("/dashboard");
         return;
       }
 
       // Not logged in, go to login
-      console.log('HomePage: Redirecting to /login');
-      router.replace('/login');
+      console.log("HomePage: Redirecting to /login");
+      router.replace("/login");
     }
   }, [setupLoading, setupRequired, userLoading, user, router]);
 

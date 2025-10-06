@@ -12,12 +12,16 @@ export const isRadarrCandidate = (
   candidate: ManualImportCandidateUnion,
 ): candidate is ManualImportRadarrCandidate => candidate.service === "radarr";
 
-type SonarrEpisode = NonNullable<ManualImportSonarrCandidate["episodes"]>[number];
+type SonarrEpisode = NonNullable<
+  ManualImportSonarrCandidate["episodes"]
+>[number];
 
 const isMeaningfulString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
 
-export const formatEpisodeCode = (episode: SonarrEpisode | undefined): string => {
+export const formatEpisodeCode = (
+  episode: SonarrEpisode | undefined,
+): string => {
   if (!episode) {
     return "";
   }
@@ -25,11 +29,16 @@ export const formatEpisodeCode = (episode: SonarrEpisode | undefined): string =>
   const season =
     typeof episode.seasonNumber === "number" ? episode.seasonNumber : undefined;
   const episodeNumber =
-    typeof episode.episodeNumber === "number" ? episode.episodeNumber : undefined;
+    typeof episode.episodeNumber === "number"
+      ? episode.episodeNumber
+      : undefined;
 
-  const seasonPart = typeof season === "number" ? `S${String(season).padStart(2, "0")}` : "";
+  const seasonPart =
+    typeof season === "number" ? `S${String(season).padStart(2, "0")}` : "";
   const episodePart =
-    typeof episodeNumber === "number" ? `E${String(episodeNumber).padStart(2, "0")}` : "";
+    typeof episodeNumber === "number"
+      ? `E${String(episodeNumber).padStart(2, "0")}`
+      : "";
 
   return `${seasonPart}${episodePart}`;
 };
@@ -40,7 +49,9 @@ export const describeEpisode = (episode: SonarrEpisode | undefined): string => {
   }
 
   const code = formatEpisodeCode(episode);
-  const title = isMeaningfulString(episode.title) ? episode.title.trim() : undefined;
+  const title = isMeaningfulString(episode.title)
+    ? episode.title.trim()
+    : undefined;
 
   if (code && title) {
     return `${code} - ${title}`;
@@ -53,7 +64,9 @@ export const describeEpisode = (episode: SonarrEpisode | undefined): string => {
   return code || "Episode";
 };
 
-export const describeRejections = (candidate: ManualImportCandidateUnion): string | undefined => {
+export const describeRejections = (
+  candidate: ManualImportCandidateUnion,
+): string | undefined => {
   if (!candidate.rejections || candidate.rejections.length === 0) {
     return undefined;
   }
@@ -65,9 +78,14 @@ export const describeRejections = (candidate: ManualImportCandidateUnion): strin
   return reasons.length > 0 ? reasons.join("; ") : undefined;
 };
 
-export const describeCandidate = (candidate: ManualImportCandidateUnion): string => {
+export const describeCandidate = (
+  candidate: ManualImportCandidateUnion,
+): string => {
   const fallback =
-    candidate.name ?? candidate.relativePath ?? candidate.path ?? String(candidate.id ?? "candidate");
+    candidate.name ??
+    candidate.relativePath ??
+    candidate.path ??
+    String(candidate.id ?? "candidate");
 
   if (isSonarrCandidate(candidate)) {
     const seriesTitle = candidate.series?.title ?? "Unknown series";
@@ -75,7 +93,9 @@ export const describeCandidate = (candidate: ManualImportCandidateUnion): string
       ?.map((episode) => describeEpisode(episode))
       .filter(isMeaningfulString);
 
-    return episodes && episodes.length > 0 ? `${seriesTitle} - ${episodes.join(", ")}` : seriesTitle;
+    return episodes && episodes.length > 0
+      ? `${seriesTitle} - ${episodes.join(", ")}`
+      : seriesTitle;
   }
 
   if (isRadarrCandidate(candidate)) {
@@ -85,7 +105,9 @@ export const describeCandidate = (candidate: ManualImportCandidateUnion): string
   return fallback;
 };
 
-export const extractDownloadId = (candidate: ManualImportCandidateUnion): string | undefined => {
+export const extractDownloadId = (
+  candidate: ManualImportCandidateUnion,
+): string | undefined => {
   const value = candidate.downloadId;
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 };
@@ -93,8 +115,13 @@ export const extractDownloadId = (candidate: ManualImportCandidateUnion): string
 export const candidateKey = (candidate: ManualImportCandidateUnion): string =>
   `${candidate.service}:${candidate.id}`;
 
-export const candidateDisplayPath = (candidate: ManualImportCandidateUnion): string =>
-  candidate.relativePath ?? candidate.path ?? candidate.name ?? String(candidate.id ?? "candidate");
+export const candidateDisplayPath = (
+  candidate: ManualImportCandidateUnion,
+): string =>
+  candidate.relativePath ??
+  candidate.path ??
+  candidate.name ??
+  String(candidate.id ?? "candidate");
 
 export const describeQuality = (quality: unknown): string => {
   if (!quality || typeof quality !== "object") {
@@ -104,7 +131,9 @@ export const describeQuality = (quality: unknown): string => {
   const source = quality as Record<string, unknown>;
   const nested = source.quality;
   const qualityObject =
-    typeof nested === "object" && nested !== null ? (nested as Record<string, unknown>) : undefined;
+    typeof nested === "object" && nested !== null
+      ? (nested as Record<string, unknown>)
+      : undefined;
 
   const nameCandidates: Array<unknown> = [
     qualityObject?.name,

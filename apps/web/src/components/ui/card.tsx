@@ -1,8 +1,11 @@
-'use client';
+"use client";
 
 import { cn } from "../../lib/utils";
 
-const Card = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+const Card = ({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement>) => (
   <div
     className={cn(
       "group relative rounded-2xl border border-border/50 p-6 transition-all duration-300",
@@ -16,19 +19,31 @@ const Card = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => 
   />
 );
 
-const CardHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+const CardHeader = ({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement>) => (
   <div className={cn("mb-4 space-y-1.5", className)} {...props} />
 );
 
-const CardTitle = ({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
+const CardTitle = ({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLHeadingElement>) => (
   <h3 className={cn("text-lg font-semibold text-fg", className)} {...props} />
 );
 
-const CardDescription = ({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) => (
+const CardDescription = ({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLParagraphElement>) => (
   <p className={cn("text-sm text-fg-muted", className)} {...props} />
 );
 
-const CardContent = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
+const CardContent = ({
+  className,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement>) => (
   <div className={cn("text-sm text-fg-subtle", className)} {...props} />
 );
 

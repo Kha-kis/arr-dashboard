@@ -5,7 +5,7 @@ export const recommendationTypeSchema = z.enum([
   "popular",
   "top_rated",
   "upcoming",
-  "airing_today"
+  "airing_today",
 ]);
 
 export type RecommendationType = z.infer<typeof recommendationTypeSchema>;
@@ -28,15 +28,22 @@ export type RecommendationItem = z.infer<typeof recommendationItemSchema>;
 export const recommendationsRequestSchema = z.object({
   type: recommendationTypeSchema,
   mediaType: z.enum(["movie", "series"]),
+  page: z.coerce.number().min(1).optional().default(1),
 });
 
-export type RecommendationsRequest = z.infer<typeof recommendationsRequestSchema>;
+export type RecommendationsRequest = z.infer<
+  typeof recommendationsRequestSchema
+>;
 
 export const recommendationsResponseSchema = z.object({
   type: recommendationTypeSchema,
   mediaType: z.enum(["movie", "series"]),
   items: z.array(recommendationItemSchema),
   totalResults: z.number(),
+  page: z.number(),
+  totalPages: z.number(),
 });
 
-export type RecommendationsResponse = z.infer<typeof recommendationsResponseSchema>;
+export type RecommendationsResponse = z.infer<
+  typeof recommendationsResponseSchema
+>;

@@ -70,13 +70,17 @@ export const prowlarrIndexerDetailsSchema = z.object({
   stats: prowlarrIndexerStatsSchema.optional(),
 });
 
-export type ProwlarrIndexerDetails = z.infer<typeof prowlarrIndexerDetailsSchema>;
+export type ProwlarrIndexerDetails = z.infer<
+  typeof prowlarrIndexerDetailsSchema
+>;
 
 export const searchIndexerDetailsResponseSchema = z.object({
   indexer: prowlarrIndexerDetailsSchema,
 });
 
-export type SearchIndexerDetailsResponse = z.infer<typeof searchIndexerDetailsResponseSchema>;
+export type SearchIndexerDetailsResponse = z.infer<
+  typeof searchIndexerDetailsResponseSchema
+>;
 
 export const searchIndexersResponseSchema = z.object({
   instances: z.array(
@@ -90,7 +94,9 @@ export const searchIndexersResponseSchema = z.object({
   totalCount: z.number().int().nonnegative(),
 });
 
-export type SearchIndexersResponse = z.infer<typeof searchIndexersResponseSchema>;
+export type SearchIndexersResponse = z.infer<
+  typeof searchIndexersResponseSchema
+>;
 
 const searchLanguageSchema = z.object({
   id: z.number().int(),
@@ -146,7 +152,9 @@ export const multiInstanceSearchResponseSchema = z.object({
   totalCount: z.number().int().nonnegative(),
 });
 
-export type MultiInstanceSearchResponse = z.infer<typeof multiInstanceSearchResponseSchema>;
+export type MultiInstanceSearchResponse = z.infer<
+  typeof multiInstanceSearchResponseSchema
+>;
 
 const searchFilterSchema = z.object({
   instanceId: z.string(),
@@ -163,7 +171,10 @@ export const searchRequestSchema = z.object({
 
 export type SearchRequest = z.infer<typeof searchRequestSchema>;
 
-const grabResultSchema = searchResultSchema.omit({ instanceId: true, instanceName: true });
+const grabResultSchema = searchResultSchema.omit({
+  instanceId: true,
+  instanceName: true,
+});
 
 export const searchGrabRequestSchema = z.object({
   instanceId: z.string(),
@@ -176,20 +187,24 @@ export const searchIndexerTestRequestSchema = z.object({
   indexerId: z.number().int().positive(),
 });
 
-export type SearchIndexerTestRequest = z.infer<typeof searchIndexerTestRequestSchema>;
+export type SearchIndexerTestRequest = z.infer<
+  typeof searchIndexerTestRequestSchema
+>;
 
 export const searchIndexerTestResponseSchema = z.object({
   success: z.boolean(),
   message: z.string().optional(),
 });
 
-export type SearchIndexerTestResponse = z.infer<typeof searchIndexerTestResponseSchema>;
+export type SearchIndexerTestResponse = z.infer<
+  typeof searchIndexerTestResponseSchema
+>;
 
 export const searchIndexerUpdateRequestSchema = z.object({
   instanceId: z.string(),
   indexer: prowlarrIndexerDetailsSchema,
 });
 
-export type SearchIndexerUpdateRequest = z.infer<typeof searchIndexerUpdateRequestSchema>;
-
-
+export type SearchIndexerUpdateRequest = z.infer<
+  typeof searchIndexerUpdateRequestSchema
+>;

@@ -54,9 +54,11 @@ export const useIndexerDetailsQuery = (
   });
 
 export const useUpdateIndexerMutation = () =>
-  useMutation<ProwlarrIndexerDetails, unknown, { instanceId: string; indexerId: number; indexer: ProwlarrIndexerDetails }>({
-    mutationFn: ({ instanceId, indexerId, indexer }) => updateSearchIndexer(instanceId, indexerId, indexer),
+  useMutation<
+    ProwlarrIndexerDetails,
+    unknown,
+    { instanceId: string; indexerId: number; indexer: ProwlarrIndexerDetails }
+  >({
+    mutationFn: ({ instanceId, indexerId, indexer }) =>
+      updateSearchIndexer(instanceId, indexerId, indexer),
   });
-
-
-

@@ -31,7 +31,9 @@ const manualImportRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		if (!query.downloadId && !query.folder) {
 			reply.status(400);
-			return { message: "Provide either downloadId or folder to fetch manual import candidates." };
+			return {
+				message: "Provide either downloadId or folder to fetch manual import candidates.",
+			};
 		}
 
 		const instance = await app.prisma.serviceInstance.findFirst({

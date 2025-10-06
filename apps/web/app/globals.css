@@ -39,18 +39,30 @@
     /* Shadows - Enhanced with colored shadows */
     --shadow-none: none;
     --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
-    --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
-    --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.2);
-    --shadow-xl: 0 20px 25px -5px rgb(0 0 0 / 0.4), 0 8px 10px -6px rgb(0 0 0 / 0.3);
+    --shadow-md:
+      0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+    --shadow-lg:
+      0 10px 15px -3px rgb(0 0 0 / 0.3), 0 4px 6px -4px rgb(0 0 0 / 0.2);
+    --shadow-xl:
+      0 20px 25px -5px rgb(0 0 0 / 0.4), 0 8px 10px -6px rgb(0 0 0 / 0.3);
     --shadow-primary: 0 10px 40px -10px hsl(217 91% 60% / 0.4);
     --shadow-accent: 0 10px 40px -10px hsl(270 95% 75% / 0.3);
 
     /* Gradients */
-    --gradient-primary: linear-gradient(135deg, hsl(217 91% 60%) 0%, hsl(270 95% 75%) 100%);
-    --gradient-subtle: linear-gradient(135deg, hsl(240 6% 10%) 0%, hsl(240 5% 15%) 100%);
-    --gradient-mesh: radial-gradient(at 0% 0%, hsl(217 91% 60% / 0.15) 0px, transparent 50%),
-                     radial-gradient(at 100% 0%, hsl(270 95% 75% / 0.1) 0px, transparent 50%),
-                     radial-gradient(at 100% 100%, hsl(330 85% 65% / 0.1) 0px, transparent 50%);
+    --gradient-primary: linear-gradient(
+      135deg,
+      hsl(217 91% 60%) 0%,
+      hsl(270 95% 75%) 100%
+    );
+    --gradient-subtle: linear-gradient(
+      135deg,
+      hsl(240 6% 10%) 0%,
+      hsl(240 5% 15%) 100%
+    );
+    --gradient-mesh:
+      radial-gradient(at 0% 0%, hsl(217 91% 60% / 0.15) 0px, transparent 50%),
+      radial-gradient(at 100% 0%, hsl(270 95% 75% / 0.1) 0px, transparent 50%),
+      radial-gradient(at 100% 100%, hsl(330 85% 65% / 0.1) 0px, transparent 50%);
 
     /* Typography Scale */
     --text-xs: 0.75rem;
@@ -222,7 +234,8 @@
 
   /* Glow effect */
   @keyframes glow {
-    0%, 100% {
+    0%,
+    100% {
       opacity: 1;
     }
     50% {

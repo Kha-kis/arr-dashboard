@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -29,7 +29,9 @@ export const Sidebar = () => {
   const NavContent = () => (
     <>
       <div className="mb-10 relative z-10">
-        <h1 className="text-xl font-semibold gradient-text">Arr Control Center</h1>
+        <h1 className="text-xl font-semibold gradient-text">
+          Arr Control Center
+        </h1>
         <p className="mt-1 text-xs text-fg-muted">Centralized Management</p>
       </div>
 
@@ -85,7 +87,7 @@ export const Sidebar = () => {
       <aside
         className={cn(
           "lg:hidden fixed inset-y-0 left-0 z-40 w-72 flex flex-col border-r border-border/30 bg-bg/95 backdrop-blur-xl p-6 text-fg-muted transition-transform duration-300",
-          mobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+          mobileMenuOpen ? "translate-x-0" : "-translate-x-full",
         )}
       >
         {/* Decorative gradient orb */}

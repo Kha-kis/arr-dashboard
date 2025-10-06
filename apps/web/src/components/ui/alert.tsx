@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { cn } from '../../lib/utils';
-import type { LucideIcon } from 'lucide-react';
-import { AlertCircle, CheckCircle, Info, AlertTriangle, X } from 'lucide-react';
+import { cn } from "../../lib/utils";
+import type { LucideIcon } from "lucide-react";
+import { AlertCircle, CheckCircle, Info, AlertTriangle, X } from "lucide-react";
 
 /**
  * Alert Component
@@ -18,13 +18,13 @@ import { AlertCircle, CheckCircle, Info, AlertTriangle, X } from 'lucide-react';
  * ```
  */
 
-export type AlertVariant = 'info' | 'success' | 'warning' | 'danger';
+export type AlertVariant = "info" | "success" | "warning" | "danger";
 
 const variantStyles: Record<AlertVariant, string> = {
-  info: 'bg-info/10 border-info/30 text-info-fg',
-  success: 'bg-success/10 border-success/30 text-success-fg',
-  warning: 'bg-warning/10 border-warning/30 text-warning-fg',
-  danger: 'bg-danger/10 border-danger/30 text-danger-fg',
+  info: "bg-info/10 border-info/30 text-info-fg",
+  success: "bg-success/10 border-success/30 text-success-fg",
+  warning: "bg-warning/10 border-warning/30 text-warning-fg",
+  danger: "bg-danger/10 border-danger/30 text-danger-fg",
 };
 
 const variantIcons: Record<AlertVariant, LucideIcon> = {
@@ -43,7 +43,7 @@ export interface AlertProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 export function Alert({
-  variant = 'info',
+  variant = "info",
   dismissible,
   onDismiss,
   className,
@@ -56,9 +56,9 @@ export function Alert({
     <div
       role="alert"
       className={cn(
-        'relative flex items-start gap-3 rounded-xl border p-4 backdrop-blur-sm',
+        "relative flex items-start gap-3 rounded-xl border p-4 backdrop-blur-sm",
         variantStyles[variant],
-        className
+        className,
       )}
       {...props}
     >
@@ -85,7 +85,7 @@ export function AlertTitle({
 }: React.HTMLAttributes<HTMLHeadingElement>) {
   return (
     <h5
-      className={cn('font-semibold leading-none tracking-tight', className)}
+      className={cn("font-semibold leading-none tracking-tight", className)}
       {...props}
     />
   );
@@ -95,7 +95,5 @@ export function AlertDescription({
   className,
   ...props
 }: React.HTMLAttributes<HTMLParagraphElement>) {
-  return (
-    <p className={cn('text-sm opacity-90', className)} {...props} />
-  );
+  return <p className={cn("text-sm opacity-90", className)} {...props} />;
 }

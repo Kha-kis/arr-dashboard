@@ -1,8 +1,14 @@
-'use client';
+"use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CurrentUser } from "@arr/shared";
-import { login, logout, fetchCurrentUser, updateAccount, checkSetupRequired } from "../../lib/api-client/auth";
+import {
+  login,
+  logout,
+  fetchCurrentUser,
+  updateAccount,
+  checkSetupRequired,
+} from "../../lib/api-client/auth";
 
 // Login
 interface LoginPayload {

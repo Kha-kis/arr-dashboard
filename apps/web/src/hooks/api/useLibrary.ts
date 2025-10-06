@@ -21,7 +21,7 @@ import {
   searchLibrarySeason,
   searchLibrarySeries,
   toggleEpisodeMonitoring,
-  toggleLibraryMonitoring
+  toggleLibraryMonitoring,
 } from "../../lib/api-client/library";
 
 interface LibraryQueryOptions {
@@ -32,8 +32,15 @@ interface LibraryQueryOptions {
 
 export const useLibraryQuery = (options: LibraryQueryOptions = {}) =>
   useQuery<MultiInstanceLibraryResponse>({
-    queryKey: ["library", { service: options.service, instanceId: options.instanceId }],
-    queryFn: () => fetchLibrary({ service: options.service, instanceId: options.instanceId }),
+    queryKey: [
+      "library",
+      { service: options.service, instanceId: options.instanceId },
+    ],
+    queryFn: () =>
+      fetchLibrary({
+        service: options.service,
+        instanceId: options.instanceId,
+      }),
     enabled: options.enabled ?? true,
     staleTime: 60 * 1000,
     refetchInterval: 5 * 60 * 1000,
@@ -60,7 +67,6 @@ export const useLibrarySeasonSearchMutation = () => {
   });
 };
 
-
 export const useLibraryMovieSearchMutation = () => {
   const queryClient = useQueryClient();
   return useMutation<void, unknown, LibraryMovieSearchRequest>({
@@ -70,8 +76,6 @@ export const useLibraryMovieSearchMutation = () => {
     },
   });
 };
-
-
 
 export const useLibrarySeriesSearchMutation = () => {
   const queryClient = useQueryClient();
@@ -92,16 +96,21 @@ interface EpisodesQueryOptions {
 
 export const useEpisodesQuery = (options: EpisodesQueryOptions) =>
   useQuery<LibraryEpisodesResponse>({
-    queryKey: ["library", "episodes", {
-      instanceId: options.instanceId,
-      seriesId: options.seriesId,
-      seasonNumber: options.seasonNumber,
-    }],
-    queryFn: () => fetchEpisodes({
-      instanceId: options.instanceId,
-      seriesId: options.seriesId,
-      seasonNumber: options.seasonNumber,
-    }),
+    queryKey: [
+      "library",
+      "episodes",
+      {
+        instanceId: options.instanceId,
+        seriesId: options.seriesId,
+        seasonNumber: options.seasonNumber,
+      },
+    ],
+    queryFn: () =>
+      fetchEpisodes({
+        instanceId: options.instanceId,
+        seriesId: options.seriesId,
+        seasonNumber: options.seasonNumber,
+      }),
     enabled: options.enabled ?? true,
     staleTime: 60 * 1000,
   });
@@ -127,4 +136,3 @@ export const useLibraryEpisodeMonitorMutation = () => {
     },
   });
 };
-

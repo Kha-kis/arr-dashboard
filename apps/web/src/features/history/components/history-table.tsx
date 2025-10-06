@@ -1,4 +1,4 @@
-﻿'use client';
+﻿"use client";
 
 import type { HistoryItem } from "@arr/shared";
 
@@ -45,7 +45,11 @@ const formatDateTime = (value?: string): string => {
 
 const getEventTypeBadgeClass = (eventType: string): string => {
   const normalized = eventType.toLowerCase();
-  if (normalized.includes("grab") || normalized.includes("indexerquery") || normalized.includes("query")) {
+  if (
+    normalized.includes("grab") ||
+    normalized.includes("indexerquery") ||
+    normalized.includes("query")
+  ) {
     return "bg-blue-500/20 text-blue-200";
   }
   if (normalized.includes("download") || normalized.includes("import")) {
@@ -54,7 +58,11 @@ const getEventTypeBadgeClass = (eventType: string): string => {
   if (normalized.includes("delete") || normalized.includes("removed")) {
     return "bg-red-500/20 text-red-200";
   }
-  if (normalized.includes("fail") || normalized.includes("error") || normalized.includes("reject")) {
+  if (
+    normalized.includes("fail") ||
+    normalized.includes("error") ||
+    normalized.includes("reject")
+  ) {
     return "bg-red-500/20 text-red-200";
   }
   if (normalized.includes("renam") || normalized.includes("upgrade")) {
@@ -74,7 +82,8 @@ const getDisplayTitle = (item: HistoryItem): string => {
 
     // For release grabbed events, prioritize release title
     if (eventType.includes("grab") || eventType.includes("release")) {
-      const release = data?.releaseTitle || data?.title || item.title || item.sourceTitle;
+      const release =
+        data?.releaseTitle || data?.title || item.title || item.sourceTitle;
       if (release && release !== "Untitled" && release) return release;
     }
 
@@ -129,7 +138,10 @@ const getProwlarrDetails = (item: HistoryItem): string => {
   const parts: string[] = [];
 
   // Show number of results for queries
-  if (typeof data.queryResults === "number" || typeof data.numberOfResults === "number") {
+  if (
+    typeof data.queryResults === "number" ||
+    typeof data.numberOfResults === "number"
+  ) {
     const count = data.queryResults ?? data.numberOfResults;
     parts.push(`${count} results`);
   }
@@ -152,7 +164,12 @@ const getProwlarrDetails = (item: HistoryItem): string => {
   return parts.join(" • ") || "-";
 };
 
-export const HistoryTable = ({ groups, loading, emptyMessage, groupingEnabled }: HistoryTableProps) => {
+export const HistoryTable = ({
+  groups,
+  loading,
+  emptyMessage,
+  groupingEnabled,
+}: HistoryTableProps) => {
   if (loading) {
     return (
       <div className="rounded-xl border border-white/10 bg-white/5 p-6 text-sm text-white/70">
@@ -205,7 +222,9 @@ export const HistoryTable = ({ groups, loading, emptyMessage, groupingEnabled }:
                       <span className="inline-flex w-fit rounded-full px-2 py-0.5 text-xs font-semibold bg-blue-500/20 text-blue-200">
                         indexerRss
                       </span>
-                      <span className="text-xs text-white/50 capitalize">{firstItem?.instanceName ?? "-"}</span>
+                      <span className="text-xs text-white/50 capitalize">
+                        {firstItem?.instanceName ?? "-"}
+                      </span>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-white">
@@ -214,11 +233,13 @@ export const HistoryTable = ({ groups, loading, emptyMessage, groupingEnabled }:
                   <td className="px-4 py-3 text-white/70">-</td>
                   <td className="px-4 py-3 text-white/70">
                     <div className="text-xs text-white/50">
-                      {eventCount} {eventCount === 1 ? 'feed' : 'feeds'}
+                      {eventCount} {eventCount === 1 ? "feed" : "feeds"}
                     </div>
                   </td>
                   <td className="px-4 py-3 text-right text-white/70">-</td>
-                  <td className="px-4 py-3 text-white/70 whitespace-nowrap">{firstItem?.date ? formatDateTime(firstItem.date) : "-"}</td>
+                  <td className="px-4 py-3 text-white/70 whitespace-nowrap">
+                    {firstItem?.date ? formatDateTime(firstItem.date) : "-"}
+                  </td>
                 </tr>
               );
             }
@@ -237,17 +258,28 @@ export const HistoryTable = ({ groups, loading, emptyMessage, groupingEnabled }:
               const eventTypeLower = eventType.toLowerCase();
               let sourceClient = "";
 
-              if (eventTypeLower.includes("grab") || eventTypeLower.includes("query") || eventTypeLower.includes("rss")) {
+              if (
+                eventTypeLower.includes("grab") ||
+                eventTypeLower.includes("query") ||
+                eventTypeLower.includes("rss")
+              ) {
                 // Show indexer for search/grab events
                 sourceClient = isProwlarr
-                  ? (prowlarrData?.indexer || prowlarrData?.indexerName || item.indexer || "-")
-                  : (item.indexer || "-");
-              } else if (eventTypeLower.includes("download") || eventTypeLower.includes("import")) {
+                  ? prowlarrData?.indexer ||
+                    prowlarrData?.indexerName ||
+                    item.indexer ||
+                    "-"
+                  : item.indexer || "-";
+              } else if (
+                eventTypeLower.includes("download") ||
+                eventTypeLower.includes("import")
+              ) {
                 // Show download client for download/import events
                 sourceClient = item.downloadClient || "-";
               } else {
                 // Fallback: show whatever is available
-                sourceClient = item.downloadClient || item.indexer || item.protocol || "-";
+                sourceClient =
+                  item.downloadClient || item.indexer || item.protocol || "-";
               }
 
               // Filter out useless values
@@ -261,32 +293,44 @@ export const HistoryTable = ({ groups, loading, emptyMessage, groupingEnabled }:
               return (
                 <tr
                   key={key}
-                  className={`hover:bg-white/10 ${isGrouped ? 'border-l-2 border-l-sky-500/50' : ''} ${isGrouped && !isLastInGroup ? 'border-b-0' : ''}`}
+                  className={`hover:bg-white/10 ${isGrouped ? "border-l-2 border-l-sky-500/50" : ""} ${isGrouped && !isLastInGroup ? "border-b-0" : ""}`}
                 >
-                  <td className={`px-4 py-3 ${isGrouped && !isFirstInGroup ? 'pl-8' : ''}`}>
+                  <td
+                    className={`px-4 py-3 ${isGrouped && !isFirstInGroup ? "pl-8" : ""}`}
+                  >
                     <div className="flex flex-col gap-1">
                       {isFirstInGroup && isGrouped && (
                         <div className="mb-1 text-xs text-sky-400 font-semibold">
                           📦 {group.items.length} events
                         </div>
                       )}
-                      <span className={`inline-flex w-fit rounded-full px-2 py-0.5 text-xs font-semibold ${getEventTypeBadgeClass(eventType)}`}>
+                      <span
+                        className={`inline-flex w-fit rounded-full px-2 py-0.5 text-xs font-semibold ${getEventTypeBadgeClass(eventType)}`}
+                      >
                         {eventType}
                       </span>
-                      <span className="text-xs text-white/50">{item.instanceName}</span>
+                      <span className="text-xs text-white/50">
+                        {item.instanceName}
+                      </span>
                     </div>
                   </td>
-                  <td className="max-w-xs px-4 py-3 text-white" title={displayTitle}>
+                  <td
+                    className="max-w-xs px-4 py-3 text-white"
+                    title={displayTitle}
+                  >
                     <div className="truncate">{displayTitle}</div>
                   </td>
                   <td className="px-4 py-3 text-white/70">
-                    {(item.quality as { quality?: { name?: string } })?.quality?.name ?? "-"}
+                    {(item.quality as { quality?: { name?: string } })?.quality
+                      ?.name ?? "-"}
                   </td>
-                  <td className="px-4 py-3 text-white/70">
-                    {sourceClient}
+                  <td className="px-4 py-3 text-white/70">{sourceClient}</td>
+                  <td className="px-4 py-3 text-right text-white/70">
+                    {formatBytes(item.size)}
                   </td>
-                  <td className="px-4 py-3 text-right text-white/70">{formatBytes(item.size)}</td>
-                  <td className="px-4 py-3 text-white/70 whitespace-nowrap">{formatDateTime(item.date)}</td>
+                  <td className="px-4 py-3 text-white/70 whitespace-nowrap">
+                    {formatDateTime(item.date)}
+                  </td>
                 </tr>
               );
             });

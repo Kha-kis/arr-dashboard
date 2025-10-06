@@ -1,8 +1,18 @@
-﻿'use client';
+﻿"use client";
 
 import { useQuery } from "@tanstack/react-query";
-import type { MultiInstanceQueueResponse, MultiInstanceHistoryResponse, MultiInstanceCalendarResponse, DashboardStatisticsResponse } from "@arr/shared";
-import { fetchMultiInstanceQueue, fetchMultiInstanceHistory, fetchMultiInstanceCalendar, fetchDashboardStatistics } from "../../lib/api-client/dashboard";
+import type {
+  MultiInstanceQueueResponse,
+  MultiInstanceHistoryResponse,
+  MultiInstanceCalendarResponse,
+  DashboardStatisticsResponse,
+} from "@arr/shared";
+import {
+  fetchMultiInstanceQueue,
+  fetchMultiInstanceHistory,
+  fetchMultiInstanceCalendar,
+  fetchDashboardStatistics,
+} from "../../lib/api-client/dashboard";
 
 export const useMultiInstanceQueueQuery = () =>
   useQuery<MultiInstanceQueueResponse>({
@@ -12,7 +22,10 @@ export const useMultiInstanceQueueQuery = () =>
     refetchInterval: 30 * 1000,
   });
 
-export const useMultiInstanceHistoryQuery = (params?: { startDate?: string; endDate?: string }) =>
+export const useMultiInstanceHistoryQuery = (params?: {
+  startDate?: string;
+  endDate?: string;
+}) =>
   useQuery<MultiInstanceHistoryResponse>({
     queryKey: ["dashboard", "history", params],
     queryFn: () => fetchMultiInstanceHistory(params),
@@ -20,7 +33,11 @@ export const useMultiInstanceHistoryQuery = (params?: { startDate?: string; endD
     refetchInterval: 60 * 1000,
   });
 
-export const useMultiInstanceCalendarQuery = (params: { start: string; end: string; unmonitored?: boolean }) =>
+export const useMultiInstanceCalendarQuery = (params: {
+  start: string;
+  end: string;
+  unmonitored?: boolean;
+}) =>
   useQuery<MultiInstanceCalendarResponse>({
     queryKey: ["dashboard", "calendar", params],
     queryFn: () => fetchMultiInstanceCalendar(params),

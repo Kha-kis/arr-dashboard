@@ -2,7 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "../../../components/ui/button";
-import { useManualImportQuery, useManualImportMutation } from "../../../hooks/api/useManualImport";
+import {
+  useManualImportQuery,
+  useManualImportMutation,
+} from "../../../hooks/api/useManualImport";
 import type {
   ManualImportModalProps,
   ManualImportCandidateUnion,
@@ -21,11 +24,17 @@ import {
   isRadarrCandidate,
   describeEpisode,
 } from "../helpers";
-import { useManualImportStore, getSelectionForCandidate, hasValidSelections } from "../store";
+import {
+  useManualImportStore,
+  getSelectionForCandidate,
+  hasValidSelections,
+} from "../store";
 import { cn } from "../../../lib/utils";
 
-const backdropClasses = "fixed inset-0 z-modal-backdrop flex items-center justify-center bg-black/60 backdrop-blur-sm";
-const panelClasses = "relative z-modal flex max-h-[90vh] w-full max-w-5xl flex-col gap-5 overflow-hidden rounded-2xl border border-border bg-bg-subtle/98 backdrop-blur-xl p-6 shadow-xl";
+const backdropClasses =
+  "fixed inset-0 z-modal-backdrop flex items-center justify-center bg-black/60 backdrop-blur-sm";
+const panelClasses =
+  "relative z-modal flex max-h-[90vh] w-full max-w-5xl flex-col gap-5 overflow-hidden rounded-2xl border border-border bg-bg-subtle/98 backdrop-blur-xl p-6 shadow-xl";
 
 const statusToneClasses: Record<"ready" | "warning" | "error", string> = {
   ready: "text-emerald-300",
@@ -51,7 +60,8 @@ export const ManualImportModal = ({
   onOpenChange,
   onCompleted,
 }: ManualImportModalProps) => {
-  const { selections, toggleSelection, updateSelection, clear } = useManualImportStore();
+  const { selections, toggleSelection, updateSelection, clear } =
+    useManualImportStore();
   const [selectionError, setSelectionError] = useState<string | undefined>();
   const [showSelectedOnly, setShowSelectedOnly] = useState(false);
   const [importMode, setImportMode] = useState<ImportMode>("auto");
@@ -69,24 +79,29 @@ export const ManualImportModal = ({
   const candidates = query.candidates;
 
   const rejectionCount = useMemo(
-    () => candidates.filter((candidate) => Boolean(describeRejections(candidate))).length,
+    () =>
+      candidates.filter((candidate) => Boolean(describeRejections(candidate)))
+        .length,
     [candidates],
   );
 
   const selectionsForService = useMemo(
-    () => Object.values(selections).filter((selection) => selection.service === service),
+    () =>
+      Object.values(selections).filter(
+        (selection) => selection.service === service,
+      ),
     [selections, service],
   );
 
   const selectedCount = selectionsForService.length;
 
   const buildSubmissionDefaults = useCallback(
-    (candidate: ManualImportCandidateUnion):
-      | {
-          downloadId: string;
-          values: ManualImportSubmissionFile;
-        }
-      | null => {
+    (
+      candidate: ManualImportCandidateUnion,
+    ): {
+      downloadId: string;
+      values: ManualImportSubmissionFile;
+    } | null => {
       const resolvedDownloadId = extractDownloadId(candidate) ?? downloadId;
       if (!resolvedDownloadId) {
         return null;
@@ -100,7 +115,8 @@ export const ManualImportModal = ({
         languages: candidate.languages,
         releaseGroup: candidate.releaseGroup ?? undefined,
         indexerFlags:
-          typeof candidate.indexerFlags === "number" && Number.isFinite(candidate.indexerFlags)
+          typeof candidate.indexerFlags === "number" &&
+          Number.isFinite(candidate.indexerFlags)
             ? candidate.indexerFlags
             : 0,
         releaseType: candidate.releaseType ?? undefined,
@@ -150,7 +166,9 @@ export const ManualImportModal = ({
     if (!open || query.isLoading) {
       return;
     }
-    const available = candidates.filter((candidate) => !describeRejections(candidate));
+    const available = candidates.filter(
+      (candidate) => !describeRejections(candidate),
+    );
     if (available.length === 1) {
       const candidate = available[0];
       if (!candidate) {
@@ -159,7 +177,12 @@ export const ManualImportModal = ({
       if (!getSelectionForCandidate(selections, candidate)) {
         const defaults = buildSubmissionDefaults(candidate);
         if (defaults) {
-          toggleSelection(candidate, instanceId, defaults.downloadId, defaults.values);
+          toggleSelection(
+            candidate,
+            instanceId,
+            defaults.downloadId,
+            defaults.values,
+          );
         }
       }
     }
@@ -176,7 +199,9 @@ export const ManualImportModal = ({
   const visibleCandidates = useMemo(() => {
     let list = candidates;
     if (showSelectedOnly) {
-      list = list.filter((candidate) => Boolean(getSelectionForCandidate(selections, candidate)));
+      list = list.filter((candidate) =>
+        Boolean(getSelectionForCandidate(selections, candidate)),
+      );
     }
     return list;
   }, [candidates, showSelectedOnly, selections]);
@@ -205,7 +230,12 @@ export const ManualImportModal = ({
         return;
       }
       setSelectionError(undefined);
-      toggleSelection(candidate, instanceId, defaults.downloadId, defaults.values);
+      toggleSelection(
+        candidate,
+        instanceId,
+        defaults.downloadId,
+        defaults.values,
+      );
     },
     [buildSubmissionDefaults, toggleSelection, instanceId],
   );
@@ -213,7 +243,9 @@ export const ManualImportModal = ({
   const handleToggleEpisode = useCallback(
     (candidate: ManualImportCandidateUnion, episodeId: number) => {
       updateSelection(candidate, (current) => {
-        const currentIds = Array.isArray(current.values.episodeIds) ? current.values.episodeIds : [];
+        const currentIds = Array.isArray(current.values.episodeIds)
+          ? current.values.episodeIds
+          : [];
         const next = currentIds.includes(episodeId)
           ? currentIds.filter((id) => id !== episodeId)
           : [...currentIds, episodeId];
@@ -279,7 +311,9 @@ export const ManualImportModal = ({
     }
 
     if (!hasValidSelections(selections, service)) {
-      setSelectionError("At least one selected file is missing required mappings.");
+      setSelectionError(
+        "At least one selected file is missing required mappings.",
+      );
       return;
     }
 
@@ -295,7 +329,8 @@ export const ManualImportModal = ({
       onOpenChange(false);
       onCompleted?.({ status: "success", imported: importedCount });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Manual import failed.";
+      const message =
+        error instanceof Error ? error.message : "Manual import failed.";
       setSelectionError(message);
     }
   };
@@ -309,7 +344,9 @@ export const ManualImportModal = ({
       <div className={panelClasses}>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-white">Manual Import - {instanceName}</h2>
+            <h2 className="text-lg font-semibold text-white">
+              Manual Import - {instanceName}
+            </h2>
             <p className="text-xs text-white/60">
               {downloadId
                 ? `Download: ${downloadId}`
@@ -318,15 +355,18 @@ export const ManualImportModal = ({
                   : "Interactive manual import"}
             </p>
           </div>
-          <Button variant="ghost" onClick={() => handleClose(false)} disabled={mutation.isPending}>
+          <Button
+            variant="ghost"
+            onClick={() => handleClose(false)}
+            disabled={mutation.isPending}
+          >
             Close
           </Button>
         </div>
 
         {query.isError && (
           <div className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
-            Failed to fetch manual import candidates.
-            {" "}
+            Failed to fetch manual import candidates.{" "}
             {query.error instanceof Error ? query.error.message : ""}
           </div>
         )}
@@ -349,12 +389,18 @@ export const ManualImportModal = ({
               Import mode
               <select
                 value={importMode}
-                onChange={(event) => setImportMode(event.target.value as ImportMode)}
+                onChange={(event) =>
+                  setImportMode(event.target.value as ImportMode)
+                }
                 className="rounded-md border border-white/20 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
                 disabled={mutation.isPending}
               >
                 {importModeOptions.map((option) => (
-                  <option key={option.value} value={option.value} className="bg-slate-900 text-white">
+                  <option
+                    key={option.value}
+                    value={option.value}
+                    className="bg-slate-900 text-white"
+                  >
                     {option.label}
                   </option>
                 ))}
@@ -391,21 +437,27 @@ export const ManualImportModal = ({
             const selection = getSelectionForCandidate(selections, candidate);
             const selected = Boolean(selection);
             const rejection = describeRejections(candidate);
-            const downloadAvailable = Boolean(extractDownloadId(candidate) ?? downloadId);
+            const downloadAvailable = Boolean(
+              extractDownloadId(candidate) ?? downloadId,
+            );
             const qualityLabel = describeQuality(candidate.quality);
             const languageLabel = describeLanguages(candidate.languages);
             const sizeLabel =
-              typeof candidate.size === "number" && candidate.size > 0 ? formatFileSize(candidate.size) : "";
+              typeof candidate.size === "number" && candidate.size > 0
+                ? formatFileSize(candidate.size)
+                : "";
             const releaseGroup = candidate.releaseGroup;
 
             const mappingSummary = isSonarrCandidate(candidate)
-              ? candidate.series?.title ?? "Unmapped series"
+              ? (candidate.series?.title ?? "Unmapped series")
               : isRadarrCandidate(candidate)
-                ? candidate.movie?.title ?? "Unmapped movie"
+                ? (candidate.movie?.title ?? "Unmapped movie")
                 : "Unknown";
 
             const episodeIds =
-              selection && Array.isArray(selection.values.episodeIds) ? selection.values.episodeIds : [];
+              selection && Array.isArray(selection.values.episodeIds)
+                ? selection.values.episodeIds
+                : [];
 
             let statusTone: "ready" | "warning" | "error" = "ready";
             let statusText = "Ready to import";
@@ -416,19 +468,33 @@ export const ManualImportModal = ({
             } else if (rejection) {
               statusTone = "warning";
               statusText = rejection;
-            } else if (selected && isSonarrCandidate(candidate) && episodeIds.length === 0) {
+            } else if (
+              selected &&
+              isSonarrCandidate(candidate) &&
+              episodeIds.length === 0
+            ) {
               statusTone = "warning";
               statusText = "Select at least one episode before importing.";
-            } else if (selected && isRadarrCandidate(candidate) && selection?.values.movieId === undefined) {
+            } else if (
+              selected &&
+              isRadarrCandidate(candidate) &&
+              selection?.values.movieId === undefined
+            ) {
               statusTone = "warning";
               statusText = "Movie mapping is missing.";
             }
 
-            const chips = [qualityLabel, sizeLabel, languageLabel, releaseGroup].filter(
-              (value): value is string => Boolean(value),
-            );
+            const chips = [
+              qualityLabel,
+              sizeLabel,
+              languageLabel,
+              releaseGroup,
+            ].filter((value): value is string => Boolean(value));
 
-            const episodes = isSonarrCandidate(candidate) && candidate.episodes ? candidate.episodes : [];
+            const episodes =
+              isSonarrCandidate(candidate) && candidate.episodes
+                ? candidate.episodes
+                : [];
 
             return (
               <div
@@ -451,8 +517,12 @@ export const ManualImportModal = ({
                     />
                     <div className="min-w-0 space-y-2">
                       <div className="space-y-1">
-                        <p className="font-medium text-white">{describeCandidate(candidate)}</p>
-                        <p className="break-words text-xs text-white/60">{candidateDisplayPath(candidate)}</p>
+                        <p className="font-medium text-white">
+                          {describeCandidate(candidate)}
+                        </p>
+                        <p className="break-words text-xs text-white/60">
+                          {candidateDisplayPath(candidate)}
+                        </p>
                       </div>
                       {chips.length > 0 && (
                         <div className="flex flex-wrap gap-2 text-xs text-white/60">
@@ -473,58 +543,75 @@ export const ManualImportModal = ({
                       <p className="text-xs uppercase text-white/50">Mapping</p>
                       <p>{mappingSummary}</p>
                     </div>
-                    {selected && isSonarrCandidate(candidate) && episodes.length > 0 && (
-                      <div className="space-y-2 rounded-md border border-white/10 bg-slate-900/50 p-3 text-xs text-white/70">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span>Episodes</span>
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              className="text-sky-300 hover:underline disabled:opacity-50"
-                              onClick={() => handleSelectAllEpisodes(candidate)}
-                              disabled={mutation.isPending}
-                            >
-                              Select all
-                            </button>
-                            <button
-                              type="button"
-                              className="text-sky-300 hover:underline disabled:opacity-50"
-                              onClick={() => handleClearEpisodes(candidate)}
-                              disabled={mutation.isPending}
-                            >
-                              Clear
-                            </button>
+                    {selected &&
+                      isSonarrCandidate(candidate) &&
+                      episodes.length > 0 && (
+                        <div className="space-y-2 rounded-md border border-white/10 bg-slate-900/50 p-3 text-xs text-white/70">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span>Episodes</span>
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                className="text-sky-300 hover:underline disabled:opacity-50"
+                                onClick={() =>
+                                  handleSelectAllEpisodes(candidate)
+                                }
+                                disabled={mutation.isPending}
+                              >
+                                Select all
+                              </button>
+                              <button
+                                type="button"
+                                className="text-sky-300 hover:underline disabled:opacity-50"
+                                onClick={() => handleClearEpisodes(candidate)}
+                                disabled={mutation.isPending}
+                              >
+                                Clear
+                              </button>
+                            </div>
+                          </div>
+                          <div className="grid gap-1 sm:grid-cols-2">
+                            {episodes.map((episode) => {
+                              const episodeId =
+                                typeof episode?.id === "number"
+                                  ? episode.id
+                                  : undefined;
+                              if (episodeId === undefined) {
+                                return null;
+                              }
+                              const checked = episodeIds.includes(episodeId);
+                              return (
+                                <label
+                                  key={`${key}:episode:${episodeId}`}
+                                  className="flex items-center gap-2 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-white/80"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    className="h-3.5 w-3.5"
+                                    checked={checked}
+                                    onChange={() =>
+                                      handleToggleEpisode(candidate, episodeId)
+                                    }
+                                    disabled={mutation.isPending}
+                                  />
+                                  <span className="truncate text-xs">
+                                    {describeEpisode(
+                                      episode as Parameters<
+                                        typeof describeEpisode
+                                      >[0],
+                                    )}
+                                  </span>
+                                </label>
+                              );
+                            })}
                           </div>
                         </div>
-                        <div className="grid gap-1 sm:grid-cols-2">
-                          {episodes.map((episode) => {
-                            const episodeId = typeof episode?.id === "number" ? episode.id : undefined;
-                            if (episodeId === undefined) {
-                              return null;
-                            }
-                            const checked = episodeIds.includes(episodeId);
-                            return (
-                              <label
-                                key={`${key}:episode:${episodeId}`}
-                                className="flex items-center gap-2 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-white/80"
-                              >
-                                <input
-                                  type="checkbox"
-                                  className="h-3.5 w-3.5"
-                                  checked={checked}
-                                  onChange={() => handleToggleEpisode(candidate, episodeId)}
-                                  disabled={mutation.isPending}
-                                />
-                                <span className="truncate text-xs">{describeEpisode(episode as Parameters<typeof describeEpisode>[0])}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
+                      )}
                   </div>
                   <div className="flex flex-col items-end gap-3 text-xs text-white/60">
-                    <span className={statusToneClasses[statusTone]}>{statusText}</span>
+                    <span className={statusToneClasses[statusTone]}>
+                      {statusText}
+                    </span>
                     <Button
                       variant={selected ? "secondary" : "ghost"}
                       className="px-3 py-2 text-xs"
@@ -545,7 +632,11 @@ export const ManualImportModal = ({
             {rejectionCount > 0 ? "Some files may require manual mapping." : ""}
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="ghost" onClick={() => handleClose(false)} disabled={mutation.isPending}>
+            <Button
+              variant="ghost"
+              onClick={() => handleClose(false)}
+              disabled={mutation.isPending}
+            >
               Cancel
             </Button>
             <Button
@@ -563,11 +654,3 @@ export const ManualImportModal = ({
 };
 
 export default ManualImportModal;
-
-
-
-
-
-
-
-

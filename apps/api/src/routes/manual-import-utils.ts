@@ -29,7 +29,7 @@ export type ManualImportFetchOptions = {
 const manualImportApiPath = "/api/v3/manualimport";
 const commandApiPath = "/api/v3/command";
 
-const normalizeRejections = (rejections: any): ManualImportCandidate["rejections"] => {
+const normalizeRejections = (rejections: unknown): ManualImportCandidate["rejections"] => {
 	if (!Array.isArray(rejections)) {
 		return undefined;
 	}
@@ -51,7 +51,7 @@ const normalizeRejections = (rejections: any): ManualImportCandidate["rejections
 	return normalized.length > 0 ? normalized : undefined;
 };
 
-const normalizeEpisodes = (episodes: any): ManualImportCandidateSonarr["episodes"] => {
+const normalizeEpisodes = (episodes: unknown): ManualImportCandidateSonarr["episodes"] => {
 	if (!Array.isArray(episodes)) {
 		return undefined;
 	}
@@ -74,7 +74,7 @@ const normalizeEpisodes = (episodes: any): ManualImportCandidateSonarr["episodes
 	return normalized.length > 0 ? normalized : undefined;
 };
 
-const normalizeSeries = (series: any): ManualImportCandidateSonarr["series"] => {
+const normalizeSeries = (series: unknown): ManualImportCandidateSonarr["series"] => {
 	const id = toNumber(series?.id);
 	if (typeof id !== "number") {
 		return undefined;
@@ -87,7 +87,7 @@ const normalizeSeries = (series: any): ManualImportCandidateSonarr["series"] => 
 	};
 };
 
-const normalizeMovie = (movie: any): ManualImportCandidateRadarr["movie"] => {
+const normalizeMovie = (movie: unknown): ManualImportCandidateRadarr["movie"] => {
 	const id = toNumber(movie?.id);
 	if (typeof id !== "number") {
 		return undefined;
@@ -101,7 +101,10 @@ const normalizeMovie = (movie: any): ManualImportCandidateRadarr["movie"] => {
 	};
 };
 
-const mapCandidate = (service: ManualImportService, item: any): ManualImportCandidate | null => {
+const mapCandidate = (
+	service: ManualImportService,
+	item: unknown,
+): ManualImportCandidate | null => {
 	const path = toStringValue(item?.path);
 	if (!path) {
 		return null;
@@ -195,8 +198,8 @@ export const fetchManualImportCandidates = async (
 
 	const rawItems = Array.isArray(payload)
 		? payload
-		: Array.isArray((payload as any)?.items)
-			? (payload as any).items
+		: Array.isArray((payload as { items?: unknown[] } | undefined)?.items)
+			? (payload as { items: unknown[] }).items
 			: [];
 
 	if (!Array.isArray(rawItems) || rawItems.length === 0) {

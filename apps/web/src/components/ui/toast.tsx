@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { Toaster as Sonner } from 'sonner';
+import { Toaster as Sonner } from "sonner";
 
 /**
  * Toast Notification System
@@ -36,22 +36,20 @@ export function Toaster({ ...props }: ToasterProps) {
       toastOptions={{
         classNames: {
           toast:
-            'group toast group-[.toaster]:bg-bg-subtle/95 group-[.toaster]:backdrop-blur-xl group-[.toaster]:border-border/50 group-[.toaster]:text-fg group-[.toaster]:shadow-lg',
-          description: 'group-[.toast]:text-fg-muted',
-          actionButton:
-            'group-[.toast]:bg-primary group-[.toast]:text-white',
+            "group toast group-[.toaster]:bg-bg-subtle/95 group-[.toaster]:backdrop-blur-xl group-[.toaster]:border-border/50 group-[.toaster]:text-fg group-[.toaster]:shadow-lg",
+          description: "group-[.toast]:text-fg-muted",
+          actionButton: "group-[.toast]:bg-primary group-[.toast]:text-white",
           cancelButton:
-            'group-[.toast]:bg-bg-muted group-[.toast]:text-fg-muted',
+            "group-[.toast]:bg-bg-muted group-[.toast]:text-fg-muted",
           closeButton:
-            'group-[.toast]:bg-bg-muted group-[.toast]:border-border/50 group-[.toast]:text-fg-muted hover:group-[.toast]:bg-bg-muted/80',
+            "group-[.toast]:bg-bg-muted group-[.toast]:border-border/50 group-[.toast]:text-fg-muted hover:group-[.toast]:bg-bg-muted/80",
           success:
-            'group-[.toaster]:border-success/30 group-[.toaster]:text-success-fg',
+            "group-[.toaster]:border-success/30 group-[.toaster]:text-success-fg",
           error:
-            'group-[.toaster]:border-danger/30 group-[.toaster]:text-danger-fg',
+            "group-[.toaster]:border-danger/30 group-[.toaster]:text-danger-fg",
           warning:
-            'group-[.toaster]:border-warning/30 group-[.toaster]:text-warning-fg',
-          info:
-            'group-[.toaster]:border-info/30 group-[.toaster]:text-info-fg',
+            "group-[.toaster]:border-warning/30 group-[.toaster]:text-warning-fg",
+          info: "group-[.toaster]:border-info/30 group-[.toaster]:text-info-fg",
         },
       }}
       {...props}
@@ -59,4 +57,4 @@ export function Toaster({ ...props }: ToasterProps) {
   );
 }
 
-export { toast } from 'sonner';
+export { toast } from "sonner";

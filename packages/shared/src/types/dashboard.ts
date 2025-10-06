@@ -28,7 +28,9 @@ const queueMovieSummarySchema = z.object({
 export type QueueStatusMessage = z.infer<typeof queueStatusMessageSchema>;
 export type QueueSeriesSummary = z.infer<typeof queueSeriesSummarySchema>;
 export type QueueMovieSummary = z.infer<typeof queueMovieSummarySchema>;
-export type QueueActionCapabilities = z.infer<typeof queueActionCapabilitiesSchema>;
+export type QueueActionCapabilities = z.infer<
+  typeof queueActionCapabilitiesSchema
+>;
 
 export const queueItemSchema = z.object({
   id: z.union([z.string(), z.number()]),
@@ -74,7 +76,9 @@ export const multiInstanceQueueResponseSchema = z.object({
   totalCount: z.number(),
 });
 
-export type MultiInstanceQueueResponse = z.infer<typeof multiInstanceQueueResponseSchema>;
+export type MultiInstanceQueueResponse = z.infer<
+  typeof multiInstanceQueueResponseSchema
+>;
 
 export const queueActionRequestSchema = z.object({
   instanceId: z.string(),
@@ -108,7 +112,9 @@ export const queueBulkActionRequestSchema = z.object({
   search: z.boolean().default(false),
 });
 
-export type QueueBulkActionRequest = z.infer<typeof queueBulkActionRequestSchema>;
+export type QueueBulkActionRequest = z.infer<
+  typeof queueBulkActionRequestSchema
+>;
 
 export const historyItemSchema = z.object({
   id: z.union([z.string(), z.number()]),
@@ -151,7 +157,9 @@ export const multiInstanceHistoryResponseSchema = z.object({
   totalCount: z.number(),
 });
 
-export type MultiInstanceHistoryResponse = z.infer<typeof multiInstanceHistoryResponseSchema>;
+export type MultiInstanceHistoryResponse = z.infer<
+  typeof multiInstanceHistoryResponseSchema
+>;
 
 export const calendarItemSchema = z.object({
   id: z.union([z.string(), z.number()]),
@@ -200,7 +208,9 @@ export const multiInstanceCalendarResponseSchema = z.object({
   totalCount: z.number(),
 });
 
-export type MultiInstanceCalendarResponse = z.infer<typeof multiInstanceCalendarResponseSchema>;
+export type MultiInstanceCalendarResponse = z.infer<
+  typeof multiInstanceCalendarResponseSchema
+>;
 
 export const qualityBreakdownSchema = z.record(z.string(), z.number());
 
@@ -275,30 +285,37 @@ export type ProwlarrStatistics = z.infer<typeof prowlarrStatisticsSchema>;
 
 export const dashboardStatisticsResponseSchema = z.object({
   sonarr: z.object({
-    instances: z.array(z.object({
-      instanceId: z.string(),
-      instanceName: z.string(),
-      data: sonarrStatisticsSchema,
-    })),
+    instances: z.array(
+      z.object({
+        instanceId: z.string(),
+        instanceName: z.string(),
+        data: sonarrStatisticsSchema,
+      }),
+    ),
     aggregate: sonarrStatisticsSchema.optional(),
   }),
   radarr: z.object({
-    instances: z.array(z.object({
-      instanceId: z.string(),
-      instanceName: z.string(),
-      data: radarrStatisticsSchema,
-    })),
+    instances: z.array(
+      z.object({
+        instanceId: z.string(),
+        instanceName: z.string(),
+        data: radarrStatisticsSchema,
+      }),
+    ),
     aggregate: radarrStatisticsSchema.optional(),
   }),
   prowlarr: z.object({
-    instances: z.array(z.object({
-      instanceId: z.string(),
-      instanceName: z.string(),
-      data: prowlarrStatisticsSchema,
-    })),
+    instances: z.array(
+      z.object({
+        instanceId: z.string(),
+        instanceName: z.string(),
+        data: prowlarrStatisticsSchema,
+      }),
+    ),
     aggregate: prowlarrStatisticsSchema.optional(),
   }),
 });
 
-export type DashboardStatisticsResponse = z.infer<typeof dashboardStatisticsResponseSchema>;
-
+export type DashboardStatisticsResponse = z.infer<
+  typeof dashboardStatisticsResponseSchema
+>;

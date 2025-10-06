@@ -9,8 +9,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --format esm,cjs --dts",
-    "dev": "tsup src/index.ts --watch --format esm,cjs --dts",
+    "build": "tsup src/index.ts --format esm --format cjs --dts",
+    "dev": "tsup src/index.ts --watch --format esm --format cjs --dts",
     "lint": "biome lint .",
     "format": "biome format .",
     "test": "vitest",

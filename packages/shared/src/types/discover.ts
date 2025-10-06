@@ -16,7 +16,9 @@ export const discoverResultInstanceStateSchema = z.object({
   rootFolderPath: z.string().optional(),
 });
 
-export type DiscoverResultInstanceState = z.infer<typeof discoverResultInstanceStateSchema>;
+export type DiscoverResultInstanceState = z.infer<
+  typeof discoverResultInstanceStateSchema
+>;
 
 export const discoverSearchResultSchema = z.object({
   id: z.string(),
@@ -68,21 +70,27 @@ export const discoverSearchResponseSchema = z.object({
   totalCount: z.number().nonnegative(),
 });
 
-export type DiscoverSearchResponse = z.infer<typeof discoverSearchResponseSchema>;
+export type DiscoverSearchResponse = z.infer<
+  typeof discoverSearchResponseSchema
+>;
 
 export const discoverQualityProfileSchema = z.object({
   id: z.number(),
   name: z.string(),
 });
 
-export type DiscoverQualityProfile = z.infer<typeof discoverQualityProfileSchema>;
+export type DiscoverQualityProfile = z.infer<
+  typeof discoverQualityProfileSchema
+>;
 
 export const discoverLanguageProfileSchema = z.object({
   id: z.number(),
   name: z.string(),
 });
 
-export type DiscoverLanguageProfile = z.infer<typeof discoverLanguageProfileSchema>;
+export type DiscoverLanguageProfile = z.infer<
+  typeof discoverLanguageProfileSchema
+>;
 
 export const discoverRootFolderSchema = z.object({
   id: z.union([z.number(), z.string()]).optional(),
@@ -145,7 +153,9 @@ export const discoverInstanceOptionsRequestSchema = z.object({
   type: discoverSearchTypeSchema.default("movie"),
 });
 
-export type DiscoverInstanceOptionsRequest = z.infer<typeof discoverInstanceOptionsRequestSchema>;
+export type DiscoverInstanceOptionsRequest = z.infer<
+  typeof discoverInstanceOptionsRequestSchema
+>;
 
 export const discoverInstanceOptionsResponseSchema = z.object({
   instanceId: z.string(),
@@ -155,4 +165,6 @@ export const discoverInstanceOptionsResponseSchema = z.object({
   languageProfiles: z.array(discoverLanguageProfileSchema).optional(),
 });
 
-export type DiscoverInstanceOptionsResponse = z.infer<typeof discoverInstanceOptionsResponseSchema>;
+export type DiscoverInstanceOptionsResponse = z.infer<
+  typeof discoverInstanceOptionsResponseSchema
+>;

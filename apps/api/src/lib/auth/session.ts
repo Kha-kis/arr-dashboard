@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type { PrismaClient } from "@prisma/client";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import type { ApiEnv } from "../../config/env.js";
@@ -90,7 +90,10 @@ export class SessionService {
 
 	attachCookie(reply: FastifyReply, token: string) {
 		const options = BASE_COOKIE_OPTIONS(this.env);
-		reply.setCookie(this.env.SESSION_COOKIE_NAME, token, { ...options, signed: true });
+		reply.setCookie(this.env.SESSION_COOKIE_NAME, token, {
+			...options,
+			signed: true,
+		});
 	}
 
 	clearCookie(reply: FastifyReply) {

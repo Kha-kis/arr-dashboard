@@ -1,4 +1,4 @@
-﻿'use client';
+﻿"use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ServiceInstanceSummary } from "@arr/shared";
@@ -38,18 +38,23 @@ export const useUpdateServiceMutation = () => {
   return useMutation<ServiceInstanceSummary, Error, UpdateVariables>({
     mutationFn: ({ id, payload }) => updateService(id, payload),
     onSuccess: (updated) => {
-      queryClient.setQueryData<ServiceInstanceSummary[]>(SERVICES_QUERY_KEY, (prev) => {
-        if (!prev) {return prev;}
-        return prev.map((service) => {
-          if (service.id === updated.id) {
-            return updated;
+      queryClient.setQueryData<ServiceInstanceSummary[]>(
+        SERVICES_QUERY_KEY,
+        (prev) => {
+          if (!prev) {
+            return prev;
           }
-          if (updated.isDefault && service.service === updated.service) {
-            return { ...service, isDefault: false };
-          }
-          return service;
-        });
-      });
+          return prev.map((service) => {
+            if (service.id === updated.id) {
+              return updated;
+            }
+            if (updated.isDefault && service.service === updated.service) {
+              return { ...service, isDefault: false };
+            }
+            return service;
+          });
+        },
+      );
     },
   });
 };
@@ -60,10 +65,15 @@ export const useDeleteServiceMutation = () => {
   return useMutation<void, Error, DeleteVariables>({
     mutationFn: removeService,
     onSuccess: (_, id) => {
-      queryClient.setQueryData<ServiceInstanceSummary[]>(SERVICES_QUERY_KEY, (prev) => {
-        if (!prev) {return prev;}
-        return prev.filter((service) => service.id !== id);
-      });
+      queryClient.setQueryData<ServiceInstanceSummary[]>(
+        SERVICES_QUERY_KEY,
+        (prev) => {
+          if (!prev) {
+            return prev;
+          }
+          return prev.filter((service) => service.id !== id);
+        },
+      );
     },
   });
 };

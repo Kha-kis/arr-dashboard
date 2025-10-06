@@ -17,7 +17,12 @@ export const QueueProgress = ({ value, size = "md" }: QueueProgressProps) => {
 
   return (
     <div className="flex flex-col gap-1">
-      <div className={cn("relative overflow-hidden rounded-full bg-white/10", height)}>
+      <div
+        className={cn(
+          "relative overflow-hidden rounded-full bg-white/10",
+          height,
+        )}
+      >
         <div
           className="absolute inset-y-0 left-0 rounded-full bg-sky-500"
           style={{ width: `${clamped}%` }}
