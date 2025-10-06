@@ -12,12 +12,12 @@ import { buildSeriesItem } from "./series-normalizer";
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const buildLibraryItem = (
-	instance: ServiceInstance,
-	service: LibraryService,
-	raw: any,
+  instance: ServiceInstance,
+  service: LibraryService,
+  raw: any,
 ): LibraryItem => {
-	if (service === "radarr") {
-		return buildMovieItem(instance, service, raw);
-	}
-	return buildSeriesItem(instance, service, raw);
+  if (service === "radarr") {
+    return buildMovieItem(instance, service, raw);
+  }
+  return buildSeriesItem(instance, service, raw);
 };

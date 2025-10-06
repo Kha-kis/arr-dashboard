@@ -6,10 +6,12 @@ import type { AccountFormState } from "../components/account-tab";
 /**
  * Hook for managing account updates
  */
-export const useAccountManagement = (currentUser?: {
-  email: string;
-  username: string;
-} | null) => {
+export const useAccountManagement = (
+  currentUser?: {
+    email: string;
+    username: string;
+  } | null,
+) => {
   const updateAccountMutation = useUpdateAccountMutation();
 
   const [accountForm, setAccountForm] = useState<AccountFormState>({
@@ -113,7 +115,8 @@ export const useAccountManagement = (currentUser?: {
     } catch (error: unknown) {
       setAccountUpdateResult({
         success: false,
-        message: error instanceof Error ? error.message : "Failed to update account",
+        message:
+          error instanceof Error ? error.message : "Failed to update account",
       });
     }
   };

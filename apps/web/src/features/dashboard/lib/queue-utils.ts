@@ -3,7 +3,10 @@
  */
 
 import type { QueueItem } from "@arr/shared";
-import type { MessageTone, IssueSummary } from "../components/queue-issue-badge";
+import type {
+  MessageTone,
+  IssueSummary,
+} from "../components/queue-issue-badge";
 
 /**
  * Status line representing a single message with tone
@@ -253,7 +256,9 @@ export const summarizeIssueCounts = (lines: StatusLine[]): IssueSummary[] => {
 /**
  * Computes progress percentage from queue items
  */
-export const computeProgressValue = (items: QueueItem[]): number | undefined => {
+export const computeProgressValue = (
+  items: QueueItem[],
+): number | undefined => {
   const totalSize = sumNumbers(items.map((item) => item.size));
   const totalLeft = sumNumbers(items.map((item) => item.sizeleft));
   if (totalSize <= 0) {
