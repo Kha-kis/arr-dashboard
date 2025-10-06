@@ -1,5 +1,5 @@
 import type { LibraryEpisode } from "@arr/shared";
-import { toBoolean, toNumber, toStringValue } from "./type-converters.js";
+import { toBoolean, toNumber, toStringValue } from "./type-converters";
 
 /**
  * Normalizes a raw episode object from Sonarr API

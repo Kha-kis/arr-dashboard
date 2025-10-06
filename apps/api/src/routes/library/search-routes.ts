@@ -7,7 +7,7 @@ import {
 } from "@arr/shared";
 import type { ServiceInstance } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
+import { createInstanceFetcher } from "../../lib/arr/arr-fetcher";
 
 /**
  * Register search operation routes for library

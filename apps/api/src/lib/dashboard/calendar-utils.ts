@@ -1,5 +1,5 @@
 import type { CalendarItem } from "@arr/shared";
-import { toBoolean, toNumber, toStringArray, toStringValue } from "../data/values.js";
+import { toBoolean, toNumber, toStringArray, toStringValue } from "../data/values";
 
 /**
  * Returns the API path for calendar endpoints

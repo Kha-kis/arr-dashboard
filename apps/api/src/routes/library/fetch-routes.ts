@@ -8,11 +8,11 @@ import {
 } from "@arr/shared";
 import type { ServiceInstance, ServiceType } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
-import { normalizeEpisode } from "../../lib/library/episode-normalizer.js";
-import { buildLibraryItem } from "../../lib/library/library-item-builder.js";
-import { toNumber } from "../../lib/library/type-converters.js";
-import { libraryQuerySchema } from "../../lib/library/validation-schemas.js";
+import { createInstanceFetcher } from "../../lib/arr/arr-fetcher";
+import { normalizeEpisode } from "../../lib/library/episode-normalizer";
+import { buildLibraryItem } from "../../lib/library/library-item-builder";
+import { toNumber } from "../../lib/library/type-converters";
+import { libraryQuerySchema } from "../../lib/library/validation-schemas";
 
 /**
  * Register data fetching routes for library

@@ -3,8 +3,8 @@ import type { HistoryItem } from "@arr/shared";
 import type { ServiceInstance } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
-import { fetchHistoryItems } from "../../lib/dashboard/fetch-utils.js";
+import { createInstanceFetcher } from "../../lib/arr/arr-fetcher";
+import { fetchHistoryItems } from "../../lib/dashboard/fetch-utils";
 
 const historyQuerySchema = z.object({
 	page: z.coerce.number().min(1).optional().default(1),
