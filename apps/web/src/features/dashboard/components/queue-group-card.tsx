@@ -7,14 +7,14 @@
 import type { QueueItem } from "@arr/shared";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
-import type { QueueAction } from "./queue-action-buttons.js";
-import { QueueActionButtons } from "./queue-action-buttons.js";
-import type { IssueSummary } from "./queue-issue-badge.js";
-import { QueueIssueBadge } from "./queue-issue-badge.js";
-import { QueueProgress } from "./queue-progress.js";
-import { QueueItemCard } from "./queue-item-card.js";
-import { QueueItemMetadata } from "./queue-item-metadata.js";
-import { buildKey, collectStatusLines } from "../lib/queue-utils.js";
+import type { QueueAction } from "./queue-action-buttons";
+import { QueueActionButtons } from "./queue-action-buttons";
+import type { IssueSummary } from "./queue-issue-badge";
+import { QueueIssueBadge } from "./queue-issue-badge";
+import { QueueProgress } from "./queue-progress";
+import { QueueItemCard } from "./queue-item-card";
+import { QueueItemMetadata } from "./queue-item-metadata";
+import { buildKey, collectStatusLines } from "../lib/queue-utils";
 
 interface QueueGroupCardProps {
   groupKey: string;

@@ -3,16 +3,16 @@
 import { useMemo } from "react";
 import type { QueueItem } from "@arr/shared";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
-import type { QueueAction } from "./queue-action-buttons.js";
-import { QueueGroupCard } from "./queue-group-card.js";
-import { QueueItemCard } from "./queue-item-card.js";
-import { QueueSelectionToolbar } from "./queue-selection-toolbar.js";
+import type { QueueAction } from "./queue-action-buttons";
+import { QueueGroupCard } from "./queue-group-card";
+import { QueueItemCard } from "./queue-item-card";
+import { QueueSelectionToolbar } from "./queue-selection-toolbar";
 import {
   useQueueSelection,
   useQueueGrouping,
   useQueueExpansion,
   filterItemsForAction,
-} from "../hooks/index.js";
+} from "../hooks";
 
 type QueueActionHandler = (
   items: QueueItem[],

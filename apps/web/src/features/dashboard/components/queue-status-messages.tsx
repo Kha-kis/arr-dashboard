@@ -4,9 +4,9 @@
  * Component for rendering queue status messages in a compact format
  */
 
-import { cn } from "../../../lib/utils/index.js";
-import type { StatusLine } from "../lib/queue-utils.js";
-import { summarizeLines } from "../lib/queue-utils.js";
+import { cn } from "../../../lib/utils/index";
+import type { StatusLine } from "../lib/queue-utils";
+import { summarizeLines } from "../lib/queue-utils";
 
 interface QueueStatusMessagesProps {
   lines: StatusLine[];
