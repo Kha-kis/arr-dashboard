@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * Component for rendering queue status messages in a compact format
  */
