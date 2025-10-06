@@ -93,11 +93,7 @@ export const ServiceDefaultsSection = ({
               Use instance default
             </option>
             {optionsData.qualityProfiles.map((profile) => (
-              <option
-                key={profile.id}
-                value={profile.id}
-                style={OPTION_STYLE}
-              >
+              <option key={profile.id} value={profile.id} style={OPTION_STYLE}>
                 {profile.name}
               </option>
             ))}
@@ -109,9 +105,7 @@ export const ServiceDefaultsSection = ({
           )}
         </div>
         <div className="space-y-2">
-          <label className="text-xs uppercase text-white/60">
-            Root folder
-          </label>
+          <label className="text-xs uppercase text-white/60">Root folder</label>
           <select
             className={SELECT_CLASS}
             value={formState.defaultRootFolderPath}

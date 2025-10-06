@@ -33,9 +33,8 @@ export const ResultsSummary = ({
 }: ResultsSummaryProps) => {
   return (
     <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/70">
-      Showing{" "}
-      <span className="font-semibold text-white">{displayedCount}</span> of{" "}
-      <span className="font-semibold text-white">{totalCount}</span> results.
+      Showing <span className="font-semibold text-white">{displayedCount}</span>{" "}
+      of <span className="font-semibold text-white">{totalCount}</span> results.
       {filtersActive && hiddenCount > 0 ? (
         <span className="ml-2 text-xs text-white/50">
           {hiddenCount} hidden by filters.

@@ -6,20 +6,23 @@ import { toStringValue } from "./type-converters";
  * @param baseUrl - Optional base URL to prepend to relative paths
  * @returns The resolved image URL or undefined
  */
-export const resolveImageUrl = (value: unknown, baseUrl?: string): string | undefined => {
-	const raw = toStringValue(value);
-	if (!raw) {
-		return undefined;
-	}
-	if (/^https?:\/\//i.test(raw)) {
-		return raw;
-	}
-	if (!baseUrl) {
-		return raw;
-	}
-	const normalizedBase = baseUrl.replace(/\/$/, "");
-	const trimmed = raw.replace(/^\/+/, "");
-	return `${normalizedBase}/${trimmed}`;
+export const resolveImageUrl = (
+  value: unknown,
+  baseUrl?: string,
+): string | undefined => {
+  const raw = toStringValue(value);
+  if (!raw) {
+    return undefined;
+  }
+  if (/^https?:\/\//i.test(raw)) {
+    return raw;
+  }
+  if (!baseUrl) {
+    return raw;
+  }
+  const normalizedBase = baseUrl.replace(/\/$/, "");
+  const trimmed = raw.replace(/^\/+/, "");
+  return `${normalizedBase}/${trimmed}`;
 };
 
 /**
@@ -29,28 +32,28 @@ export const resolveImageUrl = (value: unknown, baseUrl?: string): string | unde
  * @returns Object containing poster and fanart URLs
  */
 export const normalizeImages = (
-	images: unknown,
-	baseUrl?: string,
+  images: unknown,
+  baseUrl?: string,
 ): { poster?: string; fanart?: string } => {
-	if (!Array.isArray(images)) {
-		return {};
-	}
-	const result: { poster?: string; fanart?: string } = {};
-	for (const raw of images as Array<{
-		coverType?: string;
-		url?: string;
-		remoteUrl?: string;
-	}>) {
-		const type = toStringValue(raw?.coverType)?.toLowerCase();
-		if (!type) {
-			continue;
-		}
-		if (type === "poster" && !result.poster) {
-			result.poster = resolveImageUrl(raw?.remoteUrl ?? raw?.url, baseUrl);
-		}
-		if ((type === "fanart" || type === "background") && !result.fanart) {
-			result.fanart = resolveImageUrl(raw?.remoteUrl ?? raw?.url, baseUrl);
-		}
-	}
-	return result;
+  if (!Array.isArray(images)) {
+    return {};
+  }
+  const result: { poster?: string; fanart?: string } = {};
+  for (const raw of images as Array<{
+    coverType?: string;
+    url?: string;
+    remoteUrl?: string;
+  }>) {
+    const type = toStringValue(raw?.coverType)?.toLowerCase();
+    if (!type) {
+      continue;
+    }
+    if (type === "poster" && !result.poster) {
+      result.poster = resolveImageUrl(raw?.remoteUrl ?? raw?.url, baseUrl);
+    }
+    if ((type === "fanart" || type === "background") && !result.fanart) {
+      result.fanart = resolveImageUrl(raw?.remoteUrl ?? raw?.url, baseUrl);
+    }
+  }
+  return result;
 };

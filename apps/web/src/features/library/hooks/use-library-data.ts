@@ -8,10 +8,7 @@ import type {
 } from "@arr/shared";
 import { useLibraryQuery } from "../../../hooks/api/useLibrary";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
-import type {
-  StatusFilterValue,
-  FileFilterValue,
-} from "./use-library-filters";
+import type { StatusFilterValue, FileFilterValue } from "./use-library-filters";
 
 /**
  * Groups library items by their type
@@ -42,7 +39,11 @@ export interface LibraryData {
     movies: LibraryItem[];
     series: LibraryItem[];
   };
-  instances: Array<{ instanceId: string; instanceName: string; service: LibraryService }>;
+  instances: Array<{
+    instanceId: string;
+    instanceName: string;
+    service: LibraryService;
+  }>;
   instanceOptions: InstanceOption[];
   serviceLookup: Record<string, ServiceInstanceSummary>;
   isLoading: boolean;

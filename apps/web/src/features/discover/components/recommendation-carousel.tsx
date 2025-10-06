@@ -1,9 +1,6 @@
 "use client";
 
-import type {
-  DiscoverSearchResult,
-  ServiceInstanceSummary,
-} from "@arr/shared";
+import type { DiscoverSearchResult, ServiceInstanceSummary } from "@arr/shared";
 import { Loader2, CheckCircle2 } from "lucide-react";
 
 /**
@@ -40,9 +37,7 @@ interface RecommendationCarouselProps {
  *   isLoading={false}
  * />
  */
-export const RecommendationCarousel: React.FC<
-  RecommendationCarouselProps
-> = ({
+export const RecommendationCarousel: React.FC<RecommendationCarouselProps> = ({
   title,
   description,
   results,

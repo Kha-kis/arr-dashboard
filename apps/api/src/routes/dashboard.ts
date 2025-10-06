@@ -9,13 +9,13 @@ import { statisticsRoutes } from "./dashboard/statistics-routes";
  * Registers all dashboard-related route modules
  */
 const dashboardRoute: FastifyPluginCallback = (app, _opts, done) => {
-	// Register all dashboard route modules
-	app.register(queueRoutes);
-	app.register(historyRoutes);
-	app.register(calendarRoutes);
-	app.register(statisticsRoutes);
+  // Register all dashboard route modules
+  app.register(queueRoutes);
+  app.register(historyRoutes);
+  app.register(calendarRoutes);
+  app.register(statisticsRoutes);
 
-	done();
+  done();
 };
 
 export const registerDashboardRoutes = dashboardRoute;

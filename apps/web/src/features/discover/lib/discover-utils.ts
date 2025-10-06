@@ -84,9 +84,7 @@ export const getRecentlyAdded = (
 
   return matchingItems
     .filter((item) => item.added)
-    .sort(
-      (a, b) => new Date(b.added!).getTime() - new Date(a.added!).getTime(),
-    )
+    .sort((a, b) => new Date(b.added!).getTime() - new Date(a.added!).getTime())
     .slice(0, limit);
 };
 

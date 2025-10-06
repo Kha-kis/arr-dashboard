@@ -50,7 +50,9 @@ interface LibraryHeaderProps {
   /** Currently selected status filter */
   statusFilter: (typeof STATUS_FILTERS)[number]["value"];
   /** Handler for status filter changes */
-  onStatusFilterChange: (value: (typeof STATUS_FILTERS)[number]["value"]) => void;
+  onStatusFilterChange: (
+    value: (typeof STATUS_FILTERS)[number]["value"],
+  ) => void;
   /** Currently selected file filter */
   fileFilter: (typeof FILE_FILTERS)[number]["value"];
   /** Handler for file filter changes */
@@ -141,8 +143,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
               {instanceOptions
                 .filter(
                   (option) =>
-                    serviceFilter === "all" ||
-                    option.service === serviceFilter,
+                    serviceFilter === "all" || option.service === serviceFilter,
                 )
                 .map((option) => (
                   <option
@@ -191,8 +192,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
               value={fileFilter}
               onChange={(event) =>
                 onFileFilterChange(
-                  event.target
-                    .value as (typeof FILE_FILTERS)[number]["value"],
+                  event.target.value as (typeof FILE_FILTERS)[number]["value"],
                 )
               }
               className="rounded-md border border-white/20 bg-slate-900/80 px-3 py-2 text-sm text-white hover:border-sky-400/80 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"

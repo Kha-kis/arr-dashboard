@@ -8,12 +8,12 @@ import { registerSearchRoutes } from "./library/search-routes";
  * Registers all library-related routes including fetch, monitor, and search operations
  */
 const libraryRoute: FastifyPluginCallback = (app, _opts, done) => {
-	// Register all route modules
-	app.register(registerFetchRoutes);
-	app.register(registerMonitorRoutes);
-	app.register(registerSearchRoutes);
+  // Register all route modules
+  app.register(registerFetchRoutes);
+  app.register(registerMonitorRoutes);
+  app.register(registerSearchRoutes);
 
-	done();
+  done();
 };
 
 export const registerLibraryRoutes = libraryRoute;

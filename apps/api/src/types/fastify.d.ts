@@ -5,15 +5,15 @@ import type { Encryptor } from "../lib/auth/encryption";
 import type { SessionService } from "../lib/auth/session";
 
 declare module "fastify" {
-	interface FastifyInstance {
-		config: ApiEnv;
-		prisma: PrismaClient;
-		encryptor: Encryptor;
-		sessionService: SessionService;
-	}
+  interface FastifyInstance {
+    config: ApiEnv;
+    prisma: PrismaClient;
+    encryptor: Encryptor;
+    sessionService: SessionService;
+  }
 
-	interface FastifyRequest {
-		currentUser: User | null;
-		sessionToken: string | null;
-	}
+  interface FastifyRequest {
+    currentUser: User | null;
+    sessionToken: string | null;
+  }
 }

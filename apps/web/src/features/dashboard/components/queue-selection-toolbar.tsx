@@ -15,7 +15,10 @@ interface QueueSelectionToolbarProps {
   pending?: boolean;
   onManualImport?: (items: QueueItem[]) => Promise<void> | void;
   onRetry?: (items: QueueItem[]) => Promise<void> | void;
-  onRemove?: (items: QueueItem[], options?: QueueActionOptions) => Promise<void> | void;
+  onRemove?: (
+    items: QueueItem[],
+    options?: QueueActionOptions,
+  ) => Promise<void> | void;
   onChangeCategory?: (items: QueueItem[]) => Promise<void> | void;
 }
 
