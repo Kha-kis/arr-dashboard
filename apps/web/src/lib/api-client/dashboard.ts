@@ -1,4 +1,13 @@
-﻿import type { MultiInstanceQueueResponse, QueueActionRequest, QueueBulkActionRequest, MultiInstanceHistoryResponse, MultiInstanceCalendarResponse, DashboardStatisticsResponse, ManualImportCandidate, ManualImportSubmission } from "@arr/shared";
+﻿import type {
+  MultiInstanceQueueResponse,
+  QueueActionRequest,
+  QueueBulkActionRequest,
+  MultiInstanceHistoryResponse,
+  MultiInstanceCalendarResponse,
+  DashboardStatisticsResponse,
+  ManualImportCandidate,
+  ManualImportSubmission,
+} from "@arr/shared";
 import { apiRequest, UnauthorizedError } from "./base";
 
 export async function fetchMultiInstanceQueue(): Promise<MultiInstanceQueueResponse> {
@@ -12,7 +21,10 @@ export async function fetchMultiInstanceQueue(): Promise<MultiInstanceQueueRespo
   }
 }
 
-export async function fetchMultiInstanceHistory(options?: { startDate?: string; endDate?: string }): Promise<MultiInstanceHistoryResponse> {
+export async function fetchMultiInstanceHistory(options?: {
+  startDate?: string;
+  endDate?: string;
+}): Promise<MultiInstanceHistoryResponse> {
   const searchParams = new URLSearchParams();
   if (options?.startDate) {
     searchParams.set("startDate", options.startDate);
@@ -20,9 +32,10 @@ export async function fetchMultiInstanceHistory(options?: { startDate?: string; 
   if (options?.endDate) {
     searchParams.set("endDate", options.endDate);
   }
-  const path = searchParams.size > 0
-    ? `/api/dashboard/history?${searchParams.toString()}`
-    : "/api/dashboard/history";
+  const path =
+    searchParams.size > 0
+      ? `/api/dashboard/history?${searchParams.toString()}`
+      : "/api/dashboard/history";
 
   try {
     return await apiRequest<MultiInstanceHistoryResponse>(path);
@@ -34,7 +47,9 @@ export async function fetchMultiInstanceHistory(options?: { startDate?: string; 
   }
 }
 
-export async function fetchMultiInstanceCalendar(options: { start?: string; end?: string; unmonitored?: boolean } = {}): Promise<MultiInstanceCalendarResponse> {
+export async function fetchMultiInstanceCalendar(
+  options: { start?: string; end?: string; unmonitored?: boolean } = {},
+): Promise<MultiInstanceCalendarResponse> {
   const searchParams = new URLSearchParams();
   if (options.start) {
     searchParams.set("start", options.start);
@@ -46,9 +61,10 @@ export async function fetchMultiInstanceCalendar(options: { start?: string; end?
     searchParams.set("unmonitored", String(options.unmonitored));
   }
 
-  const path = searchParams.size > 0
-    ? `/api/dashboard/calendar?${searchParams.toString()}`
-    : "/api/dashboard/calendar";
+  const path =
+    searchParams.size > 0
+      ? `/api/dashboard/calendar?${searchParams.toString()}`
+      : "/api/dashboard/calendar";
 
   try {
     return await apiRequest<MultiInstanceCalendarResponse>(path);
@@ -62,7 +78,9 @@ export async function fetchMultiInstanceCalendar(options: { start?: string; end?
 
 export async function fetchDashboardStatistics(): Promise<DashboardStatisticsResponse> {
   try {
-    return await apiRequest<DashboardStatisticsResponse>("/api/dashboard/statistics");
+    return await apiRequest<DashboardStatisticsResponse>(
+      "/api/dashboard/statistics",
+    );
   } catch (error) {
     if (error instanceof UnauthorizedError) {
       return {
@@ -75,14 +93,18 @@ export async function fetchDashboardStatistics(): Promise<DashboardStatisticsRes
   }
 }
 
-export async function performQueueAction(payload: QueueActionRequest): Promise<void> {
+export async function performQueueAction(
+  payload: QueueActionRequest,
+): Promise<void> {
   await apiRequest<void>("/api/dashboard/queue/action", {
     method: "POST",
     json: payload,
   });
 }
 
-export async function performQueueBulkAction(payload: QueueBulkActionRequest): Promise<void> {
+export async function performQueueBulkAction(
+  payload: QueueBulkActionRequest,
+): Promise<void> {
   await apiRequest<void>("/api/dashboard/queue/bulk", {
     method: "POST",
     json: payload,
@@ -119,12 +141,15 @@ export async function fetchManualImportCandidates(params: {
     search.set("filterExistingFiles", String(params.filterExistingFiles));
   }
 
-  return await apiRequest<{ candidates: ManualImportCandidate[]; total: number }>(
-    `/api/manual-import?${search.toString()}`,
-  );
+  return await apiRequest<{
+    candidates: ManualImportCandidate[];
+    total: number;
+  }>(`/api/manual-import?${search.toString()}`);
 }
 
-export async function submitManualImport(payload: ManualImportSubmission): Promise<void> {
+export async function submitManualImport(
+  payload: ManualImportSubmission,
+): Promise<void> {
   await apiRequest<void>("/api/manual-import", {
     method: "POST",
     json: payload,

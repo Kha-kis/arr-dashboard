@@ -124,19 +124,20 @@ export const emptyProwlarrStatistics: ProwlarrStatistics = prowlarrStatisticsSch
 export const fetchSonarrStatistics = async (
 	fetcher: (path: string, init?: RequestInit) => Promise<Response>,
 ): Promise<SonarrStatistics> => {
-	const series = (await safeRequestJson<any[]>(fetcher, "/api/v3/series")) ?? [];
-	const diskspace = (await safeRequestJson<any[]>(fetcher, "/api/v3/diskspace")) ?? [];
-	const health = (await safeRequestJson<any[]>(fetcher, "/api/v3/system/health")) ?? [];
+	const series = (await safeRequestJson<unknown[]>(fetcher, "/api/v3/series")) ?? [];
+	const diskspace = (await safeRequestJson<unknown[]>(fetcher, "/api/v3/diskspace")) ?? [];
+	const health = (await safeRequestJson<unknown[]>(fetcher, "/api/v3/system/health")) ?? [];
 	const cutoffUnmet =
-		(await safeRequestJson<any>(fetcher, "/api/v3/wanted/cutoff?page=1&pageSize=1")) ?? {};
-	const qualityProfiles = (await safeRequestJson<any[]>(fetcher, "/api/v3/qualityprofile")) ?? [];
+		(await safeRequestJson<unknown>(fetcher, "/api/v3/wanted/cutoff?page=1&pageSize=1")) ?? {};
+	const qualityProfiles =
+		(await safeRequestJson<unknown[]>(fetcher, "/api/v3/qualityprofile")) ?? [];
 
 	// Build a map of profile ID to profile name
 	const profileIdToName = new Map<number, string>();
 	for (const profile of qualityProfiles) {
 		if (profile && typeof profile === "object") {
-			const profileId = toNumber((profile as any).id);
-			const profileName = toStringValue((profile as any).name);
+			const profileId = toNumber((profile as { id?: unknown }).id);
+			const profileName = toStringValue((profile as { name?: unknown }).name);
 
 			if (profileId !== undefined && profileName) {
 				profileIdToName.set(profileId, profileName);
@@ -162,18 +163,18 @@ export const fetchSonarrStatistics = async (
 			continue;
 		}
 		totalSeries += 1;
-		if ((entry as any).monitored !== false) {
+		if ((entry as { monitored?: unknown }).monitored !== false) {
 			monitoredSeries += 1;
 		}
 
-		const status = toStringValue((entry as any).status);
+		const status = toStringValue((entry as { status?: unknown }).status);
 		if (status === "continuing") {
 			continuingSeries += 1;
 		} else if (status === "ended") {
 			endedSeries += 1;
 		}
 
-		const stats = (entry as any).statistics ?? {};
+		const stats = (entry as { statistics?: unknown }).statistics ?? {};
 		const episodesTotal = toNumber(stats.totalEpisodeCount ?? stats.episodeCount) ?? 0;
 		const episodesWithFile = toNumber(stats.episodeFileCount) ?? 0;
 		const sizeOnDisk = toNumber(stats.sizeOnDisk) ?? 0;
@@ -186,14 +187,14 @@ export const fetchSonarrStatistics = async (
 
 		// Count episodes by quality profile (for series with files)
 		if (episodesWithFile > 0) {
-			const qualityProfileId = toNumber((entry as any).qualityProfileId);
+			const qualityProfileId = toNumber((entry as { qualityProfileId?: unknown }).qualityProfileId);
 
 			// Look up the profile name
 			if (qualityProfileId !== undefined && profileIdToName.has(qualityProfileId)) {
 				const profileName = profileIdToName.get(qualityProfileId)!;
 				qualityBreakdown[profileName] = (qualityBreakdown[profileName] ?? 0) + episodesWithFile;
 			} else {
-				qualityBreakdown["Unknown"] = (qualityBreakdown["Unknown"] ?? 0) + episodesWithFile;
+				qualityBreakdown.Unknown = (qualityBreakdown.Unknown ?? 0) + episodesWithFile;
 			}
 		}
 	}
@@ -203,7 +204,7 @@ export const fetchSonarrStatistics = async (
 		downloadedEpisodes > 0 ? totalFileSize / downloadedEpisodes : undefined;
 
 	const diskTotals = diskspace.reduce(
-		(acc: { total: number; free: number }, entry: any) => {
+		(acc: { total: number; free: number }, entry: unknown) => {
 			acc.total += toNumber(entry?.totalSpace) ?? 0;
 			acc.free += toNumber(entry?.freeSpace) ?? 0;
 			return acc;
@@ -247,19 +248,20 @@ export const fetchSonarrStatistics = async (
 export const fetchRadarrStatistics = async (
 	fetcher: (path: string, init?: RequestInit) => Promise<Response>,
 ): Promise<RadarrStatistics> => {
-	const movies = (await safeRequestJson<any[]>(fetcher, "/api/v3/movie")) ?? [];
-	const diskspace = (await safeRequestJson<any[]>(fetcher, "/api/v3/diskspace")) ?? [];
-	const health = (await safeRequestJson<any[]>(fetcher, "/api/v3/system/health")) ?? [];
+	const movies = (await safeRequestJson<unknown[]>(fetcher, "/api/v3/movie")) ?? [];
+	const diskspace = (await safeRequestJson<unknown[]>(fetcher, "/api/v3/diskspace")) ?? [];
+	const health = (await safeRequestJson<unknown[]>(fetcher, "/api/v3/system/health")) ?? [];
 	const cutoffUnmet =
-		(await safeRequestJson<any>(fetcher, "/api/v3/wanted/cutoff?page=1&pageSize=1")) ?? {};
-	const qualityProfiles = (await safeRequestJson<any[]>(fetcher, "/api/v3/qualityprofile")) ?? [];
+		(await safeRequestJson<unknown>(fetcher, "/api/v3/wanted/cutoff?page=1&pageSize=1")) ?? {};
+	const qualityProfiles =
+		(await safeRequestJson<unknown[]>(fetcher, "/api/v3/qualityprofile")) ?? [];
 
 	// Build a map of profile ID to profile name
 	const profileIdToName = new Map<number, string>();
 	for (const profile of qualityProfiles) {
 		if (profile && typeof profile === "object") {
-			const profileId = toNumber((profile as any).id);
-			const profileName = toStringValue((profile as any).name);
+			const profileId = toNumber((profile as { id?: unknown }).id);
+			const profileName = toStringValue((profile as { name?: unknown }).name);
 
 			if (profileId !== undefined && profileName) {
 				profileIdToName.set(profileId, profileName);
@@ -277,24 +279,24 @@ export const fetchRadarrStatistics = async (
 		if (!movie || typeof movie !== "object") {
 			continue;
 		}
-		if ((movie as any).monitored !== false) {
+		if ((movie as { monitored?: unknown }).monitored !== false) {
 			monitoredMovies += 1;
 		}
-		if ((movie as any).hasFile) {
+		if ((movie as { hasFile?: unknown }).hasFile) {
 			downloadedMovies += 1;
 
-			const sizeOnDisk = toNumber((movie as any).sizeOnDisk) ?? 0;
+			const sizeOnDisk = toNumber((movie as { sizeOnDisk?: unknown }).sizeOnDisk) ?? 0;
 			totalFileSize += sizeOnDisk;
 
 			// Use quality profile to categorize
-			const qualityProfileId = toNumber((movie as any).qualityProfileId);
+			const qualityProfileId = toNumber((movie as { qualityProfileId?: unknown }).qualityProfileId);
 
 			// Look up the profile name
 			if (qualityProfileId !== undefined && profileIdToName.has(qualityProfileId)) {
 				const profileName = profileIdToName.get(qualityProfileId)!;
 				qualityBreakdown[profileName] = (qualityBreakdown[profileName] ?? 0) + 1;
 			} else {
-				qualityBreakdown["Unknown"] = (qualityBreakdown["Unknown"] ?? 0) + 1;
+				qualityBreakdown.Unknown = (qualityBreakdown.Unknown ?? 0) + 1;
 			}
 		}
 	}
@@ -305,7 +307,7 @@ export const fetchRadarrStatistics = async (
 	const averageMovieSize = downloadedMovies > 0 ? totalFileSize / downloadedMovies : undefined;
 
 	const diskTotals = diskspace.reduce(
-		(acc: { total: number; free: number }, entry: any) => {
+		(acc: { total: number; free: number }, entry: unknown) => {
 			acc.total += toNumber(entry?.totalSpace) ?? 0;
 			acc.free += toNumber(entry?.freeSpace) ?? 0;
 			return acc;
@@ -345,8 +347,8 @@ export const fetchRadarrStatistics = async (
 export const fetchProwlarrStatistics = async (
 	fetcher: (path: string, init?: RequestInit) => Promise<Response>,
 ): Promise<ProwlarrStatistics> => {
-	const indexers = (await safeRequestJson<any[]>(fetcher, "/api/v1/indexer")) ?? [];
-	const health = (await safeRequestJson<any[]>(fetcher, "/api/v1/health")) ?? [];
+	const indexers = (await safeRequestJson<unknown[]>(fetcher, "/api/v1/indexer")) ?? [];
+	const health = (await safeRequestJson<unknown[]>(fetcher, "/api/v1/health")) ?? [];
 
 	// Fetch history from last 30 days for more accurate statistics
 	const thirtyDaysAgo = new Date();
@@ -354,7 +356,7 @@ export const fetchProwlarrStatistics = async (
 	const startDate = thirtyDaysAgo.toISOString();
 
 	// Fetch multiple pages if needed (up to 5000 records total)
-	const historyRecords: any[] = [];
+	const historyRecords: unknown[] = [];
 	const pageSize = 1000;
 	const maxPages = 5;
 
@@ -392,8 +394,8 @@ export const fetchProwlarrStatistics = async (
 	const indexerIdToName = new Map<number, string>();
 	for (const indexer of indexers) {
 		if (indexer && typeof indexer === "object") {
-			const id = toNumber((indexer as any).id);
-			const name = toStringValue((indexer as any).name);
+			const id = toNumber((indexer as { id?: unknown }).id);
+			const name = toStringValue((indexer as { name?: unknown }).name);
 			if (id !== undefined && name) {
 				indexerIdToName.set(id, name);
 			}
@@ -409,7 +411,10 @@ export const fetchProwlarrStatistics = async (
 		}
 
 		// Try to get indexer ID and map it to name
-		const indexerId = toNumber((record as any).indexerId ?? (record as any).indexer);
+		const indexerId = toNumber(
+			(record as { indexerId?: unknown; indexer?: unknown }).indexerId ??
+				(record as { indexerId?: unknown; indexer?: unknown }).indexer,
+		);
 		let indexerName = "Unknown";
 
 		if (indexerId !== undefined && indexerIdToName.has(indexerId)) {
@@ -417,13 +422,14 @@ export const fetchProwlarrStatistics = async (
 		} else {
 			// Fallback to direct name field
 			indexerName =
-				toStringValue((record as any).indexer) ??
-				toStringValue((record as any).indexerName) ??
+				toStringValue((record as { indexer?: unknown }).indexer) ??
+				toStringValue((record as { indexerName?: unknown }).indexerName) ??
 				"Unknown";
 		}
 
-		const eventType = toStringValue((record as any).eventType)?.toLowerCase() ?? "";
-		const successful = (record as any).successful !== false;
+		const eventType =
+			toStringValue((record as { eventType?: unknown }).eventType)?.toLowerCase() ?? "";
+		const successful = (record as { successful?: unknown }).successful !== false;
 
 		if (!indexerStatsMap.has(indexerName)) {
 			indexerStatsMap.set(indexerName, { queries: 0, grabs: 0, successful: 0 });
@@ -743,7 +749,13 @@ export const aggregateProwlarrStatistics = (
 		},
 		new Map<
 			string,
-			{ displayName: string; queries: number; grabs: number; successRateSum: number; count: number }
+			{
+				displayName: string;
+				queries: number;
+				grabs: number;
+				successRateSum: number;
+				count: number;
+			}
 		>(),
 	);
 

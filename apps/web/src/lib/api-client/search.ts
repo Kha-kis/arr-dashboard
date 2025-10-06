@@ -33,9 +33,14 @@ export async function fetchSearchIndexers(): Promise<SearchIndexersResponse> {
   }
 }
 
-export async function fetchSearchIndexerDetails(instanceId: string, indexerId: number): Promise<ProwlarrIndexerDetails> {
+export async function fetchSearchIndexerDetails(
+  instanceId: string,
+  indexerId: number,
+): Promise<ProwlarrIndexerDetails> {
   try {
-    const data = await apiRequest<SearchIndexerDetailsResponse>(`/api/search/indexers/${instanceId}/${indexerId}`);
+    const data = await apiRequest<SearchIndexerDetailsResponse>(
+      `/api/search/indexers/${instanceId}/${indexerId}`,
+    );
     return data.indexer;
   } catch (error) {
     if (error instanceof UnauthorizedError) {
@@ -50,7 +55,9 @@ export async function fetchSearchIndexerDetails(instanceId: string, indexerId: n
   }
 }
 
-export async function performManualSearch(payload: SearchRequest): Promise<MultiInstanceSearchResponse> {
+export async function performManualSearch(
+  payload: SearchRequest,
+): Promise<MultiInstanceSearchResponse> {
   try {
     return await apiRequest<MultiInstanceSearchResponse>("/api/search/query", {
       method: "POST",
@@ -64,30 +71,39 @@ export async function performManualSearch(payload: SearchRequest): Promise<Multi
   }
 }
 
-export async function grabManualSearchResult(payload: SearchGrabRequest): Promise<void> {
+export async function grabManualSearchResult(
+  payload: SearchGrabRequest,
+): Promise<void> {
   await apiRequest<void>("/api/search/grab", {
     method: "POST",
     json: payload,
   });
 }
 
-export async function updateSearchIndexer(instanceId: string, indexerId: number, indexer: ProwlarrIndexerDetails): Promise<ProwlarrIndexerDetails> {
+export async function updateSearchIndexer(
+  instanceId: string,
+  indexerId: number,
+  indexer: ProwlarrIndexerDetails,
+): Promise<ProwlarrIndexerDetails> {
   const payload = { instanceId, indexer };
-  const response = await apiRequest<SearchIndexerDetailsResponse>(`/api/search/indexers/${instanceId}/${indexerId}`, {
-    method: "PUT",
-    json: payload,
-  });
+  const response = await apiRequest<SearchIndexerDetailsResponse>(
+    `/api/search/indexers/${instanceId}/${indexerId}`,
+    {
+      method: "PUT",
+      json: payload,
+    },
+  );
   return response.indexer;
 }
 
-export async function testSearchIndexer(payload: SearchIndexerTestRequest): Promise<SearchIndexerTestResponse> {
-  return await apiRequest<SearchIndexerTestResponse>("/api/search/indexers/test", {
-    method: "POST",
-    json: payload,
-  });
+export async function testSearchIndexer(
+  payload: SearchIndexerTestRequest,
+): Promise<SearchIndexerTestResponse> {
+  return await apiRequest<SearchIndexerTestResponse>(
+    "/api/search/indexers/test",
+    {
+      method: "POST",
+      json: payload,
+    },
+  );
 }
-
-
-
-
-

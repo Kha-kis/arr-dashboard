@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { cn } from '../../lib/utils';
-import { Button, type ButtonProps } from './button';
-import type { LucideIcon } from 'lucide-react';
+import { cn } from "../../lib/utils";
+import { Button, type ButtonProps } from "./button";
+import type { LucideIcon } from "lucide-react";
 
 /**
  * EmptyState Component
@@ -30,8 +30,8 @@ export interface EmptyStateProps {
   /** Optional action button */
   action?: {
     label: string;
-    variant?: ButtonProps['variant'];
-  } & Pick<ButtonProps, 'onClick' | 'href'>;
+    variant?: ButtonProps["variant"];
+  } & Pick<ButtonProps, "onClick" | "href">;
   /** Additional className */
   className?: string;
 }
@@ -46,8 +46,8 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        'flex flex-col items-center justify-center text-center p-12 rounded-2xl border border-border/30 bg-bg-subtle/20',
-        className
+        "flex flex-col items-center justify-center text-center p-12 rounded-2xl border border-border/30 bg-bg-subtle/20",
+        className,
       )}
       role="status"
       aria-live="polite"
@@ -66,7 +66,7 @@ export function EmptyState({
 
       {action && (
         <Button
-          variant={action.variant || 'primary'}
+          variant={action.variant || "primary"}
           onClick={action.onClick}
           {...(action.href ? { asChild: true } : {})}
         >

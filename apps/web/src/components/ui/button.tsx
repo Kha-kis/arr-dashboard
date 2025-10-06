@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import { cn } from "../../lib/utils";
 
@@ -10,27 +10,27 @@ const variantStyles: Record<ButtonVariant, string> = {
     "relative overflow-hidden bg-primary text-white shadow-lg shadow-primary/30",
     "hover:shadow-xl hover:shadow-primary/40 hover:scale-[1.02]",
     "active:scale-[0.98]",
-    "before:absolute before:inset-0 before:bg-gradient-to-r before:from-white/20 before:to-transparent before:opacity-0 hover:before:opacity-100 before:transition-opacity"
+    "before:absolute before:inset-0 before:bg-gradient-to-r before:from-white/20 before:to-transparent before:opacity-0 hover:before:opacity-100 before:transition-opacity",
   ),
   gradient: cn(
     "relative overflow-hidden bg-gradient-to-r from-primary via-accent to-accent/80 text-white shadow-lg shadow-primary/30",
     "hover:shadow-xl hover:shadow-accent/40 hover:scale-[1.02]",
     "active:scale-[0.98]",
-    "before:absolute before:inset-0 before:bg-gradient-to-r before:from-transparent before:via-white/20 before:to-transparent before:translate-x-[-100%] hover:before:translate-x-[100%] before:transition-transform before:duration-700"
+    "before:absolute before:inset-0 before:bg-gradient-to-r before:from-transparent before:via-white/20 before:to-transparent before:translate-x-[-100%] hover:before:translate-x-[100%] before:transition-transform before:duration-700",
   ),
   secondary: cn(
     "bg-bg-subtle/40 backdrop-blur-sm hover:bg-bg-subtle/60 text-fg border border-border/50",
     "hover:border-border/80 hover:shadow-md",
-    "active:scale-[0.98] transition-all"
+    "active:scale-[0.98] transition-all",
   ),
   ghost: cn(
     "hover:bg-bg-subtle/50 text-fg-muted hover:text-fg",
-    "active:scale-[0.98] transition-all"
+    "active:scale-[0.98] transition-all",
   ),
   danger: cn(
     "bg-danger/90 hover:bg-danger text-white shadow-lg shadow-danger/20",
     "hover:shadow-xl hover:shadow-danger/30 hover:scale-[1.02]",
-    "active:scale-[0.98]"
+    "active:scale-[0.98]",
   ),
 };
 
@@ -40,7 +40,8 @@ const sizeStyles: Record<ButtonSize, string> = {
   lg: "px-6 py-3 text-base h-12",
 };
 
-export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+export interface ButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
   size?: ButtonSize;
   asChild?: boolean;

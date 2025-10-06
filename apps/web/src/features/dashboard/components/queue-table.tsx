@@ -5,12 +5,22 @@ import type { QueueItem } from "@arr/shared";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "../../../lib/utils";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
-import { QueueActionButtons, RemoveActionMenu, type QueueAction } from "./queue-action-buttons";
-import { QueueIssueBadge, type IssueSummary, type MessageTone } from "./queue-issue-badge";
+import {
+  QueueActionButtons,
+  RemoveActionMenu,
+  type QueueAction,
+} from "./queue-action-buttons";
+import {
+  QueueIssueBadge,
+  type IssueSummary,
+  type MessageTone,
+} from "./queue-issue-badge";
 import { QueueProgress } from "./queue-progress";
 
-
-type QueueActionHandler = (items: QueueItem[], options?: QueueActionOptions) => Promise<void> | void;
+type QueueActionHandler = (
+  items: QueueItem[],
+  options?: QueueActionOptions,
+) => Promise<void> | void;
 
 interface QueueTableProps {
   items: QueueItem[];
@@ -23,7 +33,8 @@ interface QueueTableProps {
   emptyMessage?: string;
 }
 
-const buildKey = (item: QueueItem) => `${item.service}:${item.instanceId}:${String(item.id)}`;
+const buildKey = (item: QueueItem) =>
+  `${item.service}:${item.instanceId}:${String(item.id)}`;
 
 const getGroupKey = (item: QueueItem): string | null => {
   if (item.downloadId) {
@@ -107,14 +118,18 @@ const looksLikeReleaseName = (text: string): boolean => {
     return false;
   }
   const lower = trimmed.toLowerCase();
-  const tokenMatch = /(s\d{1,2}e\d{1,3}|\.720p|\.1080p|\.2160p|\.480p|\.web[-_.]?dl|\.webrip|\.bluray|\.h\.264|\.h\.265|\.x264|\.x265|\.dvdrip|\.proper|\.repack|\.amzn|\.nf|\.hbo|\.dsnp)/i.test(lower);
+  const tokenMatch =
+    /(s\d{1,2}e\d{1,3}|\.720p|\.1080p|\.2160p|\.480p|\.web[-_.]?dl|\.webrip|\.bluray|\.h\.264|\.h\.265|\.x264|\.x265|\.dvdrip|\.proper|\.repack|\.amzn|\.nf|\.hbo|\.dsnp)/i.test(
+      lower,
+    );
   if (!tokenMatch) {
     return false;
   }
-  const dotSegments = trimmed.split('.')
+  const dotSegments = trimmed
+    .split(".")
     .map((segment) => segment.trim())
     .filter(Boolean);
-  return dotSegments.length >= 4 || !trimmed.includes(' ');
+  return dotSegments.length >= 4 || !trimmed.includes(" ");
 };
 const messageToneClasses: Record<MessageTone, string> = {
   info: "border-white/20 bg-white/5 text-white/80",
@@ -127,7 +142,8 @@ const collectStatusLines = (item: QueueItem): StatusLine[] => {
 
   if (Array.isArray(item.statusMessages)) {
     item.statusMessages.forEach((entry, entryIndex) => {
-      const title = typeof entry?.title === "string" ? entry.title.trim() : undefined;
+      const title =
+        typeof entry?.title === "string" ? entry.title.trim() : undefined;
       if (title) {
         lines.push({
           key: `${buildKey(item)}:status:${entryIndex}:title`,
@@ -155,7 +171,10 @@ const collectStatusLines = (item: QueueItem): StatusLine[] => {
     });
   }
 
-  if (typeof item.errorMessage === "string" && item.errorMessage.trim().length > 0) {
+  if (
+    typeof item.errorMessage === "string" &&
+    item.errorMessage.trim().length > 0
+  ) {
     const trimmed = item.errorMessage.trim();
     lines.push({
       key: `${buildKey(item)}:error`,
@@ -177,7 +196,9 @@ const summarizeLines = (lines: StatusLine[]): CompactLine[] => {
     }
 
     const normalized = trimmed.toLowerCase();
-    const looksLikeFile = /\.(mkv|mp4|avi|m4v|ts|rar|zip|7z)$/i.test(normalized);
+    const looksLikeFile = /\.(mkv|mp4|avi|m4v|ts|rar|zip|7z)$/i.test(
+      normalized,
+    );
     if (looksLikeFile || looksLikeReleaseName(trimmed)) {
       return;
     }
@@ -210,8 +231,10 @@ const renderCompactLines = (lines: StatusLine[]) => {
       key={entry.key}
       className={cn(
         "flex items-start gap-2 rounded-md border px-3 py-2 text-xs",
-        entry.tone === "error" && "border-red-500/40 bg-red-500/10 text-red-100",
-        entry.tone === "warning" && "border-amber-500/40 bg-amber-500/10 text-amber-50",
+        entry.tone === "error" &&
+          "border-red-500/40 bg-red-500/10 text-red-100",
+        entry.tone === "warning" &&
+          "border-amber-500/40 bg-amber-500/10 text-amber-50",
         entry.tone === "info" && "border-white/15 bg-white/5 text-white/70",
       )}
     >
@@ -247,7 +270,10 @@ type ActionCounts = {
 
 const summarizeActionCapabilities = (
   items: QueueItem[],
-): { counts: ActionCounts; primaryAction?: Extract<QueueAction, "retry" | "manualImport"> } => {
+): {
+  counts: ActionCounts;
+  primaryAction?: Extract<QueueAction, "retry" | "manualImport">;
+} => {
   let manualImport = 0;
   let retry = 0;
 
@@ -267,7 +293,9 @@ const summarizeActionCapabilities = (
     }
   }
 
-  const primaryAction: Extract<QueueAction, "retry" | "manualImport"> | undefined =
+  const primaryAction:
+    | Extract<QueueAction, "retry" | "manualImport">
+    | undefined =
     manualImport > 0 ? "manualImport" : retry > 0 ? "retry" : undefined;
 
   return {
@@ -279,7 +307,10 @@ const summarizeActionCapabilities = (
   };
 };
 
-const filterItemsForAction = (items: QueueItem[], action: QueueAction): QueueItem[] => {
+const filterItemsForAction = (
+  items: QueueItem[],
+  action: QueueAction,
+): QueueItem[] => {
   if (action === "retry") {
     return items.filter((item) => {
       if (!item.actions) {
@@ -321,11 +352,12 @@ const createGroupSummary = (key: string, items: QueueItem[]): SummaryRow => {
       .map((item) => item.status?.trim())
       .filter((status): status is string => Boolean(status)),
   );
-  const statusLabel = uniqueStatuses.size === 0
-    ? "Pending"
-    : uniqueStatuses.size === 1
-      ? uniqueStatuses.values().next().value ?? "Pending"
-      : `${uniqueStatuses.size} statuses`;
+  const statusLabel =
+    uniqueStatuses.size === 0
+      ? "Pending"
+      : uniqueStatuses.size === 1
+        ? (uniqueStatuses.values().next().value ?? "Pending")
+        : `${uniqueStatuses.size} statuses`;
 
   const actionSummary = summarizeActionCapabilities(items);
 
@@ -417,7 +449,7 @@ export const QueueTable = ({
 
     for (const item of items) {
       const groupKey = getGroupKey(item);
-      const groupItems = groupKey ? groupMap.get(groupKey) ?? [] : [];
+      const groupItems = groupKey ? (groupMap.get(groupKey) ?? []) : [];
 
       if (groupKey && groupItems.length >= 2) {
         if (!addedGroups.has(groupKey)) {
@@ -500,7 +532,11 @@ export const QueueTable = ({
     }
   };
 
-  const handleRowAction = async (row: SummaryRow, action: QueueAction, actionOptions?: QueueActionOptions) => {
+  const handleRowAction = async (
+    row: SummaryRow,
+    action: QueueAction,
+    actionOptions?: QueueActionOptions,
+  ) => {
     const actionableItems = filterItemsForAction(row.items, action);
     if (actionableItems.length === 0) {
       return;
@@ -523,7 +559,11 @@ export const QueueTable = ({
     }
   };
 
-  const handleItemAction = async (item: QueueItem, action: QueueAction, actionOptions?: QueueActionOptions) => {
+  const handleItemAction = async (
+    item: QueueItem,
+    action: QueueAction,
+    actionOptions?: QueueActionOptions,
+  ) => {
     const actionableItems = filterItemsForAction([item], action);
     if (actionableItems.length === 0) {
       return;
@@ -562,14 +602,16 @@ export const QueueTable = ({
     );
   }
 
-  const allSelected = selectedKeys.size > 0 && selectedKeys.size === items.length;
+  const allSelected =
+    selectedKeys.size > 0 && selectedKeys.size === items.length;
 
   return (
     <div className="space-y-4">
       {selectedItems.length > 0 && (
         <div className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/10 px-4 py-2 text-sm text-white/80 lg:flex-row lg:items-center lg:justify-between">
           <span>
-            {selectedItems.length} item{selectedItems.length === 1 ? "" : "s"} selected
+            {selectedItems.length} item{selectedItems.length === 1 ? "" : "s"}{" "}
+            selected
           </span>
           <div className="flex flex-wrap gap-2">
             {onManualImport && selectedManualImportItems.length > 0 && (
@@ -636,8 +678,12 @@ export const QueueTable = ({
                 everySelected={everySelected}
                 onToggleExpand={() => toggleRowExpansion(groupRow.key)}
                 onToggleSelect={() => toggleSelectionForItems(groupRow.items)}
-                onAction={(action, actionOptions) => void handleRowAction(groupRow, action, actionOptions)}
-                onItemAction={(item, action, actionOptions) => void handleItemAction(item, action, actionOptions)}
+                onAction={(action, actionOptions) =>
+                  void handleRowAction(groupRow, action, actionOptions)
+                }
+                onItemAction={(item, action, actionOptions) =>
+                  void handleItemAction(item, action, actionOptions)
+                }
                 isItemSelected={(item) => selectedKeys.has(buildKey(item))}
                 onToggleItemSelect={(item) => toggleSingleSelection(item)}
                 issueSummary={issueSummary}
@@ -654,7 +700,9 @@ export const QueueTable = ({
               pending={pending}
               showChangeCategory={Boolean(onChangeCategory)}
               onToggleSelect={() => toggleSingleSelection(row.items[0]!)}
-              onAction={(action, actionOptions) => void handleItemAction(row.items[0]!, action, actionOptions)}
+              onAction={(action, actionOptions) =>
+                void handleItemAction(row.items[0]!, action, actionOptions)
+              }
               primaryAction={row.primaryAction}
             />
           );
@@ -674,7 +722,11 @@ interface GroupCardProps {
   onToggleExpand: () => void;
   onToggleSelect: () => void;
   onAction: (action: QueueAction, options?: QueueActionOptions) => void;
-  onItemAction: (item: QueueItem, action: QueueAction, options?: QueueActionOptions) => void;
+  onItemAction: (
+    item: QueueItem,
+    action: QueueAction,
+    options?: QueueActionOptions,
+  ) => void;
   isItemSelected: (item: QueueItem) => boolean;
   onToggleItemSelect: (item: QueueItem) => void;
 }
@@ -716,7 +768,11 @@ const GroupCard = ({
               onClick={onToggleExpand}
               className="flex items-center gap-2 text-left text-white"
             >
-              {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              {expanded ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronRight className="h-4 w-4" />
+              )}
               <span className="font-semibold">{row.title}</span>
             </button>
             <div className="flex flex-wrap gap-2 text-xs text-white/60">
@@ -752,7 +808,9 @@ const GroupCard = ({
               pending={pending}
               showChangeCategory={showChangeCategory}
               onToggleSelect={() => onToggleItemSelect(item)}
-              onAction={(action, actionOptions) => void onItemAction(item, action, actionOptions)}
+              onAction={(action, actionOptions) =>
+                void onItemAction(item, action, actionOptions)
+              }
             />
           ))}
         </div>
@@ -789,10 +847,15 @@ const QueueItemCard = ({
   const primaryActionItems = effectivePrimaryAction
     ? filterItemsForAction([item], effectivePrimaryAction)
     : [];
-  const primaryDisabled = !effectivePrimaryAction || primaryActionItems.length === 0;
+  const primaryDisabled =
+    !effectivePrimaryAction || primaryActionItems.length === 0;
 
   return (
-    <div className={cn("rounded-xl border border-white/10 bg-white/5 p-4", selected && "border-white/40")}
+    <div
+      className={cn(
+        "rounded-xl border border-white/10 bg-white/5 p-4",
+        selected && "border-white/40",
+      )}
     >
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start lg:gap-6">
         <div className="flex min-w-0 items-start gap-3 lg:pr-4">
@@ -805,14 +868,16 @@ const QueueItemCard = ({
           />
           <div className="min-w-0 space-y-2">
             <div>
-              <p className="font-medium text-white">{item.title ?? "Unnamed item"}</p>
+              <p className="font-medium text-white">
+                {item.title ?? "Unnamed item"}
+              </p>
               <div className="mt-1 flex flex-wrap gap-2 text-xs text-white/60">
                 <span className="capitalize">{item.service}</span>
                 {item.instanceName && <span>{item.instanceName}</span>}
                 {item.downloadClient && <span>{item.downloadClient}</span>}
                 {item.indexer && <span>{item.indexer}</span>}
                 {typeof item.size === "number" && (
-                  <span>{(item.size / (1024 ** 3)).toFixed(2)} GB</span>
+                  <span>{(item.size / 1024 ** 3).toFixed(2)} GB</span>
                 )}
               </div>
             </div>
@@ -841,20 +906,3 @@ const QueueItemCard = ({
     </div>
   );
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -180,7 +180,13 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(404).send({ error: "Service instance not found" });
 		}
 
-		const updateData: any = {};
+		const updateData: {
+			label?: string;
+			baseUrl?: string;
+			enabled?: boolean;
+			isDefault?: boolean;
+			apiKey?: string;
+		} = {};
 		if (payload.label) {
 			updateData.label = payload.label;
 		}
@@ -234,7 +240,9 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 		});
 
 		if (payload.tags) {
-			await app.prisma.serviceInstanceTag.deleteMany({ where: { instanceId: id } });
+			await app.prisma.serviceInstanceTag.deleteMany({
+				where: { instanceId: id },
+			});
 			const connections = await Promise.all(
 				payload.tags.map(async (name) => {
 					const tag = await app.prisma.serviceTag.upsert({
@@ -257,20 +265,20 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		return reply.send({
 			service: {
-				id: fresh!.id,
-				service: fresh!.service.toLowerCase(),
-				label: fresh!.label,
-				baseUrl: fresh!.baseUrl,
-				enabled: fresh!.enabled,
-				isDefault: fresh!.isDefault,
-				createdAt: fresh!.createdAt,
-				updatedAt: fresh!.updatedAt,
-				hasApiKey: Boolean(fresh!.encryptedApiKey),
-				defaultQualityProfileId: fresh!.defaultQualityProfileId,
-				defaultLanguageProfileId: fresh!.defaultLanguageProfileId,
-				defaultRootFolderPath: fresh!.defaultRootFolderPath,
-				defaultSeasonFolder: fresh!.defaultSeasonFolder,
-				tags: fresh!.tags.map(({ tag }) => ({ id: tag.id, name: tag.name })),
+				id: fresh?.id,
+				service: fresh?.service.toLowerCase(),
+				label: fresh?.label,
+				baseUrl: fresh?.baseUrl,
+				enabled: fresh?.enabled,
+				isDefault: fresh?.isDefault,
+				createdAt: fresh?.createdAt,
+				updatedAt: fresh?.updatedAt,
+				hasApiKey: Boolean(fresh?.encryptedApiKey),
+				defaultQualityProfileId: fresh?.defaultQualityProfileId,
+				defaultLanguageProfileId: fresh?.defaultLanguageProfileId,
+				defaultRootFolderPath: fresh?.defaultRootFolderPath,
+				defaultSeasonFolder: fresh?.defaultSeasonFolder,
+				tags: fresh?.tags.map(({ tag }) => ({ id: tag.id, name: tag.name })),
 			},
 		});
 	});
@@ -354,10 +362,15 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			return;
 		}
 
-		const payload = request.body as any;
+		const payload = request.body as {
+			baseUrl?: unknown;
+			apiKey?: unknown;
+			service?: unknown;
+		};
 		const baseUrl = payload?.baseUrl;
 		const apiKey = payload?.apiKey;
-		const service = payload?.service?.toLowerCase();
+		const service =
+			typeof payload?.service === "string" ? payload.service.toLowerCase() : undefined;
 
 		if (!baseUrl || !apiKey || !service) {
 			return reply.status(400).send({
@@ -393,7 +406,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 							details: `Cannot reach ${pingUrl}. Check the base URL is correct.`,
 						});
 					}
-				} catch (pingError: any) {
+				} catch (pingError: unknown) {
 					return reply.status(200).send({
 						success: false,
 						error: "Cannot reach Prowlarr",
@@ -444,7 +457,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				message: `Successfully connected to ${service.charAt(0).toUpperCase() + service.slice(1)}`,
 				version,
 			});
-		} catch (error: any) {
+		} catch (error: unknown) {
 			let errorMessage = "Connection failed";
 			let details = "Unknown error";
 
@@ -513,7 +526,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 							details: `Cannot reach ${pingUrl}. Check the base URL is correct.`,
 						});
 					}
-				} catch (pingError: any) {
+				} catch (pingError: unknown) {
 					return reply.status(200).send({
 						success: false,
 						error: "Cannot reach Prowlarr",
@@ -564,7 +577,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				message: `Successfully connected to ${service.charAt(0).toUpperCase() + service.slice(1)}`,
 				version,
 			});
-		} catch (error: any) {
+		} catch (error: unknown) {
 			let errorMessage = "Connection failed";
 			let details = "Unknown error";
 

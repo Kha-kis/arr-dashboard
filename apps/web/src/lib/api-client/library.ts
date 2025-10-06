@@ -27,7 +27,8 @@ export async function fetchLibrary(
     search.set("instanceId", params.instanceId);
   }
 
-  const path = search.size > 0 ? `/api/library?${search.toString()}` : "/api/library";
+  const path =
+    search.size > 0 ? `/api/library?${search.toString()}` : "/api/library";
 
   try {
     return await apiRequest<MultiInstanceLibraryResponse>(path);
@@ -39,30 +40,36 @@ export async function fetchLibrary(
   }
 }
 
-export async function toggleLibraryMonitoring(payload: LibraryToggleMonitorRequest): Promise<void> {
+export async function toggleLibraryMonitoring(
+  payload: LibraryToggleMonitorRequest,
+): Promise<void> {
   await apiRequest<void>("/api/library/monitor", {
     method: "POST",
     json: payload,
   });
 }
 
-export async function searchLibrarySeason(payload: LibrarySeasonSearchRequest): Promise<void> {
+export async function searchLibrarySeason(
+  payload: LibrarySeasonSearchRequest,
+): Promise<void> {
   await apiRequest<void>("/api/library/season/search", {
     method: "POST",
     json: payload,
   });
 }
 
-
-
-export async function searchLibraryMovie(payload: LibraryMovieSearchRequest): Promise<void> {
+export async function searchLibraryMovie(
+  payload: LibraryMovieSearchRequest,
+): Promise<void> {
   await apiRequest<void>("/api/library/movie/search", {
     method: "POST",
     json: payload,
   });
 }
 
-export async function searchLibrarySeries(payload: LibrarySeriesSearchRequest): Promise<void> {
+export async function searchLibrarySeries(
+  payload: LibrarySeriesSearchRequest,
+): Promise<void> {
   await apiRequest<void>("/api/library/series/search", {
     method: "POST",
     json: payload,
@@ -75,7 +82,9 @@ export interface FetchEpisodesParams {
   seasonNumber?: number;
 }
 
-export async function fetchEpisodes(params: FetchEpisodesParams): Promise<LibraryEpisodesResponse> {
+export async function fetchEpisodes(
+  params: FetchEpisodesParams,
+): Promise<LibraryEpisodesResponse> {
   const search = new URLSearchParams({
     instanceId: params.instanceId,
     seriesId: String(params.seriesId),
@@ -84,20 +93,25 @@ export async function fetchEpisodes(params: FetchEpisodesParams): Promise<Librar
     search.set("seasonNumber", String(params.seasonNumber));
   }
 
-  return await apiRequest<LibraryEpisodesResponse>(`/api/library/episodes?${search.toString()}`);
+  return await apiRequest<LibraryEpisodesResponse>(
+    `/api/library/episodes?${search.toString()}`,
+  );
 }
 
-export async function searchLibraryEpisode(payload: LibraryEpisodeSearchRequest): Promise<void> {
+export async function searchLibraryEpisode(
+  payload: LibraryEpisodeSearchRequest,
+): Promise<void> {
   await apiRequest<void>("/api/library/episode/search", {
     method: "POST",
     json: payload,
   });
 }
 
-export async function toggleEpisodeMonitoring(payload: LibraryEpisodeMonitorRequest): Promise<void> {
+export async function toggleEpisodeMonitoring(
+  payload: LibraryEpisodeMonitorRequest,
+): Promise<void> {
   await apiRequest<void>("/api/library/episode/monitor", {
     method: "POST",
     json: payload,
   });
 }
-

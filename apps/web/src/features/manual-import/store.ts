@@ -85,7 +85,9 @@ export const hasValidSelections = (
   selections: Record<string, ManualImportSelection>,
   service: ManualImportService,
 ): boolean => {
-  const entries = Object.values(selections).filter((selection) => selection.service === service);
+  const entries = Object.values(selections).filter(
+    (selection) => selection.service === service,
+  );
   if (entries.length === 0) {
     return false;
   }
@@ -93,7 +95,9 @@ export const hasValidSelections = (
   return entries.every((selection) => {
     if (selection.service === "sonarr") {
       const { seriesId, episodeIds } = selection.values;
-      return Boolean(seriesId && Array.isArray(episodeIds) && episodeIds.length > 0);
+      return Boolean(
+        seriesId && Array.isArray(episodeIds) && episodeIds.length > 0,
+      );
     }
 
     if (selection.service === "radarr") {

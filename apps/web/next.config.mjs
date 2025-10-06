@@ -5,7 +5,8 @@ const nextConfig = {
   },
   poweredByHeader: false,
   async headers() {
-    const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001";
+    const apiUrl =
+      process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001";
     // Extract the origin (protocol + host) for CSP
     const apiOrigin = new URL(apiUrl).origin;
 

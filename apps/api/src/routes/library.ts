@@ -108,7 +108,11 @@ const normalizeImages = (
 		return {};
 	}
 	const result: { poster?: string; fanart?: string } = {};
-	for (const raw of images as Array<{ coverType?: string; url?: string; remoteUrl?: string }>) {
+	for (const raw of images as Array<{
+		coverType?: string;
+		url?: string;
+		remoteUrl?: string;
+	}>) {
 		const type = toStringValue(raw?.coverType)?.toLowerCase();
 		if (!type) {
 			continue;
@@ -438,7 +442,7 @@ const libraryRoute: FastifyPluginCallback = (app, _opts, done) => {
 					let nextMonitored = !!season?.monitored;
 
 					if (hasSelections) {
-						if (seasonNumbers!.includes(seasonNumber)) {
+						if (seasonNumbers?.includes(seasonNumber)) {
 							nextMonitored = payload.monitored;
 						}
 					} else {
@@ -492,7 +496,9 @@ const libraryRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const service = instance.service.toLowerCase() as LibraryService;
 		if (service !== "sonarr") {
 			reply.status(400);
-			return reply.send({ message: "Season search is only supported for Sonarr instances" });
+			return reply.send({
+				message: "Season search is only supported for Sonarr instances",
+			});
 		}
 
 		const seriesId = Number(payload.seriesId);
@@ -555,7 +561,9 @@ const libraryRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const service = instance.service.toLowerCase() as LibraryService;
 		if (service !== "sonarr") {
 			reply.status(400);
-			return reply.send({ message: "Series search is only supported for Sonarr instances" });
+			return reply.send({
+				message: "Series search is only supported for Sonarr instances",
+			});
 		}
 
 		const seriesId = Number(payload.seriesId);
@@ -611,7 +619,9 @@ const libraryRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const service = instance.service.toLowerCase() as LibraryService;
 		if (service !== "radarr") {
 			reply.status(400);
-			return reply.send({ message: "Movie search is only supported for Radarr instances" });
+			return reply.send({
+				message: "Movie search is only supported for Radarr instances",
+			});
 		}
 
 		const movieId = Number(payload.movieId);
@@ -668,7 +678,9 @@ const libraryRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const service = instance.service.toLowerCase() as LibraryService;
 		if (service !== "sonarr") {
 			reply.status(400);
-			return reply.send({ message: "Episodes are only available for Sonarr instances" });
+			return reply.send({
+				message: "Episodes are only available for Sonarr instances",
+			});
 		}
 
 		const seriesId = Number(parsed.seriesId);
@@ -738,7 +750,9 @@ const libraryRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const service = instance.service.toLowerCase() as LibraryService;
 		if (service !== "sonarr") {
 			reply.status(400);
-			return reply.send({ message: "Episode search is only supported for Sonarr instances" });
+			return reply.send({
+				message: "Episode search is only supported for Sonarr instances",
+			});
 		}
 
 		if (!payload.episodeIds || payload.episodeIds.length === 0) {
@@ -794,7 +808,9 @@ const libraryRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const service = instance.service.toLowerCase() as LibraryService;
 		if (service !== "sonarr") {
 			reply.status(400);
-			return reply.send({ message: "Episode monitoring is only supported for Sonarr instances" });
+			return reply.send({
+				message: "Episode monitoring is only supported for Sonarr instances",
+			});
 		}
 
 		const seriesId = Number(payload.seriesId);

@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import { type ReactNode, useEffect } from "react";
 import { cn } from "../../lib/utils";
@@ -17,7 +17,12 @@ const sizeStyles = {
   xl: "max-w-5xl",
 };
 
-export const Dialog = ({ open, onOpenChange, children, size = "md" }: DialogProps) => {
+export const Dialog = ({
+  open,
+  onOpenChange,
+  children,
+  size = "md",
+}: DialogProps) => {
   // Handle ESC key
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
@@ -89,9 +94,7 @@ export interface DialogTitleProps {
 }
 
 export const DialogTitle = ({ children, className }: DialogTitleProps) => (
-  <h2 className={cn("text-lg font-semibold text-fg", className)}>
-    {children}
-  </h2>
+  <h2 className={cn("text-lg font-semibold text-fg", className)}>{children}</h2>
 );
 
 export interface DialogDescriptionProps {
@@ -99,10 +102,11 @@ export interface DialogDescriptionProps {
   className?: string;
 }
 
-export const DialogDescription = ({ children, className }: DialogDescriptionProps) => (
-  <p className={cn("text-sm text-fg-muted", className)}>
-    {children}
-  </p>
+export const DialogDescription = ({
+  children,
+  className,
+}: DialogDescriptionProps) => (
+  <p className={cn("text-sm text-fg-muted", className)}>{children}</p>
 );
 
 export interface DialogContentProps {
@@ -122,7 +126,12 @@ export interface DialogFooterProps {
 }
 
 export const DialogFooter = ({ children, className }: DialogFooterProps) => (
-  <div className={cn("flex items-center justify-end gap-3 px-6 pb-6 pt-4", className)}>
+  <div
+    className={cn(
+      "flex items-center justify-end gap-3 px-6 pb-6 pt-4",
+      className,
+    )}
+  >
     {children}
   </div>
 );

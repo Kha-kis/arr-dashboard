@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { useSetupRequired } from '../../src/hooks/api/useAuth';
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useSetupRequired } from "../../src/hooks/api/useAuth";
 import { SetupClient } from "../../src/features/setup/components/setup-client";
 import { Skeleton } from "../../src/components/ui";
 
@@ -13,7 +13,7 @@ const SetupPage = () => {
   useEffect(() => {
     // If setup is complete, redirect to login
     if (!isLoading && setupRequired === false) {
-      router.replace('/login');
+      router.replace("/login");
     }
   }, [isLoading, setupRequired, router]);
 

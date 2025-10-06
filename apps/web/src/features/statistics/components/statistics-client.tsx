@@ -1,13 +1,20 @@
 "use client";
 
 import { useMemo } from "react";
-import type { SonarrStatistics, RadarrStatistics, ProwlarrStatistics, ProwlarrIndexerStat } from "@arr/shared";
+import type {
+  SonarrStatistics,
+  RadarrStatistics,
+  ProwlarrStatistics,
+  ProwlarrIndexerStat,
+} from "@arr/shared";
 import { useDashboardStatisticsQuery } from "../../../hooks/api/useDashboard";
 import { Button } from "../../../components/ui/button";
 import { Alert, AlertDescription, Skeleton } from "../../../components/ui";
 
 const integer = new Intl.NumberFormat();
-const percentFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
+const percentFormatter = new Intl.NumberFormat(undefined, {
+  maximumFractionDigits: 1,
+});
 
 const formatBytes = (value?: number): string => {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
@@ -51,26 +58,33 @@ interface StatsCardProps {
 const StatsCard = ({ title, value, description }: StatsCardProps) => (
   <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80">
     <p className="text-xs uppercase text-white/50">{title}</p>
-    <p className="text-2xl font-semibold text-white">{typeof value === "number" ? integer.format(value) : value}</p>
-    {description ? <p className="text-xs text-white/50">{description}</p> : null}
+    <p className="text-2xl font-semibold text-white">
+      {typeof value === "number" ? integer.format(value) : value}
+    </p>
+    {description ? (
+      <p className="text-xs text-white/50">{description}</p>
+    ) : null}
   </div>
 );
 
 interface QualityBreakdownProps {
-  breakdown?: Record<string, number> | {
-    uhd4k: number;
-    fullHd1080p: number;
-    hd720p: number;
-    sd: number;
-    unknown: number;
-  };
+  breakdown?:
+    | Record<string, number>
+    | {
+        uhd4k: number;
+        fullHd1080p: number;
+        hd720p: number;
+        sd: number;
+        unknown: number;
+      };
 }
 
 const QualityBreakdown = ({ breakdown }: QualityBreakdownProps) => {
   if (!breakdown) return null;
 
   const total = Object.values(breakdown).reduce((sum, val) => sum + val, 0);
-  if (total === 0) return <p className="text-sm text-white/50">No quality data</p>;
+  if (total === 0)
+    return <p className="text-sm text-white/50">No quality data</p>;
 
   return (
     <div className="space-y-2">
@@ -79,7 +93,9 @@ const QualityBreakdown = ({ breakdown }: QualityBreakdownProps) => {
         const percentage = (count / total) * 100;
         return (
           <div key={key} className="flex items-center gap-3">
-            <div className="w-20 text-xs text-white/70">{getQualityLabel(key)}</div>
+            <div className="w-20 text-xs text-white/70">
+              {getQualityLabel(key)}
+            </div>
             <div className="flex-1">
               <div className="h-2 overflow-hidden rounded-full bg-white/10">
                 <div
@@ -116,7 +132,11 @@ interface InstanceTableProps<Row extends InstanceRow> {
   columns: InstanceTableColumn<Row>[];
 }
 
-const InstanceTable = <Row extends InstanceRow>({ rows, emptyMessage, columns }: InstanceTableProps<Row>) => {
+const InstanceTable = <Row extends InstanceRow>({
+  rows,
+  emptyMessage,
+  columns,
+}: InstanceTableProps<Row>) => {
   if (rows.length === 0) {
     return (
       <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-white/60">
@@ -169,100 +189,202 @@ const InstanceTable = <Row extends InstanceRow>({ rows, emptyMessage, columns }:
   );
 };
 
-const sum = <T,>(rows: Array<{ data: T }>, selector: (value: T) => number | undefined) =>
-  rows.reduce((total, row) => total + (selector(row.data) ?? 0), 0);
+const sum = <T,>(
+  rows: Array<{ data: T }>,
+  selector: (value: T) => number | undefined,
+) => rows.reduce((total, row) => total + (selector(row.data) ?? 0), 0);
 
 const calculatePercent = (numerator: number, denominator: number) =>
   denominator > 0 ? (numerator / denominator) * 100 : 0;
 
 const buildSonarrRows = (
-  instances: Array<{ instanceId: string; instanceName: string; data: SonarrStatistics }>,
-) => instances.map((entry) => ({ instanceId: entry.instanceId, instanceName: entry.instanceName, ...entry.data }));
+  instances: Array<{
+    instanceId: string;
+    instanceName: string;
+    data: SonarrStatistics;
+  }>,
+) =>
+  instances.map((entry) => ({
+    instanceId: entry.instanceId,
+    instanceName: entry.instanceName,
+    ...entry.data,
+  }));
 
 const buildRadarrRows = (
-  instances: Array<{ instanceId: string; instanceName: string; data: RadarrStatistics }>,
-) => instances.map((entry) => ({ instanceId: entry.instanceId, instanceName: entry.instanceName, ...entry.data }));
+  instances: Array<{
+    instanceId: string;
+    instanceName: string;
+    data: RadarrStatistics;
+  }>,
+) =>
+  instances.map((entry) => ({
+    instanceId: entry.instanceId,
+    instanceName: entry.instanceName,
+    ...entry.data,
+  }));
 
 const buildProwlarrRows = (
-  instances: Array<{ instanceId: string; instanceName: string; data: ProwlarrStatistics }>,
-) => instances.map((entry) => ({ instanceId: entry.instanceId, instanceName: entry.instanceName, ...entry.data }));
+  instances: Array<{
+    instanceId: string;
+    instanceName: string;
+    data: ProwlarrStatistics;
+  }>,
+) =>
+  instances.map((entry) => ({
+    instanceId: entry.instanceId,
+    instanceName: entry.instanceName,
+    ...entry.data,
+  }));
 
 export const StatisticsClient = () => {
-  const { data, isLoading, isFetching, error, refetch } = useDashboardStatisticsQuery();
+  const { data, isLoading, isFetching, error, refetch } =
+    useDashboardStatisticsQuery();
 
   const sonarrInstances = data?.sonarr.instances ?? [];
   const radarrInstances = data?.radarr.instances ?? [];
   const prowlarrInstances = data?.prowlarr.instances ?? [];
 
-  const sonarrRows = useMemo(() => buildSonarrRows(sonarrInstances), [sonarrInstances]);
-  const radarrRows = useMemo(() => buildRadarrRows(radarrInstances), [radarrInstances]);
-  const prowlarrRows = useMemo(() => buildProwlarrRows(prowlarrInstances), [prowlarrInstances]);
+  const sonarrRows = useMemo(
+    () => buildSonarrRows(sonarrInstances),
+    [sonarrInstances],
+  );
+  const radarrRows = useMemo(
+    () => buildRadarrRows(radarrInstances),
+    [radarrInstances],
+  );
+  const prowlarrRows = useMemo(
+    () => buildProwlarrRows(prowlarrInstances),
+    [prowlarrInstances],
+  );
 
   const sonarrAggregate = data?.sonarr.aggregate;
   const radarrAggregate = data?.radarr.aggregate;
   const prowlarrAggregate = data?.prowlarr.aggregate;
 
   const sonarrTotals = {
-    totalSeries: sonarrAggregate?.totalSeries ?? sum(sonarrInstances, (stats) => stats.totalSeries),
-    monitoredSeries: sonarrAggregate?.monitoredSeries ?? sum(sonarrInstances, (stats) => stats.monitoredSeries),
-    downloadedEpisodes: sonarrAggregate?.downloadedEpisodes ?? sum(sonarrInstances, (stats) => stats.downloadedEpisodes),
-    missingEpisodes: sonarrAggregate?.missingEpisodes ?? sum(sonarrInstances, (stats) => stats.missingEpisodes),
+    totalSeries:
+      sonarrAggregate?.totalSeries ??
+      sum(sonarrInstances, (stats) => stats.totalSeries),
+    monitoredSeries:
+      sonarrAggregate?.monitoredSeries ??
+      sum(sonarrInstances, (stats) => stats.monitoredSeries),
+    downloadedEpisodes:
+      sonarrAggregate?.downloadedEpisodes ??
+      sum(sonarrInstances, (stats) => stats.downloadedEpisodes),
+    missingEpisodes:
+      sonarrAggregate?.missingEpisodes ??
+      sum(sonarrInstances, (stats) => stats.missingEpisodes),
     downloadPercent:
       sonarrAggregate?.downloadedPercentage ??
       calculatePercent(
         sum(sonarrInstances, (stats) => stats.downloadedEpisodes),
-        Math.max(sum(sonarrInstances, (stats) => stats.totalEpisodes), 1),
+        Math.max(
+          sum(sonarrInstances, (stats) => stats.totalEpisodes),
+          1,
+        ),
       ),
-    diskUsed: sonarrAggregate?.diskUsed ?? sum(sonarrInstances, (stats) => stats.diskUsed),
-    diskTotal: sonarrAggregate?.diskTotal ?? sum(sonarrInstances, (stats) => stats.diskTotal),
+    diskUsed:
+      sonarrAggregate?.diskUsed ??
+      sum(sonarrInstances, (stats) => stats.diskUsed),
+    diskTotal:
+      sonarrAggregate?.diskTotal ??
+      sum(sonarrInstances, (stats) => stats.diskTotal),
     diskPercent:
       sonarrAggregate?.diskUsagePercent ??
       calculatePercent(
         sum(sonarrInstances, (stats) => stats.diskUsed),
-        Math.max(sum(sonarrInstances, (stats) => stats.diskTotal), 1),
+        Math.max(
+          sum(sonarrInstances, (stats) => stats.diskTotal),
+          1,
+        ),
       ),
-    healthIssues: sonarrAggregate?.healthIssues ?? sum(sonarrInstances, (stats) => stats.healthIssues),
+    healthIssues:
+      sonarrAggregate?.healthIssues ??
+      sum(sonarrInstances, (stats) => stats.healthIssues),
   };
 
   const radarrTotals = {
-    totalMovies: radarrAggregate?.totalMovies ?? sum(radarrInstances, (stats) => stats.totalMovies),
-    monitoredMovies: radarrAggregate?.monitoredMovies ?? sum(radarrInstances, (stats) => stats.monitoredMovies),
-    downloadedMovies: radarrAggregate?.downloadedMovies ?? sum(radarrInstances, (stats) => stats.downloadedMovies),
-    missingMovies: radarrAggregate?.missingMovies ?? sum(radarrInstances, (stats) => stats.missingMovies),
+    totalMovies:
+      radarrAggregate?.totalMovies ??
+      sum(radarrInstances, (stats) => stats.totalMovies),
+    monitoredMovies:
+      radarrAggregate?.monitoredMovies ??
+      sum(radarrInstances, (stats) => stats.monitoredMovies),
+    downloadedMovies:
+      radarrAggregate?.downloadedMovies ??
+      sum(radarrInstances, (stats) => stats.downloadedMovies),
+    missingMovies:
+      radarrAggregate?.missingMovies ??
+      sum(radarrInstances, (stats) => stats.missingMovies),
     downloadPercent:
       radarrAggregate?.downloadedPercentage ??
       calculatePercent(
         sum(radarrInstances, (stats) => stats.downloadedMovies),
-        Math.max(sum(radarrInstances, (stats) => stats.monitoredMovies), 1),
+        Math.max(
+          sum(radarrInstances, (stats) => stats.monitoredMovies),
+          1,
+        ),
       ),
-    diskUsed: radarrAggregate?.diskUsed ?? sum(radarrInstances, (stats) => stats.diskUsed),
-    diskTotal: radarrAggregate?.diskTotal ?? sum(radarrInstances, (stats) => stats.diskTotal),
+    diskUsed:
+      radarrAggregate?.diskUsed ??
+      sum(radarrInstances, (stats) => stats.diskUsed),
+    diskTotal:
+      radarrAggregate?.diskTotal ??
+      sum(radarrInstances, (stats) => stats.diskTotal),
     diskPercent:
       radarrAggregate?.diskUsagePercent ??
       calculatePercent(
         sum(radarrInstances, (stats) => stats.diskUsed),
-        Math.max(sum(radarrInstances, (stats) => stats.diskTotal), 1),
+        Math.max(
+          sum(radarrInstances, (stats) => stats.diskTotal),
+          1,
+        ),
       ),
-    healthIssues: radarrAggregate?.healthIssues ?? sum(radarrInstances, (stats) => stats.healthIssues),
+    healthIssues:
+      radarrAggregate?.healthIssues ??
+      sum(radarrInstances, (stats) => stats.healthIssues),
   };
 
   const prowlarrTotals = {
-    totalIndexers: prowlarrAggregate?.totalIndexers ?? sum(prowlarrInstances, (stats) => stats.totalIndexers),
-    activeIndexers: prowlarrAggregate?.activeIndexers ?? sum(prowlarrInstances, (stats) => stats.activeIndexers),
-    pausedIndexers: prowlarrAggregate?.pausedIndexers ?? sum(prowlarrInstances, (stats) => stats.pausedIndexers),
-    totalQueries: prowlarrAggregate?.totalQueries ?? sum(prowlarrInstances, (stats) => stats.totalQueries),
-    totalGrabs: prowlarrAggregate?.totalGrabs ?? sum(prowlarrInstances, (stats) => stats.totalGrabs),
-    successfulQueries: prowlarrAggregate?.successfulQueries ?? sum(prowlarrInstances, (stats) => stats.successfulQueries),
-    failedQueries: prowlarrAggregate?.failedQueries ?? sum(prowlarrInstances, (stats) => stats.failedQueries),
-    successfulGrabs: prowlarrAggregate?.successfulGrabs ?? sum(prowlarrInstances, (stats) => stats.successfulGrabs),
-    failedGrabs: prowlarrAggregate?.failedGrabs ?? sum(prowlarrInstances, (stats) => stats.failedGrabs),
+    totalIndexers:
+      prowlarrAggregate?.totalIndexers ??
+      sum(prowlarrInstances, (stats) => stats.totalIndexers),
+    activeIndexers:
+      prowlarrAggregate?.activeIndexers ??
+      sum(prowlarrInstances, (stats) => stats.activeIndexers),
+    pausedIndexers:
+      prowlarrAggregate?.pausedIndexers ??
+      sum(prowlarrInstances, (stats) => stats.pausedIndexers),
+    totalQueries:
+      prowlarrAggregate?.totalQueries ??
+      sum(prowlarrInstances, (stats) => stats.totalQueries),
+    totalGrabs:
+      prowlarrAggregate?.totalGrabs ??
+      sum(prowlarrInstances, (stats) => stats.totalGrabs),
+    successfulQueries:
+      prowlarrAggregate?.successfulQueries ??
+      sum(prowlarrInstances, (stats) => stats.successfulQueries),
+    failedQueries:
+      prowlarrAggregate?.failedQueries ??
+      sum(prowlarrInstances, (stats) => stats.failedQueries),
+    successfulGrabs:
+      prowlarrAggregate?.successfulGrabs ??
+      sum(prowlarrInstances, (stats) => stats.successfulGrabs),
+    failedGrabs:
+      prowlarrAggregate?.failedGrabs ??
+      sum(prowlarrInstances, (stats) => stats.failedGrabs),
     grabRate: prowlarrAggregate?.grabRate,
     averageResponseTime: prowlarrAggregate?.averageResponseTime,
-    healthIssues: prowlarrAggregate?.healthIssues ?? sum(prowlarrInstances, (stats) => stats.healthIssues),
+    healthIssues:
+      prowlarrAggregate?.healthIssues ??
+      sum(prowlarrInstances, (stats) => stats.healthIssues),
     indexers: prowlarrAggregate?.indexers ?? [],
   };
 
-  const totalHealthIssues = sonarrTotals.healthIssues + radarrTotals.healthIssues + prowlarrTotals.healthIssues;
+  const totalHealthIssues =
+    sonarrTotals.healthIssues +
+    radarrTotals.healthIssues +
+    prowlarrTotals.healthIssues;
 
   if (isLoading) {
     return (
@@ -276,11 +398,16 @@ export const StatisticsClient = () => {
     <section className="flex flex-col gap-10">
       <header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-          <p className="text-sm font-medium uppercase text-white/60">Systems overview</p>
+          <p className="text-sm font-medium uppercase text-white/60">
+            Systems overview
+          </p>
           <h1 className="text-3xl font-semibold text-white">Statistics</h1>
         </div>
         <div className="flex items-center gap-3 text-sm text-white/60">
-          <span>Aggregated health and library metrics across all configured instances.</span>
+          <span>
+            Aggregated health and library metrics across all configured
+            instances.
+          </span>
           <Button
             variant="ghost"
             onClick={() => void refetch()}
@@ -300,9 +427,12 @@ export const StatisticsClient = () => {
               <div className="flex-1">
                 <p className="font-medium">Health Issues Detected</p>
                 <p className="text-sm opacity-70">
-                  {sonarrTotals.healthIssues > 0 && `Sonarr: ${sonarrTotals.healthIssues} `}
-                  {radarrTotals.healthIssues > 0 && `Radarr: ${radarrTotals.healthIssues} `}
-                  {prowlarrTotals.healthIssues > 0 && `Prowlarr: ${prowlarrTotals.healthIssues}`}
+                  {sonarrTotals.healthIssues > 0 &&
+                    `Sonarr: ${sonarrTotals.healthIssues} `}
+                  {radarrTotals.healthIssues > 0 &&
+                    `Radarr: ${radarrTotals.healthIssues} `}
+                  {prowlarrTotals.healthIssues > 0 &&
+                    `Prowlarr: ${prowlarrTotals.healthIssues}`}
                 </p>
               </div>
             </div>
@@ -312,34 +442,56 @@ export const StatisticsClient = () => {
 
       {error && (
         <Alert variant="danger">
-          <AlertDescription>Unable to refresh one or more instances. Showing last known values.</AlertDescription>
+          <AlertDescription>
+            Unable to refresh one or more instances. Showing last known values.
+          </AlertDescription>
         </Alert>
       )}
 
       <section className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold text-white">Sonarr</h2>
-          <p className="text-sm text-white/60">Series coverage and disk utilisation.</p>
+          <p className="text-sm text-white/60">
+            Series coverage and disk utilisation.
+          </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatsCard title="Series" value={sonarrTotals.totalSeries} />
           <StatsCard title="Monitored" value={sonarrTotals.monitoredSeries} />
           <StatsCard
             title="Continuing"
-            value={sonarrAggregate?.continuingSeries ?? sum(sonarrInstances, (stats) => stats.continuingSeries)}
+            value={
+              sonarrAggregate?.continuingSeries ??
+              sum(sonarrInstances, (stats) => stats.continuingSeries)
+            }
           />
           <StatsCard
             title="Ended"
-            value={sonarrAggregate?.endedSeries ?? sum(sonarrInstances, (stats) => stats.endedSeries)}
+            value={
+              sonarrAggregate?.endedSeries ??
+              sum(sonarrInstances, (stats) => stats.endedSeries)
+            }
           />
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatsCard title="Downloaded Episodes" value={sonarrTotals.downloadedEpisodes} />
-          <StatsCard title="Missing Episodes" value={sonarrTotals.missingEpisodes} />
-          <StatsCard title="Downloaded %" value={formatPercent(sonarrTotals.downloadPercent)} />
+          <StatsCard
+            title="Downloaded Episodes"
+            value={sonarrTotals.downloadedEpisodes}
+          />
+          <StatsCard
+            title="Missing Episodes"
+            value={sonarrTotals.missingEpisodes}
+          />
+          <StatsCard
+            title="Downloaded %"
+            value={formatPercent(sonarrTotals.downloadPercent)}
+          />
           <StatsCard
             title="Cutoff Unmet"
-            value={sonarrAggregate?.cutoffUnmetCount ?? sum(sonarrInstances, (stats) => stats.cutoffUnmetCount)}
+            value={
+              sonarrAggregate?.cutoffUnmetCount ??
+              sum(sonarrInstances, (stats) => stats.cutoffUnmetCount)
+            }
             description="Episodes eligible for upgrade"
           />
         </div>
@@ -354,7 +506,9 @@ export const StatisticsClient = () => {
             value={formatBytes(sonarrAggregate?.averageEpisodeSize)}
           />
           <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
-            <p className="mb-3 text-xs uppercase text-white/50">Quality Distribution</p>
+            <p className="mb-3 text-xs uppercase text-white/50">
+              Quality Distribution
+            </p>
             <QualityBreakdown breakdown={sonarrAggregate?.qualityBreakdown} />
           </div>
         </div>
@@ -366,7 +520,11 @@ export const StatisticsClient = () => {
             { key: "monitoredSeries", label: "Monitored" },
             { key: "downloadedEpisodes", label: "Downloaded" },
             { key: "missingEpisodes", label: "Missing" },
-            { key: "downloadedPercentage", label: "Downloaded %", formatter: (value) => formatPercent(value as number) },
+            {
+              key: "downloadedPercentage",
+              label: "Downloaded %",
+              formatter: (value) => formatPercent(value as number),
+            },
           ]}
         />
       </section>
@@ -374,7 +532,9 @@ export const StatisticsClient = () => {
       <section className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold text-white">Radarr</h2>
-          <p className="text-sm text-white/60">Movie library status and storage usage.</p>
+          <p className="text-sm text-white/60">
+            Movie library status and storage usage.
+          </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatsCard title="Movies" value={radarrTotals.totalMovies} />
@@ -383,10 +543,16 @@ export const StatisticsClient = () => {
           <StatsCard title="Missing" value={radarrTotals.missingMovies} />
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatsCard title="Downloaded %" value={formatPercent(radarrTotals.downloadPercent)} />
+          <StatsCard
+            title="Downloaded %"
+            value={formatPercent(radarrTotals.downloadPercent)}
+          />
           <StatsCard
             title="Cutoff Unmet"
-            value={radarrAggregate?.cutoffUnmetCount ?? sum(radarrInstances, (stats) => stats.cutoffUnmetCount)}
+            value={
+              radarrAggregate?.cutoffUnmetCount ??
+              sum(radarrInstances, (stats) => stats.cutoffUnmetCount)
+            }
             description="Movies eligible for upgrade"
           />
           <StatsCard
@@ -400,7 +566,9 @@ export const StatisticsClient = () => {
           />
         </div>
         <div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
-          <p className="mb-3 text-xs uppercase text-white/50">Quality Distribution</p>
+          <p className="mb-3 text-xs uppercase text-white/50">
+            Quality Distribution
+          </p>
           <QualityBreakdown breakdown={radarrAggregate?.qualityBreakdown} />
         </div>
         <InstanceTable
@@ -411,7 +579,11 @@ export const StatisticsClient = () => {
             { key: "monitoredMovies", label: "Monitored" },
             { key: "downloadedMovies", label: "Downloaded" },
             { key: "missingMovies", label: "Missing" },
-            { key: "downloadedPercentage", label: "Downloaded %", formatter: (value) => formatPercent(value as number) },
+            {
+              key: "downloadedPercentage",
+              label: "Downloaded %",
+              formatter: (value) => formatPercent(value as number),
+            },
           ]}
         />
       </section>
@@ -419,7 +591,9 @@ export const StatisticsClient = () => {
       <section className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-semibold text-white">Prowlarr</h2>
-          <p className="text-sm text-white/60">Indexer performance and activity.</p>
+          <p className="text-sm text-white/60">
+            Indexer performance and activity.
+          </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <StatsCard title="Indexers" value={prowlarrTotals.totalIndexers} />
@@ -427,26 +601,55 @@ export const StatisticsClient = () => {
           <StatsCard title="Paused" value={prowlarrTotals.pausedIndexers} />
           <StatsCard
             title="Avg Response"
-            value={prowlarrTotals.averageResponseTime ? `${percentFormatter.format(prowlarrTotals.averageResponseTime)} ms` : "-"}
+            value={
+              prowlarrTotals.averageResponseTime
+                ? `${percentFormatter.format(prowlarrTotals.averageResponseTime)} ms`
+                : "-"
+            }
           />
         </div>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatsCard title="Total Queries" value={prowlarrTotals.totalQueries} />
+          <StatsCard
+            title="Total Queries"
+            value={prowlarrTotals.totalQueries}
+          />
           <StatsCard
             title="Successful Queries"
             value={prowlarrTotals.successfulQueries ?? "-"}
-            description={prowlarrTotals.totalQueries > 0 ? formatPercent(((prowlarrTotals.successfulQueries ?? 0) / prowlarrTotals.totalQueries) * 100) : undefined}
+            description={
+              prowlarrTotals.totalQueries > 0
+                ? formatPercent(
+                    ((prowlarrTotals.successfulQueries ?? 0) /
+                      prowlarrTotals.totalQueries) *
+                      100,
+                  )
+                : undefined
+            }
           />
           <StatsCard
             title="Failed Queries"
             value={prowlarrTotals.failedQueries ?? "-"}
-            description={prowlarrTotals.totalQueries > 0 ? formatPercent(((prowlarrTotals.failedQueries ?? 0) / prowlarrTotals.totalQueries) * 100) : undefined}
+            description={
+              prowlarrTotals.totalQueries > 0
+                ? formatPercent(
+                    ((prowlarrTotals.failedQueries ?? 0) /
+                      prowlarrTotals.totalQueries) *
+                      100,
+                  )
+                : undefined
+            }
           />
-          <StatsCard title="Grab Rate" value={formatPercent(prowlarrTotals.grabRate)} />
+          <StatsCard
+            title="Grab Rate"
+            value={formatPercent(prowlarrTotals.grabRate)}
+          />
         </div>
         <div className="grid gap-3 sm:grid-cols-2">
           <StatsCard title="Total Grabs" value={prowlarrTotals.totalGrabs} />
-          <StatsCard title="Successful Grabs" value={prowlarrTotals.successfulGrabs ?? "-"} />
+          <StatsCard
+            title="Successful Grabs"
+            value={prowlarrTotals.successfulGrabs ?? "-"}
+          />
         </div>
         <InstanceTable
           rows={prowlarrRows}
@@ -475,9 +678,15 @@ export const StatisticsClient = () => {
                 {prowlarrTotals.indexers.map((indexer: ProwlarrIndexerStat) => (
                   <tr key={indexer.name}>
                     <td className="py-2 text-white">{indexer.name}</td>
-                    <td className="py-2 text-right text-white/70">{integer.format(indexer.queries)}</td>
-                    <td className="py-2 text-right text-white/70">{integer.format(indexer.grabs)}</td>
-                    <td className="py-2 text-right text-white/70">{formatPercent(indexer.successRate)}</td>
+                    <td className="py-2 text-right text-white/70">
+                      {integer.format(indexer.queries)}
+                    </td>
+                    <td className="py-2 text-right text-white/70">
+                      {integer.format(indexer.grabs)}
+                    </td>
+                    <td className="py-2 text-right text-white/70">
+                      {formatPercent(indexer.successRate)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -488,6 +697,3 @@ export const StatisticsClient = () => {
     </section>
   );
 };
-
-
-

@@ -83,8 +83,12 @@ const getQualityLabel = (quality: SearchResult["quality"]): string | null => {
   }
   const maybeNested = (quality as any).quality;
   if (maybeNested && typeof maybeNested === "object") {
-    const name = typeof maybeNested.name === "string" ? maybeNested.name : undefined;
-    const resolution = typeof maybeNested.resolution === "number" ? maybeNested.resolution : undefined;
+    const name =
+      typeof maybeNested.name === "string" ? maybeNested.name : undefined;
+    const resolution =
+      typeof maybeNested.resolution === "number"
+        ? maybeNested.resolution
+        : undefined;
     if (name || resolution) {
       if (name && resolution && !name.includes(`${resolution}p`)) {
         return `${name} ${resolution}p`;
@@ -110,7 +114,8 @@ const protocolBadgeClass = (protocol: SearchResult["protocol"]): string => {
   }
 };
 
-const metricBadgeClass = "inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/8 px-2 py-0.5 text-[11px] text-white/70";
+const metricBadgeClass =
+  "inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/8 px-2 py-0.5 text-[11px] text-white/70";
 
 interface SearchResultsTableProps {
   results: SearchResult[];
@@ -122,7 +127,8 @@ interface SearchResultsTableProps {
   onOpenInfo?: (result: SearchResult) => void;
 }
 
-const buildRowKey = (result: SearchResult) => `${result.instanceId}:${result.indexerId}:${result.id}`;
+const buildRowKey = (result: SearchResult) =>
+  `${result.instanceId}:${result.indexerId}:${result.id}`;
 
 export const SearchResultsTable = ({
   results,
@@ -161,21 +167,31 @@ export const SearchResultsTable = ({
         <tbody className="divide-y divide-white/10">
           {results.map((result) => {
             const key = buildRowKey(result);
-            const copyable = Boolean(result.magnetUrl ?? result.downloadUrl ?? result.link);
-            const hasInfo = Boolean(result.infoUrl ?? result.link ?? result.downloadUrl ?? result.magnetUrl);
+            const copyable = Boolean(
+              result.magnetUrl ?? result.downloadUrl ?? result.link,
+            );
+            const hasInfo = Boolean(
+              result.infoUrl ??
+                result.link ??
+                result.downloadUrl ??
+                result.magnetUrl,
+            );
             const qualityLabel = getQualityLabel(result.quality);
             const ageLabel = formatAgeLabel(result);
             const sizeLabel = formatBytes(result.size);
-            const rejectionMessage = result.rejected && result.rejectionReasons?.length
-              ? result.rejectionReasons.join(", ")
-              : null;
+            const rejectionMessage =
+              result.rejected && result.rejectionReasons?.length
+                ? result.rejectionReasons.join(", ")
+                : null;
 
             return (
               <tr key={key} className="align-top hover:bg-white/10">
                 <td className="px-4 py-4 text-white">
                   <div className="space-y-3 break-words">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-semibold leading-tight break-words">{result.title}</span>
+                      <span className="font-semibold leading-tight break-words">
+                        {result.title}
+                      </span>
                       <span
                         className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${protocolBadgeClass(result.protocol)}`}
                       >
@@ -194,34 +210,52 @@ export const SearchResultsTable = ({
                     </div>
 
                     <div className="flex flex-wrap items-center gap-3 text-xs text-white/60">
-                      <span className="font-medium text-white/80">{result.indexer}</span>
+                      <span className="font-medium text-white/80">
+                        {result.indexer}
+                      </span>
                       <span className="text-white/45">#{result.indexerId}</span>
-                      <span className="text-white/45">{result.instanceName}</span>
+                      <span className="text-white/45">
+                        {result.instanceName}
+                      </span>
                     </div>
 
                     <div className="flex flex-wrap gap-2 text-[11px] text-white/70">
                       <span className={metricBadgeClass}>Size {sizeLabel}</span>
-                      <span className={metricBadgeClass}>Seeders {integer.format(result.seeders ?? 0)}</span>
-                      <span className={metricBadgeClass}>Leechers {integer.format(result.leechers ?? 0)}</span>
+                      <span className={metricBadgeClass}>
+                        Seeders {integer.format(result.seeders ?? 0)}
+                      </span>
+                      <span className={metricBadgeClass}>
+                        Leechers {integer.format(result.leechers ?? 0)}
+                      </span>
                       <span className={metricBadgeClass}>Age {ageLabel}</span>
-                      {typeof result.downloadVolumeFactor === "number" || typeof result.uploadVolumeFactor === "number" ? (
+                      {typeof result.downloadVolumeFactor === "number" ||
+                      typeof result.uploadVolumeFactor === "number" ? (
                         <span className={metricBadgeClass}>
-                          Ratio DL {result.downloadVolumeFactor ?? 1}x / UL {result.uploadVolumeFactor ?? 1}x
+                          Ratio DL {result.downloadVolumeFactor ?? 1}x / UL{" "}
+                          {result.uploadVolumeFactor ?? 1}x
                         </span>
                       ) : null}
                     </div>
 
                     {result.categories?.length ? (
                       <div className="flex flex-wrap gap-2 text-xs text-white/50">
-                        <span className="uppercase text-white/40">Categories</span>
+                        <span className="uppercase text-white/40">
+                          Categories
+                        </span>
                         <span>{result.categories.join(", ")}</span>
                       </div>
                     ) : null}
 
                     {result.languages?.length ? (
                       <div className="flex flex-wrap gap-2 text-xs text-white/50">
-                        <span className="uppercase text-white/40">Languages</span>
-                        <span>{result.languages.map((language) => language.name).join(", ")}</span>
+                        <span className="uppercase text-white/40">
+                          Languages
+                        </span>
+                        <span>
+                          {result.languages
+                            .map((language) => language.name)
+                            .join(", ")}
+                        </span>
                       </div>
                     ) : null}
 
@@ -268,4 +302,3 @@ export const SearchResultsTable = ({
     </div>
   );
 };
-

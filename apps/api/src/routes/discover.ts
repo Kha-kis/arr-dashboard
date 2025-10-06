@@ -199,7 +199,10 @@ const ensureResult = (
 		studio: existing.studio ?? result.studio,
 		runtime: existing.runtime ?? result.runtime,
 		ratings: existing.ratings ?? result.ratings,
-		instanceStates: mergeInstanceState(existing.instanceStates, result.instanceStates[0]!),
+		instanceStates:
+			result.instanceStates[0] !== undefined
+				? mergeInstanceState(existing.instanceStates, result.instanceStates[0])
+				: existing.instanceStates,
 	});
 };
 
@@ -207,7 +210,7 @@ const fetchLookupResults = async (
 	fetcher: (path: string, init?: RequestInit) => Promise<Response>,
 	service: "sonarr" | "radarr",
 	query: string,
-): Promise<any[]> => {
+): Promise<unknown[]> => {
 	const encoded = encodeURIComponent(query);
 	const path =
 		service === "radarr"
@@ -221,7 +224,7 @@ const fetchLookupResults = async (
 const createInstanceState = (
 	instance: ServiceInstance,
 	service: "sonarr" | "radarr",
-	payload: any,
+	payload: unknown,
 ): DiscoverResultInstanceState => ({
 	instanceId: instance.id,
 	instanceName: instance.label,
@@ -234,7 +237,7 @@ const createInstanceState = (
 });
 
 const normalizeLookupResult = (
-	raw: any,
+	raw: unknown,
 	instance: ServiceInstance,
 	service: "sonarr" | "radarr",
 ): DiscoverSearchResult => {
@@ -284,7 +287,7 @@ const normalizeLookupResult = (
 const loadRadarrRemote = async (
 	fetcher: (path: string, init?: RequestInit) => Promise<Response>,
 	payload: { tmdbId?: number; imdbId?: string; queryFallback: string },
-): Promise<any | null> => {
+): Promise<unknown | null> => {
 	const terms: string[] = [];
 	if (payload.tmdbId) {
 		terms.push(`tmdb:${payload.tmdbId}`);
@@ -310,7 +313,7 @@ const loadRadarrRemote = async (
 const loadSonarrRemote = async (
 	fetcher: (path: string, init?: RequestInit) => Promise<Response>,
 	payload: { tvdbId?: number; tmdbId?: number; queryFallback: string },
-): Promise<any | null> => {
+): Promise<unknown | null> => {
 	const terms: string[] = [];
 	if (payload.tvdbId) {
 		terms.push(`tvdb:${payload.tvdbId}`);
@@ -432,7 +435,9 @@ const discoverRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const expected = parsed.type === "movie" ? "radarr" : "sonarr";
 		if (service !== expected) {
 			reply.status(400);
-			return reply.send({ message: `Instance does not support ${parsed.type}` });
+			return reply.send({
+				message: `Instance does not support ${parsed.type}`,
+			});
 		}
 
 		try {
@@ -445,7 +450,7 @@ const discoverRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 			const qualityProfiles = Array.isArray(qualityProfilesRaw)
 				? qualityProfilesRaw
-						.map((profile: any) => ({
+						.map((profile: unknown) => ({
 							id: toNumber(profile?.id),
 							name: toStringValue(profile?.name),
 						}))
@@ -457,8 +462,13 @@ const discoverRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 			const rootFolders = Array.isArray(rootFoldersRaw)
 				? rootFoldersRaw.reduce<
-						Array<{ id?: number | string; path: string; accessible?: boolean; freeSpace?: number }>
-					>((acc, folder: any) => {
+						Array<{
+							id?: number | string;
+							path: string;
+							accessible?: boolean;
+							freeSpace?: number;
+						}>
+					>((acc, folder: unknown) => {
 						const path = toStringValue(folder?.path);
 						if (!path) {
 							return acc;
@@ -480,7 +490,7 @@ const discoverRoute: FastifyPluginCallback = (app, _opts, done) => {
 					const languageRaw = await languageResponse.json();
 					languageProfiles = Array.isArray(languageRaw)
 						? languageRaw
-								.map((profile: any) => ({
+								.map((profile: unknown) => ({
 									id: toNumber(profile?.id),
 									name: toStringValue(profile?.name),
 								}))
@@ -544,7 +554,9 @@ const discoverRoute: FastifyPluginCallback = (app, _opts, done) => {
 			if (service === "radarr") {
 				if (payload.payload.type !== "movie") {
 					reply.status(400);
-					return reply.send({ message: "Instance service does not match payload" });
+					return reply.send({
+						message: "Instance service does not match payload",
+					});
 				}
 
 				const moviePayload = payload.payload;
@@ -594,7 +606,9 @@ const discoverRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 			if (payload.payload.type !== "series") {
 				reply.status(400);
-				return reply.send({ message: "Instance service does not match payload" });
+				return reply.send({
+					message: "Instance service does not match payload",
+				});
 			}
 
 			const seriesPayload = payload.payload;
@@ -610,7 +624,7 @@ const discoverRoute: FastifyPluginCallback = (app, _opts, done) => {
 			}
 
 			const seasons = Array.isArray(remote?.seasons)
-				? remote.seasons.map((season: any) => ({
+				? remote.seasons.map((season: unknown) => ({
 						seasonNumber: toNumber(season?.seasonNumber) ?? 0,
 						monitored:
 							seriesPayload.seasonFolder === false ? false : (seriesPayload.monitored ?? true),

@@ -1,13 +1,46 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { DiscoverAddRequest, DiscoverSearchResult, DiscoverSearchType, RecommendationItem } from "@arr/shared";
+import type {
+  DiscoverAddRequest,
+  DiscoverSearchResult,
+  DiscoverSearchType,
+  RecommendationItem,
+} from "@arr/shared";
 import type { ServiceInstanceSummary } from "@arr/shared";
-import { Film, Loader2, PlusCircle, Search, Tv, CheckCircle2, AlertCircle, Inbox, Star, ChevronLeft, ChevronRight } from "lucide-react";
-import { Button, Card, CardContent, CardDescription, CardHeader, CardTitle, Input, Alert, AlertTitle, AlertDescription, EmptyState } from "../../../components/ui";
+import {
+  Film,
+  Loader2,
+  PlusCircle,
+  Search,
+  Tv,
+  CheckCircle2,
+  AlertCircle,
+  Inbox,
+  Star,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Input,
+  Alert,
+  AlertTitle,
+  AlertDescription,
+  EmptyState,
+} from "../../../components/ui";
 import { cn } from "../../../lib/utils";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
-import { useDiscoverAddMutation, useDiscoverSearchQuery, useRecommendationsQuery } from "../../../hooks/api/useDiscover";
+import {
+  useDiscoverAddMutation,
+  useDiscoverSearchQuery,
+  useInfiniteRecommendationsQuery,
+} from "../../../hooks/api/useDiscover";
 import { useLibraryQuery } from "../../../hooks/api/useLibrary";
 import { AddToLibraryDialog } from "./add-to-library-dialog";
 
@@ -27,7 +60,9 @@ const renderInstanceBadge = (
   instance: ServiceInstanceSummary,
   result: DiscoverSearchResult,
 ) => {
-  const state = result.instanceStates.find((entry) => entry.instanceId === instance.id);
+  const state = result.instanceStates.find(
+    (entry) => entry.instanceId === instance.id,
+  );
   if (!state) {
     return (
       <span
@@ -63,7 +98,8 @@ const renderInstanceBadge = (
   );
 };
 
-const iconForType = (type: DiscoverSearchType) => (type === "movie" ? <Film className="h-4 w-4" /> : <Tv className="h-4 w-4" />);
+const iconForType = (type: DiscoverSearchType) =>
+  type === "movie" ? <Film className="h-4 w-4" /> : <Tv className="h-4 w-4" />;
 
 const TMDBCarousel: React.FC<{
   title: string;
@@ -71,7 +107,19 @@ const TMDBCarousel: React.FC<{
   items: RecommendationItem[];
   onSelectItem: (item: RecommendationItem) => void;
   isLoading?: boolean;
-}> = ({ title, description, items, onSelectItem, isLoading }) => {
+  isFetchingNextPage?: boolean;
+  hasNextPage?: boolean;
+  onLoadMore?: () => void;
+}> = ({
+  title,
+  description,
+  items,
+  onSelectItem,
+  isLoading,
+  isFetchingNextPage,
+  hasNextPage,
+  onLoadMore,
+}) => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -92,25 +140,43 @@ const TMDBCarousel: React.FC<{
     });
   };
 
+  const handleScroll = () => {
+    checkScrollButtons();
+
+    // Check if we're near the end and should load more
+    if (!scrollContainerRef.current || !hasNextPage || isFetchingNextPage)
+      return;
+
+    const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
+    const scrollPercentage = (scrollLeft + clientWidth) / scrollWidth;
+
+    // Load more when scrolled 80% to the right
+    if (scrollPercentage > 0.8 && onLoadMore) {
+      onLoadMore();
+    }
+  };
+
   useEffect(() => {
     checkScrollButtons();
     const container = scrollContainerRef.current;
     if (container) {
-      container.addEventListener("scroll", checkScrollButtons);
+      container.addEventListener("scroll", handleScroll);
       window.addEventListener("resize", checkScrollButtons);
       return () => {
-        container.removeEventListener("scroll", checkScrollButtons);
+        container.removeEventListener("scroll", handleScroll);
         window.removeEventListener("resize", checkScrollButtons);
       };
     }
-  }, [items]);
+  }, [items, hasNextPage, isFetchingNextPage]);
 
   if (isLoading) {
     return (
       <section className="space-y-3">
         <div>
           <h2 className="text-lg font-semibold text-fg">{title}</h2>
-          {description && <p className="text-sm text-fg-muted">{description}</p>}
+          {description && (
+            <p className="text-sm text-fg-muted">{description}</p>
+          )}
         </div>
         <div className="flex items-center gap-3 text-fg-muted">
           <Loader2 className="h-5 w-5 animate-spin" />
@@ -153,7 +219,7 @@ const TMDBCarousel: React.FC<{
           ref={scrollContainerRef}
           className="flex gap-4 overflow-x-auto pb-4 scrollbar-none"
         >
-          {items.slice(0, 20).map((item) => (
+          {items.map((item) => (
             <div
               key={item.id}
               className="group relative w-[160px] flex-shrink-0 cursor-pointer overflow-hidden rounded-lg border border-border/50 bg-bg-subtle transition-all hover:scale-105 hover:border-border"
@@ -179,13 +245,22 @@ const TMDBCarousel: React.FC<{
                 )}
               </div>
               <div className="p-2">
-                <p className="truncate text-sm font-medium text-fg">{item.title}</p>
+                <p className="truncate text-sm font-medium text-fg">
+                  {item.title}
+                </p>
                 {item.releaseDate && (
-                  <p className="text-xs text-fg-muted">{new Date(item.releaseDate).getFullYear()}</p>
+                  <p className="text-xs text-fg-muted">
+                    {new Date(item.releaseDate).getFullYear()}
+                  </p>
                 )}
               </div>
             </div>
           ))}
+          {isFetchingNextPage && (
+            <div className="flex w-[160px] flex-shrink-0 items-center justify-center">
+              <Loader2 className="h-6 w-6 animate-spin text-fg-muted" />
+            </div>
+          )}
         </div>
       </div>
     </section>
@@ -199,10 +274,19 @@ const RecommendationCarousel: React.FC<{
   relevantInstances: ServiceInstanceSummary[];
   onSelectResult: (result: DiscoverSearchResult) => void;
   isLoading?: boolean;
-}> = ({ title, description, results, relevantInstances, onSelectResult, isLoading }) => {
+}> = ({
+  title,
+  description,
+  results,
+  relevantInstances,
+  onSelectResult,
+  isLoading,
+}) => {
   // Filter out items that already exist in ANY instance
   const availableResults = results.filter((result) => {
-    const existsInAnyInstance = result.instanceStates.some((state) => state.exists);
+    const existsInAnyInstance = result.instanceStates.some(
+      (state) => state.exists,
+    );
     return !existsInAnyInstance;
   });
 
@@ -211,7 +295,9 @@ const RecommendationCarousel: React.FC<{
       <section className="space-y-3">
         <div>
           <h2 className="text-lg font-semibold text-fg">{title}</h2>
-          {description && <p className="text-sm text-fg-muted">{description}</p>}
+          {description && (
+            <p className="text-sm text-fg-muted">{description}</p>
+          )}
         </div>
         <div className="flex items-center gap-3 text-fg-muted">
           <Loader2 className="h-5 w-5 animate-spin" />
@@ -235,7 +321,9 @@ const RecommendationCarousel: React.FC<{
         <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border/50">
           {availableResults.slice(0, 10).map((result) => {
             const availableTargets = relevantInstances.filter((instance) => {
-              const state = result.instanceStates.find((entry) => entry.instanceId === instance.id);
+              const state = result.instanceStates.find(
+                (entry) => entry.instanceId === instance.id,
+              );
               return !state?.exists;
             });
             const canAdd = availableTargets.length > 0;
@@ -271,10 +359,14 @@ const RecommendationCarousel: React.FC<{
                   )}
                 </div>
                 <div className="p-2">
-                  <p className="truncate text-sm font-medium text-fg">{result.title}</p>
+                  <p className="truncate text-sm font-medium text-fg">
+                    {result.title}
+                  </p>
                   <p className="text-xs text-fg-muted">{result.year}</p>
                   {result.genres && result.genres.length > 0 && (
-                    <p className="mt-1 truncate text-xs text-fg-muted">{result.genres.slice(0, 2).join(", ")}</p>
+                    <p className="mt-1 truncate text-xs text-fg-muted">
+                      {result.genres.slice(0, 2).join(", ")}
+                    </p>
                   )}
                 </div>
               </div>
@@ -290,8 +382,12 @@ export const DiscoverClient: React.FC = () => {
   const [searchType, setSearchType] = useState<DiscoverSearchType>("movie");
   const [searchInput, setSearchInput] = useState("");
   const [submittedQuery, setSubmittedQuery] = useState("");
-  const [selectedResult, setSelectedResult] = useState<DiscoverSearchResult | null>(null);
-  const [feedback, setFeedback] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [selectedResult, setSelectedResult] =
+    useState<DiscoverSearchResult | null>(null);
+  const [feedback, setFeedback] = useState<{
+    type: "success" | "error";
+    message: string;
+  } | null>(null);
 
   const { data: services = [] } = useServicesQuery();
   const { data: libraryData } = useLibraryQuery();
@@ -299,7 +395,11 @@ export const DiscoverClient: React.FC = () => {
   const relevantInstances = useMemo(
     () =>
       services.filter(
-        (service) => service.enabled && (searchType === "movie" ? service.service === "radarr" : service.service === "sonarr"),
+        (service) =>
+          service.enabled &&
+          (searchType === "movie"
+            ? service.service === "radarr"
+            : service.service === "sonarr"),
       ),
     [services, searchType],
   );
@@ -335,7 +435,9 @@ export const DiscoverClient: React.FC = () => {
       id: `tmdb-${item.tmdbId}`,
       title: item.title,
       type: searchType,
-      year: item.releaseDate ? new Date(item.releaseDate).getFullYear() : undefined,
+      year: item.releaseDate
+        ? new Date(item.releaseDate).getFullYear()
+        : undefined,
       overview: item.overview,
       remoteIds: {
         tmdbId: item.tmdbId,
@@ -344,12 +446,14 @@ export const DiscoverClient: React.FC = () => {
         poster: item.posterUrl,
         fanart: item.backdropUrl,
       },
-      ratings: item.rating ? {
-        value: item.rating,
-        votes: item.voteCount,
-      } : undefined,
+      ratings: item.rating
+        ? {
+            value: item.rating,
+            votes: item.voteCount,
+          }
+        : undefined,
       // Create fake instance states - all available since we don't know which instances have it
-      instanceStates: relevantInstances.map(instance => ({
+      instanceStates: relevantInstances.map((instance) => ({
         instanceId: instance.id,
         instanceName: instance.label,
         service: instance.service as "sonarr" | "radarr",
@@ -365,11 +469,15 @@ export const DiscoverClient: React.FC = () => {
     try {
       await addMutation.mutateAsync(requestPayload);
       if (selectedResult) {
-        setFeedback({ type: "success", message: `Added '${selectedResult.title ?? "Title"}' to your library.` });
+        setFeedback({
+          type: "success",
+          message: `Added '${selectedResult.title ?? "Title"}' to your library.`,
+        });
       }
       setSelectedResult(null);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Failed to add title";
+      const message =
+        error instanceof Error ? error.message : "Failed to add title";
       setFeedback({ type: "error", message });
     }
   };
@@ -379,26 +487,38 @@ export const DiscoverClient: React.FC = () => {
   const hasQuery = submittedQuery.trim().length > 0;
   const canSearch = relevantInstances.length > 0;
 
-  // Query for TMDB recommendations
-  const trendingQuery = useRecommendationsQuery({
-    type: "trending",
-    mediaType: searchType === "movie" ? "movie" : "series",
-  }, !hasQuery && canSearch);
+  // Query for TMDB recommendations with infinite scroll
+  const trendingQuery = useInfiniteRecommendationsQuery(
+    {
+      type: "trending",
+      mediaType: searchType === "movie" ? "movie" : "series",
+    },
+    !hasQuery && canSearch,
+  );
 
-  const popularQuery = useRecommendationsQuery({
-    type: "popular",
-    mediaType: searchType === "movie" ? "movie" : "series",
-  }, !hasQuery && canSearch);
+  const popularQuery = useInfiniteRecommendationsQuery(
+    {
+      type: "popular",
+      mediaType: searchType === "movie" ? "movie" : "series",
+    },
+    !hasQuery && canSearch,
+  );
 
-  const topRatedQuery = useRecommendationsQuery({
-    type: "top_rated",
-    mediaType: searchType === "movie" ? "movie" : "series",
-  }, !hasQuery && canSearch);
+  const topRatedQuery = useInfiniteRecommendationsQuery(
+    {
+      type: "top_rated",
+      mediaType: searchType === "movie" ? "movie" : "series",
+    },
+    !hasQuery && canSearch,
+  );
 
-  const upcomingQuery = useRecommendationsQuery({
-    type: searchType === "movie" ? "upcoming" : "airing_today",
-    mediaType: searchType === "movie" ? "movie" : "series",
-  }, !hasQuery && canSearch);
+  const upcomingQuery = useInfiniteRecommendationsQuery(
+    {
+      type: searchType === "movie" ? "upcoming" : "airing_today",
+      mediaType: searchType === "movie" ? "movie" : "series",
+    },
+    !hasQuery && canSearch,
+  );
 
   // Filter out recommendations that are already in the library
   const filterExistingItems = (items: RecommendationItem[]) => {
@@ -406,11 +526,12 @@ export const DiscoverClient: React.FC = () => {
 
     const libraryTitles = new Set(
       libraryData.aggregated
-        .filter((item) =>
-          (searchType === "movie" && item.type === "movie") ||
-          (searchType === "series" && item.type === "series")
+        .filter(
+          (item) =>
+            (searchType === "movie" && item.type === "movie") ||
+            (searchType === "series" && item.type === "series"),
         )
-        .map((item) => item.title.toLowerCase())
+        .map((item) => item.title.toLowerCase()),
     );
 
     return items.filter((item) => !libraryTitles.has(item.title.toLowerCase()));
@@ -422,13 +543,17 @@ export const DiscoverClient: React.FC = () => {
       return [];
     }
 
-    const matchingItems = libraryData.aggregated.filter((item) =>
-      (searchType === "movie" && item.type === "movie") || (searchType === "series" && item.type === "series")
+    const matchingItems = libraryData.aggregated.filter(
+      (item) =>
+        (searchType === "movie" && item.type === "movie") ||
+        (searchType === "series" && item.type === "series"),
     );
 
     return matchingItems
       .filter((item) => item.added)
-      .sort((a, b) => new Date(b.added!).getTime() - new Date(a.added!).getTime())
+      .sort(
+        (a, b) => new Date(b.added!).getTime() - new Date(a.added!).getTime(),
+      )
       .slice(0, 5);
   }, [libraryData, searchType]);
 
@@ -438,8 +563,10 @@ export const DiscoverClient: React.FC = () => {
       return [];
     }
 
-    const matchingItems = libraryData.aggregated.filter((item) =>
-      (searchType === "movie" && item.type === "movie") || (searchType === "series" && item.type === "series")
+    const matchingItems = libraryData.aggregated.filter(
+      (item) =>
+        (searchType === "movie" && item.type === "movie") ||
+        (searchType === "series" && item.type === "series"),
     );
 
     return matchingItems
@@ -456,11 +583,16 @@ export const DiscoverClient: React.FC = () => {
     <div className="space-y-12">
       <header className="space-y-8">
         <div className="space-y-2">
-          <p className="text-xs uppercase tracking-[0.4em] text-white/40">Discover</p>
-          <h1 className="text-3xl font-semibold text-white">Find new content for your *arr stack</h1>
+          <p className="text-xs uppercase tracking-[0.4em] text-white/40">
+            Discover
+          </p>
+          <h1 className="text-3xl font-semibold text-white">
+            Find new content for your *arr stack
+          </h1>
           <p className="text-sm text-white/60">
-            Search across your configured {searchType === "movie" ? "Radarr" : "Sonarr"} instances and add titles with
-            smart defaults.
+            Search across your configured{" "}
+            {searchType === "movie" ? "Radarr" : "Sonarr"} instances and add
+            titles with smart defaults.
           </p>
         </div>
 
@@ -487,12 +619,16 @@ export const DiscoverClient: React.FC = () => {
               ))}
             </div>
             <span className="text-sm text-white/50">
-              {relevantInstances.length} {searchType === "movie" ? "Radarr" : "Sonarr"} instance
+              {relevantInstances.length}{" "}
+              {searchType === "movie" ? "Radarr" : "Sonarr"} instance
               {relevantInstances.length === 1 ? "" : "s"} connected
             </span>
           </div>
 
-          <form className="flex w-full flex-col gap-4 md:flex-row" onSubmit={handleSubmit}>
+          <form
+            className="flex w-full flex-col gap-4 md:flex-row"
+            onSubmit={handleSubmit}
+          >
             <div className="relative flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
               <Input
@@ -502,8 +638,16 @@ export const DiscoverClient: React.FC = () => {
                 className="pl-10"
               />
             </div>
-            <Button type="submit" className="flex items-center gap-2" disabled={!canSearch || searchInput.trim().length === 0}>
-              {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+            <Button
+              type="submit"
+              className="flex items-center gap-2"
+              disabled={!canSearch || searchInput.trim().length === 0}
+            >
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Search className="h-4 w-4" />
+              )}
               Search
             </Button>
           </form>
@@ -511,7 +655,9 @@ export const DiscoverClient: React.FC = () => {
           {!canSearch ? (
             <Alert variant="warning">
               <AlertDescription>
-                Configure at least one {searchType === "movie" ? "Radarr" : "Sonarr"} instance in Settings to perform searches.
+                Configure at least one{" "}
+                {searchType === "movie" ? "Radarr" : "Sonarr"} instance in
+                Settings to perform searches.
               </AlertDescription>
             </Alert>
           ) : null}
@@ -522,9 +668,14 @@ export const DiscoverClient: React.FC = () => {
         <TMDBCarousel
           title="Trending Now"
           description={`Popular ${searchType === "movie" ? "movies" : "series"} trending this week`}
-          items={filterExistingItems(trendingQuery.data?.items || [])}
+          items={filterExistingItems(
+            trendingQuery.data?.pages.flatMap((p) => p.items) || [],
+          )}
           onSelectItem={handleSelectItem}
           isLoading={trendingQuery.isLoading}
+          isFetchingNextPage={trendingQuery.isFetchingNextPage}
+          hasNextPage={trendingQuery.hasNextPage}
+          onLoadMore={() => trendingQuery.fetchNextPage()}
         />
       )}
 
@@ -532,9 +683,14 @@ export const DiscoverClient: React.FC = () => {
         <TMDBCarousel
           title="Popular Releases"
           description={`Most popular ${searchType === "movie" ? "movies" : "series"} right now`}
-          items={filterExistingItems(popularQuery.data?.items || [])}
+          items={filterExistingItems(
+            popularQuery.data?.pages.flatMap((p) => p.items) || [],
+          )}
           onSelectItem={handleSelectItem}
           isLoading={popularQuery.isLoading}
+          isFetchingNextPage={popularQuery.isFetchingNextPage}
+          hasNextPage={popularQuery.hasNextPage}
+          onLoadMore={() => popularQuery.fetchNextPage()}
         />
       )}
 
@@ -542,19 +698,33 @@ export const DiscoverClient: React.FC = () => {
         <TMDBCarousel
           title="Top Rated"
           description={`Highest rated ${searchType === "movie" ? "movies" : "series"} of all time`}
-          items={filterExistingItems(topRatedQuery.data?.items || [])}
+          items={filterExistingItems(
+            topRatedQuery.data?.pages.flatMap((p) => p.items) || [],
+          )}
           onSelectItem={handleSelectItem}
           isLoading={topRatedQuery.isLoading}
+          isFetchingNextPage={topRatedQuery.isFetchingNextPage}
+          hasNextPage={topRatedQuery.hasNextPage}
+          onLoadMore={() => topRatedQuery.fetchNextPage()}
         />
       )}
 
       {!hasQuery && (
         <TMDBCarousel
           title={searchType === "movie" ? "Coming Soon" : "Airing Today"}
-          description={searchType === "movie" ? "Upcoming movies to watch out for" : "TV shows airing today"}
-          items={filterExistingItems(upcomingQuery.data?.items || [])}
+          description={
+            searchType === "movie"
+              ? "Upcoming movies to watch out for"
+              : "TV shows airing today"
+          }
+          items={filterExistingItems(
+            upcomingQuery.data?.pages.flatMap((p) => p.items) || [],
+          )}
           onSelectItem={handleSelectItem}
           isLoading={upcomingQuery.isLoading}
+          isFetchingNextPage={upcomingQuery.isFetchingNextPage}
+          hasNextPage={upcomingQuery.hasNextPage}
+          onLoadMore={() => upcomingQuery.fetchNextPage()}
         />
       )}
 
@@ -577,88 +747,108 @@ export const DiscoverClient: React.FC = () => {
 
           <div className="grid gap-6 lg:grid-cols-2">
             {searchResults.map((result) => {
-            const availableTargets = relevantInstances.filter((instance) => {
-              const state = result.instanceStates.find((entry) => entry.instanceId === instance.id);
-              return !state?.exists;
-            });
-            const canAdd = availableTargets.length > 0;
-            const runtimeLabel = formatRuntime(result.runtime);
-            const genres = result.genres?.slice(0, 4) ?? [];
-            const ratingValue = result.ratings?.value;
+              const availableTargets = relevantInstances.filter((instance) => {
+                const state = result.instanceStates.find(
+                  (entry) => entry.instanceId === instance.id,
+                );
+                return !state?.exists;
+              });
+              const canAdd = availableTargets.length > 0;
+              const runtimeLabel = formatRuntime(result.runtime);
+              const genres = result.genres?.slice(0, 4) ?? [];
+              const ratingValue = result.ratings?.value;
 
-            return (
-              <Card key={result.id} className="border-white/10 bg-white/5 p-5">
-                <CardContent className="space-y-4">
-                  <div className="flex gap-4">
-                    <div className="relative h-36 w-24 overflow-hidden rounded-lg border border-white/10 bg-gradient-to-br from-slate-700 to-slate-900">
-                      {result.images?.poster ? (
-                        <img
-                          src={result.images.poster}
-                          alt={result.title ?? "Poster"}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-sm text-white/40">
-                          {searchType === "movie" ? "Poster" : "Key art"}
+              return (
+                <Card
+                  key={result.id}
+                  className="border-white/10 bg-white/5 p-5"
+                >
+                  <CardContent className="space-y-4">
+                    <div className="flex gap-4">
+                      <div className="relative h-36 w-24 overflow-hidden rounded-lg border border-white/10 bg-gradient-to-br from-slate-700 to-slate-900">
+                        {result.images?.poster ? (
+                          <img
+                            src={result.images.poster}
+                            alt={result.title ?? "Poster"}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-sm text-white/40">
+                            {searchType === "movie" ? "Poster" : "Key art"}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 space-y-3">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <h3 className="text-lg font-semibold text-white">
+                              {result.title}
+                            </h3>
+                            <p className="text-sm text-white/50">
+                              {result.year ? String(result.year) + " - " : ""}
+                              {result.status ?? "Unknown status"}
+                              {runtimeLabel ? " - " + runtimeLabel : ""}
+                            </p>
+                          </div>
+                          {typeof ratingValue === "number" ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-yellow-500/30 bg-yellow-500/10 px-3 py-1 text-xs text-yellow-200">
+                              Rating {ratingValue.toFixed(1)}
+                            </span>
+                          ) : null}
                         </div>
-                      )}
-                    </div>
-                    <div className="flex-1 space-y-3">
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div>
-                          <h3 className="text-lg font-semibold text-white">{result.title}</h3>
-                          <p className="text-sm text-white/50">
-                            {result.year ? String(result.year) + " - " : ""}
-                            {result.status ?? "Unknown status"}
-                            {runtimeLabel ? " - " + runtimeLabel : ""}
+                        {result.overview ? (
+                          <p className="line-clamp-3 text-sm text-white/70">
+                            {result.overview}
                           </p>
-                        </div>
-                        {typeof ratingValue === "number" ? (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-yellow-500/30 bg-yellow-500/10 px-3 py-1 text-xs text-yellow-200">
-                            Rating {ratingValue.toFixed(1)}
-                          </span>
+                        ) : null}
+                        {genres.length > 0 ? (
+                          <div className="flex flex-wrap gap-2">
+                            {genres.map((genre) => (
+                              <span
+                                key={genre}
+                                className="rounded-full bg-white/10 px-2 py-0.5 text-xs text-white/60"
+                              >
+                                {genre}
+                              </span>
+                            ))}
+                          </div>
                         ) : null}
                       </div>
-                      {result.overview ? (
-                        <p className="line-clamp-3 text-sm text-white/70">{result.overview}</p>
-                      ) : null}
-                      {genres.length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                          {genres.map((genre) => (
-                            <span key={genre} className="rounded-full bg-white/10 px-2 py-0.5 text-xs text-white/60">
-                              {genre}
-                            </span>
-                          ))}
-                        </div>
-                      ) : null}
                     </div>
-                  </div>
 
-                  <div className="flex flex-wrap items-center gap-2">
-                    {relevantInstances.map((instance) => renderInstanceBadge(instance, result))}
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
-                    <div className="flex flex-wrap items-center gap-2 text-xs text-white/50">
-                      {result.remoteIds?.tmdbId ? <span>TMDB #{result.remoteIds.tmdbId}</span> : null}
-                      {result.remoteIds?.tvdbId ? <span>TVDB #{result.remoteIds.tvdbId}</span> : null}
-                      {result.remoteIds?.imdbId ? <span>IMDB {result.remoteIds.imdbId}</span> : null}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {relevantInstances.map((instance) =>
+                        renderInstanceBadge(instance, result),
+                      )}
                     </div>
-                    <Button
-                      type="button"
-                      className="flex items-center gap-2"
-                      variant={canAdd ? "primary" : "secondary"}
-                      disabled={!canAdd}
-                      onClick={() => setSelectedResult(result)}
-                    >
-                      <PlusCircle className="h-4 w-4" />
-                      {canAdd ? "Add to library" : "Already added"}
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-white/50">
+                        {result.remoteIds?.tmdbId ? (
+                          <span>TMDB #{result.remoteIds.tmdbId}</span>
+                        ) : null}
+                        {result.remoteIds?.tvdbId ? (
+                          <span>TVDB #{result.remoteIds.tvdbId}</span>
+                        ) : null}
+                        {result.remoteIds?.imdbId ? (
+                          <span>IMDB {result.remoteIds.imdbId}</span>
+                        ) : null}
+                      </div>
+                      <Button
+                        type="button"
+                        className="flex items-center gap-2"
+                        variant={canAdd ? "primary" : "secondary"}
+                        disabled={!canAdd}
+                        onClick={() => setSelectedResult(result)}
+                      >
+                        <PlusCircle className="h-4 w-4" />
+                        {canAdd ? "Add to library" : "Already added"}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
           </div>
         </section>
       )}
@@ -681,7 +871,8 @@ export const DiscoverClient: React.FC = () => {
         <Alert variant="danger">
           <AlertTitle>Search failed</AlertTitle>
           <AlertDescription>
-            {(searchQuery.error as Error | undefined)?.message ?? "An error occurred while searching."}
+            {(searchQuery.error as Error | undefined)?.message ??
+              "An error occurred while searching."}
           </AlertDescription>
         </Alert>
       ) : null}
