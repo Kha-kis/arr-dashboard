@@ -1,10 +1,7 @@
 "use client";
 
 import { Button, Input } from "../../../components/ui";
-import {
-  PROTOCOL_FILTERS,
-  type ProtocolFilter,
-} from "../lib/search-utils";
+import { PROTOCOL_FILTERS, type ProtocolFilter } from "../lib/search-utils";
 
 interface FilterControlsProps {
   /**
@@ -138,7 +135,9 @@ export const FilterControls = ({
             onClick={onHideRejectedToggle}
             aria-pressed={hideRejected}
           >
-            {hideRejected ? "Hidden rejected releases" : "Hide rejected releases"}
+            {hideRejected
+              ? "Hidden rejected releases"
+              : "Hide rejected releases"}
           </Button>
         </div>
       </div>

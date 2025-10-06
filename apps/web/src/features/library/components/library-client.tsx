@@ -138,7 +138,11 @@ export const LibraryClient: React.FC = () => {
           item={seasonDetail}
           onClose={handleCloseSeasonDetail}
           onToggleSeason={(seasonNumber, nextMonitored) =>
-            actions.handleSeasonMonitor(seasonDetail, seasonNumber, nextMonitored)
+            actions.handleSeasonMonitor(
+              seasonDetail,
+              seasonNumber,
+              nextMonitored,
+            )
           }
           onSearchSeason={(seasonNumber) =>
             actions.handleSeasonSearch(seasonDetail, seasonNumber)

@@ -103,8 +103,8 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
     <>
       {isLoading ? (
         <div className="flex items-center gap-3 text-white/60">
-          <Loader2 className="h-5 w-5 animate-spin" /> Loading library from
-          your instances...
+          <Loader2 className="h-5 w-5 animate-spin" /> Loading library from your
+          instances...
         </div>
       ) : null}
 
@@ -187,8 +187,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
         <Alert variant="danger">
           <AlertTitle>Failed to load library</AlertTitle>
           <AlertDescription>
-            {error?.message ??
-              "An error occurred while loading your library."}
+            {error?.message ?? "An error occurred while loading your library."}
           </AlertDescription>
         </Alert>
       ) : null}

@@ -168,9 +168,7 @@ export const ServiceForm = ({
               type="button"
               variant="secondary"
               onClick={onTestConnection}
-              disabled={
-                isTesting || !formState.baseUrl || !formState.apiKey
-              }
+              disabled={isTesting || !formState.baseUrl || !formState.apiKey}
             >
               {isTesting ? "Testing connection..." : "Test connection"}
             </Button>

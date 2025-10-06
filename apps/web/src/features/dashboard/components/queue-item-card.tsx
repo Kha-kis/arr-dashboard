@@ -14,10 +14,7 @@ import { QueueProgress } from "./queue-progress";
 import { QueueItemMetadata } from "./queue-item-metadata";
 import { QueueStatusMessages } from "./queue-status-messages";
 import type { StatusLine } from "../lib/queue-utils";
-import {
-  summarizeIssueCounts,
-  computeProgressValue,
-} from "../lib/queue-utils";
+import { summarizeIssueCounts, computeProgressValue } from "../lib/queue-utils";
 
 export interface QueueItemCardProps {
   item: QueueItem;
@@ -51,7 +48,8 @@ export const QueueItemCard = ({
   const canRetry = item.actions?.canRetry ?? true;
 
   const effectivePrimaryAction =
-    primaryAction ?? (canManualImport ? "manualImport" : canRetry ? "retry" : undefined);
+    primaryAction ??
+    (canManualImport ? "manualImport" : canRetry ? "retry" : undefined);
 
   const primaryDisabled =
     !effectivePrimaryAction ||
