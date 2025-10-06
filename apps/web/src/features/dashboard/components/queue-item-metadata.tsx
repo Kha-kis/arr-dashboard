@@ -5,7 +5,7 @@
  */
 
 import type { QueueItem } from "@arr/shared";
-import { formatSizeGB } from "../lib/queue-utils.js";
+import { formatSizeGB } from "../lib/queue-utils";
 
 interface QueueItemMetadataProps {
   item: QueueItem;

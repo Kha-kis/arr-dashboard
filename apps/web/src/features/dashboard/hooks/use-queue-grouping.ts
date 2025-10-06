@@ -4,8 +4,8 @@
 
 import { useMemo } from "react";
 import type { QueueItem } from "@arr/shared";
-import type { QueueAction } from "../components/queue-action-buttons.js";
-import type { IssueSummary } from "../components/queue-issue-badge.js";
+import type { QueueAction } from "../components/queue-action-buttons";
+import type { IssueSummary } from "../components/queue-issue-badge";
 import {
   buildKey,
   getGroupKey,
@@ -15,7 +15,7 @@ import {
   computeProgressValue,
   type StatusLine,
   type ActionCounts,
-} from "../lib/queue-utils.js";
+} from "../lib/queue-utils";
 
 /**
  * Summary row representing either a group of items or a single item
