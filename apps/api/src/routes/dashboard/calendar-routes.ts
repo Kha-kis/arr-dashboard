@@ -3,9 +3,9 @@ import type { CalendarItem } from "@arr/shared";
 import type { ServiceInstance } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
-import { formatDateOnly } from "../../lib/dashboard/calendar-utils.js";
-import { fetchCalendarItems } from "../../lib/dashboard/fetch-utils.js";
+import { createInstanceFetcher } from "../../lib/arr/arr-fetcher";
+import { formatDateOnly } from "../../lib/dashboard/calendar-utils";
+import { fetchCalendarItems } from "../../lib/dashboard/fetch-utils";
 
 const calendarQuerySchema = z.object({
 	start: z.string().optional(),

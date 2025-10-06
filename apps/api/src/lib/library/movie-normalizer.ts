@@ -1,13 +1,13 @@
 import type { LibraryItem, LibraryService } from "@arr/shared";
 import type { ServiceInstance } from "@prisma/client";
-import { normalizeImages } from "./image-normalizer.js";
+import { normalizeImages } from "./image-normalizer";
 import {
 	normalizeGenres,
 	normalizeTags,
 	toBoolean,
 	toNumber,
 	toStringValue,
-} from "./type-converters.js";
+} from "./type-converters";
 
 /**
  * Extracts year from raw API data, checking multiple fields
