@@ -1,7 +1,11 @@
 node_modules
 .pnpm-store
 .env
-.env.*
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
 .next
 out
 build
