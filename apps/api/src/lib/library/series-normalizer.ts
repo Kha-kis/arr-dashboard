@@ -12,15 +12,15 @@ import {
 
 /**
  * Normalizes an array of season objects from raw API data
- * @param value - The raw seasons array (any type allows flexible property access, safety enforced via helper functions)
+ * @param value - The raw seasons array (unknown type allows flexible property access, safety enforced via helper functions)
  * @returns Array of normalized season objects or undefined
  */
-export const normalizeSeasons = (value: any) => {
+export const normalizeSeasons = (value: unknown) => {
 	if (!Array.isArray(value)) {
 		return undefined;
 	}
 	const seasons = value
-		.map((entry: any) => {
+		.map((entry: unknown) => {
 			const seasonNumber = toNumber(entry?.seasonNumber);
 			if (seasonNumber === undefined) {
 				return null;
@@ -58,13 +58,13 @@ export const normalizeSeasons = (value: any) => {
  * Builds a series library item from raw Sonarr API data
  * @param instance - The service instance
  * @param service - The service type (sonarr)
- * @param raw - The raw API data (any type allows flexible property access, safety enforced via helper functions)
+ * @param raw - The raw API data (unknown object type allows flexible property access, safety enforced via helper functions)
  * @returns A normalized series library item
  */
 export const buildSeriesItem = (
 	instance: ServiceInstance,
 	service: LibraryService,
-	raw: any,
+	raw: Record<string, unknown>,
 ): LibraryItem => {
 	const images = normalizeImages(raw?.images, instance.baseUrl);
 	const stats = raw?.statistics ?? {};
@@ -110,7 +110,7 @@ export const buildSeriesItem = (
 			episodeFileCount,
 			totalEpisodeCount: toNumber(stats?.totalEpisodeCount),
 			monitoredSeasons: Array.isArray(raw?.seasons)
-				? raw.seasons.filter((season: any) => toBoolean(season?.monitored)).length
+				? raw.seasons.filter((season: unknown) => toBoolean((season as Record<string, unknown>)?.monitored)).length
 				: undefined,
 			runtime: toNumber(raw?.runtime),
 		},

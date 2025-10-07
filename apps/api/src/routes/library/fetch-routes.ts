@@ -77,7 +77,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 				const response = await fetcher(path);
 				const payload = await response.json();
 				const items = Array.isArray(payload)
-					? payload.map((rawItem: any) =>
+					? payload.map((rawItem: Record<string, unknown>) =>
 							buildLibraryItem(instance as ServiceInstance, service, rawItem),
 						)
 					: [];
@@ -157,7 +157,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			const payload = await response.json();
 
 			const episodes: LibraryEpisode[] = Array.isArray(payload)
-				? payload.map((raw: any) => normalizeEpisode(raw, seriesId))
+				? payload.map((raw: Record<string, unknown>) => normalizeEpisode(raw, seriesId))
 				: [];
 
 			return libraryEpisodesResponseSchema.parse({ episodes });

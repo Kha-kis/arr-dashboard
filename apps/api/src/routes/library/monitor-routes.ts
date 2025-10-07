@@ -69,7 +69,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 				const seasonNumbers = payload.seasonNumbers
 					?.map((number) => Number(number))
 					.filter((value) => Number.isFinite(value));
-				series.seasons = series.seasons.map((season: any) => {
+				series.seasons = series.seasons.map((season: unknown) => {
 					const seasonNumber = toNumber(season?.seasonNumber) ?? 0;
 					const hasSelections = Array.isArray(seasonNumbers) && seasonNumbers.length > 0;
 
@@ -164,8 +164,8 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 
 			// Update the monitored status for the specified episodes
 			const updates = allEpisodes
-				.filter((ep: any) => payload.episodeIds.includes(toNumber(ep?.id) ?? -1))
-				.map((ep: any) => ({
+				.filter((ep: unknown) => payload.episodeIds.includes(toNumber((ep as Record<string, unknown>)?.id) ?? -1))
+				.map((ep: unknown) => ({
 					...ep,
 					monitored: payload.monitored,
 				}));

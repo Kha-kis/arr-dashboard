@@ -36,6 +36,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 
 	app.register(fastifyHelmet, {
 		contentSecurityPolicy: false,
+		xssFilter: false, // Deprecated header, modern browsers have built-in protections
 		hsts: {
 			maxAge: 31536000,
 			includeSubDomains: true,

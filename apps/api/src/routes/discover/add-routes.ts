@@ -121,7 +121,7 @@ export const registerAddRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			}
 
 			const seasons = Array.isArray(remote?.seasons)
-				? remote.seasons.map((season: any) => ({
+				? remote.seasons.map((season: unknown) => ({
 						seasonNumber: toNumber(season?.seasonNumber) ?? 0,
 						monitored:
 							seriesPayload.seasonFolder === false ? false : (seriesPayload.monitored ?? true),

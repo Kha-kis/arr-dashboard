@@ -26,4 +26,20 @@ legacy/node_modules
 .pf/
 .claude/agents/
 .claude/bin/
-apps/web/nul
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS specific
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Temporary files
+*.tmp
+nul

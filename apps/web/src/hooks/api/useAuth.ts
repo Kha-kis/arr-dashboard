@@ -14,6 +14,7 @@ import {
 interface LoginPayload {
 	identifier: string;
 	password: string;
+	rememberMe?: boolean;
 }
 
 export const useLoginMutation = () => {

@@ -39,6 +39,7 @@ export const LoginForm = () => {
 
 	const [identifier, setIdentifier] = useState("");
 	const [password, setPassword] = useState("");
+	const [rememberMe, setRememberMe] = useState(false);
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
 	const redirectTarget = useMemo(
@@ -60,6 +61,7 @@ export const LoginForm = () => {
 			await loginMutation.mutateAsync({
 				identifier: trimmedIdentifier,
 				password,
+				rememberMe,
 			});
 			setPassword("");
 			router.replace(redirectTarget);
@@ -92,10 +94,15 @@ export const LoginForm = () => {
 				<CardContent>
 					<form className="space-y-5" onSubmit={handleSubmit} autoComplete="off">
 						<div className="space-y-2">
-							<label className="block text-xs font-semibold uppercase tracking-wide text-white/60">
+							<label
+								htmlFor="identifier"
+								className="block text-xs font-semibold uppercase tracking-wide text-white/60"
+							>
 								Username or email
 							</label>
 							<Input
+								id="identifier"
+								name="identifier"
 								value={identifier}
 								onChange={(event) => setIdentifier(event.target.value)}
 								placeholder="Enter your username"
@@ -105,10 +112,15 @@ export const LoginForm = () => {
 						</div>
 
 						<div className="space-y-2">
-							<label className="block text-xs font-semibold uppercase tracking-wide text-white/60">
+							<label
+								htmlFor="password"
+								className="block text-xs font-semibold uppercase tracking-wide text-white/60"
+							>
 								Password
 							</label>
 							<Input
+								id="password"
+								name="password"
 								type="password"
 								value={password}
 								onChange={(event) => setPassword(event.target.value)}
@@ -116,6 +128,20 @@ export const LoginForm = () => {
 								autoComplete="off"
 								required
 							/>
+						</div>
+
+						<div className="flex items-center gap-2">
+							<input
+								type="checkbox"
+								id="rememberMe"
+								name="rememberMe"
+								checked={rememberMe}
+								onChange={(e) => setRememberMe(e.target.checked)}
+								className="h-4 w-4 rounded border-white/20 bg-white/5 text-primary focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 focus:ring-offset-bg"
+							/>
+							<label htmlFor="rememberMe" className="text-sm text-white/70 cursor-pointer">
+								Remember me for 30 days
+							</label>
 						</div>
 
 						{errorMessage && (

@@ -141,6 +141,7 @@ export const emptySonarrStatistics: SonarrStatistics = sonarrStatisticsSchema.pa
 	diskUsed: 0,
 	diskUsagePercent: 0,
 	healthIssues: 0,
+	healthIssuesList: [],
 });
 
 export const emptyRadarrStatistics: RadarrStatistics = radarrStatisticsSchema.parse({
@@ -157,6 +158,7 @@ export const emptyRadarrStatistics: RadarrStatistics = radarrStatisticsSchema.pa
 	diskUsed: 0,
 	diskUsagePercent: 0,
 	healthIssues: 0,
+	healthIssuesList: [],
 });
 
 export const emptyProwlarrStatistics: ProwlarrStatistics = prowlarrStatisticsSchema.parse({
@@ -172,11 +174,15 @@ export const emptyProwlarrStatistics: ProwlarrStatistics = prowlarrStatisticsSch
 	grabRate: 0,
 	averageResponseTime: undefined,
 	healthIssues: 0,
+	healthIssuesList: [],
 	indexers: [],
 });
 
 export const fetchSonarrStatistics = async (
 	fetcher: (path: string, init?: RequestInit) => Promise<Response>,
+	instanceId: string,
+	instanceName: string,
+	instanceBaseUrl: string,
 ): Promise<SonarrStatistics> => {
 	const series = (await safeRequestJson<unknown[]>(fetcher, "/api/v3/series")) ?? [];
 	const diskspace = (await safeRequestJson<unknown[]>(fetcher, "/api/v3/diskspace")) ?? [];
@@ -277,13 +283,32 @@ export const fetchSonarrStatistics = async (
 	const diskUsagePercent =
 		diskTotals.total > 0 ? clampPercentage((diskUsed / diskTotals.total) * 100) : 0;
 
-	const healthIssues = Array.isArray(health)
-		? health.filter((item) => {
-				const healthItem = item as HealthEntry;
-				const type = toStringValue(healthItem?.type);
-				return type === "error" || type === "warning";
-			}).length
-		: 0;
+	const healthIssuesList = Array.isArray(health)
+		? health
+				.filter((item) => {
+					const healthItem = item as HealthEntry;
+					const type = toStringValue(healthItem?.type);
+					return type === "error" || type === "warning";
+				})
+				.map((item) => {
+					const healthItem = item as Record<string, unknown>;
+					const type = toStringValue(healthItem?.type) as "error" | "warning";
+					const message = toStringValue(healthItem?.message) ?? "Unknown health issue";
+					const source = toStringValue(healthItem?.source);
+					const wikiUrl = toStringValue(healthItem?.wikiUrl);
+					return {
+						type,
+						message,
+						source,
+						wikiUrl,
+						instanceId,
+						instanceName,
+						instanceBaseUrl,
+						service: "sonarr" as const,
+					};
+				})
+		: [];
+	const healthIssues = healthIssuesList.length;
 
 	return sonarrStatisticsSchema.parse({
 		totalSeries,
@@ -304,11 +329,15 @@ export const fetchSonarrStatistics = async (
 		diskUsed: diskUsed || undefined,
 		diskUsagePercent,
 		healthIssues,
+		healthIssuesList,
 	});
 };
 
 export const fetchRadarrStatistics = async (
 	fetcher: (path: string, init?: RequestInit) => Promise<Response>,
+	instanceId: string,
+	instanceName: string,
+	instanceBaseUrl: string,
 ): Promise<RadarrStatistics> => {
 	const movies = (await safeRequestJson<unknown[]>(fetcher, "/api/v3/movie")) ?? [];
 	const diskspace = (await safeRequestJson<unknown[]>(fetcher, "/api/v3/diskspace")) ?? [];
@@ -387,13 +416,32 @@ export const fetchRadarrStatistics = async (
 	const diskUsagePercent =
 		diskTotals.total > 0 ? clampPercentage((diskUsed / diskTotals.total) * 100) : 0;
 
-	const healthIssues = Array.isArray(health)
-		? health.filter((item) => {
-				const healthItem = item as HealthEntry;
-				const type = toStringValue(healthItem?.type);
-				return type === "error" || type === "warning";
-			}).length
-		: 0;
+	const healthIssuesList = Array.isArray(health)
+		? health
+				.filter((item) => {
+					const healthItem = item as HealthEntry;
+					const type = toStringValue(healthItem?.type);
+					return type === "error" || type === "warning";
+				})
+				.map((item) => {
+					const healthItem = item as Record<string, unknown>;
+					const type = toStringValue(healthItem?.type) as "error" | "warning";
+					const message = toStringValue(healthItem?.message) ?? "Unknown health issue";
+					const source = toStringValue(healthItem?.source);
+					const wikiUrl = toStringValue(healthItem?.wikiUrl);
+					return {
+						type,
+						message,
+						source,
+						wikiUrl,
+						instanceId,
+						instanceName,
+						instanceBaseUrl,
+						service: "radarr" as const,
+					};
+				})
+		: [];
+	const healthIssues = healthIssuesList.length;
 
 	return radarrStatisticsSchema.parse({
 		totalMovies,
@@ -410,11 +458,15 @@ export const fetchRadarrStatistics = async (
 		diskUsed: diskUsed || undefined,
 		diskUsagePercent,
 		healthIssues,
+		healthIssuesList,
 	});
 };
 
 export const fetchProwlarrStatistics = async (
 	fetcher: (path: string, init?: RequestInit) => Promise<Response>,
+	instanceId: string,
+	instanceName: string,
+	instanceBaseUrl: string,
 ): Promise<ProwlarrStatistics> => {
 	const indexers = (await safeRequestJson<unknown[]>(fetcher, "/api/v1/indexer")) ?? [];
 	const health = (await safeRequestJson<unknown[]>(fetcher, "/api/v1/health")) ?? [];
@@ -560,13 +612,32 @@ export const fetchProwlarrStatistics = async (
 
 	const grabRate = totalQueries > 0 ? clampPercentage((totalGrabs / totalQueries) * 100) : 0;
 
-	const healthIssues = Array.isArray(health)
-		? health.filter((item) => {
-				const healthItem = item as HealthEntry;
-				const type = toStringValue(healthItem?.type);
-				return type === "error" || type === "warning";
-			}).length
-		: 0;
+	const healthIssuesList = Array.isArray(health)
+		? health
+				.filter((item) => {
+					const healthItem = item as HealthEntry;
+					const type = toStringValue(healthItem?.type);
+					return type === "error" || type === "warning";
+				})
+				.map((item) => {
+					const healthItem = item as Record<string, unknown>;
+					const type = toStringValue(healthItem?.type) as "error" | "warning";
+					const message = toStringValue(healthItem?.message) ?? "Unknown health issue";
+					const source = toStringValue(healthItem?.source);
+					const wikiUrl = toStringValue(healthItem?.wikiUrl);
+					return {
+						type,
+						message,
+						source,
+						wikiUrl,
+						instanceId,
+						instanceName,
+						instanceBaseUrl,
+						service: "prowlarr" as const,
+					};
+				})
+		: [];
+	const healthIssues = healthIssuesList.length;
 
 	const topIndexers = normalizedStats.sort((a, b) => b.queries - a.queries).slice(0, 10);
 
@@ -583,6 +654,7 @@ export const fetchProwlarrStatistics = async (
 		grabRate,
 		averageResponseTime: undefined,
 		healthIssues,
+		healthIssuesList,
 		indexers: topIndexers,
 	});
 };
@@ -610,6 +682,9 @@ export const aggregateSonarrStatistics = (
 			acc.diskFree += data.diskFree ?? 0;
 			acc.diskUsed += data.diskUsed ?? 0;
 			acc.healthIssues += data.healthIssues ?? 0;
+			if (data.healthIssuesList) {
+				acc.healthIssuesList.push(...data.healthIssuesList);
+			}
 			if (data.qualityBreakdown) {
 				for (const [profileName, count] of Object.entries(data.qualityBreakdown)) {
 					acc.qualityBreakdown[profileName] = (acc.qualityBreakdown[profileName] ?? 0) + count;
@@ -635,6 +710,7 @@ export const aggregateSonarrStatistics = (
 			diskFree: 0,
 			diskUsed: 0,
 			healthIssues: 0,
+			healthIssuesList: [] as SonarrStatistics["healthIssuesList"],
 			qualityBreakdown: {} as Record<string, number>,
 			totalFileSize: 0,
 			totalFiles: 0,
@@ -668,6 +744,7 @@ export const aggregateSonarrStatistics = (
 		diskUsed: totals.diskUsed || undefined,
 		diskUsagePercent,
 		healthIssues: totals.healthIssues,
+		healthIssuesList: totals.healthIssuesList,
 	});
 };
 
@@ -690,6 +767,9 @@ export const aggregateRadarrStatistics = (
 			acc.diskFree += data.diskFree ?? 0;
 			acc.diskUsed += data.diskUsed ?? 0;
 			acc.healthIssues += data.healthIssues ?? 0;
+			if (data.healthIssuesList) {
+				acc.healthIssuesList.push(...data.healthIssuesList);
+			}
 			if (data.qualityBreakdown) {
 				for (const [profileName, count] of Object.entries(data.qualityBreakdown)) {
 					acc.qualityBreakdown[profileName] = (acc.qualityBreakdown[profileName] ?? 0) + count;
@@ -711,6 +791,7 @@ export const aggregateRadarrStatistics = (
 			diskFree: 0,
 			diskUsed: 0,
 			healthIssues: 0,
+			healthIssuesList: [] as RadarrStatistics["healthIssuesList"],
 			qualityBreakdown: {} as Record<string, number>,
 			totalFileSize: 0,
 			totalFiles: 0,
@@ -740,6 +821,7 @@ export const aggregateRadarrStatistics = (
 		diskUsed: totals.diskUsed || undefined,
 		diskUsagePercent,
 		healthIssues: totals.healthIssues,
+		healthIssuesList: totals.healthIssuesList,
 	});
 };
 
@@ -763,6 +845,9 @@ export const aggregateProwlarrStatistics = (
 			acc.successfulGrabs += data.successfulGrabs ?? 0;
 			acc.failedGrabs += data.failedGrabs ?? 0;
 			acc.healthIssues += data.healthIssues ?? 0;
+			if (data.healthIssuesList) {
+				acc.healthIssuesList.push(...data.healthIssuesList);
+			}
 			const response = data.averageResponseTime;
 			if (typeof response === "number" && Number.isFinite(response)) {
 				acc.responseTimes.push(response);
@@ -781,6 +866,7 @@ export const aggregateProwlarrStatistics = (
 			successfulGrabs: 0,
 			failedGrabs: 0,
 			healthIssues: 0,
+			healthIssuesList: [] as ProwlarrStatistics["healthIssuesList"],
 			responseTimes: [] as number[],
 			indexers: [] as ProwlarrIndexerStat[],
 		},
@@ -863,6 +949,7 @@ export const aggregateProwlarrStatistics = (
 		grabRate,
 		averageResponseTime: averageResponseTime ?? undefined,
 		healthIssues: totals.healthIssues,
+		healthIssuesList: totals.healthIssuesList,
 		indexers,
 	});
 };

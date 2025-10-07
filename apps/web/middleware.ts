@@ -3,7 +3,6 @@ import type { NextRequest } from "next/server";
 
 const SESSION_COOKIE_NAME = process.env.NEXT_PUBLIC_SESSION_COOKIE_NAME ?? "arr_session";
 const PUBLIC_PATHS = new Set([
-	"/",
 	"/login",
 	"/setup",
 	"/favicon.ico",
@@ -28,6 +27,13 @@ const isPublicPath = (pathname: string) => {
 export function middleware(request: NextRequest) {
 	const { pathname } = request.nextUrl;
 	const hasSession = Boolean(request.cookies.get(SESSION_COOKIE_NAME));
+
+	// Home page: redirect to dashboard if logged in, otherwise to login
+	if (pathname === "/") {
+		const url = request.nextUrl.clone();
+		url.pathname = hasSession ? "/dashboard" : "/login";
+		return NextResponse.redirect(url);
+	}
 
 	if (pathname === "/login") {
 		if (hasSession) {

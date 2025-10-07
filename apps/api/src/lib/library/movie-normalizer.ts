@@ -11,10 +11,10 @@ import {
 
 /**
  * Extracts year from raw API data, checking multiple fields
- * @param raw - The raw API data (any type allows flexible property access, safety enforced via helper functions)
+ * @param raw - The raw API data (unknown object type allows flexible property access, safety enforced via helper functions)
  * @returns The extracted year or undefined
  */
-export const extractYear = (raw: any): number | undefined => {
+export const extractYear = (raw: Record<string, unknown>): number | undefined => {
 	const year = toNumber(raw?.year ?? raw?.releaseYear);
 	if (typeof year === "number") {
 		return year;
@@ -34,10 +34,10 @@ export const extractYear = (raw: any): number | undefined => {
 
 /**
  * Builds a movie file object from raw API data
- * @param raw - The raw movie file data (any type allows flexible property access, safety enforced via helper functions)
+ * @param raw - The raw movie file data (unknown object type allows flexible property access, safety enforced via helper functions)
  * @returns Movie file object or undefined
  */
-export const buildMovieFile = (raw: any) => {
+export const buildMovieFile = (raw: Record<string, unknown>) => {
 	if (!raw || typeof raw !== "object") {
 		return undefined;
 	}
@@ -76,12 +76,12 @@ export const buildMovieFile = (raw: any) => {
  */
 /**
  * Builds a movie library item from raw Radarr API data
- * @param raw - The raw API data (any type allows flexible property access, safety enforced via helper functions)
+ * @param raw - The raw API data (unknown object type allows flexible property access, safety enforced via helper functions)
  */
 export const buildMovieItem = (
 	instance: ServiceInstance,
 	service: LibraryService,
-	raw: any,
+	raw: Record<string, unknown>,
 ): LibraryItem => {
 	const images = normalizeImages(raw?.images, instance.baseUrl);
 
