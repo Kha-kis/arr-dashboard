@@ -168,6 +168,73 @@ export const DiscoverClient: React.FC = () => {
 		!hasQuery && canSearch,
 	);
 
+	// Auto-load more pages if filtered results are too few (minimum 10 items)
+	const MIN_VISIBLE_ITEMS = 10;
+
+	useEffect(() => {
+		const trendingItems = filterExistingItems(
+			trendingQuery.data?.pages.flatMap((p) => p.items) || [],
+			libraryData?.aggregated,
+			searchType === "movie" ? "movie" : "series",
+		);
+		if (
+			trendingItems.length < MIN_VISIBLE_ITEMS &&
+			trendingQuery.hasNextPage &&
+			!trendingQuery.isFetchingNextPage &&
+			!trendingQuery.isLoading
+		) {
+			trendingQuery.fetchNextPage();
+		}
+	}, [trendingQuery.data, libraryData, searchType, trendingQuery.hasNextPage]);
+
+	useEffect(() => {
+		const popularItems = filterExistingItems(
+			popularQuery.data?.pages.flatMap((p) => p.items) || [],
+			libraryData?.aggregated,
+			searchType === "movie" ? "movie" : "series",
+		);
+		if (
+			popularItems.length < MIN_VISIBLE_ITEMS &&
+			popularQuery.hasNextPage &&
+			!popularQuery.isFetchingNextPage &&
+			!popularQuery.isLoading
+		) {
+			popularQuery.fetchNextPage();
+		}
+	}, [popularQuery.data, libraryData, searchType, popularQuery.hasNextPage]);
+
+	useEffect(() => {
+		const topRatedItems = filterExistingItems(
+			topRatedQuery.data?.pages.flatMap((p) => p.items) || [],
+			libraryData?.aggregated,
+			searchType === "movie" ? "movie" : "series",
+		);
+		if (
+			topRatedItems.length < MIN_VISIBLE_ITEMS &&
+			topRatedQuery.hasNextPage &&
+			!topRatedQuery.isFetchingNextPage &&
+			!topRatedQuery.isLoading
+		) {
+			topRatedQuery.fetchNextPage();
+		}
+	}, [topRatedQuery.data, libraryData, searchType, topRatedQuery.hasNextPage]);
+
+	useEffect(() => {
+		const upcomingItems = filterExistingItems(
+			upcomingQuery.data?.pages.flatMap((p) => p.items) || [],
+			libraryData?.aggregated,
+			searchType === "movie" ? "movie" : "series",
+		);
+		if (
+			upcomingItems.length < MIN_VISIBLE_ITEMS &&
+			upcomingQuery.hasNextPage &&
+			!upcomingQuery.isFetchingNextPage &&
+			!upcomingQuery.isLoading
+		) {
+			upcomingQuery.fetchNextPage();
+		}
+	}, [upcomingQuery.data, libraryData, searchType, upcomingQuery.hasNextPage]);
+
 	return (
 		<div className="space-y-12">
 			<header className="space-y-8">
