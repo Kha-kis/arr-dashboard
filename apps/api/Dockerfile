@@ -54,9 +54,13 @@ COPY --from=builder --chown=apiuser:nodejs /app/apps/api/dist ./dist
 COPY --from=builder --chown=apiuser:nodejs /app/apps/api/node_modules ./node_modules
 COPY --from=builder --chown=apiuser:nodejs /app/apps/api/prisma ./prisma
 COPY --from=builder --chown=apiuser:nodejs /app/apps/api/package.json ./package.json
+COPY --from=builder --chown=apiuser:nodejs /app/apps/api/scripts/start.sh ./start.sh
 
 # Create data directory for SQLite database
 RUN mkdir -p /app/data && chown -R apiuser:nodejs /app/data
+
+# Make startup script executable
+RUN chmod +x /app/start.sh
 
 USER apiuser
 
@@ -66,4 +70,4 @@ EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3001/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
-CMD ["node", "dist/index.js"]
+CMD ["/app/start.sh"]
