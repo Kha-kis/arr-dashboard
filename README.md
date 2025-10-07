@@ -52,6 +52,15 @@ NEXT_PUBLIC_API_BASE_URL=http://your-server-ip:3001
 docker-compose up -d
 ```
 
+The API container will automatically:
+1. Run database migrations to create the schema
+2. Start the API server
+
+You can monitor the startup logs:
+```bash
+docker-compose logs -f api
+```
+
 ### 4. Initial Setup
 
 1. Open your browser to `http://your-server-ip:3000`
@@ -197,26 +206,39 @@ arr-dashboard/
 - **Validation**: Zod schemas
 - **Build**: Turbo, pnpm workspaces
 
-## Database Migrations
+## Database Setup
 
-### Running Migrations
+### Automatic Migrations (Docker)
+
+When using Docker, migrations run automatically on container startup. The startup script:
+1. Runs `prisma migrate deploy` to apply pending migrations
+2. Starts the API server
+
+### Manual Migrations
 
 ```bash
 cd apps/api
 
-# Development
+# Development - Push schema without creating migration
 pnpm run db:push
 
-# Production
+# Production - Apply migrations
 pnpm run db:migrate
 ```
 
-### Creating Migrations
+### Creating New Migrations
+
+When you modify the Prisma schema:
 
 ```bash
 cd apps/api
 npx prisma migrate dev --name your_migration_name
 ```
+
+This will:
+1. Generate a new migration file
+2. Apply it to your development database
+3. Regenerate the Prisma Client
 
 ## Resetting Admin Password
 
