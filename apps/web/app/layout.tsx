@@ -9,26 +9,25 @@ import { Toaster } from "../src/components/ui";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Arr Control Center",
-  description:
-    "Centralized management dashboard for Sonarr, Radarr, and Prowlarr",
+	title: "Arr Control Center",
+	description: "Centralized management dashboard for Sonarr, Radarr, and Prowlarr",
 };
 
 interface RootLayoutProps {
-  readonly children: React.ReactNode;
+	readonly children: React.ReactNode;
 }
 
 const RootLayout = ({ children }: RootLayoutProps) => (
-  <html lang="en" suppressHydrationWarning>
-    <body className={inter.className}>
-      <RootProviders>
-        <AuthGate>
-          <LayoutWrapper>{children}</LayoutWrapper>
-        </AuthGate>
-        <Toaster />
-      </RootProviders>
-    </body>
-  </html>
+	<html lang="en" suppressHydrationWarning>
+		<body className={inter.className}>
+			<RootProviders>
+				<AuthGate>
+					<LayoutWrapper>{children}</LayoutWrapper>
+				</AuthGate>
+				<Toaster />
+			</RootProviders>
+		</body>
+	</html>
 );
 
 export default RootLayout;
