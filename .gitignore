@@ -11,21 +11,26 @@ logs
 .tmp
 .DS_Store
 *.log
+.turbo
 apps/**/.turbo
 apps/**/.next
 apps/**/node_modules
 packages/**/node_modules
 legacy/node_modules
 
+# Build caches
+*.tsbuildinfo
+.eslintcache
+.cache
+
 # Database files
 *.db
 *.db-journal
 
-# Auditor tool artifacts
+# Development tool artifacts
 .auditor_venv/
 .pf/
-.claude/agents/
-.claude/bin/
+.claude/
 
 # IDE and Editor files
 .vscode/
