@@ -7,19 +7,19 @@
  * @returns React component or null if no value
  */
 export const DetailStat = ({
-  label,
-  value,
+	label,
+	value,
 }: {
-  label: string;
-  value?: string;
+	label: string;
+	value?: string;
 }) => {
-  if (!value || value.trim().length === 0) {
-    return null;
-  }
-  return (
-    <div className="space-y-1">
-      <p className="text-xs uppercase tracking-wider text-white/40">{label}</p>
-      <p className="text-sm font-medium text-white">{value}</p>
-    </div>
-  );
+	if (!value || value.trim().length === 0) {
+		return null;
+	}
+	return (
+		<div className="space-y-1">
+			<p className="text-xs uppercase tracking-wider text-white/40">{label}</p>
+			<p className="text-sm font-medium text-white">{value}</p>
+		</div>
+	);
 };

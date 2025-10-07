@@ -9,21 +9,21 @@ export const numberFormatter = new Intl.NumberFormat();
  * Percentage formatter with one decimal place
  */
 export const percentFormatter = new Intl.NumberFormat(undefined, {
-  style: "percent",
-  maximumFractionDigits: 1,
+	style: "percent",
+	maximumFractionDigits: 1,
 });
 
 /**
  * Statistics computed from indexer data
  */
 export interface IndexerStats {
-  total: number;
-  enabled: number;
-  disabled: number;
-  torrent: number;
-  usenet: number;
-  search: number;
-  rss: number;
+	total: number;
+	enabled: number;
+	disabled: number;
+	torrent: number;
+	usenet: number;
+	search: number;
+	rss: number;
 }
 
 /**
@@ -32,18 +32,18 @@ export interface IndexerStats {
  * @returns Computed statistics object
  */
 export const computeStats = (indexers: ProwlarrIndexer[]): IndexerStats => {
-  const enabled = indexers.filter((indexer) => indexer.enable);
-  const torrent = enabled.filter((indexer) => indexer.protocol === "torrent");
-  const usenet = enabled.filter((indexer) => indexer.protocol === "usenet");
-  return {
-    total: indexers.length,
-    enabled: enabled.length,
-    disabled: indexers.length - enabled.length,
-    torrent: torrent.length,
-    usenet: usenet.length,
-    search: enabled.filter((indexer) => indexer.supportsSearch).length,
-    rss: enabled.filter((indexer) => indexer.supportsRss).length,
-  };
+	const enabled = indexers.filter((indexer) => indexer.enable);
+	const torrent = enabled.filter((indexer) => indexer.protocol === "torrent");
+	const usenet = enabled.filter((indexer) => indexer.protocol === "usenet");
+	return {
+		total: indexers.length,
+		enabled: enabled.length,
+		disabled: indexers.length - enabled.length,
+		torrent: torrent.length,
+		usenet: usenet.length,
+		search: enabled.filter((indexer) => indexer.supportsSearch).length,
+		rss: enabled.filter((indexer) => indexer.supportsRss).length,
+	};
 };
 
 /**
@@ -51,17 +51,15 @@ export const computeStats = (indexers: ProwlarrIndexer[]): IndexerStats => {
  * @param protocol - Protocol type (torrent or usenet)
  * @returns Label string
  */
-export const protocolLabel = (
-  protocol: ProwlarrIndexer["protocol"],
-): string => {
-  switch (protocol) {
-    case "torrent":
-      return "Torrent";
-    case "usenet":
-      return "Usenet";
-    default:
-      return "Unknown";
-  }
+export const protocolLabel = (protocol: ProwlarrIndexer["protocol"]): string => {
+	switch (protocol) {
+		case "torrent":
+			return "Torrent";
+		case "usenet":
+			return "Usenet";
+		default:
+			return "Unknown";
+	}
 };
 
 /**
@@ -70,25 +68,25 @@ export const protocolLabel = (
  * @returns True if field is API key related
  */
 export const isApiKeyRelatedField = (field: ProwlarrIndexerField): boolean => {
-  const name = (field.name ?? "").toLowerCase();
-  const label = (field.label ?? "").toLowerCase();
+	const name = (field.name ?? "").toLowerCase();
+	const label = (field.label ?? "").toLowerCase();
 
-  if (name.includes("apikey") || name.includes("api_key")) {
-    return true;
-  }
+	if (name.includes("apikey") || name.includes("api_key")) {
+		return true;
+	}
 
-  if (label.includes("api key")) {
-    return true;
-  }
+	if (label.includes("api key")) {
+		return true;
+	}
 
-  if (
-    (name.includes("about") && name.includes("api")) ||
-    (label.includes("about") && label.includes("api"))
-  ) {
-    return true;
-  }
+	if (
+		(name.includes("about") && name.includes("api")) ||
+		(label.includes("about") && label.includes("api"))
+	) {
+		return true;
+	}
 
-  return false;
+	return false;
 };
 
 /**
@@ -98,39 +96,37 @@ export const isApiKeyRelatedField = (field: ProwlarrIndexerField): boolean => {
  * @returns Formatted string
  */
 export const formatFieldValue = (name: string, value: unknown): string => {
-  if (value === null || typeof value === "undefined") {
-    return "Not configured";
-  }
+	if (value === null || typeof value === "undefined") {
+		return "Not configured";
+	}
 
-  if (typeof value === "boolean") {
-    return value ? "Enabled" : "Disabled";
-  }
+	if (typeof value === "boolean") {
+		return value ? "Enabled" : "Disabled";
+	}
 
-  if (Array.isArray(value)) {
-    return value
-      .map((entry) =>
-        typeof entry === "string"
-          ? entry
-          : typeof entry === "number"
-            ? entry.toString()
-            : undefined,
-      )
-      .filter(Boolean)
-      .join(", ");
-  }
+	if (Array.isArray(value)) {
+		return value
+			.map((entry) =>
+				typeof entry === "string"
+					? entry
+					: typeof entry === "number"
+						? entry.toString()
+						: undefined,
+			)
+			.filter(Boolean)
+			.join(", ");
+	}
 
-  if (typeof value === "object") {
-    return Object.values(value as Record<string, unknown>)
-      .map((entry) =>
-        typeof entry === "string" || typeof entry === "number"
-          ? entry.toString()
-          : undefined,
-      )
-      .filter(Boolean)
-      .join(", ");
-  }
+	if (typeof value === "object") {
+		return Object.values(value as Record<string, unknown>)
+			.map((entry) =>
+				typeof entry === "string" || typeof entry === "number" ? entry.toString() : undefined,
+			)
+			.filter(Boolean)
+			.join(", ");
+	}
 
-  return String(value);
+	return String(value);
 };
 
 /**
@@ -139,11 +135,11 @@ export const formatFieldValue = (name: string, value: unknown): string => {
  * @returns Formatted percentage string
  */
 export const formatSuccessRate = (value?: number): string => {
-  if (typeof value !== "number") {
-    return "–";
-  }
-  const normalized = value > 1 ? value / 100 : value;
-  return percentFormatter.format(Math.max(0, Math.min(1, normalized)));
+	if (typeof value !== "number") {
+		return "–";
+	}
+	const normalized = value > 1 ? value / 100 : value;
+	return percentFormatter.format(Math.max(0, Math.min(1, normalized)));
 };
 
 /**
@@ -152,13 +148,13 @@ export const formatSuccessRate = (value?: number): string => {
  * @returns Formatted time string
  */
 export const formatResponseTime = (value?: number): string => {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return "–";
-  }
-  if (value >= 1000) {
-    return `${(value / 1000).toFixed(2)} s`;
-  }
-  return `${Math.round(value)} ms`;
+	if (typeof value !== "number" || !Number.isFinite(value)) {
+		return "–";
+	}
+	if (value >= 1000) {
+		return `${(value / 1000).toFixed(2)} s`;
+	}
+	return `${Math.round(value)} ms`;
 };
 
 /**
@@ -167,12 +163,12 @@ export const formatResponseTime = (value?: number): string => {
  * @returns Formatted date string
  */
 export const formatDateTime = (value?: string): string => {
-  if (!value) {
-    return "–";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleString();
+	if (!value) {
+		return "–";
+	}
+	const date = new Date(value);
+	if (Number.isNaN(date.getTime())) {
+		return value;
+	}
+	return date.toLocaleString();
 };

@@ -15,15 +15,15 @@ import type { LibraryItem } from "@arr/shared";
  * formatRuntime(0) // null
  */
 export const formatRuntime = (runtime?: number): string | null => {
-  if (!runtime || runtime <= 0) {
-    return null;
-  }
-  if (runtime >= 60) {
-    const hours = Math.floor(runtime / 60);
-    const minutes = runtime % 60;
-    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-  }
-  return `${runtime}m`;
+	if (!runtime || runtime <= 0) {
+		return null;
+	}
+	if (runtime >= 60) {
+		const hours = Math.floor(runtime / 60);
+		const minutes = runtime % 60;
+		return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+	}
+	return `${runtime}m`;
 };
 
 /**
@@ -39,23 +39,23 @@ export const formatRuntime = (runtime?: number): string | null => {
  * const filtered = filterExistingItems(recommendations, library, "movie");
  */
 export const filterExistingItems = (
-  items: RecommendationItem[],
-  libraryItems: LibraryItem[] | undefined,
-  mediaType: "movie" | "series",
+	items: RecommendationItem[],
+	libraryItems: LibraryItem[] | undefined,
+	mediaType: "movie" | "series",
 ): RecommendationItem[] => {
-  if (!libraryItems) return items;
+	if (!libraryItems) return items;
 
-  const libraryTitles = new Set(
-    libraryItems
-      .filter(
-        (item) =>
-          (mediaType === "movie" && item.type === "movie") ||
-          (mediaType === "series" && item.type === "series"),
-      )
-      .map((item) => item.title.toLowerCase()),
-  );
+	const libraryTitles = new Set(
+		libraryItems
+			.filter(
+				(item) =>
+					(mediaType === "movie" && item.type === "movie") ||
+					(mediaType === "series" && item.type === "series"),
+			)
+			.map((item) => item.title.toLowerCase()),
+	);
 
-  return items.filter((item) => !libraryTitles.has(item.title.toLowerCase()));
+	return items.filter((item) => !libraryTitles.has(item.title.toLowerCase()));
 };
 
 /**
@@ -68,24 +68,24 @@ export const filterExistingItems = (
  * @returns Array of recently added library items
  */
 export const getRecentlyAdded = (
-  libraryItems: LibraryItem[] | undefined,
-  mediaType: "movie" | "series",
-  limit: number = 5,
+	libraryItems: LibraryItem[] | undefined,
+	mediaType: "movie" | "series",
+	limit: number = 5,
 ): LibraryItem[] => {
-  if (!libraryItems) {
-    return [];
-  }
+	if (!libraryItems) {
+		return [];
+	}
 
-  const matchingItems = libraryItems.filter(
-    (item) =>
-      (mediaType === "movie" && item.type === "movie") ||
-      (mediaType === "series" && item.type === "series"),
-  );
+	const matchingItems = libraryItems.filter(
+		(item) =>
+			(mediaType === "movie" && item.type === "movie") ||
+			(mediaType === "series" && item.type === "series"),
+	);
 
-  return matchingItems
-    .filter((item) => item.added)
-    .sort((a, b) => new Date(b.added!).getTime() - new Date(a.added!).getTime())
-    .slice(0, limit);
+	return matchingItems
+		.filter((item) => item.added)
+		.sort((a, b) => new Date(b.added!).getTime() - new Date(a.added!).getTime())
+		.slice(0, limit);
 };
 
 /**
@@ -98,26 +98,26 @@ export const getRecentlyAdded = (
  * @returns Array of top rated library items
  */
 export const getTopRated = (
-  libraryItems: LibraryItem[] | undefined,
-  mediaType: "movie" | "series",
-  limit: number = 5,
+	libraryItems: LibraryItem[] | undefined,
+	mediaType: "movie" | "series",
+	limit: number = 5,
 ): LibraryItem[] => {
-  if (!libraryItems) {
-    return [];
-  }
+	if (!libraryItems) {
+		return [];
+	}
 
-  const matchingItems = libraryItems.filter(
-    (item) =>
-      (mediaType === "movie" && item.type === "movie") ||
-      (mediaType === "series" && item.type === "series"),
-  );
+	const matchingItems = libraryItems.filter(
+		(item) =>
+			(mediaType === "movie" && item.type === "movie") ||
+			(mediaType === "series" && item.type === "series"),
+	);
 
-  return matchingItems
-    .filter((item) => item.statistics?.runtime && item.statistics.runtime > 0)
-    .sort((a, b) => {
-      const ratingA = a.statistics?.runtime || 0;
-      const ratingB = b.statistics?.runtime || 0;
-      return ratingB - ratingA;
-    })
-    .slice(0, limit);
+	return matchingItems
+		.filter((item) => item.statistics?.runtime && item.statistics.runtime > 0)
+		.sort((a, b) => {
+			const ratingA = a.statistics?.runtime || 0;
+			const ratingB = b.statistics?.runtime || 0;
+			return ratingB - ratingA;
+		})
+		.slice(0, limit);
 };

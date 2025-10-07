@@ -7,17 +7,16 @@ import { buildSeriesItem } from "./series-normalizer";
  * Builds a library item from raw API data based on service type
  * @param instance - The service instance
  * @param service - The service type (radarr or sonarr)
- * @param raw - The raw API data
+ * @param raw - The raw API data (any type allows flexible property access, safety enforced via normalizer functions)
  * @returns A normalized library item
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const buildLibraryItem = (
-  instance: ServiceInstance,
-  service: LibraryService,
-  raw: any,
+	instance: ServiceInstance,
+	service: LibraryService,
+	raw: any,
 ): LibraryItem => {
-  if (service === "radarr") {
-    return buildMovieItem(instance, service, raw);
-  }
-  return buildSeriesItem(instance, service, raw);
+	if (service === "radarr") {
+		return buildMovieItem(instance, service, raw);
+	}
+	return buildSeriesItem(instance, service, raw);
 };

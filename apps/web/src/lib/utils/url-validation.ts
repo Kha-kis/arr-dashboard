@@ -11,41 +11,41 @@ const ALLOWED_PROTOCOLS = ["http:", "https:"];
  * @returns true if the URL is safe, false otherwise
  */
 export function isSafeUrl(url: string): boolean {
-  if (!url || typeof url !== "string") {
-    return false;
-  }
+	if (!url || typeof url !== "string") {
+		return false;
+	}
 
-  // Trim whitespace
-  const trimmedUrl = url.trim();
+	// Trim whitespace
+	const trimmedUrl = url.trim();
 
-  // Reject empty strings
-  if (trimmedUrl.length === 0) {
-    return false;
-  }
+	// Reject empty strings
+	if (trimmedUrl.length === 0) {
+		return false;
+	}
 
-  // Reject javascript: and data: URLs
-  const lowerUrl = trimmedUrl.toLowerCase();
-  if (
-    lowerUrl.startsWith("javascript:") ||
-    lowerUrl.startsWith("data:") ||
-    lowerUrl.startsWith("vbscript:")
-  ) {
-    return false;
-  }
+	// Reject javascript: and data: URLs
+	const lowerUrl = trimmedUrl.toLowerCase();
+	if (
+		lowerUrl.startsWith("javascript:") ||
+		lowerUrl.startsWith("data:") ||
+		lowerUrl.startsWith("vbscript:")
+	) {
+		return false;
+	}
 
-  try {
-    const parsedUrl = new URL(trimmedUrl);
+	try {
+		const parsedUrl = new URL(trimmedUrl);
 
-    // Only allow http and https protocols
-    if (!ALLOWED_PROTOCOLS.includes(parsedUrl.protocol)) {
-      return false;
-    }
+		// Only allow http and https protocols
+		if (!ALLOWED_PROTOCOLS.includes(parsedUrl.protocol)) {
+			return false;
+		}
 
-    return true;
-  } catch (error) {
-    // If URL parsing fails, it's not a valid URL
-    return false;
-  }
+		return true;
+	} catch (error) {
+		// If URL parsing fails, it's not a valid URL
+		return false;
+	}
 }
 
 /**
@@ -54,11 +54,11 @@ export function isSafeUrl(url: string): boolean {
  * @returns true if the URL was opened, false if it was rejected
  */
 export function safeOpenUrl(url: string): boolean {
-  if (!isSafeUrl(url)) {
-    console.warn("Attempted to open unsafe URL:", url);
-    return false;
-  }
+	if (!isSafeUrl(url)) {
+		console.warn("Attempted to open unsafe URL:", url);
+		return false;
+	}
 
-  window.open(url, "_blank", "noopener,noreferrer");
-  return true;
+	window.open(url, "_blank", "noopener,noreferrer");
+	return true;
 }

@@ -6,32 +6,29 @@ import { ThemeProvider } from "next-themes";
 import React from "react";
 
 interface RootProvidersProps {
-  readonly children: React.ReactNode;
+	readonly children: React.ReactNode;
 }
 
 export const RootProviders: React.FC<RootProvidersProps> = ({ children }) => {
-  const [queryClient] = React.useState(
-    () =>
-      new QueryClient({
-        defaultOptions: {
-          queries: {
-            refetchOnWindowFocus: false,
-            staleTime: 1000 * 30,
-            retry: 1,
-          },
-        },
-      }),
-  );
+	const [queryClient] = React.useState(
+		() =>
+			new QueryClient({
+				defaultOptions: {
+					queries: {
+						refetchOnWindowFocus: false,
+						staleTime: 1000 * 30,
+						retry: 1,
+					},
+				},
+			}),
+	);
 
-  return (
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-      <QueryClientProvider client={queryClient}>
-        {children}
-        <ReactQueryDevtools
-          initialIsOpen={false}
-          buttonPosition="bottom-right"
-        />
-      </QueryClientProvider>
-    </ThemeProvider>
-  );
+	return (
+		<ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+			<QueryClientProvider client={queryClient}>
+				{children}
+				<ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-right" />
+			</QueryClientProvider>
+		</ThemeProvider>
+	);
 };
