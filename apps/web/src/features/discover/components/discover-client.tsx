@@ -15,7 +15,7 @@ import {
 	useInfiniteRecommendationsQuery,
 } from "../../../hooks/api/useDiscover";
 import { useLibraryQuery } from "../../../hooks/api/useLibrary";
-import { filterExistingItems } from "../lib/discover-utils";
+import { deduplicateItems, filterExistingItems } from "../lib/discover-utils";
 import { AddToLibraryDialog } from "./add-to-library-dialog";
 import { MediaTypeToggle } from "./media-type-toggle";
 import { SearchForm } from "./search-form";
@@ -172,8 +172,10 @@ export const DiscoverClient: React.FC = () => {
 	const MIN_VISIBLE_ITEMS = 10;
 
 	useEffect(() => {
+		const allItems = trendingQuery.data?.pages.flatMap((p) => p.items) || [];
+		const uniqueItems = deduplicateItems(allItems);
 		const trendingItems = filterExistingItems(
-			trendingQuery.data?.pages.flatMap((p) => p.items) || [],
+			uniqueItems,
 			libraryData?.aggregated,
 			searchType === "movie" ? "movie" : "series",
 		);
@@ -188,8 +190,10 @@ export const DiscoverClient: React.FC = () => {
 	}, [trendingQuery.data, libraryData, searchType, trendingQuery.hasNextPage]);
 
 	useEffect(() => {
+		const allItems = popularQuery.data?.pages.flatMap((p) => p.items) || [];
+		const uniqueItems = deduplicateItems(allItems);
 		const popularItems = filterExistingItems(
-			popularQuery.data?.pages.flatMap((p) => p.items) || [],
+			uniqueItems,
 			libraryData?.aggregated,
 			searchType === "movie" ? "movie" : "series",
 		);
@@ -204,8 +208,10 @@ export const DiscoverClient: React.FC = () => {
 	}, [popularQuery.data, libraryData, searchType, popularQuery.hasNextPage]);
 
 	useEffect(() => {
+		const allItems = topRatedQuery.data?.pages.flatMap((p) => p.items) || [];
+		const uniqueItems = deduplicateItems(allItems);
 		const topRatedItems = filterExistingItems(
-			topRatedQuery.data?.pages.flatMap((p) => p.items) || [],
+			uniqueItems,
 			libraryData?.aggregated,
 			searchType === "movie" ? "movie" : "series",
 		);
@@ -220,8 +226,10 @@ export const DiscoverClient: React.FC = () => {
 	}, [topRatedQuery.data, libraryData, searchType, topRatedQuery.hasNextPage]);
 
 	useEffect(() => {
+		const allItems = upcomingQuery.data?.pages.flatMap((p) => p.items) || [];
+		const uniqueItems = deduplicateItems(allItems);
 		const upcomingItems = filterExistingItems(
-			upcomingQuery.data?.pages.flatMap((p) => p.items) || [],
+			uniqueItems,
 			libraryData?.aggregated,
 			searchType === "movie" ? "movie" : "series",
 		);
@@ -278,7 +286,7 @@ export const DiscoverClient: React.FC = () => {
 					title="Trending Now"
 					description={`Popular ${searchType === "movie" ? "movies" : "series"} trending this week`}
 					items={filterExistingItems(
-						trendingQuery.data?.pages.flatMap((p) => p.items) || [],
+						deduplicateItems(trendingQuery.data?.pages.flatMap((p) => p.items) || []),
 						libraryData?.aggregated,
 						searchType === "movie" ? "movie" : "series",
 					)}
@@ -295,7 +303,7 @@ export const DiscoverClient: React.FC = () => {
 					title="Popular Releases"
 					description={`Most popular ${searchType === "movie" ? "movies" : "series"} right now`}
 					items={filterExistingItems(
-						popularQuery.data?.pages.flatMap((p) => p.items) || [],
+						deduplicateItems(popularQuery.data?.pages.flatMap((p) => p.items) || []),
 						libraryData?.aggregated,
 						searchType === "movie" ? "movie" : "series",
 					)}
@@ -312,7 +320,7 @@ export const DiscoverClient: React.FC = () => {
 					title="Top Rated"
 					description={`Highest rated ${searchType === "movie" ? "movies" : "series"} of all time`}
 					items={filterExistingItems(
-						topRatedQuery.data?.pages.flatMap((p) => p.items) || [],
+						deduplicateItems(topRatedQuery.data?.pages.flatMap((p) => p.items) || []),
 						libraryData?.aggregated,
 						searchType === "movie" ? "movie" : "series",
 					)}
@@ -331,7 +339,7 @@ export const DiscoverClient: React.FC = () => {
 						searchType === "movie" ? "Upcoming movies to watch out for" : "TV shows airing today"
 					}
 					items={filterExistingItems(
-						upcomingQuery.data?.pages.flatMap((p) => p.items) || [],
+						deduplicateItems(upcomingQuery.data?.pages.flatMap((p) => p.items) || []),
 						libraryData?.aggregated,
 						searchType === "movie" ? "movie" : "series",
 					)}

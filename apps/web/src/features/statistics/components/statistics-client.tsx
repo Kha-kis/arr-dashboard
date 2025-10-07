@@ -6,10 +6,11 @@ import type {
 	RadarrStatistics,
 	ProwlarrStatistics,
 	ProwlarrIndexerStat,
+	HealthIssue,
 } from "@arr/shared";
 import { useDashboardStatisticsQuery } from "../../../hooks/api/useDashboard";
 import { Button } from "../../../components/ui/button";
-import { Alert, AlertDescription, Skeleton } from "../../../components/ui";
+import { Alert, AlertDescription, AlertTitle, Skeleton } from "../../../components/ui";
 
 const integer = new Intl.NumberFormat();
 const percentFormatter = new Intl.NumberFormat(undefined, {
@@ -337,6 +338,20 @@ export const StatisticsClient = () => {
 	const totalHealthIssues =
 		sonarrTotals.healthIssues + radarrTotals.healthIssues + prowlarrTotals.healthIssues;
 
+	const allHealthIssues: HealthIssue[] = useMemo(() => {
+		const issues: HealthIssue[] = [];
+		if (sonarrAggregate?.healthIssuesList) {
+			issues.push(...sonarrAggregate.healthIssuesList);
+		}
+		if (radarrAggregate?.healthIssuesList) {
+			issues.push(...radarrAggregate.healthIssuesList);
+		}
+		if (prowlarrAggregate?.healthIssuesList) {
+			issues.push(...prowlarrAggregate.healthIssuesList);
+		}
+		return issues;
+	}, [sonarrAggregate?.healthIssuesList, radarrAggregate?.healthIssuesList, prowlarrAggregate?.healthIssuesList]);
+
 	if (isLoading) {
 		return (
 			<div className="flex h-64 items-center justify-center">
@@ -365,19 +380,37 @@ export const StatisticsClient = () => {
 				</div>
 			</header>
 
-			{totalHealthIssues > 0 && (
+			{allHealthIssues.length > 0 && (
 				<Alert variant="warning">
+					<AlertTitle>{allHealthIssues.length} Health {allHealthIssues.length === 1 ? "Issue" : "Issues"} Detected</AlertTitle>
 					<AlertDescription>
-						<div className="flex items-center gap-3">
-							<div className="text-2xl font-semibold">{totalHealthIssues}</div>
-							<div className="flex-1">
-								<p className="font-medium">Health Issues Detected</p>
-								<p className="text-sm opacity-70">
-									{sonarrTotals.healthIssues > 0 && `Sonarr: ${sonarrTotals.healthIssues} `}
-									{radarrTotals.healthIssues > 0 && `Radarr: ${radarrTotals.healthIssues} `}
-									{prowlarrTotals.healthIssues > 0 && `Prowlarr: ${prowlarrTotals.healthIssues}`}
-								</p>
-							</div>
+						<div className="space-y-3 mt-2">
+							{allHealthIssues.map((issue, index) => (
+								<div key={index} className="flex flex-col gap-2 pb-3 border-b border-white/10 last:border-0 last:pb-0">
+									<div className="flex items-start gap-3">
+										<span className="text-xs uppercase text-white/40 min-w-[80px] pt-1">
+											{issue.service}
+										</span>
+										<div className="flex-1 space-y-2">
+											<a
+												href={`${issue.instanceBaseUrl}/system/status`}
+												target="_blank"
+												rel="noopener noreferrer"
+												className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/30 transition-colors text-sm font-medium"
+											>
+												<span>View in {issue.instanceName}</span>
+												<svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+													<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+												</svg>
+											</a>
+											<p className="text-sm">{issue.message}</p>
+											{issue.source && (
+												<p className="text-xs text-white/50">Source: {issue.source}</p>
+											)}
+										</div>
+									</div>
+								</div>
+							))}
 						</div>
 					</AlertDescription>
 				</Alert>

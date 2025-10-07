@@ -59,6 +59,34 @@ export const parseSeasonFolderValue = (
 };
 
 /**
+ * Returns service-specific placeholder values
+ */
+export const getServicePlaceholders = (service: ServiceType) => {
+	switch (service) {
+		case "sonarr":
+			return {
+				label: "Primary Sonarr",
+				baseUrl: "http://localhost:8989",
+			};
+		case "radarr":
+			return {
+				label: "Primary Radarr",
+				baseUrl: "http://localhost:7878",
+			};
+		case "prowlarr":
+			return {
+				label: "Primary Prowlarr",
+				baseUrl: "http://localhost:9696",
+			};
+		default:
+			return {
+				label: "Primary Instance",
+				baseUrl: "http://localhost:8989",
+			};
+	}
+};
+
+/**
  * Validates password strength
  */
 export const validatePassword = (password: string): { valid: boolean; message?: string } => {

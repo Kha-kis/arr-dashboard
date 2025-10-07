@@ -27,6 +27,27 @@ export const formatRuntime = (runtime?: number): string | null => {
 };
 
 /**
+ * Deduplicates recommendation items by TMDB ID.
+ * When duplicates are found, keeps the first occurrence.
+ *
+ * @param items - Array of recommendation items to deduplicate
+ * @returns Array of unique recommendation items
+ *
+ * @example
+ * const unique = deduplicateItems(items);
+ */
+export const deduplicateItems = (items: RecommendationItem[]): RecommendationItem[] => {
+	const seen = new Set<number>();
+	return items.filter((item) => {
+		if (!item.tmdbId || seen.has(item.tmdbId)) {
+			return false;
+		}
+		seen.add(item.tmdbId);
+		return true;
+	});
+};
+
+/**
  * Filters out recommendation items that already exist in the library.
  * Uses TMDB ID matching (most reliable) with title fallback.
  *

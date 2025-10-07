@@ -59,7 +59,7 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			if (service === "sonarr") {
 				try {
-					const data = await fetchSonarrStatistics(fetcher);
+					const data = await fetchSonarrStatistics(fetcher, instance.id, instance.label, instance.baseUrl);
 					sonarrInstances.push({
 						instanceId: instance.id,
 						instanceName: instance.label,
@@ -81,7 +81,7 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			if (service === "radarr") {
 				try {
-					const data = await fetchRadarrStatistics(fetcher);
+					const data = await fetchRadarrStatistics(fetcher, instance.id, instance.label, instance.baseUrl);
 					radarrInstances.push({
 						instanceId: instance.id,
 						instanceName: instance.label,
@@ -102,7 +102,7 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			}
 
 			try {
-				const data = await fetchProwlarrStatistics(fetcher);
+				const data = await fetchProwlarrStatistics(fetcher, instance.id, instance.label, instance.baseUrl);
 				prowlarrInstances.push({
 					instanceId: instance.id,
 					instanceName: instance.label,
