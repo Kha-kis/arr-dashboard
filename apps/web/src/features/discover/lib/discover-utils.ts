@@ -28,7 +28,7 @@ export const formatRuntime = (runtime?: number): string | null => {
 
 /**
  * Filters out recommendation items that already exist in the library.
- * Performs case-insensitive title matching based on the selected media type.
+ * Uses TMDB ID matching (most reliable) with title fallback.
  *
  * @param items - Array of recommendation items to filter
  * @param libraryItems - Array of library items to check against
@@ -45,17 +45,38 @@ export const filterExistingItems = (
 ): RecommendationItem[] => {
 	if (!libraryItems) return items;
 
-	const libraryTitles = new Set(
-		libraryItems
-			.filter(
-				(item) =>
-					(mediaType === "movie" && item.type === "movie") ||
-					(mediaType === "series" && item.type === "series"),
-			)
-			.map((item) => item.title.toLowerCase()),
+	// Filter library items by media type
+	const relevantLibraryItems = libraryItems.filter(
+		(item) =>
+			(mediaType === "movie" && item.type === "movie") ||
+			(mediaType === "series" && item.type === "series"),
 	);
 
-	return items.filter((item) => !libraryTitles.has(item.title.toLowerCase()));
+	// Build a Set of TMDB IDs that exist in library
+	const libraryTmdbIds = new Set(
+		relevantLibraryItems
+			.map((item) => item.remoteIds?.tmdbId)
+			.filter((id): id is number => typeof id === "number"),
+	);
+
+	// Build a Set of titles (lowercase) as fallback for items without TMDB IDs
+	const libraryTitles = new Set(
+		relevantLibraryItems.map((item) => item.title.toLowerCase()),
+	);
+
+	return items.filter((item) => {
+		// First try matching by TMDB ID (most reliable)
+		if (item.tmdbId && libraryTmdbIds.has(item.tmdbId)) {
+			return false; // Item exists in library
+		}
+
+		// Fallback to title matching for items without TMDB IDs
+		if (libraryTitles.has(item.title.toLowerCase())) {
+			return false; // Item exists in library
+		}
+
+		return true; // Item not in library
+	});
 };
 
 /**
