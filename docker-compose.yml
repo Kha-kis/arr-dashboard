@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   api:
     build:
@@ -11,17 +9,9 @@ services:
       - "3001:3001"
     environment:
       NODE_ENV: production
-      API_HOST: 0.0.0.0
-      API_PORT: 3001
-      API_CORS_ORIGIN: ${APP_URL:-http://localhost:3000}
-      API_RATE_LIMIT_MAX: ${API_RATE_LIMIT_MAX:-200}
-      API_RATE_LIMIT_WINDOW: ${API_RATE_LIMIT_WINDOW:-1 minute}
       DATABASE_URL: file:/app/data/prod.db
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required}
-      SESSION_COOKIE_SECRET: ${SESSION_COOKIE_SECRET:?SESSION_COOKIE_SECRET is required}
-      SESSION_COOKIE_NAME: ${SESSION_COOKIE_NAME:-arr_session}
-      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-24}
-      APP_URL: ${APP_URL:-http://localhost:3000}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required - generate with 'openssl rand -hex 32'}
+      SESSION_COOKIE_SECRET: ${SESSION_COOKIE_SECRET:?SESSION_COOKIE_SECRET is required - generate with 'openssl rand -hex 32'}
       TMDB_API_KEY: ${TMDB_API_KEY:-}
     volumes:
       - api-data:/app/data
@@ -44,7 +34,6 @@ services:
       - "3000:3000"
     environment:
       NODE_ENV: production
-      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:3001}
     depends_on:
       api:
         condition: service_healthy
@@ -59,8 +48,6 @@ services:
 
 volumes:
   api-data:
-    driver: local
 
 networks:
   arr-dashboard:
-    driver: bridge
