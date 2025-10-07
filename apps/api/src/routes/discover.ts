@@ -8,11 +8,11 @@ import { registerSearchRoutes } from "./discover/search-routes.js";
  * Registers all discover-related route handlers
  */
 const discoverRoute: FastifyPluginCallback = (app, _opts, done) => {
-  app.register(registerSearchRoutes);
-  app.register(registerOptionsRoutes);
-  app.register(registerAddRoutes);
+	app.register(registerSearchRoutes);
+	app.register(registerOptionsRoutes);
+	app.register(registerAddRoutes);
 
-  done();
+	done();
 };
 
 export const registerDiscoverRoutes = discoverRoute;

@@ -11,19 +11,15 @@ import { registerQueryRoutes } from "./search/query-routes";
  * - Query routes: Manual search functionality
  * - Grab routes: Download/grab release functionality
  */
-export const registerSearchRoutes: FastifyPluginCallback = (
-  app,
-  _opts,
-  done,
-) => {
-  // Register indexer management routes
-  app.register(registerIndexerRoutes);
+export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) => {
+	// Register indexer management routes
+	app.register(registerIndexerRoutes);
 
-  // Register search query routes
-  app.register(registerQueryRoutes);
+	// Register search query routes
+	app.register(registerQueryRoutes);
 
-  // Register grab/download routes
-  app.register(registerGrabRoutes);
+	// Register grab/download routes
+	app.register(registerGrabRoutes);
 
-  done();
+	done();
 };
