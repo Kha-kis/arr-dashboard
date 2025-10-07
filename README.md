@@ -37,14 +37,15 @@ openssl rand -hex 32  # Use this for ENCRYPTION_KEY
 openssl rand -hex 32  # Use this for SESSION_COOKIE_SECRET
 ```
 
-Edit `.env` and set the required values:
+Edit `.env` and replace the placeholder values with your generated keys:
 
 ```env
-APP_URL=http://your-server-ip:3000
-ENCRYPTION_KEY=<generated-key-1>
-SESSION_COOKIE_SECRET=<generated-key-2>
-NEXT_PUBLIC_API_BASE_URL=http://your-server-ip:3001
+ENCRYPTION_KEY=<paste-generated-key-1>
+SESSION_COOKIE_SECRET=<paste-generated-key-2>
+TMDB_API_KEY=  # Optional - leave empty if you don't need TMDB features
 ```
+
+That's it! All other settings use sensible defaults.
 
 ### 3. Start the Application
 
@@ -163,21 +164,33 @@ docker run -d \
 
 ### Required Environment Variables
 
-| Variable | Description | Example |
-|----------|-------------|---------|
-| `ENCRYPTION_KEY` | 32-byte hex key for encrypting API keys | Generate with `openssl rand -hex 32` |
-| `SESSION_COOKIE_SECRET` | 32-byte hex key for session cookies | Generate with `openssl rand -hex 32` |
-| `APP_URL` | Public URL of the dashboard | `http://192.168.1.100:3000` |
-| `NEXT_PUBLIC_API_BASE_URL` | API URL accessible by browsers | `http://192.168.1.100:3001` |
+Only 2 variables are required - everything else has sensible defaults:
+
+| Variable | Description | How to Generate |
+|----------|-------------|-----------------|
+| `ENCRYPTION_KEY` | 32-byte hex key for encrypting API keys | `openssl rand -hex 32` |
+| `SESSION_COOKIE_SECRET` | 32-byte hex key for session cookies | `openssl rand -hex 32` |
 
 ### Optional Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `TMDB_API_KEY` | TMDB API key for discover features | None |
-| `SESSION_TTL_HOURS` | Session expiration time | `24` |
-| `API_RATE_LIMIT_MAX` | Max requests per window | `200` |
-| `API_RATE_LIMIT_WINDOW` | Rate limit time window | `1 minute` |
+| `TMDB_API_KEY` | TMDB API key for discover features | None (disabled) |
+
+### Advanced Configuration (Built-in Defaults)
+
+These are managed by the application and don't need to be set:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `API_PORT` | `3001` | API server port |
+| `API_HOST` | `0.0.0.0` | API bind address |
+| `API_CORS_ORIGIN` | `http://localhost:3000` | Allowed CORS origins |
+| `SESSION_TTL_HOURS` | `24` | Session expiration |
+| `API_RATE_LIMIT_MAX` | `200` | Max requests per minute |
+| `APP_URL` | `http://localhost:3000` | Frontend URL |
+
+To override defaults, add them to your `.env` file or docker-compose.yml.
 
 ### Database
 
