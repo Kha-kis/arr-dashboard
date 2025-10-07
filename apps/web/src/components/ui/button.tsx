@@ -1,5 +1,6 @@
 "use client";
 
+import { Slot } from "@radix-ui/react-slot";
 import { cn } from "../../lib/utils";
 
 type ButtonVariant = "primary" | "secondary" | "ghost" | "danger" | "gradient";
@@ -51,18 +52,23 @@ export const Button = ({
 	variant = "primary",
 	size = "md",
 	type = "button",
+	asChild = false,
 	...props
-}: ButtonProps) => (
-	<button
-		type={type}
-		className={cn(
-			"inline-flex items-center justify-center rounded-xl font-medium transition-all duration-200",
-			"focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 focus:ring-offset-bg",
-			"disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100",
-			variantStyles[variant],
-			sizeStyles[size],
-			className,
-		)}
-		{...props}
-	/>
-);
+}: ButtonProps) => {
+	const Comp = asChild ? Slot : "button";
+
+	return (
+		<Comp
+			{...(asChild ? {} : { type })}
+			className={cn(
+				"inline-flex items-center justify-center rounded-xl font-medium transition-all duration-200",
+				"focus:outline-none focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 focus:ring-offset-bg",
+				"disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100",
+				variantStyles[variant],
+				sizeStyles[size],
+				className,
+			)}
+			{...props}
+		/>
+	);
+};

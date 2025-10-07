@@ -15,11 +15,13 @@ const registerSchema = z.object({
 	email: z.string().email().max(255),
 	username: z.string().min(3).max(50),
 	password: passwordSchema,
+	rememberMe: z.boolean().optional().default(false),
 });
 
 const loginSchema = z.object({
 	identifier: z.string().min(3).max(255),
 	password: z.string().min(8).max(128),
+	rememberMe: z.boolean().optional().default(false),
 });
 
 const REGISTER_RATE_LIMIT = { max: 5, timeWindow: "1 minute" };
@@ -71,8 +73,8 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			},
 		});
 
-		const session = await app.sessionService.createSession(user.id);
-		app.sessionService.attachCookie(reply, session.token);
+		const session = await app.sessionService.createSession(user.id, parsed.data.rememberMe);
+		app.sessionService.attachCookie(reply, session.token, parsed.data.rememberMe);
 
 		return reply.status(201).send({
 			user: {
@@ -158,8 +160,8 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
-		const session = await app.sessionService.createSession(user.id);
-		app.sessionService.attachCookie(reply, session.token);
+		const session = await app.sessionService.createSession(user.id, parsed.data.rememberMe);
+		app.sessionService.attachCookie(reply, session.token, parsed.data.rememberMe);
 
 		return reply.send({
 			user: {

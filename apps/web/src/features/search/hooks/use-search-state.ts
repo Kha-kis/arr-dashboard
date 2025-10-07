@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import type { ProtocolFilter, SortKey } from "../lib/search-utils";
 
 export interface SearchFilters {
@@ -100,6 +100,28 @@ export const useSearchState = (): SearchState => {
 		setSortDirection("desc");
 	}, []);
 
+	const actions = useMemo(
+		() => ({
+			setQuery,
+			setSearchType,
+			setSelectedIndexers,
+			setValidationError,
+			setFeedback,
+			setGrabbingKey,
+			setHasSearched,
+			setProtocolFilter,
+			setMinSeedersInput,
+			setMaxAgeInput,
+			setHideRejected,
+			setSortKey,
+			setSortDirection,
+			resetFilters,
+			handleToggleIndexer,
+			handleToggleAll,
+		}),
+		[resetFilters, handleToggleIndexer, handleToggleAll],
+	);
+
 	return {
 		query,
 		searchType,
@@ -118,23 +140,6 @@ export const useSearchState = (): SearchState => {
 			sortKey,
 			sortDirection,
 		},
-		actions: {
-			setQuery,
-			setSearchType,
-			setSelectedIndexers,
-			setValidationError,
-			setFeedback,
-			setGrabbingKey,
-			setHasSearched,
-			setProtocolFilter,
-			setMinSeedersInput,
-			setMaxAgeInput,
-			setHideRejected,
-			setSortKey,
-			setSortDirection,
-			resetFilters,
-			handleToggleIndexer,
-			handleToggleAll,
-		},
+		actions,
 	};
 };

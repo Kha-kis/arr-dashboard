@@ -14,14 +14,16 @@ import type { ApiEnv } from "../../config/env.js";
  * Note: For complete CSRF protection on state-changing requests (POST/PUT/PATCH/DELETE),
  * consider implementing CSRF tokens with @fastify/csrf-protection in the future.
  */
-const BASE_COOKIE_OPTIONS = (env: ApiEnv) => ({
+const BASE_COOKIE_OPTIONS = (env: ApiEnv, maxAgeSeconds?: number) => ({
 	path: "/",
 	httpOnly: true,
 	sameSite: "lax" as const,
 	secure: env.NODE_ENV === "production",
-	maxAge: env.SESSION_TTL_HOURS * 60 * 60,
+	maxAge: maxAgeSeconds ?? env.SESSION_TTL_HOURS * 60 * 60,
 	domain: undefined as string | undefined,
 });
+
+const REMEMBER_ME_TTL_DAYS = 30;
 
 const generateSessionToken = () => randomBytes(32).toString("base64url");
 
@@ -33,10 +35,15 @@ export class SessionService {
 		private readonly env: ApiEnv,
 	) {}
 
-	async createSession(userId: string) {
+	async createSession(userId: string, rememberMe: boolean = false) {
 		const token = generateSessionToken();
 		const hashedToken = hashToken(token);
-		const expiresAt = new Date(Date.now() + this.env.SESSION_TTL_HOURS * 60 * 60 * 1000);
+
+		const ttlMs = rememberMe
+			? REMEMBER_ME_TTL_DAYS * 24 * 60 * 60 * 1000
+			: this.env.SESSION_TTL_HOURS * 60 * 60 * 1000;
+
+		const expiresAt = new Date(Date.now() + ttlMs);
 
 		await this.prisma.session.create({
 			data: {
@@ -99,8 +106,12 @@ export class SessionService {
 		return { session: record, token: unsigned.value };
 	}
 
-	attachCookie(reply: FastifyReply, token: string) {
-		const options = BASE_COOKIE_OPTIONS(this.env);
+	attachCookie(reply: FastifyReply, token: string, rememberMe: boolean = false) {
+		const maxAgeSeconds = rememberMe
+			? REMEMBER_ME_TTL_DAYS * 24 * 60 * 60
+			: this.env.SESSION_TTL_HOURS * 60 * 60;
+
+		const options = BASE_COOKIE_OPTIONS(this.env, maxAgeSeconds);
 		reply.setCookie(this.env.SESSION_COOKIE_NAME, token, {
 			...options,
 			signed: true,

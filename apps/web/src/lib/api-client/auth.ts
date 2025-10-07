@@ -16,6 +16,7 @@ export async function fetchCurrentUser(): Promise<CurrentUser | null> {
 export async function login(payload: {
 	identifier: string;
 	password: string;
+	rememberMe?: boolean;
 }): Promise<CurrentUser> {
 	const data = await apiRequest<CurrentUserResponse>("/auth/login", {
 		method: "POST",

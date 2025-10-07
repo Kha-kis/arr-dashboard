@@ -62,10 +62,10 @@ const normalizeImages = (
 
 /**
  * Normalizes a lookup result from Sonarr or Radarr API
- * @param raw - Raw API response (any type allows flexible property access, safety enforced via helper functions)
+ * @param raw - Raw API response (unknown object type allows flexible property access, safety enforced via helper functions)
  */
 export const normalizeLookupResult = (
-	raw: any,
+	raw: Record<string, unknown>,
 	instance: ServiceInstance,
 	service: "sonarr" | "radarr",
 ): DiscoverSearchResult => {
@@ -184,7 +184,7 @@ export const fetchLookupResults = async (
 	fetcher: (path: string, init?: RequestInit) => Promise<Response>,
 	service: "sonarr" | "radarr",
 	query: string,
-): Promise<any[]> => {
+): Promise<Record<string, unknown>[]> => {
 	const encodedQuery = encodeURIComponent(query);
 	const endpoint =
 		service === "radarr"
@@ -251,7 +251,7 @@ export const slugify = (value: string): string =>
 export const loadRadarrRemote = async (
 	fetcher: (path: string, init?: RequestInit) => Promise<Response>,
 	payload: { tmdbId?: number; imdbId?: string; queryFallback: string },
-): Promise<any | null> => {
+): Promise<Record<string, unknown> | null> => {
 	const terms: string[] = [];
 	if (payload.tmdbId) {
 		terms.push(`tmdb:${payload.tmdbId}`);
@@ -280,7 +280,7 @@ export const loadRadarrRemote = async (
 export const loadSonarrRemote = async (
 	fetcher: (path: string, init?: RequestInit) => Promise<Response>,
 	payload: { tvdbId?: number; tmdbId?: number; queryFallback: string },
-): Promise<any | null> => {
+): Promise<Record<string, unknown> | null> => {
 	const terms: string[] = [];
 	if (payload.tvdbId) {
 		terms.push(`tvdb:${payload.tvdbId}`);

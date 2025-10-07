@@ -15,6 +15,7 @@ import {
 import { Alert, AlertDescription } from "../../../components/ui";
 import { cn } from "../../../lib/utils";
 import { SERVICE_TYPES, SELECT_CLASS, OPTION_STYLE } from "../lib/settings-constants";
+import { getServicePlaceholders } from "../lib/settings-utils";
 
 /**
  * Props for the ServiceForm component
@@ -66,6 +67,8 @@ export const ServiceForm = ({
 	testResult,
 	defaultSectionContent,
 }: ServiceFormProps) => {
+	const placeholders = getServicePlaceholders(formState.service);
+
 	return (
 		<Card>
 			<CardHeader>
@@ -93,6 +96,7 @@ export const ServiceForm = ({
 											defaultLanguageProfileId: "",
 											defaultRootFolderPath: "",
 											defaultSeasonFolder: "",
+											isDefault: service === "prowlarr" ? false : prev.isDefault,
 										}))
 									}
 									className={cn(
@@ -117,7 +121,7 @@ export const ServiceForm = ({
 									label: event.target.value,
 								}))
 							}
-							placeholder="Primary Sonarr"
+							placeholder={placeholders.label}
 							required
 						/>
 					</div>
@@ -132,7 +136,7 @@ export const ServiceForm = ({
 									baseUrl: event.target.value,
 								}))
 							}
-							placeholder="http://localhost:8989"
+							placeholder={placeholders.baseUrl}
 							required
 						/>
 					</div>
@@ -219,20 +223,22 @@ export const ServiceForm = ({
 							/>
 							Enabled
 						</label>
-						<label className="flex items-center gap-2 text-sm text-white/70">
-							<input
-								type="checkbox"
-								className="h-4 w-4 border border-white/20 bg-white/10"
-								checked={formState.isDefault}
-								onChange={(event) =>
-									onFormStateChange((prev) => ({
-										...prev,
-										isDefault: event.target.checked,
-									}))
-								}
-							/>
-							Default
-						</label>
+						{formState.service !== "prowlarr" && (
+							<label className="flex items-center gap-2 text-sm text-white/70">
+								<input
+									type="checkbox"
+									className="h-4 w-4 border border-white/20 bg-white/10"
+									checked={formState.isDefault}
+									onChange={(event) =>
+										onFormStateChange((prev) => ({
+											...prev,
+											isDefault: event.target.checked,
+										}))
+									}
+								/>
+								Default
+							</label>
+						)}
 					</div>
 					<div className="flex gap-2">
 						<Button type="submit" disabled={isCreating || isUpdating}>

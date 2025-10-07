@@ -216,6 +216,19 @@ export const qualityBreakdownSchema = z.record(z.string(), z.number());
 
 export type QualityBreakdown = z.infer<typeof qualityBreakdownSchema>;
 
+export const healthIssueSchema = z.object({
+  type: z.enum(["error", "warning"]),
+  message: z.string(),
+  source: z.string().optional(),
+  wikiUrl: z.string().optional(),
+  instanceId: z.string(),
+  instanceName: z.string(),
+  instanceBaseUrl: z.string(),
+  service: z.enum(["sonarr", "radarr", "prowlarr"]),
+});
+
+export type HealthIssue = z.infer<typeof healthIssueSchema>;
+
 export const sonarrStatisticsSchema = z.object({
   totalSeries: z.number(),
   monitoredSeries: z.number(),
@@ -234,6 +247,7 @@ export const sonarrStatisticsSchema = z.object({
   diskUsed: z.number().optional(),
   diskUsagePercent: z.number().optional(),
   healthIssues: z.number().optional(),
+  healthIssuesList: z.array(healthIssueSchema).optional(),
 });
 
 export type SonarrStatistics = z.infer<typeof sonarrStatisticsSchema>;
@@ -252,6 +266,7 @@ export const radarrStatisticsSchema = z.object({
   diskUsed: z.number().optional(),
   diskUsagePercent: z.number().optional(),
   healthIssues: z.number().optional(),
+  healthIssuesList: z.array(healthIssueSchema).optional(),
 });
 
 export type RadarrStatistics = z.infer<typeof radarrStatisticsSchema>;
@@ -278,6 +293,7 @@ export const prowlarrStatisticsSchema = z.object({
   grabRate: z.number().optional(),
   averageResponseTime: z.number().optional(),
   healthIssues: z.number().optional(),
+  healthIssuesList: z.array(healthIssueSchema).optional(),
   indexers: z.array(prowlarrIndexerStatSchema),
 });
 
