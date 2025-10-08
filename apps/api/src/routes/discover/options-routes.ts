@@ -11,6 +11,7 @@ import { toBoolean, toNumber, toStringValue } from "../../lib/data/values.js";
  * Type alias for dynamic API responses. Uses `any` to allow flexible property access
  * while safety is enforced through helper functions (toStringValue, toNumber, etc.)
  */
+// biome-ignore lint/suspicious/noExplicitAny: Runtime safety enforced via helper functions
 type UnknownRecord = Record<string, any>;
 
 /**
