@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "../../../components/ui/button";
 import { useManualImportQuery } from "../../../hooks/api/useManualImport";
-import type { ManualImportModalProps } from "../types";
+import type { ManualImportModalProps, ManualImportCandidateUnion } from "../types";
 import { candidateKey, describeRejections } from "../helpers";
 import { useManualImportStore, getSelectionForCandidate } from "../store";
 import { buildSubmissionDefaults } from "../lib/submission-builder";
