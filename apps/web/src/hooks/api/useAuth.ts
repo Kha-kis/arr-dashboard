@@ -51,6 +51,8 @@ export const useCurrentUser = (enabled: boolean = true) =>
 		staleTime: 5 * 60 * 1000,
 		retry: false,
 		enabled,
+		refetchOnMount: false,
+		refetchOnWindowFocus: false,
 	});
 
 // Update Account
