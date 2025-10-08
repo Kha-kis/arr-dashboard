@@ -22,14 +22,14 @@ A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances
 - Docker and Docker Compose installed
 - At least one Sonarr, Radarr, or Prowlarr instance
 
-### Usage
+### Using Pre-built Images
+
+Create a `docker-compose.yml` file:
 
 ```yaml
 services:
   api:
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
+    image: khak1s/arr-dashboard-api:latest
     container_name: arr-dashboard-api
     volumes:
       - ./data:/app/data
@@ -38,10 +38,10 @@ services:
     restart: unless-stopped
 
   web:
-    build:
-      context: .
-      dockerfile: apps/web/Dockerfile
+    image: khak1s/arr-dashboard-web:latest
     container_name: arr-dashboard-web
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost:3001
     ports:
       - 3000:3000
     restart: unless-stopped
@@ -49,9 +49,30 @@ services:
       - api
 ```
 
+Then start the containers:
+
 ```bash
 docker-compose up -d
 ```
+
+**Version Tags:**
+- `latest` - Latest stable release
+- `2.0.0` - Specific version (e.g., `khak1s/arr-dashboard-api:2.0.0`)
+
+### Building from Source (Alternative)
+
+If you prefer to build the images yourself:
+
+```bash
+# Clone the repository
+git clone https://github.com/yourusername/arr-dashboard.git
+cd arr-dashboard
+
+# Build and start
+docker-compose -f docker-compose.build.yml up -d
+```
+
+See [docker-compose.build.yml](docker-compose.build.yml) for the build configuration.
 
 **Application Setup:**
 
@@ -125,36 +146,39 @@ pnpm run start
 
 ### Docker Deployment Options
 
-#### Option 1: Docker Compose (Recommended)
+#### Option 1: Pre-built Images (Recommended)
+
+Use the pre-built images from Docker Hub:
 
 ```bash
 docker-compose up -d
 ```
 
-#### Option 2: Build Individual Images
+Images are available at:
+- [khak1s/arr-dashboard-api](https://hub.docker.com/r/khak1s/arr-dashboard-api)
+- [khak1s/arr-dashboard-web](https://hub.docker.com/r/khak1s/arr-dashboard-web)
+
+#### Option 2: Build from Source
 
 ```bash
-# Build API
-docker build -f apps/api/Dockerfile -t arr-dashboard-api .
+docker-compose -f docker-compose.build.yml up -d
+```
 
-# Build Web
-docker build -f apps/web/Dockerfile -t arr-dashboard-web .
+#### Option 3: Manual Docker Commands
 
-# Run containers
+```bash
+# Using pre-built images
 docker run -d \
   --name arr-dashboard-api \
   -p 3001:3001 \
-  -e DATABASE_URL=file:/app/data/prod.db \
-  -e ENCRYPTION_KEY=<your-key> \
-  -e SESSION_COOKIE_SECRET=<your-secret> \
   -v arr-api-data:/app/data \
-  arr-dashboard-api
+  khak1s/arr-dashboard-api:latest
 
 docker run -d \
   --name arr-dashboard-web \
   -p 3000:3000 \
   -e NEXT_PUBLIC_API_BASE_URL=http://localhost:3001 \
-  arr-dashboard-web
+  khak1s/arr-dashboard-web:latest
 ```
 
 ## Configuration
@@ -319,15 +343,25 @@ server {
 
 ## Updating
 
-### Docker
+### Docker (Pre-built Images)
+
+```bash
+# Pull latest images
+docker-compose pull
+
+# Restart containers
+docker-compose up -d
+```
+
+### Docker (Build from Source)
 
 ```bash
 # Pull latest code
 git pull
 
 # Rebuild and restart
-docker-compose down
-docker-compose up -d --build
+docker-compose -f docker-compose.build.yml down
+docker-compose -f docker-compose.build.yml up -d --build
 ```
 
 ### Manual
