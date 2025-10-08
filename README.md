@@ -80,6 +80,8 @@ See [docker-compose.build.yml](docker-compose.build.yml) for the build configura
 2. Create your admin account
 3. Add your Sonarr/Radarr/Prowlarr instances in Settings
 
+> **Note**: The web UI automatically proxies API requests internally. No additional configuration needed!
+
 **Parameters:**
 
 | Parameter | Function |
