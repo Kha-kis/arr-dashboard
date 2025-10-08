@@ -35,7 +35,7 @@ export class SessionService {
 		private readonly env: ApiEnv,
 	) {}
 
-	async createSession(userId: string, rememberMe: boolean = false) {
+	async createSession(userId: string, rememberMe = false) {
 		const token = generateSessionToken();
 		const hashedToken = hashToken(token);
 
@@ -106,7 +106,7 @@ export class SessionService {
 		return { session: record, token: unsigned.value };
 	}
 
-	attachCookie(reply: FastifyReply, token: string, rememberMe: boolean = false) {
+	attachCookie(reply: FastifyReply, token: string, rememberMe = false) {
 		const maxAgeSeconds = rememberMe
 			? REMEMBER_ME_TTL_DAYS * 24 * 60 * 60
 			: this.env.SESSION_TTL_HOURS * 60 * 60;
