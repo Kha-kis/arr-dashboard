@@ -5,6 +5,8 @@
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances.
 
+[![CI](https://github.com/Kha-kis/arr-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Kha-kis/arr-dashboard/actions/workflows/ci.yml)
+
 ## Features
 
 - 📊 **Unified Dashboard** - View queue, calendar, and history across all instances
