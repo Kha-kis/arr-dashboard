@@ -19,10 +19,10 @@ From the repository root:
 docker build -t arr-dashboard:latest .
 ```
 
-Or use the docker-compose file:
+Or use docker-compose:
 
 ```bash
-docker-compose -f docker-compose.combined.yml up -d --build
+docker-compose up -d --build
 ```
 
 ## Running the Container
