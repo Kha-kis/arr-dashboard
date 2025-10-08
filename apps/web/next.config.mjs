@@ -5,18 +5,6 @@ const nextConfig = {
 		dirs: ["app", "src"],
 	},
 	poweredByHeader: false,
-	async rewrites() {
-		// Proxy /api requests to the backend API server
-		// In Docker, uses container name; in dev, uses localhost
-		const apiHost = process.env.API_HOST || "http://localhost:3001";
-
-		return [
-			{
-				source: "/api/:path*",
-				destination: `${apiHost}/:path*`,
-			},
-		];
-	},
 	async headers() {
 		return [
 			{

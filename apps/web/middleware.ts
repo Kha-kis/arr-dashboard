@@ -24,8 +24,33 @@ const isPublicPath = (pathname: string) => {
 	return PUBLIC_FILE.test(pathname);
 };
 
+// Proxy API requests to the backend
+function proxyApiRequest(request: NextRequest): NextResponse | null {
+	const { pathname } = request.nextUrl;
+
+	// Check if this is an API or auth request
+	if (!pathname.startsWith("/api/") && !pathname.startsWith("/auth/")) {
+		return null;
+	}
+
+	// Determine API host (Docker: api:3001, Local dev: localhost:3001)
+	const apiHost = process.env.API_HOST || "http://localhost:3001";
+
+	// Construct the proxied URL
+	const apiUrl = new URL(pathname + request.nextUrl.search, apiHost);
+
+	// Rewrite to the API server
+	return NextResponse.rewrite(apiUrl);
+}
+
 export function middleware(request: NextRequest) {
 	const { pathname } = request.nextUrl;
+
+	// Handle API proxy first
+	const apiResponse = proxyApiRequest(request);
+	if (apiResponse) {
+		return apiResponse;
+	}
 	const hasSession = Boolean(request.cookies.get(SESSION_COOKIE_NAME));
 
 	// Home page: redirect to dashboard if logged in, otherwise to login

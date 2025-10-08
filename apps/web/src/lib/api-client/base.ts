@@ -24,9 +24,9 @@ const resolveUrl = (path: string): string => {
 	if (path.startsWith("http://") || path.startsWith("https://")) {
 		return path;
 	}
-	// Use /api prefix - Next.js will proxy to the backend API server
+	// Paths like /auth/* and /api/* are proxied by Next.js middleware
 	const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-	return `/api${normalizedPath}`;
+	return normalizedPath;
 };
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
