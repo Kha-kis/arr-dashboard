@@ -34,13 +34,12 @@ export const envSchema = z
 		TMDB_IMAGE_BASE_URL: z.string().url().default("https://image.tmdb.org/t/p"),
 	})
 	.transform((data) => {
-		// Auto-configure DATABASE_URL based on NODE_ENV if not provided
+		// Auto-configure DATABASE_URL if not provided
+		// Use /app/data/prod.db for Docker, ./dev.db for local development
 		if (!data.DATABASE_URL) {
-			if (data.NODE_ENV === "production") {
-				data.DATABASE_URL = "file:/app/data/prod.db";
-			} else {
-				data.DATABASE_URL = "file:./dev.db";
-			}
+			// Detect Docker environment by checking if /app directory exists
+			const isDocker = data.NODE_ENV === "production" || process.cwd().startsWith("/app");
+			data.DATABASE_URL = isDocker ? "file:/app/data/prod.db" : "file:./dev.db";
 		}
 		return data;
 	});

@@ -18,7 +18,7 @@ const BASE_COOKIE_OPTIONS = (env: ApiEnv, maxAgeSeconds?: number) => ({
 	path: "/",
 	httpOnly: true,
 	sameSite: "lax" as const,
-	secure: env.NODE_ENV === "production",
+	secure: false, // Allow HTTP for local network access (most self-hosted deployments)
 	maxAge: maxAgeSeconds ?? env.SESSION_TTL_HOURS * 60 * 60,
 	domain: undefined as string | undefined,
 });

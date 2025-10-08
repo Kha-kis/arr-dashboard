@@ -28,8 +28,6 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     container_name: arr-dashboard-api
-    environment:
-      - NODE_ENV=production
     volumes:
       - ./data:/app/data
     ports:
@@ -41,8 +39,6 @@ services:
       context: .
       dockerfile: apps/web/Dockerfile
     container_name: arr-dashboard-web
-    environment:
-      - NODE_ENV=production
     ports:
       - 3000:3000
     restart: unless-stopped
@@ -67,7 +63,6 @@ docker-compose up -d
 | `-p 3000:3000` | Web UI |
 | `-p 3001:3001` | API |
 | `-v ./data:/app/data` | Database and configuration |
-| `-e NODE_ENV=production` | Run in production mode |
 
 ## Manual Installation (Development)
 
