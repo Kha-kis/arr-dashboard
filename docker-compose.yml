@@ -12,7 +12,6 @@ services:
       DATABASE_URL: file:/app/data/prod.db
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required - generate with 'openssl rand -hex 32'}
       SESSION_COOKIE_SECRET: ${SESSION_COOKIE_SECRET:?SESSION_COOKIE_SECRET is required - generate with 'openssl rand -hex 32'}
-      TMDB_API_KEY: ${TMDB_API_KEY:-}
     volumes:
       - api-data:/app/data
     healthcheck:
