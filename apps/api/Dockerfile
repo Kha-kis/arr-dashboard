@@ -30,10 +30,6 @@ COPY apps/api ./apps/api
 COPY tsconfig.base.json ./
 COPY turbo.json ./
 
-# Generate Prisma client
-WORKDIR /app/apps/api
-RUN pnpm run db:generate
-
 # Build shared package first, then API
 WORKDIR /app
 RUN pnpm --filter @arr/shared run build
@@ -46,26 +42,23 @@ RUN pnpm --filter @arr/api --prod deploy /app/deploy
 FROM base AS runner
 WORKDIR /app
 
-# Create non-root user
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 apiuser
-
 # Copy production deployment (without symlinks)
-COPY --from=builder --chown=apiuser:nodejs /app/deploy/node_modules ./node_modules
-COPY --from=builder --chown=apiuser:nodejs /app/deploy/package.json ./package.json
-COPY --from=builder --chown=apiuser:nodejs /app/apps/api/dist ./dist
-COPY --from=builder --chown=apiuser:nodejs /app/apps/api/prisma ./prisma
-COPY --from=builder --chown=apiuser:nodejs /app/apps/api/scripts/start.sh ./start.sh
+COPY --from=builder /app/deploy/node_modules ./node_modules
+COPY --from=builder /app/deploy/package.json ./package.json
+COPY --from=builder /app/apps/api/dist ./dist
+COPY --from=builder /app/apps/api/prisma ./prisma
+COPY --from=builder /app/apps/api/scripts/start.sh ./start.sh
 
-# Copy generated Prisma client (not included in pnpm deploy)
-COPY --from=builder --chown=apiuser:nodejs /app/apps/api/node_modules/.prisma ./node_modules/.prisma
-COPY --from=builder --chown=apiuser:nodejs /app/apps/api/node_modules/@prisma ./node_modules/@prisma
+# Generate Prisma client in the final image
+RUN npx prisma generate --schema prisma/schema.prisma
 
-# Create data directory for SQLite database
-RUN mkdir -p /app/data && chown -R apiuser:nodejs /app/data
+# Create data directory and make script executable
+RUN mkdir -p /app/data && chmod +x /app/start.sh
 
-# Make startup script executable
-RUN chmod +x /app/start.sh
+# Create non-root user and set ownership
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 apiuser && \
+    chown -R apiuser:nodejs /app
 
 USER apiuser
 
