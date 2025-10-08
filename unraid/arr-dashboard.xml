@@ -14,6 +14,7 @@
   <WebUI>http://[IP]:[PORT:3000]</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/Kha-kis/arr-dashboard/main/unraid/arr-dashboard.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/Kha-kis/arr-dashboard/main/apps/web/public/icon.png</Icon>
+  <Description>Arr Dashboard provides a unified interface to manage all your Sonarr, Radarr, and Prowlarr instances from one place. View queues, calendars, and history across all instances. Search content globally across all indexers. Manage your media library with tag-based organization. Monitor health and statistics. Discover new content with TMDB integration. Built with modern architecture featuring zero-config Docker deployment, encrypted API keys, and secure session management.</Description>
   <ExtraParams/>
   <PostArgs/>
   <CPUset/>
