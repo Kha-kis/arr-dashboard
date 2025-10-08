@@ -30,6 +30,8 @@ legacy/node_modules
 # Database files
 *.db
 *.db-journal
+data/
+apps/api/dev.db
 
 # Development tool artifacts
 .auditor_venv/
