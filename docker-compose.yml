@@ -10,8 +10,9 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: file:/app/data/prod.db
-      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?ENCRYPTION_KEY is required - generate with 'openssl rand -hex 32'}
-      SESSION_COOKIE_SECRET: ${SESSION_COOKIE_SECRET:?SESSION_COOKIE_SECRET is required - generate with 'openssl rand -hex 32'}
+      # Optional: Provide custom encryption keys (auto-generated if not set)
+      # ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
+      # SESSION_COOKIE_SECRET: ${SESSION_COOKIE_SECRET:-}
     volumes:
       - api-data:/app/data
     healthcheck:

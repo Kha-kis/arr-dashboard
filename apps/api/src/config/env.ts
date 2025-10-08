@@ -19,8 +19,9 @@ export const envSchema = z.object({
 	API_RATE_LIMIT_MAX: z.coerce.number().min(1).default(200),
 	API_RATE_LIMIT_WINDOW: z.union([z.string(), z.coerce.number()]).default("1 minute"),
 	DATABASE_URL: z.string().min(1, "DATABASE_URL is required"),
-	ENCRYPTION_KEY: z.string().min(32, "ENCRYPTION_KEY must be at least 32 characters"),
-	SESSION_COOKIE_SECRET: z.string().min(32, "SESSION_COOKIE_SECRET must be at least 32 characters"),
+	// Optional - will be auto-generated if not provided
+	ENCRYPTION_KEY: z.string().min(32).optional(),
+	SESSION_COOKIE_SECRET: z.string().min(32).optional(),
 	SESSION_COOKIE_NAME: z.string().default("arr_session"),
 	SESSION_TTL_HOURS: z.coerce
 		.number()
