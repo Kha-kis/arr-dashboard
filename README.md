@@ -26,29 +26,9 @@ git clone <repository-url>
 cd arr-dashboard
 ```
 
-### 2. Configure Environment
+### 2. Start the Application
 
-```bash
-# Copy the production environment template
-cp .env.production.example .env
-
-# Generate secure keys
-openssl rand -hex 32  # Use this for ENCRYPTION_KEY
-openssl rand -hex 32  # Use this for SESSION_COOKIE_SECRET
-```
-
-Edit `.env` and replace the placeholder values with your generated keys:
-
-```env
-ENCRYPTION_KEY=<paste-generated-key-1>
-SESSION_COOKIE_SECRET=<paste-generated-key-2>
-```
-
-That's it! All other settings use sensible defaults.
-
-> **Note:** TMDB API keys are configured per-user in the Settings page, not in environment variables.
-
-### 3. Start the Application
+**No configuration needed!** Security keys are auto-generated on first run.
 
 ```bash
 docker-compose up -d
@@ -56,14 +36,15 @@ docker-compose up -d
 
 The API container will automatically:
 1. Run database migrations to create the schema
-2. Start the API server
+2. Generate security keys (if not already present)
+3. Start the API server
 
 You can monitor the startup logs:
 ```bash
 docker-compose logs -f api
 ```
 
-### 4. Initial Setup
+### 3. Initial Setup
 
 1. Open your browser to `http://your-server-ip:3000`
 2. Complete the initial admin account setup
@@ -163,14 +144,23 @@ docker run -d \
 
 ## Configuration
 
-### Required Environment Variables
+### Zero Configuration Required! 🎉
 
-Only 2 variables are required - everything else has sensible defaults:
+The application auto-generates all necessary security keys on first run and persists them to the Docker volume.
+
+### Optional: Custom Security Keys
+
+If you want to provide your own keys (for backup/restore or compliance), create a `.env` file:
 
 | Variable | Description | How to Generate |
 |----------|-------------|-----------------|
 | `ENCRYPTION_KEY` | 32-byte hex key for encrypting API keys | `openssl rand -hex 32` |
 | `SESSION_COOKIE_SECRET` | 32-byte hex key for session cookies | `openssl rand -hex 32` |
+
+**When to provide your own keys:**
+- Migrating from another installation
+- Corporate security requirements
+- Want to back up keys separately from data
 
 ### User-Configurable Settings (in Settings Page)
 
