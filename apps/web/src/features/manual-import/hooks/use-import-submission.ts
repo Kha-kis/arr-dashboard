@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ManualImportSubmissionFile } from "../types";
+import type { ManualImportSelection } from "../types";
 import { hasValidSelections } from "../store";
 import { useManualImportMutation } from "../../../hooks/api/useManualImport";
 
@@ -19,9 +19,7 @@ export const useImportSubmission = ({
 	const [error, setError] = useState<string | undefined>();
 	const mutation = useManualImportMutation();
 
-	const submit = async (
-		selections: Record<string, { service: string; values: ManualImportSubmissionFile }>,
-	) => {
+	const submit = async (selections: Record<string, ManualImportSelection>) => {
 		setError(undefined);
 
 		const selectionsForThisService = Object.values(selections).filter(
