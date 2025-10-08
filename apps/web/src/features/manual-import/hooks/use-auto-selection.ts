@@ -1,5 +1,6 @@
 import { useEffect } from "react";
-import type { ManualImportCandidateUnion } from "../types";
+import type { ManualImportSubmissionFile } from "@arr/shared";
+import type { ManualImportCandidateUnion, ManualImportSelection } from "../types";
 import { describeRejections } from "../helpers";
 import { getSelectionForCandidate } from "../store";
 import { buildSubmissionDefaults } from "../lib/submission-builder";
@@ -11,14 +12,14 @@ export const useAutoSelection = (
 	open: boolean,
 	isLoading: boolean,
 	candidates: ManualImportCandidateUnion[],
-	selections: Record<string, unknown>,
+	selections: Record<string, ManualImportSelection>,
 	instanceId: string,
 	downloadId?: string,
 	toggleSelection?: (
 		candidate: ManualImportCandidateUnion,
 		instanceId: string,
 		downloadId: string,
-		values: unknown,
+		values: ManualImportSubmissionFile,
 	) => void,
 ) => {
 	useEffect(() => {
