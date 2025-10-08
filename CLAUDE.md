@@ -298,7 +298,7 @@ pnpm run start  # Port 3000
 - Uses multi-stage builds for optimization
 - Main Dockerfile: `Dockerfile` (root directory)
 - Startup script: `docker/start-combined.sh` - Manages both services
-- Compose file: `docker-compose.yml` or `docker-compose.combined.yml`
+- Compose file: `docker-compose.yml`
 - Published to Docker Hub: `khak1s/arr-dashboard`
 - Unraid template: `unraid/arr-dashboard.xml`
 
