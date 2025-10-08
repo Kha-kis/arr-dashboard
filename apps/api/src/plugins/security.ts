@@ -1,5 +1,5 @@
 import { dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import fastifyCookie from "@fastify/cookie";
 import fp from "fastify-plugin";
 import { Encryptor } from "../lib/auth/encryption.js";
 import { SecretManager } from "../lib/auth/secret-manager.js";
@@ -31,6 +31,12 @@ export const securityPlugin = fp(async (app) => {
 		encryptionKey = encryptionKey || secrets.encryptionKey;
 		sessionCookieSecret = sessionCookieSecret || secrets.sessionCookieSecret;
 	}
+
+	// Register cookie plugin with the secret (auto-generated or from env)
+	await app.register(fastifyCookie, {
+		secret: sessionCookieSecret,
+		hook: "onRequest",
+	});
 
 	const encryptor = new Encryptor(encryptionKey);
 	const sessionService = new SessionService(app.prisma, {
