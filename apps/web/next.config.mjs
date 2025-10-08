@@ -5,11 +5,19 @@ const nextConfig = {
 		dirs: ["app", "src"],
 	},
 	poweredByHeader: false,
-	async headers() {
-		const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:3001";
-		// Extract the origin (protocol + host) for CSP
-		const apiOrigin = new URL(apiUrl).origin;
+	async rewrites() {
+		// Proxy /api requests to the backend API server
+		// In Docker, uses container name; in dev, uses localhost
+		const apiHost = process.env.API_HOST || "http://localhost:3001";
 
+		return [
+			{
+				source: "/api/:path*",
+				destination: `${apiHost}/:path*`,
+			},
+		];
+	},
+	async headers() {
 		return [
 			{
 				source: "/:path*",
@@ -22,7 +30,7 @@ const nextConfig = {
 							"style-src 'self' 'unsafe-inline'",
 							"img-src 'self' data: https:",
 							"font-src 'self' data:",
-							`connect-src 'self' ${apiOrigin}`,
+							"connect-src 'self'",
 							"frame-ancestors 'none'",
 						].join("; "),
 					},

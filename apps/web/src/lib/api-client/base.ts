@@ -1,7 +1,5 @@
 import type { ApiErrorPayload } from "@arr/shared";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
-
 export class ApiError extends Error {
 	constructor(
 		message: string,
@@ -26,9 +24,9 @@ const resolveUrl = (path: string): string => {
 	if (path.startsWith("http://") || path.startsWith("https://")) {
 		return path;
 	}
-	const base = API_BASE_URL.replace(/\/$/, "");
+	// Use /api prefix - Next.js will proxy to the backend API server
 	const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-	return `${base}${normalizedPath}`;
+	return `/api${normalizedPath}`;
 };
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
