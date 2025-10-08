@@ -39,6 +39,10 @@ WORKDIR /app
 RUN pnpm --filter @arr/shared run build
 RUN pnpm --filter @arr/api run build
 
+# Create a production deployment without symlinks
+WORKDIR /app
+RUN pnpm --filter @arr/api --prod deploy /app/deploy
+
 FROM base AS runner
 WORKDIR /app
 
@@ -46,11 +50,11 @@ WORKDIR /app
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 apiuser
 
-# Copy built application
+# Copy production deployment (without symlinks)
+COPY --from=builder --chown=apiuser:nodejs /app/deploy/node_modules ./node_modules
+COPY --from=builder --chown=apiuser:nodejs /app/deploy/package.json ./package.json
 COPY --from=builder --chown=apiuser:nodejs /app/apps/api/dist ./dist
-COPY --from=builder --chown=apiuser:nodejs /app/apps/api/node_modules ./node_modules
 COPY --from=builder --chown=apiuser:nodejs /app/apps/api/prisma ./prisma
-COPY --from=builder --chown=apiuser:nodejs /app/apps/api/package.json ./package.json
 COPY --from=builder --chown=apiuser:nodejs /app/apps/api/scripts/start.sh ./start.sh
 
 # Create data directory for SQLite database
