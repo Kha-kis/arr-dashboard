@@ -20,7 +20,7 @@ export const AuthGate = ({ children }: AuthGateProps) => {
 
 	// Only fetch user if setup is complete AND not on a public route
 	const shouldFetchUser = setupRequired === false && !isSetupRoute && !isPublicRoute;
-	const { data: user, isLoading: userLoading } = useCurrentUser(shouldFetchUser);
+	const { data: user, isLoading: userLoading, isFetching: userFetching } = useCurrentUser(shouldFetchUser);
 
 	// Handle auth redirects (but NOT setup redirects - home page handles that)
 	useEffect(() => {
@@ -30,8 +30,8 @@ export const AuthGate = ({ children }: AuthGateProps) => {
 		// Only handle redirects if setup is complete
 		if (setupRequired !== false) return;
 
-		// Don't redirect if user query is disabled or still loading
-		if (!shouldFetchUser || userLoading) return;
+		// Don't redirect if user query is disabled, still loading, or actively fetching
+		if (!shouldFetchUser || userLoading || userFetching) return;
 
 		// Redirect to login if not authenticated on protected route
 		if (!user) {
@@ -41,7 +41,7 @@ export const AuthGate = ({ children }: AuthGateProps) => {
 		}
 
 		// Redirect logged-in users away from login (handled above by isPublicRoute check)
-	}, [setupRequired, shouldFetchUser, userLoading, user, pathname, isPublicRoute, router]);
+	}, [setupRequired, shouldFetchUser, userLoading, userFetching, user, pathname, isPublicRoute, router]);
 
 	// Always render children immediately to avoid hydration issues
 	return <>{children}</>;
