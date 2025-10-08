@@ -1,14 +1,14 @@
 import type { LibraryItem, LibraryService } from "@arr/shared";
 import type { ServiceInstance } from "@prisma/client";
-import { normalizeImages } from "./image-normalizer";
-import { extractYear } from "./movie-normalizer";
+import { normalizeImages } from "./image-normalizer.js";
+import { extractYear } from "./movie-normalizer.js";
 import {
 	normalizeGenres,
 	normalizeTags,
 	toBoolean,
 	toNumber,
 	toStringValue,
-} from "./type-converters";
+} from "./type-converters.js";
 
 /**
  * Normalizes an array of season objects from raw API data

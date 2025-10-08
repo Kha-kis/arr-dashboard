@@ -5,8 +5,8 @@ import {
 } from "@arr/shared";
 import type { ServiceInstance } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher";
-import { toNumber } from "../../lib/library/type-converters";
+import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
+import { toNumber } from "../../lib/library/type-converters.js";
 
 /**
  * Register monitoring control routes for library

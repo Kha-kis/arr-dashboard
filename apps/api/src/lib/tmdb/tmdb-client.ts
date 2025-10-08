@@ -70,12 +70,14 @@ async function fetchMultiplePages<T extends { results: unknown[] }>(
 	const combinedResults = responses.flatMap((r) => r.results);
 
 	// Return first response with combined results
+	const data = responses[0];
+	const awaitedData = data as any;
 	return {
-		...responses[0],
+		...data,
 		results: combinedResults,
-		total_results: responses[0].total_results,
-		total_pages: responses[0].total_pages,
-	} as T;
+		total_results: awaitedData?.total_results ?? 0,
+		total_pages: awaitedData?.total_pages ?? 0,
+	} as unknown as T;
 }
 
 async function fetchSinglePage<T>(
@@ -110,12 +112,13 @@ export async function getTrendingMovies(
 
 	const allMovies = responses.flatMap((r) => r.results);
 
+	const data = responses[0];
 	return {
-		...responses[0],
+		...data,
 		page,
 		results: allMovies,
-		total_results: responses[0].total_results,
-		total_pages: Math.ceil(responses[0].total_pages / pagesToFetch),
+		total_results: data?.total_results ?? 0,
+		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
 	};
 }
 
@@ -142,12 +145,13 @@ export async function getTrendingTV(
 
 	const allShows = responses.flatMap((r) => r.results);
 
+	const data = responses[0];
 	return {
-		...responses[0],
+		...data,
 		page,
 		results: allShows,
-		total_results: responses[0].total_results,
-		total_pages: Math.ceil(responses[0].total_pages / pagesToFetch),
+		total_results: data?.total_results ?? 0,
+		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
 	};
 }
 
@@ -168,12 +172,13 @@ export async function getPopularMovies(
 
 	const allMovies = responses.flatMap((r) => r.results);
 
+	const data = responses[0];
 	return {
-		...responses[0],
+		...data,
 		page,
 		results: allMovies,
-		total_results: responses[0].total_results,
-		total_pages: Math.ceil(responses[0].total_pages / pagesToFetch),
+		total_results: data?.total_results ?? 0,
+		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
 	};
 }
 
@@ -194,12 +199,13 @@ export async function getPopularTV(
 
 	const allShows = responses.flatMap((r) => r.results);
 
+	const data = responses[0];
 	return {
-		...responses[0],
+		...data,
 		page,
 		results: allShows,
-		total_results: responses[0].total_results,
-		total_pages: Math.ceil(responses[0].total_pages / pagesToFetch),
+		total_results: data?.total_results ?? 0,
+		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
 	};
 }
 
@@ -220,12 +226,13 @@ export async function getTopRatedMovies(
 
 	const allMovies = responses.flatMap((r) => r.results);
 
+	const data = responses[0];
 	return {
-		...responses[0],
+		...data,
 		page,
 		results: allMovies,
-		total_results: responses[0].total_results,
-		total_pages: Math.ceil(responses[0].total_pages / pagesToFetch),
+		total_results: data?.total_results ?? 0,
+		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
 	};
 }
 
@@ -246,12 +253,13 @@ export async function getTopRatedTV(
 
 	const allShows = responses.flatMap((r) => r.results);
 
+	const data = responses[0];
 	return {
-		...responses[0],
+		...data,
 		page,
 		results: allShows,
-		total_results: responses[0].total_results,
-		total_pages: Math.ceil(responses[0].total_pages / pagesToFetch),
+		total_results: data?.total_results ?? 0,
+		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
 	};
 }
 
@@ -281,12 +289,13 @@ export async function getUpcomingMovies(
 		return releaseDate >= today;
 	});
 
+	const data = responses[0];
 	return {
-		...responses[0],
+		...data,
 		page,
 		results: futureMovies,
-		total_results: responses[0].total_results,
-		total_pages: Math.ceil(responses[0].total_pages / pagesToFetch),
+		total_results: data?.total_results ?? 0,
+		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
 	};
 }
 
@@ -307,12 +316,13 @@ export async function getAiringTodayTV(
 
 	const allShows = responses.flatMap((r) => r.results);
 
+	const data = responses[0];
 	return {
-		...responses[0],
+		...data,
 		page,
 		results: allShows,
-		total_results: responses[0].total_results,
-		total_pages: Math.ceil(responses[0].total_pages / pagesToFetch),
+		total_results: data?.total_results ?? 0,
+		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
 	};
 }
 

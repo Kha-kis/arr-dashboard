@@ -683,7 +683,7 @@ export const aggregateSonarrStatistics = (
 			acc.diskUsed += data.diskUsed ?? 0;
 			acc.healthIssues += data.healthIssues ?? 0;
 			if (data.healthIssuesList) {
-				acc.healthIssuesList.push(...data.healthIssuesList);
+				acc.healthIssuesList?.push(...data.healthIssuesList);
 			}
 			if (data.qualityBreakdown) {
 				for (const [profileName, count] of Object.entries(data.qualityBreakdown)) {
@@ -768,7 +768,7 @@ export const aggregateRadarrStatistics = (
 			acc.diskUsed += data.diskUsed ?? 0;
 			acc.healthIssues += data.healthIssues ?? 0;
 			if (data.healthIssuesList) {
-				acc.healthIssuesList.push(...data.healthIssuesList);
+				acc.healthIssuesList?.push(...data.healthIssuesList);
 			}
 			if (data.qualityBreakdown) {
 				for (const [profileName, count] of Object.entries(data.qualityBreakdown)) {
@@ -846,7 +846,7 @@ export const aggregateProwlarrStatistics = (
 			acc.failedGrabs += data.failedGrabs ?? 0;
 			acc.healthIssues += data.healthIssues ?? 0;
 			if (data.healthIssuesList) {
-				acc.healthIssuesList.push(...data.healthIssuesList);
+				acc.healthIssuesList?.push(...data.healthIssuesList);
 			}
 			const response = data.averageResponseTime;
 			if (typeof response === "number" && Number.isFinite(response)) {

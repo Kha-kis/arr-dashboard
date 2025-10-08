@@ -1,4 +1,4 @@
-import { toStringValue } from "./type-converters";
+import { toStringValue } from "./type-converters.js";
 
 /**
  * Resolves an image URL, handling both absolute URLs and relative paths

@@ -317,14 +317,14 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				request.log.info({ hasEncrypted: !!value, hasIv: !!iv }, "Encrypted TMDB API key");
 			} else {
 				// Clear the TMDB API key if empty string provided
-				updateData.encryptedTmdbApiKey = null;
-				updateData.tmdbEncryptionIv = null;
+				updateData.encryptedTmdbApiKey = undefined;
+				updateData.tmdbEncryptionIv = undefined;
 			}
 		}
 
 		// If changing password, clear the mustChangePassword flag
 		if (newPassword && currentPassword) {
-			updateData.mustChangePassword = false;
+			(updateData as { mustChangePassword?: boolean }).mustChangePassword = false;
 		}
 
 		const updatedUser = await app.prisma.user.update({

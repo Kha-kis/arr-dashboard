@@ -2,7 +2,7 @@ import { dashboardStatisticsResponseSchema } from "@arr/shared";
 import type { DashboardStatisticsResponse } from "@arr/shared";
 import type { ServiceInstance } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher";
+import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
 import {
 	aggregateProwlarrStatistics,
 	aggregateRadarrStatistics,
