@@ -42,10 +42,11 @@ Edit `.env` and replace the placeholder values with your generated keys:
 ```env
 ENCRYPTION_KEY=<paste-generated-key-1>
 SESSION_COOKIE_SECRET=<paste-generated-key-2>
-TMDB_API_KEY=  # Optional - leave empty if you don't need TMDB features
 ```
 
 That's it! All other settings use sensible defaults.
+
+> **Note:** TMDB API keys are configured per-user in the Settings page, not in environment variables.
 
 ### 3. Start the Application
 
@@ -171,11 +172,15 @@ Only 2 variables are required - everything else has sensible defaults:
 | `ENCRYPTION_KEY` | 32-byte hex key for encrypting API keys | `openssl rand -hex 32` |
 | `SESSION_COOKIE_SECRET` | 32-byte hex key for session cookies | `openssl rand -hex 32` |
 
-### Optional Environment Variables
+### User-Configurable Settings (in Settings Page)
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `TMDB_API_KEY` | TMDB API key for discover features | None (disabled) |
+These are set per-user in the web interface, not in environment variables:
+
+| Setting | Where | Description |
+|---------|-------|-------------|
+| **TMDB API Key** | Settings → Account | For trending/popular content in Discover page |
+| **Service Instances** | Settings → Services | Sonarr, Radarr, and Prowlarr connections |
+| **Tags** | Settings → Tags | Organize and filter instances |
 
 ### Advanced Configuration (Built-in Defaults)
 
