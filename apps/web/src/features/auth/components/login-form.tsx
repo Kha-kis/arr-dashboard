@@ -36,6 +36,7 @@ export const LoginForm = () => {
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const loginMutation = useLoginMutation();
+	const { data: setupRequired, isLoading: setupLoading } = useSetupRequired();
 
 	const [identifier, setIdentifier] = useState("");
 	const [password, setPassword] = useState("");
@@ -46,6 +47,13 @@ export const LoginForm = () => {
 		() => sanitizeRedirect(searchParams?.get("redirectTo") ?? null),
 		[searchParams],
 	);
+
+	// Redirect to setup if no users exist
+	useEffect(() => {
+		if (!setupLoading && setupRequired === true) {
+			router.replace("/setup");
+		}
+	}, [setupLoading, setupRequired, router]);
 
 	const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
@@ -75,6 +83,20 @@ export const LoginForm = () => {
 	};
 
 	const disabled = loginMutation.isPending;
+
+	// Show loading while checking setup requirement
+	if (setupLoading) {
+		return (
+			<div className="flex min-h-[60vh] flex-col items-center justify-center">
+				<div className="h-10 w-10 animate-spin rounded-full border-4 border-white/20 border-t-white" />
+			</div>
+		);
+	}
+
+	// Don't render if setup is required (will redirect)
+	if (setupRequired === true) {
+		return null;
+	}
 
 	return (
 		<div className="flex min-h-[60vh] flex-col items-center justify-center gap-6">
