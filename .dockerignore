@@ -1,29 +1,25 @@
-# Dependencies
-node_modules
+# Dependencies (always exclude, we install fresh in container)
 **/node_modules
+**/.pnpm-store
+.pnpm-store
 
-# Build outputs
-dist
-.next
-.turbo
+# Build outputs (we build fresh in container)
+**/dist
+**/.next
+*.log
 *.tsbuildinfo
+.turbo
 
 # Development files
-.git
-.gitignore
-*.log
-npm-debug.log*
-pnpm-debug.log*
-
-# Environment files
 .env
 .env.*
 !.env.example
 !.env.production.example
 
-# Database files (will be in volume)
-*.db
-*.db-journal
+# Git
+.git
+.gitignore
+.github
 
 # IDE
 .vscode
@@ -31,13 +27,31 @@ pnpm-debug.log*
 *.swp
 *.swo
 
+# Testing
+coverage
+*.test.ts
+*.test.tsx
+*.spec.ts
+*.spec.tsx
+
+# Documentation
+*.md
+!README.md
+docs
+
+# Database
+*.db
+*.db-journal
+secrets.json
+
 # OS
 .DS_Store
 Thumbs.db
 
-# Documentation
-README.md
-docs
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
 
-# CI/CD
-.github
+# Data directory
+data/
