@@ -1,5 +1,8 @@
 # Arr Dashboard
 
+> **⚠️ Version 2.0 - Complete Rewrite**
+> This is a ground-up rewrite with modern architecture, zero-config Docker deployment, and improved features. Not compatible with v1.x.
+
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances.
 
 ## Features
