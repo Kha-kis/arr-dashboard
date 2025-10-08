@@ -19,20 +19,18 @@ A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances
 - Docker and Docker Compose installed
 - At least one Sonarr, Radarr, or Prowlarr instance
 
-### 1. Clone the Repository
+### Deploy in 2 Steps
 
 ```bash
+# 1. Clone the repository
 git clone <repository-url>
 cd arr-dashboard
-```
 
-### 2. Start the Application
-
-**No configuration needed!** Security keys are auto-generated on first run.
-
-```bash
+# 2. Start the application (that's it!)
 docker-compose up -d
 ```
+
+**No configuration needed!** Everything is auto-configured on first run.
 
 The API container will automatically:
 1. Run database migrations to create the schema
@@ -148,19 +146,17 @@ docker run -d \
 
 The application auto-generates all necessary security keys on first run and persists them to the Docker volume.
 
-### Optional: Custom Security Keys
+### Optional: Advanced Configuration
 
-If you want to provide your own keys (for backup/restore or compliance), create a `.env` file:
+See `.env.production.example` for advanced customization options.
 
-| Variable | Description | How to Generate |
-|----------|-------------|-----------------|
-| `ENCRYPTION_KEY` | 32-byte hex key for encrypting API keys | `openssl rand -hex 32` |
-| `SESSION_COOKIE_SECRET` | 32-byte hex key for session cookies | `openssl rand -hex 32` |
+**When you might need custom configuration:**
+- **Migration**: Preserve encryption keys from another installation
+- **Compliance**: Corporate security requires specific key management
+- **Port Conflicts**: Default ports 3000/3001 are already in use
+- **Network Setup**: Custom reverse proxy or network configuration
 
-**When to provide your own keys:**
-- Migrating from another installation
-- Corporate security requirements
-- Want to back up keys separately from data
+To customize, create a `.env` file with your overrides. See the example file for details.
 
 ### User-Configurable Settings (in Settings Page)
 
