@@ -1,6 +1,8 @@
 services:
   api:
-    image: khak1s/arr-dashboard-api:latest
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
     container_name: arr-dashboard-api
     volumes:
       - ./data:/app/data
@@ -9,7 +11,9 @@ services:
     restart: unless-stopped
 
   web:
-    image: khak1s/arr-dashboard-web:latest
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
     container_name: arr-dashboard-web
     environment:
       - NEXT_PUBLIC_API_BASE_URL=http://localhost:3001
