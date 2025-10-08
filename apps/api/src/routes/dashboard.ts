@@ -1,8 +1,8 @@
 import type { FastifyPluginCallback } from "fastify";
-import { calendarRoutes } from "./dashboard/calendar-routes";
-import { historyRoutes } from "./dashboard/history-routes";
-import { queueRoutes } from "./dashboard/queue-routes";
-import { statisticsRoutes } from "./dashboard/statistics-routes";
+import { calendarRoutes } from "./dashboard/calendar-routes.js";
+import { historyRoutes } from "./dashboard/history-routes.js";
+import { queueRoutes } from "./dashboard/queue-routes.js";
+import { statisticsRoutes } from "./dashboard/statistics-routes.js";
 
 /**
  * Dashboard routes aggregator

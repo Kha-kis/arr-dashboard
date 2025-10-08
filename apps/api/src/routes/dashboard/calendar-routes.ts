@@ -3,9 +3,9 @@ import type { CalendarItem } from "@arr/shared";
 import type { ServiceInstance } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher";
-import { formatDateOnly } from "../../lib/dashboard/calendar-utils";
-import { fetchCalendarItems } from "../../lib/dashboard/fetch-utils";
+import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
+import { formatDateOnly } from "../../lib/dashboard/calendar-utils.js";
+import { fetchCalendarItems } from "../../lib/dashboard/fetch-utils.js";
 
 const calendarQuerySchema = z.object({
 	start: z.string().optional(),
@@ -77,12 +77,12 @@ export const calendarRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					unmonitored,
 				});
 				const validated = items
-					.map((item) => ({
-						...item,
+					.map((item: unknown) => ({
+						...item as Record<string, unknown>,
 						instanceId: instance.id,
 						instanceName: instance.label,
 					}))
-					.map((item) => calendarItemSchema.parse(item));
+					.map((item: unknown) => calendarItemSchema.parse(item));
 				results.push({
 					instanceId: instance.id,
 					instanceName: instance.label,

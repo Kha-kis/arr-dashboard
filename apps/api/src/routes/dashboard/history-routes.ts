@@ -3,8 +3,8 @@ import type { HistoryItem } from "@arr/shared";
 import type { ServiceInstance } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher";
-import { fetchHistoryItems } from "../../lib/dashboard/fetch-utils";
+import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
+import { fetchHistoryItems } from "../../lib/dashboard/fetch-utils.js";
 
 const historyQuerySchema = z.object({
 	page: z.coerce.number().min(1).optional().default(1),
@@ -60,12 +60,12 @@ export const historyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					startDate,
 					endDate,
 				);
-				const enriched = items.map((item) => ({
-					...item,
+				const enriched = items.map((item: unknown) => ({
+					...item as Record<string, unknown>,
 					instanceId: instance.id,
 					instanceName: instance.label,
 				}));
-				const validated = enriched.map((entry) => historyItemSchema.parse(entry));
+				const validated = enriched.map((entry: unknown) => historyItemSchema.parse(entry));
 				results.push({
 					instanceId: instance.id,
 					instanceName: instance.label,
