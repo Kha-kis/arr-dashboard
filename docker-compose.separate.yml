@@ -1,0 +1,20 @@
+services:
+  api:
+    image: khak1s/arr-dashboard-api:latest
+    container_name: arr-dashboard-api
+    volumes:
+      - ./data:/app/data
+    ports:
+      - 3001:3001
+    restart: unless-stopped
+
+  web:
+    image: khak1s/arr-dashboard-web:latest
+    container_name: arr-dashboard-web
+    environment:
+      - API_HOST=http://api:3001
+    ports:
+      - 3000:3000
+    restart: unless-stopped
+    depends_on:
+      - api

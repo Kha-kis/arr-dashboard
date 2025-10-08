@@ -1,0 +1,29 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>arr-dashboard</Name>
+  <Repository>khak1s/arr-dashboard:latest</Repository>
+  <Registry>https://hub.docker.com/r/khak1s/arr-dashboard</Registry>
+  <Network>bridge</Network>
+  <MyIP/>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/Kha-kis/arr-dashboard/issues</Support>
+  <Project>https://github.com/Kha-kis/arr-dashboard</Project>
+  <Overview>A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Features include unified queue/calendar/history views, global indexer search, library management, statistics, and TMDB content discovery.</Overview>
+  <Category>MediaApp:Other MediaServer:Other</Category>
+  <WebUI>http://[IP]:[PORT:3000]</WebUI>
+  <TemplateURL>https://raw.githubusercontent.com/Kha-kis/arr-dashboard/main/unraid/arr-dashboard.xml</TemplateURL>
+  <Icon>https://raw.githubusercontent.com/Kha-kis/arr-dashboard/main/apps/web/public/icon.png</Icon>
+  <ExtraParams/>
+  <PostArgs/>
+  <CPUset/>
+  <DateInstalled></DateInstalled>
+  <DonateText/>
+  <DonateLink/>
+  <Requires/>
+  <Config Name="Web UI Port" Target="3000" Default="3000" Mode="tcp" Description="Port for the web interface" Type="Port" Display="always" Required="true" Mask="false">3000</Config>
+  <Config Name="API Port" Target="3001" Default="3001" Mode="tcp" Description="Port for the API (optional, only needed for direct API access)" Type="Port" Display="advanced" Required="false" Mask="false">3001</Config>
+  <Config Name="AppData" Target="/app/data" Default="/mnt/user/appdata/arr-dashboard" Mode="rw" Description="Database and configuration storage" Type="Path" Display="advanced" Required="true" Mask="false">/mnt/user/appdata/arr-dashboard</Config>
+  <Config Name="Database URL" Target="DATABASE_URL" Default="file:/app/data/prod.db" Mode="" Description="Database connection string (leave default for SQLite)" Type="Variable" Display="advanced" Required="false" Mask="false">file:/app/data/prod.db</Config>
+  <Config Name="Session TTL (Hours)" Target="SESSION_TTL_HOURS" Default="24" Mode="" Description="Session expiration time in hours" Type="Variable" Display="advanced" Required="false" Mask="false">24</Config>
+</Container>
