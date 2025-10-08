@@ -6,7 +6,6 @@ services:
     container_name: arr-dashboard-api
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=file:/app/data/prod.db
     volumes:
       - ./data:/app/data
     ports:
