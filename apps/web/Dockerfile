@@ -21,17 +21,14 @@ RUN pnpm install --frozen-lockfile
 FROM base AS builder
 WORKDIR /app
 
-# Copy dependencies from deps stage
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
-COPY --from=deps /app/apps/web/node_modules ./apps/web/node_modules
+# Copy everything from deps stage (includes workspace structure)
+COPY --from=deps /app ./
 
 # Copy source code
 COPY packages/shared ./packages/shared
 COPY apps/web ./apps/web
 COPY tsconfig.base.json ./
 COPY turbo.json ./
-COPY pnpm-workspace.yaml ./
 
 # Build shared package first, then web app
 RUN pnpm --filter @arr/shared run build
