@@ -81,18 +81,10 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build API Docker image
+      - name: Build Combined Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./apps/api/Dockerfile
+          file: ./Dockerfile
           push: false
-          tags: arr-dashboard-api:test
-
-      - name: Build Web Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./apps/web/Dockerfile
-          push: false
-          tags: arr-dashboard-web:test
+          tags: arr-dashboard:test
