@@ -1,6 +1,8 @@
 services:
   arr-dashboard:
-    image: khak1s/arr-dashboard:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: arr-dashboard
     volumes:
       - ./data:/app/data

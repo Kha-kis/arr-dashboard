@@ -25,7 +25,7 @@ const isPublicPath = (pathname: string) => {
 };
 
 // Proxy API requests to the backend
-function proxyApiRequest(request: NextRequest): NextResponse | null {
+async function proxyApiRequest(request: NextRequest): Promise<NextResponse | null> {
 	const { pathname } = request.nextUrl;
 
 	// Check if this is an API or auth request
@@ -48,19 +48,33 @@ function proxyApiRequest(request: NextRequest): NextResponse | null {
 		requestHeaders.set("cookie", cookieHeader);
 	}
 
-	// Rewrite to the API server with explicit headers
-	return NextResponse.rewrite(apiUrl, {
-		request: {
-			headers: requestHeaders,
-		},
+	// Fetch from the API server
+	const response = await fetch(apiUrl.toString(), {
+		method: request.method,
+		headers: requestHeaders,
+		body: request.body,
+		duplex: "half",
+	} as RequestInit);
+
+	// Create response with the API's body
+	const proxyResponse = new NextResponse(response.body, {
+		status: response.status,
+		statusText: response.statusText,
 	});
+
+	// Forward all headers from API response, including Set-Cookie
+	response.headers.forEach((value, key) => {
+		proxyResponse.headers.set(key, value);
+	});
+
+	return proxyResponse;
 }
 
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
 	const { pathname } = request.nextUrl;
 
 	// Handle API proxy first
-	const apiResponse = proxyApiRequest(request);
+	const apiResponse = await proxyApiRequest(request);
 	if (apiResponse) {
 		return apiResponse;
 	}
