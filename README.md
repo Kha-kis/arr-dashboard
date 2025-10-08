@@ -58,8 +58,9 @@ docker-compose up -d
 ```
 
 **Version Tags:**
-- `latest` - Latest stable release
-- `2.0.2` - Specific version (e.g., `khak1s/arr-dashboard:2.0.2`)
+- `latest` - Latest stable release (currently v2.0.3)
+- `2.0.3` - Latest stable version
+- `2.0.2` - Previous version
 
 **For Unraid users:** See [UNRAID_DEPLOYMENT.md](UNRAID_DEPLOYMENT.md) for step-by-step installation instructions.
 
