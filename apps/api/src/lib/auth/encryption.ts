@@ -13,7 +13,19 @@ export class Encryptor {
 	private readonly key: Buffer;
 
 	constructor(secret: string) {
-		const keyBuffer = Buffer.from(secret, secret.length === 64 ? "base64" : "utf-8");
+		// Detect encoding: hex (64 chars), base64 (44 chars with padding), or utf-8
+		let keyBuffer: Buffer;
+		if (secret.length === 64 && /^[0-9a-f]+$/i.test(secret)) {
+			// Hex encoded (32 bytes = 64 hex chars)
+			keyBuffer = Buffer.from(secret, "hex");
+		} else if (secret.length === 44 || secret.length === 43) {
+			// Base64 encoded (32 bytes = 43-44 chars)
+			keyBuffer = Buffer.from(secret, "base64");
+		} else {
+			// UTF-8 string
+			keyBuffer = Buffer.from(secret, "utf-8");
+		}
+
 		if (keyBuffer.length !== 32) {
 			throw new Error("ENCRYPTION_KEY must decode to 32 bytes");
 		}
