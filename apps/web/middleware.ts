@@ -39,8 +39,21 @@ function proxyApiRequest(request: NextRequest): NextResponse | null {
 	// Construct the proxied URL
 	const apiUrl = new URL(pathname + request.nextUrl.search, apiHost);
 
-	// Rewrite to the API server
-	return NextResponse.rewrite(apiUrl);
+	// Clone the request headers to forward cookies
+	const requestHeaders = new Headers(request.headers);
+
+	// Explicitly forward cookies
+	const cookieHeader = request.headers.get("cookie");
+	if (cookieHeader) {
+		requestHeaders.set("cookie", cookieHeader);
+	}
+
+	// Rewrite to the API server with explicit headers
+	return NextResponse.rewrite(apiUrl, {
+		request: {
+			headers: requestHeaders,
+		},
+	});
 }
 
 export function middleware(request: NextRequest) {
