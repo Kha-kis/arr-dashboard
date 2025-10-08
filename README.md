@@ -19,36 +19,56 @@ A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances
 - Docker and Docker Compose installed
 - At least one Sonarr, Radarr, or Prowlarr instance
 
-### Deploy in 2 Steps
+### Usage
+
+```yaml
+services:
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: arr-dashboard-api
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=file:/app/data/prod.db
+    volumes:
+      - ./data:/app/data
+    ports:
+      - 3001:3001
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: arr-dashboard-web
+    environment:
+      - NODE_ENV=production
+    ports:
+      - 3000:3000
+    restart: unless-stopped
+    depends_on:
+      - api
+```
 
 ```bash
-# 1. Clone the repository
-git clone <repository-url>
-cd arr-dashboard
-
-# 2. Start the application (that's it!)
 docker-compose up -d
 ```
 
-**No configuration needed!** Everything is auto-configured on first run.
+**Application Setup:**
 
-The API container will automatically:
-1. Run database migrations to create the schema
-2. Generate security keys (if not already present)
-3. Start the API server
-
-You can monitor the startup logs:
-```bash
-docker-compose logs -f api
-```
-
-### 3. Initial Setup
-
-1. Open your browser to `http://your-server-ip:3000`
-2. Complete the initial admin account setup
+1. Open `http://your-server-ip:3000`
+2. Create your admin account
 3. Add your Sonarr/Radarr/Prowlarr instances in Settings
 
-The application is now running! 🎉
+**Parameters:**
+
+| Parameter | Function |
+|-----------|----------|
+| `-p 3000:3000` | Web UI |
+| `-p 3001:3001` | API |
+| `-v ./data:/app/data` | Database and configuration |
+| `-e NODE_ENV=production` | Run in production mode |
 
 ## Manual Installation (Development)
 

@@ -4,50 +4,24 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     container_name: arr-dashboard-api
-    restart: unless-stopped
-    ports:
-      - "3001:3001"
     environment:
-      NODE_ENV: production
-      DATABASE_URL: file:/app/data/prod.db
-      # Optional: Provide custom encryption keys (auto-generated if not set)
-      # ENCRYPTION_KEY: ${ENCRYPTION_KEY:-}
-      # SESSION_COOKIE_SECRET: ${SESSION_COOKIE_SECRET:-}
+      - NODE_ENV=production
+      - DATABASE_URL=file:/app/data/prod.db
     volumes:
-      - api-data:/app/data
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3001/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
-      start_period: 10s
-    networks:
-      - arr-dashboard
+      - ./data:/app/data
+    ports:
+      - 3001:3001
+    restart: unless-stopped
 
   web:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
     container_name: arr-dashboard-web
-    restart: unless-stopped
-    ports:
-      - "3000:3000"
     environment:
-      NODE_ENV: production
+      - NODE_ENV=production
+    ports:
+      - 3000:3000
+    restart: unless-stopped
     depends_on:
-      api:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
-      interval: 30s
-      timeout: 3s
-      retries: 3
-      start_period: 10s
-    networks:
-      - arr-dashboard
-
-volumes:
-  api-data:
-
-networks:
-  arr-dashboard:
+      - api
