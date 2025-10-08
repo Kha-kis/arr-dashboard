@@ -1,4 +1,3 @@
-import fastifyCookie from "@fastify/cookie";
 import fastifyCors from "@fastify/cors";
 import fastifyHelmet from "@fastify/helmet";
 import fastifyRateLimit from "@fastify/rate-limit";
@@ -44,16 +43,12 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		},
 	});
 
-	app.register(fastifyCookie, {
-		secret: env.SESSION_COOKIE_SECRET,
-		hook: "onRequest",
-	});
-
 	app.register(fastifyRateLimit, {
 		max: env.API_RATE_LIMIT_MAX,
 		timeWindow: env.API_RATE_LIMIT_WINDOW,
 	});
 
+	// Register Prisma and Security plugins (security plugin registers cookies with auto-generated secrets)
 	app.register(prismaPlugin);
 	app.register(securityPlugin);
 
