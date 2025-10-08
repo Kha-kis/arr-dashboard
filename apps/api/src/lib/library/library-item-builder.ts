@@ -1,7 +1,7 @@
 import type { LibraryItem, LibraryService } from "@arr/shared";
 import type { ServiceInstance } from "@prisma/client";
-import { buildMovieItem } from "./movie-normalizer";
-import { buildSeriesItem } from "./series-normalizer";
+import { buildMovieItem } from "./movie-normalizer.js";
+import { buildSeriesItem } from "./series-normalizer.js";
 
 /**
  * Builds a library item from raw API data based on service type

@@ -1,5 +1,5 @@
 import type { QueueActionCapabilities, QueueItem } from "@arr/shared";
-import { toNumber, toStringValue } from "../data/values";
+import { toNumber, toStringValue } from "../data/values.js";
 
 /**
  * Type alias for dynamic API responses. Uses `any` to allow flexible property access

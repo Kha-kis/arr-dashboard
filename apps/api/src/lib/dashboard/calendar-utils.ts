@@ -1,5 +1,5 @@
 import type { CalendarItem } from "@arr/shared";
-import { toBoolean, toNumber, toStringArray, toStringValue } from "../data/values";
+import { toBoolean, toNumber, toStringArray, toStringValue } from "../data/values.js";
 
 /**
  * Type alias for dynamic API responses. Uses `any` to allow flexible property access

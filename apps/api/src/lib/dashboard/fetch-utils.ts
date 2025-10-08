@@ -1,7 +1,7 @@
 import type { CalendarItem, HistoryItem, QueueItem } from "@arr/shared";
-import { calendarApiPath, compareCalendarItems, normalizeCalendarItem } from "./calendar-utils";
-import { historyApiPath, normalizeHistoryItem } from "./history-utils";
-import { normalizeQueueItem, queueApiPath } from "./queue-utils";
+import { calendarApiPath, compareCalendarItems, normalizeCalendarItem } from "./calendar-utils.js";
+import { historyApiPath, normalizeHistoryItem } from "./history-utils.js";
+import { normalizeQueueItem, queueApiPath } from "./queue-utils.js";
 
 /**
  * Fetches queue items from Sonarr or Radarr

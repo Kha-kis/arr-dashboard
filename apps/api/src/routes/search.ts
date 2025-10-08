@@ -1,7 +1,7 @@
 import type { FastifyPluginCallback } from "fastify";
-import { registerGrabRoutes } from "./search/grab-routes";
-import { registerIndexerRoutes } from "./search/indexer-routes";
-import { registerQueryRoutes } from "./search/query-routes";
+import { registerGrabRoutes } from "./search/grab-routes.js";
+import { registerIndexerRoutes } from "./search/indexer-routes.js";
+import { registerQueryRoutes } from "./search/query-routes.js";
 
 /**
  * Registers all search-related routes for Prowlarr functionality.

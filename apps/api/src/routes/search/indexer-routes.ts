@@ -12,13 +12,13 @@ import {
 	searchIndexerUpdateRequestSchema,
 	searchIndexersResponseSchema,
 } from "@arr/shared";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher";
+import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
 import {
 	buildIndexerDetailsFallback,
 	fetchProwlarrIndexerDetails,
 	fetchProwlarrIndexers,
 	testProwlarrIndexer,
-} from "../../lib/search/prowlarr-api";
+} from "../../lib/search/prowlarr-api.js";
 
 /**
  * Registers indexer-related routes for Prowlarr.

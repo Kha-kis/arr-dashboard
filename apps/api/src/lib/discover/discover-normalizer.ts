@@ -265,7 +265,7 @@ export const loadRadarrRemote = async (
 		try {
 			const results = await fetchLookupResults(fetcher, "radarr", term);
 			if (results.length > 0) {
-				return results[0];
+				return results[0] ?? null;
 			}
 		} catch (error) {
 			// try next term
@@ -294,7 +294,7 @@ export const loadSonarrRemote = async (
 		try {
 			const results = await fetchLookupResults(fetcher, "sonarr", term);
 			if (results.length > 0) {
-				return results[0];
+				return results[0] ?? null;
 			}
 		} catch (error) {
 			// try next

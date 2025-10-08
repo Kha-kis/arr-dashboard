@@ -1,7 +1,7 @@
 import type { FastifyPluginCallback } from "fastify";
-import { registerFetchRoutes } from "./library/fetch-routes";
-import { registerMonitorRoutes } from "./library/monitor-routes";
-import { registerSearchRoutes } from "./library/search-routes";
+import { registerFetchRoutes } from "./library/fetch-routes.js";
+import { registerMonitorRoutes } from "./library/monitor-routes.js";
+import { registerSearchRoutes } from "./library/search-routes.js";
 
 /**
  * Library routes plugin

@@ -6,10 +6,10 @@ import {
 import type { QueueItem } from "@arr/shared";
 import type { ServiceInstance } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher";
-import { fetchQueueItems } from "../../lib/dashboard/fetch-utils";
-import { parseQueueId, queueApiPath, triggerQueueSearch } from "../../lib/dashboard/queue-utils";
-import { ManualImportError, autoImportByDownloadId } from "../manual-import-utils";
+import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
+import { fetchQueueItems } from "../../lib/dashboard/fetch-utils.js";
+import { parseQueueId, queueApiPath, triggerQueueSearch } from "../../lib/dashboard/queue-utils.js";
+import { ManualImportError, autoImportByDownloadId } from "../manual-import-utils.js";
 
 /**
  * Queue-related routes for the dashboard
@@ -46,8 +46,8 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			try {
 				const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
 				const items = await fetchQueueItems(fetcher, service);
-				const enriched = items.map((item) => ({
-					...item,
+				const enriched = items.map((item: unknown) => ({
+					...item as Record<string, unknown>,
 					instanceId: instance.id,
 					instanceName: instance.label,
 				}));
@@ -55,10 +55,10 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					instanceId: instance.id,
 					instanceName: instance.label,
 					service,
-					data: enriched.map((item) => queueItemSchema.parse(item)),
+					data: enriched.map((item: unknown) => queueItemSchema.parse(item)),
 				});
-				aggregated.push(...enriched.map((item) => queueItemSchema.parse(item)));
-			} catch (error) {
+				aggregated.push(...enriched.map((item: unknown) => queueItemSchema.parse(item)));
+			} catch (error: unknown) {
 				request.log.error({ err: error, instance: instance.id }, "queue fetch failed");
 				results.push({
 					instanceId: instance.id,
