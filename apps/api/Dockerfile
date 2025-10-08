@@ -57,6 +57,10 @@ COPY --from=builder --chown=apiuser:nodejs /app/apps/api/dist ./dist
 COPY --from=builder --chown=apiuser:nodejs /app/apps/api/prisma ./prisma
 COPY --from=builder --chown=apiuser:nodejs /app/apps/api/scripts/start.sh ./start.sh
 
+# Copy generated Prisma client (not included in pnpm deploy)
+COPY --from=builder --chown=apiuser:nodejs /app/apps/api/node_modules/.prisma ./node_modules/.prisma
+COPY --from=builder --chown=apiuser:nodejs /app/apps/api/node_modules/@prisma ./node_modules/@prisma
+
 # Create data directory for SQLite database
 RUN mkdir -p /app/data && chown -R apiuser:nodejs /app/data
 
