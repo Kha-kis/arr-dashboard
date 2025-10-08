@@ -22,8 +22,10 @@ export const useLoginMutation = () => {
 
 	return useMutation<CurrentUser, unknown, LoginPayload>({
 		mutationFn: login,
-		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["current-user"] });
+		onSuccess: (user) => {
+			// Immediately set the user data in cache instead of invalidating
+			// This prevents race conditions on redirect
+			queryClient.setQueryData(["current-user"], user);
 		},
 	});
 };
@@ -35,7 +37,8 @@ export const useLogoutMutation = () => {
 	return useMutation<void, unknown, void>({
 		mutationFn: logout,
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["current-user"] });
+			// Immediately clear user data from cache
+			queryClient.setQueryData(["current-user"], null);
 		},
 	});
 };
