@@ -21,17 +21,14 @@ RUN pnpm install --frozen-lockfile
 FROM base AS builder
 WORKDIR /app
 
-# Copy dependencies from deps stage
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/packages/shared/node_modules ./packages/shared/node_modules
-COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
+# Copy everything from deps stage (includes workspace structure)
+COPY --from=deps /app ./
 
 # Copy source code
 COPY packages/shared ./packages/shared
 COPY apps/api ./apps/api
 COPY tsconfig.base.json ./
 COPY turbo.json ./
-COPY pnpm-workspace.yaml ./
 
 # Generate Prisma client
 WORKDIR /app/apps/api
