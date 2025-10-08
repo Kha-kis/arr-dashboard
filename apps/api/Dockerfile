@@ -67,6 +67,9 @@ USER apiuser
 
 EXPOSE 3001
 
+# Set default DATABASE_URL for Docker
+ENV DATABASE_URL="file:/app/data/prod.db"
+
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3001/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
