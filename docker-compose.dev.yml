@@ -6,8 +6,8 @@ services:
       - ./data-dev:/app/data
     ports:
       - 3000:3000
-    environment:
+    # environment:
       # Optional: Override environment variables for dev testing
-      # - SESSION_TTL_HOURS=24
-      # - LOG_LEVEL=debug
+      # SESSION_TTL_HOURS: "24"
+      # LOG_LEVEL: "debug"
     restart: unless-stopped
