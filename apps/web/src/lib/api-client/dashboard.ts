@@ -49,7 +49,7 @@ export async function fetchMultiInstanceHistory(options?: {
 		return await apiRequest<MultiInstanceHistoryResponse>(path);
 	} catch (error) {
 		if (error instanceof UnauthorizedError) {
-			return { instances: [], aggregated: [], totalCount: 0, page: 1, pageSize: 25 };
+			return { instances: [], aggregated: [], totalCount: 0 };
 		}
 		throw error;
 	}
