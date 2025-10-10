@@ -3,6 +3,7 @@
 import type { ServiceInstanceSummary } from "@arr/shared";
 import { Button } from "../../../components/ui/button";
 import { Alert, AlertDescription } from "../../../components/ui";
+import { useIncognitoMode, getLinuxUrl } from "../../../lib/incognito";
 
 /**
  * Props for the ServiceInstanceCard component
@@ -46,6 +47,8 @@ export const ServiceInstanceCard = ({
 	mutationPending,
 	testResult,
 }: ServiceInstanceCardProps) => {
+	const [incognitoMode] = useIncognitoMode();
+
 	return (
 		<div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-white/5 p-4">
 			<div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -56,7 +59,9 @@ export const ServiceInstanceCard = ({
 						</span>
 						<h3 className="text-base font-semibold text-white">{instance.label}</h3>
 					</div>
-					<p className="text-xs text-white/50">{instance.baseUrl}</p>
+					<p className="text-xs text-white/50">
+						{incognitoMode ? getLinuxUrl(instance.baseUrl) : instance.baseUrl}
+					</p>
 					<p className="text-xs text-white/50">
 						Tags:{" "}
 						{instance.tags.length === 0 ? "-" : instance.tags.map((tag) => tag.name).join(", ")}

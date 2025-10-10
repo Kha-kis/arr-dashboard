@@ -112,7 +112,7 @@ export function getLinuxIpAddress(ip: string): string {
 
 // Generic API URL
 export function getLinuxUrl(_url: string): string {
-	return "http://192.168.1.100:8080";
+	return "http://localhost";
 }
 
 // Anonymize health messages by replacing indexer names and show/movie names
