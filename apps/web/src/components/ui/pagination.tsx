@@ -72,8 +72,8 @@ export const Pagination = ({
 	};
 
 	const pageNumbers = getPageNumbers();
-	const showFirstPage = pageNumbers[0] > 1;
-	const showLastPage = pageNumbers[pageNumbers.length - 1] < totalPages;
+	const showFirstPage = (pageNumbers[0] ?? 1) > 1;
+	const showLastPage = (pageNumbers[pageNumbers.length - 1] ?? totalPages) < totalPages;
 
 	if (totalItems === 0) {
 		return null;
@@ -144,7 +144,7 @@ export const Pagination = ({
 						>
 							1
 						</Button>
-						{pageNumbers[0] > 2 && (
+						{(pageNumbers[0] ?? 1) > 2 && (
 							<span className="px-2 text-white/50">...</span>
 						)}
 					</>
@@ -166,7 +166,7 @@ export const Pagination = ({
 				{/* Last page number if not in range */}
 				{showLastPage && (
 					<>
-						{pageNumbers[pageNumbers.length - 1] < totalPages - 1 && (
+						{(pageNumbers[pageNumbers.length - 1] ?? totalPages) < totalPages - 1 && (
 							<span className="px-2 text-white/50">...</span>
 						)}
 						<Button
