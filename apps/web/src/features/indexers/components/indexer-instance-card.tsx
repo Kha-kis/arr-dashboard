@@ -9,6 +9,7 @@ import {
 	CardTitle,
 } from "../../../components/ui/card";
 import { IndexerRow } from "./indexer-row";
+import { useIncognitoMode, getLinuxInstanceName } from "../../../lib/incognito";
 
 /**
  * Card displaying all indexers for a single Prowlarr instance
@@ -48,11 +49,15 @@ export const IndexerInstanceCard = ({
 	expandedKey: string | null;
 	onToggleDetails: (instanceId: string, indexerId: number) => void;
 }) => {
+	const [incognitoMode] = useIncognitoMode();
+
 	return (
 		<Card className="border-white/10 bg-white/5">
 			<CardHeader className="flex flex-col gap-1 md:flex-row md:items-center md:justify-between">
 				<div>
-					<CardTitle className="text-xl text-white">{instanceName}</CardTitle>
+					<CardTitle className="text-xl text-white">
+						{incognitoMode ? getLinuxInstanceName(instanceName) : instanceName}
+					</CardTitle>
 					<CardDescription>{indexers.length} indexers</CardDescription>
 				</div>
 				<p className="text-xs text-white/40">ID: {instanceId}</p>

@@ -14,6 +14,12 @@ import { Button, Card, CardContent } from "../../../components/ui";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
 import { LibraryBadge } from "./library-badge";
 import { formatBytes, formatRuntime } from "../lib/library-utils";
+import {
+	useIncognitoMode,
+	getLinuxIsoName,
+	getLinuxInstanceName,
+	getLinuxSavePath,
+} from "../../../lib/incognito";
 
 /**
  * Props for the LibraryCard component
@@ -72,15 +78,19 @@ export const LibraryCard = ({
 	seriesSearchPending = false,
 	onExpandDetails,
 }: LibraryCardProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const monitored = item.monitored ?? false;
 	const hasFile = item.hasFile ?? false;
 	const sizeLabel = formatBytes(item.sizeOnDisk);
 	const runtimeLabel = formatRuntime(item.runtime);
 	const serviceLabel = item.service === "sonarr" ? "Sonarr" : "Radarr";
-	const movieFileName =
+	const rawMovieFileName =
 		item.type === "movie"
 			? (item.movieFile?.relativePath ?? item.path)?.split(/[\\/]/g).pop()
 			: undefined;
+	const movieFileName = incognitoMode && rawMovieFileName
+		? getLinuxIsoName(rawMovieFileName)
+		: rawMovieFileName;
 
 	const handleOpenExternal = () => {
 		if (!externalLink) {
@@ -202,13 +212,15 @@ export const LibraryCard = ({
 
 	const locationEntries: Array<{ label: string; value: string }> = [];
 	if (item.path) {
-		locationEntries.push({ label: "Location", value: item.path });
+		const displayPath = incognitoMode ? getLinuxSavePath(item.path) : item.path;
+		locationEntries.push({ label: "Location", value: displayPath });
 	}
 	if (movieFileName) {
 		locationEntries.push({ label: "File", value: movieFileName });
 	}
 	if (item.rootFolderPath && item.rootFolderPath !== item.path) {
-		locationEntries.push({ label: "Root", value: item.rootFolderPath });
+		const displayRoot = incognitoMode ? "/media" : item.rootFolderPath;
+		locationEntries.push({ label: "Root", value: displayRoot });
 	}
 
 	const tagEntries = (item.tags ?? []).filter(Boolean);
@@ -236,7 +248,9 @@ export const LibraryCard = ({
 									<span className="text-xs text-white/50">{item.year}</span>
 								) : null}
 							</div>
-							<p className="text-xs text-white/50">{item.instanceName}</p>
+							<p className="text-xs text-white/50">
+							{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}
+						</p>
 						</div>
 
 						{item.overview ? (
