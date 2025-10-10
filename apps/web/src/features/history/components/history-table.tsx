@@ -1,6 +1,13 @@
 ﻿"use client";
 
 import type { HistoryItem } from "@arr/shared";
+import {
+	useIncognitoMode,
+	getLinuxIsoName,
+	getLinuxIndexer,
+	getLinuxDownloadClient,
+	getLinuxInstanceName,
+} from "../../../lib/incognito";
 
 interface HistoryGroup {
 	downloadId?: string;
@@ -166,6 +173,8 @@ export const HistoryTable = ({
 	emptyMessage,
 	groupingEnabled,
 }: HistoryTableProps) => {
+	const [incognitoMode] = useIncognitoMode();
+
 	if (loading) {
 		return (
 			<div className="rounded-xl border border-white/10 bg-white/5 p-6 text-sm text-white/70">
@@ -219,7 +228,11 @@ export const HistoryTable = ({
 												indexerRss
 											</span>
 											<span className="text-xs text-white/50 capitalize">
-												{firstItem?.instanceName ?? "-"}
+												{firstItem?.instanceName
+													? incognitoMode
+														? getLinuxInstanceName(firstItem.instanceName)
+														: firstItem.instanceName
+													: "-"}
 											</span>
 										</div>
 									</td>
@@ -244,6 +257,7 @@ export const HistoryTable = ({
 							const key = `${item.service}:${item.instanceId}:${String(item.id)}`;
 							const eventType = item.eventType ?? item.status ?? "Unknown";
 							const displayTitle = getDisplayTitle(item);
+							const anonymizedTitle = incognitoMode ? getLinuxIsoName(displayTitle) : displayTitle;
 
 							// Determine what to show in Source/Client column (smart selection)
 							const isProwlarr = item.service === "prowlarr";
@@ -260,15 +274,26 @@ export const HistoryTable = ({
 								eventTypeLower.includes("rss")
 							) {
 								// Show indexer for search/grab events
-								sourceClient = isProwlarr
+								const rawIndexer = isProwlarr
 									? prowlarrData?.indexer || prowlarrData?.indexerName || item.indexer || "-"
 									: item.indexer || "-";
+								sourceClient = incognitoMode && rawIndexer !== "-" ? getLinuxIndexer(rawIndexer) : rawIndexer;
 							} else if (eventTypeLower.includes("download") || eventTypeLower.includes("import")) {
 								// Show download client for download/import events
-								sourceClient = item.downloadClient || "-";
+								const rawClient = item.downloadClient || "-";
+								sourceClient = incognitoMode && rawClient !== "-" ? getLinuxDownloadClient(rawClient) : rawClient;
 							} else {
 								// Fallback: show whatever is available
-								sourceClient = item.downloadClient || item.indexer || item.protocol || "-";
+								const raw = item.downloadClient || item.indexer || item.protocol || "-";
+								if (raw !== "-" && incognitoMode) {
+									sourceClient = item.downloadClient
+										? getLinuxDownloadClient(raw)
+										: item.indexer
+											? getLinuxIndexer(raw)
+											: raw;
+								} else {
+									sourceClient = raw;
+								}
 							}
 
 							// Filter out useless values
@@ -296,11 +321,13 @@ export const HistoryTable = ({
 											>
 												{eventType}
 											</span>
-											<span className="text-xs text-white/50">{item.instanceName}</span>
+											<span className="text-xs text-white/50">
+												{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}
+											</span>
 										</div>
 									</td>
-									<td className="max-w-xs px-4 py-3 text-white" title={displayTitle}>
-										<div className="truncate">{displayTitle}</div>
+									<td className="max-w-xs px-4 py-3 text-white" title={anonymizedTitle}>
+										<div className="truncate">{anonymizedTitle}</div>
 									</td>
 									<td className="px-4 py-3 text-white/70">
 										{(item.quality as { quality?: { name?: string } })?.quality?.name ?? "-"}
