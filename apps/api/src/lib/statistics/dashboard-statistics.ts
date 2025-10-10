@@ -283,11 +283,15 @@ export const fetchSonarrStatistics = async (
 	const diskUsagePercent =
 		diskTotals.total > 0 ? clampPercentage((diskUsed / diskTotals.total) * 100) : 0;
 
+	// Log all health items for debugging
+	console.log(`[Sonarr ${instanceName}] Health check returned ${health.length} items:`, JSON.stringify(health, null, 2));
+
 	const healthIssuesList = Array.isArray(health)
 		? health
 				.filter((item) => {
 					const healthItem = item as HealthEntry;
 					const type = toStringValue(healthItem?.type);
+					console.log(`[Sonarr ${instanceName}] Health item type: "${type}"`);
 					return type === "error" || type === "warning";
 				})
 				.map((item) => {
@@ -309,6 +313,7 @@ export const fetchSonarrStatistics = async (
 				})
 		: [];
 	const healthIssues = healthIssuesList.length;
+	console.log(`[Sonarr ${instanceName}] Filtered to ${healthIssues} health issues`);
 
 	return sonarrStatisticsSchema.parse({
 		totalSeries,
@@ -416,11 +421,15 @@ export const fetchRadarrStatistics = async (
 	const diskUsagePercent =
 		diskTotals.total > 0 ? clampPercentage((diskUsed / diskTotals.total) * 100) : 0;
 
+	// Log all health items for debugging
+	console.log(`[Radarr ${instanceName}] Health check returned ${health.length} items:`, JSON.stringify(health, null, 2));
+
 	const healthIssuesList = Array.isArray(health)
 		? health
 				.filter((item) => {
 					const healthItem = item as HealthEntry;
 					const type = toStringValue(healthItem?.type);
+					console.log(`[Radarr ${instanceName}] Health item type: "${type}"`);
 					return type === "error" || type === "warning";
 				})
 				.map((item) => {
@@ -442,6 +451,7 @@ export const fetchRadarrStatistics = async (
 				})
 		: [];
 	const healthIssues = healthIssuesList.length;
+	console.log(`[Radarr ${instanceName}] Filtered to ${healthIssues} health issues`);
 
 	return radarrStatisticsSchema.parse({
 		totalMovies,
@@ -612,11 +622,15 @@ export const fetchProwlarrStatistics = async (
 
 	const grabRate = totalQueries > 0 ? clampPercentage((totalGrabs / totalQueries) * 100) : 0;
 
+	// Log all health items for debugging
+	console.log(`[Prowlarr ${instanceName}] Health check returned ${health.length} items:`, JSON.stringify(health, null, 2));
+
 	const healthIssuesList = Array.isArray(health)
 		? health
 				.filter((item) => {
 					const healthItem = item as HealthEntry;
 					const type = toStringValue(healthItem?.type);
+					console.log(`[Prowlarr ${instanceName}] Health item type: "${type}"`);
 					return type === "error" || type === "warning";
 				})
 				.map((item) => {
@@ -638,6 +652,7 @@ export const fetchProwlarrStatistics = async (
 				})
 		: [];
 	const healthIssues = healthIssuesList.length;
+	console.log(`[Prowlarr ${instanceName}] Filtered to ${healthIssues} health issues`);
 
 	const topIndexers = normalizedStats.sort((a, b) => b.queries - a.queries).slice(0, 10);
 
