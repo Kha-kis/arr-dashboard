@@ -65,24 +65,24 @@ const LINUX_SAVE_PATHS = [
 
 // Generate a deterministic but seemingly random Linux ISO name based on string
 export function getLinuxIsoName(value: string): string {
-	if (!value) return linuxIsoNames[0];
+	if (!value) return linuxIsoNames[0]!;
 
 	let hashSum = 0;
 	for (let i = 0; i < value.length; i++) {
 		hashSum += value.charCodeAt(i);
 	}
-	return linuxIsoNames[hashSum % linuxIsoNames.length];
+	return linuxIsoNames[hashSum % linuxIsoNames.length]!;
 }
 
 // Generate deterministic Linux save path based on string
 export function getLinuxSavePath(value: string): string {
-	if (!value) return LINUX_SAVE_PATHS[0];
+	if (!value) return LINUX_SAVE_PATHS[0]!;
 
 	let hashSum = 0;
 	for (let i = 0; i < Math.min(8, value.length); i++) {
 		hashSum += value.charCodeAt(i) * (i + 3);
 	}
-	return LINUX_SAVE_PATHS[hashSum % LINUX_SAVE_PATHS.length];
+	return LINUX_SAVE_PATHS[hashSum % LINUX_SAVE_PATHS.length]!;
 }
 
 // Generic indexer name
