@@ -11,7 +11,7 @@ import type {
 import { useDashboardStatisticsQuery } from "../../../hooks/api/useDashboard";
 import { Button } from "../../../components/ui/button";
 import { Alert, AlertDescription, AlertTitle, Skeleton } from "../../../components/ui";
-import { useIncognitoMode, getLinuxIndexer, getLinuxInstanceName } from "../../../lib/incognito";
+import { useIncognitoMode, getLinuxIndexer, getLinuxInstanceName, anonymizeHealthMessage } from "../../../lib/incognito";
 
 const integer = new Intl.NumberFormat();
 const percentFormatter = new Intl.NumberFormat(undefined, {
@@ -414,7 +414,9 @@ export const StatisticsClient = () => {
 													<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
 												</svg>
 											</a>
-											<p className="text-sm">{issue.message}</p>
+											<p className="text-sm">
+												{incognitoMode ? anonymizeHealthMessage(issue.message) : issue.message}
+											</p>
 											{issue.source && (
 												<p className="text-xs text-white/50">Source: {issue.source}</p>
 											)}

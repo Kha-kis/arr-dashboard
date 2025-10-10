@@ -115,5 +115,39 @@ export function getLinuxUrl(_url: string): string {
 	return "http://192.168.1.100:8080";
 }
 
+// Anonymize health messages by replacing indexer names and show/movie names
+export function anonymizeHealthMessage(message: string): string {
+	// Replace patterns like "IndexerName (Prowlarr), OtherIndexer (Prowlarr)" with "LinuxTracker, LinuxTracker"
+	let anonymized = message.replace(/[A-Za-z0-9._-]+\s*\(Prowlarr\)/gi, "LinuxTracker");
+
+	// Replace standalone indexer names (without Prowlarr suffix) in lists
+	// Pattern: "Indexers unavailable...hours: IndexerA, IndexerB"
+	anonymized = anonymized.replace(
+		/(Indexers[^:]+:\s*)([A-Za-z0-9._\-, ]+)(\s|$)/gi,
+		(match, prefix, indexerList, suffix) => {
+			// Split by comma, replace each with LinuxTracker
+			const anonymizedList = indexerList.split(',')
+				.map(() => "LinuxTracker")
+				.join(', ');
+			return `${prefix}${anonymizedList}${suffix}`;
+		}
+	);
+
+	// Replace individual series/movie entries: "SeriesName (tvdbid 123456)" or "SeriesName (tmdbid 123456)"
+	// This will handle comma-separated lists by processing each item individually
+	anonymized = anonymized.replace(
+		/([A-Za-z0-9\s.:'&!?()\-]+?)\s+\((tvdbid|tmdbid)\s+\d+\)/gi,
+		(match, name, idType) => {
+			const isoName = getLinuxIsoName(name.trim());
+			return `${isoName} (${idType} [redacted])`;
+		}
+	);
+
+	// Replace any remaining quoted names with generic alternatives
+	anonymized = anonymized.replace(/"([^"]+)"/g, '"linux-distribution"');
+
+	return anonymized;
+}
+
 // Re-export the hook from context
 export { useIncognitoMode } from "../contexts/IncognitoContext";
