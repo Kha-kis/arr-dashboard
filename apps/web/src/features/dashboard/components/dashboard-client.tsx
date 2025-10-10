@@ -21,6 +21,7 @@ import {
 import { AlertCircle, User } from "lucide-react";
 import { QueueTable } from "./queue-table";
 import ManualImportModal from "../../manual-import/components/manual-import-modal";
+import { useIncognitoMode, getLinuxUrl } from "../../../lib/incognito";
 
 const SERVICE_FILTERS = [
 	{ value: "all" as const, label: "All services" },
@@ -30,6 +31,7 @@ const SERVICE_FILTERS = [
 
 export const DashboardClient = () => {
 	const { data: currentUser, isLoading: userLoading, error: userError } = useCurrentUser();
+	const [incognitoMode] = useIncognitoMode();
 
 	const servicesQuery = useServicesQuery({ enabled: Boolean(currentUser) });
 	const services = useMemo(() => servicesQuery.data ?? [], [servicesQuery.data]);
@@ -288,7 +290,9 @@ export const DashboardClient = () => {
 									<tr key={instance.id}>
 										<td className="px-4 py-3 font-medium text-white">{instance.label}</td>
 										<td className="px-4 py-3 capitalize">{instance.service}</td>
-										<td className="px-4 py-3 text-white/70">{instance.baseUrl}</td>
+										<td className="px-4 py-3 text-white/70">
+											{incognitoMode ? getLinuxUrl(instance.baseUrl) : instance.baseUrl}
+										</td>
 										<td className="px-4 py-3">
 											{instance.tags.length === 0 ? (
 												<span className="text-white/40">-</span>
