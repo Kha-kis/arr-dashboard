@@ -8,7 +8,7 @@ import {
 	useUpdateIndexerMutation,
 } from "../../../hooks/api/useSearch";
 import { Button } from "../../../components/ui/button";
-import { Alert, AlertDescription, Skeleton } from "../../../components/ui";
+import { Alert, AlertDescription, Skeleton, Pagination } from "../../../components/ui";
 import { computeStats } from "../lib/indexers-utils";
 import { IndexerStatsGrid } from "./indexer-stats-grid";
 import { EmptyIndexersCard } from "./empty-indexers-card";
@@ -29,11 +29,40 @@ export const IndexersClient = () => {
 		message: string;
 	} | null>(null);
 	const [expandedKey, setExpandedKey] = useState<string | null>(null);
+	const [page, setPage] = useState(1);
+	const [pageSize, setPageSize] = useState(25);
 
 	const aggregated = useMemo(() => data?.aggregated ?? [], [data?.aggregated]);
 	const stats = useMemo(() => computeStats(aggregated), [aggregated]);
 	const instances = useMemo(() => data?.instances ?? [], [data?.instances]);
 	const noInstances = !isLoading && instances.length === 0;
+
+	const paginatedAggregated = useMemo(() => {
+		const start = (page - 1) * pageSize;
+		return aggregated.slice(start, start + pageSize);
+	}, [aggregated, page, pageSize]);
+
+	const paginatedInstances = useMemo(() => {
+		const instanceMap = new Map<string, typeof instances[0]>();
+
+		for (const indexer of paginatedAggregated) {
+			const existingInstance = instanceMap.get(indexer.instanceId);
+			if (existingInstance) {
+				existingInstance.data.push(indexer);
+			} else {
+				const originalInstance = instances.find(inst => inst.instanceId === indexer.instanceId);
+				if (originalInstance) {
+					instanceMap.set(indexer.instanceId, {
+						instanceId: originalInstance.instanceId,
+						instanceName: originalInstance.instanceName,
+						data: [indexer],
+					});
+				}
+			}
+		}
+
+		return Array.from(instanceMap.values());
+	}, [paginatedAggregated, instances]);
 
 	const handleTest = async (instanceId: string, indexerId: number) => {
 		if (testMutation.isPending) {
@@ -127,8 +156,22 @@ export const IndexersClient = () => {
 				<>
 					<IndexerStatsGrid stats={stats} />
 
+					{aggregated.length > 0 && (
+						<Pagination
+							currentPage={page}
+							totalItems={aggregated.length}
+							pageSize={pageSize}
+							onPageChange={setPage}
+							onPageSizeChange={(size) => {
+								setPageSize(size);
+								setPage(1);
+							}}
+							pageSizeOptions={[25, 50, 100]}
+						/>
+					)}
+
 					<div className="space-y-8">
-						{instances.map((instance) => (
+						{paginatedInstances.map((instance) => (
 							<IndexerInstanceCard
 								key={instance.instanceId}
 								instanceId={instance.instanceId}
@@ -143,6 +186,20 @@ export const IndexersClient = () => {
 							/>
 						))}
 					</div>
+
+					{aggregated.length > 0 && (
+						<Pagination
+							currentPage={page}
+							totalItems={aggregated.length}
+							pageSize={pageSize}
+							onPageChange={setPage}
+							onPageSizeChange={(size) => {
+								setPageSize(size);
+								setPage(1);
+							}}
+							pageSizeOptions={[25, 50, 100]}
+						/>
+					)}
 				</>
 			)}
 		</section>

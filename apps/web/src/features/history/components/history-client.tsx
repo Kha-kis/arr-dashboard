@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import { useMultiInstanceHistoryQuery } from "../../../hooks/api/useDashboard";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
-import { Alert, AlertDescription } from "../../../components/ui";
+import { Alert, AlertDescription, Pagination } from "../../../components/ui";
 import { HistoryTable } from "./history-table";
 import { SERVICE_FILTERS } from "../lib/history-utils";
 import { useHistoryState } from "../hooks/use-history-state";
@@ -232,49 +232,17 @@ export const HistoryClient = () => {
 			</div>
 
 			{totalRecords > 0 && (
-				<div className="flex flex-wrap items-center justify-between gap-4 text-sm text-white/70">
-					<div>
-						Showing {showingFrom}-{showingTo} of {totalRecords} records
-					</div>
-					<div className="flex items-center gap-2">
-						<Button
-							variant="secondary"
-							onClick={() => actions.setPage(Math.max(1, page - 1))}
-							disabled={page === 1 || isLoading}
-						>
-							Previous
-						</Button>
-						<span className="px-3">
-							Page {page} of {totalPages}
-						</span>
-						<Button
-							variant="secondary"
-							onClick={() => actions.setPage(Math.min(totalPages, page + 1))}
-							disabled={page === totalPages || isLoading}
-						>
-							Next
-						</Button>
-					</div>
-					<div className="flex items-center gap-2">
-						<label htmlFor="page-size" className="text-xs">
-							Per page:
-						</label>
-						<select
-							id="page-size"
-							value={pageSize}
-							onChange={(event) => {
-								actions.setPageSize(Number(event.target.value));
-								actions.setPage(1);
-							}}
-							className="rounded-md border border-white/20 bg-white/10 px-2 py-1 text-sm text-white [&>option]:bg-slate-800 [&>option]:text-white"
-						>
-							<option value="25">25</option>
-							<option value="50">50</option>
-							<option value="100">100</option>
-							<option value="200">200</option>
-						</select>
-					</div>
-				</div>
+				<Pagination
+					currentPage={page}
+					totalItems={totalRecords}
+					pageSize={pageSize}
+					onPageChange={(newPage) => actions.setPage(newPage)}
+					onPageSizeChange={(newPageSize) => {
+						actions.setPageSize(newPageSize);
+						actions.setPage(1);
+					}}
+					pageSizeOptions={[25, 50, 100]}
+				/>
 			)}
 
 			{statusSummary.length > 0 && (

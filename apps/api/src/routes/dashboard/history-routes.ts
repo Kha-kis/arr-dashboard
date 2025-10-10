@@ -24,10 +24,10 @@ export const historyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	app.get("/dashboard/history", async (request, reply) => {
 		if (!request.currentUser) {
 			reply.status(401);
-			return { instances: [], aggregated: [], totalCount: 0 };
+			return { instances: [], aggregated: [], totalCount: 0, page: 1, pageSize: 25 };
 		}
 
-		const { startDate, endDate } = historyQuerySchema.parse(request.query ?? {});
+		const { page, pageSize, startDate, endDate } = historyQuerySchema.parse(request.query ?? {});
 
 		const instances = await app.prisma.serviceInstance.findMany({
 			where: { userId: request.currentUser.id, enabled: true },
@@ -51,12 +51,13 @@ export const historyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			try {
 				const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
-				// Fetch all records (no pagination) - let client handle pagination
+				// Fetch 2500 records from each service
+				const recordLimit = 2500;
 				const { items, totalRecords } = await fetchHistoryItems(
 					fetcher,
 					service,
 					1,
-					10000,
+					recordLimit,
 					startDate,
 					endDate,
 				);
@@ -93,6 +94,7 @@ export const historyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return dateB - dateA;
 		});
 
+		// Return all items - frontend will handle pagination after filtering
 		return reply.send({
 			instances: results,
 			aggregated: allItems,

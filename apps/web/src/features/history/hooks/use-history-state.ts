@@ -35,7 +35,7 @@ export interface UseHistoryStateReturn {
  */
 export const useHistoryState = (): UseHistoryStateReturn => {
 	const [page, setPage] = useState(1);
-	const [pageSize, setPageSize] = useState(100);
+	const [pageSize, setPageSize] = useState(25);
 	const [startDate, setStartDate] = useState("");
 	const [endDate, setEndDate] = useState("");
 	const [searchTerm, setSearchTerm] = useState("");

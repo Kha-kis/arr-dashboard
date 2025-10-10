@@ -46,6 +46,7 @@ export const fetchHistoryItems = async (
 
 	const response = await fetcher(`${historyApiPath(service)}?${params.toString()}`);
 	const payload = await response.json();
+
 	const records = Array.isArray(payload)
 		? payload
 		: Array.isArray(payload?.records)

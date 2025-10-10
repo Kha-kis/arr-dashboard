@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { LibraryItem } from "@arr/shared";
 import { useLibraryMonitorMutation } from "../../../hooks/api/useLibrary";
 import { useLibraryFilters, useLibraryData, useLibraryActions } from "../hooks";
@@ -29,6 +29,10 @@ export const LibraryClient: React.FC = () => {
 	const [itemDetail, setItemDetail] = useState<LibraryItem | null>(null);
 	const [seasonDetail, setSeasonDetail] = useState<LibraryItem | null>(null);
 
+	// Pagination state
+	const [page, setPage] = useState(1);
+	const [pageSize, setPageSize] = useState(25);
+
 	// Custom hooks
 	const filters = useLibraryFilters();
 	const data = useLibraryData({
@@ -39,6 +43,19 @@ export const LibraryClient: React.FC = () => {
 		fileFilter: filters.fileFilter,
 	});
 	const actions = useLibraryActions();
+
+	// Paginate all filtered items together
+	const paginatedItems = useMemo(() => {
+		const allItems = [...data.grouped.movies, ...data.grouped.series];
+		const start = (page - 1) * pageSize;
+		return allItems.slice(start, start + pageSize);
+	}, [data.grouped.movies, data.grouped.series, page, pageSize]);
+
+	// Group paginated items by type
+	const paginatedGrouped = useMemo(() => ({
+		movies: paginatedItems.filter(item => item.type === "movie"),
+		series: paginatedItems.filter(item => item.type === "series"),
+	}), [paginatedItems]);
 
 	// Monitor mutation for toggling item monitoring
 	const monitorMutation = useLibraryMonitorMutation();
@@ -113,7 +130,15 @@ export const LibraryClient: React.FC = () => {
 					isLoading={data.isLoading}
 					isError={data.isError}
 					error={data.error}
-					grouped={data.grouped}
+					grouped={paginatedGrouped}
+					totalItems={data.grouped.movies.length + data.grouped.series.length}
+					page={page}
+					pageSize={pageSize}
+					onPageChange={setPage}
+					onPageSizeChange={(size) => {
+						setPageSize(size);
+						setPage(1);
+					}}
 					onToggleMonitor={handleToggleMonitor}
 					pendingKey={pendingKey}
 					isMonitorPending={monitorMutation.isPending}
