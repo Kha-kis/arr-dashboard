@@ -8,7 +8,7 @@ on:
 
 env:
   DOCKERHUB_IMAGE: khak1s/arr-dashboard
-  GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/arr-dashboard
+  GHCR_IMAGE: ghcr.io/kha-kis/arr-dashboard
 
 jobs:
   build:
