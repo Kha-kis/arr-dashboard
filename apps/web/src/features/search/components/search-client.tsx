@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { SearchResult } from "@arr/shared";
 import {
@@ -19,6 +19,7 @@ import {
 	AlertTitle,
 	AlertDescription,
 	Skeleton,
+	Pagination,
 } from "../../../components/ui";
 import { SearchResultsTable } from "./search-results-table";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
@@ -33,6 +34,8 @@ import { useSearchData } from "../hooks/use-search-data";
 
 export const SearchClient = () => {
 	const [results, setResults] = useState<SearchResult[]>([]);
+	const [page, setPage] = useState(1);
+	const [pageSize, setPageSize] = useState(25);
 
 	const searchState = useSearchState();
 	const {
@@ -56,6 +59,11 @@ export const SearchClient = () => {
 		...filters,
 		...sort,
 	});
+
+	const paginatedResults = useMemo(() => {
+		const start = (page - 1) * pageSize;
+		return processed.results.slice(start, start + pageSize);
+	}, [processed.results, page, pageSize]);
 
 	useEffect(() => {
 		if (!indexersQuery.data || indexersQuery.data.instances.length === 0) {
@@ -319,8 +327,22 @@ export const SearchClient = () => {
 						/>
 					)}
 
+					{processed.results.length > 0 && (
+						<Pagination
+							currentPage={page}
+							totalItems={processed.results.length}
+							pageSize={pageSize}
+							onPageChange={setPage}
+							onPageSizeChange={(size) => {
+								setPageSize(size);
+								setPage(1);
+							}}
+							pageSizeOptions={[25, 50, 100]}
+						/>
+					)}
+
 					<SearchResultsTable
-						results={processed.results}
+						results={paginatedResults}
 						loading={searchMutation.isPending}
 						onGrab={handleGrab}
 						grabbingKey={grabbingKey}
@@ -328,6 +350,20 @@ export const SearchClient = () => {
 						onOpenInfo={handleOpenInfo}
 						emptyMessage={emptyMessage}
 					/>
+
+					{processed.results.length > 0 && (
+						<Pagination
+							currentPage={page}
+							totalItems={processed.results.length}
+							pageSize={pageSize}
+							onPageChange={setPage}
+							onPageSizeChange={(size) => {
+								setPageSize(size);
+								setPage(1);
+							}}
+							pageSizeOptions={[25, 50, 100]}
+						/>
+					)}
 				</>
 			)}
 		</section>

@@ -25,6 +25,8 @@ export const useMultiInstanceQueueQuery = () =>
 export const useMultiInstanceHistoryQuery = (params?: {
 	startDate?: string;
 	endDate?: string;
+	page?: number;
+	pageSize?: number;
 }) =>
 	useQuery<MultiInstanceHistoryResponse>({
 		queryKey: ["dashboard", "history", params],

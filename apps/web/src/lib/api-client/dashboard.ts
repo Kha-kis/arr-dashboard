@@ -24,6 +24,8 @@ export async function fetchMultiInstanceQueue(): Promise<MultiInstanceQueueRespo
 export async function fetchMultiInstanceHistory(options?: {
 	startDate?: string;
 	endDate?: string;
+	page?: number;
+	pageSize?: number;
 }): Promise<MultiInstanceHistoryResponse> {
 	const searchParams = new URLSearchParams();
 	if (options?.startDate) {
@@ -31,6 +33,12 @@ export async function fetchMultiInstanceHistory(options?: {
 	}
 	if (options?.endDate) {
 		searchParams.set("endDate", options.endDate);
+	}
+	if (options?.page) {
+		searchParams.set("page", String(options.page));
+	}
+	if (options?.pageSize) {
+		searchParams.set("pageSize", String(options.pageSize));
 	}
 	const path =
 		searchParams.size > 0
@@ -41,7 +49,7 @@ export async function fetchMultiInstanceHistory(options?: {
 		return await apiRequest<MultiInstanceHistoryResponse>(path);
 	} catch (error) {
 		if (error instanceof UnauthorizedError) {
-			return { instances: [], aggregated: [], totalCount: 0 };
+			return { instances: [], aggregated: [], totalCount: 0, page: 1, pageSize: 25 };
 		}
 		throw error;
 	}

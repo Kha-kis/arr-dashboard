@@ -16,6 +16,7 @@ import {
 	Skeleton,
 	SkeletonText,
 	SkeletonCard,
+	Pagination,
 } from "../../../components/ui";
 import { AlertCircle, User } from "lucide-react";
 import { QueueTable } from "./queue-table";
@@ -65,6 +66,8 @@ export const DashboardClient = () => {
 		useState<(typeof SERVICE_FILTERS)[number]["value"]>("all");
 	const [instanceFilter, setInstanceFilter] = useState<string>("all");
 	const [statusFilter, setStatusFilter] = useState<string>("all");
+	const [page, setPage] = useState(1);
+	const [pageSize, setPageSize] = useState(25);
 
 	const isLoading = userLoading || (servicesLoading && Boolean(currentUser));
 
@@ -117,6 +120,11 @@ export const DashboardClient = () => {
 			return true;
 		});
 	}, [queueAggregated, serviceFilter, instanceFilter, statusFilter]);
+
+	const paginatedQueueItems = useMemo(() => {
+		const start = (page - 1) * pageSize;
+		return filteredQueueItems.slice(start, start + pageSize);
+	}, [filteredQueueItems, page, pageSize]);
 
 	const statusSummary = useMemo(() => {
 		const summary = new Map<string, number>();
@@ -210,6 +218,7 @@ export const DashboardClient = () => {
 		setServiceFilter("all");
 		setInstanceFilter("all");
 		setStatusFilter("all");
+		setPage(1);
 	};
 
 	return (
@@ -412,8 +421,21 @@ export const DashboardClient = () => {
 						</AlertDescription>
 					</Alert>
 				)}
+				{filteredQueueItems.length > 0 && (
+					<Pagination
+						currentPage={page}
+						totalItems={filteredQueueItems.length}
+						pageSize={pageSize}
+						onPageChange={setPage}
+						onPageSizeChange={(size) => {
+							setPageSize(size);
+							setPage(1);
+						}}
+						pageSizeOptions={[25, 50, 100]}
+					/>
+				)}
 				<QueueTable
-					items={filteredQueueItems}
+					items={paginatedQueueItems}
 					loading={queueQuery.isLoading}
 					pending={queueActions.isPending}
 					onRetry={handleQueueRetry}
@@ -427,6 +449,19 @@ export const DashboardClient = () => {
 					onChangeCategory={handleQueueChangeCategory}
 					emptyMessage={emptyMessage}
 				/>
+				{filteredQueueItems.length > 0 && (
+					<Pagination
+						currentPage={page}
+						totalItems={filteredQueueItems.length}
+						pageSize={pageSize}
+						onPageChange={setPage}
+						onPageSizeChange={(size) => {
+							setPageSize(size);
+							setPage(1);
+						}}
+						pageSizeOptions={[25, 50, 100]}
+					/>
+				)}
 			</div>
 
 			<ManualImportModal
