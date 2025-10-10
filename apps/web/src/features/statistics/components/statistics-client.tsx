@@ -11,7 +11,7 @@ import type {
 import { useDashboardStatisticsQuery } from "../../../hooks/api/useDashboard";
 import { Button } from "../../../components/ui/button";
 import { Alert, AlertDescription, AlertTitle, Skeleton } from "../../../components/ui";
-import { useIncognitoMode, getLinuxIndexer, getLinuxInstanceName, anonymizeHealthMessage } from "../../../lib/incognito";
+import { useIncognitoMode, getLinuxIndexer, getLinuxInstanceName, anonymizeHealthMessage, getLinuxUrl } from "../../../lib/incognito";
 
 const integer = new Intl.NumberFormat();
 const percentFormatter = new Intl.NumberFormat(undefined, {
@@ -399,7 +399,7 @@ export const StatisticsClient = () => {
 										</span>
 										<div className="flex-1 space-y-2">
 											<a
-												href={`${issue.instanceBaseUrl}/system/status`}
+												href={`${incognitoMode ? getLinuxUrl(issue.instanceBaseUrl) : issue.instanceBaseUrl}/system/status`}
 												target="_blank"
 												rel="noopener noreferrer"
 												className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/30 transition-colors text-sm font-medium"
