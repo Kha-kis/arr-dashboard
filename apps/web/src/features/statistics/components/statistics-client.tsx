@@ -11,6 +11,7 @@ import type {
 import { useDashboardStatisticsQuery } from "../../../hooks/api/useDashboard";
 import { Button } from "../../../components/ui/button";
 import { Alert, AlertDescription, AlertTitle, Skeleton } from "../../../components/ui";
+import { useIncognitoMode, getLinuxIndexer, getLinuxInstanceName } from "../../../lib/incognito";
 
 const integer = new Intl.NumberFormat();
 const percentFormatter = new Intl.NumberFormat(undefined, {
@@ -123,12 +124,14 @@ interface InstanceTableProps<Row extends InstanceRow> {
 	rows: Row[];
 	emptyMessage: string;
 	columns: InstanceTableColumn<Row>[];
+	incognitoMode: boolean;
 }
 
 const InstanceTable = <Row extends InstanceRow>({
 	rows,
 	emptyMessage,
 	columns,
+	incognitoMode,
 }: InstanceTableProps<Row>) => {
 	if (rows.length === 0) {
 		return (
@@ -157,7 +160,9 @@ const InstanceTable = <Row extends InstanceRow>({
 				<tbody className="divide-y divide-white/5">
 					{rows.map((row) => (
 						<tr key={row.instanceId} className="hover:bg-white/10">
-							<td className="px-4 py-3 text-white">{row.instanceName}</td>
+							<td className="px-4 py-3 text-white">
+								{incognitoMode ? getLinuxInstanceName(row.instanceName) : row.instanceName}
+							</td>
 							{columns.map((column) => {
 								const raw = row[column.key];
 								const formatted = column.formatter
@@ -229,6 +234,7 @@ const buildProwlarrRows = (
 
 export const StatisticsClient = () => {
 	const { data, isLoading, isFetching, error, refetch } = useDashboardStatisticsQuery();
+	const [incognitoMode] = useIncognitoMode();
 
 	const sonarrInstances = data?.sonarr.instances ?? [];
 	const radarrInstances = data?.radarr.instances ?? [];
@@ -398,7 +404,12 @@ export const StatisticsClient = () => {
 												rel="noopener noreferrer"
 												className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 hover:border-white/30 transition-colors text-sm font-medium"
 											>
-												<span>View in {issue.instanceName}</span>
+												<span>
+													View in{" "}
+													{incognitoMode
+														? getLinuxInstanceName(issue.instanceName)
+														: issue.instanceName}
+												</span>
 												<svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 													<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
 												</svg>
@@ -477,6 +488,7 @@ export const StatisticsClient = () => {
 				<InstanceTable
 					rows={sonarrRows}
 					emptyMessage="No Sonarr instances configured."
+					incognitoMode={incognitoMode}
 					columns={[
 						{ key: "totalSeries", label: "Series" },
 						{ key: "monitoredSeries", label: "Monitored" },
@@ -529,6 +541,7 @@ export const StatisticsClient = () => {
 				<InstanceTable
 					rows={radarrRows}
 					emptyMessage="No Radarr instances configured."
+					incognitoMode={incognitoMode}
 					columns={[
 						{ key: "totalMovies", label: "Movies" },
 						{ key: "monitoredMovies", label: "Monitored" },
@@ -594,6 +607,7 @@ export const StatisticsClient = () => {
 				<InstanceTable
 					rows={prowlarrRows}
 					emptyMessage="No Prowlarr instances configured."
+					incognitoMode={incognitoMode}
 					columns={[
 						{ key: "totalIndexers", label: "Indexers" },
 						{ key: "activeIndexers", label: "Active" },
@@ -617,7 +631,9 @@ export const StatisticsClient = () => {
 							<tbody className="divide-y divide-white/10">
 								{prowlarrTotals.indexers.map((indexer: ProwlarrIndexerStat) => (
 									<tr key={indexer.name}>
-										<td className="py-2 text-white">{indexer.name}</td>
+										<td className="py-2 text-white">
+											{incognitoMode ? getLinuxIndexer(indexer.name) : indexer.name}
+										</td>
 										<td className="py-2 text-right text-white/70">
 											{integer.format(indexer.queries)}
 										</td>

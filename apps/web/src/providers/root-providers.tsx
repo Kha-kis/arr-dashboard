@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { ThemeProvider } from "next-themes";
 import React from "react";
+import { IncognitoProvider } from "../contexts/IncognitoContext";
 
 interface RootProvidersProps {
 	readonly children: React.ReactNode;
@@ -26,8 +27,10 @@ export const RootProviders: React.FC<RootProvidersProps> = ({ children }) => {
 	return (
 		<ThemeProvider attribute="class" defaultTheme="system" enableSystem>
 			<QueryClientProvider client={queryClient}>
-				{children}
-				<ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-right" />
+				<IncognitoProvider>
+					{children}
+					<ReactQueryDevtools initialIsOpen={false} buttonPosition="bottom-right" />
+				</IncognitoProvider>
 			</QueryClientProvider>
 		</ThemeProvider>
 	);

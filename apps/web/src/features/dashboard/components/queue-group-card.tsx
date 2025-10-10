@@ -15,6 +15,7 @@ import { QueueProgress } from "./queue-progress";
 import { QueueItemCard } from "./queue-item-card";
 import { QueueItemMetadata } from "./queue-item-metadata";
 import { buildKey, collectStatusLines } from "../lib/queue-utils";
+import { useIncognitoMode, getLinuxIsoName } from "../../../lib/incognito";
 
 interface QueueGroupCardProps {
 	groupKey: string;
@@ -65,6 +66,7 @@ export const QueueGroupCard = ({
 	isItemSelected,
 	onToggleItemSelect,
 }: QueueGroupCardProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	// Create a minimal item for metadata display
 	const firstItem = items[0];
 	const metadataItem: QueueItem = firstItem
@@ -99,7 +101,9 @@ export const QueueGroupCard = ({
 							) : (
 								<ChevronRight className="h-4 w-4" />
 							)}
-							<span className="font-semibold">{title}</span>
+							<span className="font-semibold">
+							{incognitoMode ? getLinuxIsoName(title) : title}
+						</span>
 						</button>
 						<QueueItemMetadata item={metadataItem} showGroupCount groupCount={groupCount} />
 					</div>

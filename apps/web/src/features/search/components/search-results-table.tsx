@@ -3,6 +3,12 @@
 import type { SearchResult } from "@arr/shared";
 import { Copy, ExternalLink } from "lucide-react";
 import { Button } from "../../../components/ui/button";
+import {
+	useIncognitoMode,
+	getLinuxIsoName,
+	getLinuxIndexer,
+	getLinuxInstanceName,
+} from "../../../lib/incognito";
 
 const integer = new Intl.NumberFormat();
 
@@ -136,6 +142,8 @@ export const SearchResultsTable = ({
 	onCopyMagnet,
 	onOpenInfo,
 }: SearchResultsTableProps) => {
+	const [incognitoMode] = useIncognitoMode();
+
 	if (loading) {
 		return (
 			<div className="rounded-xl border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-white/70">
@@ -182,7 +190,7 @@ export const SearchResultsTable = ({
 									<div className="space-y-3 break-words">
 										<div className="flex flex-wrap items-center gap-2">
 											<span className="font-semibold leading-tight break-words">
-												{result.title}
+												{incognitoMode ? getLinuxIsoName(result.title) : result.title}
 											</span>
 											<span
 												className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${protocolBadgeClass(result.protocol)}`}
@@ -202,9 +210,13 @@ export const SearchResultsTable = ({
 										</div>
 
 										<div className="flex flex-wrap items-center gap-3 text-xs text-white/60">
-											<span className="font-medium text-white/80">{result.indexer}</span>
+											<span className="font-medium text-white/80">
+												{incognitoMode ? getLinuxIndexer(result.indexer) : result.indexer}
+											</span>
 											<span className="text-white/45">#{result.indexerId}</span>
-											<span className="text-white/45">{result.instanceName}</span>
+											<span className="text-white/45">
+												{incognitoMode ? getLinuxInstanceName(result.instanceName) : result.instanceName}
+											</span>
 										</div>
 
 										<div className="flex flex-wrap gap-2 text-[11px] text-white/70">

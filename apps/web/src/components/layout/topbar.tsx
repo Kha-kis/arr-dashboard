@@ -2,7 +2,9 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import { EyeOff, Eye } from "lucide-react";
 import { useCurrentUser, useLogoutMutation } from "../../hooks/api/useAuth";
+import { useIncognitoMode } from "../../lib/incognito";
 import { Button } from "../ui/button";
 
 export const TopBar = () => {
@@ -10,6 +12,7 @@ export const TopBar = () => {
 	const pathname = usePathname();
 	const router = useRouter();
 	const logoutMutation = useLogoutMutation();
+	const [incognitoMode, setIncognitoMode] = useIncognitoMode();
 
 	if (pathname === "/login") {
 		return null;
@@ -39,6 +42,19 @@ export const TopBar = () => {
 					</Button>
 				) : user ? (
 					<>
+						<Button
+							variant="ghost"
+							size="sm"
+							onClick={() => setIncognitoMode(!incognitoMode)}
+							title={incognitoMode ? "Show real data" : "Hide sensitive data"}
+							className="relative h-9 w-9 p-0"
+						>
+							{incognitoMode ? (
+								<EyeOff className="h-4 w-4" />
+							) : (
+								<Eye className="h-4 w-4" />
+							)}
+						</Button>
 						<div className="group relative flex items-center gap-3 px-3 py-2 rounded-lg bg-bg-subtle/40 backdrop-blur-sm border border-border/50 hover:border-primary/30 transition-all duration-200 cursor-pointer">
 							<div className="absolute inset-0 rounded-lg bg-gradient-to-r from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
 

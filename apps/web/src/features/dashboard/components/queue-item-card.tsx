@@ -15,6 +15,7 @@ import { QueueItemMetadata } from "./queue-item-metadata";
 import { QueueStatusMessages } from "./queue-status-messages";
 import type { StatusLine } from "../lib/queue-utils";
 import { summarizeIssueCounts, computeProgressValue } from "../lib/queue-utils";
+import { useIncognitoMode, getLinuxIsoName } from "../../../lib/incognito";
 
 export interface QueueItemCardProps {
 	item: QueueItem;
@@ -40,6 +41,7 @@ export const QueueItemCard = ({
 	onAction,
 	primaryAction,
 }: QueueItemCardProps) => {
+	const [incognitoMode] = useIncognitoMode();
 	const issueSummary = summarizeIssueCounts(issueLines);
 	const progressValue = computeProgressValue([item]);
 
@@ -74,7 +76,11 @@ export const QueueItemCard = ({
 					/>
 					<div className="min-w-0 space-y-2">
 						<div>
-							<p className="font-medium text-white">{item.title ?? "Unnamed item"}</p>
+							<p className="font-medium text-white">
+								{incognitoMode
+									? getLinuxIsoName(item.title ?? "Unnamed item")
+									: (item.title ?? "Unnamed item")}
+							</p>
 							<QueueItemMetadata item={item} />
 						</div>
 						{issueLines.length > 0 && <QueueStatusMessages lines={issueLines} />}

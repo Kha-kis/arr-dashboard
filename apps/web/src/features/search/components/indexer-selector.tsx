@@ -2,6 +2,7 @@
 
 import type { SearchIndexersResponse } from "@arr/shared";
 import { Button } from "../../../components/ui";
+import { useIncognitoMode, getLinuxIndexer, getLinuxInstanceName } from "../../../lib/incognito";
 
 interface IndexerSelectorProps {
 	/**
@@ -34,6 +35,8 @@ export const IndexerSelector = ({
 	onToggleIndexer,
 	onToggleAll,
 }: IndexerSelectorProps) => {
+	const [incognitoMode] = useIncognitoMode();
+
 	return (
 		<div className="space-y-4">
 			{indexersData.instances.map((instance) => {
@@ -48,7 +51,11 @@ export const IndexerSelector = ({
 					>
 						<div className="mb-3 flex flex-wrap items-center justify-between gap-2">
 							<div>
-								<p className="text-sm font-semibold text-white">{instance.instanceName}</p>
+								<p className="text-sm font-semibold text-white">
+									{incognitoMode
+										? getLinuxInstanceName(instance.instanceName)
+										: instance.instanceName}
+								</p>
 								<p className="text-xs text-white/50">
 									{ids.length} of {instance.data.length} indexers selected
 								</p>
@@ -75,7 +82,7 @@ export const IndexerSelector = ({
 												: "border-white/20 bg-transparent text-white/70 hover:border-white/40"
 										}`}
 									>
-										{indexer.name}
+										{incognitoMode ? getLinuxIndexer(indexer.name) : indexer.name}
 									</button>
 								);
 							})}

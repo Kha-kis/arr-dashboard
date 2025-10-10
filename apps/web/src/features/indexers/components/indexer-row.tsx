@@ -4,6 +4,7 @@ import type { ProwlarrIndexer, ProwlarrIndexerDetails } from "@arr/shared";
 import { Button } from "../../../components/ui/button";
 import { IndexerDetailsPanel } from "./indexer-details-panel";
 import { protocolLabel } from "../lib/indexers-utils";
+import { useIncognitoMode, getLinuxIndexer } from "../../../lib/incognito";
 
 /**
  * Single indexer row displaying basic info with test and details toggle buttons
@@ -37,11 +38,15 @@ export const IndexerRow = ({
 	expanded: boolean;
 	onToggleDetails: () => void;
 }) => {
+	const [incognitoMode] = useIncognitoMode();
+
 	return (
 		<div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
 			<div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 				<div className="space-y-1">
-					<p className="text-sm font-semibold text-white">{indexer.name}</p>
+					<p className="text-sm font-semibold text-white">
+						{incognitoMode ? getLinuxIndexer(indexer.name) : indexer.name}
+					</p>
 					<p className="text-xs text-white/50">
 						{protocolLabel(indexer.protocol)} · Priority {indexer.priority ?? 0}
 					</p>
