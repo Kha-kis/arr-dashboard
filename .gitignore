@@ -31,6 +31,7 @@ legacy/node_modules
 *.db
 *.db-journal
 data/
+data-dev/
 apps/api/dev.db
 
 # Development tool artifacts

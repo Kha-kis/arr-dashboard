@@ -1,0 +1,87 @@
+name: Build and Push Dev Docker Image
+
+on:
+  # Auto-build on every push to main
+  push:
+    branches:
+      - main
+  # Or manually trigger from Actions tab
+  workflow_dispatch:
+
+env:
+  DOCKERHUB_IMAGE: khak1s/arr-dashboard
+  GHCR_IMAGE: ghcr.io/${{ github.repository_owner }}/arr-dashboard
+
+jobs:
+  build-dev:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate dev tag
+        id: dev-tag
+        run: echo "tag=dev-$(date +%Y%m%d-%H%M%S)-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Build and push dev Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ env.DOCKERHUB_IMAGE }}:dev
+            ${{ env.DOCKERHUB_IMAGE }}:${{ steps.dev-tag.outputs.tag }}
+            ${{ env.GHCR_IMAGE }}:dev
+            ${{ env.GHCR_IMAGE }}:${{ steps.dev-tag.outputs.tag }}
+          labels: |
+            org.opencontainers.image.title=Arr Dashboard (Dev)
+            org.opencontainers.image.description=Development build of Arr Dashboard
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ github.event.head_commit.timestamp }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Comment on commit (if triggered by push)
+        if: github.event_name == 'push'
+        uses: peter-evans/commit-comment@v3
+        with:
+          body: |
+            🐳 Dev Docker image built and pushed!
+
+            **Docker Hub:**
+            - `${{ env.DOCKERHUB_IMAGE }}:dev`
+            - `${{ env.DOCKERHUB_IMAGE }}:${{ steps.dev-tag.outputs.tag }}`
+
+            **GHCR:**
+            - `${{ env.GHCR_IMAGE }}:dev`
+            - `${{ env.GHCR_IMAGE }}:${{ steps.dev-tag.outputs.tag }}`
+
+            To test:
+            ```bash
+            docker pull ${{ env.DOCKERHUB_IMAGE }}:dev
+            docker-compose -f docker-compose.dev.yml up -d
+            ```
