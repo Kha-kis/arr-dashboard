@@ -2,7 +2,7 @@
 
 import type { LibraryItem, ServiceInstanceSummary } from "@arr/shared";
 import { Library as LibraryIcon, Loader2 } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle, EmptyState } from "../../../components/ui";
+import { Alert, AlertDescription, AlertTitle, EmptyState, Pagination } from "../../../components/ui";
 
 /**
  * Props for LibraryCard component (passthrough)
@@ -30,11 +30,21 @@ interface LibraryContentProps {
 	isError: boolean;
 	/** Error object */
 	error?: Error | null;
-	/** Grouped library items */
+	/** Grouped library items (paginated) */
 	grouped: {
 		movies: LibraryItem[];
 		series: LibraryItem[];
 	};
+	/** Total items count */
+	totalItems: number;
+	/** Current page */
+	page: number;
+	/** Page size */
+	pageSize: number;
+	/** Page change handler */
+	onPageChange: (page: number) => void;
+	/** Page size change handler */
+	onPageSizeChange: (size: number) => void;
 	/** Handler for toggling monitoring */
 	onToggleMonitor: (item: LibraryItem) => void;
 	/** Pending key for monitor mutation */
@@ -76,6 +86,11 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 	isError,
 	error,
 	grouped,
+	totalItems,
+	page,
+	pageSize,
+	onPageChange,
+	onPageSizeChange,
 	onToggleMonitor,
 	pendingKey,
 	isMonitorPending,
@@ -89,7 +104,9 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 	buildLibraryExternalLink,
 	LibraryCard,
 }) => {
-	const totalItems = grouped.movies.length + grouped.series.length;
+
+	const allItems = [...grouped.movies, ...grouped.series];
+	const hasBothTypes = grouped.movies.length > 0 && grouped.series.length > 0;
 
 	return (
 		<>
@@ -107,52 +124,94 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 				/>
 			) : null}
 
-			{grouped.movies.length > 0 ? (
-				<section className="space-y-4">
-					<div className="flex items-center justify-between">
-						<h2 className="text-xl font-semibold text-white">Movies</h2>
-						<span className="text-sm text-white/50">{grouped.movies.length} items</span>
-					</div>
-					<div className="grid gap-4 lg:grid-cols-2">
-						{grouped.movies.map((item) => (
-							<LibraryCard
-								key={`${item.instanceId}:${item.id}`}
-								item={item}
-								onToggleMonitor={onToggleMonitor}
-								pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
-								externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
-								onSearchMovie={onSearchMovie}
-								movieSearchPending={pendingMovieSearch === `${item.instanceId}:${item.id}`}
-								onExpandDetails={onExpandDetails}
-							/>
-						))}
-					</div>
-				</section>
-			) : null}
+			{totalItems > 0 && (
+				<Pagination
+					currentPage={page}
+					totalItems={totalItems}
+					pageSize={pageSize}
+					onPageChange={onPageChange}
+					onPageSizeChange={onPageSizeChange}
+					pageSizeOptions={[25, 50, 100]}
+				/>
+			)}
 
-			{grouped.series.length > 0 ? (
-				<section className="space-y-4">
-					<div className="flex items-center justify-between">
-						<h2 className="text-xl font-semibold text-white">Series</h2>
-						<span className="text-sm text-white/50">{grouped.series.length} items</span>
-					</div>
-					<div className="grid gap-4 lg:grid-cols-2">
-						{grouped.series.map((item) => (
-							<LibraryCard
-								key={`${item.instanceId}:${item.id}`}
-								item={item}
-								onToggleMonitor={onToggleMonitor}
-								pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
-								externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
-								onViewSeasons={onViewSeasons}
-								onSearchSeries={onSearchSeries}
-								seriesSearchPending={pendingSeriesSearch === `${item.instanceId}:${item.id}`}
-								onExpandDetails={onExpandDetails}
-							/>
-						))}
-					</div>
-				</section>
-			) : null}
+			{hasBothTypes ? (
+				<div className="grid gap-4 lg:grid-cols-2">
+					{allItems.map((item) => (
+						<LibraryCard
+							key={`${item.instanceId}:${item.id}`}
+							item={item}
+							onToggleMonitor={onToggleMonitor}
+							pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
+							externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
+							onViewSeasons={item.type === "series" ? onViewSeasons : undefined}
+							onSearchMovie={item.type === "movie" ? onSearchMovie : undefined}
+							movieSearchPending={item.type === "movie" ? pendingMovieSearch === `${item.instanceId}:${item.id}` : undefined}
+							onSearchSeries={item.type === "series" ? onSearchSeries : undefined}
+							seriesSearchPending={item.type === "series" ? pendingSeriesSearch === `${item.instanceId}:${item.id}` : undefined}
+							onExpandDetails={onExpandDetails}
+						/>
+					))}
+				</div>
+			) : (
+				<>
+					{grouped.movies.length > 0 ? (
+						<section className="space-y-4">
+							<div className="flex items-center justify-between">
+								<h2 className="text-xl font-semibold text-white">Movies</h2>
+							</div>
+							<div className="grid gap-4 lg:grid-cols-2">
+								{grouped.movies.map((item) => (
+									<LibraryCard
+										key={`${item.instanceId}:${item.id}`}
+										item={item}
+										onToggleMonitor={onToggleMonitor}
+										pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
+										externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
+										onSearchMovie={onSearchMovie}
+										movieSearchPending={pendingMovieSearch === `${item.instanceId}:${item.id}`}
+										onExpandDetails={onExpandDetails}
+									/>
+								))}
+							</div>
+						</section>
+					) : null}
+
+					{grouped.series.length > 0 ? (
+						<section className="space-y-4">
+							<div className="flex items-center justify-between">
+								<h2 className="text-xl font-semibold text-white">Series</h2>
+							</div>
+							<div className="grid gap-4 lg:grid-cols-2">
+								{grouped.series.map((item) => (
+									<LibraryCard
+										key={`${item.instanceId}:${item.id}`}
+										item={item}
+										onToggleMonitor={onToggleMonitor}
+										pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
+										externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
+										onViewSeasons={onViewSeasons}
+										onSearchSeries={onSearchSeries}
+										seriesSearchPending={pendingSeriesSearch === `${item.instanceId}:${item.id}`}
+										onExpandDetails={onExpandDetails}
+									/>
+								))}
+							</div>
+						</section>
+					) : null}
+				</>
+			)}
+
+			{totalItems > 0 && (
+				<Pagination
+					currentPage={page}
+					totalItems={totalItems}
+					pageSize={pageSize}
+					onPageChange={onPageChange}
+					onPageSizeChange={onPageSizeChange}
+					pageSizeOptions={[25, 50, 100]}
+				/>
+			)}
 
 			{isError ? (
 				<Alert variant="danger">

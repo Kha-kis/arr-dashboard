@@ -52,3 +52,6 @@ export {
 	SkeletonCard,
 	SkeletonAvatar,
 } from "./skeleton";
+
+// Navigation
+export { Pagination, type PaginationProps } from "./pagination";
