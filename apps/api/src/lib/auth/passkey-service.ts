@@ -51,7 +51,7 @@ export class PasskeyService {
 		const options = await generateRegistrationOptions({
 			rpName: this.config.rpName,
 			rpID: this.config.rpID,
-			userID: userId,
+			userID: Buffer.from(userId, "utf-8"), // Convert string to Buffer for @simplewebauthn/server v13+
 			userName: username,
 			userDisplayName: userEmail,
 			// Exclude existing credentials to prevent re-registering the same authenticator
@@ -95,16 +95,16 @@ export class PasskeyService {
 			throw new Error("Passkey registration verification failed");
 		}
 
-		const { credentialID, credentialPublicKey, counter, credentialBackedUp } =
-			verification.registrationInfo;
+		// @simplewebauthn/server v13+ changed the structure - credentials are now under 'credential' object
+		const { credential, credentialBackedUp } = verification.registrationInfo;
 
 		// Store credential in database
 		await this.app.prisma.webAuthnCredential.create({
 			data: {
-				id: Buffer.from(credentialID).toString("base64url"),
+				id: Buffer.from(credential.id).toString("base64url"),
 				userId,
-				publicKey: Buffer.from(credentialPublicKey).toString("base64url"),
-				counter,
+				publicKey: Buffer.from(credential.publicKey).toString("base64url"),
+				counter: credential.counter,
 				transports: response.response.transports
 					? JSON.stringify(response.response.transports)
 					: null,
