@@ -19,21 +19,23 @@ enum ServiceType {
 }
 
 model User {
-  id                  String            @id @default(cuid())
-  email               String            @unique
-  username            String            @unique
-  hashedPassword      String
-  role                UserRole          @default(USER)
-  mustChangePassword  Boolean           @default(false)
-  failedLoginAttempts Int               @default(0)
+  id                  String                @id @default(cuid())
+  email               String                @unique
+  username            String                @unique
+  hashedPassword      String?               // Optional: users can authenticate via OIDC or passkeys
+  role                UserRole              @default(USER)
+  mustChangePassword  Boolean               @default(false)
+  failedLoginAttempts Int                   @default(0)
   lockedUntil         DateTime?
   encryptedTmdbApiKey String?
   tmdbEncryptionIv    String?
-  createdAt           DateTime          @default(now())
-  updatedAt           DateTime          @updatedAt
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
   sessions            Session[]
   serviceInstances    ServiceInstance[]
   serviceTags         ServiceTag[]
+  oidcAccounts        OIDCAccount[]
+  webauthnCredentials WebAuthnCredential[]
 }
 
 model Session {
@@ -90,4 +92,39 @@ model ServiceInstanceTag {
   tag      ServiceTag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@id([instanceId, tagId])
+}
+
+// OIDC Account for external authentication providers (Authelia, Authentik, etc.)
+model OIDCAccount {
+  id              String   @id @default(cuid())
+  userId          String
+  provider        String   // e.g., "authelia", "authentik", "generic"
+  providerUserId  String   // The user ID from the OIDC provider
+  providerEmail   String?  // Email from the OIDC provider
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerUserId])
+  @@index([userId])
+  @@map("oidc_accounts")
+}
+
+// WebAuthn credentials for passkey authentication
+model WebAuthnCredential {
+  id                String   @id // Base64url encoded credential ID
+  userId            String
+  publicKey         String   // Base64url encoded public key
+  counter           Int      @default(0) // Signature counter for security
+  transports        String?  // JSON array of allowed transports (usb, nfc, ble, internal)
+  backedUp          Boolean  @default(false) // Whether credential is backed up to cloud
+  friendlyName      String?  // User-provided name (e.g., "iPhone", "YubiKey")
+  createdAt         DateTime @default(now())
+  lastUsedAt        DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("webauthn_credentials")
 }
