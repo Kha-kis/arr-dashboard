@@ -74,6 +74,6 @@ jobs:
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-          repository: ${{ env.IMAGE_NAME }}
+          repository: ${{ env.DOCKERHUB_IMAGE }}
           short-description: ${{ github.event.repository.description }}
           readme-filepath: ./docker/README.md
