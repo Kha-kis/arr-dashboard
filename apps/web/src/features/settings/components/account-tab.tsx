@@ -10,6 +10,7 @@ import {
 	CardDescription,
 } from "../../../components/ui/card";
 import { Alert, AlertDescription } from "../../../components/ui";
+import { PasskeySection } from "./passkey-section";
 
 /**
  * Account form state
@@ -62,8 +63,9 @@ export const AccountTab = ({
 	updateResult,
 }: AccountTabProps) => {
 	return (
-		<div className="grid gap-6 md:grid-cols-[2fr,1fr]">
-			<Card>
+		<div className="space-y-6">
+			<div className="grid gap-6 md:grid-cols-[2fr,1fr]">
+				<Card>
 				<CardHeader>
 					<CardTitle>Account Information</CardTitle>
 					<CardDescription>Update your email, username, or password.</CardDescription>
@@ -217,6 +219,10 @@ export const AccountTab = ({
 					</div>
 				</CardContent>
 			</Card>
+			</div>
+
+			{/* Passkey Management Section */}
+			<PasskeySection />
 		</div>
 	);
 };
