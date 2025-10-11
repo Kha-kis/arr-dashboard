@@ -54,32 +54,6 @@ async function tmdbFetch<T>(
 	return response.json();
 }
 
-async function fetchMultiplePages<T extends { results: unknown[] }>(
-	endpoint: string,
-	apiKey: string,
-	config: TMDBClientConfig,
-	pages = 3,
-): Promise<T> {
-	const requests = Array.from({ length: pages }, (_, i) =>
-		tmdbFetch<T>(endpoint, apiKey, config, i + 1),
-	);
-
-	const responses = await Promise.all(requests);
-
-	// Combine all results
-	const combinedResults = responses.flatMap((r) => r.results);
-
-	// Return first response with combined results
-	const data = responses[0];
-	const awaitedData = data as any;
-	return {
-		...data,
-		results: combinedResults,
-		total_results: awaitedData?.total_results ?? 0,
-		total_pages: awaitedData?.total_pages ?? 0,
-	} as unknown as T;
-}
-
 async function fetchSinglePage<T>(
 	endpoint: string,
 	apiKey: string,
