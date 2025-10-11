@@ -80,8 +80,13 @@ export class OIDCProvider {
 
 	/**
 	 * Exchange authorization code for tokens
+	 * @param code - Authorization code from OIDC provider
+	 * @param expectedNonce - Nonce value to validate against ID token (prevents replay attacks)
 	 */
-	async exchangeCode(code: string): Promise<oauth.TokenEndpointResponse> {
+	async exchangeCode(
+		code: string,
+		expectedNonce: string,
+	): Promise<oauth.TokenEndpointResponse> {
 		const authServer = await this.discoverAuthServer();
 
 		const params = new URLSearchParams();
@@ -99,6 +104,7 @@ export class OIDCProvider {
 			authServer,
 			this.client,
 			response,
+			expectedNonce, // Validate nonce to prevent ID token replay attacks
 		);
 
 		if (oauth.isOAuth2Error(result)) {
