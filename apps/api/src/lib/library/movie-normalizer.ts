@@ -46,12 +46,15 @@ export const buildMovieFile = (raw: Record<string, unknown>) => {
 		toStringValue(raw?.relativePath) ??
 		toStringValue(raw?.path) ??
 		toStringValue(raw?.originalFilePath);
-	const quality = toStringValue(raw?.quality?.quality?.name) ?? toStringValue(raw?.quality?.name);
+	const qualityObj = raw?.quality as Record<string, unknown> | undefined;
+	const qualityQuality = qualityObj?.quality as Record<string, unknown> | undefined;
+	const quality = toStringValue(qualityQuality?.name) ?? toStringValue(qualityObj?.name);
 	const size = toNumber(raw?.size) ?? toNumber(raw?.sizeOnDisk);
+	const mediaInfo = raw?.mediaInfo as Record<string, unknown> | undefined;
 	let resolution =
-		toStringValue(raw?.mediaInfo?.resolution) ?? toStringValue(raw?.mediaInfo?.screenSize);
-	const width = toNumber(raw?.mediaInfo?.width);
-	const height = toNumber(raw?.mediaInfo?.height);
+		toStringValue(mediaInfo?.resolution) ?? toStringValue(mediaInfo?.screenSize);
+	const width = toNumber(mediaInfo?.width);
+	const height = toNumber(mediaInfo?.height);
 	if (!resolution && width !== undefined && height !== undefined) {
 		resolution = `${width}x${height}`;
 	}
@@ -106,7 +109,7 @@ export const buildMovieItem = (
 		monitored: toBoolean(raw?.monitored),
 		hasFile: Boolean(raw?.hasFile || raw?.movieFileId),
 		qualityProfileId: toNumber(raw?.qualityProfileId),
-		qualityProfileName: toStringValue(raw?.qualityProfile?.name),
+		qualityProfileName: toStringValue((raw?.qualityProfile as Record<string, unknown> | undefined)?.name),
 		rootFolderPath: toStringValue(raw?.path ?? raw?.rootFolderPath),
 		sizeOnDisk: toNumber(raw?.sizeOnDisk),
 		path: toStringValue(raw?.path),
@@ -115,10 +118,19 @@ export const buildMovieItem = (
 			tmdbId: toNumber(raw?.tmdbId),
 			imdbId: toStringValue(raw?.imdbId),
 		},
-		movieFile: buildMovieFile(raw?.movieFile),
+		movieFile: buildMovieFile(raw?.movieFile as Record<string, unknown>),
 		statistics: {
-			movieFileQuality: toStringValue(raw?.movieFile?.quality?.quality?.name),
-			runtime: toNumber(raw?.runtime ?? raw?.movieFile?.mediaInfo?.runTime),
+			movieFileQuality: (() => {
+				const movieFile = raw?.movieFile as Record<string, unknown> | undefined;
+				const quality = movieFile?.quality as Record<string, unknown> | undefined;
+				const qualityQuality = quality?.quality as Record<string, unknown> | undefined;
+				return toStringValue(qualityQuality?.name);
+			})(),
+			runtime: (() => {
+				const movieFile = raw?.movieFile as Record<string, unknown> | undefined;
+				const mediaInfo = movieFile?.mediaInfo as Record<string, unknown> | undefined;
+				return toNumber(raw?.runtime ?? mediaInfo?.runTime);
+			})(),
 		},
 	} as LibraryItem;
 };

@@ -21,19 +21,20 @@ export const normalizeSeasons = (value: unknown) => {
 	}
 	const seasons = value
 		.map((entry: unknown) => {
-			const seasonNumber = toNumber(entry?.seasonNumber);
+			const seasonEntry = entry as Record<string, unknown>;
+			const seasonNumber = toNumber(seasonEntry?.seasonNumber);
 			if (seasonNumber === undefined) {
 				return null;
 			}
-			const title = toStringValue(entry?.title);
-			const monitored = toBoolean(entry?.monitored);
-			const stats = entry?.statistics ?? {};
+			const title = toStringValue(seasonEntry?.title);
+			const monitored = toBoolean(seasonEntry?.monitored);
+			const stats = (seasonEntry?.statistics ?? {}) as Record<string, unknown>;
 			const episodeCount =
 				toNumber(stats?.totalEpisodeCount) ??
 				toNumber(stats?.episodeCount) ??
-				toNumber(entry?.episodeCount);
+				toNumber(seasonEntry?.episodeCount);
 			const episodeFileCount =
-				toNumber(stats?.episodeFileCount) ?? toNumber(entry?.episodeFileCount);
+				toNumber(stats?.episodeFileCount) ?? toNumber(seasonEntry?.episodeFileCount);
 			const missingEpisodeCountRaw =
 				episodeCount !== undefined && episodeFileCount !== undefined
 					? Math.max(episodeCount - episodeFileCount, 0)
@@ -67,7 +68,7 @@ export const buildSeriesItem = (
 	raw: Record<string, unknown>,
 ): LibraryItem => {
 	const images = normalizeImages(raw?.images, instance.baseUrl);
-	const stats = raw?.statistics ?? {};
+	const stats = (raw?.statistics ?? {}) as Record<string, unknown>;
 	const episodeFileCount = toNumber(stats?.episodeFileCount ?? raw?.episodeFileCount) ?? 0;
 
 	return {
@@ -91,9 +92,9 @@ export const buildSeriesItem = (
 		monitored: toBoolean(raw?.monitored),
 		hasFile: episodeFileCount > 0,
 		qualityProfileId: toNumber(raw?.qualityProfileId),
-		qualityProfileName: toStringValue(raw?.qualityProfile?.name),
+		qualityProfileName: toStringValue((raw?.qualityProfile as Record<string, unknown> | undefined)?.name),
 		languageProfileId: toNumber(raw?.languageProfileId),
-		languageProfileName: toStringValue(raw?.languageProfile?.name),
+		languageProfileName: toStringValue((raw?.languageProfile as Record<string, unknown> | undefined)?.name),
 		rootFolderPath: toStringValue(raw?.path ?? raw?.rootFolderPath),
 		sizeOnDisk: toNumber(stats?.sizeOnDisk),
 		path: toStringValue(raw?.path),

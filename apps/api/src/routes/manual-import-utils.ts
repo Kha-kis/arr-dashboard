@@ -36,8 +36,9 @@ const normalizeRejections = (rejections: unknown): ManualImportCandidate["reject
 
 	const normalized = rejections
 		.map((entry) => {
-			const reason = toStringValue(entry?.reason ?? entry);
-			const type = toStringValue(entry?.type);
+			const entryObj = entry as Record<string, unknown> | undefined;
+			const reason = toStringValue(entryObj?.reason ?? entry);
+			const type = toStringValue(entryObj?.type);
 			if (!reason && !type) {
 				return undefined;
 			}
@@ -58,15 +59,16 @@ const normalizeEpisodes = (episodes: unknown): ManualImportCandidateSonarr["epis
 
 	const normalized = episodes
 		.map((episode) => {
-			const id = toNumber(episode?.id);
+			const episodeObj = episode as Record<string, unknown> | undefined;
+			const id = toNumber(episodeObj?.id);
 			if (typeof id !== "number") {
 				return undefined;
 			}
 			return {
 				id,
-				title: toStringValue(episode?.title),
-				seasonNumber: toNumber(episode?.seasonNumber),
-				episodeNumber: toNumber(episode?.episodeNumber),
+				title: toStringValue(episodeObj?.title),
+				seasonNumber: toNumber(episodeObj?.seasonNumber),
+				episodeNumber: toNumber(episodeObj?.episodeNumber),
 			};
 		})
 		.filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
@@ -75,29 +77,31 @@ const normalizeEpisodes = (episodes: unknown): ManualImportCandidateSonarr["epis
 };
 
 const normalizeSeries = (series: unknown): ManualImportCandidateSonarr["series"] => {
-	const id = toNumber(series?.id);
+	const seriesObj = series as Record<string, unknown> | undefined;
+	const id = toNumber(seriesObj?.id);
 	if (typeof id !== "number") {
 		return undefined;
 	}
 
 	return {
 		id,
-		title: toStringValue(series?.title),
-		titleSlug: toStringValue(series?.titleSlug),
+		title: toStringValue(seriesObj?.title),
+		titleSlug: toStringValue(seriesObj?.titleSlug),
 	};
 };
 
 const normalizeMovie = (movie: unknown): ManualImportCandidateRadarr["movie"] => {
-	const id = toNumber(movie?.id);
+	const movieObj = movie as Record<string, unknown> | undefined;
+	const id = toNumber(movieObj?.id);
 	if (typeof id !== "number") {
 		return undefined;
 	}
 
 	return {
 		id,
-		title: toStringValue(movie?.title),
-		tmdbId: toNumber(movie?.tmdbId),
-		imdbId: toStringValue(movie?.imdbId),
+		title: toStringValue(movieObj?.title),
+		tmdbId: toNumber(movieObj?.tmdbId),
+		imdbId: toStringValue(movieObj?.imdbId),
 	};
 };
 
@@ -105,29 +109,30 @@ const mapCandidate = (
 	service: ManualImportService,
 	item: unknown,
 ): ManualImportCandidate | null => {
-	const path = toStringValue(item?.path);
+	const itemObj = item as Record<string, unknown> | undefined;
+	const path = toStringValue(itemObj?.path);
 	if (!path) {
 		return null;
 	}
 
 	const base = {
-		id: item?.id ?? path,
+		id: itemObj?.id ?? path,
 		path,
-		relativePath: toStringValue(item?.relativePath),
-		folderName: toStringValue(item?.folderName),
-		name: toStringValue(item?.name),
-		size: typeof item?.size === "number" ? item.size : toNumber(item?.size),
-		downloadId: toStringValue(item?.downloadId),
-		releaseGroup: toStringValue(item?.releaseGroup),
-		quality: item?.quality,
-		languages: Array.isArray(item?.languages) ? item.languages : undefined,
-		customFormats: Array.isArray(item?.customFormats) ? item.customFormats : undefined,
-		customFormatScore: toNumber(item?.customFormatScore),
-		indexerFlags: toNumber(item?.indexerFlags),
-		releaseType: toStringValue(item?.releaseType),
-		rejections: normalizeRejections(item?.rejections),
-		episodeFileId: toNumber(item?.episodeFileId),
-		movieFileId: toNumber(item?.movieFileId),
+		relativePath: toStringValue(itemObj?.relativePath),
+		folderName: toStringValue(itemObj?.folderName),
+		name: toStringValue(itemObj?.name),
+		size: typeof itemObj?.size === "number" ? itemObj.size : toNumber(itemObj?.size),
+		downloadId: toStringValue(itemObj?.downloadId),
+		releaseGroup: toStringValue(itemObj?.releaseGroup),
+		quality: itemObj?.quality,
+		languages: Array.isArray(itemObj?.languages) ? itemObj.languages : undefined,
+		customFormats: Array.isArray(itemObj?.customFormats) ? itemObj.customFormats : undefined,
+		customFormatScore: toNumber(itemObj?.customFormatScore),
+		indexerFlags: toNumber(itemObj?.indexerFlags),
+		releaseType: toStringValue(itemObj?.releaseType),
+		rejections: normalizeRejections(itemObj?.rejections),
+		episodeFileId: toNumber(itemObj?.episodeFileId),
+		movieFileId: toNumber(itemObj?.movieFileId),
 	} as const;
 
 	try {
@@ -135,16 +140,16 @@ const mapCandidate = (
 			return manualImportCandidateSchema.parse({
 				...base,
 				service,
-				series: normalizeSeries(item?.series),
-				seasonNumber: toNumber(item?.seasonNumber),
-				episodes: normalizeEpisodes(item?.episodes),
+				series: normalizeSeries(itemObj?.series),
+				seasonNumber: toNumber(itemObj?.seasonNumber),
+				episodes: normalizeEpisodes(itemObj?.episodes),
 			});
 		}
 
 		return manualImportCandidateSchema.parse({
 			...base,
 			service,
-			movie: normalizeMovie(item?.movie),
+			movie: normalizeMovie(itemObj?.movie),
 		});
 	} catch (error) {
 		return null;
