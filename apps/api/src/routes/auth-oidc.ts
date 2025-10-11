@@ -155,11 +155,17 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		});
 
 		try {
-			// Exchange code for tokens
-			const tokenResponse = await oidcProvider.exchangeCode(code);
+			// Exchange code for tokens (with nonce validation)
+			const tokenResponse = await oidcProvider.exchangeCode(code, storedState.nonce);
 
 			if (!tokenResponse.access_token) {
 				throw new Error("No access token received from OIDC provider");
+			}
+
+			// Extract and validate ID token claims
+			let idTokenClaims: Record<string, unknown> = {};
+			if (tokenResponse.id_token) {
+				idTokenClaims = oidcProvider.extractIdTokenClaims(tokenResponse.id_token);
 			}
 
 			// Get user info from provider
@@ -193,6 +199,15 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 						.send({ error: "OIDC provider did not provide email address" });
 				}
 
+				// Validate email_verified claim before auto-linking accounts
+				const emailVerified = idTokenClaims.email_verified;
+				if (emailVerified === false) {
+					return reply.status(400).send({
+						error:
+							"Email address not verified by OIDC provider. Please verify your email and try again.",
+					});
+				}
+
 				// Check if user exists with this email
 				const existingUser = await app.prisma.user.findUnique({
 					where: { email },
@@ -200,6 +215,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 				if (existingUser) {
 					// Link OIDC account to existing user
+					// Note: email_verified check above ensures this is safe
 					oidcAccount = await app.prisma.oIDCAccount.create({
 						data: {
 							provider,
