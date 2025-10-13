@@ -34,7 +34,7 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId: request.currentUser.id, enabled: true },
+			where: { enabled: true },
 		});
 
 		const sonarrInstances: Array<{

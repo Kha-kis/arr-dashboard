@@ -83,9 +83,7 @@ export class SessionService {
 				user: {
 					select: {
 						id: true,
-						email: true,
 						username: true,
-						role: true,
 						mustChangePassword: true,
 						createdAt: true,
 						updatedAt: true,

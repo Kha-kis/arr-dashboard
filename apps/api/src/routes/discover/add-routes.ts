@@ -28,7 +28,6 @@ export const registerAddRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const instance = await app.prisma.serviceInstance.findFirst({
 			where: {
 				id: payload.instanceId,
-				userId: request.currentUser.id,
 				enabled: true,
 			},
 		});

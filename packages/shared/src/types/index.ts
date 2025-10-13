@@ -6,3 +6,4 @@ export * from "./library.js";
 export * from "./search.js";
 export * from "./manual-import.js";
 export * from "./recommendations.js";
+export * from "./oidc-provider.js";
