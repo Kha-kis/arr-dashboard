@@ -55,7 +55,6 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId: user.id },
 			include: {
 				tags: {
 					include: {
@@ -88,16 +87,15 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		if (isDefault) {
 			await app.prisma.serviceInstance.updateMany({
-				where: { userId: user.id, service: serviceEnum },
+				where: { service: serviceEnum },
 				data: { isDefault: false },
 			});
 		}
 
-		const tagRecords = await upsertTags(app.prisma, user.id, tags);
+		const tagRecords = await upsertTags(app.prisma, tags);
 
 		const created = await app.prisma.serviceInstance.create({
 			data: {
-				userId: user.id,
 				service: serviceEnum,
 				encryptedApiKey: encrypted.value,
 				encryptionIv: encrypted.iv,
@@ -135,7 +133,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		const payload = parsed.data;
 		const existing = await app.prisma.serviceInstance.findFirst({
-			where: { id, userId: user.id },
+			where: { id },
 		});
 
 		if (!existing) {
@@ -149,7 +147,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 				payload.service ?? existing.service.toLowerCase()
 			).toUpperCase() as ServiceType;
 			await app.prisma.serviceInstance.updateMany({
-				where: { userId: user.id, service: targetService, NOT: { id } },
+				where: { service: targetService, NOT: { id } },
 				data: { isDefault: false },
 			});
 		}
@@ -163,7 +161,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 		});
 
 		if (payload.tags) {
-			await updateInstanceTags(app.prisma, user.id, id, payload.tags);
+			await updateInstanceTags(app.prisma, id, payload.tags);
 		}
 
 		const fresh = await app.prisma.serviceInstance.findUnique({
@@ -189,7 +187,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const { id } = request.params as { id: string };
 
 		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { id, userId: user.id },
+			where: { id },
 		});
 
 		if (!instance) {
@@ -207,7 +205,6 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		const tags = await app.prisma.serviceTag.findMany({
-			where: { userId: user.id },
 			orderBy: { name: "asc" },
 		});
 
@@ -226,9 +223,9 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		const tag = await app.prisma.serviceTag.upsert({
-			where: { userId_name: { userId: user.id, name: parsed.data.name } },
+			where: { name: parsed.data.name },
 			update: {},
-			create: { userId: user.id, name: parsed.data.name },
+			create: { name: parsed.data.name },
 		});
 
 		return reply.status(201).send({ tag });
@@ -296,7 +293,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const { id } = request.params as { id: string };
 
 		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { id, userId: user.id },
+			where: { id },
 		});
 
 		if (!instance) {

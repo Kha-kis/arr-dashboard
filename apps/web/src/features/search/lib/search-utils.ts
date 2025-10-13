@@ -186,6 +186,9 @@ export const interpretGrabError = (message: string): string | null => {
 	if (normalized.includes("download client") && normalized.includes("configure")) {
 		return "Configure a torrent download client in Prowlarr before grabbing releases.";
 	}
+	if (normalized.includes("download client failed to add torrent")) {
+		return "The download client (qBittorrent/Transmission/etc.) rejected the torrent. Check that your download client is running and properly configured in Prowlarr.";
+	}
 	if (
 		normalized.includes("validation errors") &&
 		normalized.includes("json value could not be converted")
@@ -193,6 +196,33 @@ export const interpretGrabError = (message: string): string | null => {
 		return "Prowlarr rejected the grab payload. Try the search again or review the indexer configuration.";
 	}
 	return null;
+};
+
+/**
+ * Checks if a string looks like a stack trace
+ * @param text - Text to check
+ * @returns True if text appears to be a stack trace
+ */
+const isStackTrace = (text: string): boolean => {
+	const lines = text.split("\n");
+	// If it has more than 3 lines and contains common stack trace patterns
+	if (lines.length > 3) {
+		const stackIndicators = [
+			"at ",
+			".cs:line",
+			"NzbDrone.",
+			"Prowlarr.",
+			"System.",
+			"Microsoft.",
+			"   at ",
+		];
+		const matchingLines = lines.filter((line) =>
+			stackIndicators.some((indicator) => line.includes(indicator)),
+		);
+		// If more than half the lines look like stack trace lines
+		return matchingLines.length > lines.length / 2;
+	}
+	return false;
 };
 
 /**
@@ -210,6 +240,9 @@ export const deriveGrabErrorMessage = (error: unknown): string => {
 			const primary = typeof record.message === "string" ? record.message.trim() : "";
 			const secondary = typeof record.description === "string" ? record.description.trim() : "";
 
+			// Filter out stack traces from description
+			const cleanSecondary = secondary && !isStackTrace(secondary) ? secondary : "";
+
 			const errors = record.errors as Record<string, unknown> | undefined;
 			const fieldMessages: string[] = [];
 			if (errors && typeof errors === "object") {
@@ -224,7 +257,9 @@ export const deriveGrabErrorMessage = (error: unknown): string => {
 				}
 			}
 
-			const combined = [primary, secondary, ...fieldMessages].filter((entry) => entry.length > 0);
+			const combined = [primary, cleanSecondary, ...fieldMessages].filter(
+				(entry) => entry.length > 0,
+			);
 			if (combined.length > 0) {
 				const friendly = interpretGrabError(combined.join(" "));
 				return friendly ?? combined.join(" ");

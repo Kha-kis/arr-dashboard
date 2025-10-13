@@ -62,7 +62,7 @@ export const PasskeySection = () => {
 			const options = await getPasskeyRegistrationOptions(passkeyName || undefined);
 
 			// Start WebAuthn registration
-			const registrationResponse = await startRegistration(options);
+			const registrationResponse = await startRegistration({ optionsJSON: options });
 
 			// Verify registration with server
 			await verifyPasskeyRegistration(registrationResponse, passkeyName || undefined);
@@ -154,7 +154,7 @@ export const PasskeySection = () => {
 				<CardTitle>Passkeys</CardTitle>
 				<CardDescription>
 					Manage your passkey credentials for passwordless authentication. Passkeys use your
-					device's biometrics or PIN.
+					device&apos;s biometrics or PIN.
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-6">
@@ -174,7 +174,7 @@ export const PasskeySection = () => {
 						</Button>
 					</div>
 					<p className="text-xs text-white/50">
-						You'll be prompted to use your device's biometric authentication or security key.
+						You&apos;ll be prompted to use your device&apos;s biometric authentication or security key.
 					</p>
 				</div>
 
@@ -212,7 +212,7 @@ export const PasskeySection = () => {
 												<Button size="sm" onClick={() => saveEdit(credential.id)}>
 													Save
 												</Button>
-												<Button size="sm" variant="outline" onClick={cancelEdit}>
+												<Button size="sm" variant="secondary" onClick={cancelEdit}>
 													Cancel
 												</Button>
 											</div>
@@ -252,7 +252,7 @@ export const PasskeySection = () => {
 										<div className="flex gap-2">
 											<Button
 												size="sm"
-												variant="outline"
+												variant="secondary"
 												onClick={() => startEdit(credential)}
 												className="text-white/70 hover:text-white"
 											>
@@ -260,7 +260,7 @@ export const PasskeySection = () => {
 											</Button>
 											<Button
 												size="sm"
-												variant="outline"
+												variant="secondary"
 												onClick={() => handleDeletePasskey(credential.id)}
 												className="text-red-400 hover:text-red-300"
 											>

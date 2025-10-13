@@ -12,6 +12,7 @@ import {
 	type VerifiedAuthenticationResponse,
 	type VerifiedRegistrationResponse,
 } from "@simplewebauthn/server";
+import { isoBase64URL } from "@simplewebauthn/server/helpers";
 
 /**
  * WebAuthn Relying Party configuration
@@ -98,12 +99,16 @@ export class PasskeyService {
 		// @simplewebauthn/server v13+ changed the structure - credentials are now under 'credential' object
 		const { credential, credentialBackedUp } = verification.registrationInfo;
 
+		// Use response.id which is already base64url encoded and matches what the browser sends during auth
+		// This avoids double-encoding issues with credential.id
+		const credentialId = response.id;
+
 		// Store credential in database
 		await this.app.prisma.webAuthnCredential.create({
 			data: {
-				id: Buffer.from(credential.id).toString("base64url"),
+				id: credentialId, // Already base64url from browser
 				userId,
-				publicKey: Buffer.from(credential.publicKey).toString("base64url"),
+				publicKey: isoBase64URL.fromBuffer(credential.publicKey),
 				counter: credential.counter,
 				transports: response.response.transports
 					? JSON.stringify(response.response.transports)
@@ -164,14 +169,15 @@ export class PasskeyService {
 			throw new Error("Passkey credential not found");
 		}
 
+		// v13+ renamed 'authenticator' parameter to 'credential'
 		const verification = await verifyAuthenticationResponse({
 			response,
 			expectedChallenge,
 			expectedOrigin: this.config.origin,
 			expectedRPID: this.config.rpID,
-			authenticator: {
-				credentialID: Buffer.from(credential.id, "base64url"),
-				credentialPublicKey: Buffer.from(credential.publicKey, "base64url"),
+			credential: {
+				id: credential.id,
+				publicKey: isoBase64URL.toBuffer(credential.publicKey),
 				counter: credential.counter,
 			},
 		});

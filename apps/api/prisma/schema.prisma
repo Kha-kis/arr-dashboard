@@ -7,11 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum UserRole {
-  ADMIN
-  USER
-}
-
 enum ServiceType {
   SONARR
   RADARR
@@ -20,10 +15,8 @@ enum ServiceType {
 
 model User {
   id                  String                @id @default(cuid())
-  email               String                @unique
   username            String                @unique
   hashedPassword      String?               // Optional: users can authenticate via OIDC or passkeys
-  role                UserRole              @default(USER)
   mustChangePassword  Boolean               @default(false)
   failedLoginAttempts Int                   @default(0)
   lockedUntil         DateTime?
@@ -32,8 +25,6 @@ model User {
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
   sessions            Session[]
-  serviceInstances    ServiceInstance[]
-  serviceTags         ServiceTag[]
   oidcAccounts        OIDCAccount[]
   webauthnCredentials WebAuthnCredential[]
 }
@@ -51,19 +42,14 @@ model Session {
 
 model ServiceTag {
   id        String            @id @default(cuid())
-  userId    String
-  name      String
+  name      String            @unique
   createdAt DateTime          @default(now())
   updatedAt DateTime          @updatedAt
-  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   instances ServiceInstanceTag[]
-
-  @@unique([userId, name])
 }
 
 model ServiceInstance {
   id              String              @id @default(cuid())
-  userId          String
   service         ServiceType
   label           String
   baseUrl         String
@@ -77,10 +63,9 @@ model ServiceInstance {
   defaultSeasonFolder Boolean?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
-  user            User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   tags            ServiceInstanceTag[]
 
-  @@index([userId, service])
+  @@index([service])
 }
 
 model ServiceInstanceTag {
@@ -92,6 +77,25 @@ model ServiceInstanceTag {
   tag      ServiceTag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@id([instanceId, tagId])
+}
+
+// OIDC Provider Configuration (stored in database, managed via UI)
+model OIDCProvider {
+  id                      String   @id @default(cuid())
+  type                    String   // "authelia", "authentik", "generic"
+  displayName             String   // Display name shown on login button
+  clientId                String
+  encryptedClientSecret   String   // AES-256-GCM encrypted
+  clientSecretIv          String   // Initialization vector for encryption
+  issuer                  String   // OIDC issuer URL for discovery
+  redirectUri             String   // Callback URL
+  scopes                  String   @default("openid,email,profile") // Comma-separated
+  enabled                 Boolean  @default(true)
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@unique([type])
+  @@map("oidc_providers")
 }
 
 // OIDC Account for external authentication providers (Authelia, Authentik, etc.)

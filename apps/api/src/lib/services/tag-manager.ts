@@ -5,19 +5,18 @@ import type { PrismaClient } from "@prisma/client";
  */
 
 /**
- * Upserts tags for a user and returns tag IDs
+ * Upserts tags and returns tag IDs
  */
 export async function upsertTags(
 	prisma: PrismaClient,
-	userId: string,
 	tagNames: string[],
 ): Promise<Array<{ tagId: string }>> {
 	return await Promise.all(
 		tagNames.map(async (name) => {
 			const tag = await prisma.serviceTag.upsert({
-				where: { userId_name: { userId, name } },
+				where: { name },
 				update: {},
-				create: { userId, name },
+				create: { name },
 			});
 			return { tagId: tag.id };
 		}),
@@ -29,7 +28,6 @@ export async function upsertTags(
  */
 export async function updateInstanceTags(
 	prisma: PrismaClient,
-	userId: string,
 	instanceId: string,
 	tagNames: string[],
 ): Promise<void> {
@@ -42,9 +40,9 @@ export async function updateInstanceTags(
 	const connections = await Promise.all(
 		tagNames.map(async (name) => {
 			const tag = await prisma.serviceTag.upsert({
-				where: { userId_name: { userId, name } },
+				where: { name },
 				update: {},
-				create: { userId, name },
+				create: { name },
 			});
 			return { instanceId, tagId: tag.id };
 		}),
