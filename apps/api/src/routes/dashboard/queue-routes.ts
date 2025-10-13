@@ -26,7 +26,7 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId: request.currentUser.id, enabled: true },
+			where: { enabled: true },
 		});
 
 		const results: Array<{
@@ -88,7 +88,7 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		const body = queueActionRequestSchema.parse(request.body);
 		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { id: body.instanceId, userId: request.currentUser.id },
+			where: { id: body.instanceId },
 		});
 
 		if (!instance || instance.service.toLowerCase() !== body.service) {
@@ -187,7 +187,7 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		const body = queueBulkActionRequestSchema.parse(request.body);
 		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { id: body.instanceId, userId: request.currentUser.id },
+			where: { id: body.instanceId },
 		});
 
 		if (!instance || instance.service.toLowerCase() !== body.service) {

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { startAuthentication } from "@simplewebauthn/browser";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser, useSetupRequired, useLoginMutation } from "../../../hooks/api/useAuth";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
@@ -49,10 +50,11 @@ const providerDisplayNames: Record<string, string> = {
 export const LoginForm = () => {
 	const router = useRouter();
 	const searchParams = useSearchParams();
+	const queryClient = useQueryClient();
 	const loginMutation = useLoginMutation();
 	const { data: setupRequired, isLoading: setupLoading } = useSetupRequired();
 
-	const [identifier, setIdentifier] = useState("");
+	const [username, setUsername] = useState("");
 	const [password, setPassword] = useState("");
 	const [rememberMe, setRememberMe] = useState(false);
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -91,20 +93,21 @@ export const LoginForm = () => {
 		event.preventDefault();
 		setErrorMessage(null);
 
-		const trimmedIdentifier = identifier.trim();
-		if (trimmedIdentifier.length === 0) {
-			setErrorMessage("Please enter your username or email.");
+		const trimmedUsername = username.trim();
+		if (trimmedUsername.length === 0) {
+			setErrorMessage("Please enter your username.");
 			return;
 		}
 
 		try {
 			await loginMutation.mutateAsync({
-				identifier: trimmedIdentifier,
+				username: trimmedUsername,
 				password,
 				rememberMe,
 			});
 			setPassword("");
-			router.replace(redirectTarget);
+			// Use full page navigation to ensure cookie is sent
+			window.location.href = redirectTarget;
 		} catch (error) {
 			const message =
 				error instanceof Error
@@ -139,13 +142,16 @@ export const LoginForm = () => {
 			const { options, sessionId } = await getPasskeyLoginOptions();
 
 			// Start WebAuthn authentication
-			const authResponse = await startAuthentication(options);
+			const authResponse = await startAuthentication({ optionsJSON: options });
 
 			// Verify authentication with server
 			await verifyPasskeyLogin(authResponse, sessionId);
 
-			// Redirect on success
-			router.replace(redirectTarget);
+			// Invalidate queries to update authentication state
+			await queryClient.invalidateQueries({ queryKey: ["user"] });
+
+			// Use full page navigation to ensure cookie is sent
+			window.location.href = redirectTarget;
 		} catch (error) {
 			const message =
 				error instanceof Error
@@ -197,7 +203,7 @@ export const LoginForm = () => {
 					<div className="space-y-3">
 						<Button
 							type="button"
-							variant="outline"
+							variant="secondary"
 							className="w-full border-white/20 bg-white/5 text-white hover:bg-white/10"
 							onClick={handlePasskeyLogin}
 							disabled={disabled}
@@ -235,7 +241,7 @@ export const LoginForm = () => {
 								<Button
 									key={provider.type}
 									type="button"
-									variant="outline"
+									variant="secondary"
 									className="w-full border-white/20 bg-white/5 text-white hover:bg-white/10"
 									onClick={() => handleOIDCLogin(provider.type)}
 									disabled={disabled}
@@ -260,7 +266,7 @@ export const LoginForm = () => {
 													d="M13 10V3L4 14h7v7l9-11h-7z"
 												/>
 											</svg>
-											Sign in with {providerDisplayNames[provider.type] || provider.type}
+											Sign in with {provider.displayName || providerDisplayNames[provider.type] || provider.type}
 										</>
 									)}
 								</Button>
@@ -284,16 +290,16 @@ export const LoginForm = () => {
 					<form className="space-y-5" onSubmit={handlePasswordLogin} autoComplete="off">
 						<div className="space-y-2">
 							<label
-								htmlFor="identifier"
+								htmlFor="username"
 								className="block text-xs font-semibold uppercase tracking-wide text-white/60"
 							>
-								Username or email
+								Username
 							</label>
 							<Input
-								id="identifier"
-								name="identifier"
-								value={identifier}
-								onChange={(event) => setIdentifier(event.target.value)}
+								id="username"
+								name="username"
+								value={username}
+								onChange={(event) => setUsername(event.target.value)}
 								placeholder="Enter your username"
 								autoComplete="off"
 								required

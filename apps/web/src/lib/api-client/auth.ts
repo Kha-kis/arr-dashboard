@@ -1,4 +1,4 @@
-import type { CurrentUser, CurrentUserResponse } from "@arr/shared";
+import type { CurrentUser, CurrentUserResponse, OIDCProvider as SharedOIDCProvider } from "@arr/shared";
 import { apiRequest, UnauthorizedError } from "./base";
 
 export async function fetchCurrentUser(): Promise<CurrentUser | null> {
@@ -14,7 +14,7 @@ export async function fetchCurrentUser(): Promise<CurrentUser | null> {
 }
 
 export async function login(payload: {
-	identifier: string;
+	username: string;
 	password: string;
 	rememberMe?: boolean;
 }): Promise<CurrentUser> {
@@ -32,7 +32,6 @@ export async function logout(): Promise<void> {
 }
 
 interface UpdateAccountPayload {
-	email?: string;
 	username?: string;
 	currentPassword?: string;
 	newPassword?: string;
@@ -45,6 +44,22 @@ interface UpdateAccountResponse {
 export async function updateAccount(payload: UpdateAccountPayload): Promise<UpdateAccountResponse> {
 	return await apiRequest<UpdateAccountResponse>("/auth/account", {
 		method: "PATCH",
+		json: payload,
+	});
+}
+
+interface RemovePasswordPayload {
+	currentPassword: string;
+}
+
+interface RemovePasswordResponse {
+	success: boolean;
+	message: string;
+}
+
+export async function removePassword(payload: RemovePasswordPayload): Promise<RemovePasswordResponse> {
+	return await apiRequest<RemovePasswordResponse>("/auth/password", {
+		method: "DELETE",
 		json: payload,
 	});
 }
@@ -65,12 +80,8 @@ export async function checkSetupRequired(): Promise<boolean> {
 
 // ==================== OIDC Authentication ====================
 
-export type OIDCProviderType = "authelia" | "authentik" | "generic";
-
-export interface OIDCProvider {
-	type: OIDCProviderType;
-	enabled: boolean;
-}
+export type OIDCProvider = SharedOIDCProvider;
+export type OIDCProviderType = OIDCProvider["type"];
 
 interface OIDCProvidersResponse {
 	providers: OIDCProvider[];

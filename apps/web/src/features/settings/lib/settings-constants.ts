@@ -14,6 +14,6 @@ export const OPTION_STYLE = {
 	color: "#f1f5f9",
 } as const;
 
-export const TABS = ["services", "tags", "account"] as const;
+export const TABS = ["services", "tags", "account", "authentication"] as const;
 
 export type TabType = (typeof TABS)[number];

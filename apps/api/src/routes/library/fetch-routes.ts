@@ -37,12 +37,10 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 		const parsed = libraryQuerySchema.parse(request.query ?? {});
 
 		const where: {
-			userId: string;
 			enabled: boolean;
 			service?: ServiceType | { in: ServiceType[] };
 			id?: string;
 		} = {
-			userId: request.currentUser.id,
 			enabled: true,
 		};
 
@@ -121,7 +119,6 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 		const instance = await app.prisma.serviceInstance.findFirst({
 			where: {
 				id: parsed.instanceId,
-				userId: request.currentUser.id,
 				enabled: true,
 			},
 		});

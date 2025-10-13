@@ -31,36 +31,95 @@ const oidcCallbackSchema = z.object({
 	state: z.string(),
 });
 
+const oidcSetupSchema = z.object({
+	type: z.enum(["authelia", "authentik", "generic"]),
+	displayName: z.string().min(1).max(100),
+	clientId: z.string().min(1),
+	clientSecret: z.string().min(1),
+	issuer: z.string().url(),
+	redirectUri: z.string().url().optional(),
+	scopes: z.string().default("openid,email,profile"),
+});
+
 const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	/**
 	 * GET /auth/oidc/providers
-	 * Returns list of configured OIDC providers
+	 * Returns list of configured OIDC providers (from database)
 	 */
 	app.get("/oidc/providers", async (_request, reply) => {
-		const providers: Array<{ type: OIDCProviderType; enabled: boolean }> = [];
+		// Load enabled providers from database
+		const dbProviders = await app.prisma.oIDCProvider.findMany({
+			where: { enabled: true },
+			select: {
+				type: true,
+				displayName: true,
+			},
+		});
 
-		// Check which providers are configured
-		const autheliaEnabled = !!(
-			process.env.OIDC_AUTHELIA_CLIENT_ID && process.env.OIDC_AUTHELIA_ISSUER
-		);
-		const authentikEnabled = !!(
-			process.env.OIDC_AUTHENTIK_CLIENT_ID && process.env.OIDC_AUTHENTIK_ISSUER
-		);
-		const genericEnabled = !!(
-			process.env.OIDC_GENERIC_CLIENT_ID && process.env.OIDC_GENERIC_ISSUER
-		);
-
-		if (autheliaEnabled) {
-			providers.push({ type: "authelia", enabled: true });
-		}
-		if (authentikEnabled) {
-			providers.push({ type: "authentik", enabled: true });
-		}
-		if (genericEnabled) {
-			providers.push({ type: "generic", enabled: true });
-		}
+		const providers = dbProviders.map((p) => ({
+			type: p.type as OIDCProviderType,
+			displayName: p.displayName,
+			enabled: true,
+		}));
 
 		return reply.send({ providers });
+	});
+
+	/**
+	 * POST /auth/oidc/setup
+	 * Configure OIDC provider during initial setup (only allowed when no users exist)
+	 */
+	app.post("/oidc/setup", async (request, reply) => {
+		// Only allow during setup (no users exist)
+		const userCount = await app.prisma.user.count();
+		if (userCount > 0) {
+			return reply.status(403).send({
+				error: "OIDC setup is only allowed during initial setup. Use the admin panel to configure OIDC providers.",
+			});
+		}
+
+		const parsed = oidcSetupSchema.safeParse(request.body);
+		if (!parsed.success) {
+			return reply.status(400).send({ error: "Invalid OIDC configuration", details: parsed.error.flatten() });
+		}
+
+		const { type, displayName, clientId, clientSecret, issuer, scopes } = parsed.data;
+
+		// Auto-generate redirect URI if not provided
+		const redirectUri = parsed.data.redirectUri ?? `${app.env.APP_URL}/auth/oidc/callback`;
+
+		// Check if provider already exists
+		const existing = await app.prisma.oIDCProvider.findUnique({
+			where: { type },
+		});
+
+		if (existing) {
+			return reply.status(409).send({ error: `OIDC provider '${type}' already configured` });
+		}
+
+		// Encrypt client secret
+		const { value: encryptedClientSecret, iv: clientSecretIv } = app.encryptor.encrypt(clientSecret);
+
+		// Create OIDC provider
+		await app.prisma.oIDCProvider.create({
+			data: {
+				type,
+				displayName,
+				clientId,
+				encryptedClientSecret,
+				clientSecretIv,
+				issuer,
+				redirectUri,
+				scopes,
+				enabled: true,
+			},
+		});
+
+		return reply.status(201).send({
+			success: true,
+			message: "OIDC provider configured successfully",
+			provider: { type, displayName },
+		});
 	});
 
 	/**
@@ -75,22 +134,27 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		const { provider } = parsed.data;
 
-		// Get OIDC configuration
-		const clientId = process.env[`OIDC_${provider.toUpperCase()}_CLIENT_ID`];
-		const clientSecret = process.env[`OIDC_${provider.toUpperCase()}_CLIENT_SECRET`];
-		const issuer = process.env[`OIDC_${provider.toUpperCase()}_ISSUER`];
-		const redirectUri = process.env[`OIDC_${provider.toUpperCase()}_REDIRECT_URI`];
+		// Get OIDC configuration from database
+		const dbProvider = await app.prisma.oIDCProvider.findUnique({
+			where: { type: provider },
+		});
 
-		if (!clientId || !clientSecret || !issuer || !redirectUri) {
-			return reply.status(400).send({ error: "OIDC provider not configured" });
+		if (!dbProvider || !dbProvider.enabled) {
+			return reply.status(400).send({ error: "OIDC provider not configured or disabled" });
 		}
+
+		// Decrypt client secret
+		const clientSecret = app.encryptor.decrypt({
+			value: dbProvider.encryptedClientSecret,
+			iv: dbProvider.clientSecretIv,
+		});
 
 		const oidcProvider = new OIDCProvider({
 			type: provider,
-			clientId,
+			clientId: dbProvider.clientId,
 			clientSecret,
-			issuer,
-			redirectUri,
+			issuer: dbProvider.issuer,
+			redirectUri: dbProvider.redirectUri,
 		});
 
 		// Generate state and nonce for CSRF protection
@@ -136,22 +200,27 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		const { provider } = storedState;
 
-		// Get OIDC configuration
-		const clientId = process.env[`OIDC_${provider.toUpperCase()}_CLIENT_ID`];
-		const clientSecret = process.env[`OIDC_${provider.toUpperCase()}_CLIENT_SECRET`];
-		const issuer = process.env[`OIDC_${provider.toUpperCase()}_ISSUER`];
-		const redirectUri = process.env[`OIDC_${provider.toUpperCase()}_REDIRECT_URI`];
+		// Get OIDC configuration from database
+		const dbProvider = await app.prisma.oIDCProvider.findUnique({
+			where: { type: provider },
+		});
 
-		if (!clientId || !clientSecret || !issuer || !redirectUri) {
+		if (!dbProvider) {
 			return reply.status(500).send({ error: "OIDC provider configuration error" });
 		}
 
+		// Decrypt client secret
+		const clientSecret = app.encryptor.decrypt({
+			value: dbProvider.encryptedClientSecret,
+			iv: dbProvider.clientSecretIv,
+		});
+
 		const oidcProvider = new OIDCProvider({
 			type: provider,
-			clientId,
+			clientId: dbProvider.clientId,
 			clientSecret,
-			issuer,
-			redirectUri,
+			issuer: dbProvider.issuer,
+			redirectUri: dbProvider.redirectUri,
 		});
 
 		try {
@@ -162,16 +231,10 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				throw new Error("No access token received from OIDC provider");
 			}
 
-			// Extract and validate ID token claims
-			let idTokenClaims: Record<string, unknown> = {};
-			if (tokenResponse.id_token) {
-				idTokenClaims = oidcProvider.extractIdTokenClaims(tokenResponse.id_token);
-			}
-
 			// Get user info from provider
 			const userInfo = await oidcProvider.getUserInfo(tokenResponse.access_token);
 
-			// Find or create OIDC account
+			// Find existing OIDC account
 			let oidcAccount = await app.prisma.oIDCAccount.findUnique({
 				where: {
 					provider_providerUserId: {
@@ -182,72 +245,56 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				include: { user: true },
 			});
 
-			let user: { id: string; email: string; username: string; role: string };
+			let user: { id: string; username: string };
 
 			if (oidcAccount) {
 				// Existing OIDC account - log them in
 				user = oidcAccount.user;
 			} else {
-				// New OIDC account - check if we need to link or create user
-				const email = userInfo.email?.toLowerCase();
-				const username =
-					userInfo.preferred_username ?? userInfo.email?.split("@")[0] ?? `user_${userInfo.sub}`;
+				// New OIDC account - check if user is authenticated or if this is setup
 
-				if (!email) {
-					return reply
-						.status(400)
-						.send({ error: "OIDC provider did not provide email address" });
-				}
+				// Check if user is currently authenticated (has active session)
+				const isAuthenticated = Boolean(request.currentUser);
 
-				// Validate email_verified claim before auto-linking accounts
-				const emailVerified = idTokenClaims.email_verified;
-				if (emailVerified === false) {
-					return reply.status(400).send({
-						error:
-							"Email address not verified by OIDC provider. Please verify your email and try again.",
-					});
-				}
-
-				// Check if user exists with this email
-				const existingUser = await app.prisma.user.findUnique({
-					where: { email },
-				});
-
-				if (existingUser) {
-					// Link OIDC account to existing user
-					// Note: email_verified check above ensures this is safe
+				if (isAuthenticated) {
+					// User is logged in - link OIDC to their account
 					oidcAccount = await app.prisma.oIDCAccount.create({
 						data: {
 							provider,
 							providerUserId: userInfo.sub,
-							providerEmail: email,
-							userId: existingUser.id,
+							userId: request.currentUser.id,
 						},
 						include: { user: true },
 					});
-					user = existingUser;
+					user = oidcAccount.user;
 				} else {
-					// Create new user with OIDC account
+					// User is not authenticated - check if this is initial setup
 					const userCount = await app.prisma.user.count();
-					const isFirstUser = userCount === 0;
 
-					const newUser = await app.prisma.user.create({
-						data: {
-							email,
-							username,
-							hashedPassword: null, // OIDC-only user (no password)
-							role: isFirstUser ? "ADMIN" : "USER",
-							oidcAccounts: {
-								create: {
-									provider,
-									providerUserId: userInfo.sub,
-									providerEmail: email,
+					if (userCount === 0) {
+						// Initial setup - create admin account
+						const username = userInfo.preferred_username ?? `user_${userInfo.sub}`;
+
+						const newUser = await app.prisma.user.create({
+							data: {
+								username,
+								hashedPassword: null, // OIDC-only user (no password)
+								oidcAccounts: {
+									create: {
+										provider,
+										providerUserId: userInfo.sub,
+									},
 								},
 							},
-						},
-					});
+						});
 
-					user = newUser;
+						user = newUser;
+					} else {
+						// Users exist but not authenticated - security violation
+						return reply.status(401).send({
+							error: "Cannot link OIDC account without authentication. Please log in first and add OIDC from settings.",
+						});
+					}
 				}
 			}
 
