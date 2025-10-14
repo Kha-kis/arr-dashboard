@@ -98,6 +98,7 @@ export class BackupService {
 			serviceInstances,
 			serviceTags,
 			serviceInstanceTags,
+			oidcProviders,
 			oidcAccounts,
 			webAuthnCredentials,
 		] = await Promise.all([
@@ -106,6 +107,7 @@ export class BackupService {
 			this.prisma.serviceInstance.findMany(),
 			this.prisma.serviceTag.findMany(),
 			this.prisma.serviceInstanceTag.findMany(),
+			this.prisma.oIDCProvider.findMany(),
 			this.prisma.oIDCAccount.findMany(),
 			this.prisma.webAuthnCredential.findMany(),
 		]);
@@ -116,6 +118,7 @@ export class BackupService {
 			serviceInstances,
 			serviceTags,
 			serviceInstanceTags,
+			oidcProviders,
 			oidcAccounts,
 			webAuthnCredentials,
 		};
@@ -128,13 +131,12 @@ export class BackupService {
 		// Use a transaction to ensure atomicity
 		await this.prisma.$transaction(async (tx) => {
 			// Delete all existing data (in reverse order of dependencies)
-			await tx.oIDCAuthState.deleteMany();
-			await tx.webAuthnChallenge.deleteMany();
 			await tx.serviceInstanceTag.deleteMany();
 			await tx.serviceTag.deleteMany();
 			await tx.serviceInstance.deleteMany();
 			await tx.webAuthnCredential.deleteMany();
 			await tx.oIDCAccount.deleteMany();
+			await tx.oIDCProvider.deleteMany();
 			await tx.session.deleteMany();
 			await tx.user.deleteMany();
 
@@ -149,19 +151,9 @@ export class BackupService {
 				await tx.session.create({ data: session as any });
 			}
 
-			// Service instances (depend on users)
-			for (const instance of data.serviceInstances) {
-				await tx.serviceInstance.create({ data: instance as any });
-			}
-
-			// Service tags (depend on users)
-			for (const tag of data.serviceTags) {
-				await tx.serviceTag.create({ data: tag as any });
-			}
-
-			// Service instance tags (depend on instances and tags)
-			for (const instanceTag of data.serviceInstanceTags) {
-				await tx.serviceInstanceTag.create({ data: instanceTag as any });
+			// OIDC providers (no dependencies)
+			for (const provider of data.oidcProviders) {
+				await tx.oIDCProvider.create({ data: provider as any });
 			}
 
 			// OIDC accounts (depend on users)
@@ -172,6 +164,21 @@ export class BackupService {
 			// WebAuthn credentials (depend on users)
 			for (const credential of data.webAuthnCredentials) {
 				await tx.webAuthnCredential.create({ data: credential as any });
+			}
+
+			// Service instances (no user dependency based on schema)
+			for (const instance of data.serviceInstances) {
+				await tx.serviceInstance.create({ data: instance as any });
+			}
+
+			// Service tags (no dependencies)
+			for (const tag of data.serviceTags) {
+				await tx.serviceTag.create({ data: tag as any });
+			}
+
+			// Service instance tags (depend on instances and tags)
+			for (const instanceTag of data.serviceInstanceTags) {
+				await tx.serviceInstanceTag.create({ data: instanceTag as any });
 			}
 		});
 	}
@@ -237,6 +244,7 @@ export class BackupService {
 			"serviceInstances",
 			"serviceTags",
 			"serviceInstanceTags",
+			"oidcProviders",
 			"oidcAccounts",
 			"webAuthnCredentials",
 		];
