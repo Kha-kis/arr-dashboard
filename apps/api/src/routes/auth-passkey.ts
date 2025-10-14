@@ -67,7 +67,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			const options = await passkeyService.generateRegistrationOptions(
 				request.currentUser.id,
 				request.currentUser.username,
-				request.currentUser.email,
+				undefined, // email field removed from User model
 			);
 
 			// Store challenge for verification
@@ -201,9 +201,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.send({
 				user: {
 					id: user.id,
-					email: user.email,
 					username: user.username,
-					role: user.role,
 					mustChangePassword: user.mustChangePassword,
 					createdAt: user.createdAt,
 				},
