@@ -71,14 +71,6 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Configure OIDC provider during initial setup (only allowed when no users exist)
 	 */
 	app.post("/oidc/setup", async (request, reply) => {
-		// Only allow during setup (no users exist)
-		const userCount = await app.prisma.user.count();
-		if (userCount > 0) {
-			return reply.status(403).send({
-				error: "OIDC setup is only allowed during initial setup. Use the admin panel to configure OIDC providers.",
-			});
-		}
-
 		const parsed = oidcSetupSchema.safeParse(request.body);
 		if (!parsed.success) {
 			return reply.status(400).send({ error: "Invalid OIDC configuration", details: parsed.error.flatten() });
@@ -89,38 +81,60 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		// Auto-generate redirect URI if not provided
 		const redirectUri = parsed.data.redirectUri ?? `${process.env.APP_URL ?? "http://localhost:3000"}/auth/oidc/callback`;
 
-		// Check if provider already exists
-		const existing = await app.prisma.oIDCProvider.findUnique({
-			where: { type },
-		});
+		try {
+			// Use transaction to atomically check user count and create provider
+			// This prevents race condition where two concurrent requests both see userCount === 0
+			const provider = await app.prisma.$transaction(async (tx) => {
+				// Check if any users exist (must be inside transaction for atomicity)
+				const userCount = await tx.user.count();
+				if (userCount > 0) {
+					throw new Error("SETUP_CLOSED");
+				}
 
-		if (existing) {
-			return reply.status(409).send({ error: `OIDC provider '${type}' already configured` });
+				// Check if provider already exists
+				const existing = await tx.oIDCProvider.findUnique({
+					where: { type },
+				});
+
+				if (existing) {
+					throw new Error("PROVIDER_EXISTS");
+				}
+
+				// Encrypt client secret
+				const { value: encryptedClientSecret, iv: clientSecretIv } = app.encryptor.encrypt(clientSecret);
+
+				// Create OIDC provider atomically
+				return await tx.oIDCProvider.create({
+					data: {
+						type,
+						displayName,
+						clientId,
+						encryptedClientSecret,
+						clientSecretIv,
+						issuer,
+						redirectUri,
+						scopes,
+						enabled: true,
+					},
+				});
+			});
+
+			return reply.status(201).send({
+				success: true,
+				message: "OIDC provider configured successfully",
+				provider: { type: provider.type, displayName: provider.displayName },
+			});
+		} catch (error: any) {
+			if (error.message === "SETUP_CLOSED") {
+				return reply.status(403).send({
+					error: "OIDC setup is only allowed during initial setup. Use the admin panel to configure OIDC providers.",
+				});
+			}
+			if (error.message === "PROVIDER_EXISTS") {
+				return reply.status(409).send({ error: `OIDC provider '${type}' already configured` });
+			}
+			throw error;
 		}
-
-		// Encrypt client secret
-		const { value: encryptedClientSecret, iv: clientSecretIv } = app.encryptor.encrypt(clientSecret);
-
-		// Create OIDC provider
-		await app.prisma.oIDCProvider.create({
-			data: {
-				type,
-				displayName,
-				clientId,
-				encryptedClientSecret,
-				clientSecretIv,
-				issuer,
-				redirectUri,
-				scopes,
-				enabled: true,
-			},
-		});
-
-		return reply.status(201).send({
-			success: true,
-			message: "OIDC provider configured successfully",
-			provider: { type, displayName },
-		});
 	});
 
 	/**
@@ -275,31 +289,43 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					user = oidcAccount.user;
 				} else {
 					// User is not authenticated - check if this is initial setup
-					const userCount = await app.prisma.user.count();
+					// Use transaction to atomically check user count and create user
+					// This prevents race condition where two concurrent callbacks both create admin accounts
+					try {
+						const newUser = await app.prisma.$transaction(async (tx) => {
+							// Check if any users exist (must be inside transaction for atomicity)
+							const userCount = await tx.user.count();
 
-					if (userCount === 0) {
-						// Initial setup - create admin account
-						const username = userInfo.preferred_username ?? `user_${userInfo.sub}`;
+							if (userCount > 0) {
+								throw new Error("SETUP_COMPLETE");
+							}
 
-						const newUser = await app.prisma.user.create({
-							data: {
-								username,
-								hashedPassword: null, // OIDC-only user (no password)
-								oidcAccounts: {
-									create: {
-										provider,
-										providerUserId: userInfo.sub,
+							// Initial setup - create admin account atomically
+							const username = userInfo.preferred_username ?? `user_${userInfo.sub}`;
+
+							return await tx.user.create({
+								data: {
+									username,
+									hashedPassword: null, // OIDC-only user (no password)
+									oidcAccounts: {
+										create: {
+											provider,
+											providerUserId: userInfo.sub,
+										},
 									},
 								},
-							},
+							});
 						});
 
 						user = newUser;
-					} else {
-						// Users exist but not authenticated - security violation
-						return reply.status(401).send({
-							error: "Cannot link OIDC account without authentication. Please log in first and add OIDC from settings.",
-						});
+					} catch (error: any) {
+						if (error.message === "SETUP_COMPLETE") {
+							// Setup already completed by concurrent request
+							return reply.status(401).send({
+								error: "Cannot link OIDC account without authentication. Please log in first and add OIDC from settings.",
+							});
+						}
+						throw error;
 					}
 				}
 			}
