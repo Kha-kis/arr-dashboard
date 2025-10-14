@@ -62,8 +62,8 @@ export class PasskeyService {
 				transports: ["usb", "nfc", "ble", "internal"] as AuthenticatorTransportFuture[],
 			})),
 			authenticatorSelection: {
-				// Prefer platform authenticators (e.g., Touch ID, Windows Hello)
-				authenticatorAttachment: "platform",
+				// Allow both platform (Touch ID, Windows Hello) and roaming (YubiKey, USB) authenticators
+				// authenticatorAttachment removed to support cross-platform authenticators
 				// Require user verification (biometrics, PIN, etc.)
 				userVerification: "required",
 				// Allow credentials to be discovered (resident keys)
