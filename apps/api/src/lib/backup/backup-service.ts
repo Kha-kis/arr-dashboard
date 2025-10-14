@@ -2,34 +2,41 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { PrismaClient } from "@prisma/client";
-import type { BackupData, BackupMetadata } from "@arr/shared";
+import type { BackupData, BackupFileInfo, BackupMetadata } from "@arr/shared";
 
 const BACKUP_VERSION = "1.0";
-const PBKDF2_ITERATIONS = 100000;
-const PBKDF2_KEY_LENGTH = 32; // 256 bits for AES-256
-const PBKDF2_DIGEST = "sha256";
+
+type BackupType = "manual" | "scheduled" | "update";
 
 export class BackupService {
+	private backupsDir: string;
+
 	constructor(
 		private prisma: PrismaClient,
 		private secretsPath: string,
-	) {}
+	) {
+		// Set backups directory next to the database file
+		const dataDir = path.dirname(secretsPath);
+		this.backupsDir = path.join(dataDir, "backups");
+	}
 
 	/**
-	 * Create an encrypted backup of the database and secrets
+	 * Create a backup and save it to filesystem (unencrypted JSON)
 	 */
-	async createBackup(password: string, appVersion: string): Promise<{
-		encryptedBackup: string;
-		metadata: BackupMetadata;
-		filename: string;
-	}> {
-		// 1. Export all database data
+	async createBackup(
+		appVersion: string,
+		type: BackupType = "manual",
+	): Promise<BackupFileInfo> {
+		// 1. Ensure backups directory exists
+		await this.ensureBackupsDirectory();
+
+		// 2. Export all database data
 		const data = await this.exportDatabase();
 
-		// 2. Read secrets file
+		// 3. Read secrets file
 		const secrets = await this.readSecrets();
 
-		// 3. Create backup structure
+		// 4. Create backup structure
 		const backup: BackupData = {
 			version: BACKUP_VERSION,
 			appVersion,
@@ -38,52 +45,146 @@ export class BackupService {
 			secrets,
 		};
 
-		// 4. Encrypt the backup
-		const backupJson = JSON.stringify(backup);
-		const encryptedBackup = this.encrypt(backupJson, password);
-
-		// 5. Generate metadata
-		const metadata: BackupMetadata = {
-			version: BACKUP_VERSION,
-			appVersion,
-			timestamp: backup.timestamp,
-			dataSize: backupJson.length,
-		};
+		// 5. Convert to JSON (pretty-printed for readability)
+		const backupJson = JSON.stringify(backup, null, 2);
 
 		// 6. Generate filename
 		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-		const filename = `arr-dashboard-backup-${timestamp}.enc`;
+		const filename = `arr-dashboard-backup-${timestamp}.json`;
 
-		return {
-			encryptedBackup,
-			metadata,
+		// 7. Determine backup path (organized by type)
+		const typeDir = path.join(this.backupsDir, type);
+		await fs.mkdir(typeDir, { recursive: true });
+		const backupPath = path.join(typeDir, filename);
+
+		// 8. Save backup to file
+		await fs.writeFile(backupPath, backupJson, "utf-8");
+
+		// 9. Get file stats
+		const stats = await fs.stat(backupPath);
+
+		// 10. Create backup info
+		const backupInfo: BackupFileInfo = {
+			id: this.generateBackupId(backupPath),
 			filename,
+			type,
+			timestamp: backup.timestamp,
+			size: stats.size,
+			path: backupPath,
 		};
+
+		return backupInfo;
 	}
 
 	/**
-	 * Restore from an encrypted backup
+	 * List all backups from filesystem
 	 */
-	async restoreBackup(encryptedBackup: string, password: string): Promise<BackupMetadata> {
-		// 1. Decrypt the backup
-		const decryptedBackup = this.decrypt(encryptedBackup, password);
+	async listBackups(): Promise<BackupFileInfo[]> {
+		await this.ensureBackupsDirectory();
 
-		// 2. Parse and validate backup structure
-		const backup = JSON.parse(decryptedBackup) as BackupData;
+		const backups: BackupFileInfo[] = [];
+		const types: BackupType[] = ["manual", "scheduled", "update"];
+
+		for (const type of types) {
+			const typeDir = path.join(this.backupsDir, type);
+
+			try {
+				const files = await fs.readdir(typeDir);
+
+				for (const filename of files) {
+					if (!filename.endsWith(".json")) continue;
+
+					const backupPath = path.join(typeDir, filename);
+					const stats = await fs.stat(backupPath);
+
+					// Read the actual timestamp from the backup file
+					let timestamp: string;
+					try {
+						const backupContent = await fs.readFile(backupPath, "utf-8");
+						const backupData = JSON.parse(backupContent) as BackupData;
+						timestamp = backupData.timestamp;
+					} catch {
+						// If we can't read the file, use the file modification time
+						timestamp = stats.mtime.toISOString();
+					}
+
+					backups.push({
+						id: this.generateBackupId(backupPath),
+						filename,
+						type,
+						timestamp,
+						size: stats.size,
+						path: backupPath,
+					});
+				}
+			} catch (error) {
+				// Type directory doesn't exist yet, skip
+				continue;
+			}
+		}
+
+		// Sort by timestamp descending (newest first)
+		backups.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+
+		return backups;
+	}
+
+	/**
+	 * Get a specific backup by ID
+	 */
+	async getBackupById(id: string): Promise<BackupFileInfo | null> {
+		const backups = await this.listBackups();
+		return backups.find((b) => b.id === id) || null;
+	}
+
+	/**
+	 * Delete a backup by ID
+	 */
+	async deleteBackup(id: string): Promise<void> {
+		const backup = await this.getBackupById(id);
+		if (!backup) {
+			throw new Error(`Backup with ID ${id} not found`);
+		}
+
+		await fs.unlink(backup.path);
+	}
+
+	/**
+	 * Restore from a backup file on filesystem
+	 */
+	async restoreBackupFromFile(id: string): Promise<BackupMetadata> {
+		const backup = await this.getBackupById(id);
+		if (!backup) {
+			throw new Error(`Backup with ID ${id} not found`);
+		}
+
+		// Read backup file
+		const backupData = await fs.readFile(backup.path, "utf-8");
+
+		// Use existing restore logic
+		return this.restoreBackup(backupData);
+	}
+
+	/**
+	 * Restore from a backup (JSON format)
+	 */
+	async restoreBackup(backupData: string): Promise<BackupMetadata> {
+		// 1. Parse and validate backup structure
+		const backup = JSON.parse(backupData) as BackupData;
 		this.validateBackup(backup);
 
-		// 3. Restore database (in a transaction for atomicity)
+		// 2. Restore database (in a transaction for atomicity)
 		await this.restoreDatabase(backup.data);
 
-		// 4. Restore secrets file
+		// 3. Restore secrets file
 		await this.writeSecrets(backup.secrets);
 
-		// 5. Return metadata
+		// 4. Return metadata
 		return {
 			version: backup.version,
 			appVersion: backup.appVersion,
 			timestamp: backup.timestamp,
-			dataSize: decryptedBackup.length,
+			dataSize: backupData.length,
 		};
 	}
 
@@ -214,6 +315,21 @@ export class BackupService {
 	}
 
 	/**
+	 * Ensure backups directory exists
+	 */
+	private async ensureBackupsDirectory(): Promise<void> {
+		await fs.mkdir(this.backupsDir, { recursive: true });
+	}
+
+	/**
+	 * Generate a unique ID for a backup based on its path
+	 */
+	private generateBackupId(backupPath: string): string {
+		// Use SHA-256 hash of the path as the ID
+		return crypto.createHash("sha256").update(backupPath).digest("hex").substring(0, 16);
+	}
+
+	/**
 	 * Validate backup structure
 	 */
 	private validateBackup(backup: unknown): asserts backup is BackupData {
@@ -271,61 +387,4 @@ export class BackupService {
 		}
 	}
 
-	/**
-	 * Encrypt data using password-based AES-256-GCM encryption
-	 */
-	private encrypt(plaintext: string, password: string): string {
-		// Generate random salt and IV
-		const salt = crypto.randomBytes(32);
-		const iv = crypto.randomBytes(16);
-
-		// Derive key from password using PBKDF2
-		const key = crypto.pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, PBKDF2_KEY_LENGTH, PBKDF2_DIGEST);
-
-		// Encrypt using AES-256-GCM
-		const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
-		const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-		const authTag = cipher.getAuthTag();
-
-		// Combine salt + iv + authTag + encrypted data
-		const combined = Buffer.concat([salt, iv, authTag, encrypted]);
-
-		// Return as base64
-		return combined.toString("base64");
-	}
-
-	/**
-	 * Decrypt data using password-based AES-256-GCM decryption
-	 */
-	private decrypt(encryptedData: string, password: string): string {
-		try {
-			// Decode from base64
-			const combined = Buffer.from(encryptedData, "base64");
-
-			// Extract components
-			const salt = combined.subarray(0, 32);
-			const iv = combined.subarray(32, 48);
-			const authTag = combined.subarray(48, 64);
-			const encrypted = combined.subarray(64);
-
-			// Derive key from password using PBKDF2
-			const key = crypto.pbkdf2Sync(
-				password,
-				salt,
-				PBKDF2_ITERATIONS,
-				PBKDF2_KEY_LENGTH,
-				PBKDF2_DIGEST,
-			);
-
-			// Decrypt using AES-256-GCM
-			const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
-			decipher.setAuthTag(authTag);
-
-			const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
-
-			return decrypted.toString("utf8");
-		} catch (error) {
-			throw new Error("Failed to decrypt backup: invalid password or corrupted data");
-		}
-	}
 }

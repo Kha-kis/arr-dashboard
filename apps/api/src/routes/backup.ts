@@ -1,20 +1,59 @@
 import type { FastifyPluginCallback } from "fastify";
 import path from "node:path";
+import fs from "node:fs/promises";
 import {
 	createBackupRequestSchema,
+	deleteBackupRequestSchema,
+	restoreBackupFromFileRequestSchema,
 	restoreBackupRequestSchema,
-	type CreateBackupResponse,
+	updateBackupSettingsRequestSchema,
+	type BackupFileInfo,
+	type BackupSettings,
+	type ListBackupsResponse,
 	type RestoreBackupResponse,
 } from "@arr/shared";
 import { BackupService } from "../lib/backup/backup-service.js";
 
 const BACKUP_RATE_LIMIT = { max: 3, timeWindow: "5 minutes" };
 const RESTORE_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };
+const DELETE_RATE_LIMIT = { max: 5, timeWindow: "5 minutes" };
 
 const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
+	// Helper to create backup service instance
+	const getBackupService = () => {
+		const databaseUrl = process.env.DATABASE_URL || "file:./dev.db";
+		const dbPath = databaseUrl.replace("file:", "");
+		const secretsPath = path.join(path.dirname(dbPath), "secrets.json");
+		return new BackupService(app.prisma, secretsPath);
+	};
+
+	/**
+	 * GET /backup
+	 * List all backups from filesystem
+	 */
+	app.get("/", async (request, reply) => {
+		if (!request.currentUser) {
+			return reply.status(401).send({ error: "Unauthorized" });
+		}
+
+		try {
+			const backupService = getBackupService();
+			const backups = await backupService.listBackups();
+
+			const response: ListBackupsResponse = { backups };
+			return reply.send(response);
+		} catch (error: any) {
+			request.log.error({ err: error }, "Failed to list backups");
+			return reply.status(500).send({
+				error: "Failed to list backups",
+				details: error.message,
+			});
+		}
+	});
+
 	/**
 	 * POST /backup/create
-	 * Create an encrypted backup and return it
+	 * Create a backup and save it to filesystem
 	 */
 	app.post(
 		"/create",
@@ -30,34 +69,25 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			}
 
 			try {
-				// Determine secrets path
-				const databaseUrl = process.env.DATABASE_URL || "file:./dev.db";
-				const dbPath = databaseUrl.replace("file:", "");
-				const secretsPath = path.join(path.dirname(dbPath), "secrets.json");
-
-				// Create backup service
-				const backupService = new BackupService(app.prisma, secretsPath);
+				const backupService = getBackupService();
 
 				// Get app version from package.json
 				const appVersion = "2.2.0"; // TODO: Load from package.json
 
-				// Create backup
-				const result = await backupService.createBackup(parsed.data.password, appVersion);
+				// Create backup and save to filesystem
+				const backupInfo = await backupService.createBackup(appVersion, "manual");
 
 				request.log.info(
 					{
 						userId: request.currentUser.id,
-						backupSize: result.encryptedBackup.length,
-						timestamp: result.metadata.timestamp,
+						backupId: backupInfo.id,
+						backupSize: backupInfo.size,
+						timestamp: backupInfo.timestamp,
 					},
 					"Backup created successfully",
 				);
 
-				const response: CreateBackupResponse = {
-					encryptedBackup: result.encryptedBackup,
-					metadata: result.metadata,
-					filename: result.filename,
-				};
+				const response: BackupFileInfo = backupInfo;
 
 				return reply.send(response);
 			} catch (error: any) {
@@ -72,7 +102,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 	/**
 	 * POST /backup/restore
-	 * Restore from an encrypted backup
+	 * Restore from a backup (uploaded file)
 	 */
 	app.post(
 		"/restore",
@@ -88,19 +118,10 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			}
 
 			try {
-				// Determine secrets path
-				const databaseUrl = process.env.DATABASE_URL || "file:./dev.db";
-				const dbPath = databaseUrl.replace("file:", "");
-				const secretsPath = path.join(path.dirname(dbPath), "secrets.json");
-
-				// Create backup service
-				const backupService = new BackupService(app.prisma, secretsPath);
+				const backupService = getBackupService();
 
 				// Restore backup
-				const metadata = await backupService.restoreBackup(
-					parsed.data.encryptedBackup,
-					parsed.data.password,
-				);
+				const metadata = await backupService.restoreBackup(parsed.data.backupData);
 
 				request.log.info(
 					{
@@ -109,44 +130,96 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 						backupVersion: metadata.version,
 						backupAppVersion: metadata.appVersion,
 					},
-					"Backup restored successfully",
+					"Backup restored successfully (from upload)",
 				);
-
-				// Check if running under launcher (auto-restart capable)
-				const isLauncherManaged = process.env.LAUNCHER_MANAGED === "true";
 
 				const response: RestoreBackupResponse = {
 					success: true,
-					message: isLauncherManaged
-						? "Backup restored successfully. The application will restart automatically in 2 seconds..."
-						: "Backup restored successfully. Please manually restart the application for changes to take effect. (Tip: Use 'pnpm run dev:launcher' for auto-restart in development)",
+					message: `Backup restored successfully. ${app.lifecycle.getRestartMessage()}`,
 					restoredAt: new Date().toISOString(),
 					metadata,
 				};
 
-				// Send response first
+				// Send response
 				await reply.send(response);
 
-				if (isLauncherManaged) {
-					// Schedule application restart after a short delay to ensure response is sent
-					// Exit code 42 signals the launcher to restart the application
-					request.log.info("Triggering application restart after successful restore");
-					setTimeout(() => {
-						request.log.info("Restarting application now...");
-						process.exit(42); // Exit code 42 = restart signal for launcher
-					}, 2000);
-				} else {
-					request.log.warn(
-						"Not running under launcher - manual restart required. Use 'pnpm run dev:launcher' or 'pnpm run start' for auto-restart.",
-					);
+				// Initiate restart if configured
+				if (app.lifecycle.isRestartRequired()) {
+					await app.lifecycle.restart("backup-restore");
 				}
 			} catch (error: any) {
 				request.log.error({ err: error }, "Failed to restore backup");
 
 				// Check for specific error types
-				if (error.message.includes("invalid password") || error.message.includes("decrypt")) {
+				if (error.message.includes("Invalid backup format") || error.message.includes("version")) {
 					return reply.status(400).send({
-						error: "Failed to restore backup: invalid password or corrupted backup file",
+						error: `Failed to restore backup: ${error.message}`,
+					});
+				}
+
+				return reply.status(500).send({
+					error: "Failed to restore backup",
+					details: error.message,
+				});
+			}
+		},
+	);
+
+	/**
+	 * POST /backup/restore-from-file
+	 * Restore from a backup stored on filesystem
+	 */
+	app.post(
+		"/restore-from-file",
+		{ config: { rateLimit: RESTORE_RATE_LIMIT } },
+		async (request, reply) => {
+			if (!request.currentUser) {
+				return reply.status(401).send({ error: "Unauthorized" });
+			}
+
+			const parsed = restoreBackupFromFileRequestSchema.safeParse(request.body);
+			if (!parsed.success) {
+				return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
+			}
+
+			try {
+				const backupService = getBackupService();
+
+				// Restore backup from filesystem
+				const metadata = await backupService.restoreBackupFromFile(parsed.data.id);
+
+				request.log.info(
+					{
+						userId: request.currentUser.id,
+						backupId: parsed.data.id,
+						backupTimestamp: metadata.timestamp,
+						backupVersion: metadata.version,
+						backupAppVersion: metadata.appVersion,
+					},
+					"Backup restored successfully (from filesystem)",
+				);
+
+				const response: RestoreBackupResponse = {
+					success: true,
+					message: `Backup restored successfully. ${app.lifecycle.getRestartMessage()}`,
+					restoredAt: new Date().toISOString(),
+					metadata,
+				};
+
+				// Send response
+				await reply.send(response);
+
+				// Initiate restart if configured
+				if (app.lifecycle.isRestartRequired()) {
+					await app.lifecycle.restart("backup-restore");
+				}
+			} catch (error: any) {
+				request.log.error({ err: error }, "Failed to restore backup from file");
+
+				// Check for specific error types
+				if (error.message.includes("not found")) {
+					return reply.status(404).send({
+						error: `Backup not found: ${error.message}`,
 					});
 				}
 
@@ -163,6 +236,232 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			}
 		},
 	);
+
+	/**
+	 * GET /backup/:id/download
+	 * Download a backup file by ID
+	 */
+	app.get("/:id/download", async (request, reply) => {
+		if (!request.currentUser) {
+			return reply.status(401).send({ error: "Unauthorized" });
+		}
+
+		const params = request.params as { id: string };
+
+		try {
+			const backupService = getBackupService();
+			const backup = await backupService.getBackupById(params.id);
+
+			if (!backup) {
+				return reply.status(404).send({ error: "Backup not found" });
+			}
+
+			request.log.info(
+				{
+					userId: request.currentUser.id,
+					backupId: params.id,
+					filename: backup.filename,
+				},
+				"Backup downloaded",
+			);
+
+			// Read the file and send it
+			const fileBuffer = await fs.readFile(backup.path);
+			return reply
+				.header("Content-Type", "application/octet-stream")
+				.header("Content-Disposition", `attachment; filename="${backup.filename}"`)
+				.send(fileBuffer);
+		} catch (error: any) {
+			request.log.error({ err: error }, "Failed to download backup");
+			return reply.status(500).send({
+				error: "Failed to download backup",
+				details: error.message,
+			});
+		}
+	});
+
+	/**
+	 * DELETE /backup/:id
+	 * Delete a backup by ID
+	 */
+	app.delete(
+		"/:id",
+		{ config: { rateLimit: DELETE_RATE_LIMIT } },
+		async (request, reply) => {
+			if (!request.currentUser) {
+				return reply.status(401).send({ error: "Unauthorized" });
+			}
+
+			const params = request.params as { id: string };
+			const parsed = deleteBackupRequestSchema.safeParse({ id: params.id });
+			if (!parsed.success) {
+				return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
+			}
+
+			try {
+				const backupService = getBackupService();
+
+				// Delete backup
+				await backupService.deleteBackup(parsed.data.id);
+
+				request.log.info(
+					{
+						userId: request.currentUser.id,
+						backupId: parsed.data.id,
+					},
+					"Backup deleted successfully",
+				);
+
+				return reply.send({ success: true, message: "Backup deleted successfully" });
+			} catch (error: any) {
+				request.log.error({ err: error }, "Failed to delete backup");
+
+				if (error.message.includes("not found")) {
+					return reply.status(404).send({
+						error: `Backup not found: ${error.message}`,
+					});
+				}
+
+				return reply.status(500).send({
+					error: "Failed to delete backup",
+					details: error.message,
+				});
+			}
+		},
+	);
+
+	/**
+	 * GET /backup/settings
+	 * Get backup settings
+	 */
+	app.get("/settings", async (request, reply) => {
+		if (!request.currentUser) {
+			return reply.status(401).send({ error: "Unauthorized" });
+		}
+
+		try {
+			// Get or create settings
+			let settings = await app.prisma.backupSettings.findUnique({
+				where: { id: 1 },
+			});
+
+			// Create default settings if they don't exist
+			if (!settings) {
+				settings = await app.prisma.backupSettings.create({
+					data: { id: 1 },
+				});
+			}
+
+			const response: BackupSettings = {
+				id: settings.id,
+				enabled: settings.enabled,
+				intervalType: settings.intervalType,
+				intervalValue: settings.intervalValue,
+				retentionCount: settings.retentionCount,
+				lastRunAt: settings.lastRunAt?.toISOString() || null,
+				nextRunAt: settings.nextRunAt?.toISOString() || null,
+				createdAt: settings.createdAt.toISOString(),
+				updatedAt: settings.updatedAt.toISOString(),
+			};
+
+			return reply.send(response);
+		} catch (error: any) {
+			request.log.error({ err: error }, "Failed to get backup settings");
+			return reply.status(500).send({
+				error: "Failed to get backup settings",
+				details: error.message,
+			});
+		}
+	});
+
+	/**
+	 * PUT /backup/settings
+	 * Update backup settings
+	 */
+	app.put("/settings", async (request, reply) => {
+		if (!request.currentUser) {
+			return reply.status(401).send({ error: "Unauthorized" });
+		}
+
+		const parsed = updateBackupSettingsRequestSchema.safeParse(request.body);
+		if (!parsed.success) {
+			return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
+		}
+
+		try {
+			// Get or create settings
+			let settings = await app.prisma.backupSettings.findUnique({
+				where: { id: 1 },
+			});
+
+			if (!settings) {
+				settings = await app.prisma.backupSettings.create({
+					data: { id: 1 },
+				});
+			}
+
+			// Calculate next run time if interval settings changed
+			let nextRunAt = settings.nextRunAt;
+			if (parsed.data.intervalType || parsed.data.intervalValue) {
+				const intervalType = parsed.data.intervalType || settings.intervalType;
+				const intervalValue = parsed.data.intervalValue || settings.intervalValue;
+
+				if (intervalType !== "DISABLED") {
+					const now = new Date();
+					switch (intervalType) {
+						case "HOURLY":
+							nextRunAt = new Date(now.getTime() + intervalValue * 60 * 60 * 1000);
+							break;
+						case "DAILY":
+							nextRunAt = new Date(now.getTime() + intervalValue * 24 * 60 * 60 * 1000);
+							break;
+						case "WEEKLY":
+							nextRunAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+							break;
+					}
+				} else {
+					nextRunAt = null;
+				}
+			}
+
+			// Update settings
+			const updated = await app.prisma.backupSettings.update({
+				where: { id: 1 },
+				data: {
+					...parsed.data,
+					nextRunAt,
+				},
+			});
+
+			request.log.info(
+				{
+					userId: request.currentUser.id,
+					settings: parsed.data,
+				},
+				"Backup settings updated",
+			);
+
+			const response: BackupSettings = {
+				id: updated.id,
+				enabled: updated.enabled,
+				intervalType: updated.intervalType,
+				intervalValue: updated.intervalValue,
+				retentionCount: updated.retentionCount,
+				lastRunAt: updated.lastRunAt?.toISOString() || null,
+				nextRunAt: updated.nextRunAt?.toISOString() || null,
+				createdAt: updated.createdAt.toISOString(),
+				updatedAt: updated.updatedAt.toISOString(),
+			};
+
+			return reply.send(response);
+		} catch (error: any) {
+			request.log.error({ err: error }, "Failed to update backup settings");
+			return reply.status(500).send({
+				error: "Failed to update backup settings",
+				details: error.message,
+			});
+		}
+	});
 
 	done();
 };

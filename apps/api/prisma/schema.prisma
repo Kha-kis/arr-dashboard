@@ -132,3 +132,25 @@ model WebAuthnCredential {
   @@index([userId])
   @@map("webauthn_credentials")
 }
+
+enum BackupIntervalType {
+  DISABLED
+  HOURLY
+  DAILY
+  WEEKLY
+}
+
+// Backup settings (singleton table, only one row)
+model BackupSettings {
+  id                Int                 @id @default(1)
+  enabled           Boolean             @default(false)
+  intervalType      BackupIntervalType  @default(DISABLED)
+  intervalValue     Int                 @default(24) // Hours for HOURLY, days for DAILY (1-7), 1 for WEEKLY
+  retentionCount    Int                 @default(7)  // Number of scheduled backups to keep
+  lastRunAt         DateTime?
+  nextRunAt         DateTime?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@map("backup_settings")
+}

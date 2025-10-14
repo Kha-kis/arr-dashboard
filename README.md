@@ -17,6 +17,7 @@ A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances
 - 🏷️ **Tag Management** - Organize instances with custom tags
 - 🔒 **Secure** - Encrypted API keys, session management, and rate limiting
 - 🔐 **Multi-Authentication** - Password, OIDC (Authelia/Authentik), or Passkeys (WebAuthn)
+- 💾 **Backup & Restore** - Encrypted backups for easy migration and disaster recovery
 
 ## Quick Start with Docker (Recommended)
 
@@ -86,6 +87,8 @@ docker run -d --name arr-dashboard -p 3000:3000 -v ./data:/app/data arr-dashboar
 3. Add your Sonarr/Radarr/Prowlarr instances in Settings
 
 For authentication setup details, see [AUTHENTICATION.md](AUTHENTICATION.md).
+
+For backup and restore instructions, see [BACKUP_RESTORE.md](BACKUP_RESTORE.md).
 
 **Parameters:**
 
@@ -290,7 +293,7 @@ Follow the prompts to reset the password.
 2. **Never commit** `.env` files with real credentials
 3. **Use HTTPS** in production with a reverse proxy (nginx, Caddy, Traefik)
 4. **Keep your instances private** - Don't expose Sonarr/Radarr/Prowlarr to the internet
-5. **Regular backups** of the SQLite database file
+5. **Regular backups** - Use the built-in encrypted backup feature (see [BACKUP_RESTORE.md](BACKUP_RESTORE.md))
 
 ## Reverse Proxy Example (nginx)
 
