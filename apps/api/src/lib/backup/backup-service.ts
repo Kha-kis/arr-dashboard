@@ -151,9 +151,11 @@ export class BackupService {
 				await tx.session.create({ data: session as any });
 			}
 
-			// OIDC providers (no dependencies)
-			for (const provider of data.oidcProviders) {
-				await tx.oIDCProvider.create({ data: provider as any });
+			// OIDC providers (no dependencies) - optional for backward compatibility
+			if (data.oidcProviders) {
+				for (const provider of data.oidcProviders) {
+					await tx.oIDCProvider.create({ data: provider as any });
+				}
 			}
 
 			// OIDC accounts (depend on users)
@@ -244,7 +246,6 @@ export class BackupService {
 			"serviceInstances",
 			"serviceTags",
 			"serviceInstanceTags",
-			"oidcProviders",
 			"oidcAccounts",
 			"webAuthnCredentials",
 		];
@@ -253,6 +254,12 @@ export class BackupService {
 			if (!Array.isArray((b.data as any)[field])) {
 				throw new Error(`Invalid backup format: missing or invalid data.${field}`);
 			}
+		}
+
+		// Optional fields for backward compatibility
+		// oidcProviders was added later, so old backups may not have it
+		if (b.data.oidcProviders !== undefined && !Array.isArray(b.data.oidcProviders)) {
+			throw new Error("Invalid backup format: oidcProviders must be an array");
 		}
 
 		// Validate required secret fields

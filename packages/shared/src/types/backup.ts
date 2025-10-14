@@ -58,7 +58,7 @@ export interface BackupData {
 		serviceInstances: unknown[];
 		serviceTags: unknown[];
 		serviceInstanceTags: unknown[];
-		oidcProviders: unknown[];
+		oidcProviders?: unknown[]; // Optional for backward compatibility
 		oidcAccounts: unknown[];
 		webAuthnCredentials: unknown[];
 	};
