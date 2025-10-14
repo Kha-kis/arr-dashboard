@@ -233,7 +233,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 	/**
 	 * DELETE /auth/passkey/credentials
-	 * Delete a passkey credential
+	 * Delete a passkey credential (requires alternative auth method)
 	 * User must be authenticated
 	 */
 	app.delete("/passkey/credentials", async (request, reply) => {
@@ -247,6 +247,31 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		try {
+			// Check how many passkeys the user currently has
+			const passkeyCount = await app.prisma.webAuthnCredential.count({
+				where: { userId: request.currentUser.id },
+			});
+
+			// If deleting the last passkey, ensure user has alternative auth
+			if (passkeyCount === 1) {
+				const user = await app.prisma.user.findUnique({
+					where: { id: request.currentUser.id },
+				});
+
+				const hasPassword = !!user?.hashedPassword;
+
+				const oidcAccounts = await app.prisma.oIDCAccount.count({
+					where: { userId: request.currentUser.id },
+				});
+
+				if (!hasPassword && oidcAccounts === 0) {
+					return reply.status(400).send({
+						error:
+							"Cannot delete last passkey without alternative authentication method. Please add a password or OIDC provider first.",
+					});
+				}
+			}
+
 			const deleted = await passkeyService.deleteCredential(
 				request.currentUser.id,
 				parsed.data.credentialId,
