@@ -56,16 +56,18 @@ export const backupApi = {
 		return new Promise((resolve, reject) => {
 			const reader = new FileReader();
 			reader.onload = () => {
-				if (typeof reader.result === "string") {
-					// Remove data URL prefix if present
-					const base64 = reader.result.split(",")[1] || reader.result;
+				// FileReader returns ArrayBuffer when using readAsArrayBuffer
+				if (reader.result instanceof ArrayBuffer) {
+					const uint8Array = new Uint8Array(reader.result);
+					// Convert to base64
+					const base64 = btoa(String.fromCharCode(...uint8Array));
 					resolve(base64);
 				} else {
-					reject(new Error("Failed to read file as text"));
+					reject(new Error("Failed to read file as ArrayBuffer"));
 				}
 			};
 			reader.onerror = () => reject(reader.error);
-			reader.readAsDataURL(file);
+			reader.readAsArrayBuffer(file);
 		});
 	},
 };
