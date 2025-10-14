@@ -473,7 +473,7 @@ export const BackupTab = () => {
 								<div className="flex gap-2">
 									<Button
 										type="submit"
-										variant="destructive"
+										variant="danger"
 										disabled={!restoreFile || restoreBackupMutation.isPending}
 									>
 										{restoreBackupMutation.isPending ? "Restoring..." : "Restore Backup"}
@@ -646,7 +646,7 @@ export const BackupTab = () => {
 								<div className="flex gap-2">
 									<Button
 										onClick={handleRestoreBackupSubmit}
-										variant="destructive"
+										variant="danger"
 										disabled={restoreBackupFromFileMutation.isPending}
 										className="flex-1"
 									>
