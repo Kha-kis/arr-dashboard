@@ -120,8 +120,10 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			try {
 				const backupService = getBackupService();
 
-				// Restore backup
-				const metadata = await backupService.restoreBackup(parsed.data.backupData);
+				// Decode base64-encoded backup data from client
+				const backupJson = Buffer.from(parsed.data.backupData, "base64").toString("utf-8");
+
+				const metadata = await backupService.restoreBackup(backupJson);
 
 				request.log.info(
 					{

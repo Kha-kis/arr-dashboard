@@ -7,8 +7,8 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * POST /system/restart
 	 * Manually restart the application
 	 *
-	 * Security: Requires authentication (admin users only)
-	 * Rate limited to prevent abuse
+	 * Security: Requires authentication (single-admin architecture - all authenticated users are admins)
+	 * Rate limited to prevent abuse (2 requests per 5 minutes)
 	 */
 	app.post("/restart", {config: { rateLimit: RESTART_RATE_LIMIT }}, async (request, reply) => {
 		// Authentication check
