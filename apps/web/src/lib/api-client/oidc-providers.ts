@@ -20,7 +20,7 @@ export async function getOIDCProviders(): Promise<OIDCProvider[]> {
 export async function createOIDCProvider(data: CreateOIDCProvider): Promise<OIDCProvider> {
 	return apiRequest<OIDCProvider>("/api/oidc-providers", {
 		method: "POST",
-		body: JSON.stringify(data),
+		json: data,
 	});
 }
 
@@ -33,7 +33,7 @@ export async function updateOIDCProvider(
 ): Promise<OIDCProvider> {
 	return apiRequest<OIDCProvider>(`/api/oidc-providers/${id}`, {
 		method: "PUT",
-		body: JSON.stringify(data),
+		json: data,
 	});
 }
 
