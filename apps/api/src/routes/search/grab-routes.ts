@@ -23,11 +23,8 @@ export const registerGrabRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		const payload = searchGrabRequestSchema.parse(request.body ?? {});
 
-		const userId = request.currentUser.id;
-
 		const instance = await app.prisma.serviceInstance.findFirst({
 			where: {
-				userId,
 				enabled: true,
 				service: "PROWLARR",
 				id: payload.instanceId,

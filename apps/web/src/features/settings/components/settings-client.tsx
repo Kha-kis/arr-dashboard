@@ -18,6 +18,9 @@ import { ServiceForm } from "./service-form";
 import { ServiceDefaultsSection } from "./service-defaults-section";
 import { TagsTab } from "./tags-tab";
 import { AccountTab } from "./account-tab";
+import { OIDCProviderSection } from "./oidc-provider-section";
+import { PasskeySection } from "./passkey-section";
+import { PasswordSection } from "./password-section";
 
 /**
  * Main settings client component
@@ -186,6 +189,15 @@ export const SettingsClient = () => {
 					isUpdating={accountManagement.updateAccountMutation.isPending}
 					updateResult={accountManagement.accountUpdateResult}
 				/>
+			)}
+
+			{/* Authentication tab */}
+			{activeTab === "authentication" && (
+				<div className="space-y-6">
+					<PasswordSection currentUser={currentUser} />
+					<PasskeySection />
+					<OIDCProviderSection />
+				</div>
 			)}
 		</section>
 	);

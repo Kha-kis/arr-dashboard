@@ -34,7 +34,6 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 
 		const instances = await app.prisma.serviceInstance.findMany({
 			where: {
-				userId: request.currentUser.id,
 				enabled: true,
 				service: prismaService,
 			},

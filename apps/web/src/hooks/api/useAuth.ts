@@ -8,11 +8,12 @@ import {
 	fetchCurrentUser,
 	updateAccount,
 	checkSetupRequired,
+	removePassword,
 } from "../../lib/api-client/auth";
 
 // Login
 interface LoginPayload {
-	identifier: string;
+	username: string;
 	password: string;
 	rememberMe?: boolean;
 }
@@ -57,7 +58,6 @@ export const useCurrentUser = (enabled: boolean = true) =>
 
 // Update Account
 interface UpdateAccountPayload {
-	email?: string;
 	username?: string;
 	currentPassword?: string;
 	newPassword?: string;
@@ -72,8 +72,31 @@ export const useUpdateAccountMutation = () => {
 
 	return useMutation<UpdateAccountResponse, unknown, UpdateAccountPayload>({
 		mutationFn: updateAccount,
-		onSuccess: (data) => {
-			queryClient.setQueryData(["current-user"], data.user);
+		onSuccess: () => {
+			// Invalidate to refetch with updated hasPassword and hasTmdbApiKey fields
+			queryClient.invalidateQueries({ queryKey: ["current-user"] });
+		},
+	});
+};
+
+// Remove Password
+interface RemovePasswordPayload {
+	currentPassword: string;
+}
+
+interface RemovePasswordResponse {
+	success: boolean;
+	message: string;
+}
+
+export const useRemovePasswordMutation = () => {
+	const queryClient = useQueryClient();
+
+	return useMutation<RemovePasswordResponse, unknown, RemovePasswordPayload>({
+		mutationFn: removePassword,
+		onSuccess: () => {
+			// Invalidate current user to refetch and show updated state
+			queryClient.invalidateQueries({ queryKey: ["current-user"] });
 		},
 	});
 };
