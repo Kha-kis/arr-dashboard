@@ -21,6 +21,7 @@ import { AccountTab } from "./account-tab";
 import { OIDCProviderSection } from "./oidc-provider-section";
 import { PasskeySection } from "./passkey-section";
 import { PasswordSection } from "./password-section";
+import { BackupTab } from "./backup-tab";
 
 /**
  * Main settings client component
@@ -199,6 +200,9 @@ export const SettingsClient = () => {
 					<OIDCProviderSection />
 				</div>
 			)}
+
+			{/* Backup tab */}
+			{activeTab === "backup" && <BackupTab />}
 		</section>
 	);
 };

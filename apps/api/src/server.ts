@@ -8,6 +8,7 @@ import { securityPlugin } from "./plugins/security.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerAuthOidcRoutes } from "./routes/auth-oidc.js";
 import { registerAuthPasskeyRoutes } from "./routes/auth-passkey.js";
+import { registerBackupRoutes } from "./routes/backup.js";
 import { registerDashboardRoutes } from "./routes/dashboard.js";
 import { registerDiscoverRoutes } from "./routes/discover.js";
 import { registerHealthRoutes } from "./routes/health.js";
@@ -93,6 +94,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(registerSearchRoutes, { prefix: "/api" });
 	app.register(registerManualImportRoutes, { prefix: "/api" });
 	app.register(registerRecommendationsRoutes, { prefix: "/api" });
+	app.register(registerBackupRoutes, { prefix: "/api/backup" });
 
 	return app;
 };
