@@ -65,7 +65,6 @@ export const TopBar = () => {
 							</div>
 							<div className="text-right relative">
 								<p className="text-sm font-medium text-fg">{user.username}</p>
-								<p className="text-xs text-fg-muted">{user.email}</p>
 							</div>
 						</div>
 						<Button

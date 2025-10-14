@@ -40,12 +40,11 @@ export interface CreateTagResponse {
 
 export interface CurrentUser {
   id: string;
-  email: string;
   username: string;
-  role: "ADMIN" | "USER";
   mustChangePassword: boolean;
   createdAt: string;
   hasTmdbApiKey?: boolean;
+  hasPassword?: boolean;
 }
 
 export interface CurrentUserResponse {

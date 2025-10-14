@@ -6,11 +6,14 @@ import { type ApiEnv, envSchema } from "./config/env.js";
 import { prismaPlugin } from "./plugins/prisma.js";
 import { securityPlugin } from "./plugins/security.js";
 import { registerAuthRoutes } from "./routes/auth.js";
+import { registerAuthOidcRoutes } from "./routes/auth-oidc.js";
+import { registerAuthPasskeyRoutes } from "./routes/auth-passkey.js";
 import { registerDashboardRoutes } from "./routes/dashboard.js";
 import { registerDiscoverRoutes } from "./routes/discover.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerLibraryRoutes } from "./routes/library.js";
 import { registerManualImportRoutes } from "./routes/manual-import.js";
+import oidcProvidersRoutes from "./routes/oidc-providers.js";
 import { registerRecommendationsRoutes } from "./routes/recommendations.js";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerServiceRoutes } from "./routes/services.js";
@@ -80,6 +83,9 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 
 	app.register(registerHealthRoutes, { prefix: "/health" });
 	app.register(registerAuthRoutes, { prefix: "/auth" });
+	app.register(registerAuthOidcRoutes, { prefix: "/auth" });
+	app.register(registerAuthPasskeyRoutes, { prefix: "/auth" });
+	app.register(oidcProvidersRoutes);
 	app.register(registerServiceRoutes, { prefix: "/api" });
 	app.register(registerDashboardRoutes, { prefix: "/api" });
 	app.register(registerDiscoverRoutes, { prefix: "/api" });

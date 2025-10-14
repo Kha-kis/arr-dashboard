@@ -15,11 +15,7 @@ import { Alert, AlertDescription } from "../../../components/ui";
  * Account form state
  */
 export type AccountFormState = {
-	email: string;
 	username: string;
-	currentPassword: string;
-	newPassword: string;
-	confirmPassword: string;
 	tmdbApiKey: string;
 };
 
@@ -29,9 +25,7 @@ export type AccountFormState = {
 interface AccountTabProps {
 	/** Current user data */
 	currentUser?: {
-		email: string;
 		username: string;
-		role: string;
 		createdAt: string;
 		hasTmdbApiKey?: boolean;
 	} | null;
@@ -61,30 +55,17 @@ export const AccountTab = ({
 	isUpdating,
 	updateResult,
 }: AccountTabProps) => {
+
 	return (
-		<div className="grid gap-6 md:grid-cols-[2fr,1fr]">
-			<Card>
+		<div className="space-y-6">
+			<div className="grid gap-6 md:grid-cols-[2fr,1fr]">
+				<Card>
 				<CardHeader>
 					<CardTitle>Account Information</CardTitle>
-					<CardDescription>Update your email, username, or password.</CardDescription>
+					<CardDescription>Update your username and configure integrations.</CardDescription>
 				</CardHeader>
 				<CardContent>
 					<form className="space-y-4" onSubmit={onAccountUpdate}>
-						<div className="space-y-2">
-							<label className="text-xs uppercase text-white/60">Email</label>
-							<Input
-								type="email"
-								value={accountForm.email}
-								onChange={(event) =>
-									onAccountFormChange((prev) => ({
-										...prev,
-										email: event.target.value,
-									}))
-								}
-								placeholder={currentUser?.email ?? ""}
-							/>
-							<p className="text-xs text-white/40">Current: {currentUser?.email}</p>
-						</div>
 						<div className="space-y-2">
 							<label className="text-xs uppercase text-white/60">Username</label>
 							<Input
@@ -98,56 +79,6 @@ export const AccountTab = ({
 								placeholder={currentUser?.username ?? ""}
 							/>
 							<p className="text-xs text-white/40">Current: {currentUser?.username}</p>
-						</div>
-						<div className="border-t border-white/10 pt-4 mt-6">
-							<h3 className="text-sm font-semibold text-white mb-4">Change Password</h3>
-							<div className="space-y-4">
-								<div className="space-y-2">
-									<label className="text-xs uppercase text-white/60">Current Password</label>
-									<Input
-										type="password"
-										value={accountForm.currentPassword}
-										onChange={(event) =>
-											onAccountFormChange((prev) => ({
-												...prev,
-												currentPassword: event.target.value,
-											}))
-										}
-										placeholder="Enter current password"
-									/>
-								</div>
-								<div className="space-y-2">
-									<label className="text-xs uppercase text-white/60">New Password</label>
-									<Input
-										type="password"
-										value={accountForm.newPassword}
-										onChange={(event) =>
-											onAccountFormChange((prev) => ({
-												...prev,
-												newPassword: event.target.value,
-											}))
-										}
-										placeholder="At least 8 characters"
-									/>
-									<p className="text-xs text-white/50">
-										Must include uppercase, lowercase, number, and special character
-									</p>
-								</div>
-								<div className="space-y-2">
-									<label className="text-xs uppercase text-white/60">Confirm New Password</label>
-									<Input
-										type="password"
-										value={accountForm.confirmPassword}
-										onChange={(event) =>
-											onAccountFormChange((prev) => ({
-												...prev,
-												confirmPassword: event.target.value,
-											}))
-										}
-										placeholder="Re-enter new password"
-									/>
-								</div>
-							</div>
 						</div>
 						<div className="border-t border-white/10 pt-4 mt-6">
 							<h3 className="text-sm font-semibold text-white mb-4">TMDB API Integration</h3>
@@ -206,10 +137,6 @@ export const AccountTab = ({
 				</CardHeader>
 				<CardContent className="space-y-4">
 					<div className="space-y-1">
-						<p className="text-xs uppercase text-white/60">Role</p>
-						<p className="text-sm text-white capitalize">{currentUser?.role.toLowerCase()}</p>
-					</div>
-					<div className="space-y-1">
 						<p className="text-xs uppercase text-white/60">Created</p>
 						<p className="text-sm text-white">
 							{currentUser?.createdAt ? new Date(currentUser.createdAt).toLocaleDateString() : "-"}
@@ -217,6 +144,8 @@ export const AccountTab = ({
 					</div>
 				</CardContent>
 			</Card>
+			</div>
+
 		</div>
 	);
 };

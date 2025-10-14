@@ -122,15 +122,24 @@ Uses **signed, HTTP-only cookies** with Lucia Auth:
 ### 4. Database Schema (Prisma)
 
 **Key Models:**
-- `User` - Admin/user accounts with role-based access
+- `User` - User accounts (single-admin architecture, no role/email fields)
 - `Session` - Active sessions linked to users
+- `OIDCAccount` - OIDC provider account links (Authelia/Authentik/Generic)
+- `OIDCProvider` - OIDC provider configurations
+- `WebAuthnCredential` - Passkey credentials for passwordless auth
 - `ServiceInstance` - Sonarr/Radarr/Prowlarr connections (API keys encrypted)
 - `ServiceTag` - Tags for organizing instances
 - `ServiceInstanceTag` - Many-to-many join table
 
 **Encrypted Fields:**
 - All `ServiceInstance.encryptedApiKey` + `encryptionIv` pairs
+- All `OIDCProvider.encryptedClientSecret` + `clientSecretIv` pairs
 - User TMDB API keys (optional)
+
+**Authentication:**
+- Multi-authentication support: Password (optional), OIDC, and/or Passkeys
+- User model simplified: no email or role fields (single-admin architecture)
+- Service instances are global, not per-user (removed userId foreign key)
 
 **Migrations:**
 - Development: `pnpm run db:push` (no migration files)
