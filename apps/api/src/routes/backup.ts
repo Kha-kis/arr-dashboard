@@ -112,14 +112,14 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					"Backup restored successfully",
 				);
 
-				// Check if we're in production (Docker, PM2, systemd will auto-restart)
-				const isProduction = process.env.NODE_ENV === "production";
+				// Check if running under launcher (auto-restart capable)
+				const isLauncherManaged = process.env.LAUNCHER_MANAGED === "true";
 
 				const response: RestoreBackupResponse = {
 					success: true,
-					message: isProduction
+					message: isLauncherManaged
 						? "Backup restored successfully. The application will restart automatically in 2 seconds..."
-						: "Backup restored successfully. Please manually restart the application (stop and run 'pnpm run dev' again) for changes to take effect.",
+						: "Backup restored successfully. Please manually restart the application for changes to take effect. (Tip: Use 'pnpm run dev:launcher' for auto-restart in development)",
 					restoredAt: new Date().toISOString(),
 					metadata,
 				};
@@ -127,18 +127,17 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				// Send response first
 				await reply.send(response);
 
-				// Only auto-restart in production environments
-				if (isProduction) {
+				if (isLauncherManaged) {
 					// Schedule application restart after a short delay to ensure response is sent
-					// This allows Docker, PM2, systemd, or other process managers to restart the app
+					// Exit code 42 signals the launcher to restart the application
 					request.log.info("Triggering application restart after successful restore");
 					setTimeout(() => {
 						request.log.info("Restarting application now...");
-						process.exit(0); // Clean exit - process manager will restart
+						process.exit(42); // Exit code 42 = restart signal for launcher
 					}, 2000);
 				} else {
 					request.log.warn(
-						"Development mode detected - skipping automatic restart. Please manually restart the dev server.",
+						"Not running under launcher - manual restart required. Use 'pnpm run dev:launcher' or 'pnpm run start' for auto-restart.",
 					);
 				}
 			} catch (error: any) {

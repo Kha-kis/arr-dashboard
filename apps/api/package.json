@@ -5,8 +5,9 @@
 	"type": "module",
 	"scripts": {
 		"dev": "tsx watch src/index.ts",
-		"build": "tsup src/index.ts --format esm --dts --clean",
-		"start": "node ./dist/index.js",
+		"dev:launcher": "tsx src/launcher.ts",
+		"build": "tsup src/index.ts src/launcher.ts --format esm --clean",
+		"start": "node ./dist/launcher.js",
 		"lint": "biome lint src",
 		"format": "biome format src",
 		"typecheck": "tsc --noEmit",

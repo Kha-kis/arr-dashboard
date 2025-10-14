@@ -84,16 +84,16 @@ export const BackupTab = () => {
 			setRestorePassword("");
 			setShowRestoreWarning(false);
 
-			// Check if auto-restart is enabled (production mode)
-			const isAutoRestart = response.message.includes("restart automatically");
+			// Check if auto-restart will occur
+			const willAutoRestart = response.message.includes("restart automatically");
 
 			// Show success message
 			alert(
-				`Backup restored successfully!\n\nBackup from: ${new Date(response.metadata.timestamp).toLocaleString()}\n\n${response.message}${isAutoRestart ? "\n\nThe page will reload automatically once the server restarts." : ""}`,
+				`Backup restored successfully!\n\nBackup from: ${new Date(response.metadata.timestamp).toLocaleString()}\n\n${response.message}${willAutoRestart ? "\n\nThe page will reload automatically once the server restarts." : ""}`,
 			);
 
-			// Only poll for restart if in production mode
-			if (isAutoRestart) {
+			// Only poll for restart if auto-restart is enabled
+			if (willAutoRestart) {
 				// Poll for server to come back up and reload page
 				const checkServerInterval = setInterval(async () => {
 					try {
