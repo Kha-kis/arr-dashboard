@@ -84,10 +84,28 @@ export const BackupTab = () => {
 			setRestorePassword("");
 			setShowRestoreWarning(false);
 
-			// Show success message with restart instruction
+			// Show success message with restart info
 			alert(
-				`${response.message}\n\nBackup from ${new Date(response.metadata.timestamp).toLocaleString()} restored successfully.\n\nIMPORTANT: Please restart the application now for changes to take full effect.`,
+				`Backup restored successfully!\n\nBackup from: ${new Date(response.metadata.timestamp).toLocaleString()}\n\n${response.message}\n\nThe page will reload automatically once the server restarts.`,
 			);
+
+			// Poll for server to come back up and reload page
+			const checkServerInterval = setInterval(async () => {
+				try {
+					const healthResponse = await fetch("/api/health");
+					if (healthResponse.ok) {
+						clearInterval(checkServerInterval);
+						window.location.href = "/login"; // Redirect to login after restart
+					}
+				} catch {
+					// Server not ready yet, keep polling
+				}
+			}, 1000);
+
+			// Stop polling after 30 seconds
+			setTimeout(() => {
+				clearInterval(checkServerInterval);
+			}, 30000);
 		} catch (error: any) {
 			alert(`Failed to restore backup: ${error.message || "Unknown error"}`);
 		}

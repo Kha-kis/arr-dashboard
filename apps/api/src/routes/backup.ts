@@ -114,13 +114,21 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 				const response: RestoreBackupResponse = {
 					success: true,
-					message:
-						"Backup restored successfully. Please restart the application for changes to take full effect.",
+					message: "Backup restored successfully. The application will restart automatically in 2 seconds...",
 					restoredAt: new Date().toISOString(),
 					metadata,
 				};
 
-				return reply.send(response);
+				// Send response first
+				await reply.send(response);
+
+				// Schedule application restart after a short delay to ensure response is sent
+				// This allows Docker, PM2, systemd, or other process managers to restart the app
+				request.log.info("Triggering application restart after successful restore");
+				setTimeout(() => {
+					request.log.info("Restarting application now...");
+					process.exit(0); // Clean exit - process manager will restart
+				}, 2000);
 			} catch (error: any) {
 				request.log.error({ err: error }, "Failed to restore backup");
 
