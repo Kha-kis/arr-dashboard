@@ -33,6 +33,14 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.post("/register", { config: { rateLimit: REGISTER_RATE_LIMIT } }, async (request, reply) => {
+		// Only allow registration during initial setup (single-admin architecture)
+		const userCount = await app.prisma.user.count();
+		if (userCount > 0) {
+			return reply.status(403).send({
+				error: "Registration is only allowed during initial setup. Please use login, OIDC, or passkey authentication.",
+			});
+		}
+
 		const parsed = registerSchema.safeParse(request.body);
 		if (!parsed.success) {
 			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
