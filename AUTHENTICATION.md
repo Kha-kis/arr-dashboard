@@ -26,8 +26,8 @@ Arr Dashboard supports multiple authentication methods:
 No configuration needed. Create the first user on initial setup:
 
 1. Navigate to `http://your-server:3000/setup`
-2. Create an admin account
-3. Log in with username/email and password
+2. Create an admin account with username and password
+3. Log in with your credentials
 
 ### Adding Passkeys
 
@@ -122,8 +122,12 @@ OIDC (OpenID Connect) allows users to authenticate using external identity provi
 2. Dashboard redirects to OIDC provider for authentication
 3. User authenticates with provider
 4. Provider redirects back to dashboard with authorization code
-5. Dashboard exchanges code for user info and creates session
-6. If user email exists, link to existing account; otherwise create new user
+5. Dashboard exchanges code for user info and creates/links account:
+   - If OIDC account already exists (based on provider's user ID), log in
+   - If no OIDC account exists:
+     - **During initial setup** (no users exist): Create admin account
+     - **If user is logged in**: Link OIDC to existing account
+     - **If user not logged in** (but users exist): Reject (must log in first to link OIDC)
 
 ---
 
@@ -296,10 +300,16 @@ Use a reverse proxy like Nginx, Caddy, or Traefik to handle TLS.
 
 ### Account Linking
 
-When a user authenticates via OIDC or passkey:
-- If their email already exists, the auth method is linked to that account
-- If email doesn't exist, a new account is created
+When a user authenticates via OIDC:
+- OIDC accounts are linked based on the provider's unique user ID (not email)
+- **During initial setup**: First OIDC login creates the admin account
+- **After setup**: User must be logged in to link new OIDC provider to their account
 - Users can have multiple auth methods (password + OIDC + passkeys)
+
+Passkeys:
+- Must be registered while logged in (Settings → Account → Passkeys)
+- Linked directly to the user account during registration
+- Can have multiple passkeys per account
 
 ### Password Optional
 
@@ -358,14 +368,15 @@ The database field `User.hashedPassword` is now optional to support OIDC/passkey
 2. Restart the container/server after setting environment variables
 3. Check logs for OIDC configuration errors
 
-### User Can't Log In After OIDC Setup
+### OIDC Account Not Linked
 
-**Problem:** Existing user can't log in after OIDC authentication
+**Problem:** Existing user can't log in with OIDC
 
 **Solution:**
-- First OIDC login links to existing account based on email
-- User needs to log in with OIDC at least once to link the account
-- After linking, they can use either password or OIDC
+- To link OIDC to existing account: Log in with password first, then initiate OIDC login
+- During initial setup (no users exist): First OIDC login creates the account
+- OIDC accounts are linked by provider user ID, not email
+- After linking, you can use either password or OIDC to log in
 
 ---
 
