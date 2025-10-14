@@ -1,15 +1,16 @@
 import type { FastifyPluginCallback } from "fastify";
 import { randomBytes } from "node:crypto";
+import * as oauth from "oauth4webapi";
 import { z } from "zod";
 import { OIDCProvider, type OIDCProviderType } from "../lib/auth/oidc-provider.js";
 
 /**
  * In-memory storage for OIDC states and nonces (production: use Redis)
- * Format: Map<state, { nonce, provider, expiresAt }>
+ * Format: Map<state, { nonce, codeVerifier, provider, expiresAt }>
  */
 const oidcStateStore = new Map<
 	string,
-	{ nonce: string; provider: OIDCProviderType; expiresAt: number }
+	{ nonce: string; codeVerifier: string; provider: OIDCProviderType; expiresAt: number }
 >();
 
 // Clean up expired states every 5 minutes
@@ -161,15 +162,20 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const state = randomBytes(32).toString("base64url");
 		const nonce = randomBytes(32).toString("base64url");
 
+		// Generate PKCE code verifier and challenge for authorization code flow protection
+		const codeVerifier = oauth.generateRandomCodeVerifier();
+		const codeChallenge = await oauth.calculatePKCECodeChallenge(codeVerifier);
+
 		// Store state with 15 minute expiration
 		oidcStateStore.set(state, {
 			nonce,
+			codeVerifier,
 			provider,
 			expiresAt: Date.now() + 15 * 60 * 1000,
 		});
 
 		try {
-			const authorizationUrl = await oidcProvider.getAuthorizationUrl(state, nonce);
+			const authorizationUrl = await oidcProvider.getAuthorizationUrl(state, nonce, codeChallenge);
 			return reply.send({ authorizationUrl });
 		} catch (error) {
 			request.log.error({ err: error, provider }, "Failed to generate OIDC authorization URL");
@@ -224,8 +230,8 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		});
 
 		try {
-			// Exchange code for tokens (with nonce validation)
-			const tokenResponse = await oidcProvider.exchangeCode(code, storedState.nonce);
+			// Exchange code for tokens (with nonce validation and PKCE)
+			const tokenResponse = await oidcProvider.exchangeCode(code, storedState.nonce, storedState.codeVerifier);
 
 			if (!tokenResponse.access_token) {
 				throw new Error("No access token received from OIDC provider");
