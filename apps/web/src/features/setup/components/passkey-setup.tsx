@@ -17,6 +17,8 @@ export const PasskeySetup = () => {
 	const router = useRouter();
 	const [formState, setFormState] = useState({
 		username: "",
+		password: "",
+		confirmPassword: "",
 		passkeyName: "",
 	});
 	const [error, setError] = useState<string | null>(null);
@@ -27,8 +29,32 @@ export const PasskeySetup = () => {
 		setError(null);
 
 		// Validation
-		if (!formState.username) {
-			setError("Username is required");
+		if (!formState.username || !formState.password) {
+			setError("Username and password are required");
+			return;
+		}
+		if (formState.password.length < 8) {
+			setError("Password must be at least 8 characters");
+			return;
+		}
+		if (!/[a-z]/.test(formState.password)) {
+			setError("Password must contain at least one lowercase letter");
+			return;
+		}
+		if (!/[A-Z]/.test(formState.password)) {
+			setError("Password must contain at least one uppercase letter");
+			return;
+		}
+		if (!/[0-9]/.test(formState.password)) {
+			setError("Password must contain at least one number");
+			return;
+		}
+		if (!/[^a-zA-Z0-9]/.test(formState.password)) {
+			setError("Password must contain at least one special character");
+			return;
+		}
+		if (formState.password !== formState.confirmPassword) {
+			setError("Passwords do not match");
 			return;
 		}
 
@@ -37,12 +63,12 @@ export const PasskeySetup = () => {
 		let userCreated = false;
 
 		try {
-			// Step 1: Create user account without password
+			// Step 1: Create user account with password (required for initial setup)
 			const registerResponse = await apiRequest<RegisterResponse>("/auth/register", {
 				method: "POST",
 				json: {
 					username: formState.username.trim(),
-					// No password - passkey-only account
+					password: formState.password,
 				},
 			});
 			userCreated = true;
@@ -109,6 +135,30 @@ export const PasskeySetup = () => {
 				/>
 			</div>
 			<div className="space-y-2">
+				<label className="text-xs uppercase text-white/60">Password (Fallback)</label>
+				<Input
+					type="password"
+					value={formState.password}
+					onChange={(e) => setFormState((prev) => ({ ...prev, password: e.target.value }))}
+					placeholder="At least 8 characters"
+					required
+					minLength={8}
+				/>
+				<p className="text-xs text-white/50">
+					Required as a backup login method. Must include uppercase, lowercase, number, and special character.
+				</p>
+			</div>
+			<div className="space-y-2">
+				<label className="text-xs uppercase text-white/60">Confirm Password</label>
+				<Input
+					type="password"
+					value={formState.confirmPassword}
+					onChange={(e) => setFormState((prev) => ({ ...prev, confirmPassword: e.target.value }))}
+					placeholder="Re-enter password"
+					required
+				/>
+			</div>
+			<div className="space-y-2">
 				<label className="text-xs uppercase text-white/60">Passkey Name (Optional)</label>
 				<Input
 					value={formState.passkeyName}
@@ -126,11 +176,11 @@ export const PasskeySetup = () => {
 				</Alert>
 			)}
 			<Button type="submit" disabled={isSubmitting} className="w-full">
-				{isSubmitting ? "Creating account..." : "Create Admin Account with Passkey"}
+				{isSubmitting ? "Creating account..." : "Create Admin Account"}
 			</Button>
 			<p className="text-xs text-white/50 text-center">
 				You&apos;ll be prompted to register a passkey using your device&apos;s biometrics or security key.
-				This account will not have a password.
+				The password serves as a backup login method if passkey authentication fails.
 			</p>
 		</form>
 	);
