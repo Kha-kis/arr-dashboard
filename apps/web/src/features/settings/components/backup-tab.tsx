@@ -429,7 +429,7 @@ export const BackupTab = () => {
 				<CardContent>
 					{!showRestoreWarning ? (
 						<Button
-							variant="outline"
+							variant="secondary"
 							onClick={() => setShowRestoreWarning(true)}
 						>
 							Restore from Backup
@@ -481,7 +481,7 @@ export const BackupTab = () => {
 
 									<Button
 										type="button"
-										variant="outline"
+										variant="secondary"
 										onClick={() => {
 											setShowRestoreWarning(false);
 											setRestoreFile(null);
@@ -580,7 +580,7 @@ export const BackupTab = () => {
 											<td className="py-3 px-4">
 												<div className="flex items-center justify-end gap-2">
 													<Button
-														variant="outline"
+														variant="secondary"
 														size="sm"
 														onClick={() => handleDownloadBackup(backup)}
 													>
@@ -588,7 +588,7 @@ export const BackupTab = () => {
 														Download
 													</Button>
 													<Button
-														variant="outline"
+														variant="secondary"
 														size="sm"
 														onClick={() => handleRestoreBackupClick(backup)}
 													>
@@ -596,7 +596,7 @@ export const BackupTab = () => {
 														Restore
 													</Button>
 													<Button
-														variant="outline"
+														variant="secondary"
 														size="sm"
 														onClick={() => handleDeleteBackup(backup)}
 														disabled={deleteBackupMutation.isPending}
@@ -654,7 +654,7 @@ export const BackupTab = () => {
 									</Button>
 									<Button
 										type="button"
-										variant="outline"
+										variant="secondary"
 										onClick={() => {
 											setShowBackupRestoreModal(false);
 											setSelectedBackupForRestore(null);
