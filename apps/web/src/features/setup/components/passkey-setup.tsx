@@ -34,6 +34,8 @@ export const PasskeySetup = () => {
 
 		setIsSubmitting(true);
 
+		let userCreated = false;
+
 		try {
 			// Step 1: Create user account without password
 			const registerResponse = await apiRequest<RegisterResponse>("/auth/register", {
@@ -43,6 +45,7 @@ export const PasskeySetup = () => {
 					// No password - passkey-only account
 				},
 			});
+			userCreated = true;
 
 			// Step 2: Get passkey registration options
 			const options = await apiRequest<any>("/auth/passkey/register/options", {
@@ -67,7 +70,25 @@ export const PasskeySetup = () => {
 			// Registration successful, redirect to dashboard
 			router.push("/dashboard");
 		} catch (err: any) {
-			setError(err.message ?? "Failed to create admin account with passkey");
+			// If user was created but passkey registration failed, delete the incomplete account
+			if (userCreated) {
+				try {
+					await apiRequest("/auth/account", { method: "DELETE" });
+					setError(
+						"Passkey registration failed. The incomplete account has been deleted. Please try again. Make sure your browser supports passkeys and you approve the biometric prompt.",
+					);
+				} catch (cleanupErr) {
+					// If cleanup fails, just log out to clear the session
+					try {
+						await apiRequest("/auth/logout", { method: "POST" });
+					} catch {}
+					setError(
+						"Passkey registration failed. Please refresh the page and try again. If the problem persists, contact support to delete the incomplete account.",
+					);
+				}
+			} else {
+				setError(err.message ?? "Failed to create admin account with passkey");
+			}
 			setIsSubmitting(false);
 		}
 	};

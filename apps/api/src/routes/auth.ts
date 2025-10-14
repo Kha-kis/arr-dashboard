@@ -383,6 +383,62 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		});
 	});
 
+	/**
+	 * DELETE /auth/account
+	 * Delete current user's account if they have no authentication methods
+	 * Used for cleanup after failed passkey setup
+	 */
+	app.delete("/account", async (request, reply) => {
+		if (!request.currentUser) {
+			return reply.status(401).send({ error: "Unauthorized" });
+		}
+
+		const userId = request.currentUser.id;
+
+		// Check for any authentication methods
+		const user = await app.prisma.user.findUnique({
+			where: { id: userId },
+		});
+
+		if (!user) {
+			return reply.status(404).send({ error: "User not found" });
+		}
+
+		const oidcAccounts = await app.prisma.oIDCAccount.count({
+			where: { userId },
+		});
+
+		const passkeys = await app.prisma.webAuthnCredential.count({
+			where: { userId },
+		});
+
+		const hasPassword = !!user.hashedPassword;
+
+		// Only allow deletion if user has NO authentication methods
+		if (hasPassword || oidcAccounts > 0 || passkeys > 0) {
+			return reply.status(400).send({
+				error:
+					"Cannot delete account with existing authentication methods. Please remove password, OIDC accounts, and passkeys first.",
+			});
+		}
+
+		// Delete all user data (cascade will handle related records)
+		await app.prisma.user.delete({
+			where: { id: userId },
+		});
+
+		// Invalidate session and clear cookie
+		if (request.sessionToken) {
+			await app.sessionService.invalidateSession(request.sessionToken);
+		}
+		app.sessionService.clearCookie(reply);
+
+		return reply.send({
+			success: true,
+			message: "Account deleted successfully.",
+		});
+	});
+
 	done();
 };
 
