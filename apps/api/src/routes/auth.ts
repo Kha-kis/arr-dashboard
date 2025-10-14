@@ -33,14 +33,6 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.post("/register", { config: { rateLimit: REGISTER_RATE_LIMIT } }, async (request, reply) => {
-		// Only allow registration during initial setup (single-admin architecture)
-		const userCount = await app.prisma.user.count();
-		if (userCount > 0) {
-			return reply.status(403).send({
-				error: "Registration is only allowed during initial setup. Please use login, OIDC, or passkey authentication.",
-			});
-		}
-
 		const parsed = registerSchema.safeParse(request.body);
 		if (!parsed.success) {
 			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
@@ -53,36 +45,60 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(400).send({ error: "Invalid payload" });
 		}
 
-		const existingUser = await app.prisma.user.findFirst({
-			where: { username },
-		});
-
-		if (existingUser) {
-			return reply.status(409).send({ error: "User already exists" });
-		}
-
 		// Hash password if provided (null for passkey-only accounts)
 		const hashedPassword = password ? await hashPassword(password) : null;
 
-		const user = await app.prisma.user.create({
-			data: {
-				username,
-				hashedPassword,
-				mustChangePassword: false,
-			},
-		});
+		try {
+			// Use transaction to atomically check user count and create user
+			// This prevents race condition where two concurrent requests both see userCount === 0
+			const user = await app.prisma.$transaction(async (tx) => {
+				// Check if any users exist (must be inside transaction for atomicity)
+				const userCount = await tx.user.count();
+				if (userCount > 0) {
+					throw new Error("REGISTRATION_CLOSED");
+				}
 
-		const session = await app.sessionService.createSession(user.id, parsed.data.rememberMe);
-		app.sessionService.attachCookie(reply, session.token, parsed.data.rememberMe);
+				// Check for username conflicts
+				const existingUser = await tx.user.findFirst({
+					where: { username },
+				});
 
-		return reply.status(201).send({
-			user: {
-				id: user.id,
-				username: user.username,
-				mustChangePassword: user.mustChangePassword,
-				createdAt: user.createdAt,
-			},
-		});
+				if (existingUser) {
+					throw new Error("USERNAME_EXISTS");
+				}
+
+				// Create the first user
+				return await tx.user.create({
+					data: {
+						username,
+						hashedPassword,
+						mustChangePassword: false,
+					},
+				});
+			});
+
+			const session = await app.sessionService.createSession(user.id, parsed.data.rememberMe);
+			app.sessionService.attachCookie(reply, session.token, parsed.data.rememberMe);
+
+			return reply.status(201).send({
+				user: {
+					id: user.id,
+					username: user.username,
+					mustChangePassword: user.mustChangePassword,
+					createdAt: user.createdAt,
+				},
+			});
+		} catch (error: any) {
+			if (error.message === "REGISTRATION_CLOSED") {
+				return reply.status(403).send({
+					error: "Registration is only allowed during initial setup. Please use login, OIDC, or passkey authentication.",
+				});
+			}
+			if (error.message === "USERNAME_EXISTS") {
+				return reply.status(409).send({ error: "User already exists" });
+			}
+			throw error;
+		}
 	});
 
 	app.post("/login", { config: { rateLimit: LOGIN_RATE_LIMIT } }, async (request, reply) => {
