@@ -12,14 +12,13 @@ const passwordSchema = z
 	.regex(/[^a-zA-Z0-9]/, "Password must contain at least one special character");
 
 const registerSchema = z.object({
-	email: z.string().email().max(255),
 	username: z.string().min(3).max(50),
-	password: passwordSchema,
+	password: passwordSchema, // Required during initial setup to prevent permanent lockout
 	rememberMe: z.boolean().optional().default(false),
 });
 
 const loginSchema = z.object({
-	identifier: z.string().min(3).max(255),
+	username: z.string().min(3).max(50),
 	password: z.string().min(8).max(128),
 	rememberMe: z.boolean().optional().default(false),
 });
@@ -39,53 +38,67 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
 		}
 
-		const email = parsed.data.email.trim().toLowerCase();
 		const username = parsed.data.username.trim();
 		const password = parsed.data.password;
 
-		if (!email || !username) {
+		if (!username) {
 			return reply.status(400).send({ error: "Invalid payload" });
 		}
 
-		const existingUser = await app.prisma.user.findFirst({
-			where: {
-				OR: [{ email }, { username }],
-			},
-		});
-
-		if (existingUser) {
-			return reply.status(409).send({ error: "User already exists" });
-		}
-
+		// Hash password (required during initial setup)
 		const hashedPassword = await hashPassword(password);
 
-		// First user becomes admin
-		const userCount = await app.prisma.user.count();
-		const isFirstUser = userCount === 0;
+		try {
+			// Use transaction to atomically check user count and create user
+			// This prevents race condition where two concurrent requests both see userCount === 0
+			const user = await app.prisma.$transaction(async (tx) => {
+				// Check if any users exist (must be inside transaction for atomicity)
+				const userCount = await tx.user.count();
+				if (userCount > 0) {
+					throw new Error("REGISTRATION_CLOSED");
+				}
 
-		const user = await app.prisma.user.create({
-			data: {
-				email,
-				username,
-				hashedPassword,
-				role: isFirstUser ? "ADMIN" : "USER",
-				mustChangePassword: false,
-			},
-		});
+				// Check for username conflicts
+				const existingUser = await tx.user.findFirst({
+					where: { username },
+				});
 
-		const session = await app.sessionService.createSession(user.id, parsed.data.rememberMe);
-		app.sessionService.attachCookie(reply, session.token, parsed.data.rememberMe);
+				if (existingUser) {
+					throw new Error("USERNAME_EXISTS");
+				}
 
-		return reply.status(201).send({
-			user: {
-				id: user.id,
-				email: user.email,
-				username: user.username,
-				role: user.role,
-				mustChangePassword: user.mustChangePassword,
-				createdAt: user.createdAt,
-			},
-		});
+				// Create the first user
+				return await tx.user.create({
+					data: {
+						username,
+						hashedPassword,
+						mustChangePassword: false,
+					},
+				});
+			});
+
+			const session = await app.sessionService.createSession(user.id, parsed.data.rememberMe);
+			app.sessionService.attachCookie(reply, session.token, parsed.data.rememberMe);
+
+			return reply.status(201).send({
+				user: {
+					id: user.id,
+					username: user.username,
+					mustChangePassword: user.mustChangePassword,
+					createdAt: user.createdAt,
+				},
+			});
+		} catch (error: any) {
+			if (error.message === "REGISTRATION_CLOSED") {
+				return reply.status(403).send({
+					error: "Registration is only allowed during initial setup. Please use login, OIDC, or passkey authentication.",
+				});
+			}
+			if (error.message === "USERNAME_EXISTS") {
+				return reply.status(409).send({ error: "User already exists" });
+			}
+			throw error;
+		}
 	});
 
 	app.post("/login", { config: { rateLimit: LOGIN_RATE_LIMIT } }, async (request, reply) => {
@@ -94,17 +107,15 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
 		}
 
-		const identifier = parsed.data.identifier.trim();
+		const username = parsed.data.username.trim();
 		const password = parsed.data.password;
 
-		if (identifier.length === 0) {
+		if (username.length === 0) {
 			return reply.status(400).send({ error: "Invalid payload" });
 		}
 
 		const user = await app.prisma.user.findFirst({
-			where: {
-				OR: [{ email: identifier.toLowerCase() }, { username: identifier }],
-			},
+			where: { username },
 		});
 
 		if (!user) {
@@ -117,6 +128,13 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			const remainingMinutes = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60000);
 			return reply.status(423).send({
 				error: `Account locked. Try again in ${remainingMinutes} minute${remainingMinutes !== 1 ? "s" : ""}.`,
+			});
+		}
+
+		// Check if user has a password set
+		if (!user.hashedPassword) {
+			return reply.status(401).send({
+				error: "This account uses passwordless authentication. Please sign in with OIDC or passkey.",
 			});
 		}
 
@@ -166,9 +184,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		return reply.send({
 			user: {
 				id: user.id,
-				email: user.email,
 				username: user.username,
-				role: user.role,
 				mustChangePassword: user.mustChangePassword,
 				createdAt: user.createdAt,
 			},
@@ -192,46 +208,34 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		const user = await app.prisma.user.findUnique({
 			where: { id: request.currentUser.id },
-			select: { encryptedTmdbApiKey: true },
+			select: { encryptedTmdbApiKey: true, hashedPassword: true },
 		});
 
 		const hasTmdbApiKey = !!user?.encryptedTmdbApiKey;
+		const hasPassword = !!user?.hashedPassword;
 		request.log.info(
-			{ userId: request.currentUser.id, hasTmdbApiKey },
-			"GET /auth/me - TMDB key status",
+			{ userId: request.currentUser.id, hasTmdbApiKey, hasPassword },
+			"GET /auth/me - User status",
 		);
 
 		return reply.send({
 			user: {
 				id: request.currentUser.id,
-				email: request.currentUser.email,
 				username: request.currentUser.username,
-				role: request.currentUser.role,
 				mustChangePassword: request.currentUser.mustChangePassword,
 				createdAt: request.currentUser.createdAt,
 				hasTmdbApiKey,
+				hasPassword,
 			},
 		});
 	});
 
-	const updateAccountSchema = z
-		.object({
-			email: z.string().email().max(255).optional(),
-			username: z.string().min(3).max(50).optional(),
-			currentPassword: z.string().min(8).max(128).optional(),
-			newPassword: passwordSchema.optional(),
-			tmdbApiKey: z.string().max(255).optional(),
-		})
-		.refine(
-			(data) => {
-				// If changing password, both currentPassword and newPassword are required
-				if (data.newPassword && !data.currentPassword) {
-					return false;
-				}
-				return true;
-			},
-			{ message: "Current password is required to set a new password" },
-		);
+	const updateAccountSchema = z.object({
+		username: z.string().min(3).max(50).optional(),
+		currentPassword: z.string().min(8).max(128).optional(),
+		newPassword: passwordSchema.optional(),
+		tmdbApiKey: z.string().max(255).optional(),
+	});
 
 	app.patch("/account", async (request, reply) => {
 		if (!request.currentUser) {
@@ -243,15 +247,15 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
 		}
 
-		const { email, username, currentPassword, newPassword, tmdbApiKey } = parsed.data;
+		const { username, currentPassword, newPassword, tmdbApiKey } = parsed.data;
 
 		// Check if at least one field is being updated
-		if (!email && !username && !newPassword && tmdbApiKey === undefined) {
+		if (!username && !newPassword && tmdbApiKey === undefined) {
 			return reply.status(400).send({ error: "No updates provided" });
 		}
 
-		// If updating password, verify current password
-		if (newPassword && currentPassword) {
+		// If updating password, handle based on whether user has existing password
+		if (newPassword) {
 			const user = await app.prisma.user.findUnique({
 				where: { id: request.currentUser.id },
 			});
@@ -260,48 +264,46 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				return reply.status(404).send({ error: "User not found" });
 			}
 
-			const valid = await verifyPassword(currentPassword, user.hashedPassword);
-			if (!valid) {
-				return reply.status(401).send({ error: "Current password is incorrect" });
+			// If user has existing password, require currentPassword to change it
+			if (user.hashedPassword) {
+				if (!currentPassword) {
+					return reply.status(400).send({ error: "Current password is required to change password" });
+				}
+				const valid = await verifyPassword(currentPassword, user.hashedPassword);
+				if (!valid) {
+					return reply.status(401).send({ error: "Current password is incorrect" });
+				}
 			}
+			// If user doesn't have password, allow adding one without currentPassword
 		}
 
-		// Check for existing email/username conflicts
-		if (email || username) {
+		// Check for existing username conflicts
+		if (username) {
 			const conflicts = await app.prisma.user.findFirst({
 				where: {
 					AND: [
 						{ id: { not: request.currentUser.id } },
-						{
-							OR: [
-								email ? { email: email.trim().toLowerCase() } : {},
-								username ? { username: username.trim() } : {},
-							].filter((obj) => Object.keys(obj).length > 0),
-						},
+						{ username: username.trim() },
 					],
 				},
 			});
 
 			if (conflicts) {
-				return reply.status(409).send({ error: "Email or username already in use" });
+				return reply.status(409).send({ error: "Username already in use" });
 			}
 		}
 
 		// Build update data
 		const updateData: {
-			email?: string;
 			username?: string;
 			hashedPassword?: string;
 			encryptedTmdbApiKey?: string;
 			tmdbEncryptionIv?: string;
 		} = {};
-		if (email) {
-			updateData.email = email.trim().toLowerCase();
-		}
 		if (username) {
 			updateData.username = username.trim();
 		}
-		if (newPassword && currentPassword) {
+		if (newPassword) {
 			updateData.hashedPassword = await hashPassword(newPassword);
 		}
 		if (tmdbApiKey !== undefined) {
@@ -322,8 +324,8 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			}
 		}
 
-		// If changing password, clear the mustChangePassword flag
-		if (newPassword && currentPassword) {
+		// If setting/changing password, clear the mustChangePassword flag
+		if (newPassword) {
 			(updateData as { mustChangePassword?: boolean }).mustChangePassword = false;
 		}
 
@@ -335,12 +337,129 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		return reply.send({
 			user: {
 				id: updatedUser.id,
-				email: updatedUser.email,
 				username: updatedUser.username,
-				role: updatedUser.role,
 				mustChangePassword: updatedUser.mustChangePassword,
 				createdAt: updatedUser.createdAt,
 			},
+		});
+	});
+
+	/**
+	 * DELETE /auth/password
+	 * Remove password from account (requires alternative auth method)
+	 */
+	const removePasswordSchema = z.object({
+		currentPassword: z.string().min(8).max(128),
+	});
+
+	app.delete("/password", async (request, reply) => {
+		if (!request.currentUser) {
+			return reply.status(401).send({ error: "Unauthorized" });
+		}
+
+		const parsed = removePasswordSchema.safeParse(request.body);
+		if (!parsed.success) {
+			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
+		}
+
+		const { currentPassword } = parsed.data;
+
+		// Get user with current password
+		const user = await app.prisma.user.findUnique({
+			where: { id: request.currentUser.id },
+		});
+
+		if (!user || !user.hashedPassword) {
+			return reply.status(400).send({ error: "User does not have a password set" });
+		}
+
+		// Verify current password
+		const valid = await verifyPassword(currentPassword, user.hashedPassword);
+		if (!valid) {
+			return reply.status(401).send({ error: "Current password is incorrect" });
+		}
+
+		// Check for alternative authentication methods
+		const oidcAccounts = await app.prisma.oIDCAccount.count({
+			where: { userId: request.currentUser.id },
+		});
+
+		const passkeys = await app.prisma.webAuthnCredential.count({
+			where: { userId: request.currentUser.id },
+		});
+
+		if (oidcAccounts === 0 && passkeys === 0) {
+			return reply.status(400).send({
+				error:
+					"Cannot remove password without alternative authentication method. Please add an OIDC provider or passkey first.",
+			});
+		}
+
+		// Remove password
+		await app.prisma.user.update({
+			where: { id: request.currentUser.id },
+			data: { hashedPassword: null },
+		});
+
+		return reply.send({
+			success: true,
+			message: "Password removed successfully. You can now only sign in using OIDC or passkeys.",
+		});
+	});
+
+	/**
+	 * DELETE /auth/account
+	 * Delete current user's account if they have no authentication methods
+	 * Used for cleanup after failed passkey setup
+	 */
+	app.delete("/account", async (request, reply) => {
+		if (!request.currentUser) {
+			return reply.status(401).send({ error: "Unauthorized" });
+		}
+
+		const userId = request.currentUser.id;
+
+		// Check for any authentication methods
+		const user = await app.prisma.user.findUnique({
+			where: { id: userId },
+		});
+
+		if (!user) {
+			return reply.status(404).send({ error: "User not found" });
+		}
+
+		const oidcAccounts = await app.prisma.oIDCAccount.count({
+			where: { userId },
+		});
+
+		const passkeys = await app.prisma.webAuthnCredential.count({
+			where: { userId },
+		});
+
+		const hasPassword = !!user.hashedPassword;
+
+		// Only allow deletion if user has NO authentication methods
+		if (hasPassword || oidcAccounts > 0 || passkeys > 0) {
+			return reply.status(400).send({
+				error:
+					"Cannot delete account with existing authentication methods. Please remove password, OIDC accounts, and passkeys first.",
+			});
+		}
+
+		// Delete all user data (cascade will handle related records)
+		await app.prisma.user.delete({
+			where: { id: userId },
+		});
+
+		// Invalidate session and clear cookie
+		if (request.sessionToken) {
+			await app.sessionService.invalidateSession(request.sessionToken);
+		}
+		app.sessionService.clearCookie(reply);
+
+		return reply.send({
+			success: true,
+			message: "Account deleted successfully.",
 		});
 	});
 

@@ -31,10 +31,8 @@ export const registerQueryRoutes: FastifyPluginCallback = (app, _opts, done) => 
 
 		const payload = searchRequestSchema.parse(request.body ?? {});
 
-		const userId = request.currentUser.id;
-
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId, enabled: true, service: "PROWLARR" },
+			where: { enabled: true, service: "PROWLARR" },
 		});
 
 		if (instances.length === 0) {

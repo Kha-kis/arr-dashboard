@@ -3,6 +3,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { startAuthentication } from "@simplewebauthn/browser";
+import { useQueryClient } from "@tanstack/react-query";
 import { useCurrentUser, useSetupRequired, useLoginMutation } from "../../../hooks/api/useAuth";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
@@ -14,6 +16,13 @@ import {
 	CardTitle,
 } from "../../../components/ui/card";
 import { Alert, AlertDescription } from "../../../components/ui";
+import {
+	getOIDCProviders,
+	initiateOIDCLogin,
+	getPasskeyLoginOptions,
+	verifyPasskeyLogin,
+	type OIDCProvider,
+} from "../../../lib/api-client/auth";
 
 const DEFAULT_REDIRECT = "/dashboard";
 
@@ -32,21 +41,46 @@ const sanitizeRedirect = (value: string | null): string => {
 	}
 };
 
+const providerDisplayNames: Record<string, string> = {
+	authelia: "Authelia",
+	authentik: "Authentik",
+	generic: "OIDC Provider",
+};
+
 export const LoginForm = () => {
 	const router = useRouter();
 	const searchParams = useSearchParams();
+	const queryClient = useQueryClient();
 	const loginMutation = useLoginMutation();
 	const { data: setupRequired, isLoading: setupLoading } = useSetupRequired();
 
-	const [identifier, setIdentifier] = useState("");
+	const [username, setUsername] = useState("");
 	const [password, setPassword] = useState("");
 	const [rememberMe, setRememberMe] = useState(false);
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+	// OIDC and Passkey state
+	const [oidcProviders, setOIDCProviders] = useState<OIDCProvider[]>([]);
+	const [oidcLoading, setOIDCLoading] = useState(false);
+	const [passkeyLoading, setPasskeyLoading] = useState(false);
 
 	const redirectTarget = useMemo(
 		() => sanitizeRedirect(searchParams?.get("redirectTo") ?? null),
 		[searchParams],
 	);
+
+	// Load available OIDC providers
+	useEffect(() => {
+		const loadProviders = async () => {
+			try {
+				const providers = await getOIDCProviders();
+				setOIDCProviders(providers);
+			} catch (error) {
+				// Silently fail - OIDC not configured
+			}
+		};
+		loadProviders();
+	}, []);
 
 	// Redirect to setup if no users exist
 	useEffect(() => {
@@ -55,24 +89,25 @@ export const LoginForm = () => {
 		}
 	}, [setupLoading, setupRequired, router]);
 
-	const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+	const handlePasswordLogin = async (event: React.FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 		setErrorMessage(null);
 
-		const trimmedIdentifier = identifier.trim();
-		if (trimmedIdentifier.length === 0) {
-			setErrorMessage("Please enter your username or email.");
+		const trimmedUsername = username.trim();
+		if (trimmedUsername.length === 0) {
+			setErrorMessage("Please enter your username.");
 			return;
 		}
 
 		try {
 			await loginMutation.mutateAsync({
-				identifier: trimmedIdentifier,
+				username: trimmedUsername,
 				password,
 				rememberMe,
 			});
 			setPassword("");
-			router.replace(redirectTarget);
+			// Use full page navigation to ensure cookie is sent
+			window.location.href = redirectTarget;
 		} catch (error) {
 			const message =
 				error instanceof Error
@@ -82,7 +117,53 @@ export const LoginForm = () => {
 		}
 	};
 
-	const disabled = loginMutation.isPending;
+	const handleOIDCLogin = async (provider: string) => {
+		setErrorMessage(null);
+		setOIDCLoading(true);
+
+		try {
+			const authUrl = await initiateOIDCLogin(provider as any);
+			// Redirect to OIDC provider
+			window.location.href = authUrl;
+		} catch (error) {
+			const message =
+				error instanceof Error ? error.message : "Failed to initiate OIDC login";
+			setErrorMessage(message);
+			setOIDCLoading(false);
+		}
+	};
+
+	const handlePasskeyLogin = async () => {
+		setErrorMessage(null);
+		setPasskeyLoading(true);
+
+		try {
+			// Get authentication options from server
+			const { options, sessionId } = await getPasskeyLoginOptions();
+
+			// Start WebAuthn authentication
+			const authResponse = await startAuthentication({ optionsJSON: options });
+
+			// Verify authentication with server
+			await verifyPasskeyLogin(authResponse, sessionId);
+
+			// Invalidate queries to update authentication state
+			await queryClient.invalidateQueries({ queryKey: ["user"] });
+
+			// Use full page navigation to ensure cookie is sent
+			window.location.href = redirectTarget;
+		} catch (error) {
+			const message =
+				error instanceof Error
+					? error.message
+					: "Passkey authentication failed. Please try again or use password.";
+			setErrorMessage(message);
+			setPasskeyLoading(false);
+		}
+	};
+
+	const disabled = loginMutation.isPending || oidcLoading || passkeyLoading;
+	const hasAlternativeMethods = oidcProviders.length > 0 || true; // Passkey always available
 
 	// Show loading while checking setup requirement
 	if (setupLoading) {
@@ -103,33 +184,126 @@ export const LoginForm = () => {
 			<div className="text-center">
 				<p className="text-sm uppercase tracking-[0.3em] text-white/50">Arr Control Center</p>
 				<h1 className="mt-2 text-3xl font-semibold text-white">Sign in to your dashboard</h1>
-				<p className="mt-2 text-sm text-white/60">Use your admin credentials to continue.</p>
+				<p className="mt-2 text-sm text-white/60">
+					{hasAlternativeMethods
+						? "Choose your preferred authentication method."
+						: "Use your admin credentials to continue."}
+				</p>
 			</div>
 
 			<Card className="w-full max-w-sm border-white/10 bg-white/5">
 				<CardHeader>
 					<CardTitle className="text-xl text-white">Welcome back</CardTitle>
 					<CardDescription className="text-white/60">
-						Enter your username or email with the password you configured for this instance.
+						Sign in to manage your Sonarr, Radarr, and Prowlarr instances.
 					</CardDescription>
 				</CardHeader>
-				<CardContent>
-					<form className="space-y-5" onSubmit={handleSubmit} autoComplete="off">
+				<CardContent className="space-y-6">
+					{/* Passkey Login */}
+					<div className="space-y-3">
+						<Button
+							type="button"
+							variant="secondary"
+							className="w-full border-white/20 bg-white/5 text-white hover:bg-white/10"
+							onClick={handlePasskeyLogin}
+							disabled={disabled}
+						>
+							{passkeyLoading ? (
+								<>
+									<div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+									Authenticating with passkey...
+								</>
+							) : (
+								<>
+									<svg
+										className="mr-2 h-4 w-4"
+										fill="none"
+										stroke="currentColor"
+										viewBox="0 0 24 24"
+									>
+										<path
+											strokeLinecap="round"
+											strokeLinejoin="round"
+											strokeWidth={2}
+											d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
+										/>
+									</svg>
+									Sign in with passkey
+								</>
+							)}
+						</Button>
+					</div>
+
+					{/* OIDC Providers */}
+					{oidcProviders.length > 0 && (
+						<div className="space-y-3">
+							{oidcProviders.map((provider) => (
+								<Button
+									key={provider.type}
+									type="button"
+									variant="secondary"
+									className="w-full border-white/20 bg-white/5 text-white hover:bg-white/10"
+									onClick={() => handleOIDCLogin(provider.type)}
+									disabled={disabled}
+								>
+									{oidcLoading ? (
+										<>
+											<div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+											Redirecting...
+										</>
+									) : (
+										<>
+											<svg
+												className="mr-2 h-4 w-4"
+												fill="none"
+												stroke="currentColor"
+												viewBox="0 0 24 24"
+											>
+												<path
+													strokeLinecap="round"
+													strokeLinejoin="round"
+													strokeWidth={2}
+													d="M13 10V3L4 14h7v7l9-11h-7z"
+												/>
+											</svg>
+											Sign in with {provider.displayName || providerDisplayNames[provider.type] || provider.type}
+										</>
+									)}
+								</Button>
+							))}
+						</div>
+					)}
+
+					{/* Divider */}
+					{hasAlternativeMethods && (
+						<div className="relative">
+							<div className="absolute inset-0 flex items-center">
+								<div className="w-full border-t border-white/10" />
+							</div>
+							<div className="relative flex justify-center text-xs uppercase">
+								<span className="bg-[#0a0a0a] px-2 text-white/40">Or continue with</span>
+							</div>
+						</div>
+					)}
+
+					{/* Password Login Form */}
+					<form className="space-y-5" onSubmit={handlePasswordLogin} autoComplete="off">
 						<div className="space-y-2">
 							<label
-								htmlFor="identifier"
+								htmlFor="username"
 								className="block text-xs font-semibold uppercase tracking-wide text-white/60"
 							>
-								Username or email
+								Username
 							</label>
 							<Input
-								id="identifier"
-								name="identifier"
-								value={identifier}
-								onChange={(event) => setIdentifier(event.target.value)}
+								id="username"
+								name="username"
+								value={username}
+								onChange={(event) => setUsername(event.target.value)}
 								placeholder="Enter your username"
 								autoComplete="off"
 								required
+								disabled={disabled}
 							/>
 						</div>
 
@@ -149,6 +323,7 @@ export const LoginForm = () => {
 								placeholder="Enter your password"
 								autoComplete="off"
 								required
+								disabled={disabled}
 							/>
 						</div>
 
@@ -160,6 +335,7 @@ export const LoginForm = () => {
 								checked={rememberMe}
 								onChange={(e) => setRememberMe(e.target.checked)}
 								className="h-4 w-4 rounded border-white/20 bg-white/5 text-primary focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 focus:ring-offset-bg"
+								disabled={disabled}
 							/>
 							<label htmlFor="rememberMe" className="text-sm text-white/70 cursor-pointer">
 								Remember me for 30 days
@@ -173,7 +349,7 @@ export const LoginForm = () => {
 						)}
 
 						<Button className="w-full" type="submit" disabled={disabled}>
-							{loginMutation.isPending ? "Signing in..." : "Sign in"}
+							{loginMutation.isPending ? "Signing in..." : "Sign in with password"}
 						</Button>
 					</form>
 				</CardContent>
