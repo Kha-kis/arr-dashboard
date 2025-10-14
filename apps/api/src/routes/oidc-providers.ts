@@ -23,9 +23,9 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	 * List all OIDC providers (admin only)
 	 */
 	app.get("/api/oidc-providers", async (request, reply) => {
-		// Require admin role
-		if (!request.currentUser || request.currentUser.role !== "ADMIN") {
-			return reply.status(403).send({ error: "Admin access required" });
+		// Require authentication (single-admin architecture)
+		if (!request.currentUser) {
+			return reply.status(403).send({ error: "Authentication required" });
 		}
 
 		const providers = await app.prisma.oIDCProvider.findMany({
@@ -52,9 +52,9 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	 * Create a new OIDC provider (admin only)
 	 */
 	app.post<{ Body: OidcProviderInput }>("/api/oidc-providers", async (request, reply) => {
-		// Require admin role
-		if (!request.currentUser || request.currentUser.role !== "ADMIN") {
-			return reply.status(403).send({ error: "Admin access required" });
+		// Require authentication (single-admin architecture)
+		if (!request.currentUser) {
+			return reply.status(403).send({ error: "Authentication required" });
 		}
 
 		const validation = oidcProviderSchema.safeParse(request.body);
@@ -116,9 +116,9 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	app.put<{ Params: { id: string }; Body: UpdateOidcProviderInput }>(
 		"/api/oidc-providers/:id",
 		async (request, reply) => {
-			// Require admin role
-			if (!request.currentUser || request.currentUser.role !== "ADMIN") {
-				return reply.status(403).send({ error: "Admin access required" });
+			// Require authentication (single-admin architecture)
+			if (!request.currentUser) {
+				return reply.status(403).send({ error: "Authentication required" });
 			}
 
 			const validation = updateOidcProviderSchema.safeParse(request.body);
@@ -183,9 +183,9 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	 * Delete an OIDC provider (admin only)
 	 */
 	app.delete<{ Params: { id: string } }>("/api/oidc-providers/:id", async (request, reply) => {
-		// Require admin role
-		if (!request.currentUser || request.currentUser.role !== "ADMIN") {
-			return reply.status(403).send({ error: "Admin access required" });
+		// Require authentication (single-admin architecture)
+		if (!request.currentUser) {
+			return reply.status(403).send({ error: "Authentication required" });
 		}
 
 		const { id } = request.params;
