@@ -44,13 +44,25 @@ Once submitted to CA, you'll be able to search for "Arr Dashboard" in Community 
 ## Post-Installation Setup
 
 1. Open `http://your-unraid-ip:3000`
-2. Create your admin account on first run
+2. Create your admin account on first run (supports Password, OIDC, or Passkey authentication)
 3. Go to Settings → Services
 4. Add your Sonarr/Radarr/Prowlarr instances:
    - Name: Any friendly name
    - URL: `http://sonarr:8989` (or your instance URL)
    - API Key: From your Sonarr/Radarr/Prowlarr Settings → General
    - Service Type: Select appropriate service
+
+## Authentication Options
+
+Arr Dashboard supports multiple authentication methods:
+
+- **Password** (default) - Traditional username/password login
+- **OIDC** - External providers like Authelia or Authentik
+- **Passkeys** - Biometric authentication (Touch ID, Windows Hello, YubiKey)
+
+For OIDC and Passkey setup, see [AUTHENTICATION.md](AUTHENTICATION.md) for detailed configuration.
+
+**Note:** Passkeys require HTTPS in production (not needed for local Unraid access).
 
 ## Optional: TMDB Integration
 
