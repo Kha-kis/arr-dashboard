@@ -13,7 +13,7 @@ const passwordSchema = z
 
 const registerSchema = z.object({
 	username: z.string().min(3).max(50),
-	password: passwordSchema.optional(), // Optional for passkey-only accounts
+	password: passwordSchema, // Required during initial setup to prevent permanent lockout
 	rememberMe: z.boolean().optional().default(false),
 });
 
@@ -45,8 +45,8 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(400).send({ error: "Invalid payload" });
 		}
 
-		// Hash password if provided (null for passkey-only accounts)
-		const hashedPassword = password ? await hashPassword(password) : null;
+		// Hash password (required during initial setup)
+		const hashedPassword = await hashPassword(password);
 
 		try {
 			// Use transaction to atomically check user count and create user
