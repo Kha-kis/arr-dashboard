@@ -102,10 +102,15 @@ export class OIDCProvider {
 			oauth.nopkce, // Not using PKCE - skip code verifier check
 		);
 
+		// Validate ID token with nonce to prevent replay attacks
 		const result = await oauth.processAuthorizationCodeResponse(
 			authServer,
 			this.client,
 			response,
+			{
+				expectedNonce: expectedNonce,
+				requireIdToken: true, // OIDC requires ID token
+			},
 		);
 
 		// Check for OAuth error response
