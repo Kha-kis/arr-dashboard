@@ -112,9 +112,14 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					"Backup restored successfully",
 				);
 
+				// Check if we're in production (Docker, PM2, systemd will auto-restart)
+				const isProduction = process.env.NODE_ENV === "production";
+
 				const response: RestoreBackupResponse = {
 					success: true,
-					message: "Backup restored successfully. The application will restart automatically in 2 seconds...",
+					message: isProduction
+						? "Backup restored successfully. The application will restart automatically in 2 seconds..."
+						: "Backup restored successfully. Please manually restart the application (stop and run 'pnpm run dev' again) for changes to take effect.",
 					restoredAt: new Date().toISOString(),
 					metadata,
 				};
@@ -122,13 +127,20 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				// Send response first
 				await reply.send(response);
 
-				// Schedule application restart after a short delay to ensure response is sent
-				// This allows Docker, PM2, systemd, or other process managers to restart the app
-				request.log.info("Triggering application restart after successful restore");
-				setTimeout(() => {
-					request.log.info("Restarting application now...");
-					process.exit(0); // Clean exit - process manager will restart
-				}, 2000);
+				// Only auto-restart in production environments
+				if (isProduction) {
+					// Schedule application restart after a short delay to ensure response is sent
+					// This allows Docker, PM2, systemd, or other process managers to restart the app
+					request.log.info("Triggering application restart after successful restore");
+					setTimeout(() => {
+						request.log.info("Restarting application now...");
+						process.exit(0); // Clean exit - process manager will restart
+					}, 2000);
+				} else {
+					request.log.warn(
+						"Development mode detected - skipping automatic restart. Please manually restart the dev server.",
+					);
+				}
 			} catch (error: any) {
 				request.log.error({ err: error }, "Failed to restore backup");
 

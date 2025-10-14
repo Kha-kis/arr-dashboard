@@ -84,28 +84,34 @@ export const BackupTab = () => {
 			setRestorePassword("");
 			setShowRestoreWarning(false);
 
-			// Show success message with restart info
+			// Check if auto-restart is enabled (production mode)
+			const isAutoRestart = response.message.includes("restart automatically");
+
+			// Show success message
 			alert(
-				`Backup restored successfully!\n\nBackup from: ${new Date(response.metadata.timestamp).toLocaleString()}\n\n${response.message}\n\nThe page will reload automatically once the server restarts.`,
+				`Backup restored successfully!\n\nBackup from: ${new Date(response.metadata.timestamp).toLocaleString()}\n\n${response.message}${isAutoRestart ? "\n\nThe page will reload automatically once the server restarts." : ""}`,
 			);
 
-			// Poll for server to come back up and reload page
-			const checkServerInterval = setInterval(async () => {
-				try {
-					const healthResponse = await fetch("/api/health");
-					if (healthResponse.ok) {
-						clearInterval(checkServerInterval);
-						window.location.href = "/login"; // Redirect to login after restart
+			// Only poll for restart if in production mode
+			if (isAutoRestart) {
+				// Poll for server to come back up and reload page
+				const checkServerInterval = setInterval(async () => {
+					try {
+						const healthResponse = await fetch("/api/health");
+						if (healthResponse.ok) {
+							clearInterval(checkServerInterval);
+							window.location.href = "/login"; // Redirect to login after restart
+						}
+					} catch {
+						// Server not ready yet, keep polling
 					}
-				} catch {
-					// Server not ready yet, keep polling
-				}
-			}, 1000);
+				}, 1000);
 
-			// Stop polling after 30 seconds
-			setTimeout(() => {
-				clearInterval(checkServerInterval);
-			}, 30000);
+				// Stop polling after 30 seconds
+				setTimeout(() => {
+					clearInterval(checkServerInterval);
+				}, 30000);
+			}
 		} catch (error: any) {
 			alert(`Failed to restore backup: ${error.message || "Unknown error"}`);
 		}
