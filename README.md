@@ -16,6 +16,7 @@ A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances
 - 🎬 **Discover** - Find new content with TMDB integration
 - 🏷️ **Tag Management** - Organize instances with custom tags
 - 🔒 **Secure** - Encrypted API keys, session management, and rate limiting
+- 🔐 **Multi-Authentication** - Password, OIDC (Authelia/Authentik), or Passkeys (WebAuthn)
 
 ## Quick Start with Docker (Recommended)
 
@@ -81,8 +82,10 @@ docker run -d --name arr-dashboard -p 3000:3000 -v ./data:/app/data arr-dashboar
 **First Time Setup:**
 
 1. Open `http://your-server-ip:3000`
-2. Create your admin account on first run
+2. Create your admin account on first run (supports Password, OIDC, or Passkey authentication)
 3. Add your Sonarr/Radarr/Prowlarr instances in Settings
+
+For authentication setup details, see [AUTHENTICATION.md](AUTHENTICATION.md).
 
 **Parameters:**
 
@@ -270,7 +273,7 @@ This will:
 
 ## Resetting Admin Password
 
-If you forget your admin password:
+If you forget your password (for password-based authentication):
 
 ```bash
 cd apps/api
@@ -278,6 +281,8 @@ pnpm run reset-admin-password
 ```
 
 Follow the prompts to reset the password.
+
+**Note:** This only applies to password authentication. If you use OIDC or passkey authentication, password reset is not needed.
 
 ## Security Considerations
 
