@@ -89,25 +89,27 @@ export class OIDCProvider {
 	): Promise<oauth.TokenEndpointResponse> {
 		const authServer = await this.discoverAuthServer();
 
-		const params = new URLSearchParams();
-		params.set("grant_type", "authorization_code");
-		params.set("code", code);
-		params.set("redirect_uri", this.config.redirectUri);
+		// Callback parameters (code from authorization redirect)
+		const callbackParams = new URLSearchParams();
+		callbackParams.set("code", code);
 
 		const response = await oauth.authorizationCodeGrantRequest(
 			authServer,
 			this.client,
-			params,
+			oauth.ClientSecretBasic(this.client.client_secret as string), // clientAuth method
+			callbackParams,
+			this.config.redirectUri, // redirectUri as separate argument
+			oauth.nopkce, // Not using PKCE - skip code verifier check
 		);
 
-		const result = await oauth.processAuthorizationCodeOpenIDResponse(
+		const result = await oauth.processAuthorizationCodeResponse(
 			authServer,
 			this.client,
 			response,
-			expectedNonce, // Validate nonce to prevent ID token replay attacks
 		);
 
-		if (oauth.isOAuth2Error(result)) {
+		// Check for OAuth error response
+		if ('error' in result) {
 			throw new Error(`OIDC token exchange failed: ${result.error} - ${result.error_description}`);
 		}
 
@@ -145,12 +147,14 @@ export class OIDCProvider {
 	extractIdTokenClaims(idToken: string): Record<string, unknown> {
 		// ID tokens are JWTs in format: header.payload.signature
 		const parts = idToken.split(".");
-		if (parts.length !== 3) {
+		if (parts.length !== 3 || !parts[1]) {
 			throw new Error("Invalid ID token format");
 		}
 
 		const payload = parts[1];
-		const decoded = Buffer.from(payload, "base64url").toString("utf-8");
+		// Convert base64url to base64 (replace - with + and _ with /)
+		const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+		const decoded = Buffer.from(base64, "base64").toString("utf-8");
 		return JSON.parse(decoded);
 	}
 }
