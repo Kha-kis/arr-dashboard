@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import type { CreateBackupRequest, RestoreBackupRequest } from "@arr/shared";
-import { backupApi } from "@/lib/api-client/backup";
+import { backupApi } from "../../lib/api-client/backup";
 
 /**
  * Create an encrypted backup

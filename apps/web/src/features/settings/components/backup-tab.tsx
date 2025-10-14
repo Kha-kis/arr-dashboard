@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { Download, Upload, AlertTriangle, CheckCircle, Loader2 } from "lucide-react";
-import { useCreateBackup, useRestoreBackup } from "@/hooks/api/useBackup";
-import { backupApi } from "@/lib/api-client/backup";
+import { useCreateBackup, useRestoreBackup } from "../../../hooks/api/useBackup";
+import { backupApi } from "../../../lib/api-client/backup";
 
 export const BackupTab = () => {
 	// Create backup state
