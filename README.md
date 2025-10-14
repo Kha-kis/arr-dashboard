@@ -59,9 +59,9 @@ docker-compose up -d
 ```
 
 **Version Tags:**
-- `latest` - Latest stable release (currently v2.0.3)
-- `2.0.3` - Latest stable version
-- `2.0.2` - Previous version
+- `latest` - Latest stable release (currently v2.2.0)
+- `2.2.0` - Latest stable version with OIDC and passkey authentication
+- `2.1.1` - Previous stable version
 
 **For Unraid users:** See [UNRAID_DEPLOYMENT.md](UNRAID_DEPLOYMENT.md) for step-by-step installation instructions.
 
