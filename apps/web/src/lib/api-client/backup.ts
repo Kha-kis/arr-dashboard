@@ -12,8 +12,7 @@ export const backupApi = {
 	 */
 	async createBackup(request: CreateBackupRequest): Promise<CreateBackupResponse> {
 		return apiRequest<CreateBackupResponse>("/api/backup/create", {
-			method: "POST",
-			body: JSON.stringify(request),
+			json: request,
 		});
 	},
 
@@ -22,8 +21,7 @@ export const backupApi = {
 	 */
 	async restoreBackup(request: RestoreBackupRequest): Promise<RestoreBackupResponse> {
 		return apiRequest<RestoreBackupResponse>("/api/backup/restore", {
-			method: "POST",
-			body: JSON.stringify(request),
+			json: request,
 		});
 	},
 
