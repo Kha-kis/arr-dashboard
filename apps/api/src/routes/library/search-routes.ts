@@ -32,7 +32,6 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 		const instance = await app.prisma.serviceInstance.findFirst({
 			where: {
 				id: payload.instanceId,
-				userId: request.currentUser.id,
 				enabled: true,
 			},
 		});
@@ -102,7 +101,6 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 		const instance = await app.prisma.serviceInstance.findFirst({
 			where: {
 				id: payload.instanceId,
-				userId: request.currentUser.id,
 				enabled: true,
 			},
 		});
@@ -165,7 +163,6 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 		const instance = await app.prisma.serviceInstance.findFirst({
 			where: {
 				id: payload.instanceId,
-				userId: request.currentUser.id,
 				enabled: true,
 			},
 		});
@@ -228,7 +225,6 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 		const instance = await app.prisma.serviceInstance.findFirst({
 			where: {
 				id: payload.instanceId,
-				userId: request.currentUser.id,
 				enabled: true,
 			},
 		});

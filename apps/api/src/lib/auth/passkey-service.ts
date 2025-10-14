@@ -41,7 +41,7 @@ export class PasskeyService {
 	async generateRegistrationOptions(
 		userId: string,
 		username: string,
-		userEmail: string,
+		userEmail?: string,
 	): Promise<PublicKeyCredentialCreationOptionsJSON> {
 		// Get existing credentials for this user to exclude them
 		const existingCredentials = await this.app.prisma.webAuthnCredential.findMany({
@@ -54,7 +54,7 @@ export class PasskeyService {
 			rpID: this.config.rpID,
 			userID: Buffer.from(userId, "utf-8"), // Convert string to Buffer for @simplewebauthn/server v13+
 			userName: username,
-			userDisplayName: userEmail,
+			userDisplayName: userEmail ?? username, // Use username if email not provided
 			// Exclude existing credentials to prevent re-registering the same authenticator
 			excludeCredentials: existingCredentials.map((cred) => ({
 				id: cred.id,

@@ -86,7 +86,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const { type, displayName, clientId, clientSecret, issuer, scopes } = parsed.data;
 
 		// Auto-generate redirect URI if not provided
-		const redirectUri = parsed.data.redirectUri ?? `${app.env.APP_URL}/auth/oidc/callback`;
+		const redirectUri = parsed.data.redirectUri ?? `${process.env.APP_URL ?? "http://localhost:3000"}/auth/oidc/callback`;
 
 		// Check if provider already exists
 		const existing = await app.prisma.oIDCProvider.findUnique({
@@ -254,15 +254,15 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				// New OIDC account - check if user is authenticated or if this is setup
 
 				// Check if user is currently authenticated (has active session)
-				const isAuthenticated = Boolean(request.currentUser);
+				const currentUser = request.currentUser;
 
-				if (isAuthenticated) {
+				if (currentUser) {
 					// User is logged in - link OIDC to their account
 					oidcAccount = await app.prisma.oIDCAccount.create({
 						data: {
 							provider,
 							providerUserId: userInfo.sub,
-							userId: request.currentUser.id,
+							userId: currentUser.id,
 						},
 						include: { user: true },
 					});

@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
@@ -139,7 +140,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 			}
 
 			// Prepare update data
-			const updateData: any = {
+			const updateData: Prisma.OIDCProviderUpdateInput = {
 				...(data.displayName && { displayName: data.displayName }),
 				...(data.clientId && { clientId: data.clientId }),
 				...(data.issuer && { issuer: data.issuer }),
