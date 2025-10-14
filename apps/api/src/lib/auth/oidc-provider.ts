@@ -56,9 +56,9 @@ export class OIDCProvider {
 	}
 
 	/**
-	 * Generate authorization URL for OIDC login flow
+	 * Generate authorization URL for OIDC login flow with PKCE
 	 */
-	async getAuthorizationUrl(state: string, nonce: string): Promise<string> {
+	async getAuthorizationUrl(state: string, nonce: string, codeChallenge: string): Promise<string> {
 		const authServer = await this.discoverAuthServer();
 
 		if (!authServer.authorization_endpoint) {
@@ -74,18 +74,22 @@ export class OIDCProvider {
 		authUrl.searchParams.set("scope", scopes.join(" "));
 		authUrl.searchParams.set("state", state);
 		authUrl.searchParams.set("nonce", nonce);
+		authUrl.searchParams.set("code_challenge", codeChallenge);
+		authUrl.searchParams.set("code_challenge_method", "S256");
 
 		return authUrl.toString();
 	}
 
 	/**
-	 * Exchange authorization code for tokens
+	 * Exchange authorization code for tokens with PKCE
 	 * @param code - Authorization code from OIDC provider
 	 * @param expectedNonce - Nonce value to validate against ID token (prevents replay attacks)
+	 * @param codeVerifier - PKCE code verifier to prove possession (prevents authorization code interception)
 	 */
 	async exchangeCode(
 		code: string,
 		expectedNonce: string,
+		codeVerifier: string,
 	): Promise<oauth.TokenEndpointResponse> {
 		const authServer = await this.discoverAuthServer();
 
@@ -99,7 +103,7 @@ export class OIDCProvider {
 			oauth.ClientSecretBasic(this.client.client_secret as string), // clientAuth method
 			callbackParams,
 			this.config.redirectUri, // redirectUri as separate argument
-			oauth.nopkce, // Not using PKCE - skip code verifier check
+			codeVerifier, // PKCE code verifier for authorization code protection
 		);
 
 		// Validate ID token with nonce to prevent replay attacks
