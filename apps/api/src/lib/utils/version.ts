@@ -15,21 +15,32 @@ export function getAppVersion(): string {
 	}
 
 	try {
-		// Start from current file's directory
+		// Start from current file's directory and walk to filesystem root
+		// Track the outermost package.json found (repository root)
 		let currentDir = path.dirname(fileURLToPath(import.meta.url));
-		let packageJsonPath = path.join(currentDir, "package.json");
+		const rootDir = path.parse(currentDir).root;
+		let lastFoundPackageJsonPath: string | null = null;
 
-		// Search upward for package.json
-		while (!fs.existsSync(packageJsonPath) && currentDir !== path.parse(currentDir).root) {
+		// Walk upward to filesystem root, tracking all package.json files found
+		while (currentDir !== rootDir) {
+			const packageJsonPath = path.join(currentDir, "package.json");
+			if (fs.existsSync(packageJsonPath)) {
+				lastFoundPackageJsonPath = packageJsonPath;
+			}
 			currentDir = path.dirname(currentDir);
-			packageJsonPath = path.join(currentDir, "package.json");
 		}
 
-		if (!fs.existsSync(packageJsonPath)) {
+		// Check root directory as well
+		const rootPackageJsonPath = path.join(rootDir, "package.json");
+		if (fs.existsSync(rootPackageJsonPath)) {
+			lastFoundPackageJsonPath = rootPackageJsonPath;
+		}
+
+		if (!lastFoundPackageJsonPath) {
 			throw new Error("Could not locate root package.json");
 		}
 
-		const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf-8"));
+		const packageJson = JSON.parse(fs.readFileSync(lastFoundPackageJsonPath, "utf-8"));
 		const version = packageJson.version as string;
 
 		if (version) {
