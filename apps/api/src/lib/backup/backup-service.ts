@@ -8,6 +8,11 @@ const BACKUP_VERSION = "1.0";
 const PBKDF2_ITERATIONS = 600000; // OWASP recommendation for PBKDF2-SHA256
 const KEY_LENGTH = 32; // 256 bits for AES-256
 
+// Size limits for backup operations
+// These limits help prevent out-of-memory errors during JSON stringification and encryption
+const RECOMMENDED_MAX_BACKUP_SIZE_MB = 100; // 100 MB recommended limit for backup data
+const WARNING_BACKUP_SIZE_MB = 50; // Log warning when backup exceeds this size
+
 type BackupType = "manual" | "scheduled" | "update";
 
 // Encrypted backup envelope structure
@@ -281,24 +286,51 @@ export class BackupService {
 			secrets,
 		};
 
-		// 5. Convert to JSON
+		// 5. Estimate backup size before stringification to detect potential memory issues
+		// This is a rough estimate based on record counts to fail fast before JSON.stringify
+		const estimatedRecordCount =
+			data.users.length +
+			data.sessions.length +
+			data.serviceInstances.length +
+			data.serviceTags.length +
+			data.serviceInstanceTags.length +
+			(data.oidcProviders?.length || 0) +
+			data.oidcAccounts.length +
+			data.webAuthnCredentials.length;
+
+		// Average ~1KB per record (conservative estimate including encrypted fields)
+		const estimatedSizeMB = (estimatedRecordCount * 1024) / (1024 * 1024);
+
+		if (estimatedSizeMB > RECOMMENDED_MAX_BACKUP_SIZE_MB) {
+			const message = `Backup size estimate (${estimatedSizeMB.toFixed(2)} MB) exceeds recommended limit (${RECOMMENDED_MAX_BACKUP_SIZE_MB} MB). ` +
+				`This may cause memory issues or timeouts. Consider implementing backup streaming or pruning old data.`;
+			console.error(message);
+			throw new Error(message);
+		} else if (estimatedSizeMB > WARNING_BACKUP_SIZE_MB) {
+			console.warn(
+				`Backup size estimate (${estimatedSizeMB.toFixed(2)} MB) is large. ` +
+				`Consider monitoring memory usage and implementing streaming for larger datasets.`
+			);
+		}
+
+		// 6. Convert to JSON
 		const backupJson = JSON.stringify(backup);
 
-		// 6. Encrypt the backup data
+		// 7. Encrypt the backup data
 		const encryptedEnvelope = await this.encryptBackup(backupJson);
 
-		// 7. Convert encrypted envelope to JSON (pretty-printed for storage)
+		// 8. Convert encrypted envelope to JSON (pretty-printed for storage)
 		const envelopeJson = JSON.stringify(encryptedEnvelope, null, 2);
 
-		// 8. Generate filename using the same timestamp from backup payload to avoid drift
+		// 9. Generate filename using the same timestamp from backup payload to avoid drift
 		const filename = `arr-dashboard-backup-${backup.timestamp.replace(/[:.]/g, "-")}.json`;
 
-		// 9. Determine backup path (organized by type)
+		// 10. Determine backup path (organized by type)
 		const typeDir = path.join(this.backupsDir, type);
 		await fs.mkdir(typeDir, { recursive: true });
 		const backupPath = path.join(typeDir, filename);
 
-		// 10. Save encrypted backup to file with restrictive permissions (owner read/write only)
+		// 11. Save encrypted backup to file with restrictive permissions (owner read/write only)
 		// Use 'wx' flag to fail if file already exists (prevents accidental overwrite)
 		await fs.writeFile(backupPath, envelopeJson, { encoding: "utf-8", mode: 0o600, flag: "wx" });
 
@@ -306,10 +338,10 @@ export class BackupService {
 		// This handles cases where the file system doesn't support mode during creation
 		await fs.chmod(backupPath, 0o600);
 
-		// 11. Get file stats
+		// 12. Get file stats
 		const stats = await fs.stat(backupPath);
 
-		// 12. Create backup info (excluding internal path from public response)
+		// 13. Create backup info (excluding internal path from public response)
 		const backupInfo: BackupFileInfo = {
 			id: this.generateBackupId(backupPath),
 			filename,
@@ -574,9 +606,26 @@ export class BackupService {
 
 	/**
 	 * Export all database tables
+	 *
+	 * CURRENT IMPLEMENTATION: In-memory bulk export
+	 * - Loads all table data into memory at once using findMany()
+	 * - Efficient for typical installations (< 50 MB of data)
+	 * - Size checks in createBackup() prevent excessive memory usage
+	 *
+	 * SCALABILITY CONSIDERATIONS:
+	 * For installations with very large datasets (100+ MB or 100,000+ records):
+	 * - This approach may cause out-of-memory errors during export
+	 * - Consider implementing streaming with cursor-based pagination:
+	 *   - Use Prisma's cursor pagination: findMany({ take: 1000, cursor: ... })
+	 *   - Export in batches and stream to file system
+	 *   - Add progress tracking and timeout handling
+	 * - Consider adding per-table size estimates before exporting
+	 *
+	 * Current size limits are enforced at ~100 MB in createBackup()
 	 */
 	private async exportDatabase() {
 		// Export all tables in parallel
+		// NOTE: This loads all data into memory - see method documentation for scalability notes
 		const [
 			users,
 			sessions,
@@ -612,9 +661,28 @@ export class BackupService {
 	/**
 	 * Restore database from backup data
 	 * Uses bulk inserts for better performance and validates data before restoration
+	 *
+	 * CURRENT IMPLEMENTATION: In-memory bulk restore
+	 * - Performs bulk createMany() operations for all records in a single transaction
+	 * - Efficient for typical installations (< 50 MB of data)
+	 * - Transaction ensures atomicity but can be long-running for large datasets
+	 *
+	 * SCALABILITY CONSIDERATIONS:
+	 * For installations with very large datasets (100+ MB or 100,000+ records):
+	 * - Long-running transactions can block other database operations
+	 * - May cause timeouts or excessive memory usage during restoration
+	 * - Consider implementing batched restore:
+	 *   - Process N records at a time (e.g., 1000 records per batch)
+	 *   - Use multiple smaller transactions or chunk processing
+	 *   - Add progress tracking and incremental commits
+	 *   - Handle partial restore failures with rollback mechanisms
+	 * - Consider using COPY operations for bulk data insertion (PostgreSQL)
+	 *
+	 * Current implementation assumes datasets within size limits enforced by createBackup()
 	 */
 	private async restoreDatabase(data: BackupData["data"]) {
 		// Use a transaction to ensure atomicity
+		// NOTE: This processes all data in a single transaction - see method documentation for scalability notes
 		await this.prisma.$transaction(async (tx) => {
 			// Delete all existing data (in reverse order of dependencies)
 			await tx.serviceInstanceTag.deleteMany();
