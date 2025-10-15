@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CurrentUser } from "@arr/shared";
 import {
@@ -59,9 +60,12 @@ export const useCurrentUser = (enabled: boolean = true) => {
 	});
 
 	// Handle 401 errors to clear stale cache
-	if (query.error && typeof query.error === "object" && "status" in query.error && query.error.status === 401) {
-		queryClient.setQueryData(["current-user"], null);
-	}
+	// Run as a controlled side effect after render
+	useEffect(() => {
+		if (query.error && typeof query.error === "object" && "status" in query.error && query.error.status === 401) {
+			queryClient.setQueryData(["current-user"], null);
+		}
+	}, [query.error, queryClient]);
 
 	return query;
 };
