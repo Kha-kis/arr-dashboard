@@ -380,6 +380,58 @@ export class BackupService {
 	}
 
 	/**
+	 * Validate that an object is a valid encrypted backup envelope
+	 * Performs strict type checking on all required fields to prevent misclassification
+	 */
+	private isEncryptedBackupEnvelope(obj: unknown): obj is EncryptedBackupEnvelope {
+		if (typeof obj !== "object" || obj === null) {
+			return false;
+		}
+
+		const envelope = obj as Record<string, unknown>;
+
+		// Validate all required fields with correct types
+		return (
+			typeof envelope.version === "string" &&
+			typeof envelope.salt === "string" &&
+			typeof envelope.iv === "string" &&
+			typeof envelope.tag === "string" &&
+			typeof envelope.cipherText === "string" &&
+			typeof envelope.kdfParams === "object" &&
+			envelope.kdfParams !== null &&
+			typeof (envelope.kdfParams as Record<string, unknown>).algorithm === "string" &&
+			typeof (envelope.kdfParams as Record<string, unknown>).hash === "string" &&
+			typeof (envelope.kdfParams as Record<string, unknown>).iterations === "number" &&
+			typeof (envelope.kdfParams as Record<string, unknown>).saltLength === "number"
+		);
+	}
+
+	/**
+	 * Validate that an object is a valid plaintext backup (legacy format)
+	 * Performs strict type checking on all required fields to prevent misclassification
+	 */
+	private isPlaintextBackup(obj: unknown): obj is BackupData {
+		if (typeof obj !== "object" || obj === null) {
+			return false;
+		}
+
+		const backup = obj as Record<string, unknown>;
+
+		// Validate all required top-level fields with correct types
+		return (
+			typeof backup.version === "string" &&
+			typeof backup.appVersion === "string" &&
+			typeof backup.timestamp === "string" &&
+			typeof backup.data === "object" &&
+			backup.data !== null &&
+			typeof backup.secrets === "object" &&
+			backup.secrets !== null &&
+			// Ensure this isn't an encrypted envelope (no cipherText field)
+			!("cipherText" in backup)
+		);
+	}
+
+	/**
 	 * Restore from a backup (accepts both encrypted envelope or plaintext JSON)
 	 * For uploaded backups, this receives the base64-decoded backup data
 	 */
@@ -387,15 +439,15 @@ export class BackupService {
 		let decryptedBackupJson: string;
 
 		try {
-			// Try to parse as encrypted envelope first
+			// Try to parse JSON
 			const parsed = JSON.parse(backupData);
 
-			// Check if it's an encrypted envelope
-			if (parsed.version && parsed.kdfParams && parsed.salt && parsed.iv && parsed.cipherText) {
-				// It's an encrypted backup
-				decryptedBackupJson = this.decryptBackup(parsed as EncryptedBackupEnvelope);
-			} else if (parsed.version && parsed.data && parsed.secrets) {
-				// It's a plaintext backup (legacy format)
+			// Strictly validate format with type checks to avoid misclassification
+			if (this.isEncryptedBackupEnvelope(parsed)) {
+				// It's an encrypted backup - decrypt it
+				decryptedBackupJson = this.decryptBackup(parsed);
+			} else if (this.isPlaintextBackup(parsed)) {
+				// It's a plaintext backup (legacy format) - use as-is
 				decryptedBackupJson = backupData;
 			} else {
 				throw new Error("Invalid backup format: unrecognized structure");
