@@ -427,10 +427,11 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							nextRunAt = new Date(now.getTime() + intervalValue * 24 * 60 * 60 * 1000);
 							break;
 						case "WEEKLY":
-							nextRunAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+							nextRunAt = new Date(now.getTime() + intervalValue * 7 * 24 * 60 * 60 * 1000);
 							break;
 					}
 				} else {
+					// When DISABLED, clear any scheduled run
 					nextRunAt = null;
 				}
 			}
