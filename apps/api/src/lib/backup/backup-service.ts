@@ -844,8 +844,16 @@ export class BackupService {
 			try {
 				const existingContent = await fs.readFile(this.secretsPath, "utf-8");
 				existingSecrets = JSON.parse(existingContent);
-			} catch {
-				// File doesn't exist or is invalid, start with empty object
+			} catch (error) {
+				if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+					// File doesn't exist, start with empty object
+				} else if (error instanceof SyntaxError) {
+					// Invalid JSON, start with empty object (log warning)
+					console.warn("Existing secrets file has invalid JSON, will overwrite");
+				} else {
+					// Unexpected error (e.g., EACCES), log but continue to allow restore to proceed
+					console.warn("Warning: Failed to read existing secrets, some fields may be lost:", error);
+				}
 			}
 
 			// Merge backup secrets with existing ones
