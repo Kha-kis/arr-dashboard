@@ -304,20 +304,10 @@ export class BackupService {
 					const backupPath = path.join(typeDir, filename);
 					const stats = await fs.stat(backupPath);
 
-					// Read the actual timestamp from the encrypted backup file
-					let timestamp: string;
-					try {
-						const fileContent = await fs.readFile(backupPath, "utf-8");
-						const envelope = JSON.parse(fileContent) as EncryptedBackupEnvelope;
-
-						// Decrypt to get the original backup data
-						const decryptedJson = this.decryptBackup(envelope);
-						const backupData = JSON.parse(decryptedJson) as BackupData;
-						timestamp = backupData.timestamp;
-					} catch {
-						// If we can't decrypt/read the file, use the file modification time
-						timestamp = stats.mtime.toISOString();
-					}
+					// Parse timestamp from filename instead of decrypting the file
+					// Filename format: arr-dashboard-backup-2025-10-15T13-27-36-897Z.json
+					// Timestamp format: 2025-10-15T13:27:36.897Z (ISO 8601)
+					const timestamp = this.parseTimestampFromFilename(filename, stats.mtime);
 
 					backups.push({
 						id: this.generateBackupId(backupPath),
@@ -644,6 +634,44 @@ export class BackupService {
 	private generateBackupId(backupPath: string): string {
 		// Use SHA-256 hash of the path as the ID
 		return crypto.createHash("sha256").update(backupPath).digest("hex").substring(0, 16);
+	}
+
+	/**
+	 * Parse timestamp from backup filename without decrypting the file
+	 * Filename format: arr-dashboard-backup-2025-10-15T13-27-36-897Z.json
+	 * Returns ISO 8601 timestamp: 2025-10-15T13:27:36.897Z
+	 * Falls back to file modification time if parsing fails
+	 */
+	private parseTimestampFromFilename(filename: string, fallbackMtime: Date): string {
+		// Pattern to extract timestamp: backup-YYYY-MM-DDTHH-MM-SS-MMMZ
+		const timestampPattern = /backup-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)/;
+		const match = filename.match(timestampPattern);
+
+		if (!match) {
+			// Filename doesn't match expected format, use file modification time
+			return fallbackMtime.toISOString();
+		}
+
+		// Extract timestamp string and convert hyphens to colons in the time portion
+		// Input:  2025-10-15T13-27-36-897Z
+		// Output: 2025-10-15T13:27:36.897Z
+		const rawTimestamp = match[1];
+		const [datePart, timePart] = rawTimestamp.split("T");
+
+		// Convert time portion: 13-27-36-897Z -> 13:27:36.897Z
+		const timeConverted = timePart
+			.replace(/-(\d{2})-(\d{2})-(\d{3}Z)/, ":$1:$2.$3"); // HH-MM-SS-MMMZ -> HH:MM:SS.MMMZ
+
+		const isoTimestamp = `${datePart}T${timeConverted}`;
+
+		// Validate the parsed timestamp is valid ISO 8601
+		const date = new Date(isoTimestamp);
+		if (Number.isNaN(date.getTime())) {
+			// Invalid date, use fallback
+			return fallbackMtime.toISOString();
+		}
+
+		return isoTimestamp;
 	}
 
 	/**
