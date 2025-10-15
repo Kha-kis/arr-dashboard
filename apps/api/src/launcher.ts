@@ -24,10 +24,22 @@ const MAX_RESTARTS = 10;
 const RESTART_WINDOW_MS = 60000; // 1 minute
 let restartTimestamps: number[] = [];
 
+/**
+ * Log a message to stdout prefixed with "[Launcher]".
+ *
+ * @param message - The text to log
+ */
 function log(message: string) {
 	console.log(`[Launcher] ${message}`);
 }
 
+/**
+ * Decides whether a new restart is permitted based on recent restart history.
+ *
+ * Cleans up recorded restart timestamps older than the configured window, logs an error if the recent restart count has reached the maximum, and updates internal state accordingly.
+ *
+ * @returns `true` if a restart is allowed, `false` if the maximum number of restarts within the window has been reached
+ */
 function shouldAllowRestart(): boolean {
 	const now = Date.now();
 
@@ -45,6 +57,11 @@ function shouldAllowRestart(): boolean {
 	return true;
 }
 
+/**
+ * Spawn and manage the application process, restarting it when it exits with the designated restart code and forwarding termination signals.
+ *
+ * Starts the child application in either development mode (runs the TypeScript source via `tsx`) or production mode (runs the compiled `index.js` with source maps), sets `LAUNCHER_MANAGED` in the child's environment, and inherits stdio. If the child exits with the restart code, records the restart, enforces the restart rate limit, and schedules a restart after one second; if the child exits normally or with any other code, the launcher exits with that code. The launcher also forwards `SIGTERM` and `SIGINT` to the child process.
+ */
 function startServer() {
 	log("Starting application...");
 
