@@ -693,6 +693,15 @@ export class BackupService {
 				if (!(field in recordObj) || recordObj[field] === undefined) {
 					throw new Error(`Invalid ${entityType} record at index ${i}: missing required field '${field}'`);
 				}
+
+				// Basic type check: ensure field is a primitive (string, number, boolean) or Date
+				// Complex objects likely indicate corrupted or incompatible backup data
+				const value = recordObj[field];
+				if (value !== null && typeof value === "object" && !(value instanceof Date)) {
+					throw new Error(
+						`Invalid ${entityType} record at index ${i}: field '${field}' has unexpected type (expected primitive, got object)`
+					);
+				}
 			}
 		}
 	}
