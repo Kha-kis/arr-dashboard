@@ -53,8 +53,9 @@ export class LifecycleService {
 			await this.gracefulShutdown();
 
 			// Step 2: Spawn new process (production only)
+			let spawnSuccess = true;
 			if (this.shouldSpawnNewProcess()) {
-				this.spawnNewProcess();
+				spawnSuccess = this.spawnNewProcess();
 			}
 
 			// Step 3: Conditionally exit current process
@@ -63,10 +64,10 @@ export class LifecycleService {
 			const isProduction = process.env.NODE_ENV === "production";
 
 			if (isLauncherManaged || isProduction) {
-				// Exit in launcher-managed or production mode
-				const exitCode = isLauncherManaged ? 42 : 0;
+				// Exit with code 1 if spawn failed, otherwise use appropriate success code
+				const exitCode = !spawnSuccess ? 1 : isLauncherManaged ? 42 : 0;
 				this.app.log.info(
-					{ exitCode, launcherManaged: isLauncherManaged, production: isProduction },
+					{ exitCode, launcherManaged: isLauncherManaged, production: isProduction, spawnSuccess },
 					"Exiting current process"
 				);
 				process.exit(exitCode);
@@ -126,8 +127,9 @@ export class LifecycleService {
 	/**
 	 * Spawn a new instance of the application
 	 * Uses detached process to ensure it survives parent exit
+	 * @returns true if spawn succeeded, false if spawn failed
 	 */
-	private spawnNewProcess(): void {
+	private spawnNewProcess(): boolean {
 		try {
 			// Ensure we have a valid node executable path
 			const nodeExecutable = process.argv[0];
@@ -158,9 +160,10 @@ export class LifecycleService {
 			child.unref();
 
 			this.app.log.info({ childPid: child.pid }, "New process spawned successfully");
+			return true;
 		} catch (error) {
 			this.app.log.error({ err: error }, "Failed to spawn new process");
-			// Continue with exit anyway
+			return false;
 		}
 	}
 
