@@ -477,12 +477,18 @@ export class BackupService {
 	}
 
 	/**
-	 * Write secrets to secrets.json
+	 * Write secrets to secrets.json with restrictive permissions (0o600)
+	 * Only the owner can read/write the secrets file for enhanced security
 	 */
 	private async writeSecrets(secrets: BackupData["secrets"]): Promise<void> {
 		try {
 			const secretsContent = JSON.stringify(secrets, null, 2);
-			await fs.writeFile(this.secretsPath, secretsContent, "utf-8");
+			// Write with restrictive permissions (owner read/write only)
+			await fs.writeFile(this.secretsPath, secretsContent, { encoding: "utf-8", mode: 0o600 });
+
+			// Fallback: explicitly set permissions to ensure they're enforced
+			// This handles cases where the file existed with different permissions
+			await fs.chmod(this.secretsPath, 0o600);
 		} catch (error) {
 			throw new Error(`Failed to write secrets file: ${error}`);
 		}
