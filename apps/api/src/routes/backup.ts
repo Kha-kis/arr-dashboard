@@ -261,7 +261,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		try {
 			const backupService = getBackupService();
-			const backup = await backupService.getBackupById(params.id);
+			const backup = await backupService.getBackupByIdInternal(params.id);
 
 			if (!backup) {
 				return reply.status(404).send({ error: "Backup not found" });

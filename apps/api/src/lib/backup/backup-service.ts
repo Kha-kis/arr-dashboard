@@ -279,7 +279,7 @@ export class BackupService {
 	/**
 	 * Get a specific backup by ID with internal path (server-side only)
 	 */
-	private async getBackupByIdInternal(id: string): Promise<BackupFileInfoInternal | null> {
+	async getBackupByIdInternal(id: string): Promise<BackupFileInfoInternal | null> {
 		const backups = await this.listBackupsInternal();
 		return backups.find((b) => b.id === id) || null;
 	}
