@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { QueueItem } from "@arr/shared";
+import type { CurrentUser, QueueItem } from "@arr/shared";
 import { useCurrentUser } from "../../../hooks/api/useAuth";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useMultiInstanceQueueQuery } from "../../../hooks/api/useDashboard";

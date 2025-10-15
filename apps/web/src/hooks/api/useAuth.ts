@@ -1,6 +1,7 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import type { CurrentUser } from "@arr/shared";
 import {
 	login,
@@ -45,8 +46,10 @@ export const useLogoutMutation = () => {
 };
 
 // Current User
-export const useCurrentUser = (enabled: boolean = true) =>
-	useQuery<CurrentUser | null>({
+export const useCurrentUser = (enabled: boolean = true): UseQueryResult<CurrentUser | null, Error> => {
+	const queryClient = useQueryClient();
+
+	const query = useQuery<CurrentUser | null>({
 		queryKey: ["current-user"],
 		queryFn: fetchCurrentUser,
 		staleTime: 5 * 60 * 1000,
@@ -55,6 +58,17 @@ export const useCurrentUser = (enabled: boolean = true) =>
 		refetchOnMount: false,
 		refetchOnWindowFocus: false,
 	});
+
+	// Handle 401 errors to clear stale cache
+	// Run as a controlled side effect after render
+	useEffect(() => {
+		if (query.error && typeof query.error === "object" && "status" in query.error && query.error.status === 401) {
+			queryClient.setQueryData(["current-user"], null);
+		}
+	}, [query.error, queryClient]);
+
+	return query;
+};
 
 // Update Account
 interface UpdateAccountPayload {

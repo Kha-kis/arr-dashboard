@@ -7,3 +7,4 @@ export * from "./search.js";
 export * from "./manual-import.js";
 export * from "./recommendations.js";
 export * from "./oidc-provider.js";
+export * from "./backup.js";
