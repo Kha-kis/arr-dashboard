@@ -18,16 +18,21 @@ export const createBackupRequestSchema = z.object({
 export type CreateBackupRequest = z.infer<typeof createBackupRequestSchema>;
 
 // Backup file info (stored on filesystem)
+// Note: Internal path field is kept separate for server-side use only
 export const backupFileInfoSchema = z.object({
 	id: z.string(), // Hash of filename for unique identification
 	filename: z.string(),
 	type: z.enum(["manual", "scheduled", "update"]),
 	timestamp: z.string(),
-	size: z.number(), // File size in bytes
-	path: z.string(), // Absolute path to backup file
+	size: z.number(), // File size in bytes (encrypted file size)
 });
 
 export type BackupFileInfo = z.infer<typeof backupFileInfoSchema>;
+
+// Internal type with path field (server-side only, not exposed in API responses)
+export interface BackupFileInfoInternal extends BackupFileInfo {
+	path: string; // Absolute path to backup file
+}
 
 // Create backup response (returns backup file info after saving to filesystem)
 export const createBackupResponseSchema = backupFileInfoSchema;
