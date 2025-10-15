@@ -92,8 +92,16 @@ export class BackupService {
 				if (recheckSecrets.backupPassword && typeof recheckSecrets.backupPassword === "string") {
 					return recheckSecrets.backupPassword;
 				}
-			} catch {
-				// File disappeared or became invalid, proceed with write
+			} catch (error) {
+				// Only proceed if file is missing or invalid JSON; re-throw other errors
+				if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
+					// File disappeared, proceed with write
+				} else if (error instanceof SyntaxError) {
+					// Invalid JSON, proceed with write
+				} else {
+					// Unexpected error (e.g., EACCES permission denied), re-throw
+					throw error;
+				}
 			}
 
 			const updatedSecrets = { ...secrets, backupPassword: newPassword };
@@ -139,8 +147,17 @@ export class BackupService {
 							if (existingSecrets.backupPassword && typeof existingSecrets.backupPassword === "string") {
 								return existingSecrets.backupPassword;
 							}
-						} catch {
-							// Fall through to original error
+						} catch (readError) {
+							// Only fall through to original error if read failed due to expected reasons
+							// Re-throw if it's an unexpected error (e.g., permission denied)
+							if (readError && typeof readError === "object" && "code" in readError && readError.code === "ENOENT") {
+								// File was deleted between EEXIST and read, fall through to original error
+							} else if (readError instanceof SyntaxError) {
+								// File exists but has invalid JSON, fall through to original error
+							} else {
+								// Unexpected error (e.g., EACCES), re-throw
+								throw readError;
+							}
 						}
 					}
 					throw new Error(`Failed to create secrets file: ${writeError}`);
