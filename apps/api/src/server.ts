@@ -3,11 +3,14 @@ import fastifyHelmet from "@fastify/helmet";
 import fastifyRateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance } from "fastify";
 import { type ApiEnv, envSchema } from "./config/env.js";
+import backupSchedulerPlugin from "./plugins/backup-scheduler.js";
+import lifecyclePlugin from "./plugins/lifecycle.js";
 import { prismaPlugin } from "./plugins/prisma.js";
 import { securityPlugin } from "./plugins/security.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerAuthOidcRoutes } from "./routes/auth-oidc.js";
 import { registerAuthPasskeyRoutes } from "./routes/auth-passkey.js";
+import { registerBackupRoutes } from "./routes/backup.js";
 import { registerDashboardRoutes } from "./routes/dashboard.js";
 import { registerDiscoverRoutes } from "./routes/discover.js";
 import { registerHealthRoutes } from "./routes/health.js";
@@ -17,6 +20,7 @@ import oidcProvidersRoutes from "./routes/oidc-providers.js";
 import { registerRecommendationsRoutes } from "./routes/recommendations.js";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerServiceRoutes } from "./routes/services.js";
+import { registerSystemRoutes } from "./routes/system.js";
 
 export type ServerOptions = {
 	logger?: boolean;
@@ -51,9 +55,11 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		timeWindow: env.API_RATE_LIMIT_WINDOW,
 	});
 
-	// Register Prisma and Security plugins (security plugin registers cookies with auto-generated secrets)
+	// Register Prisma, Security, Lifecycle, and Backup Scheduler plugins
 	app.register(prismaPlugin);
 	app.register(securityPlugin);
+	app.register(lifecyclePlugin);
+	app.register(backupSchedulerPlugin);
 
 	app.decorateRequest("currentUser", null);
 	app.decorateRequest("sessionToken", null);
@@ -93,6 +99,8 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(registerSearchRoutes, { prefix: "/api" });
 	app.register(registerManualImportRoutes, { prefix: "/api" });
 	app.register(registerRecommendationsRoutes, { prefix: "/api" });
+	app.register(registerBackupRoutes, { prefix: "/api/backup" });
+	app.register(registerSystemRoutes, { prefix: "/api/system" });
 
 	return app;
 };
