@@ -79,6 +79,18 @@ export class BackupService {
 
 			// Generate new password and merge with existing secrets
 			const newPassword = crypto.randomBytes(32).toString("base64");
+
+			// Guard against race condition: Check again before writing in case another process wrote a password
+			try {
+				const recheckContent = await fs.readFile(this.secretsPath, "utf-8");
+				const recheckSecrets = JSON.parse(recheckContent);
+				if (recheckSecrets.backupPassword && typeof recheckSecrets.backupPassword === "string") {
+					return recheckSecrets.backupPassword;
+				}
+			} catch {
+				// File disappeared or became invalid, proceed with write
+			}
+
 			const updatedSecrets = { ...secrets, backupPassword: newPassword };
 
 			// Write atomically with restrictive permissions
@@ -103,16 +115,29 @@ export class BackupService {
 					const dir = path.dirname(this.secretsPath);
 					await fs.mkdir(dir, { recursive: true });
 
-					// Write with restrictive permissions
+					// Write with restrictive permissions and 'wx' flag to fail if file exists (race guard)
 					await fs.writeFile(this.secretsPath, JSON.stringify(secrets, null, 2), {
 						encoding: "utf-8",
-						mode: 0o600
+						mode: 0o600,
+						flag: "wx"
 					});
 					await fs.chmod(this.secretsPath, 0o600);
 
 					console.log("Created secrets.json with generated backup password for development");
 					return newPassword;
 				} catch (writeError) {
+					// If write failed because file now exists (race condition), read and return existing password
+					if (writeError && typeof writeError === "object" && "code" in writeError && writeError.code === "EEXIST") {
+						try {
+							const existingContent = await fs.readFile(this.secretsPath, "utf-8");
+							const existingSecrets = JSON.parse(existingContent);
+							if (existingSecrets.backupPassword && typeof existingSecrets.backupPassword === "string") {
+								return existingSecrets.backupPassword;
+							}
+						} catch {
+							// Fall through to original error
+						}
+					}
 					throw new Error(`Failed to create secrets file: ${writeError}`);
 				}
 			}
