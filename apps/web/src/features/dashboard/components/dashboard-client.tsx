@@ -30,11 +30,7 @@ const SERVICE_FILTERS = [
 ];
 
 export const DashboardClient = () => {
-	const { data: currentUser, isLoading: userLoading, error: userError } = useCurrentUser() as {
-		data: CurrentUser | null | undefined;
-		isLoading: boolean;
-		error: unknown;
-	};
+	const { data: currentUser, isLoading: userLoading, error: userError } = useCurrentUser();
 	const [incognitoMode] = useIncognitoMode();
 
 	const servicesQuery = useServicesQuery({ enabled: Boolean(currentUser) });

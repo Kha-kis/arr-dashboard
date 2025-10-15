@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import type { CurrentUser } from "@arr/shared";
 import {
 	login,
@@ -46,7 +46,7 @@ export const useLogoutMutation = () => {
 };
 
 // Current User
-export const useCurrentUser = (enabled: boolean = true) => {
+export const useCurrentUser = (enabled: boolean = true): UseQueryResult<CurrentUser | null, Error> => {
 	const queryClient = useQueryClient();
 
 	const query = useQuery<CurrentUser | null>({

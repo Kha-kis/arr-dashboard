@@ -40,7 +40,7 @@ export const SettingsClient = () => {
 	// Data queries
 	const { data: services = [], isLoading: servicesLoading } = useServicesQuery();
 	const { data: tags = [] } = useTagsQuery();
-	const { data: currentUser } = useCurrentUser() as { data: CurrentUser | null | undefined };
+	const { data: currentUser } = useCurrentUser();
 
 	// Local state
 	const [activeTab, setActiveTab] = useState<TabType>("services");

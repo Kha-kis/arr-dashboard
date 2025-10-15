@@ -519,6 +519,7 @@ export class BackupService {
 
 	/**
 	 * Restore from a backup file on filesystem
+	 * Delegates to restoreBackup which handles both encrypted and plaintext formats
 	 */
 	async restoreBackupFromFile(id: string): Promise<BackupMetadata> {
 		const backup = await this.getBackupByIdInternal(id);
@@ -536,17 +537,11 @@ export class BackupService {
 			);
 		}
 
-		// Read encrypted backup file
+		// Read backup file
 		const fileContent = await fs.readFile(backup.path, "utf-8");
 
-		// Parse as encrypted envelope
-		const envelope = JSON.parse(fileContent) as EncryptedBackupEnvelope;
-
-		// Decrypt to get original backup data
-		const backupData = await this.decryptBackup(envelope);
-
-		// Use existing restore logic
-		return this.restoreBackup(backupData);
+		// Delegate to restoreBackup which handles both encrypted and plaintext formats
+		return this.restoreBackup(fileContent);
 	}
 
 	/**
