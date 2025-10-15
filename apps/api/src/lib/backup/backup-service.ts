@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
+import * as fsSync from "node:fs";
 import path from "node:path";
 import type { PrismaClient } from "@prisma/client";
 import type { BackupData, BackupFileInfo, BackupFileInfoInternal, BackupMetadata } from "@arr/shared";
@@ -38,19 +39,86 @@ export class BackupService {
 	}
 
 	/**
-	 * Get the backup password from environment or use default
-	 * In production, BACKUP_PASSWORD should be set via environment variable
+	 * Get the backup password from environment, fail closed in production,
+	 * or auto-generate and persist a secure password in development
 	 */
 	private getBackupPassword(): string {
-		const password = process.env.BACKUP_PASSWORD;
-		if (!password) {
-			// Default password for development - should be overridden in production
-			console.warn(
-				"BACKUP_PASSWORD not set, using default. Set BACKUP_PASSWORD environment variable for production."
-			);
-			return "arr-dashboard-default-backup-key";
+		// If explicitly set via environment, use it
+		const envPassword = process.env.BACKUP_PASSWORD;
+		if (envPassword) {
+			return envPassword;
 		}
-		return password;
+
+		// In production, fail closed - do not allow backups without explicit password
+		const isProduction = process.env.NODE_ENV === "production";
+		if (isProduction) {
+			throw new Error(
+				"FATAL: BACKUP_PASSWORD environment variable is required in production. " +
+				"Set a strong password to enable encrypted backups."
+			);
+		}
+
+		// In development, generate and persist a secure random password
+		return this.getOrGenerateDevBackupPassword();
+	}
+
+	/**
+	 * Get or generate a development backup password
+	 * Generates a cryptographically strong random password and persists it to secrets.json
+	 */
+	private getOrGenerateDevBackupPassword(): string {
+		try {
+			// Try to read existing secrets file
+			const secretsContent = fsSync.readFileSync(this.secretsPath, "utf-8");
+			const secrets = JSON.parse(secretsContent);
+
+			// If backup password already exists, return it
+			if (secrets.backupPassword && typeof secrets.backupPassword === "string") {
+				return secrets.backupPassword;
+			}
+
+			// Generate new password and merge with existing secrets
+			const newPassword = crypto.randomBytes(32).toString("base64");
+			const updatedSecrets = { ...secrets, backupPassword: newPassword };
+
+			// Write atomically with restrictive permissions
+			const tempPath = `${this.secretsPath}.tmp`;
+			fsSync.writeFileSync(tempPath, JSON.stringify(updatedSecrets, null, 2), {
+				encoding: "utf-8",
+				mode: 0o600
+			});
+			fsSync.renameSync(tempPath, this.secretsPath);
+			fsSync.chmodSync(this.secretsPath, 0o600);
+
+			console.log("Generated new backup password for development (stored in secrets.json)");
+			return newPassword;
+		} catch (error) {
+			// If secrets file doesn't exist, create it with just the backup password
+			if ((error as any).code === "ENOENT") {
+				const newPassword = crypto.randomBytes(32).toString("base64");
+				const secrets = { backupPassword: newPassword };
+
+				try {
+					// Ensure directory exists
+					const dir = path.dirname(this.secretsPath);
+					fsSync.mkdirSync(dir, { recursive: true });
+
+					// Write with restrictive permissions
+					fsSync.writeFileSync(this.secretsPath, JSON.stringify(secrets, null, 2), {
+						encoding: "utf-8",
+						mode: 0o600
+					});
+					fsSync.chmodSync(this.secretsPath, 0o600);
+
+					console.log("Created secrets.json with generated backup password for development");
+					return newPassword;
+				} catch (writeError) {
+					throw new Error(`Failed to create secrets file: ${writeError}`);
+				}
+			}
+
+			throw new Error(`Failed to read/write secrets file: ${error}`);
+		}
 	}
 
 	/**
