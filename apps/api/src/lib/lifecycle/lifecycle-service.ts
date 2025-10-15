@@ -81,20 +81,31 @@ export class LifecycleService {
 
 	/**
 	 * Determine if we should spawn a new process
-	 * Only spawn in production or when explicitly managed
+	 * Only spawn in production when NOT launcher-managed
+	 * (When launcher-managed, the launcher handles spawning via exit code 42)
 	 */
 	private shouldSpawnNewProcess(): boolean {
-		const isProduction = process.env.NODE_ENV === "production";
 		const isLauncherManaged = process.env.LAUNCHER_MANAGED === "true";
+
+		// If launcher-managed, let the launcher handle spawning
+		if (isLauncherManaged) {
+			this.app.log.info(
+				"Launcher-managed mode - launcher will handle restart"
+			);
+			return false;
+		}
+
+		const isProduction = process.env.NODE_ENV === "production";
 		const isDevelopment = !isProduction;
 
-		if (isDevelopment && !isLauncherManaged) {
+		if (isDevelopment) {
 			this.app.log.info(
 				"Development mode without launcher - manual restart required"
 			);
 			return false;
 		}
 
+		// Only self-spawn in production when not launcher-managed
 		return true;
 	}
 
