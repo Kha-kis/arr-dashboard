@@ -7,6 +7,7 @@ import backupSchedulerPlugin from "./plugins/backup-scheduler.js";
 import lifecyclePlugin from "./plugins/lifecycle.js";
 import { prismaPlugin } from "./plugins/prisma.js";
 import { securityPlugin } from "./plugins/security.js";
+import { arrSyncRoutes } from "./routes/arr-sync.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerAuthOidcRoutes } from "./routes/auth-oidc.js";
 import { registerAuthPasskeyRoutes } from "./routes/auth-passkey.js";
@@ -99,6 +100,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(registerSearchRoutes, { prefix: "/api" });
 	app.register(registerManualImportRoutes, { prefix: "/api" });
 	app.register(registerRecommendationsRoutes, { prefix: "/api" });
+	app.register(arrSyncRoutes);
 	app.register(registerBackupRoutes, { prefix: "/api/backup" });
 	app.register(registerSystemRoutes, { prefix: "/api/system" });
 

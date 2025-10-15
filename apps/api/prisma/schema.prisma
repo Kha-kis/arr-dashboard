@@ -64,6 +64,7 @@ model ServiceInstance {
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   tags            ServiceInstanceTag[]
+  arrSyncSettings ArrSyncSettings?
 
   @@index([service])
 }
@@ -153,4 +154,21 @@ model BackupSettings {
   updatedAt         DateTime            @updatedAt
 
   @@map("backup_settings")
+}
+
+// ARR Custom Formats & TRaSH Sync Settings
+model ArrSyncSettings {
+  id                String   @id @default(cuid())
+  serviceInstanceId String   @unique
+  enabled           Boolean  @default(true)
+  trashRef          String   @default("stable") // git tag/branch/commit of TRaSH guides
+  presets           String   @default("[]")     // JSON array of preset names (e.g. ["anime","x265","hdr10plus"])
+  overridesJson     String   @default("{}")     // JSON for scores/terms/profile overrides
+  lastSyncAt        DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  serviceInstance ServiceInstance @relation(fields: [serviceInstanceId], references: [id], onDelete: Cascade)
+
+  @@map("arr_sync_settings")
 }
