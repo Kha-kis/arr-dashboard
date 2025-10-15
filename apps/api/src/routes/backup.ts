@@ -147,7 +147,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 				const response: RestoreBackupResponse = {
 					success: true,
-					message: `Backup restored successfully. ${app.lifecycle.getRestartMessage()}`,
+					message: `Backup restored successfully. ${app.lifecycle?.getRestartMessage?.() || "Please restart the application manually for changes to take effect."}`,
 					restoredAt: new Date().toISOString(),
 					metadata,
 				};
@@ -155,8 +155,8 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				// Send response
 				await reply.send(response);
 
-				// Initiate restart if configured
-				if (app.lifecycle.isRestartRequired()) {
+				// Initiate restart if lifecycle service is available and configured
+				if (app.lifecycle?.isRestartRequired?.()) {
 					await app.lifecycle.restart("backup-restore");
 				}
 			} catch (error) {
@@ -215,7 +215,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 				const response: RestoreBackupResponse = {
 					success: true,
-					message: `Backup restored successfully. ${app.lifecycle.getRestartMessage()}`,
+					message: `Backup restored successfully. ${app.lifecycle?.getRestartMessage?.() || "Please restart the application manually for changes to take effect."}`,
 					restoredAt: new Date().toISOString(),
 					metadata,
 				};
@@ -223,8 +223,8 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				// Send response
 				await reply.send(response);
 
-				// Initiate restart if configured
-				if (app.lifecycle.isRestartRequired()) {
+				// Initiate restart if lifecycle service is available and configured
+				if (app.lifecycle?.isRestartRequired?.()) {
 					await app.lifecycle.restart("backup-restore");
 				}
 			} catch (error) {
