@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import * as fsSync from "node:fs";
 import path from "node:path";
-import type { PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "@prisma/client";
 import type { BackupData, BackupFileInfo, BackupFileInfoInternal, BackupMetadata } from "@arr/shared";
 
 const BACKUP_VERSION = "1.0";
@@ -94,7 +94,7 @@ export class BackupService {
 			return newPassword;
 		} catch (error) {
 			// If secrets file doesn't exist, create it with just the backup password
-			if ((error as any).code === "ENOENT") {
+			if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
 				const newPassword = crypto.randomBytes(32).toString("base64");
 				const secrets = { backupPassword: newPassword };
 
@@ -330,7 +330,6 @@ export class BackupService {
 				}
 			} catch (error) {
 				// Type directory doesn't exist yet, skip
-				continue;
 			}
 		}
 
@@ -490,44 +489,44 @@ export class BackupService {
 			// Restore data (in order of dependencies)
 			// Users first (no dependencies)
 			for (const user of data.users) {
-				await tx.user.create({ data: user as any });
+				await tx.user.create({ data: user as Prisma.UserCreateInput });
 			}
 
 			// Sessions (depend on users)
 			for (const session of data.sessions) {
-				await tx.session.create({ data: session as any });
+				await tx.session.create({ data: session as Prisma.SessionCreateInput });
 			}
 
 			// OIDC providers (no dependencies) - optional for backward compatibility
 			if (data.oidcProviders) {
 				for (const provider of data.oidcProviders) {
-					await tx.oIDCProvider.create({ data: provider as any });
+					await tx.oIDCProvider.create({ data: provider as Prisma.OIDCProviderCreateInput });
 				}
 			}
 
 			// OIDC accounts (depend on users)
 			for (const oidcAccount of data.oidcAccounts) {
-				await tx.oIDCAccount.create({ data: oidcAccount as any });
+				await tx.oIDCAccount.create({ data: oidcAccount as Prisma.OIDCAccountCreateInput });
 			}
 
 			// WebAuthn credentials (depend on users)
 			for (const credential of data.webAuthnCredentials) {
-				await tx.webAuthnCredential.create({ data: credential as any });
+				await tx.webAuthnCredential.create({ data: credential as Prisma.WebAuthnCredentialCreateInput });
 			}
 
 			// Service instances (no user dependency based on schema)
 			for (const instance of data.serviceInstances) {
-				await tx.serviceInstance.create({ data: instance as any });
+				await tx.serviceInstance.create({ data: instance as Prisma.ServiceInstanceCreateInput });
 			}
 
 			// Service tags (no dependencies)
 			for (const tag of data.serviceTags) {
-				await tx.serviceTag.create({ data: tag as any });
+				await tx.serviceTag.create({ data: tag as Prisma.ServiceTagCreateInput });
 			}
 
 			// Service instance tags (depend on instances and tags)
 			for (const instanceTag of data.serviceInstanceTags) {
-				await tx.serviceInstanceTag.create({ data: instanceTag as any });
+				await tx.serviceInstanceTag.create({ data: instanceTag as Prisma.ServiceInstanceTagCreateInput });
 			}
 		});
 	}
@@ -618,8 +617,9 @@ export class BackupService {
 			"webAuthnCredentials",
 		];
 
+		const dataRecord = b.data as Record<string, unknown>;
 		for (const field of requiredFields) {
-			if (!Array.isArray((b.data as any)[field])) {
+			if (!Array.isArray(dataRecord[field])) {
 				throw new Error(`Invalid backup format: missing or invalid data.${field}`);
 			}
 		}
