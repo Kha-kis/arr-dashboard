@@ -348,17 +348,12 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		try {
-			// Get or create settings
-			let settings = await app.prisma.backupSettings.findUnique({
+			// Get or create settings atomically
+			const settings = await app.prisma.backupSettings.upsert({
 				where: { id: 1 },
+				create: { id: 1 },
+				update: {},
 			});
-
-			// Create default settings if they don't exist
-			if (!settings) {
-				settings = await app.prisma.backupSettings.create({
-					data: { id: 1 },
-				});
-			}
 
 			const response: BackupSettings = {
 				id: settings.id,
@@ -397,16 +392,12 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		try {
-			// Get or create settings
-			let settings = await app.prisma.backupSettings.findUnique({
+			// Get or create settings atomically
+			const settings = await app.prisma.backupSettings.upsert({
 				where: { id: 1 },
+				create: { id: 1 },
+				update: {},
 			});
-
-			if (!settings) {
-				settings = await app.prisma.backupSettings.create({
-					data: { id: 1 },
-				});
-			}
 
 			// Calculate next run time if interval settings changed
 			let nextRunAt = settings.nextRunAt;
