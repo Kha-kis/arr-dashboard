@@ -104,17 +104,23 @@ export class LifecycleService {
 	 */
 	private spawnNewProcess(): void {
 		try {
+			// Ensure we have a valid node executable path
+			const nodeExecutable = process.argv[0];
+			if (!nodeExecutable) {
+				throw new Error("Cannot determine node executable path");
+			}
+
 			this.app.log.info(
 				{
-					command: process.argv[0],
+					command: nodeExecutable,
 					args: process.argv.slice(1),
 				},
 				"Spawning new process"
 			);
 
-			const child = spawn(process.argv[0], process.argv.slice(1), {
+			const child = spawn(nodeExecutable, process.argv.slice(1), {
 				detached: true,
-				stdio: "ignore",
+				stdio: ["ignore", "ignore", "ignore"],
 				env: {
 					...process.env,
 					// Signal to new process that it's a restart
