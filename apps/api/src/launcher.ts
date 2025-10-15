@@ -151,6 +151,13 @@ function startServer() {
 		cwd: isDev ? process.cwd() : undefined,
 	});
 
+	// Handle spawn errors (e.g., command not found, permission denied)
+	serverProcess.on("error", (err) => {
+		log(`ERROR: Failed to spawn server process: ${err.message}`);
+		serverProcess = null;
+		process.exit(1);
+	});
+
 	serverProcess.on("exit", (code, signal) => {
 		// Clear the process reference immediately so signal handlers know there's no live child
 		serverProcess = null;
@@ -162,14 +169,22 @@ function startServer() {
 		}
 
 		if (code === RESTART_CODE) {
-			// Restart requested
-			restartTimestamps.push(Date.now());
-			restartCount++;
-
+			// Restart requested - check if we should allow it first
 			if (!shouldAllowRestart()) {
 				process.exit(1);
 				return;
 			}
+
+			// Check if shutdown was initiated before scheduling restart
+			if (isShuttingDown) {
+				log("Shutdown in progress, skipping restart");
+				process.exit(0);
+				return;
+			}
+
+			// Only record the restart after we know it's allowed
+			restartTimestamps.push(Date.now());
+			restartCount++;
 
 			log(`Restart requested (count: ${restartCount}). Restarting in 1 second...`);
 			restartTimer = setTimeout(() => {
