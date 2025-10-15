@@ -250,8 +250,12 @@ export class BackupService {
 		await fs.mkdir(typeDir, { recursive: true });
 		const backupPath = path.join(typeDir, filename);
 
-		// 10. Save encrypted backup to file
-		await fs.writeFile(backupPath, envelopeJson, "utf-8");
+		// 10. Save encrypted backup to file with restrictive permissions (owner read/write only)
+		await fs.writeFile(backupPath, envelopeJson, { encoding: "utf-8", mode: 0o600 });
+
+		// Fallback: explicitly set permissions to ensure they're enforced
+		// This handles cases where the file system doesn't support mode during creation
+		await fs.chmod(backupPath, 0o600);
 
 		// 11. Get file stats
 		const stats = await fs.stat(backupPath);
