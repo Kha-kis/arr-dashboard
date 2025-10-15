@@ -8,6 +8,7 @@ const CHECK_INTERVAL_MS = 60 * 1000; // Check every minute
 export class BackupScheduler {
 	private intervalId: NodeJS.Timeout | null = null;
 	private backupService: BackupService;
+	private isRunning = false;
 
 	constructor(
 		private prisma: PrismaClient,
@@ -54,8 +55,19 @@ export class BackupScheduler {
 
 	/**
 	 * Check if a backup should run and execute it
+	 *
+	 * This method includes an in-flight guard to prevent overlapping backup runs.
+	 * Note: This in-memory flag only works for single-instance deployments. For
+	 * multi-instance deployments (e.g., multiple Docker containers sharing a database),
+	 * consider implementing a database advisory lock or a distributed lock mechanism.
 	 */
 	private async checkAndRunBackup() {
+		// In-flight guard: prevent overlapping backup runs
+		if (this.isRunning) {
+			this.logger.debug("Backup already running, skipping this check");
+			return;
+		}
+
 		try {
 			// Get backup settings
 			const settings = await this.prisma.backupSettings.findUnique({
@@ -73,6 +85,9 @@ export class BackupScheduler {
 				return;
 			}
 
+			// Set running flag before executing backup
+			this.isRunning = true;
+
 			this.logger.info(
 				{
 					intervalType: settings.intervalType,
@@ -82,31 +97,36 @@ export class BackupScheduler {
 				"Running scheduled backup",
 			);
 
-			// Run the backup
-			await this.runScheduledBackup(settings.retentionCount);
+			try {
+				// Run the backup
+				await this.runScheduledBackup(settings.retentionCount);
 
-			// Calculate next run time
-			const nextRunAt = this.calculateNextRunTime(
-				settings.intervalType as "HOURLY" | "DAILY" | "WEEKLY",
-				settings.intervalValue,
-			);
+				// Calculate next run time
+				const nextRunAt = this.calculateNextRunTime(
+					settings.intervalType as "HOURLY" | "DAILY" | "WEEKLY",
+					settings.intervalValue,
+				);
 
-			// Update settings with last run and next run times
-			await this.prisma.backupSettings.update({
-				where: { id: 1 },
-				data: {
-					lastRunAt: now,
-					nextRunAt,
-				},
-			});
+				// Update settings with last run and next run times
+				await this.prisma.backupSettings.update({
+					where: { id: 1 },
+					data: {
+						lastRunAt: now,
+						nextRunAt,
+					},
+				});
 
-			this.logger.info(
-				{
-					lastRunAt: now.toISOString(),
-					nextRunAt: nextRunAt.toISOString(),
-				},
-				"Scheduled backup completed",
-			);
+				this.logger.info(
+					{
+						lastRunAt: now.toISOString(),
+						nextRunAt: nextRunAt.toISOString(),
+					},
+					"Scheduled backup completed",
+				);
+			} finally {
+				// Always reset the running flag, even if backup fails
+				this.isRunning = false;
+			}
 		} catch (error) {
 			this.logger.error({ err: error }, "Error checking/running scheduled backup");
 		}
