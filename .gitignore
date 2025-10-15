@@ -55,3 +55,9 @@ $RECYCLE.BIN/
 # Temporary files
 *.tmp
 nul
+
+# Sensitive data - must never be committed
+secrets.json
+apps/api/secrets.json
+apps/api/backups/
+backups/

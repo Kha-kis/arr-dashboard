@@ -11,6 +11,8 @@ export const prismaPlugin = fp(async (app) => {
 	app.addHook("onClose", async (server) => {
 		await server.prisma.$disconnect();
 	});
+}, {
+	name: "prisma"
 });
 
 export type PrismaPlugin = ReturnType<typeof prismaPlugin>;
