@@ -56,12 +56,25 @@ export class LifecycleService {
 				this.spawnNewProcess();
 			}
 
-			// Step 3: Exit current process
-			// Use exit code 42 when launcher-managed to signal restart
+			// Step 3: Conditionally exit current process
+			// Only exit in launcher-managed mode or production
 			const isLauncherManaged = process.env.LAUNCHER_MANAGED === "true";
-			const exitCode = isLauncherManaged ? 42 : 0;
-			this.app.log.info({ exitCode, launcherManaged: isLauncherManaged }, "Exiting current process");
-			process.exit(exitCode);
+			const isProduction = process.env.NODE_ENV === "production";
+
+			if (isLauncherManaged || isProduction) {
+				// Exit in launcher-managed or production mode
+				const exitCode = isLauncherManaged ? 42 : 0;
+				this.app.log.info(
+					{ exitCode, launcherManaged: isLauncherManaged, production: isProduction },
+					"Exiting current process"
+				);
+				process.exit(exitCode);
+			} else {
+				// Development without launcher - skip exit, let hot reload handle restart
+				this.app.log.info("Development mode without launcher - skipping exit, server will continue running");
+				this.isShuttingDown = false;
+				return;
+			}
 		} catch (error) {
 			this.app.log.error({ err: error }, "Error during restart");
 			process.exit(1);
