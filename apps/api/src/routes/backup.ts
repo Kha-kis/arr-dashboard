@@ -44,10 +44,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.send(response);
 		} catch (error) {
 			request.log.error({ err: error }, "Failed to list backups");
-			return reply.status(500).send({
-				error: "Failed to list backups",
-				details: error instanceof Error ? error.message : String(error),
-			});
+			return reply.status(500).send({ error: "Failed to list backups" });
 		}
 	});
 
@@ -92,10 +89,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				return reply.send(response);
 			} catch (error) {
 				request.log.error({ err: error }, "Failed to create backup");
-				return reply.status(500).send({
-					error: "Failed to create backup",
-					details: error instanceof Error ? error.message : String(error),
-				});
+				return reply.status(500).send({ error: "Failed to create backup" });
 			}
 		},
 	);
@@ -156,15 +150,10 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 				// Check for specific error types
 				if (errorMessage.includes("Invalid backup format") || errorMessage.includes("version")) {
-					return reply.status(400).send({
-						error: `Failed to restore backup: ${errorMessage}`,
-					});
+					return reply.status(400).send({ error: "Invalid backup format or version mismatch" });
 				}
 
-				return reply.status(500).send({
-					error: "Failed to restore backup",
-					details: errorMessage,
-				});
+				return reply.status(500).send({ error: "Failed to restore backup" });
 			}
 		},
 	);
@@ -224,21 +213,14 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 				// Check for specific error types
 				if (errorMessage.includes("not found")) {
-					return reply.status(404).send({
-						error: `Backup not found: ${errorMessage}`,
-					});
+					return reply.status(404).send({ error: "Backup not found" });
 				}
 
 				if (errorMessage.includes("Invalid backup format") || errorMessage.includes("version")) {
-					return reply.status(400).send({
-						error: `Failed to restore backup: ${errorMessage}`,
-					});
+					return reply.status(400).send({ error: "Invalid backup format or version mismatch" });
 				}
 
-				return reply.status(500).send({
-					error: "Failed to restore backup",
-					details: errorMessage,
-				});
+				return reply.status(500).send({ error: "Failed to restore backup" });
 			}
 		},
 	);
@@ -279,10 +261,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				.send(fileBuffer);
 		} catch (error) {
 			request.log.error({ err: error }, "Failed to download backup");
-			return reply.status(500).send({
-				error: "Failed to download backup",
-				details: error instanceof Error ? error.message : String(error),
-			});
+			return reply.status(500).send({ error: "Failed to download backup" });
 		}
 	});
 
@@ -325,15 +304,10 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				const errorMessage = error instanceof Error ? error.message : String(error);
 
 				if (errorMessage.includes("not found")) {
-					return reply.status(404).send({
-						error: `Backup not found: ${errorMessage}`,
-					});
+					return reply.status(404).send({ error: "Backup not found" });
 				}
 
-				return reply.status(500).send({
-					error: "Failed to delete backup",
-					details: errorMessage,
-				});
+				return reply.status(500).send({ error: "Failed to delete backup" });
 			}
 		},
 	);
@@ -370,10 +344,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.send(response);
 		} catch (error) {
 			request.log.error({ err: error }, "Failed to get backup settings");
-			return reply.status(500).send({
-				error: "Failed to get backup settings",
-				details: error instanceof Error ? error.message : String(error),
-			});
+			return reply.status(500).send({ error: "Failed to get backup settings" });
 		}
 	});
 
@@ -456,10 +427,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.send(response);
 		} catch (error) {
 			request.log.error({ err: error }, "Failed to update backup settings");
-			return reply.status(500).send({
-				error: "Failed to update backup settings",
-				details: error instanceof Error ? error.message : String(error),
-			});
+			return reply.status(500).send({ error: "Failed to update backup settings" });
 		}
 	});
 
