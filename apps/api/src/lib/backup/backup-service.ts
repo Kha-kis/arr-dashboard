@@ -1,6 +1,5 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
-import * as fsSync from "node:fs";
 import path from "node:path";
 import { Prisma, type PrismaClient } from "@prisma/client";
 import type { BackupData, BackupFileInfo, BackupFileInfoInternal, BackupMetadata } from "@arr/shared";
@@ -42,7 +41,7 @@ export class BackupService {
 	 * Get the backup password from environment, fail closed in production,
 	 * or auto-generate and persist a secure password in development
 	 */
-	private getBackupPassword(): string {
+	private async getBackupPassword(): Promise<string> {
 		// If explicitly set via environment, use it
 		const envPassword = process.env.BACKUP_PASSWORD;
 		if (envPassword) {
@@ -65,11 +64,12 @@ export class BackupService {
 	/**
 	 * Get or generate a development backup password
 	 * Generates a cryptographically strong random password and persists it to secrets.json
+	 * Uses async file operations to avoid blocking the event loop
 	 */
-	private getOrGenerateDevBackupPassword(): string {
+	private async getOrGenerateDevBackupPassword(): Promise<string> {
 		try {
 			// Try to read existing secrets file
-			const secretsContent = fsSync.readFileSync(this.secretsPath, "utf-8");
+			const secretsContent = await fs.readFile(this.secretsPath, "utf-8");
 			const secrets = JSON.parse(secretsContent);
 
 			// If backup password already exists, return it
@@ -83,12 +83,12 @@ export class BackupService {
 
 			// Write atomically with restrictive permissions
 			const tempPath = `${this.secretsPath}.tmp`;
-			fsSync.writeFileSync(tempPath, JSON.stringify(updatedSecrets, null, 2), {
+			await fs.writeFile(tempPath, JSON.stringify(updatedSecrets, null, 2), {
 				encoding: "utf-8",
 				mode: 0o600
 			});
-			fsSync.renameSync(tempPath, this.secretsPath);
-			fsSync.chmodSync(this.secretsPath, 0o600);
+			await fs.rename(tempPath, this.secretsPath);
+			await fs.chmod(this.secretsPath, 0o600);
 
 			console.log("Generated new backup password for development (stored in secrets.json)");
 			return newPassword;
@@ -101,14 +101,14 @@ export class BackupService {
 				try {
 					// Ensure directory exists
 					const dir = path.dirname(this.secretsPath);
-					fsSync.mkdirSync(dir, { recursive: true });
+					await fs.mkdir(dir, { recursive: true });
 
 					// Write with restrictive permissions
-					fsSync.writeFileSync(this.secretsPath, JSON.stringify(secrets, null, 2), {
+					await fs.writeFile(this.secretsPath, JSON.stringify(secrets, null, 2), {
 						encoding: "utf-8",
 						mode: 0o600
 					});
-					fsSync.chmodSync(this.secretsPath, 0o600);
+					await fs.chmod(this.secretsPath, 0o600);
 
 					console.log("Created secrets.json with generated backup password for development");
 					return newPassword;
@@ -125,17 +125,17 @@ export class BackupService {
 	 * Encrypt backup data using password-based encryption
 	 * Uses PBKDF2 for key derivation and AES-256-GCM for encryption
 	 */
-	private encryptBackup(backupJson: string): EncryptedBackupEnvelope {
-		const password = this.getBackupPassword();
+	private async encryptBackup(backupJson: string): Promise<EncryptedBackupEnvelope> {
+		const password = await this.getBackupPassword();
 
 		// Generate random salt for PBKDF2
 		const salt = crypto.randomBytes(32);
 
-		// Derive encryption key from password using PBKDF2
-		const key = crypto.pbkdf2Sync(password, salt, PBKDF2_ITERATIONS, KEY_LENGTH, "sha256");
+		// Derive encryption key from password using PBKDF2 (async to avoid blocking event loop)
+		const key = await this.deriveKey(password, salt, PBKDF2_ITERATIONS);
 
-		// Generate random IV for AES-GCM
-		const iv = crypto.randomBytes(16);
+		// Generate random IV for AES-GCM (12 bytes is optimal for GCM per NIST recommendation)
+		const iv = crypto.randomBytes(12);
 
 		// Create cipher
 		const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
@@ -163,11 +163,27 @@ export class BackupService {
 	}
 
 	/**
+	 * Derive encryption key from password using PBKDF2
+	 * Uses async crypto.pbkdf2 to avoid blocking the event loop
+	 */
+	private async deriveKey(password: string, salt: Buffer, iterations: number): Promise<Buffer> {
+		return new Promise((resolve, reject) => {
+			crypto.pbkdf2(password, salt, iterations, KEY_LENGTH, "sha256", (err, derivedKey) => {
+				if (err) {
+					reject(err);
+				} else {
+					resolve(derivedKey);
+				}
+			});
+		});
+	}
+
+	/**
 	 * Decrypt backup data using password-based encryption
 	 * Verifies authentication tag to ensure data integrity
 	 */
-	private decryptBackup(envelope: EncryptedBackupEnvelope): string {
-		const password = this.getBackupPassword();
+	private async decryptBackup(envelope: EncryptedBackupEnvelope): Promise<string> {
+		const password = await this.getBackupPassword();
 
 		// Validate envelope version
 		if (envelope.version !== "1.0") {
@@ -185,14 +201,22 @@ export class BackupService {
 		const tag = Buffer.from(envelope.tag, "base64");
 		const cipherText = Buffer.from(envelope.cipherText, "base64");
 
-		// Derive decryption key using stored KDF parameters
-		const key = crypto.pbkdf2Sync(
-			password,
-			salt,
-			envelope.kdfParams.iterations,
-			KEY_LENGTH,
-			"sha256"
-		);
+		// Sanity check decoded buffer lengths to fail fast on malformed input
+		if (salt.length !== 32) {
+			throw new Error(`Invalid salt length: expected 32 bytes, got ${salt.length}`);
+		}
+		if (iv.length !== 12) {
+			throw new Error(`Invalid IV length: expected 12 bytes, got ${iv.length}`);
+		}
+		if (tag.length !== 16) {
+			throw new Error(`Invalid auth tag length: expected 16 bytes, got ${tag.length}`);
+		}
+		if (cipherText.length === 0) {
+			throw new Error("Invalid ciphertext: empty buffer");
+		}
+
+		// Derive decryption key using stored KDF parameters (async to avoid blocking event loop)
+		const key = await this.deriveKey(password, salt, envelope.kdfParams.iterations);
 
 		// Create decipher
 		const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
@@ -236,14 +260,13 @@ export class BackupService {
 		const backupJson = JSON.stringify(backup);
 
 		// 6. Encrypt the backup data
-		const encryptedEnvelope = this.encryptBackup(backupJson);
+		const encryptedEnvelope = await this.encryptBackup(backupJson);
 
 		// 7. Convert encrypted envelope to JSON (pretty-printed for storage)
 		const envelopeJson = JSON.stringify(encryptedEnvelope, null, 2);
 
-		// 8. Generate filename
-		const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-		const filename = `arr-dashboard-backup-${timestamp}.json`;
+		// 8. Generate filename using the same timestamp from backup payload to avoid drift
+		const filename = `arr-dashboard-backup-${backup.timestamp.replace(/[:.]/g, "-")}.json`;
 
 		// 9. Determine backup path (organized by type)
 		const typeDir = path.join(this.backupsDir, type);
@@ -251,7 +274,8 @@ export class BackupService {
 		const backupPath = path.join(typeDir, filename);
 
 		// 10. Save encrypted backup to file with restrictive permissions (owner read/write only)
-		await fs.writeFile(backupPath, envelopeJson, { encoding: "utf-8", mode: 0o600 });
+		// Use 'wx' flag to fail if file already exists (prevents accidental overwrite)
+		await fs.writeFile(backupPath, envelopeJson, { encoding: "utf-8", mode: 0o600, flag: "wx" });
 
 		// Fallback: explicitly set permissions to ensure they're enforced
 		// This handles cases where the file system doesn't support mode during creation
@@ -373,7 +397,7 @@ export class BackupService {
 		const envelope = JSON.parse(fileContent) as EncryptedBackupEnvelope;
 
 		// Decrypt to get original backup data
-		const backupData = this.decryptBackup(envelope);
+		const backupData = await this.decryptBackup(envelope);
 
 		// Use existing restore logic
 		return this.restoreBackup(backupData);
@@ -445,7 +469,7 @@ export class BackupService {
 			// Strictly validate format with type checks to avoid misclassification
 			if (this.isEncryptedBackupEnvelope(parsed)) {
 				// It's an encrypted backup - decrypt it
-				decryptedBackupJson = this.decryptBackup(parsed);
+				decryptedBackupJson = await this.decryptBackup(parsed);
 			} else if (this.isPlaintextBackup(parsed)) {
 				// It's a plaintext backup (legacy format) - use as-is
 				decryptedBackupJson = backupData;
@@ -453,7 +477,9 @@ export class BackupService {
 				throw new Error("Invalid backup format: unrecognized structure");
 			}
 		} catch (error) {
-			throw new Error(`Failed to parse backup data: ${error}`);
+			// Properly extract error message instead of stringifying which becomes "[object Object]"
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			throw new Error(`Failed to parse backup data: ${errorMessage}`);
 		}
 
 		// 1. Parse and validate decrypted backup structure
@@ -684,8 +710,8 @@ export class BackupService {
 	 * Generate a unique ID for a backup based on its path
 	 */
 	private generateBackupId(backupPath: string): string {
-		// Use SHA-256 hash of the path as the ID
-		return crypto.createHash("sha256").update(backupPath).digest("hex").substring(0, 16);
+		// Use SHA-256 hash of the path as the ID (24 hex chars = 96 bits for collision resistance)
+		return crypto.createHash("sha256").update(backupPath).digest("hex").substring(0, 24);
 	}
 
 	/**
