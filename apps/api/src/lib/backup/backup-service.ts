@@ -127,7 +127,20 @@ export class BackupService {
 				if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
 					// File disappeared, proceed with write
 				} else if (error instanceof SyntaxError) {
-					// Invalid JSON, proceed with write
+					// Invalid JSON - try to salvage backupPassword before overwriting
+					console.warn("secrets.json has invalid JSON; attempting to salvage backupPassword...");
+					try {
+						// Attempt regex extraction as fallback (recheckContent is already available from outer try block)
+						const backupPasswordMatch = recheckContent.match(/"backupPassword"\s*:\s*"([^"]+)"/);
+						if (backupPasswordMatch && backupPasswordMatch[1]) {
+							console.warn("Found existing backupPassword in invalid JSON, preserving it");
+							return backupPasswordMatch[1];
+						}
+					} catch {
+						// Salvage attempt failed, continue to overwrite
+					}
+					console.warn("Could not salvage backupPassword; existing backups may become inaccessible");
+					// Proceed with write
 				} else {
 					// Unexpected error (e.g., EACCES permission denied), re-throw
 					throw error;
