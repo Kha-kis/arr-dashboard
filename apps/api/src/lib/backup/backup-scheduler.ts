@@ -205,7 +205,7 @@ export class BackupScheduler {
 			case "DAILY":
 				return new Date(now.getTime() + intervalValue * 24 * 60 * 60 * 1000);
 			case "WEEKLY":
-				return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+				return new Date(now.getTime() + 7 * intervalValue * 24 * 60 * 60 * 1000);
 			default:
 				return new Date(now.getTime() + 24 * 60 * 60 * 1000); // Default to 24 hours
 		}
