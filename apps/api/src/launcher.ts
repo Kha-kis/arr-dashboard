@@ -28,6 +28,10 @@ let restartTimestamps: number[] = [];
 // This prevents signal handler accumulation on restarts
 let serverProcess: ReturnType<typeof spawn> | null = null;
 
+// Module-level state for coordinated shutdown and pending restart cancellation
+let isShuttingDown = false;
+let restartTimer: NodeJS.Timeout | null = null;
+
 /**
  * Log a message to stdout prefixed with "[Launcher]".
  *
@@ -40,12 +44,38 @@ function log(message: string) {
 // Handle launcher termination (registered once at module level)
 // These handlers use the module-level serverProcess variable to avoid accumulation
 process.on("SIGTERM", () => {
+	// Prevent duplicate shutdown attempts
+	if (isShuttingDown) {
+		return;
+	}
+
+	isShuttingDown = true;
 	log("Received SIGTERM, shutting down...");
+
+	// Cancel any pending restart to avoid race conditions
+	if (restartTimer) {
+		clearTimeout(restartTimer);
+		restartTimer = null;
+	}
+
 	serverProcess?.kill("SIGTERM");
 });
 
 process.on("SIGINT", () => {
+	// Prevent duplicate shutdown attempts
+	if (isShuttingDown) {
+		return;
+	}
+
+	isShuttingDown = true;
 	log("Received SIGINT, shutting down...");
+
+	// Cancel any pending restart to avoid race conditions
+	if (restartTimer) {
+		clearTimeout(restartTimer);
+		restartTimer = null;
+	}
+
 	serverProcess?.kill("SIGINT");
 });
 
@@ -79,6 +109,12 @@ function shouldAllowRestart(): boolean {
  * Starts the child application in either development mode (runs the TypeScript source via `tsx`) or production mode (runs the compiled `index.js` with source maps), sets `LAUNCHER_MANAGED` in the child's environment, and inherits stdio. If the child exits with the restart code, records the restart, enforces the restart rate limit, and schedules a restart after one second; if the child exits normally or with any other code, the launcher exits with that code. The spawned process is assigned to the module-level `serverProcess` variable, which is used by the top-level signal handlers to forward termination signals.
  */
 function startServer() {
+	// Prevent spawning during shutdown to avoid race conditions
+	if (isShuttingDown) {
+		log("Shutdown in progress, skipping server start");
+		return;
+	}
+
 	log("Starting application...");
 
 	// Determine if we're in development or production
@@ -119,8 +155,11 @@ function startServer() {
 			}
 
 			log(`Restart requested (count: ${restartCount}). Restarting in 1 second...`);
-			setTimeout(() => {
-				startServer();
+			restartTimer = setTimeout(() => {
+				// Check if shutdown was initiated during the delay
+				if (!isShuttingDown) {
+					startServer();
+				}
 			}, 1000);
 		} else {
 			// Normal exit or error
