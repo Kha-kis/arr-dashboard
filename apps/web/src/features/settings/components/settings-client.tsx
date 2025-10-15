@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { CurrentUser } from "@arr/shared";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useTagsQuery } from "../../../hooks/api/useTags";
 import { useDiscoverOptionsQuery } from "../../../hooks/api/useDiscover";
@@ -21,6 +22,7 @@ import { AccountTab } from "./account-tab";
 import { OIDCProviderSection } from "./oidc-provider-section";
 import { PasskeySection } from "./passkey-section";
 import { PasswordSection } from "./password-section";
+import { BackupTab } from "./backup-tab";
 
 /**
  * Main settings client component
@@ -199,6 +201,9 @@ export const SettingsClient = () => {
 					<OIDCProviderSection />
 				</div>
 			)}
+
+			{/* Backup tab */}
+			{activeTab === "backup" && <BackupTab />}
 		</section>
 	);
 };
