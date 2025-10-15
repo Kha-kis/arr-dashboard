@@ -22,7 +22,8 @@ export class LifecycleService {
 	 */
 	async restart(reason: string): Promise<void> {
 		if (this.isShuttingDown) {
-			throw new Error("Application is already shutting down");
+			this.app.log.warn("Restart already in progress; ignoring duplicate request");
+			return;
 		}
 
 		this.isShuttingDown = true;
@@ -37,8 +38,8 @@ export class LifecycleService {
 		);
 
 		// Schedule the actual restart after allowing time for response to be sent
-		setTimeout(async () => {
-			await this.performRestart();
+		setTimeout(() => {
+			void this.performRestart();
 		}, 1500);
 	}
 
@@ -145,6 +146,7 @@ export class LifecycleService {
 			const child = spawn(nodeExecutable, process.argv.slice(1), {
 				detached: true,
 				stdio: ["ignore", "ignore", "ignore"],
+				windowsHide: true,
 				env: {
 					...process.env,
 					// Signal to new process that it's a restart
