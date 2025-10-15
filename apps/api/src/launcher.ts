@@ -24,6 +24,10 @@ const MAX_RESTARTS = 10;
 const RESTART_WINDOW_MS = 60000; // 1 minute
 let restartTimestamps: number[] = [];
 
+// Module-level variable to track the current server process
+// This prevents signal handler accumulation on restarts
+let serverProcess: ReturnType<typeof spawn> | null = null;
+
 /**
  * Log a message to stdout prefixed with "[Launcher]".
  *
@@ -32,6 +36,18 @@ let restartTimestamps: number[] = [];
 function log(message: string) {
 	console.log(`[Launcher] ${message}`);
 }
+
+// Handle launcher termination (registered once at module level)
+// These handlers use the module-level serverProcess variable to avoid accumulation
+process.on("SIGTERM", () => {
+	log("Received SIGTERM, shutting down...");
+	serverProcess?.kill("SIGTERM");
+});
+
+process.on("SIGINT", () => {
+	log("Received SIGINT, shutting down...");
+	serverProcess?.kill("SIGINT");
+});
 
 /**
  * Decides whether a new restart is permitted based on recent restart history.
@@ -58,9 +74,9 @@ function shouldAllowRestart(): boolean {
 }
 
 /**
- * Spawn and manage the application process, restarting it when it exits with the designated restart code and forwarding termination signals.
+ * Spawn and manage the application process, restarting it when it exits with the designated restart code.
  *
- * Starts the child application in either development mode (runs the TypeScript source via `tsx`) or production mode (runs the compiled `index.js` with source maps), sets `LAUNCHER_MANAGED` in the child's environment, and inherits stdio. If the child exits with the restart code, records the restart, enforces the restart rate limit, and schedules a restart after one second; if the child exits normally or with any other code, the launcher exits with that code. The launcher also forwards `SIGTERM` and `SIGINT` to the child process.
+ * Starts the child application in either development mode (runs the TypeScript source via `tsx`) or production mode (runs the compiled `index.js` with source maps), sets `LAUNCHER_MANAGED` in the child's environment, and inherits stdio. If the child exits with the restart code, records the restart, enforces the restart rate limit, and schedules a restart after one second; if the child exits normally or with any other code, the launcher exits with that code. The spawned process is assigned to the module-level `serverProcess` variable, which is used by the top-level signal handlers to forward termination signals.
  */
 function startServer() {
 	log("Starting application...");
@@ -75,8 +91,8 @@ function startServer() {
 		? ["src/index.ts"]
 		: ["--enable-source-maps", path.join(__dirname, "index.js")];
 
-	// Spawn the actual server process
-	const serverProcess = spawn(command, args, {
+	// Spawn the actual server process and assign to module-level variable
+	serverProcess = spawn(command, args, {
 		stdio: "inherit",
 		env: {
 			...process.env,
@@ -115,17 +131,6 @@ function startServer() {
 			}
 			process.exit(code || 0);
 		}
-	});
-
-	// Handle launcher termination
-	process.on("SIGTERM", () => {
-		log("Received SIGTERM, shutting down...");
-		serverProcess.kill("SIGTERM");
-	});
-
-	process.on("SIGINT", () => {
-		log("Received SIGINT, shutting down...");
-		serverProcess.kill("SIGINT");
 	});
 }
 
