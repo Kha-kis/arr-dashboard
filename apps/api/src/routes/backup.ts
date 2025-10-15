@@ -22,7 +22,8 @@ const DELETE_RATE_LIMIT = { max: 5, timeWindow: "5 minutes" };
 const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	// Helper to create backup service instance
 	const getBackupService = () => {
-		const databaseUrl = process.env.DATABASE_URL || "file:./dev.db";
+		// Use app.config.DATABASE_URL (includes env schema defaults) not process.env
+		const databaseUrl = app.config.DATABASE_URL || "file:./dev.db";
 		const secretsPath = resolveSecretsPath(databaseUrl);
 		return new BackupService(app.prisma, secretsPath);
 	};
