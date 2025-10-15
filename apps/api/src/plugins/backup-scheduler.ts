@@ -11,15 +11,15 @@ declare module "fastify" {
 
 const backupSchedulerPlugin = fastifyPlugin(
 	async (app: FastifyInstance) => {
-		// Determine secrets path based on DATABASE_URL using shared helper
-		const databaseUrl = process.env.DATABASE_URL || "file:./dev.db";
-		const secretsPath = resolveSecretsPath(databaseUrl);
-
-		// Use onReady hook to ensure Prisma is fully initialized before creating scheduler
+		// Use onReady hook to ensure config and Prisma are fully initialized before creating scheduler
 		app.addHook("onReady", async () => {
 			app.log.info("Initializing backup scheduler");
 
-			// Create and register backup scheduler (Prisma is guaranteed to be ready)
+			// Determine secrets path based on DATABASE_URL from app config (canonical source)
+			const databaseUrl = app.config.DATABASE_URL || "file:./dev.db";
+			const secretsPath = resolveSecretsPath(databaseUrl);
+
+			// Create and register backup scheduler (Prisma and config are guaranteed to be ready)
 			const scheduler = new BackupScheduler(app.prisma, app.log, secretsPath);
 			app.decorate("backupScheduler", scheduler);
 
