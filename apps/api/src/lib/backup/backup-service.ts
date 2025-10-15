@@ -472,6 +472,7 @@ export class BackupService {
 
 	/**
 	 * Restore database from backup data
+	 * Uses bulk inserts for better performance and validates data before restoration
 	 */
 	private async restoreDatabase(data: BackupData["data"]) {
 		// Use a transaction to ensure atomicity
@@ -488,47 +489,98 @@ export class BackupService {
 
 			// Restore data (in order of dependencies)
 			// Users first (no dependencies)
-			for (const user of data.users) {
-				await tx.user.create({ data: user as Prisma.UserCreateInput });
+			if (data.users.length > 0) {
+				this.validateRecords(data.users, "user", ["id", "username"]);
+				await tx.user.createMany({
+					data: data.users as Prisma.UserCreateManyInput[],
+					skipDuplicates: false,
+				});
 			}
 
 			// Sessions (depend on users)
-			for (const session of data.sessions) {
-				await tx.session.create({ data: session as Prisma.SessionCreateInput });
+			if (data.sessions.length > 0) {
+				this.validateRecords(data.sessions, "session", ["id", "userId", "expiresAt"]);
+				await tx.session.createMany({
+					data: data.sessions as Prisma.SessionCreateManyInput[],
+					skipDuplicates: false,
+				});
 			}
 
 			// OIDC providers (no dependencies) - optional for backward compatibility
-			if (data.oidcProviders) {
-				for (const provider of data.oidcProviders) {
-					await tx.oIDCProvider.create({ data: provider as Prisma.OIDCProviderCreateInput });
-				}
+			if (data.oidcProviders && data.oidcProviders.length > 0) {
+				this.validateRecords(data.oidcProviders, "oidcProvider", ["id", "clientId", "issuer"]);
+				await tx.oIDCProvider.createMany({
+					data: data.oidcProviders as Prisma.OIDCProviderCreateManyInput[],
+					skipDuplicates: false,
+				});
 			}
 
 			// OIDC accounts (depend on users)
-			for (const oidcAccount of data.oidcAccounts) {
-				await tx.oIDCAccount.create({ data: oidcAccount as Prisma.OIDCAccountCreateInput });
+			if (data.oidcAccounts.length > 0) {
+				this.validateRecords(data.oidcAccounts, "oidcAccount", ["id", "userId", "provider"]);
+				await tx.oIDCAccount.createMany({
+					data: data.oidcAccounts as Prisma.OIDCAccountCreateManyInput[],
+					skipDuplicates: false,
+				});
 			}
 
 			// WebAuthn credentials (depend on users)
-			for (const credential of data.webAuthnCredentials) {
-				await tx.webAuthnCredential.create({ data: credential as Prisma.WebAuthnCredentialCreateInput });
+			if (data.webAuthnCredentials.length > 0) {
+				this.validateRecords(data.webAuthnCredentials, "webAuthnCredential", ["id", "userId", "publicKey"]);
+				await tx.webAuthnCredential.createMany({
+					data: data.webAuthnCredentials as Prisma.WebAuthnCredentialCreateManyInput[],
+					skipDuplicates: false,
+				});
 			}
 
 			// Service instances (no user dependency based on schema)
-			for (const instance of data.serviceInstances) {
-				await tx.serviceInstance.create({ data: instance as Prisma.ServiceInstanceCreateInput });
+			if (data.serviceInstances.length > 0) {
+				this.validateRecords(data.serviceInstances, "serviceInstance", ["id", "service", "baseUrl"]);
+				await tx.serviceInstance.createMany({
+					data: data.serviceInstances as Prisma.ServiceInstanceCreateManyInput[],
+					skipDuplicates: false,
+				});
 			}
 
 			// Service tags (no dependencies)
-			for (const tag of data.serviceTags) {
-				await tx.serviceTag.create({ data: tag as Prisma.ServiceTagCreateInput });
+			if (data.serviceTags.length > 0) {
+				this.validateRecords(data.serviceTags, "serviceTag", ["id", "name"]);
+				await tx.serviceTag.createMany({
+					data: data.serviceTags as Prisma.ServiceTagCreateManyInput[],
+					skipDuplicates: false,
+				});
 			}
 
 			// Service instance tags (depend on instances and tags)
-			for (const instanceTag of data.serviceInstanceTags) {
-				await tx.serviceInstanceTag.create({ data: instanceTag as Prisma.ServiceInstanceTagCreateInput });
+			if (data.serviceInstanceTags.length > 0) {
+				this.validateRecords(data.serviceInstanceTags, "serviceInstanceTag", ["instanceId", "tagId"]);
+				await tx.serviceInstanceTag.createMany({
+					data: data.serviceInstanceTags as Prisma.ServiceInstanceTagCreateManyInput[],
+					skipDuplicates: false,
+				});
 			}
 		});
+	}
+
+	/**
+	 * Validate that records have the expected shape before inserting
+	 * Prevents runtime errors from corrupted or incompatible backup data
+	 */
+	private validateRecords(records: unknown[], entityType: string, requiredFields: string[]): void {
+		for (let i = 0; i < records.length; i++) {
+			const record = records[i];
+
+			if (!record || typeof record !== "object") {
+				throw new Error(`Invalid ${entityType} record at index ${i}: not an object`);
+			}
+
+			const recordObj = record as Record<string, unknown>;
+			for (const field of requiredFields) {
+				if (!(field in recordObj) || recordObj[field] === undefined) {
+					throw new Error(`Invalid ${entityType} record at index ${i}: missing required field '${field}'`);
+				}
+			}
+		}
 	}
 
 	/**
