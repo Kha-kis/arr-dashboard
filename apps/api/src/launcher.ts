@@ -58,7 +58,14 @@ process.on("SIGTERM", () => {
 		restartTimer = null;
 	}
 
-	serverProcess?.kill("SIGTERM");
+	// Attempt to kill the child process if it's running
+	if (serverProcess) {
+		serverProcess.kill("SIGTERM");
+	} else {
+		// No child process running (e.g., during restart delay), exit immediately
+		log("No child process running, exiting launcher");
+		process.exit(0);
+	}
 });
 
 process.on("SIGINT", () => {
@@ -76,7 +83,14 @@ process.on("SIGINT", () => {
 		restartTimer = null;
 	}
 
-	serverProcess?.kill("SIGINT");
+	// Attempt to kill the child process if it's running
+	if (serverProcess) {
+		serverProcess.kill("SIGINT");
+	} else {
+		// No child process running (e.g., during restart delay), exit immediately
+		log("No child process running, exiting launcher");
+		process.exit(0);
+	}
 });
 
 /**
@@ -138,6 +152,9 @@ function startServer() {
 	});
 
 	serverProcess.on("exit", (code, signal) => {
+		// Clear the process reference immediately so signal handlers know there's no live child
+		serverProcess = null;
+
 		if (signal) {
 			log(`Application killed by signal ${signal}`);
 			process.exit(1);
