@@ -23,7 +23,6 @@ import { OIDCProviderSection } from "./oidc-provider-section";
 import { PasskeySection } from "./passkey-section";
 import { PasswordSection } from "./password-section";
 import { BackupTab } from "./backup-tab";
-import { ArrSyncTab } from "./arr-sync-tab";
 
 /**
  * Main settings client component
@@ -205,9 +204,6 @@ export const SettingsClient = () => {
 
 			{/* Backup tab */}
 			{activeTab === "backup" && <BackupTab />}
-
-			{/* ARR Sync tab */}
-			{activeTab === "arr-sync" && <ArrSyncTab />}
 		</section>
 	);
 };
