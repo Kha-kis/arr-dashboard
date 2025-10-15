@@ -549,11 +549,25 @@ export class BackupService {
 
 	/**
 	 * Write secrets to secrets.json with restrictive permissions (0o600)
+	 * Merges with existing secrets to preserve additional fields like backupPassword
 	 * Only the owner can read/write the secrets file for enhanced security
 	 */
 	private async writeSecrets(secrets: BackupData["secrets"]): Promise<void> {
 		try {
-			const secretsContent = JSON.stringify(secrets, null, 2);
+			// Read existing secrets to preserve fields not in backup (e.g., backupPassword)
+			let existingSecrets: Record<string, unknown> = {};
+			try {
+				const existingContent = await fs.readFile(this.secretsPath, "utf-8");
+				existingSecrets = JSON.parse(existingContent);
+			} catch {
+				// File doesn't exist or is invalid, start with empty object
+			}
+
+			// Merge backup secrets with existing ones
+			// Backup secrets take precedence, but existing fields are preserved
+			const mergedSecrets = { ...existingSecrets, ...secrets };
+
+			const secretsContent = JSON.stringify(mergedSecrets, null, 2);
 			// Write with restrictive permissions (owner read/write only)
 			await fs.writeFile(this.secretsPath, secretsContent, { encoding: "utf-8", mode: 0o600 });
 
