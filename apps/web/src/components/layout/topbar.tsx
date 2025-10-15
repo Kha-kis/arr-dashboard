@@ -3,12 +3,13 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { EyeOff, Eye } from "lucide-react";
+import type { CurrentUser } from "@arr/shared";
 import { useCurrentUser, useLogoutMutation } from "../../hooks/api/useAuth";
 import { useIncognitoMode } from "../../lib/incognito";
 import { Button } from "../ui/button";
 
 export const TopBar = () => {
-	const { data: user } = useCurrentUser();
+	const { data: user } = useCurrentUser() as { data: CurrentUser | null | undefined };
 	const pathname = usePathname();
 	const router = useRouter();
 	const logoutMutation = useLogoutMutation();
@@ -60,7 +61,7 @@ export const TopBar = () => {
 
 							<div className="relative h-9 w-9 rounded-full bg-gradient-to-br from-primary to-accent text-white flex items-center justify-center shadow-md ring-1 ring-white/10">
 								<span className="text-sm font-semibold">
-									{user.username[0]?.toUpperCase() ?? "U"}
+									{user.username?.[0]?.toUpperCase() ?? "U"}
 								</span>
 							</div>
 							<div className="text-right relative">

@@ -48,7 +48,7 @@ export const useLogoutMutation = () => {
 export const useCurrentUser = (enabled: boolean = true) => {
 	const queryClient = useQueryClient();
 
-	return useQuery<CurrentUser | null>({
+	const query = useQuery<CurrentUser | null>({
 		queryKey: ["current-user"],
 		queryFn: fetchCurrentUser,
 		staleTime: 5 * 60 * 1000,
@@ -56,15 +56,14 @@ export const useCurrentUser = (enabled: boolean = true) => {
 		enabled,
 		refetchOnMount: false,
 		refetchOnWindowFocus: false,
-		// Clear user data from cache on 401 errors to force re-authentication
-		onError: (error: unknown) => {
-			// Check if error is 401 Unauthorized
-			if (error && typeof error === "object" && "status" in error && error.status === 401) {
-				// Clear all cached user data to force login flow
-				queryClient.setQueryData(["current-user"], null);
-			}
-		},
 	});
+
+	// Handle 401 errors to clear stale cache
+	if (query.error && typeof query.error === "object" && "status" in query.error && query.error.status === 401) {
+		queryClient.setQueryData(["current-user"], null);
+	}
+
+	return query;
 };
 
 // Update Account

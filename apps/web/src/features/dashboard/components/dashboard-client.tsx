@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { QueueItem } from "@arr/shared";
+import type { CurrentUser, QueueItem } from "@arr/shared";
 import { useCurrentUser } from "../../../hooks/api/useAuth";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useMultiInstanceQueueQuery } from "../../../hooks/api/useDashboard";
@@ -30,7 +30,11 @@ const SERVICE_FILTERS = [
 ];
 
 export const DashboardClient = () => {
-	const { data: currentUser, isLoading: userLoading, error: userError } = useCurrentUser();
+	const { data: currentUser, isLoading: userLoading, error: userError } = useCurrentUser() as {
+		data: CurrentUser | null | undefined;
+		isLoading: boolean;
+		error: unknown;
+	};
 	const [incognitoMode] = useIncognitoMode();
 
 	const servicesQuery = useServicesQuery({ enabled: Boolean(currentUser) });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { CurrentUser } from "@arr/shared";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useTagsQuery } from "../../../hooks/api/useTags";
 import { useDiscoverOptionsQuery } from "../../../hooks/api/useDiscover";
@@ -39,7 +40,7 @@ export const SettingsClient = () => {
 	// Data queries
 	const { data: services = [], isLoading: servicesLoading } = useServicesQuery();
 	const { data: tags = [] } = useTagsQuery();
-	const { data: currentUser } = useCurrentUser();
+	const { data: currentUser } = useCurrentUser() as { data: CurrentUser | null | undefined };
 
 	// Local state
 	const [activeTab, setActiveTab] = useState<TabType>("services");
