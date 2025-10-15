@@ -488,19 +488,63 @@ export class BackupService {
 		const backup = parsed as BackupData;
 		this.validateBackup(backup);
 
-		// 2. Restore database (in a transaction for atomicity)
-		await this.restoreDatabase(backup.data);
+		// 2. Perform atomic restore with two-phase commit pattern to prevent partial restore
+		const secretsBackupPath = `${this.secretsPath}.restore-backup`;
+		let secretsBackedUp = false;
 
-		// 3. Restore secrets file
-		await this.writeSecrets(backup.secrets);
+		try {
+			// Phase 1: Backup current secrets before making any changes
+			try {
+				const currentSecrets = await fs.readFile(this.secretsPath, "utf-8");
+				await fs.writeFile(secretsBackupPath, currentSecrets, { encoding: "utf-8", mode: 0o600 });
+				secretsBackedUp = true;
+			} catch (error) {
+				// If secrets file doesn't exist yet, that's okay - no need to back up
+				if (error && typeof error === "object" && "code" in error && error.code !== "ENOENT") {
+					throw new Error(`Failed to backup current secrets: ${error}`);
+				}
+			}
 
-		// 4. Return metadata
-		return {
-			version: backup.version,
-			appVersion: backup.appVersion,
-			timestamp: backup.timestamp,
-			dataSize: JSON.stringify(backup).length,
-		};
+			// Phase 2: Write new secrets
+			await this.writeSecrets(backup.secrets);
+
+			// Phase 3: Restore database (in a transaction for atomicity)
+			// If this fails, we need to restore the backed-up secrets
+			await this.restoreDatabase(backup.data);
+
+			// Phase 4: Success - clean up backup
+			if (secretsBackedUp) {
+				await fs.unlink(secretsBackupPath).catch(() => {
+					// Ignore errors during cleanup
+				});
+			}
+
+			// 3. Return metadata
+			return {
+				version: backup.version,
+				appVersion: backup.appVersion,
+				timestamp: backup.timestamp,
+				dataSize: JSON.stringify(backup).length,
+			};
+		} catch (error) {
+			// Rollback: Restore the backed-up secrets if database restore failed
+			if (secretsBackedUp) {
+				try {
+					const backedUpSecrets = await fs.readFile(secretsBackupPath, "utf-8");
+					await fs.writeFile(this.secretsPath, backedUpSecrets, { encoding: "utf-8", mode: 0o600 });
+					await fs.chmod(this.secretsPath, 0o600);
+					await fs.unlink(secretsBackupPath).catch(() => {
+						// Ignore errors during cleanup
+					});
+				} catch (rollbackError) {
+					// Log rollback failure but throw original error
+					console.error("CRITICAL: Failed to rollback secrets after restore failure:", rollbackError);
+				}
+			}
+
+			// Re-throw the original error
+			throw error;
+		}
 	}
 
 	/**
