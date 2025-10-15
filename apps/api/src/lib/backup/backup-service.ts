@@ -32,6 +32,9 @@ interface EncryptedBackupEnvelope {
 
 export class BackupService {
 	private backupsDir: string;
+	// In-memory cache to reduce file system contention for dev password
+	private devPasswordCache: string | null = null;
+	private devPasswordPromise: Promise<string> | null = null;
 
 	constructor(
 		private prisma: PrismaClient,
@@ -68,10 +71,36 @@ export class BackupService {
 
 	/**
 	 * Get or generate a development backup password
+	 * Uses in-memory cache to reduce file system contention
+	 * Deduplicates concurrent generation attempts by sharing the same Promise
+	 */
+	private async getOrGenerateDevBackupPassword(): Promise<string> {
+		// Return cached value if available
+		if (this.devPasswordCache) {
+			return this.devPasswordCache;
+		}
+
+		// If already generating, await the same promise
+		if (this.devPasswordPromise) {
+			return this.devPasswordPromise;
+		}
+
+		// Start generation
+		this.devPasswordPromise = this._generateDevBackupPassword();
+		try {
+			this.devPasswordCache = await this.devPasswordPromise;
+			return this.devPasswordCache;
+		} finally {
+			this.devPasswordPromise = null;
+		}
+	}
+
+	/**
+	 * Generate a development backup password and persist to secrets.json
 	 * Generates a cryptographically strong random password and persists it to secrets.json
 	 * Uses async file operations to avoid blocking the event loop
 	 */
-	private async getOrGenerateDevBackupPassword(): Promise<string> {
+	private async _generateDevBackupPassword(): Promise<string> {
 		try {
 			// Try to read existing secrets file
 			const secretsContent = await fs.readFile(this.secretsPath, "utf-8");
