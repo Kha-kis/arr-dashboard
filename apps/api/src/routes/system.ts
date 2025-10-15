@@ -28,9 +28,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		});
 
 		// Initiate restart
-		if (app.lifecycle.isRestartRequired()) {
-			await app.lifecycle.restart("manual-restart");
-		}
+		await app.lifecycle.restart("manual-restart");
 	});
 
 	done();
