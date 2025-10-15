@@ -12,6 +12,7 @@ const KEY_LENGTH = 32; // 256 bits for AES-256
 // These limits help prevent out-of-memory errors during JSON stringification and encryption
 const RECOMMENDED_MAX_BACKUP_SIZE_MB = 100; // 100 MB recommended limit for backup data
 const WARNING_BACKUP_SIZE_MB = 50; // Log warning when backup exceeds this size
+const MAX_RESTORE_SIZE_MB = 200; // Maximum size for restore operations (defense against malicious files)
 
 type BackupType = "manual" | "scheduled" | "update";
 
@@ -374,11 +375,30 @@ export class BackupService {
 		// 10. Determine backup path (organized by type)
 		const typeDir = path.join(this.backupsDir, type);
 		await fs.mkdir(typeDir, { recursive: true });
-		const backupPath = path.join(typeDir, filename);
+		let backupPath = path.join(typeDir, filename);
 
 		// 11. Save encrypted backup to file with restrictive permissions (owner read/write only)
 		// Use 'wx' flag to fail if file already exists (prevents accidental overwrite)
-		await fs.writeFile(backupPath, envelopeJson, { encoding: "utf-8", mode: 0o600, flag: "wx" });
+		// Retry with random suffix on timestamp collision to improve resilience
+		let attempt = 0;
+		let finalPath = backupPath;
+		while (attempt < 5) {
+			try {
+				await fs.writeFile(finalPath, envelopeJson, { encoding: "utf-8", mode: 0o600, flag: "wx" });
+				break; // Success
+			} catch (error) {
+				// If file exists and we have retries left, add random suffix and retry
+				if (error && typeof error === "object" && "code" in error && error.code === "EEXIST" && attempt < 4) {
+					const suffix = crypto.randomBytes(4).toString("hex");
+					finalPath = backupPath.replace(".json", `-${suffix}.json`);
+					attempt++;
+				} else {
+					// Re-throw on other errors or if retries exhausted
+					throw error;
+				}
+			}
+		}
+		backupPath = finalPath; // Update backupPath for subsequent operations
 
 		// Fallback: explicitly set permissions to ensure they're enforced
 		// This handles cases where the file system doesn't support mode during creation
@@ -491,6 +511,16 @@ export class BackupService {
 		const backup = await this.getBackupByIdInternal(id);
 		if (!backup) {
 			throw new Error(`Backup with ID ${id} not found`);
+		}
+
+		// Optional: Validate file size before reading (defense-in-depth against malicious files)
+		// While createBackup enforces ~100 MB limit, manually created or maliciously large backup files
+		// could cause OOM errors. Allow slightly larger files than creation limit for flexibility.
+		const sizeMB = backup.size / (1024 * 1024);
+		if (sizeMB > MAX_RESTORE_SIZE_MB) {
+			throw new Error(
+				`Backup file too large (${sizeMB.toFixed(1)} MB). Maximum allowed: ${MAX_RESTORE_SIZE_MB} MB`
+			);
 		}
 
 		// Read encrypted backup file
