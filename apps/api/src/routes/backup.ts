@@ -13,6 +13,7 @@ import {
 	type RestoreBackupResponse,
 } from "@arr/shared";
 import { BackupService } from "../lib/backup/backup-service.js";
+import { getAppVersion } from "../lib/utils/version.js";
 
 const BACKUP_RATE_LIMIT = { max: 3, timeWindow: "5 minutes" };
 const RESTORE_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };
@@ -51,11 +52,11 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			const response: ListBackupsResponse = { backups };
 			return reply.send(response);
-		} catch (error: any) {
+		} catch (error) {
 			request.log.error({ err: error }, "Failed to list backups");
 			return reply.status(500).send({
 				error: "Failed to list backups",
-				details: error.message,
+				details: error instanceof Error ? error.message : String(error),
 			});
 		}
 	});
@@ -80,8 +81,8 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			try {
 				const backupService = getBackupService();
 
-				// Get app version from package.json
-				const appVersion = "2.2.0"; // TODO: Load from package.json
+				// Get app version from root package.json
+				const appVersion = getAppVersion();
 
 				// Create backup and save to filesystem
 				const backupInfo = await backupService.createBackup(appVersion, "manual");
@@ -99,11 +100,11 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				const response: BackupFileInfo = backupInfo;
 
 				return reply.send(response);
-			} catch (error: any) {
+			} catch (error) {
 				request.log.error({ err: error }, "Failed to create backup");
 				return reply.status(500).send({
 					error: "Failed to create backup",
-					details: error.message,
+					details: error instanceof Error ? error.message : String(error),
 				});
 			}
 		},
@@ -158,19 +159,21 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				if (app.lifecycle.isRestartRequired()) {
 					await app.lifecycle.restart("backup-restore");
 				}
-			} catch (error: any) {
+			} catch (error) {
 				request.log.error({ err: error }, "Failed to restore backup");
 
+				const errorMessage = error instanceof Error ? error.message : String(error);
+
 				// Check for specific error types
-				if (error.message.includes("Invalid backup format") || error.message.includes("version")) {
+				if (errorMessage.includes("Invalid backup format") || errorMessage.includes("version")) {
 					return reply.status(400).send({
-						error: `Failed to restore backup: ${error.message}`,
+						error: `Failed to restore backup: ${errorMessage}`,
 					});
 				}
 
 				return reply.status(500).send({
 					error: "Failed to restore backup",
-					details: error.message,
+					details: errorMessage,
 				});
 			}
 		},
@@ -224,25 +227,27 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				if (app.lifecycle.isRestartRequired()) {
 					await app.lifecycle.restart("backup-restore");
 				}
-			} catch (error: any) {
+			} catch (error) {
 				request.log.error({ err: error }, "Failed to restore backup from file");
 
+				const errorMessage = error instanceof Error ? error.message : String(error);
+
 				// Check for specific error types
-				if (error.message.includes("not found")) {
+				if (errorMessage.includes("not found")) {
 					return reply.status(404).send({
-						error: `Backup not found: ${error.message}`,
+						error: `Backup not found: ${errorMessage}`,
 					});
 				}
 
-				if (error.message.includes("Invalid backup format") || error.message.includes("version")) {
+				if (errorMessage.includes("Invalid backup format") || errorMessage.includes("version")) {
 					return reply.status(400).send({
-						error: `Failed to restore backup: ${error.message}`,
+						error: `Failed to restore backup: ${errorMessage}`,
 					});
 				}
 
 				return reply.status(500).send({
 					error: "Failed to restore backup",
-					details: error.message,
+					details: errorMessage,
 				});
 			}
 		},
@@ -282,11 +287,11 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				.header("Content-Type", "application/octet-stream")
 				.header("Content-Disposition", `attachment; filename="${backup.filename}"`)
 				.send(fileBuffer);
-		} catch (error: any) {
+		} catch (error) {
 			request.log.error({ err: error }, "Failed to download backup");
 			return reply.status(500).send({
 				error: "Failed to download backup",
-				details: error.message,
+				details: error instanceof Error ? error.message : String(error),
 			});
 		}
 	});
@@ -324,18 +329,20 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				);
 
 				return reply.send({ success: true, message: "Backup deleted successfully" });
-			} catch (error: any) {
+			} catch (error) {
 				request.log.error({ err: error }, "Failed to delete backup");
 
-				if (error.message.includes("not found")) {
+				const errorMessage = error instanceof Error ? error.message : String(error);
+
+				if (errorMessage.includes("not found")) {
 					return reply.status(404).send({
-						error: `Backup not found: ${error.message}`,
+						error: `Backup not found: ${errorMessage}`,
 					});
 				}
 
 				return reply.status(500).send({
 					error: "Failed to delete backup",
-					details: error.message,
+					details: errorMessage,
 				});
 			}
 		},
@@ -376,11 +383,11 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			};
 
 			return reply.send(response);
-		} catch (error: any) {
+		} catch (error) {
 			request.log.error({ err: error }, "Failed to get backup settings");
 			return reply.status(500).send({
 				error: "Failed to get backup settings",
-				details: error.message,
+				details: error instanceof Error ? error.message : String(error),
 			});
 		}
 	});
@@ -466,11 +473,11 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			};
 
 			return reply.send(response);
-		} catch (error: any) {
+		} catch (error) {
 			request.log.error({ err: error }, "Failed to update backup settings");
 			return reply.status(500).send({
 				error: "Failed to update backup settings",
-				details: error.message,
+				details: error instanceof Error ? error.message : String(error),
 			});
 		}
 	});

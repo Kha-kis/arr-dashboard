@@ -2,6 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { FastifyBaseLogger } from "fastify";
 import path from "node:path";
 import { BackupService } from "./backup-service.js";
+import { getAppVersion } from "../utils/version.js";
 
 const CHECK_INTERVAL_MS = 60 * 1000; // Check every minute
 
@@ -137,8 +138,8 @@ export class BackupScheduler {
 	 */
 	private async runScheduledBackup(retentionCount: number) {
 		try {
-			// Create the backup
-			const appVersion = "2.2.0"; // TODO: Load from package.json
+			// Create the backup with version from root package.json
+			const appVersion = getAppVersion();
 			await this.backupService.createBackup(appVersion, "scheduled");
 
 			// Clean up old backups
