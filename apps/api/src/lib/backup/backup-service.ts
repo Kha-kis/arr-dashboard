@@ -460,19 +460,21 @@ export class BackupService {
 	 * For uploaded backups, this receives the base64-decoded backup data
 	 */
 	async restoreBackup(backupData: string): Promise<BackupMetadata> {
-		let decryptedBackupJson: string;
+		let parsed: unknown;
 
 		try {
 			// Try to parse JSON
-			const parsed = JSON.parse(backupData);
+			parsed = JSON.parse(backupData);
 
 			// Strictly validate format with type checks to avoid misclassification
 			if (this.isEncryptedBackupEnvelope(parsed)) {
 				// It's an encrypted backup - decrypt it
-				decryptedBackupJson = await this.decryptBackup(parsed);
+				const decryptedBackupJson = await this.decryptBackup(parsed);
+				// Re-parse after decryption
+				parsed = JSON.parse(decryptedBackupJson);
 			} else if (this.isPlaintextBackup(parsed)) {
-				// It's a plaintext backup (legacy format) - use as-is
-				decryptedBackupJson = backupData;
+				// It's a plaintext backup (legacy format) - parsed already contains the backup data
+				// No need to parse again
 			} else {
 				throw new Error("Invalid backup format: unrecognized structure");
 			}
@@ -482,8 +484,8 @@ export class BackupService {
 			throw new Error(`Failed to parse backup data: ${errorMessage}`);
 		}
 
-		// 1. Parse and validate decrypted backup structure
-		const backup = JSON.parse(decryptedBackupJson) as BackupData;
+		// 1. Validate backup structure (parsed now contains the backup object)
+		const backup = parsed as BackupData;
 		this.validateBackup(backup);
 
 		// 2. Restore database (in a transaction for atomicity)
@@ -497,7 +499,7 @@ export class BackupService {
 			version: backup.version,
 			appVersion: backup.appVersion,
 			timestamp: backup.timestamp,
-			dataSize: decryptedBackupJson.length,
+			dataSize: JSON.stringify(backup).length,
 		};
 	}
 
