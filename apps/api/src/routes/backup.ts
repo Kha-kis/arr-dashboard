@@ -22,8 +22,17 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	// Helper to create backup service instance
 	const getBackupService = () => {
 		const databaseUrl = process.env.DATABASE_URL || "file:./dev.db";
-		const dbPath = databaseUrl.replace("file:", "");
-		const secretsPath = path.join(path.dirname(dbPath), "secrets.json");
+		let secretsPath: string;
+
+		if (databaseUrl.startsWith("file:")) {
+			// Extract directory from SQLite database path
+			const dbPath = databaseUrl.replace("file:", "");
+			secretsPath = path.join(path.dirname(dbPath), "secrets.json");
+		} else {
+			// For non-SQLite databases (PostgreSQL, MySQL), use default path
+			secretsPath = "./data/secrets.json";
+		}
+
 		return new BackupService(app.prisma, secretsPath);
 	};
 

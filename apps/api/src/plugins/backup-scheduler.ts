@@ -10,10 +10,18 @@ declare module "fastify" {
 }
 
 const backupSchedulerPlugin = fastifyPlugin(async (app: FastifyInstance) => {
-	// Get database path to determine secrets path
+	// Determine secrets path based on DATABASE_URL (same logic as security plugin)
 	const databaseUrl = process.env.DATABASE_URL || "file:./dev.db";
-	const dbPath = databaseUrl.replace("file:", "");
-	const secretsPath = path.join(path.dirname(dbPath), "secrets.json");
+	let secretsPath: string;
+
+	if (databaseUrl.startsWith("file:")) {
+		// Extract directory from SQLite database path
+		const dbPath = databaseUrl.replace("file:", "");
+		secretsPath = path.join(path.dirname(dbPath), "secrets.json");
+	} else {
+		// For non-SQLite databases (PostgreSQL, MySQL), use default path
+		secretsPath = "./data/secrets.json";
+	}
 
 	// Create and register backup scheduler
 	const scheduler = new BackupScheduler(app.prisma, app.log, secretsPath);
