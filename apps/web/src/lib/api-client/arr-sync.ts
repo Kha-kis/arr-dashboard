@@ -34,7 +34,7 @@ export async function updateArrSyncSettings(
 		`/api/arr-sync/settings/${instanceId}`,
 		{
 			method: "PUT",
-			body: JSON.stringify(settings),
+			json: settings,
 		},
 	);
 }
@@ -47,7 +47,7 @@ export async function previewArrSync(
 ): Promise<PreviewResponse> {
 	return apiRequest<PreviewResponse>("/api/arr-sync/preview", {
 		method: "POST",
-		body: JSON.stringify(request),
+		json: request,
 	});
 }
 
@@ -59,7 +59,7 @@ export async function applyArrSync(
 ): Promise<ApplyResponse> {
 	return apiRequest<ApplyResponse>("/api/arr-sync/apply", {
 		method: "POST",
-		body: JSON.stringify(request),
+		json: request,
 	});
 }
 

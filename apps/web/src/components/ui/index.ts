@@ -55,3 +55,4 @@ export {
 
 // Navigation
 export { Pagination, type PaginationProps } from "./pagination";
+export { Tabs, TabsList, TabsTrigger, TabsContent } from "./tabs";

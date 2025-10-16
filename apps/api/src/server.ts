@@ -7,13 +7,16 @@ import backupSchedulerPlugin from "./plugins/backup-scheduler.js";
 import lifecyclePlugin from "./plugins/lifecycle.js";
 import { prismaPlugin } from "./plugins/prisma.js";
 import { securityPlugin } from "./plugins/security.js";
+import trashSyncSchedulerPlugin from "./plugins/trash-sync-scheduler.js";
 import { arrSyncRoutes } from "./routes/arr-sync.js";
 import { registerAuthRoutes } from "./routes/auth.js";
 import { registerAuthOidcRoutes } from "./routes/auth-oidc.js";
 import { registerAuthPasskeyRoutes } from "./routes/auth-passkey.js";
 import { registerBackupRoutes } from "./routes/backup.js";
+import { customFormatsRoutes } from "./routes/custom-formats.js";
 import { registerDashboardRoutes } from "./routes/dashboard.js";
 import { registerDiscoverRoutes } from "./routes/discover.js";
+import { qualityProfilesRoutes } from "./routes/quality-profiles.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerLibraryRoutes } from "./routes/library.js";
 import { registerManualImportRoutes } from "./routes/manual-import.js";
@@ -22,6 +25,7 @@ import { registerRecommendationsRoutes } from "./routes/recommendations.js";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerServiceRoutes } from "./routes/services.js";
 import { registerSystemRoutes } from "./routes/system.js";
+import { trashGuidesRoutes } from "./routes/trash-guides.js";
 
 export type ServerOptions = {
 	logger?: boolean;
@@ -56,11 +60,12 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		timeWindow: env.API_RATE_LIMIT_WINDOW,
 	});
 
-	// Register Prisma, Security, Lifecycle, and Backup Scheduler plugins
+	// Register Prisma, Security, Lifecycle, Backup Scheduler, and TRaSH Sync Scheduler plugins
 	app.register(prismaPlugin);
 	app.register(securityPlugin);
 	app.register(lifecyclePlugin);
 	app.register(backupSchedulerPlugin);
+	app.register(trashSyncSchedulerPlugin);
 
 	app.decorateRequest("currentUser", null);
 	app.decorateRequest("sessionToken", null);
@@ -101,6 +106,9 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(registerManualImportRoutes, { prefix: "/api" });
 	app.register(registerRecommendationsRoutes, { prefix: "/api" });
 	app.register(arrSyncRoutes);
+	app.register(customFormatsRoutes);
+	app.register(qualityProfilesRoutes);
+	app.register(trashGuidesRoutes);
 	app.register(registerBackupRoutes, { prefix: "/api/backup" });
 	app.register(registerSystemRoutes, { prefix: "/api/system" });
 

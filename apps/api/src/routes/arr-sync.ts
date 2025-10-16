@@ -59,7 +59,11 @@ export async function arrSyncRoutes(app: FastifyInstance) {
 									: [],
 								overrides: settings.overridesJson
 									? JSON.parse(settings.overridesJson)
-									: {},
+									: {
+											customFormats: {},
+											scores: {},
+											profiles: {},
+										},
 							}
 						: null;
 
@@ -97,6 +101,11 @@ export async function arrSyncRoutes(app: FastifyInstance) {
 		// Validate request body
 		const validation = ArrSyncSettingsSchema.safeParse(request.body);
 		if (!validation.success) {
+			app.log.error({
+				instanceId,
+				requestBody: request.body,
+				validationErrors: validation.error.errors,
+			}, "ARR Sync settings validation failed");
 			return reply.code(400).send({
 				error: "Invalid settings",
 				details: validation.error.errors,
@@ -211,7 +220,11 @@ export async function arrSyncRoutes(app: FastifyInstance) {
 
 			return reply.send(response);
 		} catch (error) {
-			app.log.error("Failed to preview sync:", error);
+			app.log.error({
+				error,
+				message: error instanceof Error ? error.message : String(error),
+				stack: error instanceof Error ? error.stack : undefined,
+			}, "Failed to preview sync");
 			return reply.code(500).send({
 				error: "Failed to preview sync",
 				details:

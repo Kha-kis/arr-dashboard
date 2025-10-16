@@ -29,6 +29,7 @@ export interface SyncContext {
 export interface TrashCustomFormat {
 	trash_id: string;
 	trash_scores?: Record<string, number>;
+	trash_description?: string;
 	name: string;
 	includeCustomFormatWhenRenaming?: boolean;
 	specifications: CustomFormatSpecification[];

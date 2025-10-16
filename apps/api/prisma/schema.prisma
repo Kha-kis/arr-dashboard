@@ -65,6 +65,8 @@ model ServiceInstance {
   updatedAt       DateTime            @updatedAt
   tags            ServiceInstanceTag[]
   arrSyncSettings ArrSyncSettings?
+  trashCFGroupTracking TrashCFGroupTracking[] @relation("TrashCFGroupTracking")
+  trashQualityProfileTracking TrashQualityProfileTracking[] @relation("TrashQualityProfileTracking")
 
   @@index([service])
 }
@@ -171,4 +173,120 @@ model ArrSyncSettings {
   serviceInstance ServiceInstance @relation(fields: [serviceInstanceId], references: [id], onDelete: Cascade)
 
   @@map("arr_sync_settings")
+}
+
+// Track custom formats imported from TRaSH Guides
+model TrashCustomFormatTracking {
+  id                String   @id @default(cuid())
+  serviceInstanceId String
+  customFormatId    Int      // The ID from Sonarr/Radarr
+  customFormatName  String   // Name of the custom format (for display)
+  trashId           String   // The TRaSH ID (from TRaSH Guides)
+  service           ServiceType
+  syncExcluded      Boolean  @default(false) // If true, skip this format during auto-sync
+  lastSyncedAt      DateTime @default(now())
+  lastSyncedHash    String?  // Hash of the format content to detect changes
+  gitRef            String   @default("master") // Which git ref was used
+
+  // Import source tracking
+  importSource      TrashImportSource @default(INDIVIDUAL) // How this format was imported
+  sourceReference   String?  // Optional: group filename or profile filename if imported from group/profile
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@unique([serviceInstanceId, customFormatId])
+  @@index([serviceInstanceId])
+  @@index([trashId])
+  @@map("trash_custom_format_tracking")
+}
+
+enum TrashSyncIntervalType {
+  DISABLED
+  HOURLY
+  DAILY
+  WEEKLY
+}
+
+enum TrashSyncStatus {
+  SUCCESS
+  FAILED
+  PARTIAL
+}
+
+enum TrashImportSource {
+  INDIVIDUAL  // Imported individually from TRaSH browser
+  CF_GROUP    // Imported as part of a CF group
+  QUALITY_PROFILE // Imported/applied via quality profile
+}
+
+// TRaSH Guides automatic sync settings per instance
+model TrashInstanceSyncSettings {
+  id                String                  @id @default(cuid())
+  serviceInstanceId String                  @unique
+  enabled           Boolean                 @default(false)
+  intervalType      TrashSyncIntervalType   @default(DISABLED)
+  intervalValue     Int                     @default(24) // Hours for HOURLY, days for DAILY (1-7), 1 for WEEKLY
+
+  // What to sync
+  syncFormats       Boolean                 @default(true)  // Sync individual custom formats
+  syncCFGroups      Boolean                 @default(true)  // Sync CF groups
+  syncQualityProfiles Boolean               @default(true)  // Sync quality profiles
+
+  // Last run info
+  lastRunAt         DateTime?
+  lastRunStatus     TrashSyncStatus?
+  lastErrorMessage  String?
+
+  // Last run statistics
+  formatsSynced     Int                     @default(0)
+  formatsFailed     Int                     @default(0)
+  cfGroupsSynced    Int                     @default(0)
+  qualityProfilesSynced Int                 @default(0)
+
+  nextRunAt         DateTime?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  @@map("trash_instance_sync_settings")
+}
+
+// Track CF Groups imported from TRaSH Guides
+model TrashCFGroupTracking {
+  id                String      @id @default(cuid())
+  serviceInstanceId String
+  groupFileName     String      // The filename of the CF group in TRaSH repo
+  groupName         String      // Display name of the group
+  service           ServiceType
+  importedCount     Int         @default(0) // Number of formats imported from this group
+  lastSyncedAt      DateTime    @default(now())
+  gitRef            String      @default("master") // Which git ref was used
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  serviceInstance ServiceInstance @relation("TrashCFGroupTracking", fields: [serviceInstanceId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceInstanceId, groupFileName])
+  @@index([serviceInstanceId])
+  @@map("trash_cf_group_tracking")
+}
+
+// Track Quality Profiles applied from TRaSH Guides
+model TrashQualityProfileTracking {
+  id                String      @id @default(cuid())
+  serviceInstanceId String
+  profileFileName   String      // The filename of the quality profile in TRaSH repo
+  profileName       String      // Display name of the profile
+  qualityProfileId  Int?        // The ID from Sonarr/Radarr (if it was created, not updated)
+  service           ServiceType
+  lastAppliedAt     DateTime    @default(now())
+  gitRef            String      @default("master") // Which git ref was used
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  serviceInstance ServiceInstance @relation("TrashQualityProfileTracking", fields: [serviceInstanceId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceInstanceId, profileFileName])
+  @@index([serviceInstanceId])
+  @@map("trash_quality_profile_tracking")
 }

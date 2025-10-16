@@ -44,7 +44,11 @@ export const ArrSyncClient = () => {
 			enabled: false,
 			trashRef: "stable",
 			presets: [],
-			overrides: {},
+			overrides: {
+				customFormats: {},
+				scores: {},
+				profiles: {},
+			},
 		};
 
 		await updateSettings.mutateAsync({
