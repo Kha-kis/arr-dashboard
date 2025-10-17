@@ -1,10 +1,8 @@
 -- CreateTable
 CREATE TABLE "User" (
     "id" TEXT NOT NULL PRIMARY KEY,
-    "email" TEXT NOT NULL,
     "username" TEXT NOT NULL,
-    "hashedPassword" TEXT NOT NULL,
-    "role" TEXT NOT NULL DEFAULT 'USER',
+    "hashedPassword" TEXT,
     "mustChangePassword" BOOLEAN NOT NULL DEFAULT false,
     "failedLoginAttempts" INTEGER NOT NULL DEFAULT 0,
     "lockedUntil" DATETIME,
@@ -63,9 +61,6 @@ CREATE TABLE "ServiceInstanceTag" (
     CONSTRAINT "ServiceInstanceTag_instanceId_fkey" FOREIGN KEY ("instanceId") REFERENCES "ServiceInstance" ("id") ON DELETE CASCADE ON UPDATE CASCADE,
     CONSTRAINT "ServiceInstanceTag_tagId_fkey" FOREIGN KEY ("tagId") REFERENCES "ServiceTag" ("id") ON DELETE CASCADE ON UPDATE CASCADE
 );
-
--- CreateIndex
-CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "User_username_key" ON "User"("username");
