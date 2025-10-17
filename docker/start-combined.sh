@@ -29,6 +29,18 @@ shutdown() {
 trap shutdown SIGTERM SIGINT
 
 echo ""
+echo "Ensuring data directory permissions..."
+# Ensure the data directory exists and is writable
+mkdir -p /app/data
+# Try to create a test file to check permissions
+if ! touch /app/data/.permissions_test 2>/dev/null; then
+    echo "WARNING: /app/data is not writable. Database operations may fail."
+    echo "Please ensure the mounted volume has proper permissions for UID 1001."
+else
+    rm -f /app/data/.permissions_test
+fi
+
+echo ""
 echo "Running database migrations..."
 cd /app/api
 npx prisma migrate deploy --schema prisma/schema.prisma
