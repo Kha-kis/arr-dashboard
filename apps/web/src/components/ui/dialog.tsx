@@ -54,10 +54,10 @@ export const Dialog = ({ open, onOpenChange, children, size = "md" }: DialogProp
 			/>
 
 			{/* Dialog Container */}
-			<div className="fixed inset-0 flex items-center justify-center p-4 sm:p-6 md:p-8">
+			<div className="fixed inset-0 flex items-center justify-center p-4 sm:p-6 md:p-8 pointer-events-none">
 				<div
 					className={cn(
-						"relative z-modal w-full overflow-hidden rounded-2xl border border-border bg-bg-subtle/95 shadow-xl",
+						"relative z-modal w-full overflow-hidden rounded-2xl border border-border bg-bg-subtle/95 shadow-xl pointer-events-auto",
 						"max-h-[90vh] flex flex-col",
 						sizeStyles[size],
 					)}

@@ -28,6 +28,8 @@ export function useCustomFormats(instanceId?: string) {
 	return useQuery({
 		queryKey: customFormatsKeys.list(instanceId),
 		queryFn: () => customFormatsApi.getCustomFormats(instanceId),
+		staleTime: 5 * 60 * 1000, // 5 minutes
+		gcTime: 10 * 60 * 1000, // 10 minutes
 	});
 }
 
@@ -40,6 +42,8 @@ export function useCustomFormat(instanceId: string, customFormatId: number) {
 		queryFn: () =>
 			customFormatsApi.getCustomFormat(instanceId, customFormatId),
 		enabled: !!instanceId && !!customFormatId,
+		staleTime: 5 * 60 * 1000, // 5 minutes
+		gcTime: 10 * 60 * 1000, // 10 minutes
 	});
 }
 
@@ -112,8 +116,42 @@ export function useDeleteCustomFormat() {
 			instanceId: string;
 			customFormatId: number;
 		}) => customFormatsApi.deleteCustomFormat(instanceId, customFormatId),
-		onSuccess: () => {
-			// Invalidate all custom formats queries
+		onMutate: async ({ instanceId, customFormatId }) => {
+			// Cancel outgoing refetches
+			await queryClient.cancelQueries({ queryKey: customFormatsKeys.lists() });
+
+			// Snapshot previous value
+			const previousFormats = queryClient.getQueryData(customFormatsKeys.lists());
+
+			// Optimistically update to remove the deleted format
+			queryClient.setQueriesData({ queryKey: customFormatsKeys.lists() }, (old: any) => {
+				if (!old?.instances) return old;
+
+				return {
+					...old,
+					instances: old.instances.map((instance: any) => {
+						if (instance.instanceId !== instanceId) return instance;
+
+						return {
+							...instance,
+							customFormats: (instance.customFormats || []).filter(
+								(cf: any) => cf.id !== customFormatId
+							),
+						};
+					}),
+				};
+			});
+
+			return { previousFormats };
+		},
+		onError: (err, variables, context) => {
+			// Rollback on error
+			if (context?.previousFormats) {
+				queryClient.setQueryData(customFormatsKeys.lists(), context.previousFormats);
+			}
+		},
+		onSettled: () => {
+			// Refetch to ensure consistency
 			queryClient.invalidateQueries({ queryKey: customFormatsKeys.lists() });
 		},
 	});
@@ -184,5 +222,7 @@ export function useCustomFormatSchema(instanceId: string | undefined) {
 		queryKey: customFormatsKeys.schema(instanceId || ""),
 		queryFn: () => customFormatsApi.getCustomFormatSchema(instanceId!),
 		enabled: !!instanceId,
+		staleTime: 30 * 60 * 1000, // 30 minutes (schema rarely changes)
+		gcTime: 60 * 60 * 1000, // 1 hour
 	});
 }

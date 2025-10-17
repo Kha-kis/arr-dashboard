@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, lazy, Suspense } from "react";
 import {
 	useCustomFormats,
 	useCreateCustomFormat,
@@ -23,15 +23,17 @@ import {
 import * as customFormatsApi from "../../../lib/api-client/custom-formats";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, Badge, Input, toast, Tabs, TabsList, TabsTrigger, TabsContent } from "../../../components/ui";
 import type { CustomFormat } from "@arr/shared";
-import { CustomFormatFormModal } from "./custom-format-form-modal";
-import { ExportModal } from "./export-modal";
-import { ImportModal } from "./import-modal";
 import { ScoringMatrix } from "./scoring-matrix";
-import { TrashBrowserModal } from "./trash-browser-modal";
 import { InstanceSyncSettings } from "./instance-sync-settings";
 import { QualityProfilesList } from "./quality-profiles-list";
 import { TrackedCFGroups } from "./tracked-cf-groups";
 import { TrackedQualityProfiles } from "./tracked-quality-profiles";
+
+// Lazy load heavy modal components
+const CustomFormatFormModal = lazy(() => import("./custom-format-form-modal").then(module => ({ default: module.CustomFormatFormModal })));
+const ExportModal = lazy(() => import("./export-modal").then(module => ({ default: module.ExportModal })));
+const ImportModal = lazy(() => import("./import-modal").then(module => ({ default: module.ImportModal })));
+const TrashBrowserModal = lazy(() => import("./trash-browser-modal").then(module => ({ default: module.TrashBrowserModal })));
 
 /**
  * Custom Formats Management Client
@@ -754,25 +756,42 @@ export const CustomFormatsClient = () => {
 														/>
 													</td>
 													<td className="p-4">
-														<div className="flex items-center gap-2">
+														<div className="flex items-start gap-2">
 															<span className="font-medium text-sm text-fg">
 																{format.name}
 															</span>
 															{isTrackedByTrash(format.instanceId, format.id!) && (
-																<>
+																<div className="flex items-start gap-1 flex-wrap">
 																	<Badge variant="success" className="text-xs shrink-0" title="Managed by TRaSH Guides">
 																		TRaSH
 																	</Badge>
 																	{(() => {
 																		const trashInfo = getTrashInfo(format.instanceId, format.id!);
 																		if (trashInfo?.importSource) {
-																			const sourceLabel = trashInfo.importSource === "CF_GROUP" ? "CF Group" : trashInfo.importSource === "QUALITY_PROFILE" ? "Quality Profile" : "Individual";
-																			const sourceTitle = trashInfo.sourceReference
-																				? `Imported from ${sourceLabel}: ${trashInfo.sourceReference}`
-																				: `Imported as ${sourceLabel}`;
+																			const sourceType = trashInfo.importSource === "CF_GROUP" ? "CF" : trashInfo.importSource === "QUALITY_PROFILE" ? "QP" : "Individual";
+																			const sourceTypeFull = trashInfo.importSource === "CF_GROUP" ? "CF Group" : trashInfo.importSource === "QUALITY_PROFILE" ? "Quality Profile" : "Individual";
+																			// Use sourceDisplayName (friendly name) if available, otherwise fall back to sourceReference (filename)
+																			const displayName = (trashInfo as any).sourceDisplayName || trashInfo.sourceReference;
+																			const badgeLabel = displayName
+																				? `${sourceType}: ${displayName}`
+																				: sourceType;
+																			const sourceTitle = displayName
+																				? `Imported from ${sourceTypeFull}: ${displayName}`
+																				: `Imported as ${sourceTypeFull}`;
 																			return (
 																				<Badge variant="info" className="text-xs shrink-0" title={sourceTitle}>
-																					{sourceLabel}
+																					{badgeLabel}
+																				</Badge>
+																			);
+																		}
+																		return null;
+																	})()}
+																	{(() => {
+																		const trashInfo = getTrashInfo(format.instanceId, format.id!);
+																		if (trashInfo?.importSource === "CF_GROUP" && (trashInfo as any).associatedQualityProfile) {
+																			return (
+																				<Badge variant="info" className="text-xs shrink-0" title={`Part of Quality Profile: ${(trashInfo as any).associatedQualityProfile}`}>
+																					QP: {(trashInfo as any).associatedQualityProfile}
 																				</Badge>
 																			);
 																		}
@@ -783,7 +802,7 @@ export const CustomFormatsClient = () => {
 																			Auto-Sync Off
 																		</Badge>
 																	)}
-																</>
+																</div>
 															)}
 														</div>
 													</td>
@@ -921,32 +940,43 @@ export const CustomFormatsClient = () => {
 										return (
 											<Card key={format.id} className="hover:border-primary/50 transition-colors">
 												<CardHeader className="pb-3">
-													<div className="flex items-center justify-between gap-2">
-														<CardTitle className="text-sm truncate flex-1" title={format.name}>
+													<div className="space-y-2">
+														<CardTitle className="text-sm" title={format.name}>
 															{format.name}
 														</CardTitle>
 														{isTrash && (
-															<div className="flex items-center gap-1 shrink-0">
-																<Badge variant="success" className="text-xs" title={`Managed by TRaSH Guides\nLast synced: ${trashInfo?.lastSyncedAt ? new Date(trashInfo.lastSyncedAt).toLocaleString() : 'Unknown'}`}>
+															<div className="flex items-start gap-1 flex-wrap">
+																<Badge variant="success" className="text-xs shrink-0" title={`Managed by TRaSH Guides\nLast synced: ${trashInfo?.lastSyncedAt ? new Date(trashInfo.lastSyncedAt).toLocaleString() : 'Unknown'}`}>
 																	TRaSH
 																</Badge>
-																{format.id && trashInfo?.importSource && (
-																	<Badge
-																		variant="info"
-																		className="text-xs shrink-0"
-																		title={trashInfo.sourceReference
-																			? `Imported from ${trashInfo.importSource === "CF_GROUP" ? "CF Group" : trashInfo.importSource === "QUALITY_PROFILE" ? "Quality Profile" : "Individual"}: ${trashInfo.sourceReference}`
-																			: `Imported as ${trashInfo.importSource === "CF_GROUP" ? "CF Group" : trashInfo.importSource === "QUALITY_PROFILE" ? "Quality Profile" : "Individual"}`}
-																	>
-																		{trashInfo.importSource === "CF_GROUP"
-																			? "CF Group"
-																			: trashInfo.importSource === "QUALITY_PROFILE"
-																				? "Quality Profile"
-																				: "Individual"}
+																{format.id && trashInfo?.importSource && (() => {
+																	const sourceType = trashInfo.importSource === "CF_GROUP" ? "CF" : trashInfo.importSource === "QUALITY_PROFILE" ? "QP" : "Individual";
+																	const sourceTypeFull = trashInfo.importSource === "CF_GROUP" ? "CF Group" : trashInfo.importSource === "QUALITY_PROFILE" ? "Quality Profile" : "Individual";
+																	// Use sourceDisplayName (friendly name) if available, otherwise fall back to sourceReference (filename)
+																	const displayName = (trashInfo as any).sourceDisplayName || trashInfo.sourceReference;
+																	const badgeLabel = displayName
+																		? `${sourceType}: ${displayName}`
+																		: sourceType;
+																	const sourceTitle = displayName
+																		? `Imported from ${sourceTypeFull}: ${displayName}`
+																		: `Imported as ${sourceTypeFull}`;
+																	return (
+																		<Badge
+																			variant="info"
+																			className="text-xs shrink-0"
+																			title={sourceTitle}
+																		>
+																			{badgeLabel}
+																		</Badge>
+																	);
+																})()}
+																{format.id && trashInfo?.importSource === "CF_GROUP" && (trashInfo as any).associatedQualityProfile && (
+																	<Badge variant="info" className="text-xs shrink-0" title={`Part of Quality Profile: ${(trashInfo as any).associatedQualityProfile}`}>
+																		QP: {(trashInfo as any).associatedQualityProfile}
 																	</Badge>
 																)}
 																{format.id && isSyncExcluded(instance.instanceId, format.id) && (
-																	<Badge variant="warning" className="text-xs" title="Excluded from automatic TRaSH sync - will not be updated during sync operations">
+																	<Badge variant="warning" className="text-xs shrink-0" title="Excluded from automatic TRaSH sync - will not be updated during sync operations">
 																		Auto-Sync Off
 																	</Badge>
 																)}
@@ -1258,48 +1288,64 @@ export const CustomFormatsClient = () => {
 			</TabsContent>
 			</Tabs>
 
-			{/* Modals (outside tabs, always rendered) */}
+			{/* Modals (outside tabs, lazy loaded with Suspense) */}
 			{/* Create/Edit Modal */}
-			<CustomFormatFormModal
-				isOpen={isModalOpen}
-				onClose={handleModalClose}
-				onSubmit={handleFormSubmit}
-				initialData={selectedFormat}
-				isSubmitting={createMutation.isPending || updateMutation.isPending}
-				instanceId={selectedInstance || undefined}
-				instances={instances}
-				onInstanceChange={handleInstanceChange}
-				isTrackedByTrash={selectedFormat?.id && selectedInstance ? isTrackedByTrash(selectedInstance, selectedFormat.id) : false}
-				isSyncExcluded={selectedFormat?.id && selectedInstance ? isSyncExcluded(selectedInstance, selectedFormat.id) : false}
-				onToggleSyncExclusion={selectedFormat?.id && selectedInstance ? () => handleToggleSyncExclusion(selectedInstance, selectedFormat.id!, isSyncExcluded(selectedInstance, selectedFormat.id!), selectedFormat.name) : undefined}
-				isTogglingExclusion={toggleExclusionMutation.isPending}
-				trashData={selectedTrashFormat}
-			/>
+			{isModalOpen && (
+				<Suspense fallback={<div />}>
+					<CustomFormatFormModal
+						isOpen={isModalOpen}
+						onClose={handleModalClose}
+						onSubmit={handleFormSubmit}
+						initialData={selectedFormat}
+						isSubmitting={createMutation.isPending || updateMutation.isPending}
+						instanceId={selectedInstance || undefined}
+						instances={instances}
+						onInstanceChange={handleInstanceChange}
+						isTrackedByTrash={selectedFormat?.id && selectedInstance ? isTrackedByTrash(selectedInstance, selectedFormat.id) : false}
+						isSyncExcluded={selectedFormat?.id && selectedInstance ? isSyncExcluded(selectedInstance, selectedFormat.id) : false}
+						onToggleSyncExclusion={selectedFormat?.id && selectedInstance ? () => handleToggleSyncExclusion(selectedInstance, selectedFormat.id!, isSyncExcluded(selectedInstance, selectedFormat.id!), selectedFormat.name) : undefined}
+						isTogglingExclusion={toggleExclusionMutation.isPending}
+						trashData={selectedTrashFormat}
+					/>
+				</Suspense>
+			)}
 
 			{/* Export Modal */}
-			<ExportModal
-				isOpen={isExportModalOpen}
-				onClose={() => setIsExportModalOpen(false)}
-				customFormat={exportingFormat}
-				formatName={exportFormatName}
-			/>
+			{isExportModalOpen && (
+				<Suspense fallback={<div />}>
+					<ExportModal
+						isOpen={isExportModalOpen}
+						onClose={() => setIsExportModalOpen(false)}
+						customFormat={exportingFormat}
+						formatName={exportFormatName}
+					/>
+				</Suspense>
+			)}
 
 			{/* Import Modal */}
-			<ImportModal
-				isOpen={isImportModalOpen}
-				onClose={() => setIsImportModalOpen(false)}
-				onImport={handleImport}
-				instanceLabel={importingInstanceLabel}
-			/>
+			{isImportModalOpen && (
+				<Suspense fallback={<div />}>
+					<ImportModal
+						isOpen={isImportModalOpen}
+						onClose={() => setIsImportModalOpen(false)}
+						onImport={handleImport}
+						instanceLabel={importingInstanceLabel}
+					/>
+				</Suspense>
+			)}
 
 			{/* TRaSH Browser Modal */}
-			<TrashBrowserModal
-				isOpen={isTrashBrowserOpen}
-				onClose={() => setIsTrashBrowserOpen(false)}
-				instances={instances}
-				onSelectFormat={handleSelectTrashFormat}
-				onImportMultiple={handleImportMultipleTrash}
-			/>
+			{isTrashBrowserOpen && (
+				<Suspense fallback={<div />}>
+					<TrashBrowserModal
+						isOpen={isTrashBrowserOpen}
+						onClose={() => setIsTrashBrowserOpen(false)}
+						instances={instances}
+						onSelectFormat={handleSelectTrashFormat}
+						onImportMultiple={handleImportMultipleTrash}
+					/>
+				</Suspense>
+			)}
 		</div>
 	);
 };

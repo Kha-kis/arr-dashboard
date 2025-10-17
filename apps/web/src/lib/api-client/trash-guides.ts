@@ -363,12 +363,64 @@ export async function getTrackedCFGroups(): Promise<GetTrackedCFGroupsResponse> 
 export async function resyncCFGroup(
 	request: ResyncCFGroupRequest
 ): Promise<ResyncCFGroupResponse> {
+	// Strip .json extension from groupFileName to avoid confusion with static files
+	// Backend will normalize it back to include .json for database lookup
+	const cleanGroupFileName = request.groupFileName.endsWith('.json')
+		? request.groupFileName.slice(0, -5)
+		: request.groupFileName;
+
 	return apiRequest<ResyncCFGroupResponse>("/api/trash-guides/resync-cf-group", {
 		method: "POST",
 		json: {
 			...request,
+			groupFileName: cleanGroupFileName,
 			ref: request.ref || "master",
 		},
+	});
+}
+
+/**
+ * Untrack a CF group (removes tracking and optionally deletes formats from instance)
+ */
+export async function untrackCFGroup(
+	instanceId: string,
+	groupFileName: string,
+	deleteFormats = true
+): Promise<{
+	message: string;
+	untracked: number;
+	failed: number;
+	results: Array<{
+		customFormatId: number;
+		name: string;
+		status: "untracked_and_deleted" | "tracking_only_removed" | "delete_failed" | "error" | "converted_to_individual";
+	}>;
+	groupName: string;
+	action: "deleted" | "converted";
+}> {
+	// Strip .json extension from groupFileName to avoid confusion with static files
+	// Backend will normalize it back to include .json for database lookup
+	const cleanGroupFileName = groupFileName.endsWith('.json')
+		? groupFileName.slice(0, -5)
+		: groupFileName;
+
+	const queryParams = new URLSearchParams({
+		deleteFormats: deleteFormats.toString(),
+	});
+
+	return apiRequest<{
+		message: string;
+		untracked: number;
+		failed: number;
+		results: Array<{
+			customFormatId: number;
+			name: string;
+			status: "untracked_and_deleted" | "tracking_only_removed" | "delete_failed" | "error" | "converted_to_individual";
+		}>;
+		groupName: string;
+		action: "deleted" | "converted";
+	}>(`/api/trash-guides/tracked-cf-groups/${encodeURIComponent(instanceId)}/${encodeURIComponent(cleanGroupFileName)}?${queryParams}`, {
+		method: "DELETE",
 	});
 }
 
@@ -407,6 +459,12 @@ export interface ApplyQualityProfileResponse {
 	message: string;
 	qualityProfile: any;
 	action: "created" | "updated";
+	importedCFs?: {
+		created: number;
+		updated: number;
+		skipped: number;
+		failed: number;
+	};
 }
 
 /**
@@ -471,6 +529,12 @@ export interface ReapplyQualityProfileResponse {
 	message: string;
 	qualityProfile: any;
 	action: "created" | "updated";
+	importedCFs?: {
+		created: number;
+		updated: number;
+		skipped: number;
+		failed: number;
+	};
 }
 
 /**

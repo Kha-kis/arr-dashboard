@@ -5,7 +5,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useCustomFormats } from "../../../hooks/api/useCustomFormats";
 import { useQualityProfiles, useUpdateProfileScores } from "../../../hooks/api/useQualityProfiles";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, toast, Badge } from "../../../components/ui";
@@ -19,7 +19,7 @@ interface ScoringMatrixProps {
  * Scoring Matrix for a single instance
  * Shows custom formats as rows and quality profiles as columns
  */
-export const ScoringMatrix = ({ instanceId, instanceLabel }: ScoringMatrixProps) => {
+export const ScoringMatrix = React.memo(({ instanceId, instanceLabel }: ScoringMatrixProps) => {
 	const { data: customFormatsData, isLoading: isLoadingFormats } = useCustomFormats(instanceId);
 	const { data: profilesData, isLoading: isLoadingProfiles } = useQualityProfiles(instanceId);
 	const updateScores = useUpdateProfileScores();
@@ -276,4 +276,4 @@ export const ScoringMatrix = ({ instanceId, instanceLabel }: ScoringMatrixProps)
 			</CardContent>
 		</Card>
 	);
-};
+});

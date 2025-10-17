@@ -200,26 +200,41 @@ export async function qualityProfilesRoutes(app: FastifyInstance) {
 				);
 
 				// Update the formatItems with new scores
+				// Handle both lowercase and capitalized property names for compatibility
 				const updatedFormatItems = (existing.formatItems || []).map(
 					(item: any) => {
-						const newScore = scoresMap.get(item.format);
+						const formatId = item.format || item.Format;
+						const newScore = scoresMap.get(formatId);
 						return {
 							...item,
-							score: newScore !== undefined ? newScore : item.score,
+							// Ensure we use capitalized properties for Radarr API
+							Format: formatId,
+							Name: item.name || item.Name || "",
+							Score: newScore !== undefined ? newScore : (item.score || item.Score || 0),
+							// Remove lowercase properties to avoid confusion
+							format: undefined,
+							name: undefined,
+							score: undefined,
 						};
 					},
-				);
+				).map((item: any) => {
+					// Clean up undefined properties
+					const { format, name, score, ...cleanItem } = item;
+					return cleanItem;
+				});
 
 				// Add any new custom formats that weren't in the profile
 				for (const [formatId, score] of scoresMap.entries()) {
 					if (
 						!updatedFormatItems.some(
-							(item: any) => item.format === formatId,
+							(item: any) => (item.format || item.Format) === formatId,
 						)
 					) {
+						// Use capitalized properties for new items
 						updatedFormatItems.push({
-							format: formatId,
-							score,
+							Format: formatId,
+							Name: "", // Name should be filled by the API
+							Score: score,
 						});
 					}
 				}

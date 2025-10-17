@@ -1,10 +1,11 @@
 "use client";
 
+import React from "react";
 import { Card, CardHeader, CardTitle, CardContent, Button, Badge } from "../../../components/ui";
 import { useTrackedQualityProfiles, useReapplyQualityProfile } from "../../../hooks/api/useTrashGuides";
 import { toast } from "../../../components/ui/toast";
 
-export function TrackedQualityProfiles() {
+export const TrackedQualityProfiles = React.memo(function TrackedQualityProfiles() {
 	const { data, isLoading, error } = useTrackedQualityProfiles();
 	const reapplyMutation = useReapplyQualityProfile();
 
@@ -122,4 +123,4 @@ export function TrackedQualityProfiles() {
 			</CardContent>
 		</Card>
 	);
-}
+});

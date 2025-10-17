@@ -228,6 +228,30 @@ export function useTrackedQualityProfiles() {
 }
 
 /**
+ * Hook to untrack a CF group
+ */
+export function useUntrackCFGroup() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: ({ instanceId, groupFileName, deleteFormats = true }: {
+			instanceId: string;
+			groupFileName: string;
+			deleteFormats?: boolean;
+		}) =>
+			trashGuidesApi.untrackCFGroup(instanceId, groupFileName, deleteFormats),
+		onSuccess: () => {
+			// Invalidate custom formats queries to refresh the list
+			queryClient.invalidateQueries({ queryKey: customFormatsKeys.lists() });
+			// Invalidate TRaSH tracking data
+			queryClient.invalidateQueries({ queryKey: [...trashGuidesKeys.all, "tracked"] });
+			// Invalidate tracked CF groups
+			queryClient.invalidateQueries({ queryKey: [...trashGuidesKeys.all, "tracked-cf-groups"] });
+		},
+	});
+}
+
+/**
  * Hook to re-apply a tracked quality profile
  */
 export function useReapplyQualityProfile() {

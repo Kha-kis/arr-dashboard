@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { Card, CardHeader, CardTitle, CardContent, Button, Badge, Input } from "../../../components/ui";
 
 interface InstanceSyncSettingsProps {
@@ -35,7 +35,7 @@ interface InstanceSyncSettingsProps {
 	isSaving: boolean;
 }
 
-export const InstanceSyncSettings = ({
+export const InstanceSyncSettings = React.memo(({
 	instanceId,
 	instanceLabel,
 	instanceService,
@@ -317,4 +317,4 @@ export const InstanceSyncSettings = ({
 			</CardContent>
 		</Card>
 	);
-};
+});

@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState, useMemo } from "react";
+import DOMPurify from "dompurify";
 import { Card, CardHeader, CardTitle, CardContent, Button, Badge, Input, toast } from "../../../components/ui";
-import { useTrashQualityProfiles, useApplyQualityProfile } from "../../../hooks/api/useTrashGuides";
+import { useTrashQualityProfiles, useApplyQualityProfile, useTrackedQualityProfiles, useReapplyQualityProfile } from "../../../hooks/api/useTrashGuides";
 import type { TrashQualityProfile } from "../../../lib/api-client/trash-guides";
 
 interface QualityProfilesListProps {
@@ -11,7 +12,7 @@ interface QualityProfilesListProps {
 	service?: "SONARR" | "RADARR";
 }
 
-export function QualityProfilesList({
+export const QualityProfilesList = React.memo(function QualityProfilesList({
 	instanceId,
 	instanceLabel,
 	service,
@@ -20,9 +21,31 @@ export function QualityProfilesList({
 
 	// Fetch quality profiles for the selected service
 	const { data, isLoading, error } = useTrashQualityProfiles(service || "RADARR");
+	const { data: trackedData } = useTrackedQualityProfiles();
 	const applyProfileMutation = useApplyQualityProfile();
+	const reapplyProfileMutation = useReapplyQualityProfile();
 
 	const qualityProfiles = data?.qualityProfiles || [];
+
+	// Filter tracked profiles for this instance
+	const trackedProfiles = useMemo(() => {
+		if (!trackedData?.profiles) return new Map();
+		const map = new Map();
+		trackedData.profiles
+			.filter(tp => tp.serviceInstanceId === instanceId)
+			.forEach(tp => {
+				map.set(tp.profileFileName, tp);
+			});
+		return map;
+	}, [trackedData, instanceId]);
+
+	// Helper function to sanitize HTML descriptions
+	const sanitizeHtml = (html: string) => {
+		return DOMPurify.sanitize(html, {
+			ALLOWED_TAGS: ['br', 'b', 'i', 'em', 'strong', 'a', 'p', 'ul', 'ol', 'li'],
+			ALLOWED_ATTR: ['href', 'target', 'rel'],
+		});
+	};
 
 	// Filter profiles by search query
 	const filteredProfiles = qualityProfiles.filter((profile) =>
@@ -32,13 +55,25 @@ export function QualityProfilesList({
 	const handleApplyProfile = async (profile: TrashQualityProfile) => {
 		if (!service) return;
 
+		const isTracked = trackedProfiles.has(profile.fileName);
+
 		try {
-			await applyProfileMutation.mutateAsync({
-				instanceId,
-				profileFileName: profile.fileName,
-				service,
-			});
-			toast.success(`Successfully applied quality profile: ${profile.name} to ${instanceLabel}`);
+			if (isTracked) {
+				// Re-apply tracked profile
+				await reapplyProfileMutation.mutateAsync({
+					instanceId,
+					profileFileName: profile.fileName,
+				});
+				toast.success(`Successfully re-applied quality profile: ${profile.name} to ${instanceLabel}`);
+			} else {
+				// Apply new profile
+				await applyProfileMutation.mutateAsync({
+					instanceId,
+					profileFileName: profile.fileName,
+					service,
+				});
+				toast.success(`Successfully applied quality profile: ${profile.name} to ${instanceLabel}`);
+			}
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : "Failed to apply quality profile");
 		}
@@ -115,20 +150,33 @@ export function QualityProfilesList({
 								>
 									<div className="flex items-start gap-4">
 										<div className="flex-1 space-y-2">
-											<div className="flex items-center gap-2">
+											<div className="flex items-center gap-2 flex-wrap">
 												<h3 className="font-medium text-fg">
 													{profile.name}
 												</h3>
+												{trackedProfiles.has(profile.fileName) && (
+													<Badge variant="default" className="text-xs bg-primary/20 text-primary border-primary/30">
+														Tracked
+													</Badge>
+												)}
 												{profile.upgradeAllowed !== undefined && (
 													<Badge variant="secondary" className="text-xs">
 														{profile.upgradeAllowed ? "Upgrades Allowed" : "No Upgrades"}
 													</Badge>
 												)}
 											</div>
-											{profile.trash_description && (
-												<p className="text-sm text-fg-muted">
-													{profile.trash_description}
+											{trackedProfiles.has(profile.fileName) && (
+												<p className="text-xs text-fg-muted">
+													Last applied: {new Date(trackedProfiles.get(profile.fileName)!.lastAppliedAt).toLocaleString()}
 												</p>
+											)}
+											{profile.trash_description && (
+												<div
+													className="text-sm text-fg-muted prose prose-sm max-w-none prose-invert"
+													dangerouslySetInnerHTML={{
+														__html: sanitizeHtml(profile.trash_description)
+													}}
+												/>
 											)}
 											<div className="flex gap-2 text-xs text-fg-muted">
 												{profile.minFormatScore !== undefined && (
@@ -147,9 +195,9 @@ export function QualityProfilesList({
 											<Button
 												size="sm"
 												onClick={() => handleApplyProfile(profile)}
-												disabled={applyProfileMutation.isPending}
+												disabled={applyProfileMutation.isPending || reapplyProfileMutation.isPending}
 											>
-												Apply Profile
+												{trackedProfiles.has(profile.fileName) ? "Re-apply Profile" : "Apply Profile"}
 											</Button>
 										</div>
 									</div>
@@ -180,4 +228,4 @@ export function QualityProfilesList({
 			</CardContent>
 		</Card>
 	);
-}
+});

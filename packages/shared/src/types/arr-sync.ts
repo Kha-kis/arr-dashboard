@@ -59,9 +59,13 @@ export const QualityProfileItemSchema: z.ZodSchema = z.object({
 
 export const CustomFormatScoreSchema = z.object({
 	id: z.number().optional(),
-	name: z.string(),
+	name: z.string().optional(),
 	format: z.number().optional(),
 	score: z.number(),
+	// Support both formats for compatibility
+	Format: z.number().optional(),
+	Name: z.string().optional(),
+	Score: z.number().optional(),
 });
 
 export const QualityProfileSchema = z.object({
@@ -195,6 +199,7 @@ export const TrackedCFGroupSchema = z.object({
 	serviceInstanceId: z.string(),
 	groupFileName: z.string(),
 	groupName: z.string(),
+	qualityProfileName: z.string().nullable().optional(),
 	service: z.enum(["SONARR", "RADARR", "PROWLARR"]),
 	importedCount: z.number(),
 	lastSyncedAt: z.string(),
@@ -205,6 +210,13 @@ export const TrackedCFGroupSchema = z.object({
 
 export const TrackedCFGroupWithInstanceSchema = TrackedCFGroupSchema.extend({
 	instanceLabel: z.string(),
+	customFormats: z.array(z.object({
+		id: z.string(),
+		customFormatId: z.number(),
+		customFormatName: z.string(),
+		trashId: z.string(),
+		lastSyncedAt: z.string(),
+	})).optional(),
 });
 
 export const GetTrackedCFGroupsResponseSchema = z.object({
@@ -274,6 +286,39 @@ export type TrackedQualityProfileWithInstance = z.infer<typeof TrackedQualityPro
 export type GetTrackedQualityProfilesResponse = z.infer<typeof GetTrackedQualityProfilesResponseSchema>;
 export type ReapplyQualityProfileRequest = z.infer<typeof ReapplyQualityProfileRequestSchema>;
 export type ReapplyQualityProfileResponse = z.infer<typeof ReapplyQualityProfileResponseSchema>;
+
+// Quality Profile Customizations
+export const QualityProfileCustomFormatCustomizationSchema = z.object({
+	excluded: z.boolean().optional(), // If true, exclude this CF from the profile
+	scoreOverride: z.number().optional(), // Override the default score for this CF
+	notes: z.string().optional(), // Notes about why this customization was made
+});
+
+export const QualityProfileCustomizationsSchema = z.record(
+	z.string(), // trashId
+	QualityProfileCustomFormatCustomizationSchema,
+);
+
+export const UpdateQualityProfileCustomizationsRequestSchema = z.object({
+	instanceId: z.string(),
+	profileFileName: z.string(),
+	customizations: QualityProfileCustomizationsSchema,
+});
+
+export const UpdateQualityProfileCustomizationsResponseSchema = z.object({
+	message: z.string(),
+	customizations: QualityProfileCustomizationsSchema,
+});
+
+export const GetQualityProfileCustomizationsResponseSchema = z.object({
+	customizations: QualityProfileCustomizationsSchema,
+});
+
+export type QualityProfileCustomFormatCustomization = z.infer<typeof QualityProfileCustomFormatCustomizationSchema>;
+export type QualityProfileCustomizations = z.infer<typeof QualityProfileCustomizationsSchema>;
+export type UpdateQualityProfileCustomizationsRequest = z.infer<typeof UpdateQualityProfileCustomizationsRequestSchema>;
+export type UpdateQualityProfileCustomizationsResponse = z.infer<typeof UpdateQualityProfileCustomizationsResponseSchema>;
+export type GetQualityProfileCustomizationsResponse = z.infer<typeof GetQualityProfileCustomizationsResponseSchema>;
 
 // ============================================================================
 // Sync Settings & Overrides

@@ -257,6 +257,7 @@ model TrashCFGroupTracking {
   serviceInstanceId String
   groupFileName     String      // The filename of the CF group in TRaSH repo
   groupName         String      // Display name of the group
+  qualityProfileName String?    // The quality profile that auto-included this CF-Group
   service           ServiceType
   importedCount     Int         @default(0) // Number of formats imported from this group
   lastSyncedAt      DateTime    @default(now())
@@ -281,6 +282,7 @@ model TrashQualityProfileTracking {
   service           ServiceType
   lastAppliedAt     DateTime    @default(now())
   gitRef            String      @default("master") // Which git ref was used
+  customizationsJson String     @default("{}") // JSON: { [trashId]: { excluded?: boolean, scoreOverride?: number, notes?: string } }
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
