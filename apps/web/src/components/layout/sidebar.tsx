@@ -15,6 +15,8 @@ const NAV_ITEMS = [
 	{ href: "/calendar", label: "Calendar" },
 	{ href: "/statistics", label: "Statistics" },
 	{ href: "/history", label: "History" },
+	{ href: "/custom-formats", label: "Custom Formats" },
+	{ href: "/profiles", label: "Quality Profiles" },
 	{ href: "/settings", label: "Settings" },
 ];
 

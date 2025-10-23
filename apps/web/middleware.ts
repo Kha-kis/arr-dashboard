@@ -9,7 +9,8 @@ const PUBLIC_PATHS = new Set([
 	"/robots.txt",
 	"/sitemap.xml",
 ]);
-const PUBLIC_FILE = /\.(.*)$/;
+// Only match actual static file extensions, not API routes that happen to have dots
+const PUBLIC_FILE = /\.(png|jpg|jpeg|gif|webp|svg|ico|css|js|woff2?|ttf|eot)$/;
 
 const isPublicPath = (pathname: string) => {
 	if (PUBLIC_PATHS.has(pathname)) {
@@ -48,13 +49,20 @@ async function proxyApiRequest(request: NextRequest): Promise<NextResponse | nul
 		requestHeaders.set("cookie", cookieHeader);
 	}
 
-	// Fetch from the API server
-	const response = await fetch(apiUrl.toString(), {
+	// Prepare fetch options
+	const fetchOptions: RequestInit = {
 		method: request.method,
 		headers: requestHeaders,
-		body: request.body,
-		duplex: "half",
-	} as RequestInit);
+	};
+
+	// Only include body for methods that typically have a body
+	if (request.method !== "GET" && request.method !== "HEAD" && request.method !== "DELETE") {
+		fetchOptions.body = request.body;
+		(fetchOptions as any).duplex = "half";
+	}
+
+	// Fetch from the API server
+	const response = await fetch(apiUrl.toString(), fetchOptions);
 
 	// Create response with the API's body
 	const proxyResponse = new NextResponse(response.body, {
@@ -73,11 +81,18 @@ async function proxyApiRequest(request: NextRequest): Promise<NextResponse | nul
 export async function middleware(request: NextRequest) {
 	const { pathname } = request.nextUrl;
 
-	// Handle API proxy first
+	// Handle API proxy first - MUST come before isPublicPath check
 	const apiResponse = await proxyApiRequest(request);
 	if (apiResponse) {
 		return apiResponse;
 	}
+
+	// Only check for public paths AFTER API proxy check
+	// This ensures API routes are always proxied, even if they contain dots
+	if (isPublicPath(pathname)) {
+		return NextResponse.next();
+	}
+
 	const hasSession = Boolean(request.cookies.get(SESSION_COOKIE_NAME));
 
 	// Home page: redirect to dashboard if logged in, otherwise to login
@@ -99,10 +114,6 @@ export async function middleware(request: NextRequest) {
 		return NextResponse.next();
 	}
 
-	if (isPublicPath(pathname)) {
-		return NextResponse.next();
-	}
-
 	if (!hasSession) {
 		const loginUrl = request.nextUrl.clone();
 		loginUrl.pathname = "/login";
@@ -116,6 +127,8 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
 	matcher: [
-		"/((?!_next/static|_next/image|favicon.ico|assets|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|css|js|woff2?)).*)",
+		// Match all paths except Next.js internals and real static files
+		// Note: We intentionally match API routes even if they contain dots (e.g., .json)
+		"/((?!_next/static|_next/image|favicon.ico|assets|static/).*)",
 	],
 };

@@ -17,7 +17,7 @@ export const envSchema = z
 		API_HOST: z.string().default("0.0.0.0"),
 		API_PORT: z.coerce.number().min(0).max(65535).default(3001),
 		API_CORS_ORIGIN: corsOriginSchema,
-		API_RATE_LIMIT_MAX: z.coerce.number().min(1).default(200),
+		API_RATE_LIMIT_MAX: z.coerce.number().min(1).default(1000),
 		API_RATE_LIMIT_WINDOW: z.union([z.string(), z.coerce.number()]).default("1 minute"),
 		DATABASE_URL: z.string().optional(),
 	// Optional - will be auto-generated if not provided

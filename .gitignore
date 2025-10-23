@@ -61,3 +61,37 @@ secrets.json
 apps/api/secrets.json
 apps/api/backups/
 backups/
+
+# Test artifacts
+apps/web/test-results/
+apps/web/playwright-report/
+apps/web/playwright-results.json
+apps/api/tmp/
+
+# Archives
+apps/api/scripts/archive/
+
+# Local env for e2e
+apps/api/.env.e2e
+
+# Dev E2E (ignored for now)
+apps/web/tests/
+apps/web/playwright.config.ts
+apps/web/vitest.config.ts
+apps/web/tsconfig.vitest.json
+apps/web/setupTests.ts
+apps/api/scripts/e2e-reset-db.ts
+
+# Dev notes & one-off scripts at repo root
+/CURRENT_STATUS.md
+/MANUAL_TESTING_GUIDE.md
+/PR*_SUMMARY.md
+/PROFILES_API_TEST_RESULTS.md
+/TEMPLATE_OVERLAY_IMPLEMENTATION_SUMMARY.md
+/TEST_CHECKLIST.md
+/add-recommendation-logic.js
+/add-recommended-badge.js
+/add-recommended-stats.js
+/complete-recommendation-fix.js
+/fix-isrecommended.js
+/update-optional-logic.js

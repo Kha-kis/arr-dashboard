@@ -44,11 +44,106 @@ jobs:
         run: pnpm run typecheck
         continue-on-error: true
 
+  # Test
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    needs: [lint]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: cd apps/api && pnpm exec prisma generate
+
+      - name: Run API tests
+        run: pnpm --filter @arr/api run test
+
+      - name: Run Web tests with coverage
+        run: pnpm --filter @arr/web run test:coverage
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./apps/web/coverage/lcov.info
+          flags: web-adapter
+          name: web-adapter-coverage
+        continue-on-error: true
+
+  # E2E Tests
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: [test]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: cd apps/api && pnpm exec prisma generate
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-browsers-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            playwright-browsers-
+
+      - name: Install Playwright browsers
+        run: cd apps/web && pnpm exec playwright install chromium --with-deps
+
+      - name: Run E2E tests
+        run: pnpm --filter @arr/web run test:e2e
+        env:
+          NEXT_PUBLIC_PROFILES_UNIFIED_UI: "true"
+          E2E_USER: "admin"
+          E2E_PASS: "admin"
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report/
+          retention-days: 7
+
   # Build
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [lint]
+    needs: [test, e2e]
 
     steps:
       - name: Checkout code
