@@ -35,7 +35,7 @@ interface InstanceSyncSettingsProps {
 	isSaving: boolean;
 }
 
-export const InstanceSyncSettings = React.memo(({
+const InstanceSyncSettingsComponent = ({
 	instanceId,
 	instanceLabel,
 	instanceService,
@@ -317,4 +317,7 @@ export const InstanceSyncSettings = React.memo(({
 			</CardContent>
 		</Card>
 	);
-});
+};
+
+export const InstanceSyncSettings = React.memo(InstanceSyncSettingsComponent);
+InstanceSyncSettings.displayName = 'InstanceSyncSettings';

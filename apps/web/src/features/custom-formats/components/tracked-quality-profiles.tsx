@@ -1,13 +1,16 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { Card, CardHeader, CardTitle, CardContent, Button, Badge } from "../../../components/ui";
-import { useTrackedQualityProfiles, useReapplyQualityProfile } from "../../../hooks/api/useTrashGuides";
+import { useTrackedQualityProfiles, useReapplyQualityProfile, useUntrackQualityProfile } from "../../../hooks/api/useTrashGuides";
 import { toast } from "../../../components/ui/toast";
+import { Trash2 } from "lucide-react";
 
 export const TrackedQualityProfiles = React.memo(function TrackedQualityProfiles() {
 	const { data, isLoading, error } = useTrackedQualityProfiles();
 	const reapplyMutation = useReapplyQualityProfile();
+	const untrackMutation = useUntrackQualityProfile();
+	const [untrackingId, setUntrackingId] = useState<string | null>(null);
 
 	const trackedProfiles = data?.profiles || [];
 
@@ -20,6 +23,25 @@ export const TrackedQualityProfiles = React.memo(function TrackedQualityProfiles
 			toast.success(`Successfully re-applied quality profile (${result.action})`);
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : "Failed to re-apply quality profile");
+		}
+	};
+
+	const handleUntrack = async (instanceId: string, profileFileName: string, profileName: string) => {
+		if (!confirm(`Are you sure you want to untrack "${profileName}"?\n\nThis will:\n- Remove tracking for this quality profile\n- Convert associated custom formats to individual tracking\n- NOT delete any custom formats from your instance`)) {
+			return;
+		}
+
+		setUntrackingId(`${instanceId}-${profileFileName}`);
+		try {
+			const result = await untrackMutation.mutateAsync({
+				instanceId,
+				profileFileName,
+			});
+			toast.success(`${result.message} (${result.convertedCFs} CFs converted to individual tracking)`);
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : "Failed to untrack quality profile");
+		} finally {
+			setUntrackingId(null);
 		}
 	};
 
@@ -95,16 +117,38 @@ export const TrackedQualityProfiles = React.memo(function TrackedQualityProfiles
 										})}
 									</span>
 								</div>
-								<div className="text-xs text-fg-muted">Git ref: {profile.gitRef}</div>
+								<div className="flex gap-2 items-center text-xs text-fg-muted">
+									<span>Git ref: {profile.gitRef}</span>
+									{profile.commitSha && (
+										<Badge variant="secondary" className="text-xs font-mono">
+											{profile.commitSha.slice(0, 7)}
+										</Badge>
+									)}
+								</div>
 							</div>
 
 							<div className="flex gap-2 shrink-0">
 								<Button
 									size="sm"
 									onClick={() => handleReapply(profile.serviceInstanceId, profile.profileFileName)}
-									disabled={reapplyMutation.isPending}
+									disabled={reapplyMutation.isPending || untrackingId === `${profile.serviceInstanceId}-${profile.profileFileName}`}
 								>
 									Re-apply
+								</Button>
+								<Button
+									size="sm"
+									variant="danger"
+									onClick={() => handleUntrack(profile.serviceInstanceId, profile.profileFileName, profile.profileName)}
+									disabled={untrackingId === `${profile.serviceInstanceId}-${profile.profileFileName}`}
+									title="Stop tracking this quality profile"
+								>
+									{untrackingId === `${profile.serviceInstanceId}-${profile.profileFileName}` ? (
+										"Untracking..."
+									) : (
+										<>
+											<Trash2 className="w-4 h-4" />
+										</>
+									)}
 								</Button>
 							</div>
 						</div>

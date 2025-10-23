@@ -1,6 +1,7 @@
 "use client";
 
-import { type ReactNode, useEffect } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "../../lib/utils";
 
 export interface DialogProps {
@@ -18,6 +19,8 @@ const sizeStyles = {
 };
 
 export const Dialog = ({ open, onOpenChange, children, size = "md" }: DialogProps) => {
+	const dialogRef = useRef<HTMLDivElement>(null);
+
 	// Handle ESC key
 	useEffect(() => {
 		const handleEsc = (e: KeyboardEvent) => {
@@ -42,10 +45,61 @@ export const Dialog = ({ open, onOpenChange, children, size = "md" }: DialogProp
 		};
 	}, [open]);
 
+	// Focus management: Focus first focusable element when dialog opens
+	useEffect(() => {
+		if (open && dialogRef.current) {
+			const focusableElements = dialogRef.current.querySelectorAll<HTMLElement>(
+				'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+			);
+			const firstElement = focusableElements[0];
+			if (firstElement) {
+				// Delay focus to ensure DOM is ready
+				setTimeout(() => firstElement.focus(), 0);
+			}
+		}
+	}, [open]);
+
+	// Focus trap: Keep focus within dialog
+	useEffect(() => {
+		if (!open || !dialogRef.current) return;
+
+		const handleTabKey = (e: KeyboardEvent) => {
+			if (e.key !== "Tab" || !dialogRef.current) return;
+
+			const focusableElements = Array.from(
+				dialogRef.current.querySelectorAll<HTMLElement>(
+					'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+				)
+			);
+
+			if (focusableElements.length === 0) return;
+
+			const firstElement = focusableElements[0];
+			const lastElement = focusableElements[focusableElements.length - 1];
+
+			if (e.shiftKey) {
+				// Shift + Tab: Moving backwards
+				if (document.activeElement === firstElement) {
+					e.preventDefault();
+					lastElement.focus();
+				}
+			} else {
+				// Tab: Moving forwards
+				if (document.activeElement === lastElement) {
+					e.preventDefault();
+					firstElement.focus();
+				}
+			}
+		};
+
+		document.addEventListener("keydown", handleTabKey);
+		return () => document.removeEventListener("keydown", handleTabKey);
+	}, [open]);
+
 	if (!open) return null;
 
-	return (
-		<div className="fixed inset-0 z-modal-backdrop">
+	const modalContent = (
+		<div className="fixed inset-0 z-modal-backdrop isolate">
 			{/* Backdrop */}
 			<div
 				className="fixed inset-0 bg-bg/80 backdrop-blur"
@@ -56,6 +110,7 @@ export const Dialog = ({ open, onOpenChange, children, size = "md" }: DialogProp
 			{/* Dialog Container */}
 			<div className="fixed inset-0 flex items-center justify-center p-4 sm:p-6 md:p-8 pointer-events-none">
 				<div
+					ref={dialogRef}
 					className={cn(
 						"relative z-modal w-full overflow-hidden rounded-2xl border border-border bg-bg-subtle/95 shadow-xl pointer-events-auto",
 						"max-h-[90vh] flex flex-col",
@@ -70,6 +125,11 @@ export const Dialog = ({ open, onOpenChange, children, size = "md" }: DialogProp
 			</div>
 		</div>
 	);
+
+	// Render modal in a portal at document.body to escape any stacking contexts
+	return typeof window !== "undefined"
+		? createPortal(modalContent, document.body)
+		: null;
 };
 
 export interface DialogHeaderProps {

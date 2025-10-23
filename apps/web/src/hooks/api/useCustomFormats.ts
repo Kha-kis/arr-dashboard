@@ -3,7 +3,12 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CustomFormat } from "@arr/shared";
+import type {
+	CustomFormat,
+	TemplateOverlayDto,
+	TemplatePreviewRequest,
+	TemplateApplyRequest,
+} from "@arr/shared";
 import * as customFormatsApi from "../../lib/api-client/custom-formats";
 
 /**
@@ -19,6 +24,8 @@ export const customFormatsKeys = {
 		[...customFormatsKeys.details(), instanceId, customFormatId] as const,
 	schema: (instanceId: string) =>
 		[...customFormatsKeys.all, "schema", instanceId] as const,
+	overlay: (instanceId: string) =>
+		[...customFormatsKeys.all, "overlay", instanceId] as const,
 };
 
 /**
@@ -224,5 +231,85 @@ export function useCustomFormatSchema(instanceId: string | undefined) {
 		enabled: !!instanceId,
 		staleTime: 30 * 60 * 1000, // 30 minutes (schema rarely changes)
 		gcTime: 60 * 60 * 1000, // 1 hour
+	});
+}
+
+// ============================================================================
+// Template Overlay System Hooks
+// ============================================================================
+
+/**
+ * Hook to get template overlay configuration for an instance
+ */
+export function useTemplateOverlay(instanceId: string | undefined) {
+	return useQuery({
+		queryKey: customFormatsKeys.overlay(instanceId || ""),
+		queryFn: () => customFormatsApi.getTemplateOverlay(instanceId!),
+		enabled: !!instanceId,
+		staleTime: 2 * 60 * 1000, // 2 minutes
+		gcTime: 10 * 60 * 1000, // 10 minutes
+	});
+}
+
+/**
+ * Hook to update template overlay configuration
+ */
+export function useUpdateTemplateOverlay() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: ({
+			instanceId,
+			overlay,
+		}: {
+			instanceId: string;
+			overlay: TemplateOverlayDto;
+		}) => customFormatsApi.updateTemplateOverlay(instanceId, overlay),
+		onSuccess: (_, variables) => {
+			// Invalidate the overlay query for this instance
+			queryClient.invalidateQueries({
+				queryKey: customFormatsKeys.overlay(variables.instanceId),
+			});
+		},
+	});
+}
+
+/**
+ * Hook to preview template merge
+ */
+export function usePreviewTemplateMerge() {
+	return useMutation({
+		mutationFn: ({
+			instanceId,
+			request,
+		}: {
+			instanceId: string;
+			request: TemplatePreviewRequest;
+		}) => customFormatsApi.previewTemplateMerge(instanceId, request),
+	});
+}
+
+/**
+ * Hook to apply template merge
+ */
+export function useApplyTemplateMerge() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: ({
+			instanceId,
+			request,
+		}: {
+			instanceId: string;
+			request: TemplateApplyRequest;
+		}) => customFormatsApi.applyTemplateMerge(instanceId, request),
+		onSuccess: (_, variables) => {
+			// Invalidate all custom formats (they may have changed)
+			queryClient.invalidateQueries({ queryKey: customFormatsKeys.lists() });
+			// Invalidate the overlay query (lastAppliedAt updated)
+			queryClient.invalidateQueries({
+				queryKey: customFormatsKeys.overlay(variables.instanceId),
+			});
+		},
 	});
 }

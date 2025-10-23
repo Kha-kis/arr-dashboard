@@ -3,7 +3,16 @@
  * Client functions for custom format CRUD operations
  */
 
-import type { CustomFormat } from "@arr/shared";
+import type {
+	CustomFormat,
+	TemplateOverlayDto,
+	GetTemplateOverlayResponse,
+	UpdateTemplateOverlayResponse,
+	TemplatePreviewRequest,
+	TemplatePreviewResponse,
+	TemplateApplyRequest,
+	TemplateApplyResponse,
+} from "@arr/shared";
 import { apiRequest } from "./base";
 
 // Response types
@@ -167,4 +176,70 @@ export async function getCustomFormatSchema(instanceId: string): Promise<any> {
 	return apiRequest<any>(`/api/custom-formats/schema/${instanceId}`, {
 		method: "GET",
 	});
+}
+
+// ============================================================================
+// Template Overlay System
+// ============================================================================
+
+/**
+ * Get template overlay configuration for an instance
+ */
+export async function getTemplateOverlay(
+	instanceId: string,
+): Promise<GetTemplateOverlayResponse> {
+	return apiRequest<GetTemplateOverlayResponse>(
+		`/api/custom-formats/${instanceId}/overlay`,
+		{
+			method: "GET",
+		},
+	);
+}
+
+/**
+ * Update template overlay configuration for an instance
+ */
+export async function updateTemplateOverlay(
+	instanceId: string,
+	overlay: TemplateOverlayDto,
+): Promise<UpdateTemplateOverlayResponse> {
+	return apiRequest<UpdateTemplateOverlayResponse>(
+		`/api/custom-formats/${instanceId}/overlay`,
+		{
+			method: "PUT",
+			json: overlay,
+		},
+	);
+}
+
+/**
+ * Preview template merge (dry-run)
+ */
+export async function previewTemplateMerge(
+	instanceId: string,
+	request: TemplatePreviewRequest,
+): Promise<TemplatePreviewResponse> {
+	return apiRequest<TemplatePreviewResponse>(
+		`/api/custom-formats/${instanceId}/preview`,
+		{
+			method: "POST",
+			json: request,
+		},
+	);
+}
+
+/**
+ * Apply template merge to instance
+ */
+export async function applyTemplateMerge(
+	instanceId: string,
+	request: TemplateApplyRequest,
+): Promise<TemplateApplyResponse> {
+	return apiRequest<TemplateApplyResponse>(
+		`/api/custom-formats/${instanceId}/apply`,
+		{
+			method: "POST",
+			json: request,
+		},
+	);
 }

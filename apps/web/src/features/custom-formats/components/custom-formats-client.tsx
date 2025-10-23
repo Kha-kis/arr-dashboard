@@ -13,21 +13,13 @@ import {
 import {
 	useTrashTracked,
 	useSyncTrashFormats,
-	useAllTrashSyncSettings,
-	useUpdateTrashSyncSettings,
 	useToggleSyncExclusion,
 	useImportTrashFormat,
-	useTrashQualityProfiles,
-	useApplyQualityProfile,
 } from "../../../hooks/api/useTrashGuides";
 import * as customFormatsApi from "../../../lib/api-client/custom-formats";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, Badge, Input, toast, Tabs, TabsList, TabsTrigger, TabsContent } from "../../../components/ui";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent, Button, Badge, Input, toast } from "../../../components/ui";
 import type { CustomFormat } from "@arr/shared";
-import { ScoringMatrix } from "./scoring-matrix";
-import { InstanceSyncSettings } from "./instance-sync-settings";
-import { QualityProfilesList } from "./quality-profiles-list";
 import { TrackedCFGroups } from "./tracked-cf-groups";
-import { TrackedQualityProfiles } from "./tracked-quality-profiles";
 
 // Lazy load heavy modal components
 const CustomFormatFormModal = lazy(() => import("./custom-format-form-modal").then(module => ({ default: module.CustomFormatFormModal })));
@@ -53,10 +45,6 @@ export const CustomFormatsClient = () => {
 	const syncTrashMutation = useSyncTrashFormats();
 	const toggleExclusionMutation = useToggleSyncExclusion();
 	const trashImportMutation = useImportTrashFormat();
-
-	// TRaSH Auto-sync settings (per-instance)
-	const { data: allSyncSettings } = useAllTrashSyncSettings();
-	const updateSyncSettingsMutation = useUpdateTrashSyncSettings();
 
 	const [selectedInstance, setSelectedInstance] = useState<string | null>(null);
 	const [selectedFormat, setSelectedFormat] = useState<CustomFormat | null>(null);
@@ -88,10 +76,6 @@ export const CustomFormatsClient = () => {
 	// TRaSH format selection state (for pre-filling form)
 	const [selectedTrashFormat, setSelectedTrashFormat] = useState<any | null>(null);
 
-	// Tab state
-	const [activeTab, setActiveTab] = useState<"formats" | "scoring" | "auto-sync" | "quality-profiles">("formats");
-	const [scoringInstanceId, setScoringInstanceId] = useState<string>("");
-	const [qualityProfileInstanceId, setQualityProfileInstanceId] = useState<string>("");
 
 
 	// Handlers
@@ -101,9 +85,12 @@ export const CustomFormatsClient = () => {
 			return;
 		}
 		// Default to first instance
-		setSelectedInstance(instances[0].instanceId);
-		setSelectedFormat(null);
-		setIsModalOpen(true);
+		const firstInstance = instances[0];
+		if (firstInstance) {
+			setSelectedInstance(firstInstance.instanceId);
+			setSelectedFormat(null);
+			setIsModalOpen(true);
+		}
 	};
 
 	const handleBrowseTrashClick = () => {
@@ -407,6 +394,7 @@ export const CustomFormatsClient = () => {
 		const deletePromises: Promise<void>[] = [];
 		for (const key of selectedFormats) {
 			const [instanceId, formatId] = key.split("-");
+			if (!instanceId || !formatId) continue;
 			deletePromises.push(
 				deleteMutation.mutateAsync({
 					instanceId,
@@ -432,6 +420,7 @@ export const CustomFormatsClient = () => {
 		try {
 			for (const key of selectedFormats) {
 				const [instanceId, formatId] = key.split("-");
+				if (!instanceId || !formatId) continue;
 				await exportCustomFormat(instanceId, Number(formatId));
 			}
 			toast.success(`${selectedFormats.size} custom format(s) exported successfully`);
@@ -516,16 +505,6 @@ export const CustomFormatsClient = () => {
 
 	return (
 		<div className="space-y-6">
-			<Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as "formats" | "scoring" | "auto-sync" | "quality-profiles")}>
-				<TabsList>
-					<TabsTrigger value="formats">Formats</TabsTrigger>
-					<TabsTrigger value="scoring">Scoring</TabsTrigger>
-					<TabsTrigger value="auto-sync">Auto-Sync</TabsTrigger>
-					<TabsTrigger value="quality-profiles">Quality Profiles</TabsTrigger>
-				</TabsList>
-
-				{/* Formats Tab */}
-				<TabsContent value="formats" className="space-y-6 mt-6">
 					{/* Header */}
 					<Card>
 						<CardHeader>
@@ -808,7 +787,7 @@ export const CustomFormatsClient = () => {
 													</td>
 													<td className="p-4">
 														<div className="flex items-center gap-2">
-															<Badge variant="secondary" className="text-xs">
+															<Badge variant="default" className="text-xs">
 																{format.instanceService}
 															</Badge>
 															<span className="text-sm text-fg-muted">
@@ -895,31 +874,37 @@ export const CustomFormatsClient = () => {
 										<h3 className="text-lg font-semibold text-fg">
 											{instance.instanceLabel}
 										</h3>
-										<Badge variant="secondary" className="text-xs">
+										<Badge variant="default" className="text-xs">
 											{instance.instanceService}
 										</Badge>
 										<span className="text-sm text-fg-muted">
 											{instanceFormats.length} format{instanceFormats.length !== 1 ? "s" : ""}
 										</span>
 										{/* Show TRaSH managed count */}
-										{trashTrackedData?.tracked?.[instance.instanceId]?.length > 0 && (
-											<Badge variant="success" className="text-xs">
-												{trashTrackedData.tracked[instance.instanceId].length} TRaSH
-											</Badge>
-										)}
+										{(() => {
+											const trashCount = trashTrackedData?.tracked?.[instance.instanceId]?.length ?? 0;
+											return trashCount > 0 ? (
+												<Badge variant="success" className="text-xs">
+													{trashCount} TRaSH
+												</Badge>
+											) : null;
+										})()}
 									</div>
 									<div className="flex gap-2">
 										{/* Sync TRaSH button - only show if there are tracked formats */}
-										{trashTrackedData?.tracked?.[instance.instanceId]?.length > 0 && (
-											<Button
-												size="sm"
-												variant="secondary"
-												onClick={() => handleSyncTrash(instance.instanceId, instance.instanceLabel)}
-												disabled={syncTrashMutation.isPending}
-											>
-												{syncTrashMutation.isPending ? "Syncing..." : "Sync TRaSH"}
-											</Button>
-										)}
+										{(() => {
+											const trashCount = trashTrackedData?.tracked?.[instance.instanceId]?.length ?? 0;
+											return trashCount > 0 ? (
+												<Button
+													size="sm"
+													variant="secondary"
+													onClick={() => handleSyncTrash(instance.instanceId, instance.instanceLabel)}
+													disabled={syncTrashMutation.isPending}
+												>
+													{syncTrashMutation.isPending ? "Syncing..." : "Sync TRaSH"}
+												</Button>
+											) : null;
+										})()}
 										<Button
 											size="sm"
 											variant="secondary"
@@ -1059,234 +1044,6 @@ export const CustomFormatsClient = () => {
 
 			{/* Tracked CF Groups */}
 			<TrackedCFGroups />
-
-				</TabsContent>
-
-				{/* Scoring Tab */}
-				<TabsContent value="scoring" className="space-y-6 mt-6">
-					{instances.length === 0 ? (
-						<Card>
-							<CardContent className="py-12">
-								<div className="text-center space-y-4">
-									<p className="text-fg-muted">
-										No Sonarr or Radarr instances configured.
-									</p>
-									<p className="text-sm text-fg-subtle">
-										Add instances in Settings → Services to get started.
-									</p>
-									<Button asChild>
-										<a href="/settings">Go to Settings</a>
-									</Button>
-								</div>
-							</CardContent>
-						</Card>
-					) : (
-						<>
-							{/* Instance selector */}
-							<Card>
-								<CardHeader>
-									<CardTitle>Quality Profile Scoring</CardTitle>
-									<CardDescription>
-										Manage custom format scores across quality profiles
-									</CardDescription>
-								</CardHeader>
-								<CardContent>
-									<div className="space-y-2">
-										<label htmlFor="scoring-instance" className="text-sm font-medium text-fg">
-											Select Instance
-										</label>
-										<select
-											id="scoring-instance"
-											value={scoringInstanceId}
-											onChange={(e) => setScoringInstanceId(e.target.value)}
-											className="w-full max-w-md rounded-lg border border-border bg-bg px-3 py-2 text-sm text-fg focus:ring-2 focus:ring-primary focus:ring-offset-2"
-										>
-											<option value="">Choose an instance...</option>
-											{instances.map((instance) => (
-												<option key={instance.instanceId} value={instance.instanceId}>
-													{instance.instanceLabel} ({instance.instanceService})
-												</option>
-											))}
-										</select>
-										<p className="text-xs text-fg-muted">
-											View and edit custom format scores for each quality profile
-										</p>
-									</div>
-								</CardContent>
-							</Card>
-
-							{/* Scoring matrix */}
-							{scoringInstanceId && (
-								<ScoringMatrix
-									instanceId={scoringInstanceId}
-									instanceLabel={
-										instances.find((i) => i.instanceId === scoringInstanceId)
-											?.instanceLabel || ""
-									}
-								/>
-							)}
-						</>
-					)}
-				</TabsContent>
-
-			{/* Auto-Sync Tab */}
-			<TabsContent value="auto-sync" className="space-y-6 mt-6">
-				{instances.length === 0 ? (
-					<Card>
-						<CardContent className="py-12">
-							<div className="text-center space-y-4">
-								<p className="text-fg-muted">
-									No Sonarr or Radarr instances configured.
-								</p>
-								<p className="text-sm text-fg-subtle">
-									Add instances in Settings → Services to get started.
-								</p>
-								<Button asChild>
-									<a href="/settings">Go to Settings</a>
-								</Button>
-							</div>
-						</CardContent>
-					</Card>
-				) : (
-					<>
-						{/* Header card */}
-						<Card>
-							<CardHeader>
-								<CardTitle>Automatic TRaSH Sync</CardTitle>
-								<CardDescription>
-									Configure automatic sync schedules for each instance independently.
-									TRaSH-managed custom formats will be automatically updated on the schedule you set.
-								</CardDescription>
-							</CardHeader>
-						</Card>
-
-						{/* Instance cards */}
-						<div className="space-y-4">
-							{instances.map((instance) => {
-								const trackedCount = trashTrackedData?.tracked?.[instance.instanceId]?.length || 0;
-								const instanceSettings = allSyncSettings?.settings?.find(
-									(s) => s.serviceInstanceId === instance.instanceId
-								);
-
-								const currentSettings = instanceSettings || {
-									enabled: false,
-									intervalType: "DISABLED" as const,
-									intervalValue: 24,
-									syncFormats: true,
-									syncCFGroups: true,
-									syncQualityProfiles: true,
-									lastRunAt: null,
-									lastRunStatus: null,
-									lastErrorMessage: null,
-									formatsSynced: 0,
-									formatsFailed: 0,
-									cfGroupsSynced: 0,
-									qualityProfilesSynced: 0,
-									nextRunAt: null,
-								};
-
-								return (
-									<InstanceSyncSettings
-										key={instance.instanceId}
-										instanceId={instance.instanceId}
-										instanceLabel={instance.instanceLabel}
-										instanceService={instance.instanceService}
-										trashFormatCount={trackedCount}
-										currentSettings={currentSettings}
-										onSave={(enabled, intervalType, intervalValue, syncFormats, syncCFGroups, syncQualityProfiles) =>
-											handleUpdateInstanceSync(
-												instance.instanceId,
-												enabled,
-												intervalType,
-												intervalValue,
-												syncFormats,
-												syncCFGroups,
-												syncQualityProfiles
-											)
-										}
-										isSaving={updateSyncSettingsMutation.isPending}
-									/>
-								);
-							})}
-						</div>
-					</>
-				)}
-			</TabsContent>
-
-			{/* Quality Profiles Tab */}
-			<TabsContent value="quality-profiles" className="space-y-6 mt-6">
-				{instances.length === 0 ? (
-					<Card>
-						<CardContent className="py-12">
-							<div className="text-center space-y-4">
-								<p className="text-fg-muted">
-									No Sonarr or Radarr instances configured.
-								</p>
-								<p className="text-sm text-fg-subtle">
-									Add instances in Settings → Services to get started.
-								</p>
-								<Button asChild>
-									<a href="/settings">Go to Settings</a>
-								</Button>
-							</div>
-						</CardContent>
-					</Card>
-				) : (
-					<>
-						{/* Header card */}
-						<Card>
-							<CardHeader>
-								<CardTitle>TRaSH Quality Profiles</CardTitle>
-								<CardDescription>
-									Browse and apply pre-configured quality profiles from TRaSH Guides to your Sonarr and Radarr instances.
-								</CardDescription>
-							</CardHeader>
-							<CardContent>
-								<div className="space-y-2">
-									<label htmlFor="qp-instance" className="text-sm font-medium text-fg">
-										Select Instance
-									</label>
-									<select
-										id="qp-instance"
-										value={qualityProfileInstanceId}
-										onChange={(e) => setQualityProfileInstanceId(e.target.value)}
-										className="w-full max-w-md rounded-lg border border-border bg-bg px-3 py-2 text-sm text-fg focus:ring-2 focus:ring-primary focus:ring-offset-2"
-									>
-										<option value="">Choose an instance...</option>
-										{instances.map((instance) => (
-											<option key={instance.instanceId} value={instance.instanceId}>
-												{instance.instanceLabel} ({instance.instanceService})
-											</option>
-										))}
-									</select>
-									<p className="text-xs text-fg-muted">
-										Select an instance to view and apply TRaSH quality profiles
-									</p>
-								</div>
-							</CardContent>
-						</Card>
-
-						{/* Quality Profiles List */}
-						{qualityProfileInstanceId && (
-							<QualityProfilesList
-								instanceId={qualityProfileInstanceId}
-								instanceLabel={
-									instances.find((i) => i.instanceId === qualityProfileInstanceId)
-										?.instanceLabel || ""
-								}
-								service={
-									instances.find((i) => i.instanceId === qualityProfileInstanceId)
-										?.instanceService as "SONARR" | "RADARR" | undefined
-								}
-							/>
-						)}
-
-						{/* Tracked Quality Profiles */}
-						<TrackedQualityProfiles />
-					</>
-				)}
-			</TabsContent>
-			</Tabs>
 
 			{/* Modals (outside tabs, lazy loaded with Suspense) */}
 			{/* Create/Edit Modal */}

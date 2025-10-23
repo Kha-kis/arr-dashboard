@@ -433,7 +433,7 @@ export function CustomFormatFormModal({
 														{enableAutoSync ? (
 															<>Auto-sync will keep this format updated with TRaSH Guides. You can customize it now, but changes may be overwritten during sync.</>
 														) : (
-															<>Auto-sync is disabled. Your customizations will be preserved and won't be overwritten by TRaSH updates.</>
+															<>Auto-sync is disabled. Your customizations will be preserved and won&apos;t be overwritten by TRaSH updates.</>
 														)}
 													</p>
 												</div>
@@ -762,7 +762,7 @@ export function CustomFormatFormModal({
 								{isJsonDirty && !jsonError && (
 									<div className="rounded-lg border border-warning bg-warning/10 px-3 py-2">
 										<p className="text-sm text-warning">
-											You have unsaved JSON changes. Click "Apply Changes" to update the form.
+											You have unsaved JSON changes. Click &quot;Apply Changes&quot; to update the form.
 										</p>
 									</div>
 								)}
@@ -778,8 +778,8 @@ export function CustomFormatFormModal({
 									<p><strong>Tips:</strong></p>
 									<ul className="list-disc list-inside space-y-1 ml-2">
 										<li>Paste JSON from TRaSH guides or other sources</li>
-										<li>Format: Click "Format" to auto-indent the JSON</li>
-										<li>Apply: Click "Apply Changes" to sync JSON to form fields</li>
+										<li>Format: Click &quot;Format&quot; to auto-indent the JSON</li>
+										<li>Apply: Click &quot;Apply Changes&quot; to sync JSON to form fields</li>
 										<li>Required fields: name, specifications array</li>
 									</ul>
 								</div>

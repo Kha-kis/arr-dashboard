@@ -8,6 +8,55 @@ import { z } from "zod";
 import { fetchTrashGuides, fetchCFGroups, fetchQualityProfiles } from "../lib/arr-sync/trash/trash-fetcher.js";
 import type { ServiceType } from "@prisma/client";
 
+// Helper function to determine semantic category from CF group filename
+function getSemanticCategory(fileName: string): string {
+	const lower = fileName.toLowerCase();
+
+	// HDR Formats
+	if (lower.includes('hdr-formats')) return 'HDR Formats';
+
+	// SDR
+	if (lower.includes('optional-sdr')) return 'SDR';
+
+	// Audio
+	if (lower.includes('audio-formats')) return 'Audio';
+
+	// Movie Versions
+	if (lower.includes('movie-versions')) return 'Movie Versions';
+
+	// Optional / Miscellaneous
+	if (lower.includes('optional-misc')) return 'Optional';
+	if (lower.includes('optional-resolutions')) return 'Optional';
+
+	// Release Groups
+	if (lower.includes('release-groups')) {
+		if (lower.includes('german')) return 'Release Groups (German)';
+		if (lower.includes('french')) return 'Release Groups (French)';
+		if (lower.includes('hd-bluray')) return 'Release Groups (HD Bluray)';
+		if (lower.includes('uhd-bluray')) return 'Release Groups (UHD Bluray)';
+		if (lower.includes('remuxes')) return 'Release Groups (Remux)';
+		if (lower.includes('web')) return 'Release Groups (WEB)';
+		return 'Release Groups';
+	}
+
+	// Streaming Services
+	if (lower.includes('streaming-services')) {
+		if (lower.includes('anime')) return 'Streaming Services (Anime)';
+		if (lower.includes('asian')) return 'Streaming Services (Asian)';
+		if (lower.includes('dutch')) return 'Streaming Services (Dutch)';
+		if (lower.includes('uk')) return 'Streaming Services (UK)';
+		if (lower.includes('general')) return 'Streaming Services';
+		return 'Streaming Services (Other)';
+	}
+
+	// Required
+	if (lower.includes('required') || lower.includes('golden-rule')) return 'Required';
+	if (lower.includes('sqp')) return 'Quality Profile Formats';
+
+	// Default fallback
+	return 'Other';
+}
+
 // Request schemas
 const GetTrashFormatsQuerySchema = z.object({
 	service: z.enum(["SONARR", "RADARR"]),
@@ -33,6 +82,11 @@ const ApplyQualityProfileSchema = z.object({
 	profileFileName: z.string(),
 	service: z.enum(["SONARR", "RADARR"]),
 	ref: z.string().default("master"),
+	customizations: z.record(z.object({
+		excluded: z.boolean().optional(),
+		scoreOverride: z.number().optional(),
+	})).optional(),
+	addedCFTrashIds: z.array(z.string()).optional(),
 });
 
 export async function trashGuidesRoutes(app: FastifyInstance) {
@@ -871,6 +925,129 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 	});
 
 	// ========================================================================
+	// Get Recommended CFs for Quality Profile
+	// ========================================================================
+
+	app.get("/api/trash-guides/recommended-cfs", async (request, reply) => {
+		if (!request.currentUser) {
+			return reply.code(401).send({ error: "Unauthorized" });
+		}
+
+		const querySchema = z.object({
+			service: z.enum(["RADARR", "SONARR"]),
+			ref: z.string().default("master"),
+			profileTrashId: z.string(), // The trash_id of the quality profile
+		});
+
+		const queryValidation = querySchema.safeParse(request.query);
+		if (!queryValidation.success) {
+			return reply.code(400).send({
+				error: "Invalid query parameters",
+				details: queryValidation.error.errors,
+			});
+		}
+
+		const { service, ref, profileTrashId } = queryValidation.data;
+
+		try {
+			app.log.info({
+				service,
+				ref,
+				profileTrashId,
+			}, "Fetching recommended CFs for quality profile");
+
+			// Fetch all CF groups
+			const cfGroups = await fetchCFGroups({
+				service: service as ServiceType,
+				ref,
+			});
+
+			// Filter CF groups to find those that are:
+			// 1. NOT excluded for this profile trash_id
+			// 2. Marked as optional (filename contains "optional" or not marked as "default")
+			const recommendedCFs: Array<{
+				trashId: string;
+				name: string;
+				cfGroupName: string;
+				cfGroupFileName: string;
+				cfGroupDescription?: string;
+				isOptional: boolean;
+				isNicheStreaming: boolean;
+				required: boolean;
+				default: boolean;
+				isMutuallyExclusive: boolean;
+				semanticCategory: string;
+			}> = [];
+
+			for (const cfGroup of cfGroups) {
+				// Check if this CF group is excluded for the profile
+				const excludedProfiles = cfGroup.quality_profiles?.exclude || {};
+				const isExcluded = Object.values(excludedProfiles).includes(profileTrashId);
+
+				if (isExcluded) {
+					continue; // Skip excluded groups
+				}
+
+				// Determine if this CF group is "optional" (from "optional-*" files)
+				const isOptionalGroup = cfGroup.fileName?.toLowerCase().includes('optional');
+
+				// Determine if this is a niche/specific streaming service (not general)
+				const isNicheStreaming =
+					cfGroup.default !== "true" &&
+					cfGroup.fileName?.toLowerCase().includes('streaming-services') &&
+					!cfGroup.fileName?.toLowerCase().includes('general');
+
+				// Determine if this CF group is mutually exclusive (only one CF should be selected)
+				// TRaSH Guides indicates mutual exclusivity via description text
+				// Look for the specific phrase: "Please ensure you only score or enable one of them"
+				const hasMutualExclusivityWarning = cfGroup.trash_description?.includes('only score or enable one of them') || false;
+				const isMutuallyExclusive = hasMutualExclusivityWarning;
+
+				// Determine semantic category (for UI grouping like recyclarr)
+				const semanticCategory = getSemanticCategory(cfGroup.fileName || '');
+
+				// Add each CF in the group to the recommended list
+				if (cfGroup.custom_formats && Array.isArray(cfGroup.custom_formats)) {
+					for (const cf of cfGroup.custom_formats) {
+						recommendedCFs.push({
+							trashId: cf.trash_id,
+							name: cf.name,
+							cfGroupName: cfGroup.name,
+							cfGroupFileName: cfGroup.fileName,
+							cfGroupDescription: cfGroup.trash_description,
+							isOptional: isOptionalGroup,
+							isNicheStreaming: isNicheStreaming,
+							required: cf.required || false,
+							default: cf.default || false,
+							isMutuallyExclusive: isMutuallyExclusive,
+							semanticCategory: semanticCategory,
+						});
+					}
+				}
+			}
+
+			app.log.info({
+				service,
+				ref,
+				profileTrashId,
+				count: recommendedCFs.length,
+			}, "Recommended CFs fetched");
+
+			return reply.send({
+				recommendedCFs,
+				version: ref,
+				lastUpdated: new Date().toISOString(),
+			});
+		} catch (error) {
+			app.log.error("Failed to fetch recommended CFs:", error);
+			return reply.code(500).send({
+				error: "Failed to fetch recommended CFs",
+				details: error instanceof Error ? error.message : String(error),
+			});
+		}
+	});
+
+	// ========================================================================
 	// Import CF Group (Multiple Custom Formats)
 	// ========================================================================
 
@@ -1157,6 +1334,76 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 				count: qualityProfiles.length,
 			}, "TRaSH guides quality profiles fetched");
 
+
+		// Enrich each profile with auto-included CFs from default CF groups
+		try {
+			app.log.info("Enriching quality profiles with auto-included CFs from CF groups");
+
+			const cfGroups = await fetchCFGroups({
+				service: service as ServiceType,
+				ref,
+			});
+
+			const trashData = await fetchTrashGuides({
+				service: service as ServiceType,
+				ref,
+			});
+
+			for (const profile of qualityProfiles) {
+				const autoIncludedCFs: Record<string, { trashId: string; groupName: string; groupFileName: string }> = {};
+
+				for (const cfGroup of cfGroups) {
+					if (cfGroup.default !== true && cfGroup.default !== 'true') {
+						continue;
+					}
+
+					const isExcluded = cfGroup.quality_profiles?.exclude?.[profile.name] != null;
+					if (isExcluded) {
+						continue;
+					}
+
+					const cfsToInclude = (cfGroup.custom_formats || []).filter((cf: any) => {
+						return cf.required === true || cf.default === true;
+					});
+
+					for (const cfRef of cfsToInclude) {
+						const trashFormat = trashData.customFormats.find((cf: any) => cf.trash_id === cfRef.trash_id);
+						if (trashFormat) {
+							autoIncludedCFs[trashFormat.name] = {
+								trashId: cfRef.trash_id,
+								groupName: cfGroup.name,
+								groupFileName: cfGroup.fileName,
+							};
+						}
+					}
+				}
+
+				if (Object.keys(autoIncludedCFs).length > 0) {
+					if (!profile.formatItems) {
+						profile.formatItems = {};
+					}
+
+					for (const [cfName, cfInfo] of Object.entries(autoIncludedCFs)) {
+						if (!profile.formatItems[cfName]) {
+							profile.formatItems[cfName] = cfInfo.trashId;
+						}
+					}
+
+					(profile as any).autoIncludedCFs = autoIncludedCFs;
+
+					app.log.info({
+						profileName: profile.name,
+						autoIncludedCount: Object.keys(autoIncludedCFs).length,
+					}, "Auto-included CFs from CF groups for profile");
+				}
+			}
+		} catch (error) {
+			app.log.error({
+				error: error instanceof Error ? error.message : String(error),
+				stack: error instanceof Error ? error.stack : undefined
+			}, 'Failed to enrich profiles with CF groups - continuing without enrichment');
+		}
+
 			return reply.send({
 				qualityProfiles,
 				version: ref,
@@ -1166,6 +1413,123 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 			app.log.error("Failed to fetch TRaSH quality profiles:", error);
 			return reply.code(500).send({
 				error: "Failed to fetch TRaSH quality profiles",
+				details: error instanceof Error ? error.message : String(error),
+			});
+		}
+	});
+
+	// ========================================================================
+	// Preview Quality Profile Changes (Before Apply)
+	// ========================================================================
+
+	app.post("/api/trash-guides/preview-quality-profile", async (request, reply) => {
+		if (!request.currentUser) {
+			return reply.code(401).send({ error: "Unauthorized" });
+		}
+
+		const schema = z.object({
+			instanceId: z.string(),
+			profileFileName: z.string(),
+			ref: z.string().default("master"),
+			customizations: z.object({
+				excludedCFs: z.array(z.string()).optional(),
+				scoreOverrides: z.record(z.string(), z.number()).optional(),
+				minFormatScore: z.number().optional(),
+				cutoffFormatScore: z.number().optional(),
+			}).optional(),
+		});
+
+		const validation = schema.safeParse(request.body);
+		if (!validation.success) {
+			return reply.code(400).send({
+				error: "Invalid request body",
+				details: validation.error.errors,
+			});
+		}
+
+		const { instanceId, profileFileName, ref, customizations } = validation.data;
+
+		try {
+			// Get instance
+			const instance = await app.prisma.serviceInstance.findUnique({
+				where: { id: instanceId },
+			});
+
+			if (!instance) {
+				return reply.code(404).send({ error: "Instance not found" });
+			}
+
+			// Initialize version tracker
+			const { TRaSHVersionTracker } = await import('../lib/arr-sync/trash/version-tracker.js');
+			const versionTracker = new TRaSHVersionTracker(app.prisma, app.log);
+			const { commitSha, commitInfo } = await versionTracker.resolveAndTrackVersion(
+				instance.service as ServiceType,
+				ref
+			);
+
+			// Fetch TRaSH data using commit SHA
+			const trashData = await fetchTrashGuides({
+				service: instance.service as ServiceType,
+				ref: commitSha,
+			});
+
+			// Find the desired profile
+			const qualityProfiles = await fetchQualityProfiles({
+				service: instance.service as ServiceType,
+				ref: commitSha,
+			});
+
+			const desiredProfile = qualityProfiles.find(p => p.fileName === profileFileName);
+			if (!desiredProfile) {
+				return reply.code(404).send({ error: "Quality profile not found in TRaSH guides" });
+			}
+
+			// Fetch current state from instance
+			const fetcher = createInstanceFetcher(app, instance);
+			
+			// Get current custom formats
+			const currentCFsResponse = await fetcher('/api/v3/customformat');
+			const currentCFs = currentCFsResponse.ok ? await currentCFsResponse.json() : [];
+
+			// Get current quality profiles to find matching one
+			const currentProfilesResponse = await fetcher('/api/v3/qualityprofile');
+			const currentProfiles = currentProfilesResponse.ok ? await currentProfilesResponse.json() : [];
+			const currentProfile = currentProfiles.find((p: any) => p.name === desiredProfile.name) || null;
+
+			// Build desired custom formats list from profile
+			const desiredCFTrashIds = new Set(desiredProfile.customFormats || []);
+			const desiredCFs = trashData.customFormats.filter(cf => 
+				desiredCFTrashIds.has(cf.trash_id || "")
+			);
+
+			// Initialize diff service
+			const { ProfileDiffService } = await import('../lib/arr-sync/trash/profile-diff-service.js');
+			const diffService = new ProfileDiffService(app.prisma, app.log);
+
+			// Compute diff
+			const diffPlan = await diffService.computeDiff(
+				currentCFs,
+				currentProfile,
+				desiredCFs,
+				desiredProfile as any,
+				customizations,
+				{
+					commitSha,
+					commitMessage: commitInfo.message,
+					fetchedAt: new Date().toISOString(),
+				}
+			);
+
+			return reply.send({
+				success: true,
+				diffPlan,
+			});
+
+		} catch (error) {
+			app.log.error("Failed to preview quality profile:", error);
+			return reply.code(500).send({
+				success: false,
+				error: "Failed to preview quality profile",
 				details: error instanceof Error ? error.message : String(error),
 			});
 		}
@@ -1188,7 +1552,7 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 			});
 		}
 
-		const { instanceId, profileFileName, service, ref } = validation.data;
+		const { instanceId, profileFileName, service, ref, addedCFTrashIds, customizations } = validation.data;
 
 		try {
 			// Fetch the instance
@@ -1632,11 +1996,16 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 				return payload;
 			}
 
+			// Resolve ref to actual commit SHA for version pinning
+			const { TRaSHVersionTracker } = await import('../lib/arr-sync/trash/version-tracker.js');
+			const versionTracker = new TRaSHVersionTracker(app.prisma, app.log);
+			const { commitSha } = await versionTracker.resolveAndTrackVersion(service as ServiceType, ref);
+
 			// Fetch TRaSH custom formats data for the pipeline (BEFORE creating pipeline)
 			// This ensures the pipeline can import actual TRaSH format specifications
 			const trashData = await fetchTrashGuides({
 				service: service as ServiceType,
-				ref,
+				ref: commitSha, // Use actual commit SHA instead of branch name
 			});
 
 			app.log.info({
@@ -1644,6 +2013,39 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 				instanceName: instance.label,
 				trashFormatsCount: trashData.customFormats.length,
 			}, "Fetched TRaSH data for pipeline-based quality profile sync (recyclarr-style workflow)");
+
+			// Add manually-added custom formats to the profile's formatItems
+			if (addedCFTrashIds && addedCFTrashIds.length > 0) {
+				app.log.info({
+					addedCount: addedCFTrashIds.length,
+					addedCFs: addedCFTrashIds,
+				}, "Adding manually-selected custom formats to profile");
+
+				// Ensure formatItems exists as an object
+				if (!qualityProfile.formatItems) {
+					qualityProfile.formatItems = {};
+				}
+
+				// Add each manually-added CF to formatItems
+				for (const trashId of addedCFTrashIds) {
+					// Find the TRaSH format by trash_id
+					const trashFormat = trashData.customFormats.find(
+						(cf) => cf.trash_id === trashId
+					);
+
+					if (trashFormat) {
+						// Add to formatItems if not already present
+						if (!qualityProfile.formatItems[trashFormat.name]) {
+							qualityProfile.formatItems[trashFormat.name] = trashId;
+							app.log.debug(`Added manually-selected CF '${trashFormat.name}' to profile`);
+						}
+					} else {
+						app.log.warn({
+							trashId,
+						}, "Manually-selected CF not found in TRaSH data");
+					}
+				}
+			}
 
 			// Fetch existing custom formats to resolve formatItems
 			const existingFormatsResponse = await fetcher("/api/v3/customformat");
@@ -1660,7 +2062,8 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 				app.prisma,
 				instanceId,
 				instance.service,
-				ref
+				ref,        // Keep for backwards compat
+				commitSha   // NEW: Actual commit SHA for version pinning
 			);
 
 			// Apply the profile using pipeline workflow
@@ -1670,7 +2073,8 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 			const pipelineResult = await pipelineService.applyProfile(
 				qualityProfile.name,
 				qualityProfile, // Pass the entire TRaSH profile
-				profileFileName // Pass filename for tracking
+				profileFileName, // Pass filename for tracking
+				customizations // Pass user customizations (exclusions and score overrides)
 			);
 
 			if (!pipelineResult.success) {
@@ -1715,6 +2119,7 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 					qualityProfileId: result.id,
 					lastAppliedAt: new Date(),
 					gitRef: ref,
+					commitSha: commitSha, // NEW: Store actual commit SHA
 				},
 				create: {
 					serviceInstanceId: instanceId,
@@ -1723,6 +2128,7 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 					qualityProfileId: result.id,
 					service: service as any,
 					gitRef: ref,
+					commitSha: commitSha, // NEW: Store actual commit SHA
 				},
 			});
 
@@ -2325,7 +2731,7 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 				},
 			});
 
-			// Map to include instance label
+			// Map to include instance label and commitSha
 			const profiles = tracked.map((item) => ({
 				id: item.id,
 				serviceInstanceId: item.serviceInstanceId,
@@ -2335,6 +2741,7 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 				service: item.service,
 				lastAppliedAt: item.lastAppliedAt.toISOString(),
 				gitRef: item.gitRef,
+				commitSha: item.commitSha, // NEW: Version control
 				createdAt: item.createdAt.toISOString(),
 				updatedAt: item.updatedAt.toISOString(),
 				instanceLabel: item.serviceInstance.label,
@@ -2516,6 +2923,113 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 			}, "Failed to re-apply quality profile");
 			return reply.code(500).send({
 				error: "Failed to re-apply quality profile",
+				details: error instanceof Error ? error.message : String(error),
+			});
+		}
+	});
+
+	// ========================================================================
+	// Untrack Quality Profile
+	// ========================================================================
+
+	app.delete("/api/trash-guides/tracked-quality-profiles/:instanceId/:profileFileName", async (request, reply) => {
+		if (!request.currentUser) {
+			return reply.code(401).send({ error: "Unauthorized" });
+		}
+
+		const paramsValidation = z.object({
+			instanceId: z.string(),
+			profileFileName: z.string(),
+		}).safeParse(request.params);
+
+		if (!paramsValidation.success) {
+			return reply.code(400).send({
+				error: "Invalid request parameters",
+				details: paramsValidation.error.errors,
+			});
+		}
+
+		const { instanceId, profileFileName } = paramsValidation.data;
+
+		// Normalize filename (add .json if missing)
+		const normalizedFileName = profileFileName.endsWith('.json')
+			? profileFileName
+			: `${profileFileName}.json`;
+
+		try {
+			// Get the tracked profile
+			const trackedProfile = await app.prisma.trashQualityProfileTracking.findUnique({
+				where: {
+					serviceInstanceId_profileFileName: {
+						serviceInstanceId: instanceId,
+						profileFileName: normalizedFileName,
+					},
+				},
+				include: {
+					serviceInstance: true,
+				},
+			});
+
+			if (!trackedProfile) {
+				return reply.code(404).send({ error: "Tracked quality profile not found" });
+			}
+
+			// Find all custom formats that were imported via this quality profile
+			const relatedCFs = await app.prisma.trashCustomFormatTracking.findMany({
+				where: {
+					serviceInstanceId: instanceId,
+					importSource: "QUALITY_PROFILE",
+					sourceReference: normalizedFileName,
+				},
+			});
+
+			app.log.info({
+				profileName: trackedProfile.profileName,
+				relatedCFsCount: relatedCFs.length,
+			}, "Untracking quality profile");
+
+			// Remove the quality profile tracking
+			await app.prisma.trashQualityProfileTracking.delete({
+				where: {
+					serviceInstanceId_profileFileName: {
+						serviceInstanceId: instanceId,
+						profileFileName: normalizedFileName,
+					},
+				},
+			});
+
+			// Convert related CFs to individual tracking (don't delete them)
+			// This preserves the custom formats but removes the quality profile association
+			const converted = await app.prisma.trashCustomFormatTracking.updateMany({
+				where: {
+					serviceInstanceId: instanceId,
+					importSource: "QUALITY_PROFILE",
+					sourceReference: normalizedFileName,
+				},
+				data: {
+					importSource: "INDIVIDUAL",
+					sourceReference: null,
+				},
+			});
+
+			app.log.info({
+				profileName: trackedProfile.profileName,
+				convertedCount: converted.count,
+			}, "Quality profile untracked successfully");
+
+			return reply.send({
+				message: `Quality profile "${trackedProfile.profileName}" untracked successfully`,
+				profileName: trackedProfile.profileName,
+				convertedCFs: converted.count,
+			});
+		} catch (error) {
+			app.log.error({
+				error: error instanceof Error ? error.message : String(error),
+				instanceId,
+				profileFileName: normalizedFileName,
+			}, "Failed to untrack quality profile");
+			return reply.code(500).send({
+				error: "Failed to untrack quality profile",
 				details: error instanceof Error ? error.message : String(error),
 			});
 		}

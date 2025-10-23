@@ -15,7 +15,11 @@
 		"db:generate": "prisma generate --schema prisma/schema.prisma",
 		"db:migrate": "prisma migrate deploy --schema prisma/schema.prisma",
 		"db:push": "prisma db push --schema prisma/schema.prisma",
-		"reset-admin-password": "tsx scripts/reset-admin-password.ts"
+		"reset-admin-password": "tsx scripts/reset-admin-password.ts",
+		"e2e:reset-db": "tsx scripts/e2e-reset-db.ts",
+		"migrate:overlays": "tsx scripts/migrate-template-overlays.ts",
+		"migrate:overlays:rollback": "tsx scripts/migrate-template-overlays.ts rollback",
+		"migrate:overlays:verify": "tsx scripts/migrate-template-overlays.ts verify"
 	},
 	"dependencies": {
 		"@arr/shared": "workspace:*",

@@ -433,13 +433,21 @@ export interface TrashQualityProfile {
 	fileName: string;
 	trash_id?: string;
 	trash_description?: string;
+	trash_guide_url?: string; // URL to TRaSH Guides documentation
+	trash_score_set?: string; // Score set used for this profile (e.g., "anime-radarr", "sqp-1-1080p")
 	upgradeAllowed?: boolean;
 	cutoff?: any;
 	items?: any[];
 	minFormatScore?: number;
 	cutoffFormatScore?: number;
-	formatItems?: any[];
+	formatItems?: any; // Object with CF names as keys and trash_ids as values
 	language?: any;
+	// Metadata about which CFs were auto-included from CF groups
+	autoIncludedCFs?: Record<string, {
+		trashId: string;
+		groupName: string;
+		groupFileName: string;
+	}>;
 }
 
 export interface GetTrashQualityProfilesResponse {
@@ -558,5 +566,90 @@ export async function reapplyQualityProfile(
 			...request,
 			ref: request.ref || "master",
 		},
+	});
+}
+
+/**
+ * Get recommended/optional custom formats for a quality profile
+ */
+export interface RecommendedCF {
+	trashId: string;
+	name: string;
+	cfGroupName: string;
+	cfGroupFileName: string;
+	cfGroupDescription?: string;
+	isOptional: boolean;
+	isNicheStreaming: boolean;
+	required: boolean;
+	default: boolean;
+	isMutuallyExclusive: boolean;
+	semanticCategory: string;
+}
+
+export interface GetRecommendedCFsResponse {
+	recommendedCFs: RecommendedCF[];
+	version: string;
+	lastUpdated: string;
+}
+
+export async function getRecommendedCFs(
+	service: "SONARR" | "RADARR",
+	profileTrashId: string,
+	ref = "master"
+): Promise<GetRecommendedCFsResponse> {
+	return apiRequest<GetRecommendedCFsResponse>(
+		`/api/trash-guides/recommended-cfs?service=${service}&profileTrashId=${profileTrashId}&ref=${ref}`,
+		{
+			method: "GET",
+		}
+	);
+}
+
+/**
+ * Preview quality profile changes before applying
+ */
+export async function previewQualityProfile(data: {
+	instanceId: string;
+	profileFileName: string;
+	ref?: string;
+	customizations?: {
+		excludedCFs?: string[];
+		scoreOverrides?: Record<string, number>;
+		minFormatScore?: number;
+		cutoffFormatScore?: number;
+	};
+}) {
+	return apiRequest<{ success: boolean; diffPlan?: any; error?: string }>(
+		"/api/trash-guides/preview-quality-profile",
+		{
+			method: "POST",
+			body: JSON.stringify(data),
+		}
+	);
+}
+
+/**
+ * Untrack a quality profile (removes tracking, converts CFs to individual tracking)
+ */
+export async function untrackQualityProfile(
+	instanceId: string,
+	profileFileName: string
+): Promise<{
+	message: string;
+	profileName: string;
+	convertedCFs: number;
+}> {
+	// Strip .json extension from profileFileName to avoid confusion with static files
+	// Backend will normalize it back to include .json for database lookup
+	const cleanProfileFileName = profileFileName.endsWith('.json')
+		? profileFileName.slice(0, -5)
+		: profileFileName;
+
+	return apiRequest<{
+		message: string;
+		profileName: string;
+		convertedCFs: number;
+	}>(`/api/trash-guides/tracked-quality-profiles/${encodeURIComponent(instanceId)}/${encodeURIComponent(cleanProfileFileName)}`, {
+		method: "DELETE",
 	});
 }

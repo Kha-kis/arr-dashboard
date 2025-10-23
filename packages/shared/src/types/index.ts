@@ -8,4 +8,6 @@ export * from "./manual-import.js";
 export * from "./recommendations.js";
 export * from "./oidc-provider.js";
 export * from "./backup.js";
-export * from "./arr-sync.js";
+export * from "./custom-formats.js";
+export * from "./profiles.js";
+export * from "./diff.js";

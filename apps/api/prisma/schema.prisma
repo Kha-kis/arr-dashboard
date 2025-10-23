@@ -67,6 +67,8 @@ model ServiceInstance {
   arrSyncSettings ArrSyncSettings?
   trashCFGroupTracking TrashCFGroupTracking[] @relation("TrashCFGroupTracking")
   trashQualityProfileTracking TrashQualityProfileTracking[] @relation("TrashQualityProfileTracking")
+  templateOverlays TemplateOverlay[]
+  profileBindings ProfileBinding[] @relation("ProfileBindings")
 
   @@index([service])
 }
@@ -186,7 +188,8 @@ model TrashCustomFormatTracking {
   syncExcluded      Boolean  @default(false) // If true, skip this format during auto-sync
   lastSyncedAt      DateTime @default(now())
   lastSyncedHash    String?  // Hash of the format content to detect changes
-  gitRef            String   @default("master") // Which git ref was used
+  gitRef            String   @default("master") // Git ref (branch/tag) - deprecated, use commitSha
+  commitSha         String?  // Actual commit SHA for version pinning
 
   // Import source tracking
   importSource      TrashImportSource @default(INDIVIDUAL) // How this format was imported
@@ -261,7 +264,8 @@ model TrashCFGroupTracking {
   service           ServiceType
   importedCount     Int         @default(0) // Number of formats imported from this group
   lastSyncedAt      DateTime    @default(now())
-  gitRef            String      @default("master") // Which git ref was used
+  gitRef            String      @default("master") // Git ref (branch/tag) - deprecated, use commitSha
+  commitSha         String?     // Actual commit SHA for version pinning
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
@@ -281,7 +285,8 @@ model TrashQualityProfileTracking {
   qualityProfileId  Int?        // The ID from Sonarr/Radarr (if it was created, not updated)
   service           ServiceType
   lastAppliedAt     DateTime    @default(now())
-  gitRef            String      @default("master") // Which git ref was used
+  gitRef            String      @default("master") // Git ref (branch/tag) - deprecated, use commitSha
+  commitSha         String?     // Actual commit SHA for version pinning
   customizationsJson String     @default("{}") // JSON: { [trashId]: { excluded?: boolean, scoreOverride?: number, notes?: string } }
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
@@ -291,4 +296,130 @@ model TrashQualityProfileTracking {
   @@unique([serviceInstanceId, profileFileName])
   @@index([serviceInstanceId])
   @@map("trash_quality_profile_tracking")
+}
+
+// Template Overlay Scope
+enum OverlayScope {
+  INSTANCE  // Scoped to a specific Arr instance
+  GLOBAL    // Global templates (future use)
+}
+
+// TRaSH Guides Dataset Version Tracking
+// Tracks fetched TRaSH data by commit SHA for version control
+model TRaSHDatasetVersion {
+  id                    String      @id @default(cuid())
+  app                   ServiceType // RADARR or SONARR
+  commitSha             String      // Git commit SHA from TRaSH-Guides repo
+  commitMessage         String?     // Commit message for changelog
+  fetchedAt             DateTime    @default(now())
+
+  // Counts for quick stats
+  customFormatsCount    Int         @default(0)
+  qualityProfilesCount  Int         @default(0)
+  cfGroupsCount         Int         @default(0)
+
+  // Structured CF-Group rules for conditional logic
+  cfGroupRulesJson      String      @default("[]") // Array of CFGroupRule objects
+
+  createdAt             DateTime    @default(now())
+  updatedAt             DateTime    @updatedAt
+
+  @@unique([app, commitSha])
+  @@index([app, commitSha])
+  @@map("trash_dataset_versions")
+}
+
+// Template Overlay System for Custom Formats
+// Manages includes[], excludes[], and overrides{} for deterministic CF merging
+model TemplateOverlay {
+  id                String        @id @default(cuid())
+  scope             OverlayScope  @default(INSTANCE)
+  serviceInstanceId String?       // Required if scope=INSTANCE, null if scope=GLOBAL
+
+  // Template selection
+  includes          String        @default("[]")  // JSON array of template IDs to pull (e.g. ["trash-anime", "trash-x265"])
+  excludes          String        @default("[]")  // JSON array of CF trash_id or local ID to skip
+
+  // Per-CF overrides
+  overridesJson     String        @default("{}") // JSON: { [cfId]: { name?, score?, tags?, spec?, qualityProfileLinks? } }
+
+  // Version control
+  sourceCommitSha   String?       // TRaSH Guides commit SHA this overlay is based on
+
+  // Metadata
+  lastAppliedAt     DateTime?     // Last time this overlay was applied to the Arr instance
+  lastCheckedForUpdatesAt DateTime? // Last time we checked if newer TRaSH version available
+  migrated          Boolean       @default(false) // Migration tracking: true if migrated to Profile/ProfileBinding
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  // Relation
+  serviceInstance   ServiceInstance? @relation(fields: [serviceInstanceId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceInstanceId]) // One overlay per instance
+  @@index([serviceInstanceId])
+  @@map("template_overlays")
+}
+
+// Profile Type (unified custom formats, quality profiles, CF groups)
+enum ProfileType {
+  CUSTOM_FORMAT
+  QUALITY_PROFILE
+  CF_GROUP
+}
+
+// Profile Source
+enum ProfileSource {
+  TRASH   // TRaSH Guides
+  LOCAL   // User-created
+}
+
+// Profile Binding State
+enum ProfileBindingState {
+  PREVIEW  // Preview computed, not yet applied
+  APPLIED  // Successfully applied to instance
+}
+
+// Profile - Unified template/effective profile representation
+// Stores both templates (source=TRASH) and computed effective profiles (with hash)
+model Profile {
+  id                String        @id @default(cuid())
+  name              String
+  type              ProfileType
+  source            ProfileSource @default(LOCAL)
+  hash              String        // SHA-256 of effective content (for change detection)
+  metadataJson      String        @default("{}") // JSON: flexible metadata (version, trash_id, etc.)
+
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  // Relations
+  bindings          ProfileBinding[]
+
+  @@index([type, source])
+  @@index([hash])
+  @@map("profiles")
+}
+
+// ProfileBinding - Tracks application of profiles to Arr instances
+model ProfileBinding {
+  id                String              @id @default(cuid())
+  serviceInstanceId String
+  profileId         String
+  state             ProfileBindingState @default(PREVIEW)
+
+  lastAppliedAt     DateTime?
+  lastPreviewHash   String?             // Hash from last preview (for apply validation)
+
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  // Relations
+  serviceInstance   ServiceInstance     @relation("ProfileBindings", fields: [serviceInstanceId], references: [id], onDelete: Cascade)
+  profile           Profile             @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceInstanceId, profileId])
+  @@index([profileId])
+  @@index([state])
+  @@map("profile_bindings")
 }

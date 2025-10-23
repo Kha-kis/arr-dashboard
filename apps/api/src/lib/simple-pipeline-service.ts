@@ -10,7 +10,8 @@ export class SimplePipelineService {
     private readonly prisma?: any, // Prisma client for tracking (optional)
     private readonly instanceId?: string, // Instance ID for tracking (optional)
     private readonly serviceType?: string, // Service type for tracking (optional)
-    private readonly gitRef?: string // Git ref for tracking (optional)
+    private readonly gitRef?: string, // Git ref for tracking (optional, deprecated)
+    private readonly commitSha?: string // Actual commit SHA for version pinning (NEW)
   ) {}
 
   /**
@@ -21,16 +22,17 @@ export class SimplePipelineService {
   async applyProfile(
     profileName: string,
     trashProfile: any,
-    profileFileName?: string // NEW: Profile filename for tracking
+    profileFileName?: string, // NEW: Profile filename for tracking
+    customizations?: Record<string, { excluded?: boolean; scoreOverride?: number }> // User customizations
   ): Promise<{ success: boolean; message?: string; details?: any }> {
     this.logger.info(`Starting pipeline workflow for profile: ${profileName}`);
 
     try {
       // Pipeline Step 1: Custom Format Phase
-      await this.executeCustomFormatPhase(trashProfile, profileFileName);
+      await this.executeCustomFormatPhase(trashProfile, profileFileName, customizations);
 
       // Pipeline Step 2: Quality Profile Phase
-      await this.executeQualityProfilePhase(profileName, trashProfile);
+      await this.executeQualityProfilePhase(profileName, trashProfile, customizations);
 
       return {
         success: true,
@@ -46,7 +48,7 @@ export class SimplePipelineService {
     }
   }
 
-  private async executeCustomFormatPhase(trashProfile: any, profileFileName?: string): Promise<void> {
+  private async executeCustomFormatPhase(trashProfile: any, profileFileName?: string, customizations?: Record<string, { excluded?: boolean; scoreOverride?: number }>): Promise<void> {
     this.logger.info('Pipeline Phase 1: Processing Custom Formats with actual TRaSH definitions');
 
     // Get existing custom formats
@@ -201,6 +203,13 @@ export class SimplePipelineService {
     for (const cfItem of customFormatsToProcess) {
       const cfName = cfItem.name;
 
+      // Check if user excluded this CF via customizations
+      if (customizations && customizations[cfName]?.excluded) {
+        this.logger.info(`Skipping excluded custom format: ${cfName}`);
+        skippedCount++;
+        continue;
+      }
+
       // Find the actual TRaSH format definition
       const trashFormat = this.trashData.customFormats.find(
         (cf: any) => cf.name === cfName
@@ -259,6 +268,7 @@ export class SimplePipelineService {
                 trashId: trashFormat.trash_id,
                 lastSyncedAt: new Date(),
                 gitRef: this.gitRef || 'master',
+                commitSha: this.commitSha, // NEW: Store actual commit SHA
                 importSource: importSource as any,
                 sourceReference: sourceReference,
               },
@@ -269,6 +279,7 @@ export class SimplePipelineService {
                 trashId: trashFormat.trash_id,
                 service: this.serviceType as any,
                 gitRef: this.gitRef || 'master',
+                commitSha: this.commitSha, // NEW: Store actual commit SHA
                 importSource: importSource as any,
                 sourceReference: sourceReference,
               },
@@ -316,6 +327,7 @@ export class SimplePipelineService {
                 trashId: trashFormat.trash_id,
                 service: this.serviceType as any,
                 gitRef: this.gitRef || 'master',
+                commitSha: this.commitSha, // NEW: Store actual commit SHA
                 importSource: importSource as any,
                 sourceReference: sourceReference,
               },
@@ -350,6 +362,7 @@ export class SimplePipelineService {
               importedCount: group.cfCount,
               lastSyncedAt: new Date(),
               gitRef: this.gitRef || 'master',
+              commitSha: this.commitSha, // NEW: Store actual commit SHA
             },
             create: {
               serviceInstanceId: this.instanceId,
@@ -359,6 +372,7 @@ export class SimplePipelineService {
               service: this.serviceType as any,
               importedCount: group.cfCount,
               gitRef: this.gitRef || 'master',
+              commitSha: this.commitSha, // NEW: Store actual commit SHA
             },
           });
 
@@ -375,7 +389,11 @@ export class SimplePipelineService {
     this.logger.info('Pipeline Phase 1: Custom Formats phase completed');
   }
 
-  private async executeQualityProfilePhase(profileName: string, trashProfile: any): Promise<void> {
+  private async executeQualityProfilePhase(
+    profileName: string,
+    trashProfile: any,
+    customizations?: Record<string, { excluded?: boolean; scoreOverride?: number }>
+  ): Promise<void> {
     this.logger.info('Pipeline Phase 2: Processing Quality Profile');
 
     // At this point, all custom formats should exist from Phase 1
@@ -512,7 +530,15 @@ export class SimplePipelineService {
       }, 'Building custom formats with scores for quality profile (including auto-included from CF-Groups)');
 
       for (const formatItem of formatItemsList) {
-        const trashFormat = this.trashData.customFormats.find((cf: any) => cf.name === formatItem.name);
+        const cfName = formatItem.name;
+
+        // Check if user excluded this CF via customizations
+        if (customizations && customizations[cfName]?.excluded) {
+          this.logger.info(`Skipping excluded custom format in quality profile: ${cfName}`);
+          continue;
+        }
+
+        const trashFormat = this.trashData.customFormats.find((cf: any) => cf.name === cfName);
 
         if (trashFormat) {
           // Look up score from trash_scores mapping using the profile's trash_score_set
@@ -529,16 +555,16 @@ export class SimplePipelineService {
             if (scoreSetKey && scoreSetKey in trashFormat.trash_scores) {
               // Found exact match for profile's score set
               score = trashFormat.trash_scores[scoreSetKey];
-              this.logger.debug(`Using score ${score} from trash_score_set '${scoreSetKey}' for custom format '${trashFormat.name}'`);
+              this.logger.debug(`Using score ${score} from trash_score_set '${scoreSetKey}' for custom format '${cfName}'`);
             } else if ('default' in trashFormat.trash_scores) {
               // Fall back to default score
               score = trashFormat.trash_scores['default'];
-              this.logger.debug(`Using default score ${score} for custom format '${trashFormat.name}'`);
+              this.logger.debug(`Using default score ${score} for custom format '${cfName}'`);
             } else {
               // No matching key or default - use 0
               score = 0;
               this.logger.warn({
-                cfName: trashFormat.name,
+                cfName: cfName,
                 scoreSetKey: scoreSetKey,
                 availableKeys: Object.keys(trashFormat.trash_scores)
               }, 'No matching score in trash_scores, using 0');
@@ -546,7 +572,14 @@ export class SimplePipelineService {
           } else {
             // No trash_scores mapping at all - use 0
             score = 0;
-            this.logger.warn(`Custom format '${trashFormat.name}' has no trash_scores mapping, using score 0`);
+            this.logger.warn(`Custom format '${cfName}' has no trash_scores mapping, using score 0`);
+          }
+
+          // Apply user's score override if provided
+          if (customizations && customizations[cfName]?.scoreOverride !== undefined) {
+            const originalScore = score;
+            score = customizations[cfName].scoreOverride!;
+            this.logger.info(`Applying score override for '${cfName}': ${originalScore} → ${score}`);
           }
 
           customFormatsForProfile.push({
@@ -555,7 +588,7 @@ export class SimplePipelineService {
           });
         } else {
           this.logger.warn({
-            formatName: formatItem.name
+            formatName: cfName
           }, 'Custom format not found in TRaSH data');
         }
       }

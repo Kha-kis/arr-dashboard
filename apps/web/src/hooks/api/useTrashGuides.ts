@@ -265,3 +265,38 @@ export function useReapplyQualityProfile() {
 		},
 	});
 }
+
+/**
+ * Hook to get recommended/optional custom formats for a quality profile
+ */
+export function useRecommendedCFs(
+	service: "SONARR" | "RADARR",
+	profileTrashId: string | undefined,
+	ref = "master"
+) {
+	return useQuery({
+		queryKey: [...trashGuidesKeys.all, "recommended-cfs", service, profileTrashId, ref],
+		queryFn: () => trashGuidesApi.getRecommendedCFs(service, profileTrashId!, ref),
+		enabled: !!service && !!profileTrashId,
+		staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+	});
+}
+
+/**
+ * Hook to untrack a quality profile
+ */
+export function useUntrackQualityProfile() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: ({ instanceId, profileFileName }: { instanceId: string; profileFileName: string }) =>
+			trashGuidesApi.untrackQualityProfile(instanceId, profileFileName),
+		onSuccess: () => {
+			// Invalidate tracked quality profiles to refresh the list
+			queryClient.invalidateQueries({ queryKey: [...trashGuidesKeys.all, "tracked-quality-profiles"] });
+			// Also invalidate custom formats since they might have been converted
+			queryClient.invalidateQueries({ queryKey: customFormatsKeys.lists() });
+			queryClient.invalidateQueries({ queryKey: [...trashGuidesKeys.all, "tracked"] });
+		},
+	});
+}

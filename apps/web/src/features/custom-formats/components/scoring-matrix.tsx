@@ -19,7 +19,7 @@ interface ScoringMatrixProps {
  * Scoring Matrix for a single instance
  * Shows custom formats as rows and quality profiles as columns
  */
-export const ScoringMatrix = React.memo(({ instanceId, instanceLabel }: ScoringMatrixProps) => {
+const ScoringMatrixComponent = ({ instanceId, instanceLabel }: ScoringMatrixProps) => {
 	const { data: customFormatsData, isLoading: isLoadingFormats } = useCustomFormats(instanceId);
 	const { data: profilesData, isLoading: isLoadingProfiles } = useQualityProfiles(instanceId);
 	const updateScores = useUpdateProfileScores();
@@ -266,7 +266,7 @@ export const ScoringMatrix = React.memo(({ instanceId, instanceLabel }: ScoringM
 							Negative scores decrease priority or reject releases
 						</li>
 						<li>
-							Zero score means the format is tracked but doesn't affect priority
+							Zero score means the format is tracked but doesn&apos;t affect priority
 						</li>
 						<li>
 							Total score from all matching formats determines release selection
@@ -276,4 +276,7 @@ export const ScoringMatrix = React.memo(({ instanceId, instanceLabel }: ScoringM
 			</CardContent>
 		</Card>
 	);
-});
+};
+
+export const ScoringMatrix = React.memo(ScoringMatrixComponent);
+ScoringMatrix.displayName = 'ScoringMatrix';

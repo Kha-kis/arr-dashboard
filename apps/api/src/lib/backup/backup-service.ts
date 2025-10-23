@@ -784,7 +784,6 @@ export class BackupService {
 				this.validateRecords(data.users, "user", ["id", "username"]);
 				await tx.user.createMany({
 					data: data.users as Prisma.UserCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 
@@ -793,7 +792,6 @@ export class BackupService {
 				this.validateRecords(data.sessions, "session", ["id", "userId", "expiresAt"]);
 				await tx.session.createMany({
 					data: data.sessions as Prisma.SessionCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 
@@ -802,7 +800,6 @@ export class BackupService {
 				this.validateRecords(data.oidcProviders, "oidcProvider", ["id", "clientId", "issuer"]);
 				await tx.oIDCProvider.createMany({
 					data: data.oidcProviders as Prisma.OIDCProviderCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 
@@ -811,7 +808,6 @@ export class BackupService {
 				this.validateRecords(data.oidcAccounts, "oidcAccount", ["id", "userId", "provider"]);
 				await tx.oIDCAccount.createMany({
 					data: data.oidcAccounts as Prisma.OIDCAccountCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 
@@ -820,7 +816,6 @@ export class BackupService {
 				this.validateRecords(data.webAuthnCredentials, "webAuthnCredential", ["id", "userId", "publicKey"]);
 				await tx.webAuthnCredential.createMany({
 					data: data.webAuthnCredentials as Prisma.WebAuthnCredentialCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 
@@ -829,7 +824,6 @@ export class BackupService {
 				this.validateRecords(data.serviceInstances, "serviceInstance", ["id", "service", "baseUrl"]);
 				await tx.serviceInstance.createMany({
 					data: data.serviceInstances as Prisma.ServiceInstanceCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 
@@ -838,7 +832,6 @@ export class BackupService {
 				this.validateRecords(data.serviceTags, "serviceTag", ["id", "name"]);
 				await tx.serviceTag.createMany({
 					data: data.serviceTags as Prisma.ServiceTagCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 
@@ -847,7 +840,6 @@ export class BackupService {
 				this.validateRecords(data.serviceInstanceTags, "serviceInstanceTag", ["instanceId", "tagId"]);
 				await tx.serviceInstanceTag.createMany({
 					data: data.serviceInstanceTags as Prisma.ServiceInstanceTagCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 		});

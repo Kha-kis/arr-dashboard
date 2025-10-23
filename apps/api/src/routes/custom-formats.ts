@@ -5,7 +5,7 @@
 
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { CustomFormatSchema } from "@arr/shared";
+import { CustomFormatSchema } from "@arr/shared"; // Exported from profiles.ts
 import { createInstanceFetcher } from "../lib/arr/arr-fetcher.js";
 
 // Request schemas
