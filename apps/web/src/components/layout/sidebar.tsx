@@ -16,7 +16,7 @@ const NAV_ITEMS = [
 	{ href: "/statistics", label: "Statistics" },
 	{ href: "/history", label: "History" },
 	{ href: "/custom-formats", label: "Custom Formats" },
-	{ href: "/arr-sync", label: "ARR Sync" },
+	{ href: "/profiles", label: "Quality Profiles" },
 	{ href: "/settings", label: "Settings" },
 ];
 
