@@ -189,7 +189,7 @@ export async function getTemplateOverlay(
 	instanceId: string,
 ): Promise<GetTemplateOverlayResponse> {
 	return apiRequest<GetTemplateOverlayResponse>(
-		`/api/custom-formats/${instanceId}/overlay`,
+		`/api/profiles/overlays/${instanceId}`,
 		{
 			method: "GET",
 		},
@@ -204,7 +204,7 @@ export async function updateTemplateOverlay(
 	overlay: TemplateOverlayDto,
 ): Promise<UpdateTemplateOverlayResponse> {
 	return apiRequest<UpdateTemplateOverlayResponse>(
-		`/api/custom-formats/${instanceId}/overlay`,
+		`/api/profiles/overlays/${instanceId}`,
 		{
 			method: "PUT",
 			json: overlay,
@@ -220,7 +220,7 @@ export async function previewTemplateMerge(
 	request: TemplatePreviewRequest,
 ): Promise<TemplatePreviewResponse> {
 	return apiRequest<TemplatePreviewResponse>(
-		`/api/custom-formats/${instanceId}/preview`,
+		`/api/profiles/preview/${instanceId}`,
 		{
 			method: "POST",
 			json: request,
@@ -236,7 +236,7 @@ export async function applyTemplateMerge(
 	request: TemplateApplyRequest,
 ): Promise<TemplateApplyResponse> {
 	return apiRequest<TemplateApplyResponse>(
-		`/api/custom-formats/${instanceId}/apply`,
+		`/api/profiles/apply/${instanceId}`,
 		{
 			method: "POST",
 			json: request,
