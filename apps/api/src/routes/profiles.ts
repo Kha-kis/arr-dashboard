@@ -182,5 +182,155 @@ export async function profilesRoutes(app: FastifyInstance) {
 		}
 	});
 
+	/**
+	 * POST /api/profiles/preview/:instanceId
+	 * Preview template overlay changes before applying
+	 */
+	app.post("/api/profiles/preview/:instanceId", async (request, reply) => {
+		if (!request.currentUser) {
+			return reply.code(401).send({ error: "Unauthorized" });
+		}
+
+		const { instanceId } = request.params as { instanceId: string };
+
+		const bodySchema = z.object({
+			includes: z.array(z.string()).default([]),
+			excludes: z.array(z.string()).default([]),
+			overrides: z
+				.array(
+					z.object({
+						trash_id: z.string(),
+						score: z.number(),
+					}),
+				)
+				.default([]),
+		});
+
+		const validation = bodySchema.safeParse(request.body);
+		if (!validation.success) {
+			return reply.code(400).send({
+				error: "Invalid request body",
+				details: validation.error.errors,
+			});
+		}
+
+		const { includes, excludes, overrides } = validation.data;
+
+		try {
+			const instance = await app.prisma.serviceInstance.findUnique({
+				where: { id: instanceId },
+			});
+
+			if (!instance) {
+				return reply.code(404).send({ error: "Instance not found" });
+			}
+
+			// TODO: Implement actual preview logic
+			// For now, return a placeholder response
+			return reply.send({
+				instanceId,
+				instanceLabel: instance.label,
+				changes: {
+					added: [],
+					modified: [],
+					removed: [],
+				},
+				warnings: ["Preview functionality not yet implemented"],
+			});
+		} catch (error) {
+			app.log.error("Failed to preview template overlay:", error);
+			return reply.code(500).send({
+				error: "Failed to preview template overlay",
+				details: error instanceof Error ? error.message : String(error),
+			});
+		}
+	});
+
+	/**
+	 * POST /api/profiles/apply/:instanceId
+	 * Apply template overlay to an instance
+	 */
+	app.post("/api/profiles/apply/:instanceId", async (request, reply) => {
+		if (!request.currentUser) {
+			return reply.code(401).send({ error: "Unauthorized" });
+		}
+
+		const { instanceId } = request.params as { instanceId: string };
+
+		const bodySchema = z.object({
+			includes: z.array(z.string()).default([]),
+			excludes: z.array(z.string()).default([]),
+			overrides: z
+				.array(
+					z.object({
+						trash_id: z.string(),
+						score: z.number(),
+					}),
+				)
+				.default([]),
+			dryRun: z.boolean().default(false),
+		});
+
+		const validation = bodySchema.safeParse(request.body);
+		if (!validation.success) {
+			return reply.code(400).send({
+				error: "Invalid request body",
+				details: validation.error.errors,
+			});
+		}
+
+		const { includes, excludes, overrides, dryRun } = validation.data;
+
+		try {
+			const instance = await app.prisma.serviceInstance.findUnique({
+				where: { id: instanceId },
+			});
+
+			if (!instance) {
+				return reply.code(404).send({ error: "Instance not found" });
+			}
+
+			// Update overlay configuration in database
+			await app.prisma.templateOverlay.upsert({
+				where: { serviceInstanceId: instanceId },
+				create: {
+					serviceInstanceId: instanceId,
+					includes,
+					excludes,
+					overrides,
+					lastAppliedAt: dryRun ? null : new Date(),
+				},
+				update: {
+					includes,
+					excludes,
+					overrides,
+					lastAppliedAt: dryRun ? undefined : new Date(),
+				},
+			});
+
+			// TODO: Implement actual apply logic
+			// For now, return a placeholder response
+			return reply.send({
+				instanceId,
+				instanceLabel: instance.label,
+				success: true,
+				applied: {
+					created: 0,
+					updated: 0,
+					deleted: 0,
+				},
+				warnings: dryRun
+					? ["Dry run - no changes applied to ARR instance"]
+					: ["Apply functionality not yet fully implemented"],
+			});
+		} catch (error) {
+			app.log.error("Failed to apply template overlay:", error);
+			return reply.code(500).send({
+				error: "Failed to apply template overlay",
+				details: error instanceof Error ? error.message : String(error),
+			});
+		}
+	});
+
 	app.log.info("Profiles routes registered");
 }
