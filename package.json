@@ -10,7 +10,11 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "format": "turbo run format",
-    "clean": "turbo prune --scope='@arr/*' --docker"
+    "clean": "turbo prune --scope='@arr/*' --docker",
+    "scan:dyn-imports": "rg -n \"import\\(\\s*['\\\"]([^'\\\"]+)['\\\"]\\s*\\)\" -S apps packages || true",
+    "check:dead": "knip && ts-unused-exports && unimported || true",
+    "check:dup": "jscpd --silent --reporters console --min-lines 25 apps packages || true",
+    "check:repo": "pnpm -w typecheck && pnpm -w build && pnpm -w check:dead && pnpm -w check:dup && pnpm -w scan:dyn-imports"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.3",

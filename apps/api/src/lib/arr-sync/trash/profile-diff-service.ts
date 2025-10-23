@@ -1,3 +1,7 @@
+// NOTE: This module is loaded via dynamic import() from trash-guides.ts.
+// Do not remove based on static 'unused' analysis.
+// Keep interface compatible with callers expecting ProfileDiffService.
+
 /**
  * Profile Diff Service - Stub Implementation
  * Computes differences between quality profile configurations
