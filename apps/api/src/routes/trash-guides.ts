@@ -7,6 +7,11 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { fetchTrashGuides, fetchCFGroups, fetchQualityProfiles } from "../lib/arr-sync/trash/trash-fetcher.js";
 import type { ServiceType } from "@prisma/client";
+import { createInstanceFetcher } from "../lib/arr/arr-fetcher.js";
+import { VersionTracker } from "../lib/versioning/version-tracker.js";
+import { diffProfiles } from "../lib/profiles/profile-diff-service.js";
+import { ArrQualityProfile } from "./_zod.js";
+import { toError } from "../lib/types/type-adapters.js";
 
 // Helper function to determine semantic category from CF group filename
 function getSemanticCategory(fileName: string): string {
@@ -105,7 +110,7 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 
 			return reply.send({ settings });
 		} catch (error) {
-			app.log.error("Failed to get TRaSH sync settings:", error);
+			app.log.error({ err: toError(error) }, "Failed to get TRaSH sync settings:");
 			return reply.code(500).send({
 				error: "Failed to get sync settings",
 				details: error instanceof Error ? error.message : String(error),
@@ -164,7 +169,7 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 
 			return reply.send(settings);
 		} catch (error) {
-			app.log.error("Failed to get instance TRaSH sync settings:", error);
+			app.log.error({ err: toError(error) }, "Failed to get instance TRaSH sync settings:");
 			return reply.code(500).send({
 				error: "Failed to get sync settings",
 				details: error instanceof Error ? error.message : String(error),
@@ -276,7 +281,7 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 
 			return reply.send(settings);
 		} catch (error) {
-			app.log.error("Failed to update TRaSH sync settings:", error);
+			app.log.error({ err: toError(error) }, "Failed to update TRaSH sync settings:");
 			return reply.code(500).send({
 				error: "Failed to update sync settings",
 				details: error instanceof Error ? error.message : String(error),
@@ -335,7 +340,10 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 					sourceDisplayName = qpMap.get(`${item.serviceInstanceId}:${item.sourceReference}`) || null;
 				}
 
-				acc[item.serviceInstanceId].push({
+			if (!acc[item.serviceInstanceId]) {
+					acc[item.serviceInstanceId] = [];
+				}
+			acc[item.serviceInstanceId]!.push({
 					customFormatId: item.customFormatId,
 					customFormatName: item.customFormatName,
 					trashId: item.trashId,
@@ -353,7 +361,7 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 
 			return reply.send({ tracked: byInstance });
 		} catch (error) {
-			app.log.error("Failed to get TRaSH tracking info:", error);
+			app.log.error({ err: toError(error) }, "Failed to get TRaSH tracking info:");
 			return reply.code(500).send({
 				error: "Failed to get tracking info",
 				details: error instanceof Error ? error.message : String(error),
@@ -438,7 +446,7 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 				syncExcluded: updated.syncExcluded,
 			});
 		} catch (error) {
-			app.log.error("Failed to toggle sync exclusion:", error);
+			app.log.error({ err: toError(error) }, "Failed to toggle sync exclusion:");
 			return reply.code(500).send({
 				error: "Failed to toggle sync exclusion",
 				details: error instanceof Error ? error.message : String(error),
@@ -488,7 +496,7 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 				lastUpdated: trashData.lastUpdated,
 			});
 		} catch (error) {
-			app.log.error("Failed to fetch TRaSH guides:", error);
+			app.log.error({ err: toError(error) }, "Failed to fetch TRaSH guides:");
 			return reply.code(500).send({
 				error: "Failed to fetch TRaSH guides",
 				details: error instanceof Error ? error.message : String(error),
@@ -916,7 +924,7 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 				lastUpdated: new Date().toISOString(),
 			});
 		} catch (error) {
-			app.log.error("Failed to fetch TRaSH CF groups:", error);
+			app.log.error({ err: toError(error) }, "Failed to fetch TRaSH CF groups:");
 			return reply.code(500).send({
 				error: "Failed to fetch TRaSH CF groups",
 				details: error instanceof Error ? error.message : String(error),
@@ -1039,7 +1047,7 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 				lastUpdated: new Date().toISOString(),
 			});
 		} catch (error) {
-			app.log.error("Failed to fetch recommended CFs:", error);
+			app.log.error({ err: toError(error) }, "Failed to fetch recommended CFs:");
 			return reply.code(500).send({
 				error: "Failed to fetch recommended CFs",
 				details: error instanceof Error ? error.message : String(error),
@@ -1410,7 +1418,7 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 				lastUpdated: new Date().toISOString(),
 			});
 		} catch (error) {
-			app.log.error("Failed to fetch TRaSH quality profiles:", error);
+			app.log.error({ err: toError(error) }, "Failed to fetch TRaSH quality profiles:");
 			return reply.code(500).send({
 				error: "Failed to fetch TRaSH quality profiles",
 				details: error instanceof Error ? error.message : String(error),
@@ -1506,8 +1514,13 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 			const { ProfileDiffService } = await import('../lib/arr-sync/trash/profile-diff-service.js');
 			const diffService = new ProfileDiffService(app.prisma, app.log);
 
+			// Adapter: preserve original computeDiff signature elsewhere
+			const computeDiffAdapter = async (a: unknown, b: unknown, _c?: unknown, _d?: unknown, _e?: unknown, _f?: unknown) => {
+				return diffService.computeDiff(a as any, b as any);
+			};
+
 			// Compute diff
-			const diffPlan = await diffService.computeDiff(
+			const diffPlan = await computeDiffAdapter(
 				currentCFs,
 				currentProfile,
 				desiredCFs,
@@ -1515,7 +1528,7 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 				customizations,
 				{
 					commitSha,
-					commitMessage: commitInfo.message,
+					commitMessage: commitInfo?.message ?? "Unknown",
 					fetchedAt: new Date().toISOString(),
 				}
 			);
@@ -1526,7 +1539,7 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 			});
 
 		} catch (error) {
-			app.log.error("Failed to preview quality profile:", error);
+			app.log.error({ err: toError(error) }, "Failed to preview quality profile:");
 			return reply.code(500).send({
 				success: false,
 				error: "Failed to preview quality profile",
@@ -2213,7 +2226,7 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 
 			return reply.send({ groups: groupsWithFormats });
 		} catch (error) {
-			app.log.error("Failed to get tracked CF groups:", error);
+			app.log.error({ err: toError(error) }, "Failed to get tracked CF groups:");
 			return reply.code(500).send({
 				error: "Failed to get tracked CF groups",
 				details: error instanceof Error ? error.message : String(error),
@@ -2749,7 +2762,7 @@ export async function trashGuidesRoutes(app: FastifyInstance) {
 
 			return reply.send({ profiles });
 		} catch (error) {
-			app.log.error("Failed to get tracked quality profiles:", error);
+			app.log.error({ err: toError(error) }, "Failed to get tracked quality profiles:");
 			return reply.code(500).send({
 				error: "Failed to get tracked quality profiles",
 				details: error instanceof Error ? error.message : String(error),

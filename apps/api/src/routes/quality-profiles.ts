@@ -6,6 +6,10 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { createInstanceFetcher } from "../lib/arr/arr-fetcher.js";
+import { VersionTracker } from "../lib/versioning/version-tracker.js";
+import { diffProfiles } from "../lib/profiles/profile-diff-service.js";
+import { ArrQualityProfile } from "./_zod.js";
+import { toError } from "../lib/types/type-adapters.js";
 
 // Request schemas
 const GetQualityProfilesQuerySchema = z.object({
@@ -72,7 +76,7 @@ export async function qualityProfilesRoutes(app: FastifyInstance) {
 
 			return reply.send({ profiles });
 		} catch (error) {
-			app.log.error("Failed to get quality profiles:", error);
+			app.log.error({ err: toError(error) }, "Failed to get quality profiles:");
 			return reply.code(500).send({
 				error: "Failed to get quality profiles",
 				details: error instanceof Error ? error.message : String(error),
@@ -122,7 +126,7 @@ export async function qualityProfilesRoutes(app: FastifyInstance) {
 
 				return reply.send(profile);
 			} catch (error) {
-				app.log.error("Failed to get quality profile:", error);
+				app.log.error({ err: toError(error) }, "Failed to get quality profile:");
 				return reply.code(500).send({
 					error: "Failed to get quality profile",
 					details:
@@ -265,7 +269,7 @@ export async function qualityProfilesRoutes(app: FastifyInstance) {
 
 				return reply.send(result);
 			} catch (error) {
-				app.log.error("Failed to update quality profile scores:", error);
+				app.log.error({ err: toError(error) }, "Failed to update quality profile scores:");
 				return reply.code(500).send({
 					error: "Failed to update quality profile scores",
 					details:
