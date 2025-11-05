@@ -27,6 +27,7 @@ model User {
   sessions            Session[]
   oidcAccounts        OIDCAccount[]
   webauthnCredentials WebAuthnCredential[]
+  trashSettings       TrashSettings?
 }
 
 model Session {
@@ -64,6 +65,9 @@ model ServiceInstance {
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   tags            ServiceInstanceTag[]
+  trashSyncHistory TrashSyncHistory[]
+  trashBackups     TrashBackup[]
+  trashSchedules   TrashSyncSchedule[]
 
   @@index([service])
 }
@@ -153,4 +157,152 @@ model BackupSettings {
   updatedAt         DateTime            @updatedAt
 
   @@map("backup_settings")
+}
+
+// ============================================================================
+// TRaSH Guides Integration Models
+// ============================================================================
+
+// TRaSH Guides cache storage for fetched JSON data from GitHub
+model TrashCache {
+  id            String      @id @default(cuid())
+  serviceType   ServiceType // RADARR, SONARR
+  configType    String      // CUSTOM_FORMATS, CF_GROUPS, QUALITY_SIZE, NAMING
+  data          String      // JSON blob (will be compressed in application layer)
+  version       Int         @default(1)
+  fetchedAt     DateTime    @default(now())
+  lastCheckedAt DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([serviceType, configType])
+  @@index([serviceType, configType])
+  @@map("trash_cache")
+}
+
+// User-created templates for TRaSH configurations
+model TrashTemplate {
+  id          String      @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  serviceType ServiceType // RADARR, SONARR
+  configData  String      // JSON blob with user customizations
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  deletedAt   DateTime?   // Soft delete
+
+  syncHistory TrashSyncHistory[]
+  schedules   TrashSyncSchedule[]
+
+  @@index([userId])
+  @@index([serviceType])
+  @@map("trash_templates")
+}
+
+// Sync operation history and audit log
+model TrashSyncHistory {
+  id          String    @id @default(cuid())
+  instanceId  String
+  templateId  String?
+  userId      String
+  syncType    String    // MANUAL, SCHEDULED
+  status      String    // SUCCESS, PARTIAL_SUCCESS, FAILED
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  duration    Int?      // seconds
+
+  // Sync statistics
+  configsApplied   Int @default(0)
+  configsFailed    Int @default(0)
+  configsSkipped   Int @default(0)
+
+  // Detailed sync data (JSON blobs)
+  appliedConfigs String  // JSON array of applied config IDs
+  failedConfigs  String? // JSON array with error details
+  errorLog       String? // Full error log
+
+  // Rollback reference
+  backupId       String?
+  rolledBack     Boolean @default(false)
+  rolledBackAt   DateTime?
+
+  instance   ServiceInstance   @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  template   TrashTemplate?    @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  backup     TrashBackup?      @relation(fields: [backupId], references: [id], onDelete: SetNull)
+
+  @@index([instanceId])
+  @@index([templateId])
+  @@index([userId])
+  @@index([startedAt])
+  @@map("trash_sync_history")
+}
+
+// Backup snapshots of instance configs before sync operations
+model TrashBackup {
+  id         String      @id @default(cuid())
+  instanceId String
+  userId     String
+  backupData String      // JSON blob (compressed) - full instance config snapshot
+  createdAt  DateTime    @default(now())
+  expiresAt  DateTime?   // Auto-delete after retention period
+
+  instance    ServiceInstance    @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  syncHistory TrashSyncHistory[]
+
+  @@index([instanceId])
+  @@index([createdAt])
+  @@map("trash_backups")
+}
+
+// Scheduled sync configuration for automated TRaSH updates
+model TrashSyncSchedule {
+  id          String      @id @default(cuid())
+  instanceId  String?
+  templateId  String?
+  userId      String
+  enabled     Boolean     @default(true)
+
+  // Schedule configuration
+  frequency   String      // DAILY, WEEKLY, MONTHLY
+  lastRunAt   DateTime?
+  nextRunAt   DateTime?
+
+  // Sync behavior
+  autoApply   Boolean     @default(false) // Auto-apply or just notify
+  notifyUser  Boolean     @default(true)
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  instance ServiceInstance? @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  template TrashTemplate?   @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId])
+  @@index([templateId])
+  @@index([nextRunAt])
+  @@map("trash_sync_schedules")
+}
+
+// User preferences for TRaSH Guides feature
+model TrashSettings {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+
+  // Update check settings
+  checkFrequency     Int      @default(12) // hours
+  autoRefreshCache   Boolean  @default(true)
+
+  // Notification preferences
+  notifyOnUpdates    Boolean  @default(true)
+  notifyOnSyncFail   Boolean  @default(true)
+
+  // Backup settings
+  backupRetention    Int      @default(10) // number of backups to keep per instance
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("trash_settings")
 }

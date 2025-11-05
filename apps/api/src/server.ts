@@ -21,6 +21,7 @@ import { registerRecommendationsRoutes } from "./routes/recommendations.js";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerServiceRoutes } from "./routes/services.js";
 import { registerSystemRoutes } from "./routes/system.js";
+import { registerTrashGuidesRoutes } from "./routes/trash-guides/index.js";
 
 export type ServerOptions = {
 	logger?: boolean;
@@ -101,6 +102,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(registerRecommendationsRoutes, { prefix: "/api" });
 	app.register(registerBackupRoutes, { prefix: "/api/backup" });
 	app.register(registerSystemRoutes, { prefix: "/api/system" });
+	app.register(registerTrashGuidesRoutes, { prefix: "/api/trash-guides" });
 
 	return app;
 };

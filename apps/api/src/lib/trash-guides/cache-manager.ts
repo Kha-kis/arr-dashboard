@@ -1,0 +1,386 @@
+/**
+ * TRaSH Guides Cache Manager
+ *
+ * Manages caching of TRaSH Guides configuration data with compression.
+ * Handles cache versioning, staleness detection, and automatic cleanup.
+ */
+
+import { PrismaClient } from "@prisma/client";
+import { gzip, gunzip } from "node:zlib";
+import { promisify } from "node:util";
+import type { TrashConfigType, TrashCacheEntry, TrashCacheStatus } from "@arr/shared";
+
+// ============================================================================
+// Compression Utilities
+// ============================================================================
+
+const gzipAsync = promisify(gzip);
+const gunzipAsync = promisify(gunzip);
+
+/**
+ * Compress JSON data using gzip
+ */
+async function compressData(data: unknown): Promise<string> {
+	const jsonString = JSON.stringify(data);
+	const compressed = await gzipAsync(Buffer.from(jsonString, "utf-8"));
+	return compressed.toString("base64");
+}
+
+/**
+ * Decompress gzip data to JSON
+ */
+async function decompressData<T = unknown>(compressedData: string): Promise<T> {
+	const buffer = Buffer.from(compressedData, "base64");
+	const decompressed = await gunzipAsync(buffer);
+	const jsonString = decompressed.toString("utf-8");
+	return JSON.parse(jsonString) as T;
+}
+
+// ============================================================================
+// Types
+// ============================================================================
+
+interface CacheOptions {
+	staleAfterHours?: number; // Hours before cache is considered stale
+	compressionEnabled?: boolean;
+}
+
+interface CacheStats {
+	totalEntries: number;
+	staleEntries: number;
+	totalSizeBytes: number;
+	oldestEntry?: Date;
+	newestEntry?: Date;
+}
+
+// ============================================================================
+// Cache Manager Class
+// ============================================================================
+
+export class TrashCacheManager {
+	private prisma: PrismaClient;
+	private options: Required<CacheOptions>;
+
+	constructor(prisma: PrismaClient, options: CacheOptions = {}) {
+		this.prisma = prisma;
+		this.options = {
+			staleAfterHours: options.staleAfterHours ?? 12,
+			compressionEnabled: options.compressionEnabled ?? true,
+		};
+	}
+
+	/**
+	 * Get cached data for a specific service and config type
+	 */
+	async get<T = unknown>(
+		serviceType: "RADARR" | "SONARR",
+		configType: TrashConfigType,
+	): Promise<T | null> {
+		const cacheEntry = await this.prisma.trashCache.findUnique({
+			where: {
+				serviceType_configType: {
+					serviceType,
+					configType,
+				},
+			},
+		});
+
+		if (!cacheEntry) {
+			return null;
+		}
+
+		// Update last checked timestamp
+		await this.touchCache(serviceType, configType);
+
+		// Decompress and return data
+		if (this.options.compressionEnabled) {
+			return await decompressData<T>(cacheEntry.data);
+		}
+
+		return JSON.parse(cacheEntry.data) as T;
+	}
+
+	/**
+	 * Set cached data for a specific service and config type
+	 */
+	async set<T = unknown>(
+		serviceType: "RADARR" | "SONARR",
+		configType: TrashConfigType,
+		data: T,
+	): Promise<void> {
+		// Compress data if enabled
+		const dataString = this.options.compressionEnabled
+			? await compressData(data)
+			: JSON.stringify(data);
+
+		const now = new Date();
+
+		// Get existing entry to check if version should increment
+		const existing = await this.prisma.trashCache.findUnique({
+			where: {
+				serviceType_configType: {
+					serviceType,
+					configType,
+				},
+			},
+		});
+
+		const newVersion = existing ? existing.version + 1 : 1;
+
+		// Upsert cache entry
+		await this.prisma.trashCache.upsert({
+			where: {
+				serviceType_configType: {
+					serviceType,
+					configType,
+				},
+			},
+			create: {
+				serviceType,
+				configType,
+				data: dataString,
+				version: 1,
+				fetchedAt: now,
+				lastCheckedAt: now,
+			},
+			update: {
+				data: dataString,
+				version: newVersion,
+				fetchedAt: now,
+				lastCheckedAt: now,
+			},
+		});
+	}
+
+	/**
+	 * Check if cache exists and is fresh
+	 */
+	async isFresh(serviceType: "RADARR" | "SONARR", configType: TrashConfigType): Promise<boolean> {
+		const cacheEntry = await this.prisma.trashCache.findUnique({
+			where: {
+				serviceType_configType: {
+					serviceType,
+					configType,
+				},
+			},
+		});
+
+		if (!cacheEntry) {
+			return false;
+		}
+
+		const staleThreshold = new Date();
+		staleThreshold.setHours(staleThreshold.getHours() - this.options.staleAfterHours);
+
+		return cacheEntry.lastCheckedAt > staleThreshold;
+	}
+
+	/**
+	 * Get cache status for a specific service and config type
+	 */
+	async getStatus(
+		serviceType: "RADARR" | "SONARR",
+		configType: TrashConfigType,
+	): Promise<TrashCacheStatus | null> {
+		const cacheEntry = await this.prisma.trashCache.findUnique({
+			where: {
+				serviceType_configType: {
+					serviceType,
+					configType,
+				},
+			},
+		});
+
+		if (!cacheEntry) {
+			return null;
+		}
+
+		// Determine if cache is stale
+		const staleThreshold = new Date();
+		staleThreshold.setHours(staleThreshold.getHours() - this.options.staleAfterHours);
+		const isStale = cacheEntry.lastCheckedAt <= staleThreshold;
+
+		// Get item count
+		const data = this.options.compressionEnabled
+			? await decompressData<unknown[]>(cacheEntry.data)
+			: (JSON.parse(cacheEntry.data) as unknown[]);
+
+		const itemCount = Array.isArray(data) ? data.length : 0;
+
+		return {
+			serviceType,
+			configType,
+			version: cacheEntry.version,
+			lastFetched: cacheEntry.fetchedAt.toISOString(),
+			lastChecked: cacheEntry.lastCheckedAt.toISOString(),
+			itemCount,
+			isStale,
+		};
+	}
+
+	/**
+	 * Get all cache statuses for a service
+	 */
+	async getAllStatuses(serviceType: "RADARR" | "SONARR"): Promise<TrashCacheStatus[]> {
+		const cacheEntries = await this.prisma.trashCache.findMany({
+			where: { serviceType },
+		});
+
+		const statuses: TrashCacheStatus[] = [];
+
+		for (const entry of cacheEntries) {
+			const staleThreshold = new Date();
+			staleThreshold.setHours(staleThreshold.getHours() - this.options.staleAfterHours);
+			const isStale = entry.lastCheckedAt <= staleThreshold;
+
+			const data = this.options.compressionEnabled
+				? await decompressData<unknown[]>(entry.data)
+				: (JSON.parse(entry.data) as unknown[]);
+
+			const itemCount = Array.isArray(data) ? data.length : 0;
+
+			statuses.push({
+				serviceType,
+				configType: entry.configType as TrashConfigType,
+				version: entry.version,
+				lastFetched: entry.fetchedAt.toISOString(),
+				lastChecked: entry.lastCheckedAt.toISOString(),
+				itemCount,
+				isStale,
+			});
+		}
+
+		return statuses;
+	}
+
+	/**
+	 * Update last checked timestamp without modifying data
+	 */
+	async touchCache(serviceType: "RADARR" | "SONARR", configType: TrashConfigType): Promise<void> {
+		await this.prisma.trashCache.updateMany({
+			where: {
+				serviceType,
+				configType,
+			},
+			data: {
+				lastCheckedAt: new Date(),
+			},
+		});
+	}
+
+	/**
+	 * Delete cache entry
+	 */
+	async delete(serviceType: "RADARR" | "SONARR", configType: TrashConfigType): Promise<boolean> {
+		try {
+			await this.prisma.trashCache.delete({
+				where: {
+					serviceType_configType: {
+						serviceType,
+						configType,
+					},
+				},
+			});
+			return true;
+		} catch {
+			return false;
+		}
+	}
+
+	/**
+	 * Clear all cache for a service
+	 */
+	async clearService(serviceType: "RADARR" | "SONARR"): Promise<number> {
+		const result = await this.prisma.trashCache.deleteMany({
+			where: { serviceType },
+		});
+		return result.count;
+	}
+
+	/**
+	 * Clear all cache entries
+	 */
+	async clearAll(): Promise<number> {
+		const result = await this.prisma.trashCache.deleteMany();
+		return result.count;
+	}
+
+	/**
+	 * Get cache statistics
+	 */
+	async getStats(): Promise<CacheStats> {
+		const allEntries = await this.prisma.trashCache.findMany({
+			select: {
+				data: true,
+				fetchedAt: true,
+				lastCheckedAt: true,
+			},
+		});
+
+		const staleThreshold = new Date();
+		staleThreshold.setHours(staleThreshold.getHours() - this.options.staleAfterHours);
+
+		let totalSizeBytes = 0;
+		let staleCount = 0;
+		let oldestEntry: Date | undefined;
+		let newestEntry: Date | undefined;
+
+		for (const entry of allEntries) {
+			// Calculate size
+			totalSizeBytes += Buffer.byteLength(entry.data, "utf-8");
+
+			// Count stale entries
+			if (entry.lastCheckedAt <= staleThreshold) {
+				staleCount++;
+			}
+
+			// Track oldest/newest
+			if (!oldestEntry || entry.fetchedAt < oldestEntry) {
+				oldestEntry = entry.fetchedAt;
+			}
+			if (!newestEntry || entry.fetchedAt > newestEntry) {
+				newestEntry = entry.fetchedAt;
+			}
+		}
+
+		return {
+			totalEntries: allEntries.length,
+			staleEntries: staleCount,
+			totalSizeBytes,
+			oldestEntry,
+			newestEntry,
+		};
+	}
+
+	/**
+	 * Clean up stale cache entries (optional maintenance operation)
+	 */
+	async cleanupStale(): Promise<number> {
+		const staleThreshold = new Date();
+		staleThreshold.setHours(staleThreshold.getHours() - (this.options.staleAfterHours * 2));
+
+		const result = await this.prisma.trashCache.deleteMany({
+			where: {
+				lastCheckedAt: {
+					lte: staleThreshold,
+				},
+			},
+		});
+
+		return result.count;
+	}
+}
+
+// ============================================================================
+// Exports
+// ============================================================================
+
+/**
+ * Create a cache manager instance
+ */
+export function createCacheManager(
+	prisma: PrismaClient,
+	options: CacheOptions = {},
+): TrashCacheManager {
+	return new TrashCacheManager(prisma, options);
+}
