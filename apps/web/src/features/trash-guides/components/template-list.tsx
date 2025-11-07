@@ -8,7 +8,7 @@ import {
 	useDuplicateTemplate,
 } from "../../../hooks/api/useTemplates";
 import { Alert, AlertTitle, AlertDescription, EmptyState, Skeleton } from "../../../components/ui";
-import { AlertCircle, Plus, Download, Copy, Trash2, Edit, FileText, RefreshCw } from "lucide-react";
+import { AlertCircle, Plus, Download, Copy, Trash2, Edit, FileText, RefreshCw, Star } from "lucide-react";
 import { exportTemplate } from "../../../lib/api-client/templates";
 import { TemplateStats } from "./template-stats";
 import { SyncValidationModal } from "./sync-validation-modal";
@@ -20,9 +20,10 @@ interface TemplateListProps {
 	onCreateNew: () => void;
 	onEdit: (template: TrashTemplate) => void;
 	onImport: () => void;
+	onBrowseQualityProfiles: (serviceType: "RADARR" | "SONARR") => void;
 }
 
-export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport }: TemplateListProps) => {
+export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBrowseQualityProfiles }: TemplateListProps) => {
 	const { data, isLoading, error } = useTemplates({ serviceType });
 	const deleteMutation = useDeleteTemplate();
 	const duplicateMutation = useDuplicateTemplate();
@@ -149,21 +150,44 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport }: Tem
 					Templates {serviceType ? `(${serviceType})` : ""}
 				</h2>
 				<div className="flex gap-2">
+					{/* Primary Actions: TRaSH Guides Quality Profile Wizard */}
+					<button
+						type="button"
+						onClick={() => onBrowseQualityProfiles("RADARR")}
+						className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary/90"
+						title="Import quality profile from TRaSH Guides for Radarr using the wizard"
+					>
+						<Star className="h-4 w-4" />
+						Radarr Profiles
+					</button>
+					<button
+						type="button"
+						onClick={() => onBrowseQualityProfiles("SONARR")}
+						className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary/90"
+						title="Import quality profile from TRaSH Guides for Sonarr using the wizard"
+					>
+						<Star className="h-4 w-4" />
+						Sonarr Profiles
+					</button>
+
+					{/* Secondary Actions: Manual/Import */}
 					<button
 						type="button"
 						onClick={onImport}
 						className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
+						title="Import an existing template from JSON file"
 					>
 						<Download className="h-4 w-4" />
-						Import
+						Import JSON
 					</button>
 					<button
 						type="button"
 						onClick={onCreateNew}
-						className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary/90"
+						className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
+						title="Create a custom template manually (advanced)"
 					>
 						<Plus className="h-4 w-4" />
-						Create Template
+						Custom Template
 					</button>
 				</div>
 			</div>
