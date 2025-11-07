@@ -4,10 +4,15 @@
  * Endpoints for template CRUD operations, import/export, and statistics
  */
 
-import type { FastifyInstance, FastifyPluginOptions } from "fastify";
+import type { FastifyInstance, FastifyPluginOptions, FastifyRequest } from "fastify";
+import fp from "fastify-plugin";
 import { z } from "zod";
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
-import type { TemplateConfig } from "@arr/shared";
+import type {
+	CreateTemplateRequest,
+	UpdateTemplateRequest,
+	TemplateConfig,
+} from "@arr/shared";
 
 // ============================================================================
 // Request Schemas
@@ -50,26 +55,14 @@ const updateTemplateSchema = z.object({
 
 const listTemplatesQuerySchema = z.object({
 	serviceType: z.enum(["RADARR", "SONARR"]).optional(),
-	includeDeleted: z
-		.string()
-		.optional()
-		.transform((val) => val === "true"),
-	active: z
-		.string()
-		.optional()
-		.transform((val) => {
-			if (val === "true") return true;
-			if (val === "false") return false;
-			return undefined;
-		}),
-	limit: z
-		.string()
-		.optional()
-		.transform((val) => (val ? Number.parseInt(val, 10) : undefined)),
-	offset: z
-		.string()
-		.optional()
-		.transform((val) => (val ? Number.parseInt(val, 10) : undefined)),
+	includeDeleted: z.string().optional().transform((val) => val === "true"),
+	active: z.string().optional().transform((val) => {
+		if (val === "true") return true;
+		if (val === "false") return false;
+		return undefined;
+	}),
+	limit: z.string().optional().transform((val) => (val ? Number.parseInt(val, 10) : undefined)),
+	offset: z.string().optional().transform((val) => (val ? Number.parseInt(val, 10) : undefined)),
 });
 
 const duplicateTemplateSchema = z.object({
@@ -88,10 +81,8 @@ const getTemplateParamsSchema = z.object({
 // Route Handlers
 // ============================================================================
 
-export async function registerTemplateRoutes(
-	app: FastifyInstance,
-	_opts: FastifyPluginOptions,
-) {
+export const registerTemplateRoutes = fp(
+	async (app: FastifyInstance, _opts: FastifyPluginOptions) => {
 		const templateService = createTemplateService(app.prisma);
 
 		/**
@@ -166,9 +157,21 @@ export async function registerTemplateRoutes(
 
 				const template = await templateService.createTemplate(request.currentUser.id, body);
 
-				return reply.status(201).send({ template });
+				return reply.status(201).send({
+					template,
+					message: "Template created successfully",
+				});
 			} catch (error) {
 				app.log.error({ err: error }, "Failed to create template");
+
+				if (error instanceof Error && error.message.includes("already exists")) {
+					return reply.status(409).send({
+						statusCode: 409,
+						error: "Conflict",
+						message: error.message,
+					});
+				}
+
 				return reply.status(500).send({
 					statusCode: 500,
 					error: "InternalServerError",
@@ -236,7 +239,7 @@ export async function registerTemplateRoutes(
 				const { templateId } = getTemplateParamsSchema.parse(request.params);
 				const body = updateTemplateSchema.parse(request.body);
 
-				// Validate template configuration if provided
+				// Validate config if provided
 				if (body.config) {
 					const validation = templateService.validateTemplateConfig(body.config);
 					if (!validation.valid) {
@@ -255,7 +258,10 @@ export async function registerTemplateRoutes(
 					body,
 				);
 
-				return reply.send({ template });
+				return reply.send({
+					template,
+					message: "Template updated successfully",
+				});
 			} catch (error) {
 				app.log.error({ err: error }, "Failed to update template");
 
@@ -263,6 +269,14 @@ export async function registerTemplateRoutes(
 					return reply.status(404).send({
 						statusCode: 404,
 						error: "NotFound",
+						message: error.message,
+					});
+				}
+
+				if (error instanceof Error && error.message.includes("already exists")) {
+					return reply.status(409).send({
+						statusCode: 409,
+						error: "Conflict",
 						message: error.message,
 					});
 				}
@@ -277,7 +291,7 @@ export async function registerTemplateRoutes(
 
 		/**
 		 * DELETE /api/trash-guides/templates/:templateId
-		 * Delete template (soft delete)
+		 * Delete template
 		 */
 		app.delete<{
 			Params: z.infer<typeof getTemplateParamsSchema>;
@@ -293,22 +307,22 @@ export async function registerTemplateRoutes(
 			try {
 				const { templateId } = getTemplateParamsSchema.parse(request.params);
 
-				await templateService.deleteTemplate(templateId, request.currentUser.id);
+				const deleted = await templateService.deleteTemplate(templateId, request.currentUser.id);
 
-				return reply.send({
-					message: "Template deleted successfully",
-				});
-			} catch (error) {
-				app.log.error({ err: error }, "Failed to delete template");
-
-				if (error instanceof Error && error.message.includes("not found")) {
+				if (!deleted) {
 					return reply.status(404).send({
 						statusCode: 404,
 						error: "NotFound",
-						message: error.message,
+						message: "Template not found",
 					});
 				}
 
+				return reply.send({
+					message: "Template deleted successfully",
+					templateId,
+				});
+			} catch (error) {
+				app.log.error({ err: error }, "Failed to delete template");
 				return reply.status(500).send({
 					statusCode: 500,
 					error: "InternalServerError",
@@ -506,4 +520,8 @@ export async function registerTemplateRoutes(
 				});
 			}
 		});
-}
+	},
+	{
+		name: "trash-template-routes",
+	},
+);

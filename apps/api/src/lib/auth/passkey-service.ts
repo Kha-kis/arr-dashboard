@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { webcrypto } from "node:crypto";
 import {
 	generateAuthenticationOptions,
 	generateRegistrationOptions,
@@ -13,6 +14,11 @@ import {
 	type VerifiedRegistrationResponse,
 } from "@simplewebauthn/server";
 import { isoBase64URL } from "@simplewebauthn/server/helpers";
+
+// Polyfill WebCrypto for Node.js < 19
+if (!globalThis.crypto) {
+	globalThis.crypto = webcrypto as any;
+}
 
 /**
  * WebAuthn Relying Party configuration

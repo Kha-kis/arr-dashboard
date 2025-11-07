@@ -71,3 +71,75 @@ export async function deleteCacheEntry(
 		method: "DELETE",
 	});
 }
+
+/**
+ * Quality Profile API Types and Functions
+ */
+
+export type QualityProfileSummary = {
+	trashId: string;
+	name: string;
+	description?: string;
+	scoreSet?: string;
+	upgradeAllowed: boolean;
+	cutoff: string;
+	language?: string;
+	customFormatCount: number;
+	qualityCount: number;
+};
+
+export type QualityProfilesResponse = {
+	profiles: QualityProfileSummary[];
+	count: number;
+};
+
+export type ImportQualityProfilePayload = {
+	serviceType: "RADARR" | "SONARR";
+	trashId: string;
+	templateName: string;
+	templateDescription?: string;
+};
+
+export type ImportQualityProfileResponse = {
+	template: unknown;
+	message: string;
+	customFormatsIncluded: number;
+};
+
+/**
+ * Fetch quality profiles for a service
+ */
+export async function fetchQualityProfiles(
+	serviceType: "RADARR" | "SONARR",
+): Promise<QualityProfilesResponse> {
+	return await apiRequest<QualityProfilesResponse>(
+		`/api/trash-guides/quality-profiles/${serviceType}`,
+	);
+}
+
+/**
+ * Fetch detailed quality profile by trash_id
+ */
+export async function fetchQualityProfileDetails(
+	serviceType: "RADARR" | "SONARR",
+	trashId: string,
+): Promise<{ profile: unknown }> {
+	return await apiRequest<{ profile: unknown }>(
+		`/api/trash-guides/quality-profiles/${serviceType}/${trashId}`,
+	);
+}
+
+/**
+ * Import quality profile as template
+ */
+export async function importQualityProfile(
+	payload: ImportQualityProfilePayload,
+): Promise<ImportQualityProfileResponse> {
+	return await apiRequest<ImportQualityProfileResponse>(
+		"/api/trash-guides/quality-profiles/import",
+		{
+			method: "POST",
+			json: payload,
+		},
+	);
+}

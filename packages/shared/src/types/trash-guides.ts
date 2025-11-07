@@ -17,6 +17,8 @@ export const TRASH_CONFIG_TYPES = {
 	CF_GROUPS: "CF_GROUPS",
 	QUALITY_SIZE: "QUALITY_SIZE",
 	NAMING: "NAMING",
+	QUALITY_PROFILES: "QUALITY_PROFILES",
+	CF_DESCRIPTIONS: "CF_DESCRIPTIONS",
 } as const;
 
 export type TrashConfigType = (typeof TRASH_CONFIG_TYPES)[keyof typeof TRASH_CONFIG_TYPES];
@@ -68,17 +70,28 @@ export interface TrashCustomFormat {
 }
 
 /**
+ * Custom Format within a CF Group
+ */
+export interface GroupCustomFormat {
+	name: string;
+	trash_id: string;
+	required: boolean; // If true, user cannot individually toggle this CF (bundled with group)
+	default?: string | boolean; // If "true" or true, this CF is pre-checked when required=false
+}
+
+/**
  * Custom Format Group from TRaSH Guides
  */
 export interface TrashCustomFormatGroup {
 	trash_id: string;
 	name: string;
-	custom_formats: string[]; // Array of trash_id references
-	quality_profiles?: Array<{
-		name: string;
-		score?: number;
-		except?: string[]; // Quality profile names to exclude
-	}>;
+	trash_description?: string; // TRaSH's guidance text (HTML format)
+	default?: string | boolean; // If "true" or true, this CF Group is enabled by default for applicable profiles
+	custom_formats: Array<GroupCustomFormat | string>; // Can be objects or trash_id strings
+	quality_profiles?: {
+		exclude?: Record<string, string>; // profile name → trash_id
+		score?: number; // Recommended score
+	};
 }
 
 /**
@@ -101,6 +114,41 @@ export interface TrashNamingScheme {
 	season_folder?: string;
 }
 
+/**
+ * Quality Profile from TRaSH Guides
+ */
+export interface TrashQualityProfile {
+	trash_id: string;
+	name: string;
+	trash_score_set?: string;
+	trash_description?: string;
+	group?: number;
+	upgradeAllowed: boolean;
+	cutoff: string;
+	minFormatScore?: number;
+	cutoffFormatScore?: number;
+	minUpgradeFormatScore?: number;
+	language?: string;
+	items: Array<{
+		name: string;
+		allowed: boolean;
+		items?: string[];
+	}>;
+	formatItems?: Record<string, string>; // Custom Format name -> trash_id mapping
+}
+
+/**
+ * Custom Format Description from TRaSH Guides
+ * Parsed from markdown files in includes/cf-descriptions/
+ */
+export interface TrashCFDescription {
+	cfName: string; // File name (e.g., "hdr", "dv-hdr10plus")
+	displayName: string; // Human-readable name (extracted from markdown title)
+	description: string; // HTML content (markdown converted to HTML)
+	rawMarkdown: string; // Original markdown for reference
+	fetchedAt: string; // Timestamp when description was fetched
+}
+
 // ============================================================================
 // Cache Types
 // ============================================================================
@@ -112,7 +160,7 @@ export interface TrashCacheEntry {
 	id: string;
 	serviceType: "RADARR" | "SONARR";
 	configType: TrashConfigType;
-	data: TrashCustomFormat[] | TrashCustomFormatGroup[] | TrashQualitySize[] | TrashNamingScheme[];
+	data: TrashCustomFormat[] | TrashCustomFormatGroup[] | TrashQualitySize[] | TrashNamingScheme[] | TrashQualityProfile[] | TrashCFDescription[];
 	version: number;
 	fetchedAt: string;
 	lastCheckedAt: string;

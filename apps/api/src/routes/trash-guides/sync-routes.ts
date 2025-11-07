@@ -5,7 +5,6 @@
  */
 
 import type { FastifyInstance, FastifyPluginOptions, FastifyRequest } from "fastify";
-import fp from "fastify-plugin";
 import { z } from "zod";
 import { createSyncEngine } from "../../lib/trash-guides/sync-engine.js";
 import type { SyncProgress } from "../../lib/trash-guides/sync-engine.js";
@@ -42,8 +41,10 @@ const progressStore = new Map<string, SyncProgress>();
 // Routes
 // ============================================================================
 
-export const registerSyncRoutes = fp(
-	async (app: FastifyInstance, opts: FastifyPluginOptions) => {
+export async function registerSyncRoutes(
+	app: FastifyInstance,
+	opts: FastifyPluginOptions,
+) {
 		const syncEngine = createSyncEngine(app.prisma);
 
 		/**
@@ -402,8 +403,4 @@ export const registerSyncRoutes = fp(
 				});
 			}
 		});
-	},
-	{
-		name: "trash-guides-sync-routes",
-	},
-);
+}

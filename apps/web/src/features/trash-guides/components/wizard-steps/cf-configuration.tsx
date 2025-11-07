@@ -2,15 +2,15 @@
 
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useImportQualityProfileWizard } from "../../../../hooks/api/useQualityProfiles";
 import { Alert, AlertDescription, Skeleton, Card, CardHeader, CardTitle, CardDescription, CardContent } from "../../../../components/ui";
-import { ChevronLeft, Download, Info, AlertCircle, CheckCircle } from "lucide-react";
+import { ChevronLeft, ChevronRight, Info, AlertCircle } from "lucide-react";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { apiRequest } from "../../../../lib/api-client/base";
 
 interface CFConfigurationProps {
 	serviceType: "RADARR" | "SONARR";
 	qualityProfile: QualityProfileSummary;
+	selectedGroups: Set<string>; // Groups selected in Step 2a
 	initialSelections: Record<string, {
 		selected: boolean;
 		scoreOverride?: number;
@@ -18,24 +18,31 @@ interface CFConfigurationProps {
 	}>;
 	templateName: string;
 	templateDescription: string;
-	onComplete: () => void;
+	onNext: (
+		selections: Record<string, {
+			selected: boolean;
+			scoreOverride?: number;
+			conditionsEnabled: Record<string, boolean>;
+		}>,
+		name: string,
+		description: string
+	) => void;
 	onBack: () => void;
 }
 
 export const CFConfiguration = ({
 	serviceType,
 	qualityProfile,
+	selectedGroups,
 	initialSelections,
 	templateName: initialTemplateName,
 	templateDescription: initialTemplateDescription,
-	onComplete,
+	onNext,
 	onBack,
 }: CFConfigurationProps) => {
 	const [selections, setSelections] = useState(initialSelections);
 	const [templateName, setTemplateName] = useState(initialTemplateName);
 	const [templateDescription, setTemplateDescription] = useState(initialTemplateDescription);
-
-	const importMutation = useImportQualityProfileWizard();
 
 	const { data, isLoading, error } = useQuery({
 		queryKey: ["quality-profile-details", serviceType, qualityProfile.trashId],
@@ -144,38 +151,11 @@ export const CFConfiguration = ({
 		});
 	};
 
-	const handleImport = async () => {
+	const handleNext = () => {
 		if (!templateName.trim()) return;
 
-		try {
-			const cfGroups = data?.cfGroups || [];
-			const selectedCFTrashIds = Object.entries(selections)
-				.filter(([_, sel]) => sel.selected)
-				.map(([trashId]) => trashId);
-
-			const selectedCFGroups = cfGroups
-				.filter((group: any) => {
-					if (!Array.isArray(group.custom_formats)) return false;
-					return group.custom_formats.some((cf: any) => {
-						const cfTrashId = typeof cf === 'string' ? cf : cf.trash_id;
-						return selectedCFTrashIds.includes(cfTrashId);
-					});
-				})
-				.map((g: any) => g.trash_id);
-
-			await importMutation.mutateAsync({
-				serviceType,
-				trashId: qualityProfile.trashId,
-				templateName: templateName.trim(),
-				templateDescription: templateDescription.trim() || undefined,
-				selectedCFGroups,
-				customFormatSelections: selections,
-			});
-
-			onComplete();
-		} catch (error) {
-			console.error("Import failed:", error);
-		}
+		// Pass selections and template info to the next step (Summary/Review)
+		onNext(selections, templateName.trim(), templateDescription.trim());
 	};
 
 	if (isLoading) {
@@ -532,25 +512,6 @@ export const CFConfiguration = ({
 							className="w-full rounded border border-border bg-bg-hover px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
 						/>
 					</div>
-
-					{importMutation.isError && (
-						<Alert variant="danger">
-							<AlertDescription>
-								{importMutation.error instanceof Error
-									? importMutation.error.message
-									: "Failed to import quality profile"}
-							</AlertDescription>
-						</Alert>
-					)}
-
-					{importMutation.isSuccess && (
-						<Alert variant="success">
-							<CheckCircle className="h-4 w-4" />
-							<AlertDescription>
-								Successfully imported quality profile as template!
-							</AlertDescription>
-						</Alert>
-					)}
 				</CardContent>
 			</Card>
 
@@ -559,7 +520,6 @@ export const CFConfiguration = ({
 				<button
 					type="button"
 					onClick={onBack}
-					disabled={importMutation.isPending}
 					className="inline-flex items-center gap-2 rounded-lg bg-bg-hover px-4 py-2 text-sm font-medium text-fg transition hover:bg-bg-active disabled:opacity-50"
 				>
 					<ChevronLeft className="h-4 w-4" />
@@ -568,21 +528,12 @@ export const CFConfiguration = ({
 
 				<button
 					type="button"
-					onClick={handleImport}
-					disabled={!templateName.trim() || selectedCount === 0 || importMutation.isPending}
+					onClick={handleNext}
+					disabled={!templateName.trim() || selectedCount === 0}
 					className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary/90 disabled:opacity-50"
 				>
-					{importMutation.isPending ? (
-						<>
-							<div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-							Creating Template...
-						</>
-					) : (
-						<>
-							<Download className="h-4 w-4" />
-							Create Template ({selectedCount} formats)
-						</>
-					)}
+					Next: Review
+					<ChevronRight className="h-4 w-4" />
 				</button>
 			</div>
 		</div>

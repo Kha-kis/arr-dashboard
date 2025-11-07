@@ -11,7 +11,10 @@ import type {
 	TrashCustomFormatGroup,
 	TrashQualitySize,
 	TrashNamingScheme,
+	TrashQualityProfile,
+	TrashCFDescription,
 } from "@arr/shared";
+import { marked } from "marked";
 
 // ============================================================================
 // Constants
@@ -20,6 +23,8 @@ import type {
 const TRASH_GITHUB_BASE_URL = "https://raw.githubusercontent.com/TRaSH-Guides/Guides/master/docs/json";
 const TRASH_METADATA_URL =
 	"https://raw.githubusercontent.com/TRaSH-Guides/Guides/master/metadata.json";
+const TRASH_CF_DESCRIPTIONS_BASE_URL =
+	"https://raw.githubusercontent.com/TRaSH-Guides/Guides/master/includes/cf-descriptions";
 
 const FETCH_TIMEOUT_MS = 15000; // 15 seconds
 const MAX_RETRIES = 3;
@@ -148,6 +153,8 @@ function buildGitHubUrl(serviceType: "RADARR" | "SONARR", configType: TrashConfi
 			return `${TRASH_GITHUB_BASE_URL}/${service}/quality-size`;
 		case "NAMING":
 			return `${TRASH_GITHUB_BASE_URL}/${service}/naming`;
+		case "QUALITY_PROFILES":
+			return `${TRASH_GITHUB_BASE_URL}/${service}/quality-profiles`;
 		default:
 			throw new Error(`Unknown config type: ${configType}`);
 	}
@@ -307,6 +314,134 @@ export class TrashGitHubFetcher {
 	}
 
 	/**
+	 * Fetch Quality Profiles for a service
+	 */
+	async fetchQualityProfiles(serviceType: "RADARR" | "SONARR"): Promise<TrashQualityProfile[]> {
+		const baseUrl = buildGitHubUrl(serviceType, "QUALITY_PROFILES");
+
+		const profiles: TrashQualityProfile[] = [];
+		const knownFiles = await this.discoverConfigFiles(baseUrl);
+
+		for (const file of knownFiles) {
+			try {
+				const url = `${baseUrl}/${file}`;
+				const response = await fetchWithRetry(url, this.fetchOptions);
+
+				if (response.ok) {
+					const data = (await response.json()) as TrashQualityProfile;
+					profiles.push(data);
+				}
+			} catch (error) {
+				console.warn(`Failed to fetch ${file}:`, error);
+			}
+		}
+
+		return profiles;
+	}
+
+	/**
+	 * Fetch a single CF description by file name
+	 */
+	async fetchCFDescription(cfName: string): Promise<TrashCFDescription | null> {
+		try {
+			const url = `${TRASH_CF_DESCRIPTIONS_BASE_URL}/${cfName}.md`;
+			const response = await fetchWithRetry(url, this.fetchOptions);
+
+			if (!response.ok) {
+				console.warn(`CF description not found: ${cfName}`);
+				return null;
+			}
+
+			const rawMarkdown = await response.text();
+
+			// Extract display name from markdown (first # heading)
+			const titleMatch = rawMarkdown.match(/^#\s+(.+)$/m);
+			const displayName = titleMatch?.[1] || cfName;
+
+			// Clean markdown: remove includes and title
+			const cleanedMarkdown = rawMarkdown
+				.replace(/--8<--.*?--8<--/gs, "") // Remove includes
+				.replace(/^#\s+.+$/m, "") // Remove title
+				.trim();
+
+			// Convert markdown to HTML using marked
+			const description = await marked.parse(cleanedMarkdown, {
+				async: true,
+				breaks: true, // Convert line breaks to <br>
+				gfm: true, // Enable GitHub Flavored Markdown
+			});
+
+			return {
+				cfName,
+				displayName,
+				description,
+				rawMarkdown,
+				fetchedAt: new Date().toISOString(),
+			};
+		} catch (error) {
+			console.error(`Failed to fetch CF description for ${cfName}:`, error);
+			return null;
+		}
+	}
+
+	/**
+	 * Fetch all CF descriptions
+	 */
+	async fetchAllCFDescriptions(): Promise<TrashCFDescription[]> {
+		// First, discover all markdown files in cf-descriptions directory
+		const apiUrl = "https://api.github.com/repos/TRaSH-Guides/Guides/contents/includes/cf-descriptions";
+
+		try {
+			const response = await fetchWithRetry(apiUrl, {
+				...this.fetchOptions,
+				retries: 2,
+			});
+
+			if (!response.ok) {
+				console.warn(`GitHub API returned ${response.status} for CF descriptions`);
+				return [];
+			}
+
+			const files = (await response.json()) as Array<{
+				name: string;
+				type: string;
+			}>;
+
+			// Filter for .md files only
+			const mdFiles = files
+				.filter((file) => file.type === "file" && file.name.endsWith(".md"))
+				.map((file) => file.name.replace(/\.md$/, ""));
+
+			console.log(`Discovered ${mdFiles.length} CF description files`);
+
+			// Fetch all descriptions in parallel (with concurrency limit)
+			const BATCH_SIZE = 10; // Process 10 at a time
+			const descriptions: TrashCFDescription[] = [];
+
+			for (let i = 0; i < mdFiles.length; i += BATCH_SIZE) {
+				const batch = mdFiles.slice(i, i + BATCH_SIZE);
+				const results = await Promise.all(
+					batch.map((cfName) => this.fetchCFDescription(cfName))
+				);
+
+				// Filter out nulls and add to descriptions
+				descriptions.push(...results.filter((desc): desc is TrashCFDescription => desc !== null));
+
+				// Small delay between batches to avoid rate limiting
+				if (i + BATCH_SIZE < mdFiles.length) {
+					await delay(500);
+				}
+			}
+
+			console.log(`Successfully fetched ${descriptions.length}/${mdFiles.length} CF descriptions`);
+			return descriptions;
+		} catch (error) {
+			console.error("Failed to fetch CF descriptions:", error);
+			return [];
+		}
+	}
+
+	/**
 	 * Generic fetch for any config type
 	 */
 	async fetchConfigs(
@@ -322,53 +457,61 @@ export class TrashGitHubFetcher {
 				return this.fetchQualitySize(serviceType);
 			case "NAMING":
 				return this.fetchNaming(serviceType);
+			case "QUALITY_PROFILES":
+				return this.fetchQualityProfiles(serviceType);
+			case "CF_DESCRIPTIONS":
+				return this.fetchAllCFDescriptions();
 			default:
 				throw new Error(`Unsupported config type: ${configType}`);
 		}
 	}
 
 	/**
-	 * Discover available config files in a directory
-	 *
-	 * For Sprint 1, this uses a simplified approach.
-	 * TODO: In future sprints, use GitHub API to list directory contents
+	 * Discover available config files in a directory using GitHub API
 	 */
 	private async discoverConfigFiles(baseUrl: string): Promise<string[]> {
-		// For Sprint 1, try common file patterns
-		// This is a simplified approach - in production, use GitHub API
+		// Extract the path from the base URL
+		// baseUrl format: https://raw.githubusercontent.com/TRaSH-Guides/Guides/master/docs/json/{service}/{type}
+		const pathMatch = baseUrl.match(/\/master\/(.+)$/);
+		if (!pathMatch) {
+			console.warn(`Could not extract path from URL: ${baseUrl}`);
+			return [];
+		}
 
-		const commonFiles = [
-			"collection.json",
-			"all.json",
-			"default.json",
-			"recommended.json",
-		];
+		const repoPath = pathMatch[1];
+		const apiUrl = `https://api.github.com/repos/TRaSH-Guides/Guides/contents/${repoPath}`;
 
-		const availableFiles: string[] = [];
+		try {
+			const response = await fetchWithRetry(apiUrl, {
+				...this.fetchOptions,
+				retries: 2,
+			});
 
-		for (const file of commonFiles) {
-			try {
-				const url = `${baseUrl}/${file}`;
-				const response = await fetchWithRetry(url, {
-					...this.fetchOptions,
-					retries: 1, // Only try once for discovery
-				});
-
-				if (response.ok) {
-					availableFiles.push(file);
-				}
-			} catch {
-				// File doesn't exist, skip
+			if (!response.ok) {
+				console.warn(`GitHub API returned ${response.status} for ${apiUrl}`);
+				return [];
 			}
-		}
 
-		// If no common files found, assume there might be individual files
-		// This would be expanded with proper GitHub API integration
-		if (availableFiles.length === 0) {
-			console.warn(`No config files discovered at ${baseUrl}`);
-		}
+			const files = (await response.json()) as Array<{
+				name: string;
+				type: string;
+				download_url: string | null;
+			}>;
 
-		return availableFiles;
+			// Filter for .json files only
+			const jsonFiles = files
+				.filter((file) => file.type === "file" && file.name.endsWith(".json"))
+				.map((file) => file.name);
+
+			if (jsonFiles.length === 0) {
+				console.warn(`No JSON files discovered at ${baseUrl}`);
+			}
+
+			return jsonFiles;
+		} catch (error) {
+			console.error(`Failed to discover config files at ${baseUrl}:`, error);
+			return [];
+		}
 	}
 }
 

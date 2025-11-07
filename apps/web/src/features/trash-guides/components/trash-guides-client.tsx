@@ -8,6 +8,7 @@ import { AlertCircle, RefreshCw, Database, Clock, HardDrive } from "lucide-react
 import { TemplateList } from "./template-list";
 import { TemplateEditor } from "./template-editor";
 import { TemplateImportDialog } from "./template-import-dialog";
+import { QualityProfileWizard } from "./quality-profile-wizard";
 
 type ServiceType = "RADARR" | "SONARR";
 type Tab = "cache" | "templates";
@@ -17,15 +18,18 @@ const CONFIG_TYPE_LABELS = {
 	CF_GROUPS: "CF Groups",
 	QUALITY_SIZE: "Quality Size",
 	NAMING: "Naming Schemes",
+	QUALITY_PROFILES: "Quality Profiles",
 } as const;
 
 export const TrashGuidesClient = () => {
 	const { data, isLoading, error, refetch } = useTrashCacheStatus();
 	const refreshMutation = useRefreshTrashCache();
 	const [refreshing, setRefreshing] = useState<string | null>(null);
-	const [activeTab, setActiveTab] = useState<Tab>("cache");
+	const [activeTab, setActiveTab] = useState<Tab>("templates");
 	const [editorOpen, setEditorOpen] = useState(false);
 	const [importOpen, setImportOpen] = useState(false);
+	const [qualityProfileBrowserOpen, setQualityProfileBrowserOpen] = useState(false);
+	const [selectedServiceType, setSelectedServiceType] = useState<ServiceType | null>(null);
 	const [editingTemplate, setEditingTemplate] = useState<TrashTemplate | undefined>(undefined);
 
 	const handleRefresh = async (serviceType: ServiceType) => {
@@ -54,6 +58,11 @@ export const TrashGuidesClient = () => {
 
 	const handleImport = () => {
 		setImportOpen(true);
+	};
+
+	const handleBrowseQualityProfiles = (serviceType: ServiceType) => {
+		setSelectedServiceType(serviceType);
+		setQualityProfileBrowserOpen(true);
 	};
 
 	if (isLoading) {
@@ -196,17 +205,6 @@ export const TrashGuidesClient = () => {
 					<nav className="flex gap-6">
 						<button
 							type="button"
-							onClick={() => setActiveTab("cache")}
-							className={`border-b-2 px-1 pb-3 text-sm font-medium transition ${
-								activeTab === "cache"
-									? "border-primary text-white"
-									: "border-transparent text-white/60 hover:text-white"
-							}`}
-						>
-							Cache Status
-						</button>
-						<button
-							type="button"
 							onClick={() => setActiveTab("templates")}
 							className={`border-b-2 px-1 pb-3 text-sm font-medium transition ${
 								activeTab === "templates"
@@ -215,6 +213,17 @@ export const TrashGuidesClient = () => {
 							}`}
 						>
 							Templates
+						</button>
+						<button
+							type="button"
+							onClick={() => setActiveTab("cache")}
+							className={`border-b-2 px-1 pb-3 text-sm font-medium transition ${
+								activeTab === "cache"
+									? "border-primary text-white"
+									: "border-transparent text-white/60 hover:text-white"
+							}`}
+						>
+							Cache Status
 						</button>
 					</nav>
 				</div>
@@ -242,6 +251,7 @@ export const TrashGuidesClient = () => {
 					onCreateNew={handleCreateNew}
 					onEdit={handleEdit}
 					onImport={handleImport}
+					onBrowseQualityProfiles={handleBrowseQualityProfiles}
 				/>
 			)}
 
@@ -255,6 +265,16 @@ export const TrashGuidesClient = () => {
 				open={importOpen}
 				onClose={() => setImportOpen(false)}
 			/>
+			{selectedServiceType && (
+				<QualityProfileWizard
+					open={qualityProfileBrowserOpen}
+					onClose={() => {
+						setQualityProfileBrowserOpen(false);
+						setSelectedServiceType(null);
+					}}
+					serviceType={selectedServiceType}
+				/>
+			)}
 		</div>
 	);
 };

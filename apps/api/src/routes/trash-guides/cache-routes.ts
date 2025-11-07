@@ -5,7 +5,6 @@
  */
 
 import type { FastifyInstance, FastifyPluginOptions, FastifyRequest } from "fastify";
-import fp from "fastify-plugin";
 import { z } from "zod";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
@@ -18,12 +17,12 @@ import type { TrashConfigType } from "@arr/shared";
 
 const getCacheParamsSchema = z.object({
 	serviceType: z.enum(["RADARR", "SONARR"]),
-	configType: z.enum(["CUSTOM_FORMATS", "CF_GROUPS", "QUALITY_SIZE", "NAMING"]),
+	configType: z.enum(["CUSTOM_FORMATS", "CF_GROUPS", "QUALITY_SIZE", "NAMING", "QUALITY_PROFILES", "CF_DESCRIPTIONS"]),
 });
 
 const refreshCacheBodySchema = z.object({
 	serviceType: z.enum(["RADARR", "SONARR"]),
-	configType: z.enum(["CUSTOM_FORMATS", "CF_GROUPS", "QUALITY_SIZE", "NAMING"]).optional(),
+	configType: z.enum(["CUSTOM_FORMATS", "CF_GROUPS", "QUALITY_SIZE", "NAMING", "QUALITY_PROFILES", "CF_DESCRIPTIONS"]).optional(),
 	force: z.boolean().optional().default(false),
 });
 
@@ -35,8 +34,10 @@ const getStatusParamsSchema = z.object({
 // Route Handlers
 // ============================================================================
 
-export const registerTrashCacheRoutes = fp(
-	async (app: FastifyInstance, _opts: FastifyPluginOptions) => {
+export async function registerTrashCacheRoutes(
+	app: FastifyInstance,
+	_opts: FastifyPluginOptions,
+) {
 		const cacheManager = createCacheManager(app.prisma);
 		const fetcher = createTrashFetcher();
 
@@ -312,8 +313,4 @@ export const registerTrashCacheRoutes = fp(
 				});
 			}
 		});
-	},
-	{
-		name: "trash-cache-routes",
-	},
-);
+}

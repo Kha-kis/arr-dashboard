@@ -30,6 +30,7 @@
 		"fastify": "4.29.1",
 		"fastify-plugin": "^4.5.1",
 		"lucia": "^3.2.2",
+		"marked": "^17.0.0",
 		"oauth4webapi": "^3.8.2",
 		"oslo": "^1.2.1",
 		"pino": "^9.3.2",
