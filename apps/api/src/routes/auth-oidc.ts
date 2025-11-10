@@ -6,12 +6,15 @@ import { OIDCProvider, type OIDCProviderType } from "../lib/auth/oidc-provider.j
 
 /**
  * In-memory storage for OIDC states and nonces (production: use Redis)
- * Format: Map<state, { nonce, codeVerifier, provider, expiresAt }>
  */
-const oidcStateStore = new Map
-	string,
-	{ nonce: string; codeVerifier: string; provider: OIDCProviderType; expiresAt: number }
->();
+interface OIDCStateData {
+	nonce: string;
+	codeVerifier: string;
+	provider: OIDCProviderType;
+	expiresAt: number;
+}
+
+const oidcStateStore = new Map<string, OIDCStateData>();
 
 // Clean up expired states every 5 minutes
 setInterval(() => {
