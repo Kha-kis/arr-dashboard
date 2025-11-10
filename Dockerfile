@@ -1,6 +1,5 @@
 # Combined Dockerfile for Arr Dashboard (API + Web)
 # Optimized for single-container deployment (Unraid, etc.)
-
 FROM node:20-alpine AS base
 RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
 
@@ -48,8 +47,10 @@ RUN pnpm --filter @arr/api --prod deploy /app/deploy-api
 FROM base AS runner
 WORKDIR /app
 
-# Install tini for proper signal handling
-RUN apk add --no-cache tini
+# Install runtime dependencies
+# - tini: proper signal handling
+# - su-exec: lightweight sudo for dropping privileges
+RUN apk add --no-cache tini su-exec
 
 # Create directory structure
 RUN mkdir -p /app/api /app/web /app/data
@@ -61,7 +62,6 @@ COPY --from=builder /app/apps/api/dist ./api/dist
 COPY --from=builder /app/apps/api/prisma ./api/prisma
 
 # Copy Web files (Next.js standalone output)
-# Note: public directory is automatically included in standalone output if it exists
 COPY --from=builder /app/apps/web/.next/standalone ./web
 COPY --from=builder /app/apps/web/.next/static ./web/apps/web/.next/static
 
@@ -74,12 +74,11 @@ WORKDIR /app
 COPY docker/start-combined.sh ./start.sh
 RUN chmod +x ./start.sh
 
-# Create non-root user
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 arruser && \
-    chown -R arruser:nodejs /app
+# Create default non-root user (will be updated by start.sh if PUID/PGID are set)
+RUN addgroup -g 1001 nodejs && \
+    adduser -D -u 1001 -G nodejs arruser
 
-USER arruser
+# Note: We start as root to allow PUID/PGID changes, then drop privileges in start.sh
 
 # Expose both ports
 EXPOSE 3000 3001
@@ -89,7 +88,9 @@ ENV DATABASE_URL="file:/app/data/prod.db" \
     API_PORT=3001 \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
-    NODE_ENV=production
+    NODE_ENV=production \
+    PUID=1000 \
+    PGID=1000
 
 # Health check (checks web UI)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
