@@ -2,12 +2,14 @@ services:
   arr-dashboard-dev:
     image: khak1s/arr-dashboard:dev
     container_name: arr-dashboard-dev
+    environment:
+      - PUID=99  # Set to your user ID (run `id -u` on host)
+      - PGID=100  # Set to your group ID (run `id -g` on host)
+      # Optional: Override environment variables for dev testing
+      # SESSION_TTL_HOURS: "24"
+      # LOG_LEVEL: "debug"
     volumes:
       - ./data-dev:/app/data
     ports:
       - 3000:3000
-    # environment:
-      # Optional: Override environment variables for dev testing
-      # SESSION_TTL_HOURS: "24"
-      # LOG_LEVEL: "debug"
     restart: unless-stopped

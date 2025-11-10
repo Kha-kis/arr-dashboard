@@ -2,6 +2,9 @@ services:
   arr-dashboard:
     image: khak1s/arr-dashboard:latest
     container_name: arr-dashboard
+    environment:
+      - PUID=99  # Set to your user ID (run `id -u` on host)
+      - PGID=100  # Set to your group ID (run `id -g` on host)
     volumes:
       - ./data:/app/data
     ports:
