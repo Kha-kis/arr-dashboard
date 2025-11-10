@@ -80,65 +80,65 @@ export class OIDCProvider {
 		return authUrl.toString();
 	}
 
-	/**
-	 * Exchange authorization code for tokens with PKCE
-	 * @param callbackUrl - Full callback URL with query parameters from the OIDC redirect
-	 * @param expectedState - State value to validate against callback (CSRF protection)
-	 * @param expectedNonce - Nonce value to validate against ID token (prevents replay attacks)
-	 * @param codeVerifier - PKCE code verifier to prove possession (prevents authorization code interception)
-	 */
-	async exchangeCode(
-		callbackUrl: string,
-		expectedState: string,
-		expectedNonce: string,
-		codeVerifier: string,
-	): Promise<oauth.TokenEndpointResponse> {
-		const authServer = await this.discoverAuthServer();
+/**
+ * Exchange authorization code for tokens with PKCE
+ * @param callbackUrl - Full callback URL with query parameters from the OIDC redirect
+ * @param expectedState - State value to validate against callback (CSRF protection)
+ * @param expectedNonce - Nonce value to validate against ID token (prevents replay attacks)
+ * @param codeVerifier - PKCE code verifier to prove possession (prevents authorization code interception)
+ */
+async exchangeCode(
+	callbackUrl: string,
+	expectedState: string,
+	expectedNonce: string,
+	codeVerifier: string,
+): Promise<oauth.TokenEndpointResponse> {
+	const authServer = await this.discoverAuthServer();
 
-		// Parse the callback URL
-		const currentUrl = new URL(callbackUrl);
+	// Parse the callback URL
+	const currentUrl = new URL(callbackUrl);
 
-		// Validate the authorization response FIRST
-		// This validates state and extracts parameters properly
-		const params = oauth.validateAuthResponse(
-			authServer,
-			this.client,
-			currentUrl,
-			expectedState
-		);
+	// Validate the authorization response FIRST
+	// This validates state and extracts parameters properly
+	const params = oauth.validateAuthResponse(
+		authServer,
+		this.client,
+		currentUrl,
+		expectedState
+	);
 
-		// Check for OAuth errors
-		if (oauth.isOAuth2Error(params)) {
-			throw new Error(`OAuth error: ${params.error} - ${params.error_description || 'Unknown error'}`);
-		}
-
-		// Exchange the authorization code for tokens
-		const response = await oauth.authorizationCodeGrantRequest(
-			authServer,
-			this.client,
-			params, // Use validated params from validateAuthResponse
-			this.config.redirectUri,
-			codeVerifier, // PKCE code verifier for authorization code protection
-		);
-
-		// Validate ID token with nonce to prevent replay attacks
-		const result = await oauth.processAuthorizationCodeResponse(
-			authServer,
-			this.client,
-			response,
-			{
-				expectedNonce: expectedNonce,
-				requireIdToken: true, // OIDC requires ID token
-			},
-		);
-
-		// Check for OAuth error response
-		if (oauth.isOAuth2Error(result)) {
-			throw new Error(`OIDC token exchange failed: ${result.error} - ${result.error_description || 'Unknown error'}`);
-		}
-
-		return result;
+	// Check for OAuth errors - check if params has 'error' property
+	if ('error' in params) {
+		throw new Error(`OAuth error: ${params.error} - ${(params as any).error_description || 'Unknown error'}`);
 	}
+
+	// Exchange the authorization code for tokens
+	const response = await oauth.authorizationCodeGrantRequest(
+		authServer,
+		this.client,
+		params, // Use validated params from validateAuthResponse
+		this.config.redirectUri,
+		codeVerifier, // PKCE code verifier for authorization code protection
+	);
+
+	// Validate ID token with nonce to prevent replay attacks
+	const result = await oauth.processAuthorizationCodeResponse(
+		authServer,
+		this.client,
+		response,
+		{
+			expectedNonce: expectedNonce,
+			requireIdToken: true, // OIDC requires ID token
+		},
+	);
+
+	// Check for OAuth error response
+	if ('error' in result) {
+		throw new Error(`OIDC token exchange failed: ${result.error} - ${(result as any).error_description || 'Unknown error'}`);
+	}
+
+	return result;
+}
 
 	/**
 	 * Get user information from OIDC provider
