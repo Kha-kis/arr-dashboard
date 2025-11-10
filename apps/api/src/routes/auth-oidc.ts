@@ -8,7 +8,7 @@ import { OIDCProvider, type OIDCProviderType } from "../lib/auth/oidc-provider.j
  * In-memory storage for OIDC states and nonces (production: use Redis)
  * Format: Map<state, { nonce, codeVerifier, provider, expiresAt }>
  */
-const oidcStateStore = new Map<
+const oidcStateStore = new Map
 	string,
 	{ nonce: string; codeVerifier: string; provider: OIDCProviderType; expiresAt: number }
 >();
@@ -207,7 +207,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(400).send({ error: "Invalid callback parameters" });
 		}
 
-		const { code, state } = parsed.data;
+		const { state } = parsed.data;
 
 		// Verify state to prevent CSRF
 		const storedState = oidcStateStore.get(state);
@@ -244,8 +244,16 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		});
 
 		try {
-			// Exchange code for tokens (with nonce validation and PKCE)
-			const tokenResponse = await oidcProvider.exchangeCode(code, storedState.nonce, storedState.codeVerifier);
+			// Build full callback URL with all query parameters
+			const callbackUrl = `${request.protocol}://${request.hostname}${request.url}`;
+
+			// Exchange code for tokens (with state, nonce validation and PKCE)
+			const tokenResponse = await oidcProvider.exchangeCode(
+				callbackUrl,
+				state,
+				storedState.nonce,
+				storedState.codeVerifier
+			);
 
 			if (!tokenResponse.access_token) {
 				throw new Error("No access token received from OIDC provider");
