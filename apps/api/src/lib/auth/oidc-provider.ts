@@ -82,27 +82,42 @@ export class OIDCProvider {
 
 	/**
 	 * Exchange authorization code for tokens with PKCE
-	 * @param code - Authorization code from OIDC provider
+	 * @param callbackUrl - Full callback URL with query parameters from the OIDC redirect
+	 * @param expectedState - State value to validate against callback (CSRF protection)
 	 * @param expectedNonce - Nonce value to validate against ID token (prevents replay attacks)
 	 * @param codeVerifier - PKCE code verifier to prove possession (prevents authorization code interception)
 	 */
 	async exchangeCode(
-		code: string,
+		callbackUrl: string,
+		expectedState: string,
 		expectedNonce: string,
 		codeVerifier: string,
 	): Promise<oauth.TokenEndpointResponse> {
 		const authServer = await this.discoverAuthServer();
 
-		// Callback parameters (code from authorization redirect)
-		const callbackParams = new URLSearchParams();
-		callbackParams.set("code", code);
+		// Parse the callback URL
+		const currentUrl = new URL(callbackUrl);
 
+		// Validate the authorization response FIRST
+		// This validates state and extracts parameters properly
+		const params = oauth.validateAuthResponse(
+			authServer,
+			this.client,
+			currentUrl,
+			expectedState
+		);
+
+		// Check for OAuth errors
+		if (oauth.isOAuth2Error(params)) {
+			throw new Error(`OAuth error: ${params.error} - ${params.error_description || 'Unknown error'}`);
+		}
+
+		// Exchange the authorization code for tokens
 		const response = await oauth.authorizationCodeGrantRequest(
 			authServer,
 			this.client,
-			oauth.ClientSecretBasic(this.client.client_secret as string), // clientAuth method
-			callbackParams,
-			this.config.redirectUri, // redirectUri as separate argument
+			params, // Use validated params from validateAuthResponse
+			this.config.redirectUri,
 			codeVerifier, // PKCE code verifier for authorization code protection
 		);
 
@@ -118,8 +133,8 @@ export class OIDCProvider {
 		);
 
 		// Check for OAuth error response
-		if ('error' in result) {
-			throw new Error(`OIDC token exchange failed: ${result.error} - ${result.error_description}`);
+		if (oauth.isOAuth2Error(result)) {
+			throw new Error(`OIDC token exchange failed: ${result.error} - ${result.error_description || 'Unknown error'}`);
 		}
 
 		return result;
