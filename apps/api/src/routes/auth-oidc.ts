@@ -82,7 +82,14 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const { type, displayName, clientId, clientSecret, issuer, scopes } = parsed.data;
 
 		// Auto-generate redirect URI if not provided
-		const redirectUri = parsed.data.redirectUri ?? `${process.env.APP_URL ?? "http://localhost:3000"}/auth/oidc/callback`;
+		// Use the request origin to detect the correct URL (works in Docker/proxy environments)
+		let redirectUri = parsed.data.redirectUri;
+		if (!redirectUri) {
+			const protocol = request.headers['x-forwarded-proto'] || request.protocol;
+			const host = request.headers['x-forwarded-host'] || request.headers.host || 'localhost:3000';
+			redirectUri = `${protocol}://${host}/auth/oidc/callback`;
+			request.log.info({ redirectUri, protocol, host }, "Auto-generated redirect URI from request");
+		}
 
 		try {
 			// Use transaction to atomically check user count and create provider
@@ -266,16 +273,20 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		});
 
 		try {
-			// Build full callback URL with all query parameters
-			// Use the configured redirect URI as the base to avoid issues with proxies/Docker
-			const callbackParams = new URL(request.url, 'http://localhost').search;
-			const callbackUrl = `${dbProvider.redirectUri}${callbackParams}`;
+			// Convert query object to URLSearchParams for oauth4webapi
+			const queryParams = new URLSearchParams();
+			for (const [key, value] of Object.entries(request.query as Record<string, string>)) {
+				if (value !== undefined && value !== null) {
+					queryParams.append(key, value);
+				}
+			}
 
-			request.log.info({ callbackUrl, redirectUri: dbProvider.redirectUri }, "Exchanging authorization code");
+			request.log.info({ queryParams: Object.fromEntries(queryParams.entries()), redirectUri: dbProvider.redirectUri }, "Exchanging authorization code");
 
 			// Exchange code for tokens (with state, nonce validation and PKCE)
 			const tokenResponse = await oidcProvider.exchangeCode(
-				callbackUrl,
+				queryParams,
+				dbProvider.redirectUri,
 				state,
 				storedState.nonce,
 				storedState.codeVerifier
