@@ -37,6 +37,22 @@ export class OIDCProvider {
 	}
 
 	/**
+	 * Check if HTTP requests should be allowed for this issuer
+	 * Allows HTTP for localhost and private network IPs
+	 */
+	private shouldAllowInsecureRequests(): boolean {
+		const issuerUrl = new URL(this.config.issuer);
+		return (
+			issuerUrl.hostname === 'localhost' ||
+			issuerUrl.hostname === '127.0.0.1' ||
+			issuerUrl.hostname.startsWith('192.168.') ||
+			issuerUrl.hostname.startsWith('10.') ||
+			issuerUrl.hostname.startsWith('172.16.') ||
+			!!issuerUrl.hostname.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./) // 172.16.0.0 - 172.31.255.255
+		);
+	}
+
+	/**
 	 * Discover OIDC configuration from issuer
 	 */
 	private async discoverAuthServer(): Promise<oauth.AuthorizationServer> {
@@ -45,8 +61,12 @@ export class OIDCProvider {
 		}
 
 		const issuerUrl = new URL(this.config.issuer);
+
+		// Allow HTTP for local/development environments (localhost, 127.0.0.1, private IPs)
+		// In production with public domains, HTTPS is still enforced by oauth4webapi
 		const discoveryResponse = await oauth.discoveryRequest(issuerUrl, {
 			algorithm: "oidc",
+			[oauth.allowInsecureRequests]: this.shouldAllowInsecureRequests(),
 		});
 
 		const authServer = await oauth.processDiscoveryResponse(issuerUrl, discoveryResponse);
@@ -127,6 +147,9 @@ export class OIDCProvider {
 			params, // Use validated params from validateAuthResponse
 			this.config.redirectUri,
 			codeVerifier, // PKCE code verifier for authorization code protection
+			{
+				[oauth.allowInsecureRequests]: this.shouldAllowInsecureRequests(),
+			}
 		);
 
 		// Validate ID token with nonce to prevent replay attacks
@@ -158,7 +181,9 @@ export class OIDCProvider {
 			throw new Error("UserInfo endpoint not found in OIDC discovery");
 		}
 
-		const response = await oauth.userInfoRequest(authServer, this.client, accessToken);
+		const response = await oauth.userInfoRequest(authServer, this.client, accessToken, {
+			[oauth.allowInsecureRequests]: this.shouldAllowInsecureRequests(),
+		});
 		const userInfo = await oauth.processUserInfoResponse(authServer, this.client, "", response);
 
 		if (!userInfo.sub) {
