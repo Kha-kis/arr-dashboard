@@ -108,7 +108,7 @@ export const OIDCSetup = () => {
 				<Input
 					value={formState.issuer}
 					onChange={(e) => setFormState({ ...formState, issuer: e.target.value })}
-					placeholder="http://192.168.1.100:9000/application/o/my-app"
+					placeholder="https://auth.example.com"
 					required
 				/>
 				<p className="text-xs text-white/50">
