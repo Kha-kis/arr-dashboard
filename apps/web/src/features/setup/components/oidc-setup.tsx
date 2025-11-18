@@ -14,6 +14,7 @@ export const OIDCSetup = () => {
 		clientId: "",
 		clientSecret: "",
 		issuer: "",
+		redirectUri: "",
 		scopes: "openid,email,profile",
 	});
 	const [error, setError] = useState<string | null>(null);
@@ -107,11 +108,22 @@ export const OIDCSetup = () => {
 				<Input
 					value={formState.issuer}
 					onChange={(e) => setFormState({ ...formState, issuer: e.target.value })}
-					placeholder="https://auth.example.com"
+					placeholder="http://192.168.1.100:9000/application/o/my-app"
 					required
 				/>
 				<p className="text-xs text-white/50">
-					The base URL of your OIDC provider (without .well-known path)
+					The base URL of your OIDC provider (issuer URL from provider config)
+				</p>
+			</div>
+			<div className="space-y-2">
+				<label className="text-xs uppercase text-white/60">Redirect URI</label>
+				<Input
+					value={formState.redirectUri}
+					onChange={(e) => setFormState({ ...formState, redirectUri: e.target.value })}
+					placeholder={`${window.location.origin}/auth/oidc/callback`}
+				/>
+				<p className="text-xs text-white/50">
+					Leave empty to auto-detect. Must match the redirect URI configured in your OIDC provider.
 				</p>
 			</div>
 			<div className="space-y-2">
