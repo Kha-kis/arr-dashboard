@@ -141,28 +141,27 @@ export class OIDCProvider {
 
 	/**
 	 * Exchange authorization code for tokens with PKCE
-	 * @param callbackUrl - Full callback URL with query parameters from the OIDC redirect
+	 * @param callbackParams - URLSearchParams from the OIDC callback (query parameters)
+	 * @param redirectUri - The redirect URI used for this flow
 	 * @param expectedState - State value to validate against callback (CSRF protection)
 	 * @param expectedNonce - Nonce value to validate against ID token (prevents replay attacks)
 	 * @param codeVerifier - PKCE code verifier to prove possession (prevents authorization code interception)
 	 */
 	async exchangeCode(
-		callbackUrl: string,
+		callbackParams: URLSearchParams,
+		redirectUri: string,
 		expectedState: string,
 		expectedNonce: string,
 		codeVerifier: string,
 	): Promise<oauth.TokenEndpointResponse> {
 		const authServer = await this.discoverAuthServer();
 
-		// Parse the callback URL
-		const currentUrl = new URL(callbackUrl);
-
 		// Validate the authorization response FIRST
 		// This validates state and extracts parameters properly
 		const params = oauth.validateAuthResponse(
 			authServer,
 			this.client,
-			currentUrl,
+			callbackParams,
 			expectedState
 		);
 
@@ -176,7 +175,7 @@ export class OIDCProvider {
 			authServer,
 			this.client,
 			params, // Use validated params from validateAuthResponse
-			this.config.redirectUri,
+			redirectUri,
 			codeVerifier, // PKCE code verifier for authorization code protection
 			{
 				[oauth.allowInsecureRequests]: this.shouldAllowInsecureRequests(),
