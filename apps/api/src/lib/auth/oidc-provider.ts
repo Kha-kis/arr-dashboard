@@ -8,7 +8,7 @@ export interface OIDCProviderConfig {
 	clientSecret: string;
 	issuer: string; // e.g., https://auth.example.com
 	redirectUri: string; // e.g., https://arr-dashboard.example.com/auth/oidc/callback
-	scopes?: string[]; // Default: ["openid", "email", "profile"]
+	scopes?: string[] | string; // Array or comma-separated string. Default: ["openid", "email", "profile"]
 }
 
 export interface OIDCUserInfo {
@@ -65,7 +65,15 @@ export class OIDCProvider {
 			throw new Error("Authorization endpoint not found in OIDC discovery");
 		}
 
-		const scopes = this.config.scopes ?? ["openid", "email", "profile"];
+		// Parse scopes - handle both array and comma-separated string
+		let scopes: string[];
+		if (Array.isArray(this.config.scopes)) {
+			scopes = this.config.scopes;
+		} else if (typeof this.config.scopes === 'string') {
+			scopes = this.config.scopes.split(',').map(s => s.trim()).filter(Boolean);
+		} else {
+			scopes = ["openid", "email", "profile"];
+		}
 
 		const authUrl = new URL(authServer.authorization_endpoint);
 		authUrl.searchParams.set("client_id", this.config.clientId);

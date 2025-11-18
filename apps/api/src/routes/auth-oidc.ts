@@ -173,6 +173,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			clientSecret,
 			issuer: dbProvider.issuer,
 			redirectUri: dbProvider.redirectUri,
+			scopes: dbProvider.scopes,
 		});
 
 		// Generate state and nonce for CSRF protection
@@ -193,6 +194,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		try {
 			const authorizationUrl = await oidcProvider.getAuthorizationUrl(state, nonce, codeChallenge);
+			request.log.info({ authorizationUrl, provider, redirectUri: dbProvider.redirectUri }, "Generated OIDC authorization URL");
 			return reply.send({ authorizationUrl });
 		} catch (error) {
 			request.log.error({ err: error, provider }, "Failed to generate OIDC authorization URL");
@@ -205,23 +207,39 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Handles OIDC callback after user authorization
 	 */
 	app.get("/oidc/callback", async (request, reply) => {
-		const parsed = oidcCallbackSchema.safeParse(request.query);
-		if (!parsed.success) {
-			return reply.status(400).send({ error: "Invalid callback parameters" });
+		request.log.info({ query: request.query, url: request.url }, "OIDC callback received");
+
+		// Check if OIDC provider returned an error
+		const queryParams = request.query as Record<string, unknown>;
+		if (queryParams.error) {
+			const errorDescription = queryParams.error_description || 'Unknown error';
+			request.log.error({ error: queryParams.error, description: errorDescription }, "OIDC provider returned error");
+			return reply.status(400).send({
+				error: `Authentication failed: ${queryParams.error}`,
+				details: errorDescription
+			});
 		}
 
-		const { state } = parsed.data;
+		const parsed = oidcCallbackSchema.safeParse(request.query);
+		if (!parsed.success) {
+			request.log.error({ errors: parsed.error.flatten(), query: request.query }, "Invalid callback parameters");
+			return reply.status(400).send({ error: "Invalid callback parameters", details: parsed.error.flatten() });
+		}
+
+		const { code, state } = parsed.data;
 
 		// Verify state to prevent CSRF
 		const storedState = oidcStateStore.get(state);
 		if (!storedState) {
-			return reply.status(400).send({ error: "Invalid or expired state" });
+			request.log.error({ state }, "Invalid or expired OIDC state");
+			return reply.status(400).send({ error: "Invalid or expired state. Please try logging in again." });
 		}
 
 		// Remove state to prevent replay attacks
 		oidcStateStore.delete(state);
 
 		const { provider } = storedState;
+		request.log.info({ provider, hasCode: !!code }, "Processing OIDC callback");
 
 		// Get OIDC configuration from database
 		const dbProvider = await app.prisma.oIDCProvider.findUnique({
@@ -244,11 +262,16 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			clientSecret,
 			issuer: dbProvider.issuer,
 			redirectUri: dbProvider.redirectUri,
+			scopes: dbProvider.scopes,
 		});
 
 		try {
 			// Build full callback URL with all query parameters
-			const callbackUrl = `${request.protocol}://${request.hostname}${request.url}`;
+			// Use the configured redirect URI as the base to avoid issues with proxies/Docker
+			const callbackParams = new URL(request.url, 'http://localhost').search;
+			const callbackUrl = `${dbProvider.redirectUri}${callbackParams}`;
+
+			request.log.info({ callbackUrl, redirectUri: dbProvider.redirectUri }, "Exchanging authorization code");
 
 			// Exchange code for tokens (with state, nonce validation and PKCE)
 			const tokenResponse = await oidcProvider.exchangeCode(
@@ -259,11 +282,15 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			);
 
 			if (!tokenResponse.access_token) {
+				request.log.error({ tokenResponse }, "No access token in OIDC response");
 				throw new Error("No access token received from OIDC provider");
 			}
 
+			request.log.info("Successfully exchanged code for tokens");
+
 			// Get user info from provider
 			const userInfo = await oidcProvider.getUserInfo(tokenResponse.access_token);
+			request.log.info({ sub: userInfo.sub, email: userInfo.email }, "Retrieved user info from OIDC provider");
 
 			// Find existing OIDC account
 			let oidcAccount = await app.prisma.oIDCAccount.findUnique({
@@ -346,10 +373,27 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			app.sessionService.attachCookie(reply, session.token, true);
 
 			// Redirect to dashboard
+			request.log.info({ userId: user.id, username: user.username }, "OIDC authentication successful, redirecting to dashboard");
 			return reply.redirect(302, "/dashboard");
-		} catch (error) {
-			request.log.error({ err: error, provider }, "OIDC callback failed");
-			return reply.status(500).send({ error: "OIDC authentication failed" });
+		} catch (error: any) {
+			request.log.error({ err: error, provider, errorMessage: error?.message, errorStack: error?.stack }, "OIDC callback failed");
+
+			// Return more specific error messages
+			let errorMessage = "OIDC authentication failed";
+			if (error?.message?.includes("OAuth error")) {
+				errorMessage = `Authentication failed: ${error.message}`;
+			} else if (error?.message?.includes("state")) {
+				errorMessage = "State validation failed. Please try logging in again.";
+			} else if (error?.message?.includes("nonce")) {
+				errorMessage = "Nonce validation failed. Please try logging in again.";
+			} else if (error?.message?.includes("code")) {
+				errorMessage = "Authorization code validation failed. Please try logging in again.";
+			}
+
+			return reply.status(500).send({
+				error: errorMessage,
+				details: error?.message
+			});
 		}
 	});
 
