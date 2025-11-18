@@ -38,18 +38,49 @@ export class OIDCProvider {
 
 	/**
 	 * Check if HTTP requests should be allowed for this issuer
-	 * Allows HTTP for localhost and private network IPs
+	 * Allows HTTP for localhost and private network IPs (IPv4 and IPv6)
 	 */
 	private shouldAllowInsecureRequests(): boolean {
 		const issuerUrl = new URL(this.config.issuer);
-		return (
-			issuerUrl.hostname === 'localhost' ||
-			issuerUrl.hostname === '127.0.0.1' ||
-			issuerUrl.hostname.startsWith('192.168.') ||
-			issuerUrl.hostname.startsWith('10.') ||
-			issuerUrl.hostname.startsWith('172.16.') ||
-			!!issuerUrl.hostname.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./) // 172.16.0.0 - 172.31.255.255
-		);
+		const hostname = issuerUrl.hostname.toLowerCase();
+
+		// IPv4 localhost
+		if (hostname === 'localhost' || hostname === '127.0.0.1') {
+			return true;
+		}
+
+		// IPv6 localhost (::1)
+		if (hostname === '::1' || hostname === '[::1]') {
+			return true;
+		}
+
+		// IPv4 private networks
+		// 192.168.0.0/16
+		if (hostname.startsWith('192.168.')) {
+			return true;
+		}
+		// 10.0.0.0/8
+		if (hostname.startsWith('10.')) {
+			return true;
+		}
+		// 172.16.0.0/12 (172.16.0.0 - 172.31.255.255)
+		if (hostname.startsWith('172.16.') || hostname.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./)) {
+			return true;
+		}
+
+		// IPv6 private/local networks
+		// fe80::/10 (link-local)
+		if (hostname.startsWith('fe80:') || hostname.startsWith('[fe80:')) {
+			return true;
+		}
+		// fc00::/7 (unique local addresses - ULA)
+		// fd00::/8 (ULA subset, more commonly used)
+		if (hostname.startsWith('fc00:') || hostname.startsWith('[fc00:') ||
+		    hostname.startsWith('fd00:') || hostname.startsWith('[fd00:')) {
+			return true;
+		}
+
+		return false;
 	}
 
 	/**
