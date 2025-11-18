@@ -156,12 +156,17 @@ export class OIDCProvider {
 	): Promise<oauth.TokenEndpointResponse> {
 		const authServer = await this.discoverAuthServer();
 
+		// Construct the full callback URL by combining redirect URI + query parameters
+		// validateAuthResponse() requires a full URL, not just parameters
+		const callbackUrl = new URL(redirectUri);
+		callbackUrl.search = callbackParams.toString();
+
 		// Validate the authorization response FIRST
 		// This validates state and extracts parameters properly
 		const params = oauth.validateAuthResponse(
 			authServer,
 			this.client,
-			callbackParams,
+			callbackUrl,
 			expectedState
 		);
 
