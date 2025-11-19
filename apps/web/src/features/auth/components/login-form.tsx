@@ -17,11 +17,10 @@ import {
 } from "../../../components/ui/card";
 import { Alert, AlertDescription } from "../../../components/ui";
 import {
-	getOIDCProviders,
+	getOIDCProvider,
 	initiateOIDCLogin,
 	getPasskeyLoginOptions,
 	verifyPasskeyLogin,
-	type OIDCProvider,
 } from "../../../lib/api-client/auth";
 
 const DEFAULT_REDIRECT = "/dashboard";
@@ -41,12 +40,6 @@ const sanitizeRedirect = (value: string | null): string => {
 	}
 };
 
-const providerDisplayNames: Record<string, string> = {
-	authelia: "Authelia",
-	authentik: "Authentik",
-	generic: "OIDC Provider",
-};
-
 export const LoginForm = () => {
 	const router = useRouter();
 	const searchParams = useSearchParams();
@@ -60,7 +53,7 @@ export const LoginForm = () => {
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
 	// OIDC and Passkey state
-	const [oidcProviders, setOIDCProviders] = useState<OIDCProvider[]>([]);
+	const [oidcProvider, setOIDCProvider] = useState<{ displayName: string; enabled: boolean } | null>(null);
 	const [oidcLoading, setOIDCLoading] = useState(false);
 	const [passkeyLoading, setPasskeyLoading] = useState(false);
 
@@ -69,17 +62,17 @@ export const LoginForm = () => {
 		[searchParams],
 	);
 
-	// Load available OIDC providers
+	// Load OIDC provider (if configured)
 	useEffect(() => {
-		const loadProviders = async () => {
+		const loadProvider = async () => {
 			try {
-				const providers = await getOIDCProviders();
-				setOIDCProviders(providers);
+				const provider = await getOIDCProvider();
+				setOIDCProvider(provider);
 			} catch (error) {
 				// Silently fail - OIDC not configured
 			}
 		};
-		loadProviders();
+		loadProvider();
 	}, []);
 
 	// Redirect to setup if no users exist
@@ -117,12 +110,12 @@ export const LoginForm = () => {
 		}
 	};
 
-	const handleOIDCLogin = async (provider: string) => {
+	const handleOIDCLogin = async () => {
 		setErrorMessage(null);
 		setOIDCLoading(true);
 
 		try {
-			const authUrl = await initiateOIDCLogin(provider as any);
+			const authUrl = await initiateOIDCLogin();
 			// Redirect to OIDC provider
 			window.location.href = authUrl;
 		} catch (error) {
@@ -163,7 +156,7 @@ export const LoginForm = () => {
 	};
 
 	const disabled = loginMutation.isPending || oidcLoading || passkeyLoading;
-	const hasAlternativeMethods = oidcProviders.length > 0 || true; // Passkey always available
+	const hasAlternativeMethods = oidcProvider !== null || true; // Passkey always available
 
 	// Show loading while checking setup requirement
 	if (setupLoading) {
@@ -234,43 +227,40 @@ export const LoginForm = () => {
 						</Button>
 					</div>
 
-					{/* OIDC Providers */}
-					{oidcProviders.length > 0 && (
+					{/* OIDC Provider */}
+					{oidcProvider && oidcProvider.enabled && (
 						<div className="space-y-3">
-							{oidcProviders.map((provider) => (
-								<Button
-									key={provider.type}
-									type="button"
-									variant="secondary"
-									className="w-full border-white/20 bg-white/5 text-white hover:bg-white/10"
-									onClick={() => handleOIDCLogin(provider.type)}
-									disabled={disabled}
-								>
-									{oidcLoading ? (
-										<>
-											<div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white" />
-											Redirecting...
-										</>
-									) : (
-										<>
-											<svg
-												className="mr-2 h-4 w-4"
-												fill="none"
-												stroke="currentColor"
-												viewBox="0 0 24 24"
-											>
-												<path
-													strokeLinecap="round"
-													strokeLinejoin="round"
-													strokeWidth={2}
-													d="M13 10V3L4 14h7v7l9-11h-7z"
-												/>
-											</svg>
-											Sign in with {provider.displayName || providerDisplayNames[provider.type] || provider.type}
-										</>
-									)}
-								</Button>
-							))}
+							<Button
+								type="button"
+								variant="secondary"
+								className="w-full border-white/20 bg-white/5 text-white hover:bg-white/10"
+								onClick={handleOIDCLogin}
+								disabled={disabled}
+							>
+								{oidcLoading ? (
+									<>
+										<div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+										Redirecting...
+									</>
+								) : (
+									<>
+										<svg
+											className="mr-2 h-4 w-4"
+											fill="none"
+											stroke="currentColor"
+											viewBox="0 0 24 24"
+										>
+											<path
+												strokeLinecap="round"
+												strokeLinejoin="round"
+												strokeWidth={2}
+												d="M13 10V3L4 14h7v7l9-11h-7z"
+											/>
+										</svg>
+										Sign in with {oidcProvider.displayName}
+									</>
+								)}
+							</Button>
 						</div>
 					)}
 
