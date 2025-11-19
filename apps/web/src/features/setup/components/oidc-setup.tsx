@@ -2,14 +2,12 @@
 
 import { useState } from "react";
 import { apiRequest } from "../../../lib/api-client/base";
-import type { OIDCProviderType } from "@arr/shared";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Alert, AlertDescription } from "../../../components/ui";
 
 export const OIDCSetup = () => {
 	const [formState, setFormState] = useState({
-		type: "generic" as OIDCProviderType,
 		displayName: "",
 		clientId: "",
 		clientSecret: "",
@@ -47,7 +45,6 @@ export const OIDCSetup = () => {
 			// Initiate OIDC login
 			const response = await apiRequest<{ authorizationUrl: string }>("/auth/oidc/login", {
 				method: "POST",
-				json: { provider: formState.type },
 			});
 
 			// Redirect to OIDC provider
@@ -60,20 +57,6 @@ export const OIDCSetup = () => {
 
 	return (
 		<form className="space-y-4" onSubmit={handleSubmit}>
-			<div className="space-y-2">
-				<label className="text-xs uppercase text-white/60">Provider Type</label>
-				<select
-					value={formState.type}
-					onChange={(e) =>
-						setFormState({ ...formState, type: e.target.value as OIDCProviderType })
-					}
-					className="w-full rounded-xl border border-border bg-bg-subtle px-4 py-3 text-sm text-fg transition-all duration-200 hover:border-border/80 hover:bg-bg-subtle/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-bg-subtle/80"
-				>
-					<option value="authelia">Authelia</option>
-					<option value="authentik">Authentik</option>
-					<option value="generic">Generic OIDC</option>
-				</select>
-			</div>
 			<div className="space-y-2">
 				<label className="text-xs uppercase text-white/60">Display Name</label>
 				<Input

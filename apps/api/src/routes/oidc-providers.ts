@@ -3,7 +3,6 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 
 const oidcProviderSchema = z.object({
-	type: z.enum(["authelia", "authentik", "generic"]),
 	displayName: z.string().min(1).max(100),
 	clientId: z.string().min(1),
 	clientSecret: z.string().min(1),
@@ -13,7 +12,7 @@ const oidcProviderSchema = z.object({
 	enabled: z.boolean().default(true),
 });
 
-const updateOidcProviderSchema = oidcProviderSchema.partial().omit({ type: true });
+const updateOidcProviderSchema = oidcProviderSchema.partial();
 
 type OidcProviderInput = z.infer<typeof oidcProviderSchema>;
 type UpdateOidcProviderInput = z.infer<typeof updateOidcProviderSchema>;
@@ -21,7 +20,7 @@ type UpdateOidcProviderInput = z.infer<typeof updateOidcProviderSchema>;
 export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	/**
 	 * GET /api/oidc-providers
-	 * List all OIDC providers (admin only)
+	 * Get the configured OIDC provider (admin only)
 	 */
 	app.get("/api/oidc-providers", async (request, reply) => {
 		// Require authentication (single-admin architecture)
@@ -29,28 +28,31 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 			return reply.status(403).send({ error: "Authentication required" });
 		}
 
-		const providers = await app.prisma.oIDCProvider.findMany({
-			orderBy: { createdAt: "asc" },
-		});
+		const provider = await app.prisma.oIDCProvider.findFirst();
 
-		// Return providers without exposing client secrets
-		return providers.map((provider) => ({
-			id: provider.id,
-			type: provider.type,
-			displayName: provider.displayName,
-			clientId: provider.clientId,
-			issuer: provider.issuer,
-			redirectUri: provider.redirectUri,
-			scopes: provider.scopes,
-			enabled: provider.enabled,
-			createdAt: provider.createdAt,
-			updatedAt: provider.updatedAt,
-		}));
+		if (!provider) {
+			return reply.send({ provider: null });
+		}
+
+		// Return provider without exposing client secret
+		return reply.send({
+			provider: {
+				id: provider.id,
+				displayName: provider.displayName,
+				clientId: provider.clientId,
+				issuer: provider.issuer,
+				redirectUri: provider.redirectUri,
+				scopes: provider.scopes,
+				enabled: provider.enabled,
+				createdAt: provider.createdAt,
+				updatedAt: provider.updatedAt,
+			}
+		});
 	});
 
 	/**
 	 * POST /api/oidc-providers
-	 * Create a new OIDC provider (admin only)
+	 * Create the OIDC provider (admin only - only one allowed)
 	 */
 	app.post<{ Body: OidcProviderInput }>("/api/oidc-providers", async (request, reply) => {
 		// Require authentication (single-admin architecture)
@@ -65,26 +67,23 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 
 		const data = validation.data;
 
-		// Check if provider type already exists
-		const existing = await app.prisma.oIDCProvider.findUnique({
-			where: { type: data.type },
-		});
+		// Check if provider already exists (only one allowed)
+		const existing = await app.prisma.oIDCProvider.findFirst();
 
 		if (existing) {
 			return reply.status(409).send({
-				error: `OIDC provider type '${data.type}' already exists. Please update the existing provider or choose a different type.`,
+				error: "An OIDC provider already exists. Please update or delete the existing provider first.",
 			});
 		}
 
 		// Encrypt client secret
-		const { value: encryptedClientSecret, iv: clientSecretIv } = app.encryptor.encrypt(
+		const { value: encryptedClientSecret, iv: clientSecretIv} = app.encryptor.encrypt(
 			data.clientSecret,
 		);
 
 		// Create provider
 		const provider = await app.prisma.oIDCProvider.create({
 			data: {
-				type: data.type,
 				displayName: data.displayName,
 				clientId: data.clientId,
 				encryptedClientSecret,
@@ -98,7 +97,6 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 
 		return reply.status(201).send({
 			id: provider.id,
-			type: provider.type,
 			displayName: provider.displayName,
 			clientId: provider.clientId,
 			issuer: provider.issuer,
@@ -166,7 +164,6 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 
 			return {
 				id: provider.id,
-				type: provider.type,
 				displayName: provider.displayName,
 				clientId: provider.clientId,
 				issuer: provider.issuer,

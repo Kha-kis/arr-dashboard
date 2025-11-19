@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import type { OIDCProviderType } from "@arr/shared";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import {
@@ -13,26 +12,22 @@ import {
 } from "../../../components/ui/card";
 import { Alert, AlertDescription } from "../../../components/ui";
 import {
-	useOIDCProviders,
+	useOIDCProvider,
 	useCreateOIDCProvider,
 	useUpdateOIDCProvider,
 	useDeleteOIDCProvider,
 } from "../../../hooks/api/useOIDCProviders";
 
-const PROVIDER_DISPLAY_NAMES: Record<OIDCProviderType, string> = {
-	authelia: "Authelia",
-	authentik: "Authentik",
-	generic: "Generic OIDC",
-};
-
 /**
  * OIDC Provider management section for admin settings
  */
 export const OIDCProviderSection = () => {
-	const { data: providers, isLoading } = useOIDCProviders();
+	const { data: providerData, isLoading } = useOIDCProvider();
 	const createMutation = useCreateOIDCProvider();
 	const updateMutation = useUpdateOIDCProvider();
 	const deleteMutation = useDeleteOIDCProvider();
+
+	const provider = providerData?.provider;
 
 	const [error, setError] = useState<string | null>(null);
 	const [success, setSuccess] = useState<string | null>(null);
@@ -40,7 +35,6 @@ export const OIDCProviderSection = () => {
 	// Form state for creating new provider
 	const [showCreateForm, setShowCreateForm] = useState(false);
 	const [formData, setFormData] = useState({
-		type: "generic" as OIDCProviderType,
 		displayName: "",
 		clientId: "",
 		clientSecret: "",
@@ -51,7 +45,7 @@ export const OIDCProviderSection = () => {
 	});
 
 	// Editing state
-	const [editingId, setEditingId] = useState<string | null>(null);
+	const [isEditing, setIsEditing] = useState(false);
 	const [editData, setEditData] = useState({
 		displayName: "",
 		clientId: "",
@@ -72,7 +66,6 @@ export const OIDCProviderSection = () => {
 			setShowCreateForm(false);
 			// Reset form
 			setFormData({
-				type: "generic",
 				displayName: "",
 				clientId: "",
 				clientSecret: "",
@@ -86,7 +79,9 @@ export const OIDCProviderSection = () => {
 		}
 	};
 
-	const handleUpdate = async (id: string) => {
+	const handleUpdate = async () => {
+		if (!provider?.id) return;
+
 		setError(null);
 		setSuccess(null);
 
@@ -101,15 +96,17 @@ export const OIDCProviderSection = () => {
 			if (editData.scopes) updatePayload.scopes = editData.scopes;
 			updatePayload.enabled = editData.enabled;
 
-			await updateMutation.mutateAsync({ id, data: updatePayload });
+			await updateMutation.mutateAsync({ id: provider.id, data: updatePayload });
 			setSuccess("OIDC provider updated successfully!");
-			setEditingId(null);
+			setIsEditing(false);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to update OIDC provider");
 		}
 	};
 
-	const handleDelete = async (id: string) => {
+	const handleDelete = async () => {
+		if (!provider?.id) return;
+
 		if (!confirm("Are you sure you want to delete this OIDC provider?")) {
 			return;
 		}
@@ -118,15 +115,17 @@ export const OIDCProviderSection = () => {
 		setSuccess(null);
 
 		try {
-			await deleteMutation.mutateAsync(id);
+			await deleteMutation.mutateAsync(provider.id);
 			setSuccess("OIDC provider deleted successfully!");
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to delete OIDC provider");
 		}
 	};
 
-	const startEdit = (provider: any) => {
-		setEditingId(provider.id);
+	const startEdit = () => {
+		if (!provider) return;
+
+		setIsEditing(true);
 		setEditData({
 			displayName: provider.displayName,
 			clientId: provider.clientId,
