@@ -394,9 +394,9 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			const session = await app.sessionService.createSession(user.id, true);
 			app.sessionService.attachCookie(reply, session.token, true);
 
-			// Redirect to dashboard
-			request.log.info({ userId: user.id, username: user.username }, "OIDC authentication successful, redirecting to dashboard");
-			return reply.redirect(302, "/dashboard");
+			// Redirect to root - Next.js middleware will redirect to dashboard if authenticated
+			request.log.info({ userId: user.id, username: user.username }, "OIDC authentication successful, redirecting to root");
+			return reply.redirect("/", 302);
 		} catch (error: any) {
 			request.log.error({ err: error, provider, errorMessage: error?.message, errorStack: error?.stack }, "OIDC callback failed");
 
