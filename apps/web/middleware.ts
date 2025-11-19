@@ -63,8 +63,13 @@ async function proxyApiRequest(request: NextRequest): Promise<NextResponse | nul
 	});
 
 	// Forward all headers from API response, including Set-Cookie
+	// Use append() for Set-Cookie to preserve multiple cookies, set() for others
 	response.headers.forEach((value, key) => {
-		proxyResponse.headers.set(key, value);
+		if (key.toLowerCase() === 'set-cookie') {
+			proxyResponse.headers.append(key, value);
+		} else {
+			proxyResponse.headers.set(key, value);
+		}
 	});
 
 	return proxyResponse;
