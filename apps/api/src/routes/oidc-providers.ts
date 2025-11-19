@@ -1,28 +1,36 @@
-import type { Prisma } from "@prisma/client";
+import type { Prisma, OIDCProvider as PrismaOIDCProvider } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
-import { z } from "zod";
+import {
+	createOidcProviderSchema,
+	updateOidcProviderSchema,
+	type OIDCProvider,
+	type OIDCProviderResponse,
+} from "@arr/shared";
 
-const oidcProviderSchema = z.object({
-	displayName: z.string().min(1).max(100),
-	clientId: z.string().min(1),
-	clientSecret: z.string().min(1),
-	issuer: z.string().url(),
-	redirectUri: z.string().url(),
-	scopes: z.string().default("openid,email,profile"),
-	enabled: z.boolean().default(true),
-});
-
-const updateOidcProviderSchema = oidcProviderSchema.partial();
-
-type OidcProviderInput = z.infer<typeof oidcProviderSchema>;
-type UpdateOidcProviderInput = z.infer<typeof updateOidcProviderSchema>;
+/**
+ * Transform a Prisma OIDCProvider model to the public DTO shape
+ * Strips encrypted client secret and IVs from response
+ */
+function toPublicProvider(provider: PrismaOIDCProvider): OIDCProvider {
+	return {
+		id: provider.id,
+		displayName: provider.displayName,
+		clientId: provider.clientId,
+		issuer: provider.issuer,
+		redirectUri: provider.redirectUri,
+		scopes: provider.scopes,
+		enabled: provider.enabled,
+		createdAt: provider.createdAt.toISOString(),
+		updatedAt: provider.updatedAt.toISOString(),
+	};
+}
 
 export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	/**
 	 * GET /api/oidc-providers
 	 * Get the configured OIDC provider (admin only)
 	 */
-	app.get("/api/oidc-providers", async (request, reply) => {
+	app.get<{ Reply: OIDCProviderResponse }>("/api/oidc-providers", async (request, reply) => {
 		// Require authentication (single-admin architecture)
 		if (!request.currentUser) {
 			return reply.status(403).send({ error: "Authentication required" });
@@ -36,17 +44,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 
 		// Return provider without exposing client secret
 		return reply.send({
-			provider: {
-				id: provider.id,
-				displayName: provider.displayName,
-				clientId: provider.clientId,
-				issuer: provider.issuer,
-				redirectUri: provider.redirectUri,
-				scopes: provider.scopes,
-				enabled: provider.enabled,
-				createdAt: provider.createdAt,
-				updatedAt: provider.updatedAt,
-			}
+			provider: toPublicProvider(provider),
 		});
 	});
 
@@ -54,18 +52,28 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	 * POST /api/oidc-providers
 	 * Create the OIDC provider (admin only - only one allowed)
 	 */
-	app.post<{ Body: OidcProviderInput }>("/api/oidc-providers", async (request, reply) => {
+	app.post<{ Body: unknown; Reply: OIDCProvider }>("/api/oidc-providers", async (request, reply) => {
 		// Require authentication (single-admin architecture)
 		if (!request.currentUser) {
 			return reply.status(403).send({ error: "Authentication required" });
 		}
 
-		const validation = oidcProviderSchema.safeParse(request.body);
+		const validation = createOidcProviderSchema.safeParse(request.body);
 		if (!validation.success) {
 			return reply.status(400).send({ error: validation.error.errors });
 		}
 
 		const data = validation.data;
+
+		// Auto-generate redirect URI if not provided
+		// Use the request origin to detect the correct URL (works in Docker/proxy environments)
+		let redirectUri = data.redirectUri;
+		if (!redirectUri) {
+			const protocol = request.headers['x-forwarded-proto'] || request.protocol;
+			const host = request.headers['x-forwarded-host'] || request.headers.host || 'localhost:3000';
+			redirectUri = `${protocol}://${host}/auth/oidc/callback`;
+			request.log.info({ redirectUri, protocol, host }, "Auto-generated redirect URI from request");
+		}
 
 		// Check if provider already exists (only one allowed)
 		const existing = await app.prisma.oIDCProvider.findFirst();
@@ -89,30 +97,20 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 				encryptedClientSecret,
 				clientSecretIv,
 				issuer: data.issuer,
-				redirectUri: data.redirectUri,
+				redirectUri,
 				scopes: data.scopes,
 				enabled: data.enabled,
 			},
 		});
 
-		return reply.status(201).send({
-			id: provider.id,
-			displayName: provider.displayName,
-			clientId: provider.clientId,
-			issuer: provider.issuer,
-			redirectUri: provider.redirectUri,
-			scopes: provider.scopes,
-			enabled: provider.enabled,
-			createdAt: provider.createdAt,
-			updatedAt: provider.updatedAt,
-		});
+		return reply.status(201).send(toPublicProvider(provider));
 	});
 
 	/**
 	 * PUT /api/oidc-providers/:id
 	 * Update an existing OIDC provider (admin only)
 	 */
-	app.put<{ Params: { id: string }; Body: UpdateOidcProviderInput }>(
+	app.put<{ Params: { id: string }; Body: unknown; Reply: OIDCProvider }>(
 		"/api/oidc-providers/:id",
 		async (request, reply) => {
 			// Require authentication (single-admin architecture)
@@ -162,17 +160,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 				data: updateData,
 			});
 
-			return {
-				id: provider.id,
-				displayName: provider.displayName,
-				clientId: provider.clientId,
-				issuer: provider.issuer,
-				redirectUri: provider.redirectUri,
-				scopes: provider.scopes,
-				enabled: provider.enabled,
-				createdAt: provider.createdAt,
-				updatedAt: provider.updatedAt,
-			};
+			return toPublicProvider(provider);
 		},
 	);
 

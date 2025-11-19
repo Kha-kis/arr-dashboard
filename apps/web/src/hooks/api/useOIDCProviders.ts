@@ -3,17 +3,19 @@ import type { CreateOIDCProvider, OIDCProvider, UpdateOIDCProvider } from "@arr/
 import {
 	createOIDCProvider,
 	deleteOIDCProvider,
-	getOIDCProviders,
+	getOIDCProvider,
 	updateOIDCProvider,
 } from "../../lib/api-client/oidc-providers";
 
 /**
  * Fetch the configured OIDC provider (admin only)
+ *
+ * Returns the single OIDC provider for this installation wrapped in { provider: OIDCProvider | null }
  */
 export function useOIDCProvider() {
 	return useQuery({
 		queryKey: ["oidc-provider"],
-		queryFn: getOIDCProviders, // Returns { provider: OIDCProvider | null }
+		queryFn: getOIDCProvider, // Returns { provider: OIDCProvider | null }
 	});
 }
 

@@ -8,8 +8,7 @@
     "declaration": true,
     "declarationMap": true,
     "emitDeclarationOnly": false,
-    "sourceMap": true,
-    "types": ["node"]
+    "sourceMap": true
   },
   "include": ["src"],
   "exclude": ["dist", "node_modules", "**/*.test.ts"]
