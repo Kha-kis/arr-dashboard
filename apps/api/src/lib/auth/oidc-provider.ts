@@ -73,11 +73,24 @@ export class OIDCProvider {
 		if (hostname.startsWith('fe80:') || hostname.startsWith('[fe80:')) {
 			return true;
 		}
+
 		// fc00::/7 (unique local addresses - ULA)
-		// fd00::/8 (ULA subset, more commonly used)
-		if (hostname.startsWith('fc00:') || hostname.startsWith('[fc00:') ||
-		    hostname.startsWith('fd00:') || hostname.startsWith('[fd00:')) {
-			return true;
+		// This includes both fc00::/8 and fd00::/8 ranges
+		// Strip brackets if present for parsing
+		const ipv6Host = hostname.replace(/^\[|\]$/g, '');
+		if (ipv6Host.includes(':')) {
+			// Extract first hextet (first 16 bits)
+			const firstHextet = ipv6Host.split(':')[0];
+			if (firstHextet) {
+				// Parse as hex and check if it's in fc00-fdff range (fc00::/7)
+				const firstBits = Number.parseInt(firstHextet, 16);
+				// fc00::/7 means first 7 bits are 1111110x
+				// fc00 = 0xFC00 (11111100), fdff = 0xFDFF (11111101)
+				// So we check if (firstBits & 0xFE00) === 0xFC00
+				if (!Number.isNaN(firstBits) && (firstBits & 0xFE00) === 0xFC00) {
+					return true;
+				}
+			}
 		}
 
 		return false;

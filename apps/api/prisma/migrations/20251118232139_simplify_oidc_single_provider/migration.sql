@@ -4,7 +4,33 @@
   - You are about to drop the column `type` on the `oidc_providers` table. All the data in the column will be lost.
   - You are about to drop the column `provider` on the `oidc_accounts` table. All the data in the column will be lost.
 
+  IMPORTANT: This migration assumes a single-provider setup. If you have multiple providers
+  configured or the same user linked to multiple providers, this migration will:
+  1. Keep only the most recently created OIDCAccount per providerUserId
+  2. Keep only the most recently created OIDCProvider
+  3. Backfill missing redirectUri values with a default
 */
+
+-- Step 1: Handle duplicate providerUserIds in oidc_accounts
+-- Delete all but the most recent account for each providerUserId
+DELETE FROM "oidc_accounts"
+WHERE "id" NOT IN (
+  SELECT "id" FROM (
+    SELECT "id", "providerUserId", MAX("createdAt") as max_created
+    FROM "oidc_accounts"
+    GROUP BY "providerUserId"
+  )
+);
+
+-- Step 2: Handle multiple OIDC providers (keep only most recent)
+DELETE FROM "oidc_providers"
+WHERE "id" NOT IN (
+  SELECT "id" FROM (
+    SELECT "id", MAX("createdAt") as max_created
+    FROM "oidc_providers"
+  )
+);
+
 -- DropIndex
 DROP INDEX "oidc_providers_type_key";
 
@@ -29,8 +55,13 @@ CREATE TABLE "new_oidc_providers" (
     "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" DATETIME NOT NULL
 );
+
+-- Insert with redirectUri backfill for NULL values
 INSERT INTO "new_oidc_providers" ("id", "displayName", "clientId", "encryptedClientSecret", "clientSecretIv", "issuer", "redirectUri", "scopes", "enabled", "createdAt", "updatedAt")
-SELECT "id", "displayName", "clientId", "encryptedClientSecret", "clientSecretIv", "issuer", "redirectUri", "scopes", "enabled", "createdAt", "updatedAt" FROM "oidc_providers";
+SELECT "id", "displayName", "clientId", "encryptedClientSecret", "clientSecretIv", "issuer",
+       COALESCE("redirectUri", "issuer" || '/auth/oidc/callback') as "redirectUri",
+       "scopes", "enabled", "createdAt", "updatedAt"
+FROM "oidc_providers";
 DROP TABLE "oidc_providers";
 ALTER TABLE "new_oidc_providers" RENAME TO "oidc_providers";
 
@@ -49,7 +80,7 @@ SELECT "id", "userId", "providerUserId", "providerEmail", "createdAt", "updatedA
 DROP TABLE "oidc_accounts";
 ALTER TABLE "new_oidc_accounts" RENAME TO "oidc_accounts";
 
--- Recreate indexes
+-- Recreate indexes (now safe because duplicates have been removed)
 CREATE INDEX "oidc_accounts_userId_idx" ON "oidc_accounts"("userId");
 CREATE UNIQUE INDEX "oidc_accounts_providerUserId_key" ON "oidc_accounts"("providerUserId");
 

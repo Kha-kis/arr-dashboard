@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { UpdateOIDCProvider } from "@arr/shared";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import {
@@ -61,7 +62,14 @@ export const OIDCProviderSection = () => {
 		setSuccess(null);
 
 		try {
-			await createMutation.mutateAsync(formData);
+			// Only include redirectUri if non-empty
+			const { redirectUri, ...rest } = formData;
+			const payload = {
+				...rest,
+				...(redirectUri.trim() ? { redirectUri: redirectUri.trim() } : {}),
+			};
+
+			await createMutation.mutateAsync(payload);
 			setSuccess("OIDC provider created successfully!");
 			setShowCreateForm(false);
 			// Reset form
@@ -86,13 +94,13 @@ export const OIDCProviderSection = () => {
 		setSuccess(null);
 
 		try {
-			// Only send fields that were provided
-			const updatePayload: any = {};
+			// Only send fields that were provided - use shared UpdateOIDCProvider type for safety
+			const updatePayload: UpdateOIDCProvider = {};
 			if (editData.displayName) updatePayload.displayName = editData.displayName;
 			if (editData.clientId) updatePayload.clientId = editData.clientId;
 			if (editData.clientSecret) updatePayload.clientSecret = editData.clientSecret;
 			if (editData.issuer) updatePayload.issuer = editData.issuer;
-			if (editData.redirectUri) updatePayload.redirectUri = editData.redirectUri;
+			if (editData.redirectUri?.trim()) updatePayload.redirectUri = editData.redirectUri.trim();
 			if (editData.scopes) updatePayload.scopes = editData.scopes;
 			updatePayload.enabled = editData.enabled;
 
@@ -222,7 +230,11 @@ export const OIDCProviderSection = () => {
 										<Input
 											value={formData.redirectUri}
 											onChange={(e) => setFormData({ ...formData, redirectUri: e.target.value })}
-											placeholder={`${window.location.origin}/auth/oidc/callback`}
+											placeholder={
+												typeof window !== "undefined"
+													? `${window.location.origin}/auth/oidc/callback`
+													: "/auth/oidc/callback"
+											}
 										/>
 										<p className="mt-1 text-xs text-white/40">Leave empty to auto-detect</p>
 									</div>

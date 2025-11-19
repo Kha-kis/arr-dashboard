@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+/**
+ * Public OIDC Provider shape (without client secret)
+ * Used for API responses - never includes encrypted secrets
+ */
 export const oidcProviderSchema = z.object({
 	id: z.string(),
 	displayName: z.string(),
@@ -14,6 +18,10 @@ export const oidcProviderSchema = z.object({
 
 export type OIDCProvider = z.infer<typeof oidcProviderSchema>;
 
+/**
+ * Input schema for creating an OIDC provider
+ * Includes clientSecret which will be encrypted on the backend
+ */
 export const createOidcProviderSchema = z.object({
 	displayName: z.string().min(1).max(100),
 	clientId: z.string().min(1),
@@ -26,14 +34,20 @@ export const createOidcProviderSchema = z.object({
 
 export type CreateOIDCProvider = z.infer<typeof createOidcProviderSchema>;
 
-export const updateOidcProviderSchema = z.object({
-	displayName: z.string().min(1).max(100).optional(),
-	clientId: z.string().min(1).optional(),
-	clientSecret: z.string().min(1).optional(),
-	issuer: z.string().url().optional(),
-	redirectUri: z.string().url().optional(),
-	scopes: z.string().optional(),
-	enabled: z.boolean().optional(),
-});
+/**
+ * Input schema for updating an OIDC provider
+ * All fields optional - only provided fields will be updated
+ * If clientSecret is provided, it will be re-encrypted on the backend
+ */
+export const updateOidcProviderSchema = createOidcProviderSchema.partial();
 
 export type UpdateOIDCProvider = z.infer<typeof updateOidcProviderSchema>;
+
+/**
+ * Response wrapper for the single OIDC provider endpoint
+ */
+export const oidcProviderResponseSchema = z.object({
+	provider: oidcProviderSchema.nullable(),
+});
+
+export type OIDCProviderResponse = z.infer<typeof oidcProviderResponseSchema>;
