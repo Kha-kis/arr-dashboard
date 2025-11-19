@@ -156,7 +156,8 @@ export const LoginForm = () => {
 	};
 
 	const disabled = loginMutation.isPending || oidcLoading || passkeyLoading;
-	const hasAlternativeMethods = oidcProvider !== null || true; // Passkey always available
+	// Passkey is always available, so there is always at least one alternative method.
+	const hasAlternativeMethods = true;
 
 	// Show loading while checking setup requirement
 	if (setupLoading) {

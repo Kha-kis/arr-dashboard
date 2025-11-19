@@ -212,10 +212,14 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		const { code, state } = parsed.data;
 
-		// Verify state to prevent CSRF
+		// Verify state to prevent CSRF and check expiration
 		const storedState = oidcStateStore.get(state);
-		if (!storedState) {
-			request.log.error({ state }, "Invalid or expired OIDC state");
+		if (!storedState || storedState.expiresAt < Date.now()) {
+			// Clean up expired state if it exists
+			if (storedState) {
+				oidcStateStore.delete(state);
+			}
+			request.log.error({ state, expired: storedState ? storedState.expiresAt < Date.now() : false }, "Invalid or expired OIDC state");
 			return reply.status(400).send({ error: "Invalid or expired state. Please try logging in again." });
 		}
 
