@@ -38,6 +38,7 @@ apps/api/dev.db
 .auditor_venv/
 .pf/
 .claude/
+.serena/
 
 # IDE and Editor files
 .vscode/

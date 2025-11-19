@@ -73,15 +73,13 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		Body: {
 			templateId: string;
 			instanceId: string;
-			userId?: string; // Optional userId, will be required when auth is implemented
 			conflictResolutions?: Record<string, string>; // Map of trashId → resolution
 			createBackup?: boolean;
 		};
 	}>("/execute", async (request, reply) => {
 		try {
-			const { templateId, instanceId, userId: bodyUserId } = request.body;
-			// TODO: Replace with actual auth when implemented
-			const userId = bodyUserId || "system";
+			const { templateId, instanceId } = request.body;
+			const userId = request.currentUser.id;
 
 			if (!templateId || !instanceId) {
 				return reply.status(400).send({
@@ -138,13 +136,11 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		Body: {
 			templateId: string;
 			instanceIds: string[];
-			userId?: string; // Optional userId, will be required when auth is implemented
 		};
 	}>("/execute-bulk", async (request, reply) => {
 		try {
-			const { templateId, instanceIds, userId: bodyUserId } = request.body;
-			// TODO: Replace with actual auth when implemented
-			const userId = bodyUserId || "system";
+			const { templateId, instanceIds } = request.body;
+			const userId = request.currentUser.id;
 
 			if (!templateId || !instanceIds || instanceIds.length === 0) {
 				return reply.status(400).send({

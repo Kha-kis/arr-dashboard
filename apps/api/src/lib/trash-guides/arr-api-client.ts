@@ -233,10 +233,8 @@ export class ArrApiClient {
 	 * Get Quality Profiles
 	 */
 	async getQualityProfiles(): Promise<QualityProfile[]> {
-		console.log("[ARR-API] Fetching quality profiles from /api/v3/qualityprofile");
 		try {
 			const result = await this.request<QualityProfile[]>("GET", "qualityprofile");
-			console.log("[ARR-API] Quality profiles SUCCESS:", JSON.stringify(result));
 			return result;
 		} catch (error) {
 			console.error("[ARR-API] Quality profiles FAILED:", error);
@@ -264,11 +262,8 @@ export class ArrApiClient {
 	async createQualityProfile(
 		profile: Omit<QualityProfile, "id">,
 	): Promise<QualityProfile> {
-		console.log("[ARR-API] Creating quality profile...");
-		console.log("[ARR-API] Profile data:", JSON.stringify(profile, null, 2));
 		try {
 			const result = await this.request<QualityProfile>("POST", "qualityprofile", profile);
-			console.log("[ARR-API] Quality profile created successfully:", JSON.stringify(result));
 			return result;
 		} catch (error) {
 			console.error("[ARR-API] Quality profile creation FAILED:");

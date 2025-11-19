@@ -137,13 +137,11 @@ export class DeploymentExecutorService {
 
 			// Get existing Custom Formats from instance
 			const existingCFs = await apiClient.getCustomFormats();
-			console.log(`[DEPLOYMENT] Found ${existingCFs.length} existing CFs in Radarr`);
 
 			const existingCFMap = new Map<string, CustomFormat>();
 			const existingCFByName = new Map<string, CustomFormat>();
 			for (const cf of existingCFs) {
 				const trashId = this.extractTrashId(cf);
-				console.log(`[DEPLOYMENT] Existing CF: "${cf.name}" (ID: ${cf.id}, trashId: ${trashId})`);
 				if (trashId) {
 					existingCFMap.set(trashId, cf);
 				}
@@ -151,7 +149,6 @@ export class DeploymentExecutorService {
 				existingCFByName.set(cf.name, cf);
 			}
 
-			console.log(`[DEPLOYMENT] Built maps: ${existingCFMap.size} by trashId, ${existingCFByName.size} by name`);
 
 			// Parse template config and apply instance overrides
 			const templateConfig = JSON.parse(template.configData);
@@ -221,35 +218,24 @@ export class DeploymentExecutorService {
 
 			for (const templateCF of templateCFs) {
 				try {
-					console.log(`[DEPLOYMENT] ===== Processing CF: ${templateCF.name} =====`);
-					console.log(`[DEPLOYMENT] Template CF trashId: ${templateCF.trashId}`);
-					console.log(`[DEPLOYMENT] Looking for name: "${templateCF.name}"`);
-					console.log(`[DEPLOYMENT] Available names in map:`, Array.from(existingCFByName.keys()).slice(0, 5)); // Just first 5 to reduce log spam
 
 					// Try to match by trashId first, then fall back to name
 					let existingCF = existingCFMap.get(templateCF.trashId);
 					if (!existingCF) {
-						console.log(`[DEPLOYMENT] No match by trashId, trying name match...`);
 						existingCF = existingCFByName.get(templateCF.name);
 						if (!existingCF) {
-							console.log(`[DEPLOYMENT] Name match also failed`);
 						}
 					}
 
 					if (existingCF) {
-						console.log(`[DEPLOYMENT] FOUND MATCH: "${existingCF.name}" (ID: ${existingCF.id})`);
 					} else {
-						console.log(`[DEPLOYMENT] NO MATCH FOUND - will create new CF`);
 					}
 
 					if (existingCF && existingCF.id) {
 						// Update existing CF
 						// Transform specifications: convert fields from object to array format
-						console.log(`[DEPLOYMENT] PRE-TRANSFORM UPDATE - Original spec for "${templateCF.name}":`, JSON.stringify(templateCF.originalConfig?.specifications || []));
 						const specifications = (templateCF.originalConfig?.specifications || []).map((spec: any) => {
-							console.log(`[DEPLOYMENT] Processing spec "${spec.name}" with fields:`, JSON.stringify(spec.fields));
 							const transformedFields = this.transformFieldsToArray(spec.fields);
-							console.log(`[DEPLOYMENT] Transformed fields result:`, JSON.stringify(transformedFields));
 							return {
 								...spec,
 								fields: transformedFields,
@@ -262,19 +248,14 @@ export class DeploymentExecutorService {
 							specifications,
 						};
 
-						console.log(`[DEPLOYMENT] Updating CF "${templateCF.name}" (id: ${existingCF.id})`);
-						console.log(`[DEPLOYMENT] Update CF Data:`, JSON.stringify(updatedCF, null, 2));
 						await apiClient.updateCustomFormat(existingCF.id, updatedCF);
 						updated++;
 						details.updated.push(templateCF.name);
 					} else {
 						// Create new CF
 						// Transform specifications: convert fields from object to array format
-						console.log(`[DEPLOYMENT] PRE-TRANSFORM - Original spec for "${templateCF.name}":`, JSON.stringify(templateCF.originalConfig?.specifications || []));
 						const specifications = (templateCF.originalConfig?.specifications || []).map((spec: any) => {
-							console.log(`[DEPLOYMENT] Processing spec "${spec.name}" with fields:`, JSON.stringify(spec.fields));
 							const transformedFields = this.transformFieldsToArray(spec.fields);
-							console.log(`[DEPLOYMENT] Transformed fields result:`, JSON.stringify(transformedFields));
 							return {
 								...spec,
 								fields: transformedFields,
@@ -287,8 +268,6 @@ export class DeploymentExecutorService {
 							specifications,
 						};
 
-						console.log(`[DEPLOYMENT] Creating CF "${templateCF.name}"`);
-						console.log(`[DEPLOYMENT] CF Data:`, JSON.stringify(newCF, null, 2));
 						await apiClient.createCustomFormat(newCF);
 						created++;
 						details.created.push(templateCF.name);
@@ -309,47 +288,33 @@ export class DeploymentExecutorService {
 			}
 
 			// Update Quality Profile with Custom Format scores
-			console.log("[DEPLOYMENT] ===== Updating Quality Profile =====");
 			try {
 				const profileName = template.name || "TRaSH Guides HD/UHD";
-				console.log(`[DEPLOYMENT] Looking for quality profile: "${profileName}"`);
 
 				let qualityProfiles = await apiClient.getQualityProfiles();
-				console.log(`[DEPLOYMENT] Quality profiles response:`, JSON.stringify(qualityProfiles));
-				console.log(`[DEPLOYMENT] Quality profiles count: ${qualityProfiles.length}`);
 
 				// Find existing profile by name
 				let targetProfile = qualityProfiles.find(p => p.name === profileName);
 
 				if (targetProfile) {
-					console.log(`[DEPLOYMENT] Found existing profile "${profileName}" (ID: ${targetProfile.id})`);
 				}
 
 				// Create quality profile if it doesn't exist
 				if (!targetProfile) {
-					console.log(`[DEPLOYMENT] Profile "${profileName}" not found, creating new profile...`);
 
 					try {
 						// Get the quality profile schema to get proper structure
-						console.log("[DEPLOYMENT] Fetching quality profile schema...");
 						const schema = await apiClient.getQualityProfileSchema();
-						console.log("[DEPLOYMENT] Schema fetched successfully");
 
 						// Write to file for debugging
 						const fs = await import("fs");
 						fs.writeFileSync("/tmp/radarr-schema.json", JSON.stringify(schema, null, 2));
-						console.log("[DEPLOYMENT] Schema written to /tmp/radarr-schema.json");
 
 						// Get quality definitions from the TRaSH template config
 						const fs2 = await import("fs");
 						fs2.writeFileSync("/tmp/template-debug.json", JSON.stringify(templateConfig, null, 2));
-						console.log("[DEPLOYMENT] ===== TEMPLATE CONFIG DEBUG =====");
-						console.log("[DEPLOYMENT] template.name:", template.name);
-						console.log("[DEPLOYMENT] templateConfig.qualityProfile exists:", !!templateConfig.qualityProfile);
 						if (templateConfig.qualityProfile) {
-							console.log("[DEPLOYMENT] qualityProfile.items count:", templateConfig.qualityProfile.items?.length || 0);
 						}
-						console.log("[DEPLOYMENT] ===== END TEMPLATE CONFIG DEBUG =====");
 
 						// Normalize quality names for consistent matching (remove spaces/hyphens)
 						const normalizeQualityName = (name: string) => name.replace(/[\s-]/g, '').toLowerCase();
@@ -372,7 +337,6 @@ export class DeploymentExecutorService {
 							}
 						};
 						extractQualities(schema.items);
-						console.log(`[DEPLOYMENT] Found ${allAvailableQualities.size} individual qualities in Radarr`);
 
 						// Build quality items according to TRaSH Guides structure
 						const qualityItems: any[] = [];
@@ -381,7 +345,6 @@ export class DeploymentExecutorService {
 						for (const templateItem of templateConfig.qualityProfile?.items || []) {
 							if (templateItem.items && Array.isArray(templateItem.items) && templateItem.items.length > 0) {
 								// This is a quality GROUP from TRaSH (e.g., "WEB 720p" with nested qualities)
-								console.log(`[DEPLOYMENT] Building custom group "${templateItem.name}" with ${templateItem.items.length} qualities`);
 
 								const groupQualities: any[] = [];
 								for (const qualityName of templateItem.items) {
@@ -391,9 +354,7 @@ export class DeploymentExecutorService {
 											...quality,
 											allowed: false // Individual items in groups have allowed=false, group controls it
 										});
-										console.log(`[DEPLOYMENT]   - Added "${qualityName}" to group`);
 									} else {
-										console.log(`[DEPLOYMENT]   - WARNING: Quality "${qualityName}" not found in Radarr`);
 									}
 								}
 
@@ -404,7 +365,6 @@ export class DeploymentExecutorService {
 										allowed: templateItem.allowed,
 										id: customGroupId++
 									});
-									console.log(`[DEPLOYMENT] Created group "${templateItem.name}": ${templateItem.allowed ? 'ENABLED' : 'DISABLED'}`);
 								}
 							} else {
 								// This is an INDIVIDUAL quality from TRaSH (no nested items)
@@ -414,14 +374,11 @@ export class DeploymentExecutorService {
 										...quality,
 										allowed: templateItem.allowed
 									});
-									console.log(`[DEPLOYMENT] Individual quality "${templateItem.name}": ${templateItem.allowed ? 'ENABLED' : 'DISABLED'}`);
 								} else {
-									console.log(`[DEPLOYMENT] WARNING: Quality "${templateItem.name}" not found in Radarr`);
 								}
 							}
 						}
 
-						console.log(`[DEPLOYMENT] Built ${qualityItems.length} quality items for profile`);
 
 						// Get fresh CFs list with IDs for score application
 						const allCFs = await apiClient.getCustomFormats();
@@ -441,21 +398,17 @@ export class DeploymentExecutorService {
 							// Priority 1: User's score override from wizard
 							if (templateCF.scoreOverride !== undefined && templateCF.scoreOverride !== null) {
 								score = templateCF.scoreOverride;
-								console.log(`[DEPLOYMENT] Applying user override score ${score} to CF "${cf.name}" (ID: ${cf.id})`);
 							}
 							// Priority 2: TRaSH Guides score from profile's score set
 							else if (scoreSet && templateCF.originalConfig?.trash_scores?.[scoreSet] !== undefined) {
 								score = templateCF.originalConfig.trash_scores[scoreSet];
-								console.log(`[DEPLOYMENT] Applying TRaSH score ${score} (set: ${scoreSet}) to CF "${cf.name}" (ID: ${cf.id})`);
 							}
 							// Priority 3: TRaSH Guides default score
 							else if (templateCF.originalConfig?.trash_scores?.default !== undefined) {
 								score = templateCF.originalConfig.trash_scores.default;
-								console.log(`[DEPLOYMENT] Applying TRaSH default score ${score} to CF "${cf.name}" (ID: ${cf.id})`);
 							}
 							// Priority 4: Explicit zero (CF has no scores)
 							else {
-								console.log(`[DEPLOYMENT] CF "${cf.name}" (ID: ${cf.id}) has no scores defined, using 0`);
 							}
 	
 								return {
@@ -471,7 +424,6 @@ export class DeploymentExecutorService {
 						let cutoffId = 31; // Default to Remux-2160p
 						if (templateConfig.qualityProfile?.cutoff) {
 							const cutoffName = templateConfig.qualityProfile.cutoff;
-							console.log(`[DEPLOYMENT] Template specifies cutoff: "${cutoffName}"`);
 
 							// Search in the quality items we built (not schema) - if cutoff is in a group, return group ID
 							// Normalize names by removing spaces and hyphens for comparison
@@ -502,9 +454,7 @@ export class DeploymentExecutorService {
 							const foundCutoffId = findQualityId(qualityItems, cutoffName);
 							if (foundCutoffId) {
 								cutoffId = foundCutoffId;
-								console.log(`[DEPLOYMENT] Found cutoff quality ID: ${cutoffId} for "${cutoffName}"`);
 							} else {
-								console.log(`[DEPLOYMENT] Could not find cutoff "${cutoffName}", using default: ${cutoffId}`);
 							}
 						}
 
@@ -514,7 +464,6 @@ export class DeploymentExecutorService {
 						const templateMinScore = templateConfig.qualityProfile?.minFormatScore ?? 0;
 						const effectiveMinScore = (!hasDefinedScores && templateMinScore > 0) ? 0 : templateMinScore;
 						if (!hasDefinedScores && templateMinScore > 0) {
-							console.log(`[DEPLOYMENT] ⚠️  Template specifies minFormatScore=${templateMinScore} but no CF scores defined - overriding to 0`);
 						}
 
 						// Use schema as base and customize with template settings
@@ -545,10 +494,7 @@ export class DeploymentExecutorService {
 						delete (profileToCreate as { id?: number }).id;
 
 						fs.writeFileSync("/tmp/radarr-profile-create.json", JSON.stringify(profileToCreate, null, 2));
-						console.log("[DEPLOYMENT] Profile to create written to /tmp/radarr-profile-create.json");
-						console.log("[DEPLOYMENT] Creating quality profile with schema-based structure and CF scores");
 						targetProfile = await apiClient.createQualityProfile(profileToCreate);
-						console.log(`[DEPLOYMENT] Created quality profile: ${targetProfile.name} (ID: ${targetProfile.id})`);
 					} catch (createError) {
 						console.error("[DEPLOYMENT] Failed to create quality profile:", createError);
 						console.error("[DEPLOYMENT] Error details:", JSON.stringify(createError, null, 2));
@@ -557,7 +503,6 @@ export class DeploymentExecutorService {
 				}
 
 				if (targetProfile) {
-					console.log(`[DEPLOYMENT] Updating quality profile: ${targetProfile.name} (ID: ${targetProfile.id})`);
 
 					// Get fresh CFs list with IDs
 					const allCFs = await apiClient.getCustomFormats();
@@ -573,7 +518,6 @@ export class DeploymentExecutorService {
 				const overrideMap = new Map(
 					instanceOverrides.map(override => [override.customFormatId, override.score])
 				);
-				console.log(`[DEPLOYMENT] Found ${instanceOverrides.length} instance-level score overrides for profile ${targetProfile.id}`);
 
 				// Build format items from template CFs
 				const formatItems: Array<{ format: number; score: number }> = [];
@@ -611,7 +555,6 @@ export class DeploymentExecutorService {
 							format: cf.id,
 							score,
 						});
-						console.log(`[DEPLOYMENT] CF "${templateCF.name}" (ID: ${cf.id}) score: ${score} (source: ${scoreSource})`);
 					}
 				}
 
@@ -630,7 +573,6 @@ export class DeploymentExecutorService {
 					};
 
 					await apiClient.updateQualityProfile(targetProfile.id, updatedProfile);
-					console.log(`[DEPLOYMENT] Quality profile updated successfully with ${formatItems.length} CF scores`);
 
 					// Create/update mapping to track that this profile is managed by this template
 					await this.prisma.templateQualityProfileMapping.upsert({
@@ -654,7 +596,6 @@ export class DeploymentExecutorService {
 							updatedAt: new Date(),
 						},
 					});
-					console.log(`[DEPLOYMENT] Created/updated template mapping for profile ${targetProfile.id}`);
 				}
 			} catch (error) {
 				console.error("[DEPLOYMENT] Failed to update quality profile:", error);
@@ -800,23 +741,19 @@ export class DeploymentExecutorService {
 	private transformFieldsToArray(fields: any): Array<{ name: string; value: unknown }> {
 		// If fields is already an array, return it as-is
 		if (Array.isArray(fields)) {
-			console.log("[DEPLOYMENT] transformFieldsToArray - INPUT is already an array:", JSON.stringify(fields));
 			return fields;
 		}
 
 		// If fields is undefined or null, return empty array
 		if (!fields) {
-			console.log("[DEPLOYMENT] transformFieldsToArray - INPUT is null/undefined");
 			return [];
 		}
 
 		// Convert object format to array format
-		console.log("[DEPLOYMENT] transformFieldsToArray - INPUT (object):", JSON.stringify(fields));
 		const result = Object.entries(fields).map(([name, value]) => ({
 			name,
 			value,
 		}));
-		console.log("[DEPLOYMENT] transformFieldsToArray - OUTPUT (array):", JSON.stringify(result));
 		return result;
 	}
 

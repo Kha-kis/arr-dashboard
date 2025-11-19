@@ -117,7 +117,6 @@ export class BulkScoreManager {
 		const templateMappingMap = new Map(
 			templateMappings.map(mapping => [mapping.qualityProfileId, mapping.templateId])
 		);
-		console.log(`[BULK-SCORE] Found ${templateMappings.length} template-managed profiles`);
 
 		// Step 2: Collect all unique custom formats across all instances
 		// Key: CF name, Value: CustomFormatScoreEntry

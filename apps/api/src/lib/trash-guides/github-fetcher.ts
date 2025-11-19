@@ -412,7 +412,6 @@ export class TrashGitHubFetcher {
 				.filter((file) => file.type === "file" && file.name.endsWith(".md"))
 				.map((file) => file.name.replace(/\.md$/, ""));
 
-			console.log(`Discovered ${mdFiles.length} CF description files`);
 
 			// Fetch all descriptions in parallel (with concurrency limit)
 			const BATCH_SIZE = 10; // Process 10 at a time
@@ -433,7 +432,6 @@ export class TrashGitHubFetcher {
 				}
 			}
 
-			console.log(`Successfully fetched ${descriptions.length}/${mdFiles.length} CF descriptions`);
 			return descriptions;
 		} catch (error) {
 			console.error("Failed to fetch CF descriptions:", error);
