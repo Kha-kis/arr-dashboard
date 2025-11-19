@@ -81,25 +81,31 @@ export async function checkSetupRequired(): Promise<boolean> {
 // ==================== OIDC Authentication ====================
 
 export type OIDCProvider = SharedOIDCProvider;
-export type OIDCProviderType = OIDCProvider["type"];
 
-interface OIDCProvidersResponse {
-	providers: OIDCProvider[];
+interface OIDCProviderResponse {
+	provider: { displayName: string; enabled: boolean } | null;
 }
 
 interface OIDCLoginResponse {
 	authorizationUrl: string;
 }
 
-export async function getOIDCProviders(): Promise<OIDCProvider[]> {
-	const data = await apiRequest<OIDCProvidersResponse>("/auth/oidc/providers");
-	return data.providers;
+/**
+ * Get the configured OIDC provider (if any)
+ * @returns Provider info with displayName and enabled status, or null if not configured
+ */
+export async function getOIDCProvider(): Promise<{ displayName: string; enabled: boolean } | null> {
+	const data = await apiRequest<OIDCProviderResponse>("/auth/oidc/providers");
+	return data.provider;
 }
 
-export async function initiateOIDCLogin(provider: OIDCProviderType): Promise<string> {
+/**
+ * Initiate OIDC login flow
+ * @returns Authorization URL to redirect user to
+ */
+export async function initiateOIDCLogin(): Promise<string> {
 	const data = await apiRequest<OIDCLoginResponse>("/auth/oidc/login", {
 		method: "POST",
-		json: { provider },
 	});
 	return data.authorizationUrl;
 }
