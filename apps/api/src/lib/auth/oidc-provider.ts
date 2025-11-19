@@ -26,6 +26,7 @@ export class OIDCProvider {
 	private config: OIDCProviderConfig;
 	private authServer: oauth.AuthorizationServer | null = null;
 	private client: oauth.Client;
+	private clientAuth: oauth.ClientAuth;
 
 	constructor(config: OIDCProviderConfig) {
 		this.config = config;
@@ -34,6 +35,8 @@ export class OIDCProvider {
 			client_secret: config.clientSecret,
 			token_endpoint_auth_method: "client_secret_basic",
 		};
+		// Create client authentication method for token endpoint requests
+		this.clientAuth = oauth.ClientSecretBasic(config.clientSecret);
 	}
 
 	/**
@@ -179,6 +182,7 @@ export class OIDCProvider {
 		const response = await oauth.authorizationCodeGrantRequest(
 			authServer,
 			this.client,
+			this.clientAuth, // Client authentication method (ClientSecretBasic)
 			params, // Use validated params from validateAuthResponse
 			redirectUri,
 			codeVerifier, // PKCE code verifier for authorization code protection
