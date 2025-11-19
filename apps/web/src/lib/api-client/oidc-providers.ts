@@ -1,22 +1,29 @@
 import type {
 	CreateOIDCProvider,
 	OIDCProvider,
+	OIDCProviderResponse,
 	UpdateOIDCProvider,
 } from "@arr/shared";
 import { apiRequest } from "./base";
 
-interface OIDCProviderResponse {
-	provider: OIDCProvider | null;
-}
-
 /**
  * Get the configured OIDC provider (admin only)
+ *
+ * Returns a wrapper object containing the single OIDC provider for this installation.
+ * Only one OIDC provider is supported per installation.
+ *
+ * @returns Promise resolving to { provider: OIDCProvider | null }
  */
-export async function getOIDCProviders(): Promise<OIDCProviderResponse> {
+export async function getOIDCProvider(): Promise<OIDCProviderResponse> {
 	return apiRequest<OIDCProviderResponse>("/api/oidc-providers", {
 		method: "GET",
 	});
 }
+
+/**
+ * @deprecated Use getOIDCProvider instead - renamed to reflect single-provider semantics
+ */
+export const getOIDCProviders = getOIDCProvider;
 
 /**
  * Create a new OIDC provider (admin only)

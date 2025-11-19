@@ -37,9 +37,15 @@ export const OIDCSetup = () => {
 
 		try {
 			// Configure OIDC provider
+			const { redirectUri, ...rest } = formState;
+			const payload = {
+				...rest,
+				...(redirectUri.trim() ? { redirectUri: redirectUri.trim() } : {}),
+			};
+
 			await apiRequest("/auth/oidc/setup", {
 				method: "POST",
-				json: formState,
+				json: payload,
 			});
 
 			// Initiate OIDC login
@@ -103,7 +109,11 @@ export const OIDCSetup = () => {
 				<Input
 					value={formState.redirectUri}
 					onChange={(e) => setFormState({ ...formState, redirectUri: e.target.value })}
-					placeholder={`${window.location.origin}/auth/oidc/callback`}
+					placeholder={
+						typeof window !== "undefined"
+							? `${window.location.origin}/auth/oidc/callback`
+							: "/auth/oidc/callback"
+					}
 				/>
 				<p className="text-xs text-white/50">
 					Leave empty to auto-detect. Must match the redirect URI configured in your OIDC provider.

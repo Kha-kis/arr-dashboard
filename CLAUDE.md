@@ -59,22 +59,27 @@ arr-dashboard/
 
 **The web app does NOT make direct API calls to `http://localhost:3001`.**
 
-Instead, it uses Next.js middleware to proxy all `/api/*` and `/auth/*` requests to the backend. This is handled in `apps/web/middleware.ts`.
+Instead, it uses Next.js rewrites to proxy all `/api/*` and `/auth/*` requests to the backend. This is handled in `apps/web/next.config.mjs`.
 
 ```typescript
 // Frontend makes requests to relative paths
 fetch("/api/services")  // NOT http://localhost:3001/api/services
 
-// Middleware rewrites to backend
+// Next.js rewrites proxy to backend
 // Development: http://localhost:3001
 // Docker: http://api:3001
 ```
 
 **Why this matters:**
 - Eliminates CORS issues
-- Handles cookie forwarding automatically
+- Next.js handles cookie forwarding automatically via rewrites
 - Works seamlessly in Docker without exposing backend port
+- Middleware (`apps/web/middleware.ts`) now only handles route protection and session checks
 - Recent commits (f7c52f7, c9f24b7, 8b80c82, 917aa92) fixed race conditions and cookie forwarding issues
+
+**Key Files:**
+- `apps/web/next.config.mjs` - Rewrites configuration for API proxying
+- `apps/web/middleware.ts` - Session-based route protection (skips /api and /auth paths)
 
 **Environment Variables:**
 - Frontend: `API_HOST` environment variable (Docker: `http://api:3001`, Dev: `http://localhost:3001`)
@@ -111,13 +116,15 @@ Uses **signed, HTTP-only cookies** with Lucia Auth:
 **Auth Flow:**
 1. Login creates session in database
 2. Signed cookie sent to client
-3. Middleware validates cookie on each request
-4. `request.currentUser` populated in Fastify context
+3. Middleware checks for session cookie presence to handle routing (redirect to /login if missing)
+4. API requests are proxied via Next.js rewrites (cookie forwarded automatically)
+5. `request.currentUser` populated in Fastify context by preHandler hook
 
 **Important Files:**
 - `apps/api/src/routes/auth.ts` - Login/logout routes
 - `apps/api/src/server.ts` - Authentication preHandler hook (lines 58-66)
-- `apps/web/middleware.ts` - Session cookie check for routing
+- `apps/web/middleware.ts` - Session cookie check for routing (skips /api and /auth paths)
+- `apps/web/next.config.mjs` - API proxy rewrites with automatic cookie forwarding
 
 ### 4. Database Schema (Prisma)
 
@@ -397,7 +404,7 @@ const results = await Promise.all(
 ### 4. Protected Routes
 - Backend: Check `request.currentUser` (populated by preHandler hook)
 - Frontend: `AuthGate` component handles client-side redirect
-- Middleware handles SSR redirects for protected routes
+- Middleware handles SSR redirects for protected routes (does NOT proxy API requests)
 
 ### 5. React Query Key Conventions
 ```typescript
@@ -410,7 +417,7 @@ const results = await Promise.all(
 
 ### 6. Environment Variables
 - API: Defined in `apps/api/src/config/env.ts` with Zod schema
-- Web: Only `API_HOST` needed (for middleware proxy)
+- Web: Only `API_HOST` needed (for Next.js rewrites configuration in next.config.mjs)
 - NO `NEXT_PUBLIC_*` variables needed for API communication
 - Secrets auto-generated if not provided
 
@@ -429,8 +436,8 @@ const results = await Promise.all(
 ## Recent Bug Fixes to Remember
 
 1. **Login race condition** (f7c52f7): Query cache must be updated immediately after login
-2. **Cookie forwarding** (c9f24b7): Middleware must explicitly forward cookie headers
-3. **API proxy** (8b80c82, 917aa92): Use middleware proxy instead of client-side API URLs
+2. **Cookie forwarding** (c9f24b7): Next.js rewrites automatically forward cookies (no manual forwarding needed)
+3. **API proxy** (8b80c82, 917aa92): Use Next.js rewrites (next.config.mjs) instead of client-side API URLs
 4. **Secret generation** (8fbb72f): Register cookie plugin AFTER secret generation
 5. **Hex key detection** (af87b0d): Encryption key auto-detects hex/base64/utf8 encoding
 
@@ -466,7 +473,8 @@ const results = await Promise.all(
 - Features: `apps/web/src/features/` (page-specific components)
 - Hooks: `apps/web/src/hooks/api/`
 - API client: `apps/web/src/lib/api-client/`
-- Middleware: `apps/web/middleware.ts`
+- Middleware: `apps/web/middleware.ts` (route protection only, skips /api and /auth)
+- Config: `apps/web/next.config.mjs` (API proxy rewrites)
 
 **Shared:**
 - Types: `packages/shared/src/types/*.ts`
@@ -501,7 +509,7 @@ pnpm run start    # Start production server
 
 ## When Working on This Codebase
 
-1. **Always check middleware first** - API proxy behavior is non-obvious
+1. **Understand the proxy architecture** - API requests are proxied via Next.js rewrites (next.config.mjs), NOT middleware. Middleware only handles route protection.
 2. **Never commit secrets** - `.env` files are gitignored
 3. **Use relative paths in API** - Avoid absolute imports in Fastify routes
 4. **Server Components by default** - Only add `"use client"` when necessary

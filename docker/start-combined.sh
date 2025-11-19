@@ -17,17 +17,15 @@ if [ "$(id -u)" = "0" ]; then
     echo "Running as root, will drop privileges to $PUID:$PGID"
     
     # Update the arruser UID/GID to match requested values
-    if [ "$PUID" != "1001" ] || [ "$PGID" != "1001" ]; then
+    if [ "$PUID" != "1000" ] || [ "$PGID" != "1000" ]; then
         echo "Updating arruser to UID:GID = $PUID:$PGID"
-        
-        # Modify group first
-        if [ "$PGID" != "1001" ]; then
-            delgroup nodejs 2>/dev/null || true
-            addgroup -g "$PGID" appgroup 2>/dev/null || true
-        fi
-        
+
+        # Modify group first - always create appgroup to ensure it exists
+        delgroup nodejs 2>/dev/null || true
+        addgroup -g "$PGID" appgroup 2>/dev/null || true
+
         # Modify user
-        if [ "$PUID" != "1001" ]; then
+        if [ "$PUID" != "1000" ]; then
             deluser arruser 2>/dev/null || true
             adduser -D -u "$PUID" -G appgroup arruser 2>/dev/null || true
         fi
@@ -78,7 +76,7 @@ shutdown() {
 }
 
 # Trap signals
-trap shutdown SIGTERM SIGINT
+trap shutdown TERM INT
 
 # ===== PERMISSIONS CHECK (if running as non-root from the start) =====
 if [ "$(id -u)" != "0" ]; then

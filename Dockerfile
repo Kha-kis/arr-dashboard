@@ -75,8 +75,8 @@ COPY docker/start-combined.sh ./start.sh
 RUN chmod +x ./start.sh
 
 # Create default non-root user (will be updated by start.sh if PUID/PGID are set)
-RUN addgroup -g 1001 nodejs && \
-    adduser -D -u 1001 -G nodejs arruser
+RUN addgroup -g 1000 nodejs && \
+    adduser -D -u 1000 -G nodejs arruser
 
 # Note: We start as root to allow PUID/PGID changes, then drop privileges in start.sh
 
