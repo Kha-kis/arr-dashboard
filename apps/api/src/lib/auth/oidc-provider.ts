@@ -1,9 +1,6 @@
 import * as oauth from "oauth4webapi";
 
-export type OIDCProviderType = "authelia" | "authentik" | "generic";
-
 export interface OIDCProviderConfig {
-	type: OIDCProviderType;
 	clientId: string;
 	clientSecret: string;
 	issuer: string; // e.g., https://auth.example.com
@@ -20,7 +17,7 @@ export interface OIDCUserInfo {
 
 /**
  * OIDC Provider Service
- * Supports Authelia, Authentik, and generic OIDC providers
+ * Supports any OpenID Connect compliant provider
  */
 export class OIDCProvider {
 	private config: OIDCProviderConfig;
@@ -257,32 +254,3 @@ export class OIDCProvider {
 	}
 }
 
-/**
- * Create OIDC provider from environment variables
- */
-export function createOIDCProviderFromEnv(type: OIDCProviderType): OIDCProvider | null {
-	const prefix = type.toUpperCase();
-	const clientId = process.env[`OIDC_${prefix}_CLIENT_ID`];
-	const clientSecret = process.env[`OIDC_${prefix}_CLIENT_SECRET`];
-	const issuer = process.env[`OIDC_${prefix}_ISSUER`];
-	const redirectUri = process.env[`OIDC_${prefix}_REDIRECT_URI`];
-
-	if (!clientId || !clientSecret || !issuer || !redirectUri) {
-		return null; // Provider not configured
-	}
-
-	const scopes = process.env[`OIDC_${prefix}_SCOPES`]?.split(",") ?? [
-		"openid",
-		"email",
-		"profile",
-	];
-
-	return new OIDCProvider({
-		type,
-		clientId,
-		clientSecret,
-		issuer,
-		redirectUri,
-		scopes,
-	});
-}

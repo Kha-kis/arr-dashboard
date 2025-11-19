@@ -1,12 +1,7 @@
 import { z } from "zod";
 
-export const oidcProviderTypeSchema = z.enum(["authelia", "authentik", "generic"]);
-
-export type OIDCProviderType = z.infer<typeof oidcProviderTypeSchema>;
-
 export const oidcProviderSchema = z.object({
 	id: z.string(),
-	type: oidcProviderTypeSchema,
 	displayName: z.string(),
 	clientId: z.string(),
 	issuer: z.string(),
@@ -20,12 +15,11 @@ export const oidcProviderSchema = z.object({
 export type OIDCProvider = z.infer<typeof oidcProviderSchema>;
 
 export const createOidcProviderSchema = z.object({
-	type: oidcProviderTypeSchema,
 	displayName: z.string().min(1).max(100),
 	clientId: z.string().min(1),
 	clientSecret: z.string().min(1),
 	issuer: z.string().url(),
-	redirectUri: z.string().url(),
+	redirectUri: z.string().url().optional(),
 	scopes: z.string().default("openid,email,profile"),
 	enabled: z.boolean().default(true),
 });
