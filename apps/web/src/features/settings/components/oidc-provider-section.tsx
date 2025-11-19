@@ -195,7 +195,7 @@ export const OIDCProviderSection = () => {
 											onChange={(e) => setFormData({ ...formData, issuer: e.target.value })}
 											placeholder="https://auth.example.com"
 										/>
-										<p className="mt-1 text-xs text-white/40">Your OIDC provider's base URL</p>
+										<p className="mt-1 text-xs text-white/40">Your OIDC provider&apos;s base URL</p>
 									</div>
 
 									<div>
