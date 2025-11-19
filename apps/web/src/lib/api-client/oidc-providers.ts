@@ -5,11 +5,15 @@ import type {
 } from "@arr/shared";
 import { apiRequest } from "./base";
 
+interface OIDCProviderResponse {
+	provider: OIDCProvider | null;
+}
+
 /**
- * Get all OIDC providers (admin only)
+ * Get the configured OIDC provider (admin only)
  */
-export async function getOIDCProviders(): Promise<OIDCProvider[]> {
-	return apiRequest<OIDCProvider[]>("/api/oidc-providers", {
+export async function getOIDCProviders(): Promise<OIDCProviderResponse> {
+	return apiRequest<OIDCProviderResponse>("/api/oidc-providers", {
 		method: "GET",
 	});
 }
