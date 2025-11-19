@@ -5,6 +5,19 @@ const nextConfig = {
 		dirs: ["app", "src"],
 	},
 	poweredByHeader: false,
+	async rewrites() {
+		const apiHost = process.env.API_HOST || "http://localhost:3001";
+		return [
+			{
+				source: "/api/:path*",
+				destination: `${apiHost}/api/:path*`,
+			},
+			{
+				source: "/auth/:path*",
+				destination: `${apiHost}/auth/:path*`,
+			},
+		];
+	},
 	async headers() {
 		return [
 			{
