@@ -1,12 +1,17 @@
+/**
+ * CF Configuration Step
+ * Refactored: Query logic extracted to useCFConfiguration hook (reduces complexity)
+ */
+
 "use client";
 
 import { useState, useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertDescription, Skeleton, Card, CardHeader, CardTitle, CardDescription, CardContent } from "../../../../components/ui";
 import { ChevronLeft, ChevronRight, Info, AlertCircle, Search, ChevronDown, Lock, Edit, RotateCcw, Settings } from "lucide-react";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
-import { apiRequest } from "../../../../lib/api-client/base";
 import { ConditionEditor } from "../condition-editor";
+import { useCFConfiguration } from "../../../../hooks/api/useCFConfiguration";
+import { ErrorBoundary } from "../../../../components/error-boundary";
 
 interface CustomFormatItem {
 	displayName?: string;
@@ -65,114 +70,12 @@ export const CFConfiguration = ({
 		format: CustomFormatItem;
 	} | null>(null);
 
-	// In edit mode, we use template's embedded originalConfig data; otherwise fetch quality profile
-	const { data, isLoading, error } = useQuery({
-		queryKey: isEditMode
-			? ["template-edit-data", editingTemplate?.id]
-			: ["quality-profile-details", serviceType, qualityProfile.trashId],
-		queryFn: async () => {
-			if (isEditMode && editingTemplate) {
-				// In edit mode, use the template's embedded originalConfig data
-				const templateCFs = editingTemplate.config.customFormats || [];
-				const templateCFGroups = editingTemplate.config.customFormatGroups || [];
-
-				// Extract custom formats from template's originalConfig
-				const mandatoryCFs = templateCFs.map((cf: any) => {
-					// Extract default TRaSH score from originalConfig.trash_scores
-					const trashScores = cf.originalConfig?.trash_scores || {};
-					const defaultScore = trashScores.default || 0;
-
-					return {
-						trash_id: cf.trashId,
-						name: cf.originalConfig?.name || cf.name,
-						displayName: cf.originalConfig?.name || cf.name,
-						description: '', // originalConfig.specifications don't contain description
-						defaultScore, // TRaSH Guides default score
-						scoreOverride: cf.scoreOverride, // User's custom score
-						source: "template" as const,
-						locked: false,
-						originalConfig: cf.originalConfig, // Keep full original config
-					};
-				});
-
-				// Fetch all available custom formats from cache for browse view
-				const customFormatsRes = await apiRequest<any>(
-					`/api/trash-guides/cache/entries?serviceType=${serviceType}&configType=CUSTOM_FORMATS`
-				);
-				const customFormatsCacheEntry = Array.isArray(customFormatsRes) ? customFormatsRes[0] : customFormatsRes;
-				const allCustomFormats = customFormatsCacheEntry?.data || [];
-
-				// Map all custom formats with proper score extraction
-				const availableFormats = allCustomFormats.map((cf: any) => {
-					const trashScores = cf.trash_scores || {};
-					const defaultScore = trashScores.default || 0;
-
-					return {
-						trash_id: cf.trash_id,
-						name: cf.name,
-						displayName: cf.name,
-						description: cf.trash_description || '',
-						score: defaultScore,
-						originalConfig: cf, // Keep full config for future use
-					};
-				});
-
-				// Also include CF Groups for structure (for browse view grouping if needed later)
-				const cfGroups = templateCFGroups.map((cfGroup: any) => ({
-					trash_id: cfGroup.trashId,
-					name: cfGroup.originalConfig?.name || cfGroup.name,
-					trash_description: cfGroup.originalConfig?.trash_description || '',
-					custom_formats: cfGroup.originalConfig?.custom_formats || [],
-					default: cfGroup.originalConfig?.default,
-					quality_profiles: cfGroup.originalConfig?.quality_profiles,
-				}));
-
-				return {
-					cfGroups, // Keep groups for potential future use
-					mandatoryCFs,
-					availableFormats,
-					stats: {
-						mandatoryCount: templateCFs.length,
-						optionalGroupCount: templateCFGroups.length,
-						totalOptionalCFs: availableFormats.length,
-					},
-				};
-			} else {
-				// Normal mode - fetch quality profile details
-				const profileData = await apiRequest<any>(
-					`/api/trash-guides/quality-profiles/${serviceType}/${qualityProfile.trashId}`,
-				);
-
-				// Also fetch all available custom formats from cache for browse view
-				const customFormatsRes = await apiRequest<any>(
-					`/api/trash-guides/cache/entries?serviceType=${serviceType}&configType=CUSTOM_FORMATS`
-				);
-				const customFormatsCacheEntry = Array.isArray(customFormatsRes) ? customFormatsRes[0] : customFormatsRes;
-				const allCustomFormats = customFormatsCacheEntry?.data || [];
-
-				// Map all custom formats with proper score extraction
-				const availableFormats = allCustomFormats.map((cf: any) => {
-					const trashScores = cf.trash_scores || {};
-					const defaultScore = trashScores.default || 0;
-
-					return {
-						trash_id: cf.trash_id,
-						name: cf.name,
-						displayName: cf.name,
-						description: cf.trash_description || '',
-						score: defaultScore,
-						originalConfig: cf, // Keep full config for future use
-					};
-				});
-
-				// Return combined data with availableFormats
-				return {
-					...profileData,
-					availableFormats,
-				};
-			}
-		},
-		enabled: !isEditMode || !!editingTemplate, // Only run if we have template in edit mode
+	// Fetch CF configuration data using extracted hook
+	const { data, isLoading, error } = useCFConfiguration({
+		serviceType,
+		qualityProfile,
+		isEditMode,
+		editingTemplate,
 	});
 
 	// Initialize selections when data loads
