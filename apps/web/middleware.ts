@@ -24,65 +24,14 @@ const isPublicPath = (pathname: string) => {
 	return PUBLIC_FILE.test(pathname);
 };
 
-// Proxy API requests to the backend
-async function proxyApiRequest(request: NextRequest): Promise<NextResponse | null> {
-	const { pathname } = request.nextUrl;
-
-	// Check if this is an API or auth request
-	if (!pathname.startsWith("/api/") && !pathname.startsWith("/auth/")) {
-		return null;
-	}
-
-	// Determine API host (Docker: api:3001, Local dev: localhost:3001)
-	const apiHost = process.env.API_HOST || "http://localhost:3001";
-
-	// Construct the proxied URL
-	const apiUrl = new URL(pathname + request.nextUrl.search, apiHost);
-
-	// Clone the request headers to forward cookies
-	const requestHeaders = new Headers(request.headers);
-
-	// Explicitly forward cookies
-	const cookieHeader = request.headers.get("cookie");
-	if (cookieHeader) {
-		requestHeaders.set("cookie", cookieHeader);
-	}
-
-	// Fetch from the API server
-	const response = await fetch(apiUrl.toString(), {
-		method: request.method,
-		headers: requestHeaders,
-		body: request.body,
-		duplex: "half",
-	} as RequestInit);
-
-	// Create response with the API's body
-	const proxyResponse = new NextResponse(response.body, {
-		status: response.status,
-		statusText: response.statusText,
-	});
-
-	// Forward all headers from API response, including Set-Cookie
-	// Use append() for Set-Cookie to preserve multiple cookies, set() for others
-	response.headers.forEach((value, key) => {
-		if (key.toLowerCase() === 'set-cookie') {
-			proxyResponse.headers.append(key, value);
-		} else {
-			proxyResponse.headers.set(key, value);
-		}
-	});
-
-	return proxyResponse;
-}
-
 export async function middleware(request: NextRequest) {
 	const { pathname } = request.nextUrl;
 
-	// Handle API proxy first
-	const apiResponse = await proxyApiRequest(request);
-	if (apiResponse) {
-		return apiResponse;
+	// Skip middleware for API/auth routes - handled by rewrites in next.config.mjs
+	if (pathname.startsWith("/api/") || pathname.startsWith("/auth/")) {
+		return NextResponse.next();
 	}
+
 	const hasSession = Boolean(request.cookies.get(SESSION_COOKIE_NAME));
 
 	// Home page: redirect to dashboard if logged in, otherwise to login
