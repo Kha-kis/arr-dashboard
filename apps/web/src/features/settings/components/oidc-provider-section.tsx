@@ -141,8 +141,8 @@ export const OIDCProviderSection = () => {
 		return (
 			<Card>
 				<CardHeader>
-					<CardTitle>OIDC Providers</CardTitle>
-					<CardDescription>Loading OIDC providers...</CardDescription>
+					<CardTitle>OIDC Provider</CardTitle>
+					<CardDescription>Loading OIDC provider...</CardDescription>
 				</CardHeader>
 			</Card>
 		);
@@ -151,10 +151,10 @@ export const OIDCProviderSection = () => {
 	return (
 		<Card>
 			<CardHeader>
-				<CardTitle>OIDC Providers</CardTitle>
+				<CardTitle>OIDC Provider</CardTitle>
 				<CardDescription>
-					Configure external authentication providers for single sign-on. Users can authenticate
-					using Authelia, Authentik, or any OpenID Connect-compliant provider.
+					Configure OpenID Connect authentication for single sign-on with any OIDC-compliant provider
+					(Authelia, Authentik, Keycloak, etc.).
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-6">
@@ -170,262 +170,249 @@ export const OIDCProviderSection = () => {
 					</Alert>
 				)}
 
-				{/* Create New Provider Button */}
-				{!showCreateForm && (
-					<Button onClick={() => setShowCreateForm(true)}>Add OIDC Provider</Button>
-				)}
+				{/* No Provider - Show Create Form or Empty State */}
+				{!provider && (
+					<>
+						{showCreateForm ? (
+							<div className="space-y-4 rounded-lg border border-white/10 bg-white/5 p-4">
+								<h3 className="text-sm font-semibold text-white">Configure OIDC Provider</h3>
 
-				{/* Create Form */}
-				{showCreateForm && (
-					<div className="space-y-4 rounded-lg border border-white/10 bg-white/5 p-4">
-						<h3 className="text-sm font-semibold text-white">New OIDC Provider</h3>
+								<div className="space-y-3">
+									<div>
+										<label className="text-xs text-white/60">Display Name</label>
+										<Input
+											value={formData.displayName}
+											onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
+											placeholder="e.g., Authentik SSO"
+										/>
+										<p className="mt-1 text-xs text-white/40">Friendly name shown on login page</p>
+									</div>
 
-						<div className="space-y-3">
-							<div>
-								<label className="text-xs text-white/60">Provider Type</label>
-								<select
-									value={formData.type}
-									onChange={(e) =>
-										setFormData({ ...formData, type: e.target.value as OIDCProviderType })
-									}
-									className="w-full rounded-xl border border-border bg-bg-subtle px-4 py-3 text-sm text-fg transition-all duration-200 hover:border-border/80 hover:bg-bg-subtle/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-bg-subtle/80"
-								>
-									<option value="authelia">Authelia</option>
-									<option value="authentik">Authentik</option>
-									<option value="generic">Generic OIDC</option>
-								</select>
-							</div>
+									<div>
+										<label className="text-xs text-white/60">Issuer URL</label>
+										<Input
+											value={formData.issuer}
+											onChange={(e) => setFormData({ ...formData, issuer: e.target.value })}
+											placeholder="https://auth.example.com"
+										/>
+										<p className="mt-1 text-xs text-white/40">Your OIDC provider's base URL</p>
+									</div>
 
-							<div>
-								<label className="text-xs text-white/60">Display Name</label>
-								<Input
-									value={formData.displayName}
-									onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
-									placeholder="e.g., My Auth Server"
-								/>
-							</div>
+									<div>
+										<label className="text-xs text-white/60">Client ID</label>
+										<Input
+											value={formData.clientId}
+											onChange={(e) => setFormData({ ...formData, clientId: e.target.value })}
+											placeholder="OAuth client ID"
+										/>
+									</div>
 
-							<div>
-								<label className="text-xs text-white/60">Client ID</label>
-								<Input
-									value={formData.clientId}
-									onChange={(e) => setFormData({ ...formData, clientId: e.target.value })}
-									placeholder="OAuth client ID"
-								/>
-							</div>
+									<div>
+										<label className="text-xs text-white/60">Client Secret</label>
+										<Input
+											type="password"
+											value={formData.clientSecret}
+											onChange={(e) => setFormData({ ...formData, clientSecret: e.target.value })}
+											placeholder="OAuth client secret"
+										/>
+									</div>
 
-							<div>
-								<label className="text-xs text-white/60">Client Secret</label>
-								<Input
-									type="password"
-									value={formData.clientSecret}
-									onChange={(e) => setFormData({ ...formData, clientSecret: e.target.value })}
-									placeholder="OAuth client secret"
-								/>
-							</div>
+									<div>
+										<label className="text-xs text-white/60">Redirect URI</label>
+										<Input
+											value={formData.redirectUri}
+											onChange={(e) => setFormData({ ...formData, redirectUri: e.target.value })}
+											placeholder={`${window.location.origin}/auth/oidc/callback`}
+										/>
+										<p className="mt-1 text-xs text-white/40">Leave empty to auto-detect</p>
+									</div>
 
-							<div>
-								<label className="text-xs text-white/60">Issuer URL</label>
-								<Input
-									value={formData.issuer}
-									onChange={(e) => setFormData({ ...formData, issuer: e.target.value })}
-									placeholder="https://auth.example.com"
-								/>
-							</div>
+									<div>
+										<label className="text-xs text-white/60">Scopes (comma-separated)</label>
+										<Input
+											value={formData.scopes}
+											onChange={(e) => setFormData({ ...formData, scopes: e.target.value })}
+											placeholder="openid,email,profile"
+										/>
+									</div>
 
-							<div>
-								<label className="text-xs text-white/60">Redirect URI</label>
-								<Input
-									value={formData.redirectUri}
-									onChange={(e) => setFormData({ ...formData, redirectUri: e.target.value })}
-									placeholder="https://your-dashboard.com/auth/oidc/callback"
-								/>
-							</div>
-
-							<div>
-								<label className="text-xs text-white/60">Scopes (comma-separated)</label>
-								<Input
-									value={formData.scopes}
-									onChange={(e) => setFormData({ ...formData, scopes: e.target.value })}
-									placeholder="openid,email,profile"
-								/>
-							</div>
-
-							<div className="flex items-center gap-2">
-								<input
-									type="checkbox"
-									checked={formData.enabled}
-									onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
-									className="h-4 w-4 rounded border-white/20 bg-white/5"
-								/>
-								<label className="text-sm text-white/70">Enable provider</label>
-							</div>
-						</div>
-
-						<div className="flex gap-2">
-							<Button onClick={handleCreate} disabled={createMutation.isPending}>
-								{createMutation.isPending ? "Creating..." : "Create Provider"}
-							</Button>
-							<Button variant="secondary" onClick={() => setShowCreateForm(false)}>
-								Cancel
-							</Button>
-						</div>
-					</div>
-				)}
-
-				{/* Existing Providers */}
-				{providers && providers.length > 0 ? (
-					<div className="space-y-4">
-						<h3 className="text-sm font-semibold text-white">Configured Providers</h3>
-						<div className="space-y-3">
-							{providers.map((provider) => (
-								<div
-									key={provider.id}
-									className="rounded-lg border border-white/10 bg-white/5 p-4"
-								>
-									{editingId === provider.id ? (
-										<div className="space-y-3">
-											<div>
-												<label className="text-xs text-white/60">Display Name</label>
-												<Input
-													value={editData.displayName}
-													onChange={(e) => setEditData({ ...editData, displayName: e.target.value })}
-												/>
-											</div>
-
-											<div>
-												<label className="text-xs text-white/60">Client ID</label>
-												<Input
-													value={editData.clientId}
-													onChange={(e) => setEditData({ ...editData, clientId: e.target.value })}
-												/>
-											</div>
-
-											<div>
-												<label className="text-xs text-white/60">
-													Client Secret (leave empty to keep current)
-												</label>
-												<Input
-													type="password"
-													value={editData.clientSecret}
-													onChange={(e) => setEditData({ ...editData, clientSecret: e.target.value })}
-													placeholder="Enter new secret to update"
-												/>
-											</div>
-
-											<div>
-												<label className="text-xs text-white/60">Issuer URL</label>
-												<Input
-													value={editData.issuer}
-													onChange={(e) => setEditData({ ...editData, issuer: e.target.value })}
-												/>
-											</div>
-
-											<div>
-												<label className="text-xs text-white/60">Redirect URI</label>
-												<Input
-													value={editData.redirectUri}
-													onChange={(e) => setEditData({ ...editData, redirectUri: e.target.value })}
-												/>
-											</div>
-
-											<div>
-												<label className="text-xs text-white/60">Scopes</label>
-												<Input
-													value={editData.scopes}
-													onChange={(e) => setEditData({ ...editData, scopes: e.target.value })}
-												/>
-											</div>
-
-											<div className="flex items-center gap-2">
-												<input
-													type="checkbox"
-													checked={editData.enabled}
-													onChange={(e) => setEditData({ ...editData, enabled: e.target.checked })}
-													className="h-4 w-4 rounded border-white/20 bg-white/5"
-												/>
-												<label className="text-sm text-white/70">Enable provider</label>
-											</div>
-
-											<div className="flex gap-2">
-												<Button
-													size="sm"
-													onClick={() => handleUpdate(provider.id)}
-													disabled={updateMutation.isPending}
-												>
-													{updateMutation.isPending ? "Saving..." : "Save"}
-												</Button>
-												<Button size="sm" variant="secondary" onClick={() => setEditingId(null)}>
-													Cancel
-												</Button>
-											</div>
-										</div>
-									) : (
-										<>
-											<div className="flex items-start justify-between">
-												<div className="flex-1">
-													<div className="flex items-center gap-2">
-														<p className="text-sm font-medium text-white">{provider.displayName}</p>
-														<span className="rounded bg-blue-500/20 px-2 py-0.5 text-xs text-blue-300">
-															{PROVIDER_DISPLAY_NAMES[provider.type as OIDCProviderType]}
-														</span>
-														{!provider.enabled && (
-															<span className="rounded bg-red-500/20 px-2 py-0.5 text-xs text-red-300">
-																Disabled
-															</span>
-														)}
-													</div>
-													<p className="mt-1 text-xs text-white/50">Issuer: {provider.issuer}</p>
-													<p className="text-xs text-white/50">Client ID: {provider.clientId}</p>
-												</div>
-												<div className="flex gap-2">
-													<Button
-														size="sm"
-														variant="secondary"
-														onClick={() => startEdit(provider)}
-														className="text-white/70 hover:text-white"
-													>
-														Edit
-													</Button>
-													<Button
-														size="sm"
-														variant="secondary"
-														onClick={() => handleDelete(provider.id)}
-														disabled={deleteMutation.isPending}
-														className="text-red-400 hover:text-red-300"
-													>
-														Delete
-													</Button>
-												</div>
-											</div>
-										</>
-									)}
+									<div className="flex items-center gap-2">
+										<input
+											type="checkbox"
+											checked={formData.enabled}
+											onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
+											className="h-4 w-4 rounded border-white/20 bg-white/5"
+										/>
+										<label className="text-sm text-white/70">Enable provider</label>
+									</div>
 								</div>
-							))}
-						</div>
+
+								<div className="flex gap-2">
+									<Button onClick={handleCreate} disabled={createMutation.isPending}>
+										{createMutation.isPending ? "Creating..." : "Create Provider"}
+									</Button>
+									<Button variant="secondary" onClick={() => setShowCreateForm(false)}>
+										Cancel
+									</Button>
+								</div>
+							</div>
+						) : (
+							<div className="rounded-lg border border-white/10 bg-white/5 p-6 text-center">
+								<svg
+									className="mx-auto h-12 w-12 text-white/20"
+									fill="none"
+									stroke="currentColor"
+									viewBox="0 0 24 24"
+								>
+									<path
+										strokeLinecap="round"
+										strokeLinejoin="round"
+										strokeWidth={2}
+										d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
+									/>
+								</svg>
+								<p className="mt-4 text-sm text-white/60">No OIDC provider configured</p>
+								<p className="mt-1 text-xs text-white/40">
+									Configure OpenID Connect to enable single sign-on
+								</p>
+								<Button className="mt-4" onClick={() => setShowCreateForm(true)}>
+									Configure OIDC
+								</Button>
+							</div>
+						)}
+					</>
+				)}
+
+				{/* Provider Exists - Show Details or Edit Form */}
+				{provider && (
+					<div className="rounded-lg border border-white/10 bg-white/5 p-4">
+						{isEditing ? (
+							<div className="space-y-3">
+								<h3 className="text-sm font-semibold text-white">Edit OIDC Provider</h3>
+
+								<div>
+									<label className="text-xs text-white/60">Display Name</label>
+									<Input
+										value={editData.displayName}
+										onChange={(e) => setEditData({ ...editData, displayName: e.target.value })}
+									/>
+								</div>
+
+								<div>
+									<label className="text-xs text-white/60">Issuer URL</label>
+									<Input
+										value={editData.issuer}
+										onChange={(e) => setEditData({ ...editData, issuer: e.target.value })}
+									/>
+								</div>
+
+								<div>
+									<label className="text-xs text-white/60">Client ID</label>
+									<Input
+										value={editData.clientId}
+										onChange={(e) => setEditData({ ...editData, clientId: e.target.value })}
+									/>
+								</div>
+
+								<div>
+									<label className="text-xs text-white/60">
+										Client Secret (leave empty to keep current)
+									</label>
+									<Input
+										type="password"
+										value={editData.clientSecret}
+										onChange={(e) => setEditData({ ...editData, clientSecret: e.target.value })}
+										placeholder="Enter new secret to update"
+									/>
+								</div>
+
+								<div>
+									<label className="text-xs text-white/60">Redirect URI</label>
+									<Input
+										value={editData.redirectUri}
+										onChange={(e) => setEditData({ ...editData, redirectUri: e.target.value })}
+									/>
+								</div>
+
+								<div>
+									<label className="text-xs text-white/60">Scopes</label>
+									<Input
+										value={editData.scopes}
+										onChange={(e) => setEditData({ ...editData, scopes: e.target.value })}
+									/>
+								</div>
+
+								<div className="flex items-center gap-2">
+									<input
+										type="checkbox"
+										checked={editData.enabled}
+										onChange={(e) => setEditData({ ...editData, enabled: e.target.checked })}
+										className="h-4 w-4 rounded border-white/20 bg-white/5"
+									/>
+									<label className="text-sm text-white/70">Enable provider</label>
+								</div>
+
+								<div className="flex gap-2">
+									<Button
+										size="sm"
+										onClick={handleUpdate}
+										disabled={updateMutation.isPending}
+									>
+										{updateMutation.isPending ? "Saving..." : "Save Changes"}
+									</Button>
+									<Button size="sm" variant="secondary" onClick={() => setIsEditing(false)}>
+										Cancel
+									</Button>
+								</div>
+							</div>
+						) : (
+							<>
+								<div className="flex items-start justify-between">
+									<div className="flex-1">
+										<div className="flex items-center gap-2">
+											<p className="text-sm font-medium text-white">{provider.displayName}</p>
+											{!provider.enabled && (
+												<span className="rounded bg-red-500/20 px-2 py-0.5 text-xs text-red-300">
+													Disabled
+												</span>
+											)}
+										</div>
+										<p className="mt-2 text-xs text-white/50">
+											<span className="font-medium">Issuer:</span> {provider.issuer}
+										</p>
+										<p className="mt-1 text-xs text-white/50">
+											<span className="font-medium">Client ID:</span> {provider.clientId}
+										</p>
+										<p className="mt-1 text-xs text-white/50">
+											<span className="font-medium">Redirect URI:</span> {provider.redirectUri}
+										</p>
+										<p className="mt-1 text-xs text-white/50">
+											<span className="font-medium">Scopes:</span> {provider.scopes}
+										</p>
+									</div>
+									<div className="flex gap-2">
+										<Button
+											size="sm"
+											variant="secondary"
+											onClick={startEdit}
+											className="text-white/70 hover:text-white"
+										>
+											Edit
+										</Button>
+										<Button
+											size="sm"
+											variant="secondary"
+											onClick={handleDelete}
+											disabled={deleteMutation.isPending}
+											className="text-red-400 hover:text-red-300"
+										>
+											{deleteMutation.isPending ? "Deleting..." : "Delete"}
+										</Button>
+									</div>
+								</div>
+							</>
+						)}
 					</div>
-				) : (
-					!showCreateForm && (
-						<div className="rounded-lg border border-white/10 bg-white/5 p-6 text-center">
-							<svg
-								className="mx-auto h-12 w-12 text-white/20"
-								fill="none"
-								stroke="currentColor"
-								viewBox="0 0 24 24"
-							>
-								<path
-									strokeLinecap="round"
-									strokeLinejoin="round"
-									strokeWidth={2}
-									d="M13 10V3L4 14h7v7l9-11h-7z"
-								/>
-							</svg>
-							<p className="mt-4 text-sm text-white/60">No OIDC providers configured</p>
-							<p className="mt-1 text-xs text-white/40">
-								Add an OIDC provider to enable external authentication
-							</p>
-						</div>
-					)
 				)}
 			</CardContent>
 		</Card>
