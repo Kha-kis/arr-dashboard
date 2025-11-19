@@ -212,8 +212,10 @@ export class OIDCProvider {
 
 	/**
 	 * Get user information from OIDC provider
+	 * @param accessToken - Access token from token exchange
+	 * @param expectedSubject - Expected subject (sub) claim from ID token for validation
 	 */
-	async getUserInfo(accessToken: string): Promise<OIDCUserInfo> {
+	async getUserInfo(accessToken: string, expectedSubject: string): Promise<OIDCUserInfo> {
 		const authServer = await this.discoverAuthServer();
 
 		if (!authServer.userinfo_endpoint) {
@@ -223,7 +225,7 @@ export class OIDCProvider {
 		const response = await oauth.userInfoRequest(authServer, this.client, accessToken, {
 			[oauth.allowInsecureRequests]: this.shouldAllowInsecureRequests(),
 		});
-		const userInfo = await oauth.processUserInfoResponse(authServer, this.client, "", response);
+		const userInfo = await oauth.processUserInfoResponse(authServer, this.client, expectedSubject, response);
 
 		if (!userInfo.sub) {
 			throw new Error("OIDC user info missing 'sub' claim");

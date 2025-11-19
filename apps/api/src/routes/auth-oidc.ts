@@ -299,8 +299,19 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			request.log.info("Successfully exchanged code for tokens");
 
-			// Get user info from provider
-			const userInfo = await oidcProvider.getUserInfo(tokenResponse.access_token);
+			// Extract subject from ID token for validation
+			if (!tokenResponse.id_token) {
+				throw new Error("No ID token received from OIDC provider");
+			}
+			const idTokenClaims = oidcProvider.extractIdTokenClaims(tokenResponse.id_token);
+			const expectedSubject = idTokenClaims.sub as string;
+
+			if (!expectedSubject) {
+				throw new Error("ID token missing 'sub' claim");
+			}
+
+			// Get user info from provider (validates that userinfo sub matches ID token sub)
+			const userInfo = await oidcProvider.getUserInfo(tokenResponse.access_token, expectedSubject);
 			request.log.info({ sub: userInfo.sub, email: userInfo.email }, "Retrieved user info from OIDC provider");
 
 			// Find existing OIDC account
