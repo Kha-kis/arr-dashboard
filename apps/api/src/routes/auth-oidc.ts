@@ -2,7 +2,7 @@ import type { FastifyPluginCallback } from "fastify";
 import { randomBytes } from "node:crypto";
 import * as oauth from "oauth4webapi";
 import { z } from "zod";
-import { OIDCProvider, type OIDCProviderType } from "../lib/auth/oidc-provider.js";
+import { OIDCProvider } from "../lib/auth/oidc-provider.js";
 
 /**
  * In-memory storage for OIDC states and nonces (production: use Redis)
@@ -10,7 +10,6 @@ import { OIDCProvider, type OIDCProviderType } from "../lib/auth/oidc-provider.j
 interface OIDCStateData {
 	nonce: string;
 	codeVerifier: string;
-	provider: OIDCProviderType;
 	expiresAt: number;
 }
 
@@ -26,17 +25,12 @@ setInterval(() => {
 	}
 }, 5 * 60 * 1000);
 
-const oidcLoginSchema = z.object({
-	provider: z.enum(["authelia", "authentik", "generic"]),
-});
-
 const oidcCallbackSchema = z.object({
 	code: z.string(),
 	state: z.string(),
 });
 
 const oidcSetupSchema = z.object({
-	type: z.enum(["authelia", "authentik", "generic"]),
 	displayName: z.string().min(1).max(100),
 	clientId: z.string().min(1),
 	clientSecret: z.string().min(1),
@@ -48,25 +42,20 @@ const oidcSetupSchema = z.object({
 const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	/**
 	 * GET /auth/oidc/providers
-	 * Returns list of configured OIDC providers (from database)
+	 * Returns the configured OIDC provider (if any)
 	 */
 	app.get("/oidc/providers", async (_request, reply) => {
-		// Load enabled providers from database
-		const dbProviders = await app.prisma.oIDCProvider.findMany({
+		// Load the OIDC provider from database
+		const dbProvider = await app.prisma.oIDCProvider.findFirst({
 			where: { enabled: true },
 			select: {
-				type: true,
 				displayName: true,
 			},
 		});
 
-		const providers = dbProviders.map((p) => ({
-			type: p.type as OIDCProviderType,
-			displayName: p.displayName,
-			enabled: true,
-		}));
-
-		return reply.send({ providers });
+		return reply.send({
+			provider: dbProvider ? { displayName: dbProvider.displayName, enabled: true } : null
+		});
 	});
 
 	/**
@@ -79,7 +68,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(400).send({ error: "Invalid OIDC configuration", details: parsed.error.flatten() });
 		}
 
-		const { type, displayName, clientId, clientSecret, issuer, scopes } = parsed.data;
+		const { displayName, clientId, clientSecret, issuer, scopes } = parsed.data;
 
 		// Auto-generate redirect URI if not provided
 		// Use the request origin to detect the correct URL (works in Docker/proxy environments)
@@ -101,10 +90,8 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					throw new Error("SETUP_CLOSED");
 				}
 
-				// Check if provider already exists
-				const existing = await tx.oIDCProvider.findUnique({
-					where: { type },
-				});
+				// Check if provider already exists (only one allowed)
+				const existing = await tx.oIDCProvider.findFirst();
 
 				if (existing) {
 					throw new Error("PROVIDER_EXISTS");
@@ -116,7 +103,6 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				// Create OIDC provider atomically
 				return await tx.oIDCProvider.create({
 					data: {
-						type,
 						displayName,
 						clientId,
 						encryptedClientSecret,
@@ -132,7 +118,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(201).send({
 				success: true,
 				message: "OIDC provider configured successfully",
-				provider: { type: provider.type, displayName: provider.displayName },
+				provider: { displayName: provider.displayName },
 			});
 		} catch (error: any) {
 			if (error.message === "SETUP_CLOSED") {
@@ -141,7 +127,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				});
 			}
 			if (error.message === "PROVIDER_EXISTS") {
-				return reply.status(409).send({ error: `OIDC provider '${type}' already configured` });
+				return reply.status(409).send({ error: "OIDC provider already configured" });
 			}
 			throw error;
 		}
@@ -152,19 +138,12 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Initiates OIDC login flow by generating authorization URL
 	 */
 	app.post("/oidc/login", async (request, reply) => {
-		const parsed = oidcLoginSchema.safeParse(request.body);
-		if (!parsed.success) {
-			return reply.status(400).send({ error: "Invalid provider" });
-		}
-
-		const { provider } = parsed.data;
-
 		// Get OIDC configuration from database
-		const dbProvider = await app.prisma.oIDCProvider.findUnique({
-			where: { type: provider },
+		const dbProvider = await app.prisma.oIDCProvider.findFirst({
+			where: { enabled: true },
 		});
 
-		if (!dbProvider || !dbProvider.enabled) {
+		if (!dbProvider) {
 			return reply.status(400).send({ error: "OIDC provider not configured or disabled" });
 		}
 
@@ -175,7 +154,6 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		});
 
 		const oidcProvider = new OIDCProvider({
-			type: provider,
 			clientId: dbProvider.clientId,
 			clientSecret,
 			issuer: dbProvider.issuer,
@@ -195,16 +173,15 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		oidcStateStore.set(state, {
 			nonce,
 			codeVerifier,
-			provider,
 			expiresAt: Date.now() + 15 * 60 * 1000,
 		});
 
 		try {
 			const authorizationUrl = await oidcProvider.getAuthorizationUrl(state, nonce, codeChallenge);
-			request.log.info({ authorizationUrl, provider, redirectUri: dbProvider.redirectUri }, "Generated OIDC authorization URL");
+			request.log.info({ authorizationUrl, redirectUri: dbProvider.redirectUri }, "Generated OIDC authorization URL");
 			return reply.send({ authorizationUrl });
 		} catch (error) {
-			request.log.error({ err: error, provider }, "Failed to generate OIDC authorization URL");
+			request.log.error({ err: error }, "Failed to generate OIDC authorization URL");
 			return reply.status(500).send({ error: "Failed to initiate OIDC login" });
 		}
 	});
@@ -245,12 +222,11 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		// Remove state to prevent replay attacks
 		oidcStateStore.delete(state);
 
-		const { provider } = storedState;
-		request.log.info({ provider, hasCode: !!code }, "Processing OIDC callback");
+		request.log.info({ hasCode: !!code }, "Processing OIDC callback");
 
 		// Get OIDC configuration from database
-		const dbProvider = await app.prisma.oIDCProvider.findUnique({
-			where: { type: provider },
+		const dbProvider = await app.prisma.oIDCProvider.findFirst({
+			where: { enabled: true },
 		});
 
 		if (!dbProvider) {
@@ -264,7 +240,6 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		});
 
 		const oidcProvider = new OIDCProvider({
-			type: provider,
 			clientId: dbProvider.clientId,
 			clientSecret,
 			issuer: dbProvider.issuer,
@@ -317,10 +292,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			// Find existing OIDC account
 			let oidcAccount = await app.prisma.oIDCAccount.findUnique({
 				where: {
-					provider_providerUserId: {
-						provider,
-						providerUserId: userInfo.sub,
-					},
+					providerUserId: userInfo.sub,
 				},
 				include: { user: true },
 			});
@@ -340,7 +312,6 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					// User is logged in - link OIDC to their account
 					oidcAccount = await app.prisma.oIDCAccount.create({
 						data: {
-							provider,
 							providerUserId: userInfo.sub,
 							userId: currentUser.id,
 						},
@@ -369,7 +340,6 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 									hashedPassword: null, // OIDC-only user (no password)
 									oidcAccounts: {
 										create: {
-											provider,
 											providerUserId: userInfo.sub,
 										},
 									},
@@ -398,7 +368,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			request.log.info({ userId: user.id, username: user.username }, "OIDC authentication successful, redirecting to root");
 			return reply.redirect("/", 302);
 		} catch (error: any) {
-			request.log.error({ err: error, provider, errorMessage: error?.message, errorStack: error?.stack }, "OIDC callback failed");
+			request.log.error({ err: error, errorMessage: error?.message, errorStack: error?.stack }, "OIDC callback failed");
 
 			// Return more specific error messages
 			let errorMessage = "OIDC authentication failed";

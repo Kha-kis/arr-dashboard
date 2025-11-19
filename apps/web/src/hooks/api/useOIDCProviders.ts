@@ -8,17 +8,24 @@ import {
 } from "../../lib/api-client/oidc-providers";
 
 /**
- * Fetch all OIDC providers (admin only)
+ * Fetch the configured OIDC provider (admin only)
  */
-export function useOIDCProviders() {
+export function useOIDCProvider() {
 	return useQuery({
-		queryKey: ["oidc-providers"],
-		queryFn: getOIDCProviders,
+		queryKey: ["oidc-provider"],
+		queryFn: getOIDCProviders, // Returns { provider: OIDCProvider | null }
 	});
 }
 
 /**
- * Create a new OIDC provider (admin only)
+ * @deprecated Use useOIDCProvider instead - only one provider is supported
+ */
+export function useOIDCProviders() {
+	return useOIDCProvider();
+}
+
+/**
+ * Create the OIDC provider (admin only - only one allowed)
  */
 export function useCreateOIDCProvider() {
 	const queryClient = useQueryClient();
@@ -26,14 +33,14 @@ export function useCreateOIDCProvider() {
 	return useMutation({
 		mutationFn: (data: CreateOIDCProvider) => createOIDCProvider(data),
 		onSuccess: () => {
-			// Invalidate provider list to refetch
-			queryClient.invalidateQueries({ queryKey: ["oidc-providers"] });
+			// Invalidate provider query to refetch
+			queryClient.invalidateQueries({ queryKey: ["oidc-provider"] });
 		},
 	});
 }
 
 /**
- * Update an existing OIDC provider (admin only)
+ * Update the OIDC provider (admin only)
  */
 export function useUpdateOIDCProvider() {
 	const queryClient = useQueryClient();
@@ -42,14 +49,14 @@ export function useUpdateOIDCProvider() {
 		mutationFn: ({ id, data }: { id: string; data: UpdateOIDCProvider }) =>
 			updateOIDCProvider(id, data),
 		onSuccess: () => {
-			// Invalidate provider list to refetch
-			queryClient.invalidateQueries({ queryKey: ["oidc-providers"] });
+			// Invalidate provider query to refetch
+			queryClient.invalidateQueries({ queryKey: ["oidc-provider"] });
 		},
 	});
 }
 
 /**
- * Delete an OIDC provider (admin only)
+ * Delete the OIDC provider (admin only)
  */
 export function useDeleteOIDCProvider() {
 	const queryClient = useQueryClient();
@@ -57,8 +64,8 @@ export function useDeleteOIDCProvider() {
 	return useMutation({
 		mutationFn: (id: string) => deleteOIDCProvider(id),
 		onSuccess: () => {
-			// Invalidate provider list to refetch
-			queryClient.invalidateQueries({ queryKey: ["oidc-providers"] });
+			// Invalidate provider query to refetch
+			queryClient.invalidateQueries({ queryKey: ["oidc-provider"] });
 		},
 	});
 }
