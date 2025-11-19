@@ -39,13 +39,13 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 
 	const updateAccountMutation = useUpdateAccountMutation();
 	const removePasswordMutation = useRemovePasswordMutation();
-	const { data: oidcProviders = [] } = useOIDCProviders();
+	const { data: oidcProviderData } = useOIDCProviders();
 	const { data: passkeys = [] } = useQuery({
 		queryKey: ["passkey-credentials"],
 		queryFn: getPasskeyCredentials,
 	});
 
-	const hasOIDC = oidcProviders.length > 0;
+	const hasOIDC = oidcProviderData?.provider != null && oidcProviderData.provider.enabled;
 	const hasPasskeys = passkeys.length > 0;
 	const hasAlternativeAuth = hasOIDC || hasPasskeys;
 
@@ -230,7 +230,7 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 									You can remove your password and use only OIDC or passkeys to sign in.
 									<br />
 									Alternative authentication methods available:
-									{hasOIDC && <span className="ml-2">✓ OIDC providers</span>}
+									{hasOIDC && <span className="ml-2">✓ OIDC provider</span>}
 									{hasPasskeys && <span className="ml-2">✓ Passkeys</span>}
 								</p>
 								{!showRemovePassword ? (
