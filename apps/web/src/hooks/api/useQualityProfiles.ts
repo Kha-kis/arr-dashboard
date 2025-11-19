@@ -5,11 +5,13 @@ import type {
 	QualityProfilesResponse,
 	ImportQualityProfilePayload,
 	ImportQualityProfileResponse,
+	UpdateQualityProfileTemplatePayload,
 } from "../../lib/api-client/trash-guides";
 import {
 	fetchQualityProfiles,
 	fetchQualityProfileDetails,
 	importQualityProfile,
+	updateQualityProfileTemplate,
 } from "../../lib/api-client/trash-guides";
 
 /**
@@ -65,6 +67,24 @@ export const useImportQualityProfileWizard = () => {
 		mutationFn: (payload) => importQualityProfile(payload),
 		onSuccess: () => {
 			// Invalidate templates query to show newly created template
+			void queryClient.invalidateQueries({ queryKey: ["templates"] });
+		},
+	});
+};
+
+/**
+ * Hook to update quality profile template with wizard selections
+ */
+export const useUpdateQualityProfileTemplate = () => {
+	const queryClient = useQueryClient();
+
+	return useMutation<ImportQualityProfileResponse, Error, UpdateQualityProfileTemplatePayload & {
+		selectedCFGroups: string[];
+		customFormatSelections: Record<string, any>;
+	}>({
+		mutationFn: (payload) => updateQualityProfileTemplate(payload),
+		onSuccess: () => {
+			// Invalidate templates query to show updated template
 			void queryClient.invalidateQueries({ queryKey: ["templates"] });
 		},
 	});

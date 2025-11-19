@@ -1,0 +1,91 @@
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import {
+	getAllDeploymentHistory,
+	getTemplateDeploymentHistory,
+	getInstanceDeploymentHistory,
+	getDeploymentHistoryDetail,
+	rollbackDeployment,
+	type DeploymentHistoryResponse,
+	type DeploymentHistoryDetailResponse,
+	type RollbackResponse,
+} from "../../lib/api-client/trash-guides";
+
+/**
+ * Hook to fetch all deployment history (global view)
+ */
+export function useAllDeploymentHistory(options?: { limit?: number; offset?: number }) {
+	return useQuery<DeploymentHistoryResponse, Error>({
+		queryKey: ["deployment-history", "all", options],
+		queryFn: () => getAllDeploymentHistory(options),
+	});
+}
+
+/**
+ * Hook to fetch deployment history for a template
+ */
+export function useTemplateDeploymentHistory(
+	templateId: string | null,
+	options?: { limit?: number; offset?: number },
+) {
+	return useQuery<DeploymentHistoryResponse, Error>({
+		queryKey: ["deployment-history", "template", templateId, options],
+		queryFn: () => {
+			if (!templateId) throw new Error("Template ID is required");
+			return getTemplateDeploymentHistory(templateId, options);
+		},
+		enabled: !!templateId,
+	});
+}
+
+/**
+ * Hook to fetch deployment history for an instance
+ */
+export function useInstanceDeploymentHistory(
+	instanceId: string | null,
+	options?: { limit?: number; offset?: number },
+) {
+	return useQuery<DeploymentHistoryResponse, Error>({
+		queryKey: ["deployment-history", "instance", instanceId, options],
+		queryFn: () => {
+			if (!instanceId) throw new Error("Instance ID is required");
+			return getInstanceDeploymentHistory(instanceId, options);
+		},
+		enabled: !!instanceId,
+	});
+}
+
+/**
+ * Hook to fetch detailed deployment history entry
+ */
+export function useDeploymentHistoryDetail(historyId: string | null) {
+	return useQuery<DeploymentHistoryDetailResponse, Error>({
+		queryKey: ["deployment-history", "detail", historyId],
+		queryFn: () => {
+			if (!historyId) throw new Error("History ID is required");
+			return getDeploymentHistoryDetail(historyId);
+		},
+		enabled: !!historyId,
+	});
+}
+
+/**
+ * Hook to rollback a deployment
+ */
+export function useRollbackDeployment() {
+	const queryClient = useQueryClient();
+
+	return useMutation<RollbackResponse, Error, string>({
+		mutationFn: (historyId: string) => rollbackDeployment(historyId),
+		onSuccess: (data, historyId) => {
+			// Invalidate deployment history queries to refetch updated data
+			queryClient.invalidateQueries({
+				queryKey: ["deployment-history"],
+			});
+
+			// Invalidate the specific history detail
+			queryClient.invalidateQueries({
+				queryKey: ["deployment-history", "detail", historyId],
+			});
+		},
+	});
+}

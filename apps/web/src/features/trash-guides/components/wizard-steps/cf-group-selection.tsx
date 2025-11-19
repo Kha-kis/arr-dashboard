@@ -41,20 +41,24 @@ export const CFGroupSelection = ({
 		? Object.values(data.profile.formatItems)
 		: [];
 
-	// Auto-select recommended groups on initial load
+	// Auto-select groups that are default or recommended on initial load
 	useEffect(() => {
 		if (data?.cfGroups && selectedGroups.size === 0 && initialSelection.size === 0) {
-			// Auto-select groups that are "required" or have high priority for this profile
-			const recommendedGroups = data.cfGroups
+			// Auto-select groups that are default or have high priority for this profile
+			const autoSelectGroups = data.cfGroups
 				.filter((group: any) => {
-					// Check if group is marked as required or has high score
+					// Check if group is default-enabled
+					const isDefaultEnabled = group.default === true || group.defaultEnabled === true;
+
+					// Check if group has high score (recommended)
 					const hasHighScore = group.quality_profiles?.score && group.quality_profiles.score > 0;
-					return hasHighScore;
+
+					return isDefaultEnabled || hasHighScore;
 				})
 				.map((g: any) => g.trash_id);
 
-			if (recommendedGroups.length > 0) {
-				setSelectedGroups(new Set(recommendedGroups));
+			if (autoSelectGroups.length > 0) {
+				setSelectedGroups(new Set(autoSelectGroups));
 			}
 		}
 	}, [data]);
@@ -182,12 +186,18 @@ export const CFGroupSelection = ({
 					// Check if this group is recommended (has positive score)
 					const isRecommended = group.quality_profiles?.score && group.quality_profiles.score > 0;
 
-					// Count how many CFs from this group will be enabled
+					// Count required CFs in this group (these MUST be enabled if group is selected)
+					const requiredCFsCount = customFormats.filter((cf: any) => {
+						return typeof cf === 'object' && cf.required === true;
+					}).length;
+
+					// Count how many CFs from this group will be enabled by default
 					const enabledCFsCount = customFormats.filter((cf: any) => {
 						const cfTrashId = typeof cf === 'string' ? cf : cf.trash_id;
 						const isRequired = typeof cf === 'object' && cf.required === true;
+						const isDefault = typeof cf === 'object' && cf.default === true;
 						const isInProfile = profileFormatIds.includes(cfTrashId);
-						return isRequired || isInProfile;
+						return isRequired || isDefault || isInProfile;
 					}).length;
 
 					return (
@@ -217,6 +227,11 @@ export const CFGroupSelection = ({
 													<span className="inline-flex items-center gap-1 rounded bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-300">
 														<Star className="h-3 w-3" />
 														Recommended
+													</span>
+												)}
+												{requiredCFsCount > 0 && requiredCFsCount === cfCount && (
+													<span className="inline-flex items-center gap-1 rounded bg-blue-500/20 px-2 py-0.5 text-xs font-medium text-blue-300">
+														All CFs Required
 													</span>
 												)}
 											</div>

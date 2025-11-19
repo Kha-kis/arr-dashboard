@@ -4,8 +4,6 @@
  * Handles Custom Format operations for Radarr and Sonarr instances
  */
 
-import crypto from "node:crypto";
-
 // ============================================================================
 // Types
 // ============================================================================
@@ -61,6 +59,32 @@ export interface ApiError {
 	message: string;
 	status: number;
 	response?: unknown;
+}
+
+export interface QualityProfile {
+	id: number;
+	name: string;
+	upgradeAllowed: boolean;
+	cutoff: number;
+	items: QualityProfileItem[];
+	minFormatScore: number;
+	cutoffFormatScore: number;
+	formatItems: FormatItem[];
+	language?: unknown;
+}
+
+export interface QualityProfileItem {
+	id?: number;
+	name?: string;
+	quality?: unknown;
+	items?: QualityProfileItem[];
+	allowed?: boolean;
+}
+
+export interface FormatItem {
+	format: number; // Custom Format ID
+	name?: string;
+	score: number;
 }
 
 // ============================================================================
@@ -208,8 +232,70 @@ export class ArrApiClient {
 	/**
 	 * Get Quality Profiles
 	 */
-	async getQualityProfiles(): Promise<unknown[]> {
-		return await this.request<unknown[]>("GET", "qualityprofile");
+	async getQualityProfiles(): Promise<QualityProfile[]> {
+		console.log("[ARR-API] Fetching quality profiles from /api/v3/qualityprofile");
+		try {
+			const result = await this.request<QualityProfile[]>("GET", "qualityprofile");
+			console.log("[ARR-API] Quality profiles SUCCESS:", JSON.stringify(result));
+			return result;
+		} catch (error) {
+			console.error("[ARR-API] Quality profiles FAILED:", error);
+			throw error;
+		}
+	}
+
+	/**
+	 * Get Quality Profile by ID
+	 */
+	async getQualityProfile(id: number): Promise<QualityProfile> {
+		return await this.request<QualityProfile>("GET", `qualityprofile/${id}`);
+	}
+
+	/**
+	 * Get Quality Profile Schema (template for creating new profiles)
+	 */
+	async getQualityProfileSchema(): Promise<QualityProfile> {
+		return await this.request<QualityProfile>("GET", "qualityprofile/schema");
+	}
+
+	/**
+	 * Create Quality Profile
+	 */
+	async createQualityProfile(
+		profile: Omit<QualityProfile, "id">,
+	): Promise<QualityProfile> {
+		console.log("[ARR-API] Creating quality profile...");
+		console.log("[ARR-API] Profile data:", JSON.stringify(profile, null, 2));
+		try {
+			const result = await this.request<QualityProfile>("POST", "qualityprofile", profile);
+			console.log("[ARR-API] Quality profile created successfully:", JSON.stringify(result));
+			return result;
+		} catch (error) {
+			console.error("[ARR-API] Quality profile creation FAILED:");
+			console.error("[ARR-API] Error object:", JSON.stringify(error, null, 2));
+			if ((error as { response?: string }).response) {
+				console.error("[ARR-API] Full API response:", (error as { response: string }).response);
+			}
+			// Write full error to file for debugging
+			const fs = await import("fs");
+			fs.writeFileSync("/tmp/radarr-error.json", JSON.stringify(error, null, 2));
+			console.error("[ARR-API] Full error written to /tmp/radarr-error.json");
+			throw error;
+		}
+	}
+
+	/**
+	 * Update Quality Profile
+	 */
+	async updateQualityProfile(
+		id: number,
+		profile: QualityProfile,
+	): Promise<QualityProfile> {
+		return await this.request<QualityProfile>(
+			"PUT",
+			`qualityprofile/${id}`,
+			profile,
+		);
 	}
 
 	/**
@@ -234,41 +320,28 @@ export class ArrApiClient {
 // ============================================================================
 
 /**
- * Decrypt API key using stored encryption data
- */
-export function decryptApiKey(
-	encryptedApiKey: string,
-	encryptionIv: string,
-): string {
-	const algorithm = "aes-256-gcm";
-	const key = Buffer.from(process.env.ENCRYPTION_KEY || "", "hex");
-	const iv = Buffer.from(encryptionIv, "hex");
-
-	// Extract auth tag (last 16 bytes) and encrypted data
-	const encryptedBuffer = Buffer.from(encryptedApiKey, "hex");
-	const authTag = encryptedBuffer.subarray(encryptedBuffer.length - 16);
-	const encrypted = encryptedBuffer.subarray(0, encryptedBuffer.length - 16);
-
-	const decipher = crypto.createDecipheriv(algorithm, key, iv);
-	decipher.setAuthTag(authTag);
-
-	let decrypted = decipher.update(encrypted);
-	decrypted = Buffer.concat([decrypted, decipher.final()]);
-
-	return decrypted.toString("utf8");
-}
-
-/**
  * Create API client from database instance
+ *
+ * @param instance - Service instance from database with encrypted API key
+ * @param encryptor - Encryptor instance to decrypt the API key (from app.encryptor)
  */
-export function createArrApiClient(instance: {
-	id: string;
-	baseUrl: string;
-	encryptedApiKey: string;
-	encryptionIv: string;
-	service: string;
-}): ArrApiClient {
-	const apiKey = decryptApiKey(instance.encryptedApiKey, instance.encryptionIv);
+export function createArrApiClient(
+	instance: {
+		id: string;
+		baseUrl: string;
+		encryptedApiKey: string;
+		encryptionIv: string;
+		service: string;
+	},
+	encryptor: {
+		decrypt: (payload: { value: string; iv: string }) => string;
+	},
+): ArrApiClient {
+	// Decrypt API key using the app's encryptor (no code duplication!)
+	const apiKey = encryptor.decrypt({
+		value: instance.encryptedApiKey,
+		iv: instance.encryptionIv,
+	});
 
 	return new ArrApiClient({
 		id: instance.id,

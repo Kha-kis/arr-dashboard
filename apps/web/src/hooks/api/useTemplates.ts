@@ -21,11 +21,14 @@ import {
 // ============================================================================
 
 /**
- * Hook to fetch all templates with optional filtering
+ * Hook to fetch all templates with optional filtering, searching, and sorting
  */
 export const useTemplates = (params?: {
 	serviceType?: "RADARR" | "SONARR";
 	includeDeleted?: boolean;
+	search?: string;
+	sortBy?: "name" | "createdAt" | "updatedAt" | "usageCount";
+	sortOrder?: "asc" | "desc";
 	limit?: number;
 	offset?: number;
 }) =>

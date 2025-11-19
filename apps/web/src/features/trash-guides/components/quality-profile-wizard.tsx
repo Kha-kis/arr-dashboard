@@ -1,10 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { X } from "lucide-react";
 import type { QualityProfileSummary } from "../../../lib/api-client/trash-guides";
+import type { TrashTemplate } from "@arr/shared";
 import { QualityProfileSelection } from "./wizard-steps/quality-profile-selection";
-import { CFGroupSelection } from "./wizard-steps/cf-group-selection";
 import { CFConfiguration } from "./wizard-steps/cf-configuration";
 import { TemplateCreation } from "./wizard-steps/template-creation";
 
@@ -12,14 +12,14 @@ interface QualityProfileWizardProps {
 	open: boolean;
 	onClose: () => void;
 	serviceType: "RADARR" | "SONARR";
+	editingTemplate?: TrashTemplate;
 }
 
-type WizardStep = "profile" | "groups" | "customize" | "summary";
+type WizardStep = "profile" | "customize" | "summary";
 
 interface WizardState {
 	currentStep: WizardStep;
 	selectedProfile: QualityProfileSummary | null;
-	selectedGroups: Set<string>;
 	customFormatSelections: Record<string, {
 		selected: boolean;
 		scoreOverride?: number;
@@ -27,33 +27,32 @@ interface WizardState {
 	}>;
 	templateName: string;
 	templateDescription: string;
+	templateId?: string; // For editing existing templates
 }
 
-const STEP_ORDER: WizardStep[] = ["profile", "groups", "customize", "summary"];
+const STEP_ORDER: WizardStep[] = ["profile", "customize", "summary"];
 
-const STEP_TITLES: Record<WizardStep, string> = {
+const getStepTitles = (isEditMode: boolean): Record<WizardStep, string> => ({
 	profile: "Select Quality Profile",
-	groups: "Choose CF Groups",
-	customize: "Customize Formats",
-	summary: "Review & Create",
-};
+	customize: isEditMode ? "Edit Custom Formats" : "Configure Custom Formats",
+	summary: isEditMode ? "Review & Update" : "Review & Create",
+});
 
-const STEP_DESCRIPTIONS: Record<WizardStep, string> = {
+const getStepDescriptions = (isEditMode: boolean): Record<WizardStep, string> => ({
 	profile: "Select a TRaSH Guides quality profile to import",
-	groups: "Select optional CF groups (quick setup)",
-	customize: "Fine-tune individual custom formats",
-	summary: "Review your selections and create template",
-};
+	customize: isEditMode ? "Modify formats, groups, and scores" : "Select CF groups and individual formats, adjust scores",
+	summary: isEditMode ? "Review your changes and update template" : "Review your selections and create template",
+});
 
 export const QualityProfileWizard = ({
 	open,
 	onClose,
 	serviceType,
+	editingTemplate,
 }: QualityProfileWizardProps) => {
 	const [wizardState, setWizardState] = useState<WizardState>({
 		currentStep: "profile",
 		selectedProfile: null,
-		selectedGroups: new Set(),
 		customFormatSelections: {},
 		templateName: "",
 		templateDescription: "",
@@ -61,25 +60,61 @@ export const QualityProfileWizard = ({
 
 	const currentStepIndex = STEP_ORDER.indexOf(wizardState.currentStep);
 	const totalSteps = STEP_ORDER.length;
+	const isEditMode = !!editingTemplate;
+
+	// Initialize wizard state from editing template
+	useEffect(() => {
+		if (editingTemplate && open) {
+			// Convert template's config data into wizard format
+			const selections: Record<string, {
+				selected: boolean;
+				scoreOverride?: number;
+				conditionsEnabled: Record<string, boolean>;
+			}> = {};
+
+			// Map customFormats from template to wizard selections
+			editingTemplate.config.customFormats.forEach((cf) => {
+				selections[cf.trashId] = {
+					selected: true,
+					scoreOverride: cf.scoreOverride,
+					conditionsEnabled: cf.conditionsEnabled || {},
+				};
+			});
+
+			setWizardState({
+				currentStep: "customize", // Skip profile selection in edit mode
+				selectedProfile: {
+					trashId: editingTemplate.id, // Use template ID as placeholder
+					name: editingTemplate.name,
+					description: editingTemplate.description || "",
+				} as QualityProfileSummary,
+				customFormatSelections: selections,
+				templateName: editingTemplate.name,
+				templateDescription: editingTemplate.description || "",
+				templateId: editingTemplate.id,
+			});
+		} else if (!editingTemplate && open) {
+			// Reset to initial state for new template
+			setWizardState({
+				currentStep: "profile",
+				selectedProfile: null,
+				customFormatSelections: {},
+				templateName: "",
+				templateDescription: "",
+			});
+		}
+	}, [editingTemplate, open]);
 
 	const handleProfileSelected = (profile: QualityProfileSummary) => {
 		setWizardState(prev => ({
 			...prev,
-			currentStep: "groups",
+			currentStep: "customize",
 			selectedProfile: profile,
 			customFormatSelections: {},
 			templateName: profile.name,
 			templateDescription: profile.description
 				? profile.description.replace(/<br>/g, "\n")
 				: `Imported from TRaSH Guides: ${profile.name}`,
-		}));
-	};
-
-	const handleGroupsSelected = (groups: Set<string>) => {
-		setWizardState(prev => ({
-			...prev,
-			currentStep: "customize",
-			selectedGroups: groups,
 		}));
 	};
 
@@ -94,7 +129,7 @@ export const QualityProfileWizard = ({
 	) => {
 		setWizardState(prev => ({
 			...prev,
-			currentStep: "summary",
+			currentStep: "summary" as WizardStep,
 			customFormatSelections: selections,
 			templateName: name,
 			templateDescription: description,
@@ -106,7 +141,6 @@ export const QualityProfileWizard = ({
 		setWizardState({
 			currentStep: "profile",
 			selectedProfile: null,
-			selectedGroups: new Set(),
 			customFormatSelections: {},
 			templateName: "",
 			templateDescription: "",
@@ -118,17 +152,19 @@ export const QualityProfileWizard = ({
 		const currentIndex = STEP_ORDER.indexOf(wizardState.currentStep);
 		if (currentIndex > 0) {
 			const previousStep = STEP_ORDER[currentIndex - 1];
-			setWizardState(prev => ({
-				...prev,
-				currentStep: previousStep,
-			}));
+			if (previousStep) {
+				setWizardState(prev => ({
+					...prev,
+					currentStep: previousStep,
+				}));
+			}
 		}
 	};
 
-	const handleSkipToCustomization = () => {
+	const handleEditStep = (step: "profile" | "customize") => {
 		setWizardState(prev => ({
 			...prev,
-			currentStep: "customize",
+			currentStep: step,
 		}));
 	};
 
@@ -137,7 +173,6 @@ export const QualityProfileWizard = ({
 		setWizardState({
 			currentStep: "profile",
 			selectedProfile: null,
-			selectedGroups: new Set(),
 			customFormatSelections: {},
 			templateName: "",
 			templateDescription: "",
@@ -169,10 +204,10 @@ export const QualityProfileWizard = ({
 						<div className="flex items-center justify-between mb-4">
 							<div>
 								<h2 id="wizard-title" className="text-xl font-semibold text-fg">
-									{STEP_TITLES[wizardState.currentStep]}
+									{getStepTitles(isEditMode)[wizardState.currentStep]}
 								</h2>
 								<p className="mt-1 text-sm text-fg-muted">
-									{STEP_DESCRIPTIONS[wizardState.currentStep]}
+									{getStepDescriptions(isEditMode)[wizardState.currentStep]}
 								</p>
 							</div>
 							<button
@@ -212,7 +247,7 @@ export const QualityProfileWizard = ({
 														isAccessible ? "text-fg" : "text-fg-muted"
 													}`}
 												>
-													{STEP_TITLES[step]}
+													{getStepTitles(isEditMode)[step]}
 												</div>
 											</div>
 										</div>
@@ -232,34 +267,25 @@ export const QualityProfileWizard = ({
 
 				{/* Content */}
 				<div className="overflow-y-auto p-6" style={{ maxHeight: "calc(90vh - 180px)" }}>
-					{wizardState.currentStep === "profile" && (
+					{wizardState.currentStep === "profile" && !isEditMode && (
 						<QualityProfileSelection
 							serviceType={serviceType}
 							onSelect={handleProfileSelected}
 						/>
 					)}
 
-					{wizardState.currentStep === "groups" && wizardState.selectedProfile && (
-						<CFGroupSelection
-							serviceType={serviceType}
-							qualityProfile={wizardState.selectedProfile}
-							initialSelection={wizardState.selectedGroups}
-							onNext={handleGroupsSelected}
-							onBack={handleBack}
-							onSkip={handleSkipToCustomization}
-						/>
-					)}
 
 					{wizardState.currentStep === "customize" && wizardState.selectedProfile && (
 						<CFConfiguration
 							serviceType={serviceType}
 							qualityProfile={wizardState.selectedProfile}
-							selectedGroups={wizardState.selectedGroups}
 							initialSelections={wizardState.customFormatSelections}
 							templateName={wizardState.templateName}
 							templateDescription={wizardState.templateDescription}
 							onNext={handleCustomizationComplete}
-							onBack={handleBack}
+							onBack={isEditMode ? undefined : handleBack} // Disable back in edit mode
+							isEditMode={isEditMode} // Pass edit mode flag
+							editingTemplate={editingTemplate} // Pass template data for edit mode
 						/>
 					)}
 
@@ -268,13 +294,15 @@ export const QualityProfileWizard = ({
 							serviceType={serviceType}
 							wizardState={{
 								selectedProfile: wizardState.selectedProfile,
-								selectedGroups: wizardState.selectedGroups,
 								customFormatSelections: wizardState.customFormatSelections,
 								templateName: wizardState.templateName,
 								templateDescription: wizardState.templateDescription,
 							}}
+							templateId={wizardState.templateId} // Pass template ID for update
+							isEditMode={isEditMode}
 							onComplete={handleComplete}
 							onBack={handleBack}
+							onEditStep={handleEditStep}
 						/>
 					)}
 				</div>

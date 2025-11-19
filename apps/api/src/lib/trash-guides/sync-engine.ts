@@ -73,11 +73,16 @@ export class SyncEngine {
 	private prisma: PrismaClient;
 	private backupManager: BackupManager;
 	private progressCallbacks: Map<string, (progress: SyncProgress) => void>;
+	private encryptor: { decrypt: (payload: { value: string; iv: string }) => string };
 
-	constructor(prisma: PrismaClient) {
+	constructor(
+		prisma: PrismaClient,
+		encryptor: { decrypt: (payload: { value: string; iv: string }) => string },
+	) {
 		this.prisma = prisma;
 		this.backupManager = createBackupManager(prisma);
 		this.progressCallbacks = new Map();
+		this.encryptor = encryptor;
 	}
 
 	/**
@@ -141,7 +146,7 @@ export class SyncEngine {
 		const config = JSON.parse(template.configData) as TemplateConfig;
 
 		// Create API client
-		const apiClient = createArrApiClient(instance);
+		const apiClient = createArrApiClient(instance, this.encryptor);
 
 		try {
 			// Test connection
@@ -251,7 +256,7 @@ export class SyncEngine {
 			const totalConfigs = config.customFormats.length;
 
 			// Create API client
-			const apiClient = createArrApiClient(instance);
+			const apiClient = createArrApiClient(instance, this.encryptor);
 
 			// Update progress: Validating
 			this.emitProgress({
@@ -544,6 +549,9 @@ export class SyncEngine {
 /**
  * Create a sync engine instance
  */
-export function createSyncEngine(prisma: PrismaClient): SyncEngine {
-	return new SyncEngine(prisma);
+export function createSyncEngine(
+	prisma: PrismaClient,
+	encryptor: { decrypt: (payload: { value: string; iv: string }) => string },
+): SyncEngine {
+	return new SyncEngine(prisma, encryptor);
 }

@@ -7,6 +7,7 @@
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
+import { createDeploymentExecutorService } from "../../lib/trash-guides/deployment-executor.js";
 import type { TemplateConfig } from "@arr/shared";
 
 // ============================================================================
@@ -62,6 +63,9 @@ const listTemplatesQuerySchema = z.object({
 			if (val === "false") return false;
 			return undefined;
 		}),
+	search: z.string().optional(),
+	sortBy: z.enum(["name", "createdAt", "updatedAt", "usageCount"]).optional(),
+	sortOrder: z.enum(["asc", "desc"]).optional(),
 	limit: z
 		.string()
 		.optional()
@@ -117,6 +121,9 @@ export async function registerTemplateRoutes(
 					serviceType: query.serviceType,
 					includeDeleted: query.includeDeleted,
 					active: query.active,
+					search: query.search,
+					sortBy: query.sortBy,
+					sortOrder: query.sortOrder,
 					limit: query.limit,
 					offset: query.offset,
 				});
@@ -506,4 +513,370 @@ export async function registerTemplateRoutes(
 				});
 			}
 		});
+
+	// ============================================================================
+	// Instance Override Management (Phase 4.2)
+	// ============================================================================
+
+	/**
+	 * GET /api/trash-guides/templates/:templateId/instance-overrides/:instanceId
+	 * Get instance-specific overrides for a template
+	 */
+	app.get<{
+		Params: { templateId: string; instanceId: string };
+	}>("/:templateId/instance-overrides/:instanceId", async (request, reply) => {
+		if (!request.currentUser) {
+			return reply.status(401).send({
+				statusCode: 401,
+				error: "Unauthorized",
+				message: "Authentication required",
+			});
+		}
+
+		try {
+			const { templateId, instanceId } = request.params;
+
+			const template = await app.prisma.trashTemplate.findFirst({
+				where: {
+					id: templateId,
+					userId: request.currentUser.id,
+				},
+			});
+
+			if (!template) {
+				return reply.status(404).send({
+					statusCode: 404,
+					error: "NotFound",
+					message: "Template not found",
+				});
+			}
+
+			const instanceOverrides = template.instanceOverrides
+				? JSON.parse(template.instanceOverrides)
+				: {};
+			const overridesForInstance = instanceOverrides[instanceId] || {};
+
+			return reply.send({
+				templateId,
+				instanceId,
+				overrides: overridesForInstance,
+			});
+		} catch (error) {
+			app.log.error({ err: error }, "Failed to get instance overrides");
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to get instance overrides",
+			});
+		}
+	});
+
+	/**
+	 * PUT /api/trash-guides/templates/:templateId/instance-overrides/:instanceId
+	 * Update instance-specific overrides for a template
+	 */
+	app.put<{
+		Params: { templateId: string; instanceId: string };
+		Body: {
+			scoreOverrides?: Record<string, number>;
+			cfOverrides?: Record<string, { enabled: boolean }>;
+		};
+	}>("/:templateId/instance-overrides/:instanceId", async (request, reply) => {
+		if (!request.currentUser) {
+			return reply.status(401).send({
+				statusCode: 401,
+				error: "Unauthorized",
+				message: "Authentication required",
+			});
+		}
+
+		try {
+			const { templateId, instanceId } = request.params;
+			const { scoreOverrides, cfOverrides } = request.body;
+
+			const template = await app.prisma.trashTemplate.findFirst({
+				where: {
+					id: templateId,
+					userId: request.currentUser.id,
+				},
+			});
+
+			if (!template) {
+				return reply.status(404).send({
+					statusCode: 404,
+					error: "NotFound",
+					message: "Template not found",
+				});
+			}
+
+			// Parse existing overrides
+			const instanceOverrides = template.instanceOverrides
+				? JSON.parse(template.instanceOverrides)
+				: {};
+
+			// Update overrides for this instance
+			instanceOverrides[instanceId] = {
+				scoreOverrides: scoreOverrides || {},
+				cfOverrides: cfOverrides || {},
+			};
+
+			// Save back to database
+			await app.prisma.trashTemplate.update({
+				where: { id: templateId },
+				data: {
+					instanceOverrides: JSON.stringify(instanceOverrides),
+					updatedAt: new Date(),
+				},
+			});
+
+			return reply.send({
+				success: true,
+				message: "Instance overrides updated successfully",
+				overrides: instanceOverrides[instanceId],
+			});
+		} catch (error) {
+			app.log.error({ err: error }, "Failed to update instance overrides");
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to update instance overrides",
+			});
+		}
+	});
+
+	/**
+	 * DELETE /api/trash-guides/templates/:templateId/instance-overrides/:instanceId
+	 * Remove instance-specific overrides for a template
+	 */
+	app.delete<{
+		Params: { templateId: string; instanceId: string };
+	}>("/:templateId/instance-overrides/:instanceId", async (request, reply) => {
+		if (!request.currentUser) {
+			return reply.status(401).send({
+				statusCode: 401,
+				error: "Unauthorized",
+				message: "Authentication required",
+			});
+		}
+
+		try {
+			const { templateId, instanceId } = request.params;
+
+			const template = await app.prisma.trashTemplate.findFirst({
+				where: {
+					id: templateId,
+					userId: request.currentUser.id,
+				},
+			});
+
+			if (!template) {
+				return reply.status(404).send({
+					statusCode: 404,
+					error: "NotFound",
+					message: "Template not found",
+				});
+			}
+
+			// Parse existing overrides
+			const instanceOverrides = template.instanceOverrides
+				? JSON.parse(template.instanceOverrides)
+				: {};
+
+			// Remove overrides for this instance
+			delete instanceOverrides[instanceId];
+
+			// Save back to database
+			await app.prisma.trashTemplate.update({
+				where: { id: templateId },
+				data: {
+					instanceOverrides: JSON.stringify(instanceOverrides),
+					updatedAt: new Date(),
+				},
+			});
+
+			return reply.send({
+				success: true,
+				message: "Instance overrides removed successfully",
+			});
+		} catch (error) {
+			app.log.error({ err: error }, "Failed to remove instance overrides");
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to remove instance overrides",
+			});
+		}
+	});
+
+	/**
+	 * POST /api/trash-guides/templates/deployment/execute
+	 * Execute deployment to a single instance
+	 */
+	app.post<{
+		Body: {
+			templateId: string;
+			instanceId: string;
+		};
+	}>("/deployment/execute", async (request, reply) => {
+		if (!request.currentUser) {
+			return reply.status(401).send({
+				statusCode: 401,
+				error: "Unauthorized",
+				message: "Authentication required",
+			});
+		}
+
+		try {
+			const { templateId, instanceId } = request.body;
+
+			if (!templateId || !instanceId) {
+				return reply.status(400).send({
+					statusCode: 400,
+					error: "BadRequest",
+					message: "templateId and instanceId are required",
+				});
+			}
+
+			// Verify template belongs to user
+			const template = await app.prisma.trashTemplate.findFirst({
+				where: {
+					id: templateId,
+					userId: request.currentUser.id,
+				},
+			});
+
+			if (!template) {
+				return reply.status(404).send({
+					statusCode: 404,
+					error: "NotFound",
+					message: "Template not found",
+				});
+			}
+
+			// Verify instance belongs to user
+			const instance = await app.prisma.serviceInstance.findFirst({
+				where: {
+					id: instanceId,
+				},
+			});
+
+			if (!instance) {
+				return reply.status(404).send({
+					statusCode: 404,
+					error: "NotFound",
+					message: "Instance not found",
+				});
+			}
+
+			// Execute deployment
+			const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.encryptor);
+			const result = await deploymentExecutor.deploySingleInstance(
+				templateId,
+				instanceId,
+				request.currentUser.id,
+			);
+
+			return reply.send({
+				success: result.success,
+				result,
+			});
+		} catch (error) {
+			app.log.error({ err: error }, "Failed to execute deployment");
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to execute deployment",
+			});
+		}
+	});
+
+	/**
+	 * POST /api/trash-guides/templates/deployment/bulk
+	 * Execute bulk deployment to multiple instances
+	 */
+	app.post<{
+		Body: {
+			templateId: string;
+			instanceIds: string[];
+		};
+	}>("/deployment/bulk", async (request, reply) => {
+		if (!request.currentUser) {
+			return reply.status(401).send({
+				statusCode: 401,
+				error: "Unauthorized",
+				message: "Authentication required",
+			});
+		}
+
+		try {
+			const { templateId, instanceIds } = request.body;
+
+			if (!templateId || !instanceIds || !Array.isArray(instanceIds)) {
+				return reply.status(400).send({
+					statusCode: 400,
+					error: "BadRequest",
+					message: "templateId and instanceIds array are required",
+				});
+			}
+
+			if (instanceIds.length === 0) {
+				return reply.status(400).send({
+					statusCode: 400,
+					error: "BadRequest",
+					message: "At least one instance ID is required",
+				});
+			}
+
+			// Verify template belongs to user
+			const template = await app.prisma.trashTemplate.findFirst({
+				where: {
+					id: templateId,
+					userId: request.currentUser.id,
+				},
+			});
+
+			if (!template) {
+				return reply.status(404).send({
+					statusCode: 404,
+					error: "NotFound",
+					message: "Template not found",
+				});
+			}
+
+			// Verify all instances belong to user
+			const instances = await app.prisma.serviceInstance.findMany({
+				where: {
+					id: { in: instanceIds },
+				},
+			});
+
+			if (instances.length !== instanceIds.length) {
+				return reply.status(404).send({
+					statusCode: 404,
+					error: "NotFound",
+					message: "One or more instances not found",
+				});
+			}
+
+			// Execute bulk deployment
+			const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.encryptor);
+			const result = await deploymentExecutor.deployBulkInstances(
+				templateId,
+				instanceIds,
+				request.currentUser.id,
+			);
+
+			return reply.send({
+				success: result.successfulInstances > 0,
+				result,
+			});
+		} catch (error) {
+			app.log.error({ err: error }, "Failed to execute bulk deployment");
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to execute bulk deployment",
+			});
+		}
+	});
 }

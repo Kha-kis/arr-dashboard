@@ -33,6 +33,20 @@ const importQualityProfileSchema = z.object({
 	})),
 });
 
+const updateQualityProfileTemplateSchema = z.object({
+	serviceType: z.enum(["RADARR", "SONARR"]),
+	trashId: z.string().optional(), // Optional - not needed when updating existing template
+	templateName: z.string().min(1).max(100),
+	templateDescription: z.string().max(500).optional(),
+	// Wizard selections (REQUIRED - legacy mode removed)
+	selectedCFGroups: z.array(z.string()),
+	customFormatSelections: z.record(z.object({
+		selected: z.boolean(),
+		scoreOverride: z.number().optional(),
+		conditionsEnabled: z.record(z.boolean()),
+	})),
+});
+
 // ============================================================================
 // Route Handlers
 // ============================================================================
@@ -211,8 +225,8 @@ export async function registerQualityProfileRoutes(
 						displayName,
 						description,
 						score,
-						required: typeof cf === 'object' ? cf.required : false,
-						defaultChecked: typeof cf === 'object' && cf.default === "true",
+						required: typeof cf === 'object' ? cf.required === true : false,
+						defaultChecked: typeof cf === 'object' && (cf.default === true || cf.default === "true"),
 						source: "group" as const, // NEW: Mark as optional (from CF Group)
 						...(fullCF && { specifications: fullCF.specifications }),
 					};
@@ -221,7 +235,8 @@ export async function registerQualityProfileRoutes(
 				return {
 					...group,
 					custom_formats: enrichedCFs,
-					defaultEnabled: group.default === "true",
+					defaultEnabled: group.default === "true" || group.default === true,
+					required: group.required === true,
 				};
 			}) || [];
 
@@ -353,6 +368,20 @@ export async function registerQualityProfileRoutes(
 			const templateConfig: TemplateConfig = {
 				customFormats: [],
 				customFormatGroups: [],
+				qualityProfile: {
+					upgradeAllowed: profile.upgradeAllowed,
+					cutoff: profile.cutoff,
+					items: profile.items as Array<{
+						name: string;
+						allowed: boolean;
+						items?: string[];
+					}>,
+					minFormatScore: profile.minFormatScore,
+					cutoffFormatScore: profile.cutoffFormatScore,
+					minUpgradeFormatScore: profile.minUpgradeFormatScore,
+					trash_score_set: profile.trash_score_set, // Store the score set from TRaSH Guides
+					language: profile.language, // Store language from TRaSH Guides
+				},
 			};
 
 			// Get CF Groups for reference storage
@@ -400,6 +429,8 @@ export async function registerQualityProfileRoutes(
 					`Imported from TRaSH Guides: ${profile.name}${profile.trash_description ? ` - ${profile.trash_description}` : ""}`,
 				serviceType,
 				config: templateConfig,
+				sourceQualityProfileTrashId: profile.trash_id,
+				sourceQualityProfileName: profile.name,
 			});
 
 			return reply.status(201).send({
@@ -424,6 +455,147 @@ export async function registerQualityProfileRoutes(
 				statusCode: 500,
 				error: "InternalServerError",
 				message: error instanceof Error ? error.message : "Failed to import quality profile",
+			});
+		}
+	});
+
+	/**
+	 * PUT /api/trash-guides/quality-profiles/update/:templateId
+	 * Update an existing quality profile template
+	 */
+	app.put<{
+		Params: { templateId: string };
+		Body: z.infer<typeof updateQualityProfileTemplateSchema>;
+	}>("/update/:templateId", async (request, reply) => {
+		if (!request.currentUser) {
+			return reply.status(401).send({
+				statusCode: 401,
+				error: "Unauthorized",
+				message: "Authentication required",
+			});
+		}
+
+		try {
+			const { templateId } = request.params;
+			const { serviceType, templateName, templateDescription, selectedCFGroups, customFormatSelections } =
+				updateQualityProfileTemplateSchema.parse(request.body);
+
+			// Get existing template to preserve quality profile settings
+			const existingTemplate = await templateService.getTemplate(
+				templateId,
+				request.currentUser.id,
+			);
+
+			if (!existingTemplate) {
+				return reply.status(404).send({
+					statusCode: 404,
+					error: "NotFound",
+					message: `Template with ID ${templateId} not found`,
+				});
+			}
+
+			// Get Custom Formats from cache
+			const customFormats = (await cacheManager.get(
+				serviceType,
+				"CUSTOM_FORMATS",
+			)) as any[] | null;
+
+			if (!customFormats) {
+				return reply.status(400).send({
+					statusCode: 400,
+					error: "BadRequest",
+					message:
+						"Custom Formats not cached. Please refresh Custom Formats cache first before updating templates.",
+				});
+			}
+
+			// Build template config from quality profile using wizard selections
+			// Preserve existing quality profile settings
+			const existingConfig = JSON.parse(existingTemplate.configData);
+			const templateConfig: TemplateConfig = {
+				customFormats: [],
+				customFormatGroups: [],
+				qualityProfile: existingConfig.qualityProfile,
+			};
+
+			// Get CF Groups for reference storage
+			const cfGroups = (await cacheManager.get(
+				serviceType,
+				"CF_GROUPS",
+			)) as any[] | null;
+
+			// Add selected CF Groups
+			if (cfGroups) {
+				for (const groupTrashId of selectedCFGroups) {
+					const group = cfGroups.find((g) => g.trash_id === groupTrashId);
+					if (group) {
+						templateConfig.customFormatGroups.push({
+							trashId: group.trash_id,
+							name: group.name,
+							enabled: true,
+							originalConfig: group,
+						});
+					}
+				}
+			}
+
+			// Add selected Custom Formats with user customizations
+			for (const [cfTrashId, selection] of Object.entries(customFormatSelections)) {
+				if (!selection.selected) continue;
+
+				const customFormat = customFormats.find((cf) => cf.trash_id === cfTrashId);
+				if (customFormat) {
+					templateConfig.customFormats.push({
+						trashId: customFormat.trash_id,
+						name: customFormat.name,
+						scoreOverride: selection.scoreOverride,
+						conditionsEnabled: selection.conditionsEnabled,
+						originalConfig: customFormat,
+					});
+				}
+			}
+
+			// Update template
+			const template = await templateService.updateTemplate(
+				templateId,
+				request.currentUser.id,
+				{
+					name: templateName,
+					description: templateDescription,
+					config: templateConfig,
+				},
+			);
+
+			return reply.send({
+				template,
+				message: `Successfully updated quality profile template "${templateName}"`,
+				customFormatsIncluded: templateConfig.customFormats.length,
+				customFormatGroupsIncluded: templateConfig.customFormatGroups.length,
+			});
+		} catch (error) {
+			app.log.error({ err: error }, "Failed to update quality profile template");
+
+			if (error instanceof z.ZodError) {
+				return reply.status(400).send({
+					statusCode: 400,
+					error: "ValidationError",
+					message: "Invalid request data",
+					errors: error.errors,
+				});
+			}
+
+			if (error instanceof Error && error.message.includes("not found")) {
+				return reply.status(404).send({
+					statusCode: 404,
+					error: "NotFound",
+					message: error.message,
+				});
+			}
+
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to update quality profile template",
 			});
 		}
 	});

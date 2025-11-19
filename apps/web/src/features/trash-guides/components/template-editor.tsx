@@ -5,7 +5,9 @@ import type { TrashTemplate, TemplateConfig, TrashCustomFormat, TrashCustomForma
 import { useCreateTemplate, useUpdateTemplate } from "../../../hooks/api/useTemplates";
 import { useTrashCacheEntries } from "../../../hooks/api/useTrashCache";
 import { Alert, AlertDescription } from "../../../components/ui";
-import { X, Save, Plus, Minus } from "lucide-react";
+import { X, Save, Plus, Minus, Settings } from "lucide-react";
+import { SyncStrategyControl } from "./sync-strategy-control";
+import { ConditionEditor } from "./condition-editor";
 
 interface TemplateEditorProps {
 	open: boolean;
@@ -17,11 +19,16 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 	const [name, setName] = useState("");
 	const [description, setDescription] = useState("");
 	const [serviceType, setServiceType] = useState<"RADARR" | "SONARR">("RADARR");
+	const [syncStrategy, setSyncStrategy] = useState<"auto" | "manual" | "notify">("notify");
 	const [selectedFormats, setSelectedFormats] = useState<Map<string, {
 		scoreOverride?: number;
 		conditionsEnabled: Record<string, boolean>;
 	}>>(new Map());
 	const [selectedGroups, setSelectedGroups] = useState<Set<string>>(new Set());
+	const [conditionEditorFormat, setConditionEditorFormat] = useState<{
+		trashId: string;
+		format: TrashCustomFormat;
+	} | null>(null);
 
 	const createMutation = useCreateTemplate();
 	const updateMutation = useUpdateTemplate();
@@ -33,6 +40,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 			setName(template.name);
 			setDescription(template.description || "");
 			setServiceType(template.serviceType);
+			setSyncStrategy(template.syncStrategy);
 
 			// Convert config to form state
 			const formatsMap = new Map();
@@ -56,6 +64,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 			setName("");
 			setDescription("");
 			setServiceType("RADARR");
+			setSyncStrategy("notify");
 			setSelectedFormats(new Map());
 			setSelectedGroups(new Set());
 		}
@@ -113,10 +122,10 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 			if (template) {
 				await updateMutation.mutateAsync({
 					templateId: template.id,
-					payload: { name, description, config },
+					payload: { name, description, config, syncStrategy },
 				});
 			} else {
-				await createMutation.mutateAsync({ name, description, serviceType, config });
+				await createMutation.mutateAsync({ name, description, serviceType, config, syncStrategy });
 			}
 			onClose();
 		} catch (error) {
@@ -260,6 +269,15 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 								</div>
 							</div>
 						)}
+
+						{/* TRaSH Guides Sync Strategy */}
+						<div>
+							<SyncStrategyControl
+								value={syncStrategy}
+								onChange={setSyncStrategy}
+								disabled={mutation.isPending}
+							/>
+						</div>
 					</div>
 
 					{/* Custom Formats */}
@@ -287,7 +305,19 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 												</label>
 												{isSelected && (
 													<div className="flex items-center gap-2">
-														<label className="text-xs text-white/60">Score Override:</label>
+														<button
+															type="button"
+															onClick={() => {
+																console.log('Advanced clicked for format:', format.trash_id, format);
+																setConditionEditorFormat({ trashId: format.trash_id, format });
+															}}
+															className="inline-flex items-center gap-1 rounded bg-white/10 px-2 py-1 text-xs font-medium text-white transition hover:bg-white/20"
+															title="Advanced condition editing"
+														>
+															<Settings className="h-3 w-3" />
+															Advanced
+														</button>
+														<label className="text-xs text-white/60">Score:</label>
 														<input
 															type="number"
 															value={settings?.scoreOverride ?? ""}
@@ -295,6 +325,15 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 															placeholder="Default"
 															className="w-20 rounded border border-white/20 bg-white/10 px-2 py-1 text-xs text-white"
 														/>
+														<button
+															type="button"
+															onClick={() => handleToggleFormat(format.trash_id, format)}
+															className="inline-flex items-center gap-1 rounded bg-red-500/20 px-2 py-1 text-xs font-medium text-red-300 transition hover:bg-red-500/30"
+															title="Remove this custom format"
+														>
+															<Minus className="h-3 w-3" />
+															Remove
+														</button>
 													</div>
 												)}
 											</div>
@@ -364,7 +403,56 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 						</button>
 					</div>
 				</div>
+
+				{/* Condition Editor Modal */}
+				{conditionEditorFormat && (() => {
+					console.log('Rendering modal for:', conditionEditorFormat);
+					const settings = selectedFormats.get(conditionEditorFormat.trashId);
+					const specificationsWithEnabled = conditionEditorFormat.format.specifications.map((spec: any) => ({
+						...spec,
+						enabled: settings?.conditionsEnabled[spec.name] !== false,
+					}));
+					console.log('Specifications with enabled:', specificationsWithEnabled);
+
+					return (
+						<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+							<div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-white/20 bg-gradient-to-br from-slate-900 to-slate-800 p-6">
+								{/* Close button */}
+								<button
+									type="button"
+									onClick={() => setConditionEditorFormat(null)}
+									className="absolute top-4 right-4 rounded p-1 text-white/60 hover:bg-white/10 hover:text-white"
+								>
+									<X className="h-5 w-5" />
+								</button>
+
+								<ConditionEditor
+									customFormatId={conditionEditorFormat.trashId}
+									customFormatName={conditionEditorFormat.format.name}
+									specifications={specificationsWithEnabled}
+									onChange={(updatedSpecs: any) => {
+										const newMap = new Map(selectedFormats);
+										const current = newMap.get(conditionEditorFormat.trashId);
+										if (current) {
+											const conditionsEnabled: Record<string, boolean> = {};
+											for (const spec of updatedSpecs) {
+												conditionsEnabled[spec.name] = spec.enabled !== false;
+											}
+											newMap.set(conditionEditorFormat.trashId, {
+												...current,
+												conditionsEnabled,
+											});
+											setSelectedFormats(newMap);
+										}
+										// Don't close modal on every change - let user close explicitly
+									}}
+								/>
+							</div>
+						</div>
+					);
+				})()}
 			</div>
 		</div>
 	);
 };
+

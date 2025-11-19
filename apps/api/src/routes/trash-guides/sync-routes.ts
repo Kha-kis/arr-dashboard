@@ -45,7 +45,7 @@ export async function registerSyncRoutes(
 	app: FastifyInstance,
 	opts: FastifyPluginOptions,
 ) {
-		const syncEngine = createSyncEngine(app.prisma);
+		const syncEngine = createSyncEngine(app.prisma, app.encryptor);
 
 		/**
 		 * Validate sync before execution
@@ -343,7 +343,7 @@ export async function registerSyncRoutes(
 				const backupData = await backupManager.restoreBackup(sync.backupId);
 
 				// Create API client
-				const apiClient = createArrApiClient(sync.instance);
+				const apiClient = createArrApiClient(sync.instance, app.encryptor);
 
 				// Get current Custom Formats to understand what changed
 				const currentFormats = await apiClient.getCustomFormats();

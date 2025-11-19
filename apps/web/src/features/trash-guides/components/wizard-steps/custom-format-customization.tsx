@@ -106,8 +106,9 @@ export const CustomFormatCustomization = ({
 		setSelections((prev) => ({
 			...prev,
 			[cfTrashId]: {
-				...prev[cfTrashId],
 				selected: !prev[cfTrashId]?.selected,
+				scoreOverride: prev[cfTrashId]?.scoreOverride,
+				conditionsEnabled: prev[cfTrashId]?.conditionsEnabled || {},
 			},
 		}));
 	};
@@ -117,8 +118,9 @@ export const CustomFormatCustomization = ({
 		setSelections((prev) => ({
 			...prev,
 			[cfTrashId]: {
-				...prev[cfTrashId],
+				selected: prev[cfTrashId]?.selected || false,
 				scoreOverride: scoreValue,
+				conditionsEnabled: prev[cfTrashId]?.conditionsEnabled || {},
 			},
 		}));
 	};
@@ -127,10 +129,11 @@ export const CustomFormatCustomization = ({
 		setSelections((prev) => ({
 			...prev,
 			[cfTrashId]: {
-				...prev[cfTrashId],
+				selected: prev[cfTrashId]?.selected || false,
+				scoreOverride: prev[cfTrashId]?.scoreOverride,
 				conditionsEnabled: {
-					...prev[cfTrashId]?.conditionsEnabled,
-					[conditionName]: !prev[cfTrashId]?.conditionsEnabled[conditionName],
+					...(prev[cfTrashId]?.conditionsEnabled || {}),
+					[conditionName]: !(prev[cfTrashId]?.conditionsEnabled?.[conditionName] ?? false),
 				},
 			},
 		}));

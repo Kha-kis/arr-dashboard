@@ -59,6 +59,7 @@ export type TrashScheduleFrequency =
 export interface TrashCustomFormat {
 	trash_id: string;
 	name: string;
+	score?: number; // Default score from TRaSH Guides
 	includeCustomFormatWhenRenaming?: boolean;
 	specifications: Array<{
 		name: string;
@@ -87,6 +88,7 @@ export interface TrashCustomFormatGroup {
 	name: string;
 	trash_description?: string; // TRaSH's guidance text (HTML format)
 	default?: string | boolean; // If "true" or true, this CF Group is enabled by default for applicable profiles
+	required?: boolean; // If true, this CF Group cannot be disabled (always required)
 	custom_formats: Array<GroupCustomFormat | string>; // Can be objects or trash_id strings
 	quality_profiles?: {
 		exclude?: Record<string, string>; // profile name → trash_id
@@ -190,6 +192,7 @@ export interface TrashCacheStatus {
 export interface TemplateCustomFormat {
 	trashId: string;
 	name: string;
+	score?: number; // Current score (either from scoreOverride or originalConfig.score)
 	scoreOverride?: number; // User-defined score
 	conditionsEnabled: Record<string, boolean>; // Which conditions are enabled
 	originalConfig: TrashCustomFormat; // Original TRaSH config
@@ -211,8 +214,109 @@ export interface TemplateCustomFormatGroup {
 export interface TemplateConfig {
 	customFormats: TemplateCustomFormat[];
 	customFormatGroups: TemplateCustomFormatGroup[];
+	qualityProfile?: {
+		upgradeAllowed?: boolean;
+		cutoff?: string; // Quality name like "Remux 1080p"
+		items?: Array<{
+			name: string;
+			allowed: boolean;
+			items?: string[]; // Nested quality names
+		}>;
+		minFormatScore?: number;
+		cutoffFormatScore?: number;
+		minUpgradeFormatScore?: number;
+		trash_score_set?: string; // Score set to use for CF scores (e.g., "default", "sqp-1-1080p")
+		language?: string; // Language name from TRaSH Guides (e.g., "Original")
+	};
 	qualitySize?: TrashQualitySize[];
 	naming?: TrashNamingScheme[];
+	// Phase 5.3: Complete quality profile settings (imported from *arr instance)
+	completeQualityProfile?: CompleteQualityProfile;
+}
+
+/**
+ * Phase 5.3: Complete quality profile data from *arr instance
+ * This allows templates to be full quality profile clones
+ */
+export interface CompleteQualityProfile {
+	// Source information
+	sourceInstanceId: string; // Instance this was imported from
+	sourceProfileId: number; // *arr quality profile ID
+	sourceProfileName: string; // Original profile name
+	importedAt: string; // When it was imported
+
+	// Quality definitions
+	upgradeAllowed: boolean;
+	cutoff: number; // Quality ID
+	cutoffQuality?: {
+		id: number;
+		name: string;
+		source: string;
+		resolution: number;
+	};
+
+	// Quality items with ordering
+	items: Array<{
+		quality?: {
+			id: number;
+			name: string;
+			source: string;
+			resolution: number;
+		};
+		items?: Array<{
+			id: number;
+			name: string;
+			source: string;
+			resolution: number;
+			allowed: boolean;
+		}>;
+		allowed: boolean;
+		id?: number;
+		name?: string;
+	}>;
+
+	// Format scores (minimum thresholds)
+	minFormatScore: number;
+	cutoffFormatScore: number;
+	minUpgradeFormatScore?: number;
+
+	// Language settings (if applicable)
+	language?: {
+		id: number;
+		name: string;
+	};
+	languages?: Array<{
+		id: number;
+		name: string;
+		allowed: boolean;
+	}>;
+}
+
+/**
+ * Phase 3: Change log entry for template modifications
+ */
+export interface TemplateChangeLogEntry {
+	timestamp: string;
+	userId: string;
+	action: "created" | "updated" | "synced" | "deployed";
+	changes: {
+		field: string;
+		oldValue?: unknown;
+		newValue?: unknown;
+	}[];
+	note?: string;
+}
+
+/**
+ * Phase 3: Instance-specific overrides for a template
+ */
+export interface TemplateInstanceOverride {
+	instanceId: string;
+	cfScoreOverrides?: Record<string, number>; // CF trash_id → score
+	cfSelectionOverrides?: Record<string, boolean>; // CF trash_id → enabled
+	conditionOverrides?: Record<string, Record<string, boolean>>; // CF trash_id → condition name → enabled
+	lastModifiedAt: string;
+	lastModifiedBy: string;
 }
 
 /**
@@ -228,6 +332,31 @@ export interface TrashTemplate {
 	createdAt: string;
 	updatedAt: string;
 	deletedAt?: string;
+
+	// Source Quality Profile Information
+	sourceQualityProfileTrashId?: string; // TRaSH quality profile trash_id this template was created from
+	sourceQualityProfileName?: string; // TRaSH quality profile name (e.g., "HD Bluray + WEB")
+
+	// Phase 3: Versioning & Metadata
+	trashGuidesCommitHash?: string; // TRaSH Guides commit hash at time of import
+	trashGuidesVersion?: string; // Semantic version if available
+	importedAt: string;
+	lastSyncedAt?: string; // Last time template was synced with TRaSH Guides
+
+	// Phase 3: Customization Tracking
+	hasUserModifications: boolean; // True if user has modified scores/selections
+	modifiedFields?: string[]; // Array: ["scores", "cf_selections", "conditions"]
+	lastModifiedAt?: string;
+	lastModifiedBy?: string; // userId who made last modification
+
+	// Phase 3: Sync Strategy
+	syncStrategy: "auto" | "manual" | "notify"; // How to handle TRaSH Guides updates
+
+	// Phase 3: Change History (optional, for audit trail)
+	changeLog?: TemplateChangeLogEntry[];
+
+	// Phase 3: Instance-specific Overrides
+	instanceOverrides?: Record<string, TemplateInstanceOverride>;
 }
 
 /**
@@ -238,6 +367,9 @@ export interface CreateTemplateRequest {
 	description?: string;
 	serviceType: "RADARR" | "SONARR";
 	config: TemplateConfig;
+	syncStrategy?: "auto" | "manual" | "notify";
+	sourceQualityProfileTrashId?: string; // TRaSH quality profile trash_id this template was created from
+	sourceQualityProfileName?: string; // TRaSH quality profile name (e.g., "HD Bluray + WEB")
 }
 
 /**
@@ -247,6 +379,7 @@ export interface UpdateTemplateRequest {
 	name?: string;
 	description?: string;
 	config?: TemplateConfig;
+	syncStrategy?: "auto" | "manual" | "notify";
 }
 
 // ============================================================================
@@ -481,4 +614,308 @@ export interface TrashApiError {
 	code: string;
 	message: string;
 	details?: Record<string, unknown>;
+}
+
+// ============================================================================
+// Update Scheduler Types
+// ============================================================================
+
+/**
+ * Scheduler statistics and status
+ */
+export interface SchedulerStats {
+	isRunning: boolean;
+	lastCheckAt?: Date;
+	nextCheckAt?: Date;
+	lastCheckResult?: {
+		templatesChecked: number;
+		templatesOutdated: number;
+		templatesAutoSynced: number;
+		templatesNeedingAttention: number;
+		cachesRefreshed: number;
+		cachesFailed: number;
+		errors: string[];
+	};
+}
+
+// ============================================================================
+// Template Diff Types
+// ============================================================================
+
+export type DiffChangeType = "added" | "removed" | "modified" | "unchanged";
+
+/**
+ * Custom Format diff detail
+ */
+export interface CustomFormatDiff {
+	trashId: string;
+	name: string;
+	changeType: DiffChangeType;
+	currentScore?: number;
+	newScore?: number;
+	currentSpecifications?: any[];
+	newSpecifications?: any[];
+	hasSpecificationChanges: boolean;
+}
+
+/**
+ * Custom Format Group diff detail
+ */
+export interface CustomFormatGroupDiff {
+	trashId: string;
+	name: string;
+	changeType: DiffChangeType;
+	customFormatDiffs: CustomFormatDiff[];
+}
+
+/**
+ * Template diff comparison result
+ */
+export interface TemplateDiffResult {
+	templateId: string;
+	templateName: string;
+	currentCommit: string | null;
+	latestCommit: string;
+	summary: {
+		totalChanges: number;
+		addedCFs: number;
+		removedCFs: number;
+		modifiedCFs: number;
+		unchangedCFs: number;
+	};
+	customFormatDiffs: CustomFormatDiff[];
+	customFormatGroupDiffs: CustomFormatGroupDiff[];
+	hasUserModifications: boolean;
+}
+
+/**
+ * Template diff request
+ */
+export interface GetTemplateDiffRequest {
+	templateId: string;
+	targetCommit?: string; // Optional - defaults to latest
+}
+
+/**
+ * Template diff response
+ */
+export interface GetTemplateDiffResponse {
+	success: boolean;
+	data: TemplateDiffResult;
+}
+
+/**
+ * Merge strategy for template sync
+ */
+export type MergeStrategy = "keep_custom" | "sync_new" | "smart_merge";
+
+/**
+ * Sync with merge strategy payload
+ */
+export interface SyncTemplateMergePayload {
+	templateId: string;
+	targetCommitHash?: string;
+	strategy: MergeStrategy;
+}
+
+// ============================================================================
+// Deployment Preview Types (Phase 4)
+// ============================================================================
+
+/**
+ * Conflict type for deployment preview
+ */
+export type ConflictType = "score_mismatch" | "specification_mismatch" | "name_conflict";
+
+/**
+ * Conflict resolution strategy
+ */
+export type ConflictResolution = "use_template" | "keep_existing" | "merge" | "manual";
+
+/**
+ * Custom Format action for deployment
+ */
+export type DeploymentAction = "create" | "update" | "delete" | "skip";
+
+/**
+ * Custom Format conflict detail
+ */
+export interface CustomFormatConflict {
+	cfTrashId: string;
+	cfName: string;
+	conflictType: ConflictType;
+	templateValue: unknown;
+	instanceValue: unknown;
+	suggestedResolution: ConflictResolution;
+	resolution?: ConflictResolution; // User's chosen resolution
+}
+
+/**
+ * Custom Format deployment item
+ */
+export interface CustomFormatDeploymentItem {
+	trashId: string;
+	name: string;
+	action: DeploymentAction;
+	templateData: unknown; // Full CF data from template
+	instanceData?: unknown; // Existing CF data from instance (if update/conflict)
+	conflicts: CustomFormatConflict[];
+	hasConflicts: boolean;
+}
+
+/**
+ * Deployment preview result
+ */
+export interface DeploymentPreview {
+	templateId: string;
+	templateName: string;
+	instanceId: string;
+	instanceLabel: string;
+	instanceServiceType: "RADARR" | "SONARR";
+
+	// Deployment statistics
+	summary: {
+		totalItems: number;
+		newCustomFormats: number;
+		updatedCustomFormats: number;
+		deletedCustomFormats: number;
+		skippedCustomFormats: number;
+		totalConflicts: number;
+		unresolvedConflicts: number;
+	};
+
+	// Deployment items
+	customFormats: CustomFormatDeploymentItem[];
+
+	// Instance state
+	canDeploy: boolean; // False if instance unreachable or conflicts unresolved
+	requiresConflictResolution: boolean;
+	instanceReachable: boolean;
+	instanceVersion?: string;
+}
+
+/**
+ * Deployment preview request
+ */
+export interface GetDeploymentPreviewRequest {
+	templateId: string;
+	instanceId: string;
+}
+
+// ============================================================================
+// Phase 5: Bulk Score Management Types
+// ============================================================================
+
+/**
+ * Score for a custom format in a specific template
+ */
+export interface TemplateScore {
+	templateId: string;
+	templateName: string; // User's custom template name
+	qualityProfileName: string; // TRaSH quality profile name (e.g., "HD Bluray + WEB")
+	scoreSet: string; // Score set used by this template (e.g., "sqp-1-1080p")
+	currentScore: number; // Current score in template (may be overridden)
+	defaultScore: number; // Original TRaSH Guides score for this score set
+	isModified: boolean; // True if currentScore !== defaultScore
+	isTemplateManaged?: boolean; // True if this quality profile is managed by a TRaSH template
+}
+
+/**
+ * Custom Format score entry for bulk management
+ * Shows one CF with scores across all templates that use it
+ */
+export interface CustomFormatScoreEntry {
+	trashId: string;
+	name: string;
+	serviceType: "RADARR" | "SONARR";
+
+	// Scores across all templates using this CF
+	templateScores: TemplateScore[]; // One entry per template using this CF
+
+	// Metadata
+	hasAnyModifications: boolean; // True if ANY template has a modified score
+	groupName?: string; // CF Group this CF belongs to (if any)
+	groupTrashId?: string;
+}
+
+/**
+ * Bulk score management filters
+ */
+export interface BulkScoreFilters {
+	instanceId?: string; // Specific instance to view scores for
+	templateIds?: string[];
+	groupTrashIds?: string[];
+	search?: string; // Search by CF name
+	modifiedOnly?: boolean; // Only show user-modified scores
+	sortBy?: "name" | "score" | "templateName" | "groupName";
+	sortOrder?: "asc" | "desc";
+}
+
+/**
+ * Bulk score update operation
+ */
+export interface BulkScoreUpdate {
+	targetTrashIds: string[]; // CF trash_ids to update
+	targetTemplateIds?: string[]; // Templates to update (if not specified, all templates with these CFs)
+	targetScoreSets?: string[]; // Specific score sets to update (if not specified, update all score sets)
+	newScore: number;
+	resetToDefault?: boolean; // If true, reset to TRaSH Guides default instead of newScore
+}
+
+/**
+ * Bulk score copy operation
+ */
+export interface BulkScoreCopy {
+	sourceTemplateId: string;
+	targetTemplateIds: string[];
+	cfTrashIds?: string[]; // Specific CFs to copy (if not specified, copy all)
+	overwriteModified?: boolean; // Whether to overwrite user-modified scores in target templates
+}
+
+/**
+ * Bulk score reset operation
+ */
+export interface BulkScoreReset {
+	templateIds: string[];
+	cfTrashIds?: string[]; // Specific CFs to reset (if not specified, reset all)
+	resetModificationsFlag?: boolean; // Whether to also reset hasUserModifications flag
+}
+
+/**
+ * Bulk score export format
+ */
+export interface BulkScoreExport {
+	version: string;
+	exportedAt: string;
+	serviceType: "RADARR" | "SONARR";
+	templates: Array<{
+		templateId: string;
+		templateName: string;
+		scores: Record<string, number>; // CF trash_id → score
+	}>;
+}
+
+/**
+ * Bulk score import operation
+ */
+export interface BulkScoreImport {
+	data: BulkScoreExport;
+	targetTemplateIds?: string[]; // Templates to import into (if not specified, create new or match by name)
+	overwriteExisting?: boolean;
+	createMissing?: boolean; // Create templates that don't exist
+}
+
+/**
+ * Bulk score management response
+ */
+export interface BulkScoreManagementResponse {
+	success: boolean;
+	message: string;
+	affectedTemplates: number;
+	affectedCustomFormats: number;
+	details?: {
+		templatesUpdated: string[]; // Template IDs
+		customFormatsUpdated: string[]; // CF trash_ids
+		errors?: string[];
+	};
 }

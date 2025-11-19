@@ -107,6 +107,7 @@ export class TrashCacheManager {
 		serviceType: "RADARR" | "SONARR",
 		configType: TrashConfigType,
 		data: T,
+		commitHash?: string,
 	): Promise<void> {
 		// Compress data if enabled
 		const dataString = this.options.compressionEnabled
@@ -140,12 +141,14 @@ export class TrashCacheManager {
 				configType,
 				data: dataString,
 				version: 1,
+				commitHash,
 				fetchedAt: now,
 				lastCheckedAt: now,
 			},
 			update: {
 				data: dataString,
 				version: newVersion,
+				commitHash,
 				fetchedAt: now,
 				lastCheckedAt: now,
 			},
@@ -368,6 +371,28 @@ export class TrashCacheManager {
 		});
 
 		return result.count;
+	}
+
+	/**
+	 * Get the commit hash for cached data
+	 */
+	async getCommitHash(
+		serviceType: "RADARR" | "SONARR",
+		configType: TrashConfigType,
+	): Promise<string | null> {
+		const cacheEntry = await this.prisma.trashCache.findUnique({
+			where: {
+				serviceType_configType: {
+					serviceType,
+					configType,
+				},
+			},
+			select: {
+				commitHash: true,
+			},
+		});
+
+		return cacheEntry?.commitHash || null;
 	}
 }
 

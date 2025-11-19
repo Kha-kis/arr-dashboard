@@ -50,12 +50,15 @@ export interface DeleteTemplateResponse {
 // ============================================================================
 
 /**
- * List all templates with optional filtering
+ * List all templates with optional filtering, searching, and sorting
  */
 export async function fetchTemplates(params?: {
 	serviceType?: "RADARR" | "SONARR";
 	includeDeleted?: boolean;
 	active?: boolean;
+	search?: string;
+	sortBy?: "name" | "createdAt" | "updatedAt" | "usageCount";
+	sortOrder?: "asc" | "desc";
 	limit?: number;
 	offset?: number;
 }): Promise<TemplateListResponse> {
@@ -69,6 +72,15 @@ export async function fetchTemplates(params?: {
 	}
 	if (params?.active !== undefined) {
 		queryParams.append("active", params.active.toString());
+	}
+	if (params?.search) {
+		queryParams.append("search", params.search);
+	}
+	if (params?.sortBy) {
+		queryParams.append("sortBy", params.sortBy);
+	}
+	if (params?.sortOrder) {
+		queryParams.append("sortOrder", params.sortOrder);
 	}
 	if (params?.limit) {
 		queryParams.append("limit", params.limit.toString());

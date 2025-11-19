@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import type { TrashTemplate } from "@arr/shared";
 import {
 	useTemplates,
@@ -8,12 +8,19 @@ import {
 	useDuplicateTemplate,
 } from "../../../hooks/api/useTemplates";
 import { Alert, AlertTitle, AlertDescription, EmptyState, Skeleton } from "../../../components/ui";
-import { AlertCircle, Plus, Download, Copy, Trash2, Edit, FileText, RefreshCw, Star } from "lucide-react";
+import { AlertCircle, Plus, Download, Copy, Trash2, Edit, FileText, RefreshCw, Star, Rocket } from "lucide-react";
 import { exportTemplate } from "../../../lib/api-client/templates";
 import { TemplateStats } from "./template-stats";
 import { SyncValidationModal } from "./sync-validation-modal";
 import { SyncProgressModal } from "./sync-progress-modal";
 import { useExecuteSync } from "../../../hooks/api/useSync";
+import { useTemplateUpdates } from "../../../hooks/api/useTemplateUpdates";
+import { TemplateUpdateBanner } from "./template-update-banner";
+import { DeploymentPreviewModal } from "./deployment-preview-modal";
+import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
+import { useQueryClient } from "@tanstack/react-query";
+import { EnhancedTemplateExportModal } from "./enhanced-template-export-modal";
+import { EnhancedTemplateImportModal } from "./enhanced-template-import-modal";
 
 interface TemplateListProps {
 	serviceType?: "RADARR" | "SONARR";
@@ -24,14 +31,41 @@ interface TemplateListProps {
 }
 
 export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBrowseQualityProfiles }: TemplateListProps) => {
-	const { data, isLoading, error } = useTemplates({ serviceType });
+	// Search, filter, and sort state
+	const [searchInput, setSearchInput] = useState("");
+	const [debouncedSearch, setDebouncedSearch] = useState("");
+	const [sortBy, setSortBy] = useState<"name" | "createdAt" | "updatedAt" | "usageCount">("updatedAt");
+	const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+	// Debounce search input to avoid excessive API calls and prevent focus loss
+	useEffect(() => {
+		const timer = setTimeout(() => {
+			setDebouncedSearch(searchInput);
+		}, 300);
+		return () => clearTimeout(timer);
+	}, [searchInput]);
+
+	const { data, isLoading, error } = useTemplates({
+		serviceType,
+		search: debouncedSearch || undefined,
+		sortBy,
+		sortOrder,
+	});
+	const { data: updatesData } = useTemplateUpdates();
+	const { data: servicesData } = useServicesQuery();
 	const deleteMutation = useDeleteTemplate();
 	const duplicateMutation = useDuplicateTemplate();
 	const executeSync = useExecuteSync();
+	const queryClient = useQueryClient();
 
 	const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 	const [duplicateName, setDuplicateName] = useState<string>("");
 	const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+	const [instanceSelectorTemplate, setInstanceSelectorTemplate] = useState<{
+		templateId: string;
+		templateName: string;
+		serviceType: "RADARR" | "SONARR";
+	} | null>(null);
 	const [validationModal, setValidationModal] = useState<{
 		templateId: string;
 		templateName: string;
@@ -43,24 +77,17 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 		templateName: string;
 		instanceName: string;
 	} | null>(null);
-
-	const handleExport = async (templateId: string, templateName: string) => {
-		try {
-			const jsonData = await exportTemplate(templateId);
-			const blob = new Blob([jsonData], { type: "application/json" });
-			const url = URL.createObjectURL(blob);
-			const a = document.createElement("a");
-			a.href = url;
-			a.download = `${templateName.toLowerCase().replace(/\s+/g, "-")}-template.json`;
-			document.body.appendChild(a);
-			a.click();
-			document.body.removeChild(a);
-			URL.revokeObjectURL(url);
-		} catch (error) {
-			console.error("Export failed:", error);
-			alert("Failed to export template");
-		}
-	};
+	const [deploymentModal, setDeploymentModal] = useState<{
+		templateId: string;
+		templateName: string;
+		instanceId: string;
+		instanceLabel: string;
+	} | null>(null);
+	const [exportModal, setExportModal] = useState<{
+		templateId: string;
+		templateName: string;
+	} | null>(null);
+	const [importModal, setImportModal] = useState(false);
 
 	const handleDelete = async (templateId: string) => {
 		try {
@@ -145,6 +172,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 
 	return (
 		<div className="space-y-4">
+			{/* Header with Title and Actions */}
 			<div className="flex items-center justify-between">
 				<h2 className="text-xl font-semibold text-white">
 					Templates {serviceType ? `(${serviceType})` : ""}
@@ -173,9 +201,9 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 					{/* Secondary Actions: Manual/Import */}
 					<button
 						type="button"
-						onClick={onImport}
+						onClick={() => setImportModal(true)}
 						className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
-						title="Import an existing template from JSON file"
+						title="Import an existing template from JSON file with validation"
 					>
 						<Download className="h-4 w-4" />
 						Import JSON
@@ -192,14 +220,81 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 				</div>
 			</div>
 
+			{/* Search, Filter, and Sort Controls */}
+			<div className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+				{/* Search Input */}
+				<div className="flex-1 max-w-md">
+					<div className="relative">
+						<input
+							type="text"
+							placeholder="Search templates by name or description..."
+							value={searchInput}
+							onChange={(e) => setSearchInput(e.target.value)}
+							className="w-full rounded-lg border border-white/20 bg-white/10 px-4 py-2 pl-10 text-sm text-white placeholder:text-white/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+						/>
+						<svg
+							className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40"
+							fill="none"
+							stroke="currentColor"
+							viewBox="0 0 24 24"
+						>
+							<path
+								strokeLinecap="round"
+								strokeLinejoin="round"
+								strokeWidth={2}
+								d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+							/>
+						</svg>
+					</div>
+				</div>
+
+				{/* Sort and Filter Controls */}
+				<div className="flex items-center gap-2">
+					{/* Sort By Dropdown */}
+					<select
+						value={sortBy}
+						onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+						className="rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+					>
+						<option value="updatedAt">Last Updated</option>
+						<option value="createdAt">Date Created</option>
+						<option value="name">Name</option>
+						<option value="usageCount">Usage Count</option>
+					</select>
+
+					{/* Sort Order Toggle */}
+					<button
+						type="button"
+						onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+						className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/20"
+						title={sortOrder === "asc" ? "Sort ascending" : "Sort descending"}
+					>
+						{sortOrder === "asc" ? "↑" : "↓"}
+					</button>
+				</div>
+			</div>
+
 			{templates.length === 0 ? (
 				<EmptyState
 					icon={FileText}
-					title="No templates yet"
-					description="Create your first template to get started with TRaSH Guides deployment"
+					title={debouncedSearch ? "No templates found" : "No templates yet"}
+					description={
+						debouncedSearch
+							? `No templates match "${debouncedSearch}". Try a different search term.`
+							: "Create your first template to get started with TRaSH Guides deployment"
+					}
 				/>
 			) : (
-				<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+				<>
+					{/* Results Counter */}
+					<div className="flex items-center justify-between text-sm text-white/60">
+						<span>
+							Showing {templates.length} template{templates.length !== 1 ? "s" : ""}
+							{debouncedSearch && ` matching "${debouncedSearch}"`}
+						</span>
+					</div>
+
+					<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
 					{templates.map((template) => (
 						<article
 							key={template.id}
@@ -282,21 +377,81 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 									<p className="text-sm text-white/70 line-clamp-2">{template.description}</p>
 								)}
 
-								<div className="flex items-center gap-2 text-xs text-white/60">
-									<span>{template.config.customFormats.length} formats</span>
-									<span>•</span>
-									<span>{template.config.customFormatGroups.length} groups</span>
+								<div className="space-y-2">
+									<div className="flex items-center gap-2 text-xs text-white/60">
+										<span>{template.config.customFormats.length} formats</span>
+										<span>•</span>
+										<span>{template.config.customFormatGroups.length} groups</span>
+									</div>
+									{template.config.qualityProfile && (
+										<div className="flex flex-wrap gap-1.5">
+											{template.config.qualityProfile.language && (
+												<span className="inline-flex items-center gap-1 rounded bg-blue-500/20 px-1.5 py-0.5 text-xs font-medium text-blue-300">
+													🌐 {template.config.qualityProfile.language}
+												</span>
+											)}
+											{template.config.qualityProfile.trash_score_set && (
+												<span className="inline-flex items-center gap-1 rounded bg-purple-500/20 px-1.5 py-0.5 text-xs font-medium text-purple-300">
+													📊 {template.config.qualityProfile.trash_score_set}
+												</span>
+											)}
+											{template.config.qualityProfile.cutoff && (
+												<span className="inline-flex items-center gap-1 rounded bg-green-500/20 px-1.5 py-0.5 text-xs font-medium text-green-300">
+													🎬 {template.config.qualityProfile.cutoff}
+												</span>
+											)}
+										</div>
+									)}
 								</div>
 
+								{/* Update Notification Banner */}
+								{updatesData?.data.templatesWithUpdates.find((u) => u.templateId === template.id) && (
+									<TemplateUpdateBanner
+										update={updatesData.data.templatesWithUpdates.find((u) => u.templateId === template.id)!}
+										onSyncSuccess={() => {
+											// Refetch templates and updates after successful sync
+											queryClient.invalidateQueries({ queryKey: ["trash-guides", "templates"] });
+											queryClient.invalidateQueries({ queryKey: ["trash-guides", "updates"] });
+										}}
+									/>
+								)}
+
 								{/* Template Stats */}
-								<TemplateStats templateId={template.id} onSync={(instanceId, instanceName) => {
-									setValidationModal({
+								<TemplateStats
+									templateId={template.id}
+									templateName={template.name}
+									onSync={(instanceId, instanceName) => {
+										setValidationModal({
+											templateId: template.id,
+											templateName: template.name,
+											instanceId,
+											instanceName,
+										});
+									}}
+									onDeploy={(instanceId, instanceLabel) => {
+										setDeploymentModal({
+											templateId: template.id,
+											templateName: template.name,
+											instanceId,
+											instanceLabel,
+										});
+									}}
+								/>
+
+								{/* Primary Deploy Button */}
+								<button
+									type="button"
+									onClick={() => setInstanceSelectorTemplate({
 										templateId: template.id,
 										templateName: template.name,
-										instanceId,
-										instanceName,
-									});
-								}} />
+										serviceType: template.serviceType
+									})}
+									className="w-full rounded-lg bg-primary px-4 py-3 text-sm font-medium text-white transition hover:bg-primary/90 flex items-center justify-center gap-2"
+									title="Deploy this template to an instance"
+								>
+									<Rocket className="h-4 w-4" />
+									Deploy to Instance
+								</button>
 
 								{/* Action Buttons */}
 								<div className="flex gap-2 pt-2">
@@ -321,9 +476,9 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 									</button>
 									<button
 										type="button"
-										onClick={() => handleExport(template.id, template.name)}
+										onClick={() => setExportModal({ templateId: template.id, templateName: template.name })}
 										className="flex-1 rounded bg-white/10 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/20"
-										title="Export template"
+										title="Export template with metadata"
 									>
 										<Download className="mx-auto h-4 w-4" />
 									</button>
@@ -339,7 +494,8 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 							</div>
 						</article>
 					))}
-				</div>
+					</div>
+				</>
 			)}
 
 			{/* Sync Modals */}
@@ -362,6 +518,136 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 					onComplete={handleSyncComplete}
 					onClose={() => setProgressModal(null)}
 				/>
+			)}
+
+			{deploymentModal && (
+				<DeploymentPreviewModal
+					open={true}
+					onClose={() => setDeploymentModal(null)}
+					templateId={deploymentModal.templateId}
+					templateName={deploymentModal.templateName}
+					instanceId={deploymentModal.instanceId}
+					instanceLabel={deploymentModal.instanceLabel}
+					onDeploySuccess={() => {
+						// Refetch templates, updates, and deployment history after successful deployment
+						queryClient.invalidateQueries({ queryKey: ["trash-guides", "templates"] });
+						queryClient.invalidateQueries({ queryKey: ["trash-guides", "updates"] });
+						queryClient.invalidateQueries({ queryKey: ["deployment-history"] });
+					}}
+				/>
+			)}
+
+			{/* Instance Selector Modal */}
+			{instanceSelectorTemplate && (
+				<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+					<div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-2xl border border-white/20 max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+						{/* Header */}
+						<div className="flex items-center justify-between p-6 border-b border-white/10 bg-gradient-to-r from-primary/10 to-transparent">
+							<div>
+								<h2 className="text-xl font-semibold text-white flex items-center gap-2">
+									<Rocket className="h-5 w-5 text-primary" />
+									Deploy Template
+								</h2>
+								<p className="text-sm text-white/70 mt-1">
+									{instanceSelectorTemplate.templateName}
+								</p>
+							</div>
+							<button
+								onClick={() => setInstanceSelectorTemplate(null)}
+								className="p-2 rounded-lg hover:bg-white/10 transition-colors group"
+								aria-label="Close"
+							>
+								<Copy className="h-5 w-5 text-white/60 group-hover:text-white rotate-45" />
+							</button>
+						</div>
+
+						{/* Instance List */}
+						<div className="flex-1 overflow-y-auto p-6 bg-slate-900/50">
+							<h3 className="text-sm font-medium text-white/90 mb-4">Select an instance to deploy to:</h3>
+							<div className="space-y-3">
+								{servicesData && servicesData.length > 0 ? (
+									servicesData
+										.filter(instance =>
+											// Only show instances matching the template's service type
+											// Compare uppercase versions since API returns lowercase "radarr"/"sonarr"
+											instance.service.toUpperCase() === instanceSelectorTemplate.serviceType
+										)
+										.map((instance) => (
+											<button
+												key={instance.id}
+												onClick={() => {
+													setDeploymentModal({
+														templateId: instanceSelectorTemplate.templateId,
+														templateName: instanceSelectorTemplate.templateName,
+														instanceId: instance.id,
+														instanceLabel: instance.label,
+													});
+													setInstanceSelectorTemplate(null);
+												}}
+												className="w-full flex items-center justify-between p-4 rounded-lg border border-white/20 bg-white/5 hover:bg-primary/20 hover:border-primary/50 transition-all text-left group shadow-lg hover:shadow-primary/20"
+											>
+												<div>
+													<div className="font-medium text-white group-hover:text-primary transition-colors">
+														{instance.label}
+													</div>
+													<div className="text-sm text-white/60 mt-1">
+														{instance.service}
+													</div>
+												</div>
+												<Rocket className="h-5 w-5 text-primary group-hover:scale-110 transition-transform" />
+											</button>
+										))
+								) : (
+									<div className="text-center py-12 px-4 rounded-lg border border-dashed border-white/20 bg-white/5">
+										<AlertCircle className="h-12 w-12 text-white/40 mx-auto mb-4" />
+										<p className="text-white/70 font-medium">No instances available.</p>
+										<p className="text-sm text-white/50 mt-2">
+											Add a Radarr or Sonarr instance in Settings first.
+										</p>
+									</div>
+								)}
+							</div>
+						</div>
+
+						{/* Footer */}
+						<div className="flex items-center justify-end gap-3 p-6 border-t border-white/10 bg-slate-900/80">
+							<button
+								onClick={() => setInstanceSelectorTemplate(null)}
+								className="px-4 py-2 text-sm rounded-lg border border-white/20 text-white/80 hover:bg-white/10 hover:text-white transition-colors"
+							>
+								Cancel
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Enhanced Export Modal */}
+			{exportModal && (
+				<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+					<div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-2xl border border-white/20 max-w-2xl w-full max-h-[90vh] overflow-auto">
+						<EnhancedTemplateExportModal
+							templateId={exportModal.templateId}
+							templateName={exportModal.templateName}
+							onClose={() => setExportModal(null)}
+						/>
+					</div>
+				</div>
+			)}
+
+			{/* Enhanced Import Modal */}
+			{importModal && (
+				<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+					<div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-2xl border border-white/20 max-w-2xl w-full max-h-[90vh] overflow-auto">
+						<EnhancedTemplateImportModal
+							onImportComplete={() => {
+								queryClient.invalidateQueries({ queryKey: ["trash-guides", "templates"] });
+								setImportModal(false);
+							}}
+							onClose={() => setImportModal(false)}
+						/>
+					</div>
+				</div>
 			)}
 		</div>
 	);

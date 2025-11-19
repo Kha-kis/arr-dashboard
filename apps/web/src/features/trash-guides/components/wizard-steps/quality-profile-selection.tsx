@@ -1,9 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import { useQualityProfiles } from "../../../../hooks/api/useQualityProfiles";
-import { Alert, AlertDescription, EmptyState, Skeleton, Card, CardHeader, CardTitle, CardDescription, CardContent } from "../../../../components/ui";
-import { FileText, Star, Languages, Gauge, Info } from "lucide-react";
+import { Alert, AlertDescription, EmptyState, Skeleton, Card, CardHeader, CardTitle, CardDescription, CardContent, Button } from "../../../../components/ui";
+import { FileText, Star, Languages, Gauge, Info, Download, Layers } from "lucide-react";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
+import type { CompleteQualityProfile } from "@arr/shared";
+import { QualityProfileImporter } from "../quality-profile-importer";
 
 interface QualityProfileSelectionProps {
 	serviceType: "RADARR" | "SONARR";
@@ -14,7 +17,27 @@ export const QualityProfileSelection = ({
 	serviceType,
 	onSelect,
 }: QualityProfileSelectionProps) => {
+	const [showCloneImporter, setShowCloneImporter] = useState(false);
 	const { data, isLoading, error } = useQualityProfiles(serviceType);
+
+	// Handle imported profile from cloning
+	const handleProfileImported = (importedProfile: CompleteQualityProfile) => {
+		// Convert CompleteQualityProfile to QualityProfileSummary format for wizard
+		const profileSummary: QualityProfileSummary = {
+			trashId: `cloned-${importedProfile.sourceInstanceId}-${importedProfile.sourceProfileId}`,
+			name: importedProfile.sourceProfileName,
+			description: `Cloned from instance ${importedProfile.sourceInstanceId}`,
+			scoreSet: undefined,
+			customFormatCount: 0, // CF count not available in CompleteQualityProfile
+			qualityCount: importedProfile.items.length,
+			language: importedProfile.language?.name,
+			cutoff: importedProfile.cutoffQuality?.name || "Unknown",
+			upgradeAllowed: importedProfile.upgradeAllowed,
+		};
+
+		onSelect(profileSummary);
+		setShowCloneImporter(false);
+	};
 
 	if (isLoading) {
 		return (
@@ -47,6 +70,33 @@ export const QualityProfileSelection = ({
 		);
 	}
 
+	// Show clone importer if user selected that option
+	if (showCloneImporter) {
+		return (
+			<div className="space-y-4">
+				<div className="flex items-center justify-between">
+					<div>
+						<h3 className="text-lg font-semibold text-fg">Clone from Instance</h3>
+						<p className="text-sm text-fg-muted mt-1">
+							Import a complete quality profile from an existing *arr instance
+						</p>
+					</div>
+					<Button
+						variant="secondary"
+						onClick={() => setShowCloneImporter(false)}
+					>
+						Back to TRaSH Guides
+					</Button>
+				</div>
+
+				<QualityProfileImporter
+					onImportComplete={handleProfileImported}
+					onClose={() => setShowCloneImporter(false)}
+				/>
+			</div>
+		);
+	}
+
 	return (
 		<div className="space-y-6">
 			{/* Introduction */}
@@ -56,6 +106,44 @@ export const QualityProfileSelection = ({
 					<strong>Quality profiles</strong> are expert-curated configurations from TRaSH Guides that define quality preferences, custom format rules, and scoring systems. Choose a profile that matches your quality preferences.
 				</AlertDescription>
 			</Alert>
+
+			{/* Source Selection */}
+			<div className="flex gap-3">
+				<Card className="flex-1 cursor-pointer transition-all hover:border-primary hover:shadow-md" onClick={() => {}}>
+					<CardContent className="pt-6">
+						<div className="flex items-center gap-3">
+							<div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/20">
+								<Layers className="h-5 w-5 text-primary" />
+							</div>
+							<div className="flex-1">
+								<div className="font-medium text-fg">TRaSH Guides Profiles</div>
+								<div className="text-xs text-fg-muted mt-0.5">
+									Expert-curated configurations (selected)
+								</div>
+							</div>
+						</div>
+					</CardContent>
+				</Card>
+
+				<Card
+					className="flex-1 cursor-pointer transition-all hover:border-primary hover:shadow-md"
+					onClick={() => setShowCloneImporter(true)}
+				>
+					<CardContent className="pt-6">
+						<div className="flex items-center gap-3">
+							<div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/20">
+								<Download className="h-5 w-5 text-blue-400" />
+							</div>
+							<div className="flex-1">
+								<div className="font-medium text-fg">Clone from Instance</div>
+								<div className="text-xs text-fg-muted mt-0.5">
+									Import from existing *arr instance
+								</div>
+							</div>
+						</div>
+					</CardContent>
+				</Card>
+			</div>
 
 			<div className="grid gap-4 md:grid-cols-2">
 				{data.profiles.map((profile) => (

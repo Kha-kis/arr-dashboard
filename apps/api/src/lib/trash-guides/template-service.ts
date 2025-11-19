@@ -40,6 +40,9 @@ export interface TemplateListOptions {
 	serviceType?: "RADARR" | "SONARR";
 	includeDeleted?: boolean;
 	active?: boolean; // Filter by active status
+	search?: string; // Search by name or description
+	sortBy?: "name" | "createdAt" | "updatedAt" | "usageCount";
+	sortOrder?: "asc" | "desc";
 	limit?: number;
 	offset?: number;
 }
@@ -62,20 +65,22 @@ export class TemplateService {
 		userId: string,
 		request: CreateTemplateRequest,
 	): Promise<TrashTemplate> {
-		// Validate name uniqueness for user
+		// Validate name uniqueness for user and service type
 		const existing = await this.prisma.trashTemplate.findFirst({
 			where: {
 				userId,
 				name: request.name,
+				serviceType: request.serviceType,
 				deletedAt: null,
 			},
 		});
 
 		if (existing) {
-			throw new Error(`Template with name "${request.name}" already exists`);
+			throw new Error(`Template with name "${request.name}" already exists for ${request.serviceType}`);
 		}
 
-		// Create template
+		// Create template with Phase 3 metadata
+		const now = new Date();
 		const template = await this.prisma.trashTemplate.create({
 			data: {
 				userId,
@@ -83,6 +88,21 @@ export class TemplateService {
 				description: request.description || null,
 				serviceType: request.serviceType,
 				configData: JSON.stringify(request.config),
+				// Source Quality Profile Information
+				sourceQualityProfileTrashId: request.sourceQualityProfileTrashId || null,
+				sourceQualityProfileName: request.sourceQualityProfileName || null,
+				// Phase 3: Initialize metadata
+				importedAt: now,
+				hasUserModifications: false,
+				syncStrategy: "manual",
+				changeLog: JSON.stringify([
+					{
+						timestamp: now.toISOString(),
+						userId,
+						changeType: "import",
+						description: "Template created from TRaSH Guides quality profile",
+					},
+				]),
 			},
 		});
 
@@ -109,33 +129,71 @@ export class TemplateService {
 	}
 
 	/**
-	 * List templates with filtering
+	 * List templates with filtering, searching, and sorting
 	 */
 	async listTemplates(options: TemplateListOptions = {}): Promise<TrashTemplate[]> {
-		// If filtering by active status, we need to include schedules
+		// Build where clause with search
+		const whereClause: any = {
+			...(options.userId && { userId: options.userId }),
+			...(options.serviceType && { serviceType: options.serviceType }),
+			...(options.includeDeleted ? {} : { deletedAt: null }),
+		};
+
+		// Add search filter for name and description
+		// SQLite doesn't support mode: "insensitive", but LIKE is case-insensitive by default in SQLite
+		if (options.search) {
+			whereClause.OR = [
+				{ name: { contains: options.search } },
+				{ description: { contains: options.search } },
+			];
+		}
+
+		// Determine if we need to include schedules (for active filter or sorting by usage)
 		const includeSchedules = options.active !== undefined;
+		const includeSyncHistory = options.sortBy === "usageCount";
+
+		// Build orderBy clause
+		let orderBy: any = { updatedAt: "desc" }; // Default sort
+		if (options.sortBy) {
+			const sortOrder = options.sortOrder || "desc";
+			switch (options.sortBy) {
+				case "name":
+					orderBy = { name: sortOrder };
+					break;
+				case "createdAt":
+					orderBy = { createdAt: sortOrder };
+					break;
+				case "updatedAt":
+					orderBy = { updatedAt: sortOrder };
+					break;
+				// usageCount will be handled separately after fetching
+			}
+		}
+
+		// Build include clause based on what we need
+		const includeClause: any = {};
+		if (includeSchedules) {
+			includeClause.schedules = {
+				select: {
+					enabled: true,
+				},
+				where: {
+					enabled: true,
+				},
+			};
+		}
+		if (includeSyncHistory) {
+			includeClause._count = {
+				select: {
+					syncHistory: true,
+				},
+			};
+		}
 
 		const templates = await this.prisma.trashTemplate.findMany({
-			where: {
-				...(options.userId && { userId: options.userId }),
-				...(options.serviceType && { serviceType: options.serviceType }),
-				...(options.includeDeleted ? {} : { deletedAt: null }),
-			},
-			...(includeSchedules && {
-				include: {
-					schedules: {
-						select: {
-							enabled: true,
-						},
-						where: {
-							enabled: true,
-						},
-					},
-				},
-			}),
-			orderBy: {
-				updatedAt: "desc",
-			},
+			where: whereClause,
+			...(includeSchedules || includeSyncHistory ? { include: includeClause } : {}),
+			orderBy,
 		});
 
 		// Filter by active status if specified
@@ -147,7 +205,17 @@ export class TemplateService {
 			});
 		}
 
-		// Apply pagination after filtering
+		// Sort by usage count if requested
+		if (options.sortBy === "usageCount") {
+			const sortOrder = options.sortOrder || "desc";
+			filteredTemplates.sort((a, b) => {
+				const countA = "_count" in a ? (a._count as any).syncHistory : 0;
+				const countB = "_count" in b ? (b._count as any).syncHistory : 0;
+				return sortOrder === "asc" ? countA - countB : countB - countA;
+			});
+		}
+
+		// Apply pagination after filtering and sorting
 		const paginatedTemplates = filteredTemplates.slice(
 			options.offset || 0,
 			options.offset ? (options.offset + (options.limit || filteredTemplates.length)) : (options.limit || filteredTemplates.length)
@@ -183,24 +251,47 @@ export class TemplateService {
 				where: {
 					userId,
 					name: request.name,
+					serviceType: existing.serviceType,
 					deletedAt: null,
 					id: { not: templateId },
 				},
 			});
 
 			if (nameConflict) {
-				throw new Error(`Template with name "${request.name}" already exists`);
+				throw new Error(`Template with name "${request.name}" already exists for ${existing.serviceType}`);
 			}
 		}
 
-		// Update template
+		// Update template with Phase 3 metadata
+		const now = new Date();
+
+		// Build update data with Phase 3 metadata
+		const updateData: any = {
+			...(request.name && { name: request.name }),
+			...(request.description !== undefined && { description: request.description || null }),
+			...(request.config && { configData: JSON.stringify(request.config) }),
+		};
+
+		// If config changed, track user modifications
+		if (request.config) {
+			// Parse existing changeLog and append new entry
+			const existingChangeLog = existing.changeLog ? JSON.parse(existing.changeLog) : [];
+			const newChangeLogEntry = {
+				timestamp: now.toISOString(),
+				userId,
+				changeType: "manual_edit",
+				description: "Template updated via wizard",
+			};
+
+			updateData.hasUserModifications = true;
+			updateData.lastModifiedAt = now;
+			updateData.lastModifiedBy = userId;
+			updateData.changeLog = JSON.stringify([...existingChangeLog, newChangeLogEntry]);
+		}
+
 		const updated = await this.prisma.trashTemplate.update({
 			where: { id: templateId },
-			data: {
-				...(request.name && { name: request.name }),
-				...(request.description !== undefined && { description: request.description || null }),
-				...(request.config && { configData: JSON.stringify(request.config) }),
-			},
+			data: updateData,
 		});
 
 		return this.mapToTemplate(updated);
@@ -299,6 +390,7 @@ export class TemplateService {
 				where: {
 					userId,
 					name,
+					serviceType: data.template.serviceType,
 					deletedAt: null,
 				},
 			})
@@ -459,6 +551,23 @@ export class TemplateService {
 			createdAt: prismaTemplate.createdAt.toISOString(),
 			updatedAt: prismaTemplate.updatedAt.toISOString(),
 			deletedAt: prismaTemplate.deletedAt?.toISOString(),
+			// Source Quality Profile Information
+			sourceQualityProfileTrashId: prismaTemplate.sourceQualityProfileTrashId || undefined,
+			sourceQualityProfileName: prismaTemplate.sourceQualityProfileName || undefined,
+			// Phase 3: Versioning & Metadata
+			trashGuidesCommitHash: prismaTemplate.trashGuidesCommitHash || undefined,
+			trashGuidesVersion: prismaTemplate.trashGuidesVersion || undefined,
+			importedAt: prismaTemplate.importedAt?.toISOString() || prismaTemplate.createdAt.toISOString(),
+			lastSyncedAt: prismaTemplate.lastSyncedAt?.toISOString(),
+			// Phase 3: Customization Tracking
+			hasUserModifications: prismaTemplate.hasUserModifications ?? false,
+			modifiedFields: prismaTemplate.modifiedFields ? JSON.parse(prismaTemplate.modifiedFields) : undefined,
+			lastModifiedAt: prismaTemplate.lastModifiedAt?.toISOString(),
+			lastModifiedBy: prismaTemplate.lastModifiedBy || undefined,
+			// Phase 3: Sync Strategy
+			syncStrategy: prismaTemplate.syncStrategy || "manual",
+			// Phase 3: Change Log
+			changeLog: prismaTemplate.changeLog ? JSON.parse(prismaTemplate.changeLog) : undefined,
 		};
 	}
 }

@@ -9,20 +9,26 @@ import { TemplateList } from "./template-list";
 import { TemplateEditor } from "./template-editor";
 import { TemplateImportDialog } from "./template-import-dialog";
 import { QualityProfileWizard } from "./quality-profile-wizard";
+import { SchedulerStatusDashboard } from "./scheduler-status-dashboard";
+import { DeploymentHistoryTable } from "./deployment-history-table";
+import { BulkScoreManager } from "./bulk-score-manager";
+import { useTemplates } from "../../../hooks/api/useTemplates";
 
 type ServiceType = "RADARR" | "SONARR";
-type Tab = "cache" | "templates";
+type Tab = "cache" | "templates" | "scheduler" | "history" | "bulk-scores";
 
-const CONFIG_TYPE_LABELS = {
+const CONFIG_TYPE_LABELS: Record<string, string> = {
 	CUSTOM_FORMATS: "Custom Formats",
 	CF_GROUPS: "CF Groups",
 	QUALITY_SIZE: "Quality Size",
 	NAMING: "Naming Schemes",
 	QUALITY_PROFILES: "Quality Profiles",
-} as const;
+	CF_DESCRIPTIONS: "CF Descriptions",
+};
 
 export const TrashGuidesClient = () => {
 	const { data, isLoading, error, refetch } = useTrashCacheStatus();
+	const { data: templatesData } = useTemplates();
 	const refreshMutation = useRefreshTrashCache();
 	const [refreshing, setRefreshing] = useState<string | null>(null);
 	const [activeTab, setActiveTab] = useState<Tab>("templates");
@@ -62,6 +68,13 @@ export const TrashGuidesClient = () => {
 
 	const handleBrowseQualityProfiles = (serviceType: ServiceType) => {
 		setSelectedServiceType(serviceType);
+		setEditingTemplate(undefined); // Clear any editing template when browsing
+		setQualityProfileBrowserOpen(true);
+	};
+
+	const handleEditTemplate = (template: TrashTemplate) => {
+		setEditingTemplate(template);
+		setSelectedServiceType(template.serviceType);
 		setQualityProfileBrowserOpen(true);
 	};
 
@@ -216,6 +229,39 @@ export const TrashGuidesClient = () => {
 						</button>
 						<button
 							type="button"
+							onClick={() => setActiveTab("bulk-scores")}
+							className={`border-b-2 px-1 pb-3 text-sm font-medium transition ${
+								activeTab === "bulk-scores"
+									? "border-primary text-white"
+									: "border-transparent text-white/60 hover:text-white"
+							}`}
+						>
+							Bulk Score Management
+						</button>
+						<button
+							type="button"
+							onClick={() => setActiveTab("history")}
+							className={`border-b-2 px-1 pb-3 text-sm font-medium transition ${
+								activeTab === "history"
+									? "border-primary text-white"
+									: "border-transparent text-white/60 hover:text-white"
+							}`}
+						>
+							Deployment History
+						</button>
+						<button
+							type="button"
+							onClick={() => setActiveTab("scheduler")}
+							className={`border-b-2 px-1 pb-3 text-sm font-medium transition ${
+								activeTab === "scheduler"
+									? "border-primary text-white"
+									: "border-transparent text-white/60 hover:text-white"
+							}`}
+						>
+							Update Scheduler
+						</button>
+						<button
+							type="button"
 							onClick={() => setActiveTab("cache")}
 							className={`border-b-2 px-1 pb-3 text-sm font-medium transition ${
 								activeTab === "cache"
@@ -246,10 +292,34 @@ export const TrashGuidesClient = () => {
 					{renderServiceSection("RADARR")}
 					{renderServiceSection("SONARR")}
 				</div>
+			) : activeTab === "scheduler" ? (
+				<SchedulerStatusDashboard />
+			) : activeTab === "history" ? (
+				<div className="space-y-6">
+					<div className="rounded-lg border border-white/10 bg-white/5 p-6">
+						<h3 className="text-lg font-semibold text-white mb-4">Deployment History</h3>
+						<p className="text-white/70 mb-4">
+							View all template deployments across your instances. Track deployment status, review applied configurations, and rollback when needed.
+						</p>
+					</div>
+
+					{/* Global Deployment History Table */}
+					<DeploymentHistoryTable />
+				</div>
+			) : activeTab === "bulk-scores" ? (
+				<div className="rounded-lg border border-white/10 bg-white/5 p-6">
+					<BulkScoreManager
+						userId="user-placeholder"
+						onOperationComplete={() => {
+							// Refetch templates or cache data if needed
+							refetch();
+						}}
+					/>
+				</div>
 			) : (
 				<TemplateList
 					onCreateNew={handleCreateNew}
-					onEdit={handleEdit}
+					onEdit={handleEditTemplate}
 					onImport={handleImport}
 					onBrowseQualityProfiles={handleBrowseQualityProfiles}
 				/>
@@ -271,8 +341,10 @@ export const TrashGuidesClient = () => {
 					onClose={() => {
 						setQualityProfileBrowserOpen(false);
 						setSelectedServiceType(null);
+						setEditingTemplate(undefined);
 					}}
 					serviceType={selectedServiceType}
+					editingTemplate={editingTemplate}
 				/>
 			)}
 		</div>

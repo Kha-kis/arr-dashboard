@@ -25,6 +25,7 @@ export {
 	type SelectProps,
 	type SelectOptionProps,
 } from "./select";
+export { Switch } from "./switch";
 export {
 	Dialog,
 	DialogHeader,

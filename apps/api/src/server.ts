@@ -4,6 +4,7 @@ import fastifyRateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance } from "fastify";
 import { type ApiEnv, envSchema } from "./config/env.js";
 import backupSchedulerPlugin from "./plugins/backup-scheduler.js";
+import trashUpdateSchedulerPlugin from "./plugins/trash-update-scheduler.js";
 import lifecyclePlugin from "./plugins/lifecycle.js";
 import { prismaPlugin } from "./plugins/prisma.js";
 import { securityPlugin } from "./plugins/security.js";
@@ -56,11 +57,12 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		timeWindow: env.API_RATE_LIMIT_WINDOW,
 	});
 
-	// Register Prisma, Security, Lifecycle, and Backup Scheduler plugins
+	// Register Prisma, Security, Lifecycle, and Scheduler plugins
 	app.register(prismaPlugin);
 	app.register(securityPlugin);
 	app.register(lifecyclePlugin);
 	app.register(backupSchedulerPlugin);
+	app.register(trashUpdateSchedulerPlugin);
 
 	app.decorateRequest("currentUser", null);
 	app.decorateRequest("sessionToken", null);
