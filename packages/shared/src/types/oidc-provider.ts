@@ -3,9 +3,10 @@ import { z } from "zod";
 /**
  * Public OIDC Provider shape (without client secret)
  * Used for API responses - never includes encrypted secrets
+ * Singleton: id is always 1
  */
 export const oidcProviderSchema = z.object({
-	id: z.string(),
+	id: z.number(),
 	displayName: z.string(),
 	clientId: z.string(),
 	issuer: z.string(),

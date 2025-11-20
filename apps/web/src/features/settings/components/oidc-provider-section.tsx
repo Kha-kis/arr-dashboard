@@ -88,7 +88,7 @@ export const OIDCProviderSection = () => {
 	};
 
 	const handleUpdate = async () => {
-		if (!provider?.id) return;
+		if (!provider) return;
 
 		setError(null);
 		setSuccess(null);
@@ -104,7 +104,7 @@ export const OIDCProviderSection = () => {
 			if (editData.scopes) updatePayload.scopes = editData.scopes;
 			updatePayload.enabled = editData.enabled;
 
-			await updateMutation.mutateAsync({ id: provider.id, data: updatePayload });
+			await updateMutation.mutateAsync(updatePayload);
 			setSuccess("OIDC provider updated successfully!");
 			setIsEditing(false);
 		} catch (err) {
@@ -113,7 +113,7 @@ export const OIDCProviderSection = () => {
 	};
 
 	const handleDelete = async () => {
-		if (!provider?.id) return;
+		if (!provider) return;
 
 		if (!confirm("Are you sure you want to delete this OIDC provider?")) {
 			return;
@@ -123,7 +123,7 @@ export const OIDCProviderSection = () => {
 		setSuccess(null);
 
 		try {
-			await deleteMutation.mutateAsync(provider.id);
+			await deleteMutation.mutateAsync();
 			setSuccess("OIDC provider deleted successfully!");
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to delete OIDC provider");
