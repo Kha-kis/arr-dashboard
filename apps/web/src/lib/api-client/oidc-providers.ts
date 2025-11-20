@@ -36,23 +36,22 @@ export async function createOIDCProvider(data: CreateOIDCProvider): Promise<OIDC
 }
 
 /**
- * Update an existing OIDC provider (admin only)
+ * Update the OIDC provider (admin only, singleton)
  */
 export async function updateOIDCProvider(
-	id: string,
 	data: UpdateOIDCProvider,
 ): Promise<OIDCProvider> {
-	return apiRequest<OIDCProvider>(`/api/oidc-providers/${id}`, {
+	return apiRequest<OIDCProvider>("/api/oidc-providers", {
 		method: "PUT",
 		json: data,
 	});
 }
 
 /**
- * Delete an OIDC provider (admin only)
+ * Delete the OIDC provider (admin only, singleton)
  */
-export async function deleteOIDCProvider(id: string): Promise<void> {
-	await apiRequest<void>(`/api/oidc-providers/${id}`, {
+export async function deleteOIDCProvider(): Promise<void> {
+	await apiRequest<void>("/api/oidc-providers", {
 		method: "DELETE",
 	});
 }
