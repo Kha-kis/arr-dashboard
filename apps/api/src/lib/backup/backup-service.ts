@@ -797,12 +797,17 @@ export class BackupService {
 				});
 			}
 
-			// OIDC providers (no dependencies) - optional for backward compatibility
+			// OIDC provider (singleton, no dependencies) - optional for backward compatibility
+			// Only restore the first provider if multiple are present (migration from old backups)
 			if (data.oidcProviders && data.oidcProviders.length > 0) {
 				this.validateRecords(data.oidcProviders, "oidcProvider", ["id", "clientId", "issuer"]);
-				await tx.oIDCProvider.createMany({
-					data: data.oidcProviders as Prisma.OIDCProviderCreateManyInput[],
-					skipDuplicates: false,
+				const providerData = data.oidcProviders[0] as Prisma.OIDCProviderCreateInput;
+				// Force id to 1 for singleton pattern
+				await tx.oIDCProvider.create({
+					data: {
+						...providerData,
+						id: 1,
+					},
 				});
 			}
 

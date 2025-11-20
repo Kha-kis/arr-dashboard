@@ -80,9 +80,9 @@ model ServiceInstanceTag {
 }
 
 // OIDC Provider Configuration (stored in database, managed via UI)
-// Only one OIDC provider is supported per installation
+// Singleton table: Only one OIDC provider is supported per installation (enforced at database level)
 model OIDCProvider {
-  id                      String   @id @default(cuid())
+  id                      Int      @id @default(1) // Singleton: always 1
   displayName             String   // Display name shown on login button
   clientId                String
   encryptedClientSecret   String   // AES-256-GCM encrypted

@@ -191,7 +191,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Handles OIDC callback after user authorization
 	 */
 	app.get("/oidc/callback", async (request, reply) => {
-		request.log.info({ query: request.query, url: request.url }, "OIDC callback received");
+		request.log.info({ hasCode: "code" in (request.query as any), url: request.url }, "OIDC callback received");
 
 		// Check if OIDC provider returned an error
 		const queryParams = request.query as Record<string, unknown>;
@@ -260,7 +260,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				}
 			}
 
-			request.log.info({ queryParams: Object.fromEntries(queryParams.entries()), redirectUri: dbProvider.redirectUri }, "Exchanging authorization code");
+			request.log.info({ redirectUri: dbProvider.redirectUri }, "Exchanging authorization code");
 
 			// Exchange code for tokens (with state, nonce validation and PKCE)
 			const tokenResponse = await oidcProvider.exchangeCode(
@@ -291,7 +291,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			// Get user info from provider (validates that userinfo sub matches ID token sub)
 			const userInfo = await oidcProvider.getUserInfo(tokenResponse.access_token, expectedSubject);
-			request.log.info({ sub: userInfo.sub, email: userInfo.email }, "Retrieved user info from OIDC provider");
+			request.log.info({ sub: userInfo.sub }, "Retrieved user info from OIDC provider");
 
 			// Find existing OIDC account
 			let oidcAccount = await app.prisma.oIDCAccount.findUnique({
