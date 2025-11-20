@@ -107,11 +107,11 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	});
 
 	/**
-	 * PUT /api/oidc-providers/:id
-	 * Update an existing OIDC provider (admin only)
+	 * PUT /api/oidc-providers
+	 * Update the OIDC provider (admin only, singleton)
 	 */
-	app.put<{ Params: { id: string }; Body: unknown; Reply: OIDCProvider }>(
-		"/api/oidc-providers/:id",
+	app.put<{ Body: unknown; Reply: OIDCProvider }>(
+		"/api/oidc-providers",
 		async (request, reply) => {
 			// Require authentication (single-admin architecture)
 			if (!request.currentUser) {
@@ -124,11 +124,10 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 			}
 
 			const data = validation.data;
-			const { id } = request.params;
 
-			// Check if provider exists
+			// Check if provider exists (singleton with id=1)
 			const existing = await app.prisma.oIDCProvider.findUnique({
-				where: { id },
+				where: { id: 1 },
 			});
 
 			if (!existing) {
@@ -154,9 +153,9 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 				updateData.clientSecretIv = clientSecretIv;
 			}
 
-			// Update provider
+			// Update provider (singleton with id=1)
 			const provider = await app.prisma.oIDCProvider.update({
-				where: { id },
+				where: { id: 1 },
 				data: updateData,
 			});
 
@@ -165,29 +164,27 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	);
 
 	/**
-	 * DELETE /api/oidc-providers/:id
-	 * Delete an OIDC provider (admin only)
+	 * DELETE /api/oidc-providers
+	 * Delete the OIDC provider (admin only, singleton)
 	 */
-	app.delete<{ Params: { id: string } }>("/api/oidc-providers/:id", async (request, reply) => {
+	app.delete("/api/oidc-providers", async (request, reply) => {
 		// Require authentication (single-admin architecture)
 		if (!request.currentUser) {
 			return reply.status(403).send({ error: "Authentication required" });
 		}
 
-		const { id } = request.params;
-
-		// Check if provider exists
+		// Check if provider exists (singleton with id=1)
 		const existing = await app.prisma.oIDCProvider.findUnique({
-			where: { id },
+			where: { id: 1 },
 		});
 
 		if (!existing) {
 			return reply.status(404).send({ error: "OIDC provider not found" });
 		}
 
-		// Delete provider
+		// Delete provider (singleton with id=1)
 		await app.prisma.oIDCProvider.delete({
-			where: { id },
+			where: { id: 1 },
 		});
 
 		return reply.status(204).send();
