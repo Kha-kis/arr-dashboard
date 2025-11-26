@@ -9,6 +9,7 @@ import { z } from "zod";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
+import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js";
 import type { TrashQualityProfile, TemplateConfig } from "@arr/shared";
 
 // ============================================================================
@@ -58,6 +59,7 @@ export async function registerQualityProfileRoutes(
 	const fetcher = createTrashFetcher();
 	const cacheManager = createCacheManager(app.prisma);
 	const templateService = createTemplateService(app.prisma);
+	const versionTracker = createVersionTracker();
 
 	/**
 	 * GET /api/trash-guides/quality-profiles/:serviceType
@@ -421,6 +423,16 @@ export async function registerQualityProfileRoutes(
 				}
 			}
 
+			// Fetch latest TRaSH Guides commit hash for version tracking
+			let latestCommitHash: string | undefined;
+			try {
+				const latestCommit = await versionTracker.getLatestCommit();
+				latestCommitHash = latestCommit?.commitHash;
+				app.log.info({ commitHash: latestCommitHash }, "Fetched TRaSH Guides commit hash for template import");
+			} catch (error) {
+				app.log.warn({ err: error }, "Failed to fetch TRaSH Guides commit hash, template will be created without version tracking");
+			}
+
 			// Create template
 			const template = await templateService.createTemplate(request.currentUser.id, {
 				name: templateName,
@@ -431,6 +443,7 @@ export async function registerQualityProfileRoutes(
 				config: templateConfig,
 				sourceQualityProfileTrashId: profile.trash_id,
 				sourceQualityProfileName: profile.name,
+				trashGuidesCommitHash: latestCommitHash,
 			});
 
 			return reply.status(201).send({
@@ -511,7 +524,7 @@ export async function registerQualityProfileRoutes(
 
 			// Build template config from quality profile using wizard selections
 			// Preserve existing quality profile settings
-			const existingConfig = JSON.parse(existingTemplate.configData);
+			const existingConfig = existingTemplate.config;
 			const templateConfig: TemplateConfig = {
 				customFormats: [],
 				customFormatGroups: [],

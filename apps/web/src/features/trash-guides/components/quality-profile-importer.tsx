@@ -10,8 +10,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "../../../components/ui/button";
-import { Alert, AlertDescription } from "../../../components/ui/alert";
+import { Button, Alert, AlertDescription, Select, SelectOption } from "../../../components/ui";
 import {
 	useInstanceProfiles,
 	useImportProfile,
@@ -122,19 +121,19 @@ export function QualityProfileImporter({
 				<label className="block text-sm font-medium text-fg">
 					Step 1: Select Instance
 				</label>
-				<select
+				<Select
 					value={selectedInstanceId || ""}
 					onChange={(e) => handleInstanceSelect(e.target.value)}
 					disabled={loadingInstances}
-					className="w-full rounded border border-border bg-bg-hover px-3 py-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary/50"
+					className="w-full"
 				>
-					<option value="">Select an instance...</option>
+					<SelectOption value="">Select an instance...</SelectOption>
 					{instances?.map((instance) => (
-						<option key={instance.id} value={instance.id}>
+						<SelectOption key={instance.id} value={instance.id}>
 							{instance.label} ({instance.service})
-						</option>
+						</SelectOption>
 					))}
-				</select>
+				</Select>
 			</div>
 
 			{/* Step 2: Select Profile */}

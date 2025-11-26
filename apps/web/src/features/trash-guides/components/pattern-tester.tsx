@@ -11,9 +11,8 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Alert, AlertDescription } from "../../../components/ui/alert";
-import { Button } from "../../../components/ui/button";
-import { CheckCircle, XCircle, Info, AlertTriangle } from "lucide-react";
+import { Alert, AlertDescription, Button, Input } from "../../../components/ui";
+import { CheckCircle, XCircle, Info, AlertTriangle, AlertCircle } from "lucide-react";
 
 interface PatternTesterProps {
 	pattern: string;
@@ -173,7 +172,7 @@ export function PatternTester({
 						setSelectedPreset(null);
 					}}
 					rows={6}
-					className="w-full rounded border border-border bg-bg-hover px-3 py-2 text-sm font-mono text-fg focus:outline-none focus:ring-2 focus:ring-primary/50"
+					className="w-full rounded-xl border border-border bg-bg-subtle px-4 py-3 text-sm font-mono text-fg placeholder:text-fg-muted/60 transition-all duration-200 hover:border-border/80 hover:bg-bg-subtle/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-bg-subtle/80"
 					placeholder="Enter release names or file names to test..."
 				/>
 			</div>
@@ -234,8 +233,27 @@ export function PatternTester({
 									</div>
 								</div>
 							);
-						} catch {
-							return null;
+						} catch (error) {
+							// Show error indicator for lines that failed regex execution
+							console.error(`Regex execution error for line "${line}":`, error);
+							return (
+								<div
+									key={index}
+									className="rounded border border-amber-500/30 bg-amber-500/10 p-3"
+								>
+									<div className="flex items-start gap-3">
+										<AlertCircle className="h-5 w-5 text-amber-400 flex-shrink-0 mt-0.5" />
+										<div className="flex-1 min-w-0">
+											<code className="text-xs font-mono text-fg break-all">
+												{line}
+											</code>
+											<p className="text-xs text-amber-300 mt-1">
+												Error testing this line - check pattern syntax
+											</p>
+										</div>
+									</div>
+								</div>
+							);
 						}
 					})}
 				</div>

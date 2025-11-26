@@ -10,6 +10,7 @@ import type { TrashConfigType } from "@arr/shared";
 import type { VersionTracker, VersionInfo } from "./version-tracker.js";
 import type { TrashCacheManager } from "./cache-manager.js";
 import type { TrashGitHubFetcher } from "./github-fetcher.js";
+import type { DeploymentExecutorService } from "./deployment-executor.js";
 
 // ============================================================================
 // Types
@@ -21,7 +22,8 @@ export interface TemplateUpdateInfo {
 	currentCommit: string | null;
 	latestCommit: string;
 	hasUserModifications: boolean;
-	syncStrategy: "auto" | "manual" | "notify";
+	// Number of instances with auto-sync enabled for this template
+	autoSyncInstanceCount: number;
 	canAutoSync: boolean;
 	serviceType: "RADARR" | "SONARR";
 }
@@ -50,17 +52,20 @@ export class TemplateUpdater {
 	private versionTracker: VersionTracker;
 	private cacheManager: TrashCacheManager;
 	private githubFetcher: TrashGitHubFetcher;
+	private deploymentExecutor?: DeploymentExecutorService;
 
 	constructor(
 		prisma: PrismaClient,
 		versionTracker: VersionTracker,
 		cacheManager: TrashCacheManager,
 		githubFetcher: TrashGitHubFetcher,
+		deploymentExecutor?: DeploymentExecutorService,
 	) {
 		this.prisma = prisma;
 		this.versionTracker = versionTracker;
 		this.cacheManager = cacheManager;
 		this.githubFetcher = githubFetcher;
+		this.deploymentExecutor = deploymentExecutor;
 	}
 
 	/**
@@ -70,7 +75,7 @@ export class TemplateUpdater {
 		// Get latest commit from GitHub
 		const latestCommit = await this.versionTracker.getLatestCommit();
 
-		// Get all active templates
+		// Get all active templates with their deployment mappings
 		const templates = await this.prisma.trashTemplate.findMany({
 			where: {
 				deletedAt: null,
@@ -81,7 +86,12 @@ export class TemplateUpdater {
 				serviceType: true,
 				trashGuidesCommitHash: true,
 				hasUserModifications: true,
-				syncStrategy: true,
+				// Include deployment mappings to check for auto-sync instances
+				qualityProfileMappings: {
+					select: {
+						syncStrategy: true,
+					},
+				},
 			},
 		});
 
@@ -96,8 +106,13 @@ export class TemplateUpdater {
 
 			// Check if template is outdated
 			if (template.trashGuidesCommitHash !== latestCommit.commitHash) {
-				const canAutoSync =
-					template.syncStrategy === "auto" && !template.hasUserModifications;
+				// Count instances with auto-sync enabled for this template
+				const autoSyncInstanceCount = template.qualityProfileMappings.filter(
+					(m) => m.syncStrategy === "auto"
+				).length;
+
+				// Can auto-sync if has auto-sync instances and no user modifications
+				const canAutoSync = autoSyncInstanceCount > 0 && !template.hasUserModifications;
 
 				templatesWithUpdates.push({
 					templateId: template.id,
@@ -105,7 +120,7 @@ export class TemplateUpdater {
 					currentCommit: template.trashGuidesCommitHash,
 					latestCommit: latestCommit.commitHash,
 					hasUserModifications: template.hasUserModifications,
-					syncStrategy: template.syncStrategy as "auto" | "manual" | "notify",
+					autoSyncInstanceCount,
 					canAutoSync,
 					serviceType: template.serviceType as "RADARR" | "SONARR",
 				});
@@ -184,6 +199,7 @@ export class TemplateUpdater {
 
 	/**
 	 * Process automatic updates for templates with auto-sync enabled
+	 * Also triggers automatic deployment to mapped instances after successful sync
 	 */
 	async processAutoUpdates(): Promise<{
 		processed: number;
@@ -212,6 +228,21 @@ export class TemplateUpdater {
 
 			if (result.success) {
 				successful++;
+
+				// Auto-deploy to mapped instances after successful sync
+				try {
+					await this.deployToMappedInstances(template.templateId);
+				} catch (error) {
+					// Log deployment error but don't fail the sync
+					console.error(`Auto-deploy failed for template ${template.templateId}:`, error);
+					// Optionally add deployment error to result
+					if (!result.errors) {
+						result.errors = [];
+					}
+					result.errors.push(
+						`Auto-deploy failed: ${error instanceof Error ? error.message : String(error)}`
+					);
+				}
 			} else {
 				failed++;
 			}
@@ -226,13 +257,71 @@ export class TemplateUpdater {
 	}
 
 	/**
-	 * Get templates requiring user attention (notify or manual strategy)
+	 * Deploy template to all mapped instances
+	 * @private
+	 */
+	private async deployToMappedInstances(templateId: string): Promise<void> {
+		// Skip if deployment executor not provided
+		if (!this.deploymentExecutor) {
+			console.log(`Template ${templateId} synced, but no deployment executor available`);
+			return;
+		}
+
+		// Get all instances mapped to this template
+		const mappings = await this.prisma.templateQualityProfileMapping.findMany({
+			where: { templateId },
+			include: {
+				instance: true,
+			},
+		});
+
+		if (mappings.length === 0) {
+			console.log(`Template ${templateId} synced, but no instances mapped`);
+			return; // No instances mapped, nothing to deploy
+		}
+
+		console.log(`Auto-deploying template ${templateId} to ${mappings.length} instances...`);
+
+		// Deploy to each mapped instance
+		// Note: Using a system user ID for auto-deployments
+		const SYSTEM_USER_ID = "system";
+		for (const mapping of mappings) {
+			try {
+				const result = await this.deploymentExecutor.deploySingleInstance(
+					templateId,
+					mapping.instanceId,
+					SYSTEM_USER_ID,
+				);
+
+				if (result.success) {
+					console.log(
+						`Successfully auto-deployed template ${templateId} to instance ${mapping.instance.label}: ` +
+						`${result.customFormatsCreated} created, ${result.customFormatsUpdated} updated`
+					);
+				} else {
+					console.error(
+						`Failed to auto-deploy template ${templateId} to instance ${mapping.instance.label}:`,
+						result.errors
+					);
+				}
+			} catch (error) {
+				console.error(
+					`Error auto-deploying template ${templateId} to instance ${mapping.instanceId}:`,
+					error
+				);
+			}
+		}
+	}
+
+	/**
+	 * Get templates requiring user attention (not auto-synced or have user modifications)
 	 */
 	async getTemplatesNeedingAttention(): Promise<TemplateUpdateInfo[]> {
 		const updateCheck = await this.checkForUpdates();
 
+		// Templates that can't auto-sync need user attention
 		return updateCheck.templatesWithUpdates.filter(
-			(t) => !t.canAutoSync && (t.syncStrategy === "notify" || t.hasUserModifications),
+			(t) => !t.canAutoSync || t.hasUserModifications,
 		);
 	}
 
@@ -546,6 +635,7 @@ export function createTemplateUpdater(
 	versionTracker: VersionTracker,
 	cacheManager: TrashCacheManager,
 	githubFetcher: TrashGitHubFetcher,
+	deploymentExecutor?: DeploymentExecutorService,
 ): TemplateUpdater {
-	return new TemplateUpdater(prisma, versionTracker, cacheManager, githubFetcher);
+	return new TemplateUpdater(prisma, versionTracker, cacheManager, githubFetcher, deploymentExecutor);
 }

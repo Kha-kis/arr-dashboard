@@ -18,6 +18,7 @@ export interface TemplateUpdateInfo {
 	behindBy: number;
 	hasUserModifications: boolean;
 	canAutoSync: boolean;
+	autoSyncInstanceCount?: number;
 	lastSyncedAt?: string;
 }
 
@@ -107,6 +108,8 @@ export interface SchedulerStatusResponse {
 		templatesChecked: number;
 		templatesOutdated: number;
 		templatesAutoSynced: number;
+		templatesWithAutoStrategy?: number;
+		templatesWithNotifyStrategy?: number;
 		templatesNeedingAttention: number;
 	};
 }

@@ -103,21 +103,6 @@ export const SyncStrategyControl = ({
 					</button>
 				))}
 			</div>
-
-			{value === "auto" && (
-				<div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
-					<p className="text-xs text-fg-muted">
-						<strong className="text-amber-600 dark:text-amber-400">
-							Note:
-						</strong>{" "}
-						Auto-sync is also controlled by the system-wide{" "}
-						<code className="px-1 py-0.5 rounded bg-bg-subtle text-fg font-mono text-xs">
-							TRASH_AUTO_SYNC_ENABLED
-						</code>{" "}
-						environment variable. Both must be enabled for auto-sync to work.
-					</p>
-				</div>
-			)}
 		</div>
 	);
 };

@@ -24,12 +24,13 @@ import {
 	useDeleteInstanceOverrides,
 } from "../../../hooks/api/useInstanceOverrides";
 import { cn } from "../../../lib/utils";
+import { toast } from "sonner";
 
 interface CustomFormatOverrideRow {
 	trashId: string;
 	name: string;
-	baseScore: number;
-	overrideScore?: number;
+	defaultScore: number; // Score from the template (TRaSH Guides default)
+	overrideScore?: number; // Custom score for this instance (optional)
 	enabled: boolean;
 }
 
@@ -43,7 +44,8 @@ interface InstanceOverrideEditorProps {
 	customFormats: Array<{
 		trashId: string;
 		name: string;
-		scoreOverride: number;
+		defaultScore: number; // Original score from TRaSH Guides template
+		instanceOverrideScore?: number; // Current instance-specific override (if any)
 	}>;
 }
 
@@ -56,7 +58,7 @@ export const InstanceOverrideEditor = ({
 	instanceLabel,
 	customFormats,
 }: InstanceOverrideEditorProps) => {
-	const { data, isLoading, error } = useInstanceOverrides(templateId, instanceId);
+	const { data, isLoading, error, refetch } = useInstanceOverrides(templateId, instanceId);
 	const updateMutation = useUpdateInstanceOverrides();
 	const deleteMutation = useDeleteInstanceOverrides();
 
@@ -64,17 +66,18 @@ export const InstanceOverrideEditor = ({
 	const [hasChanges, setHasChanges] = useState(false);
 
 	// Initialize edited overrides when data loads
+	// Merge customFormats (default scores) with saved overrides from API
 	useEffect(() => {
-		if (data && customFormats.length > 0) {
-			const overrides = data.overrides || {};
+		if (customFormats.length > 0) {
+			const overrides = data?.overrides || {};
 			const scoreOverrides = overrides.scoreOverrides || {};
 			const cfOverrides = overrides.cfOverrides || {};
 
 			const rows: CustomFormatOverrideRow[] = customFormats.map((cf) => ({
 				trashId: cf.trashId,
 				name: cf.name,
-				baseScore: cf.scoreOverride,
-				overrideScore: scoreOverrides[cf.trashId],
+				defaultScore: cf.defaultScore, // TRaSH Guides template default
+				overrideScore: scoreOverrides[cf.trashId], // Saved instance override (if any)
 				enabled: cfOverrides[cf.trashId]?.enabled ?? true,
 			}));
 
@@ -84,7 +87,9 @@ export const InstanceOverrideEditor = ({
 	}, [data, customFormats]);
 
 	const handleScoreChange = (trashId: string, value: string) => {
-		const numValue = value === "" ? undefined : Number.parseInt(value, 10);
+		// Parse the value, treating empty string as undefined
+		const parsed = Number.parseInt(value, 10);
+		const numValue = value === "" ? undefined : (Number.isNaN(parsed) ? undefined : parsed);
 
 		setEditedOverrides((prev) =>
 			prev.map((row) =>
@@ -134,8 +139,8 @@ export const InstanceOverrideEditor = ({
 		const cfOverrides: Record<string, { enabled: boolean }> = {};
 
 		for (const row of editedOverrides) {
-			// Only include score overrides that differ from base
-			if (row.overrideScore !== undefined && row.overrideScore !== row.baseScore) {
+			// Only include score overrides that differ from default
+			if (row.overrideScore !== undefined && row.overrideScore !== row.defaultScore) {
 				scoreOverrides[row.trashId] = row.overrideScore;
 			}
 
@@ -154,9 +159,13 @@ export const InstanceOverrideEditor = ({
 					cfOverrides: Object.keys(cfOverrides).length > 0 ? cfOverrides : undefined,
 				},
 			});
+			// Refetch to ensure we have the latest data from the server
+			await refetch();
 			setHasChanges(false);
+			toast.success("Instance overrides saved successfully");
 		} catch (err) {
 			console.error("Failed to save instance overrides:", err);
+			toast.error("Failed to save instance overrides");
 		}
 	};
 
@@ -165,6 +174,8 @@ export const InstanceOverrideEditor = ({
 
 		try {
 			await deleteMutation.mutateAsync({ templateId, instanceId });
+			// Refetch to ensure we have the latest data from the server
+			await refetch();
 			setEditedOverrides((prev) =>
 				prev.map((row) => ({
 					...row,
@@ -173,8 +184,10 @@ export const InstanceOverrideEditor = ({
 				})),
 			);
 			setHasChanges(false);
+			toast.success("All instance overrides deleted");
 		} catch (err) {
 			console.error("Failed to delete instance overrides:", err);
+			toast.error("Failed to delete instance overrides");
 		}
 	};
 
@@ -257,7 +270,7 @@ export const InstanceOverrideEditor = ({
 										<tr>
 											<th className="text-left p-3 font-medium text-fg">Enabled</th>
 											<th className="text-left p-3 font-medium text-fg">Custom Format</th>
-											<th className="text-center p-3 font-medium text-fg">Base Score</th>
+											<th className="text-center p-3 font-medium text-fg">Default Score</th>
 											<th className="text-center p-3 font-medium text-fg">Override Score</th>
 											<th className="text-center p-3 font-medium text-fg">Actions</th>
 										</tr>
@@ -290,14 +303,15 @@ export const InstanceOverrideEditor = ({
 														</span>
 													</td>
 													<td className="p-3 text-center">
-														<span className="text-sm text-fg-muted">{row.baseScore}</span>
+														<span className="text-sm text-fg-muted">{row.defaultScore}</span>
 													</td>
 													<td className="p-3">
 														<input
+															key={`${row.trashId}-${row.overrideScore === undefined ? 'default' : 'override'}`}
 															type="number"
 															value={row.overrideScore ?? ""}
 															onChange={(e) => handleScoreChange(row.trashId, e.target.value)}
-															placeholder={row.baseScore.toString()}
+															placeholder={row.defaultScore.toString()}
 															disabled={!row.enabled}
 															className="w-20 px-2 py-1 text-center rounded border border-border bg-bg text-sm disabled:opacity-50 disabled:cursor-not-allowed"
 														/>

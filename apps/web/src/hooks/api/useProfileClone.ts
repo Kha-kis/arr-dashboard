@@ -2,7 +2,7 @@
  * API hooks for Quality Profile Clone operations
  */
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { CompleteQualityProfile } from "@arr/shared";
 
 // ============================================================================
@@ -94,6 +94,8 @@ export function useInstanceProfiles(instanceId: string | null) {
  * Import quality profile from instance
  */
 export function useImportProfile() {
+	const queryClient = useQueryClient();
+
 	return useMutation({
 		mutationFn: async (request: ImportProfileRequest) => {
 			const response = await fetch(
@@ -111,7 +113,16 @@ export function useImportProfile() {
 			}
 
 			const data = await response.json();
-			return data.data.profile as CompleteQualityProfile;
+			return {
+				profile: data.data.profile as CompleteQualityProfile,
+				instanceId: request.instanceId,
+			};
+		},
+		onSuccess: (data) => {
+			// Invalidate profile list for the affected instance
+			queryClient.invalidateQueries({
+				queryKey: ["profile-clone", "profiles", data.instanceId],
+			});
 		},
 	});
 }
@@ -146,6 +157,8 @@ export function usePreviewProfileDeployment() {
  * Deploy complete profile to instance
  */
 export function useDeployProfile() {
+	const queryClient = useQueryClient();
+
 	return useMutation({
 		mutationFn: async (request: DeployProfileRequest) => {
 			const response = await fetch(
@@ -163,7 +176,16 @@ export function useDeployProfile() {
 			}
 
 			const data = await response.json();
-			return data.data.profileId as number;
+			return {
+				profileId: data.data.profileId as number,
+				instanceId: request.instanceId,
+			};
+		},
+		onSuccess: (data) => {
+			// Invalidate profile list for the affected instance
+			queryClient.invalidateQueries({
+				queryKey: ["profile-clone", "profiles", data.instanceId],
+			});
 		},
 	});
 }

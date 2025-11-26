@@ -349,9 +349,6 @@ export interface TrashTemplate {
 	lastModifiedAt?: string;
 	lastModifiedBy?: string; // userId who made last modification
 
-	// Phase 3: Sync Strategy
-	syncStrategy: "auto" | "manual" | "notify"; // How to handle TRaSH Guides updates
-
 	// Phase 3: Change History (optional, for audit trail)
 	changeLog?: TemplateChangeLogEntry[];
 
@@ -367,9 +364,9 @@ export interface CreateTemplateRequest {
 	description?: string;
 	serviceType: "RADARR" | "SONARR";
 	config: TemplateConfig;
-	syncStrategy?: "auto" | "manual" | "notify";
 	sourceQualityProfileTrashId?: string; // TRaSH quality profile trash_id this template was created from
 	sourceQualityProfileName?: string; // TRaSH quality profile name (e.g., "HD Bluray + WEB")
+	trashGuidesCommitHash?: string; // TRaSH Guides commit hash at time of import for version tracking
 }
 
 /**
@@ -379,7 +376,6 @@ export interface UpdateTemplateRequest {
 	name?: string;
 	description?: string;
 	config?: TemplateConfig;
-	syncStrategy?: "auto" | "manual" | "notify";
 }
 
 // ============================================================================
@@ -632,6 +628,8 @@ export interface SchedulerStats {
 		templatesOutdated: number;
 		templatesAutoSynced: number;
 		templatesNeedingAttention: number;
+		templatesWithAutoStrategy: number;
+		templatesWithNotifyStrategy: number;
 		cachesRefreshed: number;
 		cachesFailed: number;
 		errors: string[];
@@ -757,6 +755,9 @@ export interface CustomFormatDeploymentItem {
 	trashId: string;
 	name: string;
 	action: DeploymentAction;
+	defaultScore: number; // Original score from the template (TRaSH Guides default)
+	instanceOverrideScore?: number; // Instance-specific override score (if set)
+	scoreOverride: number; // Final effective score (instanceOverrideScore ?? defaultScore)
 	templateData: unknown; // Full CF data from template
 	instanceData?: unknown; // Existing CF data from instance (if update/conflict)
 	conflicts: CustomFormatConflict[];
@@ -918,4 +919,49 @@ export interface BulkScoreManagementResponse {
 		customFormatsUpdated: string[]; // CF trash_ids
 		errors?: string[];
 	};
+}
+
+// ============================================================================
+// Template Instance Deployment Types
+// ============================================================================
+
+/**
+ * Sync strategy type for template deployments
+ * - auto: Automatically apply TRaSH updates to this instance
+ * - manual: User must manually trigger sync
+ * - notify: Notify user of updates but don't auto-apply
+ */
+export type SyncStrategyType = "auto" | "manual" | "notify";
+
+/**
+ * Template to Instance deployment mapping
+ * Tracks which templates are deployed to which instances with sync preferences
+ */
+export interface TemplateInstanceDeployment {
+	id: string;
+	templateId: string;
+	instanceId: string;
+	qualityProfileId: number;
+	qualityProfileName: string;
+	syncStrategy: SyncStrategyType;
+	createdAt: string;
+	updatedAt: string;
+	lastSyncedAt: string;
+}
+
+/**
+ * Request to deploy a template to an instance
+ */
+export interface DeployTemplateToInstanceRequest {
+	templateId: string;
+	instanceId: string;
+	qualityProfileName: string;
+	syncStrategy: SyncStrategyType;
+}
+
+/**
+ * Request to update deployment settings for an instance
+ */
+export interface UpdateDeploymentSettingsRequest {
+	syncStrategy: SyncStrategyType;
 }

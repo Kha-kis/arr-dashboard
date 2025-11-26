@@ -266,15 +266,7 @@ export class ArrApiClient {
 			const result = await this.request<QualityProfile>("POST", "qualityprofile", profile);
 			return result;
 		} catch (error) {
-			console.error("[ARR-API] Quality profile creation FAILED:");
-			console.error("[ARR-API] Error object:", JSON.stringify(error, null, 2));
-			if ((error as { response?: string }).response) {
-				console.error("[ARR-API] Full API response:", (error as { response: string }).response);
-			}
-			// Write full error to file for debugging
-			const fs = await import("fs");
-			fs.writeFileSync("/tmp/radarr-error.json", JSON.stringify(error, null, 2));
-			console.error("[ARR-API] Full error written to /tmp/radarr-error.json");
+			console.error("[ARR-API] Quality profile creation failed:", error instanceof Error ? error.message : "Unknown error");
 			throw error;
 		}
 	}

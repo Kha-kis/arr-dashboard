@@ -19,6 +19,9 @@ import {
 	Server,
 	Package,
 	Settings,
+	RefreshCw,
+	Bell,
+	Hand,
 } from "lucide-react";
 import { useDeploymentPreview } from "../../../hooks/api/useDeploymentPreview";
 import { executeDeployment } from "../../../lib/api-client/trash-guides";
@@ -50,6 +53,7 @@ export const DeploymentPreviewModal = ({
 		new Set(),
 	);
 	const [showOverrideEditor, setShowOverrideEditor] = useState(false);
+	const [syncStrategy, setSyncStrategy] = useState<"auto" | "manual" | "notify">("notify");
 
 	const toggleConflict = (trashId: string) => {
 		setExpandedConflicts((prev) => {
@@ -125,6 +129,7 @@ export const DeploymentPreviewModal = ({
 			const response = await executeDeployment({
 				templateId,
 				instanceId,
+				syncStrategy,
 			});
 
 			if (response.success) {
@@ -226,6 +231,96 @@ export const DeploymentPreviewModal = ({
 								>
 									<Settings className="h-3 w-3" />
 									Instance Overrides
+								</button>
+							</div>
+						</div>
+
+						{/* Sync Strategy Selector */}
+						<div className="rounded-lg border border-border bg-bg-subtle p-4">
+							<h3 className="text-sm font-medium text-fg mb-3">
+								Update Behavior
+							</h3>
+							<p className="text-xs text-fg-muted mb-3">
+								Choose how this instance should handle future template updates
+							</p>
+							<div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+								<button
+									type="button"
+									onClick={() => setSyncStrategy("auto")}
+									className={cn(
+										"flex items-center gap-3 rounded-lg border p-3 text-left transition",
+										syncStrategy === "auto"
+											? "border-green-500 bg-green-500/10"
+											: "border-border hover:border-border/80 hover:bg-bg-subtle/50"
+									)}
+								>
+									<RefreshCw className={cn(
+										"h-5 w-5 shrink-0",
+										syncStrategy === "auto" ? "text-green-500" : "text-fg-muted"
+									)} />
+									<div>
+										<p className={cn(
+											"text-sm font-medium",
+											syncStrategy === "auto" ? "text-green-500" : "text-fg"
+										)}>
+											Auto-sync
+										</p>
+										<p className="text-xs text-fg-muted">
+											Automatically apply updates
+										</p>
+									</div>
+								</button>
+								<button
+									type="button"
+									onClick={() => setSyncStrategy("notify")}
+									className={cn(
+										"flex items-center gap-3 rounded-lg border p-3 text-left transition",
+										syncStrategy === "notify"
+											? "border-blue-500 bg-blue-500/10"
+											: "border-border hover:border-border/80 hover:bg-bg-subtle/50"
+									)}
+								>
+									<Bell className={cn(
+										"h-5 w-5 shrink-0",
+										syncStrategy === "notify" ? "text-blue-500" : "text-fg-muted"
+									)} />
+									<div>
+										<p className={cn(
+											"text-sm font-medium",
+											syncStrategy === "notify" ? "text-blue-500" : "text-fg"
+										)}>
+											Notify
+										</p>
+										<p className="text-xs text-fg-muted">
+											Alert me before syncing
+										</p>
+									</div>
+								</button>
+								<button
+									type="button"
+									onClick={() => setSyncStrategy("manual")}
+									className={cn(
+										"flex items-center gap-3 rounded-lg border p-3 text-left transition",
+										syncStrategy === "manual"
+											? "border-amber-500 bg-amber-500/10"
+											: "border-border hover:border-border/80 hover:bg-bg-subtle/50"
+									)}
+								>
+									<Hand className={cn(
+										"h-5 w-5 shrink-0",
+										syncStrategy === "manual" ? "text-amber-500" : "text-fg-muted"
+									)} />
+									<div>
+										<p className={cn(
+											"text-sm font-medium",
+											syncStrategy === "manual" ? "text-amber-500" : "text-fg"
+										)}>
+											Manual
+										</p>
+										<p className="text-xs text-fg-muted">
+											Only sync when I choose
+										</p>
+									</div>
 								</button>
 							</div>
 						</div>
@@ -414,7 +509,8 @@ export const DeploymentPreviewModal = ({
 					customFormats={data.data.customFormats.map((cf) => ({
 						trashId: cf.trashId,
 						name: cf.name,
-						scoreOverride: (cf.templateData as { scoreOverride?: number })?.scoreOverride ?? 0,
+						defaultScore: cf.defaultScore ?? 0,
+						instanceOverrideScore: cf.instanceOverrideScore,
 					}))}
 				/>
 			)}

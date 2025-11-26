@@ -358,10 +358,12 @@ export class TrashGitHubFetcher {
 			const titleMatch = rawMarkdown.match(/^#\s+(.+)$/m);
 			const displayName = titleMatch?.[1] || cfName;
 
-			// Clean markdown: remove includes and title
+			// Clean markdown: remove includes, title, and Kramdown-specific syntax
 			const cleanedMarkdown = rawMarkdown
 				.replace(/--8<--.*?--8<--/gs, "") // Remove includes
 				.replace(/^#\s+.+$/m, "") // Remove title
+				.replace(/\{:target="_blank"\s*rel="noopener noreferrer"\}/g, "") // Remove Kramdown link attributes
+				.replace(/\{:.*?\}/g, "") // Remove any other Kramdown inline attributes
 				.trim();
 
 			// Convert markdown to HTML using marked

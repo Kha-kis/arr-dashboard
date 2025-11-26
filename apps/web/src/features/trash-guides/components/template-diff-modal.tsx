@@ -244,81 +244,117 @@ export const TemplateDiffModal = ({
 						{data.data.customFormatDiffs.length > 0 && (
 							<div className="space-y-3">
 								<h3 className="text-sm font-medium text-fg">
-									Custom Format Changes ({data.data.customFormatDiffs.length})
+									Custom Format Changes ({data.data.customFormatDiffs.filter(d => d.changeType !== "unchanged").length})
 								</h3>
-								<div className="space-y-2 max-h-64 overflow-y-auto">
+								<div className="space-y-2 max-h-80 overflow-y-auto pr-1">
 									{data.data.customFormatDiffs
 										.filter((diff) => diff.changeType !== "unchanged")
-										.map((diff) => (
-											<div
-												key={diff.trashId}
-												className={cn(
-													"rounded-lg border p-3",
-													getChangeTypeColor(diff.changeType),
-												)}
-											>
-												<div className="flex items-start justify-between gap-3">
-													<div className="flex items-start gap-2 flex-1 min-w-0">
-														{getChangeTypeIcon(diff.changeType)}
-														<div className="flex-1 min-w-0">
-															<p className="text-sm font-medium truncate">
-																{diff.name}
-															</p>
-															{diff.changeType === "modified" && (
-																<p className="text-xs mt-1 opacity-80">
-																	Specifications changed
-																</p>
-															)}
-															{diff.currentScore !== undefined && (
-																<p className="text-xs mt-1 opacity-80">
-																	Score: {diff.currentScore}
-																</p>
+										.map((diff) => {
+											const hasDetails = diff.hasSpecificationChanges ||
+												diff.currentSpecifications ||
+												diff.newSpecifications ||
+												diff.currentScore !== undefined ||
+												diff.newScore !== undefined;
+											const isExpanded = expandedItems.has(diff.trashId);
+
+											return (
+												<div
+													key={diff.trashId}
+													className={cn(
+														"rounded-lg border",
+														getChangeTypeColor(diff.changeType),
+													)}
+												>
+													<button
+														type="button"
+														onClick={() => hasDetails && toggleExpanded(diff.trashId)}
+														className={cn(
+															"w-full text-left p-3",
+															hasDetails && "cursor-pointer hover:bg-black/5 dark:hover:bg-white/5"
+														)}
+														disabled={!hasDetails}
+													>
+														<div className="flex items-center justify-between gap-3">
+															<div className="flex items-center gap-2 flex-1 min-w-0">
+																{getChangeTypeIcon(diff.changeType)}
+																<span className="text-sm font-medium truncate">
+																	{diff.name}
+																</span>
+																{diff.currentScore !== undefined && diff.changeType !== "added" && (
+																	<span className="text-xs opacity-70 shrink-0">
+																		Score: {diff.currentScore}
+																	</span>
+																)}
+																{diff.newScore !== undefined && diff.changeType === "added" && (
+																	<span className="text-xs opacity-70 shrink-0">
+																		Score: {diff.newScore}
+																	</span>
+																)}
+																{diff.changeType === "modified" && diff.currentScore !== diff.newScore && (
+																	<span className="text-xs opacity-70 shrink-0">
+																		{diff.currentScore} → {diff.newScore}
+																	</span>
+																)}
+															</div>
+															{hasDetails && (
+																<span className="shrink-0">
+																	{isExpanded ? (
+																		<ChevronDown className="h-4 w-4" />
+																	) : (
+																		<ChevronRight className="h-4 w-4" />
+																	)}
+																</span>
 															)}
 														</div>
-													</div>
+													</button>
 
-													{diff.hasSpecificationChanges && (
-														<button
-															type="button"
-															onClick={() => toggleExpanded(diff.trashId)}
-															className="shrink-0 p-1 hover:bg-black/10 dark:hover:bg-white/10 rounded"
-														>
-															{expandedItems.has(diff.trashId) ? (
-																<ChevronDown className="h-4 w-4" />
-															) : (
-																<ChevronRight className="h-4 w-4" />
+													{isExpanded && hasDetails && (
+														<div className="px-3 pb-3 space-y-2 text-xs border-t border-current/20">
+															{diff.changeType === "removed" && diff.currentSpecifications && (
+																<div className="pt-2">
+																	<p className="font-medium opacity-80 mb-1">
+																		Specifications (will be removed):
+																	</p>
+																	<pre className="p-2 rounded bg-black/10 dark:bg-white/10 overflow-x-auto text-[10px] leading-relaxed">
+																		{JSON.stringify(diff.currentSpecifications, null, 2)}
+																	</pre>
+																</div>
 															)}
-														</button>
+															{diff.changeType === "added" && diff.newSpecifications && (
+																<div className="pt-2">
+																	<p className="font-medium opacity-80 mb-1">
+																		Specifications (will be added):
+																	</p>
+																	<pre className="p-2 rounded bg-black/10 dark:bg-white/10 overflow-x-auto text-[10px] leading-relaxed">
+																		{JSON.stringify(diff.newSpecifications, null, 2)}
+																	</pre>
+																</div>
+															)}
+															{diff.changeType === "modified" && (
+																<>
+																	{diff.currentSpecifications && (
+																		<div className="pt-2">
+																			<p className="font-medium opacity-80 mb-1">Current:</p>
+																			<pre className="p-2 rounded bg-black/10 dark:bg-white/10 overflow-x-auto text-[10px] leading-relaxed">
+																				{JSON.stringify(diff.currentSpecifications, null, 2)}
+																			</pre>
+																		</div>
+																	)}
+																	{diff.newSpecifications && (
+																		<div>
+																			<p className="font-medium opacity-80 mb-1">New:</p>
+																			<pre className="p-2 rounded bg-black/10 dark:bg-white/10 overflow-x-auto text-[10px] leading-relaxed">
+																				{JSON.stringify(diff.newSpecifications, null, 2)}
+																			</pre>
+																		</div>
+																	)}
+																</>
+															)}
+														</div>
 													)}
 												</div>
-
-												{expandedItems.has(diff.trashId) &&
-													diff.hasSpecificationChanges && (
-														<div className="mt-3 pt-3 border-t border-current/20 space-y-2 text-xs">
-															<div>
-																<p className="font-medium opacity-80 mb-1">
-																	Current Specifications:
-																</p>
-																<code className="block p-2 rounded bg-black/10 dark:bg-white/10 overflow-x-auto">
-																	{JSON.stringify(
-																		diff.currentSpecifications,
-																		null,
-																		2,
-																	)}
-																</code>
-															</div>
-															<div>
-																<p className="font-medium opacity-80 mb-1">
-																	New Specifications:
-																</p>
-																<code className="block p-2 rounded bg-black/10 dark:bg-white/10 overflow-x-auto">
-																	{JSON.stringify(diff.newSpecifications, null, 2)}
-																</code>
-															</div>
-														</div>
-													)}
-											</div>
-										))}
+											);
+										})}
 								</div>
 							</div>
 						)}

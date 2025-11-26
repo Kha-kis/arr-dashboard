@@ -42,6 +42,7 @@ export const SyncValidationModal = ({
 				},
 			},
 		);
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- Only run on mount with templateId/instanceId
 	}, [templateId, instanceId]);
 
 	const handleResolutionChange = (configName: string, action: "REPLACE" | "SKIP") => {

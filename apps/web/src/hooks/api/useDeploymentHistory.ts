@@ -4,10 +4,11 @@ import {
 	getTemplateDeploymentHistory,
 	getInstanceDeploymentHistory,
 	getDeploymentHistoryDetail,
-	rollbackDeployment,
+	undeployDeployment,
+	deleteDeploymentHistory,
 	type DeploymentHistoryResponse,
 	type DeploymentHistoryDetailResponse,
-	type RollbackResponse,
+	type UndeployResponse,
 } from "../../lib/api-client/trash-guides";
 
 /**
@@ -69,13 +70,13 @@ export function useDeploymentHistoryDetail(historyId: string | null) {
 }
 
 /**
- * Hook to rollback a deployment
+ * Hook to undeploy a deployment (remove CFs unique to this template)
  */
-export function useRollbackDeployment() {
+export function useUndeployDeployment() {
 	const queryClient = useQueryClient();
 
-	return useMutation<RollbackResponse, Error, string>({
-		mutationFn: (historyId: string) => rollbackDeployment(historyId),
+	return useMutation<UndeployResponse, Error, string>({
+		mutationFn: (historyId: string) => undeployDeployment(historyId),
 		onSuccess: (data, historyId) => {
 			// Invalidate deployment history queries to refetch updated data
 			queryClient.invalidateQueries({
@@ -85,6 +86,23 @@ export function useRollbackDeployment() {
 			// Invalidate the specific history detail
 			queryClient.invalidateQueries({
 				queryKey: ["deployment-history", "detail", historyId],
+			});
+		},
+	});
+}
+
+/**
+ * Hook to delete a deployment history entry
+ */
+export function useDeleteDeploymentHistory() {
+	const queryClient = useQueryClient();
+
+	return useMutation<{ success: boolean; message: string }, Error, string>({
+		mutationFn: (historyId: string) => deleteDeploymentHistory(historyId),
+		onSuccess: () => {
+			// Invalidate all deployment history queries to refetch updated data
+			queryClient.invalidateQueries({
+				queryKey: ["deployment-history"],
 			});
 		},
 	});

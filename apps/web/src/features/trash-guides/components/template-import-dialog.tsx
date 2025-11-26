@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useImportTemplate } from "../../../hooks/api/useTemplates";
-import { Alert, AlertDescription } from "../../../components/ui";
+import { Alert, AlertDescription, Input } from "../../../components/ui";
 import { Upload, X } from "lucide-react";
 
 interface TemplateImportDialogProps {
@@ -74,11 +74,11 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 						<label className="mb-2 block text-sm font-medium text-white">
 							Upload JSON File
 						</label>
-						<input
+						<Input
 							type="file"
 							accept=".json,application/json"
 							onChange={handleFileUpload}
-							className="w-full rounded border border-white/20 bg-white/10 px-3 py-2 text-sm text-white file:mr-4 file:rounded file:border-0 file:bg-primary file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-primary/90"
+							className="w-full"
 						/>
 					</div>
 
@@ -98,7 +98,7 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 							onChange={(e) => setJsonData(e.target.value)}
 							placeholder='{"version": "1.0", "template": {...}}'
 							rows={12}
-							className="w-full rounded border border-white/20 bg-white/10 px-3 py-2 font-mono text-sm text-white placeholder:text-white/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+							className="w-full rounded-xl border border-border bg-bg-subtle px-4 py-3 font-mono text-sm text-fg placeholder:text-fg-muted/60 transition-all duration-200 hover:border-border/80 hover:bg-bg-subtle/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-bg-subtle/80"
 						/>
 					</div>
 

@@ -166,25 +166,26 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 		const { instanceId } = request.params as { instanceId: string };
 
 		try {
-			// Get instance
+			// Get instance (owned by current user)
 			const instance = await app.prisma.serviceInstance.findFirst({
 				where: {
 					id: instanceId,
+					userId, // Enforce ownership
 				},
 			});
 
 			if (!instance) {
 				return reply.status(404).send({
 					success: false,
-					error: "Instance not found",
+					error: "Instance not found or access denied",
 				});
 			}
 
 			// Decrypt API key
-			const apiKey = app.encryptor.decrypt(
-				instance.encryptedApiKey,
-				instance.encryptionIv,
-			);
+			const apiKey = app.encryptor.decrypt({
+				value: instance.encryptedApiKey,
+				iv: instance.encryptionIv,
+			});
 			const baseUrl = instance.baseUrl?.replace(/\/$/, "") || "";
 
 			if (!baseUrl || !apiKey) {

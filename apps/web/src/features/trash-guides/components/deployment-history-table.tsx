@@ -5,7 +5,8 @@ import {
 	useAllDeploymentHistory,
 	useTemplateDeploymentHistory,
 	useInstanceDeploymentHistory,
-	useRollbackDeployment,
+	useUndeployDeployment,
+	useDeleteDeploymentHistory,
 } from "../../../hooks/api/useDeploymentHistory";
 import type { DeploymentHistoryEntry } from "../../../lib/api-client/trash-guides";
 import { format } from "date-fns";
@@ -24,7 +25,10 @@ export function DeploymentHistoryTable({
 }: DeploymentHistoryTableProps) {
 	const [offset, setOffset] = useState(0);
 	const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
-	const rollbackMutation = useRollbackDeployment();
+	const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+	const [undeployConfirmId, setUndeployConfirmId] = useState<string | null>(null);
+	const undeployMutation = useUndeployDeployment();
+	const deleteMutation = useDeleteDeploymentHistory();
 
 	// Use appropriate hook based on props
 	const { data, isLoading, error } = templateId
@@ -187,19 +191,71 @@ export function DeploymentHistoryTable({
 											>
 												View Details
 											</button>
-											{!entry.rolledBack && entry.backupId && (
-												<button
-													className="text-xs text-destructive hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
-													onClick={() => rollbackMutation.mutate(entry.id)}
-													disabled={rollbackMutation.isPending}
-												>
-													{rollbackMutation.isPending ? "Rolling back..." : "Rollback"}
-												</button>
+											{!entry.rolledBack && (
+												undeployConfirmId === entry.id ? (
+													<div className="flex items-center gap-1">
+														<button
+															className="text-xs text-destructive hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+															onClick={() => {
+																undeployMutation.mutate(entry.id, {
+																	onSuccess: () => setUndeployConfirmId(null),
+																});
+															}}
+															disabled={undeployMutation.isPending}
+														>
+															{undeployMutation.isPending ? "Undeploying..." : "Confirm"}
+														</button>
+														<button
+															className="text-xs text-muted-foreground hover:underline"
+															onClick={() => setUndeployConfirmId(null)}
+															disabled={undeployMutation.isPending}
+														>
+															Cancel
+														</button>
+													</div>
+												) : (
+													<button
+														className="text-xs text-orange-600 dark:text-orange-400 hover:underline"
+														onClick={() => setUndeployConfirmId(entry.id)}
+														title="Remove Custom Formats deployed by this template (shared CFs will be kept)"
+													>
+														Undeploy
+													</button>
+												)
 											)}
 											{entry.rolledBack && (
 												<span className="text-xs text-muted-foreground">
-													Rolled back
+													Undeployed
 												</span>
+											)}
+											{deleteConfirmId === entry.id ? (
+												<div className="flex items-center gap-1">
+													<button
+														className="text-xs text-destructive hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+														onClick={() => {
+															deleteMutation.mutate(entry.id, {
+																onSuccess: () => setDeleteConfirmId(null),
+															});
+														}}
+														disabled={deleteMutation.isPending}
+													>
+														{deleteMutation.isPending ? "Deleting..." : "Confirm"}
+													</button>
+													<button
+														className="text-xs text-muted-foreground hover:underline"
+														onClick={() => setDeleteConfirmId(null)}
+														disabled={deleteMutation.isPending}
+													>
+														Cancel
+													</button>
+												</div>
+											) : (
+												<button
+													className="text-xs text-muted-foreground hover:text-destructive hover:underline"
+													onClick={() => setDeleteConfirmId(entry.id)}
+												>
+													Delete
+												</button>
 											)}
 										</div>
 									</td>
@@ -239,8 +295,8 @@ export function DeploymentHistoryTable({
 				<DeploymentHistoryDetailsModal
 					historyId={selectedHistoryId}
 					onClose={() => setSelectedHistoryId(null)}
-					onRollback={(historyId) => {
-						rollbackMutation.mutate(historyId, {
+					onUndeploy={(historyId) => {
+						undeployMutation.mutate(historyId, {
 							onSuccess: () => {
 								setSelectedHistoryId(null);
 							},

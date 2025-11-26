@@ -11,7 +11,7 @@
 
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { Search, Save, ArrowUpCircle, X, RotateCcw } from "lucide-react";
 import type {
 	CustomFormatScoreEntry,
@@ -20,6 +20,7 @@ import type {
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useQualityProfileOverrides, useDeleteOverride, useBulkDeleteOverrides } from "../../../hooks/api/useQualityProfileOverrides";
 import { PromoteOverrideDialog } from "./promote-override-dialog";
+import { Select, SelectOption, Input } from "../../../components/ui";
 
 interface BulkScoreManagerProps {
 	/** User ID for data fetching */
@@ -79,10 +80,43 @@ export function BulkScoreManager({
 		return map;
 	}, [allOverrides]);
 
+	// Fetch overrides for multiple quality profiles
+	const fetchOverridesForProfiles = useCallback(async (profileIds: number[]) => {
+		if (!instanceId || profileIds.length === 0) return;
+
+		try {
+			// Fetch overrides for each profile in parallel
+			const overridePromises = profileIds.map(profileId =>
+				fetch(`/api/trash-guides/instances/${instanceId}/quality-profiles/${profileId}/overrides`)
+					.then(res => res.ok ? res.json() : null)
+					.then(data => ({ profileId, data }))
+			);
+
+			const results = await Promise.all(overridePromises);
+
+			// Build override map: ${profileId}-${cfId} → override data
+			const newOverrides = new Map<string, { customFormatId: number; score: number }>();
+			for (const result of results) {
+				if (result.data?.success && result.data.overrides) {
+					for (const override of result.data.overrides) {
+						const key = `${result.profileId}-${override.customFormatId}`;
+						newOverrides.set(key, {
+							customFormatId: override.customFormatId,
+							score: override.score,
+						});
+					}
+				}
+			}
+
+			setAllOverrides(newOverrides);
+		} catch (error) {
+			console.error("Error fetching overrides:", error);
+		}
+	}, [instanceId]);
+
 	// Fetch scores based on filters
-	const fetchScores = async () => {
+	const fetchScores = useCallback(async () => {
 		if (!instanceId) {
-			alert("Please select an instance to view scores");
 			return;
 		}
 
@@ -133,41 +167,19 @@ export function BulkScoreManager({
 		} finally {
 			setIsLoading(false);
 		}
-	};
+	}, [instanceId, searchTerm, modifiedOnly, fetchOverridesForProfiles]);
 
-	// Fetch overrides for multiple quality profiles
-	const fetchOverridesForProfiles = async (profileIds: number[]) => {
-		if (!instanceId || profileIds.length === 0) return;
-
-		try {
-			// Fetch overrides for each profile in parallel
-			const overridePromises = profileIds.map(profileId =>
-				fetch(`/api/trash-guides/instances/${instanceId}/quality-profiles/${profileId}/overrides`)
-					.then(res => res.ok ? res.json() : null)
-					.then(data => ({ profileId, data }))
-			);
-
-			const results = await Promise.all(overridePromises);
-
-			// Build override map: ${profileId}-${cfId} → override data
-			const newOverrides = new Map<string, { customFormatId: number; score: number }>();
-			for (const result of results) {
-				if (result.data?.success && result.data.overrides) {
-					for (const override of result.data.overrides) {
-						const key = `${result.profileId}-${override.customFormatId}`;
-						newOverrides.set(key, {
-							customFormatId: override.customFormatId,
-							score: override.score,
-						});
-					}
-				}
-			}
-
-			setAllOverrides(newOverrides);
-		} catch (error) {
-			console.error("Error fetching overrides:", error);
+	// Auto-fetch scores when instance changes
+	useEffect(() => {
+		if (instanceId) {
+			// Clear previous data and fetch new scores
+			setScores([]);
+			setModifiedScores(new Map());
+			setSelectedCFs(new Set());
+			fetchScores();
 		}
-	};
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- Only trigger on instanceId change, not on filter/callback changes
+	}, [instanceId]);
 
 	// Handle score change in table
 	const handleScoreChange = (cfTrashId: string, templateId: string, newScore: number) => {
@@ -460,30 +472,30 @@ export function BulkScoreManager({
 
 			{/* Filters */}
 			<div className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/5 p-4 sm:flex-row sm:items-center sm:flex-wrap">
-				<select
+				<Select
 					value={instanceId}
 					onChange={(e) => setInstanceId(e.target.value)}
-					className="min-w-[200px] rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+					className="min-w-[200px]"
 				>
-					<option value="">Select Instance</option>
+					<SelectOption value="">Select Instance</SelectOption>
 					{instances
 						.filter((instance) => instance.service === "radarr" || instance.service === "sonarr")
 						.map((instance) => (
-							<option key={instance.id} value={instance.id}>
+							<SelectOption key={instance.id} value={instance.id}>
 								{instance.label} ({instance.service.toUpperCase()})
-							</option>
+							</SelectOption>
 						))}
-				</select>
+				</Select>
 
 				<div className="flex-1 min-w-[200px]">
 					<div className="relative">
 						<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" />
-						<input
+						<Input
 							type="text"
 							placeholder="Search custom formats..."
 							value={searchTerm}
 							onChange={(e) => setSearchTerm(e.target.value)}
-							className="w-full rounded-lg border border-white/20 bg-white/10 px-4 py-2 pl-10 text-sm text-white placeholder:text-white/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+							className="w-full pl-10"
 						/>
 					</div>
 				</div>
@@ -498,14 +510,12 @@ export function BulkScoreManager({
 					<span>Modified Only</span>
 				</label>
 
-				<button
-					type="button"
-					onClick={fetchScores}
-					disabled={isLoading || !instanceId}
-					className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary/90 disabled:opacity-50 whitespace-nowrap"
-				>
-					{isLoading ? "Loading..." : "Load Scores"}
-				</button>
+				{isLoading && (
+					<div className="flex items-center gap-2 text-sm text-white/60">
+						<div className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-primary" />
+						<span>Loading...</span>
+					</div>
+				)}
 			</div>
 
 			{/* Save/Discard Changes Bar */}
@@ -605,7 +615,7 @@ export function BulkScoreManager({
 						{filteredScores.length === 0 ? (
 							<tr>
 								<td colSpan={100} className="px-4 py-8 text-center text-white/60">
-									No scores found. Select an instance and click &quot;Load Scores&quot;.
+									{instanceId ? "No scores found for this instance." : "Select an instance to view scores."}
 								</td>
 							</tr>
 						) : (

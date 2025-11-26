@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import { useQualityProfiles, useImportQualityProfile } from "../../../hooks/api/useQualityProfiles";
-import { Alert, AlertDescription, EmptyState, Skeleton } from "../../../components/ui";
+import { Alert, AlertDescription, EmptyState, Skeleton, Input, Button } from "../../../components/ui";
 import { X, Download, Check, FileText, Star, Languages, Gauge } from "lucide-react";
+import { createSanitizedHtml } from "../../../lib/sanitize-html";
 import type { QualityProfileSummary } from "../../../lib/api-client/trash-guides";
+import { htmlToPlainText } from "../lib/description-utils";
 
 interface QualityProfileBrowserProps {
 	open: boolean;
@@ -52,7 +54,7 @@ export const QualityProfileBrowser = ({
 		setTemplateName(profile.name);
 		setTemplateDescription(
 			profile.description
-				? profile.description.replace(/<br>/g, "\n")
+				? htmlToPlainText(profile.description)
 				: `Imported from TRaSH Guides: ${profile.name}`,
 		);
 	};
@@ -146,9 +148,7 @@ export const QualityProfileBrowser = ({
 												{profile.description && (
 													<p
 														className="text-sm text-white/70 line-clamp-2"
-														dangerouslySetInnerHTML={{
-															__html: profile.description,
-														}}
+														dangerouslySetInnerHTML={createSanitizedHtml(profile.description)}
 													/>
 												)}
 
@@ -210,9 +210,7 @@ export const QualityProfileBrowser = ({
 										{selectedProfile.description && (
 											<p
 												className="text-sm text-white/70"
-												dangerouslySetInnerHTML={{
-													__html: selectedProfile.description,
-												}}
+												dangerouslySetInnerHTML={createSanitizedHtml(selectedProfile.description)}
 											/>
 										)}
 									</div>
@@ -222,12 +220,12 @@ export const QualityProfileBrowser = ({
 											<label className="mb-2 block text-sm font-medium text-white">
 												Template Name <span className="text-red-400">*</span>
 											</label>
-											<input
+											<Input
 												type="text"
 												value={templateName}
 												onChange={(e) => setTemplateName(e.target.value)}
 												placeholder="Enter template name"
-												className="w-full rounded border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+												className="w-full"
 											/>
 										</div>
 
@@ -240,7 +238,7 @@ export const QualityProfileBrowser = ({
 												onChange={(e) => setTemplateDescription(e.target.value)}
 												placeholder="Enter template description"
 												rows={4}
-												className="w-full rounded border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+												className="w-full rounded-xl border border-border bg-bg-subtle px-4 py-3 text-sm text-fg placeholder:text-fg-muted/60 transition-all duration-200 hover:border-border/80 hover:bg-bg-subtle/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-bg-subtle/80"
 											/>
 										</div>
 									</div>

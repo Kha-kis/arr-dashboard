@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * Switch Component
  * Simple toggle switch for on/off states

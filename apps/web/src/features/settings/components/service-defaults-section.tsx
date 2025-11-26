@@ -9,7 +9,7 @@ import { SELECT_CLASS, OPTION_STYLE } from "../lib/settings-constants";
  * Props for ServiceDefaultsSection
  */
 interface ServiceDefaultsSectionProps {
-	/** The service instance being edited */
+	/** The service instance being edited (null when creating new) */
 	selectedService: ServiceInstanceSummary | null;
 	/** Current form state */
 	formState: ServiceFormState;
@@ -19,10 +19,10 @@ interface ServiceDefaultsSectionProps {
 	optionsPending: boolean;
 	/** Whether options failed to load */
 	optionsLoadFailed: boolean;
-	/** Instance options data */
+	/** Instance options data (from test endpoint or instance endpoint) */
 	optionsData: {
 		qualityProfiles: Array<{ id: number; name: string }>;
-		rootFolders: Array<{ path: string }>;
+		rootFolders: Array<{ path: string; id?: number | string; accessible?: boolean; freeSpace?: number }>;
 		languageProfiles?: Array<{ id: number; name: string }>;
 	} | null;
 }
@@ -38,14 +38,12 @@ export const ServiceDefaultsSection = ({
 	optionsLoadFailed,
 	optionsData,
 }: ServiceDefaultsSectionProps): ReactNode => {
-	if (!selectedService) {
-		return null;
-	}
-
+	// Show loading state
 	if (optionsPending) {
 		return <p className="text-sm text-white/60">Fetching available quality profiles...</p>;
 	}
 
+	// Show error state
 	if (optionsLoadFailed) {
 		return (
 			<p className="text-sm text-amber-300">

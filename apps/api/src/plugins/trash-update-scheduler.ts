@@ -11,6 +11,7 @@ import { createVersionTracker } from "../lib/trash-guides/version-tracker.js";
 import { createCacheManager } from "../lib/trash-guides/cache-manager.js";
 import { createTemplateUpdater } from "../lib/trash-guides/template-updater.js";
 import { createTrashFetcher } from "../lib/trash-guides/github-fetcher.js";
+import { createDeploymentExecutorService } from "../lib/trash-guides/deployment-executor.js";
 
 declare module "fastify" {
 	interface FastifyInstance {
@@ -31,18 +32,19 @@ const trashUpdateSchedulerPlugin = fastifyPlugin(
 					process.env.TRASH_UPDATE_CHECK_INTERVAL_HOURS || "12",
 					10,
 				),
-				autoSyncEnabled: process.env.TRASH_AUTO_SYNC_ENABLED === "true", // Disabled by default for safety
 			};
 
 			// Create services
 			const versionTracker = createVersionTracker();
 			const cacheManager = createCacheManager(app.prisma);
 			const githubFetcher = createTrashFetcher();
+			const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.encryptor);
 			const templateUpdater = createTemplateUpdater(
 				app.prisma,
 				versionTracker,
 				cacheManager,
 				githubFetcher,
+				deploymentExecutor,
 			);
 
 			// Create and register scheduler

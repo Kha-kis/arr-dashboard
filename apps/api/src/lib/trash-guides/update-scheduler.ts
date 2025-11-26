@@ -16,7 +16,6 @@ import type { VersionTracker } from "./version-tracker.js";
 export interface SchedulerConfig {
 	enabled: boolean;
 	intervalHours: number; // How often to check for updates (default: 12 hours)
-	autoSyncEnabled: boolean; // Whether to automatically sync templates
 	logLevel?: "debug" | "info" | "warn" | "error";
 }
 
@@ -28,6 +27,8 @@ export interface SchedulerStats {
 		templatesChecked: number;
 		templatesOutdated: number;
 		templatesAutoSynced: number;
+		templatesWithAutoStrategy: number; // Total templates configured with "auto" sync strategy
+		templatesWithNotifyStrategy: number; // Total templates configured with "notify" sync strategy
 		templatesNeedingAttention: number;
 		cachesRefreshed: number;
 		cachesFailed: number;
@@ -65,7 +66,6 @@ export class UpdateScheduler {
 		this.config = {
 			enabled: config.enabled,
 			intervalHours: config.intervalHours,
-			autoSyncEnabled: config.autoSyncEnabled,
 			logLevel: config.logLevel ?? "info",
 		};
 		this.templateUpdater = templateUpdater;
@@ -89,7 +89,7 @@ export class UpdateScheduler {
 		}
 
 		this.logger.info(
-			`Starting TRaSH Guides update scheduler (interval: ${this.config.intervalHours}h, auto-sync: ${this.config.autoSyncEnabled})`,
+			`Starting TRaSH Guides update scheduler (interval: ${this.config.intervalHours}h)`,
 		);
 
 		// Run immediately on start
@@ -128,7 +128,9 @@ export class UpdateScheduler {
 	 * Get current scheduler statistics
 	 */
 	getStats(): SchedulerStats {
-		return { ...this.stats };
+		return {
+			...this.stats
+		};
 	}
 
 	/**
@@ -149,6 +151,32 @@ export class UpdateScheduler {
 		const errors: string[] = [];
 		let templatesAutoSynced = 0;
 		let templatesNeedingAttention = 0;
+
+		// Count templates by sync strategy (unique templates with at least one mapping of each type)
+		const [templatesWithAutoStrategy, templatesWithNotifyStrategy] = await Promise.all([
+			this.prisma.trashTemplate.count({
+				where: {
+					deletedAt: null,
+					trashGuidesCommitHash: { not: null },
+					qualityProfileMappings: {
+						some: {
+							syncStrategy: "auto",
+						},
+					},
+				},
+			}),
+			this.prisma.trashTemplate.count({
+				where: {
+					deletedAt: null,
+					trashGuidesCommitHash: { not: null },
+					qualityProfileMappings: {
+						some: {
+							syncStrategy: "notify",
+						},
+					},
+				},
+			}),
+		]);
 
 		try {
 			// Get latest version info
@@ -194,6 +222,8 @@ export class UpdateScheduler {
 					templatesChecked: updateCheck.totalTemplates,
 					templatesOutdated: 0,
 					templatesAutoSynced: 0,
+					templatesWithAutoStrategy,
+					templatesWithNotifyStrategy,
 					templatesNeedingAttention: 0,
 					cachesRefreshed: totalCachesRefreshed,
 					cachesFailed: totalCacheFailed,
@@ -202,31 +232,29 @@ export class UpdateScheduler {
 				return;
 			}
 
-			// Process auto-sync templates if enabled
-			if (this.config.autoSyncEnabled) {
-				const autoSyncResult = await this.templateUpdater.processAutoUpdates();
+			// Process auto-sync templates (respects per-template syncStrategy)
+			const autoSyncResult = await this.templateUpdater.processAutoUpdates();
 
-				templatesAutoSynced = autoSyncResult.successful;
+			templatesAutoSynced = autoSyncResult.successful;
 
-				if (autoSyncResult.failed > 0) {
-					this.logger.warn(
-						`${autoSyncResult.failed} templates failed to auto-sync`,
-						{
-							failures: autoSyncResult.results.filter((r: { success: boolean }) => !r.success),
-						},
-					);
+			if (autoSyncResult.failed > 0) {
+				this.logger.warn(
+					`${autoSyncResult.failed} templates failed to auto-sync`,
+					{
+						failures: autoSyncResult.results.filter((r: { success: boolean }) => !r.success),
+					},
+				);
 
-					errors.push(
-						...autoSyncResult.results
-							.filter((r: { success: boolean }) => !r.success)
-							.flatMap((r: { errors?: string[] }) => r.errors || []),
-					);
-				}
-
-				this.logger.info(
-					`Auto-synced ${templatesAutoSynced} templates (${autoSyncResult.failed} failed)`,
+				errors.push(
+					...autoSyncResult.results
+						.filter((r: { success: boolean }) => !r.success)
+						.flatMap((r: { errors?: string[] }) => r.errors || []),
 				);
 			}
+
+			this.logger.info(
+				`Auto-synced ${templatesAutoSynced} templates (${autoSyncResult.failed} failed)`,
+			);
 
 			// Get templates needing user attention
 			const attentionTemplates =
@@ -256,6 +284,8 @@ export class UpdateScheduler {
 				templatesChecked: updateCheck.totalTemplates,
 				templatesOutdated: updateCheck.outdatedTemplates,
 				templatesAutoSynced,
+				templatesWithAutoStrategy,
+				templatesWithNotifyStrategy,
 				templatesNeedingAttention,
 				cachesRefreshed: totalCachesRefreshed,
 				cachesFailed: totalCacheFailed,
@@ -278,6 +308,8 @@ export class UpdateScheduler {
 				templatesChecked: 0,
 				templatesOutdated: 0,
 				templatesAutoSynced: 0,
+				templatesWithAutoStrategy,
+				templatesWithNotifyStrategy,
 				templatesNeedingAttention: 0,
 				cachesRefreshed: 0,
 				cachesFailed: 0,

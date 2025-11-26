@@ -209,6 +209,7 @@ export type ImportQualityProfilePayload = {
 	trashId: string;
 	templateName: string;
 	templateDescription?: string;
+	syncStrategy?: "auto" | "manual" | "notify";
 };
 
 export type UpdateQualityProfileTemplatePayload = {
@@ -289,7 +290,7 @@ export type TemplateUpdateInfo = {
 	currentCommit: string | null;
 	latestCommit: string;
 	hasUserModifications: boolean;
-	syncStrategy: "auto" | "manual" | "notify";
+	autoSyncInstanceCount: number;
 	canAutoSync: boolean;
 	serviceType: "RADARR" | "SONARR";
 };
@@ -370,6 +371,7 @@ export type LatestVersionResponse = {
 
 export type SchedulerStats = {
 	isRunning: boolean;
+	autoSyncEnabled: boolean;
 	lastCheckAt?: string;
 	nextCheckAt?: string;
 	lastCheckResult?: {
@@ -377,6 +379,8 @@ export type SchedulerStats = {
 		templatesOutdated: number;
 		templatesAutoSynced: number;
 		templatesNeedingAttention: number;
+		templatesWithAutoStrategy: number;
+		templatesWithNotifyStrategy: number;
 		cachesRefreshed: number;
 		cachesFailed: number;
 		errors: string[];
@@ -675,6 +679,7 @@ export type BulkDeploymentResult = {
 export type ExecuteDeploymentPayload = {
 	templateId: string;
 	instanceId: string;
+	syncStrategy?: "auto" | "manual" | "notify";
 };
 
 export type ExecuteDeploymentResponse = {
@@ -685,6 +690,9 @@ export type ExecuteDeploymentResponse = {
 export type ExecuteBulkDeploymentPayload = {
 	templateId: string;
 	instanceIds: string[];
+	syncStrategy?: "auto" | "manual" | "notify";
+	/** Per-instance sync strategies - overrides global syncStrategy for specific instances */
+	instanceSyncStrategies?: Record<string, "auto" | "manual" | "notify">;
 };
 
 export type ExecuteBulkDeploymentResponse = {
@@ -711,6 +719,107 @@ export async function executeBulkDeployment(
 		"/api/trash-guides/deployment/execute-bulk",
 		{
 			method: "POST",
+			json: payload,
+		},
+	);
+}
+
+// ============================================================================
+// Sync Strategy Update Types & Functions
+// ============================================================================
+
+export type UpdateSyncStrategyPayload = {
+	templateId: string;
+	instanceId: string;
+	syncStrategy: "auto" | "manual" | "notify";
+};
+
+export type UpdateSyncStrategyResponse = {
+	success: boolean;
+	message: string;
+	data: {
+		templateId: string;
+		instanceId: string;
+		syncStrategy: "auto" | "manual" | "notify";
+	};
+};
+
+/**
+ * Update sync strategy for an existing deployment
+ */
+export async function updateSyncStrategy(
+	payload: UpdateSyncStrategyPayload,
+): Promise<UpdateSyncStrategyResponse> {
+	return await apiRequest<UpdateSyncStrategyResponse>(
+		"/api/trash-guides/deployment/sync-strategy",
+		{
+			method: "PATCH",
+			json: payload,
+		},
+	);
+}
+
+export type BulkUpdateSyncStrategyPayload = {
+	templateId: string;
+	syncStrategy: "auto" | "manual" | "notify";
+};
+
+export type BulkUpdateSyncStrategyResponse = {
+	success: boolean;
+	message: string;
+	data: {
+		templateId: string;
+		syncStrategy: "auto" | "manual" | "notify";
+		updatedCount: number;
+	};
+};
+
+/**
+ * Update sync strategy for all instances of a template at once
+ */
+export async function bulkUpdateSyncStrategy(
+	payload: BulkUpdateSyncStrategyPayload,
+): Promise<BulkUpdateSyncStrategyResponse> {
+	return await apiRequest<BulkUpdateSyncStrategyResponse>(
+		"/api/trash-guides/deployment/sync-strategy-bulk",
+		{
+			method: "PATCH",
+			json: payload,
+		},
+	);
+}
+
+// ============================================================================
+// Unlink Template from Instance
+// ============================================================================
+
+export type UnlinkTemplatePayload = {
+	templateId: string;
+	instanceId: string;
+};
+
+export type UnlinkTemplateResponse = {
+	success: boolean;
+	message: string;
+	data: {
+		templateId: string;
+		instanceId: string;
+		templateName: string;
+		instanceName: string;
+	};
+};
+
+/**
+ * Remove a template from a single instance (unlink without deleting the template)
+ * This removes the deployment mapping but keeps Custom Formats on the instance
+ */
+export async function unlinkTemplateFromInstance(
+	payload: UnlinkTemplatePayload,
+): Promise<UnlinkTemplateResponse> {
+	return await apiRequest<UnlinkTemplateResponse>(
+		"/api/trash-guides/deployment/unlink",
+		{
+			method: "DELETE",
 			json: payload,
 		},
 	);
@@ -783,10 +892,18 @@ export type DeploymentHistoryDetailResponse = {
 	};
 };
 
-export type RollbackResponse = {
+export type UndeployResponse = {
 	success: boolean;
 	message: string;
-	data: DeploymentHistoryEntry;
+	data: {
+		deleted: number;
+		skippedShared: string[];
+		skippedSharedCount: number;
+		notFound: string[];
+		notFoundCount: number;
+		errors: string[];
+		totalInTemplate: number;
+	};
 };
 
 /**
@@ -845,15 +962,30 @@ export async function getDeploymentHistoryDetail(
 }
 
 /**
- * Rollback a deployment
+ * Undeploy - remove Custom Formats deployed by a specific deployment
+ * Only removes CFs unique to this template (not shared with other templates)
  */
-export async function rollbackDeployment(
+export async function undeployDeployment(
 	historyId: string,
-): Promise<RollbackResponse> {
-	return await apiRequest<RollbackResponse>(
-		`/api/trash-guides/deployment/history/${historyId}/rollback`,
+): Promise<UndeployResponse> {
+	return await apiRequest<UndeployResponse>(
+		`/api/trash-guides/deployment/history/${historyId}/undeploy`,
 		{
 			method: "POST",
+		},
+	);
+}
+
+/**
+ * Delete a deployment history entry
+ */
+export async function deleteDeploymentHistory(
+	historyId: string,
+): Promise<{ success: boolean; message: string }> {
+	return await apiRequest<{ success: boolean; message: string }>(
+		`/api/trash-guides/deployment/history/${historyId}`,
+		{
+			method: "DELETE",
 		},
 	);
 }

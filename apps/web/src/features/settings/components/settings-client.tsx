@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import type { CurrentUser } from "@arr/shared";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useTagsQuery } from "../../../hooks/api/useTags";
-import { useDiscoverOptionsQuery } from "../../../hooks/api/useDiscover";
+import { useDiscoverOptionsQuery, useDiscoverTestOptionsQuery } from "../../../hooks/api/useDiscover";
 import { useCurrentUser } from "../../../hooks/api/useAuth";
 import { cn } from "../../../lib/utils";
 import { TABS, type TabType } from "../lib/settings-constants";
@@ -60,22 +60,55 @@ export const SettingsClient = () => {
 			serviceFormState.selectedServiceForEdit.service !== "prowlarr",
 	);
 
-	// Fetch instance options for default settings
+	// Check if creating new service supports defaults (not prowlarr)
+	const creatingSupportsDefaults = Boolean(
+		!serviceFormState.selectedServiceForEdit &&
+			serviceFormState.formState.service !== "prowlarr" &&
+			serviceFormState.formState.baseUrl &&
+			serviceFormState.formState.apiKey,
+	);
+
+	// Fetch instance options for default settings (editing existing)
 	const {
 		data: instanceOptions,
-		isLoading: optionsLoading,
-		isFetching: optionsFetching,
-		isError: optionsError,
+		isLoading: instanceOptionsLoading,
+		isFetching: instanceOptionsFetching,
+		isError: instanceOptionsError,
 	} = useDiscoverOptionsQuery(
 		editingSupportsDefaults ? (serviceFormState.selectedServiceForEdit?.id ?? null) : null,
 		serviceFormState.selectedServiceForEdit?.service === "sonarr" ? "series" : "movie",
 		editingSupportsDefaults,
 	);
 
-	const optionsPending = optionsLoading || optionsFetching;
-	const optionsData = instanceOptions ?? null;
+	// Fetch test options for default settings (creating new)
+	const {
+		data: testOptions,
+		isLoading: testOptionsLoading,
+		isFetching: testOptionsFetching,
+		isError: testOptionsError,
+	} = useDiscoverTestOptionsQuery(
+		creatingSupportsDefaults
+			? {
+					baseUrl: serviceFormState.formState.baseUrl,
+					apiKey: serviceFormState.formState.apiKey,
+					service: serviceFormState.formState.service as "radarr" | "sonarr",
+				}
+			: null,
+		creatingSupportsDefaults,
+	);
+
+	// Combine options from both sources
+	const optionsPending = editingSupportsDefaults
+		? instanceOptionsLoading || instanceOptionsFetching
+		: creatingSupportsDefaults
+			? testOptionsLoading || testOptionsFetching
+			: false;
+
+	const optionsData = editingSupportsDefaults ? (instanceOptions ?? null) : (testOptions ?? null);
+
 	const optionsLoadFailed = Boolean(
-		editingSupportsDefaults && !optionsPending && (optionsError || !optionsData),
+		(editingSupportsDefaults && !optionsPending && (instanceOptionsError || !instanceOptions)) ||
+			(creatingSupportsDefaults && !optionsPending && (testOptionsError || !testOptions)),
 	);
 
 	// Build default section content for service form
@@ -115,23 +148,25 @@ export const SettingsClient = () => {
 	return (
 		<section className="flex flex-col gap-8">
 			{/* Tab navigation */}
-			<div className="flex items-center gap-4 border-b border-white/10 pb-4">
+			<nav className="flex items-center gap-4 border-b border-border pb-4" role="tablist">
 				{TABS.map((tab) => (
 					<button
 						key={tab}
 						type="button"
+						role="tab"
+						aria-selected={activeTab === tab}
 						onClick={() => setActiveTab(tab)}
 						className={cn(
 							"px-3 py-2 text-sm font-medium uppercase tracking-wide transition",
 							activeTab === tab
-								? "border-b-2 border-sky-400 text-white"
-								: "text-white/50 hover:text-white",
+								? "border-b-2 border-primary text-fg"
+								: "text-fg-muted hover:text-fg",
 						)}
 					>
 						{tab}
 					</button>
 				))}
-			</div>
+			</nav>
 
 			{/* Services tab */}
 			{activeTab === "services" && (

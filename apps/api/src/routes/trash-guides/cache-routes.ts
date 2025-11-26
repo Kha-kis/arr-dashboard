@@ -313,4 +313,83 @@ export async function registerTrashCacheRoutes(
 				});
 			}
 		});
+
+		/**
+		 * GET /api/trash-guides/cache/custom-formats/list
+		 * Get all available custom formats from cache for browsing
+		 */
+		app.get<{
+			Querystring: { serviceType?: "RADARR" | "SONARR" };
+		}>("/custom-formats/list", async (request, reply) => {
+			const { serviceType } = request.query;
+
+			try {
+				const results: any = {};
+
+				// Fetch custom formats for requested service types
+				const serviceTypes = serviceType ? [serviceType] : ["RADARR", "SONARR"];
+
+				for (const service of serviceTypes) {
+					// Check cache freshness
+					const isFresh = await cacheManager.isFresh(service as "RADARR" | "SONARR", "CUSTOM_FORMATS");
+
+					if (!isFresh) {
+						// Fetch fresh data if cache is stale
+						const data = await fetcher.fetchConfigs(service as "RADARR" | "SONARR", "CUSTOM_FORMATS");
+						await cacheManager.set(service as "RADARR" | "SONARR", "CUSTOM_FORMATS", data);
+						results[service.toLowerCase()] = data;
+					} else {
+						// Get from cache
+						const data = await cacheManager.get(service as "RADARR" | "SONARR", "CUSTOM_FORMATS");
+						results[service.toLowerCase()] = data || [];
+					}
+				}
+
+				return reply.send(results);
+			} catch (error) {
+				app.log.error({ err: error, serviceType }, "Failed to fetch custom formats list");
+				return reply.status(500).send({
+					statusCode: 500,
+					error: "InternalServerError",
+					message: error instanceof Error ? error.message : "Failed to fetch custom formats",
+				});
+			}
+		});
+
+	/**
+	 * GET /api/trash-guides/cache/cf-descriptions/list
+	 * Get all CF descriptions from cache
+	 */
+	app.get<{
+		Querystring: { serviceType?: "RADARR" | "SONARR" };
+	}>("/cf-descriptions/list", async (request, reply) => {
+		const { serviceType } = request.query;
+
+		try {
+			const results: any = {};
+			const serviceTypes = serviceType ? [serviceType] : ["RADARR", "SONARR"];
+
+			for (const service of serviceTypes) {
+				const isFresh = await cacheManager.isFresh(service as "RADARR" | "SONARR", "CF_DESCRIPTIONS");
+
+				if (!isFresh) {
+					const data = await fetcher.fetchConfigs(service as "RADARR" | "SONARR", "CF_DESCRIPTIONS");
+					await cacheManager.set(service as "RADARR" | "SONARR", "CF_DESCRIPTIONS", data);
+					results[service.toLowerCase()] = data;
+				} else {
+					const data = await cacheManager.get(service as "RADARR" | "SONARR", "CF_DESCRIPTIONS");
+					results[service.toLowerCase()] = data || [];
+				}
+			}
+
+			return reply.send(results);
+		} catch (error) {
+			app.log.error({ err: error, serviceType }, "Failed to fetch CF descriptions");
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to fetch CF descriptions",
+			});
+		}
+	});
 }

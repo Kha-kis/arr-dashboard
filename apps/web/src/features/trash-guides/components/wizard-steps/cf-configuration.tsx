@@ -8,6 +8,7 @@
 import { useState, useEffect } from "react";
 import { Alert, AlertDescription, Skeleton, Card, CardHeader, CardTitle, CardDescription, CardContent } from "../../../../components/ui";
 import { ChevronLeft, ChevronRight, Info, AlertCircle, Search, ChevronDown, Lock, Edit, RotateCcw, Settings } from "lucide-react";
+import { createSanitizedHtml } from "../../../../lib/sanitize-html";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { ConditionEditor } from "../condition-editor";
 import { useCFConfiguration } from "../../../../hooks/api/useCFConfiguration";
@@ -557,7 +558,7 @@ export const CFConfiguration = ({
 																	<span>What is this?</span>
 																</summary>
 																<div className="mt-2 pl-4 text-sm text-fg-subtle prose prose-invert prose-sm max-w-none">
-																	<div dangerouslySetInnerHTML={{ __html: cf.description }} />
+																	<div dangerouslySetInnerHTML={createSanitizedHtml(cf.description)} />
 																</div>
 															</details>
 														)}
@@ -778,7 +779,7 @@ export const CFConfiguration = ({
 															<span>What is this?</span>
 														</summary>
 														<div className="mt-2 pl-4 text-sm text-fg-subtle prose prose-invert prose-sm max-w-none">
-															<div dangerouslySetInnerHTML={{ __html: cf.description }} />
+															<div dangerouslySetInnerHTML={createSanitizedHtml(cf.description)} />
 														</div>
 													</details>
 												)}
@@ -910,9 +911,7 @@ export const CFConfiguration = ({
 												<AlertCircle className="h-4 w-4 text-blue-400 mt-0.5 flex-shrink-0" />
 												<div
 													className="text-sm text-blue-100"
-													dangerouslySetInnerHTML={{
-														__html: group.trash_description,
-													}}
+													dangerouslySetInnerHTML={createSanitizedHtml(group.trash_description)}
 												/>
 											</div>
 										</div>
@@ -975,7 +974,7 @@ export const CFConfiguration = ({
 																		<span>What is this?</span>
 																	</summary>
 																	<div className="mt-2 pl-4 text-sm text-fg-subtle prose prose-invert prose-sm max-w-none">
-																		<div dangerouslySetInnerHTML={{ __html: cf.description }} />
+																		<div dangerouslySetInnerHTML={createSanitizedHtml(cf.description)} />
 																	</div>
 																</details>
 															)}
@@ -1119,7 +1118,7 @@ export const CFConfiguration = ({
 																	<span>What is this?</span>
 																</summary>
 																<div className="mt-2 pl-4 text-sm text-fg-subtle prose prose-invert prose-sm max-w-none">
-																	<div dangerouslySetInnerHTML={{ __html: cf.description }} />
+																	<div dangerouslySetInnerHTML={createSanitizedHtml(cf.description)} />
 																</div>
 															</details>
 														)}
@@ -1272,7 +1271,7 @@ export const CFConfiguration = ({
 																	<span>What is this?</span>
 																</summary>
 																<div className="mt-2 pl-4 text-sm text-fg-subtle prose prose-invert prose-sm max-w-none">
-																	<div dangerouslySetInnerHTML={{ __html: cf.description }} />
+																	<div dangerouslySetInnerHTML={createSanitizedHtml(cf.description)} />
 																</div>
 															</details>
 														)}

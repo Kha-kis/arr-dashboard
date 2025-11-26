@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertDescription, Skeleton } from "../../../../components/ui";
 import { ChevronRight, ChevronLeft, ChevronDown, Info, CheckCircle2, Star } from "lucide-react";
+import { createSanitizedHtml } from "../../../../lib/sanitize-html";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { apiRequest } from "../../../../lib/api-client/base";
 
@@ -61,6 +62,7 @@ export const CFGroupSelection = ({
 				setSelectedGroups(new Set(autoSelectGroups));
 			}
 		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- Only auto-select on data load, selectedGroups.size and initialSelection.size are checked inside
 	}, [data]);
 
 	const toggleGroup = (groupTrashId: string) => {
@@ -239,9 +241,7 @@ export const CFGroupSelection = ({
 											{group.trash_description && (
 												<p
 													className="mt-2 text-sm text-white/70"
-													dangerouslySetInnerHTML={{
-														__html: group.trash_description,
-													}}
+													dangerouslySetInnerHTML={createSanitizedHtml(group.trash_description)}
 												/>
 											)}
 

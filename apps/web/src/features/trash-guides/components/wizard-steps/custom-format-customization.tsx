@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertDescription, Skeleton } from "../../../../components/ui";
 import { ChevronRight, ChevronLeft, Info, CheckCircle2, Settings } from "lucide-react";
+import { createSanitizedHtml } from "../../../../lib/sanitize-html";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { apiRequest } from "../../../../lib/api-client/base";
 
@@ -100,6 +101,7 @@ export const CustomFormatCustomization = ({
 
 			setSelections(newSelections);
 		}
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- Only initialize on data/selectedCFGroups change, selections.length checked inside
 	}, [data, selectedCFGroups]);
 
 	const toggleCF = (cfTrashId: string) => {
@@ -264,9 +266,7 @@ export const CustomFormatCustomization = ({
 											{cf.trash_description && (
 												<p
 													className="mt-1 text-sm text-white/70"
-													dangerouslySetInnerHTML={{
-														__html: cf.trash_description,
-													}}
+													dangerouslySetInnerHTML={createSanitizedHtml(cf.trash_description)}
 												/>
 											)}
 										</div>

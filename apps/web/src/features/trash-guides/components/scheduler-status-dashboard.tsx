@@ -67,7 +67,8 @@ export const SchedulerStatusDashboard = () => {
 							TRaSH Guides Update Scheduler
 						</h3>
 						<p className="text-sm text-fg-muted mt-1">
-							Automatic update checking and synchronization
+							Checks for TRaSH Guides updates every 12 hours. Templates set to "Auto" sync strategy
+							will be automatically updated and deployed to your instances.
 						</p>
 					</div>
 					<div className="flex items-center gap-2">
@@ -150,27 +151,47 @@ export const SchedulerStatusDashboard = () => {
 							Last Check Results
 						</h4>
 
-						{/* Template Results */}
+						{/* Template Version Check Results */}
 						<div className="mb-4">
-							<h5 className="text-xs font-medium text-fg-muted mb-2">Templates</h5>
-							<div className="grid gap-3 md:grid-cols-3">
+							<div className="mb-2">
+								<h5 className="text-xs font-medium text-fg mb-1">Template Version Updates</h5>
+								<p className="text-xs text-fg-muted">
+									Compares your templates against latest TRaSH Guides commits.
+									Templates with "Auto" strategy are updated and deployed automatically.
+								</p>
+							</div>
+							<div className="grid gap-3 grid-cols-2 md:grid-cols-4">
 								<div>
-									<span className="text-xs text-fg-muted">Auto-synced</span>
-									<p className="text-sm font-medium text-fg mt-1">
-										{schedulerData.lastCheckResult.templatesAutoSynced}
+									<span className="text-xs text-fg-muted">Auto-Sync</span>
+									<p className="text-sm font-medium text-green-400 mt-1">
+										{schedulerData.lastCheckResult.templatesWithAutoStrategy ?? 0}
+									</p>
+									<p className="text-xs text-fg-muted mt-0.5">
+										{schedulerData.lastCheckResult.templatesAutoSynced > 0
+											? `${schedulerData.lastCheckResult.templatesAutoSynced} synced`
+											: "Up to date"}
+									</p>
+								</div>
+								<div>
+									<span className="text-xs text-fg-muted">Notify</span>
+									<p className="text-sm font-medium text-blue-400 mt-1">
+										{schedulerData.lastCheckResult.templatesWithNotifyStrategy ?? 0}
+									</p>
+									<p className="text-xs text-fg-muted mt-0.5">
+										Will alert on updates
 									</p>
 								</div>
 								<div>
 									<span className="text-xs text-fg-muted">
 										Needing Attention
 									</span>
-									<p className="text-sm font-medium text-fg mt-1">
+									<p className="text-sm font-medium text-yellow-400 mt-1">
 										{schedulerData.lastCheckResult.templatesNeedingAttention}
 									</p>
 								</div>
 								<div>
 									<span className="text-xs text-fg-muted">Errors</span>
-									<p className="text-sm font-medium text-fg mt-1">
+									<p className="text-sm font-medium text-red-400 mt-1">
 										{schedulerData.lastCheckResult.errors.length}
 									</p>
 								</div>
@@ -179,7 +200,12 @@ export const SchedulerStatusDashboard = () => {
 
 						{/* Cache Refresh Results */}
 						<div className="pt-3 border-t border-white/10">
-							<h5 className="text-xs font-medium text-fg-muted mb-2">Cache Refresh</h5>
+							<div className="mb-2">
+								<h5 className="text-xs font-medium text-fg mb-1">TRaSH Guides Data Cache</h5>
+								<p className="text-xs text-fg-muted">
+									Refreshes cached quality profiles, naming formats, and custom formats from repository
+								</p>
+							</div>
 							<div className="grid gap-3 md:grid-cols-2">
 								<div>
 									<span className="text-xs text-fg-muted">Caches Refreshed</span>

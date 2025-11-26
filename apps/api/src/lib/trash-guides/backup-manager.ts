@@ -119,7 +119,12 @@ export class BackupManager {
 			return null;
 		}
 
-		return JSON.parse(backup.backupData) as BackupData;
+		try {
+			return JSON.parse(backup.backupData) as BackupData;
+		} catch (error) {
+			console.error(`Failed to parse backup data for backupId ${backupId}:`, error);
+			return null;
+		}
 	}
 
 	/**
@@ -137,16 +142,22 @@ export class BackupManager {
 			skip: offset,
 		});
 
-		return backups.map((backup) => {
-			const data = JSON.parse(backup.backupData) as BackupData;
-			return {
-				id: backup.id,
-				instanceId: backup.instanceId,
-				createdAt: backup.createdAt,
-				dataSize: backup.backupData.length,
-				configCount: data.customFormats.length,
-			};
-		});
+		return backups.reduce<BackupInfo[]>((result, backup) => {
+			try {
+				const data = JSON.parse(backup.backupData) as BackupData;
+				result.push({
+					id: backup.id,
+					instanceId: backup.instanceId,
+					createdAt: backup.createdAt,
+					dataSize: backup.backupData.length,
+					configCount: data.customFormats.length,
+				});
+			} catch (error) {
+				console.error(`Failed to parse backup data for backup ${backup.id}, instanceId ${backup.instanceId}:`, error);
+				// Skip corrupted backups instead of crashing
+			}
+			return result;
+		}, []);
 	}
 
 	/**
@@ -173,7 +184,8 @@ export class BackupManager {
 				where: { id: backupId },
 			});
 			return true;
-		} catch {
+		} catch (error) {
+			console.error(`deleteBackup failed for backupId ${backupId}:`, error);
 			return false;
 		}
 	}

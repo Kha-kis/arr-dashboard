@@ -1,29 +1,96 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { fetchTemplateStats } from "../../../lib/api-client/templates";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { fetchTemplateStats, fetchTemplate } from "../../../lib/api-client/templates";
 import type { TemplateStatsResponse } from "../../../lib/api-client/templates";
-import { ChevronDown, ChevronUp, Calendar, Package, Users, Activity, RefreshCw, Rocket, Layers, History } from "lucide-react";
+import { ChevronDown, ChevronUp, Calendar, Package, Activity, Rocket, Layers, History, SlidersHorizontal, Unlink2, RefreshCw, Bell, Hand } from "lucide-react";
 import { BulkDeploymentModal } from "./bulk-deployment-modal";
 import { DeploymentHistoryTable } from "./deployment-history-table";
+import { InstanceOverrideEditor } from "./instance-override-editor";
+import { DropdownMenu, DropdownMenuItem, Badge } from "../../../components/ui";
+import { updateSyncStrategy, bulkUpdateSyncStrategy } from "../../../lib/api-client/trash-guides";
+import { cn } from "../../../lib/utils";
+
+// Helper to get sync strategy display info
+const getSyncStrategyInfo = (strategy: "auto" | "manual" | "notify") => {
+	switch (strategy) {
+		case "auto":
+			return { label: "Auto-sync", icon: RefreshCw, variant: "success" as const, color: "text-green-500" };
+		case "notify":
+			return { label: "Notify", icon: Bell, variant: "info" as const, color: "text-blue-500" };
+		case "manual":
+			return { label: "Manual", icon: Hand, variant: "warning" as const, color: "text-amber-500" };
+	}
+};
 
 interface TemplateStatsProps {
 	templateId: string;
 	templateName: string;
-	onSync?: (instanceId: string, instanceName: string) => void;
 	onDeploy?: (instanceId: string, instanceName: string) => void;
+	onUnlinkInstance?: (instanceId: string, instanceName: string) => void;
 }
 
-export const TemplateStats = ({ templateId, templateName, onSync, onDeploy }: TemplateStatsProps) => {
+export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInstance }: TemplateStatsProps) => {
 	const [expanded, setExpanded] = useState(false);
 	const [showBulkDeployment, setShowBulkDeployment] = useState(false);
 	const [showHistory, setShowHistory] = useState(false);
+	const [overrideModal, setOverrideModal] = useState<{
+		instanceId: string;
+		instanceName: string;
+	} | null>(null);
+	const [updatingStrategy, setUpdatingStrategy] = useState<string | null>(null);
+	const [bulkUpdating, setBulkUpdating] = useState(false);
+	const queryClient = useQueryClient();
+
+	const handleBulkSyncStrategyChange = async (
+		newStrategy: "auto" | "manual" | "notify"
+	) => {
+		setBulkUpdating(true);
+		try {
+			await bulkUpdateSyncStrategy({
+				templateId,
+				syncStrategy: newStrategy,
+			});
+			// Invalidate and refetch stats
+			queryClient.invalidateQueries({ queryKey: ["template-stats", templateId] });
+		} catch (error) {
+			console.error("Failed to bulk update sync strategy:", error);
+		} finally {
+			setBulkUpdating(false);
+		}
+	};
+
+	const handleSyncStrategyChange = async (
+		instanceId: string,
+		newStrategy: "auto" | "manual" | "notify"
+	) => {
+		setUpdatingStrategy(instanceId);
+		try {
+			await updateSyncStrategy({
+				templateId,
+				instanceId,
+				syncStrategy: newStrategy,
+			});
+			// Invalidate and refetch stats
+			queryClient.invalidateQueries({ queryKey: ["template-stats", templateId] });
+		} catch (error) {
+			console.error("Failed to update sync strategy:", error);
+		} finally {
+			setUpdatingStrategy(null);
+		}
+	};
+
+	// Fetch template data when override modal is open (to get customFormats)
+	const { data: templateData, isLoading: templateLoading } = useQuery({
+		queryKey: ["template", templateId],
+		queryFn: () => fetchTemplate(templateId),
+		enabled: !!overrideModal,
+	});
 
 	const { data, isLoading } = useQuery<TemplateStatsResponse>({
 		queryKey: ["template-stats", templateId],
 		queryFn: () => fetchTemplateStats(templateId),
-		enabled: expanded,
 	});
 
 	if (isLoading && expanded) {
@@ -50,23 +117,10 @@ export const TemplateStats = ({ templateId, templateName, onSync, onDeploy }: Te
 				<div className="flex items-center gap-3">
 					<Activity className="h-4 w-4 text-primary" />
 					<span className="text-sm font-medium text-white">Template Stats</span>
-					{stats && (
-						<>
-							{stats.isActive ? (
-								<span className="rounded-full bg-green-500/20 px-2 py-0.5 text-xs font-medium text-green-400">
-									Active
-								</span>
-							) : (
-								<span className="rounded-full bg-white/10 px-2 py-0.5 text-xs font-medium text-white/60">
-									Inactive
-								</span>
-							)}
-							{stats.activeInstanceCount > 0 && (
-								<span className="text-xs text-white/60">
-									{stats.activeInstanceCount} instance{stats.activeInstanceCount !== 1 ? "s" : ""}
-								</span>
-							)}
-						</>
+					{stats && stats.instances.length > 0 && (
+						<span className="text-xs text-white/60">
+							{stats.instances.length} instance{stats.instances.length !== 1 ? "s" : ""}
+						</span>
 					)}
 				</div>
 				{expanded ? (
@@ -80,7 +134,7 @@ export const TemplateStats = ({ templateId, templateName, onSync, onDeploy }: Te
 			{expanded && stats && (
 				<div className="rounded-lg border border-white/10 bg-white/5 p-4 space-y-4">
 					{/* Action Buttons */}
-					<div className="flex items-center gap-2">
+					<div className="flex items-center gap-2 justify-center">
 						<button
 							type="button"
 							onClick={() => setShowHistory(true)}
@@ -92,35 +146,27 @@ export const TemplateStats = ({ templateId, templateName, onSync, onDeploy }: Te
 					</div>
 
 					{/* Metrics Grid */}
-					<div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-						<div className="space-y-1">
-							<div className="flex items-center gap-2 text-xs text-white/60">
+					<div className="grid grid-cols-3 gap-4">
+						<div className="space-y-1 text-center">
+							<div className="flex items-center gap-2 text-xs text-white/60 justify-center">
 								<Package className="h-3 w-3" />
 								<span>Formats</span>
 							</div>
 							<p className="text-lg font-semibold text-white">{stats.formatCount}</p>
 						</div>
 
-						<div className="space-y-1">
-							<div className="flex items-center gap-2 text-xs text-white/60">
+						<div className="space-y-1 text-center">
+							<div className="flex items-center gap-2 text-xs text-white/60 justify-center">
 								<Package className="h-3 w-3" />
 								<span>Groups</span>
 							</div>
 							<p className="text-lg font-semibold text-white">{stats.groupCount}</p>
 						</div>
 
-						<div className="space-y-1">
-							<div className="flex items-center gap-2 text-xs text-white/60">
-								<Users className="h-3 w-3" />
-								<span>Usage Count</span>
-							</div>
-							<p className="text-lg font-semibold text-white">{stats.usageCount}</p>
-						</div>
-
-						<div className="space-y-1">
-							<div className="flex items-center gap-2 text-xs text-white/60">
+						<div className="space-y-1 text-center">
+							<div className="flex items-center gap-2 text-xs text-white/60 justify-center">
 								<Calendar className="h-3 w-3" />
-								<span>Last Used</span>
+								<span>Last Deployed</span>
 							</div>
 							<p className="text-xs font-medium text-white">
 								{stats.lastUsedAt ? new Date(stats.lastUsedAt).toLocaleDateString() : "Never"}
@@ -131,49 +177,89 @@ export const TemplateStats = ({ templateId, templateName, onSync, onDeploy }: Te
 					{/* Instances List */}
 					{stats.instances.length > 0 && (
 						<div className="space-y-2">
-							<div className="flex items-center justify-between">
+							<div className="flex flex-col items-center gap-2">
 								<h4 className="text-sm font-medium text-white/70">Instances Using This Template</h4>
 								{stats.instances.length > 1 && (
-									<button
-										type="button"
-										onClick={(e) => {
-											e.stopPropagation();
-											setShowBulkDeployment(true);
-										}}
-										className="flex items-center gap-1 rounded bg-primary/20 px-2 py-1 text-xs font-medium text-primary transition hover:bg-primary/30"
-										title="Deploy to multiple instances at once"
-									>
-										<Layers className="h-3 w-3" />
-										Bulk Deploy
-									</button>
+									<div className="flex items-center gap-2">
+										<button
+											type="button"
+											onClick={(e) => {
+												e.stopPropagation();
+												setShowBulkDeployment(true);
+											}}
+											className="flex items-center gap-1 rounded bg-primary/20 px-2 py-1 text-xs font-medium text-primary transition hover:bg-primary/30"
+											title="Deploy to multiple instances at once"
+										>
+											<Layers className="h-3 w-3" />
+											Bulk Deploy
+										</button>
+										{/* Bulk Sync Strategy Dropdown */}
+										<DropdownMenu
+											trigger={
+												<div
+													className={cn(
+														"flex items-center gap-1 rounded bg-white/10 px-2 py-1 text-xs font-medium text-white/80 transition hover:bg-white/20 cursor-pointer",
+														bulkUpdating && "opacity-50 pointer-events-none"
+													)}
+													title="Set sync strategy for all instances"
+												>
+													{bulkUpdating ? (
+														<RefreshCw className="h-3 w-3 animate-spin" />
+													) : (
+														<SlidersHorizontal className="h-3 w-3" />
+													)}
+													Set All Strategy
+												</div>
+											}
+											align="right"
+										>
+											<DropdownMenuItem
+												icon={<RefreshCw className="h-4 w-4 text-green-500" />}
+												onClick={() => handleBulkSyncStrategyChange("auto")}
+												disabled={bulkUpdating}
+											>
+												All Auto-sync
+											</DropdownMenuItem>
+											<DropdownMenuItem
+												icon={<Bell className="h-4 w-4 text-blue-500" />}
+												onClick={() => handleBulkSyncStrategyChange("notify")}
+												disabled={bulkUpdating}
+											>
+												All Notify Only
+											</DropdownMenuItem>
+											<DropdownMenuItem
+												icon={<Hand className="h-4 w-4 text-amber-500" />}
+												onClick={() => handleBulkSyncStrategyChange("manual")}
+												disabled={bulkUpdating}
+											>
+												All Manual
+											</DropdownMenuItem>
+										</DropdownMenu>
+									</div>
 								)}
 							</div>
 							<div className="space-y-2">
-								{stats.instances.map((instance) => (
+								{stats.instances.map((instance) => {
+									const strategyInfo = getSyncStrategyInfo(instance.syncStrategy);
+									const StrategyIcon = strategyInfo.icon;
+									const isUpdating = updatingStrategy === instance.instanceId;
+
+									return (
 									<div
 										key={instance.instanceId}
-										className="flex items-center justify-between rounded border border-white/10 bg-white/5 p-3"
+										className="flex flex-col gap-2 rounded border border-white/10 bg-white/5 p-2"
 									>
-										<div className="flex items-center gap-3">
-											<div className="flex items-center gap-2">
-												<span className="text-sm font-medium text-white">{instance.instanceName}</span>
-												<span className="rounded bg-white/10 px-2 py-0.5 text-xs text-white/60">
-													{instance.instanceType}
-												</span>
-											</div>
-											{instance.hasActiveSchedule && (
-												<span className="rounded-full bg-green-500/20 px-2 py-0.5 text-xs font-medium text-green-400">
-													Scheduled
-												</span>
-											)}
+										{/* Top: Instance name + strategy badge */}
+										<div className="flex items-center justify-center gap-2">
+											<span className="text-sm font-medium text-white">{instance.instanceName}</span>
+											<Badge variant={strategyInfo.variant} className="text-[10px] px-1.5 py-0 flex items-center gap-1">
+												<StrategyIcon className={cn("h-2.5 w-2.5", isUpdating && "animate-spin")} />
+												{strategyInfo.label}
+											</Badge>
 										</div>
-										<div className="flex items-center gap-2">
-											{instance.lastAppliedAt && (
-												<div className="flex items-center gap-1 text-xs text-white/60">
-													<Calendar className="h-3 w-3" />
-													<span>{new Date(instance.lastAppliedAt).toLocaleDateString()}</span>
-												</div>
-											)}
+
+										{/* Bottom: Actions */}
+										<div className="flex items-center justify-center gap-1">
 											{onDeploy && (
 												<button
 													type="button"
@@ -181,30 +267,74 @@ export const TemplateStats = ({ templateId, templateName, onSync, onDeploy }: Te
 														e.stopPropagation();
 														onDeploy(instance.instanceId, instance.instanceName);
 													}}
-													className="flex items-center gap-1 rounded bg-green-500/20 px-2 py-1 text-xs font-medium text-green-400 transition hover:bg-green-500/30"
-													title="Preview deployment to this instance"
+													className="flex items-center justify-center rounded bg-green-500/20 p-1.5 text-green-400 transition hover:bg-green-500/30"
+													title="Deploy template to this instance"
 												>
-													<Rocket className="h-3 w-3" />
-													Deploy
+													<Rocket className="h-3.5 w-3.5" />
 												</button>
 											)}
-											{onSync && (
+											{/* Sync Strategy Dropdown */}
+											<DropdownMenu
+												trigger={
+													<div className="flex items-center justify-center rounded bg-white/10 p-1.5 text-white/80 transition hover:bg-white/20 cursor-pointer" title="Change sync strategy">
+														<StrategyIcon className={cn("h-3.5 w-3.5", strategyInfo.color, isUpdating && "animate-spin")} />
+													</div>
+												}
+												align="right"
+											>
+												<DropdownMenuItem
+													icon={<RefreshCw className="h-4 w-4 text-green-500" />}
+													onClick={() => handleSyncStrategyChange(instance.instanceId, "auto")}
+													disabled={isUpdating || instance.syncStrategy === "auto"}
+												>
+													Auto-sync
+												</DropdownMenuItem>
+												<DropdownMenuItem
+													icon={<Bell className="h-4 w-4 text-blue-500" />}
+													onClick={() => handleSyncStrategyChange(instance.instanceId, "notify")}
+													disabled={isUpdating || instance.syncStrategy === "notify"}
+												>
+													Notify Only
+												</DropdownMenuItem>
+												<DropdownMenuItem
+													icon={<Hand className="h-4 w-4 text-amber-500" />}
+													onClick={() => handleSyncStrategyChange(instance.instanceId, "manual")}
+													disabled={isUpdating || instance.syncStrategy === "manual"}
+												>
+													Manual
+												</DropdownMenuItem>
+											</DropdownMenu>
+											<button
+												type="button"
+												onClick={(e) => {
+													e.stopPropagation();
+													setOverrideModal({
+														instanceId: instance.instanceId,
+														instanceName: instance.instanceName,
+													});
+												}}
+												className="flex items-center justify-center rounded bg-white/10 p-1.5 text-white/80 transition hover:bg-white/20"
+												title="Manage instance score overrides"
+											>
+												<SlidersHorizontal className="h-3.5 w-3.5" />
+											</button>
+											{onUnlinkInstance && (
 												<button
 													type="button"
 													onClick={(e) => {
 														e.stopPropagation();
-														onSync(instance.instanceId, instance.instanceName);
+														onUnlinkInstance(instance.instanceId, instance.instanceName);
 													}}
-													className="flex items-center gap-1 rounded bg-primary/20 px-2 py-1 text-xs font-medium text-primary transition hover:bg-primary/30"
-													title="Sync template to this instance"
+													className="flex items-center justify-center rounded bg-red-500/20 p-1.5 text-red-400 transition hover:bg-red-500/30"
+													title="Remove template from this instance"
 												>
-													<RefreshCw className="h-3 w-3" />
-													Sync
+													<Unlink2 className="h-3.5 w-3.5" />
 												</button>
 											)}
 										</div>
 									</div>
-								))}
+								);
+							})}
 							</div>
 						</div>
 					)}
@@ -271,6 +401,63 @@ export const TemplateStats = ({ templateId, templateName, onSync, onDeploy }: Te
 						</div>
 					</div>
 				</div>
+			)}
+
+			{/* Instance Override Editor Modal */}
+			{overrideModal && templateLoading && (
+				<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+					<div className="bg-background rounded-lg shadow-lg p-8 text-center">
+						<Activity className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+						<p className="text-sm text-fg-muted">Loading template data...</p>
+					</div>
+				</div>
+			)}
+			{overrideModal && !templateLoading && templateData && (
+				<InstanceOverrideEditor
+					open={!!overrideModal}
+					onClose={() => setOverrideModal(null)}
+					templateId={templateId}
+					templateName={templateName}
+					instanceId={overrideModal.instanceId}
+					instanceLabel={overrideModal.instanceName}
+					customFormats={
+						templateData.template?.config?.customFormats?.map((cf) => {
+							// Resolve score using the same logic as deployment executor
+							const scoreSet = templateData.template?.config?.qualityProfile?.trash_score_set;
+							let defaultScore = 0;
+
+							// Cast originalConfig to access trash_scores (actual TRaSH API data has this)
+							const originalConfig = cf.originalConfig as { trash_scores?: Record<string, number>; score?: number } | undefined;
+
+							// Priority 1: User's score override
+							if (cf.scoreOverride !== undefined && cf.scoreOverride !== null) {
+								defaultScore = cf.scoreOverride;
+							}
+							// Priority 2: TRaSH score from profile's score set
+							else if (scoreSet && originalConfig?.trash_scores?.[scoreSet] !== undefined) {
+								defaultScore = originalConfig.trash_scores[scoreSet];
+							}
+							// Priority 3: TRaSH default score
+							else if (originalConfig?.trash_scores?.default !== undefined) {
+								defaultScore = originalConfig.trash_scores.default;
+							}
+							// Priority 4: Legacy score field from originalConfig
+							else if (originalConfig?.score !== undefined) {
+								defaultScore = originalConfig.score;
+							}
+							// Priority 5: Score from template custom format
+							else if (cf.score !== undefined) {
+								defaultScore = cf.score;
+							}
+
+							return {
+								trashId: cf.trashId,
+								name: cf.name,
+								defaultScore,
+							};
+						}) ?? []
+					}
+				/>
 			)}
 		</div>
 	);

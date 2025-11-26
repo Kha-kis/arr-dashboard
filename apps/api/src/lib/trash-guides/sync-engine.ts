@@ -6,10 +6,8 @@
 
 import { PrismaClient } from "@prisma/client";
 import type { TemplateConfig } from "@arr/shared";
-import { createArrApiClient } from "./arr-api-client.js";
-import type { ArrApiClient, CustomFormat } from "./arr-api-client.js";
-import { createBackupManager } from "./backup-manager.js";
-import type { BackupManager } from "./backup-manager.js";
+import type { TemplateUpdater } from "./template-updater.js";
+import type { DeploymentExecutorService } from "./deployment-executor.js";
 
 // ============================================================================
 // Types
@@ -71,18 +69,19 @@ export interface ValidationResult {
 
 export class SyncEngine {
 	private prisma: PrismaClient;
-	private backupManager: BackupManager;
 	private progressCallbacks: Map<string, (progress: SyncProgress) => void>;
-	private encryptor: { decrypt: (payload: { value: string; iv: string }) => string };
+	private templateUpdater?: TemplateUpdater;
+	private deploymentExecutor?: DeploymentExecutorService;
 
 	constructor(
 		prisma: PrismaClient,
-		encryptor: { decrypt: (payload: { value: string; iv: string }) => string },
+		templateUpdater?: TemplateUpdater,
+		deploymentExecutor?: DeploymentExecutorService,
 	) {
 		this.prisma = prisma;
-		this.backupManager = createBackupManager(prisma);
 		this.progressCallbacks = new Map();
-		this.encryptor = encryptor;
+		this.templateUpdater = templateUpdater;
+		this.deploymentExecutor = deploymentExecutor;
 	}
 
 	/**
@@ -142,52 +141,7 @@ export class SyncEngine {
 			return { valid: false, conflicts, errors, warnings };
 		}
 
-		// Parse template config
-		const config = JSON.parse(template.configData) as TemplateConfig;
-
-		// Create API client
-		const apiClient = createArrApiClient(instance, this.encryptor);
-
-		try {
-			// Test connection
-			const canConnect = await apiClient.testConnection();
-			if (!canConnect) {
-				errors.push("Cannot connect to instance API");
-				return { valid: false, conflicts, errors, warnings };
-			}
-
-			// Get existing Custom Formats
-			const existingFormats = await apiClient.getCustomFormats();
-
-			// Check for conflicts
-			for (const templateFormat of config.customFormats) {
-				const existing = existingFormats.find((f) => f.name === templateFormat.name);
-				if (existing && existing.id) {
-					conflicts.push({
-						configName: templateFormat.name,
-						existingId: existing.id,
-						action: "REPLACE", // Default action
-						reason: "Custom Format with same name already exists",
-					});
-				}
-			}
-
-			// Warnings for disabled conditions
-			const formatsWithDisabledConditions = config.customFormats.filter(
-				(f) => Object.values(f.conditionsEnabled).some((enabled) => !enabled),
-			);
-
-			if (formatsWithDisabledConditions.length > 0) {
-				warnings.push(
-					`${formatsWithDisabledConditions.length} formats have disabled conditions`,
-				);
-			}
-		} catch (error) {
-			errors.push(
-				error instanceof Error ? error.message : "Failed to validate with instance",
-			);
-			return { valid: false, conflicts, errors, warnings };
-		}
+		// Basic validation complete - deployment executor will do detailed validation during execution
 
 		return {
 			valid: errors.length === 0,
@@ -199,6 +153,8 @@ export class SyncEngine {
 
 	/**
 	 * Execute sync operation
+	 * 1. Sync template with TRaSH Guides
+	 * 2. Deploy to instance using deployment executor
 	 */
 	async execute(
 		options: SyncOptions,
@@ -214,172 +170,70 @@ export class SyncEngine {
 				userId: options.userId,
 				syncType: options.syncType,
 				status: "RUNNING",
-				appliedConfigs: "[]", // Initialize as empty JSON array
+				appliedConfigs: "[]",
 				startedAt: new Date(),
 			},
 		});
 
 		const syncId = syncHistory.id;
-		const errors: SyncError[] = [];
-		let configsApplied = 0;
-		let configsFailed = 0;
-		let configsSkipped = 0;
-		let backupId: string | undefined;
 
 		try {
-			// Emit initial progress
+			// Step 1: Sync template with TRaSH Guides
 			this.emitProgress({
 				syncId,
 				status: "INITIALIZING",
-				currentStep: "Loading configuration",
-				progress: 0,
+				currentStep: "Syncing template with TRaSH Guides",
+				progress: 10,
 				totalConfigs: 0,
 				appliedConfigs: 0,
 				failedConfigs: 0,
 				errors: [],
 			});
 
-			// Get template and instance
-			const template = await this.prisma.trashTemplate.findUnique({
-				where: { id: options.templateId },
-			});
-
-			const instance = await this.prisma.serviceInstance.findUnique({
-				where: { id: options.instanceId },
-			});
-
-			if (!template || !instance) {
-				throw new Error("Template or instance not found");
-			}
-
-			const config = JSON.parse(template.configData) as TemplateConfig;
-			const totalConfigs = config.customFormats.length;
-
-			// Create API client
-			const apiClient = createArrApiClient(instance, this.encryptor);
-
-			// Update progress: Validating
-			this.emitProgress({
-				syncId,
-				status: "VALIDATING",
-				currentStep: "Validating instance connection",
-				progress: 10,
-				totalConfigs,
-				appliedConfigs: configsApplied,
-				failedConfigs: configsFailed,
-				errors,
-			});
-
-			// Test connection
-			const canConnect = await apiClient.testConnection();
-			if (!canConnect) {
-				throw new Error("Cannot connect to instance");
-			}
-
-			// Update progress: Backing up
-			this.emitProgress({
-				syncId,
-				status: "BACKING_UP",
-				currentStep: "Creating backup snapshot",
-				progress: 20,
-				totalConfigs,
-				appliedConfigs: configsApplied,
-				failedConfigs: configsFailed,
-				errors,
-			});
-
-			// Create backup
-			const existingFormats = await apiClient.getCustomFormats();
-			const qualityProfiles = await apiClient.getQualityProfiles();
-			const systemStatus = await apiClient.getSystemStatus();
-
-			backupId = await this.backupManager.createBackup(
-				options.instanceId,
-				options.userId,
-				{
-					customFormats: existingFormats,
-					qualityProfiles,
-					version: systemStatus.version,
-				},
-				`Pre-sync backup for template: ${template.name}`,
-			);
-
-			// Update progress: Applying
-			this.emitProgress({
-				syncId,
-				status: "APPLYING",
-				currentStep: "Applying Custom Formats",
-				progress: 30,
-				totalConfigs,
-				appliedConfigs: configsApplied,
-				failedConfigs: configsFailed,
-				errors,
-			});
-
-			// Apply each Custom Format
-			for (let i = 0; i < config.customFormats.length; i++) {
-				const templateFormat = config.customFormats[i];
-				if (!templateFormat) continue;
-
-				const progressPercent = 30 + ((i + 1) / totalConfigs) * 60;
-
-				try {
-					await this.applyCustomFormat(
-						apiClient,
-						templateFormat,
-						existingFormats,
-						conflictResolutions,
+			if (this.templateUpdater) {
+				const syncResult = await this.templateUpdater.syncTemplate(options.templateId);
+				if (!syncResult.success) {
+					throw new Error(
+						`Template sync failed: ${syncResult.errors?.join(", ") || "Unknown error"}`,
 					);
-
-					configsApplied++;
-
-					this.emitProgress({
-						syncId,
-						status: "APPLYING",
-						currentStep: `Applied: ${templateFormat.name}`,
-						progress: progressPercent,
-						totalConfigs,
-						appliedConfigs: configsApplied,
-						failedConfigs: configsFailed,
-						errors,
-					});
-				} catch (error) {
-					configsFailed++;
-					const errorMessage = error instanceof Error ? error.message : "Unknown error";
-
-					errors.push({
-						configName: templateFormat.name,
-						error: errorMessage,
-						retryable: this.isRetryableError(errorMessage),
-					});
-
-					this.emitProgress({
-						syncId,
-						status: "APPLYING",
-						currentStep: `Failed: ${templateFormat.name}`,
-						progress: progressPercent,
-						totalConfigs,
-						appliedConfigs: configsApplied,
-						failedConfigs: configsFailed,
-						errors,
-					});
 				}
 			}
 
-			// Enforce backup retention
-			await this.backupManager.enforceRetentionLimit(options.instanceId, 10);
+			// Step 2: Deploy to instance using deployment executor
+			this.emitProgress({
+				syncId,
+				status: "APPLYING",
+				currentStep: "Deploying to instance",
+				progress: 50,
+				totalConfigs: 0,
+				appliedConfigs: 0,
+				failedConfigs: 0,
+				errors: [],
+			});
 
-			// Calculate final status
-			const duration = Math.floor((Date.now() - startTime) / 1000);
-			let status: "SUCCESS" | "PARTIAL_SUCCESS" | "FAILED";
-
-			if (configsFailed === 0) {
-				status = "SUCCESS";
-			} else if (configsApplied > 0) {
-				status = "PARTIAL_SUCCESS";
-			} else {
-				status = "FAILED";
+			if (!this.deploymentExecutor) {
+				throw new Error("Deployment executor not available");
 			}
+
+			const deployResult = await this.deploymentExecutor.deploySingleInstance(
+				options.templateId,
+				options.instanceId,
+				options.userId,
+			);
+
+			// Calculate duration and status
+			const duration = Math.floor((Date.now() - startTime) / 1000);
+			const status = deployResult.success
+				? "SUCCESS"
+				: deployResult.customFormatsCreated > 0 || deployResult.customFormatsUpdated > 0
+					? "PARTIAL_SUCCESS"
+					: "FAILED";
+
+			const errors: SyncError[] = deployResult.errors.map((err) => ({
+				configName: err.split(":")[0] || "Unknown",
+				error: err,
+				retryable: false,
+			}));
 
 			// Update sync history
 			await this.prisma.trashSyncHistory.update({
@@ -388,16 +242,14 @@ export class SyncEngine {
 					status,
 					completedAt: new Date(),
 					duration,
-					configsApplied,
-					configsFailed,
-					configsSkipped,
-					appliedConfigs: JSON.stringify(
-						config.customFormats
-							.slice(0, configsApplied)
-							.map((f) => ({ name: f.name, trashId: f.trashId })),
-					),
+					configsApplied: deployResult.customFormatsCreated + deployResult.customFormatsUpdated,
+					configsFailed: deployResult.details?.failed.length || 0,
+					configsSkipped: deployResult.customFormatsSkipped,
+					appliedConfigs: JSON.stringify([
+						...(deployResult.details?.created || []).map((name) => ({ name })),
+						...(deployResult.details?.updated || []).map((name) => ({ name })),
+					]),
 					failedConfigs: errors.length > 0 ? JSON.stringify(errors) : null,
-					backupId,
 				},
 			});
 
@@ -405,28 +257,38 @@ export class SyncEngine {
 			this.emitProgress({
 				syncId,
 				status: "COMPLETED",
-				currentStep: "Sync completed",
+				currentStep: deployResult.success ? "Sync completed successfully" : "Sync completed with errors",
 				progress: 100,
-				totalConfigs,
-				appliedConfigs: configsApplied,
-				failedConfigs: configsFailed,
+				totalConfigs:
+					deployResult.customFormatsCreated +
+					deployResult.customFormatsUpdated +
+					deployResult.customFormatsSkipped,
+				appliedConfigs: deployResult.customFormatsCreated + deployResult.customFormatsUpdated,
+				failedConfigs: deployResult.details?.failed.length || 0,
 				errors,
 			});
 
 			return {
 				syncId,
-				success: status === "SUCCESS",
+				success: deployResult.success,
 				status,
 				duration,
-				configsApplied,
-				configsFailed,
-				configsSkipped,
+				configsApplied: deployResult.customFormatsCreated + deployResult.customFormatsUpdated,
+				configsFailed: deployResult.details?.failed.length || 0,
+				configsSkipped: deployResult.customFormatsSkipped,
 				errors,
-				backupId,
 			};
 		} catch (error) {
 			const duration = Math.floor((Date.now() - startTime) / 1000);
-			const errorMessage = error instanceof Error ? error.message : "Sync failed";
+
+			let errorMessage = "Sync failed";
+			if (error instanceof Error) {
+				errorMessage = error.message;
+			} else if (error && typeof error === 'object' && 'message' in error) {
+				errorMessage = String(error.message);
+			} else if (typeof error === 'string') {
+				errorMessage = error;
+			}
 
 			// Update sync history with failure
 			await this.prisma.trashSyncHistory.update({
@@ -435,11 +297,10 @@ export class SyncEngine {
 					status: "FAILED",
 					completedAt: new Date(),
 					duration,
-					configsApplied,
-					configsFailed,
-					configsSkipped,
+					configsApplied: 0,
+					configsFailed: 0,
+					configsSkipped: 0,
 					errorLog: errorMessage,
-					backupId,
 				},
 			});
 
@@ -450,9 +311,9 @@ export class SyncEngine {
 				currentStep: errorMessage,
 				progress: 0,
 				totalConfigs: 0,
-				appliedConfigs: configsApplied,
-				failedConfigs: configsFailed,
-				errors,
+				appliedConfigs: 0,
+				failedConfigs: 0,
+				errors: [{ configName: "Sync", error: errorMessage, retryable: false }],
 			});
 
 			return {
@@ -460,11 +321,10 @@ export class SyncEngine {
 				success: false,
 				status: "FAILED",
 				duration,
-				configsApplied,
-				configsFailed,
-				configsSkipped,
+				configsApplied: 0,
+				configsFailed: 0,
+				configsSkipped: 0,
 				errors: [{ configName: "Sync", error: errorMessage, retryable: false }],
-				backupId,
 			};
 		} finally {
 			// Clean up progress callback
@@ -472,74 +332,6 @@ export class SyncEngine {
 		}
 	}
 
-	/**
-	 * Apply a single Custom Format
-	 */
-	private async applyCustomFormat(
-		apiClient: ArrApiClient,
-		templateFormat: TemplateConfig["customFormats"][0],
-		existingFormats: CustomFormat[],
-		conflictResolutions?: Map<string, "REPLACE" | "SKIP">,
-	): Promise<void> {
-		// Check for existing format with same name
-		const existing = existingFormats.find((f) => f.name === templateFormat.name);
-
-		// Handle conflict resolution
-		if (existing && existing.id) {
-			const resolution = conflictResolutions?.get(templateFormat.name) || "REPLACE";
-
-			if (resolution === "SKIP") {
-				return; // Skip this format
-			}
-
-			// REPLACE: update existing format
-			const updatedFormat = this.buildCustomFormat(templateFormat);
-			await apiClient.updateCustomFormat(existing.id, {
-				...updatedFormat,
-				id: existing.id,
-			});
-		} else {
-			// Create new format
-			const newFormat = this.buildCustomFormat(templateFormat);
-			await apiClient.createCustomFormat(newFormat);
-		}
-	}
-
-	/**
-	 * Build Custom Format object from template configuration
-	 */
-	private buildCustomFormat(
-		templateFormat: TemplateConfig["customFormats"][0],
-	): CustomFormat {
-		const originalConfig = templateFormat.originalConfig as CustomFormat;
-
-		// Filter specifications based on enabled conditions
-		const enabledSpecs = originalConfig.specifications.filter((spec) => {
-			return templateFormat.conditionsEnabled[spec.name] !== false;
-		});
-
-		return {
-			name: templateFormat.name,
-			includeCustomFormatWhenRenaming: originalConfig.includeCustomFormatWhenRenaming,
-			specifications: enabledSpecs,
-		};
-	}
-
-	/**
-	 * Check if error is retryable
-	 */
-	private isRetryableError(error: string): boolean {
-		const retryablePatterns = [
-			/timeout/i,
-			/network/i,
-			/503/,
-			/429/,
-			/connection/i,
-			/unavailable/i,
-		];
-
-		return retryablePatterns.some((pattern) => pattern.test(error));
-	}
 }
 
 // ============================================================================
@@ -551,7 +343,8 @@ export class SyncEngine {
  */
 export function createSyncEngine(
 	prisma: PrismaClient,
-	encryptor: { decrypt: (payload: { value: string; iv: string }) => string },
+	templateUpdater?: TemplateUpdater,
+	deploymentExecutor?: DeploymentExecutorService,
 ): SyncEngine {
-	return new SyncEngine(prisma, encryptor);
+	return new SyncEngine(prisma, templateUpdater, deploymentExecutor);
 }

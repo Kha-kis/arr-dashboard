@@ -18,7 +18,7 @@ import { PasskeySetup } from "./passkey-setup";
 type SetupMethod = "password" | "oidc" | "passkey";
 
 export const SetupClient = () => {
-	const [activeMethod, setActiveMethod] = useState<SetupMethod>("password");
+	const [activeMethod, setActiveMethod] = useState<SetupMethod>("passkey");
 
 	return (
 		<Card className="w-full max-w-2xl">
@@ -32,6 +32,18 @@ export const SetupClient = () => {
 			<CardContent>
 				{/* Tab navigation */}
 				<div className="flex items-center gap-2 border-b border-white/10 pb-4 mb-6">
+					<Button
+						type="button"
+						variant={activeMethod === "passkey" ? "primary" : "ghost"}
+						size="sm"
+						onClick={() => setActiveMethod("passkey")}
+						className={cn(
+							"flex-1",
+							activeMethod !== "passkey" && "text-white/60 hover:text-white",
+						)}
+					>
+						Passkey
+					</Button>
 					<Button
 						type="button"
 						variant={activeMethod === "password" ? "primary" : "ghost"}
@@ -56,24 +68,12 @@ export const SetupClient = () => {
 					>
 						OIDC
 					</Button>
-					<Button
-						type="button"
-						variant={activeMethod === "passkey" ? "primary" : "ghost"}
-						size="sm"
-						onClick={() => setActiveMethod("passkey")}
-						className={cn(
-							"flex-1",
-							activeMethod !== "passkey" && "text-white/60 hover:text-white",
-						)}
-					>
-						Passkey
-					</Button>
 				</div>
 
 				{/* Method-specific forms */}
+				{activeMethod === "passkey" && <PasskeySetup />}
 				{activeMethod === "password" && <PasswordSetup />}
 				{activeMethod === "oidc" && <OIDCSetup />}
-				{activeMethod === "passkey" && <PasskeySetup />}
 			</CardContent>
 		</Card>
 	);

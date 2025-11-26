@@ -12,8 +12,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Button } from "../../../components/ui/button";
-import { Alert, AlertDescription } from "../../../components/ui/alert";
+import { Button, Alert, AlertDescription, Select, SelectOption, Input } from "../../../components/ui";
 import { Plus, Trash2, Info, Code } from "lucide-react";
 
 interface Condition {
@@ -223,17 +222,17 @@ export function VisualConditionBuilder({
 									<label className="block text-xs font-medium text-fg-muted mb-1">
 										Field
 									</label>
-									<select
+									<Select
 										value={condition.field}
 										onChange={(e) => updateCondition(condition.id, { field: e.target.value })}
-										className="w-full rounded border border-border bg-bg-hover px-3 py-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary/50"
+										className="w-full"
 									>
 										{FIELDS.map(field => (
-											<option key={field.value} value={field.value}>
+											<SelectOption key={field.value} value={field.value}>
 												{field.label}
-											</option>
+											</SelectOption>
 										))}
-									</select>
+									</Select>
 									{field && (
 										<p className="text-xs text-fg-muted mt-1">{field.description}</p>
 									)}
@@ -244,17 +243,17 @@ export function VisualConditionBuilder({
 									<label className="block text-xs font-medium text-fg-muted mb-1">
 										Operator
 									</label>
-									<select
+									<Select
 										value={condition.operator}
 										onChange={(e) => updateCondition(condition.id, { operator: e.target.value })}
-										className="w-full rounded border border-border bg-bg-hover px-3 py-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary/50"
+										className="w-full"
 									>
 										{OPERATORS.map(op => (
-											<option key={op.value} value={op.value}>
+											<SelectOption key={op.value} value={op.value}>
 												{op.label}
-											</option>
+											</SelectOption>
 										))}
-									</select>
+									</Select>
 								</div>
 							</div>
 
@@ -264,11 +263,11 @@ export function VisualConditionBuilder({
 									<label className="block text-xs font-medium text-fg-muted mb-1">
 										Value
 									</label>
-									<input
+									<Input
 										type="text"
 										value={condition.value}
 										onChange={(e) => updateCondition(condition.id, { value: e.target.value })}
-										className="w-full rounded border border-border bg-bg-hover px-3 py-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary/50"
+										className="w-full"
 										placeholder={condition.operator === "matches" ? "Enter regex pattern..." : "Enter value..."}
 									/>
 

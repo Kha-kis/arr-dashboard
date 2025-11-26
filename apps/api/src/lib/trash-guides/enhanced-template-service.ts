@@ -48,7 +48,12 @@ export class EnhancedTemplateService {
 		};
 
 		// Filter config based on options
-		let config = JSON.parse(template.configData) as any;
+		let config: any;
+		try {
+			config = JSON.parse(template.configData);
+		} catch (parseError) {
+			throw new Error(`Invalid template config data: ${parseError instanceof Error ? parseError.message : "Parse error"}`);
+		}
 		if (!options.includeQualitySettings) {
 			const { qualityProfile, completeQualityProfile, qualitySize, ...rest } = config;
 			config = rest;

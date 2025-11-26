@@ -7,27 +7,27 @@ import { X } from "lucide-react";
 interface DeploymentHistoryDetailsModalProps {
 	historyId: string;
 	onClose: () => void;
-	onRollback?: (historyId: string) => void;
+	onUndeploy?: (historyId: string) => void;
 }
 
 export function DeploymentHistoryDetailsModal({
 	historyId,
 	onClose,
-	onRollback,
+	onUndeploy,
 }: DeploymentHistoryDetailsModalProps) {
 	const { data, isLoading, error } = useDeploymentHistoryDetail(historyId);
 
 	return (
 		<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-			<div className="bg-background rounded-lg shadow-lg max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
+			<div className="bg-bg-subtle rounded-lg shadow-lg max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col border border-border">
 				{/* Header */}
-				<div className="flex items-center justify-between p-6 border-b">
-					<h2 className="text-xl font-semibold">Deployment Details</h2>
+				<div className="flex items-center justify-between p-6 border-b border-border">
+					<h2 className="text-xl font-semibold text-fg">Deployment Details</h2>
 					<button
 						onClick={onClose}
-						className="p-1 rounded-md hover:bg-muted transition-colors"
+						className="p-1 rounded-md hover:bg-bg-muted transition-colors"
 					>
-						<X className="h-5 w-5" />
+						<X className="h-5 w-5 text-fg-muted" />
 					</button>
 				</div>
 
@@ -35,18 +35,18 @@ export function DeploymentHistoryDetailsModal({
 				<div className="flex-1 overflow-y-auto p-6">
 					{isLoading && (
 						<div className="flex items-center justify-center py-12">
-							<div className="text-sm text-muted-foreground">
+							<div className="text-sm text-fg-muted">
 								Loading deployment details...
 							</div>
 						</div>
 					)}
 
 					{error && (
-						<div className="rounded-lg border border-destructive bg-destructive/10 p-4">
-							<p className="text-sm font-medium text-destructive">
+						<div className="rounded-lg border border-danger bg-danger/10 p-4">
+							<p className="text-sm font-medium text-danger">
 								Failed to load deployment details
 							</p>
-							<p className="mt-1 text-xs text-destructive/80">{error.message}</p>
+							<p className="mt-1 text-xs text-danger/80">{error.message}</p>
 						</div>
 					)}
 
@@ -54,7 +54,7 @@ export function DeploymentHistoryDetailsModal({
 						<div className="space-y-6">
 							{/* Overview Section */}
 							<section>
-								<h3 className="text-sm font-semibold mb-3">Overview</h3>
+								<h3 className="text-sm font-semibold mb-3 text-fg">Overview</h3>
 								<div className="grid grid-cols-2 gap-4">
 									<InfoField
 										label="Deployed At"
@@ -89,7 +89,7 @@ export function DeploymentHistoryDetailsModal({
 
 							{/* Instance & Template Section */}
 							<section>
-								<h3 className="text-sm font-semibold mb-3">
+								<h3 className="text-sm font-semibold mb-3 text-fg">
 									Instance & Template
 								</h3>
 								<div className="grid grid-cols-2 gap-4">
@@ -127,29 +127,29 @@ export function DeploymentHistoryDetailsModal({
 
 							{/* Results Section */}
 							<section>
-								<h3 className="text-sm font-semibold mb-3">Results</h3>
+								<h3 className="text-sm font-semibold mb-3 text-fg">Results</h3>
 								<div className="grid grid-cols-3 gap-4">
-									<div className="rounded-lg border p-3">
-										<div className="text-2xl font-bold text-green-600 dark:text-green-400">
+									<div className="rounded-lg border border-border bg-bg-muted p-3">
+										<div className="text-2xl font-bold text-success">
 											{data.data.appliedCFs}
 										</div>
-										<div className="text-xs text-muted-foreground mt-1">
+										<div className="text-xs text-fg-muted mt-1">
 											Applied
 										</div>
 									</div>
-									<div className="rounded-lg border p-3">
-										<div className="text-2xl font-bold text-red-600 dark:text-red-400">
+									<div className="rounded-lg border border-border bg-bg-muted p-3">
+										<div className="text-2xl font-bold text-danger">
 											{data.data.failedCFs}
 										</div>
-										<div className="text-xs text-muted-foreground mt-1">
+										<div className="text-xs text-fg-muted mt-1">
 											Failed
 										</div>
 									</div>
-									<div className="rounded-lg border p-3">
-										<div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+									<div className="rounded-lg border border-border bg-bg-muted p-3">
+										<div className="text-2xl font-bold text-info">
 											{data.data.totalCFs}
 										</div>
-										<div className="text-xs text-muted-foreground mt-1">
+										<div className="text-xs text-fg-muted mt-1">
 											Total
 										</div>
 									</div>
@@ -159,14 +159,14 @@ export function DeploymentHistoryDetailsModal({
 							{/* Applied Configs Section */}
 							{data.data.appliedConfigs && data.data.appliedConfigs.length > 0 && (
 									<section>
-										<h3 className="text-sm font-semibold mb-3">
+										<h3 className="text-sm font-semibold mb-3 text-fg">
 											Applied Custom Formats
 										</h3>
-										<div className="rounded-lg border divide-y max-h-48 overflow-y-auto">
+										<div className="rounded-lg border border-border bg-bg-muted divide-y divide-border max-h-48 overflow-y-auto">
 											{data.data.appliedConfigs.map((config, index) => (
-												<div key={index} className="px-3 py-2 text-sm flex items-center justify-between">
+												<div key={index} className="px-3 py-2 text-sm flex items-center justify-between text-fg">
 													<span>{config.name}</span>
-													<span className="text-xs text-muted-foreground capitalize">
+													<span className="text-xs text-fg-muted capitalize">
 														{config.action}
 													</span>
 												</div>
@@ -178,18 +178,18 @@ export function DeploymentHistoryDetailsModal({
 							{/* Failed Configs Section */}
 							{data.data.failedConfigs && data.data.failedConfigs.length > 0 && (
 								<section>
-									<h3 className="text-sm font-semibold mb-3 text-destructive">
+									<h3 className="text-sm font-semibold mb-3 text-danger">
 										Failed Custom Formats
 									</h3>
-									<div className="rounded-lg border border-destructive/50 divide-y max-h-48 overflow-y-auto">
+									<div className="rounded-lg border border-danger/50 bg-danger/5 divide-y divide-danger/20 max-h-48 overflow-y-auto">
 										{data.data.failedConfigs.map((config, index) => (
 											<div
 												key={index}
 												className="px-3 py-2 text-sm"
 											>
-												<div className="font-medium text-destructive">{config.name}</div>
+												<div className="font-medium text-danger">{config.name}</div>
 												{config.error && (
-													<div className="text-xs text-destructive/80 mt-1">{config.error}</div>
+													<div className="text-xs text-danger/80 mt-1">{config.error}</div>
 												)}
 											</div>
 										))}
@@ -200,11 +200,11 @@ export function DeploymentHistoryDetailsModal({
 							{/* Errors Section */}
 							{data.data.errors && (
 								<section>
-									<h3 className="text-sm font-semibold mb-3 text-destructive">
+									<h3 className="text-sm font-semibold mb-3 text-danger">
 										Errors
 									</h3>
-									<div className="rounded-lg border border-destructive/50 bg-destructive/5 p-3">
-										<pre className="text-xs text-destructive whitespace-pre-wrap font-mono">
+									<div className="rounded-lg border border-danger/50 bg-danger/5 p-3">
+										<pre className="text-xs text-danger whitespace-pre-wrap font-mono">
 											{data.data.errors}
 										</pre>
 									</div>
@@ -214,11 +214,11 @@ export function DeploymentHistoryDetailsModal({
 							{/* Warnings Section */}
 							{data.data.warnings && (
 								<section>
-									<h3 className="text-sm font-semibold mb-3 text-yellow-600 dark:text-yellow-400">
+									<h3 className="text-sm font-semibold mb-3 text-warning">
 										Warnings
 									</h3>
-									<div className="rounded-lg border border-yellow-500/50 bg-yellow-500/5 p-3">
-										<pre className="text-xs text-yellow-600 dark:text-yellow-400 whitespace-pre-wrap font-mono">
+									<div className="rounded-lg border border-warning/50 bg-warning/5 p-3">
+										<pre className="text-xs text-warning whitespace-pre-wrap font-mono">
 											{data.data.warnings}
 										</pre>
 									</div>
@@ -228,8 +228,8 @@ export function DeploymentHistoryDetailsModal({
 							{/* Backup Info Section */}
 							{data.data.backup && (
 								<section>
-									<h3 className="text-sm font-semibold mb-3">Backup</h3>
-									<div className="rounded-lg border p-3">
+									<h3 className="text-sm font-semibold mb-3 text-fg">Backup</h3>
+									<div className="rounded-lg border border-border bg-bg-muted p-3">
 										<InfoField
 											label="Backup Created"
 											value={format(
@@ -237,9 +237,8 @@ export function DeploymentHistoryDetailsModal({
 												"MMM d, yyyy 'at' h:mm a",
 											)}
 										/>
-										<p className="text-xs text-muted-foreground mt-2">
-											A backup was created before this deployment and can be used
-											for rollback.
+										<p className="text-xs text-fg-muted mt-2">
+											A backup was created before this deployment.
 										</p>
 									</div>
 								</section>
@@ -249,22 +248,22 @@ export function DeploymentHistoryDetailsModal({
 				</div>
 
 				{/* Footer */}
-				<div className="flex items-center justify-end gap-3 p-6 border-t">
+				<div className="flex items-center justify-end gap-3 p-6 border-t border-border">
 					<button
 						onClick={onClose}
-						className="px-4 py-2 text-sm rounded-md border hover:bg-muted transition-colors"
+						className="px-4 py-2 text-sm rounded-md border border-border text-fg hover:bg-bg-muted transition-colors"
 					>
 						Close
 					</button>
 					{data?.data &&
 						!data.data.rolledBack &&
-						data.data.backupId &&
-						onRollback && (
+						onUndeploy && (
 							<button
-								onClick={() => onRollback(historyId)}
-								className="px-4 py-2 text-sm rounded-md bg-destructive text-destructive-foreground hover:bg-destructive/90 transition-colors"
+								onClick={() => onUndeploy(historyId)}
+								className="px-4 py-2 text-sm rounded-md bg-orange-500 text-white hover:bg-orange-600 transition-colors"
+								title="Remove Custom Formats deployed by this template (shared CFs will be kept)"
 							>
-								Rollback Deployment
+								Undeploy
 							</button>
 						)}
 				</div>
@@ -276,8 +275,8 @@ export function DeploymentHistoryDetailsModal({
 function InfoField({ label, value }: { label: string; value: string }) {
 	return (
 		<div>
-			<div className="text-xs text-muted-foreground mb-1">{label}</div>
-			<div className="text-sm font-medium">{value}</div>
+			<div className="text-xs text-fg-muted mb-1">{label}</div>
+			<div className="text-sm font-medium text-fg">{value}</div>
 		</div>
 	);
 }

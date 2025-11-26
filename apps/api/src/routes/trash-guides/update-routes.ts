@@ -10,6 +10,7 @@ import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js"
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTemplateUpdater } from "../../lib/trash-guides/template-updater.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
+import { createDeploymentExecutorService } from "../../lib/trash-guides/deployment-executor.js";
 
 // ============================================================================
 // Validation Schemas
@@ -32,11 +33,13 @@ export async function registerUpdateRoutes(
 	const versionTracker = createVersionTracker();
 	const cacheManager = createCacheManager(app.prisma);
 	const githubFetcher = createTrashFetcher();
+	const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.encryptor);
 	const templateUpdater = createTemplateUpdater(
 		app.prisma,
 		versionTracker,
 		cacheManager,
 		githubFetcher,
+		deploymentExecutor,
 	);
 
 	/**

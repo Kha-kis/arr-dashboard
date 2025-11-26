@@ -25,6 +25,7 @@ export interface TemplateInstanceInfo {
 	instanceType: "RADARR" | "SONARR";
 	lastAppliedAt?: string;
 	hasActiveSchedule: boolean;
+	syncStrategy: "auto" | "manual" | "notify";
 }
 
 export interface TemplateStatsResponse {

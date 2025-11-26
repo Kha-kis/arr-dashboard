@@ -130,8 +130,9 @@ export class BackupService {
 					// Invalid JSON - try to salvage backupPassword before overwriting
 					console.warn("secrets.json has invalid JSON; attempting to salvage backupPassword...");
 					try {
-						// Attempt regex extraction as fallback (recheckContent is already available from outer try block)
-						const backupPasswordMatch = recheckContent.match(/"backupPassword"\s*:\s*"([^"]+)"/);
+						// Re-read file content for regex extraction since recheckContent is not in scope here
+						const rawContent = await fs.readFile(this.secretsPath, "utf-8");
+						const backupPasswordMatch = rawContent.match(/"backupPassword"\s*:\s*"([^"]+)"/);
 						if (backupPasswordMatch && backupPasswordMatch[1]) {
 							console.warn("Found existing backupPassword in invalid JSON, preserving it");
 							return backupPasswordMatch[1];
@@ -784,7 +785,6 @@ export class BackupService {
 				this.validateRecords(data.users, "user", ["id", "username"]);
 				await tx.user.createMany({
 					data: data.users as Prisma.UserCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 
@@ -793,7 +793,6 @@ export class BackupService {
 				this.validateRecords(data.sessions, "session", ["id", "userId", "expiresAt"]);
 				await tx.session.createMany({
 					data: data.sessions as Prisma.SessionCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 
@@ -802,7 +801,6 @@ export class BackupService {
 				this.validateRecords(data.oidcProviders, "oidcProvider", ["id", "clientId", "issuer"]);
 				await tx.oIDCProvider.createMany({
 					data: data.oidcProviders as Prisma.OIDCProviderCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 
@@ -811,7 +809,6 @@ export class BackupService {
 				this.validateRecords(data.oidcAccounts, "oidcAccount", ["id", "userId", "provider"]);
 				await tx.oIDCAccount.createMany({
 					data: data.oidcAccounts as Prisma.OIDCAccountCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 
@@ -820,7 +817,6 @@ export class BackupService {
 				this.validateRecords(data.webAuthnCredentials, "webAuthnCredential", ["id", "userId", "publicKey"]);
 				await tx.webAuthnCredential.createMany({
 					data: data.webAuthnCredentials as Prisma.WebAuthnCredentialCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 
@@ -829,7 +825,6 @@ export class BackupService {
 				this.validateRecords(data.serviceInstances, "serviceInstance", ["id", "service", "baseUrl"]);
 				await tx.serviceInstance.createMany({
 					data: data.serviceInstances as Prisma.ServiceInstanceCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 
@@ -838,7 +833,6 @@ export class BackupService {
 				this.validateRecords(data.serviceTags, "serviceTag", ["id", "name"]);
 				await tx.serviceTag.createMany({
 					data: data.serviceTags as Prisma.ServiceTagCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 
@@ -847,7 +841,6 @@ export class BackupService {
 				this.validateRecords(data.serviceInstanceTags, "serviceInstanceTag", ["instanceId", "tagId"]);
 				await tx.serviceInstanceTag.createMany({
 					data: data.serviceInstanceTags as Prisma.ServiceInstanceTagCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 		});
@@ -974,7 +967,13 @@ export class BackupService {
 		// Input:  2025-10-15T13-27-36-897Z
 		// Output: 2025-10-15T13:27:36.897Z
 		const rawTimestamp = match[1];
+		if (!rawTimestamp) {
+			return fallbackMtime.toISOString();
+		}
 		const [datePart, timePart] = rawTimestamp.split("T");
+		if (!timePart) {
+			return fallbackMtime.toISOString();
+		}
 
 		// Convert time portion: 13-27-36-897Z -> 13:27:36.897Z
 		const timeConverted = timePart

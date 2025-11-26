@@ -7,8 +7,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "../../../components/ui/button";
-import { Alert, AlertDescription } from "../../../components/ui/alert";
+import { Button, Alert, AlertDescription, Select, SelectOption, Input } from "../../../components/ui";
 import {
 	Upload,
 	AlertCircle,
@@ -145,11 +144,11 @@ export function EnhancedTemplateImportModal({
 				<label className="block text-sm font-medium text-fg">
 					Select Template File
 				</label>
-				<input
+				<Input
 					type="file"
 					accept=".json"
 					onChange={handleFileSelect}
-					className="w-full rounded border border-border bg-bg-hover px-3 py-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary/50"
+					className="w-full"
 				/>
 			</div>
 
@@ -234,7 +233,7 @@ export function EnhancedTemplateImportModal({
 											<label className="block text-xs text-fg-muted">
 												Resolution:
 											</label>
-											<select
+											<Select
 												value={options.onNameConflict}
 												onChange={(e) =>
 													setOptions({
@@ -242,12 +241,12 @@ export function EnhancedTemplateImportModal({
 														onNameConflict: e.target.value as any,
 													})
 												}
-												className="w-full rounded border border-border bg-bg-hover px-3 py-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary/50"
+												className="w-full"
 											>
-												<option value="rename">Rename (add number suffix)</option>
-												<option value="replace">Replace existing template</option>
-												<option value="cancel">Cancel import</option>
-											</select>
+												<SelectOption value="rename">Rename (add number suffix)</SelectOption>
+												<SelectOption value="replace">Replace existing template</SelectOption>
+												<SelectOption value="cancel">Cancel import</SelectOption>
+											</Select>
 										</div>
 									)}
 								</div>

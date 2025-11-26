@@ -4,9 +4,8 @@ import { useState, useEffect } from "react";
 import type { TrashTemplate, TemplateConfig, TrashCustomFormat, TrashCustomFormatGroup } from "@arr/shared";
 import { useCreateTemplate, useUpdateTemplate } from "../../../hooks/api/useTemplates";
 import { useTrashCacheEntries } from "../../../hooks/api/useTrashCache";
-import { Alert, AlertDescription } from "../../../components/ui";
+import { Alert, AlertDescription, Input } from "../../../components/ui";
 import { X, Save, Plus, Minus, Settings } from "lucide-react";
-import { SyncStrategyControl } from "./sync-strategy-control";
 import { ConditionEditor } from "./condition-editor";
 
 interface TemplateEditorProps {
@@ -19,7 +18,6 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 	const [name, setName] = useState("");
 	const [description, setDescription] = useState("");
 	const [serviceType, setServiceType] = useState<"RADARR" | "SONARR">("RADARR");
-	const [syncStrategy, setSyncStrategy] = useState<"auto" | "manual" | "notify">("notify");
 	const [selectedFormats, setSelectedFormats] = useState<Map<string, {
 		scoreOverride?: number;
 		conditionsEnabled: Record<string, boolean>;
@@ -40,7 +38,6 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 			setName(template.name);
 			setDescription(template.description || "");
 			setServiceType(template.serviceType);
-			setSyncStrategy(template.syncStrategy);
 
 			// Convert config to form state
 			const formatsMap = new Map();
@@ -64,7 +61,6 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 			setName("");
 			setDescription("");
 			setServiceType("RADARR");
-			setSyncStrategy("notify");
 			setSelectedFormats(new Map());
 			setSelectedGroups(new Set());
 		}
@@ -122,10 +118,10 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 			if (template) {
 				await updateMutation.mutateAsync({
 					templateId: template.id,
-					payload: { name, description, config, syncStrategy },
+					payload: { name, description, config },
 				});
 			} else {
-				await createMutation.mutateAsync({ name, description, serviceType, config, syncStrategy });
+				await createMutation.mutateAsync({ name, description, serviceType, config });
 			}
 			onClose();
 		} catch (error) {
@@ -220,12 +216,12 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 					<div className="space-y-4">
 						<div>
 							<label className="mb-2 block text-sm font-medium text-white">Template Name</label>
-							<input
+							<Input
 								type="text"
 								value={name}
 								onChange={(e) => setName(e.target.value)}
 								placeholder="My Custom Template"
-								className="w-full rounded border border-white/20 bg-white/10 px-3 py-2 text-white placeholder:text-white/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+								className="w-full"
 							/>
 						</div>
 
@@ -236,7 +232,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 								onChange={(e) => setDescription(e.target.value)}
 								placeholder="Describe what this template is for..."
 								rows={3}
-								className="w-full rounded border border-white/20 bg-white/10 px-3 py-2 text-white placeholder:text-white/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+								className="w-full rounded-xl border border-border bg-bg-subtle px-4 py-3 text-sm text-fg placeholder:text-fg-muted/60 transition-all duration-200 hover:border-border/80 hover:bg-bg-subtle/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-bg-subtle/80"
 							/>
 						</div>
 
@@ -269,15 +265,6 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 								</div>
 							</div>
 						)}
-
-						{/* TRaSH Guides Sync Strategy */}
-						<div>
-							<SyncStrategyControl
-								value={syncStrategy}
-								onChange={setSyncStrategy}
-								disabled={mutation.isPending}
-							/>
-						</div>
 					</div>
 
 					{/* Custom Formats */}

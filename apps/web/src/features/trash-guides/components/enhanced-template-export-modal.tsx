@@ -7,8 +7,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button } from "../../../components/ui/button";
-import { Alert, AlertDescription } from "../../../components/ui/alert";
+import { Button, Alert, AlertDescription, Select, SelectOption, Input } from "../../../components/ui";
 import { Download, Info } from "lucide-react";
 import type { TemplateExportOptions } from "@arr/shared";
 
@@ -175,12 +174,12 @@ export function EnhancedTemplateExportModal({
 							<label className="block text-xs font-medium text-fg-muted mb-1">
 								Author
 							</label>
-							<input
+							<Input
 								type="text"
 								value={author}
 								onChange={(e) => setAuthor(e.target.value)}
 								placeholder="Your name or username"
-								className="w-full rounded border border-border bg-bg-hover px-3 py-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary/50"
+								className="w-full"
 							/>
 						</div>
 
@@ -188,30 +187,30 @@ export function EnhancedTemplateExportModal({
 							<label className="block text-xs font-medium text-fg-muted mb-1">
 								Category
 							</label>
-							<select
+							<Select
 								value={category}
 								onChange={(e) => setCategory(e.target.value)}
-								className="w-full rounded border border-border bg-bg-hover px-3 py-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary/50"
+								className="w-full"
 							>
-								<option value="">Select a category...</option>
+								<SelectOption value="">Select a category...</SelectOption>
 								{CATEGORIES.map((cat) => (
-									<option key={cat.value} value={cat.value}>
+									<SelectOption key={cat.value} value={cat.value}>
 										{cat.label}
-									</option>
+									</SelectOption>
 								))}
-							</select>
+							</Select>
 						</div>
 
 						<div>
 							<label className="block text-xs font-medium text-fg-muted mb-1">
 								Tags (comma-separated)
 							</label>
-							<input
+							<Input
 								type="text"
 								value={tags}
 								onChange={(e) => setTags(e.target.value)}
 								placeholder="4K, HDR, remux, anime"
-								className="w-full rounded border border-border bg-bg-hover px-3 py-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary/50"
+								className="w-full"
 							/>
 						</div>
 
@@ -224,7 +223,7 @@ export function EnhancedTemplateExportModal({
 								onChange={(e) => setNotes(e.target.value)}
 								placeholder="Additional notes about this template..."
 								rows={3}
-								className="w-full rounded border border-border bg-bg-hover px-3 py-2 text-sm text-fg focus:outline-none focus:ring-2 focus:ring-primary/50"
+								className="w-full rounded-xl border border-border bg-bg-subtle px-4 py-3 text-sm text-fg placeholder:text-fg-muted/60 transition-all duration-200 hover:border-border/80 hover:bg-bg-subtle/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-bg-subtle/80"
 							/>
 						</div>
 					</div>

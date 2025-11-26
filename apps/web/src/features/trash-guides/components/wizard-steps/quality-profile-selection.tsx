@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useQualityProfiles } from "../../../../hooks/api/useQualityProfiles";
 import { Alert, AlertDescription, EmptyState, Skeleton, Card, CardHeader, CardTitle, CardDescription, CardContent, Button } from "../../../../components/ui";
 import { FileText, Star, Languages, Gauge, Info, Download, Layers } from "lucide-react";
+import { createSanitizedHtml } from "../../../../lib/sanitize-html";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import type { CompleteQualityProfile } from "@arr/shared";
 import { QualityProfileImporter } from "../quality-profile-importer";
@@ -165,9 +166,7 @@ export const QualityProfileSelection = ({
 							{profile.description && (
 								<CardDescription
 									className="line-clamp-2"
-									dangerouslySetInnerHTML={{
-										__html: profile.description,
-									}}
+									dangerouslySetInnerHTML={createSanitizedHtml(profile.description)}
 								/>
 							)}
 						</CardHeader>

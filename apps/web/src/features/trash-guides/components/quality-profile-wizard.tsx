@@ -7,6 +7,7 @@ import type { TrashTemplate } from "@arr/shared";
 import { QualityProfileSelection } from "./wizard-steps/quality-profile-selection";
 import { CFConfiguration } from "./wizard-steps/cf-configuration";
 import { TemplateCreation } from "./wizard-steps/template-creation";
+import { htmlToPlainText } from "../lib/description-utils";
 
 interface QualityProfileWizardProps {
 	open: boolean;
@@ -113,7 +114,7 @@ export const QualityProfileWizard = ({
 			customFormatSelections: {},
 			templateName: profile.name,
 			templateDescription: profile.description
-				? profile.description.replace(/<br>/g, "\n")
+				? htmlToPlainText(profile.description)
 				: `Imported from TRaSH Guides: ${profile.name}`,
 		}));
 	};

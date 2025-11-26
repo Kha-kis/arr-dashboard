@@ -212,9 +212,6 @@ model TrashTemplate {
   lastModifiedAt           DateTime?
   lastModifiedBy           String?   // userId who made last modification
 
-  // Phase 3: Sync Strategy
-  syncStrategy             String    @default("notify") // "auto" | "manual" | "notify"
-
   // Phase 3: Change History (optional, for audit trail)
   changeLog                String?   // JSON array of change records
 
@@ -354,6 +351,12 @@ model TemplateQualityProfileMapping {
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
   lastSyncedAt        DateTime @default(now())
+
+  // Sync strategy for this specific instance deployment
+  // "auto" = automatically apply TRaSH updates to this instance
+  // "manual" = user must manually trigger sync
+  // "notify" = notify user of updates but don't auto-apply
+  syncStrategy        String   @default("notify")
 
   template TrashTemplate      @relation(fields: [templateId], references: [id], onDelete: Cascade)
   instance ServiceInstance    @relation(fields: [instanceId], references: [id], onDelete: Cascade)

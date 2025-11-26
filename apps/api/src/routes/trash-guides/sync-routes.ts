@@ -9,19 +9,24 @@ import { z } from "zod";
 import { createSyncEngine } from "../../lib/trash-guides/sync-engine.js";
 import type { SyncProgress } from "../../lib/trash-guides/sync-engine.js";
 import { createArrApiClient } from "../../lib/trash-guides/arr-api-client.js";
+import { createTemplateUpdater } from "../../lib/trash-guides/template-updater.js";
+import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js";
+import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
+import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
+import { createDeploymentExecutorService } from "../../lib/trash-guides/deployment-executor.js";
 
 // ============================================================================
 // Request Schemas
 // ============================================================================
 
 const validateSyncSchema = z.object({
-	templateId: z.string().uuid(),
-	instanceId: z.string().uuid(),
+	templateId: z.string().cuid(),
+	instanceId: z.string().cuid(),
 });
 
 const executeSyncSchema = z.object({
-	templateId: z.string().uuid(),
-	instanceId: z.string().uuid(),
+	templateId: z.string().cuid(),
+	instanceId: z.string().cuid(),
 	syncType: z.enum(["MANUAL", "SCHEDULED"]),
 	conflictResolutions: z.record(z.enum(["REPLACE", "SKIP"])).optional(),
 });
@@ -45,7 +50,21 @@ export async function registerSyncRoutes(
 	app: FastifyInstance,
 	opts: FastifyPluginOptions,
 ) {
-		const syncEngine = createSyncEngine(app.prisma, app.encryptor);
+		// Create template updater services
+		const versionTracker = createVersionTracker();
+		const cacheManager = createCacheManager(app.prisma);
+		const githubFetcher = createTrashFetcher();
+		const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.encryptor);
+		const templateUpdater = createTemplateUpdater(
+			app.prisma,
+			versionTracker,
+			cacheManager,
+			githubFetcher,
+			deploymentExecutor,
+		);
+
+		// Create sync engine with template updater and deployment executor
+		const syncEngine = createSyncEngine(app.prisma, templateUpdater, deploymentExecutor);
 
 		/**
 		 * Validate sync before execution
@@ -69,37 +88,54 @@ export async function registerSyncRoutes(
 		 * Execute sync operation
 		 * POST /api/trash-guides/sync/execute
 		 */
-		app.post("/execute", async (request: FastifyRequest, reply) => {
-			const body = executeSyncSchema.parse(request.body);
-			const userId = request.currentUser?.id || "";
+	/**
+	 * Execute sync operation
+	 * POST /api/trash-guides/sync/execute
+	 */
+	app.post("/execute", async (request: FastifyRequest, reply) => {
+		const body = executeSyncSchema.parse(request.body);
+		const userId = request.currentUser?.id || "";
 
-			// Convert conflictResolutions object to Map
-			const resolutionsMap = body.conflictResolutions
-				? new Map(Object.entries(body.conflictResolutions) as [string, "REPLACE" | "SKIP"][])
-				: undefined;
+		// Convert conflictResolutions object to Map
+		const resolutionsMap = body.conflictResolutions
+			? new Map(Object.entries(body.conflictResolutions) as [string, "REPLACE" | "SKIP"][])
+			: undefined;
 
-			// Create promise for sync execution
-			const resultPromise = syncEngine.execute(
-				{
-					templateId: body.templateId,
-					instanceId: body.instanceId,
-					userId,
-					syncType: body.syncType,
-				},
-				resolutionsMap,
-			);
+		// Execute sync - this will complete synchronously
+		const result = await syncEngine.execute(
+			{
+				templateId: body.templateId,
+				instanceId: body.instanceId,
+				userId,
+				syncType: body.syncType,
+			},
+			resolutionsMap,
+		);
 
-			// Wait for sync to get syncId, then set up progress tracking
-			const result = await resultPromise;
+		// By the time we get here, sync is complete. Store final state in progress store
+		// so that polling endpoints can retrieve it
+		const finalProgress: SyncProgress = {
+			syncId: result.syncId,
+			status: result.success ? "COMPLETED" : "FAILED",
+			currentStep: result.success 
+				? `Sync completed: ${result.configsApplied} applied, ${result.configsFailed} failed`
+				: "Sync failed",
+			progress: 100,
+			totalConfigs: result.configsApplied + result.configsFailed + result.configsSkipped,
+			appliedConfigs: result.configsApplied,
+			failedConfigs: result.configsFailed,
+			errors: result.errors,
+		};
+		
+		progressStore.set(result.syncId, finalProgress);
 
-			// Store progress updates in memory
-			syncEngine.onProgress(result.syncId, (progress: SyncProgress) => {
-				progressStore.set(progress.syncId, progress);
-			});
-
-			return reply.send(result);
+		// Set up handler for any future progress updates (though sync is already done)
+		syncEngine.onProgress(result.syncId, (progress: SyncProgress) => {
+			progressStore.set(progress.syncId, progress);
 		});
 
+		return reply.send(result);
+	});
 		/**
 		 * Stream sync progress (SSE endpoint)
 		 * GET /api/trash-guides/sync/:syncId/stream
@@ -337,11 +373,14 @@ export async function registerSyncRoutes(
 				});
 			}
 
-			try {
-				// Get backup data
-				const backupManager = syncEngine["backupManager"]; // Access private property for rollback
-				const backupData = await backupManager.restoreBackup(sync.backupId);
+			// TODO: Implement rollback using deployment executor
+			return reply.status(501).send({
+				error: "NOT_IMPLEMENTED",
+				message: "Rollback functionality is not yet implemented with the new sync engine",
+			});
 
+			/* Rollback implementation (disabled until deployment executor supports it):
+			try {
 				// Create API client
 				const apiClient = createArrApiClient(sync.instance, app.encryptor);
 
@@ -363,20 +402,21 @@ export async function registerSyncRoutes(
 							if (currentFormat.id) {
 								await apiClient.deleteCustomFormat(currentFormat.id);
 							}
-						} catch (error) {
-							errors.push(`Failed to delete ${currentFormat.name}: ${error instanceof Error ? error.message : "Unknown error"}`);
+						} catch (deleteError) {
+							errors.push(`Failed to delete ${currentFormat.name}: ${deleteError instanceof Error ? deleteError.message : "Unknown error"}`);
 							failedCount++;
 						}
 					}
 				}
 
 				// Step 2: Restore Custom Formats from backup
+				const backupData = JSON.parse(sync.backup.data);
 				for (const backupFormat of backupData.customFormats) {
 					try {
 						await apiClient.createCustomFormat(backupFormat as any);
 						restoredCount++;
-					} catch (error) {
-						errors.push(`Failed to restore ${(backupFormat as any).name}: ${error instanceof Error ? error.message : "Unknown error"}`);
+					} catch (restoreError) {
+						errors.push(`Failed to restore ${(backupFormat as any).name}: ${restoreError instanceof Error ? restoreError.message : "Unknown error"}`);
 						failedCount++;
 					}
 				}
@@ -402,5 +442,6 @@ export async function registerSyncRoutes(
 					message: error instanceof Error ? error.message : "Rollback failed",
 				});
 			}
+			*/
 		});
 }

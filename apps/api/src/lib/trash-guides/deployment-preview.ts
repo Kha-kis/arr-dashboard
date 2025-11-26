@@ -84,40 +84,46 @@ export class DeploymentPreviewService {
 
 		// Parse template config
 		const templateConfig = JSON.parse(template.configData);
-		let templateCFs = (templateConfig.customFormats || []) as Array<{
+		const rawTemplateCFs = (templateConfig.customFormats || []) as Array<{
 			trashId: string;
 			name: string;
-			scoreOverride: number;
-			originalConfig: any;
+			scoreOverride?: number;
+			originalConfig: {
+				trash_scores?: { default?: number };
+				[key: string]: unknown;
+			};
 		}>;
 
-		// Apply instance-specific overrides if they exist
+		// Get instance-specific overrides if they exist
 		const instanceOverrides = template.instanceOverrides
 			? JSON.parse(template.instanceOverrides)
 			: {};
 		const overridesForInstance = instanceOverrides[instanceId] || {};
+		const scoreOverridesMap = overridesForInstance.scoreOverrides || {};
+		const cfOverridesMap = overridesForInstance.cfOverrides || {};
 
-		// Apply score overrides and CF selection overrides
-		if (overridesForInstance.scoreOverrides || overridesForInstance.cfOverrides) {
-			templateCFs = templateCFs.map((cf) => {
-				const cfOverride = overridesForInstance.cfOverrides?.[cf.trashId];
-				const scoreOverride = overridesForInstance.scoreOverrides?.[cf.trashId];
-
-				// If CF is disabled for this instance, skip it
-				if (cfOverride?.enabled === false) {
-					return null;
-				}
-
-				// Apply score override if exists
-				const finalScore =
-					scoreOverride !== undefined ? scoreOverride : cf.scoreOverride;
+		// Build template CFs with both default and instance override scores
+		const templateCFs = rawTemplateCFs
+			.filter((cf) => {
+				// Filter out CFs disabled for this instance
+				const cfOverride = cfOverridesMap[cf.trashId];
+				return cfOverride?.enabled !== false;
+			})
+			.map((cf) => {
+				// Get the default score from template (TRaSH Guides default)
+				const defaultScore = cf.scoreOverride ?? cf.originalConfig?.trash_scores?.default ?? 0;
+				// Get the instance-specific override (if any)
+				const instanceOverrideScore = scoreOverridesMap[cf.trashId] as number | undefined;
+				// Calculate effective score
+				const effectiveScore = instanceOverrideScore ?? defaultScore;
 
 				return {
 					...cf,
-					scoreOverride: finalScore,
+					defaultScore,
+					instanceOverrideScore,
+					scoreOverride: effectiveScore,
 				};
-			}).filter((cf): cf is NonNullable<typeof cf> => cf !== null);
-		}
+			});
 
 		// Build instance CF map by trash_id (from originalConfig metadata)
 		const instanceCFMap = new Map<string, CustomFormat>();
@@ -187,6 +193,9 @@ export class DeploymentPreviewService {
 				trashId: templateCF.trashId,
 				name: templateCF.name,
 				action,
+				defaultScore: templateCF.defaultScore,
+				instanceOverrideScore: templateCF.instanceOverrideScore,
+				scoreOverride: templateCF.scoreOverride ?? 0,
 				templateData: templateCF.originalConfig,
 				instanceData: instanceCF,
 				conflicts,
@@ -230,18 +239,32 @@ export class DeploymentPreviewService {
 
 	/**
 	 * Extract trash_id from Custom Format
-	 * TRaSH Guides CFs include trash_id in their metadata
+	 * TRaSH Guides CFs include trash_id in their metadata or specifications
 	 */
 	private extractTrashId(cf: CustomFormat): string | null {
-		// Try to find trash_id in specifications or fields
-		// This is implementation-specific to how TRaSH Guides stores trash_id
-		// Common pattern: trash_id in a specific field or specification
+		// Strategy 1: Check specifications for trash_id in fields
+		// TRaSH Guides often stores metadata in specification fields
+		for (const spec of cf.specifications || []) {
+			if (spec.fields) {
+				// Check common field patterns for trash_id
+				const trashIdField = spec.fields["trash_id"] || spec.fields["trashId"];
+				if (typeof trashIdField === "string" && trashIdField.length > 0) {
+					return trashIdField;
+				}
+			}
+		}
 
-		// For now, use CF name as identifier
-		// In production, this would need to be enhanced to properly extract trash_id
-		// from CF metadata or match against known TRaSH Guide patterns
+		// Strategy 2: Check for TRaSH ID pattern in CF name
+		// TRaSH Guides CFs may have format: "CF Name [trash_id]" or similar
+		const trashIdMatch = cf.name.match(/\[([a-f0-9-]{36})\]$/i);
+		if (trashIdMatch && trashIdMatch[1]) {
+			return trashIdMatch[1];
+		}
 
-		return cf.name; // Fallback: use name as identifier
+		// Strategy 3: Fallback to CF name as identifier
+		// This allows matching by name when trash_id is not explicitly stored
+		// Note: This is less reliable but provides backward compatibility
+		return cf.name;
 	}
 }
 

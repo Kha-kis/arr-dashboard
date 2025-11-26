@@ -1,10 +1,12 @@
 import {
 	discoverInstanceOptionsRequestSchema,
 	discoverInstanceOptionsResponseSchema,
+	discoverTestOptionsRequestSchema,
+	discoverTestOptionsResponseSchema,
 } from "@arr/shared";
 import type { ServiceInstance } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
+import { createInstanceFetcher, createTestFetcher } from "../../lib/arr/arr-fetcher.js";
 import { toBoolean, toNumber, toStringValue } from "../../lib/data/values.js";
 
 /**
@@ -17,6 +19,7 @@ type UnknownRecord = Record<string, any>;
 /**
  * Register discover options routes
  * - GET /discover/options - Get instance configuration options
+ * - POST /discover/test-options - Get configuration options without saved instance
  */
 export const registerOptionsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	/**
@@ -134,6 +137,104 @@ export const registerOptionsRoutes: FastifyPluginCallback = (app, _opts, done) =
 			});
 		} catch (error) {
 			request.log.error({ err: error, instance: instance.id }, "failed to load discover options");
+			reply.status(502);
+			return reply.send({ message: "Failed to load instance options" });
+		}
+	});
+
+	/**
+	 * POST /discover/test-options
+	 * Fetches quality profiles, root folders, and language profiles using temporary credentials
+	 * Used during service setup before instance is saved to database
+	 */
+	app.post("/discover/test-options", async (request, reply) => {
+		if (!request.currentUser) {
+			reply.status(401);
+			return reply.send();
+		}
+
+		const parsed = discoverTestOptionsRequestSchema.parse(request.body ?? {});
+		const service = parsed.service.toLowerCase() as "sonarr" | "radarr";
+
+		try {
+			const fetcher = createTestFetcher(parsed.baseUrl, parsed.apiKey);
+			const qualityProfilesResponse = await fetcher("/api/v3/qualityprofile");
+			const rootFolderResponse = await fetcher("/api/v3/rootfolder");
+
+			const qualityProfilesRaw = await qualityProfilesResponse.json();
+			const rootFoldersRaw = await rootFolderResponse.json();
+
+			const qualityProfiles = Array.isArray(qualityProfilesRaw)
+				? qualityProfilesRaw
+						.map((profile: unknown) => {
+							const p = profile as UnknownRecord;
+							return {
+								id: toNumber(p?.id),
+								name: toStringValue(p?.name),
+							};
+						})
+						.filter(
+							(profile): profile is { id: number; name: string } =>
+								typeof profile.id === "number" && typeof profile.name === "string",
+						)
+				: [];
+
+			const rootFolders = Array.isArray(rootFoldersRaw)
+				? rootFoldersRaw.reduce<
+						Array<{
+							id?: number | string;
+							path: string;
+							accessible?: boolean;
+							freeSpace?: number;
+						}>
+					>((acc, folder: unknown) => {
+						const f = folder as UnknownRecord;
+						const path = toStringValue(f?.path);
+						if (!path) {
+							return acc;
+						}
+						acc.push({
+							id: toNumber(f?.id) ?? toStringValue(f?.id) ?? undefined,
+							path,
+							accessible: toBoolean(f?.accessible),
+							freeSpace: toNumber(f?.freeSpace),
+						});
+						return acc;
+					}, [])
+				: [];
+
+			let languageProfiles: Array<{ id: number; name: string }> | undefined;
+			if (service === "sonarr") {
+				try {
+					const languageResponse = await fetcher("/api/v3/languageprofile");
+					const languageRaw = await languageResponse.json();
+					languageProfiles = Array.isArray(languageRaw)
+						? languageRaw
+								.map((profile: unknown) => {
+									const p = profile as UnknownRecord;
+									return {
+										id: toNumber(p?.id),
+										name: toStringValue(p?.name),
+									};
+								})
+								.filter(
+									(profile): profile is { id: number; name: string } =>
+										typeof profile.id === "number" && typeof profile.name === "string",
+								)
+						: [];
+				} catch (error) {
+					request.log.warn({ err: error }, "failed to load language profiles");
+				}
+			}
+
+			return discoverTestOptionsResponseSchema.parse({
+				service,
+				qualityProfiles,
+				rootFolders,
+				languageProfiles,
+			});
+		} catch (error) {
+			request.log.error({ err: error, baseUrl: parsed.baseUrl }, "failed to load test options");
 			reply.status(502);
 			return reply.send({ message: "Failed to load instance options" });
 		}

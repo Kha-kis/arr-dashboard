@@ -22,6 +22,7 @@ export interface TemplateInstanceInfo {
 	instanceType: "RADARR" | "SONARR";
 	lastAppliedAt?: Date;
 	hasActiveSchedule: boolean;
+	syncStrategy: "auto" | "manual" | "notify";
 }
 
 export interface TemplateStats {
@@ -91,16 +92,18 @@ export class TemplateService {
 				// Source Quality Profile Information
 				sourceQualityProfileTrashId: request.sourceQualityProfileTrashId || null,
 				sourceQualityProfileName: request.sourceQualityProfileName || null,
-				// Phase 3: Initialize metadata
+				// Phase 3: Initialize metadata with version tracking
+				trashGuidesCommitHash: request.trashGuidesCommitHash || null,
 				importedAt: now,
+				lastSyncedAt: request.trashGuidesCommitHash ? now : null, // Mark as synced if we have a commit hash
 				hasUserModifications: false,
-				syncStrategy: "manual",
 				changeLog: JSON.stringify([
 					{
 						timestamp: now.toISOString(),
 						userId,
 						changeType: "import",
 						description: "Template created from TRaSH Guides quality profile",
+						commitHash: request.trashGuidesCommitHash || undefined,
 					},
 				]),
 			},
@@ -383,6 +386,7 @@ export class TemplateService {
 		}
 
 		// Check for name conflicts and auto-rename if needed
+		const MAX_RENAME_ATTEMPTS = 100;
 		let name = data.template.name;
 		let counter = 1;
 		while (
@@ -395,6 +399,9 @@ export class TemplateService {
 				},
 			})
 		) {
+			if (counter > MAX_RENAME_ATTEMPTS) {
+				throw new Error(`Failed to find unique name for template after ${MAX_RENAME_ATTEMPTS} attempts`);
+			}
 			name = `${data.template.name} (${counter})`;
 			counter++;
 		}
@@ -434,13 +441,18 @@ export class TemplateService {
 						completedAt: "desc",
 					},
 				},
-				schedules: {
+				// Include quality profile mappings to determine which instances are actively managed
+				qualityProfileMappings: {
 					select: {
 						instanceId: true,
-						enabled: true,
-					},
-					where: {
-						enabled: true,
+						syncStrategy: true,
+						instance: {
+							select: {
+								id: true,
+								label: true,
+								service: true,
+							},
+						},
 					},
 				},
 			},
@@ -455,10 +467,32 @@ export class TemplateService {
 		const formatCount = config.customFormats.length;
 		const groupCount = config.customFormatGroups.length;
 
+		// Get unique instances from mappings (actively managed instances)
+		const mappedInstanceIds = new Set(template.qualityProfileMappings.map((m) => m.instanceId));
+
 		// Get unique instances and their info
 		const instanceMap = new Map<string, TemplateInstanceInfo>();
-		const activeScheduleIds = new Set(template.schedules.map((s) => s.instanceId).filter(Boolean));
 
+		// First, add all mapped instances (these are the ones we actively manage)
+		// syncStrategy is now per-instance-deployment, not per-template
+		for (const mapping of template.qualityProfileMappings) {
+			if (!instanceMap.has(mapping.instanceId)) {
+				// Find last sync time from history
+				const lastSync = template.syncHistory.find((h) => h.instanceId === mapping.instanceId);
+				const strategy = (mapping.syncStrategy as "auto" | "manual" | "notify") || "notify";
+				instanceMap.set(mapping.instanceId, {
+					instanceId: mapping.instanceId,
+					instanceName: mapping.instance.label,
+					instanceType: mapping.instance.service as "RADARR" | "SONARR",
+					lastAppliedAt: lastSync?.completedAt || undefined,
+					// Instance has "active schedule" if this deployment is set to auto-sync
+					hasActiveSchedule: strategy === "auto",
+					syncStrategy: strategy,
+				});
+			}
+		}
+
+		// Also add instances from sync history that may not have mappings anymore
 		for (const history of template.syncHistory) {
 			if (!instanceMap.has(history.instanceId)) {
 				instanceMap.set(history.instanceId, {
@@ -466,13 +500,17 @@ export class TemplateService {
 					instanceName: history.instance.label,
 					instanceType: history.instance.service as "RADARR" | "SONARR",
 					lastAppliedAt: history.completedAt || undefined,
-					hasActiveSchedule: activeScheduleIds.has(history.instanceId),
+					// No active schedule if not mapped
+					hasActiveSchedule: false,
+					syncStrategy: "notify", // Default for unmapped instances
 				});
 			}
 		}
 
 		const instances = Array.from(instanceMap.values());
-		const activeInstanceCount = instances.filter((i) => i.hasActiveSchedule).length;
+		// Active instance count = instances with auto-sync enabled in their deployment mapping
+		const activeInstanceCount = instances.filter(i => i.hasActiveSchedule).length;
+		// Template is "Active" when it has at least one instance with auto-sync enabled
 		const isActive = activeInstanceCount > 0;
 		const lastUsed = template.syncHistory[0]?.completedAt || undefined;
 
@@ -564,8 +602,6 @@ export class TemplateService {
 			modifiedFields: prismaTemplate.modifiedFields ? JSON.parse(prismaTemplate.modifiedFields) : undefined,
 			lastModifiedAt: prismaTemplate.lastModifiedAt?.toISOString(),
 			lastModifiedBy: prismaTemplate.lastModifiedBy || undefined,
-			// Phase 3: Sync Strategy
-			syncStrategy: prismaTemplate.syncStrategy || "manual",
 			// Phase 3: Change Log
 			changeLog: prismaTemplate.changeLog ? JSON.parse(prismaTemplate.changeLog) : undefined,
 		};

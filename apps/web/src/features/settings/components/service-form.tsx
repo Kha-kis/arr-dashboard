@@ -3,16 +3,18 @@
 import type { ReactNode } from "react";
 import type { ServiceInstanceSummary } from "@arr/shared";
 import type { ServiceFormState } from "../lib/settings-utils";
-import { Button } from "../../../components/ui/button";
-import { Input } from "../../../components/ui/input";
 import {
+	Button,
+	Input,
 	Card,
 	CardContent,
 	CardHeader,
 	CardTitle,
 	CardDescription,
-} from "../../../components/ui/card";
-import { Alert, AlertDescription } from "../../../components/ui";
+	Alert,
+	AlertDescription,
+	FormField,
+} from "../../../components/ui";
 import { cn } from "../../../lib/utils";
 import { SERVICE_TYPES, SELECT_CLASS, OPTION_STYLE } from "../lib/settings-constants";
 import { getServicePlaceholders } from "../lib/settings-utils";
@@ -111,9 +113,14 @@ export const ServiceForm = ({
 							))}
 						</div>
 					</div>
-					<div className="space-y-2">
-						<label className="text-xs uppercase text-white/60">Label</label>
+					<FormField
+						label="Label"
+						htmlFor="service-label"
+						hint={`Friendly name for this ${formState.service} instance`}
+						required
+					>
 						<Input
+							id="service-label"
 							value={formState.label}
 							onChange={(event) =>
 								onFormStateChange((prev) => ({
@@ -124,10 +131,15 @@ export const ServiceForm = ({
 							placeholder={placeholders.label}
 							required
 						/>
-					</div>
-					<div className="space-y-2">
-						<label className="text-xs uppercase text-white/60">Base URL</label>
+					</FormField>
+					<FormField
+						label="Base URL"
+						htmlFor="service-baseurl"
+						hint="Full URL including http:// or https://"
+						required
+					>
 						<Input
+							id="service-baseurl"
 							type="url"
 							value={formState.baseUrl}
 							onChange={(event) =>
@@ -139,10 +151,15 @@ export const ServiceForm = ({
 							placeholder={placeholders.baseUrl}
 							required
 						/>
-					</div>
-					<div className="space-y-2">
-						<label className="text-xs uppercase text-white/60">API Key</label>
+					</FormField>
+					<FormField
+						label="API Key"
+						htmlFor="service-apikey"
+						hint={selectedService ? "Leave empty to keep current key" : "Found in Settings > General"}
+						required={!selectedService}
+					>
 						<Input
+							id="service-apikey"
 							type="password"
 							value={formState.apiKey}
 							onChange={(event) =>
@@ -154,7 +171,7 @@ export const ServiceForm = ({
 							placeholder={selectedService ? "Leave blank to keep current key" : "Your API key"}
 							required={!selectedService}
 						/>
-					</div>
+					</FormField>
 					<div className="space-y-2">
 						<Button
 							type="button"
@@ -195,15 +212,9 @@ export const ServiceForm = ({
 								<p className="text-xs uppercase tracking-widest text-white/40">
 									Default add settings
 								</p>
-								{selectedService ? (
-									<span className="text-xs text-white/50">
-										Applied when using Discover and library tools.
-									</span>
-								) : (
-									<span className="text-xs text-white/40">
-										Save the service before configuring defaults.
-									</span>
-								)}
+								<span className="text-xs text-white/50">
+									Applied when using Discover and library tools.
+								</span>
 							</div>
 							{defaultSectionContent}
 						</div>

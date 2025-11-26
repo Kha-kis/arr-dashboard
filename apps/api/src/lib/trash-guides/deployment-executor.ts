@@ -60,6 +60,7 @@ export class DeploymentExecutorService {
 		templateId: string,
 		instanceId: string,
 		userId: string,
+		syncStrategy?: "auto" | "manual" | "notify",
 	): Promise<DeploymentResult> {
 		const errors: string[] = [];
 		const details = {
@@ -212,10 +213,6 @@ export class DeploymentExecutorService {
 			let updated = 0;
 			let skipped = 0;
 
-			// Write deployment start info to file
-			const fs = await import("fs");
-			fs.writeFileSync("/tmp/deployment-start.log", `Starting deployment at ${new Date().toISOString()}\nTemplate CFs: ${templateCFs.length}\nExisting CFs: ${existingCFs.length}\n`);
-
 			for (const templateCF of templateCFs) {
 				try {
 
@@ -305,16 +302,6 @@ export class DeploymentExecutorService {
 					try {
 						// Get the quality profile schema to get proper structure
 						const schema = await apiClient.getQualityProfileSchema();
-
-						// Write to file for debugging
-						const fs = await import("fs");
-						fs.writeFileSync("/tmp/radarr-schema.json", JSON.stringify(schema, null, 2));
-
-						// Get quality definitions from the TRaSH template config
-						const fs2 = await import("fs");
-						fs2.writeFileSync("/tmp/template-debug.json", JSON.stringify(templateConfig, null, 2));
-						if (templateConfig.qualityProfile) {
-						}
 
 						// Normalize quality names for consistent matching (remove spaces/hyphens)
 						const normalizeQualityName = (name: string) => name.replace(/[\s-]/g, '').toLowerCase();
@@ -493,7 +480,6 @@ export class DeploymentExecutorService {
 						// Remove the id field if it exists (schema might include it)
 						delete (profileToCreate as { id?: number }).id;
 
-						fs.writeFileSync("/tmp/radarr-profile-create.json", JSON.stringify(profileToCreate, null, 2));
 						targetProfile = await apiClient.createQualityProfile(profileToCreate);
 					} catch (createError) {
 						console.error("[DEPLOYMENT] Failed to create quality profile:", createError);
@@ -587,11 +573,13 @@ export class DeploymentExecutorService {
 							instanceId,
 							qualityProfileId: targetProfile.id,
 							qualityProfileName: targetProfile.name,
+							syncStrategy: syncStrategy || "notify",
 							lastSyncedAt: new Date(),
 						},
 						update: {
 							templateId,
 							qualityProfileName: targetProfile.name,
+							...(syncStrategy && { syncStrategy }),
 							lastSyncedAt: new Date(),
 							updatedAt: new Date(),
 						},
@@ -698,11 +686,14 @@ export class DeploymentExecutorService {
 
 	/**
 	 * Execute bulk deployment to multiple instances
+	 * Supports both global syncStrategy (applies to all) or per-instance strategies
 	 */
 	async deployBulkInstances(
 		templateId: string,
 		instanceIds: string[],
 		userId: string,
+		syncStrategy?: "auto" | "manual" | "notify",
+		instanceSyncStrategies?: Record<string, "auto" | "manual" | "notify">,
 	): Promise<BulkDeploymentResult> {
 		// Get template info
 		const template = await this.prisma.trashTemplate.findUnique({
@@ -714,9 +705,11 @@ export class DeploymentExecutorService {
 		}
 
 		// Deploy to all instances in parallel
-		const deploymentPromises = instanceIds.map((instanceId) =>
-			this.deploySingleInstance(templateId, instanceId, userId),
-		);
+		// Use per-instance strategy if provided, otherwise fall back to global strategy
+		const deploymentPromises = instanceIds.map((instanceId) => {
+			const strategy = instanceSyncStrategies?.[instanceId] ?? syncStrategy;
+			return this.deploySingleInstance(templateId, instanceId, userId, strategy);
+		});
 
 		const results = await Promise.all(deploymentPromises);
 

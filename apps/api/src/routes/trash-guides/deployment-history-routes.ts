@@ -1,7 +1,7 @@
 /**
  * TRaSH Guides Deployment History Routes
  *
- * API endpoints for retrieving deployment history and rollback capabilities.
+ * API endpoints for retrieving deployment history.
  */
 
 import type { FastifyPluginAsync } from "fastify";
@@ -337,8 +337,18 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			}
 
 			// Parse JSON fields for detailed information
-			const appliedConfigs = history.appliedConfigs ? JSON.parse(history.appliedConfigs) : [];
-			const failedConfigs = history.failedConfigs ? JSON.parse(history.failedConfigs) : [];
+			let appliedConfigs: unknown[] = [];
+			let failedConfigs: unknown[] = [];
+			try {
+				appliedConfigs = history.appliedConfigs ? JSON.parse(history.appliedConfigs) : [];
+			} catch {
+				app.log.warn({ historyId: history.id }, "Failed to parse appliedConfigs JSON");
+			}
+			try {
+				failedConfigs = history.failedConfigs ? JSON.parse(history.failedConfigs) : [];
+			} catch {
+				app.log.warn({ historyId: history.id }, "Failed to parse failedConfigs JSON");
+			}
 
 			return reply.send({
 				success: true,
@@ -365,12 +375,12 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 	});
 
 	/**
-	 * POST /api/trash-guides/deployment/history/:historyId/rollback
-	 * Rollback a deployment using its backup
+	 * DELETE /api/trash-guides/deployment/history/:historyId
+	 * Delete a deployment history entry
 	 */
-	app.post<{
+	app.delete<{
 		Params: { historyId: string };
-	}>("/history/:historyId/rollback", async (request, reply) => {
+	}>("/history/:historyId", async (request, reply) => {
 		if (!request.currentUser) {
 			return reply.status(401).send({
 				statusCode: 401,
@@ -382,13 +392,15 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 		try {
 			const { historyId } = request.params;
 
-			// Get deployment history
+			// Get deployment history with template to verify ownership
 			const history = await app.prisma.templateDeploymentHistory.findUnique({
 				where: { id: historyId },
 				include: {
-					backup: true,
-					instance: true,
-					template: true,
+					template: {
+						select: {
+							userId: true,
+						},
+					},
 				},
 			});
 
@@ -400,40 +412,172 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 				});
 			}
 
-			// Check if already rolled back
-			if (history.rolledBack) {
-				return reply.status(400).send({
-					statusCode: 400,
-					error: "BadRequest",
-					message: "Deployment has already been rolled back",
-				});
-			}
-
-			// Check if backup exists
-			if (!history.backup) {
-				return reply.status(400).send({
-					statusCode: 400,
-					error: "BadRequest",
-					message: "No backup available for rollback",
-				});
-			}
-
 			// Verify template belongs to user
 			if (history.template && history.template.userId !== request.currentUser.id) {
 				return reply.status(403).send({
 					statusCode: 403,
 					error: "Forbidden",
-					message: "Not authorized to rollback this deployment",
+					message: "Not authorized to delete this deployment history",
 				});
 			}
 
-			// Parse the backup data to restore Custom Formats
-			const backupData: CustomFormat[] = JSON.parse(history.backup.backupData);
+			// Delete the deployment history entry
+			// Note: Associated backup will be cascade deleted if configured, otherwise it remains
+			await app.prisma.templateDeploymentHistory.delete({
+				where: { id: historyId },
+			});
+
+			return reply.send({
+				success: true,
+				message: "Deployment history deleted successfully",
+			});
+		} catch (error) {
+			app.log.error({ err: error }, "Failed to delete deployment history");
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message:
+					error instanceof Error
+						? error.message
+						: "Failed to delete deployment history",
+			});
+		}
+	});
+
+	/**
+	 * POST /api/trash-guides/deployment/history/:historyId/undeploy
+	 * Undeploy (remove) Custom Formats that were deployed by this specific deployment.
+	 * Only removes CFs that are unique to this template (not shared with other templates).
+	 */
+	app.post<{
+		Params: { historyId: string };
+	}>("/history/:historyId/undeploy", async (request, reply) => {
+		if (!request.currentUser) {
+			return reply.status(401).send({
+				statusCode: 401,
+				error: "Unauthorized",
+				message: "Authentication required",
+			});
+		}
+
+		try {
+			const { historyId } = request.params;
+
+			// Get deployment history with template config
+			const history = await app.prisma.templateDeploymentHistory.findUnique({
+				where: { id: historyId },
+				include: {
+					instance: true,
+					template: {
+						select: {
+							id: true,
+							name: true,
+							userId: true,
+							configData: true,
+						},
+					},
+				},
+			});
+
+			if (!history) {
+				return reply.status(404).send({
+					statusCode: 404,
+					error: "NotFound",
+					message: "Deployment history not found",
+				});
+			}
+
+			// Check if already undeployed
+			if (history.rolledBack) {
+				return reply.status(400).send({
+					statusCode: 400,
+					error: "BadRequest",
+					message: "This deployment has already been undeployed",
+				});
+			}
+
+			// Verify template belongs to user (if template still exists)
+			if (history.template && history.template.userId !== request.currentUser.id) {
+				return reply.status(403).send({
+					statusCode: 403,
+					error: "Forbidden",
+					message: "Not authorized to undeploy this deployment",
+				});
+			}
+
+			// Get the CFs that were deployed by this template
+			// Use templateSnapshot if available, otherwise use current template config
+			let deployedCFNames: string[] = [];
+			const configSource = history.templateSnapshot || history.template?.configData;
+
+			if (configSource) {
+				try {
+					const templateConfig = JSON.parse(configSource);
+					deployedCFNames = (templateConfig.customFormats || []).map(
+						(cf: { name: string }) => cf.name
+					);
+				} catch {
+					// If we can't parse the config, we can't undeploy
+					return reply.status(400).send({
+						statusCode: 400,
+						error: "BadRequest",
+						message: "Cannot determine which Custom Formats to remove - template config is invalid",
+					});
+				}
+			} else {
+				return reply.status(400).send({
+					statusCode: 400,
+					error: "BadRequest",
+					message: "Cannot undeploy - template no longer exists and no snapshot was saved",
+				});
+			}
+
+			if (deployedCFNames.length === 0) {
+				return reply.status(400).send({
+					statusCode: 400,
+					error: "BadRequest",
+					message: "No Custom Formats found in this deployment",
+				});
+			}
+
+			// Get all OTHER templates deployed to this instance to find shared CFs
+			const otherDeployments = await app.prisma.templateDeploymentHistory.findMany({
+				where: {
+					instanceId: history.instanceId,
+					id: { not: historyId },
+					rolledBack: false, // Only consider active deployments
+				},
+				include: {
+					template: {
+						select: {
+							configData: true,
+						},
+					},
+				},
+			});
+
+			// Build a set of CF names used by other templates on this instance
+			const sharedCFNames = new Set<string>();
+			for (const deployment of otherDeployments) {
+				const configData = deployment.templateSnapshot || deployment.template?.configData;
+				if (configData) {
+					try {
+						const config = JSON.parse(configData);
+						for (const cf of config.customFormats || []) {
+							if (deployedCFNames.includes(cf.name)) {
+								sharedCFNames.add(cf.name);
+							}
+						}
+					} catch {
+						// Skip deployments with invalid config
+					}
+				}
+			}
 
 			// Create API client for the instance
 			const apiClient = createArrApiClient(history.instance, app.encryptor);
 
-			// Test connection before attempting rollback
+			// Test connection
 			try {
 				await apiClient.getSystemStatus();
 			} catch (error) {
@@ -446,60 +590,41 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 
 			// Get current Custom Formats from instance
 			const currentCFs = await apiClient.getCustomFormats();
-
-			// Rollback strategy:
-			// 1. Delete all Custom Formats that don't exist in the backup
-			// 2. Update existing Custom Formats that have changed
-			// 3. Create Custom Formats that existed in backup but not currently
-
-			const backupCFMap = new Map(backupData.map((cf) => [cf.name, cf]));
 			const currentCFMap = new Map(currentCFs.map((cf) => [cf.name, cf]));
 
-			let restored = 0;
+			// Delete only CFs that:
+			// 1. Were part of this deployment
+			// 2. Are NOT shared with other templates
+			// 3. Currently exist on the instance
 			let deleted = 0;
-			let updated = 0;
+			const skippedShared: string[] = [];
+			const notFound: string[] = [];
 			const errors: string[] = [];
 
-			// Delete CFs that don't exist in backup
-			for (const currentCF of currentCFs) {
-				if (!backupCFMap.has(currentCF.name) && currentCF.id) {
-					try {
-						await apiClient.deleteCustomFormat(currentCF.id);
-						deleted++;
-					} catch (error) {
-						errors.push(
-							`Failed to delete CF "${currentCF.name}": ${error instanceof Error ? error.message : "Unknown error"}`,
-						);
-					}
+			for (const cfName of deployedCFNames) {
+				if (sharedCFNames.has(cfName)) {
+					skippedShared.push(cfName);
+					continue;
 				}
-			}
 
-			// Restore or update CFs from backup
-			for (const backupCF of backupData) {
-				const currentCF = currentCFMap.get(backupCF.name);
+				const currentCF = currentCFMap.get(cfName);
+				if (!currentCF || !currentCF.id) {
+					notFound.push(cfName);
+					continue;
+				}
 
 				try {
-					if (currentCF && currentCF.id) {
-						// Update existing CF
-						await apiClient.updateCustomFormat(currentCF.id, {
-							...backupCF,
-							id: currentCF.id,
-						});
-						updated++;
-					} else {
-						// Create new CF from backup
-						await apiClient.createCustomFormat(backupCF);
-						restored++;
-					}
+					await apiClient.deleteCustomFormat(currentCF.id);
+					deleted++;
 				} catch (error) {
 					errors.push(
-						`Failed to restore CF "${backupCF.name}": ${error instanceof Error ? error.message : "Unknown error"}`,
+						`Failed to delete CF "${cfName}": ${error instanceof Error ? error.message : "Unknown error"}`
 					);
 				}
 			}
 
-			// Update history record with rollback information
-			const updatedHistory = await app.prisma.templateDeploymentHistory.update({
+			// Mark deployment as undeployed (using rolledBack field for backwards compatibility)
+			await app.prisma.templateDeploymentHistory.update({
 				where: { id: historyId },
 				data: {
 					rolledBack: true,
@@ -511,27 +636,27 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 				success: errors.length === 0,
 				message:
 					errors.length === 0
-						? "Deployment rollback completed successfully"
-						: "Deployment rollback completed with some errors",
+						? `Successfully undeployed ${deleted} Custom Format(s)`
+						: `Undeploy completed with ${errors.length} error(s)`,
 				data: {
-					history: updatedHistory,
-					rollbackResults: {
-						restored,
-						deleted,
-						updated,
-						errors,
-					},
+					deleted,
+					skippedShared,
+					skippedSharedCount: skippedShared.length,
+					notFound,
+					notFoundCount: notFound.length,
+					errors,
+					totalInTemplate: deployedCFNames.length,
 				},
 			});
 		} catch (error) {
-			app.log.error({ err: error }, "Failed to rollback deployment");
+			app.log.error({ err: error }, "Failed to undeploy");
 			return reply.status(500).send({
 				statusCode: 500,
 				error: "InternalServerError",
 				message:
 					error instanceof Error
 						? error.message
-						: "Failed to rollback deployment",
+						: "Failed to undeploy",
 			});
 		}
 	});
