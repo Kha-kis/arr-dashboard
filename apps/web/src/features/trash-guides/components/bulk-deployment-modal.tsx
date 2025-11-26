@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
 	Dialog,
 	DialogHeader,
@@ -156,7 +156,7 @@ export const BulkDeploymentModal = ({
 			// Auto-load previews after setting initial state
 			loadPreviewsForInstances(initialPreviews);
 		}
-	}, [open, instances, hasLoadedPreviews]);
+	}, [open, instances, hasLoadedPreviews, loadPreviewsForInstances]);
 
 	// Reset state when modal closes
 	useEffect(() => {
@@ -204,7 +204,7 @@ export const BulkDeploymentModal = ({
 		);
 	};
 
-	const loadPreviewsForInstances = async (instancesToLoad: InstancePreview[]) => {
+	const loadPreviewsForInstances = useCallback(async (instancesToLoad: InstancePreview[]) => {
 		if (!templateId) return;
 
 		setIsLoadingPreviews(true);
@@ -270,7 +270,7 @@ export const BulkDeploymentModal = ({
 
 		await Promise.all(previewPromises);
 		setIsLoadingPreviews(false);
-	};
+	}, [templateId]);
 
 	const [isDeploying, setIsDeploying] = useState(false);
 	const [deploymentError, setDeploymentError] = useState<string | null>(null);

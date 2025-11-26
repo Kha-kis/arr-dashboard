@@ -137,7 +137,9 @@ export class EnhancedTemplateService {
 						error: "Template name already exists",
 					};
 				} else if (options.onNameConflict === "rename" || !options.onNameConflict) {
-					// Auto-rename
+					// Auto-rename with upper bound to prevent infinite loop
+					const MAX_RENAME_ATTEMPTS = 1000;
+					const baseName = importData.template.name;
 					let counter = 1;
 					while (
 						await this.prisma.trashTemplate.findFirst({
@@ -149,7 +151,10 @@ export class EnhancedTemplateService {
 							},
 						})
 					) {
-						name = `${importData.template.name} (${counter})`;
+						if (counter > MAX_RENAME_ATTEMPTS) {
+							throw new Error(`Failed to find unique name for template after ${MAX_RENAME_ATTEMPTS} attempts`);
+						}
+						name = `${baseName} (${counter})`;
 						counter++;
 					}
 				}

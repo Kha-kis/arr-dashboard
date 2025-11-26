@@ -271,12 +271,6 @@ export const CFConfiguration = ({
 	const mandatoryCFs = data?.mandatoryCFs || [];
 	const selectedCount = Object.values(selections).filter(s => s?.selected).length;
 
-	// Debug logging in edit mode
-	if (isEditMode) {
-		console.log('Edit mode browse - cfGroups:', cfGroups.length, 'groups');
-		console.log('First group:', cfGroups[0]?.name, 'with', cfGroups[0]?.custom_formats?.length, 'formats');
-	}
-
 	// Build CF Groups with their CFs
 	// CF Groups already have enriched data from the API
 	const groupedCFs = cfGroups.map((group: any) => {
@@ -612,14 +606,6 @@ export const CFConfiguration = ({
 
 				// Get specifications from originalConfig if available
 				const format = conditionEditorFormat.format as any;
-				console.log('Format object for', format.name, ':', {
-					hasOriginalConfig: !!format.originalConfig,
-					hasSpecifications: !!format.specifications,
-					originalConfigSpecs: format.originalConfig?.specifications?.length || 0,
-					directSpecs: format.specifications?.length || 0,
-					fullFormat: format
-				});
-
 				const specs = format.originalConfig?.specifications || format.specifications || [];
 
 				const specificationsWithEnabled = specs.map((spec: any) => ({

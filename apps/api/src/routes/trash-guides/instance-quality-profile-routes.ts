@@ -192,7 +192,6 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 			});
 		} catch (error) {
 			request.server.log.error({ err: error, instanceId, profileId }, "Failed to update quality profile scores");
-			console.error("[SCORE-UPDATE-ERROR]", error);
 
 			if (error instanceof z.ZodError) {
 				return reply.status(400).send({
@@ -206,8 +205,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 			return reply.status(500).send({
 				statusCode: 500,
 				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to update quality profile scores",
-				details: error instanceof Error ? error.stack : String(error),
+				message: "Failed to update quality profile scores",
 			});
 		}
 	});
@@ -327,7 +325,16 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 			}
 
 			// Parse template config
-			const configData = JSON.parse(template.configData);
+			let configData: Record<string, any>;
+			try {
+				configData = JSON.parse(template.configData);
+			} catch (parseError) {
+				return reply.status(500).send({
+					statusCode: 500,
+					error: "InternalServerError",
+					message: `Template configData is invalid JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+				});
+			}
 
 			// Find and update the CF's scoreOverride in the template
 			const customFormats = configData.customFormats || [];
@@ -462,8 +469,17 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 			}
 
 			// Parse template config to get the template score for this custom format
-			const templateConfig = JSON.parse(templateMapping.template.configData);
-			const templateCf = templateConfig.customFormats?.find(
+			let templateConfigReset: Record<string, any>;
+			try {
+				templateConfigReset = JSON.parse(templateMapping.template.configData);
+			} catch (parseError) {
+				return reply.status(500).send({
+					statusCode: 500,
+					error: "InternalServerError",
+					message: `Template configData is invalid JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+				});
+			}
+			const templateCf = templateConfigReset.customFormats?.find(
 				(cf: any) => cf.originalConfig?.id === customFormatIdNum
 			);
 
@@ -476,8 +492,8 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 					templateScore = templateCf.scoreOverride;
 				}
 				// Priority 2: TRaSH Guides score from template's score set
-				else if (templateConfig.scoreSet && templateCf.originalConfig?.trash_scores?.[templateConfig.scoreSet] !== undefined) {
-					templateScore = templateCf.originalConfig.trash_scores[templateConfig.scoreSet];
+				else if (templateConfigReset.scoreSet && templateCf.originalConfig?.trash_scores?.[templateConfigReset.scoreSet] !== undefined) {
+					templateScore = templateCf.originalConfig.trash_scores[templateConfigReset.scoreSet];
 				}
 				// Priority 3: TRaSH Guides default score
 				else if (templateCf.originalConfig?.trash_scores?.default !== undefined) {
@@ -641,7 +657,16 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 			}
 
 			// Parse template config
-			const templateConfig = JSON.parse(templateMapping.template.configData);
+			let templateConfigParsed: Record<string, any>;
+			try {
+				templateConfigParsed = JSON.parse(templateMapping.template.configData);
+			} catch (parseError) {
+				return reply.status(500).send({
+					statusCode: 500,
+					error: "InternalServerError",
+					message: `Template configData is invalid JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+				});
+			}
 
 			// Get the instance from database
 			const instance = await request.server.prisma.serviceInstance.findFirst({
@@ -686,7 +711,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 			// Build a map of customFormatId -> template score
 			const templateScores = new Map<number, number>();
 			for (const cfId of customFormatIds) {
-				const templateCf = templateConfig.customFormats?.find(
+				const templateCf = templateConfigParsed.customFormats?.find(
 					(cf: any) => cf.originalConfig?.id === cfId
 				);
 				if (templateCf) {
@@ -696,8 +721,8 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 						score = templateCf.scoreOverride;
 					}
 					// Priority 2: TRaSH Guides score from template's score set
-					else if (templateConfig.scoreSet && templateCf.originalConfig?.trash_scores?.[templateConfig.scoreSet] !== undefined) {
-						score = templateCf.originalConfig.trash_scores[templateConfig.scoreSet];
+					else if (templateConfigParsed.scoreSet && templateCf.originalConfig?.trash_scores?.[templateConfigParsed.scoreSet] !== undefined) {
+						score = templateCf.originalConfig.trash_scores[templateConfigParsed.scoreSet];
 					}
 					// Priority 3: TRaSH Guides default score
 					else if (templateCf.originalConfig?.trash_scores?.default !== undefined) {

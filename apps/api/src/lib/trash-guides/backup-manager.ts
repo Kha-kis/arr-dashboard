@@ -91,7 +91,7 @@ export class BackupManager {
 			},
 		};
 
-		// Compress and store
+		// Serialize backup data
 		const backupJson = JSON.stringify(backupData);
 
 		// Create backup record
@@ -253,7 +253,11 @@ export class BackupManager {
 			throw new Error(`Backup not found: ${backupId}`);
 		}
 
-		return JSON.parse(backup.backupData) as BackupData;
+		try {
+			return JSON.parse(backup.backupData) as BackupData;
+		} catch (parseError) {
+			throw new Error(`Backup ${backupId} contains invalid JSON data: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+		}
 	}
 }
 

@@ -79,8 +79,14 @@ export function useInstanceProfiles(instanceId: string | null) {
 			);
 
 			if (!response.ok) {
-				const error = await response.json();
-				throw new Error(error.error || "Failed to fetch profiles");
+				let errorMessage = "Failed to fetch profiles";
+				try {
+					const error = await response.json();
+					errorMessage = error.error || error.message || errorMessage;
+				} catch {
+					errorMessage = `Request failed: ${response.status}`;
+				}
+				throw new Error(errorMessage);
 			}
 
 			const data = await response.json();
@@ -108,8 +114,14 @@ export function useImportProfile() {
 			);
 
 			if (!response.ok) {
-				const error = await response.json();
-				throw new Error(error.error || "Failed to import profile");
+				let errorMessage = "Failed to import profile";
+				try {
+					const error = await response.json();
+					errorMessage = error.error || error.message || errorMessage;
+				} catch {
+					errorMessage = `Request failed: ${response.status}`;
+				}
+				throw new Error(errorMessage);
 			}
 
 			const data = await response.json();
@@ -143,8 +155,14 @@ export function usePreviewProfileDeployment() {
 			);
 
 			if (!response.ok) {
-				const error = await response.json();
-				throw new Error(error.error || "Failed to preview deployment");
+				let errorMessage = "Failed to preview deployment";
+				try {
+					const error = await response.json();
+					errorMessage = error.error || error.message || errorMessage;
+				} catch {
+					errorMessage = `Request failed: ${response.status}`;
+				}
+				throw new Error(errorMessage);
 			}
 
 			const data = await response.json();
@@ -171,8 +189,14 @@ export function useDeployProfile() {
 			);
 
 			if (!response.ok) {
-				const error = await response.json();
-				throw new Error(error.error || "Failed to deploy profile");
+				let errorMessage = "Failed to deploy profile";
+				try {
+					const error = await response.json();
+					errorMessage = error.error || error.message || errorMessage;
+				} catch {
+					errorMessage = `Request failed: ${response.status}`;
+				}
+				throw new Error(errorMessage);
 			}
 
 			const data = await response.json();

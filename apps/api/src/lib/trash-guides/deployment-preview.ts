@@ -82,8 +82,15 @@ export class DeploymentPreviewService {
 			console.error("Failed to reach instance:", error);
 		}
 
-		// Parse template config
-		const templateConfig = JSON.parse(template.configData);
+		// Parse template config - fail fast on corrupted data
+		let templateConfig: { customFormats?: Array<any> };
+		try {
+			templateConfig = JSON.parse(template.configData);
+		} catch (parseError) {
+			throw new Error(
+				`Template ${template.id} has corrupted configData: ${parseError instanceof Error ? parseError.message : String(parseError)}`
+			);
+		}
 		const rawTemplateCFs = (templateConfig.customFormats || []) as Array<{
 			trashId: string;
 			name: string;
@@ -95,9 +102,14 @@ export class DeploymentPreviewService {
 		}>;
 
 		// Get instance-specific overrides if they exist
-		const instanceOverrides = template.instanceOverrides
-			? JSON.parse(template.instanceOverrides)
-			: {};
+		let instanceOverrides: Record<string, any> = {};
+		try {
+			instanceOverrides = template.instanceOverrides
+				? JSON.parse(template.instanceOverrides)
+				: {};
+		} catch (parseError) {
+			console.warn(`Failed to parse instanceOverrides for template ${template.id}:`, parseError);
+		}
 		const overridesForInstance = instanceOverrides[instanceId] || {};
 		const scoreOverridesMap = overridesForInstance.scoreOverrides || {};
 		const cfOverridesMap = overridesForInstance.cfOverrides || {};

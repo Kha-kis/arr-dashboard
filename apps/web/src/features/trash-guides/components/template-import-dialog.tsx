@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useImportTemplate } from "../../../hooks/api/useTemplates";
 import { Alert, AlertDescription, Input } from "../../../components/ui";
 import { Upload, X } from "lucide-react";
@@ -12,10 +12,20 @@ interface TemplateImportDialogProps {
 
 export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProps) => {
 	const [jsonData, setJsonData] = useState("");
+	const [parseError, setParseError] = useState<string | null>(null);
 	const importMutation = useImportTemplate();
 
 	const handleImport = async () => {
 		if (!jsonData.trim()) {
+			return;
+		}
+
+		// Validate JSON before sending to API
+		setParseError(null);
+		try {
+			JSON.parse(jsonData.trim());
+		} catch {
+			setParseError("Invalid JSON format. Please check your input.");
 			return;
 		}
 
@@ -40,14 +50,37 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 		reader.readAsText(file);
 	};
 
+	// Handle Escape key at document level
+	useEffect(() => {
+		if (!open) return;
+
+		const handleKeyDown = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				onClose();
+			}
+		};
+
+		document.addEventListener("keydown", handleKeyDown);
+		return () => document.removeEventListener("keydown", handleKeyDown);
+	}, [open, onClose]);
+
 	if (!open) return null;
 
 	return (
-		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-			<div className="relative w-full max-w-2xl rounded-xl border border-white/10 bg-slate-900 p-6 shadow-xl">
+		<div
+			className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+			onClick={(e) => e.target === e.currentTarget && onClose()}
+			role="presentation"
+		>
+			<div
+				className="relative w-full max-w-2xl rounded-xl border border-white/10 bg-slate-900 p-6 shadow-xl"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="import-template-title"
+			>
 				{/* Header */}
 				<div className="mb-4 flex items-center justify-between">
-					<h2 className="text-xl font-semibold text-white">Import Template</h2>
+					<h2 id="import-template-title" className="text-xl font-semibold text-white">Import Template</h2>
 					<button
 						type="button"
 						onClick={onClose}
@@ -59,12 +92,13 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 
 				{/* Content */}
 				<div className="space-y-4">
-					{importMutation.isError && (
+					{(importMutation.isError || parseError) && (
 						<Alert variant="danger">
 							<AlertDescription>
-								{importMutation.error instanceof Error
-									? importMutation.error.message
-									: "Failed to import template"}
+								{parseError ||
+									(importMutation.error instanceof Error
+										? importMutation.error.message
+										: "Failed to import template")}
 							</AlertDescription>
 						</Alert>
 					)}
@@ -95,7 +129,10 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 						</label>
 						<textarea
 							value={jsonData}
-							onChange={(e) => setJsonData(e.target.value)}
+							onChange={(e) => {
+								setJsonData(e.target.value);
+								setParseError(null);
+							}}
 							placeholder='{"version": "1.0", "template": {...}}'
 							rows={12}
 							className="w-full rounded-xl border border-border bg-bg-subtle px-4 py-3 font-mono text-sm text-fg placeholder:text-fg-muted/60 transition-all duration-200 hover:border-border/80 hover:bg-bg-subtle/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-bg-subtle/80"

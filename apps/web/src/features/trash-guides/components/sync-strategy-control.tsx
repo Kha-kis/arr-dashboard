@@ -46,9 +46,18 @@ export const SyncStrategyControl = ({
 				<label className="text-sm font-medium text-fg">
 					TRaSH Guides Sync Strategy
 				</label>
-				<div className="group relative">
+				<button
+					type="button"
+					className="group relative"
+					aria-label="More info about sync strategy"
+					aria-describedby="sync-strategy-tooltip"
+				>
 					<Info className="h-4 w-4 text-fg-muted cursor-help" />
-					<div className="invisible group-hover:visible absolute left-0 top-6 z-10 w-64 rounded-lg border border-white/10 bg-bg p-3 text-xs text-fg-muted shadow-lg">
+					<div
+						id="sync-strategy-tooltip"
+						role="tooltip"
+						className="invisible group-hover:visible group-focus:visible absolute left-0 top-6 z-10 w-64 rounded-lg border border-white/10 bg-bg p-3 text-xs text-fg-muted shadow-lg"
+					>
 						<p>
 							Controls how this template handles TRaSH Guides updates from
 							GitHub.
@@ -58,7 +67,7 @@ export const SyncStrategyControl = ({
 							modifications.
 						</p>
 					</div>
-				</div>
+				</button>
 			</div>
 
 			<div className="space-y-2">

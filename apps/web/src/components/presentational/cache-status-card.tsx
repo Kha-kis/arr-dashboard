@@ -24,7 +24,7 @@ interface CacheStatusCardProps {
  * <CacheStatusCard
  *   configType="CUSTOM_FORMATS"
  *   configTypeLabel="Custom Formats"
- *   version="1.2.3"
+ *   version={1}
  *   itemCount={42}
  *   lastFetched="2025-01-19T12:00:00Z"
  *   isStale={false}

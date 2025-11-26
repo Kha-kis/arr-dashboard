@@ -55,6 +55,7 @@ export class UpdateScheduler {
 	private logger: Logger;
 	private intervalId?: NodeJS.Timeout;
 	private stats: SchedulerStats = { isRunning: false };
+	private isCheckInProgress = false;
 
 	constructor(
 		config: SchedulerConfig,
@@ -145,6 +146,13 @@ export class UpdateScheduler {
 	 * Check for updates and process them
 	 */
 	private async checkForUpdates(): Promise<void> {
+		// Prevent concurrent checks
+		if (this.isCheckInProgress) {
+			this.logger.warn("Update check already in progress, skipping");
+			return;
+		}
+
+		this.isCheckInProgress = true;
 		const startTime = Date.now();
 		this.logger.info("Checking for TRaSH Guides updates...");
 
@@ -317,6 +325,8 @@ export class UpdateScheduler {
 			};
 
 			throw error;
+		} finally {
+			this.isCheckInProgress = false;
 		}
 	}
 
@@ -340,9 +350,19 @@ export class UpdateScheduler {
 					select: { changeLog: true },
 				});
 
-				const changeLog = existingTemplate?.changeLog
-					? JSON.parse(existingTemplate.changeLog)
-					: [];
+				let changeLog: Array<Record<string, unknown>> = [];
+				if (existingTemplate?.changeLog) {
+					try {
+						const parsed = JSON.parse(existingTemplate.changeLog);
+						changeLog = Array.isArray(parsed) ? parsed : [];
+					} catch (parseError) {
+						console.warn(
+							`[UpdateScheduler] Failed to parse changeLog for template ${template.templateId}: ${
+								parseError instanceof Error ? parseError.message : String(parseError)
+							}. Raw value: ${String(existingTemplate.changeLog).slice(0, 100)}`
+						);
+					}
+				}
 
 				// Check if notification already exists for this commit
 				const notificationExists = changeLog.some(

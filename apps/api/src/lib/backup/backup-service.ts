@@ -116,8 +116,9 @@ export class BackupService {
 			const newPassword = crypto.randomBytes(32).toString("base64");
 
 			// Guard against race condition: Check again before writing in case another process wrote a password
+			let recheckContent: string | null = null;
 			try {
-				const recheckContent = await fs.readFile(this.secretsPath, "utf-8");
+				recheckContent = await fs.readFile(this.secretsPath, "utf-8");
 				const recheckSecrets = JSON.parse(recheckContent);
 				if (recheckSecrets.backupPassword && typeof recheckSecrets.backupPassword === "string") {
 					return recheckSecrets.backupPassword;
@@ -126,19 +127,14 @@ export class BackupService {
 				// Only proceed if file is missing or invalid JSON; re-throw other errors
 				if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
 					// File disappeared, proceed with write
-				} else if (error instanceof SyntaxError) {
+				} else if (error instanceof SyntaxError && recheckContent) {
 					// Invalid JSON - try to salvage backupPassword before overwriting
 					console.warn("secrets.json has invalid JSON; attempting to salvage backupPassword...");
-					try {
-						// Re-read file content for regex extraction since recheckContent is not in scope here
-						const rawContent = await fs.readFile(this.secretsPath, "utf-8");
-						const backupPasswordMatch = rawContent.match(/"backupPassword"\s*:\s*"([^"]+)"/);
-						if (backupPasswordMatch && backupPasswordMatch[1]) {
-							console.warn("Found existing backupPassword in invalid JSON, preserving it");
-							return backupPasswordMatch[1];
-						}
-					} catch {
-						// Salvage attempt failed, continue to overwrite
+					// Use the already-read recheckContent instead of re-reading the file
+					const backupPasswordMatch = recheckContent.match(/"backupPassword"\s*:\s*"([^"]+)"/);
+					if (backupPasswordMatch && backupPasswordMatch[1]) {
+						console.warn("Found existing backupPassword in invalid JSON, preserving it");
+						return backupPasswordMatch[1];
 					}
 					console.warn("Could not salvage backupPassword; existing backups may become inaccessible");
 					// Proceed with write

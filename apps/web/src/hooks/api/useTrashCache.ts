@@ -34,9 +34,14 @@ export const useRefreshTrashCache = () => {
 
 	return useMutation({
 		mutationFn: (payload: RefreshCachePayload) => refreshCache(payload),
-		onSuccess: () => {
-			// Invalidate cache status queries to refetch fresh data
+		onSuccess: (_data, variables) => {
+			// Invalidate cache status and entries queries to refetch fresh data
 			void queryClient.invalidateQueries({ queryKey: ["trash-cache-status"] });
+			void queryClient.invalidateQueries({ queryKey: ["trash-cache-entries"] });
+			// Also invalidate trash-guides related queries for the specific service type
+			void queryClient.invalidateQueries({
+				queryKey: ["trash-guides", variables.serviceType],
+			});
 		},
 	});
 };

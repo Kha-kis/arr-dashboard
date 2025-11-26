@@ -23,13 +23,23 @@ export const QualityProfileSelection = ({
 
 	// Handle imported profile from cloning
 	const handleProfileImported = (importedProfile: CompleteQualityProfile) => {
+		// Generate unique ID using crypto if available, falling back to timestamp
+		const uniqueSuffix = typeof crypto !== "undefined" && crypto.randomUUID
+			? crypto.randomUUID()
+			: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
+		// Count custom formats from profile items (items with negative IDs indicate custom formats)
+		const customFormatCount = importedProfile.items.filter(
+			(item) => item.id !== undefined && item.id < 0
+		).length;
+
 		// Convert CompleteQualityProfile to QualityProfileSummary format for wizard
 		const profileSummary: QualityProfileSummary = {
-			trashId: `cloned-${importedProfile.sourceInstanceId}-${importedProfile.sourceProfileId}`,
+			trashId: `cloned-${importedProfile.sourceInstanceId}-${importedProfile.sourceProfileId}-${uniqueSuffix}`,
 			name: importedProfile.sourceProfileName,
 			description: `Cloned from instance ${importedProfile.sourceInstanceId}`,
 			scoreSet: undefined,
-			customFormatCount: 0, // CF count not available in CompleteQualityProfile
+			customFormatCount,
 			qualityCount: importedProfile.items.length,
 			language: importedProfile.language?.name,
 			cutoff: importedProfile.cutoffQuality?.name || "Unknown",
@@ -110,7 +120,7 @@ export const QualityProfileSelection = ({
 
 			{/* Source Selection */}
 			<div className="flex gap-3">
-				<Card className="flex-1 cursor-pointer transition-all hover:border-primary hover:shadow-md" onClick={() => {}}>
+				<Card className="flex-1 border-primary shadow-md bg-primary/5">
 					<CardContent className="pt-6">
 						<div className="flex items-center gap-3">
 							<div className="flex h-10 w-10 items-center justify-center rounded-lg bg-primary/20">

@@ -26,6 +26,14 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		};
 	}>("/preview", async (request, reply) => {
 		try {
+			// Authentication check
+			if (!request.currentUser?.id) {
+				return reply.status(401).send({
+					success: false,
+					error: "Authentication required",
+				});
+			}
+
 			const { templateId, instanceId } = request.body;
 
 			if (!templateId || !instanceId) {
@@ -149,6 +157,15 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		};
 	}>("/sync-strategy", async (request, reply) => {
 		try {
+			// Authentication check
+			const userId = request.currentUser?.id;
+			if (!userId) {
+				return reply.status(401).send({
+					success: false,
+					error: "Authentication required",
+				});
+			}
+
 			const { templateId, instanceId, syncStrategy } = request.body;
 
 			if (!templateId || !instanceId || !syncStrategy) {
@@ -166,11 +183,16 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				});
 			}
 
-			// Find the mapping
+			// Find the mapping and verify ownership
 			const mapping = await prisma.templateQualityProfileMapping.findFirst({
 				where: {
 					templateId,
 					instanceId,
+				},
+				include: {
+					template: {
+						select: { userId: true },
+					},
 				},
 			});
 
@@ -178,6 +200,14 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				return reply.status(404).send({
 					success: false,
 					error: "No deployment mapping found for this template and instance",
+				});
+			}
+
+			// Verify ownership
+			if (mapping.template.userId !== userId) {
+				return reply.status(403).send({
+					success: false,
+					error: "You do not have permission to modify this template",
 				});
 			}
 
@@ -220,6 +250,15 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		};
 	}>("/sync-strategy-bulk", async (request, reply) => {
 		try {
+			// Authentication check
+			const userId = request.currentUser?.id;
+			if (!userId) {
+				return reply.status(401).send({
+					success: false,
+					error: "Authentication required",
+				});
+			}
+
 			const { templateId, syncStrategy } = request.body;
 
 			if (!templateId || !syncStrategy) {
@@ -234,6 +273,21 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				return reply.status(400).send({
 					success: false,
 					error: "syncStrategy must be 'auto', 'manual', or 'notify'",
+				});
+			}
+
+			// Verify template belongs to user
+			const template = await prisma.trashTemplate.findFirst({
+				where: {
+					id: templateId,
+					userId,
+				},
+			});
+
+			if (!template) {
+				return reply.status(404).send({
+					success: false,
+					error: "Template not found or not owned by user",
 				});
 			}
 

@@ -69,9 +69,10 @@ export const CacheStatusSection = ({
 					<button
 						type="button"
 						onClick={onRefresh}
-						className="mt-4 text-sm text-primary hover:underline"
+						disabled={refreshing || isRefreshPending}
+						className="mt-4 text-sm text-primary hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
 					>
-						Click to initialize cache
+						{refreshing ? "Initializing..." : "Click to initialize cache"}
 					</button>
 				</div>
 			) : (

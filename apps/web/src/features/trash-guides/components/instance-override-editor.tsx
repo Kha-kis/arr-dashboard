@@ -307,7 +307,6 @@ export const InstanceOverrideEditor = ({
 													</td>
 													<td className="p-3">
 														<input
-															key={`${row.trashId}-${row.overrideScore === undefined ? 'default' : 'override'}`}
 															type="number"
 															value={row.overrideScore ?? ""}
 															onChange={(e) => handleScoreChange(row.trashId, e.target.value)}

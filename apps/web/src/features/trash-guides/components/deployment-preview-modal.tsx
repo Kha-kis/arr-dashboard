@@ -137,8 +137,11 @@ export const DeploymentPreviewModal = ({
 				onDeploySuccess?.();
 				onClose();
 			} else {
+				const errors = response.result?.errors;
 				setDeploymentError(
-					response.result.errors.join(", ") || "Deployment failed",
+					Array.isArray(errors) && errors.length > 0
+						? errors.join(", ")
+						: "Deployment failed",
 				);
 			}
 		} catch (error) {

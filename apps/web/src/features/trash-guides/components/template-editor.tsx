@@ -8,6 +8,9 @@ import { Alert, AlertDescription, Input } from "../../../components/ui";
 import { X, Save, Plus, Minus, Settings } from "lucide-react";
 import { ConditionEditor } from "./condition-editor";
 
+/** Specification type from TrashCustomFormat with enabled flag for UI */
+type SpecificationWithEnabled = TrashCustomFormat["specifications"][number] & { enabled: boolean };
+
 interface TemplateEditorProps {
 	open: boolean;
 	onClose: () => void;
@@ -295,7 +298,6 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 														<button
 															type="button"
 															onClick={() => {
-																console.log('Advanced clicked for format:', format.trash_id, format);
 																setConditionEditorFormat({ trashId: format.trash_id, format });
 															}}
 															className="inline-flex items-center gap-1 rounded bg-white/10 px-2 py-1 text-xs font-medium text-white transition hover:bg-white/20"
@@ -393,13 +395,11 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 
 				{/* Condition Editor Modal */}
 				{conditionEditorFormat && (() => {
-					console.log('Rendering modal for:', conditionEditorFormat);
 					const settings = selectedFormats.get(conditionEditorFormat.trashId);
-					const specificationsWithEnabled = conditionEditorFormat.format.specifications.map((spec: any) => ({
+					const specificationsWithEnabled: SpecificationWithEnabled[] = conditionEditorFormat.format.specifications.map((spec) => ({
 						...spec,
 						enabled: settings?.conditionsEnabled[spec.name] !== false,
 					}));
-					console.log('Specifications with enabled:', specificationsWithEnabled);
 
 					return (
 						<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
@@ -417,7 +417,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 									customFormatId={conditionEditorFormat.trashId}
 									customFormatName={conditionEditorFormat.format.name}
 									specifications={specificationsWithEnabled}
-									onChange={(updatedSpecs: any) => {
+									onChange={(updatedSpecs) => {
 										const newMap = new Map(selectedFormats);
 										const current = newMap.get(conditionEditorFormat.trashId);
 										if (current) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Calendar, Clock, CheckCircle2, XCircle, AlertCircle, ChevronRight } from "lucide-react";
 import { useSyncHistory } from "../../../../hooks/api/useSync";
@@ -24,6 +24,11 @@ export default function SyncHistoryPage() {
 
 	const [page, setPage] = useState(0);
 	const limit = 20;
+
+	// Reset pagination when instanceId changes
+	useEffect(() => {
+		setPage(0);
+	}, [instanceId]);
 
 	const { data, isLoading, error } = useSyncHistory(instanceId || "", {
 		limit,

@@ -42,14 +42,19 @@ export const SyncProgressModal = ({
 	// Auto-call onComplete when sync finishes successfully
 	useEffect(() => {
 		if (progress?.status === "COMPLETED") {
-			setTimeout(() => {
+			const timeoutId = setTimeout(() => {
 				onComplete();
 			}, 2000); // Give user time to see completion
+			return () => clearTimeout(timeoutId);
 		}
 	}, [progress?.status, onComplete]);
 
 	const currentStage = progress?.status || "INITIALIZING";
-	const currentStageIndex = STAGE_ORDER.indexOf(currentStage);
+	const rawStageIndex = STAGE_ORDER.indexOf(currentStage);
+	// Handle FAILED status which is not in STAGE_ORDER - clamp to valid range
+	const currentStageIndex = currentStage === "FAILED"
+		? STAGE_ORDER.length - 1
+		: Math.max(0, rawStageIndex);
 	const isFailed = currentStage === "FAILED";
 	const isCompleted = currentStage === "COMPLETED";
 
@@ -88,7 +93,7 @@ export const SyncProgressModal = ({
 							{/* 5-Stage Stepper */}
 							<div className="relative">
 								<div className="flex items-center justify-between">
-									{STAGE_ORDER.filter((s) => s !== "FAILED").map((stage, index) => {
+									{STAGE_ORDER.map((stage, index, visibleStages) => {
 										const isActive = currentStageIndex === index;
 										const isPast = currentStageIndex > index;
 										const isCurrentFailed = isFailed && currentStageIndex === index;
@@ -127,8 +132,8 @@ export const SyncProgressModal = ({
 													</span>
 												</div>
 
-												{/* Connector Line */}
-												{index < STAGE_ORDER.length - 2 && (
+												{/* Connector Line - render for all but last stage */}
+												{index < visibleStages.length - 1 && (
 													<div
 														className={`mx-2 h-0.5 flex-1 transition ${
 															isPast || isCompleted ? "bg-green-500" : "bg-white/20"
@@ -186,10 +191,10 @@ export const SyncProgressModal = ({
 												Occurred
 											</h3>
 											<ul className="mt-2 space-y-1 text-sm text-red-300">
-												{progress.errors.map((error, index) => (
+												{progress.errors.map((errItem, index) => (
 													<li key={index}>
-														<span className="font-medium">{error.configName}:</span> {error.error}
-														{error.retryable && (
+														<span className="font-medium">{errItem.configName}:</span> {errItem.error}
+														{errItem.retryable && (
 															<span className="ml-2 text-xs text-red-400">(retryable)</span>
 														)}
 													</li>

@@ -117,9 +117,14 @@ export class ArrApiClient {
 			"Content-Type": "application/json",
 		};
 
+		// Create abort controller for timeout (30 seconds)
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), 30000);
+
 		const options: RequestInit = {
 			method,
 			headers,
+			signal: controller.signal,
 		};
 
 		if (body) {
@@ -165,6 +170,8 @@ export class ArrApiClient {
 				message: error instanceof Error ? error.message : "Network error",
 				status: 0,
 			} as ApiError;
+		} finally {
+			clearTimeout(timeoutId);
 		}
 	}
 
@@ -324,6 +331,11 @@ export function createArrApiClient(
 		decrypt: (payload: { value: string; iv: string }) => string;
 	},
 ): ArrApiClient {
+	// Validate service type at runtime
+	if (instance.service !== "RADARR" && instance.service !== "SONARR") {
+		throw new Error(`Invalid service type: ${instance.service}. Expected "RADARR" or "SONARR".`);
+	}
+
 	// Decrypt API key using the app's encryptor (no code duplication!)
 	const apiKey = encryptor.decrypt({
 		value: instance.encryptedApiKey,
@@ -334,6 +346,6 @@ export function createArrApiClient(
 		id: instance.id,
 		baseUrl: instance.baseUrl,
 		apiKey,
-		service: instance.service as "RADARR" | "SONARR",
+		service: instance.service,
 	});
 }

@@ -92,6 +92,13 @@ export class SyncEngine {
 	}
 
 	/**
+	 * Remove progress callback (for cleanup on client disconnect)
+	 */
+	removeProgressListener(syncId: string, _callback: (progress: SyncProgress) => void): void {
+		this.progressCallbacks.delete(syncId);
+	}
+
+	/**
 	 * Emit progress update
 	 */
 	private emitProgress(progress: SyncProgress): void {

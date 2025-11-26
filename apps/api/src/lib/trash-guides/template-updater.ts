@@ -165,10 +165,20 @@ export class TemplateUpdater {
 		const previousCommit = template.trashGuidesCommitHash;
 
 		try {
-			// Parse existing config data
-			const configData = JSON.parse(template.configData);
+			// Parse existing config data safely
+			let configData: unknown = {};
+			try {
+				configData = JSON.parse(template.configData);
+			} catch (parseError) {
+				// Log warning but continue with empty config if parse fails
+				console.warn(
+					`[TemplateUpdater] Failed to parse configData for template ${templateId}: ${parseError instanceof Error ? parseError.message : String(parseError)}`
+				);
+			}
 
 			// Update template metadata
+			// TODO: Implement proper merge of fetched data with user customizations
+			// Currently this only updates commit hash and lastSyncedAt
 			await this.prisma.trashTemplate.update({
 				where: { id: templateId },
 				data: {

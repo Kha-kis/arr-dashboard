@@ -551,9 +551,15 @@ export async function registerTemplateRoutes(
 				});
 			}
 
-			const instanceOverrides = template.instanceOverrides
-				? JSON.parse(template.instanceOverrides)
-				: {};
+			let instanceOverrides: Record<string, unknown> = {};
+			if (template.instanceOverrides) {
+				try {
+					instanceOverrides = JSON.parse(template.instanceOverrides);
+				} catch {
+					app.log.warn({ templateId }, "Malformed instanceOverrides JSON, using empty object");
+					instanceOverrides = {};
+				}
+			}
 			const overridesForInstance = instanceOverrides[instanceId] || {};
 
 			return reply.send({
@@ -609,10 +615,16 @@ export async function registerTemplateRoutes(
 				});
 			}
 
-			// Parse existing overrides
-			const instanceOverrides = template.instanceOverrides
-				? JSON.parse(template.instanceOverrides)
-				: {};
+			// Parse existing overrides with error handling for malformed JSON
+			let instanceOverrides: Record<string, unknown> = {};
+			if (template.instanceOverrides) {
+				try {
+					instanceOverrides = JSON.parse(template.instanceOverrides);
+				} catch {
+					app.log.warn({ templateId }, "Malformed instanceOverrides JSON, starting fresh");
+					instanceOverrides = {};
+				}
+			}
 
 			// Update overrides for this instance
 			instanceOverrides[instanceId] = {
@@ -677,10 +689,36 @@ export async function registerTemplateRoutes(
 				});
 			}
 
-			// Parse existing overrides
-			const instanceOverrides = template.instanceOverrides
-				? JSON.parse(template.instanceOverrides)
-				: {};
+			// Parse existing overrides with error handling for malformed JSON
+			let instanceOverrides: Record<string, unknown> = {};
+			if (template.instanceOverrides) {
+				try {
+					instanceOverrides = JSON.parse(template.instanceOverrides);
+				} catch {
+					app.log.warn({ templateId }, "Malformed instanceOverrides JSON, clearing corrupted data");
+					// Clear corrupted JSON data in database
+					try {
+						await app.prisma.trashTemplate.update({
+							where: { id: templateId },
+							data: {
+								instanceOverrides: JSON.stringify({}),
+								updatedAt: new Date(),
+							},
+						});
+						return reply.send({
+							success: true,
+							message: "Corrupted instance overrides cleared successfully",
+						});
+					} catch (dbError) {
+						app.log.error({ err: dbError, templateId }, "Failed to clear corrupted instanceOverrides");
+						return reply.status(500).send({
+							statusCode: 500,
+							error: "InternalServerError",
+							message: "Failed to repair corrupted instance overrides",
+						});
+					}
+				}
+			}
 
 			// Remove overrides for this instance
 			delete instanceOverrides[instanceId];
@@ -753,7 +791,7 @@ export async function registerTemplateRoutes(
 				});
 			}
 
-			// Verify instance belongs to user
+			// Verify instance exists
 			const instance = await app.prisma.serviceInstance.findFirst({
 				where: {
 					id: instanceId,
@@ -843,7 +881,7 @@ export async function registerTemplateRoutes(
 				});
 			}
 
-			// Verify all instances belong to user
+			// Verify all instances exist
 			const instances = await app.prisma.serviceInstance.findMany({
 				where: {
 					id: { in: instanceIds },
@@ -854,7 +892,7 @@ export async function registerTemplateRoutes(
 				return reply.status(404).send({
 					statusCode: 404,
 					error: "NotFound",
-					message: "One or more instances not found",
+					message: "One or more instances not found or not owned by user",
 				});
 			}
 

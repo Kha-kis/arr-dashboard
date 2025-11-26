@@ -77,7 +77,7 @@ export class BulkScoreManager {
 			profileName: string;
 		}
 		const allQualityProfiles: QualityProfileRef[] = [];
-		const instanceClients = new Map<string, any>(); // Store clients for reuse
+		const instanceClients = new Map<string, ArrApiClient>(); // Store clients for reuse
 
 		for (const instance of instances) {
 			// Create API client (handles decryption internally)
@@ -248,6 +248,16 @@ export class BulkScoreManager {
 		userId: string,
 		update: BulkScoreUpdate,
 	): Promise<BulkScoreManagementResponse> {
+		// Validate newScore is a finite number
+		if (!update.resetToDefault && (typeof update.newScore !== "number" || !Number.isFinite(update.newScore))) {
+			return {
+				success: false,
+				message: "Invalid score value: must be a finite number",
+				affectedTemplates: 0,
+				affectedCustomFormats: 0,
+			};
+		}
+
 		const affectedTemplateIds = new Set<string>();
 		const affectedCfTrashIds = new Set<string>();
 		const errors: string[] = [];

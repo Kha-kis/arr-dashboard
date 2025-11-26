@@ -152,7 +152,12 @@ export class DeploymentExecutorService {
 
 
 			// Parse template config and apply instance overrides
-			const templateConfig = JSON.parse(template.configData);
+			let templateConfig: Record<string, any>;
+			try {
+				templateConfig = JSON.parse(template.configData);
+			} catch (parseError) {
+				throw new Error(`Failed to parse template configData for template ${template.id}: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+			}
 			let templateCFs = (templateConfig.customFormats || []) as Array<{
 				trashId: string;
 				name: string;
@@ -161,9 +166,14 @@ export class DeploymentExecutorService {
 			}>;
 
 			// Apply instance-specific overrides
-			const instanceOverrides = template.instanceOverrides
-				? JSON.parse(template.instanceOverrides)
-				: {};
+			let instanceOverrides: Record<string, any> = {};
+			try {
+				instanceOverrides = template.instanceOverrides
+					? JSON.parse(template.instanceOverrides)
+					: {};
+			} catch (parseError) {
+				console.warn(`Failed to parse instanceOverrides for template ${template.id}, using empty object: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+			}
 			const overridesForInstance = instanceOverrides[instanceId] || {};
 
 			if (overridesForInstance.scoreOverrides || overridesForInstance.cfOverrides) {
@@ -220,12 +230,6 @@ export class DeploymentExecutorService {
 					let existingCF = existingCFMap.get(templateCF.trashId);
 					if (!existingCF) {
 						existingCF = existingCFByName.get(templateCF.name);
-						if (!existingCF) {
-						}
-					}
-
-					if (existingCF) {
-					} else {
 					}
 
 					if (existingCF && existingCF.id) {
@@ -341,8 +345,8 @@ export class DeploymentExecutorService {
 											...quality,
 											allowed: false // Individual items in groups have allowed=false, group controls it
 										});
-									} else {
 									}
+									// Note: Silently skip qualities not available in instance
 								}
 
 								if (groupQualities.length > 0) {
@@ -361,8 +365,8 @@ export class DeploymentExecutorService {
 										...quality,
 										allowed: templateItem.allowed
 									});
-								} else {
 								}
+								// Note: Silently skip qualities not available in instance
 							}
 						}
 
@@ -704,14 +708,32 @@ export class DeploymentExecutorService {
 			throw new Error("Template not found");
 		}
 
-		// Deploy to all instances in parallel
+		// Deploy to all instances in parallel using Promise.allSettled for error isolation
 		// Use per-instance strategy if provided, otherwise fall back to global strategy
 		const deploymentPromises = instanceIds.map((instanceId) => {
 			const strategy = instanceSyncStrategies?.[instanceId] ?? syncStrategy;
 			return this.deploySingleInstance(templateId, instanceId, userId, strategy);
 		});
 
-		const results = await Promise.all(deploymentPromises);
+		const settledResults = await Promise.allSettled(deploymentPromises);
+
+		// Extract results, treating rejected promises as failed deployments
+		const results: DeploymentResult[] = settledResults.map((settled, index) => {
+			if (settled.status === "fulfilled") {
+				return settled.value;
+			}
+			// Convert rejection to a failed deployment result
+			const errorMessage = settled.reason instanceof Error ? settled.reason.message : "Deployment failed";
+			return {
+				instanceId: instanceIds[index] ?? `unknown-${index}`,
+				instanceLabel: `Instance ${index + 1}`,
+				success: false,
+				customFormatsCreated: 0,
+				customFormatsUpdated: 0,
+				customFormatsSkipped: 0,
+				errors: [errorMessage],
+			};
+		});
 
 		const successfulInstances = results.filter((r) => r.success).length;
 		const failedInstances = results.filter((r) => !r.success).length;

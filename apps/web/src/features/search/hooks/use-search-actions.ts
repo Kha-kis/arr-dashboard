@@ -93,7 +93,8 @@ export function useSearchActions(
 				},
 			},
 		);
-	}, [query, searchType, selectedIndexers, stateActions, searchMutation]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- searchMutation.mutate is stable
+	}, [query, searchType, selectedIndexers, stateActions]);
 
 	/**
 	 * Handles form submission for search.

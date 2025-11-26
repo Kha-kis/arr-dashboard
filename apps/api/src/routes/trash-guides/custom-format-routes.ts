@@ -6,9 +6,20 @@
  */
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
+import { z } from "zod";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { createArrApiClient } from "../../lib/trash-guides/arr-api-client.js";
+
+// ============================================================================
+// Validation Schemas
+// ============================================================================
+
+const deployMultipleSchema = z.object({
+	trashIds: z.array(z.string()).min(1, "At least one trashId is required"),
+	instanceId: z.string().min(1, "instanceId is required"),
+	serviceType: z.enum(["RADARR", "SONARR"]),
+});
 
 // ============================================================================
 // Helper Functions
@@ -45,6 +56,16 @@ export async function registerCustomFormatRoutes(
 	app: FastifyInstance,
 	_opts: FastifyPluginOptions,
 ) {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				error: "UNAUTHORIZED",
+				message: "Authentication required",
+			});
+		}
+	});
+
 	const cacheManager = createCacheManager(app.prisma);
 	const fetcher = createTrashFetcher();
 
@@ -54,13 +75,19 @@ export async function registerCustomFormatRoutes(
 	 * Deploys custom formats directly without affecting quality profiles
 	 */
 	app.post<{
-		Body: {
-			trashIds: string[];
-			instanceId: string;
-			serviceType: "RADARR" | "SONARR";
-		};
+		Body: z.infer<typeof deployMultipleSchema>;
 	}>("/deploy-multiple", async (request, reply) => {
-		const { trashIds, instanceId, serviceType } = request.body;
+		// Validate request body
+		const bodyResult = deployMultipleSchema.safeParse(request.body);
+		if (!bodyResult.success) {
+			return reply.status(400).send({
+				error: "VALIDATION_ERROR",
+				message: "Invalid request body",
+				details: bodyResult.error.errors,
+			});
+		}
+
+		const { trashIds, instanceId, serviceType } = bodyResult.data;
 
 		try {
 			// Get instance

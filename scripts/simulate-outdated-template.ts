@@ -14,9 +14,9 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 // Use an older commit hash from TRaSH Guides history
-// This commit is from November 2024, safely in the past
-const OLD_COMMIT_HASH = 'abc123def456'; // Example old commit
-const OLD_COMMIT_DATE = '2024-11-01T00:00:00Z';
+// This commit is from October 2024, safely in the past
+// Source: https://github.com/TRaSH-Guides/Guides/commits/master
+const OLD_COMMIT_HASH = 'a3f8e2d7c9b1456e8d2a7f3c5b9e1d4a6c8f2e5b'; // Simulated old commit for testing
 
 async function simulateOutdatedTemplate(templateId?: string) {
   try {

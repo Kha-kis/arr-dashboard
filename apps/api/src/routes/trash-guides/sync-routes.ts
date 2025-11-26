@@ -71,8 +71,16 @@ export async function registerSyncRoutes(
 		 * POST /api/trash-guides/sync/validate
 		 */
 		app.post("/validate", async (request: FastifyRequest, reply) => {
+			// Authentication check
+			if (!request.currentUser?.id) {
+				return reply.status(401).send({
+					error: "UNAUTHORIZED",
+					message: "Authentication required",
+				});
+			}
+
 			const body = validateSyncSchema.parse(request.body);
-			const userId = request.currentUser?.id || "";
+			const userId = request.currentUser.id;
 
 			const validation = await syncEngine.validate({
 				templateId: body.templateId,
@@ -93,8 +101,16 @@ export async function registerSyncRoutes(
 	 * POST /api/trash-guides/sync/execute
 	 */
 	app.post("/execute", async (request: FastifyRequest, reply) => {
+		// Authentication check
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				error: "UNAUTHORIZED",
+				message: "Authentication required",
+			});
+		}
+
 		const body = executeSyncSchema.parse(request.body);
-		const userId = request.currentUser?.id || "";
+		const userId = request.currentUser.id;
 
 		// Convert conflictResolutions object to Map
 		const resolutionsMap = body.conflictResolutions
@@ -129,11 +145,6 @@ export async function registerSyncRoutes(
 		
 		progressStore.set(result.syncId, finalProgress);
 
-		// Set up handler for any future progress updates (though sync is already done)
-		syncEngine.onProgress(result.syncId, (progress: SyncProgress) => {
-			progressStore.set(progress.syncId, progress);
-		});
-
 		return reply.send(result);
 	});
 		/**
@@ -144,6 +155,9 @@ export async function registerSyncRoutes(
 			Params: { syncId: string };
 		}>("/:syncId/stream", async (request, reply) => {
 			const { syncId } = request.params;
+
+			// Hijack the response to prevent Fastify from sending its own response
+			reply.hijack();
 
 			// Set SSE headers
 			reply.raw.setHeader("Content-Type", "text/event-stream");
@@ -162,7 +176,9 @@ export async function registerSyncRoutes(
 					// Close stream when completed or failed
 					if (progress.status === "COMPLETED" || progress.status === "FAILED") {
 						setTimeout(() => {
-							reply.raw.end();
+							if (!reply.raw.destroyed) {
+								reply.raw.end();
+							}
 						}, 1000); // Give client time to process final message
 					}
 				}
@@ -184,8 +200,11 @@ export async function registerSyncRoutes(
 
 			// Clean up on client disconnect
 			request.raw.on("close", () => {
-				// Note: progressCallbacks are cleaned up by sync engine after completion
-				reply.raw.end();
+				// Remove the progress listener to prevent memory leaks
+				syncEngine.removeProgressListener(syncId, streamProgress);
+				if (!reply.raw.destroyed) {
+					reply.raw.end();
+				}
 			});
 		});
 
@@ -217,28 +236,35 @@ export async function registerSyncRoutes(
 		app.get<{
 			Params: { instanceId: string };
 		}>("/history/:instanceId", async (request, reply) => {
+			// Authentication check
+			if (!request.currentUser?.id) {
+				return reply.status(401).send({
+					error: "UNAUTHORIZED",
+					message: "Authentication required",
+				});
+			}
+
 			const { instanceId } = request.params;
 			const query = syncHistoryQuerySchema.parse(request.query);
-			const userId = request.currentUser?.id || "";
+			const userId = request.currentUser.id;
 
-			// Verify instance exists
-			const instance = await app.prisma.serviceInstance.findFirst({
-				where: {
-					id: instanceId,
-				},
+			// Verify instance exists - ServiceInstances are shared across all authenticated users
+			// (no per-user ownership model; user-specific data is filtered at the history level)
+			const instance = await app.prisma.serviceInstance.findUnique({
+				where: { id: instanceId },
 			});
 
 			if (!instance) {
 				return reply.status(404).send({
 					error: "NOT_FOUND",
-					message: "Instance not found or access denied",
+					message: "Instance not found",
 				});
 			}
 
-			// Get sync history
+			// Get sync history for this user and instance
 			const [syncs, total] = await Promise.all([
 				app.prisma.trashSyncHistory.findMany({
-					where: { instanceId },
+					where: { instanceId, userId },
 					include: {
 						template: {
 							select: {
@@ -251,7 +277,7 @@ export async function registerSyncRoutes(
 					skip: query.offset,
 				}),
 				app.prisma.trashSyncHistory.count({
-					where: { instanceId },
+					where: { instanceId, userId },
 				}),
 			]);
 
@@ -281,13 +307,19 @@ export async function registerSyncRoutes(
 		app.get<{
 			Params: { syncId: string };
 		}>("/:syncId", async (request, reply) => {
-			const { syncId } = request.params;
-			const userId = request.currentUser?.id || "";
+			// Authentication check
+			if (!request.currentUser?.id) {
+				return reply.status(401).send({
+					error: "UNAUTHORIZED",
+					message: "Authentication required",
+				});
+			}
 
-			const sync = await app.prisma.trashSyncHistory.findFirst({
-				where: {
-					id: syncId,
-				},
+			const { syncId } = request.params;
+			const userId = request.currentUser.id;
+
+			const sync = await app.prisma.trashSyncHistory.findUnique({
+				where: { id: syncId },
 				include: {
 					template: {
 						select: {
@@ -305,7 +337,7 @@ export async function registerSyncRoutes(
 			if (!sync) {
 				return reply.status(404).send({
 					error: "NOT_FOUND",
-					message: "Sync not found or access denied",
+					message: "Sync not found",
 				});
 			}
 
@@ -314,7 +346,7 @@ export async function registerSyncRoutes(
 				templateId: sync.templateId,
 				templateName: sync.template?.name || "",
 				instanceId: sync.instanceId,
-				instanceName: sync.instance.label,
+				instanceName: sync.instance?.label || "",
 				status: sync.status,
 				syncType: sync.syncType,
 				startedAt: sync.startedAt.toISOString(),
@@ -337,14 +369,20 @@ export async function registerSyncRoutes(
 		app.post<{
 			Params: { syncId: string };
 		}>("/:syncId/rollback", async (request, reply) => {
+			// Authentication check
+			if (!request.currentUser?.id) {
+				return reply.status(401).send({
+					error: "UNAUTHORIZED",
+					message: "Authentication required",
+				});
+			}
+
 			const { syncId } = request.params;
-			const userId = request.currentUser?.id || "";
+			const userId = request.currentUser.id;
 
 			// Get sync record with backup
-			const sync = await app.prisma.trashSyncHistory.findFirst({
-				where: {
-					id: syncId,
-				},
+			const sync = await app.prisma.trashSyncHistory.findUnique({
+				where: { id: syncId },
 				include: {
 					backup: true,
 					instance: true,
@@ -355,7 +393,7 @@ export async function registerSyncRoutes(
 			if (!sync) {
 				return reply.status(404).send({
 					error: "NOT_FOUND",
-					message: "Sync not found or access denied",
+					message: "Sync not found",
 				});
 			}
 

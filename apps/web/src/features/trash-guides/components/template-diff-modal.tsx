@@ -23,7 +23,20 @@ import {
 } from "lucide-react";
 import { useTemplateDiff, useSyncTemplate } from "../../../hooks/api/useTemplateUpdates";
 import { cn } from "../../../lib/utils";
+import { toast } from "sonner";
 import type { CustomFormatDiffItem } from "../../../lib/api-client/trash-guides";
+
+/** Maps UI strategy names to API strategy names */
+function mapStrategyToApiStrategy(selectedStrategy: string): "keep_custom" | "replace" | "merge" {
+	switch (selectedStrategy) {
+		case "keep_custom":
+			return "keep_custom";
+		case "sync_new":
+			return "replace";
+		default:
+			return "merge";
+	}
+}
 
 interface TemplateDiffModalProps {
 	open: boolean;
@@ -66,13 +79,16 @@ export const TemplateDiffModal = ({
 			await syncTemplate.mutateAsync({
 				templateId,
 				payload: {
-					strategy: selectedStrategy === "keep_custom" ? "keep_custom" : selectedStrategy === "sync_new" ? "replace" : "merge",
+					strategy: mapStrategyToApiStrategy(selectedStrategy),
 				},
 			});
 			onSyncSuccess?.();
 			onClose();
 		} catch (err) {
 			console.error("Sync failed:", err);
+			toast.error("Sync failed", {
+				description: err instanceof Error ? err.message : "An unexpected error occurred",
+			});
 		}
 	};
 

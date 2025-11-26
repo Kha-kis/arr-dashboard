@@ -46,7 +46,7 @@ export class ProfileCloner {
 			if (!instance) {
 				return {
 					success: false,
-					error: "Instance not found or access denied",
+					error: "Instance not found",
 				};
 			}
 
@@ -145,7 +145,7 @@ export class ProfileCloner {
 			if (!instance) {
 				return {
 					success: false,
-					error: "Instance not found or access denied",
+					error: "Instance not found",
 				};
 			}
 
@@ -182,11 +182,11 @@ export class ProfileCloner {
 			const instanceCFs = await cfsResponse.json();
 
 			// Map trash_ids to instance custom format IDs
+			// Only match exact names to avoid false positives (e.g., "DV" matching "DV-HDR10")
 			const formatItems = customFormats
 				.map((cf) => {
 					const instanceCF = instanceCFs.find(
-						(icf: any) =>
-							icf.name === cf.trash_id || icf.name.includes(cf.trash_id),
+						(icf: any) => icf.name === cf.trash_id,
 					);
 					if (!instanceCF) return null;
 
@@ -319,21 +319,14 @@ export class ProfileCloner {
 
 			const instanceCFs = await cfsResponse.json();
 
-			// Match custom formats
+			// Match custom formats - only exact names to avoid false positives
 			const matched = customFormats.filter((cf) =>
-				instanceCFs.some(
-					(icf: any) =>
-						icf.name === cf.trash_id || icf.name.includes(cf.trash_id),
-				),
+				instanceCFs.some((icf: any) => icf.name === cf.trash_id),
 			);
 
 			const unmatched = customFormats
 				.filter(
-					(cf) =>
-						!instanceCFs.some(
-							(icf: any) =>
-								icf.name === cf.trash_id || icf.name.includes(cf.trash_id),
-						),
+					(cf) => !instanceCFs.some((icf: any) => icf.name === cf.trash_id),
 				)
 				.map((cf) => cf.trash_id);
 

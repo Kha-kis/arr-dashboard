@@ -62,12 +62,17 @@ export const QualityProfileBrowser = ({
 	if (!open) return null;
 
 	return (
-		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+		<div
+			className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="quality-profile-browser-title"
+		>
 			<div className="relative w-full max-w-4xl max-h-[90vh] overflow-hidden rounded-xl border border-white/10 bg-slate-900 shadow-xl">
 				{/* Header */}
 				<div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-slate-900/95 p-6 backdrop-blur">
 					<div>
-						<h2 className="text-xl font-semibold text-white">
+						<h2 id="quality-profile-browser-title" className="text-xl font-semibold text-white">
 							Browse TRaSH Quality Profiles
 						</h2>
 						<p className="mt-1 text-sm text-white/60">
@@ -77,6 +82,7 @@ export const QualityProfileBrowser = ({
 					<button
 						type="button"
 						onClick={onClose}
+						aria-label="Close dialog"
 						className="rounded p-1 text-white/60 hover:bg-white/10 hover:text-white"
 					>
 						<X className="h-5 w-5" />

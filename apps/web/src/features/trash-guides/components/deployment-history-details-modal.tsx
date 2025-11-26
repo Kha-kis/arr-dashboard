@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { useDeploymentHistoryDetail } from "../../../hooks/api/useDeploymentHistory";
 import { format } from "date-fns";
 import { X } from "lucide-react";
@@ -16,13 +17,41 @@ export function DeploymentHistoryDetailsModal({
 	onUndeploy,
 }: DeploymentHistoryDetailsModalProps) {
 	const { data, isLoading, error } = useDeploymentHistoryDetail(historyId);
+	const dialogRef = useRef<HTMLDivElement>(null);
+
+	// Handle Escape key and focus trap
+	useEffect(() => {
+		const handleKeyDown = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				onClose();
+			}
+		};
+
+		document.addEventListener("keydown", handleKeyDown);
+		// Focus the dialog on mount
+		dialogRef.current?.focus();
+
+		return () => {
+			document.removeEventListener("keydown", handleKeyDown);
+		};
+	}, [onClose]);
 
 	return (
-		<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-			<div className="bg-bg-subtle rounded-lg shadow-lg max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col border border-border">
+		<div
+			className="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
+			onClick={(e) => e.target === e.currentTarget && onClose()}
+		>
+			<div
+				ref={dialogRef}
+				tabIndex={-1}
+				className="bg-bg-subtle rounded-lg shadow-lg max-w-4xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col border border-border focus:outline-none"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="deployment-details-title"
+			>
 				{/* Header */}
 				<div className="flex items-center justify-between p-6 border-b border-border">
-					<h2 className="text-xl font-semibold text-fg">Deployment Details</h2>
+					<h2 id="deployment-details-title" className="text-xl font-semibold text-fg">Deployment Details</h2>
 					<button
 						onClick={onClose}
 						className="p-1 rounded-md hover:bg-bg-muted transition-colors"

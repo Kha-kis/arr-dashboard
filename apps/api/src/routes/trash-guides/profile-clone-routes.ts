@@ -18,7 +18,15 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Import complete quality profile from *arr instance
 	 */
 	app.post("/import", async (request, reply) => {
-		const userId = request.userId!;
+		if (!request.currentUser) {
+			return reply.status(401).send({
+				statusCode: 401,
+				error: "Unauthorized",
+				message: "Authentication required",
+			});
+		}
+
+		const userId = request.currentUser.id;
 		const {
 			instanceId,
 			profileId,
@@ -62,7 +70,15 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Preview deployment of complete quality profile
 	 */
 	app.post("/preview", async (request, reply) => {
-		const userId = request.userId!;
+		if (!request.currentUser) {
+			return reply.status(401).send({
+				statusCode: 401,
+				error: "Unauthorized",
+				message: "Authentication required",
+			});
+		}
+
+		const userId = request.currentUser.id;
 		const {
 			instanceId,
 			profile,
@@ -107,7 +123,15 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Deploy complete quality profile to *arr instance
 	 */
 	app.post("/deploy", async (request, reply) => {
-		const userId = request.userId!;
+		if (!request.currentUser) {
+			return reply.status(401).send({
+				statusCode: 401,
+				error: "Unauthorized",
+				message: "Authentication required",
+			});
+		}
+
+		const userId = request.currentUser.id;
 		const {
 			instanceId,
 			profile,
@@ -162,22 +186,28 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Get list of quality profiles from an instance
 	 */
 	app.get("/profiles/:instanceId", async (request, reply) => {
-		const userId = request.userId!;
+		if (!request.currentUser) {
+			return reply.status(401).send({
+				statusCode: 401,
+				error: "Unauthorized",
+				message: "Authentication required",
+			});
+		}
+
+		const userId = request.currentUser.id;
 		const { instanceId } = request.params as { instanceId: string };
 
 		try {
-			// Get instance (owned by current user)
-			const instance = await app.prisma.serviceInstance.findFirst({
-				where: {
-					id: instanceId,
-					userId, // Enforce ownership
-				},
+			// Get instance - ServiceInstances are shared across all authenticated users
+			// (no per-user ownership model; security is at the authentication layer)
+			const instance = await app.prisma.serviceInstance.findUnique({
+				where: { id: instanceId },
 			});
 
 			if (!instance) {
 				return reply.status(404).send({
 					success: false,
-					error: "Instance not found or access denied",
+					error: "Instance not found",
 				});
 			}
 

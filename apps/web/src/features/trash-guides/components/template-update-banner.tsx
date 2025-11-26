@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { RefreshCw, Clock, AlertCircle, CheckCircle2, ChevronDown, ChevronUp } from "lucide-react";
-import { useSyncTemplate } from "../../../hooks/api/useTemplateUpdates";
 import type { TemplateUpdateInfo } from "../../../lib/api-client/trash-guides";
 import { cn } from "../../../lib/utils";
 import { TemplateDiffModal } from "./template-diff-modal";
@@ -18,7 +17,6 @@ export const TemplateUpdateBanner = ({
 }: TemplateUpdateBannerProps) => {
 	const [showDetails, setShowDetails] = useState(false);
 	const [showDiffModal, setShowDiffModal] = useState(false);
-	const syncTemplate = useSyncTemplate();
 
 	const handleViewChanges = () => {
 		setShowDiffModal(true);

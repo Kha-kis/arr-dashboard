@@ -102,6 +102,7 @@ export const QualityProfileWizard = ({
 				customFormatSelections: {},
 				templateName: "",
 				templateDescription: "",
+				templateId: undefined,
 			});
 		}
 	}, [editingTemplate, open]);

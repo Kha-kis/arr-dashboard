@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Button, Input, Select, SelectOption, Alert } from "../../../components/ui";
 import { Clock, X, Calendar, AlertCircle } from "lucide-react";
 
@@ -45,6 +45,64 @@ export const TemplateScheduleModal = ({
 	const [isSaving, setIsSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
+	const modalRef = useRef<HTMLDivElement>(null);
+	const previousActiveElement = useRef<HTMLElement | null>(null);
+
+	// Reset form state when modal opens or existingSchedule changes
+	useEffect(() => {
+		if (open) {
+			setFrequency(existingSchedule?.frequency || "WEEKLY");
+			setEnabled(existingSchedule?.enabled ?? true);
+			setAutoApply(existingSchedule?.autoApply ?? false);
+			setNotifyUser(existingSchedule?.notifyUser ?? true);
+			setError(null);
+
+			// Store the previously focused element
+			previousActiveElement.current = document.activeElement as HTMLElement;
+
+			// Focus the modal
+			setTimeout(() => {
+				modalRef.current?.focus();
+			}, 0);
+		}
+	}, [open, existingSchedule]);
+
+	// Handle Escape key and focus trap
+	useEffect(() => {
+		if (!open) return;
+
+		const handleKeyDown = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				onClose();
+				return;
+			}
+
+			// Focus trap
+			if (e.key === "Tab" && modalRef.current) {
+				const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(
+					'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+				);
+				const firstElement = focusableElements[0];
+				const lastElement = focusableElements[focusableElements.length - 1];
+
+				if (e.shiftKey && document.activeElement === firstElement) {
+					e.preventDefault();
+					lastElement?.focus();
+				} else if (!e.shiftKey && document.activeElement === lastElement) {
+					e.preventDefault();
+					firstElement?.focus();
+				}
+			}
+		};
+
+		document.addEventListener("keydown", handleKeyDown);
+		return () => {
+			document.removeEventListener("keydown", handleKeyDown);
+			// Restore focus when modal closes
+			previousActiveElement.current?.focus();
+		};
+	}, [open, onClose]);
+
 	const handleSave = async () => {
 		setIsSaving(true);
 		setError(null);
@@ -68,11 +126,18 @@ export const TemplateScheduleModal = ({
 
 	return (
 		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-			<div className="relative w-full max-w-2xl overflow-hidden rounded-xl border border-white/10 bg-slate-900 shadow-xl">
+			<div
+				ref={modalRef}
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="schedule-modal-title"
+				tabIndex={-1}
+				className="relative w-full max-w-2xl overflow-hidden rounded-xl border border-white/10 bg-slate-900 shadow-xl"
+			>
 				{/* Header */}
 				<div className="flex items-center justify-between border-b border-white/10 bg-slate-900/95 p-6 backdrop-blur">
 					<div>
-						<h2 className="text-xl font-semibold text-white flex items-center gap-2">
+						<h2 id="schedule-modal-title" className="text-xl font-semibold text-white flex items-center gap-2">
 							<Clock className="h-5 w-5 text-primary" />
 							{existingSchedule ? "Edit Sync Schedule" : "Create Sync Schedule"}
 						</h2>
@@ -83,6 +148,7 @@ export const TemplateScheduleModal = ({
 					<button
 						type="button"
 						onClick={onClose}
+						aria-label="Close dialog"
 						className="rounded p-1 text-white/60 hover:bg-white/10 hover:text-white"
 					>
 						<X className="h-5 w-5" />
@@ -93,7 +159,7 @@ export const TemplateScheduleModal = ({
 				<div className="p-6 space-y-6">
 					{/* Error Alert */}
 					{error && (
-						<Alert variant="destructive" className="flex items-start gap-2">
+						<Alert variant="danger" className="flex items-start gap-2">
 							<AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
 							<div>
 								<p className="font-medium">Error</p>

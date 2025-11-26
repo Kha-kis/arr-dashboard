@@ -2,9 +2,7 @@
 
 import { useState } from "react";
 import {
-	useAllDeploymentHistory,
-	useTemplateDeploymentHistory,
-	useInstanceDeploymentHistory,
+	useDeploymentHistory,
 	useUndeployDeployment,
 	useDeleteDeploymentHistory,
 } from "../../../hooks/api/useDeploymentHistory";
@@ -30,12 +28,8 @@ export function DeploymentHistoryTable({
 	const undeployMutation = useUndeployDeployment();
 	const deleteMutation = useDeleteDeploymentHistory();
 
-	// Use appropriate hook based on props
-	const { data, isLoading, error } = templateId
-		? useTemplateDeploymentHistory(templateId, { limit, offset })
-		: instanceId
-			? useInstanceDeploymentHistory(instanceId, { limit, offset })
-			: useAllDeploymentHistory({ limit, offset });
+	// Use unified hook that handles all cases unconditionally
+	const { data, isLoading, error } = useDeploymentHistory(templateId, instanceId, { limit, offset });
 
 	if (isLoading) {
 		return (

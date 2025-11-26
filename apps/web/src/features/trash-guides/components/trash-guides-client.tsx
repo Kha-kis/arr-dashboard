@@ -19,6 +19,7 @@ import { useTrashGuidesData } from "../hooks/use-trash-guides-data";
 import { useTrashGuidesActions } from "../hooks/use-trash-guides-actions";
 import { useTrashGuidesModals } from "../hooks/use-trash-guides-modals";
 import { CONFIG_TYPE_LABELS } from "../lib/constants";
+import { useCurrentUser } from "../../../hooks/api/useAuth";
 
 /**
  * Main TRaSH Guides client component.
@@ -30,6 +31,9 @@ import { CONFIG_TYPE_LABELS } from "../lib/constants";
  * @component
  */
 export const TrashGuidesClient = () => {
+	// Get current user
+	const { data: currentUser, isLoading: isAuthLoading } = useCurrentUser();
+
 	// State management
 	const { activeTab, setActiveTab } = useTrashGuidesState();
 
@@ -165,13 +169,23 @@ export const TrashGuidesClient = () => {
 				</div>
 			) : activeTab === "bulk-scores" ? (
 				<div className="rounded-lg border border-white/10 bg-white/5 p-6">
-					<BulkScoreManager
-						userId="user-placeholder"
-						onOperationComplete={() => {
-							// Refetch templates or cache data if needed
-							refetchCache();
-						}}
-					/>
+					{isAuthLoading ? (
+						<div className="flex items-center justify-center py-8">
+							<div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+						</div>
+					) : currentUser?.id ? (
+						<BulkScoreManager
+							userId={currentUser.id}
+							onOperationComplete={() => {
+								// Refetch templates or cache data if needed
+								refetchCache();
+							}}
+						/>
+					) : (
+						<div className="text-center py-8 text-white/60">
+							Please log in to manage bulk scores
+						</div>
+					)}
 				</div>
 			) : activeTab === "custom-formats" ? (
 				<CustomFormatsBrowser />

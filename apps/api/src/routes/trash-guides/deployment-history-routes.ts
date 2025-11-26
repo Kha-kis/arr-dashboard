@@ -317,6 +317,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 							name: true,
 							description: true,
 							serviceType: true,
+							userId: true,
 						},
 					},
 					backup: {
@@ -329,6 +330,15 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			});
 
 			if (!history) {
+				return reply.status(404).send({
+					statusCode: 404,
+					error: "NotFound",
+					message: "Deployment history not found",
+				});
+			}
+
+			// Verify ownership - template must belong to user
+			if (history.template.userId !== request.currentUser.id) {
 				return reply.status(404).send({
 					statusCode: 404,
 					error: "NotFound",

@@ -29,13 +29,19 @@ export function cleanDescription(rawMarkdown: string, titleToRemove?: string): s
 		.replace(/\s+/g, ' ')  // Collapse whitespace
 		.trim();
 
-	// Remove the title line if provided
+	// Remove the title line if provided (using string-based approach to avoid ReDoS)
 	if (titleToRemove) {
-		const titlePattern = new RegExp(
-			`^${titleToRemove.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(\\s*\\([^)]+\\))?\\s*`,
-			'i'
-		);
-		cleaned = cleaned.replace(titlePattern, '').trim();
+		const lowerCleaned = cleaned.toLowerCase();
+		const lowerTitle = titleToRemove.toLowerCase();
+		if (lowerCleaned.startsWith(lowerTitle)) {
+			cleaned = cleaned.slice(titleToRemove.length);
+			// Also remove optional parenthetical suffix like "(Optional)"
+			const parenMatch = cleaned.match(/^\s*\([^)]{1,50}\)/);
+			if (parenMatch) {
+				cleaned = cleaned.slice(parenMatch[0].length);
+			}
+			cleaned = cleaned.trim();
+		}
 	}
 
 	return cleaned;

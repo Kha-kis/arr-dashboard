@@ -24,7 +24,6 @@ interface Condition {
 }
 
 interface VisualConditionBuilderProps {
-	initialPattern?: string;
 	onPatternChange: (pattern: string) => void;
 	onClose?: () => void;
 }
@@ -42,12 +41,12 @@ const FIELDS = [
 
 const OPERATORS = [
 	{ value: "contains", label: "Contains", pattern: (v: string, cs: boolean) => cs ? v : `(?i)${v}` },
-	{ value: "notContains", label: "Does Not Contain", pattern: (v: string, cs: boolean) => `^(?!.*(${cs ? v : `(?i)${v}`})).*$` },
-	{ value: "startsWith", label: "Starts With", pattern: (v: string, cs: boolean) => `^${cs ? v : `(?i)${v}`}` },
-	{ value: "endsWith", label: "Ends With", pattern: (v: string, cs: boolean) => `${cs ? v : `(?i)${v}`}$` },
-	{ value: "equals", label: "Equals (Exact)", pattern: (v: string, cs: boolean) => `^${cs ? v : `(?i)${v}`}$` },
+	{ value: "notContains", label: "Does Not Contain", pattern: (v: string, cs: boolean) => cs ? `^(?!.*${v}).*$` : `(?i)^(?!.*${v}).*$` },
+	{ value: "startsWith", label: "Starts With", pattern: (v: string, cs: boolean) => cs ? `^${v}` : `(?i)^${v}` },
+	{ value: "endsWith", label: "Ends With", pattern: (v: string, cs: boolean) => cs ? `${v}$` : `(?i)${v}$` },
+	{ value: "equals", label: "Equals (Exact)", pattern: (v: string, cs: boolean) => cs ? `^${v}$` : `(?i)^${v}$` },
 	{ value: "matches", label: "Matches Pattern (Regex)", pattern: (v: string) => v },
-	{ value: "wordBoundary", label: "Word (Standalone)", pattern: (v: string, cs: boolean) => `\\b${cs ? v : `(?i)${v}`}\\b` },
+	{ value: "wordBoundary", label: "Word (Standalone)", pattern: (v: string, cs: boolean) => cs ? `\\b${v}\\b` : `(?i)\\b${v}\\b` },
 	{ value: "isEmpty", label: "Is Empty", pattern: () => "^$" },
 	{ value: "isNotEmpty", label: "Is Not Empty", pattern: () => ".+" },
 ];
@@ -63,7 +62,6 @@ const FIELD_PRESETS: Record<string, string[]> = {
 };
 
 export function VisualConditionBuilder({
-	initialPattern = "",
 	onPatternChange,
 	onClose,
 }: VisualConditionBuilderProps) {

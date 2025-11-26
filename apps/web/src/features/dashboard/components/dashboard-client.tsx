@@ -34,6 +34,7 @@ export const DashboardClient = () => {
 		servicesRefetch,
 		groupedByService,
 		queueAggregated,
+		queueInstances,
 		totalQueueItems,
 		queueLoading,
 		queueRefetch,
@@ -162,7 +163,7 @@ export const DashboardClient = () => {
 
 			<Section
 				title="Active Queue"
-				description={`Monitoring ${queueAggregated.length} instance${queueAggregated.length === 1 ? "" : "s"}`}
+				description={`Monitoring ${queueInstances.length} instance${queueInstances.length === 1 ? "" : "s"}`}
 			>
 				<div className="mb-3 flex justify-end">
 					<Typography variant="caption">

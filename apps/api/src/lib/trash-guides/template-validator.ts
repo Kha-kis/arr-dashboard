@@ -155,6 +155,24 @@ export class TemplateValidator {
 	}
 
 	/**
+	 * Compare two version strings numerically
+	 * @returns -1 if a < b, 0 if equal, 1 if a > b
+	 */
+	private compareVersions(a: string, b: string): number {
+		const aParts = a.split(".").map((p) => Number.parseInt(p, 10) || 0);
+		const bParts = b.split(".").map((p) => Number.parseInt(p, 10) || 0);
+		const maxLen = Math.max(aParts.length, bParts.length);
+
+		for (let i = 0; i < maxLen; i++) {
+			const aNum = aParts[i] ?? 0;
+			const bNum = bParts[i] ?? 0;
+			if (aNum < bNum) return -1;
+			if (aNum > bNum) return 1;
+		}
+		return 0;
+	}
+
+	/**
 	 * Validate version compatibility
 	 */
 	private validateVersion(
@@ -164,7 +182,20 @@ export class TemplateValidator {
 		const version = importData.version;
 		const currentVersion = "2.0";
 
-		if (version < currentVersion) {
+		// Handle missing or invalid version
+		if (!version || typeof version !== "string") {
+			warnings.push({
+				field: "version",
+				message: "Template version is missing or invalid.",
+				severity: "warning",
+				suggestion: "Re-export from the source to get a valid version",
+			});
+			return;
+		}
+
+		const comparison = this.compareVersions(version, currentVersion);
+
+		if (comparison < 0) {
 			warnings.push({
 				field: "version",
 				message: `Template was exported with older version ${version}. Some features may not be available.`,
@@ -173,7 +204,7 @@ export class TemplateValidator {
 			});
 		}
 
-		if (version > currentVersion) {
+		if (comparison > 0) {
 			warnings.push({
 				field: "version",
 				message: `Template was exported with newer version ${version}. Some features may not import correctly.`,

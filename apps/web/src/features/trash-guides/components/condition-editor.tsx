@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * Condition Editor Component
  *
@@ -7,8 +9,6 @@
  * - Test patterns against sample text
  * - Visual builder for non-technical users
  */
-
-"use client";
 
 import { useState } from "react";
 import {

@@ -191,7 +191,7 @@ export const TemplateCard = ({
 				</div>
 
 				{/* Status Badges - Only shown when relevant */}
-				{hasUpdate && (
+				{hasUpdate && onViewUpdate && (
 					<button
 						type="button"
 						onClick={onViewUpdate}

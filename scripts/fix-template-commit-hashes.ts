@@ -14,28 +14,48 @@ const prisma = new PrismaClient();
 const TRASH_GUIDES_REPO = "TRaSH-Guides/Guides";
 const GITHUB_API = "https://api.github.com";
 
+// Support GitHub token from environment to avoid rate limiting
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN;
+
 async function getLatestCommitHash(): Promise<string | null> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 10_000);
+
   try {
+    const headers: Record<string, string> = {
+      Accept: "application/vnd.github.v3+json",
+      "User-Agent": "arr-dashboard",
+    };
+
+    // Add authorization header if token is available
+    if (GITHUB_TOKEN) {
+      headers.Authorization = `Bearer ${GITHUB_TOKEN}`;
+    }
+
     const response = await fetch(
       `${GITHUB_API}/repos/${TRASH_GUIDES_REPO}/commits/master`,
-      {
-        headers: {
-          Accept: "application/vnd.github.v3+json",
-          "User-Agent": "arr-dashboard",
-        },
-      }
+      { headers, signal: controller.signal }
     );
 
     if (!response.ok) {
       console.error(`GitHub API error: ${response.status} ${response.statusText}`);
+      if (response.status === 403) {
+        console.error("Rate limited. Set GITHUB_TOKEN environment variable to increase rate limit.");
+      }
       return null;
     }
 
     const data = await response.json();
     return data.sha;
   } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      console.error("GitHub API request timed out after 10 seconds");
+      return null;
+    }
     console.error("Failed to fetch latest commit:", error);
     return null;
+  } finally {
+    clearTimeout(timeoutId);
   }
 }
 
@@ -81,6 +101,7 @@ async function main() {
   console.log("\nUpdating templates...\n");
 
   const now = new Date();
+  let successfulUpdates = 0;
 
   for (const template of templatesWithoutHash) {
     try {
@@ -123,6 +144,7 @@ async function main() {
         },
       });
 
+      successfulUpdates++;
       console.log(`  ✅ Updated: ${template.name}`);
     } catch (error) {
       console.error(`  ❌ Failed to update ${template.name}:`, error);
@@ -130,7 +152,10 @@ async function main() {
   }
 
   console.log("\n=== Migration Complete ===");
-  console.log(`Updated ${templatesWithoutHash.length} templates with commit hash: ${latestCommitHash.substring(0, 7)}`);
+  console.log(`Updated ${successfulUpdates} templates with commit hash: ${latestCommitHash.substring(0, 7)}`);
+  if (successfulUpdates < templatesWithoutHash.length) {
+    console.log(`  ⚠️ ${templatesWithoutHash.length - successfulUpdates} templates failed to update`);
+  }
 }
 
 main()

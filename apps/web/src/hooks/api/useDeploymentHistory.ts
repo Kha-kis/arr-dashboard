@@ -107,3 +107,38 @@ export function useDeleteDeploymentHistory() {
 		},
 	});
 }
+
+/**
+ * Unified hook to fetch deployment history based on optional templateId or instanceId.
+ * Calls the appropriate API based on which ID is provided:
+ * - templateId provided: fetch template-specific history
+ * - instanceId provided: fetch instance-specific history
+ * - neither provided: fetch all history
+ */
+export function useDeploymentHistory(
+	templateId?: string,
+	instanceId?: string,
+	options?: { limit?: number; offset?: number },
+) {
+	// Determine which query to use based on provided IDs
+	const queryType = templateId ? "template" : instanceId ? "instance" : "all";
+	const queryId = templateId || instanceId;
+
+	// Build queryKey conditionally - omit queryId when undefined to match useAllDeploymentHistory
+	const queryKey = queryId
+		? ["deployment-history", queryType, queryId, options]
+		: ["deployment-history", queryType, options];
+
+	return useQuery<DeploymentHistoryResponse, Error>({
+		queryKey,
+		queryFn: () => {
+			if (templateId) {
+				return getTemplateDeploymentHistory(templateId, options);
+			}
+			if (instanceId) {
+				return getInstanceDeploymentHistory(instanceId, options);
+			}
+			return getAllDeploymentHistory(options);
+		},
+	});
+}

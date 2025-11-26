@@ -378,7 +378,12 @@ export class TemplateService {
 	 * Import template from JSON
 	 */
 	async importTemplate(userId: string, jsonData: string): Promise<TrashTemplate> {
-		const data = JSON.parse(jsonData);
+		let data: any;
+		try {
+			data = JSON.parse(jsonData);
+		} catch (parseError) {
+			throw new Error(`Invalid JSON format: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+		}
 
 		// Validate import structure
 		if (!data.template || !data.template.name || !data.template.serviceType || !data.template.config) {

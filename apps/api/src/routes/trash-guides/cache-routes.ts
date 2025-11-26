@@ -101,6 +101,15 @@ export async function registerTrashCacheRoutes(
 		app.post<{
 			Body: z.infer<typeof refreshCacheBodySchema>;
 		}>("/refresh", async (request, reply) => {
+			// Authentication check
+			if (!request.currentUser) {
+				return reply.status(401).send({
+					statusCode: 401,
+					error: "Unauthorized",
+					message: "Authentication required",
+				});
+			}
+
 			const { serviceType, configType, force } = refreshCacheBodySchema.parse(request.body);
 
 			try {
@@ -286,6 +295,15 @@ export async function registerTrashCacheRoutes(
 		app.delete<{
 			Params: z.infer<typeof getCacheParamsSchema>;
 		}>("/:serviceType/:configType", async (request, reply) => {
+			// Authentication check
+			if (!request.currentUser) {
+				return reply.status(401).send({
+					statusCode: 401,
+					error: "Unauthorized",
+					message: "Authentication required",
+				});
+			}
+
 			const { serviceType, configType } = getCacheParamsSchema.parse(request.params);
 
 			try {

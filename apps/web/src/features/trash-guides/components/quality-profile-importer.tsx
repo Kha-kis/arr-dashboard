@@ -72,11 +72,11 @@ export function QualityProfileImporter({
 		if (!selectedInstanceId || selectedProfileId === null) return;
 
 		try {
-			const profile = await importMutation.mutateAsync({
+			const result = await importMutation.mutateAsync({
 				instanceId: selectedInstanceId,
 				profileId: selectedProfileId,
 			});
-			setImportedProfile(profile);
+			setImportedProfile(result.profile);
 		} catch (error) {
 			console.error("Failed to import profile:", error);
 		}

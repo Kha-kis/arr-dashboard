@@ -77,14 +77,20 @@ export function EnhancedTemplateExportModal({
 			const blob = await response.blob();
 			const url = window.URL.createObjectURL(blob);
 			const a = document.createElement("a");
-			a.href = url;
-			a.download = `${templateName.replace(/[^a-z0-9]/gi, "-").toLowerCase()}.json`;
-			document.body.appendChild(a);
-			a.click();
-			window.URL.revokeObjectURL(url);
-			document.body.removeChild(a);
-
-			onClose?.();
+			let appended = false;
+			try {
+				a.href = url;
+				a.download = `${templateName.replace(/[^a-z0-9]/gi, "-").toLowerCase()}.json`;
+				document.body.appendChild(a);
+				appended = true;
+				a.click();
+				onClose?.();
+			} finally {
+				window.URL.revokeObjectURL(url);
+				if (appended) {
+					document.body.removeChild(a);
+				}
+			}
 		} catch (error) {
 			console.error("Failed to export template:", error);
 			alert("Failed to export template");

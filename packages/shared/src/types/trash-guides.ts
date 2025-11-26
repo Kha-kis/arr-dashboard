@@ -621,8 +621,8 @@ export interface TrashApiError {
  */
 export interface SchedulerStats {
 	isRunning: boolean;
-	lastCheckAt?: Date;
-	nextCheckAt?: Date;
+	lastCheckAt?: string;
+	nextCheckAt?: string;
 	lastCheckResult?: {
 		templatesChecked: number;
 		templatesOutdated: number;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { AlertCircle, CheckCircle2, XCircle, Info } from "lucide-react";
 import { useValidateSync } from "../../../hooks/api/useSync";
 import type { ConflictInfo, ValidationResult } from "../../../lib/api-client/sync";
@@ -25,6 +25,24 @@ export const SyncValidationModal = ({
 	const validateMutation = useValidateSync();
 	const [resolutions, setResolutions] = useState<Record<string, "REPLACE" | "SKIP">>({});
 	const [validation, setValidation] = useState<ValidationResult | null>(null);
+	const dialogRef = useRef<HTMLDivElement>(null);
+
+	// Handle Escape key
+	useEffect(() => {
+		const handleKeyDown = (e: KeyboardEvent) => {
+			if (e.key === "Escape") {
+				onCancel();
+			}
+		};
+
+		document.addEventListener("keydown", handleKeyDown);
+		// Focus the dialog on mount
+		dialogRef.current?.focus();
+
+		return () => {
+			document.removeEventListener("keydown", handleKeyDown);
+		};
+	}, [onCancel]);
 
 	// Auto-validate on mount
 	useEffect(() => {
@@ -61,11 +79,21 @@ export const SyncValidationModal = ({
 	const canProceed = validation && validation.valid && !hasErrors;
 
 	return (
-		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-			<div className="w-full max-w-2xl rounded-xl border border-white/10 bg-gray-900 shadow-2xl">
+		<div
+			className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+			onClick={(e) => e.target === e.currentTarget && onCancel()}
+		>
+			<div
+				ref={dialogRef}
+				tabIndex={-1}
+				className="w-full max-w-2xl rounded-xl border border-white/10 bg-gray-900 shadow-2xl focus:outline-none"
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="sync-validation-title"
+			>
 				{/* Header */}
 				<div className="border-b border-white/10 p-6">
-					<h2 className="text-xl font-semibold text-white">Validate Sync</h2>
+					<h2 id="sync-validation-title" className="text-xl font-semibold text-white">Validate Sync</h2>
 					<p className="mt-1 text-sm text-white/60">
 						Template: <span className="font-medium text-white">{templateName}</span> →
 						Instance: <span className="font-medium text-white">{instanceName}</span>
@@ -196,7 +224,11 @@ export const SyncValidationModal = ({
 								<XCircle className="h-5 w-5 flex-shrink-0 text-red-400" />
 								<div>
 									<h3 className="font-medium text-red-200">Validation Error</h3>
-									<p className="mt-1 text-sm text-red-300">{validateMutation.error.message}</p>
+									<p className="mt-1 text-sm text-red-300">
+										{validateMutation.error instanceof Error
+											? validateMutation.error.message
+											: "An unknown error occurred"}
+									</p>
 								</div>
 							</div>
 						</div>

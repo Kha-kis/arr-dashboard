@@ -8,7 +8,7 @@ import {
 	useDuplicateTemplate,
 } from "../../../hooks/api/useTemplates";
 import { Alert, AlertTitle, AlertDescription, EmptyState, Skeleton } from "../../../components/ui";
-import { AlertCircle, Plus, Download, Copy, Trash2, Edit, FileText, RefreshCw, Star, Rocket, Layers } from "lucide-react";
+import { AlertCircle, Plus, Download, Copy, Trash2, Edit, FileText, RefreshCw, Star, Rocket, Layers, X } from "lucide-react";
 import { exportTemplate } from "../../../lib/api-client/templates";
 import { unlinkTemplateFromInstance } from "../../../lib/api-client/trash-guides";
 import { TemplateStats } from "./template-stats";
@@ -592,7 +592,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 								className="p-2 rounded-lg hover:bg-white/10 transition-colors group"
 								aria-label="Close"
 							>
-								<Copy className="h-5 w-5 text-white/60 group-hover:text-white rotate-45" />
+								<X className="h-5 w-5 text-white/60 group-hover:text-white" />
 							</button>
 						</div>
 
