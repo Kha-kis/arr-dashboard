@@ -52,6 +52,7 @@ export class BackupManager {
 
 	/**
 	 * Create a backup snapshot of instance configurations
+	 * @param retentionDays - Days before backup expires. 0 = never expire. If not provided, uses user's settings (default 30).
 	 */
 	async createBackup(
 		instanceId: string,
@@ -62,6 +63,7 @@ export class BackupManager {
 			version?: string;
 		},
 		reason = "Pre-sync backup",
+		retentionDays?: number,
 	): Promise<string> {
 		// Get instance details with ownership info
 		const instance = await this.prisma.serviceInstance.findUnique({
@@ -83,6 +85,16 @@ export class BackupManager {
 			throw new Error(`Unauthorized: User does not own instance ${instanceId}`);
 		}
 
+		// Determine retention days: use provided value, or fetch from user settings, or default to 30
+		let effectiveRetentionDays = retentionDays;
+		if (effectiveRetentionDays === undefined) {
+			const settings = await this.prisma.trashSettings.findUnique({
+				where: { userId },
+				select: { backupRetentionDays: true },
+			});
+			effectiveRetentionDays = settings?.backupRetentionDays ?? 30;
+		}
+
 		// Build backup data
 		const backupData: BackupData = {
 			timestamp: new Date().toISOString(),
@@ -100,13 +112,13 @@ export class BackupManager {
 		// Serialize backup data
 		const backupJson = JSON.stringify(backupData);
 
-		// Create backup record
+		// Create backup record with calculated expiration (null if retentionDays is 0)
 		const backup = await this.prisma.trashBackup.create({
 			data: {
 				instanceId,
 				userId,
 				backupData: backupJson,
-				expiresAt: this.calculateExpirationDate(30), // 30 days retention
+				expiresAt: effectiveRetentionDays > 0 ? this.calculateExpirationDate(effectiveRetentionDays) : null,
 			},
 		});
 
@@ -173,8 +185,71 @@ export class BackupManager {
 		const result = await this.prisma.trashBackup.deleteMany({
 			where: {
 				expiresAt: {
+					not: null,
 					lte: new Date(),
 				},
+			},
+		});
+
+		return result.count;
+	}
+
+	/**
+	 * Delete orphaned backups (backups with no referencing SyncHistory or DeploymentHistory)
+	 * These can occur when sync history records are deleted but backups remain due to SetNull relation.
+	 *
+	 * Note: The TrashSyncHistory.backupId uses onDelete: SetNull, meaning when a backup is deleted,
+	 * the history record keeps its reference but set to null. However, we also want to clean up
+	 * backups that are no longer referenced by any history record and are past their expiration.
+	 */
+	async cleanupOrphanedBackups(): Promise<number> {
+		// Find backups that have no referencing sync history AND no referencing deployment history
+		// AND either have expired or have been orphaned for > 7 days
+		const orphanThreshold = new Date();
+		orphanThreshold.setDate(orphanThreshold.getDate() - 7);
+
+		// Get all backups that might be orphaned
+		const potentialOrphans = await this.prisma.trashBackup.findMany({
+			where: {
+				OR: [
+					// Expired backups with no references
+					{
+						expiresAt: {
+							not: null,
+							lte: new Date(),
+						},
+					},
+					// Old backups with no references (orphaned for more than 7 days)
+					{
+						createdAt: {
+							lte: orphanThreshold,
+						},
+					},
+				],
+			},
+			select: {
+				id: true,
+				_count: {
+					select: {
+						syncHistory: true,
+						deploymentHistory: true,
+					},
+				},
+			},
+		});
+
+		// Filter to only those with no references
+		const orphanIds = potentialOrphans
+			.filter((backup) => backup._count.syncHistory === 0 && backup._count.deploymentHistory === 0)
+			.map((backup) => backup.id);
+
+		if (orphanIds.length === 0) {
+			return 0;
+		}
+
+		const result = await this.prisma.trashBackup.deleteMany({
+			where: {
+				id: { in: orphanIds },
 			},
 		});
 

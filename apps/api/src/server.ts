@@ -4,6 +4,7 @@ import fastifyRateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance } from "fastify";
 import { type ApiEnv, envSchema } from "./config/env.js";
 import backupSchedulerPlugin from "./plugins/backup-scheduler.js";
+import trashBackupCleanupPlugin from "./plugins/trash-backup-cleanup.js";
 import trashUpdateSchedulerPlugin from "./plugins/trash-update-scheduler.js";
 import lifecyclePlugin from "./plugins/lifecycle.js";
 import { prismaPlugin } from "./plugins/prisma.js";
@@ -62,6 +63,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(securityPlugin);
 	app.register(lifecyclePlugin);
 	app.register(backupSchedulerPlugin);
+	app.register(trashBackupCleanupPlugin);
 	app.register(trashUpdateSchedulerPlugin);
 
 	app.decorateRequest("currentUser", null);

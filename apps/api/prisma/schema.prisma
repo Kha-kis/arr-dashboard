@@ -289,6 +289,7 @@ model TrashBackup {
 
   @@index([instanceId])
   @@index([createdAt])
+  @@index([expiresAt])
   @@map("trash_backups")
 }
 
@@ -336,6 +337,7 @@ model TrashSettings {
 
   // Backup settings
   backupRetention    Int      @default(10) // number of backups to keep per instance
+  backupRetentionDays Int     @default(30) // days before backup auto-expires (0 = never expire)
 
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt

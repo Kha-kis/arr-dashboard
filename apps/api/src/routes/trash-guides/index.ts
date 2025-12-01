@@ -17,6 +17,7 @@ import bulkScoreRoutes from "./bulk-score-routes.js";
 import profileCloneRoutes from "./profile-clone-routes.js";
 import templateSharingRoutes from "./template-sharing-routes.js";
 import { registerCustomFormatRoutes } from "./custom-format-routes.js";
+import { registerSettingsRoutes } from "./settings-routes.js";
 
 export async function registerTrashGuidesRoutes(
 	app: FastifyInstance,
@@ -58,6 +59,6 @@ export async function registerTrashGuidesRoutes(
 	// Register custom format routes under /custom-formats
 	app.register(registerCustomFormatRoutes, { prefix: "/custom-formats" });
 
-	// Future routes will be added here:
-	// app.register(registerTrashBackupRoutes, { prefix: "/backups" });
+	// Register settings routes under /settings
+	app.register(registerSettingsRoutes, { prefix: "/settings" });
 }
