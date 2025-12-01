@@ -1,9 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import { useQualityProfiles, useImportQualityProfile } from "../../../hooks/api/useQualityProfiles";
 import { Alert, AlertDescription, EmptyState, Skeleton, Input, Button } from "../../../components/ui";
-import { X, Download, Check, FileText, Star, Languages, Gauge } from "lucide-react";
+import { X, Download, FileText, Star, Languages, Gauge } from "lucide-react";
 import { createSanitizedHtml } from "../../../lib/sanitize-html";
 import type { QualityProfileSummary } from "../../../lib/api-client/trash-guides";
 import { htmlToPlainText } from "../lib/description-utils";
@@ -38,6 +39,9 @@ export const QualityProfileBrowser = ({
 				templateName: templateName.trim(),
 				templateDescription: templateDescription.trim() || undefined,
 			});
+
+			// Show success toast before closing
+			toast.success(`Successfully imported "${templateName.trim()}" as template!`);
 
 			// Reset state and close
 			setSelectedProfile(null);
@@ -97,14 +101,6 @@ export const QualityProfileBrowser = ({
 								{importMutation.error instanceof Error
 									? importMutation.error.message
 									: "Failed to import quality profile"}
-							</AlertDescription>
-						</Alert>
-					)}
-
-					{importMutation.isSuccess && (
-						<Alert variant="success" className="mb-4">
-							<AlertDescription>
-								Successfully imported quality profile as template!
 							</AlertDescription>
 						</Alert>
 					)}
