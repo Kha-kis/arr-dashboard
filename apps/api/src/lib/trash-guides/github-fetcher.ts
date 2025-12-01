@@ -38,6 +38,12 @@ interface FetchOptions {
 	timeout?: number;
 	retries?: number;
 	retryDelay?: number;
+	/**
+	 * GitHub Personal Access Token for authenticated API requests.
+	 * Unauthenticated requests are limited to 60/hour.
+	 * Authenticated requests allow 5,000/hour.
+	 */
+	githubToken?: string;
 }
 
 interface TrashMetadata {
@@ -58,16 +64,37 @@ function delay(ms: number): Promise<void> {
 }
 
 /**
+ * Build headers for fetch requests
+ */
+function buildHeaders(githubToken?: string, isGitHubApi = false): Record<string, string> {
+	const headers: Record<string, string> = {
+		"User-Agent": "arr-dashboard/2.3.0", // Identify ourselves
+	};
+
+	// Add authentication for GitHub API requests if token is provided
+	if (githubToken && isGitHubApi) {
+		headers["Authorization"] = `Bearer ${githubToken}`;
+		headers["X-GitHub-Api-Version"] = "2022-11-28";
+	}
+
+	return headers;
+}
+
+/**
  * Fetch with timeout support
  */
-async function fetchWithTimeout(url: string, timeout: number): Promise<Response> {
+async function fetchWithTimeout(
+	url: string,
+	timeout: number,
+	headers?: Record<string, string>
+): Promise<Response> {
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), timeout);
 
 	try {
 		const response = await fetch(url, {
 			signal: controller.signal,
-			headers: {
+			headers: headers || {
 				"User-Agent": "arr-dashboard/2.3.0", // Identify ourselves
 			},
 		});
@@ -91,20 +118,39 @@ async function fetchWithRetry(url: string, options: FetchOptions = {}): Promise<
 		timeout = FETCH_TIMEOUT_MS,
 		retries = MAX_RETRIES,
 		retryDelay = RETRY_DELAY_MS,
+		githubToken,
 	} = options;
+
+	// Determine if this is a GitHub API request (vs raw.githubusercontent.com)
+	const isGitHubApi = url.includes("api.github.com");
+	const headers = buildHeaders(githubToken, isGitHubApi);
 
 	let lastError: Error | undefined;
 
 	for (let attempt = 1; attempt <= retries; attempt++) {
 		try {
-			const response = await fetchWithTimeout(url, timeout);
+			const response = await fetchWithTimeout(url, timeout, headers);
 
 			// Check for GitHub rate limiting
 			if (response.status === 429) {
 				const retryAfter = response.headers.get("Retry-After");
 				const waitTime = retryAfter ? Number.parseInt(retryAfter, 10) * 1000 : retryDelay * attempt;
+				const rateLimitRemaining = response.headers.get("X-RateLimit-Remaining");
+				const rateLimitReset = response.headers.get("X-RateLimit-Reset");
 
-				console.warn(`GitHub rate limit hit, retrying after ${waitTime}ms`);
+				if (!githubToken) {
+					console.warn(
+						`GitHub rate limit hit (unauthenticated: 60 req/hour). ` +
+						`Consider setting GITHUB_TOKEN for 5,000 req/hour. ` +
+						`Retrying after ${waitTime}ms`
+					);
+				} else {
+					console.warn(
+						`GitHub rate limit hit. Remaining: ${rateLimitRemaining}, ` +
+						`Reset: ${rateLimitReset ? new Date(Number.parseInt(rateLimitReset, 10) * 1000).toISOString() : 'unknown'}. ` +
+						`Retrying after ${waitTime}ms`
+					);
+				}
 				await delay(waitTime);
 				continue;
 			}
@@ -520,13 +566,21 @@ export class TrashGitHubFetcher {
 // ============================================================================
 
 /**
- * Create a default fetcher instance
+ * Create a fetcher instance with optional configuration.
+ * If no githubToken is provided, attempts to read from GITHUB_TOKEN environment variable.
  */
 export function createTrashFetcher(options: FetchOptions = {}): TrashGitHubFetcher {
-	return new TrashGitHubFetcher(options);
+	// Auto-inject GitHub token from environment if not provided
+	const resolvedOptions: FetchOptions = {
+		...options,
+		githubToken: options.githubToken ?? process.env.GITHUB_TOKEN,
+	};
+
+	return new TrashGitHubFetcher(resolvedOptions);
 }
 
 /**
- * Singleton instance for convenience
+ * Singleton instance for convenience.
+ * Uses GITHUB_TOKEN from environment if available.
  */
 export const defaultFetcher = createTrashFetcher();

@@ -7,9 +7,17 @@ import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../../lib/api-client/base";
 import type { QualityProfileSummary } from "../../lib/api-client/trash-guides";
 
+/**
+ * Wizard-specific profile type that allows undefined trashId for edit mode.
+ * In edit mode, templates don't persist the original TRaSH profile ID.
+ */
+type WizardSelectedProfile = Omit<QualityProfileSummary, 'trashId'> & {
+	trashId?: string;
+};
+
 interface UseCFConfigurationOptions {
 	serviceType: "RADARR" | "SONARR";
-	qualityProfile: QualityProfileSummary;
+	qualityProfile: WizardSelectedProfile;
 	isEditMode?: boolean;
 	editingTemplate?: any;
 }
@@ -20,6 +28,9 @@ export function useCFConfiguration({
 	isEditMode = false,
 	editingTemplate,
 }: UseCFConfigurationOptions) {
+	// In normal mode, we need a valid trashId to fetch profile data
+	const hasValidTrashId = !!qualityProfile.trashId;
+
 	return useQuery({
 		queryKey: isEditMode
 			? ["template-edit-data", editingTemplate?.id]
@@ -29,7 +40,11 @@ export function useCFConfiguration({
 				if (isEditMode && editingTemplate) {
 					return await fetchEditModeData(serviceType, editingTemplate);
 				} else {
-					return await fetchNormalModeData(serviceType, qualityProfile);
+					// Guard: trashId must exist in normal mode
+					if (!qualityProfile.trashId) {
+						throw new Error("Missing trashId for quality profile fetch");
+					}
+					return await fetchNormalModeData(serviceType, qualityProfile.trashId);
 				}
 			} catch (error) {
 				console.error("Failed to fetch CF configuration:", error);
@@ -38,7 +53,8 @@ export function useCFConfiguration({
 				);
 			}
 		},
-		enabled: !isEditMode || !!editingTemplate,
+		// Only enable in edit mode (with template) or normal mode (with valid trashId)
+		enabled: isEditMode ? !!editingTemplate : hasValidTrashId,
 	});
 }
 
@@ -91,10 +107,10 @@ async function fetchEditModeData(serviceType: string, editingTemplate: any) {
 
 async function fetchNormalModeData(
 	serviceType: string,
-	qualityProfile: QualityProfileSummary
+	trashId: string
 ) {
 	const profileData = await apiRequest<any>(
-		`/api/trash-guides/quality-profiles/${serviceType}/${qualityProfile.trashId}`
+		`/api/trash-guides/quality-profiles/${serviceType}/${trashId}`
 	);
 
 	const availableFormats = await fetchAvailableFormats(serviceType);

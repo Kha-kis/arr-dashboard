@@ -130,13 +130,16 @@ export class SyncEngine {
 			return { valid: false, conflicts, errors, warnings };
 		}
 
-		// Get instance
-		const instance = await this.prisma.serviceInstance.findUnique({
-			where: { id: options.instanceId },
+		// Get instance - verify ownership by including userId in query
+		const instance = await this.prisma.serviceInstance.findFirst({
+			where: {
+				id: options.instanceId,
+				userId: options.userId,
+			},
 		});
 
 		if (!instance) {
-			errors.push("Instance not found");
+			errors.push("Instance not found or access denied");
 			return { valid: false, conflicts, errors, warnings };
 		}
 

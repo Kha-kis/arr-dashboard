@@ -19,7 +19,7 @@ import {
 	CheckCircle,
 	AlertCircle,
 } from "lucide-react";
-import { Input } from "../../../components/ui";
+import { Input, Button } from "../../../components/ui";
 import { PatternTester } from "./pattern-tester";
 
 interface Specification {
@@ -187,22 +187,22 @@ export function ConditionEditor({
 								{/* Action Buttons */}
 								{!readonly && spec.enabled && (
 									<div className="flex items-center gap-1">
-										<button
-											type="button"
+										<Button
+											variant="ghost"
+											size="sm"
 											onClick={() => setTestingSpec(isTesting ? null : index)}
-											className="p-1.5 rounded text-fg-muted hover:bg-bg-hover hover:text-fg transition-colors"
 											title="Test pattern"
 										>
 											<TestTube className="h-4 w-4" />
-										</button>
-										<button
-											type="button"
+										</Button>
+										<Button
+											variant="ghost"
+											size="sm"
 											onClick={() => setEditingSpec(isEditing ? null : index)}
-											className="p-1.5 rounded text-fg-muted hover:bg-bg-hover hover:text-fg transition-colors"
 											title={isEditing ? "Close editor" : "Edit pattern"}
 										>
 											{isEditing ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-										</button>
+										</Button>
 									</div>
 								)}
 							</div>
@@ -263,19 +263,20 @@ export function ConditionEditor({
 					</div>
 
 					<div className="flex gap-2">
-						<button
-							type="button"
+						<Button
+							variant="secondary"
+							size="sm"
 							onClick={() => {
 								const updated = specifications.map(s => ({ ...s, enabled: true }));
 								setSpecifications(updated);
 								onChange(updated);
 							}}
-							className="px-3 py-1.5 text-xs font-medium rounded bg-bg-hover hover:bg-bg-subtle text-fg border border-border/50 transition-colors"
 						>
 							Enable All
-						</button>
-						<button
-							type="button"
+						</Button>
+						<Button
+							variant="secondary"
+							size="sm"
 							onClick={() => {
 								const updated = specifications.map(s =>
 									s.required ? s : { ...s, enabled: false }
@@ -283,10 +284,9 @@ export function ConditionEditor({
 								setSpecifications(updated);
 								onChange(updated);
 							}}
-							className="px-3 py-1.5 text-xs font-medium rounded bg-bg-hover hover:bg-bg-subtle text-fg border border-border/50 transition-colors"
 						>
 							Disable Optional
-						</button>
+						</Button>
 					</div>
 				</div>
 			)}

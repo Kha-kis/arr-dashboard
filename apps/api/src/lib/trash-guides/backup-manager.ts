@@ -63,18 +63,24 @@ export class BackupManager {
 		},
 		reason = "Pre-sync backup",
 	): Promise<string> {
-		// Get instance details
+		// Get instance details with ownership info
 		const instance = await this.prisma.serviceInstance.findUnique({
 			where: { id: instanceId },
 			select: {
 				id: true,
 				label: true,
 				service: true,
+				userId: true,
 			},
 		});
 
 		if (!instance) {
 			throw new Error(`Instance not found: ${instanceId}`);
+		}
+
+		// Verify ownership authorization
+		if (instance.userId !== userId) {
+			throw new Error(`Unauthorized: User does not own instance ${instanceId}`);
 		}
 
 		// Build backup data

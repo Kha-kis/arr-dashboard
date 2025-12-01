@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Button } from "../../../components/ui";
 import { X } from "lucide-react";
 import type { QualityProfileSummary } from "../../../lib/api-client/trash-guides";
 import type { TrashTemplate } from "@arr/shared";
@@ -18,9 +19,18 @@ interface QualityProfileWizardProps {
 
 type WizardStep = "profile" | "customize" | "summary";
 
+/**
+ * Wizard-specific profile type that allows undefined trashId for edit mode.
+ * In edit mode, we don't have the original TRaSH profile trashId since templates
+ * don't persist that information. The trashId is only needed for new imports.
+ */
+type WizardSelectedProfile = Omit<QualityProfileSummary, 'trashId'> & {
+	trashId?: string;
+};
+
 interface WizardState {
 	currentStep: WizardStep;
-	selectedProfile: QualityProfileSummary | null;
+	selectedProfile: WizardSelectedProfile | null;
 	customFormatSelections: Record<string, {
 		selected: boolean;
 		scoreOverride?: number;
@@ -85,10 +95,18 @@ export const QualityProfileWizard = ({
 			setWizardState({
 				currentStep: "customize", // Skip profile selection in edit mode
 				selectedProfile: {
-					trashId: editingTemplate.id, // Use template ID as placeholder
+					// Note: trashId is intentionally undefined in edit mode.
+					// Templates don't persist the original TRaSH profile ID.
+					// The trashId is only needed for new imports from TRaSH Guides.
+					trashId: undefined,
 					name: editingTemplate.name,
 					description: editingTemplate.description || "",
-				} as QualityProfileSummary,
+					// Provide default values for required QualityProfileSummary fields
+					upgradeAllowed: true,
+					cutoff: "",
+					customFormatCount: editingTemplate.config.customFormats?.length || 0,
+					qualityCount: 0,
+				},
 				customFormatSelections: selections,
 				templateName: editingTemplate.name,
 				templateDescription: editingTemplate.description || "",
@@ -212,14 +230,14 @@ export const QualityProfileWizard = ({
 									{getStepDescriptions(isEditMode)[wizardState.currentStep]}
 								</p>
 							</div>
-							<button
-								type="button"
+							<Button
+								variant="ghost"
+								size="sm"
 								onClick={handleClose}
-								className="rounded p-1 text-fg-muted hover:bg-bg-hover hover:text-fg transition"
 								aria-label="Close wizard"
 							>
 								<X className="h-5 w-5" />
-							</button>
+							</Button>
 						</div>
 
 						{/* Progress Indicator */}

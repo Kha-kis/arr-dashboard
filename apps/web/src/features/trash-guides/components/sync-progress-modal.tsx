@@ -1,14 +1,23 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef, useCallback } from "react";
 import { CheckCircle2, XCircle, Loader2, AlertCircle } from "lucide-react";
 import { useSyncProgress } from "../../../hooks/api/useSync";
 import type { SyncProgressStatus } from "../../../lib/api-client/sync";
+import { Button } from "../../../components/ui";
+
+const FOCUSABLE_SELECTOR =
+	'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 interface SyncProgressModalProps {
 	syncId: string;
 	templateName: string;
 	instanceName: string;
+	/**
+	 * Callback fired when sync completes successfully.
+	 * IMPORTANT: Parent components should wrap this in useCallback to ensure
+	 * stable reference and prevent multiple invocations.
+	 */
 	onComplete: () => void;
 	onClose: () => void;
 }
@@ -39,13 +48,82 @@ export const SyncProgressModal = ({
 }: SyncProgressModalProps) => {
 	const { progress, error, isLoading, isPolling } = useSyncProgress(syncId);
 
-	// Auto-call onComplete when sync finishes successfully
+	// Track whether completion callback has been scheduled to prevent duplicate calls
+	const completionScheduledRef = useRef(false);
+
+	// Accessibility refs
+	const dialogRef = useRef<HTMLDivElement>(null);
+	const previousActiveElementRef = useRef<HTMLElement | null>(null);
+
+	// Handle Escape key to close modal
+	const handleKeyDown = useCallback(
+		(event: KeyboardEvent) => {
+			if (event.key === "Escape") {
+				const currentStage = progress?.status || "INITIALIZING";
+				const isFailed = currentStage === "FAILED";
+				const isCompleted = currentStage === "COMPLETED";
+				// Only allow closing when sync is finished
+				if (isCompleted || isFailed) {
+					onClose();
+				}
+			}
+
+			// Focus trap: cycle focus within modal
+			if (event.key === "Tab" && dialogRef.current) {
+				const focusableElements = dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+				const firstElement = focusableElements[0];
+				const lastElement = focusableElements[focusableElements.length - 1];
+
+				if (focusableElements.length === 0) return;
+
+				if (event.shiftKey && document.activeElement === firstElement) {
+					event.preventDefault();
+					lastElement?.focus();
+				} else if (!event.shiftKey && document.activeElement === lastElement) {
+					event.preventDefault();
+					firstElement?.focus();
+				}
+			}
+		},
+		[onClose, progress?.status]
+	);
+
+	// Focus management: save previous focus, set initial focus, restore on close
 	useEffect(() => {
-		if (progress?.status === "COMPLETED") {
+		// Save the previously focused element
+		previousActiveElementRef.current = document.activeElement as HTMLElement;
+
+		// Set initial focus to the dialog
+		if (dialogRef.current) {
+			dialogRef.current.focus();
+		}
+
+		// Add keyboard event listener
+		document.addEventListener("keydown", handleKeyDown);
+
+		return () => {
+			document.removeEventListener("keydown", handleKeyDown);
+			// Restore focus to previously focused element on unmount
+			if (previousActiveElementRef.current && typeof previousActiveElementRef.current.focus === "function") {
+				previousActiveElementRef.current.focus();
+			}
+		};
+	}, [handleKeyDown]);
+
+	// Auto-call onComplete when sync finishes successfully
+	// Uses ref flag to ensure callback is only scheduled once per completion
+	useEffect(() => {
+		if (progress?.status === "COMPLETED" && !completionScheduledRef.current) {
+			completionScheduledRef.current = true;
 			const timeoutId = setTimeout(() => {
 				onComplete();
 			}, 2000); // Give user time to see completion
-			return () => clearTimeout(timeoutId);
+			return () => {
+				clearTimeout(timeoutId);
+				// Reset flag if effect cleanup runs before timeout fires
+				// (e.g., component unmounts or syncId changes)
+				completionScheduledRef.current = false;
+			};
 		}
 	}, [progress?.status, onComplete]);
 
@@ -60,13 +138,21 @@ export const SyncProgressModal = ({
 
 	return (
 		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-			<div className="w-full max-w-3xl rounded-xl border border-white/10 bg-gray-900 shadow-2xl">
+			<div
+				ref={dialogRef}
+				role="dialog"
+				aria-modal="true"
+				aria-labelledby="sync-progress-title"
+				aria-describedby="sync-progress-description"
+				tabIndex={-1}
+				className="w-full max-w-3xl rounded-xl border border-white/10 bg-[#0d1117] shadow-2xl outline-none"
+			>
 				{/* Header */}
 				<div className="border-b border-white/10 p-6">
 					<div className="flex items-center justify-between">
 						<div>
-							<h2 className="text-xl font-semibold text-white">Sync Progress</h2>
-							<p className="mt-1 text-sm text-white/60">
+							<h2 id="sync-progress-title" className="text-xl font-semibold text-white">Sync Progress</h2>
+							<p id="sync-progress-description" className="mt-1 text-sm text-white/60">
 								Template: <span className="font-medium text-white">{templateName}</span> →
 								Instance: <span className="font-medium text-white">{instanceName}</span>
 							</p>
@@ -238,13 +324,9 @@ export const SyncProgressModal = ({
 				{/* Footer */}
 				<div className="flex items-center justify-end gap-3 border-t border-white/10 p-6">
 					{(isCompleted || isFailed) && (
-						<button
-							type="button"
-							onClick={onClose}
-							className="rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
-						>
+						<Button variant="secondary" onClick={onClose}>
 							Close
-						</button>
+						</Button>
 					)}
 					{!isCompleted && !isFailed && (
 						<div className="flex items-center gap-2 text-sm text-white/60">

@@ -9,7 +9,7 @@ import {
 	DialogContent,
 	DialogFooter,
 } from "../../../components/ui/dialog";
-import { Skeleton } from "../../../components/ui";
+import { Skeleton, Button } from "../../../components/ui";
 import {
 	AlertCircle,
 	Settings,
@@ -248,16 +248,17 @@ export const InstanceOverrideEditor = ({
 										Customize scores and enable/disable Custom Formats for this instance only
 									</p>
 								</div>
-								<button
-									type="button"
+								<Button
+									variant="secondary"
+									size="sm"
 									onClick={handleResetAll}
 									disabled={updateMutation.isPending || totalOverrides === 0}
-									className="flex items-center gap-2 rounded bg-white/10 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/20 disabled:opacity-50"
 									title="Reset all to template defaults"
+									className="gap-2"
 								>
 									<RotateCcw className="h-3 w-3" />
 									Reset All
-								</button>
+								</Button>
 							</div>
 						</div>
 
@@ -316,15 +317,15 @@ export const InstanceOverrideEditor = ({
 														/>
 													</td>
 													<td className="p-3 text-center">
-														<button
-															type="button"
+														<Button
+															variant="ghost"
+															size="sm"
 															onClick={() => handleResetToBase(row.trashId)}
 															disabled={!hasOverride}
-															className="inline-flex items-center gap-1 rounded bg-white/10 px-2 py-1 text-xs font-medium text-white transition hover:bg-white/20 disabled:opacity-50 disabled:cursor-not-allowed"
 															title="Reset to template default"
 														>
 															<RotateCcw className="h-3 w-3" />
-														</button>
+														</Button>
 													</td>
 												</tr>
 											);
@@ -347,30 +348,26 @@ export const InstanceOverrideEditor = ({
 			</DialogContent>
 
 			<DialogFooter>
-				<button
-					type="button"
+				<Button
+					variant="danger"
 					onClick={handleDeleteAll}
 					disabled={deleteMutation.isPending || totalOverrides === 0}
-					className="mr-auto px-4 py-2 text-sm font-medium text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition-colors disabled:opacity-50"
+					className="mr-auto gap-1"
 					title="Delete all instance overrides"
 				>
-					<Trash2 className="inline h-4 w-4 mr-1" />
+					<Trash2 className="h-4 w-4" />
 					Delete All
-				</button>
+				</Button>
 
-				<button
-					type="button"
-					onClick={onClose}
-					className="px-4 py-2 text-sm font-medium text-fg-muted hover:text-fg transition-colors"
-				>
+				<Button variant="ghost" onClick={onClose}>
 					{hasChanges ? "Cancel" : "Close"}
-				</button>
+				</Button>
 
-				<button
-					type="button"
+				<Button
+					variant="primary"
 					onClick={handleSave}
 					disabled={!hasChanges || updateMutation.isPending}
-					className="px-4 py-2 text-sm font-medium bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center gap-2"
+					className="gap-2"
 				>
 					{updateMutation.isPending ? (
 						<>
@@ -383,7 +380,7 @@ export const InstanceOverrideEditor = ({
 							Save Overrides
 						</>
 					)}
-				</button>
+				</Button>
 			</DialogFooter>
 		</Dialog>
 	);

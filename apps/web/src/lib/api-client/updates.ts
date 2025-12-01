@@ -115,8 +115,20 @@ export interface SchedulerStatusResponse {
 }
 
 export interface TriggerCheckResponse {
-	triggered: boolean;
+	success: boolean;
 	message: string;
+	completedAt: string;
+	result: {
+		templatesChecked: number;
+		templatesOutdated: number;
+		templatesAutoSynced: number;
+		templatesNeedingAttention: number;
+		templatesWithAutoStrategy: number;
+		templatesWithNotifyStrategy: number;
+		cachesRefreshed: number;
+		cachesFailed: number;
+		errors: string[];
+	} | null;
 }
 
 // ============================================================================

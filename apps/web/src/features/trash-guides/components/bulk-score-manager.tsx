@@ -12,14 +12,13 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { Search, Save, ArrowUpCircle, X, RotateCcw } from "lucide-react";
-import type {
-	CustomFormatScoreEntry,
-	BulkScoreFilters,
-} from "@arr/shared";
+import { Search, Save, X, RotateCcw } from "lucide-react";
+import type { CustomFormatScoreEntry } from "@arr/shared";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
-import { useQualityProfileOverrides, useDeleteOverride, useBulkDeleteOverrides } from "../../../hooks/api/useQualityProfileOverrides";
-import { PromoteOverrideDialog } from "./promote-override-dialog";
+import { useDeleteOverride, useBulkDeleteOverrides } from "../../../hooks/api/useQualityProfileOverrides";
+import { useBulkUpdateScores, type BulkScoreUpdateEntry } from "../../../hooks/api/useQualityProfileScores";
+import { useBulkScores } from "../../../hooks/api/useBulkScores";
+import { useQueryClient } from "@tanstack/react-query";
 import { Select, SelectOption, Input } from "../../../components/ui";
 
 interface BulkScoreManagerProps {
@@ -33,6 +32,8 @@ export function BulkScoreManager({
 	userId,
 	onOperationComplete,
 }: BulkScoreManagerProps) {
+	const queryClient = useQueryClient();
+
 	// Fetch available instances
 	const { data: instances = [] } = useServicesQuery();
 
@@ -41,10 +42,15 @@ export function BulkScoreManager({
 	const [searchTerm, setSearchTerm] = useState("");
 	const [modifiedOnly, setModifiedOnly] = useState(false);
 
-	// Data state
+	// Fetch bulk scores using TanStack Query
+	const { data: bulkScoresData, isLoading } = useBulkScores({
+		instanceId,
+		search: searchTerm || undefined,
+		modifiedOnly,
+	});
+
+	// Local scores state (derived from query data, can be modified locally)
 	const [scores, setScores] = useState<CustomFormatScoreEntry[]>([]);
-	const [isLoading, setIsLoading] = useState(false);
-	const [isSaving, setIsSaving] = useState(false);
 
 	// Track modified scores for saving
 	const [modifiedScores, setModifiedScores] = useState<Map<string, Map<string, number>>>(new Map());
@@ -56,16 +62,8 @@ export function BulkScoreManager({
 	const deleteOverride = useDeleteOverride();
 	const bulkDeleteOverrides = useBulkDeleteOverrides();
 
-	// Promote override dialog state
-	const [promoteDialogOpen, setPromoteDialogOpen] = useState(false);
-	const [promoteData, setPromoteData] = useState<{
-		qualityProfileId: number;
-		customFormatId: number;
-		customFormatName: string;
-		currentScore: number;
-		templateId: string;
-		templateName: string;
-	} | null>(null);
+	// Bulk update scores hook
+	const bulkUpdateScores = useBulkUpdateScores();
 
 	// Track quality profile IDs and their overrides
 	const [qualityProfileIds, setQualityProfileIds] = useState<number[]>([]);
@@ -114,46 +112,20 @@ export function BulkScoreManager({
 		}
 	}, [instanceId]);
 
-	// Fetch scores based on filters
-	const fetchScores = useCallback(async () => {
-		if (!instanceId) {
-			return;
-		}
-
-		setIsLoading(true);
-		try {
-			const filters: BulkScoreFilters = {
-				instanceId,
-				search: searchTerm || undefined,
-				modifiedOnly,
-			};
-
-			const response = await fetch(
-				`/api/trash-guides/bulk-scores?${new URLSearchParams(
-					Object.entries(filters).reduce((acc, [key, value]) => {
-						if (value !== undefined) acc[key] = String(value);
-						return acc;
-					}, {} as Record<string, string>)
-				)}`,
-				{
-					headers: { "Content-Type": "application/json" },
-				}
-			);
-
-			if (!response.ok) throw new Error("Failed to fetch scores");
-			const data = await response.json();
-			setScores(data.data.scores);
+	// Sync scores from query data and fetch overrides
+	useEffect(() => {
+		if (bulkScoresData?.data?.scores) {
+			const queryScores = bulkScoresData.data.scores;
+			setScores(queryScores);
 
 			// Extract unique quality profile IDs for override fetching
 			// templateId format: instanceId-profileId
 			const profileIds = new Set<number>();
-			if (data.data.scores.length > 0) {
-				for (const score of data.data.scores) {
-					for (const templateScore of score.templateScores) {
-						const profileId = parseInt(templateScore.templateId.split('-').pop() || '0');
-						if (profileId > 0) {
-							profileIds.add(profileId);
-						}
+			for (const score of queryScores) {
+				for (const templateScore of score.templateScores) {
+					const profileId = parseInt(templateScore.templateId.split('-').pop() || '0');
+					if (profileId > 0) {
+						profileIds.add(profileId);
 					}
 				}
 			}
@@ -161,24 +133,15 @@ export function BulkScoreManager({
 			setQualityProfileIds(profileIdArray);
 
 			// Fetch overrides for all quality profiles
-			await fetchOverridesForProfiles(profileIdArray);
-		} catch (error) {
-			console.error("Error fetching scores:", error);
-		} finally {
-			setIsLoading(false);
+			void fetchOverridesForProfiles(profileIdArray);
 		}
-	}, [instanceId, searchTerm, modifiedOnly, fetchOverridesForProfiles]);
+	}, [bulkScoresData, fetchOverridesForProfiles]);
 
-	// Auto-fetch scores when instance changes
+	// Clear local state when instance changes
 	useEffect(() => {
-		if (instanceId) {
-			// Clear previous data and fetch new scores
-			setScores([]);
-			setModifiedScores(new Map());
-			setSelectedCFs(new Set());
-			fetchScores();
-		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps -- Only trigger on instanceId change, not on filter/callback changes
+		setScores([]);
+		setModifiedScores(new Map());
+		setSelectedCFs(new Set());
 	}, [instanceId]);
 
 	// Handle score change in table
@@ -228,67 +191,44 @@ export function BulkScoreManager({
 			return;
 		}
 
-		setIsSaving(true);
-		try {
-			// Group score changes by quality profile (templateId format: {instanceId}-{profileId})
-			const profileUpdates = new Map<string, Array<{ cfTrashId: string; score: number }>>();
+		// Group score changes by quality profile (templateId format: {instanceId}-{profileId})
+		const profileUpdates = new Map<string, Array<{ cfTrashId: string; score: number }>>();
 
-			for (const [cfTrashId, templateScores] of modifiedScores.entries()) {
-				for (const [templateId, newScore] of templateScores.entries()) {
-					if (!profileUpdates.has(templateId)) {
-						profileUpdates.set(templateId, []);
-					}
-					profileUpdates.get(templateId)!.push({ cfTrashId, score: newScore });
+		for (const [cfTrashId, templateScores] of modifiedScores.entries()) {
+			for (const [templateId, newScore] of templateScores.entries()) {
+				if (!profileUpdates.has(templateId)) {
+					profileUpdates.set(templateId, []);
 				}
+				profileUpdates.get(templateId)!.push({ cfTrashId, score: newScore });
 			}
+		}
 
-			// Update each quality profile via the API
-			const updatePromises = Array.from(profileUpdates.entries()).map(async ([templateId, changes]) => {
+		// Build entries for the bulk update mutation
+		const entries: BulkScoreUpdateEntry[] = Array.from(profileUpdates.entries()).map(
+			([templateId, changes]) => {
 				// Parse templateId to get profileId (format: instanceId-profileId)
-				const profileId = parseInt(templateId.split('-').pop() || '0');
-
-				// Build the update payload
-				const scoreUpdates = changes.map(({ cfTrashId, score }) => {
-					// Extract CF ID from trashId (format: "cf-{id}")
-					const cfId = parseInt(cfTrashId.replace('cf-', ''));
-					return { customFormatId: cfId, score };
-				});
-
-				// Call the update API
-				return fetch(`/api/trash-guides/instances/${instanceId}/quality-profiles/${profileId}/scores`, {
-					method: "PATCH",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ scoreUpdates }),
-				});
-			});
-
-			const responses = await Promise.all(updatePromises);
-			const failedUpdates = responses.filter((r) => !r.ok);
-
-			if (failedUpdates.length > 0) {
-				// Get error details
-				const errors = await Promise.all(
-					failedUpdates.map(async (r) => {
-						try {
-							const body = await r.json();
-							return body.error || r.statusText;
-						} catch {
-							return r.statusText;
-						}
-					})
-				);
-				throw new Error(`Failed to update ${failedUpdates.length} quality profile(s): ${errors.join(', ')}`);
+				const profileId = parseInt(templateId.split("-").pop() || "0");
+				return {
+					profileId,
+					instanceId,
+					changes,
+				};
 			}
+		);
 
-			alert(`Successfully saved ${modifiedScores.size} custom format score change${modifiedScores.size === 1 ? '' : 's'}`);
+		const changeCount = modifiedScores.size;
+
+		try {
+			await bulkUpdateScores.mutateAsync(entries);
+			alert(
+				`Successfully saved ${changeCount} custom format score change${changeCount === 1 ? "" : "s"}`
+			);
 			setModifiedScores(new Map());
-			await fetchScores();
+			await queryClient.invalidateQueries({ queryKey: ["bulk-scores"] });
 			onOperationComplete?.();
 		} catch (error) {
 			console.error("Error saving scores:", error);
 			alert(error instanceof Error ? error.message : "Failed to save scores");
-		} finally {
-			setIsSaving(false);
 		}
 	};
 
@@ -298,31 +238,8 @@ export function BulkScoreManager({
 
 		if (confirm("Are you sure you want to discard all unsaved changes?")) {
 			setModifiedScores(new Map());
-			fetchScores();
+			void queryClient.invalidateQueries({ queryKey: ["bulk-scores"] });
 		}
-	};
-
-	// Handle promote override button click
-	const handlePromoteOverride = (
-		templateId: string,
-		customFormatId: number,
-		customFormatName: string,
-		currentScore: number,
-		templateName: string
-	) => {
-		// Extract profileId from templateId (format: instanceId-profileId)
-		const profileId = parseInt(templateId.split('-').pop() || '0');
-		if (profileId === 0) {
-			alert("Invalid quality profile ID");
-			return;
-		}
-
-		// Note: For promote functionality, we need actual template IDs, not quality profile IDs
-		// The current bulk-score-manager shows instance quality profiles, not templates
-		// This is a design issue - we can't promote to a template without knowing which template
-		// For now, we'll skip this feature in bulk-score-manager
-		// Promote should be done from the instance quality profile view instead
-		alert("Promote feature is not available in bulk score manager. Please use the instance quality profile view to promote overrides.");
 	};
 
 	// Handle delete individual override
@@ -355,7 +272,7 @@ export function BulkScoreManager({
 			});
 
 			// Refresh scores to show updated values
-			await fetchScores();
+			await queryClient.invalidateQueries({ queryKey: ["bulk-scores"] });
 			alert(`Override removed for "${customFormatName}"`);
 		} catch (error) {
 			console.error("Failed to delete override:", error);
@@ -366,60 +283,75 @@ export function BulkScoreManager({
 	// Handle bulk reset to template
 	const handleBulkResetToTemplate = async () => {
 		if (!instanceId) {
-			alert("No instance selected");
+			alert("Please select an instance first");
 			return;
 		}
 
 		if (selectedCFs.size === 0) {
-			alert("No custom formats selected");
+			alert("Please select at least one custom format to reset");
 			return;
 		}
 
-		// Extract profileId from first score (all should have same profile in bulk manager)
-		const firstScore = scores[0];
-		if (!firstScore || firstScore.templateScores.length === 0) {
-			alert("No scores available");
+		// Group selected CFs by quality profile to handle multi-profile scenarios
+		// Map: profileId -> Set of customFormatIds
+		const profileToCFs = new Map<number, Set<number>>();
+
+		for (const trashId of selectedCFs) {
+			const cfId = parseInt(trashId.replace('cf-', ''));
+			if (isNaN(cfId)) continue;
+
+			// Find all profiles that have overrides for this CF
+			for (const profileId of qualityProfileIds) {
+				const overrideKey = `${profileId}-${cfId}`;
+				if (overrideMap.has(overrideKey)) {
+					if (!profileToCFs.has(profileId)) {
+						profileToCFs.set(profileId, new Set());
+					}
+					profileToCFs.get(profileId)!.add(cfId);
+				}
+			}
+		}
+
+		if (profileToCFs.size === 0) {
+			alert("No instance-level overrides found for the selected custom formats. They are already using template defaults.");
 			return;
 		}
 
-		const firstTemplateScore = firstScore.templateScores[0];
-		if (!firstTemplateScore) {
-			alert("No template scores available");
-			return;
-		}
+		// Build confirmation message with profile breakdown
+		const profileCount = profileToCFs.size;
+		const totalOverrides = Array.from(profileToCFs.values()).reduce((sum, cfs) => sum + cfs.size, 0);
+		const confirmMessage = profileCount === 1
+			? `Reset ${totalOverrides} override(s) to template defaults?\n\nThis will remove instance-level overrides.`
+			: `Reset ${totalOverrides} override(s) across ${profileCount} quality profiles to template defaults?\n\nThis will remove instance-level overrides for the selected custom formats in all affected profiles.`;
 
-		const firstTemplateId = firstTemplateScore.templateId;
-		const profileId = parseInt(firstTemplateId.split('-').pop() || '0');
-		if (profileId === 0) {
-			alert("Invalid quality profile ID");
-			return;
-		}
-
-		// Extract custom format IDs from selected trashIds
-		const customFormatIds = Array.from(selectedCFs).map(trashId =>
-			parseInt(trashId.replace('cf-', ''))
-		);
-
-		if (!confirm(`Reset ${selectedCFs.size} custom format(s) to template defaults?\n\nThis will remove instance-level overrides.`)) {
+		if (!confirm(confirmMessage)) {
 			return;
 		}
 
 		try {
-			const result = await bulkDeleteOverrides.mutateAsync({
-				instanceId,
-				qualityProfileId: profileId,
-				payload: { customFormatIds },
-			});
+			// Reset overrides for each profile in parallel
+			const resetPromises = Array.from(profileToCFs.entries()).map(([profileId, cfIds]) =>
+				bulkDeleteOverrides.mutateAsync({
+					instanceId,
+					qualityProfileId: profileId,
+					payload: { customFormatIds: Array.from(cfIds) },
+				})
+			);
+
+			const results = await Promise.all(resetPromises);
+			const totalDeleted = results.reduce((sum, r) => sum + (r.deletedCount || 0), 0);
 
 			// Clear selection
 			setSelectedCFs(new Set());
 
 			// Refresh scores
-			await fetchScores();
-			alert(result.message);
+			await queryClient.invalidateQueries({ queryKey: ["bulk-scores"] });
+
+			alert(`Successfully reset ${totalDeleted} override(s) to template defaults.`);
 		} catch (error) {
 			console.error("Failed to bulk reset:", error);
-			alert(error instanceof Error ? error.message : "Failed to bulk reset overrides");
+			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+			alert(`Failed to reset overrides: ${errorMessage}\n\nSome overrides may have been reset. Please refresh to see the current state.`);
 		}
 	};
 
@@ -534,7 +466,7 @@ export function BulkScoreManager({
 							<button
 								type="button"
 								onClick={handleDiscardChanges}
-								disabled={isSaving}
+								disabled={bulkUpdateScores.isPending}
 								className="inline-flex items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20 disabled:opacity-50"
 							>
 								Discard Changes
@@ -542,11 +474,11 @@ export function BulkScoreManager({
 							<button
 								type="button"
 								onClick={handleSaveChanges}
-								disabled={isSaving}
+								disabled={bulkUpdateScores.isPending}
 								className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary/90 disabled:opacity-50"
 							>
 								<Save className="h-4 w-4" />
-								{isSaving ? "Saving..." : "Save Changes"}
+								{bulkUpdateScores.isPending ? "Saving..." : "Save Changes"}
 							</button>
 						</div>
 					</div>

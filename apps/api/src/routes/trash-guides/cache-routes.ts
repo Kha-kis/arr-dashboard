@@ -30,6 +30,10 @@ const getStatusParamsSchema = z.object({
 	serviceType: z.enum(["RADARR", "SONARR"]).optional(),
 });
 
+const getEntriesQuerySchema = z.object({
+	serviceType: z.enum(["RADARR", "SONARR"]),
+});
+
 // ============================================================================
 // Route Handlers
 // ============================================================================
@@ -242,17 +246,9 @@ export async function registerTrashCacheRoutes(
 		 * Get cache entries with data for a specific service type
 		 */
 		app.get<{
-			Querystring: { serviceType: string };
+			Querystring: z.infer<typeof getEntriesQuerySchema>;
 		}>("/entries", async (request, reply) => {
-			const serviceType = request.query.serviceType as "RADARR" | "SONARR";
-
-			if (!serviceType || !["RADARR", "SONARR"].includes(serviceType)) {
-				return reply.status(400).send({
-					statusCode: 400,
-					error: "BadRequest",
-					message: "serviceType query parameter is required and must be RADARR or SONARR",
-				});
-			}
+			const { serviceType } = getEntriesQuerySchema.parse(request.query);
 
 			try {
 				const configTypes = Object.values(TRASH_CONFIG_TYPES) as TrashConfigType[];

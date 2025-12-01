@@ -5,7 +5,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Alert, AlertDescription, Skeleton, Card, CardHeader, CardTitle, CardDescription, CardContent } from "../../../../components/ui";
 import { ChevronLeft, ChevronRight, Info, AlertCircle, Search, ChevronDown, Lock, Edit, RotateCcw, Settings } from "lucide-react";
 import { createSanitizedHtml } from "../../../../lib/sanitize-html";
@@ -27,9 +27,17 @@ interface CFGroup {
 	[key: string]: unknown;
 }
 
+/**
+ * Wizard-specific profile type that allows undefined trashId for edit mode.
+ * In edit mode, templates don't persist the original TRaSH profile ID.
+ */
+type WizardSelectedProfile = Omit<QualityProfileSummary, 'trashId'> & {
+	trashId?: string;
+};
+
 interface CFConfigurationProps {
 	serviceType: "RADARR" | "SONARR";
-	qualityProfile: QualityProfileSummary;
+	qualityProfile: WizardSelectedProfile;
 	initialSelections: Record<string, {
 		selected: boolean;
 		scoreOverride?: number;
@@ -70,6 +78,7 @@ export const CFConfiguration = ({
 		trashId: string;
 		format: CustomFormatItem;
 	} | null>(null);
+	const hasInitializedSelections = useRef(false);
 
 	// Fetch CF configuration data using extracted hook
 	const { data, isLoading, error } = useCFConfiguration({
@@ -79,21 +88,24 @@ export const CFConfiguration = ({
 		editingTemplate,
 	});
 
-	// Initialize selections when data loads
+	// Initialize selections when data loads (one-time only)
 	useEffect(() => {
-		if (data && Object.keys(selections).length === 0) {
-			const cfGroups = data.cfGroups || [];
-			const mandatoryCFs = data.mandatoryCFs || [];
-			const newSelections: Record<string, any> = {};
+		if (!data || hasInitializedSelections.current) {
+			return;
+		}
 
-			// Add mandatory CFs (always selected)
-			for (const cf of mandatoryCFs) {
-				newSelections[cf.trash_id] = {
-					selected: true, // Mandatory CFs always selected
-					scoreOverride: undefined,
-					conditionsEnabled: {},
-				};
-			}
+		const cfGroups = data.cfGroups || [];
+		const mandatoryCFs = data.mandatoryCFs || [];
+		const newSelections: Record<string, any> = {};
+
+		// Add mandatory CFs (always selected)
+		for (const cf of mandatoryCFs) {
+			newSelections[cf.trash_id] = {
+				selected: true, // Mandatory CFs always selected
+				scoreOverride: undefined,
+				conditionsEnabled: {},
+			};
+		}
 
 		// Build map of all CFs from all CF Groups
 		for (const group of cfGroups) {
@@ -120,9 +132,9 @@ export const CFConfiguration = ({
 			}
 		}
 
+		hasInitializedSelections.current = true;
 		setSelections(newSelections);
-	}
-}, [data]);
+	}, [data]);
 
 	const toggleCF = (cfTrashId: string, isRequired: boolean = false) => {
 		// Allow toggling all CFs, including required ones

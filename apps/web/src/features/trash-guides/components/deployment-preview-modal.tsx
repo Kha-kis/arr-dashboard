@@ -9,7 +9,7 @@ import {
 	DialogContent,
 	DialogFooter,
 } from "../../../components/ui/dialog";
-import { Skeleton } from "../../../components/ui";
+import { Skeleton, Button } from "../../../components/ui";
 import {
 	AlertCircle,
 	Plus,
@@ -328,12 +328,28 @@ export const DeploymentPreviewModal = ({
 							</div>
 						</div>
 
+						{/* Warnings */}
+						{data.data.warnings && data.data.warnings.length > 0 && (
+							<div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+								<div className="flex items-start gap-3">
+									<AlertTriangle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+									<div className="space-y-2">
+										{data.data.warnings.map((warning, idx) => (
+											<p key={idx} className="text-sm text-fg-muted">
+												{warning}
+											</p>
+										))}
+									</div>
+								</div>
+							</div>
+						)}
+
 						{/* Summary Statistics */}
 						<div className="rounded-lg border border-border bg-bg-subtle p-4">
 							<h3 className="text-sm font-medium text-fg mb-3">
 								Deployment Summary
 							</h3>
-							<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+							<div className="grid grid-cols-2 md:grid-cols-5 gap-4">
 								<div className="space-y-1">
 									<p className="text-xs text-fg-muted">Total Items</p>
 									<p className="text-2xl font-semibold text-fg">
@@ -362,6 +378,14 @@ export const DeploymentPreviewModal = ({
 									</p>
 									<p className="text-2xl font-semibold text-amber-600 dark:text-amber-400">
 										{data.data.summary.totalConflicts}
+									</p>
+								</div>
+								<div className="space-y-1">
+									<p className="text-xs text-gray-700 dark:text-gray-300">
+										Unmatched
+									</p>
+									<p className="text-2xl font-semibold text-gray-600 dark:text-gray-400">
+										{data.data.summary.unmatchedCustomFormats ?? 0}
 									</p>
 								</div>
 							</div>
@@ -444,6 +468,35 @@ export const DeploymentPreviewModal = ({
 							</div>
 						)}
 
+						{/* Unmatched Custom Formats */}
+						{data.data.unmatchedCustomFormats && data.data.unmatchedCustomFormats.length > 0 && (
+							<div className="space-y-3">
+								<h3 className="text-sm font-medium text-fg">
+									Unmatched Custom Formats ({data.data.unmatchedCustomFormats.length})
+								</h3>
+								<div className="space-y-2 max-h-48 overflow-y-auto">
+									{data.data.unmatchedCustomFormats.map((item) => (
+										<div
+											key={item.instanceId}
+											className="rounded-lg border border-gray-500/30 bg-gray-500/10 p-3"
+										>
+											<div className="flex items-start gap-2">
+												<AlertCircle className="h-4 w-4 text-gray-600 dark:text-gray-400 mt-0.5 shrink-0" />
+												<div className="flex-1 min-w-0">
+													<p className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
+														{item.name}
+													</p>
+													<p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+														{item.reason}
+													</p>
+												</div>
+											</div>
+										</div>
+									))}
+								</div>
+							</div>
+						)}
+
 						{/* No Changes Message */}
 						{data.data.summary.totalItems === 0 && (
 							<div className="rounded-lg border border-border bg-bg-subtle p-8 text-center">
@@ -470,16 +523,11 @@ export const DeploymentPreviewModal = ({
 						</div>
 					</div>
 				)}
-				<button
-					type="button"
-					onClick={onClose}
-					disabled={isDeploying}
-					className="px-4 py-2 text-sm font-medium text-fg-muted hover:text-fg transition-colors disabled:opacity-50"
-				>
+				<Button variant="ghost" onClick={onClose} disabled={isDeploying}>
 					Cancel
-				</button>
-				<button
-					type="button"
+				</Button>
+				<Button
+					variant="primary"
 					onClick={handleDeploy}
 					disabled={
 						!data?.data ||
@@ -487,7 +535,7 @@ export const DeploymentPreviewModal = ({
 						data.data.summary.totalItems === 0 ||
 						isDeploying
 					}
-					className="px-4 py-2 text-sm font-medium bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center gap-2"
+					className="gap-2"
 				>
 					{isDeploying ? (
 						<>
@@ -497,7 +545,7 @@ export const DeploymentPreviewModal = ({
 					) : (
 						"Deploy to Instance"
 					)}
-				</button>
+				</Button>
 			</DialogFooter>
 
 			{/* Instance Override Editor Modal */}

@@ -67,8 +67,7 @@ async function main() {
   const latestCommitHash = await getLatestCommitHash();
 
   if (!latestCommitHash) {
-    console.error("Failed to get latest commit hash. Aborting.");
-    process.exit(1);
+    throw new Error("Failed to get latest commit hash. Aborting.");
   }
 
   console.log(`Latest commit hash: ${latestCommitHash}\n`);
@@ -159,5 +158,8 @@ async function main() {
 }
 
 main()
-  .catch(console.error)
+  .catch((error) => {
+    console.error(error);
+    process.exitCode = 1;
+  })
   .finally(() => prisma.$disconnect());

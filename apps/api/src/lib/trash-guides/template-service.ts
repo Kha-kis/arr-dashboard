@@ -13,6 +13,31 @@ import type {
 } from "@arr/shared";
 
 // ============================================================================
+// Utilities
+// ============================================================================
+
+/**
+ * Safely parse JSON string, returning undefined on failure
+ * Logs a warning with context when parsing fails
+ */
+function safeJsonParse<T>(
+	value: string | null | undefined,
+	context: { templateId: string; fieldName: string }
+): T | undefined {
+	if (value === null || value === undefined) {
+		return undefined;
+	}
+	try {
+		return JSON.parse(value) as T;
+	} catch {
+		console.warn(
+			`[TemplateService] Failed to parse JSON for template ${context.templateId}, field: ${context.fieldName}`
+		);
+		return undefined;
+	}
+}
+
+// ============================================================================
 // Types
 // ============================================================================
 
@@ -219,10 +244,9 @@ export class TemplateService {
 		}
 
 		// Apply pagination after filtering and sorting
-		const paginatedTemplates = filteredTemplates.slice(
-			options.offset || 0,
-			options.offset ? (options.offset + (options.limit || filteredTemplates.length)) : (options.limit || filteredTemplates.length)
-		);
+		const start = options.offset || 0;
+		const length = options.limit ?? filteredTemplates.length;
+		const paginatedTemplates = filteredTemplates.slice(start, start + length);
 
 		return paginatedTemplates.map((t) => this.mapToTemplate(t));
 	}
@@ -277,8 +301,20 @@ export class TemplateService {
 
 		// If config changed, track user modifications
 		if (request.config) {
-			// Parse existing changeLog and append new entry
-			const existingChangeLog = existing.changeLog ? JSON.parse(existing.changeLog) : [];
+			// Safely parse existing changeLog with error handling
+			let existingChangeLog: unknown[] = [];
+			if (existing.changeLog) {
+				try {
+					const parsed = JSON.parse(existing.changeLog);
+					existingChangeLog = Array.isArray(parsed) ? parsed : [];
+				} catch (parseError) {
+					console.warn(
+						`Failed to parse changeLog for template ${templateId}: ${parseError instanceof Error ? parseError.message : String(parseError)}. Resetting to empty array.`
+					);
+					existingChangeLog = [];
+				}
+			}
+
 			const newChangeLogEntry = {
 				timestamp: now.toISOString(),
 				userId,
@@ -584,13 +620,24 @@ export class TemplateService {
 	 * Map Prisma model to TrashTemplate
 	 */
 	private mapToTemplate(prismaTemplate: any): TrashTemplate {
+		const templateId = prismaTemplate.id;
+
+		// Parse configData with fallback to empty config on failure
+		const config = safeJsonParse<TemplateConfig>(prismaTemplate.configData, {
+			templateId,
+			fieldName: "configData",
+		}) ?? {
+			customFormats: [],
+			customFormatGroups: [],
+		};
+
 		return {
-			id: prismaTemplate.id,
+			id: templateId,
 			userId: prismaTemplate.userId,
 			name: prismaTemplate.name,
 			description: prismaTemplate.description || undefined,
 			serviceType: prismaTemplate.serviceType,
-			config: JSON.parse(prismaTemplate.configData),
+			config,
 			createdAt: prismaTemplate.createdAt.toISOString(),
 			updatedAt: prismaTemplate.updatedAt.toISOString(),
 			deletedAt: prismaTemplate.deletedAt?.toISOString(),
@@ -604,11 +651,17 @@ export class TemplateService {
 			lastSyncedAt: prismaTemplate.lastSyncedAt?.toISOString(),
 			// Phase 3: Customization Tracking
 			hasUserModifications: prismaTemplate.hasUserModifications ?? false,
-			modifiedFields: prismaTemplate.modifiedFields ? JSON.parse(prismaTemplate.modifiedFields) : undefined,
+			modifiedFields: safeJsonParse<string[]>(prismaTemplate.modifiedFields, {
+				templateId,
+				fieldName: "modifiedFields",
+			}),
 			lastModifiedAt: prismaTemplate.lastModifiedAt?.toISOString(),
 			lastModifiedBy: prismaTemplate.lastModifiedBy || undefined,
 			// Phase 3: Change Log
-			changeLog: prismaTemplate.changeLog ? JSON.parse(prismaTemplate.changeLog) : undefined,
+			changeLog: safeJsonParse<TrashTemplate["changeLog"]>(prismaTemplate.changeLog, {
+				templateId,
+				fieldName: "changeLog",
+			}),
 		};
 	}
 }

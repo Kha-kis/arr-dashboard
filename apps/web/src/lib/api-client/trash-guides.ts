@@ -160,6 +160,42 @@ export async function bulkDeleteQualityProfileOverrides(
 	);
 }
 
+// ============================================================================
+// Quality Profile Score Update Operations
+// ============================================================================
+
+export type ScoreUpdate = {
+	customFormatId: number;
+	score: number;
+};
+
+export type UpdateProfileScoresPayload = {
+	scoreUpdates: ScoreUpdate[];
+};
+
+export type UpdateProfileScoresResponse = {
+	success: boolean;
+	message: string;
+	updatedCount: number;
+};
+
+/**
+ * Update custom format scores for a quality profile on an instance
+ */
+export async function updateQualityProfileScores(
+	instanceId: string,
+	qualityProfileId: number,
+	payload: UpdateProfileScoresPayload,
+): Promise<UpdateProfileScoresResponse> {
+	return await apiRequest<UpdateProfileScoresResponse>(
+		`/api/trash-guides/instances/${instanceId}/quality-profiles/${qualityProfileId}/scores`,
+		{
+			method: "PATCH",
+			json: payload,
+		},
+	);
+}
+
 /**
  * Fetch cache entries with data
  */
@@ -395,6 +431,18 @@ export type SchedulerStatusResponse = {
 export type TriggerCheckResponse = {
 	success: boolean;
 	message: string;
+	completedAt: string;
+	result: {
+		templatesChecked: number;
+		templatesOutdated: number;
+		templatesAutoSynced: number;
+		templatesNeedingAttention: number;
+		templatesWithAutoStrategy: number;
+		templatesWithNotifyStrategy: number;
+		cachesRefreshed: number;
+		cachesFailed: number;
+		errors: string[];
+	} | null;
 };
 
 /**
@@ -986,6 +1034,38 @@ export async function deleteDeploymentHistory(
 		`/api/trash-guides/deployment/history/${historyId}`,
 		{
 			method: "DELETE",
+		},
+	);
+}
+
+// ============================================================================
+// Enhanced Template Import Types & Functions
+// ============================================================================
+
+import type { TemplateImportOptions, TrashTemplate } from "@arr/shared";
+
+export type EnhancedImportTemplatePayload = {
+	jsonData: string;
+	options: TemplateImportOptions;
+};
+
+export type EnhancedImportTemplateResponse = {
+	success: boolean;
+	template: TrashTemplate;
+	message: string;
+};
+
+/**
+ * Import template with validation and conflict resolution options
+ */
+export async function importEnhancedTemplate(
+	payload: EnhancedImportTemplatePayload,
+): Promise<EnhancedImportTemplateResponse> {
+	return await apiRequest<EnhancedImportTemplateResponse>(
+		"/api/trash-guides/sharing/import",
+		{
+			method: "POST",
+			json: payload,
 		},
 	);
 }

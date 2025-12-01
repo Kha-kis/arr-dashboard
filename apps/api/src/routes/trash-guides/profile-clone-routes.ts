@@ -6,6 +6,7 @@
 
 import { FastifyPluginCallback } from "fastify";
 import { createProfileCloner } from "../../lib/trash-guides/profile-cloner.js";
+import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
 import type { CompleteQualityProfile } from "@arr/shared";
 
 // ============================================================================
@@ -211,35 +212,9 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				});
 			}
 
-			// Decrypt API key
-			const apiKey = app.encryptor.decrypt({
-				value: instance.encryptedApiKey,
-				iv: instance.encryptionIv,
-			});
-			const baseUrl = instance.baseUrl?.replace(/\/$/, "") || "";
-
-			if (!baseUrl || !apiKey) {
-				return reply.status(400).send({
-					success: false,
-					error: "Instance credentials incomplete",
-				});
-			}
-
-			// Fetch quality profiles
-			const profilesUrl = `${baseUrl}/api/v3/qualityprofile`;
-			const response = await fetch(profilesUrl, {
-				headers: {
-					"X-Api-Key": apiKey,
-					Accept: "application/json",
-				},
-			});
-
-			if (!response.ok) {
-				return reply.status(500).send({
-					success: false,
-					error: `Failed to fetch profiles: ${response.statusText}`,
-				});
-			}
+			// Create instance fetcher and fetch quality profiles
+			const fetcher = createInstanceFetcher(app, instance);
+			const response = await fetcher("/api/v3/qualityprofile");
 
 			const profiles = await response.json();
 

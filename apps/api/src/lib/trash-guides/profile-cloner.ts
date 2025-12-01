@@ -66,12 +66,30 @@ export class ProfileCloner {
 
 			// Fetch quality profile from *arr API
 			const profileUrl = `${baseUrl}/api/v3/qualityprofile/${profileId}`;
-			const response = await fetch(profileUrl, {
-				headers: {
-					"X-Api-Key": apiKey,
-					Accept: "application/json",
-				},
-			});
+			const controller1 = new AbortController();
+			const timeoutId1 = setTimeout(() => controller1.abort(), 30000);
+
+			let response: Response;
+			try {
+				response = await fetch(profileUrl, {
+					headers: {
+						"X-Api-Key": apiKey,
+						Accept: "application/json",
+					},
+					signal: controller1.signal,
+				});
+			} catch (error) {
+				clearTimeout(timeoutId1);
+				if (error instanceof Error && error.name === "AbortError") {
+					return {
+						success: false,
+						error: "Request timed out while fetching quality profile",
+					};
+				}
+				throw error;
+			} finally {
+				clearTimeout(timeoutId1);
+			}
 
 			if (!response.ok) {
 				return {
@@ -165,12 +183,30 @@ export class ProfileCloner {
 
 			// Fetch custom formats from instance to map trash_ids to instance IDs
 			const cfsUrl = `${baseUrl}/api/v3/customformat`;
-			const cfsResponse = await fetch(cfsUrl, {
-				headers: {
-					"X-Api-Key": apiKey,
-					Accept: "application/json",
-				},
-			});
+			const cfsController = new AbortController();
+			const cfsTimeoutId = setTimeout(() => cfsController.abort(), 30000);
+
+			let cfsResponse: Response;
+			try {
+				cfsResponse = await fetch(cfsUrl, {
+					headers: {
+						"X-Api-Key": apiKey,
+						Accept: "application/json",
+					},
+					signal: cfsController.signal,
+				});
+			} catch (error) {
+				clearTimeout(cfsTimeoutId);
+				if (error instanceof Error && error.name === "AbortError") {
+					return {
+						success: false,
+						error: "Request timed out while fetching custom formats",
+					};
+				}
+				throw error;
+			} finally {
+				clearTimeout(cfsTimeoutId);
+			}
 
 			if (!cfsResponse.ok) {
 				return {
@@ -182,12 +218,17 @@ export class ProfileCloner {
 			const instanceCFs = await cfsResponse.json();
 
 			// Map trash_ids to instance custom format IDs
-			// Only match exact names to avoid false positives (e.g., "DV" matching "DV-HDR10")
+			// Prefer exact trash_id match, fall back to name match if trash_id is absent
 			const formatItems = customFormats
 				.map((cf) => {
-					const instanceCF = instanceCFs.find(
-						(icf: any) => icf.name === cf.trash_id,
-					);
+					const instanceCF = instanceCFs.find((icf: any) => {
+						// First try exact trash_id match if the instance CF has one
+						if (icf.trash_id) {
+							return icf.trash_id === cf.trash_id;
+						}
+						// Fall back to name match only if trash_id is absent
+						return icf.name === cf.trash_id;
+					});
 					if (!instanceCF) return null;
 
 					return {
@@ -216,15 +257,33 @@ export class ProfileCloner {
 				? `${baseUrl}/api/v3/qualityprofile/${options.existingProfileId}`
 				: `${baseUrl}/api/v3/qualityprofile`;
 
-			const deployResponse = await fetch(url, {
-				method,
-				headers: {
-					"X-Api-Key": apiKey,
-					"Content-Type": "application/json",
-					Accept: "application/json",
-				},
-				body: JSON.stringify(profilePayload),
-			});
+			const deployController = new AbortController();
+			const deployTimeoutId = setTimeout(() => deployController.abort(), 30000);
+
+			let deployResponse: Response;
+			try {
+				deployResponse = await fetch(url, {
+					method,
+					headers: {
+						"X-Api-Key": apiKey,
+						"Content-Type": "application/json",
+						Accept: "application/json",
+					},
+					body: JSON.stringify(profilePayload),
+					signal: deployController.signal,
+				});
+			} catch (error) {
+				clearTimeout(deployTimeoutId);
+				if (error instanceof Error && error.name === "AbortError") {
+					return {
+						success: false,
+						error: "Request timed out while deploying profile",
+					};
+				}
+				throw error;
+			} finally {
+				clearTimeout(deployTimeoutId);
+			}
 
 			if (!deployResponse.ok) {
 				const errorText = await deployResponse.text();
@@ -303,12 +362,30 @@ export class ProfileCloner {
 
 			// Fetch custom formats
 			const cfsUrl = `${baseUrl}/api/v3/customformat`;
-			const cfsResponse = await fetch(cfsUrl, {
-				headers: {
-					"X-Api-Key": apiKey,
-					Accept: "application/json",
-				},
-			});
+			const previewController = new AbortController();
+			const previewTimeoutId = setTimeout(() => previewController.abort(), 30000);
+
+			let cfsResponse: Response;
+			try {
+				cfsResponse = await fetch(cfsUrl, {
+					headers: {
+						"X-Api-Key": apiKey,
+						Accept: "application/json",
+					},
+					signal: previewController.signal,
+				});
+			} catch (error) {
+				clearTimeout(previewTimeoutId);
+				if (error instanceof Error && error.name === "AbortError") {
+					return {
+						success: false,
+						error: "Request timed out while fetching custom formats",
+					};
+				}
+				throw error;
+			} finally {
+				clearTimeout(previewTimeoutId);
+			}
 
 			if (!cfsResponse.ok) {
 				return {
@@ -319,14 +396,21 @@ export class ProfileCloner {
 
 			const instanceCFs = await cfsResponse.json();
 
-			// Match custom formats - only exact names to avoid false positives
+			// Match custom formats - prefer trash_id match, fall back to name match
+			const matchesCF = (icf: any, trashId: string) => {
+				if (icf.trash_id) {
+					return icf.trash_id === trashId;
+				}
+				return icf.name === trashId;
+			};
+
 			const matched = customFormats.filter((cf) =>
-				instanceCFs.some((icf: any) => icf.name === cf.trash_id),
+				instanceCFs.some((icf: any) => matchesCF(icf, cf.trash_id)),
 			);
 
 			const unmatched = customFormats
 				.filter(
-					(cf) => !instanceCFs.some((icf: any) => icf.name === cf.trash_id),
+					(cf) => !instanceCFs.some((icf: any) => matchesCF(icf, cf.trash_id)),
 				)
 				.map((cf) => cf.trash_id);
 

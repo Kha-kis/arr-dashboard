@@ -35,6 +35,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			}
 
 			const { templateId, instanceId } = request.body;
+			const userId = request.currentUser.id;
 
 			if (!templateId || !instanceId) {
 				return reply.status(400).send({
@@ -46,6 +47,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			const preview = await deploymentPreview.generatePreview(
 				templateId,
 				instanceId,
+				userId,
 			);
 
 			return reply.send({

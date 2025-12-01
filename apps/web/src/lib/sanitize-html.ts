@@ -1,28 +1,57 @@
 /**
  * HTML Sanitization Utility
  * Provides safe HTML rendering to prevent XSS attacks
+ *
+ * Uses isomorphic-dompurify for SSR compatibility - it uses jsdom on the server
+ * and native DOMPurify in the browser.
  */
 
-import DOMPurify from "dompurify";
+import DOMPurify from "isomorphic-dompurify";
 
-// Add hook to enforce noopener noreferrer on external links to prevent reverse tabnapping
-DOMPurify.addHook("afterSanitizeAttributes", (node) => {
-	// Check if this is an anchor element with target="_blank"
-	if (node.tagName === "A" && node.getAttribute("target") === "_blank") {
-		const existingRel = node.getAttribute("rel") || "";
-		const relParts = existingRel.split(/\s+/).filter(Boolean);
+// Track if hooks have been initialized
+let hooksInitialized = false;
 
-		// Ensure noopener and noreferrer are present
-		if (!relParts.includes("noopener")) {
-			relParts.push("noopener");
+/**
+ * Initialize DOMPurify hooks for link security
+ */
+function initializeHooks(): void {
+	if (hooksInitialized) return;
+
+	// Add hook to enforce noopener noreferrer on external links to prevent reverse tabnapping
+	DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+		// Check if this is an anchor element with target="_blank"
+		if (node.tagName === "A" && node.getAttribute("target") === "_blank") {
+			const existingRel = node.getAttribute("rel") || "";
+			const relParts = existingRel.split(/\s+/).filter(Boolean);
+
+			// Ensure noopener and noreferrer are present
+			if (!relParts.includes("noopener")) {
+				relParts.push("noopener");
+			}
+			if (!relParts.includes("noreferrer")) {
+				relParts.push("noreferrer");
+			}
+
+			node.setAttribute("rel", relParts.join(" "));
 		}
-		if (!relParts.includes("noreferrer")) {
-			relParts.push("noreferrer");
-		}
+	});
 
-		node.setAttribute("rel", relParts.join(" "));
-	}
-});
+	hooksInitialized = true;
+}
+
+// Sanitization config - defined once for consistency
+const SANITIZE_CONFIG = {
+	// Allow common HTML tags for descriptions
+	ALLOWED_TAGS: [
+		"p", "br", "b", "i", "strong", "em", "a", "ul", "ol", "li",
+		"code", "pre", "blockquote", "h1", "h2", "h3", "h4", "h5", "h6",
+		"span", "div", "table", "thead", "tbody", "tr", "th", "td",
+	],
+	// Allow common attributes
+	ALLOWED_ATTR: [
+		"href", "target", "rel", "class", "id", "title",
+	],
+};
 
 /**
  * Sanitizes HTML content to prevent XSS attacks
@@ -32,18 +61,10 @@ DOMPurify.addHook("afterSanitizeAttributes", (node) => {
 export function sanitizeHtml(html: string | undefined | null): string {
 	if (!html) return "";
 
-	return DOMPurify.sanitize(html, {
-		// Allow common HTML tags for descriptions
-		ALLOWED_TAGS: [
-			"p", "br", "b", "i", "strong", "em", "a", "ul", "ol", "li",
-			"code", "pre", "blockquote", "h1", "h2", "h3", "h4", "h5", "h6",
-			"span", "div", "table", "thead", "tbody", "tr", "th", "td",
-		],
-		// Allow common attributes
-		ALLOWED_ATTR: [
-			"href", "target", "rel", "class", "id", "title",
-		],
-	});
+	// Initialize hooks on first use
+	initializeHooks();
+
+	return DOMPurify.sanitize(html, SANITIZE_CONFIG);
 }
 
 /**

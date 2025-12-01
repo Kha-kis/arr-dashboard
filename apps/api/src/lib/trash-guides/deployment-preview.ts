@@ -13,9 +13,11 @@ import type {
 	DeploymentAction,
 	ConflictType,
 	ConflictResolution,
+	UnmatchedCustomFormat,
 } from "@arr/shared";
 import { ArrApiClient, createArrApiClient } from "./arr-api-client.js";
 import type { CustomFormat } from "./arr-api-client.js";
+import { deepEqual } from "../utils/deep-equal.js";
 
 // ============================================================================
 // Deployment Preview Service Class
@@ -35,27 +37,31 @@ export class DeploymentPreviewService {
 
 	/**
 	 * Generate deployment preview for template → instance deployment
+	 * @param templateId - The template to preview
+	 * @param instanceId - The target instance
+	 * @param userId - The requesting user's ID (required for authorization)
 	 */
 	async generatePreview(
 		templateId: string,
 		instanceId: string,
+		userId: string,
 	): Promise<DeploymentPreview> {
-		// Get template
+		// Get template with ownership verification
 		const template = await this.prisma.trashTemplate.findUnique({
-			where: { id: templateId },
+			where: { id: templateId, userId },
 		});
 
 		if (!template) {
-			throw new Error("Template not found");
+			throw new Error("Template not found or access denied");
 		}
 
-		// Get instance
+		// Get instance with ownership verification
 		const instance = await this.prisma.serviceInstance.findUnique({
-			where: { id: instanceId },
+			where: { id: instanceId, userId },
 		});
 
 		if (!instance) {
-			throw new Error("Instance not found");
+			throw new Error("Instance not found or access denied");
 		}
 
 		// Validate service type match (case-insensitive)
@@ -138,13 +144,23 @@ export class DeploymentPreviewService {
 			});
 
 		// Build instance CF map by trash_id (from originalConfig metadata)
+		// Also collect CFs that couldn't be matched to a trash_id
 		const instanceCFMap = new Map<string, CustomFormat>();
+		const unmatchedCFs: UnmatchedCustomFormat[] = [];
+
 		for (const instanceCF of instanceCustomFormats) {
 			// Try to extract trash_id from CF name or specifications
 			// TRaSH Guides CFs typically have trash_id in their structure
 			const trashId = this.extractTrashId(instanceCF);
 			if (trashId) {
 				instanceCFMap.set(trashId, instanceCF);
+			} else {
+				// Could not extract trash_id - add to unmatched list
+				unmatchedCFs.push({
+					instanceId: instanceCF.id ?? 0, // Use 0 as fallback for CFs without an ID
+					name: instanceCF.name,
+					reason: "No trash_id found in specifications or name pattern",
+				});
 			}
 		}
 
@@ -167,13 +183,11 @@ export class DeploymentPreviewService {
 				// CF exists in instance - check for conflicts
 				action = "update";
 
-				// Check for specification differences
+				// Check for specification differences using stable deep equality
 				const templateSpecs = templateCF.originalConfig?.specifications || [];
 				const instanceSpecs = instanceCF.specifications || [];
 
-				if (
-					JSON.stringify(templateSpecs) !== JSON.stringify(instanceSpecs)
-				) {
+				if (!deepEqual(templateSpecs, instanceSpecs)) {
 					conflicts.push({
 						cfTrashId: templateCF.trashId,
 						cfName: templateCF.name,
@@ -223,6 +237,15 @@ export class DeploymentPreviewService {
 			instanceReachable && (unresolvedConflicts === 0 || totalConflicts === 0);
 		const requiresConflictResolution = unresolvedConflicts > 0;
 
+		// Build warnings list
+		const warnings: string[] = [];
+		if (unmatchedCFs.length > 0) {
+			warnings.push(
+				`${unmatchedCFs.length} Custom Format${unmatchedCFs.length === 1 ? "" : "s"} in the instance could not be matched to a TRaSH ID. ` +
+				`These may be custom CFs not from TRaSH Guides, or CFs that were manually created/modified.`
+			);
+		}
+
 		return {
 			templateId,
 			templateName: template.name,
@@ -238,20 +261,24 @@ export class DeploymentPreviewService {
 				skippedCustomFormats: skipCount,
 				totalConflicts,
 				unresolvedConflicts,
+				unmatchedCustomFormats: unmatchedCFs.length,
 			},
 
 			customFormats: deploymentItems,
+			unmatchedCustomFormats: unmatchedCFs,
 
 			canDeploy,
 			requiresConflictResolution,
 			instanceReachable,
 			instanceVersion,
+			warnings,
 		};
 	}
 
 	/**
 	 * Extract trash_id from Custom Format
 	 * TRaSH Guides CFs include trash_id in their metadata or specifications
+	 * Returns null if no trash_id can be reliably extracted
 	 */
 	private extractTrashId(cf: CustomFormat): string | null {
 		// Strategy 1: Check specifications for trash_id in fields
@@ -273,10 +300,9 @@ export class DeploymentPreviewService {
 			return trashIdMatch[1];
 		}
 
-		// Strategy 3: Fallback to CF name as identifier
-		// This allows matching by name when trash_id is not explicitly stored
-		// Note: This is less reliable but provides backward compatibility
-		return cf.name;
+		// No reliable trash_id found - return null instead of falling back to name
+		// This prevents unreliable name-based matching which can cause false positives
+		return null;
 	}
 }
 

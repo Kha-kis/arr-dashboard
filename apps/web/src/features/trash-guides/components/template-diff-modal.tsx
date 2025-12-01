@@ -9,7 +9,7 @@ import {
 	DialogContent,
 	DialogFooter,
 } from "../../../components/ui/dialog";
-import { Skeleton } from "../../../components/ui";
+import { Skeleton, Button } from "../../../components/ui";
 import {
 	AlertCircle,
 	Plus,
@@ -390,27 +390,22 @@ export const TemplateDiffModal = ({
 			</DialogContent>
 
 			<DialogFooter>
-				<button
-					type="button"
-					onClick={onClose}
-					className="px-4 py-2 text-sm font-medium text-fg-muted hover:text-fg transition-colors"
-				>
+				<Button variant="ghost" onClick={onClose}>
 					Cancel
-				</button>
-				<button
-					type="button"
+				</Button>
+				<Button
+					variant="primary"
 					onClick={handleSync}
 					disabled={
 						syncTemplate.isPending ||
 						!data?.data ||
 						data.data.summary.totalChanges === 0
 					}
-					className="px-4 py-2 text-sm font-medium bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
 				>
 					{syncTemplate.isPending
 						? "Syncing..."
 						: `Sync with ${selectedStrategy.replace(/_/g, " ")}`}
-				</button>
+				</Button>
 			</DialogFooter>
 		</Dialog>
 	);

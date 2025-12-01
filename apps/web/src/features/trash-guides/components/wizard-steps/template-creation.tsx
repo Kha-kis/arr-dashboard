@@ -8,10 +8,18 @@ import { ChevronLeft, Download, CheckCircle, Info, Save, Edit2, TrendingUp, Tren
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { apiRequest } from "../../../../lib/api-client/base";
 
+/**
+ * Wizard-specific profile type that allows undefined trashId for edit mode.
+ * In edit mode, templates don't persist the original TRaSH profile ID.
+ */
+type WizardSelectedProfile = Omit<QualityProfileSummary, 'trashId'> & {
+	trashId?: string;
+};
+
 interface TemplateCreationProps {
 	serviceType: "RADARR" | "SONARR";
 	wizardState: {
-		selectedProfile: QualityProfileSummary;
+		selectedProfile: WizardSelectedProfile;
 		customFormatSelections: Record<string, {
 			selected: boolean;
 			scoreOverride?: number;
@@ -42,6 +50,9 @@ export const TemplateCreation = ({
 	const importMutation = useImportQualityProfileWizard();
 	const updateMutation = useUpdateQualityProfileTemplate();
 
+	// Only fetch profile details when we have a valid trashId (not in edit mode)
+	// In edit mode, trashId is undefined and we don't need profile data from TRaSH Guides
+	const hasTrashId = !!wizardState.selectedProfile.trashId;
 	const { data, isLoading } = useQuery({
 		queryKey: ["quality-profile-details", serviceType, wizardState.selectedProfile.trashId],
 		queryFn: async () => {
@@ -49,6 +60,8 @@ export const TemplateCreation = ({
 				`/api/trash-guides/quality-profiles/${serviceType}/${wizardState.selectedProfile.trashId}`,
 			);
 		},
+		// Skip fetch in edit mode (no trashId) - we already have all data from the template
+		enabled: hasTrashId && !isEditMode,
 	});
 
 	const handleSubmit = async () => {
@@ -88,6 +101,9 @@ export const TemplateCreation = ({
 				});
 			} else {
 				// Create new template (trashId required to fetch from TRaSH Guides)
+				if (!wizardState.selectedProfile.trashId) {
+					throw new Error("Cannot create template: missing TRaSH profile ID");
+				}
 				await importMutation.mutateAsync({
 					serviceType,
 					trashId: wizardState.selectedProfile.trashId,
@@ -105,7 +121,8 @@ export const TemplateCreation = ({
 		}
 	};
 
-	if (isLoading) {
+	// Only show loading state when actually fetching (not in edit mode)
+	if (isLoading && !isEditMode) {
 		return (
 			<div className="space-y-4">
 				<Skeleton className="h-32" />

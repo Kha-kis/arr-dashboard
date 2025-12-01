@@ -74,22 +74,22 @@ export class DeploymentExecutorService {
 		let deploymentHistoryId: string | null = null;
 
 		try {
-			// Get template
+			// Get template with ownership verification
 			const template = await this.prisma.trashTemplate.findUnique({
-				where: { id: templateId },
+				where: { id: templateId, userId },
 			});
 
 			if (!template) {
-				throw new Error("Template not found");
+				throw new Error("Template not found or access denied");
 			}
 
-			// Get instance
+			// Get instance with ownership verification
 			const instance = await this.prisma.serviceInstance.findUnique({
-				where: { id: instanceId },
+				where: { id: instanceId, userId },
 			});
 
 			if (!instance) {
-				throw new Error("Instance not found");
+				throw new Error("Instance not found or access denied");
 			}
 
 			// Validate service type match
@@ -101,28 +101,34 @@ export class DeploymentExecutorService {
 
 			// Create backup snapshot before deployment
 			const preDeploymentCFs = await this.getExistingCustomFormats(instance);
-			const backup = await this.prisma.trashBackup.create({
-				data: {
-					instanceId,
-					userId,
-					backupData: JSON.stringify(preDeploymentCFs),
-				},
-			});
 
-			// Create deployment history record (TrashSyncHistory for legacy compatibility)
-			const history = await this.prisma.trashSyncHistory.create({
-				data: {
-					instanceId,
-					templateId,
-					userId,
-					syncType: "MANUAL",
-					status: "IN_PROGRESS",
-					backupId: backup.id,
-					appliedConfigs: "[]",
-					configsApplied: 0,
-					configsFailed: 0,
-					configsSkipped: 0,
-				},
+			// Use transaction to ensure backup and history records are created atomically
+			const { backup, history } = await this.prisma.$transaction(async (tx) => {
+				const backupRecord = await tx.trashBackup.create({
+					data: {
+						instanceId,
+						userId,
+						backupData: JSON.stringify(preDeploymentCFs),
+					},
+				});
+
+				// Create deployment history record (TrashSyncHistory for legacy compatibility)
+				const historyRecord = await tx.trashSyncHistory.create({
+					data: {
+						instanceId,
+						templateId,
+						userId,
+						syncType: "MANUAL",
+						status: "IN_PROGRESS",
+						backupId: backupRecord.id,
+						appliedConfigs: "[]",
+						configsApplied: 0,
+						configsFailed: 0,
+						configsSkipped: 0,
+					},
+				});
+
+				return { backup: backupRecord, history: historyRecord };
 			});
 			historyId = history.id;
 
@@ -699,13 +705,13 @@ export class DeploymentExecutorService {
 		syncStrategy?: "auto" | "manual" | "notify",
 		instanceSyncStrategies?: Record<string, "auto" | "manual" | "notify">,
 	): Promise<BulkDeploymentResult> {
-		// Get template info
+		// Get template info with ownership verification
 		const template = await this.prisma.trashTemplate.findUnique({
-			where: { id: templateId },
+			where: { id: templateId, userId },
 		});
 
 		if (!template) {
-			throw new Error("Template not found");
+			throw new Error("Template not found or access denied");
 		}
 
 		// Deploy to all instances in parallel using Promise.allSettled for error isolation

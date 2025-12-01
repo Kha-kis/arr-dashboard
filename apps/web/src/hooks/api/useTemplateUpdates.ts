@@ -108,6 +108,9 @@ export function useProcessAutoUpdates() {
 
 /**
  * Hook to manually trigger an update check
+ *
+ * The backend waits for the update check to complete before responding,
+ * so we can immediately invalidate queries once we receive the response.
  */
 export function useTriggerUpdateCheck() {
 	const queryClient = useQueryClient();
@@ -115,18 +118,17 @@ export function useTriggerUpdateCheck() {
 	return useMutation({
 		mutationFn: triggerUpdateCheck,
 		onSuccess: () => {
-			// Wait a moment for the check to complete, then refresh
-			setTimeout(() => {
-				queryClient.invalidateQueries({
-					queryKey: ["trash-guides", "updates"],
-				});
-				queryClient.invalidateQueries({
-					queryKey: ["trash-guides", "updates", "attention"],
-				});
-				queryClient.invalidateQueries({
-					queryKey: ["trash-guides", "updates", "scheduler", "status"],
-				});
-			}, 2000);
+			// The backend waits for the update check to complete before responding,
+			// so we can immediately invalidate queries without a timeout
+			queryClient.invalidateQueries({
+				queryKey: ["trash-guides", "updates"],
+			});
+			queryClient.invalidateQueries({
+				queryKey: ["trash-guides", "updates", "attention"],
+			});
+			queryClient.invalidateQueries({
+				queryKey: ["trash-guides", "updates", "scheduler", "status"],
+			});
 		},
 	});
 }

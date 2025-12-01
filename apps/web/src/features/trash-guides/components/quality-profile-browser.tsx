@@ -68,25 +68,25 @@ export const QualityProfileBrowser = ({
 			aria-modal="true"
 			aria-labelledby="quality-profile-browser-title"
 		>
-			<div className="relative w-full max-w-4xl max-h-[90vh] overflow-hidden rounded-xl border border-white/10 bg-slate-900 shadow-xl">
+			<div className="relative w-full max-w-4xl max-h-[90vh] overflow-hidden rounded-xl border border-border bg-bg-subtle shadow-xl">
 				{/* Header */}
-				<div className="sticky top-0 z-10 flex items-center justify-between border-b border-white/10 bg-slate-900/95 p-6 backdrop-blur">
+				<div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-bg-subtle/95 p-6 backdrop-blur">
 					<div>
-						<h2 id="quality-profile-browser-title" className="text-xl font-semibold text-white">
+						<h2 id="quality-profile-browser-title" className="text-xl font-semibold text-fg">
 							Browse TRaSH Quality Profiles
 						</h2>
-						<p className="mt-1 text-sm text-white/60">
+						<p className="mt-1 text-sm text-fg-muted">
 							Select a quality profile to import as a template for {serviceType}
 						</p>
 					</div>
-					<button
-						type="button"
+					<Button
+						variant="ghost"
+						size="sm"
 						onClick={onClose}
 						aria-label="Close dialog"
-						className="rounded p-1 text-white/60 hover:bg-white/10 hover:text-white"
 					>
 						<X className="h-5 w-5" />
-					</button>
+					</Button>
 				</div>
 
 				{/* Content */}
@@ -139,11 +139,11 @@ export const QualityProfileBrowser = ({
 											key={profile.trashId}
 											type="button"
 											onClick={() => handleSelectProfile(profile)}
-											className="group relative rounded-xl border border-white/10 bg-white/5 p-6 text-left transition hover:border-primary hover:bg-white/10"
+											className="group relative rounded-xl border border-border bg-bg-subtle/50 p-6 text-left transition hover:border-primary hover:bg-bg-hover"
 										>
 											<div className="space-y-3">
 												<div className="flex items-start justify-between">
-													<h3 className="font-medium text-white">{profile.name}</h3>
+													<h3 className="font-medium text-fg">{profile.name}</h3>
 													{profile.scoreSet && (
 														<span className="rounded bg-primary/20 px-2 py-1 text-xs text-primary">
 															{profile.scoreSet}
@@ -153,12 +153,12 @@ export const QualityProfileBrowser = ({
 
 												{profile.description && (
 													<p
-														className="text-sm text-white/70 line-clamp-2"
+														className="text-sm text-fg-muted line-clamp-2"
 														dangerouslySetInnerHTML={createSanitizedHtml(profile.description)}
 													/>
 												)}
 
-												<div className="flex flex-wrap gap-3 text-xs text-white/60">
+												<div className="flex flex-wrap gap-3 text-xs text-fg-muted">
 													<span className="inline-flex items-center gap-1">
 														<Star className="h-3 w-3" />
 														{profile.customFormatCount} formats
@@ -176,12 +176,12 @@ export const QualityProfileBrowser = ({
 												</div>
 
 												<div className="flex items-center justify-between text-xs">
-													<span className="text-white/40">Cutoff: {profile.cutoff}</span>
+													<span className="text-fg-muted">Cutoff: {profile.cutoff}</span>
 													<span
 														className={`rounded px-2 py-1 ${
 															profile.upgradeAllowed
 																? "bg-green-500/20 text-green-300"
-																: "bg-white/10 text-white/60"
+																: "bg-bg-hover text-fg-muted"
 														}`}
 													>
 														{profile.upgradeAllowed ? "Upgrades On" : "Upgrades Off"}
@@ -193,29 +193,29 @@ export const QualityProfileBrowser = ({
 								</div>
 							) : (
 								<div className="space-y-4">
-									<div className="rounded-xl border border-white/10 bg-white/5 p-6">
+									<div className="rounded-xl border border-border bg-bg-subtle/50 p-6">
 										<div className="mb-4 flex items-center justify-between">
 											<div>
-												<h3 className="text-lg font-medium text-white">
+												<h3 className="text-lg font-medium text-fg">
 													{selectedProfile.name}
 												</h3>
-												<p className="mt-1 text-sm text-white/60">
+												<p className="mt-1 text-sm text-fg-muted">
 													{selectedProfile.customFormatCount} Custom Formats •{" "}
 													{selectedProfile.qualityCount} Quality Settings
 												</p>
 											</div>
-											<button
-												type="button"
+											<Button
+												variant="secondary"
+												size="sm"
 												onClick={() => setSelectedProfile(null)}
-												className="rounded bg-white/10 px-3 py-1 text-sm text-white hover:bg-white/20"
 											>
 												Change Selection
-											</button>
+											</Button>
 										</div>
 
 										{selectedProfile.description && (
 											<p
-												className="text-sm text-white/70"
+												className="text-sm text-fg-muted"
 												dangerouslySetInnerHTML={createSanitizedHtml(selectedProfile.description)}
 											/>
 										)}
@@ -223,8 +223,8 @@ export const QualityProfileBrowser = ({
 
 									<div className="space-y-4">
 										<div>
-											<label className="mb-2 block text-sm font-medium text-white">
-												Template Name <span className="text-red-400">*</span>
+											<label className="mb-2 block text-sm font-medium text-fg">
+												Template Name <span className="text-danger">*</span>
 											</label>
 											<Input
 												type="text"
@@ -236,7 +236,7 @@ export const QualityProfileBrowser = ({
 										</div>
 
 										<div>
-											<label className="mb-2 block text-sm font-medium text-white">
+											<label className="mb-2 block text-sm font-medium text-fg">
 												Description (Optional)
 											</label>
 											<textarea
@@ -255,20 +255,16 @@ export const QualityProfileBrowser = ({
 				</div>
 
 				{/* Footer */}
-				<div className="sticky bottom-0 flex justify-end gap-2 border-t border-white/10 bg-slate-900/95 p-6 backdrop-blur">
-					<button
-						type="button"
-						onClick={onClose}
-						className="rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
-					>
+				<div className="sticky bottom-0 flex justify-end gap-2 border-t border-border bg-bg-subtle/95 p-6 backdrop-blur">
+					<Button variant="secondary" onClick={onClose}>
 						Cancel
-					</button>
+					</Button>
 					{selectedProfile && (
-						<button
-							type="button"
+						<Button
+							variant="primary"
 							onClick={handleImport}
 							disabled={!templateName.trim() || importMutation.isPending}
-							className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary/90 disabled:opacity-50"
+							className="gap-2"
 						>
 							{importMutation.isPending ? (
 								<>
@@ -281,7 +277,7 @@ export const QualityProfileBrowser = ({
 									Import as Template
 								</>
 							)}
-						</button>
+						</Button>
 					)}
 				</div>
 			</div>

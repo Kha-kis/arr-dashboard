@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import type { TrashTemplate, TemplateConfig, TrashCustomFormat, TrashCustomFormatGroup } from "@arr/shared";
 import { useCreateTemplate, useUpdateTemplate } from "../../../hooks/api/useTemplates";
 import { useTrashCacheEntries } from "../../../hooks/api/useTrashCache";
-import { Alert, AlertDescription, Input } from "../../../components/ui";
+import { Alert, AlertDescription, Input, Button } from "../../../components/ui";
 import { X, Save, Plus, Minus, Settings } from "lucide-react";
 import { ConditionEditor } from "./condition-editor";
 
@@ -190,19 +190,19 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 
 	return (
 		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-			<div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-white/10 bg-slate-900 p-6">
+			<div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-bg-subtle p-6">
 				{/* Header */}
-				<div className="mb-6 flex items-center justify-between border-b border-white/10 pb-4">
-					<h2 className="text-2xl font-semibold text-white">
+				<div className="mb-6 flex items-center justify-between border-b border-border pb-4">
+					<h2 className="text-2xl font-semibold text-fg">
 						{template ? "Edit Template" : "Create Template"}
 					</h2>
-					<button
-						type="button"
+					<Button
+						variant="ghost"
+						size="sm"
 						onClick={onClose}
-						className="rounded p-1 text-white/60 hover:bg-white/10 hover:text-white"
 					>
 						<X className="h-5 w-5" />
-					</button>
+					</Button>
 				</div>
 
 				{/* Error Alert */}
@@ -218,7 +218,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 					{/* Basic Info */}
 					<div className="space-y-4">
 						<div>
-							<label className="mb-2 block text-sm font-medium text-white">Template Name</label>
+							<label className="mb-2 block text-sm font-medium text-fg">Template Name</label>
 							<Input
 								type="text"
 								value={name}
@@ -229,7 +229,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 						</div>
 
 						<div>
-							<label className="mb-2 block text-sm font-medium text-white">Description (Optional)</label>
+							<label className="mb-2 block text-sm font-medium text-fg">Description (Optional)</label>
 							<textarea
 								value={description}
 								onChange={(e) => setDescription(e.target.value)}
@@ -241,30 +241,22 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 
 						{!template && (
 							<div>
-								<label className="mb-2 block text-sm font-medium text-white">Service Type</label>
+								<label className="mb-2 block text-sm font-medium text-fg">Service Type</label>
 								<div className="flex gap-4">
-									<button
-										type="button"
+									<Button
+										variant={serviceType === "RADARR" ? "primary" : "secondary"}
 										onClick={() => setServiceType("RADARR")}
-										className={`flex-1 rounded-lg border px-4 py-2 text-sm font-medium transition ${
-											serviceType === "RADARR"
-												? "border-primary bg-primary text-white"
-												: "border-white/20 bg-white/10 text-white/70 hover:bg-white/20"
-										}`}
+										className="flex-1"
 									>
 										Radarr
-									</button>
-									<button
-										type="button"
+									</Button>
+									<Button
+										variant={serviceType === "SONARR" ? "primary" : "secondary"}
 										onClick={() => setServiceType("SONARR")}
-										className={`flex-1 rounded-lg border px-4 py-2 text-sm font-medium transition ${
-											serviceType === "SONARR"
-												? "border-primary bg-primary text-white"
-												: "border-white/20 bg-white/10 text-white/70 hover:bg-white/20"
-										}`}
+										className="flex-1"
 									>
 										Sonarr
-									</button>
+									</Button>
 								</div>
 							</div>
 						)}
@@ -272,72 +264,74 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 
 					{/* Custom Formats */}
 					<div className="space-y-3">
-						<h3 className="text-lg font-medium text-white">Custom Formats</h3>
+						<h3 className="text-lg font-medium text-fg">Custom Formats</h3>
 						{availableFormats.length === 0 ? (
-							<p className="text-sm text-white/60">No custom formats available in cache. Refresh cache first.</p>
+							<p className="text-sm text-fg-muted">No custom formats available in cache. Refresh cache first.</p>
 						) : (
-							<div className="space-y-2 max-h-64 overflow-y-auto rounded border border-white/10 bg-white/5 p-4">
+							<div className="space-y-2 max-h-64 overflow-y-auto rounded border border-border bg-bg-subtle/50 p-4">
 								{availableFormats.map((format) => {
 									const isSelected = selectedFormats.has(format.trash_id);
 									const settings = selectedFormats.get(format.trash_id);
 
 									return (
-										<div key={format.trash_id} className="space-y-2 rounded border border-white/10 bg-white/5 p-3">
+										<div key={format.trash_id} className="space-y-2 rounded border border-border bg-bg-subtle/50 p-3">
 											<div className="flex items-center justify-between">
 												<label className="flex items-center gap-2">
 													<input
 														type="checkbox"
 														checked={isSelected}
 														onChange={() => handleToggleFormat(format.trash_id, format)}
-														className="h-4 w-4 rounded border-white/20 bg-white/10 text-primary focus:ring-primary"
+														className="h-4 w-4 rounded border-border bg-bg-subtle text-primary focus:ring-primary"
 													/>
-													<span className="text-sm font-medium text-white">{format.name}</span>
+													<span className="text-sm font-medium text-fg">{format.name}</span>
 												</label>
 												{isSelected && (
 													<div className="flex items-center gap-2">
-														<button
-															type="button"
+														<Button
+															variant="secondary"
+															size="sm"
 															onClick={() => {
 																setConditionEditorFormat({ trashId: format.trash_id, format });
 															}}
-															className="inline-flex items-center gap-1 rounded bg-white/10 px-2 py-1 text-xs font-medium text-white transition hover:bg-white/20"
 															title="Advanced condition editing"
+															className="gap-1"
 														>
 															<Settings className="h-3 w-3" />
 															Advanced
-														</button>
-														<label className="text-xs text-white/60">Score:</label>
+														</Button>
+														<label className="text-xs text-fg-muted">Score:</label>
 														<input
 															type="number"
 															value={settings?.scoreOverride ?? ""}
 															onChange={(e) => handleScoreChange(format.trash_id, e.target.value ? Number(e.target.value) : undefined)}
 															placeholder="Default"
-															className="w-20 rounded border border-white/20 bg-white/10 px-2 py-1 text-xs text-white"
+															className="w-20 rounded border border-border bg-bg-subtle px-2 py-1 text-xs text-fg"
 														/>
-														<button
-															type="button"
+														<Button
+															variant="danger"
+															size="sm"
 															onClick={() => handleToggleFormat(format.trash_id, format)}
-															className="inline-flex items-center gap-1 rounded bg-red-500/20 px-2 py-1 text-xs font-medium text-red-300 transition hover:bg-red-500/30"
 															title="Remove this custom format"
+															className="gap-1"
 														>
 															<Minus className="h-3 w-3" />
 															Remove
-														</button>
+														</Button>
 													</div>
 												)}
 											</div>
 											{isSelected && format.specifications.length > 0 && (
 												<div className="ml-6 space-y-1">
-													<p className="text-xs font-medium text-white/70">Conditions:</p>
+													<p className="text-xs font-medium text-fg-muted">Conditions:</p>
 													{format.specifications.map((spec) => (
 														<label key={spec.name} className="flex items-center gap-2">
 															<input
 																type="checkbox"
 																checked={settings?.conditionsEnabled[spec.name] !== false}
 																onChange={() => handleToggleCondition(format.trash_id, spec.name)}
-																className="h-3 w-3 rounded border-white/20 bg-white/10 text-primary focus:ring-primary"
+																className="h-3 w-3 rounded border-border bg-bg-subtle text-primary focus:ring-primary"
 															/>
-															<span className="text-xs text-white/60">{spec.name}</span>
+															<span className="text-xs text-fg-muted">{spec.name}</span>
 														</label>
 													))}
 												</div>
@@ -351,21 +345,21 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 
 					{/* Custom Format Groups */}
 					<div className="space-y-3">
-						<h3 className="text-lg font-medium text-white">Custom Format Groups</h3>
+						<h3 className="text-lg font-medium text-fg">Custom Format Groups</h3>
 						{availableGroups.length === 0 ? (
-							<p className="text-sm text-white/60">No CF groups available in cache.</p>
+							<p className="text-sm text-fg-muted">No CF groups available in cache.</p>
 						) : (
-							<div className="space-y-2 max-h-48 overflow-y-auto rounded border border-white/10 bg-white/5 p-4">
+							<div className="space-y-2 max-h-48 overflow-y-auto rounded border border-border bg-bg-subtle/50 p-4">
 								{availableGroups.map((group) => (
 									<label key={group.trash_id} className="flex items-center gap-2">
 										<input
 											type="checkbox"
 											checked={selectedGroups.has(group.trash_id)}
 											onChange={() => handleToggleGroup(group.trash_id)}
-											className="h-4 w-4 rounded border-white/20 bg-white/10 text-primary focus:ring-primary"
+											className="h-4 w-4 rounded border-border bg-bg-subtle text-primary focus:ring-primary"
 										/>
-										<span className="text-sm text-white">{group.name}</span>
-										<span className="text-xs text-white/40">({group.custom_formats.length} formats)</span>
+										<span className="text-sm text-fg">{group.name}</span>
+										<span className="text-xs text-fg-muted">({group.custom_formats.length} formats)</span>
 									</label>
 								))}
 							</div>
@@ -373,23 +367,19 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 					</div>
 
 					{/* Actions */}
-					<div className="flex justify-end gap-2 border-t border-white/10 pt-4">
-						<button
-							type="button"
-							onClick={onClose}
-							className="rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
-						>
+					<div className="flex justify-end gap-2 border-t border-border pt-4">
+						<Button variant="secondary" onClick={onClose}>
 							Cancel
-						</button>
-						<button
-							type="button"
+						</Button>
+						<Button
+							variant="primary"
 							onClick={handleSave}
 							disabled={!name.trim() || mutation.isPending}
-							className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary/90 disabled:opacity-50"
+							className="gap-2"
 						>
 							<Save className="h-4 w-4" />
 							{mutation.isPending ? "Saving..." : template ? "Update Template" : "Create Template"}
-						</button>
+						</Button>
 					</div>
 				</div>
 
@@ -403,15 +393,16 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 
 					return (
 						<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-							<div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-white/20 bg-gradient-to-br from-slate-900 to-slate-800 p-6">
+							<div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-bg-subtle p-6">
 								{/* Close button */}
-								<button
-									type="button"
+								<Button
+									variant="ghost"
+									size="sm"
 									onClick={() => setConditionEditorFormat(null)}
-									className="absolute top-4 right-4 rounded p-1 text-white/60 hover:bg-white/10 hover:text-white"
+									className="absolute top-4 right-4"
 								>
 									<X className="h-5 w-5" />
-								</button>
+								</Button>
 
 								<ConditionEditor
 									customFormatId={conditionEditorFormat.trashId}

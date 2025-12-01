@@ -74,9 +74,9 @@ export const StatisticsClient = () => {
 					</AlertTitle>
 					<AlertDescription>
 						<div className="mt-2 space-y-3">
-							{allHealthIssues.map((issue, index) => (
+							{allHealthIssues.map((issue) => (
 								<div
-									key={index}
+									key={`${issue.service}-${issue.instanceId}-${issue.type}-${issue.message}`}
 									className="flex flex-col gap-2 border-b border-white/10 pb-3 last:border-0 last:pb-0"
 								>
 									<div className="flex items-start gap-3">

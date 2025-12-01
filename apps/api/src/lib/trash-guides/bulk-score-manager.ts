@@ -118,6 +118,76 @@ export class BulkScoreManager {
 			templateMappings.map(mapping => [mapping.qualityProfileId, mapping.templateId])
 		);
 
+		// Fetch templates to get TRaSH default scores
+		const templateIds = [...new Set(templateMappings.map(m => m.templateId))];
+		const templates = templateIds.length > 0 ? await this.prisma.trashTemplate.findMany({
+			where: {
+				id: { in: templateIds },
+			},
+			select: {
+				id: true,
+				configData: true,
+			},
+		}) : [];
+
+		// Build a map of CF name → TRaSH default score from templates
+		// Key: CF name, Value: { trashId, defaultScore, scoreSet → score }
+		interface TrashScoreInfo {
+			trashId: string;
+			defaultScore: number;
+			scoreSetScores: Record<string, number>;
+		}
+		const trashDefaultScoresMap = new Map<string, TrashScoreInfo>();
+
+		for (const template of templates) {
+			try {
+				const config = JSON.parse(template.configData) as TemplateConfig;
+				const scoreSet = config.qualityProfile?.trash_score_set;
+
+				for (const cf of config.customFormats || []) {
+					// Get the original config which may have trash_scores
+					// Cast through unknown as TrashCustomFormat interface doesn't include trash_scores
+					const originalConfig = cf.originalConfig as unknown as {
+						trash_scores?: Record<string, number>;
+						score?: number;
+						[key: string]: unknown;
+					};
+
+					if (!trashDefaultScoresMap.has(cf.name)) {
+						// Calculate default score: trash_scores[scoreSet] > trash_scores.default > score > 0
+						let defaultScore = 0;
+						const scoreSetScores: Record<string, number> = {};
+
+						if (originalConfig?.trash_scores) {
+							// Store all available score sets
+							for (const [key, value] of Object.entries(originalConfig.trash_scores)) {
+								if (typeof value === 'number') {
+									scoreSetScores[key] = value;
+								}
+							}
+
+							// Calculate the default score based on priority
+							if (scoreSet && originalConfig.trash_scores[scoreSet] !== undefined) {
+								defaultScore = Number(originalConfig.trash_scores[scoreSet]);
+							} else if (originalConfig.trash_scores.default !== undefined) {
+								defaultScore = Number(originalConfig.trash_scores.default);
+							}
+						} else if (originalConfig?.score !== undefined) {
+							defaultScore = Number(originalConfig.score);
+						}
+
+						trashDefaultScoresMap.set(cf.name, {
+							trashId: cf.trashId,
+							defaultScore,
+							scoreSetScores,
+						});
+					}
+				}
+			} catch (error) {
+				console.error(`Failed to parse template ${template.id} config:`, error);
+			}
+		}
+
 		// Step 2: Collect all unique custom formats across all instances
 		// Key: CF name, Value: CustomFormatScoreEntry
 		const cfMap = new Map<string, CustomFormatScoreEntry>();
@@ -182,6 +252,10 @@ export class BulkScoreManager {
 					cfMap.set(cfKey, cfEntry);
 
 					// For newly created CF entries, add score entries for ALL quality profiles from ALL instances
+					// Get the TRaSH default score for this CF (if available from templates)
+					const trashScoreInfo = trashDefaultScoresMap.get(cfName);
+					const trashDefaultScore = trashScoreInfo?.defaultScore ?? 0;
+
 					for (const profileRef of allQualityProfiles) {
 						const isTemplateManaged = templateMappingMap.has(profileRef.profileId);
 						const templateScore: TemplateScore = {
@@ -190,7 +264,7 @@ export class BulkScoreManager {
 							qualityProfileName: profileRef.profileName,
 							scoreSet: "default",
 							currentScore: 0, // Will be updated if this profile has this CF
-							defaultScore: 0,
+							defaultScore: trashDefaultScore, // TRaSH Guides default score
 							isModified: false,
 							isTemplateManaged,
 						};
@@ -213,7 +287,11 @@ export class BulkScoreManager {
 					);
 					if (existingEntry) {
 						existingEntry.currentScore = score;
-						existingEntry.defaultScore = score;
+						// defaultScore is already set to TRaSH default; only update isModified
+						existingEntry.isModified = score !== existingEntry.defaultScore;
+						if (existingEntry.isModified) {
+							cfEntry.hasAnyModifications = true;
+						}
 					}
 				}
 			}

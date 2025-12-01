@@ -209,14 +209,19 @@ export const convertRecommendationToSearchResult = (
 					votes: item.voteCount,
 				}
 			: undefined,
-		// Create fake instance states - all available since we don't know which instances have it
-		instanceStates: relevantInstances.map((instance) => ({
-			instanceId: instance.id,
-			instanceName: instance.label,
-			service: instance.service as "sonarr" | "radarr",
-			exists: false,
-			monitored: false,
-			hasFile: false,
-		})),
+		// Initialize instance states as "not existing" - actual status will be fetched separately
+		instanceStates: relevantInstances
+			.filter(
+				(instance): instance is typeof instance & { service: "sonarr" | "radarr" } =>
+					instance.service === "sonarr" || instance.service === "radarr"
+			)
+			.map((instance) => ({
+				instanceId: instance.id,
+				instanceName: instance.label,
+				service: instance.service,
+				exists: false,
+				monitored: false,
+				hasFile: false,
+			})),
 	};
 };

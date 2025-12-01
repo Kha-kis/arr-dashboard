@@ -76,12 +76,15 @@ export function VisualConditionBuilder({
 	]);
 	const [logicOperator, setLogicOperator] = useState<"AND" | "OR">("AND");
 
+	// Positional operators that cannot use lookahead approach
+	const POSITIONAL_OPERATORS = ["startsWith", "endsWith", "equals"];
+
 	// Generate regex pattern from conditions
-	const generatedPattern = useMemo(() => {
+	const { generatedPattern, hasPositionalAnd } = useMemo(() => {
 		const validConditions = conditions.filter(c => c.value.trim() || c.operator === "isEmpty" || c.operator === "isNotEmpty");
 
 		if (validConditions.length === 0) {
-			return "";
+			return { generatedPattern: "", hasPositionalAnd: false };
 		}
 
 		const patterns = validConditions.map(condition => {
@@ -93,16 +96,88 @@ export function VisualConditionBuilder({
 		});
 
 		if (patterns.length === 1) {
-			return patterns[0];
+			return { generatedPattern: patterns[0], hasPositionalAnd: false };
 		}
 
 		// Combine with AND/OR logic
 		if (logicOperator === "AND") {
-			// For AND, use positive lookahead for each condition
-			return patterns.map(p => `(?=.*${p})`).join("") + ".*";
+			// Check if any condition uses positional operators
+			const hasPositional = validConditions.some(c => POSITIONAL_OPERATORS.includes(c.operator));
+
+			if (hasPositional) {
+				// Cannot synthesize a single regex for AND with positional operators
+				// Build a composed pattern when possible, otherwise signal that function-based matching is needed
+
+				// Analyze the conditions to see if we can compose a valid anchored pattern
+				const startsWithConditions = validConditions.filter(c => c.operator === "startsWith");
+				const endsWithConditions = validConditions.filter(c => c.operator === "endsWith");
+				const equalsConditions = validConditions.filter(c => c.operator === "equals");
+				const containsConditions = validConditions.filter(c => c.operator === "contains");
+				const otherConditions = validConditions.filter(c =>
+					!["startsWith", "endsWith", "equals", "contains"].includes(c.operator)
+				);
+
+				// If multiple startsWith, endsWith, or equals, or mixed equals with others - impossible to AND
+				if (
+					startsWithConditions.length > 1 ||
+					endsWithConditions.length > 1 ||
+					equalsConditions.length > 1 ||
+					(equalsConditions.length > 0 && (startsWithConditions.length > 0 || endsWithConditions.length > 0 || containsConditions.length > 0)) ||
+					otherConditions.length > 0
+				) {
+					// Cannot synthesize - return a marker pattern that signals function-based matching needed
+					return { generatedPattern: patterns.join(" && "), hasPositionalAnd: true };
+				}
+
+				// Build composed pattern: ^startsWith.*contains.*contains.*endsWith$
+				const getCaseFlag = (conditions: Condition[]) => {
+					// If any condition is case-insensitive, use (?i)
+					return conditions.some(c => !c.caseSensitive) ? "(?i)" : "";
+				};
+
+				let composed = "";
+				const allConditions = [...startsWithConditions, ...containsConditions, ...endsWithConditions];
+				const caseFlag = getCaseFlag(allConditions);
+
+				if (caseFlag) {
+					composed = caseFlag;
+				}
+
+				// Start anchor if startsWith present
+				const startsWithCond = startsWithConditions[0];
+				if (startsWithCond) {
+					const escapedValue = startsWithCond.value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+					composed += `^${escapedValue}`;
+				} else {
+					composed += "^";
+				}
+
+				// Add .* and contains patterns
+				for (const c of containsConditions) {
+					const escapedValue = c.value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+					composed += `.*${escapedValue}`;
+				}
+
+				// End anchor if endsWith present
+				const endsWithCond = endsWithConditions[0];
+				if (endsWithCond) {
+					const escapedValue = endsWithCond.value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+					composed += `.*${escapedValue}$`;
+				} else {
+					composed += ".*$";
+				}
+
+				return { generatedPattern: composed, hasPositionalAnd: false };
+			}
+
+			// No positional operators - safe to use lookahead approach
+			return {
+				generatedPattern: patterns.map(p => `(?=.*${p})`).join("") + ".*",
+				hasPositionalAnd: false
+			};
 		} else {
 			// For OR, just join with pipe
-			return patterns.join("|");
+			return { generatedPattern: patterns.join("|"), hasPositionalAnd: false };
 		}
 	}, [conditions, logicOperator]);
 
@@ -330,6 +405,17 @@ export function VisualConditionBuilder({
 					<code className="text-xs font-mono text-fg break-all">
 						{generatedPattern}
 					</code>
+					{hasPositionalAnd && (
+						<Alert className="mt-3">
+							<Info className="h-4 w-4" />
+							<AlertDescription className="text-xs">
+								<strong>Note:</strong> This combination of AND conditions with positional operators
+								(Starts With, Ends With, Equals) cannot be expressed as a single regex pattern.
+								The pattern shown uses &quot;&amp;&amp;&quot; notation to indicate multiple conditions
+								that must all match. Consider using OR logic, or simplify to compatible conditions.
+							</AlertDescription>
+						</Alert>
+					)}
 				</div>
 			)}
 
@@ -342,7 +428,7 @@ export function VisualConditionBuilder({
 				)}
 				<Button
 					onClick={applyPattern}
-					disabled={!generatedPattern}
+					disabled={!generatedPattern || hasPositionalAnd}
 				>
 					Apply Pattern
 				</Button>

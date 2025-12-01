@@ -7,7 +7,7 @@ import {
 	useDeleteTemplate,
 	useDuplicateTemplate,
 } from "../../../hooks/api/useTemplates";
-import { Alert, AlertTitle, AlertDescription, EmptyState, Skeleton } from "../../../components/ui";
+import { Alert, AlertTitle, AlertDescription, EmptyState, Skeleton, Button } from "../../../components/ui";
 import { AlertCircle, Plus, Download, Copy, Trash2, Edit, FileText, RefreshCw, Star, Rocket, Layers, X } from "lucide-react";
 import { exportTemplate } from "../../../lib/api-client/templates";
 import { unlinkTemplateFromInstance } from "../../../lib/api-client/trash-guides";
@@ -209,54 +209,54 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 		<div className="space-y-4">
 			{/* Header with Title and Actions */}
 			<div className="flex items-center justify-between">
-				<h2 className="text-xl font-semibold text-white">
+				<h2 className="text-xl font-semibold text-fg">
 					Templates {serviceType ? `(${serviceType})` : ""}
 				</h2>
 				<div className="flex gap-2">
 					{/* Primary Actions: TRaSH Guides Quality Profile Wizard */}
-					<button
-						type="button"
+					<Button
+						variant="primary"
 						onClick={() => onBrowseQualityProfiles("RADARR")}
-						className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary/90"
 						title="Import quality profile from TRaSH Guides for Radarr using the wizard"
+						className="gap-2"
 					>
 						<Star className="h-4 w-4" />
 						Radarr Profiles
-					</button>
-					<button
-						type="button"
+					</Button>
+					<Button
+						variant="primary"
 						onClick={() => onBrowseQualityProfiles("SONARR")}
-						className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary/90"
 						title="Import quality profile from TRaSH Guides for Sonarr using the wizard"
+						className="gap-2"
 					>
 						<Star className="h-4 w-4" />
 						Sonarr Profiles
-					</button>
+					</Button>
 
 					{/* Secondary Actions: Manual/Import */}
-					<button
-						type="button"
+					<Button
+						variant="secondary"
 						onClick={() => setImportModal(true)}
-						className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
 						title="Import an existing template from JSON file with validation"
+						className="gap-2"
 					>
 						<Download className="h-4 w-4" />
 						Import JSON
-					</button>
-					<button
-						type="button"
+					</Button>
+					<Button
+						variant="secondary"
 						onClick={onCreateNew}
-						className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
 						title="Create a custom template manually (advanced)"
+						className="gap-2"
 					>
 						<Plus className="h-4 w-4" />
 						Custom Template
-					</button>
+					</Button>
 				</div>
 			</div>
 
 			{/* Search, Filter, and Sort Controls */}
-			<div className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+			<div className="flex flex-col gap-3 rounded-lg border border-border bg-bg-subtle/50 p-4 sm:flex-row sm:items-center sm:justify-between">
 				{/* Search Input */}
 				<div className="flex-1 max-w-md">
 					<div className="relative">
@@ -265,10 +265,10 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 							placeholder="Search templates by name or description..."
 							value={searchInput}
 							onChange={(e) => setSearchInput(e.target.value)}
-							className="w-full rounded-lg border border-white/20 bg-white/10 px-4 py-2 pl-10 text-sm text-white placeholder:text-white/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+							className="w-full rounded-lg border border-border bg-bg-subtle px-4 py-2 pl-10 text-sm text-fg placeholder:text-fg-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
 						/>
 						<svg
-							className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40"
+							className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted"
 							fill="none"
 							stroke="currentColor"
 							viewBox="0 0 24 24"
@@ -289,7 +289,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 					<select
 						value={sortBy}
 						onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-						className="rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+						className="rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
 					>
 						<option value="updatedAt">Last Updated</option>
 						<option value="createdAt">Date Created</option>
@@ -298,14 +298,14 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 					</select>
 
 					{/* Sort Order Toggle */}
-					<button
-						type="button"
+					<Button
+						variant="secondary"
+						size="sm"
 						onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-						className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/20"
 						title={sortOrder === "asc" ? "Sort ascending" : "Sort descending"}
 					>
 						{sortOrder === "asc" ? "↑" : "↓"}
-					</button>
+					</Button>
 				</div>
 			</div>
 
@@ -322,7 +322,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 			) : (
 				<>
 					{/* Results Counter */}
-					<div className="flex items-center justify-between text-sm text-white/60">
+					<div className="flex items-center justify-between text-sm text-fg-muted">
 						<span>
 							Showing {templates.length} template{templates.length !== 1 ? "s" : ""}
 							{debouncedSearch && ` matching "${debouncedSearch}"`}
@@ -333,30 +333,30 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 					{templates.map((template) => (
 						<article
 							key={template.id}
-							className="group relative rounded-xl border border-white/10 bg-white/5 p-6 transition hover:border-white/20 hover:bg-white/10"
+							className="group relative rounded-xl border border-border bg-bg-subtle/50 p-6 transition hover:border-border/80 hover:bg-bg-hover"
 						>
 							{/* Delete Confirmation Overlay */}
 							{deleteConfirm === template.id && (
 								<div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-xl bg-black/80 p-6">
-									<p className="text-center text-sm text-white">
+									<p className="text-center text-sm text-fg">
 										Delete &quot;{template.name}&quot;?
 									</p>
 									<div className="flex gap-2">
-										<button
-											type="button"
+										<Button
+											variant="danger"
+											size="sm"
 											onClick={() => handleDelete(template.id)}
 											disabled={deleteMutation.isPending}
-											className="rounded bg-red-500 px-3 py-1 text-sm font-medium text-white hover:bg-red-600 disabled:opacity-50"
 										>
 											{deleteMutation.isPending ? "Deleting..." : "Delete"}
-										</button>
-										<button
-											type="button"
+										</Button>
+										<Button
+											variant="secondary"
+											size="sm"
 											onClick={() => setDeleteConfirm(null)}
-											className="rounded bg-white/10 px-3 py-1 text-sm font-medium text-white hover:bg-white/20"
 										>
 											Cancel
-										</button>
+										</Button>
 									</div>
 								</div>
 							)}
@@ -364,34 +364,34 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 							{/* Duplicate Dialog Overlay */}
 							{duplicatingId === template.id && (
 								<div className="absolute inset-0 z-10 flex flex-col gap-3 rounded-xl bg-black/90 p-6">
-									<p className="text-sm text-white">Duplicate as:</p>
+									<p className="text-sm text-fg">Duplicate as:</p>
 									<input
 										type="text"
 										value={duplicateName}
 										onChange={(e) => setDuplicateName(e.target.value)}
 										placeholder="New template name"
-										className="rounded border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+										className="rounded border border-border bg-bg-subtle px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
 										autoFocus
 									/>
 									<div className="flex gap-2">
-										<button
-											type="button"
+										<Button
+											variant="primary"
+											size="sm"
 											onClick={() => handleDuplicate(template.id)}
 											disabled={duplicateMutation.isPending || !duplicateName.trim()}
-											className="rounded bg-primary px-3 py-1 text-sm font-medium text-white hover:bg-primary/90 disabled:opacity-50"
 										>
 											{duplicateMutation.isPending ? "Creating..." : "Create"}
-										</button>
-										<button
-											type="button"
+										</Button>
+										<Button
+											variant="secondary"
+											size="sm"
 											onClick={() => {
 												setDuplicatingId(null);
 												setDuplicateName("");
 											}}
-											className="rounded bg-white/10 px-3 py-1 text-sm font-medium text-white hover:bg-white/20"
 										>
 											Cancel
-										</button>
+										</Button>
 									</div>
 								</div>
 							)}
@@ -400,20 +400,20 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 							<div className="space-y-3">
 								<div className="flex items-start justify-between">
 									<div>
-										<h3 className="font-medium text-white">{template.name}</h3>
-										<p className="mt-1 text-xs text-white/60">{template.serviceType}</p>
+										<h3 className="font-medium text-fg">{template.name}</h3>
+										<p className="mt-1 text-xs text-fg-muted">{template.serviceType}</p>
 									</div>
-									<span className="text-xs text-white/40">
+									<span className="text-xs text-fg-muted">
 										v{template.updatedAt ? new Date(template.updatedAt).toLocaleDateString() : ""}
 									</span>
 								</div>
 
 								{template.description && (
-									<p className="text-sm text-white/70 line-clamp-2">{template.description}</p>
+									<p className="text-sm text-fg-muted line-clamp-2">{template.description}</p>
 								)}
 
 								<div className="space-y-2">
-									<div className="flex items-center gap-2 text-xs text-white/60">
+									<div className="flex items-center gap-2 text-xs text-fg-muted">
 										<span>{template.config.customFormats.length} formats</span>
 										<span>•</span>
 										<span>{template.config.customFormatGroups.length} groups</span>
@@ -474,57 +474,61 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 								/>
 
 								{/* Primary Deploy Button */}
-								<button
-									type="button"
+								<Button
+									variant="primary"
 									onClick={() => setInstanceSelectorTemplate({
 										templateId: template.id,
 										templateName: template.name,
 										serviceType: template.serviceType
 									})}
-									className="w-full rounded-lg bg-primary px-4 py-3 text-sm font-medium text-white transition hover:bg-primary/90 flex items-center justify-center gap-2"
+									className="w-full gap-2"
 									title="Deploy this template to an instance"
 								>
 									<Rocket className="h-4 w-4" />
 									Deploy to Instance
-								</button>
+								</Button>
 
 								{/* Action Buttons */}
 								<div className="flex gap-2 pt-2">
-									<button
-										type="button"
+									<Button
+										variant="secondary"
+										size="sm"
 										onClick={() => onEdit(template)}
-										className="flex-1 rounded bg-white/10 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/20"
+										className="flex-1"
 										title="Edit template"
 									>
 										<Edit className="mx-auto h-4 w-4" />
-									</button>
-									<button
-										type="button"
+									</Button>
+									<Button
+										variant="secondary"
+										size="sm"
 										onClick={() => {
 											setDuplicatingId(template.id);
 											setDuplicateName(`${template.name} Copy`);
 										}}
-										className="flex-1 rounded bg-white/10 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/20"
+										className="flex-1"
 										title="Duplicate template"
 									>
 										<Copy className="mx-auto h-4 w-4" />
-									</button>
-									<button
-										type="button"
+									</Button>
+									<Button
+										variant="secondary"
+										size="sm"
 										onClick={() => setExportModal({ templateId: template.id, templateName: template.name })}
-										className="flex-1 rounded bg-white/10 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/20"
+										className="flex-1"
 										title="Export template with metadata"
 									>
 										<Download className="mx-auto h-4 w-4" />
-									</button>
-									<button
-										type="button"
+									</Button>
+									<Button
+										variant="danger"
+										size="sm"
 										onClick={() => setDeleteConfirm(template.id)}
-										className="flex-1 rounded bg-red-500/20 px-3 py-2 text-xs font-medium text-red-200 transition hover:bg-red-500/30"
+										className="flex-1"
 										title="Delete template"
 									>
 										<Trash2 className="mx-auto h-4 w-4" />
-									</button>
+									</Button>
 								</div>
 							</div>
 						</article>
@@ -575,29 +579,30 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 			{/* Instance Selector Modal */}
 			{instanceSelectorTemplate && (
 				<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-					<div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-2xl border border-white/20 max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+					<div className="bg-bg-subtle rounded-xl shadow-2xl border border-border max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
 						{/* Header */}
-						<div className="flex items-center justify-between p-6 border-b border-white/10 bg-gradient-to-r from-primary/10 to-transparent">
+						<div className="flex items-center justify-between p-6 border-b border-border bg-gradient-to-r from-primary/10 to-transparent">
 							<div>
-								<h2 className="text-xl font-semibold text-white flex items-center gap-2">
+								<h2 className="text-xl font-semibold text-fg flex items-center gap-2">
 									<Rocket className="h-5 w-5 text-primary" />
 									Deploy Template
 								</h2>
-								<p className="text-sm text-white/70 mt-1">
+								<p className="text-sm text-fg-muted mt-1">
 									{instanceSelectorTemplate.templateName}
 								</p>
 							</div>
-							<button
+							<Button
+								variant="ghost"
+								size="sm"
 								onClick={() => setInstanceSelectorTemplate(null)}
-								className="p-2 rounded-lg hover:bg-white/10 transition-colors group"
 								aria-label="Close"
 							>
-								<X className="h-5 w-5 text-white/60 group-hover:text-white" />
-							</button>
+								<X className="h-5 w-5" />
+							</Button>
 						</div>
 
 						{/* Instance List */}
-						<div className="flex-1 overflow-y-auto p-6 bg-slate-900/50">
+						<div className="flex-1 overflow-y-auto p-6 bg-bg-subtle/50">
 							{/* Deploy to Multiple Button */}
 							{(() => {
 								const matchingInstances = servicesData?.filter(instance =>
@@ -606,7 +611,8 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 
 								if (matchingInstances.length > 1) {
 									return (
-										<button
+										<Button
+											variant="secondary"
 											onClick={() => {
 												setBulkDeployModal({
 													templateId: instanceSelectorTemplate.templateId,
@@ -619,17 +625,17 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 												});
 												setInstanceSelectorTemplate(null);
 											}}
-											className="w-full flex items-center justify-center gap-2 p-3 mb-4 rounded-lg border border-primary/30 bg-primary/10 hover:bg-primary/20 hover:border-primary/50 transition-all text-primary font-medium"
+											className="w-full justify-center gap-2 mb-4 border-primary/30 bg-primary/10 hover:bg-primary/20 hover:border-primary/50 text-primary"
 										>
 											<Layers className="h-5 w-5" />
 											Deploy to Multiple Instances ({matchingInstances.length} available)
-										</button>
+										</Button>
 									);
 								}
 								return null;
 							})()}
 
-							<h3 className="text-sm font-medium text-white/90 mb-4">Select an instance to deploy to:</h3>
+							<h3 className="text-sm font-medium text-fg mb-4">Select an instance to deploy to:</h3>
 							<div className="space-y-3">
 								{servicesData && servicesData.length > 0 ? (
 									servicesData
@@ -641,6 +647,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 										.map((instance) => (
 											<button
 												key={instance.id}
+												type="button"
 												onClick={() => {
 													setDeploymentModal({
 														templateId: instanceSelectorTemplate.templateId,
@@ -650,13 +657,13 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 													});
 													setInstanceSelectorTemplate(null);
 												}}
-												className="w-full flex items-center justify-between p-4 rounded-lg border border-white/20 bg-white/5 hover:bg-primary/20 hover:border-primary/50 transition-all text-left group shadow-lg hover:shadow-primary/20"
+												className="w-full flex items-center justify-between p-4 rounded-lg border border-border bg-bg-subtle/50 hover:bg-primary/20 hover:border-primary/50 transition-all text-left group shadow-lg hover:shadow-primary/20"
 											>
 												<div>
-													<div className="font-medium text-white group-hover:text-primary transition-colors">
+													<div className="font-medium text-fg group-hover:text-primary transition-colors">
 														{instance.label}
 													</div>
-													<div className="text-sm text-white/60 mt-1">
+													<div className="text-sm text-fg-muted mt-1">
 														{instance.service}
 													</div>
 												</div>
@@ -664,10 +671,10 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 											</button>
 										))
 								) : (
-									<div className="text-center py-12 px-4 rounded-lg border border-dashed border-white/20 bg-white/5">
-										<AlertCircle className="h-12 w-12 text-white/40 mx-auto mb-4" />
-										<p className="text-white/70 font-medium">No instances available.</p>
-										<p className="text-sm text-white/50 mt-2">
+									<div className="text-center py-12 px-4 rounded-lg border border-dashed border-border bg-bg-subtle/50">
+										<AlertCircle className="h-12 w-12 text-fg-muted mx-auto mb-4" />
+										<p className="text-fg-muted font-medium">No instances available.</p>
+										<p className="text-sm text-fg-muted mt-2">
 											Add a Radarr or Sonarr instance in Settings first.
 										</p>
 									</div>
@@ -676,13 +683,10 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 						</div>
 
 						{/* Footer */}
-						<div className="flex items-center justify-end gap-3 p-6 border-t border-white/10 bg-slate-900/80">
-							<button
-								onClick={() => setInstanceSelectorTemplate(null)}
-								className="px-4 py-2 text-sm rounded-lg border border-white/20 text-white/80 hover:bg-white/10 hover:text-white transition-colors"
-							>
+						<div className="flex items-center justify-end gap-3 p-6 border-t border-border bg-bg-subtle/80">
+							<Button variant="secondary" onClick={() => setInstanceSelectorTemplate(null)}>
 								Cancel
-							</button>
+							</Button>
 						</div>
 					</div>
 				</div>
@@ -691,7 +695,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 			{/* Enhanced Export Modal */}
 			{exportModal && (
 				<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-					<div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-2xl border border-white/20 max-w-2xl w-full max-h-[90vh] overflow-auto">
+					<div className="bg-bg-subtle rounded-xl shadow-2xl border border-border max-w-2xl w-full max-h-[90vh] overflow-auto">
 						<EnhancedTemplateExportModal
 							templateId={exportModal.templateId}
 							templateName={exportModal.templateName}
@@ -704,7 +708,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 			{/* Enhanced Import Modal */}
 			{importModal && (
 				<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-					<div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-2xl border border-white/20 max-w-2xl w-full max-h-[90vh] overflow-auto">
+					<div className="bg-bg-subtle rounded-xl shadow-2xl border border-border max-w-2xl w-full max-h-[90vh] overflow-auto">
 						<EnhancedTemplateImportModal
 							onImportComplete={() => {
 								queryClient.invalidateQueries({ queryKey: ["trash-guides", "templates"] });
@@ -719,34 +723,33 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 			{/* Unlink Confirmation Modal */}
 			{unlinkConfirm && (
 				<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-					<div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl shadow-2xl border border-white/20 max-w-md w-full p-6">
+					<div className="bg-bg-subtle rounded-xl shadow-2xl border border-border max-w-md w-full p-6">
 						<div className="text-center space-y-4">
-							<div className="flex items-center justify-center w-12 h-12 rounded-full bg-red-500/20 mx-auto">
-								<AlertCircle className="h-6 w-6 text-red-400" />
+							<div className="flex items-center justify-center w-12 h-12 rounded-full bg-danger/20 mx-auto">
+								<AlertCircle className="h-6 w-6 text-danger" />
 							</div>
-							<h3 className="text-lg font-semibold text-white">
+							<h3 className="text-lg font-semibold text-fg">
 								Remove from Instance?
 							</h3>
-							<p className="text-sm text-white/70">
+							<p className="text-sm text-fg-muted">
 								Are you sure you want to unlink template &quot;{unlinkConfirm.templateName}&quot; from instance &quot;{unlinkConfirm.instanceName}&quot;?
 							</p>
-							<p className="text-xs text-white/50">
+							<p className="text-xs text-fg-muted">
 								This will remove the deployment mapping. Custom Formats already on the instance will not be deleted.
 							</p>
 							<div className="flex gap-3 justify-center pt-2">
-								<button
-									type="button"
+								<Button
+									variant="secondary"
 									onClick={() => setUnlinkConfirm(null)}
 									disabled={unlinking}
-									className="px-4 py-2 text-sm rounded-lg border border-white/20 text-white/80 hover:bg-white/10 transition-colors disabled:opacity-50"
 								>
 									Cancel
-								</button>
-								<button
-									type="button"
+								</Button>
+								<Button
+									variant="danger"
 									onClick={handleUnlinkInstance}
 									disabled={unlinking}
-									className="px-4 py-2 text-sm rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center gap-2"
+									className="gap-2"
 								>
 									{unlinking ? (
 										<>
@@ -756,7 +759,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 									) : (
 										"Unlink"
 									)}
-								</button>
+								</Button>
 							</div>
 						</div>
 					</div>

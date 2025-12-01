@@ -309,9 +309,14 @@ export async function registerUpdateRoutes(
 
 			await app.trashUpdateScheduler.triggerCheck();
 
+			// Return the scheduler stats so the frontend can know when the check completed
+			const stats = app.trashUpdateScheduler.getStats();
+
 			return reply.send({
 				success: true,
-				message: "Update check triggered successfully",
+				message: "Update check completed successfully",
+				completedAt: stats.lastCheckAt?.toISOString() ?? new Date().toISOString(),
+				result: stats.lastCheckResult ?? null,
 			});
 		} catch (error: unknown) {
 			request.log.error({ error }, "Failed to trigger update check");

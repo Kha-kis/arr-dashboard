@@ -55,6 +55,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		const instances = await app.prisma.serviceInstance.findMany({
+			where: { userId: user.id },
 			include: {
 				tags: {
 					include: {
@@ -96,6 +97,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		const created = await app.prisma.serviceInstance.create({
 			data: {
+				userId: user.id,
 				service: serviceEnum,
 				encryptedApiKey: encrypted.value,
 				encryptionIv: encrypted.iv,
@@ -138,6 +140,11 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		if (!existing) {
 			return reply.status(404).send({ error: "Service instance not found" });
+		}
+
+		// Verify ownership authorization
+		if (existing.userId !== user.id) {
+			return reply.status(403).send({ error: "Forbidden: You do not own this instance" });
 		}
 
 		const updateData = buildUpdateData(payload, app.encryptor);
@@ -192,6 +199,11 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		if (!instance) {
 			return reply.status(404).send({ error: "Service instance not found" });
+		}
+
+		// Verify ownership authorization
+		if (instance.userId !== user.id) {
+			return reply.status(403).send({ error: "Forbidden: You do not own this instance" });
 		}
 
 		await app.prisma.serviceInstance.delete({ where: { id } });
@@ -298,6 +310,11 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		if (!instance) {
 			return reply.status(404).send({ error: "Service instance not found" });
+		}
+
+		// Verify ownership authorization
+		if (instance.userId !== user.id) {
+			return reply.status(403).send({ error: "Forbidden: You do not own this instance" });
 		}
 
 		const apiKey = app.encryptor.decrypt({

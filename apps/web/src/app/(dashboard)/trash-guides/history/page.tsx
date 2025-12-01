@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Calendar, Clock, CheckCircle2, XCircle, AlertCircle, ChevronRight } from "lucide-react";
+import { Calendar, Clock, CheckCircle2, XCircle, AlertCircle, ChevronRight, ChevronLeft } from "lucide-react";
 import { useSyncHistory } from "../../../../hooks/api/useSync";
+import { Button, Badge } from "../../../../components/ui";
 
 const STATUS_ICONS = {
 	SUCCESS: CheckCircle2,
@@ -11,10 +12,10 @@ const STATUS_ICONS = {
 	FAILED: XCircle,
 };
 
-const STATUS_COLORS = {
-	SUCCESS: "text-green-400 bg-green-500/10 border-green-500/20",
-	PARTIAL_SUCCESS: "text-yellow-400 bg-yellow-500/10 border-yellow-500/20",
-	FAILED: "text-red-400 bg-red-500/10 border-red-500/20",
+const STATUS_BADGE_VARIANTS: Record<string, "success" | "warning" | "danger" | "default"> = {
+	SUCCESS: "success",
+	PARTIAL_SUCCESS: "warning",
+	FAILED: "danger",
 };
 
 export default function SyncHistoryPage() {
@@ -134,12 +135,12 @@ export default function SyncHistoryPage() {
 						<tbody className="divide-y divide-white/10">
 							{data.syncs.map((sync) => {
 								const StatusIcon = STATUS_ICONS[sync.status as keyof typeof STATUS_ICONS] || AlertCircle;
-								const statusColor = STATUS_COLORS[sync.status as keyof typeof STATUS_COLORS] || "";
+								const statusVariant = STATUS_BADGE_VARIANTS[sync.status as keyof typeof STATUS_BADGE_VARIANTS] || "default";
 
 								return (
 									<tr
 										key={sync.id}
-										className="transition hover:bg-white/5"
+										className="transition hover:bg-white/5 cursor-pointer"
 										onClick={() => handleViewDetails(sync.id)}
 									>
 										<td className="px-6 py-4">
@@ -148,12 +149,10 @@ export default function SyncHistoryPage() {
 											</div>
 										</td>
 										<td className="px-6 py-4">
-											<div
-												className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium ${statusColor}`}
-											>
+											<Badge variant={statusVariant} size="sm" className="gap-1.5">
 												<StatusIcon className="h-3.5 w-3.5" />
 												{sync.status.replace("_", " ")}
-											</div>
+											</Badge>
 										</td>
 										<td className="px-6 py-4">
 											<span className="text-sm text-white/80">{sync.syncType}</span>
@@ -182,17 +181,18 @@ export default function SyncHistoryPage() {
 											</div>
 										</td>
 										<td className="px-6 py-4">
-											<button
-												type="button"
+											<Button
+												variant="ghost"
+												size="sm"
 												onClick={(e) => {
 													e.stopPropagation();
 													handleViewDetails(sync.id);
 												}}
-												className="flex items-center gap-1 text-sm text-primary transition hover:text-primary/80"
+												className="gap-1.5"
 											>
 												View Details
 												<ChevronRight className="h-4 w-4" />
-											</button>
+											</Button>
 										</td>
 									</tr>
 								);
@@ -213,26 +213,31 @@ export default function SyncHistoryPage() {
 			{/* Pagination */}
 			{totalPages > 1 && (
 				<div className="flex items-center justify-between">
-					<p className="text-sm text-white/60">
-						Page {page + 1} of {totalPages}
+					<p className="text-sm text-white/70">
+						Page <span className="font-medium text-white">{page + 1}</span> of{" "}
+						<span className="font-medium text-white">{totalPages}</span>
 					</p>
 					<div className="flex gap-2">
-						<button
-							type="button"
+						<Button
+							variant="secondary"
+							size="sm"
 							onClick={() => setPage((p) => Math.max(0, p - 1))}
 							disabled={page === 0}
-							className="rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
+							className="gap-1.5"
 						>
+							<ChevronLeft className="h-4 w-4" />
 							Previous
-						</button>
-						<button
-							type="button"
+						</Button>
+						<Button
+							variant="secondary"
+							size="sm"
 							onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
 							disabled={page >= totalPages - 1}
-							className="rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-50"
+							className="gap-1.5"
 						>
 							Next
-						</button>
+							<ChevronRight className="h-4 w-4" />
+						</Button>
 					</div>
 				</div>
 			)}

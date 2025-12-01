@@ -94,10 +94,11 @@ export const CustomFormatsBrowser = () => {
 		if (selectedFormatsArray.length === 0) return [];
 
 		// Determine which service types are selected
+		// Selection keys are in format "SERVICE-trash_id"
 		const selectedServicesSet = new Set(
-			selectedFormatsArray.map(trashId => {
-				const format = customFormats.find(cf => cf.trash_id === trashId);
-				return format?.service;
+			selectedFormatsArray.map(selectionKey => {
+				const [service] = selectionKey.split('-');
+				return service;
 			})
 		);
 
@@ -111,13 +112,17 @@ export const CustomFormatsBrowser = () => {
 		return instances.filter(inst => inst.service.toUpperCase() === service);
 	}, [instances, selectedFormats, customFormats]);
 
+	// Helper to create combined selection key
+	const getSelectionKey = (format: { service: string; trash_id: string }) =>
+		`${format.service}-${format.trash_id}`;
+
 	// Handle format selection
-	const toggleFormat = (trashId: string) => {
+	const toggleFormat = (selectionKey: string) => {
 		const newSelection = new Set(selectedFormats);
-		if (newSelection.has(trashId)) {
-			newSelection.delete(trashId);
+		if (newSelection.has(selectionKey)) {
+			newSelection.delete(selectionKey);
 		} else {
-			newSelection.add(trashId);
+			newSelection.add(selectionKey);
 		}
 		setSelectedFormats(newSelection);
 	};
@@ -127,7 +132,7 @@ export const CustomFormatsBrowser = () => {
 		if (selectedFormats.size === customFormats.length) {
 			setSelectedFormats(new Set());
 		} else {
-			setSelectedFormats(new Set(customFormats.map(cf => cf.trash_id)));
+			setSelectedFormats(new Set(customFormats.map(cf => getSelectionKey(cf))));
 		}
 	};
 
@@ -167,8 +172,15 @@ export const CustomFormatsBrowser = () => {
 		}
 
 		try {
+			// Extract trash_ids from combined selection keys (format: "SERVICE-trash_id")
+			const trashIds = Array.from(selectedFormats).map(selectionKey => {
+				// Split only on the first hyphen to handle trash_ids that may contain hyphens
+				const firstHyphenIndex = selectionKey.indexOf('-');
+				return selectionKey.slice(firstHyphenIndex + 1);
+			});
+
 			const result = await deployMutation.mutateAsync({
-				trashIds: Array.from(selectedFormats),
+				trashIds,
 				instanceId: selectedInstance,
 				serviceType: instance.service.toUpperCase() as "RADARR" | "SONARR",
 			});
@@ -293,15 +305,17 @@ export const CustomFormatsBrowser = () => {
 				/>
 			) : (
 				<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-					{customFormats.map((format) => (
+					{customFormats.map((format) => {
+						const selectionKey = getSelectionKey(format);
+						return (
 						<Card
-							key={`${format.service}-${format.trash_id}`}
+							key={selectionKey}
 							className={`cursor-pointer transition ${
-								selectedFormats.has(format.trash_id)
+								selectedFormats.has(selectionKey)
 									? "ring-2 ring-primary bg-primary/10"
 									: "hover:border-white/20"
 							}`}
-							onClick={() => toggleFormat(format.trash_id)}
+							onClick={() => toggleFormat(selectionKey)}
 						>
 							<CardHeader>
 								<div className="flex items-start justify-between gap-2">
@@ -315,7 +329,7 @@ export const CustomFormatsBrowser = () => {
 											</Badge>
 										</CardDescription>
 									</div>
-									{selectedFormats.has(format.trash_id) && (
+									{selectedFormats.has(selectionKey) && (
 										<CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />
 									)}
 								</div>
@@ -360,7 +374,8 @@ export const CustomFormatsBrowser = () => {
 								</div>
 							</CardContent>
 						</Card>
-					))}
+						);
+					})}
 				</div>
 			)}
 

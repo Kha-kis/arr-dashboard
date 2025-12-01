@@ -87,4 +87,12 @@ async function simulateOutdatedTemplate(templateId?: string) {
 // Get template ID from command line args
 const templateId = process.argv[2];
 
-simulateOutdatedTemplate(templateId);
+(async () => {
+  try {
+    await simulateOutdatedTemplate(templateId);
+    process.exit(0);
+  } catch (error) {
+    console.error('❌ Unhandled error:', error);
+    process.exit(1);
+  }
+})();

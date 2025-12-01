@@ -76,6 +76,23 @@ export const useDashboardFilters = (queueItems: QueueItem[]) => {
 		setPage(1);
 	};
 
+	const handleServiceFilterChange = (
+		value: (typeof SERVICE_FILTERS)[number]["value"]
+	) => {
+		setPage(1);
+		setServiceFilter(value);
+	};
+
+	const handleInstanceFilterChange = (value: string) => {
+		setPage(1);
+		setInstanceFilter(value);
+	};
+
+	const handleStatusFilterChange = (value: string) => {
+		setPage(1);
+		setStatusFilter(value);
+	};
+
 	const handlePageSizeChange = (size: number) => {
 		setPageSize(size);
 		setPage(1);
@@ -84,11 +101,11 @@ export const useDashboardFilters = (queueItems: QueueItem[]) => {
 	return {
 		// Filter state
 		serviceFilter,
-		setServiceFilter,
+		setServiceFilter: handleServiceFilterChange,
 		instanceFilter,
-		setInstanceFilter,
+		setInstanceFilter: handleInstanceFilterChange,
 		statusFilter,
-		setStatusFilter,
+		setStatusFilter: handleStatusFilterChange,
 
 		// Pagination state
 		page,

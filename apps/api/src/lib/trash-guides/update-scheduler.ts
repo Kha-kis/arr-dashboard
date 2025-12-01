@@ -356,8 +356,8 @@ export class UpdateScheduler {
 						const parsed = JSON.parse(existingTemplate.changeLog);
 						changeLog = Array.isArray(parsed) ? parsed : [];
 					} catch (parseError) {
-						console.warn(
-							`[UpdateScheduler] Failed to parse changeLog for template ${template.templateId}: ${
+						this.logger.warn(
+							`Failed to parse changeLog for template ${template.templateId}: ${
 								parseError instanceof Error ? parseError.message : String(parseError)
 							}. Raw value: ${String(existingTemplate.changeLog).slice(0, 100)}`
 						);

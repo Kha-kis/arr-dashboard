@@ -88,52 +88,100 @@ export function useDiscoverRecommendations(
 	}, [upcomingQuery.data, libraryData, mediaType]);
 
 	// Auto-load more pages for trending if filtered results are too few
+	const {
+		hasNextPage: trendingHasNextPage,
+		isFetchingNextPage: trendingIsFetchingNextPage,
+		isLoading: trendingIsLoading,
+		fetchNextPage: fetchNextTrending,
+	} = trendingQuery;
 	useEffect(() => {
 		if (
 			trendingItems.length < MIN_VISIBLE_ITEMS &&
-			trendingQuery.hasNextPage &&
-			!trendingQuery.isFetchingNextPage &&
-			!trendingQuery.isLoading
+			trendingHasNextPage &&
+			!trendingIsFetchingNextPage &&
+			!trendingIsLoading
 		) {
-			trendingQuery.fetchNextPage();
+			fetchNextTrending();
 		}
-	}, [trendingItems.length, trendingQuery]);
+	}, [
+		trendingItems.length,
+		trendingHasNextPage,
+		trendingIsFetchingNextPage,
+		trendingIsLoading,
+		fetchNextTrending,
+	]);
 
 	// Auto-load more pages for popular if filtered results are too few
+	const {
+		hasNextPage: popularHasNextPage,
+		isFetchingNextPage: popularIsFetchingNextPage,
+		isLoading: popularIsLoading,
+		fetchNextPage: fetchNextPopular,
+	} = popularQuery;
 	useEffect(() => {
 		if (
 			popularItems.length < MIN_VISIBLE_ITEMS &&
-			popularQuery.hasNextPage &&
-			!popularQuery.isFetchingNextPage &&
-			!popularQuery.isLoading
+			popularHasNextPage &&
+			!popularIsFetchingNextPage &&
+			!popularIsLoading
 		) {
-			popularQuery.fetchNextPage();
+			fetchNextPopular();
 		}
-	}, [popularItems.length, popularQuery]);
+	}, [
+		popularItems.length,
+		popularHasNextPage,
+		popularIsFetchingNextPage,
+		popularIsLoading,
+		fetchNextPopular,
+	]);
 
 	// Auto-load more pages for top rated if filtered results are too few
+	const {
+		hasNextPage: topRatedHasNextPage,
+		isFetchingNextPage: topRatedIsFetchingNextPage,
+		isLoading: topRatedIsLoading,
+		fetchNextPage: fetchNextTopRated,
+	} = topRatedQuery;
 	useEffect(() => {
 		if (
 			topRatedItems.length < MIN_VISIBLE_ITEMS &&
-			topRatedQuery.hasNextPage &&
-			!topRatedQuery.isFetchingNextPage &&
-			!topRatedQuery.isLoading
+			topRatedHasNextPage &&
+			!topRatedIsFetchingNextPage &&
+			!topRatedIsLoading
 		) {
-			topRatedQuery.fetchNextPage();
+			fetchNextTopRated();
 		}
-	}, [topRatedItems.length, topRatedQuery]);
+	}, [
+		topRatedItems.length,
+		topRatedHasNextPage,
+		topRatedIsFetchingNextPage,
+		topRatedIsLoading,
+		fetchNextTopRated,
+	]);
 
 	// Auto-load more pages for upcoming if filtered results are too few
+	const {
+		hasNextPage: upcomingHasNextPage,
+		isFetchingNextPage: upcomingIsFetchingNextPage,
+		isLoading: upcomingIsLoading,
+		fetchNextPage: fetchNextUpcoming,
+	} = upcomingQuery;
 	useEffect(() => {
 		if (
 			upcomingItems.length < MIN_VISIBLE_ITEMS &&
-			upcomingQuery.hasNextPage &&
-			!upcomingQuery.isFetchingNextPage &&
-			!upcomingQuery.isLoading
+			upcomingHasNextPage &&
+			!upcomingIsFetchingNextPage &&
+			!upcomingIsLoading
 		) {
-			upcomingQuery.fetchNextPage();
+			fetchNextUpcoming();
 		}
-	}, [upcomingItems.length, upcomingQuery]);
+	}, [
+		upcomingItems.length,
+		upcomingHasNextPage,
+		upcomingIsFetchingNextPage,
+		upcomingIsLoading,
+		fetchNextUpcoming,
+	]);
 
 	return {
 		trending: {

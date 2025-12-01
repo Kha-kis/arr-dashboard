@@ -15,11 +15,13 @@ import {
 	Info,
 	AlertTriangle,
 } from "lucide-react";
+import { toast } from "sonner";
 import type {
 	TemplateImportOptions,
 	TemplateImportValidation,
 	TemplateCompatibility,
 } from "@arr/shared";
+import { useEnhancedImportTemplate } from "../../../hooks/api/useTemplates";
 
 interface EnhancedTemplateImportModalProps {
 	onImportComplete?: () => void;
@@ -38,7 +40,6 @@ export function EnhancedTemplateImportModal({
 		null,
 	);
 	const [isValidating, setIsValidating] = useState(false);
-	const [isImporting, setIsImporting] = useState(false);
 	const [options, setOptions] = useState<TemplateImportOptions>({
 		onNameConflict: "rename",
 		includeQualitySettings: true,
@@ -46,6 +47,8 @@ export function EnhancedTemplateImportModal({
 		includeMetadata: true,
 		strictValidation: false,
 	});
+
+	const importMutation = useEnhancedImportTemplate();
 
 	const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
 		const file = e.target.files?.[0];
@@ -86,34 +89,24 @@ export function EnhancedTemplateImportModal({
 		}
 	};
 
-	const handleImport = async () => {
+	const handleImport = () => {
 		if (!jsonData || !validation?.valid) return;
 
-		setIsImporting(true);
-
-		try {
-			const response = await fetch("/api/trash-guides/sharing/import", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					jsonData,
-					options,
-				}),
-			});
-
-			if (!response.ok) {
-				const error = await response.json();
-				throw new Error(error.error || "Import failed");
-			}
-
-			onImportComplete?.();
-			onClose?.();
-		} catch (error) {
-			console.error("Failed to import template:", error);
-			alert(error instanceof Error ? error.message : "Failed to import template");
-		} finally {
-			setIsImporting(false);
-		}
+		importMutation.mutate(
+			{ jsonData, options },
+			{
+				onSuccess: () => {
+					onImportComplete?.();
+					onClose?.();
+				},
+				onError: (error) => {
+					const errorMessage = error instanceof Error
+						? error.message
+						: "Failed to import template";
+					toast.error(errorMessage);
+				},
+			},
+		);
 	};
 
 	const hasErrors = validation?.errors && validation.errors.length > 0;
@@ -328,11 +321,11 @@ export function EnhancedTemplateImportModal({
 				)}
 				<Button
 					onClick={handleImport}
-					disabled={!validation?.valid || isImporting}
+					disabled={!validation?.valid || importMutation.isPending}
 					className="gap-2"
 				>
 					<Upload className="h-4 w-4" />
-					{isImporting ? "Importing..." : "Import Template"}
+					{importMutation.isPending ? "Importing..." : "Import Template"}
 				</Button>
 			</div>
 		</div>

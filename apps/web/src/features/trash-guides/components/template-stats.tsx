@@ -11,6 +11,7 @@ import { InstanceOverrideEditor } from "./instance-override-editor";
 import { DropdownMenu, DropdownMenuItem, Badge } from "../../../components/ui";
 import { updateSyncStrategy, bulkUpdateSyncStrategy } from "../../../lib/api-client/trash-guides";
 import { cn } from "../../../lib/utils";
+import { toast } from "sonner";
 
 // Helper to get sync strategy display info
 const getSyncStrategyInfo = (strategy: "auto" | "manual" | "notify") => {
@@ -56,6 +57,10 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 			queryClient.invalidateQueries({ queryKey: ["template-stats", templateId] });
 		} catch (error) {
 			console.error("Failed to bulk update sync strategy:", error);
+			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+			toast.error("Failed to update sync strategy", {
+				description: errorMessage,
+			});
 		} finally {
 			setBulkUpdating(false);
 		}
@@ -76,6 +81,10 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 			queryClient.invalidateQueries({ queryKey: ["template-stats", templateId] });
 		} catch (error) {
 			console.error("Failed to update sync strategy:", error);
+			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+			toast.error("Failed to update sync strategy", {
+				description: errorMessage,
+			});
 		} finally {
 			setUpdatingStrategy(null);
 		}

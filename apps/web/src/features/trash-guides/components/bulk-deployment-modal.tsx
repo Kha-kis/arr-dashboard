@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
 	Dialog,
 	DialogHeader,
@@ -140,72 +140,14 @@ export const BulkDeploymentModal = ({
 	const [isLoadingPreviews, setIsLoadingPreviews] = useState(false);
 	const [hasLoadedPreviews, setHasLoadedPreviews] = useState(false);
 
-	// Initialize instance previews with all instances selected and auto-load previews
-	useEffect(() => {
-		if (open && instances.length > 0 && !hasLoadedPreviews) {
-			const initialPreviews = instances.map((inst) => ({
-				instanceId: inst.instanceId,
-				instanceLabel: inst.instanceLabel,
-				selected: true,
-				syncStrategy: "notify" as const,
-				loading: true, // Start in loading state
-			}));
-			setInstancePreviews(initialPreviews);
-			setHasLoadedPreviews(true);
+	// Store templateId in a ref to avoid useCallback/useEffect dependency issues
+	const templateIdRef = useRef(templateId);
+	templateIdRef.current = templateId;
 
-			// Auto-load previews after setting initial state
-			loadPreviewsForInstances(initialPreviews);
-		}
-	}, [open, instances, hasLoadedPreviews, loadPreviewsForInstances]);
-
-	// Reset state when modal closes
-	useEffect(() => {
-		if (!open) {
-			setHasLoadedPreviews(false);
-			setInstancePreviews([]);
-		}
-	}, [open]);
-
-	const toggleInstance = (instanceId: string) => {
-		setInstancePreviews((prev) =>
-			prev.map((inst) =>
-				inst.instanceId === instanceId
-					? { ...inst, selected: !inst.selected }
-					: inst,
-			),
-		);
-	};
-
-	const updateInstanceStrategy = (instanceId: string, strategy: SyncStrategy) => {
-		setInstancePreviews((prev) =>
-			prev.map((inst) =>
-				inst.instanceId === instanceId
-					? { ...inst, syncStrategy: strategy }
-					: inst,
-			),
-		);
-	};
-
-	const setAllStrategies = (strategy: SyncStrategy) => {
-		setInstancePreviews((prev) =>
-			prev.map((inst) => ({ ...inst, syncStrategy: strategy })),
-		);
-	};
-
-	const selectAll = () => {
-		setInstancePreviews((prev) =>
-			prev.map((inst) => ({ ...inst, selected: true })),
-		);
-	};
-
-	const deselectAll = () => {
-		setInstancePreviews((prev) =>
-			prev.map((inst) => ({ ...inst, selected: false })),
-		);
-	};
-
+	// Define loadPreviewsForInstances first (before any useEffect that depends on it)
 	const loadPreviewsForInstances = useCallback(async (instancesToLoad: InstancePreview[]) => {
-		if (!templateId) return;
+		const currentTemplateId = templateIdRef.current;
+		if (!currentTemplateId) return;
 
 		setIsLoadingPreviews(true);
 
@@ -224,7 +166,7 @@ export const BulkDeploymentModal = ({
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({
-						templateId,
+						templateId: currentTemplateId,
 						instanceId: inst.instanceId,
 					}),
 				});
@@ -270,7 +212,71 @@ export const BulkDeploymentModal = ({
 
 		await Promise.all(previewPromises);
 		setIsLoadingPreviews(false);
-	}, [templateId]);
+	}, []); // No dependencies - uses ref for templateId
+
+	// Reset state when modal closes
+	useEffect(() => {
+		if (!open) {
+			setHasLoadedPreviews(false);
+			setInstancePreviews([]);
+		}
+	}, [open]);
+
+	// Initialize instance previews with all instances selected and auto-load previews
+	useEffect(() => {
+		if (open && instances.length > 0 && !hasLoadedPreviews) {
+			const initialPreviews = instances.map((inst) => ({
+				instanceId: inst.instanceId,
+				instanceLabel: inst.instanceLabel,
+				selected: true,
+				syncStrategy: "notify" as const,
+				loading: true, // Start in loading state
+			}));
+			setInstancePreviews(initialPreviews);
+			setHasLoadedPreviews(true);
+
+			// Auto-load previews after setting initial state
+			loadPreviewsForInstances(initialPreviews);
+		}
+	}, [open, instances, hasLoadedPreviews, loadPreviewsForInstances]);
+
+	const toggleInstance = (instanceId: string) => {
+		setInstancePreviews((prev) =>
+			prev.map((inst) =>
+				inst.instanceId === instanceId
+					? { ...inst, selected: !inst.selected }
+					: inst,
+			),
+		);
+	};
+
+	const updateInstanceStrategy = (instanceId: string, strategy: SyncStrategy) => {
+		setInstancePreviews((prev) =>
+			prev.map((inst) =>
+				inst.instanceId === instanceId
+					? { ...inst, syncStrategy: strategy }
+					: inst,
+			),
+		);
+	};
+
+	const setAllStrategies = (strategy: SyncStrategy) => {
+		setInstancePreviews((prev) =>
+			prev.map((inst) => ({ ...inst, syncStrategy: strategy })),
+		);
+	};
+
+	const selectAll = () => {
+		setInstancePreviews((prev) =>
+			prev.map((inst) => ({ ...inst, selected: true })),
+		);
+	};
+
+	const deselectAll = () => {
+		setInstancePreviews((prev) =>
+			prev.map((inst) => ({ ...inst, selected: false })),
+		);
+	};
 
 	const [isDeploying, setIsDeploying] = useState(false);
 	const [deploymentError, setDeploymentError] = useState<string | null>(null);

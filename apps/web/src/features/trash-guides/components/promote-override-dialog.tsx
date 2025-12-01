@@ -11,6 +11,7 @@ import {
 } from "../../../components/ui/dialog";
 import { Button } from "../../../components/ui/button";
 import { AlertTriangle, ArrowUpCircle } from "lucide-react";
+import { toast } from "sonner";
 import { usePromoteOverride } from "../../../hooks/api/useQualityProfileOverrides";
 
 interface PromoteOverrideDialogProps {
@@ -56,8 +57,10 @@ export function PromoteOverrideDialog({
 			onSuccess?.();
 			onOpenChange(false);
 		} catch (error) {
-			console.error("Failed to promote override:", error);
-			alert(error instanceof Error ? error.message : "Failed to promote override");
+			const errorMessage = error instanceof Error ? error.message : "Failed to promote override";
+			// Log only sanitized error message without stack traces or response bodies
+			console.error("Failed to promote override:", errorMessage);
+			toast.error(errorMessage);
 		} finally {
 			setIsPromoting(false);
 		}

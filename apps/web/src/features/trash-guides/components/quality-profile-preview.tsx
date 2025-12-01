@@ -10,7 +10,7 @@
 
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useRef } from "react";
 import { Alert, AlertDescription } from "../../../components/ui/alert";
 import { usePreviewProfileDeployment } from "../../../hooks/api/useProfileClone";
 import type { CompleteQualityProfile } from "@arr/shared";
@@ -38,28 +38,35 @@ export function QualityProfilePreview({
 }: QualityProfilePreviewProps) {
 	const previewMutation = usePreviewProfileDeployment();
 
-	// Create stable references for profile and customFormats based on their actual data
-	const stableProfile = useMemo(
-		() => profile,
-		// eslint-disable-next-line react-hooks/exhaustive-deps -- Intentionally depend on specific properties
-		[profile.sourceProfileId, profile.sourceInstanceId, JSON.stringify(profile.items)]
-	);
-
-	const stableCustomFormats = useMemo(
-		() => customFormats,
-		// eslint-disable-next-line react-hooks/exhaustive-deps -- Intentionally depend on serialized value
-		[JSON.stringify(customFormats)]
-	);
+	// Track previous values for deep comparison
+	const prevDataRef = useRef<{
+		instanceId: string;
+		profileKey: string;
+		formatsKey: string;
+	} | null>(null);
 
 	useEffect(() => {
-		// Auto-fetch preview on mount or when relevant properties change
+		// Create stable keys for comparison (computed once per effect, not every render)
+		const profileKey = `${profile.sourceProfileId}-${profile.sourceInstanceId}-${JSON.stringify(profile.items)}`;
+		const formatsKey = JSON.stringify(customFormats);
+
+		// Skip if data hasn't changed
+		if (
+			prevDataRef.current?.instanceId === instanceId &&
+			prevDataRef.current?.profileKey === profileKey &&
+			prevDataRef.current?.formatsKey === formatsKey
+		) {
+			return;
+		}
+
+		// Update ref and trigger mutation
+		prevDataRef.current = { instanceId, profileKey, formatsKey };
 		previewMutation.mutate({
 			instanceId,
-			profile: stableProfile,
-			customFormats: stableCustomFormats,
+			profile,
+			customFormats,
 		});
-		// eslint-disable-next-line react-hooks/exhaustive-deps -- previewMutation.mutate is stable
-	}, [instanceId, stableProfile, stableCustomFormats]);
+	}, [instanceId, profile, customFormats, previewMutation]);
 
 	useEffect(() => {
 		if (previewMutation.isSuccess && previewMutation.data) {

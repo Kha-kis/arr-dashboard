@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { AlertCircle, CheckCircle2, XCircle, Info } from "lucide-react";
 import { useValidateSync } from "../../../hooks/api/useSync";
 import type { ConflictInfo, ValidationResult } from "../../../lib/api-client/sync";
+import { Button } from "../../../components/ui";
 
 interface SyncValidationModalProps {
 	templateId: string;
@@ -26,21 +27,66 @@ export const SyncValidationModal = ({
 	const [resolutions, setResolutions] = useState<Record<string, "REPLACE" | "SKIP">>({});
 	const [validation, setValidation] = useState<ValidationResult | null>(null);
 	const dialogRef = useRef<HTMLDivElement>(null);
+	const previousActiveElement = useRef<Element | null>(null);
 
-	// Handle Escape key
+	// Focus trap and keyboard handling
 	useEffect(() => {
+		// Save the element that had focus before opening
+		previousActiveElement.current = document.activeElement;
+
+		// Focus the dialog on mount
+		dialogRef.current?.focus();
+
+		const getFocusableElements = (): HTMLElement[] => {
+			if (!dialogRef.current) return [];
+			const focusableSelectors = [
+				'button:not([disabled])',
+				'[href]',
+				'input:not([disabled])',
+				'select:not([disabled])',
+				'textarea:not([disabled])',
+				'[tabindex]:not([tabindex="-1"])',
+			].join(', ');
+			return Array.from(dialogRef.current.querySelectorAll<HTMLElement>(focusableSelectors));
+		};
+
 		const handleKeyDown = (e: KeyboardEvent) => {
 			if (e.key === "Escape") {
 				onCancel();
+				return;
+			}
+
+			if (e.key === "Tab") {
+				const focusableElements = getFocusableElements();
+				if (focusableElements.length === 0) return;
+
+				const firstElement = focusableElements[0];
+				const lastElement = focusableElements[focusableElements.length - 1];
+
+				if (e.shiftKey) {
+					// Shift+Tab: if on first element, wrap to last
+					if (document.activeElement === firstElement && lastElement) {
+						e.preventDefault();
+						lastElement.focus();
+					}
+				} else {
+					// Tab: if on last element, wrap to first
+					if (document.activeElement === lastElement && firstElement) {
+						e.preventDefault();
+						firstElement.focus();
+					}
+				}
 			}
 		};
 
 		document.addEventListener("keydown", handleKeyDown);
-		// Focus the dialog on mount
-		dialogRef.current?.focus();
 
 		return () => {
 			document.removeEventListener("keydown", handleKeyDown);
+			// Restore focus to the element that opened the modal
+			if (previousActiveElement.current instanceof HTMLElement) {
+				previousActiveElement.current.focus();
+			}
 		};
 	}, [onCancel]);
 
@@ -51,12 +97,16 @@ export const SyncValidationModal = ({
 			{
 				onSuccess: (data) => {
 					setValidation(data);
-					// Set default resolutions to REPLACE
-					const defaultResolutions: Record<string, "REPLACE" | "SKIP"> = {};
-					data.conflicts.forEach((conflict) => {
-						defaultResolutions[conflict.configName] = "REPLACE";
-					});
-					setResolutions(defaultResolutions);
+					// Set default resolutions to REPLACE only if conflicts is a valid array
+					if (data && Array.isArray(data.conflicts) && data.conflicts.length > 0) {
+						const defaultResolutions: Record<string, "REPLACE" | "SKIP"> = {};
+						data.conflicts.forEach((conflict) => {
+							defaultResolutions[conflict.configName] = "REPLACE";
+						});
+						setResolutions(defaultResolutions);
+					} else {
+						setResolutions({});
+					}
 				},
 			},
 		);
@@ -75,7 +125,9 @@ export const SyncValidationModal = ({
 	};
 
 	const isValidating = validateMutation.isPending;
-	const hasErrors = validation && validation.errors.length > 0;
+	const hasErrors = Array.isArray(validation?.errors) && validation.errors.length > 0;
+	const hasWarnings = Array.isArray(validation?.warnings) && validation.warnings.length > 0;
+	const hasConflicts = Array.isArray(validation?.conflicts) && validation.conflicts.length > 0;
 	const canProceed = validation && validation.valid && !hasErrors;
 
 	return (
@@ -86,7 +138,7 @@ export const SyncValidationModal = ({
 			<div
 				ref={dialogRef}
 				tabIndex={-1}
-				className="w-full max-w-2xl rounded-xl border border-white/10 bg-gray-900 shadow-2xl focus:outline-none"
+				className="w-full max-w-2xl rounded-xl border border-white/10 bg-[#0d1117] shadow-2xl focus:outline-none"
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="sync-validation-title"
@@ -112,7 +164,7 @@ export const SyncValidationModal = ({
 					{!isValidating && validation && (
 						<div className="space-y-4">
 							{/* Validation Errors */}
-							{validation.errors.length > 0 && (
+							{hasErrors && (
 								<div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4">
 									<div className="flex items-start gap-3">
 										<XCircle className="h-5 w-5 flex-shrink-0 text-red-400" />
@@ -129,7 +181,7 @@ export const SyncValidationModal = ({
 							)}
 
 							{/* Warnings */}
-							{validation.warnings.length > 0 && (
+							{hasWarnings && (
 								<div className="rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-4">
 									<div className="flex items-start gap-3">
 										<AlertCircle className="h-5 w-5 flex-shrink-0 text-yellow-400" />
@@ -146,7 +198,7 @@ export const SyncValidationModal = ({
 							)}
 
 							{/* Conflicts */}
-							{validation.conflicts.length > 0 && (
+							{hasConflicts && validation.conflicts && (
 								<div className="rounded-lg border border-white/10 bg-white/5 p-4">
 									<div className="flex items-start gap-3">
 										<Info className="h-5 w-5 flex-shrink-0 text-blue-400" />
@@ -171,28 +223,20 @@ export const SyncValidationModal = ({
 															</div>
 
 															<div className="flex gap-2">
-																<button
-																	type="button"
+																<Button
+																	variant={resolutions[conflict.configName] === "REPLACE" ? "primary" : "secondary"}
+																	size="sm"
 																	onClick={() => handleResolutionChange(conflict.configName, "REPLACE")}
-																	className={`rounded px-3 py-1.5 text-xs font-medium transition ${
-																		resolutions[conflict.configName] === "REPLACE"
-																			? "bg-primary text-white"
-																			: "bg-white/10 text-white/60 hover:bg-white/20"
-																	}`}
 																>
 																	Replace
-																</button>
-																<button
-																	type="button"
+																</Button>
+																<Button
+																	variant={resolutions[conflict.configName] === "SKIP" ? "primary" : "secondary"}
+																	size="sm"
 																	onClick={() => handleResolutionChange(conflict.configName, "SKIP")}
-																	className={`rounded px-3 py-1.5 text-xs font-medium transition ${
-																		resolutions[conflict.configName] === "SKIP"
-																			? "bg-primary text-white"
-																			: "bg-white/10 text-white/60 hover:bg-white/20"
-																	}`}
 																>
 																	Skip
-																</button>
+																</Button>
 															</div>
 														</div>
 													</div>
@@ -204,7 +248,7 @@ export const SyncValidationModal = ({
 							)}
 
 							{/* Success */}
-							{canProceed && validation.conflicts.length === 0 && (
+							{canProceed && !hasConflicts && (
 								<div className="rounded-lg border border-green-500/20 bg-green-500/10 p-4">
 									<div className="flex items-center gap-3">
 										<CheckCircle2 className="h-5 w-5 text-green-400" />
@@ -237,21 +281,16 @@ export const SyncValidationModal = ({
 
 				{/* Footer */}
 				<div className="flex items-center justify-end gap-3 border-t border-white/10 p-6">
-					<button
-						type="button"
-						onClick={onCancel}
-						className="rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
-					>
+					<Button variant="secondary" onClick={onCancel}>
 						Cancel
-					</button>
-					<button
-						type="button"
+					</Button>
+					<Button
+						variant="primary"
 						onClick={handleConfirm}
 						disabled={!canProceed || isValidating}
-						className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
 					>
-						{validation && validation.conflicts.length > 0 ? "Proceed with Resolutions" : "Start Sync"}
-					</button>
+						{hasConflicts ? "Proceed with Resolutions" : "Start Sync"}
+					</Button>
 				</div>
 			</div>
 		</div>

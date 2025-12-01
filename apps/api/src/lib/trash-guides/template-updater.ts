@@ -394,12 +394,24 @@ export class TemplateUpdater {
 		);
 		const cfGroupsCache = await this.cacheManager.get(serviceType, "CF_GROUPS");
 
-		// Parse template config
-		const templateConfig = JSON.parse(template.configData);
-		const currentCFs = new Map(
+		// Parse template config with error handling for corrupted data
+		let templateConfig: {
+			customFormats?: any[];
+			customFormatGroups?: any[];
+		} = {};
+		try {
+			templateConfig = JSON.parse(template.configData);
+		} catch (parseError) {
+			this.logger.error(
+				`Failed to parse configData for template "${template.name}" (id: ${template.id}): ${parseError instanceof Error ? parseError.message : "Unknown error"}`,
+			);
+			// Fall back to empty config - updater can continue with empty state
+			templateConfig = {};
+		}
+		const currentCFs = new Map<string, any>(
 			templateConfig.customFormats?.map((cf: any) => [cf.trashId, cf]) || [],
 		);
-		const currentGroups = new Map(
+		const currentGroups = new Map<string, any>(
 			templateConfig.customFormatGroups?.map((g: any) => [g.trashId, g]) || [],
 		);
 

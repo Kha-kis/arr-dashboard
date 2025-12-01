@@ -258,22 +258,18 @@ export const TemplateScheduleModal = ({
 
 				{/* Footer */}
 				<div className="flex justify-end gap-2 border-t border-white/10 bg-slate-900/95 p-6 backdrop-blur">
-					<button
-						type="button"
-						onClick={onClose}
-						className="rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
-					>
+					<Button variant="secondary" onClick={onClose}>
 						Cancel
-					</button>
-					<button
-						type="button"
+					</Button>
+					<Button
+						variant="primary"
 						onClick={handleSave}
 						disabled={isSaving}
-						className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary/90 disabled:opacity-50"
+						className="gap-2"
 					>
 						<Clock className="h-4 w-4" />
 						{isSaving ? "Saving..." : existingSchedule ? "Update Schedule" : "Create Schedule"}
-					</button>
+					</Button>
 				</div>
 			</div>
 		</div>

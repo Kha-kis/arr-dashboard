@@ -96,11 +96,7 @@ export async function registerSyncRoutes(
 		 * Execute sync operation
 		 * POST /api/trash-guides/sync/execute
 		 */
-	/**
-	 * Execute sync operation
-	 * POST /api/trash-guides/sync/execute
-	 */
-	app.post("/execute", async (request: FastifyRequest, reply) => {
+		app.post("/execute", async (request: FastifyRequest, reply) => {
 		// Authentication check
 		if (!request.currentUser?.id) {
 			return reply.status(401).send({
@@ -154,6 +150,14 @@ export async function registerSyncRoutes(
 		app.get<{
 			Params: { syncId: string };
 		}>("/:syncId/stream", async (request, reply) => {
+			// Authentication check
+			if (!request.currentUser?.id) {
+				return reply.status(401).send({
+					error: "UNAUTHORIZED",
+					message: "Authentication required",
+				});
+			}
+
 			const { syncId } = request.params;
 
 			// Hijack the response to prevent Fastify from sending its own response
@@ -215,6 +219,14 @@ export async function registerSyncRoutes(
 		app.get<{
 			Params: { syncId: string };
 		}>("/:syncId/progress", async (request, reply) => {
+			// Authentication check
+			if (!request.currentUser?.id) {
+				return reply.status(401).send({
+					error: "UNAUTHORIZED",
+					message: "Authentication required",
+				});
+			}
+
 			const { syncId } = request.params;
 
 			const progress = progressStore.get(syncId);

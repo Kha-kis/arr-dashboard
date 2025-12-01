@@ -10,16 +10,15 @@ const percentFormatter = new Intl.NumberFormat(undefined, {
 	maximumFractionDigits: 1,
 });
 
-const getQualityLabel = (key: string): string => {
-	const labels: Record<string, string> = {
-		uhd4k: "4K/UHD",
-		fullHd1080p: "1080p",
-		hd720p: "720p",
-		sd: "SD",
-		unknown: "Unknown",
-	};
-	return labels[key] ?? key;
+const qualityLabels: Record<string, string> = {
+	uhd4k: "4K/UHD",
+	fullHd1080p: "1080p",
+	hd720p: "720p",
+	sd: "SD",
+	unknown: "Unknown",
 };
+
+const getQualityLabel = (key: string): string => qualityLabels[key] ?? key;
 
 interface QualityBreakdownProps {
 	breakdown?:
@@ -44,11 +43,21 @@ export const QualityBreakdown = ({ breakdown }: QualityBreakdownProps) => {
 			{Object.entries(breakdown).map(([key, count]) => {
 				if (count === 0) return null;
 				const percentage = (count / total) * 100;
+				const labelId = `quality-label-${key}`;
 				return (
 					<div key={key} className="flex items-center gap-3">
-						<div className="w-20 text-xs text-white/70">{getQualityLabel(key)}</div>
+						<div id={labelId} className="w-20 text-xs text-white/70">
+							{getQualityLabel(key)}
+						</div>
 						<div className="flex-1">
-							<div className="h-2 overflow-hidden rounded-full bg-white/10">
+							<div
+								role="progressbar"
+								aria-valuenow={Math.round(percentage)}
+								aria-valuemin={0}
+								aria-valuemax={100}
+								aria-labelledby={labelId}
+								className="h-2 overflow-hidden rounded-full bg-white/10"
+							>
 								<div className="h-full bg-blue-500/80" style={{ width: `${percentage}%` }} />
 							</div>
 						</div>

@@ -28,12 +28,35 @@ async function compressData(data: unknown): Promise<string> {
 
 /**
  * Decompress gzip data to JSON
+ * @throws Error if decompression or parsing fails
  */
 async function decompressData<T = unknown>(compressedData: string): Promise<T> {
 	const buffer = Buffer.from(compressedData, "base64");
 	const decompressed = await gunzipAsync(buffer);
 	const jsonString = decompressed.toString("utf-8");
 	return JSON.parse(jsonString) as T;
+}
+
+/**
+ * Safely parse JSON data with error handling
+ * @returns Parsed data or null if parsing fails
+ */
+function safeJsonParse<T = unknown>(
+	data: string,
+	context: { serviceType: string; configType: string },
+): T | null {
+	try {
+		return JSON.parse(data) as T;
+	} catch (error) {
+		console.error(
+			`[TrashCacheManager] Failed to parse JSON for ${context.serviceType}/${context.configType}`,
+			{
+				dataSize: data.length,
+				error: error instanceof Error ? error.message : String(error),
+			},
+		);
+		return null;
+	}
 }
 
 // ============================================================================
@@ -93,11 +116,30 @@ export class TrashCacheManager {
 		await this.touchCache(serviceType, configType);
 
 		// Decompress and return data
-		if (this.options.compressionEnabled) {
-			return await decompressData<T>(cacheEntry.data);
-		}
+		try {
+			if (this.options.compressionEnabled) {
+				return await decompressData<T>(cacheEntry.data);
+			}
 
-		return JSON.parse(cacheEntry.data) as T;
+			const parsed = safeJsonParse<T>(cacheEntry.data, { serviceType, configType });
+			if (parsed === null) {
+				// Invalidate corrupted cache entry
+				await this.delete(serviceType, configType);
+			}
+			return parsed;
+		} catch (error) {
+			// Handle decompression or parsing errors
+			console.error(
+				`[TrashCacheManager] Failed to retrieve cache for ${serviceType}/${configType}`,
+				{
+					dataSize: cacheEntry.data.length,
+					error: error instanceof Error ? error.message : String(error),
+				},
+			);
+			// Invalidate corrupted cache entry
+			await this.delete(serviceType, configType);
+			return null;
+		}
 	}
 
 	/**
@@ -203,12 +245,32 @@ export class TrashCacheManager {
 		staleThreshold.setHours(staleThreshold.getHours() - this.options.staleAfterHours);
 		const isStale = cacheEntry.lastCheckedAt <= staleThreshold;
 
-		// Get item count
-		const data = this.options.compressionEnabled
-			? await decompressData<unknown[]>(cacheEntry.data)
-			: (JSON.parse(cacheEntry.data) as unknown[]);
+		// Get item count with error handling
+		let itemCount = 0;
+		try {
+			const data = this.options.compressionEnabled
+				? await decompressData<unknown[]>(cacheEntry.data)
+				: safeJsonParse<unknown[]>(cacheEntry.data, { serviceType, configType });
 
-		const itemCount = Array.isArray(data) ? data.length : 0;
+			itemCount = Array.isArray(data) ? data.length : 0;
+
+			// If parsing failed in non-compressed mode, invalidate the entry
+			if (!this.options.compressionEnabled && data === null) {
+				await this.delete(serviceType, configType);
+				return null;
+			}
+		} catch (error) {
+			// Handle decompression errors
+			console.error(
+				`[TrashCacheManager] Failed to get status for ${serviceType}/${configType}`,
+				{
+					dataSize: cacheEntry.data.length,
+					error: error instanceof Error ? error.message : String(error),
+				},
+			);
+			await this.delete(serviceType, configType);
+			return null;
+		}
 
 		return {
 			serviceType,
@@ -230,17 +292,41 @@ export class TrashCacheManager {
 		});
 
 		const statuses: TrashCacheStatus[] = [];
+		const entriesToDelete: string[] = [];
 
 		for (const entry of cacheEntries) {
 			const staleThreshold = new Date();
 			staleThreshold.setHours(staleThreshold.getHours() - this.options.staleAfterHours);
 			const isStale = entry.lastCheckedAt <= staleThreshold;
 
-			const data = this.options.compressionEnabled
-				? await decompressData<unknown[]>(entry.data)
-				: (JSON.parse(entry.data) as unknown[]);
+			let itemCount = 0;
+			try {
+				const data = this.options.compressionEnabled
+					? await decompressData<unknown[]>(entry.data)
+					: safeJsonParse<unknown[]>(entry.data, {
+							serviceType,
+							configType: entry.configType,
+						});
 
-			const itemCount = Array.isArray(data) ? data.length : 0;
+				// If parsing failed in non-compressed mode, mark for deletion
+				if (!this.options.compressionEnabled && data === null) {
+					entriesToDelete.push(entry.configType);
+					continue;
+				}
+
+				itemCount = Array.isArray(data) ? data.length : 0;
+			} catch (error) {
+				// Handle decompression errors - mark for deletion
+				console.error(
+					`[TrashCacheManager] Failed to get status for ${serviceType}/${entry.configType}`,
+					{
+						dataSize: entry.data.length,
+						error: error instanceof Error ? error.message : String(error),
+					},
+				);
+				entriesToDelete.push(entry.configType);
+				continue;
+			}
 
 			statuses.push({
 				serviceType,
@@ -251,6 +337,11 @@ export class TrashCacheManager {
 				itemCount,
 				isStale,
 			});
+		}
+
+		// Clean up corrupted entries
+		for (const configType of entriesToDelete) {
+			await this.delete(serviceType, configType as TrashConfigType);
 		}
 
 		return statuses;

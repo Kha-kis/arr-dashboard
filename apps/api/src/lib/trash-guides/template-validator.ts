@@ -12,6 +12,7 @@ import type {
 	TemplateConflict,
 	TemplateCompatibility,
 	CompatibilityIssue,
+	TemplateCustomFormat,
 } from "@arr/shared";
 import type { PrismaClient } from "@prisma/client";
 
@@ -58,13 +59,25 @@ export class TemplateValidator {
 	checkCompatibility(importData: TemplateExportFormat): TemplateCompatibility {
 		const issues: CompatibilityIssue[] = [];
 
-		// Check version compatibility
+		// Check version compatibility using numeric comparison
 		const version = importData.version;
-		if (version !== "1.0" && version !== "2.0") {
+		const minSupportedVersion = "1.0";
+		const maxSupportedVersion = "2.0";
+
+		if (!version || typeof version !== "string") {
 			issues.push({
 				type: "version",
 				severity: "warning",
-				message: `Template was exported with version ${version}. This version supports 1.0 and 2.0.`,
+				message: "Template version is missing or invalid.",
+			});
+		} else if (
+			this.compareVersions(version, minSupportedVersion) < 0 ||
+			this.compareVersions(version, maxSupportedVersion) > 0
+		) {
+			issues.push({
+				type: "version",
+				severity: "warning",
+				message: `Template was exported with version ${version}. This version supports ${minSupportedVersion} to ${maxSupportedVersion}.`,
 			});
 		}
 
@@ -266,20 +279,24 @@ export class TemplateValidator {
 			return;
 		}
 
+		const customFormats = config.customFormats as TemplateCustomFormat[];
+
 		// Validate each custom format
-		config.customFormats.forEach((cf: any, index: number) => {
-			if (!cf.trash_id) {
+		customFormats.forEach((cf: TemplateCustomFormat, index: number) => {
+			if (!cf.trashId) {
 				errors.push({
-					field: `customFormats[${index}].trash_id`,
-					message: "Custom format is missing trash_id",
+					field: `customFormats[${index}].trashId`,
+					message: "Custom format is missing trashId",
 					severity: "error",
 				});
 			}
 
-			if (cf.specifications && cf.specifications.length === 0) {
+			// Check specifications in the originalConfig (if present)
+			const specs = cf.originalConfig?.specifications;
+			if (Array.isArray(specs) && specs.length === 0) {
 				warnings.push({
-					field: `customFormats[${index}].specifications`,
-					message: `Custom format "${cf.name || cf.trash_id}" has no specifications`,
+					field: `customFormats[${index}].originalConfig.specifications`,
+					message: `Custom format "${cf.name || cf.trashId}" has no specifications`,
 					severity: "warning",
 				});
 			}

@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { useDeploymentHistoryDetail } from "../../../hooks/api/useDeploymentHistory";
 import { format } from "date-fns";
 import { X } from "lucide-react";
+import { Button } from "../../../components/ui";
 
 interface DeploymentHistoryDetailsModalProps {
 	historyId: string;
@@ -278,22 +279,20 @@ export function DeploymentHistoryDetailsModal({
 
 				{/* Footer */}
 				<div className="flex items-center justify-end gap-3 p-6 border-t border-border">
-					<button
-						onClick={onClose}
-						className="px-4 py-2 text-sm rounded-md border border-border text-fg hover:bg-bg-muted transition-colors"
-					>
+					<Button variant="secondary" onClick={onClose}>
 						Close
-					</button>
+					</Button>
 					{data?.data &&
 						!data.data.rolledBack &&
 						onUndeploy && (
-							<button
+							<Button
+								variant="danger"
 								onClick={() => onUndeploy(historyId)}
-								className="px-4 py-2 text-sm rounded-md bg-orange-500 text-white hover:bg-orange-600 transition-colors"
 								title="Remove Custom Formats deployed by this template (shared CFs will be kept)"
+								className="bg-orange-500 hover:bg-orange-600"
 							>
 								Undeploy
-							</button>
+							</Button>
 						)}
 				</div>
 			</div>

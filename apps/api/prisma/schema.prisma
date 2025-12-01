@@ -28,6 +28,7 @@ model User {
   oidcAccounts        OIDCAccount[]
   webauthnCredentials WebAuthnCredential[]
   trashSettings       TrashSettings?
+  serviceInstances    ServiceInstance[]
 }
 
 model Session {
@@ -51,6 +52,7 @@ model ServiceTag {
 
 model ServiceInstance {
   id              String              @id @default(cuid())
+  userId          String
   service         ServiceType
   label           String
   baseUrl         String
@@ -64,6 +66,9 @@ model ServiceInstance {
   defaultSeasonFolder Boolean?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
+
+  // Relations
+  user                        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   tags                        ServiceInstanceTag[]
   trashSyncHistory            TrashSyncHistory[]
   trashBackups                TrashBackup[]
@@ -73,6 +78,7 @@ model ServiceInstance {
   deploymentHistory           TemplateDeploymentHistory[]
 
   @@index([service])
+  @@index([userId])
 }
 
 model ServiceInstanceTag {

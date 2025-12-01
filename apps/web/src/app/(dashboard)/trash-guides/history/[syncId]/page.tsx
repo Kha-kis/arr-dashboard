@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { useSyncDetail, useRollbackSync } from "../../../../../hooks/api/useSync";
 import { useState } from "react";
+import { toast } from "sonner";
 
 const STATUS_ICONS = {
 	SUCCESS: CheckCircle2,
@@ -38,12 +39,15 @@ export default function SyncDetailPage() {
 
 	const handleRollback = async () => {
 		try {
-			await rollbackMutation.mutateAsync(syncId);
+			await rollbackMutation.mutateAsync({
+				syncId,
+				instanceId: sync?.instanceId,
+			});
 			setShowRollbackConfirm(false);
-			// Refresh the page or show success message
-			window.location.reload();
+			toast.success("Rollback completed successfully");
 		} catch (error) {
 			console.error("Rollback failed:", error);
+			toast.error("Rollback failed. Please try again.");
 		}
 	};
 

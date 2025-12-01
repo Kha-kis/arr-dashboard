@@ -15,6 +15,10 @@ import {
 	type TemplateResponse,
 	type TemplateStatsResponse,
 } from "../../lib/api-client/templates";
+import {
+	importEnhancedTemplate,
+	type EnhancedImportTemplatePayload,
+} from "../../lib/api-client/trash-guides";
 
 // ============================================================================
 // Query Hooks
@@ -132,6 +136,20 @@ export const useImportTemplate = () => {
 
 	return useMutation({
 		mutationFn: (jsonData: string) => importTemplate(jsonData),
+		onSuccess: () => {
+			void queryClient.invalidateQueries({ queryKey: ["templates"] });
+		},
+	});
+};
+
+/**
+ * Hook to import a template with enhanced options (validation, conflict resolution)
+ */
+export const useEnhancedImportTemplate = () => {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: (payload: EnhancedImportTemplatePayload) => importEnhancedTemplate(payload),
 		onSuccess: () => {
 			void queryClient.invalidateQueries({ queryKey: ["templates"] });
 		},

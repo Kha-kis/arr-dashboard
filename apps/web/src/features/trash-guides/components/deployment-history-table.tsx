@@ -9,6 +9,8 @@ import {
 import type { DeploymentHistoryEntry } from "../../../lib/api-client/trash-guides";
 import { format } from "date-fns";
 import { DeploymentHistoryDetailsModal } from "./deployment-history-details-modal";
+import { Button, Badge } from "../../../components/ui";
+import { Eye, Undo2, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
 
 interface DeploymentHistoryTableProps {
 	templateId?: string;
@@ -33,29 +35,30 @@ export function DeploymentHistoryTable({
 
 	if (isLoading) {
 		return (
-			<div className="flex items-center justify-center p-8">
-				<div className="text-sm text-muted-foreground">
+			<div className="flex items-center justify-center p-8 rounded-xl border border-white/10 bg-white/5">
+				<div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+				<span className="ml-3 text-sm text-white/60">
 					Loading deployment history...
-				</div>
+				</span>
 			</div>
 		);
 	}
 
 	if (error) {
 		return (
-			<div className="rounded-lg border border-destructive bg-destructive/10 p-4">
-				<p className="text-sm font-medium text-destructive">
+			<div className="rounded-xl border border-red-500/30 bg-red-500/10 p-6">
+				<p className="text-sm font-medium text-red-400">
 					Failed to load deployment history
 				</p>
-				<p className="mt-1 text-xs text-destructive/80">{error.message}</p>
+				<p className="mt-1 text-xs text-red-400/70">{error.message}</p>
 			</div>
 		);
 	}
 
 	if (!data?.data?.history || data.data.history.length === 0) {
 		return (
-			<div className="rounded-lg border border-dashed p-8 text-center">
-				<p className="text-sm text-muted-foreground">
+			<div className="rounded-xl border border-dashed border-white/20 bg-white/5 p-8 text-center">
+				<p className="text-sm text-white/60">
 					No deployment history found
 				</p>
 			</div>
@@ -76,120 +79,116 @@ export function DeploymentHistoryTable({
 
 	return (
 		<div className="space-y-4">
-			<div className="rounded-lg border">
+			<div className="overflow-hidden rounded-xl border border-white/10 bg-white/5">
 				<div className="overflow-x-auto">
 					<table className="w-full">
-						<thead className="border-b bg-muted/50">
+						<thead className="border-b border-white/10 bg-white/5">
 							<tr>
-								<th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">
+								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-white/60">
 									Timestamp
 								</th>
 								{!templateId && !instanceId && (
-									<th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">
+									<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-white/60">
 										Template
 									</th>
 								)}
-								<th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">
+								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-white/60">
 									{templateId ? "Instance" : instanceId ? "Template" : "Instance"}
 								</th>
-								<th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">
+								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-white/60">
 									Status
 								</th>
-								<th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">
+								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-white/60">
 									Duration
 								</th>
-								<th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">
+								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-white/60">
 									Results
 								</th>
-								<th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground">
+								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-white/60">
 									Actions
 								</th>
 							</tr>
 						</thead>
-						<tbody className="divide-y">
+						<tbody className="divide-y divide-white/10">
 							{history.map((entry) => (
 								<tr
 									key={entry.id}
-									className="hover:bg-muted/50 transition-colors"
+									className="transition hover:bg-white/5"
 								>
-									<td className="px-4 py-3 text-sm">
+									<td className="px-6 py-4 text-sm">
 										<div className="flex flex-col">
-											<span className="font-medium">
+											<span className="font-medium text-white">
 												{format(new Date(entry.deployedAt), "MMM d, yyyy")}
 											</span>
-											<span className="text-xs text-muted-foreground">
+											<span className="text-xs text-white/60">
 												{format(new Date(entry.deployedAt), "h:mm a")}
 											</span>
 										</div>
 									</td>
 									{!templateId && !instanceId && (
-										<td className="px-4 py-3 text-sm">
+										<td className="px-6 py-4 text-sm">
 											<div className="flex flex-col">
-												<span className="font-medium">
+												<span className="font-medium text-white">
 													{entry.template?.name || "Unknown"}
 												</span>
-												<span className="text-xs text-muted-foreground">
+												<span className="text-xs text-white/60">
 													{entry.template?.serviceType}
 												</span>
 											</div>
 										</td>
 									)}
-									<td className="px-4 py-3 text-sm">
+									<td className="px-6 py-4 text-sm">
 										{templateId || !instanceId ? (
 											<div className="flex flex-col">
-												<span className="font-medium">
+												<span className="font-medium text-white">
 													{entry.instance?.label || "Unknown"}
 												</span>
-												<span className="text-xs text-muted-foreground">
+												<span className="text-xs text-white/60">
 													{entry.instance?.service}
 												</span>
 											</div>
 										) : (
 											<div className="flex flex-col">
-												<span className="font-medium">
+												<span className="font-medium text-white">
 													{entry.template?.name || "Unknown"}
 												</span>
-												<span className="text-xs text-muted-foreground">
+												<span className="text-xs text-white/60">
 													{entry.template?.serviceType}
 												</span>
 											</div>
 										)}
 									</td>
-									<td className="px-4 py-3">
+									<td className="px-6 py-4">
 										<StatusBadge status={entry.status} />
 									</td>
-									<td className="px-4 py-3 text-sm text-muted-foreground">
+									<td className="px-6 py-4 text-sm text-white/60">
 										{entry.duration ? `${entry.duration}s` : "-"}
 									</td>
-									<td className="px-4 py-3 text-sm">
-										<div className="flex flex-col space-y-1">
-											<div className="flex items-center gap-2">
-												<span className="text-green-600 dark:text-green-400">
-													{entry.appliedCFs} applied
-												</span>
-											</div>
+									<td className="px-6 py-4 text-sm">
+										<div className="flex items-center gap-3 text-xs">
+											<span className="text-green-400">✓ {entry.appliedCFs}</span>
 											{entry.failedCFs > 0 && (
-												<div className="flex items-center gap-2">
-													<span className="text-red-600 dark:text-red-400">
-														{entry.failedCFs} failed
-													</span>
-												</div>
+												<span className="text-red-400">✗ {entry.failedCFs}</span>
 											)}
 										</div>
 									</td>
-									<td className="px-4 py-3">
+									<td className="px-6 py-4">
 										<div className="flex items-center gap-2">
-											<button
+											<Button
+												variant="ghost"
+												size="sm"
 												onClick={() => setSelectedHistoryId(entry.id)}
-												className="text-xs text-primary hover:underline"
+												className="gap-1.5"
 											>
-												View Details
-											</button>
+												<Eye className="h-3.5 w-3.5" />
+												Details
+											</Button>
 											{!entry.rolledBack && (
 												undeployConfirmId === entry.id ? (
 													<div className="flex items-center gap-1">
-														<button
-															className="text-xs text-destructive hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+														<Button
+															variant="danger"
+															size="sm"
 															onClick={() => {
 																undeployMutation.mutate(entry.id, {
 																	onSuccess: () => setUndeployConfirmId(null),
@@ -198,34 +197,39 @@ export function DeploymentHistoryTable({
 															disabled={undeployMutation.isPending}
 														>
 															{undeployMutation.isPending ? "Undeploying..." : "Confirm"}
-														</button>
-														<button
-															className="text-xs text-muted-foreground hover:underline"
+														</Button>
+														<Button
+															variant="ghost"
+															size="sm"
 															onClick={() => setUndeployConfirmId(null)}
 															disabled={undeployMutation.isPending}
 														>
 															Cancel
-														</button>
+														</Button>
 													</div>
 												) : (
-													<button
-														className="text-xs text-orange-600 dark:text-orange-400 hover:underline"
+													<Button
+														variant="secondary"
+														size="sm"
 														onClick={() => setUndeployConfirmId(entry.id)}
 														title="Remove Custom Formats deployed by this template (shared CFs will be kept)"
+														className="gap-1.5 text-orange-400 hover:text-orange-300"
 													>
+														<Undo2 className="h-3.5 w-3.5" />
 														Undeploy
-													</button>
+													</Button>
 												)
 											)}
 											{entry.rolledBack && (
-												<span className="text-xs text-muted-foreground">
+												<Badge variant="default" size="sm">
 													Undeployed
-												</span>
+												</Badge>
 											)}
 											{deleteConfirmId === entry.id ? (
 												<div className="flex items-center gap-1">
-													<button
-														className="text-xs text-destructive hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+													<Button
+														variant="danger"
+														size="sm"
 														onClick={() => {
 															deleteMutation.mutate(entry.id, {
 																onSuccess: () => setDeleteConfirmId(null),
@@ -234,22 +238,25 @@ export function DeploymentHistoryTable({
 														disabled={deleteMutation.isPending}
 													>
 														{deleteMutation.isPending ? "Deleting..." : "Confirm"}
-													</button>
-													<button
-														className="text-xs text-muted-foreground hover:underline"
+													</Button>
+													<Button
+														variant="ghost"
+														size="sm"
 														onClick={() => setDeleteConfirmId(null)}
 														disabled={deleteMutation.isPending}
 													>
 														Cancel
-													</button>
+													</Button>
 												</div>
 											) : (
-												<button
-													className="text-xs text-muted-foreground hover:text-destructive hover:underline"
+												<Button
+													variant="ghost"
+													size="sm"
 													onClick={() => setDeleteConfirmId(entry.id)}
+													className="gap-1.5 text-white/60 hover:text-red-400"
 												>
-													Delete
-												</button>
+													<Trash2 className="h-3.5 w-3.5" />
+												</Button>
 											)}
 										</div>
 									</td>
@@ -262,25 +269,32 @@ export function DeploymentHistoryTable({
 
 			{/* Pagination Controls */}
 			<div className="flex items-center justify-between">
-				<p className="text-sm text-muted-foreground">
-					Showing {offset + 1} to {offset + history.length} of{" "}
-					{pagination.total} deployments
+				<p className="text-sm text-white/70">
+					Showing <span className="font-medium text-white">{offset + 1}</span> to{" "}
+					<span className="font-medium text-white">{offset + history.length}</span> of{" "}
+					<span className="font-medium text-white">{pagination.total}</span> deployments
 				</p>
 				<div className="flex gap-2">
-					<button
+					<Button
+						variant="secondary"
+						size="sm"
 						onClick={handlePrevious}
 						disabled={offset === 0}
-						className="px-3 py-1 text-sm rounded border hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+						className="gap-1.5"
 					>
+						<ChevronLeft className="h-4 w-4" />
 						Previous
-					</button>
-					<button
+					</Button>
+					<Button
+						variant="secondary"
+						size="sm"
 						onClick={handleNext}
 						disabled={!pagination.hasMore}
-						className="px-3 py-1 text-sm rounded border hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+						className="gap-1.5"
 					>
 						Next
-					</button>
+						<ChevronRight className="h-4 w-4" />
+					</Button>
 				</div>
 			</div>
 
@@ -305,36 +319,34 @@ export function DeploymentHistoryTable({
 function StatusBadge({ status }: { status: string }) {
 	const statusConfig: Record<
 		string,
-		{ label: string; className: string }
+		{ label: string; variant: "success" | "warning" | "danger" | "info" | "default" }
 	> = {
 		SUCCESS: {
 			label: "Success",
-			className: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400",
+			variant: "success",
 		},
 		PARTIAL_SUCCESS: {
 			label: "Partial",
-			className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400",
+			variant: "warning",
 		},
 		FAILED: {
 			label: "Failed",
-			className: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400",
+			variant: "danger",
 		},
 		IN_PROGRESS: {
 			label: "In Progress",
-			className: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400",
+			variant: "info",
 		},
 	};
 
 	const config = statusConfig[status] || {
 		label: status,
-		className: "bg-gray-100 text-gray-800 dark:bg-gray-900/30 dark:text-gray-400",
+		variant: "default" as const,
 	};
 
 	return (
-		<span
-			className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${config.className}`}
-		>
+		<Badge variant={config.variant} size="sm">
 			{config.label}
-		</span>
+		</Badge>
 	);
 }

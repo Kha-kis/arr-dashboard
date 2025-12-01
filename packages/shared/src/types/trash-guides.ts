@@ -765,6 +765,16 @@ export interface CustomFormatDeploymentItem {
 }
 
 /**
+ * Unmatched Custom Format from instance
+ * CFs that exist in the instance but couldn't be matched to a trash_id
+ */
+export interface UnmatchedCustomFormat {
+	instanceId: number; // The CF's ID in the *arr instance
+	name: string; // The CF's name
+	reason: string; // Why it couldn't be matched (e.g., "No trash_id found in specifications or name pattern")
+}
+
+/**
  * Deployment preview result
  */
 export interface DeploymentPreview {
@@ -783,16 +793,23 @@ export interface DeploymentPreview {
 		skippedCustomFormats: number;
 		totalConflicts: number;
 		unresolvedConflicts: number;
+		unmatchedCustomFormats: number; // CFs in instance that couldn't be matched to a trash_id
 	};
 
 	// Deployment items
 	customFormats: CustomFormatDeploymentItem[];
+
+	// Unmatched CFs in instance (couldn't extract trash_id)
+	unmatchedCustomFormats: UnmatchedCustomFormat[];
 
 	// Instance state
 	canDeploy: boolean; // False if instance unreachable or conflicts unresolved
 	requiresConflictResolution: boolean;
 	instanceReachable: boolean;
 	instanceVersion?: string;
+
+	// Warnings
+	warnings: string[];
 }
 
 /**

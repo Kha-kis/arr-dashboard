@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useImportTemplate } from "../../../hooks/api/useTemplates";
-import { Alert, AlertDescription, Input } from "../../../components/ui";
+import { Alert, AlertDescription, Input, Button } from "../../../components/ui";
 import { Upload, X } from "lucide-react";
 
 interface TemplateImportDialogProps {
@@ -42,11 +42,50 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 		const file = event.target.files?.[0];
 		if (!file) return;
 
+		// Clear any previous errors when starting a new file read
+		setParseError(null);
+
+		// File size validation - limit to 10MB to prevent browser freeze
+		const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB in bytes
+		if (file.size > MAX_FILE_SIZE) {
+			setParseError(
+				`File is too large (${(file.size / (1024 * 1024)).toFixed(1)}MB). Maximum allowed size is 10MB.`
+			);
+			// Reset the input to allow re-selecting
+			event.target.value = "";
+			return;
+		}
+
 		const reader = new FileReader();
+
 		reader.onload = (e) => {
-			const text = e.target?.result as string;
-			setJsonData(text);
+			const result = e.target?.result;
+			if (typeof result === "string") {
+				// Validate that the result is non-empty before setting
+				if (result.trim()) {
+					setJsonData(result);
+				} else {
+					setParseError("File is empty. Please select a valid JSON file.");
+					setJsonData("");
+				}
+			} else {
+				setParseError("Failed to read file. Please try again or paste the JSON directly.");
+				setJsonData("");
+			}
 		};
+
+		reader.onerror = () => {
+			// Abort any ongoing read operation
+			reader.abort();
+			setParseError("Failed to read file. Please try again or paste the JSON directly.");
+			setJsonData("");
+		};
+
+		reader.onabort = () => {
+			setParseError("File reading was cancelled. Please try again.");
+			setJsonData("");
+		};
+
 		reader.readAsText(file);
 	};
 
@@ -141,22 +180,18 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 
 					{/* Actions */}
 					<div className="flex justify-end gap-2">
-						<button
-							type="button"
-							onClick={onClose}
-							className="rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
-						>
+						<Button variant="secondary" onClick={onClose}>
 							Cancel
-						</button>
-						<button
-							type="button"
+						</Button>
+						<Button
+							variant="primary"
 							onClick={handleImport}
 							disabled={!jsonData.trim() || importMutation.isPending}
-							className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary/90 disabled:opacity-50"
+							className="gap-2"
 						>
 							<Upload className="h-4 w-4" />
 							{importMutation.isPending ? "Importing..." : "Import Template"}
-						</button>
+						</Button>
 					</div>
 				</div>
 			</div>
