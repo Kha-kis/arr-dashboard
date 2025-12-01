@@ -2,11 +2,14 @@
  * HTML Sanitization Utility
  * Provides safe HTML rendering to prevent XSS attacks
  *
- * Uses isomorphic-dompurify for SSR compatibility - it uses jsdom on the server
- * and native DOMPurify in the browser.
+ * Uses DOMPurify only on the client side to avoid SSR issues.
+ * On the server, returns empty string (content will hydrate on client).
  */
 
-import DOMPurify from "isomorphic-dompurify";
+// Only import DOMPurify on the client
+const DOMPurify = typeof window !== "undefined"
+	? require("dompurify").default
+	: null;
 
 // Track if hooks have been initialized
 let hooksInitialized = false;
@@ -15,10 +18,10 @@ let hooksInitialized = false;
  * Initialize DOMPurify hooks for link security
  */
 function initializeHooks(): void {
-	if (hooksInitialized) return;
+	if (hooksInitialized || !DOMPurify) return;
 
 	// Add hook to enforce noopener noreferrer on external links to prevent reverse tabnapping
-	DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+	DOMPurify.addHook("afterSanitizeAttributes", (node: Element) => {
 		// Check if this is an anchor element with target="_blank"
 		if (node.tagName === "A" && node.getAttribute("target") === "_blank") {
 			const existingRel = node.getAttribute("rel") || "";
@@ -60,6 +63,9 @@ const SANITIZE_CONFIG = {
  */
 export function sanitizeHtml(html: string | undefined | null): string {
 	if (!html) return "";
+
+	// On server, return empty string - content will hydrate on client
+	if (!DOMPurify) return "";
 
 	// Initialize hooks on first use
 	initializeHooks();

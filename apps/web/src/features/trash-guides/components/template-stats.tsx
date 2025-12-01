@@ -4,11 +4,19 @@ import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchTemplateStats, fetchTemplate } from "../../../lib/api-client/templates";
 import type { TemplateStatsResponse } from "../../../lib/api-client/templates";
-import { ChevronDown, ChevronUp, Calendar, Package, Activity, Rocket, Layers, History, SlidersHorizontal, Unlink2, RefreshCw, Bell, Hand } from "lucide-react";
+import { ChevronDown, ChevronUp, Calendar, Package, Activity, Rocket, Layers, History, SlidersHorizontal, Unlink2, RefreshCw, Bell, Hand, X } from "lucide-react";
 import { BulkDeploymentModal } from "./bulk-deployment-modal";
 import { DeploymentHistoryTable } from "./deployment-history-table";
 import { InstanceOverrideEditor } from "./instance-override-editor";
-import { DropdownMenu, DropdownMenuItem, Badge } from "../../../components/ui";
+import { DropdownMenu, DropdownMenuItem, Badge, Button } from "../../../components/ui";
+import {
+	Dialog,
+	DialogHeader,
+	DialogTitle,
+	DialogDescription,
+	DialogContent,
+	DialogFooter,
+} from "../../../components/ui/dialog";
 import { updateSyncStrategy, bulkUpdateSyncStrategy } from "../../../lib/api-client/trash-guides";
 import { cn } from "../../../lib/utils";
 import { toast } from "sonner";
@@ -375,42 +383,29 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 			)}
 
 			{/* Deployment History Modal */}
-			{showHistory && (
-				<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-					<div className="bg-background rounded-lg shadow-lg max-w-6xl w-full mx-4 max-h-[90vh] overflow-hidden flex flex-col">
-						{/* Header */}
-						<div className="flex items-center justify-between p-6 border-b">
-							<div>
-								<h2 className="text-xl font-semibold">Deployment History</h2>
-								<p className="text-sm text-muted-foreground mt-1">
-									{templateName}
-								</p>
-							</div>
-							<button
-								onClick={() => setShowHistory(false)}
-								className="p-1 rounded-md hover:bg-muted transition-colors"
-							>
-								<ChevronUp className="h-5 w-5" />
-							</button>
+			<Dialog open={showHistory} onOpenChange={setShowHistory} size="xl">
+				<DialogHeader>
+					<DialogTitle>
+						<div className="flex items-center gap-2">
+							<History className="h-5 w-5" />
+							Deployment History
 						</div>
+					</DialogTitle>
+					<DialogDescription>
+						{templateName}
+					</DialogDescription>
+				</DialogHeader>
 
-						{/* Content */}
-						<div className="flex-1 overflow-y-auto p-6">
-							<DeploymentHistoryTable templateId={templateId} limit={10} />
-						</div>
+				<DialogContent>
+					<DeploymentHistoryTable templateId={templateId} limit={10} />
+				</DialogContent>
 
-						{/* Footer */}
-						<div className="flex items-center justify-end gap-3 p-6 border-t">
-							<button
-								onClick={() => setShowHistory(false)}
-								className="px-4 py-2 text-sm rounded-md border hover:bg-muted transition-colors"
-							>
-								Close
-							</button>
-						</div>
-					</div>
-				</div>
-			)}
+				<DialogFooter>
+					<Button variant="ghost" onClick={() => setShowHistory(false)}>
+						Close
+					</Button>
+				</DialogFooter>
+			</Dialog>
 
 			{/* Instance Override Editor Modal */}
 			{overrideModal && templateLoading && (
