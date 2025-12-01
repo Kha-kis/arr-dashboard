@@ -200,13 +200,18 @@ export class SyncEngine {
 				errors: [],
 			});
 
-			if (this.templateUpdater) {
-				const syncResult = await this.templateUpdater.syncTemplate(options.templateId);
-				if (!syncResult.success) {
-					throw new Error(
-						`Template sync failed: ${syncResult.errors?.join(", ") || "Unknown error"}`,
-					);
-				}
+			if (!this.templateUpdater) {
+				throw new Error(
+					"Template sync cannot proceed: templateUpdater dependency is not configured. " +
+						"Ensure SyncEngine is instantiated with a TemplateUpdater instance.",
+				);
+			}
+
+			const syncResult = await this.templateUpdater.syncTemplate(options.templateId);
+			if (!syncResult.success) {
+				throw new Error(
+					`Template sync failed: ${syncResult.errors?.join(", ") || "Unknown error"}`,
+				);
 			}
 
 			// Step 2: Deploy to instance using deployment executor

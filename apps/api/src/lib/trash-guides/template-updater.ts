@@ -402,7 +402,7 @@ export class TemplateUpdater {
 		try {
 			templateConfig = JSON.parse(template.configData);
 		} catch (parseError) {
-			this.logger.error(
+			console.error(
 				`Failed to parse configData for template "${template.name}" (id: ${template.id}): ${parseError instanceof Error ? parseError.message : "Unknown error"}`,
 			);
 			// Fall back to empty config - updater can continue with empty state

@@ -571,9 +571,28 @@ export class DeploymentExecutorService {
 				const formatItems: Array<{ format: number; score: number }> = [];
 				const scoreSet = templateConfig.qualityProfile?.trash_score_set;
 
+				// Build map of existing scores in the profile for "keep_existing" resolution
+				const existingScoreMap = new Map<number, number>();
+				for (const item of targetProfile.formatItems || []) {
+					existingScoreMap.set(item.format, item.score);
+				}
+
 				for (const templateCF of templateCFs) {
 					const cf = cfMap.get(templateCF.name);
 					if (cf && cf.id) {
+						// Check if user chose "keep_existing" for this CF's conflicts
+						// If so, preserve the instance's current score instead of template score
+						if (conflictResolutions?.[templateCF.trashId] === "keep_existing") {
+							const existingScore = existingScoreMap.get(cf.id);
+							if (existingScore !== undefined) {
+								formatItems.push({
+									format: cf.id,
+									score: existingScore,
+								});
+								continue;
+							}
+						}
+
 						// Use helper to calculate score with instance override support
 						const instanceOverrideScore = overrideMap.get(cf.id);
 						const { score } = calculateScoreAndSource(templateCF, scoreSet, instanceOverrideScore);
