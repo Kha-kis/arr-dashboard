@@ -465,7 +465,7 @@ export const CFConfiguration = ({
 						<span className="text-sm text-fg-muted">{profileCFs.length} formats</span>
 					</div>
 					<p className="text-sm text-fg-muted">
-						These custom formats come from the TRaSH Guides quality profile "{qualityProfile.name}". You can adjust scores or disable them.
+						These custom formats come from the TRaSH Guides quality profile &quot;{qualityProfile.name}&quot;. You can adjust scores or disable them.
 					</p>
 
 					{profileCFs.length > 0 ? (
@@ -476,7 +476,7 @@ export const CFConfiguration = ({
 						<Alert>
 							<Info className="h-4 w-4" />
 							<AlertDescription>
-								All quality profile formats have been removed. Click "Add More Formats" to browse available formats.
+								All quality profile formats have been removed. Click &quot;Add More Formats&quot; to browse available formats.
 							</AlertDescription>
 						</Alert>
 					)}
@@ -490,7 +490,7 @@ export const CFConfiguration = ({
 							<span className="text-sm text-fg-muted">{additionalCFs.length} formats</span>
 						</div>
 						<p className="text-sm text-fg-muted">
-							These custom formats were added beyond the quality profile's defaults.
+							These custom formats were added beyond the quality profile&apos;s defaults.
 						</p>
 
 						<div className="space-y-2">
@@ -711,7 +711,7 @@ export const CFConfiguration = ({
 					<Alert>
 						<Info className="h-4 w-4" />
 						<AlertDescription>
-							Found {filteredMandatoryCFs.length + filteredGroupedCFs.reduce((acc: number, g: CFGroup) => acc + g.customFormats.length, 0)} custom formats matching "{searchQuery}"
+							Found {filteredMandatoryCFs.length + filteredGroupedCFs.reduce((acc: number, g: CFGroup) => acc + g.customFormats.length, 0)} custom formats matching &quot;{searchQuery}&quot;
 						</AlertDescription>
 					</Alert>
 				</div>
@@ -1064,7 +1064,7 @@ export const CFConfiguration = ({
 								<span className="flex flex-col sm:inline-flex sm:items-center sm:gap-2">
 									<span>Additional Custom Formats</span>
 									<span className="text-sm font-normal text-fg-muted">
-										(Custom formats you've added from the catalog)
+										(Custom formats you&apos;ve added from the catalog)
 									</span>
 								</span>
 							</h3>

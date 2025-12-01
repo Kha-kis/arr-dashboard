@@ -67,7 +67,7 @@ export const SchedulerStatusDashboard = () => {
 							TRaSH Guides Update Scheduler
 						</h3>
 						<p className="text-sm text-fg-muted mt-1">
-							Checks for TRaSH Guides updates every 12 hours. Templates set to "Auto" sync strategy
+							Checks for TRaSH Guides updates every 12 hours. Templates set to &quot;Auto&quot; sync strategy
 							will be automatically updated and deployed to your instances.
 						</p>
 					</div>
@@ -157,7 +157,7 @@ export const SchedulerStatusDashboard = () => {
 								<h5 className="text-xs font-medium text-fg mb-1">Template Version Updates</h5>
 								<p className="text-xs text-fg-muted">
 									Compares your templates against latest TRaSH Guides commits.
-									Templates with "Auto" strategy are updated and deployed automatically.
+									Templates with &quot;Auto&quot; strategy are updated and deployed automatically.
 								</p>
 							</div>
 							<div className="grid gap-3 grid-cols-2 md:grid-cols-4">

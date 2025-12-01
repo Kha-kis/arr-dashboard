@@ -200,7 +200,7 @@ export const CustomFormatCustomization = ({
 			<div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
 				<h4 className="font-medium text-white mb-2">⚙️ Review & Customize Formats</h4>
 				<p className="text-sm text-white/70 mb-3">
-					TRaSH Guides recommends specific Custom Formats for this profile. <strong className="text-white">Pre-selected formats are based on the quality profile's configuration</strong>. You can adjust as needed:
+					TRaSH Guides recommends specific Custom Formats for this profile. <strong className="text-white">Pre-selected formats are based on the quality profile&apos;s configuration</strong>. You can adjust as needed:
 				</p>
 				<div className="space-y-2 text-sm text-white/70 ml-4 mb-3">
 					<div>• <strong className="text-white">Pre-selected</strong> - Recommended by TRaSH for this profile</div>

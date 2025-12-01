@@ -355,7 +355,7 @@ export const InstanceOverrideEditor = ({
 						{hasChanges && (
 							<div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
 								<p className="text-sm text-amber-700 dark:text-amber-300">
-									You have unsaved changes. Click "Save Overrides" to apply them.
+									You have unsaved changes. Click &quot;Save Overrides&quot; to apply them.
 								</p>
 							</div>
 						)}

@@ -127,7 +127,7 @@ export const CFGroupSelection = ({
 			<div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
 				<h4 className="font-medium text-white mb-2">🎯 TRaSH Guides Recommendations</h4>
 				<p className="text-sm text-white/70 mb-3">
-					TRaSH Guides has pre-configured this quality profile with specific Custom Format Groups. <strong className="text-white">Groups marked as "Recommended" are suggested by TRaSH for optimal results.</strong>
+					TRaSH Guides has pre-configured this quality profile with specific Custom Format Groups. <strong className="text-white">Groups marked as &quot;Recommended&quot; are suggested by TRaSH for optimal results.</strong>
 				</p>
 				<div className="space-y-2 text-sm text-white/70 ml-4 mb-3">
 					<div>• <strong className="text-white">✅ Enabled CFs</strong> - Will be automatically enabled based on TRaSH recommendations</div>

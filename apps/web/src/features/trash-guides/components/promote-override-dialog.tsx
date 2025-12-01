@@ -86,7 +86,7 @@ export function PromoteOverrideDialog({
 						<div className="text-sm text-amber-900 dark:text-amber-200">
 							<p className="font-medium mb-1">This will affect all instances</p>
 							<p className="text-amber-800 dark:text-amber-300">
-								All instances using template "{templateName}" will receive this score on their next sync.
+								All instances using template &quot;{templateName}&quot; will receive this score on their next sync.
 							</p>
 						</div>
 					</div>
@@ -111,7 +111,7 @@ export function PromoteOverrideDialog({
 					<div className="space-y-2 text-sm">
 						<p className="font-medium">What will happen:</p>
 						<ul className="list-disc space-y-1 pl-5 text-muted-foreground">
-							<li>Template "{templateName}" will be updated with score: <span className="font-mono font-bold">{currentScore}</span></li>
+							<li>Template &quot;{templateName}&quot; will be updated with score: <span className="font-mono font-bold">{currentScore}</span></li>
 							<li>Instance-level override will be removed (score is now in template)</li>
 							<li>All instances using this template will get this score on next deployment/sync</li>
 						</ul>

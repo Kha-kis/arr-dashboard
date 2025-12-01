@@ -113,7 +113,7 @@ export function EnhancedTemplateExportModal({
 			<Alert>
 				<Info className="h-4 w-4" />
 				<AlertDescription className="text-xs">
-					Export "{templateName}" with metadata and filtering options for sharing
+					Export &quot;{templateName}&quot; with metadata and filtering options for sharing
 					or backup.
 				</AlertDescription>
 			</Alert>

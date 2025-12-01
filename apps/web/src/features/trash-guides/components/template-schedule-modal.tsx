@@ -142,7 +142,7 @@ export const TemplateScheduleModal = ({
 							{existingSchedule ? "Edit Sync Schedule" : "Create Sync Schedule"}
 						</h2>
 						<p className="mt-1 text-sm text-white/60">
-							Automatically sync "{templateName}" to {instanceName}
+							Automatically sync &quot;{templateName}&quot; to {instanceName}
 						</p>
 					</div>
 					<button
@@ -248,7 +248,7 @@ export const TemplateScheduleModal = ({
 								<p className="font-medium mb-1">How Sync Schedules Work</p>
 								<ul className="space-y-1 text-xs text-blue-200/80">
 									<li>• Schedule checks for template updates at the specified frequency</li>
-									<li>• If updates are found, they're either auto-applied or require approval</li>
+									<li>• If updates are found, they&apos;re either auto-applied or require approval</li>
 									<li>• You can manually sync anytime using the Sync button</li>
 								</ul>
 							</div>

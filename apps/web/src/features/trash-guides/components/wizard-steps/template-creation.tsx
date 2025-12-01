@@ -202,7 +202,7 @@ export const TemplateCreation = ({
 				</p>
 				{!isEditMode && (
 					<p className="text-xs text-white/60 italic">
-						💡 Tip: Choose a descriptive name that reflects the quality preferences (e.g., "4K HDR Optimized", "Anime Quality Profile").
+						💡 Tip: Choose a descriptive name that reflects the quality preferences (e.g., &quot;4K HDR Optimized&quot;, &quot;Anime Quality Profile&quot;).
 					</p>
 				)}
 			</div>
