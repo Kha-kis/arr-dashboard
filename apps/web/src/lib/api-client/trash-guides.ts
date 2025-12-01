@@ -728,6 +728,8 @@ export type ExecuteDeploymentPayload = {
 	templateId: string;
 	instanceId: string;
 	syncStrategy?: "auto" | "manual" | "notify";
+	/** Conflict resolutions: trashId -> resolution (use_template, keep_existing) */
+	conflictResolutions?: Record<string, ConflictResolution>;
 };
 
 export type ExecuteDeploymentResponse = {

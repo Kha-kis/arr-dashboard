@@ -84,12 +84,12 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			templateId: string;
 			instanceId: string;
 			syncStrategy?: "auto" | "manual" | "notify";
-			conflictResolutions?: Record<string, string>; // Map of trashId → resolution
+			conflictResolutions?: Record<string, "use_template" | "keep_existing">; // Map of trashId → resolution
 			createBackup?: boolean;
 		};
 	}>("/execute", async (request, reply) => {
 		try {
-			const { templateId, instanceId, syncStrategy } = request.body;
+			const { templateId, instanceId, syncStrategy, conflictResolutions } = request.body;
 			const userId = request.currentUser?.id;
 
 			if (!userId) {
@@ -106,12 +106,13 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				});
 			}
 
-			// Execute deployment
+			// Execute deployment with conflict resolutions
 			const result = await deploymentExecutor.deploySingleInstance(
 				templateId,
 				instanceId,
 				userId,
 				syncStrategy,
+				conflictResolutions,
 			);
 
 			if (result.success) {

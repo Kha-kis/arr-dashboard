@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
 	Dialog,
 	DialogHeader,
@@ -9,7 +9,7 @@ import {
 	DialogContent,
 	DialogFooter,
 } from "../../../components/ui/dialog";
-import { Skeleton, Button } from "../../../components/ui";
+import { Skeleton, Button, Select, SelectOption } from "../../../components/ui";
 import {
 	AlertCircle,
 	Plus,
@@ -22,11 +22,13 @@ import {
 	RefreshCw,
 	Bell,
 	Hand,
+	ChevronDown,
+	ChevronUp,
 } from "lucide-react";
 import { useDeploymentPreview } from "../../../hooks/api/useDeploymentPreview";
 import { executeDeployment } from "../../../lib/api-client/trash-guides";
 import { cn } from "../../../lib/utils";
-import type { DeploymentAction } from "../../../lib/api-client/trash-guides";
+import type { DeploymentAction, ConflictResolution } from "../../../lib/api-client/trash-guides";
 import { InstanceOverrideEditor } from "./instance-override-editor";
 
 interface DeploymentPreviewModalProps {
@@ -54,6 +56,22 @@ export const DeploymentPreviewModal = ({
 	);
 	const [showOverrideEditor, setShowOverrideEditor] = useState(false);
 	const [syncStrategy, setSyncStrategy] = useState<"auto" | "manual" | "notify">("notify");
+	// Track user's conflict resolution choices: trashId -> resolution
+	const [conflictResolutions, setConflictResolutions] = useState<Record<string, ConflictResolution>>({});
+
+	// Initialize conflict resolutions when data loads
+	useEffect(() => {
+		if (data?.data?.customFormats) {
+			const initialResolutions: Record<string, ConflictResolution> = {};
+			for (const cf of data.data.customFormats) {
+				if (cf.hasConflicts) {
+					// Default to use_template (update to match template)
+					initialResolutions[cf.trashId] = "use_template";
+				}
+			}
+			setConflictResolutions(initialResolutions);
+		}
+	}, [data]);
 
 	const toggleConflict = (trashId: string) => {
 		setExpandedConflicts((prev) => {
@@ -130,6 +148,7 @@ export const DeploymentPreviewModal = ({
 				templateId,
 				instanceId,
 				syncStrategy,
+				conflictResolutions: Object.keys(conflictResolutions).length > 0 ? conflictResolutions : undefined,
 			});
 
 			if (response.success) {
@@ -442,24 +461,68 @@ export const DeploymentPreviewModal = ({
 											</div>
 
 											{item.hasConflicts && item.conflicts.length > 0 && (
-												<div className="mt-2 pt-2 border-t border-current/20">
-													{item.conflicts.map((conflict, idx) => (
-														<div
-															key={idx}
-															className="text-xs mt-1 space-y-1 opacity-90"
+												<div className="mt-3 pt-3 border-t border-current/20">
+													<div className="flex items-center justify-between gap-4 mb-2">
+														<Button
+															variant="ghost"
+															size="sm"
+															onClick={() => toggleConflict(item.trashId)}
+															className="flex items-center gap-1.5 text-xs px-2 py-1 h-auto"
 														>
-															<p className="font-medium">
-																{conflict.conflictType.replace(/_/g, " ")}:
-															</p>
-															<p className="ml-2">
-																Suggested:{" "}
-																{conflict.suggestedResolution.replace(
-																	/_/g,
-																	" ",
-																)}
-															</p>
+															{expandedConflicts.has(item.trashId) ? (
+																<ChevronUp className="h-3.5 w-3.5" />
+															) : (
+																<ChevronDown className="h-3.5 w-3.5" />
+															)}
+															View differences
+														</Button>
+														{/* Conflict resolution selector */}
+														<div className="flex items-center gap-2 shrink-0">
+															<span className="text-xs text-fg-muted whitespace-nowrap">Action:</span>
+															<Select
+																value={conflictResolutions[item.trashId] || "use_template"}
+																onChange={(e) => {
+																	setConflictResolutions(prev => ({
+																		...prev,
+																		[item.trashId]: e.target.value as ConflictResolution
+																	}));
+																}}
+																className="w-[200px] text-sm px-3 py-2"
+															>
+																<SelectOption value="use_template">Update to template</SelectOption>
+																<SelectOption value="keep_existing">Keep existing</SelectOption>
+															</Select>
 														</div>
-													))}
+													</div>
+													{expandedConflicts.has(item.trashId) && (
+														<div className="mt-3 space-y-3 text-xs bg-bg-subtle/50 rounded-lg p-3 border border-border/50">
+															{item.conflicts.map((conflict, idx) => (
+																<div key={idx} className="space-y-2">
+																	<p className="font-medium text-fg capitalize">
+																		{conflict.conflictType.replace(/_/g, " ")}
+																	</p>
+																	<div className="grid grid-cols-2 gap-3 text-[11px]">
+																		<div className="bg-green-500/10 rounded-lg p-2.5 border border-green-500/20">
+																			<p className="font-semibold text-green-600 dark:text-green-400 mb-1.5">Template:</p>
+																			<pre className="overflow-auto max-h-48 whitespace-pre-wrap break-words text-fg-muted font-mono text-[10px]">
+																				{typeof conflict.templateValue === 'object'
+																					? JSON.stringify(conflict.templateValue, null, 2)
+																					: String(conflict.templateValue)}
+																			</pre>
+																		</div>
+																		<div className="bg-amber-500/10 rounded-lg p-2.5 border border-amber-500/20">
+																			<p className="font-semibold text-amber-600 dark:text-amber-400 mb-1.5">Instance:</p>
+																			<pre className="overflow-auto max-h-48 whitespace-pre-wrap break-words text-fg-muted font-mono text-[10px]">
+																				{typeof conflict.instanceValue === 'object'
+																					? JSON.stringify(conflict.instanceValue, null, 2)
+																					: String(conflict.instanceValue)}
+																			</pre>
+																		</div>
+																	</div>
+																</div>
+															))}
+														</div>
+													)}
 												</div>
 											)}
 										</div>

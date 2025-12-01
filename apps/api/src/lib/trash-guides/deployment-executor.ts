@@ -38,6 +38,65 @@ export interface BulkDeploymentResult {
 }
 
 // ============================================================================
+// Score Calculation Helper
+// ============================================================================
+
+interface ScoreCalculationResult {
+	score: number;
+	scoreSource: string;
+}
+
+interface TemplateCFForScoring {
+	scoreOverride?: number | null;
+	originalConfig?: {
+		trash_scores?: Record<string, number>;
+	};
+}
+
+/**
+ * Calculates the resolved score for a Custom Format using priority rules:
+ * 1. Instance-level override (manual changes in instance)
+ * 2. Template-level override (user's wizard selection)
+ * 3. TRaSH Guides score from profile's score set
+ * 4. TRaSH Guides default score
+ * 5. Fallback to 0
+ */
+function calculateScoreAndSource(
+	templateCF: TemplateCFForScoring,
+	scoreSet: string | undefined | null,
+	instanceOverrideScore?: number
+): ScoreCalculationResult {
+	// Priority 1: Instance-level override (manual changes)
+	if (instanceOverrideScore !== undefined) {
+		return { score: instanceOverrideScore, scoreSource: "instance override" };
+	}
+
+	// Priority 2: User's score override from wizard (template-level)
+	if (templateCF.scoreOverride !== undefined && templateCF.scoreOverride !== null) {
+		return { score: templateCF.scoreOverride, scoreSource: "template override" };
+	}
+
+	// Priority 3: TRaSH Guides score from profile's score set
+	if (scoreSet && templateCF.originalConfig?.trash_scores?.[scoreSet] !== undefined) {
+		return {
+			score: templateCF.originalConfig.trash_scores[scoreSet],
+			scoreSource: `TRaSH score set (${scoreSet})`,
+		};
+	}
+
+	// Priority 4: TRaSH Guides default score
+	if (templateCF.originalConfig?.trash_scores?.default !== undefined) {
+		return {
+			score: templateCF.originalConfig.trash_scores.default,
+			scoreSource: "TRaSH default",
+		};
+	}
+
+	// Priority 5: Fallback to 0
+	return { score: 0, scoreSource: "default" };
+}
+
+// ============================================================================
 // Deployment Executor Service Class
 // ============================================================================
 
@@ -55,12 +114,16 @@ export class DeploymentExecutorService {
 
 	/**
 	 * Execute deployment to a single instance
+	 * @param conflictResolutions - Map of trashId → resolution for CFs with conflicts
+	 *   "use_template" = update CF to match template (default)
+	 *   "keep_existing" = skip this CF, leave instance version unchanged
 	 */
 	async deploySingleInstance(
 		templateId: string,
 		instanceId: string,
 		userId: string,
 		syncStrategy?: "auto" | "manual" | "notify",
+		conflictResolutions?: Record<string, "use_template" | "keep_existing">,
 	): Promise<DeploymentResult> {
 		const errors: string[] = [];
 		const details = {
@@ -238,6 +301,12 @@ export class DeploymentExecutorService {
 						existingCF = existingCFByName.get(templateCF.name);
 					}
 
+					// Check conflict resolution - if user chose "keep_existing" for this CF, skip it
+					if (existingCF && conflictResolutions?.[templateCF.trashId] === "keep_existing") {
+						skipped++;
+						continue;
+					}
+
 					if (existingCF && existingCF.id) {
 						// Update existing CF
 						// Transform specifications: convert fields from object to array format
@@ -382,32 +451,15 @@ export class DeploymentExecutorService {
 						const cfMap = new Map(allCFs.map(cf => [cf.name, cf]));
 
 						// Apply CF scores from template to the schema's formatItems
+					const scoreSet = templateConfig.qualityProfile?.trash_score_set;
 					const formatItemsWithScores = schema.formatItems.map((item: any) => {
 						// Find corresponding template CF by matching format ID with CF name
 						const cf = allCFs.find(cf => cf.id === item.format);
 						if (cf) {
 							const templateCF = templateCFs.find(tcf => tcf.name === cf.name);
 							if (templateCF) {
-							// Determine score: user override > trash_scores[score_set] > trash_scores.default > 0
-							let score = 0;
-							const scoreSet = templateConfig.qualityProfile?.trash_score_set;
-
-							// Priority 1: User's score override from wizard
-							if (templateCF.scoreOverride !== undefined && templateCF.scoreOverride !== null) {
-								score = templateCF.scoreOverride;
-							}
-							// Priority 2: TRaSH Guides score from profile's score set
-							else if (scoreSet && templateCF.originalConfig?.trash_scores?.[scoreSet] !== undefined) {
-								score = templateCF.originalConfig.trash_scores[scoreSet];
-							}
-							// Priority 3: TRaSH Guides default score
-							else if (templateCF.originalConfig?.trash_scores?.default !== undefined) {
-								score = templateCF.originalConfig.trash_scores.default;
-							}
-							// Priority 4: Explicit zero (CF has no scores)
-							else {
-							}
-	
+								// Use helper to calculate score (no instance override in create flow)
+								const { score } = calculateScoreAndSource(templateCF, scoreSet);
 								return {
 									...item,
 									score
@@ -522,30 +574,9 @@ export class DeploymentExecutorService {
 				for (const templateCF of templateCFs) {
 					const cf = cfMap.get(templateCF.name);
 					if (cf && cf.id) {
-						// Determine score using priority order
-						let score = 0;
-						let scoreSource = "default";
-
-						// Priority 1: Instance-level override (manual changes)
-						if (overrideMap.has(cf.id)) {
-							score = overrideMap.get(cf.id)!;
-							scoreSource = "instance override";
-						}
-						// Priority 2: User's score override from wizard
-						else if (templateCF.scoreOverride !== undefined && templateCF.scoreOverride !== null) {
-							score = templateCF.scoreOverride;
-							scoreSource = "template override";
-						}
-						// Priority 3: TRaSH Guides score from profile's score set
-						else if (scoreSet && templateCF.originalConfig?.trash_scores?.[scoreSet] !== undefined) {
-							score = templateCF.originalConfig.trash_scores[scoreSet];
-							scoreSource = `TRaSH score set (${scoreSet})`;
-						}
-						// Priority 4: TRaSH Guides default score
-						else if (templateCF.originalConfig?.trash_scores?.default !== undefined) {
-							score = templateCF.originalConfig.trash_scores.default;
-							scoreSource = "TRaSH default";
-						}
+						// Use helper to calculate score with instance override support
+						const instanceOverrideScore = overrideMap.get(cf.id);
+						const { score } = calculateScoreAndSource(templateCF, scoreSet, instanceOverrideScore);
 
 						formatItems.push({
 							format: cf.id,
