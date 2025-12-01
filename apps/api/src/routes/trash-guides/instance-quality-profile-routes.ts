@@ -401,6 +401,92 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 	});
 
 	/**
+	 * POST /api/trash-guides/instances/:instanceId/quality-profiles/bulk-overrides
+	 * Get overrides for multiple quality profiles in a single request
+	 * This is more efficient than fetching overrides for each profile individually
+	 */
+	app.post<{
+		Params: { instanceId: string };
+		Body: { profileIds: number[] };
+	}>("/:instanceId/quality-profiles/bulk-overrides", async (request, reply) => {
+		if (!request.currentUser) {
+			return reply.status(401).send({
+				statusCode: 401,
+				error: "Unauthorized",
+				message: "Authentication required",
+			});
+		}
+
+		const { instanceId } = request.params;
+		const { profileIds } = request.body;
+
+		if (!Array.isArray(profileIds) || profileIds.length === 0) {
+			return reply.status(400).send({
+				statusCode: 400,
+				error: "BadRequest",
+				message: "profileIds must be a non-empty array of numbers",
+			});
+		}
+
+		// Validate all profileIds are numbers
+		const invalidIds = profileIds.filter(id => typeof id !== 'number' || isNaN(id));
+		if (invalidIds.length > 0) {
+			return reply.status(400).send({
+				statusCode: 400,
+				error: "BadRequest",
+				message: "All profileIds must be valid numbers",
+			});
+		}
+
+		try {
+			// Fetch all overrides for the specified profiles in a single query
+			const overrides = await request.server.prisma.instanceQualityProfileOverride.findMany({
+				where: {
+					instanceId,
+					qualityProfileId: {
+						in: profileIds,
+					},
+				},
+				orderBy: {
+					qualityProfileId: "asc",
+				},
+			});
+
+			// Group overrides by profile ID for easier frontend consumption
+			const overridesByProfile: Record<number, Array<{
+				customFormatId: number;
+				score: number;
+				updatedAt: Date;
+			}>> = {};
+
+			for (const override of overrides) {
+				const profileId = override.qualityProfileId;
+				if (!overridesByProfile[profileId]) {
+					overridesByProfile[profileId] = [];
+				}
+				overridesByProfile[profileId]!.push({
+					customFormatId: override.customFormatId,
+					score: override.score,
+					updatedAt: override.updatedAt,
+				});
+			}
+
+			return reply.status(200).send({
+				success: true,
+				overridesByProfile,
+				totalOverrides: overrides.length,
+			});
+		} catch (error) {
+			request.server.log.error({ err: error, instanceId, profileIds }, "Failed to get bulk overrides");
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to get bulk overrides",
+			});
+		}
+	});
+
+	/**
 	 * DELETE /api/trash-guides/instances/:instanceId/quality-profiles/:profileId/overrides/:customFormatId
 	 * Delete an instance-level override (revert to template/default score)
 	 */

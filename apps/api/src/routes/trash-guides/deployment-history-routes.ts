@@ -213,7 +213,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			const limit = request.query.limit ? Number(request.query.limit) : 50;
 			const offset = request.query.offset ? Number(request.query.offset) : 0;
 
-			// Verify instance exists
+			// Verify instance exists and belongs to the user
 			const instance = await app.prisma.serviceInstance.findFirst({
 				where: {
 					id: instanceId,
@@ -225,6 +225,15 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 					statusCode: 404,
 					error: "NotFound",
 					message: "Instance not found",
+				});
+			}
+
+			// Verify user owns this instance
+			if (instance.userId !== request.currentUser.id) {
+				return reply.status(403).send({
+					statusCode: 403,
+					error: "Forbidden",
+					message: "Not authorized to access this instance's deployment history",
 				});
 			}
 
@@ -422,8 +431,9 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 				});
 			}
 
-			// Verify template belongs to user
-			if (history.template && history.template.userId !== request.currentUser.id) {
+			// Verify deployment history belongs to user
+			// Check against history.userId directly (always present) rather than relying on template relation
+			if (history.userId !== request.currentUser.id) {
 				return reply.status(403).send({
 					statusCode: 403,
 					error: "Forbidden",
@@ -506,8 +516,9 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 				});
 			}
 
-			// Verify template belongs to user (if template still exists)
-			if (history.template && history.template.userId !== request.currentUser.id) {
+			// Verify deployment history belongs to user
+			// Check against history.userId directly (always present) rather than relying on template relation
+			if (history.userId !== request.currentUser.id) {
 				return reply.status(403).send({
 					statusCode: 403,
 					error: "Forbidden",

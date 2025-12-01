@@ -15,6 +15,7 @@ import type {
 } from "@arr/shared";
 import { createArrApiClient } from "./arr-api-client.js";
 import type { CustomFormat, CustomFormatSpecification } from "./arr-api-client.js";
+import { deepEqual } from "../utils/deep-equal.js";
 
 // ============================================================================
 // Score Calculation Helper
@@ -134,10 +135,10 @@ function specsAreEqual(spec1: NormalizedSpec, spec2: NormalizedSpec): boolean {
 		if (!(key in spec2.fields)) {
 			return false;
 		}
-		// Check if values match
+		// Check if values match (use deepEqual for deterministic comparison)
 		const val1 = spec1.fields[key];
 		const val2 = spec2.fields[key];
-		if (JSON.stringify(val1) !== JSON.stringify(val2)) {
+		if (!deepEqual(val1, val2)) {
 			return false;
 		}
 	}

@@ -53,6 +53,54 @@ interface TemplateCFForScoring {
 	};
 }
 
+// Types for extracted helper methods
+interface ValidatedDeploymentData {
+	template: {
+		id: string;
+		name: string;
+		serviceType: string;
+		configData: string;
+		instanceOverrides: string | null;
+	};
+	instance: {
+		id: string;
+		label: string;
+		service: string;
+		baseUrl: string;
+		encryptedApiKey: string;
+		encryptionIv: string;
+	};
+	templateConfig: Record<string, any>;
+	templateCFs: TemplateCF[];
+	overridesForInstance: Record<string, any>;
+}
+
+interface TemplateCF {
+	trashId: string;
+	name: string;
+	scoreOverride: number;
+	originalConfig: any;
+}
+
+interface BackupAndHistoryResult {
+	backup: { id: string };
+	historyId: string;
+}
+
+interface DeploymentDetails {
+	created: string[];
+	updated: string[];
+	failed: string[];
+}
+
+interface DeployCustomFormatsResult {
+	created: number;
+	updated: number;
+	skipped: number;
+	details: DeploymentDetails;
+	errors: string[];
+}
+
 /**
  * Calculates the resolved score for a Custom Format using priority rules:
  * 1. Instance-level override (manual changes in instance)
@@ -112,449 +160,306 @@ export class DeploymentExecutorService {
 		this.encryptor = encryptor;
 	}
 
+	// ============================================================================
+	// Private Helper Methods (extracted for maintainability)
+	// ============================================================================
+
 	/**
-	 * Execute deployment to a single instance
-	 * @param conflictResolutions - Map of trashId → resolution for CFs with conflicts
-	 *   "use_template" = update CF to match template (default)
-	 *   "keep_existing" = skip this CF, leave instance version unchanged
+	 * Validates template and instance access, parses configs, and applies instance overrides.
+	 * Returns all data needed for deployment.
 	 */
-	async deploySingleInstance(
+	private async validateAndPrepareDeployment(
 		templateId: string,
 		instanceId: string,
 		userId: string,
-		syncStrategy?: "auto" | "manual" | "notify",
-		conflictResolutions?: Record<string, "use_template" | "keep_existing">,
-	): Promise<DeploymentResult> {
-		const errors: string[] = [];
-		const details = {
-			created: [] as string[],
-			updated: [] as string[],
-			failed: [] as string[],
-		};
+	): Promise<ValidatedDeploymentData> {
+		// Get template with ownership verification
+		const template = await this.prisma.trashTemplate.findUnique({
+			where: { id: templateId, userId },
+		});
 
-		const startTime = new Date();
-		let historyId: string | null = null;
-		let deploymentHistoryId: string | null = null;
+		if (!template) {
+			throw new Error("Template not found or access denied");
+		}
+
+		// Get instance with ownership verification
+		const instance = await this.prisma.serviceInstance.findUnique({
+			where: { id: instanceId, userId },
+		});
+
+		if (!instance) {
+			throw new Error("Instance not found or access denied");
+		}
+
+		// Validate service type match
+		if (template.serviceType !== instance.service) {
+			throw new Error(
+				`Service type mismatch: template is ${template.serviceType}, instance is ${instance.service}`,
+			);
+		}
+
+		// Parse template config
+		let templateConfig: Record<string, any>;
+		try {
+			templateConfig = JSON.parse(template.configData);
+		} catch (parseError) {
+			throw new Error(
+				`Failed to parse template configData for template ${template.id}: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+			);
+		}
+
+		let templateCFs = (templateConfig.customFormats || []) as TemplateCF[];
+
+		// Parse instance overrides
+		let instanceOverrides: Record<string, any> = {};
+		try {
+			instanceOverrides = template.instanceOverrides
+				? JSON.parse(template.instanceOverrides)
+				: {};
+		} catch (parseError) {
+			console.warn(
+				`Failed to parse instanceOverrides for template ${template.id}, using empty object: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+			);
+		}
+
+		const overridesForInstance = instanceOverrides[instanceId] || {};
+
+		// Apply instance-specific overrides to filter/modify CFs
+		if (overridesForInstance.scoreOverrides || overridesForInstance.cfOverrides) {
+			templateCFs = templateCFs
+				.map((cf) => {
+					const cfOverride = overridesForInstance.cfOverrides?.[cf.trashId];
+					const scoreOverride = overridesForInstance.scoreOverrides?.[cf.trashId];
+
+					// Skip if CF is disabled for this instance
+					if (cfOverride?.enabled === false) {
+						return null;
+					}
+
+					// Apply score override if exists
+					const finalScore =
+						scoreOverride !== undefined ? scoreOverride : cf.scoreOverride;
+
+					return {
+						...cf,
+						scoreOverride: finalScore,
+					};
+				})
+				.filter((cf): cf is NonNullable<typeof cf> => cf !== null);
+		}
+
+		return {
+			template: {
+				id: template.id,
+				name: template.name,
+				serviceType: template.serviceType,
+				configData: template.configData,
+				instanceOverrides: template.instanceOverrides,
+			},
+			instance: {
+				id: instance.id,
+				label: instance.label,
+				service: instance.service,
+				baseUrl: instance.baseUrl,
+				encryptedApiKey: instance.encryptedApiKey,
+				encryptionIv: instance.encryptionIv,
+			},
+			templateConfig,
+			templateCFs,
+			overridesForInstance,
+		};
+	}
+
+	/**
+	 * Creates backup snapshot and history records atomically.
+	 */
+	private async createBackupAndHistory(
+		instance: { id: string },
+		userId: string,
+		preDeploymentCFs: CustomFormat[],
+		templateId: string,
+	): Promise<BackupAndHistoryResult> {
+		// Get user's backup retention settings
+		const userSettings = await this.prisma.trashSettings.findUnique({
+			where: { userId },
+			select: { backupRetentionDays: true },
+		});
+		const retentionDays = userSettings?.backupRetentionDays ?? 30;
+
+		// Calculate expiration date (null if retention is 0 = never expire)
+		let expiresAt: Date | null = null;
+		if (retentionDays > 0) {
+			expiresAt = new Date();
+			expiresAt.setDate(expiresAt.getDate() + retentionDays);
+		}
+
+		// Use transaction to ensure backup and history records are created atomically
+		const { backup, history } = await this.prisma.$transaction(async (tx) => {
+			const backupRecord = await tx.trashBackup.create({
+				data: {
+					instanceId: instance.id,
+					userId,
+					backupData: JSON.stringify(preDeploymentCFs),
+					expiresAt,
+				},
+			});
+
+			// Create deployment history record (TrashSyncHistory for legacy compatibility)
+			const historyRecord = await tx.trashSyncHistory.create({
+				data: {
+					instanceId: instance.id,
+					templateId,
+					userId,
+					syncType: "MANUAL",
+					status: "IN_PROGRESS",
+					backupId: backupRecord.id,
+					appliedConfigs: "[]",
+					configsApplied: 0,
+					configsFailed: 0,
+					configsSkipped: 0,
+				},
+			});
+
+			return { backup: backupRecord, history: historyRecord };
+		});
+
+		return { backup: { id: backup.id }, historyId: history.id };
+	}
+
+	/**
+	 * Deploys Custom Formats to the instance (create/update loop).
+	 */
+	private async deployCustomFormats(
+		apiClient: ArrApiClient,
+		templateCFs: TemplateCF[],
+		existingCFMap: Map<string, CustomFormat>,
+		existingCFByName: Map<string, CustomFormat>,
+		conflictResolutions: Record<string, "use_template" | "keep_existing"> | undefined,
+	): Promise<DeployCustomFormatsResult> {
+		const errors: string[] = [];
+		const details: DeploymentDetails = {
+			created: [],
+			updated: [],
+			failed: [],
+		};
+		let created = 0;
+		let updated = 0;
+		let skipped = 0;
+
+		for (const templateCF of templateCFs) {
+			try {
+				// Try to match by trashId first, then fall back to name
+				let existingCF = existingCFMap.get(templateCF.trashId);
+				if (!existingCF) {
+					existingCF = existingCFByName.get(templateCF.name);
+				}
+
+				// Check conflict resolution - if user chose "keep_existing" for this CF, skip it
+				if (existingCF && conflictResolutions?.[templateCF.trashId] === "keep_existing") {
+					skipped++;
+					continue;
+				}
+
+				if (existingCF && existingCF.id) {
+					// Update existing CF
+					// Transform specifications: convert fields from object to array format
+					const specifications = (templateCF.originalConfig?.specifications || []).map(
+						(spec: any) => {
+							const transformedFields = this.transformFieldsToArray(spec.fields);
+							return {
+								...spec,
+								fields: transformedFields,
+							};
+						},
+					);
+
+					const updatedCF = {
+						...existingCF,
+						name: templateCF.name,
+						specifications,
+					};
+
+					await apiClient.updateCustomFormat(existingCF.id, updatedCF);
+					updated++;
+					details.updated.push(templateCF.name);
+				} else {
+					// Create new CF
+					// Transform specifications: convert fields from object to array format
+					const specifications = (templateCF.originalConfig?.specifications || []).map(
+						(spec: any) => {
+							const transformedFields = this.transformFieldsToArray(spec.fields);
+							return {
+								...spec,
+								fields: transformedFields,
+							};
+						},
+					);
+
+					const newCF = {
+						name: templateCF.name,
+						includeCustomFormatWhenRenaming: false,
+						specifications,
+					};
+
+					await apiClient.createCustomFormat(newCF);
+					created++;
+					details.created.push(templateCF.name);
+				}
+			} catch (error) {
+				console.error(`[DEPLOYMENT] Failed to deploy "${templateCF.name}":`, error);
+				console.error(`[DEPLOYMENT] Error details:`, {
+					message: error instanceof Error ? error.message : "Unknown error",
+					stack: error instanceof Error ? error.stack : undefined,
+					error: error,
+				});
+				errors.push(
+					`Failed to deploy "${templateCF.name}": ${error instanceof Error ? error.message : "Unknown error"}`,
+				);
+				details.failed.push(templateCF.name);
+				skipped++;
+			}
+		}
+
+		return { created, updated, skipped, details, errors };
+	}
+
+	/**
+	 * Syncs the quality profile with Custom Format scores.
+	 * Creates profile if needed, updates CF scores, and maintains template mapping.
+	 */
+	private async syncQualityProfile(
+		apiClient: ArrApiClient,
+		templateConfig: Record<string, any>,
+		templateCFs: TemplateCF[],
+		templateId: string,
+		instanceId: string,
+		userId: string,
+		syncStrategy: "auto" | "manual" | "notify" | undefined,
+		conflictResolutions: Record<string, "use_template" | "keep_existing"> | undefined,
+		profileName: string,
+	): Promise<string[]> {
+		const errors: string[] = [];
 
 		try {
-			// Get template with ownership verification
-			const template = await this.prisma.trashTemplate.findUnique({
-				where: { id: templateId, userId },
-			});
+			let qualityProfiles = await apiClient.getQualityProfiles();
 
-			if (!template) {
-				throw new Error("Template not found or access denied");
-			}
+			// Find existing profile by name
+			let targetProfile = qualityProfiles.find((p) => p.name === profileName);
 
-			// Get instance with ownership verification
-			const instance = await this.prisma.serviceInstance.findUnique({
-				where: { id: instanceId, userId },
-			});
-
-			if (!instance) {
-				throw new Error("Instance not found or access denied");
-			}
-
-			// Validate service type match
-			if (template.serviceType !== instance.service) {
-				throw new Error(
-					`Service type mismatch: template is ${template.serviceType}, instance is ${instance.service}`,
+			// Create quality profile if it doesn't exist
+			if (!targetProfile) {
+				targetProfile = await this.createQualityProfileFromSchema(
+					apiClient,
+					templateConfig,
+					templateCFs,
+					profileName,
 				);
 			}
 
-			// Create backup snapshot before deployment
-			const preDeploymentCFs = await this.getExistingCustomFormats(instance);
-
-			// Use transaction to ensure backup and history records are created atomically
-			const { backup, history } = await this.prisma.$transaction(async (tx) => {
-				const backupRecord = await tx.trashBackup.create({
-					data: {
-						instanceId,
-						userId,
-						backupData: JSON.stringify(preDeploymentCFs),
-					},
-				});
-
-				// Create deployment history record (TrashSyncHistory for legacy compatibility)
-				const historyRecord = await tx.trashSyncHistory.create({
-					data: {
-						instanceId,
-						templateId,
-						userId,
-						syncType: "MANUAL",
-						status: "IN_PROGRESS",
-						backupId: backupRecord.id,
-						appliedConfigs: "[]",
-						configsApplied: 0,
-						configsFailed: 0,
-						configsSkipped: 0,
-					},
-				});
-
-				return { backup: backupRecord, history: historyRecord };
-			});
-			historyId = history.id;
-
-			// Create API client
-			const apiClient = createArrApiClient(instance, this.encryptor);
-
-			// Test connection
-			try {
-				await apiClient.getSystemStatus();
-			} catch (error) {
-				throw new Error(`Instance unreachable: ${error instanceof Error ? error.message : "Unknown error"}`);
-			}
-
-			// Get existing Custom Formats from instance
-			const existingCFs = await apiClient.getCustomFormats();
-
-			const existingCFMap = new Map<string, CustomFormat>();
-			const existingCFByName = new Map<string, CustomFormat>();
-			for (const cf of existingCFs) {
-				const trashId = this.extractTrashId(cf);
-				if (trashId) {
-					existingCFMap.set(trashId, cf);
-				}
-				// Also map by name for fallback matching
-				existingCFByName.set(cf.name, cf);
-			}
-
-
-			// Parse template config and apply instance overrides
-			let templateConfig: Record<string, any>;
-			try {
-				templateConfig = JSON.parse(template.configData);
-			} catch (parseError) {
-				throw new Error(`Failed to parse template configData for template ${template.id}: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
-			}
-			let templateCFs = (templateConfig.customFormats || []) as Array<{
-				trashId: string;
-				name: string;
-				scoreOverride: number;
-				originalConfig: any;
-			}>;
-
-			// Apply instance-specific overrides
-			let instanceOverrides: Record<string, any> = {};
-			try {
-				instanceOverrides = template.instanceOverrides
-					? JSON.parse(template.instanceOverrides)
-					: {};
-			} catch (parseError) {
-				console.warn(`Failed to parse instanceOverrides for template ${template.id}, using empty object: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
-			}
-			const overridesForInstance = instanceOverrides[instanceId] || {};
-
-			if (overridesForInstance.scoreOverrides || overridesForInstance.cfOverrides) {
-				templateCFs = templateCFs
-					.map((cf) => {
-						const cfOverride = overridesForInstance.cfOverrides?.[cf.trashId];
-						const scoreOverride = overridesForInstance.scoreOverrides?.[cf.trashId];
-
-						// Skip if CF is disabled for this instance
-						if (cfOverride?.enabled === false) {
-							return null;
-						}
-
-						// Apply score override if exists
-						const finalScore =
-							scoreOverride !== undefined ? scoreOverride : cf.scoreOverride;
-
-						return {
-							...cf,
-							scoreOverride: finalScore,
-						};
-					})
-					.filter((cf): cf is NonNullable<typeof cf> => cf !== null);
-			}
-
-			// Create TemplateDeploymentHistory record now that we have templateCFs
-			const deploymentHistory = await this.prisma.templateDeploymentHistory.create({
-				data: {
-					templateId,
-					instanceId,
-					userId,
-					deployedBy: userId,
-					status: "IN_PROGRESS",
-					totalCFs: templateCFs.length,
-					appliedCFs: 0,
-					failedCFs: 0,
-					conflictsCount: 0,
-					backupId: backup.id,
-					canRollback: true,
-					templateSnapshot: template.configData,
-				},
-			});
-			deploymentHistoryId = deploymentHistory.id;
-
-			// Deploy each Custom Format
-			let created = 0;
-			let updated = 0;
-			let skipped = 0;
-
-			for (const templateCF of templateCFs) {
-				try {
-
-					// Try to match by trashId first, then fall back to name
-					let existingCF = existingCFMap.get(templateCF.trashId);
-					if (!existingCF) {
-						existingCF = existingCFByName.get(templateCF.name);
-					}
-
-					// Check conflict resolution - if user chose "keep_existing" for this CF, skip it
-					if (existingCF && conflictResolutions?.[templateCF.trashId] === "keep_existing") {
-						skipped++;
-						continue;
-					}
-
-					if (existingCF && existingCF.id) {
-						// Update existing CF
-						// Transform specifications: convert fields from object to array format
-						const specifications = (templateCF.originalConfig?.specifications || []).map((spec: any) => {
-							const transformedFields = this.transformFieldsToArray(spec.fields);
-							return {
-								...spec,
-								fields: transformedFields,
-							};
-						});
-
-						const updatedCF = {
-							...existingCF,
-							name: templateCF.name,
-							specifications,
-						};
-
-						await apiClient.updateCustomFormat(existingCF.id, updatedCF);
-						updated++;
-						details.updated.push(templateCF.name);
-					} else {
-						// Create new CF
-						// Transform specifications: convert fields from object to array format
-						const specifications = (templateCF.originalConfig?.specifications || []).map((spec: any) => {
-							const transformedFields = this.transformFieldsToArray(spec.fields);
-							return {
-								...spec,
-								fields: transformedFields,
-							};
-						});
-
-						const newCF = {
-							name: templateCF.name,
-							includeCustomFormatWhenRenaming: false,
-							specifications,
-						};
-
-						await apiClient.createCustomFormat(newCF);
-						created++;
-						details.created.push(templateCF.name);
-					}
-				} catch (error) {
-					console.error(`[DEPLOYMENT] Failed to deploy "${templateCF.name}":`, error);
-					console.error(`[DEPLOYMENT] Error details:`, {
-						message: error instanceof Error ? error.message : "Unknown error",
-						stack: error instanceof Error ? error.stack : undefined,
-						error: error,
-					});
-					errors.push(
-						`Failed to deploy "${templateCF.name}": ${error instanceof Error ? error.message : "Unknown error"}`,
-					);
-					details.failed.push(templateCF.name);
-					skipped++;
-				}
-			}
-
-			// Update Quality Profile with Custom Format scores
-			try {
-				const profileName = template.name || "TRaSH Guides HD/UHD";
-
-				let qualityProfiles = await apiClient.getQualityProfiles();
-
-				// Find existing profile by name
-				let targetProfile = qualityProfiles.find(p => p.name === profileName);
-
-				if (targetProfile) {
-				}
-
-				// Create quality profile if it doesn't exist
-				if (!targetProfile) {
-
-					try {
-						// Get the quality profile schema to get proper structure
-						const schema = await apiClient.getQualityProfileSchema();
-
-						// Normalize quality names for consistent matching (remove spaces/hyphens)
-						const normalizeQualityName = (name: string) => name.replace(/[\s-]/g, '').toLowerCase();
-
-						// Build a flat map of all individual qualities available in Radarr schema
-						const allAvailableQualities = new Map<string, any>();
-						const extractQualities = (items: any[]) => {
-							for (const item of items) {
-								if (item.quality) {
-									// This is an individual quality
-									allAvailableQualities.set(
-										normalizeQualityName(item.quality.name),
-										item
-									);
-								}
-								// Recursively extract from nested items
-								if (item.items && Array.isArray(item.items)) {
-									extractQualities(item.items);
-								}
-							}
-						};
-						extractQualities(schema.items);
-
-						// Build quality items according to TRaSH Guides structure
-						const qualityItems: any[] = [];
-						let customGroupId = 1000; // Start custom group IDs at 1000
-
-						for (const templateItem of templateConfig.qualityProfile?.items || []) {
-							if (templateItem.items && Array.isArray(templateItem.items) && templateItem.items.length > 0) {
-								// This is a quality GROUP from TRaSH (e.g., "WEB 720p" with nested qualities)
-
-								const groupQualities: any[] = [];
-								for (const qualityName of templateItem.items) {
-									const quality = allAvailableQualities.get(normalizeQualityName(qualityName));
-									if (quality) {
-										groupQualities.push({
-											...quality,
-											allowed: false // Individual items in groups have allowed=false, group controls it
-										});
-									}
-									// Note: Silently skip qualities not available in instance
-								}
-
-								if (groupQualities.length > 0) {
-									qualityItems.push({
-										name: templateItem.name,
-										items: groupQualities,
-										allowed: templateItem.allowed,
-										id: customGroupId++
-									});
-								}
-							} else {
-								// This is an INDIVIDUAL quality from TRaSH (no nested items)
-								const quality = allAvailableQualities.get(normalizeQualityName(templateItem.name));
-								if (quality) {
-									qualityItems.push({
-										...quality,
-										allowed: templateItem.allowed
-									});
-								}
-								// Note: Silently skip qualities not available in instance
-							}
-						}
-
-
-						// Get fresh CFs list with IDs for score application
-						const allCFs = await apiClient.getCustomFormats();
-						const cfMap = new Map(allCFs.map(cf => [cf.name, cf]));
-
-						// Apply CF scores from template to the schema's formatItems
-					const scoreSet = templateConfig.qualityProfile?.trash_score_set;
-					const formatItemsWithScores = schema.formatItems.map((item: any) => {
-						// Find corresponding template CF by matching format ID with CF name
-						const cf = allCFs.find(cf => cf.id === item.format);
-						if (cf) {
-							const templateCF = templateCFs.find(tcf => tcf.name === cf.name);
-							if (templateCF) {
-								// Use helper to calculate score (no instance override in create flow)
-								const { score } = calculateScoreAndSource(templateCF, scoreSet);
-								return {
-									...item,
-									score
-								};
-							}
-						}
-						return item; // Keep default score 0 for CFs not in template
-					});
-
-						// Find the cutoff quality ID from the template's cutoff name
-						let cutoffId = 31; // Default to Remux-2160p
-						if (templateConfig.qualityProfile?.cutoff) {
-							const cutoffName = templateConfig.qualityProfile.cutoff;
-
-							// Search in the quality items we built (not schema) - if cutoff is in a group, return group ID
-							// Normalize names by removing spaces and hyphens for comparison
-							const normalizeName = (name: string) => name.replace(/[\s-]/g, '').toLowerCase();
-
-							const findQualityId = (items: any[], name: string): number | null => {
-								const normalizedSearchName = normalizeName(name);
-
-								for (const item of items) {
-									// Check top-level quality
-									const itemName = item.quality?.name || item.name;
-									if (itemName && normalizeName(itemName) === normalizedSearchName) {
-										return item.quality?.id || item.id;
-									}
-									// Check nested qualities (like WEB 2160p contains WEBDL-2160p, WEBRip-2160p)
-									if (item.items && Array.isArray(item.items)) {
-										for (const subItem of item.items) {
-											const subItemName = subItem.quality?.name || subItem.name;
-											if (subItemName && normalizeName(subItemName) === normalizedSearchName) {
-												return item.id; // Return GROUP ID when cutoff is nested
-											}
-										}
-									}
-								}
-								return null;
-							};
-
-							const foundCutoffId = findQualityId(qualityItems, cutoffName);
-							if (foundCutoffId) {
-								cutoffId = foundCutoffId;
-							} else {
-							}
-						}
-
-						// Check if any CF scores are actually defined
-						// If all scores are 0 or undefined, override minFormatScore to 0
-						const hasDefinedScores = formatItemsWithScores.some((item: any) => item.score && item.score !== 0);
-						const templateMinScore = templateConfig.qualityProfile?.minFormatScore ?? 0;
-						const effectiveMinScore = (!hasDefinedScores && templateMinScore > 0) ? 0 : templateMinScore;
-						if (!hasDefinedScores && templateMinScore > 0) {
-						}
-
-						// Use schema as base and customize with template settings
-						const profileToCreate = {
-							...schema,
-							name: profileName,
-							upgradeAllowed: templateConfig.qualityProfile?.upgradeAllowed ?? true,
-							cutoff: cutoffId,
-							items: qualityItems,
-							minFormatScore: effectiveMinScore,
-							cutoffFormatScore: templateConfig.qualityProfile?.cutoffFormatScore ?? 10000,
-							minUpgradeFormatScore: templateConfig.qualityProfile?.minUpgradeFormatScore ?? 1,
-							formatItems: formatItemsWithScores, // Apply template CF scores
-						// Set language from template, defaulting to Original if not specified
-						...(templateConfig.qualityProfile?.language ? {
-							language: {
-								id: templateConfig.qualityProfile.language === "Original" ? -2 :
-									templateConfig.qualityProfile.language === "Any" ? -1 :
-									1, // Default to English
-								name: templateConfig.qualityProfile.language
-							}
-						} : {
-							language: { id: -2, name: "Original" } // Default to Original
-						}),
-						};
-
-						// Remove the id field if it exists (schema might include it)
-						delete (profileToCreate as { id?: number }).id;
-
-						targetProfile = await apiClient.createQualityProfile(profileToCreate);
-					} catch (createError) {
-						console.error("[DEPLOYMENT] Failed to create quality profile:", createError);
-						console.error("[DEPLOYMENT] Error details:", JSON.stringify(createError, null, 2));
-						throw new Error(`Failed to create quality profile: ${createError instanceof Error ? createError.message : "Unknown error"}`);
-					}
-				}
-
-				if (targetProfile) {
-
-					// Get fresh CFs list with IDs
-					const allCFs = await apiClient.getCustomFormats();
-					const cfMap = new Map(allCFs.map(cf => [cf.name, cf]));
+			if (targetProfile) {
+				// Get fresh CFs list with IDs
+				const allCFs = await apiClient.getCustomFormats();
+				const cfMap = new Map(allCFs.map((cf) => [cf.name, cf]));
 
 				// Fetch instance-level quality profile score overrides
 				const instanceOverrides = await this.prisma.instanceQualityProfileOverride.findMany({
@@ -564,7 +469,7 @@ export class DeploymentExecutorService {
 					},
 				});
 				const overrideMap = new Map(
-					instanceOverrides.map(override => [override.customFormatId, override.score])
+					instanceOverrides.map((override) => [override.customFormatId, override.score]),
 				);
 
 				// Build format items from template CFs
@@ -604,133 +509,478 @@ export class DeploymentExecutorService {
 					}
 				}
 
-					// Merge with existing formatItems to preserve CFs not in this template
-					const existingFormatMap = new Map(
-						(targetProfile.formatItems || []).map(item => [item.format, item])
-					);
+				// Merge with existing formatItems to preserve CFs not in this template
+				const existingFormatMap = new Map(
+					(targetProfile.formatItems || []).map((item) => [item.format, item]),
+				);
 
-					for (const newItem of formatItems) {
-						existingFormatMap.set(newItem.format, newItem);
-					}
+				for (const newItem of formatItems) {
+					existingFormatMap.set(newItem.format, newItem);
+				}
 
-					const updatedProfile = {
-						...targetProfile,
-						formatItems: Array.from(existingFormatMap.values()),
-					};
+				const updatedProfile = {
+					...targetProfile,
+					formatItems: Array.from(existingFormatMap.values()),
+				};
 
-					await apiClient.updateQualityProfile(targetProfile.id, updatedProfile);
+				await apiClient.updateQualityProfile(targetProfile.id, updatedProfile);
 
-					// Create/update mapping to track that this profile is managed by this template
-					await this.prisma.templateQualityProfileMapping.upsert({
-						where: {
-							instanceId_qualityProfileId: {
-								instanceId,
-								qualityProfileId: targetProfile.id,
-							},
-						},
-						create: {
-							templateId,
+				// Create/update mapping to track that this profile is managed by this template
+				await this.prisma.templateQualityProfileMapping.upsert({
+					where: {
+						instanceId_qualityProfileId: {
 							instanceId,
 							qualityProfileId: targetProfile.id,
-							qualityProfileName: targetProfile.name,
-							syncStrategy: syncStrategy || "notify",
-							lastSyncedAt: new Date(),
 						},
-						update: {
-							templateId,
-							qualityProfileName: targetProfile.name,
-							...(syncStrategy && { syncStrategy }),
-							lastSyncedAt: new Date(),
-							updatedAt: new Date(),
-						},
-					});
+					},
+					create: {
+						templateId,
+						instanceId,
+						qualityProfileId: targetProfile.id,
+						qualityProfileName: targetProfile.name,
+						syncStrategy: syncStrategy || "notify",
+						lastSyncedAt: new Date(),
+					},
+					update: {
+						templateId,
+						qualityProfileName: targetProfile.name,
+						...(syncStrategy && { syncStrategy }),
+						lastSyncedAt: new Date(),
+						updatedAt: new Date(),
+					},
+				});
+			}
+		} catch (error) {
+			console.error("[DEPLOYMENT] Failed to update quality profile:", error);
+			errors.push(
+				`Failed to update quality profile: ${error instanceof Error ? error.message : "Unknown error"}`,
+			);
+		}
+
+		return errors;
+	}
+
+	/**
+	 * Creates a quality profile from schema with template configuration.
+	 */
+	private async createQualityProfileFromSchema(
+		apiClient: ArrApiClient,
+		templateConfig: Record<string, any>,
+		templateCFs: TemplateCF[],
+		profileName: string,
+	): Promise<any> {
+		try {
+			// Get the quality profile schema to get proper structure
+			const schema = await apiClient.getQualityProfileSchema();
+
+			// Normalize quality names for consistent matching (remove spaces/hyphens)
+			const normalizeQualityName = (name: string) =>
+				name.replace(/[\s-]/g, "").toLowerCase();
+
+			// Build a flat map of all individual qualities available in Radarr schema
+			const allAvailableQualities = new Map<string, any>();
+			const extractQualities = (items: any[]) => {
+				for (const item of items) {
+					if (item.quality) {
+						// This is an individual quality
+						allAvailableQualities.set(normalizeQualityName(item.quality.name), item);
+					}
+					// Recursively extract from nested items
+					if (item.items && Array.isArray(item.items)) {
+						extractQualities(item.items);
+					}
 				}
+			};
+			extractQualities(schema.items);
+
+			// Build quality items according to TRaSH Guides structure
+			const qualityItems: any[] = [];
+			let customGroupId = 1000; // Start custom group IDs at 1000
+
+			for (const templateItem of templateConfig.qualityProfile?.items || []) {
+				if (
+					templateItem.items &&
+					Array.isArray(templateItem.items) &&
+					templateItem.items.length > 0
+				) {
+					// This is a quality GROUP from TRaSH (e.g., "WEB 720p" with nested qualities)
+
+					const groupQualities: any[] = [];
+					for (const qualityName of templateItem.items) {
+						const quality = allAvailableQualities.get(normalizeQualityName(qualityName));
+						if (quality) {
+							groupQualities.push({
+								...quality,
+								allowed: false, // Individual items in groups have allowed=false, group controls it
+							});
+						}
+						// Note: Silently skip qualities not available in instance
+					}
+
+					if (groupQualities.length > 0) {
+						qualityItems.push({
+							name: templateItem.name,
+							items: groupQualities,
+							allowed: templateItem.allowed,
+							id: customGroupId++,
+						});
+					}
+				} else {
+					// This is an INDIVIDUAL quality from TRaSH (no nested items)
+					const quality = allAvailableQualities.get(
+						normalizeQualityName(templateItem.name),
+					);
+					if (quality) {
+						qualityItems.push({
+							...quality,
+							allowed: templateItem.allowed,
+						});
+					}
+					// Note: Silently skip qualities not available in instance
+				}
+			}
+
+			// Get fresh CFs list with IDs for score application
+			const allCFs = await apiClient.getCustomFormats();
+
+			// Apply CF scores from template to the schema's formatItems
+			const scoreSet = templateConfig.qualityProfile?.trash_score_set;
+			const formatItemsWithScores = schema.formatItems.map((item: any) => {
+				// Find corresponding template CF by matching format ID with CF name
+				const cf = allCFs.find((cf) => cf.id === item.format);
+				if (cf) {
+					const templateCF = templateCFs.find((tcf) => tcf.name === cf.name);
+					if (templateCF) {
+						// Use helper to calculate score (no instance override in create flow)
+						const { score } = calculateScoreAndSource(templateCF, scoreSet);
+						return {
+							...item,
+							score,
+						};
+					}
+				}
+				return item; // Keep default score 0 for CFs not in template
+			});
+
+			// Find the cutoff quality ID from the template's cutoff name
+			let cutoffId = 31; // Default to Remux-2160p
+			if (templateConfig.qualityProfile?.cutoff) {
+				const cutoffName = templateConfig.qualityProfile.cutoff;
+
+				// Normalize names by removing spaces and hyphens for comparison
+				const normalizeName = (name: string) =>
+					name.replace(/[\s-]/g, "").toLowerCase();
+
+				const findQualityId = (items: any[], name: string): number | null => {
+					const normalizedSearchName = normalizeName(name);
+
+					for (const item of items) {
+						// Check top-level quality
+						const itemName = item.quality?.name || item.name;
+						if (itemName && normalizeName(itemName) === normalizedSearchName) {
+							return item.quality?.id || item.id;
+						}
+						// Check nested qualities (like WEB 2160p contains WEBDL-2160p, WEBRip-2160p)
+						if (item.items && Array.isArray(item.items)) {
+							for (const subItem of item.items) {
+								const subItemName = subItem.quality?.name || subItem.name;
+								if (subItemName && normalizeName(subItemName) === normalizedSearchName) {
+									return item.id; // Return GROUP ID when cutoff is nested
+								}
+							}
+						}
+					}
+					return null;
+				};
+
+				const foundCutoffId = findQualityId(qualityItems, cutoffName);
+				if (foundCutoffId) {
+					cutoffId = foundCutoffId;
+				}
+			}
+
+			// Check if any CF scores are actually defined
+			// If all scores are 0 or undefined, override minFormatScore to 0
+			const hasDefinedScores = formatItemsWithScores.some(
+				(item: any) => item.score && item.score !== 0,
+			);
+			const templateMinScore = templateConfig.qualityProfile?.minFormatScore ?? 0;
+			const effectiveMinScore =
+				!hasDefinedScores && templateMinScore > 0 ? 0 : templateMinScore;
+
+			// Use schema as base and customize with template settings
+			const profileToCreate = {
+				...schema,
+				name: profileName,
+				upgradeAllowed: templateConfig.qualityProfile?.upgradeAllowed ?? true,
+				cutoff: cutoffId,
+				items: qualityItems,
+				minFormatScore: effectiveMinScore,
+				cutoffFormatScore: templateConfig.qualityProfile?.cutoffFormatScore ?? 10000,
+				minUpgradeFormatScore: templateConfig.qualityProfile?.minUpgradeFormatScore ?? 1,
+				formatItems: formatItemsWithScores, // Apply template CF scores
+				// Set language from template, defaulting to Original if not specified
+				...(templateConfig.qualityProfile?.language
+					? {
+							language: {
+								id:
+									templateConfig.qualityProfile.language === "Original"
+										? -2
+										: templateConfig.qualityProfile.language === "Any"
+											? -1
+											: 1, // Default to English
+								name: templateConfig.qualityProfile.language,
+							},
+						}
+					: {
+							language: { id: -2, name: "Original" }, // Default to Original
+						}),
+			};
+
+			// Remove the id field if it exists (schema might include it)
+			delete (profileToCreate as { id?: number }).id;
+
+			return await apiClient.createQualityProfile(profileToCreate);
+		} catch (createError) {
+			console.error("[DEPLOYMENT] Failed to create quality profile:", createError);
+			console.error("[DEPLOYMENT] Error details:", JSON.stringify(createError, null, 2));
+			throw new Error(
+				`Failed to create quality profile: ${createError instanceof Error ? createError.message : "Unknown error"}`,
+			);
+		}
+	}
+
+	/**
+	 * Finalizes deployment history records with results.
+	 */
+	private async finalizeDeploymentHistory(
+		historyId: string | null,
+		deploymentHistoryId: string | null,
+		startTime: Date,
+		details: DeploymentDetails,
+		counts: { created: number; updated: number; skipped: number },
+		errors: string[],
+	): Promise<void> {
+		const endTime = new Date();
+		const duration = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
+
+		// Update TrashSyncHistory
+		if (historyId) {
+			await this.prisma.trashSyncHistory.update({
+				where: { id: historyId },
+				data: {
+					status: errors.length === 0 ? "SUCCESS" : "PARTIAL_SUCCESS",
+					completedAt: endTime,
+					duration,
+					configsApplied: counts.created + counts.updated,
+					configsFailed: counts.skipped,
+					configsSkipped: 0,
+					appliedConfigs: JSON.stringify([...details.created, ...details.updated]),
+					failedConfigs: details.failed.length > 0 ? JSON.stringify(details.failed) : null,
+					errorLog: errors.length > 0 ? errors.join("\n") : null,
+				},
+			});
+		}
+
+		// Update TemplateDeploymentHistory
+		if (deploymentHistoryId) {
+			await this.prisma.templateDeploymentHistory.update({
+				where: { id: deploymentHistoryId },
+				data: {
+					status:
+						errors.length === 0
+							? "SUCCESS"
+							: counts.skipped > 0
+								? "PARTIAL_SUCCESS"
+								: "SUCCESS",
+					duration,
+					appliedCFs: counts.created + counts.updated,
+					failedCFs: counts.skipped,
+					appliedConfigs: JSON.stringify(
+						details.created
+							.map((name) => ({ name, action: "created" }))
+							.concat(details.updated.map((name) => ({ name, action: "updated" }))),
+					),
+					failedConfigs:
+						details.failed.length > 0
+							? JSON.stringify(details.failed.map((name) => ({ name, error: "Deployment failed" })))
+							: null,
+					errors: errors.length > 0 ? JSON.stringify(errors) : null,
+				},
+			});
+		}
+	}
+
+	/**
+	 * Updates deployment history with failure status.
+	 */
+	private async finalizeDeploymentHistoryWithFailure(
+		historyId: string | null,
+		deploymentHistoryId: string | null,
+		startTime: Date,
+		error: Error | unknown,
+	): Promise<void> {
+		const endTime = new Date();
+		const duration = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
+		const errorMessage = error instanceof Error ? error.message : "Unknown error";
+
+		if (historyId) {
+			await this.prisma.trashSyncHistory.update({
+				where: { id: historyId },
+				data: {
+					status: "FAILED",
+					completedAt: endTime,
+					duration,
+					errorLog: errorMessage,
+				},
+			});
+		}
+
+		if (deploymentHistoryId) {
+			await this.prisma.templateDeploymentHistory.update({
+				where: { id: deploymentHistoryId },
+				data: {
+					status: "FAILED",
+					duration,
+					errors: JSON.stringify([errorMessage]),
+				},
+			});
+		}
+	}
+
+	// ============================================================================
+	// Public Methods
+	// ============================================================================
+
+	/**
+	 * Execute deployment to a single instance
+	 * @param conflictResolutions - Map of trashId → resolution for CFs with conflicts
+	 *   "use_template" = update CF to match template (default)
+	 *   "keep_existing" = skip this CF, leave instance version unchanged
+	 */
+	async deploySingleInstance(
+		templateId: string,
+		instanceId: string,
+		userId: string,
+		syncStrategy?: "auto" | "manual" | "notify",
+		conflictResolutions?: Record<string, "use_template" | "keep_existing">,
+	): Promise<DeploymentResult> {
+		const startTime = new Date();
+		let historyId: string | null = null;
+		let deploymentHistoryId: string | null = null;
+
+		try {
+			// Step 1: Validate and prepare deployment data
+			const { template, instance, templateConfig, templateCFs } =
+				await this.validateAndPrepareDeployment(templateId, instanceId, userId);
+
+			// Step 2: Create backup snapshot before deployment
+			const preDeploymentCFs = await this.getExistingCustomFormats(instance);
+
+			// Step 3: Create backup and history records
+			const { backup, historyId: syncHistoryId } = await this.createBackupAndHistory(
+				instance,
+				userId,
+				preDeploymentCFs,
+				templateId,
+			);
+			historyId = syncHistoryId;
+
+			// Step 4: Create API client and test connection
+			const apiClient = createArrApiClient(instance, this.encryptor);
+			try {
+				await apiClient.getSystemStatus();
 			} catch (error) {
-				console.error("[DEPLOYMENT] Failed to update quality profile:", error);
-				errors.push(`Failed to update quality profile: ${error instanceof Error ? error.message : "Unknown error"}`);
+				throw new Error(
+					`Instance unreachable: ${error instanceof Error ? error.message : "Unknown error"}`,
+				);
 			}
 
-			// Update deployment history with success
-			if (historyId) {
-				const endTime = new Date();
-				const duration = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
-
-				await this.prisma.trashSyncHistory.update({
-					where: { id: historyId },
-					data: {
-						status: errors.length === 0 ? "SUCCESS" : "PARTIAL_SUCCESS",
-						completedAt: endTime,
-						duration,
-						configsApplied: created + updated,
-						configsFailed: skipped,
-						configsSkipped: 0,
-						appliedConfigs: JSON.stringify([...details.created, ...details.updated]),
-						failedConfigs: details.failed.length > 0 ? JSON.stringify(details.failed) : null,
-						errorLog: errors.length > 0 ? errors.join("\n") : null,
-					},
-				});
+			// Step 5: Build maps for existing CFs
+			const existingCFs = await apiClient.getCustomFormats();
+			const existingCFMap = new Map<string, CustomFormat>();
+			const existingCFByName = new Map<string, CustomFormat>();
+			for (const cf of existingCFs) {
+				const trashId = this.extractTrashId(cf);
+				if (trashId) {
+					existingCFMap.set(trashId, cf);
+				}
+				existingCFByName.set(cf.name, cf);
 			}
 
-			// Update TemplateDeploymentHistory with success
-			if (deploymentHistoryId) {
-				const endTime = new Date();
-				const duration = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
+			// Step 6: Create TemplateDeploymentHistory record
+			const deploymentHistory = await this.prisma.templateDeploymentHistory.create({
+				data: {
+					templateId,
+					instanceId,
+					userId,
+					deployedBy: userId,
+					status: "IN_PROGRESS",
+					totalCFs: templateCFs.length,
+					appliedCFs: 0,
+					failedCFs: 0,
+					conflictsCount: 0,
+					backupId: backup.id,
+					canRollback: true,
+					templateSnapshot: template.configData,
+				},
+			});
+			deploymentHistoryId = deploymentHistory.id;
 
-				await this.prisma.templateDeploymentHistory.update({
-					where: { id: deploymentHistoryId },
-					data: {
-						status: errors.length === 0 ? "SUCCESS" : (skipped > 0 ? "PARTIAL_SUCCESS" : "SUCCESS"),
-						duration,
-						appliedCFs: created + updated,
-						failedCFs: skipped,
-						appliedConfigs: JSON.stringify(details.created.map((name) => ({ name, action: "created" })).concat(details.updated.map((name) => ({ name, action: "updated" })))),
-						failedConfigs: details.failed.length > 0 ? JSON.stringify(details.failed.map((name) => ({ name, error: "Deployment failed" }))) : null,
-						errors: errors.length > 0 ? JSON.stringify(errors) : null,
-					},
-				});
-			}
+			// Step 7: Deploy Custom Formats
+			const cfResult = await this.deployCustomFormats(
+				apiClient,
+				templateCFs,
+				existingCFMap,
+				existingCFByName,
+				conflictResolutions,
+			);
+
+			// Step 8: Sync Quality Profile
+			const profileName = template.name || "TRaSH Guides HD/UHD";
+			const profileErrors = await this.syncQualityProfile(
+				apiClient,
+				templateConfig,
+				templateCFs,
+				templateId,
+				instanceId,
+				userId,
+				syncStrategy,
+				conflictResolutions,
+				profileName,
+			);
+
+			// Combine errors from CF deployment and profile sync
+			const allErrors = [...cfResult.errors, ...profileErrors];
+
+			// Step 9: Finalize deployment history with success
+			await this.finalizeDeploymentHistory(
+				historyId,
+				deploymentHistoryId,
+				startTime,
+				cfResult.details,
+				{ created: cfResult.created, updated: cfResult.updated, skipped: cfResult.skipped },
+				allErrors,
+			);
 
 			return {
 				instanceId,
 				instanceLabel: instance.label,
-				success: errors.length === 0,
-				customFormatsCreated: created,
-				customFormatsUpdated: updated,
-				customFormatsSkipped: skipped,
-				errors,
-				details,
+				success: allErrors.length === 0,
+				customFormatsCreated: cfResult.created,
+				customFormatsUpdated: cfResult.updated,
+				customFormatsSkipped: cfResult.skipped,
+				errors: allErrors,
+				details: cfResult.details,
 			};
 		} catch (error) {
 			// Update deployment history with failure
-			if (historyId) {
-				const endTime = new Date();
-				const duration = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
-
-				await this.prisma.trashSyncHistory.update({
-					where: { id: historyId },
-					data: {
-						status: "FAILED",
-						completedAt: endTime,
-						duration,
-						errorLog: error instanceof Error ? error.message : "Unknown error",
-					},
-				});
-			}
-
-			// Update TemplateDeploymentHistory with failure
-			if (deploymentHistoryId) {
-				const endTime = new Date();
-				const duration = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
-
-				await this.prisma.templateDeploymentHistory.update({
-					where: { id: deploymentHistoryId },
-					data: {
-						status: "FAILED",
-						duration,
-						errors: JSON.stringify([error instanceof Error ? error.message : "Unknown error"]),
-					},
-				});
-			}
+			await this.finalizeDeploymentHistoryWithFailure(
+				historyId,
+				deploymentHistoryId,
+				startTime,
+				error,
+			);
 
 			return {
 				instanceId,

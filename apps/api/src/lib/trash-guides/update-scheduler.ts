@@ -6,7 +6,7 @@
  */
 
 import type { PrismaClient } from "@prisma/client";
-import type { TemplateUpdater } from "./template-updater.js";
+import type { TemplateUpdater, SyncResult, TemplateUpdateInfo } from "./template-updater.js";
 import type { VersionTracker } from "./version-tracker.js";
 
 // ============================================================================
@@ -246,17 +246,16 @@ export class UpdateScheduler {
 			templatesAutoSynced = autoSyncResult.successful;
 
 			if (autoSyncResult.failed > 0) {
+				const failedResults = autoSyncResult.results.filter((r: SyncResult) => !r.success);
 				this.logger.warn(
 					`${autoSyncResult.failed} templates failed to auto-sync`,
 					{
-						failures: autoSyncResult.results.filter((r: { success: boolean }) => !r.success),
+						failures: failedResults,
 					},
 				);
 
 				errors.push(
-					...autoSyncResult.results
-						.filter((r: { success: boolean }) => !r.success)
-						.flatMap((r: { errors?: string[] }) => r.errors || []),
+					...failedResults.flatMap((r: SyncResult) => r.errors || []),
 				);
 			}
 
@@ -273,7 +272,7 @@ export class UpdateScheduler {
 				this.logger.info(
 					`${templatesNeedingAttention} templates need user attention`,
 					{
-						templates: attentionTemplates.map((t: { templateId: string; templateName: string; hasUserModifications: boolean }) => ({
+						templates: attentionTemplates.map((t: TemplateUpdateInfo) => ({
 							id: t.templateId,
 							name: t.templateName,
 							hasModifications: t.hasUserModifications,

@@ -6,11 +6,19 @@
  */
 
 import { PrismaClient } from "@prisma/client";
-import type { TrashConfigType } from "@arr/shared";
+import type {
+	TrashConfigType,
+	TemplateConfig,
+	TemplateCustomFormat,
+	TemplateCustomFormatGroup,
+	TrashCustomFormat,
+	TrashCustomFormatGroup,
+} from "@arr/shared";
 import type { VersionTracker, VersionInfo } from "./version-tracker.js";
 import type { TrashCacheManager } from "./cache-manager.js";
 import type { TrashGitHubFetcher } from "./github-fetcher.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
+import { deepEqual } from "../utils/deep-equal.js";
 
 // ============================================================================
 // Types
@@ -41,6 +49,26 @@ export interface SyncResult {
 	previousCommit: string | null;
 	newCommit: string;
 	errors?: string[];
+	mergeStats?: MergeStats;
+}
+
+export interface MergeStats {
+	customFormatsAdded: number;
+	customFormatsRemoved: number;
+	customFormatsUpdated: number;
+	customFormatsPreserved: number;
+	customFormatGroupsAdded: number;
+	customFormatGroupsRemoved: number;
+	customFormatGroupsUpdated: number;
+	customFormatGroupsPreserved: number;
+	userCustomizationsPreserved: string[];
+}
+
+export interface MergeResult {
+	success: boolean;
+	mergedConfig: TemplateConfig;
+	stats: MergeStats;
+	warnings: string[];
 }
 
 // ============================================================================
@@ -136,7 +164,12 @@ export class TemplateUpdater {
 	}
 
 	/**
-	 * Sync a specific template to the latest TRaSH Guides version
+	 * Sync a specific template to the latest TRaSH Guides version.
+	 * Performs a deterministic merge that:
+	 * - Preserves user score overrides and condition customizations
+	 * - Adopts new custom formats and groups from TRaSH Guides
+	 * - Updates specifications (matching logic) from TRaSH Guides
+	 * - Handles deletions by removing obsolete entries
 	 */
 	async syncTemplate(
 		templateId: string,
@@ -163,38 +196,88 @@ export class TemplateUpdater {
 			: await this.versionTracker.getLatestCommit();
 
 		const previousCommit = template.trashGuidesCommitHash;
+		const serviceType = template.serviceType as "RADARR" | "SONARR";
 
 		try {
 			// Parse existing config data safely
-			let configData: unknown = {};
+			let currentConfig: TemplateConfig = {
+				customFormats: [],
+				customFormatGroups: [],
+			};
 			try {
-				configData = JSON.parse(template.configData);
+				currentConfig = JSON.parse(template.configData) as TemplateConfig;
 			} catch (parseError) {
-				// Log warning but continue with empty config if parse fails
 				console.warn(
 					`[TemplateUpdater] Failed to parse configData for template ${templateId}: ${parseError instanceof Error ? parseError.message : String(parseError)}`
 				);
 			}
 
-			// Update template metadata
-			// TODO: Implement proper merge of fetched data with user customizations
-			// Currently this only updates commit hash and lastSyncedAt
+			// Fetch latest TRaSH Guides data from cache
+			const fetchResult = await this.fetchLatestTrashData(serviceType);
+			if (!fetchResult.success) {
+				return {
+					success: false,
+					templateId,
+					previousCommit,
+					newCommit: targetCommit.commitHash,
+					errors: [`Failed to fetch TRaSH data: ${fetchResult.error}`],
+				};
+			}
+
+			// Perform merge: preserve user customizations, update specifications
+			const mergeResult = this.mergeTemplateConfig(
+				currentConfig,
+				fetchResult.customFormats,
+				fetchResult.customFormatGroups,
+			);
+
+			if (!mergeResult.success) {
+				return {
+					success: false,
+					templateId,
+					previousCommit,
+					newCommit: targetCommit.commitHash,
+					errors: ["Merge failed"],
+				};
+			}
+
+			// Validate merged config
+			const validationResult = this.validateMergedConfig(mergeResult.mergedConfig);
+			if (!validationResult.valid) {
+				return {
+					success: false,
+					templateId,
+					previousCommit,
+					newCommit: targetCommit.commitHash,
+					errors: validationResult.errors,
+				};
+			}
+
+			// Update template with merged config
 			await this.prisma.trashTemplate.update({
 				where: { id: templateId },
 				data: {
+					configData: JSON.stringify(mergeResult.mergedConfig),
 					trashGuidesCommitHash: targetCommit.commitHash,
 					lastSyncedAt: new Date(),
-					// Note: configData would be updated here with fetched data
-					// This is a simplified version - actual implementation would
-					// fetch new data from cache and merge with user customizations
+					// Preserve hasUserModifications - user customizations are kept
 				},
 			});
+
+			console.log(
+				`[TemplateUpdater] Successfully synced template ${templateId}: ` +
+				`${mergeResult.stats.customFormatsAdded} CFs added, ` +
+				`${mergeResult.stats.customFormatsRemoved} removed, ` +
+				`${mergeResult.stats.customFormatsUpdated} updated, ` +
+				`${mergeResult.stats.customFormatsPreserved} preserved`
+			);
 
 			return {
 				success: true,
 				templateId,
 				previousCommit,
 				newCommit: targetCommit.commitHash,
+				mergeStats: mergeResult.stats,
 			};
 		} catch (error) {
 			return {
@@ -205,6 +288,278 @@ export class TemplateUpdater {
 				errors: [error instanceof Error ? error.message : String(error)],
 			};
 		}
+	}
+
+	/**
+	 * Fetch latest TRaSH Guides custom formats and groups from cache
+	 * @private
+	 */
+	private async fetchLatestTrashData(
+		serviceType: "RADARR" | "SONARR",
+	): Promise<{
+		success: boolean;
+		customFormats: TrashCustomFormat[];
+		customFormatGroups: TrashCustomFormatGroup[];
+		error?: string;
+	}> {
+		try {
+			const [cfCache, groupCache] = await Promise.all([
+				this.cacheManager.get(serviceType, "CUSTOM_FORMATS"),
+				this.cacheManager.get(serviceType, "CF_GROUPS"),
+			]);
+
+			const customFormats = ((cfCache as any)?.data || []) as TrashCustomFormat[];
+			const customFormatGroups = ((groupCache as any)?.data || []) as TrashCustomFormatGroup[];
+
+			return {
+				success: true,
+				customFormats,
+				customFormatGroups,
+			};
+		} catch (error) {
+			return {
+				success: false,
+				customFormats: [],
+				customFormatGroups: [],
+				error: error instanceof Error ? error.message : String(error),
+			};
+		}
+	}
+
+	/**
+	 * Merge current template config with latest TRaSH data.
+	 *
+	 * Merge strategy:
+	 * - For existing CFs: Preserve user's scoreOverride and conditionsEnabled, update originalConfig
+	 * - For new CFs: Add with TRaSH defaults
+	 * - For removed CFs: Remove from template (TRaSH no longer maintains them)
+	 * - For groups: Same strategy - preserve enabled state, update originalConfig
+	 *
+	 * @private
+	 */
+	private mergeTemplateConfig(
+		currentConfig: TemplateConfig,
+		latestCustomFormats: TrashCustomFormat[],
+		latestCustomFormatGroups: TrashCustomFormatGroup[],
+	): MergeResult {
+		const stats: MergeStats = {
+			customFormatsAdded: 0,
+			customFormatsRemoved: 0,
+			customFormatsUpdated: 0,
+			customFormatsPreserved: 0,
+			customFormatGroupsAdded: 0,
+			customFormatGroupsRemoved: 0,
+			customFormatGroupsUpdated: 0,
+			customFormatGroupsPreserved: 0,
+			userCustomizationsPreserved: [],
+		};
+		const warnings: string[] = [];
+
+		// Build lookup maps for current config
+		const currentCFMap = new Map<string, TemplateCustomFormat>(
+			(currentConfig.customFormats || []).map((cf) => [cf.trashId, cf])
+		);
+		const currentGroupMap = new Map<string, TemplateCustomFormatGroup>(
+			(currentConfig.customFormatGroups || []).map((g) => [g.trashId, g])
+		);
+
+		// Build lookup for latest TRaSH data
+		const latestCFMap = new Map<string, TrashCustomFormat>(
+			latestCustomFormats.map((cf) => [cf.trash_id, cf])
+		);
+		const latestGroupMap = new Map<string, TrashCustomFormatGroup>(
+			latestCustomFormatGroups.map((g) => [g.trash_id, g])
+		);
+
+		// Merge Custom Formats
+		const mergedCustomFormats: TemplateCustomFormat[] = [];
+
+		for (const [trashId, latestCF] of latestCFMap) {
+			const currentCF = currentCFMap.get(trashId);
+
+			if (currentCF) {
+				// Existing CF - preserve user customizations, update specifications
+				const hasCustomScore = currentCF.scoreOverride !== undefined &&
+					currentCF.scoreOverride !== (latestCF.score ?? 0);
+				const hasCustomConditions = Object.values(currentCF.conditionsEnabled || {})
+					.some((enabled) => !enabled);
+
+				if (hasCustomScore) {
+					stats.userCustomizationsPreserved.push(`${latestCF.name}: custom score`);
+				}
+				if (hasCustomConditions) {
+					stats.userCustomizationsPreserved.push(`${latestCF.name}: custom conditions`);
+				}
+
+				// Check if specifications changed
+				const specsChanged = !deepEqual(
+					currentCF.originalConfig?.specifications ?? null,
+					latestCF.specifications ?? null
+				);
+
+				if (specsChanged) {
+					stats.customFormatsUpdated++;
+				} else {
+					stats.customFormatsPreserved++;
+				}
+
+				// Rebuild conditionsEnabled based on new specifications
+				const newConditionsEnabled: Record<string, boolean> = {};
+				for (const spec of latestCF.specifications || []) {
+					// Preserve user's condition setting if the condition exists in both versions
+					// Otherwise default to enabled
+					newConditionsEnabled[spec.name] = currentCF.conditionsEnabled?.[spec.name] ?? true;
+				}
+
+				mergedCustomFormats.push({
+					trashId: latestCF.trash_id,
+					name: latestCF.name,
+					score: currentCF.scoreOverride ?? latestCF.score ?? 0,
+					scoreOverride: currentCF.scoreOverride,
+					conditionsEnabled: newConditionsEnabled,
+					originalConfig: latestCF,
+				});
+			} else {
+				// New CF from TRaSH Guides
+				stats.customFormatsAdded++;
+
+				// Initialize all conditions as enabled
+				const conditionsEnabled: Record<string, boolean> = {};
+				for (const spec of latestCF.specifications || []) {
+					conditionsEnabled[spec.name] = true;
+				}
+
+				mergedCustomFormats.push({
+					trashId: latestCF.trash_id,
+					name: latestCF.name,
+					score: latestCF.score ?? 0,
+					scoreOverride: undefined,
+					conditionsEnabled,
+					originalConfig: latestCF,
+				});
+			}
+		}
+
+		// Track removed CFs
+		for (const [trashId, currentCF] of currentCFMap) {
+			if (!latestCFMap.has(trashId)) {
+				stats.customFormatsRemoved++;
+				warnings.push(`Custom format "${currentCF.name}" (${trashId}) removed - no longer in TRaSH Guides`);
+			}
+		}
+
+		// Merge Custom Format Groups
+		const mergedCustomFormatGroups: TemplateCustomFormatGroup[] = [];
+
+		for (const [trashId, latestGroup] of latestGroupMap) {
+			const currentGroup = currentGroupMap.get(trashId);
+
+			if (currentGroup) {
+				// Existing group - preserve enabled state, update originalConfig
+				const specsChanged = !deepEqual(
+					currentGroup.originalConfig ?? null,
+					latestGroup ?? null
+				);
+
+				if (specsChanged) {
+					stats.customFormatGroupsUpdated++;
+				} else {
+					stats.customFormatGroupsPreserved++;
+				}
+
+				mergedCustomFormatGroups.push({
+					trashId: latestGroup.trash_id,
+					name: latestGroup.name,
+					enabled: currentGroup.enabled,
+					originalConfig: latestGroup,
+				});
+			} else {
+				// New group from TRaSH Guides
+				stats.customFormatGroupsAdded++;
+
+				// Determine default enabled state from TRaSH data
+				const defaultEnabled = latestGroup.default === true || latestGroup.default === "true";
+
+				mergedCustomFormatGroups.push({
+					trashId: latestGroup.trash_id,
+					name: latestGroup.name,
+					enabled: defaultEnabled,
+					originalConfig: latestGroup,
+				});
+			}
+		}
+
+		// Track removed groups
+		for (const [trashId, currentGroup] of currentGroupMap) {
+			if (!latestGroupMap.has(trashId)) {
+				stats.customFormatGroupsRemoved++;
+				warnings.push(`Custom format group "${currentGroup.name}" (${trashId}) removed - no longer in TRaSH Guides`);
+			}
+		}
+
+		// Build merged config, preserving other settings
+		const mergedConfig: TemplateConfig = {
+			...currentConfig,
+			customFormats: mergedCustomFormats,
+			customFormatGroups: mergedCustomFormatGroups,
+		};
+
+		return {
+			success: true,
+			mergedConfig,
+			stats,
+			warnings,
+		};
+	}
+
+	/**
+	 * Validate merged configuration meets schema requirements
+	 * @private
+	 */
+	private validateMergedConfig(config: TemplateConfig): { valid: boolean; errors: string[] } {
+		const errors: string[] = [];
+
+		// Validate customFormats array exists and has proper structure
+		if (!Array.isArray(config.customFormats)) {
+			errors.push("customFormats must be an array");
+		} else {
+			for (const [index, cf] of config.customFormats.entries()) {
+				if (!cf.trashId) {
+					errors.push(`customFormats[${index}]: trashId is required`);
+				}
+				if (!cf.name) {
+					errors.push(`customFormats[${index}]: name is required`);
+				}
+				if (!cf.conditionsEnabled || typeof cf.conditionsEnabled !== "object") {
+					errors.push(`customFormats[${index}]: conditionsEnabled must be an object`);
+				}
+				if (!cf.originalConfig) {
+					errors.push(`customFormats[${index}]: originalConfig is required`);
+				}
+			}
+		}
+
+		// Validate customFormatGroups array
+		if (config.customFormatGroups && !Array.isArray(config.customFormatGroups)) {
+			errors.push("customFormatGroups must be an array");
+		} else if (config.customFormatGroups) {
+			for (const [index, group] of config.customFormatGroups.entries()) {
+				if (!group.trashId) {
+					errors.push(`customFormatGroups[${index}]: trashId is required`);
+				}
+				if (!group.name) {
+					errors.push(`customFormatGroups[${index}]: name is required`);
+				}
+				if (typeof group.enabled !== "boolean") {
+					errors.push(`customFormatGroups[${index}]: enabled must be a boolean`);
+				}
+			}
+		}
+
+		return {
+			valid: errors.length === 0,
+			errors,
+		};
 	}
 
 	/**
@@ -449,9 +804,10 @@ export class TemplateUpdater {
 				addedCFs++;
 			} else {
 				// CF exists, check for modifications
-				const specificationsChanged =
-					JSON.stringify(currentCF.originalConfig?.specifications) !==
-					JSON.stringify((latestCF as any).specifications);
+				// Use deepEqual for deterministic comparison (handles different key ordering)
+				const currentSpecs = currentCF.originalConfig?.specifications ?? null;
+				const latestSpecs = (latestCF as any).specifications ?? null;
+				const specificationsChanged = !deepEqual(currentSpecs, latestSpecs);
 
 				if (specificationsChanged) {
 					customFormatDiffs.push({
@@ -552,14 +908,15 @@ export class TemplateUpdater {
 	}
 
 	/**
-	 * Update cache with latest TRaSH Guides data
+	 * Check if cache needs to be updated by comparing commit hashes.
+	 * This method does NOT perform the update - use refreshAllCaches for that.
 	 */
-	async updateCache(
+	async checkCacheNeedsUpdate(
 		serviceType: "RADARR" | "SONARR",
 		configType: TrashConfigType,
-	): Promise<{ updated: boolean; error?: string }> {
+	): Promise<{ needsUpdate: boolean; error?: string }> {
 		try {
-			// Get latest commit
+			// Get latest commit from GitHub
 			const latestCommit = await this.versionTracker.getLatestCommit();
 
 			// Get current cache commit hash
@@ -568,19 +925,12 @@ export class TemplateUpdater {
 				configType,
 			);
 
-			// Only update if commit has changed
-			if (currentCommitHash === latestCommit.commitHash) {
-				return { updated: false };
-			}
-
-			// This method intentionally doesn't fetch data itself
-			// The cache-manager and github-fetcher integration handles that
-			// This is just a check to see if update is needed
-			// Actual refresh happens via the cache refresh endpoint
-			return { updated: false };
+			// Needs update if commits differ
+			const needsUpdate = currentCommitHash !== latestCommit.commitHash;
+			return { needsUpdate };
 		} catch (error) {
 			return {
-				updated: false,
+				needsUpdate: false,
 				error: error instanceof Error ? error.message : String(error),
 			};
 		}

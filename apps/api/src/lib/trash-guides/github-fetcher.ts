@@ -374,8 +374,13 @@ export class TrashGitHubFetcher {
 				const response = await fetchWithRetry(url, this.fetchOptions);
 
 				if (response.ok) {
-					const data = (await response.json()) as TrashQualityProfile;
-					profiles.push(data);
+					const data = (await response.json()) as TrashQualityProfile | TrashQualityProfile[];
+					// Handle both single profile and array of profiles
+					if (Array.isArray(data)) {
+						profiles.push(...data);
+					} else {
+						profiles.push(data);
+					}
 				}
 			} catch (error) {
 				console.warn(`Failed to fetch ${file}:`, error);
