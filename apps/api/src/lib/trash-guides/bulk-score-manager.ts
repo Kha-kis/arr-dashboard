@@ -289,7 +289,10 @@ export class BulkScoreManager {
 						existingEntry.currentScore = score;
 						// defaultScore is already set to TRaSH default; only update isModified
 						existingEntry.isModified = score !== existingEntry.defaultScore;
-						if (existingEntry.isModified) {
+						// Only mark hasAnyModifications for template-managed profiles
+						// Non-template-managed profiles shouldn't contribute to the "modified" flag
+						// since they were never expected to match template defaults
+						if (existingEntry.isModified && existingEntry.isTemplateManaged) {
 							cfEntry.hasAnyModifications = true;
 						}
 					}
