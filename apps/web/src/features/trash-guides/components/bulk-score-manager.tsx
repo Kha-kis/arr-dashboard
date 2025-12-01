@@ -13,6 +13,7 @@
 
 import { useState, useMemo, useEffect, useCallback } from "react";
 import { Search, Save, X, RotateCcw } from "lucide-react";
+import { toast } from "sonner";
 import type { CustomFormatScoreEntry } from "@arr/shared";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useDeleteOverride, useBulkDeleteOverrides } from "../../../hooks/api/useQualityProfileOverrides";
@@ -78,26 +79,32 @@ export function BulkScoreManager({
 		return map;
 	}, [allOverrides]);
 
-	// Fetch overrides for multiple quality profiles
+	// Fetch overrides for multiple quality profiles using bulk API
 	const fetchOverridesForProfiles = useCallback(async (profileIds: number[]) => {
 		if (!instanceId || profileIds.length === 0) return;
 
 		try {
-			// Fetch overrides for each profile in parallel
-			const overridePromises = profileIds.map(profileId =>
-				fetch(`/api/trash-guides/instances/${instanceId}/quality-profiles/${profileId}/overrides`)
-					.then(res => res.ok ? res.json() : null)
-					.then(data => ({ profileId, data }))
-			);
+			// Single bulk API call instead of per-profile requests
+			const response = await fetch(`/api/trash-guides/instances/${instanceId}/quality-profiles/bulk-overrides`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ profileIds }),
+			});
 
-			const results = await Promise.all(overridePromises);
+			if (!response.ok) {
+				throw new Error(`Failed to fetch bulk overrides: ${response.status}`);
+			}
+
+			const data = await response.json();
 
 			// Build override map: ${profileId}-${cfId} → override data
 			const newOverrides = new Map<string, { customFormatId: number; score: number }>();
-			for (const result of results) {
-				if (result.data?.success && result.data.overrides) {
-					for (const override of result.data.overrides) {
-						const key = `${result.profileId}-${override.customFormatId}`;
+
+			if (data?.success && data.overridesByProfile) {
+				for (const [profileIdStr, overrides] of Object.entries(data.overridesByProfile)) {
+					const profileId = parseInt(profileIdStr);
+					for (const override of overrides as Array<{ customFormatId: number; score: number }>) {
+						const key = `${profileId}-${override.customFormatId}`;
 						newOverrides.set(key, {
 							customFormatId: override.customFormatId,
 							score: override.score,
@@ -108,7 +115,7 @@ export function BulkScoreManager({
 
 			setAllOverrides(newOverrides);
 		} catch (error) {
-			console.error("Error fetching overrides:", error);
+			console.error("Error fetching bulk overrides:", error);
 		}
 	}, [instanceId]);
 
@@ -123,8 +130,9 @@ export function BulkScoreManager({
 			const profileIds = new Set<number>();
 			for (const score of queryScores) {
 				for (const templateScore of score.templateScores) {
-					const profileId = parseInt(templateScore.templateId.split('-').pop() || '0');
-					if (profileId > 0) {
+					const raw = templateScore.templateId.split('-').pop() || '';
+					const profileId = parseInt(raw, 10);
+					if (Number.isFinite(profileId) && profileId > 0) {
 						profileIds.add(profileId);
 					}
 				}
@@ -182,12 +190,12 @@ export function BulkScoreManager({
 	// Save all modified scores
 	const handleSaveChanges = async () => {
 		if (modifiedScores.size === 0) {
-			alert("No changes to save");
+			toast.error("No changes to save");
 			return;
 		}
 
 		if (!instanceId) {
-			alert("No instance selected");
+			toast.error("No instance selected");
 			return;
 		}
 
@@ -220,7 +228,7 @@ export function BulkScoreManager({
 
 		try {
 			await bulkUpdateScores.mutateAsync(entries);
-			alert(
+			toast.success(
 				`Successfully saved ${changeCount} custom format score change${changeCount === 1 ? "" : "s"}`
 			);
 			setModifiedScores(new Map());
@@ -228,7 +236,7 @@ export function BulkScoreManager({
 			onOperationComplete?.();
 		} catch (error) {
 			console.error("Error saving scores:", error);
-			alert(error instanceof Error ? error.message : "Failed to save scores");
+			toast.error(error instanceof Error ? error.message : "Failed to save scores");
 		}
 	};
 
@@ -249,14 +257,14 @@ export function BulkScoreManager({
 		customFormatName: string
 	) => {
 		if (!instanceId) {
-			alert("No instance selected");
+			toast.error("No instance selected");
 			return;
 		}
 
 		// Extract profileId from templateId (format: instanceId-profileId)
 		const profileId = parseInt(templateId.split('-').pop() || '0');
 		if (profileId === 0) {
-			alert("Invalid quality profile ID");
+			toast.error("Invalid quality profile ID");
 			return;
 		}
 
@@ -273,22 +281,22 @@ export function BulkScoreManager({
 
 			// Refresh scores to show updated values
 			await queryClient.invalidateQueries({ queryKey: ["bulk-scores"] });
-			alert(`Override removed for "${customFormatName}"`);
+			toast.success(`Override removed for "${customFormatName}"`);
 		} catch (error) {
 			console.error("Failed to delete override:", error);
-			alert(error instanceof Error ? error.message : "Failed to delete override");
+			toast.error(error instanceof Error ? error.message : "Failed to delete override");
 		}
 	};
 
 	// Handle bulk reset to template
 	const handleBulkResetToTemplate = async () => {
 		if (!instanceId) {
-			alert("Please select an instance first");
+			toast.error("Please select an instance first");
 			return;
 		}
 
 		if (selectedCFs.size === 0) {
-			alert("Please select at least one custom format to reset");
+			toast.error("Please select at least one custom format to reset");
 			return;
 		}
 
@@ -313,7 +321,7 @@ export function BulkScoreManager({
 		}
 
 		if (profileToCFs.size === 0) {
-			alert("No instance-level overrides found for the selected custom formats. They are already using template defaults.");
+			toast.error("No instance-level overrides found for the selected custom formats. They are already using template defaults.");
 			return;
 		}
 
@@ -347,11 +355,11 @@ export function BulkScoreManager({
 			// Refresh scores
 			await queryClient.invalidateQueries({ queryKey: ["bulk-scores"] });
 
-			alert(`Successfully reset ${totalDeleted} override(s) to template defaults.`);
+			toast.success(`Successfully reset ${totalDeleted} override${totalDeleted === 1 ? "" : "s"} to template defaults`);
 		} catch (error) {
 			console.error("Failed to bulk reset:", error);
 			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-			alert(`Failed to reset overrides: ${errorMessage}\n\nSome overrides may have been reset. Please refresh to see the current state.`);
+			toast.error(`Failed to reset overrides: ${errorMessage}. Some overrides may have been reset. Please refresh to see the current state.`);
 		}
 	};
 

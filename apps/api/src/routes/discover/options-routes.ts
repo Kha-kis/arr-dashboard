@@ -205,7 +205,7 @@ export const registerOptionsRoutes: FastifyPluginCallback = (app, _opts, done) =
 		} catch (error) {
 			request.log.error({ err: error, baseUrl: parsed.baseUrl }, "failed to load test options");
 			reply.status(502);
-			return reply.send({ message: "Failed to load instance options" });
+			return reply.send({ message: "Failed to load test options" });
 		}
 	});
 

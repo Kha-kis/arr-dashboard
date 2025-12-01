@@ -87,9 +87,25 @@ export const InstanceOverrideEditor = ({
 	}, [data, customFormats]);
 
 	const handleScoreChange = (trashId: string, value: string) => {
-		// Parse the value, treating empty string as undefined
-		const parsed = Number.parseInt(value, 10);
-		const numValue = value === "" ? undefined : (Number.isNaN(parsed) ? undefined : parsed);
+		// Parse the value with strict integer validation
+		// Empty string means undefined (clear the override)
+		// Only accept strings that match integer-only pattern
+		let numValue: number | undefined;
+
+		if (value === "") {
+			numValue = undefined;
+		} else if (/^-?\d+$/.test(value)) {
+			// Valid integer pattern - convert and verify
+			const parsed = Number(value);
+			if (Number.isFinite(parsed) && Number.isInteger(parsed)) {
+				numValue = parsed;
+			} else {
+				numValue = undefined;
+			}
+		} else {
+			// Invalid input (contains decimals, letters, etc.)
+			numValue = undefined;
+		}
 
 		setEditedOverrides((prev) =>
 			prev.map((row) =>

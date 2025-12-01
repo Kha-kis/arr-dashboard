@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useCallback, useRef } from "react";
 import type { CurrentUser } from "@arr/shared";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useTagsQuery } from "../../../hooks/api/useTags";
@@ -44,6 +44,39 @@ export const SettingsClient = () => {
 
 	// Local state
 	const [activeTab, setActiveTab] = useState<TabType>("services");
+	const tabRefs = useRef<Record<TabType, HTMLButtonElement | null>>({
+		services: null,
+		tags: null,
+		account: null,
+		authentication: null,
+		backup: null,
+	});
+
+	// Keyboard navigation handler for tabs
+	const handleTabKeyDown = useCallback(
+		(event: React.KeyboardEvent<HTMLButtonElement>, currentTab: TabType) => {
+			const currentIndex = TABS.indexOf(currentTab);
+			let newIndex: number | null = null;
+
+			if (event.key === "ArrowRight") {
+				newIndex = (currentIndex + 1) % TABS.length;
+			} else if (event.key === "ArrowLeft") {
+				newIndex = (currentIndex - 1 + TABS.length) % TABS.length;
+			} else if (event.key === "Home") {
+				newIndex = 0;
+			} else if (event.key === "End") {
+				newIndex = TABS.length - 1;
+			}
+
+			if (newIndex !== null && newIndex >= 0 && newIndex < TABS.length) {
+				event.preventDefault();
+				const newTab = TABS[newIndex] as TabType;
+				setActiveTab(newTab);
+				tabRefs.current[newTab]?.focus();
+			}
+		},
+		[],
+	);
 
 	// Custom hooks
 	const serviceFormState = useServiceFormState();
@@ -60,10 +93,17 @@ export const SettingsClient = () => {
 			serviceFormState.selectedServiceForEdit.service !== "prowlarr",
 	);
 
-	// Check if creating new service supports defaults (not prowlarr)
+	// Type guard for services that support defaults (radarr and sonarr only)
+	const isDefaultsSupportedService = (
+		service: string,
+	): service is "radarr" | "sonarr" => {
+		return service === "radarr" || service === "sonarr";
+	};
+
+	// Check if creating new service supports defaults (radarr or sonarr only)
 	const creatingSupportsDefaults = Boolean(
 		!serviceFormState.selectedServiceForEdit &&
-			serviceFormState.formState.service !== "prowlarr" &&
+			isDefaultsSupportedService(serviceFormState.formState.service) &&
 			serviceFormState.formState.baseUrl &&
 			serviceFormState.formState.apiKey,
 	);
@@ -81,17 +121,25 @@ export const SettingsClient = () => {
 	);
 
 	// Fetch test options for default settings (creating new)
+	// Note: creatingSupportsDefaults already validates service is "radarr" | "sonarr"
+	// via the isDefaultsSupportedService type guard, making the assertion safe
+	const serviceForTestQuery = isDefaultsSupportedService(
+		serviceFormState.formState.service,
+	)
+		? serviceFormState.formState.service
+		: null;
+
 	const {
 		data: testOptions,
 		isLoading: testOptionsLoading,
 		isFetching: testOptionsFetching,
 		isError: testOptionsError,
 	} = useDiscoverTestOptionsQuery(
-		creatingSupportsDefaults
+		creatingSupportsDefaults && serviceForTestQuery
 			? {
 					baseUrl: serviceFormState.formState.baseUrl,
 					apiKey: serviceFormState.formState.apiKey,
-					service: serviceFormState.formState.service as "radarr" | "sonarr",
+					service: serviceForTestQuery,
 				}
 			: null,
 		creatingSupportsDefaults,
@@ -152,10 +200,15 @@ export const SettingsClient = () => {
 				{TABS.map((tab) => (
 					<button
 						key={tab}
+						ref={(el) => { tabRefs.current[tab] = el; }}
+						id={`settings-tab-${tab}`}
 						type="button"
 						role="tab"
-						aria-selected={activeTab === tab}
+						aria-selected={activeTab === tab ? "true" : "false"}
+						aria-controls={`settings-panel-${tab}`}
+						tabIndex={activeTab === tab ? 0 : -1}
 						onClick={() => setActiveTab(tab)}
+						onKeyDown={(e) => handleTabKeyDown(e, tab)}
 						className={cn(
 							"px-3 py-2 text-sm font-medium uppercase tracking-wide transition",
 							activeTab === tab
@@ -170,7 +223,12 @@ export const SettingsClient = () => {
 
 			{/* Services tab */}
 			{activeTab === "services" && (
-				<div className="grid gap-6 xl:grid-cols-[2fr,1fr]">
+				<div
+					role="tabpanel"
+					id="settings-panel-services"
+					aria-labelledby="settings-tab-services"
+					className="grid gap-6 xl:grid-cols-[2fr,1fr]"
+				>
 					<ServicesTab
 						services={services}
 						isLoading={servicesLoading}
@@ -205,32 +263,49 @@ export const SettingsClient = () => {
 
 			{/* Tags tab */}
 			{activeTab === "tags" && (
-				<TagsTab
-					tags={tags}
-					newTagName={tagsManagement.newTagName}
-					onNewTagNameChange={tagsManagement.setNewTagName}
-					onCreateTag={tagsManagement.handleCreateTag}
-					onDeleteTag={(id) => tagsManagement.deleteTagMutation.mutate(id)}
-					isCreatingTag={tagsManagement.deleteTagMutation.isPending}
-					isDeletingTag={tagsManagement.deleteTagMutation.isPending}
-				/>
+				<div
+					role="tabpanel"
+					id="settings-panel-tags"
+					aria-labelledby="settings-tab-tags"
+				>
+					<TagsTab
+						tags={tags}
+						newTagName={tagsManagement.newTagName}
+						onNewTagNameChange={tagsManagement.setNewTagName}
+						onCreateTag={tagsManagement.handleCreateTag}
+						onDeleteTag={(id) => tagsManagement.deleteTagMutation.mutate(id)}
+						isCreatingTag={tagsManagement.deleteTagMutation.isPending}
+						isDeletingTag={tagsManagement.deleteTagMutation.isPending}
+					/>
+				</div>
 			)}
 
 			{/* Account tab */}
 			{activeTab === "account" && (
-				<AccountTab
-					currentUser={currentUser}
-					accountForm={accountManagement.accountForm}
-					onAccountFormChange={accountManagement.setAccountForm}
-					onAccountUpdate={accountManagement.handleAccountUpdate}
-					isUpdating={accountManagement.updateAccountMutation.isPending}
-					updateResult={accountManagement.accountUpdateResult}
-				/>
+				<div
+					role="tabpanel"
+					id="settings-panel-account"
+					aria-labelledby="settings-tab-account"
+				>
+					<AccountTab
+						currentUser={currentUser}
+						accountForm={accountManagement.accountForm}
+						onAccountFormChange={accountManagement.setAccountForm}
+						onAccountUpdate={accountManagement.handleAccountUpdate}
+						isUpdating={accountManagement.updateAccountMutation.isPending}
+						updateResult={accountManagement.accountUpdateResult}
+					/>
+				</div>
 			)}
 
 			{/* Authentication tab */}
 			{activeTab === "authentication" && (
-				<div className="space-y-6">
+				<div
+					role="tabpanel"
+					id="settings-panel-authentication"
+					aria-labelledby="settings-tab-authentication"
+					className="space-y-6"
+				>
 					<PasswordSection currentUser={currentUser} />
 					<PasskeySection />
 					<OIDCProviderSection />
@@ -238,7 +313,15 @@ export const SettingsClient = () => {
 			)}
 
 			{/* Backup tab */}
-			{activeTab === "backup" && <BackupTab />}
+			{activeTab === "backup" && (
+				<div
+					role="tabpanel"
+					id="settings-panel-backup"
+					aria-labelledby="settings-tab-backup"
+				>
+					<BackupTab />
+				</div>
+			)}
 		</section>
 	);
 };
