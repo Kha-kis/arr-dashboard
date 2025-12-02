@@ -969,8 +969,10 @@ export class TemplateUpdater {
 					configType,
 				);
 
-				// Skip if already up-to-date
+				// Skip data fetch if already up-to-date, but still touch the cache
+				// to update lastCheckedAt so it doesn't show as "stale" in the UI
 				if (currentCommitHash === latestCommit.commitHash) {
+					await this.cacheManager.touchCache(serviceType, configType);
 					continue;
 				}
 
