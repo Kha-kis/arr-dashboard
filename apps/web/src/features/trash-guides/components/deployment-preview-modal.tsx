@@ -59,6 +59,13 @@ export const DeploymentPreviewModal = ({
 	// Track user's conflict resolution choices: trashId -> resolution
 	const [conflictResolutions, setConflictResolutions] = useState<Record<string, ConflictResolution>>({});
 
+	// Initialize syncStrategy from existing deployment (if any) when data loads
+	useEffect(() => {
+		if (data?.data?.existingSyncStrategy) {
+			setSyncStrategy(data.data.existingSyncStrategy);
+		}
+	}, [data?.data?.existingSyncStrategy]);
+
 	// Initialize conflict resolutions when data loads
 	useEffect(() => {
 		if (data?.data?.customFormats) {

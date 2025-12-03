@@ -221,18 +221,53 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 
 			const profiles = await response.json();
 
+			// Helper to find cutoff quality name from profile items
+			// The cutoff ID can match:
+			// 1. A single quality item (item.quality.id)
+			// 2. A quality group (item.id with item.name, has item.items)
+			// 3. A quality inside a group (subItem.quality.id or subItem.id)
+			const findCutoffQualityName = (items: any[], cutoffId: number): string | undefined => {
+				for (const item of items) {
+					// Check if this is a single quality item matching the cutoff
+					if (item.quality?.id === cutoffId) {
+						return item.quality.name;
+					}
+					// Check if this is a quality GROUP matching the cutoff (group has id + name + items)
+					if (item.id === cutoffId && item.name && item.items) {
+						return item.name;
+					}
+					// Check if this is a group containing the cutoff quality
+					if (item.items && Array.isArray(item.items)) {
+						for (const subItem of item.items) {
+							// Sub-items can have quality wrapper or direct id/name
+							if (subItem.quality?.id === cutoffId) {
+								return subItem.quality.name;
+							}
+							if (subItem.id === cutoffId && subItem.name) {
+								return subItem.name;
+							}
+						}
+					}
+				}
+				return undefined;
+			};
+
 			return reply.status(200).send({
 				success: true,
 				data: {
-					profiles: profiles.map((p: any) => ({
-						id: p.id,
-						name: p.name,
-						upgradeAllowed: p.upgradeAllowed,
-						cutoff: p.cutoff,
-						cutoffQuality: p.cutoffQuality,
-						minFormatScore: p.minFormatScore,
-						formatItemsCount: p.formatItems?.length || 0,
-					})),
+					profiles: profiles.map((p: any) => {
+						// Resolve cutoff ID to quality name from profile items
+						const cutoffName = p.cutoff ? findCutoffQualityName(p.items || [], p.cutoff) : undefined;
+						return {
+							id: p.id,
+							name: p.name,
+							upgradeAllowed: p.upgradeAllowed,
+							cutoff: p.cutoff,
+							cutoffQuality: cutoffName ? { id: p.cutoff, name: cutoffName } : undefined,
+							minFormatScore: p.minFormatScore,
+							formatItemsCount: p.formatItems?.length || 0,
+						};
+					}),
 				},
 			});
 		} catch (error) {
@@ -840,7 +875,41 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				}
 			}
 
+			// Helper function to find cutoff quality name from profile items
+			// The cutoff ID can match:
+			// 1. A single quality item (item.quality.id)
+			// 2. A quality group (item.id with item.name, has item.items)
+			// 3. A quality inside a group (subItem.quality.id or subItem.id)
+			const findCutoffQualityName = (items: any[], cutoffId: number): string => {
+				for (const item of items) {
+					// Check if this is a single quality item matching the cutoff
+					if (item.quality?.id === cutoffId) {
+						return item.quality.name;
+					}
+					// Check if this is a quality GROUP matching the cutoff (group has id + name + items)
+					if (item.id === cutoffId && item.name && item.items) {
+						return item.name;
+					}
+					// Check if this is a group containing the cutoff quality
+					if (item.items && Array.isArray(item.items)) {
+						for (const subItem of item.items) {
+							// Sub-items can have quality wrapper or direct id/name
+							if (subItem.quality?.id === cutoffId) {
+								return subItem.quality.name;
+							}
+							if (subItem.id === cutoffId && subItem.name) {
+								return subItem.name;
+							}
+						}
+					}
+				}
+				return "Unknown";
+			};
+
 			// Build the CompleteQualityProfile from the fetched profile
+			const cutoffId = fullProfile.cutoff ?? profileConfig?.cutoff ?? 0;
+			const cutoffQualityName = cutoffId ? findCutoffQualityName(fullProfile.items || [], cutoffId) : undefined;
+
 			const completeQualityProfile: CompleteQualityProfile = {
 				// Source information
 				sourceInstanceId,
@@ -851,17 +920,10 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 
 				// Quality settings from the instance profile
 				upgradeAllowed: fullProfile.upgradeAllowed ?? profileConfig?.upgradeAllowed ?? true,
-				cutoff: fullProfile.cutoff ?? profileConfig?.cutoff ?? 0,
-				cutoffQuality: fullProfile.cutoff ? {
-					id: fullProfile.cutoff,
-					name: fullProfile.items?.find((item: any) =>
-						item.quality?.id === fullProfile.cutoff ||
-						item.items?.some((subItem: any) => subItem.id === fullProfile.cutoff)
-					)?.quality?.name ||
-					fullProfile.items?.find((item: any) =>
-						item.items?.some((subItem: any) => subItem.id === fullProfile.cutoff)
-					)?.items?.find((subItem: any) => subItem.id === fullProfile.cutoff)?.name ||
-					"Unknown",
+				cutoff: cutoffId,
+				cutoffQuality: cutoffId ? {
+					id: cutoffId,
+					name: cutoffQualityName || "Unknown",
 				} : undefined,
 
 				// Quality items with full structure
@@ -901,12 +963,22 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 			const allowedItems = completeQualityProfile.items?.filter((item: any) => item.allowed);
 			app.log.info(`[create-template] Allowed quality items: ${allowedItems?.map((item: any) => item.quality?.name || item.name || 'group').join(', ')}`);
 
+			// Build qualityProfile metadata for template card badges
+			// This provides display info (language, cutoff) for the template list
+			const qualityProfileMetadata = {
+				language: completeQualityProfile.language?.name,
+				cutoff: completeQualityProfile.cutoffQuality?.name,
+				// Cloned profiles don't have a TRaSH score set
+				trash_score_set: undefined,
+			};
+
 			// Build the template config
 			const templateConfig: TemplateConfig = {
 				customFormats: customFormatsConfig,
 				customFormatGroups: [], // Cloned profiles don't use CF groups
 				qualitySize: [],
 				naming: [],
+				qualityProfile: qualityProfileMetadata, // Add metadata for template card badges
 				completeQualityProfile, // Include the full quality profile settings
 			};
 

@@ -52,9 +52,23 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				userId,
 			);
 
+			// Check for existing deployment to get current sync strategy
+			// Find the mapping by templateId and instanceId
+			const existingMapping = await prisma.templateQualityProfileMapping.findFirst({
+				where: {
+					templateId,
+					instanceId,
+				},
+				select: { syncStrategy: true },
+			});
+
 			return reply.send({
 				success: true,
-				data: preview,
+				data: {
+					...preview,
+					// Include existing sync strategy if this instance was previously deployed
+					existingSyncStrategy: existingMapping?.syncStrategy as "auto" | "manual" | "notify" | undefined,
+				},
 			});
 		} catch (error) {
 			if (

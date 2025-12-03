@@ -814,6 +814,9 @@ export interface DeploymentPreview {
 	instanceReachable: boolean;
 	instanceVersion?: string;
 
+	// Existing deployment settings (if previously deployed)
+	existingSyncStrategy?: "auto" | "manual" | "notify";
+
 	// Warnings
 	warnings: string[];
 }
