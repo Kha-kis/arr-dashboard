@@ -21,10 +21,12 @@ export interface DeploymentResult {
 	customFormatsUpdated: number;
 	customFormatsSkipped: number;
 	errors: string[];
+	warnings?: string[];
 	details?: {
 		created: string[]; // CF names
 		updated: string[]; // CF names
 		failed: string[]; // CF names
+		orphaned: string[]; // CF names no longer in template (scores set to 0)
 	};
 }
 
@@ -94,6 +96,7 @@ interface DeploymentDetails {
 	created: string[];
 	updated: string[];
 	failed: string[];
+	orphaned: string[];
 }
 
 interface DeployCustomFormatsResult {
@@ -102,6 +105,16 @@ interface DeployCustomFormatsResult {
 	skipped: number;
 	details: DeploymentDetails;
 	errors: string[];
+}
+
+interface SyncQualityProfileResult {
+	errors: string[];
+	orphanedCFs: string[]; // CF names that were set to score 0
+}
+
+interface PreviousDeploymentCF {
+	trashId: string;
+	name: string;
 }
 
 /**
@@ -347,6 +360,7 @@ export class DeploymentExecutorService {
 			created: [],
 			updated: [],
 			failed: [],
+			orphaned: [],
 		};
 		let created = 0;
 		let updated = 0;
@@ -432,6 +446,7 @@ export class DeploymentExecutorService {
 	/**
 	 * Syncs the quality profile with Custom Format scores.
 	 * Creates profile if needed, updates CF scores, and maintains template mapping.
+	 * Also handles orphaned CFs by setting their scores to 0.
 	 */
 	private async syncQualityProfile(
 		apiClient: ArrApiClient,
@@ -443,8 +458,10 @@ export class DeploymentExecutorService {
 		syncStrategy: "auto" | "manual" | "notify" | undefined,
 		conflictResolutions: Record<string, "use_template" | "keep_existing"> | undefined,
 		profileName: string,
-	): Promise<string[]> {
+		previouslyDeployedCFs: PreviousDeploymentCF[],
+	): Promise<SyncQualityProfileResult> {
 		const errors: string[] = [];
+		const orphanedCFs: string[] = [];
 
 		try {
 			const qualityProfiles = await apiClient.getQualityProfiles();
@@ -512,6 +529,29 @@ export class DeploymentExecutorService {
 							format: cf.id,
 							score,
 						});
+					}
+				}
+
+				// Identify orphaned CFs: were in previous deployment but not in current template
+				// Set their scores to 0 to neutralize them without deleting (may be used by other templates)
+				const currentTemplateCFNames = new Set(templateCFs.map((cf) => cf.name));
+				const cfByName = new Map(allCFs.map((cf) => [cf.name, cf]));
+
+				for (const prevCF of previouslyDeployedCFs) {
+					// If this CF was previously deployed but is no longer in the template
+					if (!currentTemplateCFNames.has(prevCF.name)) {
+						const instanceCF = cfByName.get(prevCF.name);
+						if (instanceCF?.id) {
+							// Set score to 0 to neutralize it
+							formatItems.push({
+								format: instanceCF.id,
+								score: 0,
+							});
+							orphanedCFs.push(prevCF.name);
+							console.log(
+								`[DEPLOYMENT] Orphaned CF "${prevCF.name}" (${prevCF.trashId}) - setting score to 0`,
+							);
+						}
 					}
 				}
 
@@ -686,7 +726,7 @@ export class DeploymentExecutorService {
 			);
 		}
 
-		return errors;
+		return { errors, orphanedCFs };
 	}
 
 	/**
@@ -1178,7 +1218,38 @@ export class DeploymentExecutorService {
 				existingCFByName.set(cf.name, cf);
 			}
 
-			// Step 6: Create TemplateDeploymentHistory record
+			// Step 6: Fetch previous deployment to identify orphaned CFs
+			const previousDeployment = await this.prisma.templateDeploymentHistory.findFirst({
+				where: {
+					templateId,
+					instanceId,
+					status: "SUCCESS",
+					templateSnapshot: { not: null },
+				},
+				orderBy: { deployedAt: "desc" },
+				select: { templateSnapshot: true },
+			});
+
+			// Extract previously deployed CFs from the snapshot
+			let previouslyDeployedCFs: PreviousDeploymentCF[] = [];
+			if (previousDeployment?.templateSnapshot) {
+				try {
+					const prevConfig = JSON.parse(previousDeployment.templateSnapshot);
+					previouslyDeployedCFs = (prevConfig.customFormats || []).map(
+						(cf: { trashId: string; name: string }) => ({
+							trashId: cf.trashId,
+							name: cf.name,
+						}),
+					);
+				} catch (parseError) {
+					console.warn(
+						"[DEPLOYMENT] Failed to parse previous deployment snapshot for orphan detection:",
+						parseError,
+					);
+				}
+			}
+
+			// Step 7: Create TemplateDeploymentHistory record
 			const deploymentHistory = await this.prisma.templateDeploymentHistory.create({
 				data: {
 					templateId,
@@ -1197,7 +1268,7 @@ export class DeploymentExecutorService {
 			});
 			deploymentHistoryId = deploymentHistory.id;
 
-			// Step 7: Deploy Custom Formats
+			// Step 8: Deploy Custom Formats
 			const cfResult = await this.deployCustomFormats(
 				apiClient,
 				templateCFs,
@@ -1206,9 +1277,9 @@ export class DeploymentExecutorService {
 				conflictResolutions,
 			);
 
-			// Step 8: Sync Quality Profile
+			// Step 9: Sync Quality Profile (handles orphaned CFs by setting scores to 0)
 			const profileName = template.name || "TRaSH Guides HD/UHD";
-			const profileErrors = await this.syncQualityProfile(
+			const profileResult = await this.syncQualityProfile(
 				apiClient,
 				templateConfig,
 				templateCFs,
@@ -1218,10 +1289,22 @@ export class DeploymentExecutorService {
 				syncStrategy,
 				conflictResolutions,
 				profileName,
+				previouslyDeployedCFs,
 			);
 
 			// Combine errors from CF deployment and profile sync
-			const allErrors = [...cfResult.errors, ...profileErrors];
+			const allErrors = [...cfResult.errors, ...profileResult.errors];
+
+			// Build warnings for orphaned CFs
+			const warnings: string[] = [];
+			if (profileResult.orphanedCFs.length > 0) {
+				warnings.push(
+					`${profileResult.orphanedCFs.length} Custom Format(s) removed from TRaSH Guides - scores set to 0: ${profileResult.orphanedCFs.join(", ")}`,
+				);
+			}
+
+			// Add orphaned CFs to details
+			cfResult.details.orphaned = profileResult.orphanedCFs;
 
 			// Step 9: Finalize deployment history with success
 			await this.finalizeDeploymentHistory(
@@ -1241,6 +1324,7 @@ export class DeploymentExecutorService {
 				customFormatsUpdated: cfResult.updated,
 				customFormatsSkipped: cfResult.skipped,
 				errors: allErrors,
+				warnings: warnings.length > 0 ? warnings : undefined,
 				details: cfResult.details,
 			};
 		} catch (error) {

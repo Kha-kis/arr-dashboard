@@ -367,7 +367,7 @@ export const CFResolution = ({
 		return filtered;
 	}, [excludedCFs, filterMode, searchQuery]);
 
-	// Stats
+	// Stats - dynamically calculated based on what will actually be in the template
 	const matchStats = useMemo(() => {
 		if (!data?.results) return null;
 
@@ -377,10 +377,6 @@ export const CFResolution = ({
 		const nameOnly = data.results.filter((r) => r.confidence === "name_only").length;
 		const specsSimilar = data.results.filter((r) => r.confidence === "specs_similar").length;
 		const unmatched = data.results.filter((r) => r.confidence === "no_match").length;
-
-		// Count decisions
-		const usingTrash = Object.values(decisions).filter((d) => d === "use_trash").length;
-		const keepingInstance = Object.values(decisions).filter((d) => d === "keep_instance").length;
 
 		// Count active vs recommended vs excluded
 		const activeCount = activeCFs.length;
@@ -396,6 +392,48 @@ export const CFResolution = ({
 			else if (reason === "recommendation") excludedByRec++;
 		}
 
+		// Calculate what will ACTUALLY be linked to TRaSH (only from CFs that will be in the template)
+		// This includes: activeCFs + recommendedCFs + manually included excluded CFs
+		let willBeLinkingToTrash = 0;
+		let willKeepInstance = 0;
+		let totalInTemplate = 0;
+
+		// Count from active CFs
+		for (const cf of activeCFs) {
+			totalInTemplate++;
+			const decision = decisions[cf.instanceCF.id];
+			if (cf.confidence !== "no_match" && decision === "use_trash") {
+				willBeLinkingToTrash++;
+			} else if (cf.confidence !== "no_match" && decision === "keep_instance") {
+				willKeepInstance++;
+			}
+		}
+
+		// Count from recommended CFs (default to use_trash)
+		for (const cf of recommendedCFs) {
+			totalInTemplate++;
+			const decision = decisions[cf.instanceCF.id] || "use_trash";
+			if (decision === "use_trash") {
+				willBeLinkingToTrash++;
+			} else {
+				willKeepInstance++;
+			}
+		}
+
+		// Count from manually included excluded CFs
+		for (const cfId of includedExcluded) {
+			const cf = excludedCFs.find((r) => r.instanceCF.id === cfId);
+			if (cf) {
+				totalInTemplate++;
+				const decision = decisions[cf.instanceCF.id] || "keep_instance";
+				if (cf.confidence !== "no_match" && decision === "use_trash") {
+					willBeLinkingToTrash++;
+				} else if (cf.confidence !== "no_match" && decision === "keep_instance") {
+					willKeepInstance++;
+				}
+			}
+		}
+
 		return {
 			total,
 			matched,
@@ -403,16 +441,18 @@ export const CFResolution = ({
 			nameOnly,
 			specsSimilar,
 			unmatched,
-			usingTrash,
-			keepingInstance,
 			activeCount,
 			recommendedCount,
 			excludedCount,
 			manuallyExcludedCount,
 			excludedByScore,
 			excludedByRec,
+			// New dynamic stats
+			willBeLinkingToTrash,
+			willKeepInstance,
+			totalInTemplate,
 		};
-	}, [data, decisions, activeCFs, recommendedCFs, excludedCFs, manuallyExcluded, exclusionReasons]);
+	}, [data, decisions, activeCFs, recommendedCFs, excludedCFs, manuallyExcluded, includedExcluded, exclusionReasons]);
 
 	const handleDecisionChange = (cfId: number, decision: CFResolutionDecision) => {
 		setDecisions((prev) => ({ ...prev, [cfId]: decision }));
@@ -596,7 +636,12 @@ export const CFResolution = ({
 				<h4 className="font-medium text-white mb-2">🔗 Link Custom Formats to TRaSH Guides</h4>
 				<p className="text-sm text-white/70">
 					We found <span className="font-medium text-white">{matchStats?.matched || 0}</span> Custom Formats in &quot;{profileName}&quot; that match TRaSH Guides entries.
-					Choose whether to link them (for automatic updates) or keep your instance versions.
+					{matchStats && matchStats.excludedCount > 0 && (
+						<> (<span className="text-amber-400">{matchStats.excludedCount}</span> auto-excluded based on scores/recommendations)</>
+					)}
+				</p>
+				<p className="text-sm text-white/60 mt-1">
+					Choose which CFs to include in your template and whether to link them (for automatic updates) or keep instance versions.
 				</p>
 			</div>
 
@@ -692,43 +737,61 @@ export const CFResolution = ({
 				</div>
 			)}
 
-			{/* Summary Stats */}
+			{/* Summary Stats - Two rows for clarity */}
 			{matchStats && (
-				<div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
-					<div className="rounded-lg border border-white/10 bg-white/5 p-3">
-						<div className="text-2xl font-bold text-white">{matchStats.activeCount}</div>
-						<div className="text-xs text-white/60">Active CFs</div>
-					</div>
-					<div className="rounded-lg border border-purple-500/20 bg-purple-500/5 p-3">
-						<div className="text-2xl font-bold text-purple-400">{matchStats.recommendedCount}</div>
-						<div className="text-xs text-purple-300/60">TRaSH Suggested</div>
-					</div>
-					<div className="rounded-lg border border-green-500/20 bg-green-500/5 p-3">
-						<div className="text-2xl font-bold text-green-400">{matchStats.matched}</div>
-						<div className="text-xs text-green-300/60">Matched</div>
-					</div>
-					<div className="rounded-lg border border-gray-500/20 bg-gray-500/5 p-3">
-						<div className="text-2xl font-bold text-gray-400">{matchStats.unmatched}</div>
-						<div className="text-xs text-gray-300/60">Custom/Unmatched</div>
-					</div>
-					<div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
-						<div className="text-2xl font-bold text-amber-400">{matchStats.excludedCount}</div>
-						<div className="text-xs text-amber-300/60">
-							Excluded
-							{matchStats.excludedByScore > 0 && matchStats.excludedByRec > 0 ? (
-								<span className="text-gray-400 ml-1">({matchStats.excludedByScore} score, {matchStats.excludedByRec} rec)</span>
-							) : matchStats.excludedByScore > 0 ? (
-								<span className="text-gray-400 ml-1">({matchStats.excludedByScore} score)</span>
-							) : matchStats.excludedByRec > 0 ? (
-								<span className="text-gray-400 ml-1">({matchStats.excludedByRec} rec)</span>
-							) : matchStats.manuallyExcludedCount > 0 ? (
-								<span className="text-gray-400 ml-1">({matchStats.manuallyExcludedCount} manual)</span>
-							) : null}
+				<div className="space-y-3">
+					{/* Row 1: Template Summary - What will actually happen */}
+					<div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
+						<div className="text-xs text-primary/70 uppercase tracking-wide mb-3 text-center">Template Summary</div>
+						<div className="grid grid-cols-3 gap-4">
+							<div className="text-center">
+								<div className="text-3xl font-bold text-white">{matchStats.totalInTemplate}</div>
+								<div className="text-xs text-white/60">CFs in Template</div>
+							</div>
+							<div className="text-center">
+								<div className="text-3xl font-bold text-primary">{matchStats.willBeLinkingToTrash}</div>
+								<div className="text-xs text-primary/70">Linking to TRaSH</div>
+							</div>
+							<div className="text-center">
+								<div className="text-3xl font-bold text-gray-400">{matchStats.willKeepInstance}</div>
+								<div className="text-xs text-gray-400/70">Keeping Instance</div>
+							</div>
 						</div>
 					</div>
-					<div className="rounded-lg border border-primary/20 bg-primary/5 p-3">
-						<div className="text-2xl font-bold text-primary">{matchStats.usingTrash}</div>
-						<div className="text-xs text-primary/60">Linking to TRaSH</div>
+
+					{/* Row 2: Breakdown Stats */}
+					<div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+						<div className="rounded-lg border border-white/10 bg-white/5 p-3">
+							<div className="text-2xl font-bold text-white">{matchStats.activeCount}</div>
+							<div className="text-xs text-white/60">Active CFs</div>
+						</div>
+						<div className="rounded-lg border border-purple-500/20 bg-purple-500/5 p-3">
+							<div className="text-2xl font-bold text-purple-400">{matchStats.recommendedCount}</div>
+							<div className="text-xs text-purple-300/60">TRaSH Suggested</div>
+						</div>
+						<div className="rounded-lg border border-green-500/20 bg-green-500/5 p-3">
+							<div className="text-2xl font-bold text-green-400">{matchStats.matched}</div>
+							<div className="text-xs text-green-300/60">Total Matched</div>
+						</div>
+						<div className="rounded-lg border border-gray-500/20 bg-gray-500/5 p-3">
+							<div className="text-2xl font-bold text-gray-400">{matchStats.unmatched}</div>
+							<div className="text-xs text-gray-300/60">Custom/Unmatched</div>
+						</div>
+						<div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+							<div className="text-2xl font-bold text-amber-400">{matchStats.excludedCount}</div>
+							<div className="text-xs text-amber-300/60">
+								Excluded
+								{matchStats.excludedByScore > 0 && matchStats.excludedByRec > 0 ? (
+									<span className="text-gray-400 ml-1">({matchStats.excludedByScore} score, {matchStats.excludedByRec} rec)</span>
+								) : matchStats.excludedByScore > 0 ? (
+									<span className="text-gray-400 ml-1">({matchStats.excludedByScore} score)</span>
+								) : matchStats.excludedByRec > 0 ? (
+									<span className="text-gray-400 ml-1">({matchStats.excludedByRec} rec)</span>
+								) : matchStats.manuallyExcludedCount > 0 ? (
+									<span className="text-gray-400 ml-1">({matchStats.manuallyExcludedCount} manual)</span>
+								) : null}
+							</div>
+						</div>
 					</div>
 				</div>
 			)}
