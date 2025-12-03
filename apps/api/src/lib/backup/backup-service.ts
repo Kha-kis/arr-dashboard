@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { Prisma, type PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import type { BackupData, BackupFileInfo, BackupFileInfoInternal, BackupMetadata } from "@arr/shared";
 
 const BACKUP_VERSION = "1.0";
@@ -132,7 +132,7 @@ export class BackupService {
 					console.warn("secrets.json has invalid JSON; attempting to salvage backupPassword...");
 					// Use the already-read recheckContent instead of re-reading the file
 					const backupPasswordMatch = recheckContent.match(/"backupPassword"\s*:\s*"([^"]+)"/);
-					if (backupPasswordMatch && backupPasswordMatch[1]) {
+					if (backupPasswordMatch?.[1]) {
 						console.warn("Found existing backupPassword in invalid JSON, preserving it");
 						return backupPasswordMatch[1];
 					}
@@ -359,14 +359,12 @@ export class BackupService {
 		const estimatedSizeMB = (estimatedRecordCount * 1024) / (1024 * 1024);
 
 		if (estimatedSizeMB > RECOMMENDED_MAX_BACKUP_SIZE_MB) {
-			const message = `Backup size estimate (${estimatedSizeMB.toFixed(2)} MB) exceeds recommended limit (${RECOMMENDED_MAX_BACKUP_SIZE_MB} MB). ` +
-				`This may cause memory issues or timeouts. Consider implementing backup streaming or pruning old data.`;
+			const message = `Backup size estimate (${estimatedSizeMB.toFixed(2)} MB) exceeds recommended limit (${RECOMMENDED_MAX_BACKUP_SIZE_MB} MB). This may cause memory issues or timeouts. Consider implementing backup streaming or pruning old data.`;
 			console.error(message);
 			throw new Error(message);
-		} else if (estimatedSizeMB > WARNING_BACKUP_SIZE_MB) {
+		}if (estimatedSizeMB > WARNING_BACKUP_SIZE_MB) {
 			console.warn(
-				`Backup size estimate (${estimatedSizeMB.toFixed(2)} MB) is large. ` +
-				`Consider monitoring memory usage and implementing streaming for larger datasets.`
+				`Backup size estimate (${estimatedSizeMB.toFixed(2)} MB) is large. Consider monitoring memory usage and implementing streaming for larger datasets.`
 			);
 		}
 

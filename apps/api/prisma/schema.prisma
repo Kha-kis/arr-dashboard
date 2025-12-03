@@ -410,7 +410,7 @@ model TemplateDeploymentHistory {
   duration    Int?      // Duration in seconds
 
   // Deployment status
-  status      String    // SUCCESS, PARTIAL_SUCCESS, FAILED, IN_PROGRESS
+  status      String    // SUCCESS, PARTIAL_SUCCESS, FAILED, IN_PROGRESS, PARTIAL_UNDEPLOY
 
   // Deployment statistics
   appliedCFs      Int @default(0)  // Successfully applied custom formats

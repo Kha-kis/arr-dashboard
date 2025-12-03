@@ -4,7 +4,7 @@
  * Enhanced template export/import with validation and metadata
  */
 
-import { FastifyPluginCallback } from "fastify";
+import type { FastifyPluginCallback } from "fastify";
 import { createEnhancedTemplateService } from "../../lib/trash-guides/enhanced-template-service.js";
 import type { TemplateExportOptions, TemplateImportOptions } from "@arr/shared";
 
@@ -28,7 +28,7 @@ const templateSharingRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Export template with enhanced options
 	 */
 	app.post("/export", async (request, reply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 		const {
 			templateId,
 			options,
@@ -46,7 +46,7 @@ const templateSharingRoutes: FastifyPluginCallback = (app, opts, done) => {
 			);
 
 			// Parse to get template name for filename
-			let data: { template: { name: string } };
+			let data: { template: { name?: string } };
 			try {
 				data = JSON.parse(jsonData);
 			} catch (parseError) {
@@ -55,7 +55,12 @@ const templateSharingRoutes: FastifyPluginCallback = (app, opts, done) => {
 					error: `Template export returned invalid JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
 				});
 			}
-			const filename = `${data.template.name.replace(/[^a-z0-9]/gi, "-").toLowerCase()}.json`;
+			// Guard against missing or empty template name
+			const templateName =
+				data.template?.name && typeof data.template.name === "string" && data.template.name.trim()
+					? data.template.name
+					: "template";
+			const filename = `${templateName.replace(/[^a-z0-9]/gi, "-").toLowerCase()}.json`;
 
 			reply.header("Content-Type", "application/json");
 			reply.header("Content-Disposition", `attachment; filename="${filename}"`);
@@ -75,7 +80,7 @@ const templateSharingRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Validate template before import
 	 */
 	app.post("/validate", async (request, reply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 		const { jsonData } = request.body as { jsonData: string };
 
 		try {
@@ -100,7 +105,7 @@ const templateSharingRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Import template with validation and conflict resolution
 	 */
 	app.post("/import", async (request, reply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 		const {
 			jsonData,
 			options,
@@ -146,19 +151,43 @@ const templateSharingRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Preview template import without saving
 	 */
 	app.post("/preview", async (request, reply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 		const { jsonData } = request.body as { jsonData: string };
 
 		try {
-			// Parse and return template data with validation
-			const data = JSON.parse(jsonData);
+			// Parse JSON data
+			let data: unknown;
+			try {
+				data = JSON.parse(jsonData);
+			} catch (parseError) {
+				return reply.status(400).send({
+					success: false,
+					error: `Invalid JSON format: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+				});
+			}
+
+			// Validate required structure
+			if (
+				typeof data !== "object" ||
+				data === null ||
+				!("template" in data) ||
+				typeof (data as { template: unknown }).template !== "object" ||
+				(data as { template: unknown }).template === null
+			) {
+				return reply.status(400).send({
+					success: false,
+					error: "Invalid template format: missing or invalid 'template' property",
+				});
+			}
+
+			const templateData = data as { template: Record<string, unknown> };
 			const service = createEnhancedTemplateService(app.prisma);
 			const validation = await service.validateTemplateImport(userId, jsonData);
 
 			return reply.status(200).send({
 				success: true,
 				data: {
-					template: data.template,
+					template: templateData.template,
 					validation: validation.validation,
 					compatibility: validation.compatibility,
 				},

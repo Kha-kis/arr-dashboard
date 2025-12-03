@@ -4,10 +4,10 @@
  * Orchestrates the synchronization of TRaSH configurations to Radarr/Sonarr instances
  */
 
-import { PrismaClient } from "@prisma/client";
 import type { TemplateConfig } from "@arr/shared";
-import type { TemplateUpdater } from "./template-updater.js";
+import type { PrismaClient } from "@prisma/client";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
+import type { TemplateUpdater } from "./template-updater.js";
 
 // ============================================================================
 // Types
@@ -143,8 +143,9 @@ export class SyncEngine {
 			return { valid: false, conflicts, errors, warnings };
 		}
 
-		// Check service type compatibility
-		if (template.serviceType !== instance.service) {
+		// Check service type compatibility (case-insensitive)
+		// Template stores uppercase "RADARR"/"SONARR", instance may store different case
+		if (template.serviceType.toUpperCase() !== instance.service.toUpperCase()) {
 			errors.push(
 				`Template service type (${template.serviceType}) doesn't match instance (${instance.service})`,
 			);
@@ -272,7 +273,9 @@ export class SyncEngine {
 			this.emitProgress({
 				syncId,
 				status: "COMPLETED",
-				currentStep: deployResult.success ? "Sync completed successfully" : "Sync completed with errors",
+				currentStep: deployResult.success
+					? "Sync completed successfully"
+					: "Sync completed with errors",
 				progress: 100,
 				totalConfigs:
 					deployResult.customFormatsCreated +
@@ -299,9 +302,9 @@ export class SyncEngine {
 			let errorMessage = "Sync failed";
 			if (error instanceof Error) {
 				errorMessage = error.message;
-			} else if (error && typeof error === 'object' && 'message' in error) {
+			} else if (error && typeof error === "object" && "message" in error) {
 				errorMessage = String(error.message);
-			} else if (typeof error === 'string') {
+			} else if (typeof error === "string") {
 				errorMessage = error;
 			}
 
@@ -346,7 +349,6 @@ export class SyncEngine {
 			this.progressCallbacks.delete(syncId);
 		}
 	}
-
 }
 
 // ============================================================================

@@ -11,6 +11,16 @@ import { createDeploymentPreviewService } from "../../lib/trash-guides/deploymen
 import { createDeploymentExecutorService } from "../../lib/trash-guides/deployment-executor.js";
 
 export async function deploymentRoutes(app: FastifyInstance) {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
 	const { prisma } = app;
 	const deploymentPreview = createDeploymentPreviewService(prisma, app.encryptor);
 	const deploymentExecutor = createDeploymentExecutorService(prisma, app.encryptor);
@@ -26,16 +36,8 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		};
 	}>("/preview", async (request, reply) => {
 		try {
-			// Authentication check
-			if (!request.currentUser?.id) {
-				return reply.status(401).send({
-					success: false,
-					error: "Authentication required",
-				});
-			}
-
 			const { templateId, instanceId } = request.body;
-			const userId = request.currentUser.id;
+			const userId = request.currentUser?.id;
 
 			if (!templateId || !instanceId) {
 				return reply.status(400).send({
@@ -85,19 +87,11 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			instanceId: string;
 			syncStrategy?: "auto" | "manual" | "notify";
 			conflictResolutions?: Record<string, "use_template" | "keep_existing">; // Map of trashId → resolution
-			createBackup?: boolean;
 		};
 	}>("/execute", async (request, reply) => {
 		try {
 			const { templateId, instanceId, syncStrategy, conflictResolutions } = request.body;
 			const userId = request.currentUser?.id;
-
-			if (!userId) {
-				return reply.status(401).send({
-					success: false,
-					error: "Authentication required",
-				});
-			}
 
 			if (!templateId || !instanceId) {
 				return reply.status(400).send({
@@ -120,13 +114,12 @@ export async function deploymentRoutes(app: FastifyInstance) {
 					success: true,
 					data: result,
 				});
-			} else {
+			}
 				return reply.status(400).send({
 					success: false,
 					error: "Deployment failed",
 					data: result,
 				});
-			}
 		} catch (error) {
 			if (
 				error instanceof Error &&
@@ -160,15 +153,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		};
 	}>("/sync-strategy", async (request, reply) => {
 		try {
-			// Authentication check
 			const userId = request.currentUser?.id;
-			if (!userId) {
-				return reply.status(401).send({
-					success: false,
-					error: "Authentication required",
-				});
-			}
-
 			const { templateId, instanceId, syncStrategy } = request.body;
 
 			if (!templateId || !instanceId || !syncStrategy) {
@@ -253,15 +238,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		};
 	}>("/sync-strategy-bulk", async (request, reply) => {
 		try {
-			// Authentication check
 			const userId = request.currentUser?.id;
-			if (!userId) {
-				return reply.status(401).send({
-					success: false,
-					error: "Authentication required",
-				});
-			}
-
 			const { templateId, syncStrategy } = request.body;
 
 			if (!templateId || !syncStrategy) {
@@ -345,13 +322,6 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		try {
 			const { templateId, instanceId } = request.body;
 			const userId = request.currentUser?.id;
-
-			if (!userId) {
-				return reply.status(401).send({
-					success: false,
-					error: "Authentication required",
-				});
-			}
 
 			if (!templateId || !instanceId) {
 				return reply.status(400).send({
@@ -450,13 +420,6 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		try {
 			const { templateId, instanceIds, syncStrategy, instanceSyncStrategies } = request.body;
 			const userId = request.currentUser?.id;
-
-			if (!userId) {
-				return reply.status(401).send({
-					success: false,
-					error: "Authentication required",
-				});
-			}
 
 			if (!templateId || !instanceIds || instanceIds.length === 0) {
 				return reply.status(400).send({

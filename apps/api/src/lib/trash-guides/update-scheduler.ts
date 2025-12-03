@@ -365,7 +365,7 @@ export class UpdateScheduler {
 
 				// Check if notification already exists for this commit
 				const notificationExists = changeLog.some(
-					(entry: any) =>
+					(entry) =>
 						entry.type === "update_available" &&
 						entry.latestCommit === template.latestCommit,
 				);

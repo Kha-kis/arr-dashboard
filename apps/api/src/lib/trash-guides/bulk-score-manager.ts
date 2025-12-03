@@ -4,7 +4,7 @@
  * Provides bulk operations for managing custom format scores across multiple templates
  */
 
-import { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import type {
 	CustomFormatScoreEntry,
 	BulkScoreFilters,
@@ -18,7 +18,12 @@ import type {
 	TemplateCustomFormat,
 	TemplateScore,
 } from "@arr/shared";
-import { ArrApiClient, createArrApiClient } from "./arr-api-client.js";
+import {
+	type ArrApiClient,
+	type CustomFormat,
+	type QualityProfile,
+	createArrApiClient,
+} from "./arr-api-client.js";
 import type { Encryptor } from "../auth/encryption.js";
 
 // ============================================================================
@@ -64,7 +69,7 @@ export class BulkScoreManager {
 		});
 
 		if (!instance) {
-			throw new Error(`Instance not found or not enabled`);
+			throw new Error("Instance not found or not enabled");
 		}
 
 		const instances = [instance]; // Wrap in array to reuse existing logic
@@ -85,7 +90,7 @@ export class BulkScoreManager {
 			instanceClients.set(instance.id, client);
 
 			// Fetch quality profiles from this instance
-			let qualityProfiles;
+			let qualityProfiles: QualityProfile[];
 			try {
 				qualityProfiles = await client.getQualityProfiles();
 			} catch (error) {
@@ -130,19 +135,23 @@ export class BulkScoreManager {
 			},
 		}) : [];
 
-		// Build a map of CF name → TRaSH default score from templates
-		// Key: CF name, Value: { trashId, defaultScore, scoreSet → score }
+		// Build a map of CF name → all available score set scores
+		// Key: CF name, Value: { trashId, scoreSetScores (all available scores by score set) }
 		interface TrashScoreInfo {
 			trashId: string;
-			defaultScore: number;
-			scoreSetScores: Record<string, number>;
+			scoreSetScores: Record<string, number>; // scoreSet → score (e.g., "anime" → 100, "default" → 0)
+			fallbackScore: number; // score from originalConfig.score if no trash_scores
 		}
-		const trashDefaultScoresMap = new Map<string, TrashScoreInfo>();
+		const trashScoreInfoMap = new Map<string, TrashScoreInfo>();
+
+		// Build a map of templateId → scoreSet for looking up the correct default per profile
+		const templateScoreSetMap = new Map<string, string>();
 
 		for (const template of templates) {
 			try {
 				const config = JSON.parse(template.configData) as TemplateConfig;
-				const scoreSet = config.qualityProfile?.trash_score_set;
+				const scoreSet = config.qualityProfile?.trash_score_set || 'default';
+				templateScoreSetMap.set(template.id, scoreSet);
 
 				for (const cf of config.customFormats || []) {
 					// Get the original config which may have trash_scores
@@ -153,10 +162,9 @@ export class BulkScoreManager {
 						[key: string]: unknown;
 					};
 
-					if (!trashDefaultScoresMap.has(cf.name)) {
-						// Calculate default score: trash_scores[scoreSet] > trash_scores.default > score > 0
-						let defaultScore = 0;
+					if (!trashScoreInfoMap.has(cf.name)) {
 						const scoreSetScores: Record<string, number> = {};
+						let fallbackScore = 0;
 
 						if (originalConfig?.trash_scores) {
 							// Store all available score sets
@@ -165,21 +173,16 @@ export class BulkScoreManager {
 									scoreSetScores[key] = value;
 								}
 							}
-
-							// Calculate the default score based on priority
-							if (scoreSet && originalConfig.trash_scores[scoreSet] !== undefined) {
-								defaultScore = Number(originalConfig.trash_scores[scoreSet]);
-							} else if (originalConfig.trash_scores.default !== undefined) {
-								defaultScore = Number(originalConfig.trash_scores.default);
-							}
-						} else if (originalConfig?.score !== undefined) {
-							defaultScore = Number(originalConfig.score);
 						}
 
-						trashDefaultScoresMap.set(cf.name, {
+						if (originalConfig?.score !== undefined) {
+							fallbackScore = Number(originalConfig.score);
+						}
+
+						trashScoreInfoMap.set(cf.name, {
 							trashId: cf.trashId,
-							defaultScore,
 							scoreSetScores,
+							fallbackScore,
 						});
 					}
 				}
@@ -187,6 +190,21 @@ export class BulkScoreManager {
 				console.error(`Failed to parse template ${template.id} config:`, error);
 			}
 		}
+
+		// Helper function to calculate the correct default score for a CF given a score set
+		const getDefaultScoreForScoreSet = (cfName: string, scoreSet: string): number => {
+			const scoreInfo = trashScoreInfoMap.get(cfName);
+			if (!scoreInfo) return 0;
+
+			// Priority: scoreSet score > default score > fallbackScore > 0
+			if (scoreInfo.scoreSetScores[scoreSet] !== undefined) {
+				return scoreInfo.scoreSetScores[scoreSet];
+			}
+			if (scoreInfo.scoreSetScores.default !== undefined) {
+				return scoreInfo.scoreSetScores.default;
+			}
+			return scoreInfo.fallbackScore;
+		};
 
 		// Step 2: Collect all unique custom formats across all instances
 		// Key: CF name, Value: CustomFormatScoreEntry
@@ -197,7 +215,7 @@ export class BulkScoreManager {
 			if (!client) continue;
 
 			// Fetch custom formats to get all possible CFs
-			let customFormats;
+			let customFormats: CustomFormat[];
 			try {
 				customFormats = await client.getCustomFormats();
 			} catch (error) {
@@ -206,7 +224,7 @@ export class BulkScoreManager {
 			}
 
 			// Fetch quality profiles to get actual scores
-			let qualityProfiles;
+			let qualityProfiles: QualityProfile[];
 			try {
 				qualityProfiles = await client.getQualityProfiles();
 			} catch (error) {
@@ -252,19 +270,21 @@ export class BulkScoreManager {
 					cfMap.set(cfKey, cfEntry);
 
 					// For newly created CF entries, add score entries for ALL quality profiles from ALL instances
-					// Get the TRaSH default score for this CF (if available from templates)
-					const trashScoreInfo = trashDefaultScoresMap.get(cfName);
-					const trashDefaultScore = trashScoreInfo?.defaultScore ?? 0;
-
 					for (const profileRef of allQualityProfiles) {
 						const isTemplateManaged = templateMappingMap.has(profileRef.profileId);
+
+						// Get the correct default score based on the template's score set for this profile
+						const templateId = templateMappingMap.get(profileRef.profileId);
+						const profileScoreSet = templateId ? (templateScoreSetMap.get(templateId) || 'default') : 'default';
+						const trashDefaultScore = getDefaultScoreForScoreSet(cfName, profileScoreSet);
+
 						const templateScore: TemplateScore = {
 							templateId: `${profileRef.instanceId}-${profileRef.profileId}`,
 							templateName: profileRef.instanceLabel,
 							qualityProfileName: profileRef.profileName,
-							scoreSet: "default",
+							scoreSet: profileScoreSet,
 							currentScore: 0, // Will be updated if this profile has this CF
-							defaultScore: trashDefaultScore, // TRaSH Guides default score
+							defaultScore: trashDefaultScore, // TRaSH Guides default score for THIS profile's score set
 							isModified: false,
 							isTemplateManaged,
 						};
@@ -344,7 +364,7 @@ export class BulkScoreManager {
 		const errors: string[] = [];
 
 		// Determine which templates to update
-		const whereClause: any = {
+		const whereClause: Prisma.TrashTemplateWhereInput = {
 			userId,
 			deletedAt: null,
 		};
@@ -558,7 +578,7 @@ export class BulkScoreManager {
 						where: { id: template.id },
 						data: {
 							configData: JSON.stringify(config),
-							hasUserModifications: reset.resetModificationsFlag ? false : true,
+							hasUserModifications: !reset.resetModificationsFlag,
 							lastModifiedAt: now,
 							lastModifiedBy: userId,
 						},
@@ -594,15 +614,12 @@ export class BulkScoreManager {
 		templateIds: string[],
 		serviceType?: "RADARR" | "SONARR",
 	): Promise<BulkScoreExport> {
-		const whereClause: any = {
+		const whereClause: Prisma.TrashTemplateWhereInput = {
 			id: { in: templateIds },
 			userId,
 			deletedAt: null,
+			...(serviceType && { serviceType }),
 		};
-
-		if (serviceType) {
-			whereClause.serviceType = serviceType;
-		}
 
 		const templates = await this.prisma.trashTemplate.findMany({
 			where: whereClause,

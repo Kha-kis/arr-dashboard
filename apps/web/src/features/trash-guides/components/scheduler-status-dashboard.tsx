@@ -1,12 +1,26 @@
 "use client";
 
-import { useSchedulerStatus, useTriggerUpdateCheck } from "../../../hooks/api/useTemplateUpdates";
-import { RefreshCw, Clock, CheckCircle2, AlertCircle, Play } from "lucide-react";
-import { Alert, AlertDescription, Skeleton } from "../../../components/ui";
 import { formatDistanceToNow } from "date-fns";
+import { AlertCircle, CheckCircle2, Clock, Play, RefreshCw } from "lucide-react";
+import { Alert, AlertDescription, Skeleton } from "../../../components/ui";
+import { useSchedulerStatus, useTriggerUpdateCheck } from "../../../hooks/api/useTemplateUpdates";
+
+/**
+ * Safely formats a date value as relative time (e.g., "5 minutes ago").
+ * Returns fallback if the date is invalid or missing.
+ */
+function safeFormatDistanceToNow(
+	value: string | Date | null | undefined,
+	fallback = "Never",
+): string {
+	if (!value) return fallback;
+	const date = value instanceof Date ? value : new Date(value);
+	if (Number.isNaN(date.getTime())) return fallback;
+	return formatDistanceToNow(date, { addSuffix: true });
+}
 
 export const SchedulerStatusDashboard = () => {
-	const { data, isLoading, error, refetch } = useSchedulerStatus({
+	const { data, isLoading, error } = useSchedulerStatus({
 		refetchInterval: 60000, // Refresh every minute
 	});
 	const triggerCheck = useTriggerUpdateCheck();
@@ -22,8 +36,7 @@ export const SchedulerStatusDashboard = () => {
 
 		try {
 			await triggerCheck.mutateAsync();
-			// Refetch status after a brief delay
-			setTimeout(() => refetch(), 2000);
+			// Query is automatically invalidated by the mutation's onSuccess callback
 		} catch (error) {
 			console.error("Failed to trigger update check:", error);
 			alert("Failed to trigger update check. Please try again.");
@@ -50,9 +63,7 @@ export const SchedulerStatusDashboard = () => {
 	if (!schedulerData) {
 		return (
 			<Alert variant="info">
-				<AlertDescription>
-					Scheduler status not available
-				</AlertDescription>
+				<AlertDescription>Scheduler status not available</AlertDescription>
 			</Alert>
 		);
 	}
@@ -63,12 +74,10 @@ export const SchedulerStatusDashboard = () => {
 				{/* Header */}
 				<div className="flex items-center justify-between">
 					<div>
-						<h3 className="text-lg font-semibold text-fg">
-							TRaSH Guides Update Scheduler
-						</h3>
+						<h3 className="text-lg font-semibold text-fg">TRaSH Guides Update Scheduler</h3>
 						<p className="text-sm text-fg-muted mt-1">
-							Checks for TRaSH Guides updates every 12 hours. Templates set to &quot;Auto&quot; sync strategy
-							will be automatically updated and deployed to your instances.
+							Checks for TRaSH Guides updates every 12 hours. Templates set to &quot;Auto&quot; sync
+							strategy will be automatically updated and deployed to your instances.
 						</p>
 					</div>
 					<div className="flex items-center gap-2">
@@ -98,11 +107,7 @@ export const SchedulerStatusDashboard = () => {
 							<span className="text-xs font-medium">Last Check</span>
 						</div>
 						<p className="text-lg font-semibold text-fg">
-							{schedulerData.lastCheckAt
-								? formatDistanceToNow(new Date(schedulerData.lastCheckAt), {
-										addSuffix: true,
-								  })
-								: "Never"}
+							{safeFormatDistanceToNow(schedulerData.lastCheckAt, "Never")}
 						</p>
 					</div>
 
@@ -113,11 +118,7 @@ export const SchedulerStatusDashboard = () => {
 							<span className="text-xs font-medium">Next Check</span>
 						</div>
 						<p className="text-lg font-semibold text-fg">
-							{schedulerData.nextCheckAt
-								? formatDistanceToNow(new Date(schedulerData.nextCheckAt), {
-										addSuffix: true,
-								  })
-								: "Not scheduled"}
+							{safeFormatDistanceToNow(schedulerData.nextCheckAt, "Not scheduled")}
 						</p>
 					</div>
 
@@ -147,17 +148,15 @@ export const SchedulerStatusDashboard = () => {
 				{/* Last Check Results */}
 				{schedulerData.lastCheckResult && (
 					<div className="rounded-lg border border-white/10 bg-white/5 p-4">
-						<h4 className="text-sm font-medium text-fg mb-3">
-							Last Check Results
-						</h4>
+						<h4 className="text-sm font-medium text-fg mb-3">Last Check Results</h4>
 
 						{/* Template Version Check Results */}
 						<div className="mb-4">
 							<div className="mb-2">
 								<h5 className="text-xs font-medium text-fg mb-1">Template Version Updates</h5>
 								<p className="text-xs text-fg-muted">
-									Compares your templates against latest TRaSH Guides commits.
-									Templates with &quot;Auto&quot; strategy are updated and deployed automatically.
+									Compares your templates against latest TRaSH Guides commits. Templates with
+									&quot;Auto&quot; strategy are updated and deployed automatically.
 								</p>
 							</div>
 							<div className="grid gap-3 grid-cols-2 md:grid-cols-4">
@@ -177,14 +176,10 @@ export const SchedulerStatusDashboard = () => {
 									<p className="text-sm font-medium text-blue-400 mt-1">
 										{schedulerData.lastCheckResult.templatesWithNotifyStrategy ?? 0}
 									</p>
-									<p className="text-xs text-fg-muted mt-0.5">
-										Will alert on updates
-									</p>
+									<p className="text-xs text-fg-muted mt-0.5">Will alert on updates</p>
 								</div>
 								<div>
-									<span className="text-xs text-fg-muted">
-										Needing Attention
-									</span>
+									<span className="text-xs text-fg-muted">Needing Attention</span>
 									<p className="text-sm font-medium text-yellow-400 mt-1">
 										{schedulerData.lastCheckResult.templatesNeedingAttention}
 									</p>
@@ -203,7 +198,8 @@ export const SchedulerStatusDashboard = () => {
 							<div className="mb-2">
 								<h5 className="text-xs font-medium text-fg mb-1">TRaSH Guides Data Cache</h5>
 								<p className="text-xs text-fg-muted">
-									Refreshes cached quality profiles, naming formats, and custom formats from repository
+									Refreshes cached quality profiles, naming formats, and custom formats from
+									repository
 								</p>
 							</div>
 							<div className="grid gap-3 md:grid-cols-2">
@@ -224,12 +220,10 @@ export const SchedulerStatusDashboard = () => {
 
 						{schedulerData.lastCheckResult.errors.length > 0 && (
 							<div className="mt-3 rounded border border-red-500/30 bg-red-500/10 p-3">
-								<p className="text-xs font-medium text-red-600 dark:text-red-400 mb-2">
-									Errors:
-								</p>
+								<p className="text-xs font-medium text-red-600 dark:text-red-400 mb-2">Errors:</p>
 								<ul className="text-xs text-fg-muted space-y-1">
-									{schedulerData.lastCheckResult.errors.map((error, idx) => (
-										<li key={idx}>• {error}</li>
+									{schedulerData.lastCheckResult.errors.map((error) => (
+										<li key={error}>• {error}</li>
 									))}
 								</ul>
 							</div>

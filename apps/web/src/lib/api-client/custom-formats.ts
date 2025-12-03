@@ -88,6 +88,7 @@ export async function deployCustomFormat(
 	request: DeployCustomFormatRequest
 ): Promise<DeployCustomFormatResponse> {
 	return await apiRequest<DeployCustomFormatResponse>("/api/trash-guides/custom-formats/deploy", {
+		method: "POST",
 		json: request,
 	});
 }
@@ -99,6 +100,7 @@ export async function deployMultipleCustomFormats(
 	request: DeployMultipleCustomFormatsRequest
 ): Promise<DeployMultipleCustomFormatsResponse> {
 	return await apiRequest<DeployMultipleCustomFormatsResponse>("/api/trash-guides/custom-formats/deploy-multiple", {
+		method: "POST",
 		json: request,
 	});
 }

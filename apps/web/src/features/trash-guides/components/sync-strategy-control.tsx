@@ -70,11 +70,13 @@ export const SyncStrategyControl = ({
 				</button>
 			</div>
 
-			<div className="space-y-2">
+			<div className="space-y-2" role="radiogroup" aria-label="Sync strategy">
 				{strategies.map((strategy) => (
 					<button
 						key={strategy.value}
 						type="button"
+						role="radio"
+						aria-checked={value === strategy.value}
 						onClick={() => onChange(strategy.value)}
 						disabled={disabled}
 						className={`w-full text-left rounded-lg border p-3 transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
@@ -101,13 +103,18 @@ export const SyncStrategyControl = ({
 									{strategy.description}
 								</p>
 							</div>
-							<input
-								type="radio"
-								checked={value === strategy.value}
-								onChange={() => onChange(strategy.value)}
-								disabled={disabled}
-								className="mt-0.5 h-4 w-4 shrink-0"
-							/>
+							<span
+								aria-hidden="true"
+								className={`mt-0.5 h-4 w-4 shrink-0 rounded-full border-2 flex items-center justify-center ${
+									value === strategy.value
+										? "border-current bg-current"
+										: "border-fg-muted"
+								}`}
+							>
+								{value === strategy.value && (
+									<span className="h-1.5 w-1.5 rounded-full bg-bg" />
+								)}
+							</span>
 						</div>
 					</button>
 				))}

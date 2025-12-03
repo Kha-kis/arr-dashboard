@@ -3,7 +3,10 @@
  *
  * Endpoints for deploying individual custom formats to instances
  * Deploys custom formats directly without affecting quality profiles
+ *
+ * Note: This module uses `any` types for dynamic ARR API custom format structures.
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
@@ -166,7 +169,7 @@ export async function registerCustomFormatRoutes(
 						};
 					});
 
-					if (existing && existing.id) {
+					if (existing?.id) {
 						// Update existing custom format
 						const updatedCF = {
 							...existing,
@@ -202,14 +205,13 @@ export async function registerCustomFormatRoutes(
 					updated: results.updated,
 					failed: results.failed,
 				});
-			} else {
+			}
 				return reply.status(400).send({
 					success: false,
 					created: results.created,
 					updated: results.updated,
 					failed: results.failed,
 				});
-			}
 		} catch (error) {
 			app.log.error({ err: error, trashIds, instanceId, serviceType }, "Failed to deploy custom formats");
 			return reply.status(500).send({

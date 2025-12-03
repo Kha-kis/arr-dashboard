@@ -2,9 +2,12 @@
  * TRaSH Guides Template Service
  *
  * Manages template CRUD operations, validation, and metadata tracking
+ *
+ * Note: This module uses `any` types for dynamic template configuration structures.
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import type {
 	TrashTemplate,
 	CreateTemplateRequest,
@@ -503,8 +506,14 @@ export class TemplateService {
 			return null;
 		}
 
-		// Parse config to get counts
-		const config = JSON.parse(template.configData) as TemplateConfig;
+		// Parse config to get counts with fallback to empty config on failure
+		const config = safeJsonParse<TemplateConfig>(template.configData, {
+			templateId: template.id,
+			fieldName: "configData",
+		}) ?? {
+			customFormats: [],
+			customFormatGroups: [],
+		};
 		const formatCount = config.customFormats.length;
 		const groupCount = config.customFormatGroups.length;
 

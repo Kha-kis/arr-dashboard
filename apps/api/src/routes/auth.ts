@@ -88,14 +88,16 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					createdAt: user.createdAt,
 				},
 			});
-		} catch (error: any) {
-			if (error.message === "REGISTRATION_CLOSED") {
-				return reply.status(403).send({
-					error: "Registration is only allowed during initial setup. Please use login, OIDC, or passkey authentication.",
-				});
-			}
-			if (error.message === "USERNAME_EXISTS") {
-				return reply.status(409).send({ error: "User already exists" });
+		} catch (error) {
+			if (error instanceof Error) {
+				if (error.message === "REGISTRATION_CLOSED") {
+					return reply.status(403).send({
+						error: "Registration is only allowed during initial setup. Please use login, OIDC, or passkey authentication.",
+					});
+				}
+				if (error.message === "USERNAME_EXISTS") {
+					return reply.status(409).send({ error: "User already exists" });
+				}
 			}
 			throw error;
 		}

@@ -6,14 +6,14 @@
 
 import type { FastifyInstance, FastifyPluginOptions, FastifyRequest } from "fastify";
 import { z } from "zod";
+import { createArrApiClient } from "../../lib/trash-guides/arr-api-client.js";
+import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
+import { createDeploymentExecutorService } from "../../lib/trash-guides/deployment-executor.js";
+import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { createSyncEngine } from "../../lib/trash-guides/sync-engine.js";
 import type { SyncProgress } from "../../lib/trash-guides/sync-engine.js";
-import { createArrApiClient } from "../../lib/trash-guides/arr-api-client.js";
 import { createTemplateUpdater } from "../../lib/trash-guides/template-updater.js";
 import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js";
-import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
-import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
-import { createDeploymentExecutorService } from "../../lib/trash-guides/deployment-executor.js";
 
 // ============================================================================
 // Request Schemas
@@ -32,8 +32,14 @@ const executeSyncSchema = z.object({
 });
 
 const syncHistoryQuerySchema = z.object({
-	limit: z.string().optional().transform((val) => (val ? Number.parseInt(val, 10) : 20)),
-	offset: z.string().optional().transform((val) => (val ? Number.parseInt(val, 10) : 0)),
+	limit: z
+		.string()
+		.optional()
+		.transform((val) => (val ? Number.parseInt(val, 10) : 20)),
+	offset: z
+		.string()
+		.optional()
+		.transform((val) => (val ? Number.parseInt(val, 10) : 0)),
 });
 
 // ============================================================================
@@ -46,67 +52,58 @@ const progressStore = new Map<string, SyncProgress>();
 // Routes
 // ============================================================================
 
-export async function registerSyncRoutes(
-	app: FastifyInstance,
-	opts: FastifyPluginOptions,
-) {
-		// Create template updater services
-		const versionTracker = createVersionTracker();
-		const cacheManager = createCacheManager(app.prisma);
-		const githubFetcher = createTrashFetcher();
-		const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.encryptor);
-		const templateUpdater = createTemplateUpdater(
-			app.prisma,
-			versionTracker,
-			cacheManager,
-			githubFetcher,
-			deploymentExecutor,
-		);
-
-		// Create sync engine with template updater and deployment executor
-		const syncEngine = createSyncEngine(app.prisma, templateUpdater, deploymentExecutor);
-
-		/**
-		 * Validate sync before execution
-		 * POST /api/trash-guides/sync/validate
-		 */
-		app.post("/validate", async (request: FastifyRequest, reply) => {
-			// Authentication check
-			if (!request.currentUser?.id) {
-				return reply.status(401).send({
-					error: "UNAUTHORIZED",
-					message: "Authentication required",
-				});
-			}
-
-			const body = validateSyncSchema.parse(request.body);
-			const userId = request.currentUser.id;
-
-			const validation = await syncEngine.validate({
-				templateId: body.templateId,
-				instanceId: body.instanceId,
-				userId,
-				syncType: "MANUAL",
-			});
-
-			return reply.send(validation);
-		});
-
-		/**
-		 * Execute sync operation
-		 * POST /api/trash-guides/sync/execute
-		 */
-		app.post("/execute", async (request: FastifyRequest, reply) => {
-		// Authentication check
+export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPluginOptions) {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
 		if (!request.currentUser?.id) {
 			return reply.status(401).send({
-				error: "UNAUTHORIZED",
-				message: "Authentication required",
+				success: false,
+				error: "Authentication required",
 			});
 		}
+	});
 
+	// Create template updater services
+	const versionTracker = createVersionTracker();
+	const cacheManager = createCacheManager(app.prisma);
+	const githubFetcher = createTrashFetcher();
+	const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.encryptor);
+	const templateUpdater = createTemplateUpdater(
+		app.prisma,
+		versionTracker,
+		cacheManager,
+		githubFetcher,
+		deploymentExecutor,
+	);
+
+	// Create sync engine with template updater and deployment executor
+	const syncEngine = createSyncEngine(app.prisma, templateUpdater, deploymentExecutor);
+
+	/**
+	 * Validate sync before execution
+	 * POST /api/trash-guides/sync/validate
+	 */
+	app.post("/validate", async (request: FastifyRequest, reply) => {
+		const body = validateSyncSchema.parse(request.body);
+		const userId = request.currentUser?.id;
+
+		const validation = await syncEngine.validate({
+			templateId: body.templateId,
+			instanceId: body.instanceId,
+			userId,
+			syncType: "MANUAL",
+		});
+
+		return reply.send(validation);
+	});
+
+	/**
+	 * Execute sync operation
+	 * POST /api/trash-guides/sync/execute
+	 */
+	app.post("/execute", async (request: FastifyRequest, reply) => {
 		const body = executeSyncSchema.parse(request.body);
-		const userId = request.currentUser.id;
+		const userId = request.currentUser?.id;
 
 		// Convert conflictResolutions object to Map
 		const resolutionsMap = body.conflictResolutions
@@ -129,7 +126,7 @@ export async function registerSyncRoutes(
 		const finalProgress: SyncProgress = {
 			syncId: result.syncId,
 			status: result.success ? "COMPLETED" : "FAILED",
-			currentStep: result.success 
+			currentStep: result.success
 				? `Sync completed: ${result.configsApplied} applied, ${result.configsFailed} failed`
 				: "Sync failed",
 			progress: 100,
@@ -138,227 +135,143 @@ export async function registerSyncRoutes(
 			failedConfigs: result.configsFailed,
 			errors: result.errors,
 		};
-		
+
 		progressStore.set(result.syncId, finalProgress);
 
 		return reply.send(result);
 	});
-		/**
-		 * Stream sync progress (SSE endpoint)
-		 * GET /api/trash-guides/sync/:syncId/stream
-		 */
-		app.get<{
-			Params: { syncId: string };
-		}>("/:syncId/stream", async (request, reply) => {
-			// Authentication check
-			if (!request.currentUser?.id) {
-				return reply.status(401).send({
-					error: "UNAUTHORIZED",
-					message: "Authentication required",
-				});
-			}
+	/**
+	 * Stream sync progress (SSE endpoint)
+	 * GET /api/trash-guides/sync/:syncId/stream
+	 */
+	app.get<{
+		Params: { syncId: string };
+	}>("/:syncId/stream", async (request, reply) => {
+		const { syncId } = request.params;
 
-			const { syncId } = request.params;
+		// Hijack the response to prevent Fastify from sending its own response
+		reply.hijack();
 
-			// Hijack the response to prevent Fastify from sending its own response
-			reply.hijack();
+		// Set SSE headers
+		reply.raw.setHeader("Content-Type", "text/event-stream");
+		reply.raw.setHeader("Cache-Control", "no-cache");
+		reply.raw.setHeader("Connection", "keep-alive");
+		reply.raw.setHeader("X-Accel-Buffering", "no"); // Disable nginx buffering
 
-			// Set SSE headers
-			reply.raw.setHeader("Content-Type", "text/event-stream");
-			reply.raw.setHeader("Cache-Control", "no-cache");
-			reply.raw.setHeader("Connection", "keep-alive");
-			reply.raw.setHeader("X-Accel-Buffering", "no"); // Disable nginx buffering
+		// Send initial connection message
+		reply.raw.write('data: {"type":"connected"}\n\n');
 
-			// Send initial connection message
-			reply.raw.write("data: {\"type\":\"connected\"}\n\n");
+		// Set up progress callback to stream updates
+		const streamProgress = (progress: SyncProgress) => {
+			if (!reply.raw.destroyed) {
+				reply.raw.write(`data: ${JSON.stringify(progress)}\n\n`);
 
-			// Set up progress callback to stream updates
-			const streamProgress = (progress: SyncProgress) => {
-				if (!reply.raw.destroyed) {
-					reply.raw.write(`data: ${JSON.stringify(progress)}\n\n`);
-
-					// Close stream when completed or failed
-					if (progress.status === "COMPLETED" || progress.status === "FAILED") {
-						setTimeout(() => {
-							if (!reply.raw.destroyed) {
-								reply.raw.end();
-							}
-						}, 1000); // Give client time to process final message
-					}
+				// Close stream when completed or failed
+				if (progress.status === "COMPLETED" || progress.status === "FAILED") {
+					setTimeout(() => {
+						if (!reply.raw.destroyed) {
+							reply.raw.end();
+						}
+					}, 1000); // Give client time to process final message
 				}
-			};
+			}
+		};
 
-			// Register callback
-			syncEngine.onProgress(syncId, streamProgress);
+		// Register callback
+		syncEngine.onProgress(syncId, streamProgress);
 
-			// Send current progress if available
-			const currentProgress = progressStore.get(syncId);
-			if (currentProgress) {
-				streamProgress(currentProgress);
-			} else {
-				// No progress found, send error and close
-				reply.raw.write(`data: ${JSON.stringify({ type: "error", message: "Sync not found" })}\n\n`);
+		// Send current progress if available
+		const currentProgress = progressStore.get(syncId);
+		if (currentProgress) {
+			streamProgress(currentProgress);
+		} else {
+			// No progress found, send error and close
+			reply.raw.write(`data: ${JSON.stringify({ type: "error", message: "Sync not found" })}\n\n`);
+			reply.raw.end();
+			return;
+		}
+
+		// Clean up on client disconnect
+		request.raw.on("close", () => {
+			// Remove the progress listener to prevent memory leaks
+			syncEngine.removeProgressListener(syncId, streamProgress);
+			if (!reply.raw.destroyed) {
 				reply.raw.end();
-				return;
 			}
+		});
+	});
 
-			// Clean up on client disconnect
-			request.raw.on("close", () => {
-				// Remove the progress listener to prevent memory leaks
-				syncEngine.removeProgressListener(syncId, streamProgress);
-				if (!reply.raw.destroyed) {
-					reply.raw.end();
-				}
+	/**
+	 * Get sync progress (polling fallback endpoint)
+	 * GET /api/trash-guides/sync/:syncId/progress
+	 */
+	app.get<{
+		Params: { syncId: string };
+	}>("/:syncId/progress", async (request, reply) => {
+		const { syncId } = request.params;
+
+		const progress = progressStore.get(syncId);
+
+		if (!progress) {
+			return reply.status(404).send({
+				error: "NOT_FOUND",
+				message: "Sync progress not found. It may have completed or expired.",
 			});
+		}
+
+		return reply.send(progress);
+	});
+
+	/**
+	 * Get sync history for an instance
+	 * GET /api/trash-guides/sync/history/:instanceId
+	 */
+	app.get<{
+		Params: { instanceId: string };
+	}>("/history/:instanceId", async (request, reply) => {
+		const { instanceId } = request.params;
+		const query = syncHistoryQuerySchema.parse(request.query);
+		const userId = request.currentUser?.id;
+
+		// Verify instance exists - ServiceInstance is scoped to a specific user via userId owner.
+		// Sync history is filtered by userId (line 279) to ensure user-specific access.
+		// ServiceInstance records cascade-delete when the owning user is removed (see schema.prisma).
+		const instance = await app.prisma.serviceInstance.findUnique({
+			where: { id: instanceId },
 		});
 
-		/**
-		 * Get sync progress (polling fallback endpoint)
-		 * GET /api/trash-guides/sync/:syncId/progress
-		 */
-		app.get<{
-			Params: { syncId: string };
-		}>("/:syncId/progress", async (request, reply) => {
-			// Authentication check
-			if (!request.currentUser?.id) {
-				return reply.status(401).send({
-					error: "UNAUTHORIZED",
-					message: "Authentication required",
-				});
-			}
-
-			const { syncId } = request.params;
-
-			const progress = progressStore.get(syncId);
-
-			if (!progress) {
-				return reply.status(404).send({
-					error: "NOT_FOUND",
-					message: "Sync progress not found. It may have completed or expired.",
-				});
-			}
-
-			return reply.send(progress);
-		});
-
-		/**
-		 * Get sync history for an instance
-		 * GET /api/trash-guides/sync/history/:instanceId
-		 */
-		app.get<{
-			Params: { instanceId: string };
-		}>("/history/:instanceId", async (request, reply) => {
-			// Authentication check
-			if (!request.currentUser?.id) {
-				return reply.status(401).send({
-					error: "UNAUTHORIZED",
-					message: "Authentication required",
-				});
-			}
-
-			const { instanceId } = request.params;
-			const query = syncHistoryQuerySchema.parse(request.query);
-			const userId = request.currentUser.id;
-
-			// Verify instance exists - ServiceInstances are shared across all authenticated users
-			// (no per-user ownership model; user-specific data is filtered at the history level)
-			const instance = await app.prisma.serviceInstance.findUnique({
-				where: { id: instanceId },
+		if (!instance) {
+			return reply.status(404).send({
+				error: "NOT_FOUND",
+				message: "Instance not found",
 			});
+		}
 
-			if (!instance) {
-				return reply.status(404).send({
-					error: "NOT_FOUND",
-					message: "Instance not found",
-				});
-			}
-
-			// Get sync history for this user and instance
-			const [syncs, total] = await Promise.all([
-				app.prisma.trashSyncHistory.findMany({
-					where: { instanceId, userId },
-					include: {
-						template: {
-							select: {
-								name: true,
-							},
-						},
-					},
-					orderBy: { startedAt: "desc" },
-					take: query.limit,
-					skip: query.offset,
-				}),
-				app.prisma.trashSyncHistory.count({
-					where: { instanceId, userId },
-				}),
-			]);
-
-			return reply.send({
-				syncs: syncs.map((sync) => ({
-					id: sync.id,
-					templateId: sync.templateId,
-					templateName: sync.template?.name || "",
-					status: sync.status,
-					syncType: sync.syncType,
-					startedAt: sync.startedAt.toISOString(),
-					completedAt: sync.completedAt?.toISOString() || null,
-					duration: sync.duration,
-					configsApplied: sync.configsApplied,
-					configsFailed: sync.configsFailed,
-					configsSkipped: sync.configsSkipped,
-					backupId: sync.backupId,
-				})),
-				total,
-			});
-		});
-
-		/**
-		 * Get sync details
-		 * GET /api/trash-guides/sync/:syncId
-		 */
-		app.get<{
-			Params: { syncId: string };
-		}>("/:syncId", async (request, reply) => {
-			// Authentication check
-			if (!request.currentUser?.id) {
-				return reply.status(401).send({
-					error: "UNAUTHORIZED",
-					message: "Authentication required",
-				});
-			}
-
-			const { syncId } = request.params;
-			const userId = request.currentUser.id;
-
-			const sync = await app.prisma.trashSyncHistory.findUnique({
-				where: { id: syncId },
+		// Get sync history for this user and instance
+		const [syncs, total] = await Promise.all([
+			app.prisma.trashSyncHistory.findMany({
+				where: { instanceId, userId },
 				include: {
 					template: {
 						select: {
 							name: true,
 						},
 					},
-					instance: {
-						select: {
-							label: true,
-						},
-					},
 				},
-			});
+				orderBy: { startedAt: "desc" },
+				take: query.limit,
+				skip: query.offset,
+			}),
+			app.prisma.trashSyncHistory.count({
+				where: { instanceId, userId },
+			}),
+		]);
 
-			if (!sync) {
-				return reply.status(404).send({
-					error: "NOT_FOUND",
-					message: "Sync not found",
-				});
-			}
-
-			return reply.send({
+		return reply.send({
+			syncs: syncs.map((sync) => ({
 				id: sync.id,
 				templateId: sync.templateId,
 				templateName: sync.template?.name || "",
-				instanceId: sync.instanceId,
-				instanceName: sync.instance?.label || "",
 				status: sync.status,
 				syncType: sync.syncType,
 				startedAt: sync.startedAt.toISOString(),
@@ -367,69 +280,120 @@ export async function registerSyncRoutes(
 				configsApplied: sync.configsApplied,
 				configsFailed: sync.configsFailed,
 				configsSkipped: sync.configsSkipped,
-				appliedConfigs: sync.appliedConfigs ? JSON.parse(sync.appliedConfigs) : null,
-				failedConfigs: sync.failedConfigs ? JSON.parse(sync.failedConfigs) : null,
-				errorLog: sync.errorLog,
 				backupId: sync.backupId,
-			});
+			})),
+			total,
+		});
+	});
+
+	/**
+	 * Get sync details
+	 * GET /api/trash-guides/sync/:syncId
+	 */
+	app.get<{
+		Params: { syncId: string };
+	}>("/:syncId", async (request, reply) => {
+		const { syncId } = request.params;
+		const userId = request.currentUser?.id;
+
+		const sync = await app.prisma.trashSyncHistory.findFirst({
+			where: {
+				id: syncId,
+				userId,
+			},
+			include: {
+				template: {
+					select: {
+						name: true,
+					},
+				},
+				instance: {
+					select: {
+						label: true,
+					},
+				},
+			},
 		});
 
-		/**
-		 * Rollback to backup
-		 * POST /api/trash-guides/sync/:syncId/rollback
-		 */
-		app.post<{
-			Params: { syncId: string };
-		}>("/:syncId/rollback", async (request, reply) => {
-			// Authentication check
-			if (!request.currentUser?.id) {
-				return reply.status(401).send({
-					error: "UNAUTHORIZED",
-					message: "Authentication required",
-				});
-			}
-
-			const { syncId } = request.params;
-			const userId = request.currentUser.id;
-
-			// Get sync record with backup
-			const sync = await app.prisma.trashSyncHistory.findUnique({
-				where: { id: syncId },
-				include: {
-					backup: true,
-					instance: true,
-					template: true,
-				},
+		if (!sync) {
+			return reply.status(404).send({
+				error: "NOT_FOUND",
+				message: "Sync not found",
 			});
+		}
 
-			if (!sync) {
-				return reply.status(404).send({
-					error: "NOT_FOUND",
-					message: "Sync not found",
-				});
-			}
+		return reply.send({
+			id: sync.id,
+			templateId: sync.templateId,
+			templateName: sync.template?.name || "",
+			instanceId: sync.instanceId,
+			instanceName: sync.instance?.label || "",
+			status: sync.status,
+			syncType: sync.syncType,
+			startedAt: sync.startedAt.toISOString(),
+			completedAt: sync.completedAt?.toISOString() || null,
+			duration: sync.duration,
+			configsApplied: sync.configsApplied,
+			configsFailed: sync.configsFailed,
+			configsSkipped: sync.configsSkipped,
+			appliedConfigs: sync.appliedConfigs ? JSON.parse(sync.appliedConfigs) : null,
+			failedConfigs: sync.failedConfigs ? JSON.parse(sync.failedConfigs) : null,
+			errorLog: sync.errorLog,
+			backupId: sync.backupId,
+		});
+	});
 
-			if (!sync.backupId || !sync.backup) {
-				return reply.status(400).send({
-					error: "NO_BACKUP",
-					message: "No backup available for this sync operation",
-				});
-			}
+	/**
+	 * Rollback to backup
+	 * POST /api/trash-guides/sync/:syncId/rollback
+	 */
+	app.post<{
+		Params: { syncId: string };
+	}>("/:syncId/rollback", async (request, reply) => {
+		const { syncId } = request.params;
+		const userId = request.currentUser?.id;
 
-			if (sync.rolledBack) {
-				return reply.status(400).send({
-					error: "ALREADY_ROLLED_BACK",
-					message: "This sync has already been rolled back",
-				});
-			}
+		// Get sync record with backup (narrowed to current user for ownership check)
+		const sync = await app.prisma.trashSyncHistory.findFirst({
+			where: {
+				id: syncId,
+				userId,
+			},
+			include: {
+				backup: true,
+				instance: true,
+				template: true,
+			},
+		});
 
-			// TODO: Implement rollback using deployment executor
-			return reply.status(501).send({
-				error: "NOT_IMPLEMENTED",
-				message: "Rollback functionality is not yet implemented with the new sync engine",
+		if (!sync) {
+			return reply.status(404).send({
+				error: "NOT_FOUND",
+				message: "Sync not found",
 			});
+		}
 
-			/* Rollback implementation (disabled until deployment executor supports it):
+		if (!sync.backupId || !sync.backup) {
+			return reply.status(400).send({
+				error: "NO_BACKUP",
+				message: "No backup available for this sync operation",
+			});
+		}
+
+		if (sync.rolledBack) {
+			return reply.status(400).send({
+				error: "ALREADY_ROLLED_BACK",
+				message: "This sync has already been rolled back",
+			});
+		}
+
+		// TODO: Implement rollback using deployment executor
+		return reply.status(501).send({
+			error: "NOT_IMPLEMENTED",
+			message: "Rollback functionality is not yet implemented with the new sync engine",
+		});
+
+		/* Rollback implementation (disabled until deployment executor supports it):
 			try {
 				// Create API client
 				const apiClient = createArrApiClient(sync.instance, app.encryptor);
@@ -493,5 +457,5 @@ export async function registerSyncRoutes(
 				});
 			}
 			*/
-		});
+	});
 }

@@ -27,11 +27,13 @@ import {
 } from "lucide-react";
 
 interface QualityProfileImporterProps {
+	serviceType: "RADARR" | "SONARR";
 	onImportComplete?: (profile: CompleteQualityProfile) => void;
 	onClose?: () => void;
 }
 
 export function QualityProfileImporter({
+	serviceType,
 	onImportComplete,
 	onClose,
 }: QualityProfileImporterProps) {
@@ -44,8 +46,9 @@ export function QualityProfileImporter({
 	const [importedProfile, setImportedProfile] =
 		useState<CompleteQualityProfile | null>(null);
 
-	// Fetch instances
-	const { data: instances, isLoading: loadingInstances } = useServicesQuery();
+	// Fetch instances and filter by service type (compare case-insensitively)
+	const { data: allInstances, isLoading: loadingInstances } = useServicesQuery();
+	const instances = allInstances?.filter((i) => i.service.toUpperCase() === serviceType);
 
 	// Fetch profiles for selected instance
 	const { data: profiles, isLoading: loadingProfiles } =

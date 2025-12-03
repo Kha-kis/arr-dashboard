@@ -6,12 +6,20 @@ import type {
 	ImportQualityProfilePayload,
 	ImportQualityProfileResponse,
 	UpdateQualityProfileTemplatePayload,
+	CreateClonedTemplatePayload,
+	ValidateCFsPayload,
+	CFValidationResponse,
+	MatchProfilePayload,
+	ProfileMatchResult,
 } from "../../lib/api-client/trash-guides";
 import {
 	fetchQualityProfiles,
 	fetchQualityProfileDetails,
 	importQualityProfile,
 	updateQualityProfileTemplate,
+	createClonedProfileTemplate,
+	validateClonedCFs,
+	matchProfileToTrash,
 } from "../../lib/api-client/trash-guides";
 
 /**
@@ -89,3 +97,70 @@ export const useUpdateQualityProfileTemplate = () => {
 		},
 	});
 };
+
+/**
+ * Hook to create template from cloned profile (instance-based)
+ */
+export const useCreateClonedProfileTemplate = () => {
+	const queryClient = useQueryClient();
+
+	return useMutation<ImportQualityProfileResponse, Error, CreateClonedTemplatePayload>({
+		mutationFn: (payload) => createClonedProfileTemplate(payload),
+		onSuccess: () => {
+			// Invalidate templates query to show newly created template
+			void queryClient.invalidateQueries({ queryKey: ["templates"] });
+		},
+	});
+};
+
+/**
+ * Hook to validate cloned CFs against TRaSH cache
+ * Returns match results showing which CFs match TRaSH Guides and with what confidence
+ */
+export const useValidateClonedCFs = () => {
+	return useMutation<CFValidationResponse, Error, ValidateCFsPayload>({
+		mutationFn: (payload) => validateClonedCFs(payload),
+	});
+};
+
+/**
+ * Query hook version for fetching CF validation when parameters are known
+ */
+export const useClonedCFValidation = (
+	instanceId: string,
+	profileId: number,
+	serviceType: "RADARR" | "SONARR",
+	enabled = true,
+) =>
+	useQuery<CFValidationResponse>({
+		queryKey: ["cf-validation", instanceId, profileId, serviceType],
+		queryFn: () => validateClonedCFs({ instanceId, profileId, serviceType }),
+		enabled: enabled && !!instanceId && !!profileId,
+		staleTime: 5 * 60 * 1000, // 5 minutes
+	});
+
+/**
+ * Hook to match profile name to TRaSH Guides quality profiles
+ * Returns CF recommendations based on the matched profile
+ */
+export const useMatchProfileToTrash = () => {
+	return useMutation<ProfileMatchResult, Error, MatchProfilePayload>({
+		mutationFn: (payload) => matchProfileToTrash(payload),
+	});
+};
+
+/**
+ * Query hook version for profile matching when parameters are known
+ * Uses short staleTime to ensure fresh recommendations based on latest TRaSH cache
+ */
+export const useProfileMatch = (
+	profileName: string,
+	serviceType: "RADARR" | "SONARR",
+	enabled = true,
+) =>
+	useQuery<ProfileMatchResult>({
+		queryKey: ["profile-match", profileName, serviceType],
+		queryFn: () => matchProfileToTrash({ profileName, serviceType }),
+		enabled: enabled && !!profileName && !!serviceType,
+		staleTime: 30 * 1000, // 30 seconds - short to pick up TRaSH cache updates
+	});

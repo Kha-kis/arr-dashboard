@@ -81,10 +81,25 @@ export function useBulkUpdateScores() {
 				const { profileId, instanceId, changes } = entry;
 
 				// Convert changes to API format (extract CF ID from trashId format "cf-{id}")
-				const scoreUpdates = changes.map(({ cfTrashId, score }) => {
-					const customFormatId = parseInt(cfTrashId.replace("cf-", ""));
-					return { customFormatId, score };
-				});
+				// Validate cfTrashId format and filter out invalid entries
+				const scoreUpdates = changes
+					.map(({ cfTrashId, score }) => {
+						// Validate format: must be "cf-" followed by digits
+						const match = cfTrashId.match(/^cf-(\d+)$/);
+						if (!match || !match[1]) {
+							console.warn(
+								`Invalid cfTrashId format: "${cfTrashId}" - expected "cf-{number}", skipping`,
+							);
+							return null;
+						}
+						const customFormatId = parseInt(match[1], 10);
+						if (!Number.isFinite(customFormatId)) {
+							console.warn(`Failed to parse customFormatId from "${cfTrashId}", skipping`);
+							return null;
+						}
+						return { customFormatId, score };
+					})
+					.filter((entry): entry is { customFormatId: number; score: number } => entry !== null);
 
 				try {
 					const response = await updateQualityProfileScores(instanceId, profileId, {

@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertDescription, Skeleton } from "../../../../components/ui";
-import { ChevronRight, ChevronLeft, Info, CheckCircle2, Settings } from "lucide-react";
+import { ChevronRight, ChevronLeft, Info, Settings } from "lucide-react";
 import { createSanitizedHtml } from "../../../../lib/sanitize-html";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { apiRequest } from "../../../../lib/api-client/base";
@@ -31,6 +31,8 @@ export const CustomFormatCustomization = ({
 }: CustomFormatCustomizationProps) => {
 	const [selections, setSelections] = useState(initialSelections);
 	const [expandedCF, setExpandedCF] = useState<string | null>(null);
+	// Track initialization key to avoid re-running when data/selectedCFGroups haven't changed
+	const initKeyRef = useRef<string | null>(null);
 
 	const { data, isLoading, error } = useQuery({
 		queryKey: ["quality-profile-details", serviceType, qualityProfile.trashId],
@@ -41,67 +43,75 @@ export const CustomFormatCustomization = ({
 		},
 	});
 
-	// Initialize selections when data loads
+	// Initialize selections when data loads or selectedCFGroups change
 	useEffect(() => {
-		if (data && Object.keys(selections).length === 0) {
-			const cfGroups = data.cfGroups || [];
-			const customFormats = data.directCustomFormats || [];
-			const allCFs = new Map();
+		if (!data) return;
 
-			// Get all CFs from selected CF Groups
-			for (const group of cfGroups) {
-				if (selectedCFGroups.has(group.trash_id)) {
-					if (Array.isArray(group.custom_formats)) {
-						for (const cf of group.custom_formats) {
-							const cfTrashId = typeof cf === 'string' ? cf : cf.trash_id;
-							// Store the CF with its required flag from the group
-							allCFs.set(cfTrashId, cf);
-						}
+		// Create a key based on data identity and selectedCFGroups
+		const selectedGroupsKey = Array.from(selectedCFGroups).sort().join(',');
+		const currentKey = `${qualityProfile.trashId}:${selectedGroupsKey}`;
+
+		// Skip if already initialized for this key
+		if (initKeyRef.current === currentKey) return;
+
+		const cfGroups = data.cfGroups || [];
+		const customFormats = data.directCustomFormats || [];
+		const allCFs = new Map();
+
+		// Get all CFs from selected CF Groups
+		for (const group of cfGroups) {
+			if (selectedCFGroups.has(group.trash_id)) {
+				if (Array.isArray(group.custom_formats)) {
+					for (const cf of group.custom_formats) {
+						const cfTrashId = typeof cf === 'string' ? cf : cf.trash_id;
+						// Store the CF with its required flag from the group
+						allCFs.set(cfTrashId, cf);
 					}
 				}
 			}
-
-			// Add direct CFs from profile
-			for (const cf of customFormats) {
-				allCFs.set(cf.trash_id, cf);
-			}
-
-			// Initialize selections for all CFs
-			const newSelections: Record<string, any> = {};
-
-			// Get the list of CF trash IDs that are in the quality profile's formatItems
-			const profileFormatIds = data.profile?.formatItems
-				? Object.values(data.profile.formatItems)
-				: [];
-
-			for (const [cfTrashId, cf] of allCFs) {
-				const cfData = typeof cf === 'string' ? data.directCustomFormats.find((c: any) => c.trash_id === cfTrashId) : cf;
-
-				if (cfData) {
-					const conditionsEnabled: Record<string, boolean> = {};
-					if (cfData.specifications && Array.isArray(cfData.specifications)) {
-						for (const spec of cfData.specifications) {
-							conditionsEnabled[spec.name] = true;
-						}
-					}
-
-					// Auto-select if:
-					// 1. Marked as required in CF Group, OR
-					// 2. Present in the quality profile's formatItems
-					const isRequired = typeof cf === 'object' && cf.required === true;
-					const isInProfile = profileFormatIds.includes(cfTrashId);
-
-					newSelections[cfTrashId] = {
-						selected: isRequired || isInProfile, // Select if required OR in profile
-						scoreOverride: undefined,
-						conditionsEnabled,
-					};
-				}
-			}
-
-			setSelections(newSelections);
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps -- Only initialize on data/selectedCFGroups change, selections.length checked inside
+
+		// Add direct CFs from profile
+		for (const cf of customFormats) {
+			allCFs.set(cf.trash_id, cf);
+		}
+
+		// Initialize selections for all CFs
+		const newSelections: Record<string, any> = {};
+
+		// Get the list of CF trash IDs that are in the quality profile's formatItems
+		const profileFormatIds = data.profile?.formatItems
+			? Object.values(data.profile.formatItems)
+			: [];
+
+		for (const [cfTrashId, cf] of allCFs) {
+			const cfData = typeof cf === 'string' ? data.directCustomFormats.find((c: any) => c.trash_id === cfTrashId) : cf;
+
+			if (cfData) {
+				const conditionsEnabled: Record<string, boolean> = {};
+				if (cfData.specifications && Array.isArray(cfData.specifications)) {
+					for (const spec of cfData.specifications) {
+						conditionsEnabled[spec.name] = true;
+					}
+				}
+
+				// Auto-select if:
+				// 1. Marked as required in CF Group, OR
+				// 2. Present in the quality profile's formatItems
+				const isRequired = typeof cf === 'object' && cf.required === true;
+				const isInProfile = profileFormatIds.includes(cfTrashId);
+
+				newSelections[cfTrashId] = {
+					selected: isRequired || isInProfile, // Select if required OR in profile
+					scoreOverride: undefined,
+					conditionsEnabled,
+				};
+			}
+		}
+
+		setSelections(newSelections);
+		initKeyRef.current = currentKey;
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- qualityProfile.trashId is stable for this component's lifecycle
 	}, [data, selectedCFGroups]);
 
 	const toggleCF = (cfTrashId: string) => {

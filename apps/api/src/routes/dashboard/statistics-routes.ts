@@ -19,20 +19,21 @@ import {
  * Statistics-related routes for the dashboard
  */
 export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
 	/**
 	 * GET /dashboard/statistics
 	 * Fetches aggregated statistics from all enabled instances
 	 */
 	app.get("/dashboard/statistics", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-			return dashboardStatisticsResponseSchema.parse({
-				sonarr: { instances: [], aggregate: emptySonarrStatistics },
-				radarr: { instances: [], aggregate: emptyRadarrStatistics },
-				prowlarr: { instances: [], aggregate: emptyProwlarrStatistics },
-			});
-		}
-
 		const instances = await app.prisma.serviceInstance.findMany({
 			where: { enabled: true },
 		});

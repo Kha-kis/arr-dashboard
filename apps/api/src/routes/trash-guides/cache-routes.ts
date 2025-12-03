@@ -42,8 +42,18 @@ export async function registerTrashCacheRoutes(
 	app: FastifyInstance,
 	_opts: FastifyPluginOptions,
 ) {
-		const cacheManager = createCacheManager(app.prisma);
-		const fetcher = createTrashFetcher();
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
+	const cacheManager = createCacheManager(app.prisma);
+	const fetcher = createTrashFetcher();
 
 		/**
 		 * GET /api/trash-guides/cache/:serviceType/:configType
@@ -105,15 +115,6 @@ export async function registerTrashCacheRoutes(
 		app.post<{
 			Body: z.infer<typeof refreshCacheBodySchema>;
 		}>("/refresh", async (request, reply) => {
-			// Authentication check
-			if (!request.currentUser) {
-				return reply.status(401).send({
-					statusCode: 401,
-					error: "Unauthorized",
-					message: "Authentication required",
-				});
-			}
-
 			const { serviceType, configType, force } = refreshCacheBodySchema.parse(request.body);
 
 			try {
@@ -291,15 +292,6 @@ export async function registerTrashCacheRoutes(
 		app.delete<{
 			Params: z.infer<typeof getCacheParamsSchema>;
 		}>("/:serviceType/:configType", async (request, reply) => {
-			// Authentication check
-			if (!request.currentUser) {
-				return reply.status(401).send({
-					statusCode: 401,
-					error: "Unauthorized",
-					message: "Authentication required",
-				});
-			}
-
 			const { serviceType, configType } = getCacheParamsSchema.parse(request.params);
 
 			try {

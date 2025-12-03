@@ -19,6 +19,7 @@
 		"classnames": "^2.5.1",
 		"clsx": "^2.1.1",
 		"date-fns": "^4.1.0",
+		"dequal": "^2.0.3",
 		"framer-motion": "^11.11.17",
 		"isomorphic-dompurify": "^2.33.0",
 		"lucide-react": "^0.441.0",

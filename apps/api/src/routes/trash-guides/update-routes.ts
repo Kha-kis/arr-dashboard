@@ -29,6 +29,16 @@ export async function registerUpdateRoutes(
 	app: FastifyInstance,
 	opts: FastifyPluginOptions,
 ) {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
 	// Initialize services
 	const versionTracker = createVersionTracker();
 	const cacheManager = createCacheManager(app.prisma);
@@ -105,14 +115,6 @@ export async function registerUpdateRoutes(
 		Params: { id: string };
 		Body: z.infer<typeof syncTemplateSchema>;
 	}>("/:id/sync", async (request, reply) => {
-		// Authentication check
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-
 		try {
 			const { id } = request.params;
 			const body = syncTemplateSchema.parse(request.body);
@@ -162,14 +164,6 @@ export async function registerUpdateRoutes(
 	 * Process all auto-sync eligible templates
 	 */
 	app.post("/process-auto", async (request, reply) => {
-		// Authentication check
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-
 		try {
 			const result = await templateUpdater.processAutoUpdates();
 
@@ -291,14 +285,6 @@ export async function registerUpdateRoutes(
 	 * Manually trigger an update check
 	 */
 	app.post("/scheduler/trigger", async (request, reply) => {
-		// Authentication check
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-
 		try {
 			if (!app.trashUpdateScheduler) {
 				return reply.status(503).send({

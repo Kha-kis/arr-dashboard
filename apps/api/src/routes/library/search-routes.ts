@@ -17,16 +17,21 @@ import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
  * - POST /library/episode/search - Search for episodes
  */
 export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) => {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
 	/**
 	 * POST /library/season/search
 	 * Queues a season search in Sonarr
 	 */
 	app.post("/library/season/search", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-			return reply.send({ message: "Unauthorized" });
-		}
-
 		const payload = librarySeasonSearchRequestSchema.parse(request.body ?? {});
 
 		const instance = await app.prisma.serviceInstance.findFirst({
@@ -91,11 +96,6 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 	 * Queues a series search in Sonarr
 	 */
 	app.post("/library/series/search", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-			return reply.send({ message: "Unauthorized" });
-		}
-
 		const payload = librarySeriesSearchRequestSchema.parse(request.body ?? {});
 
 		const instance = await app.prisma.serviceInstance.findFirst({
@@ -153,11 +153,6 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 	 * Queues a movie search in Radarr
 	 */
 	app.post("/library/movie/search", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-			return reply.send({ message: "Unauthorized" });
-		}
-
 		const payload = libraryMovieSearchRequestSchema.parse(request.body ?? {});
 
 		const instance = await app.prisma.serviceInstance.findFirst({
@@ -215,11 +210,6 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 	 * Queues an episode search in Sonarr
 	 */
 	app.post("/library/episode/search", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-			return reply.send({ message: "Unauthorized" });
-		}
-
 		const payload = libraryEpisodeSearchRequestSchema.parse(request.body ?? {});
 
 		const instance = await app.prisma.serviceInstance.findFirst({

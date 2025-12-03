@@ -2,11 +2,37 @@
 
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useImportQualityProfileWizard, useUpdateQualityProfileTemplate } from "../../../../hooks/api/useQualityProfiles";
+import { useImportQualityProfileWizard, useUpdateQualityProfileTemplate, useCreateClonedProfileTemplate } from "../../../../hooks/api/useQualityProfiles";
 import { Alert, AlertDescription, Skeleton } from "../../../../components/ui";
 import { ChevronLeft, Download, CheckCircle, Info, Save, Edit2, TrendingUp, TrendingDown, Minus } from "lucide-react";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { apiRequest } from "../../../../lib/api-client/base";
+
+/**
+ * Check if a trashId indicates a cloned profile from an instance
+ * Cloned profile trashIds have format: cloned-{instanceId}-{profileId}-{uuid}
+ */
+function isClonedProfile(trashId: string | undefined): boolean {
+	return !!trashId && trashId.startsWith("cloned-");
+}
+
+/**
+ * Parse cloned profile trashId to extract instanceId and profileId
+ */
+function parseClonedProfileId(trashId: string): { instanceId: string; profileId: number } | null {
+	if (!isClonedProfile(trashId)) return null;
+
+	// Format: cloned-{instanceId}-{profileId}-{uuid}
+	const parts = trashId.split("-");
+	if (parts.length < 4) return null;
+
+	const instanceId = parts[1];
+	const profileId = parseInt(parts[2] || "", 10);
+
+	if (!instanceId || isNaN(profileId)) return null;
+
+	return { instanceId, profileId };
+}
 
 /**
  * Wizard-specific profile type that allows undefined trashId for edit mode.
@@ -49,13 +75,28 @@ export const TemplateCreation = ({
 
 	const importMutation = useImportQualityProfileWizard();
 	const updateMutation = useUpdateQualityProfileTemplate();
+	const clonedMutation = useCreateClonedProfileTemplate();
 
-	// Only fetch profile details when we have a valid trashId (not in edit mode)
+	// Detect if this is a cloned profile
+	const isCloned = isClonedProfile(wizardState.selectedProfile.trashId);
+	const clonedProfileInfo = isCloned ? parseClonedProfileId(wizardState.selectedProfile.trashId!) : null;
+
+	// Only fetch profile details when we have a valid trashId (not in edit mode and not cloned)
 	// In edit mode, trashId is undefined and we don't need profile data from TRaSH Guides
+	// For cloned profiles, we fetch from the instance, not TRaSH cache
 	const hasTrashId = !!wizardState.selectedProfile.trashId;
 	const { data, isLoading } = useQuery({
-		queryKey: ["quality-profile-details", serviceType, wizardState.selectedProfile.trashId],
+		queryKey: isCloned
+			? ["cloned-profile-details", wizardState.selectedProfile.trashId]
+			: ["quality-profile-details", serviceType, wizardState.selectedProfile.trashId],
 		queryFn: async () => {
+			if (isCloned && clonedProfileInfo) {
+				// Fetch from cloned profile endpoint
+				return await apiRequest<any>(
+					`/api/trash-guides/profile-clone/profile-details/${clonedProfileInfo.instanceId}/${clonedProfileInfo.profileId}`,
+				);
+			}
+			// Fetch from TRaSH Guides cache
 			return await apiRequest<any>(
 				`/api/trash-guides/quality-profiles/${serviceType}/${wizardState.selectedProfile.trashId}`,
 			);
@@ -99,8 +140,37 @@ export const TemplateCreation = ({
 					selectedCFGroups: relevantGroupIds,
 					customFormatSelections: wizardState.customFormatSelections,
 				});
+			} else if (isCloned && clonedProfileInfo) {
+				// Create template from cloned profile (instance-based)
+				if (!wizardState.selectedProfile.trashId) {
+					throw new Error("Cannot create template: missing cloned profile ID");
+				}
+
+				// Extract profile config from the data we fetched
+				const profileData = data?.data?.profile || data?.profile;
+				const instanceLabel = wizardState.selectedProfile.description?.replace("Cloned from ", "") || "Unknown Instance";
+
+				await clonedMutation.mutateAsync({
+					serviceType,
+					trashId: wizardState.selectedProfile.trashId,
+					templateName: templateName.trim(),
+					templateDescription: templateDescription.trim() || undefined,
+					customFormatSelections: wizardState.customFormatSelections,
+					sourceInstanceId: clonedProfileInfo.instanceId,
+					sourceProfileId: clonedProfileInfo.profileId,
+					sourceProfileName: wizardState.selectedProfile.name,
+					sourceInstanceLabel: instanceLabel,
+					profileConfig: {
+						upgradeAllowed: profileData?.upgradeAllowed ?? wizardState.selectedProfile.upgradeAllowed ?? true,
+						cutoff: profileData?.cutoff ?? 0,
+						minFormatScore: profileData?.minFormatScore ?? 0,
+						cutoffFormatScore: profileData?.cutoffFormatScore ?? 0,
+						items: profileData?.items || [],
+						language: profileData?.language,
+					},
+				});
 			} else {
-				// Create new template (trashId required to fetch from TRaSH Guides)
+				// Create new template from TRaSH Guides (trashId required)
 				if (!wizardState.selectedProfile.trashId) {
 					throw new Error("Cannot create template: missing TRaSH profile ID");
 				}
@@ -117,7 +187,7 @@ export const TemplateCreation = ({
 			onComplete();
 		} catch (error) {
 			// Error will be displayed through mutation state
-			console.error(isEditMode ? "Update failed:" : "Import failed:", error);
+			console.error(isEditMode ? "Update failed:" : isCloned ? "Cloned template creation failed:" : "Import failed:", error);
 		}
 	};
 
@@ -391,24 +461,32 @@ export const TemplateCreation = ({
 			</div>
 
 			{/* Error/Success Messages */}
-			{(importMutation.isError || updateMutation.isError) && (
+			{(importMutation.isError || updateMutation.isError || clonedMutation.isError) && (
 				<Alert variant="danger">
 					<AlertDescription>
 						{importMutation.error instanceof Error
 							? importMutation.error.message
 							: updateMutation.error instanceof Error
 								? updateMutation.error.message
-								: isEditMode
-									? "Failed to update template"
-									: "Failed to import quality profile"}
+								: clonedMutation.error instanceof Error
+									? clonedMutation.error.message
+									: isEditMode
+										? "Failed to update template"
+										: isCloned
+											? "Failed to create template from cloned profile"
+											: "Failed to import quality profile"}
 					</AlertDescription>
 				</Alert>
 			)}
 
-			{(importMutation.isSuccess || updateMutation.isSuccess) && (
+			{(importMutation.isSuccess || updateMutation.isSuccess || clonedMutation.isSuccess) && (
 				<Alert variant="success">
 					<AlertDescription>
-						{isEditMode ? 'Successfully updated template!' : 'Successfully imported quality profile as template!'}
+						{isEditMode
+							? 'Successfully updated template!'
+							: isCloned
+								? 'Successfully created template from cloned profile!'
+								: 'Successfully imported quality profile as template!'}
 					</AlertDescription>
 				</Alert>
 			)}
@@ -418,7 +496,7 @@ export const TemplateCreation = ({
 				<button
 					type="button"
 					onClick={onBack}
-					disabled={importMutation.isPending || updateMutation.isPending}
+					disabled={importMutation.isPending || updateMutation.isPending || clonedMutation.isPending}
 					className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20 disabled:opacity-50"
 				>
 					<ChevronLeft className="h-4 w-4" />
@@ -428,10 +506,10 @@ export const TemplateCreation = ({
 				<button
 					type="button"
 					onClick={handleSubmit}
-					disabled={!templateName.trim() || importMutation.isPending || updateMutation.isPending}
+					disabled={!templateName.trim() || importMutation.isPending || updateMutation.isPending || clonedMutation.isPending}
 					className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary/90 disabled:opacity-50"
 				>
-					{(importMutation.isPending || updateMutation.isPending) ? (
+					{(importMutation.isPending || updateMutation.isPending || clonedMutation.isPending) ? (
 						<>
 							<div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
 							{isEditMode ? 'Updating Template...' : 'Creating Template...'}

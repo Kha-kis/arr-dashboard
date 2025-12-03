@@ -5,8 +5,8 @@
  * Handles both single and bulk deployments.
  */
 
-import { PrismaClient } from "@prisma/client";
-import { ArrApiClient, createArrApiClient } from "./arr-api-client.js";
+import type { PrismaClient } from "@prisma/client";
+import { type ArrApiClient, createArrApiClient } from "./arr-api-client.js";
 import type { CustomFormat } from "./arr-api-client.js";
 
 // ============================================================================
@@ -70,8 +70,10 @@ interface ValidatedDeploymentData {
 		encryptedApiKey: string;
 		encryptionIv: string;
 	};
+	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR API config structure
 	templateConfig: Record<string, any>;
 	templateCFs: TemplateCF[];
+	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR API override structure
 	overridesForInstance: Record<string, any>;
 }
 
@@ -79,6 +81,7 @@ interface TemplateCF {
 	trashId: string;
 	name: string;
 	scoreOverride: number;
+	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR custom format config
 	originalConfig: any;
 }
 
@@ -112,7 +115,7 @@ interface DeployCustomFormatsResult {
 function calculateScoreAndSource(
 	templateCF: TemplateCFForScoring,
 	scoreSet: string | undefined | null,
-	instanceOverrideScore?: number
+	instanceOverrideScore?: number,
 ): ScoreCalculationResult {
 	// Priority 1: Instance-level override (manual changes)
 	if (instanceOverrideScore !== undefined) {
@@ -191,10 +194,16 @@ export class DeploymentExecutorService {
 			throw new Error("Instance not found or access denied");
 		}
 
-		// Validate service type match
-		if (template.serviceType !== instance.service) {
+		// Validate service type match (case-insensitive comparison)
+		const templateServiceType = template.serviceType?.toUpperCase() ?? "";
+		const instanceServiceType = instance.service?.toUpperCase() ?? "";
+		if (
+			!templateServiceType ||
+			!instanceServiceType ||
+			templateServiceType !== instanceServiceType
+		) {
 			throw new Error(
-				`Service type mismatch: template is ${template.serviceType}, instance is ${instance.service}`,
+				`Service type mismatch: template is ${template.serviceType ?? "undefined"}, instance is ${instance.service ?? "undefined"}`,
 			);
 		}
 
@@ -213,9 +222,7 @@ export class DeploymentExecutorService {
 		// Parse instance overrides
 		let instanceOverrides: Record<string, any> = {};
 		try {
-			instanceOverrides = template.instanceOverrides
-				? JSON.parse(template.instanceOverrides)
-				: {};
+			instanceOverrides = template.instanceOverrides ? JSON.parse(template.instanceOverrides) : {};
 		} catch (parseError) {
 			console.warn(
 				`Failed to parse instanceOverrides for template ${template.id}, using empty object: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
@@ -237,8 +244,7 @@ export class DeploymentExecutorService {
 					}
 
 					// Apply score override if exists
-					const finalScore =
-						scoreOverride !== undefined ? scoreOverride : cf.scoreOverride;
+					const finalScore = scoreOverride !== undefined ? scoreOverride : cf.scoreOverride;
 
 					return {
 						...cf,
@@ -360,7 +366,7 @@ export class DeploymentExecutorService {
 					continue;
 				}
 
-				if (existingCF && existingCF.id) {
+				if (existingCF?.id) {
 					// Update existing CF
 					// Transform specifications: convert fields from object to array format
 					const specifications = (templateCF.originalConfig?.specifications || []).map(
@@ -407,7 +413,7 @@ export class DeploymentExecutorService {
 				}
 			} catch (error) {
 				console.error(`[DEPLOYMENT] Failed to deploy "${templateCF.name}":`, error);
-				console.error(`[DEPLOYMENT] Error details:`, {
+				console.error("[DEPLOYMENT] Error details:", {
 					message: error instanceof Error ? error.message : "Unknown error",
 					stack: error instanceof Error ? error.stack : undefined,
 					error: error,
@@ -441,7 +447,7 @@ export class DeploymentExecutorService {
 		const errors: string[] = [];
 
 		try {
-			let qualityProfiles = await apiClient.getQualityProfiles();
+			const qualityProfiles = await apiClient.getQualityProfiles();
 
 			// Find existing profile by name
 			let targetProfile = qualityProfiles.find((p) => p.name === profileName);
@@ -484,7 +490,7 @@ export class DeploymentExecutorService {
 
 				for (const templateCF of templateCFs) {
 					const cf = cfMap.get(templateCF.name);
-					if (cf && cf.id) {
+					if (cf?.id) {
 						// Check if user chose "keep_existing" for this CF's conflicts
 						// If so, preserve the instance's current score instead of template score
 						if (conflictResolutions?.[templateCF.trashId] === "keep_existing") {
@@ -518,11 +524,134 @@ export class DeploymentExecutorService {
 					existingFormatMap.set(newItem.format, newItem);
 				}
 
-				const updatedProfile = {
+				// Build the updated profile
+				let updatedProfile: any = {
 					...targetProfile,
 					formatItems: Array.from(existingFormatMap.values()),
 				};
 
+				// If this is a cloned profile template, also update quality items structure
+				if (templateConfig.completeQualityProfile) {
+					const clonedProfile = templateConfig.completeQualityProfile;
+					const schema = await apiClient.getQualityProfileSchema();
+
+					// DEBUG: Log the cloned profile items from template config
+					console.log("[DEPLOYMENT] ===== CLONED PROFILE FROM TEMPLATE =====");
+					console.log(`[DEPLOYMENT] Cloned profile items count: ${clonedProfile.items?.length || 0}`);
+					console.log(`[DEPLOYMENT] First 3 items: ${JSON.stringify(clonedProfile.items?.slice(0, 3), null, 2)}`);
+					const allowedFromTemplate = clonedProfile.items?.filter((i: any) => i.allowed === true) || [];
+					console.log(`[DEPLOYMENT] Allowed items from template (${allowedFromTemplate.length}): ${allowedFromTemplate.map((i: any) => i.quality?.name || i.name || 'group').join(', ')}`);
+					const groupsWithAllowedFromTemplate = clonedProfile.items?.filter((i: any) => i.items?.some((sub: any) => sub.allowed === true)) || [];
+					console.log(`[DEPLOYMENT] Groups with allowed sub-items (${groupsWithAllowedFromTemplate.length}): ${JSON.stringify(groupsWithAllowedFromTemplate.map((g: any) => ({
+						name: g.name,
+						allowed: g.allowed,
+						subItems: g.items?.filter((sub: any) => sub.allowed).map((sub: any) => sub.name || 'unknown')
+					})), null, 2)}`);
+
+					// Build quality items from cloned profile
+					const normalizeQualityName = (name: string) => name.replace(/[\s-]/g, "").toLowerCase();
+					const allAvailableQualities = new Map<number, any>();
+					const qualitiesByName = new Map<string, any>();
+
+					// Extract all qualities from schema - handles both individual items and group sub-items
+					const extractQualities = (items: any[]) => {
+						for (const item of items) {
+							// Items with quality wrapper (individual quality items)
+							if (item.quality) {
+								allAvailableQualities.set(item.quality.id, item);
+								qualitiesByName.set(normalizeQualityName(item.quality.name), item);
+							}
+							// Sub-items inside groups have id/name directly (no quality wrapper)
+							// e.g. {"id":15,"name":"WEBRip-1080p","source":"webRip","resolution":1080,"allowed":true}
+							else if (item.id !== undefined && item.name && !item.items) {
+								// Wrap it in a quality structure for consistency
+								const wrappedItem = {
+									quality: {
+										id: item.id,
+										name: item.name,
+										source: item.source,
+										resolution: item.resolution,
+									},
+									items: [],
+									allowed: item.allowed,
+								};
+								allAvailableQualities.set(item.id, wrappedItem);
+								qualitiesByName.set(normalizeQualityName(item.name), wrappedItem);
+							}
+							// Recurse into groups
+							if (item.items && Array.isArray(item.items)) {
+								extractQualities(item.items);
+							}
+						}
+					};
+					extractQualities(schema.items);
+
+					let customGroupId = 1000;
+					const qualityItems: any[] = [];
+
+					for (const sourceItem of clonedProfile.items || []) {
+						if (sourceItem.items && Array.isArray(sourceItem.items) && sourceItem.items.length > 0) {
+							const groupQualities: any[] = [];
+							for (const subItem of sourceItem.items) {
+								let targetQuality = allAvailableQualities.get(subItem.id);
+								if (!targetQuality && subItem.name) {
+									targetQuality = qualitiesByName.get(normalizeQualityName(subItem.name));
+								}
+								if (targetQuality) {
+									groupQualities.push({
+										quality: targetQuality.quality,
+										items: [],
+										allowed: subItem.allowed,
+									});
+								}
+							}
+							if (groupQualities.length > 0) {
+								qualityItems.push({
+									name: sourceItem.name,
+									items: groupQualities,
+									allowed: sourceItem.allowed,
+									id: customGroupId++,
+								});
+							}
+						} else if (sourceItem.quality) {
+							let targetQuality = allAvailableQualities.get(sourceItem.quality.id);
+							if (!targetQuality && sourceItem.quality.name) {
+								targetQuality = qualitiesByName.get(normalizeQualityName(sourceItem.quality.name));
+							}
+							if (targetQuality) {
+								qualityItems.push({
+									...targetQuality,
+									allowed: sourceItem.allowed,
+								});
+							}
+						}
+					}
+
+					// DEBUG: Log what we built
+					console.log(`[DEPLOYMENT] Built qualityItems count: ${qualityItems.length}`);
+					const builtAllowedItems = qualityItems.filter((i: any) => i.allowed === true);
+					console.log(`[DEPLOYMENT] Built allowed items (${builtAllowedItems.length}): ${builtAllowedItems.map((i: any) => i.quality?.name || i.name || 'group').join(', ')}`);
+					const builtGroupsWithAllowed = qualityItems.filter((i: any) => i.items?.some((sub: any) => sub.allowed === true));
+					console.log(`[DEPLOYMENT] Built groups with allowed (${builtGroupsWithAllowed.length}): ${JSON.stringify(builtGroupsWithAllowed.map((g: any) => ({
+						name: g.name,
+						allowed: g.allowed,
+						subItems: g.items?.filter((sub: any) => sub.allowed).map((sub: any) => sub.quality?.name || 'unknown')
+					})), null, 2)}`);
+
+					// Update profile with cloned quality settings
+					updatedProfile = {
+						...updatedProfile,
+						upgradeAllowed: clonedProfile.upgradeAllowed,
+						cutoff: clonedProfile.cutoff,
+						items: qualityItems,
+						minFormatScore: clonedProfile.minFormatScore ?? updatedProfile.minFormatScore,
+						cutoffFormatScore: clonedProfile.cutoffFormatScore ?? updatedProfile.cutoffFormatScore,
+						minUpgradeFormatScore: clonedProfile.minUpgradeFormatScore ?? updatedProfile.minUpgradeFormatScore,
+						...(clonedProfile.language && { language: clonedProfile.language }),
+					};
+				}
+
+				console.log(`[DEPLOYMENT] Sending updatedProfile.items count: ${updatedProfile.items?.length}`);
 				await apiClient.updateQualityProfile(targetProfile.id, updatedProfile);
 
 				// Create/update mapping to track that this profile is managed by this template
@@ -562,6 +691,7 @@ export class DeploymentExecutorService {
 
 	/**
 	 * Creates a quality profile from schema with template configuration.
+	 * Supports both TRaSH Guides profiles (qualityProfile) and cloned instance profiles (completeQualityProfile)
 	 */
 	private async createQualityProfileFromSchema(
 		apiClient: ArrApiClient,
@@ -573,9 +703,19 @@ export class DeploymentExecutorService {
 			// Get the quality profile schema to get proper structure
 			const schema = await apiClient.getQualityProfileSchema();
 
+			// Check if this is a cloned profile with complete quality profile data
+			if (templateConfig.completeQualityProfile) {
+				return await this.createQualityProfileFromClonedProfile(
+					apiClient,
+					schema,
+					templateConfig,
+					templateCFs,
+					profileName,
+				);
+			}
+
 			// Normalize quality names for consistent matching (remove spaces/hyphens)
-			const normalizeQualityName = (name: string) =>
-				name.replace(/[\s-]/g, "").toLowerCase();
+			const normalizeQualityName = (name: string) => name.replace(/[\s-]/g, "").toLowerCase();
 
 			// Build a flat map of all individual qualities available in Radarr schema
 			const allAvailableQualities = new Map<string, any>();
@@ -627,9 +767,7 @@ export class DeploymentExecutorService {
 					}
 				} else {
 					// This is an INDIVIDUAL quality from TRaSH (no nested items)
-					const quality = allAvailableQualities.get(
-						normalizeQualityName(templateItem.name),
-					);
+					const quality = allAvailableQualities.get(normalizeQualityName(templateItem.name));
 					if (quality) {
 						qualityItems.push({
 							...quality,
@@ -668,8 +806,7 @@ export class DeploymentExecutorService {
 				const cutoffName = templateConfig.qualityProfile.cutoff;
 
 				// Normalize names by removing spaces and hyphens for comparison
-				const normalizeName = (name: string) =>
-					name.replace(/[\s-]/g, "").toLowerCase();
+				const normalizeName = (name: string) => name.replace(/[\s-]/g, "").toLowerCase();
 
 				const findQualityId = (items: any[], name: string): number | null => {
 					const normalizedSearchName = normalizeName(name);
@@ -705,8 +842,7 @@ export class DeploymentExecutorService {
 				(item: any) => item.score && item.score !== 0,
 			);
 			const templateMinScore = templateConfig.qualityProfile?.minFormatScore ?? 0;
-			const effectiveMinScore =
-				!hasDefinedScores && templateMinScore > 0 ? 0 : templateMinScore;
+			const effectiveMinScore = !hasDefinedScores && templateMinScore > 0 ? 0 : templateMinScore;
 
 			// Use schema as base and customize with template settings
 			const profileToCreate = {
@@ -738,9 +874,9 @@ export class DeploymentExecutorService {
 			};
 
 			// Remove the id field if it exists (schema might include it)
-			delete (profileToCreate as { id?: number }).id;
+			const { id: _unusedId, ...profileWithoutId } = profileToCreate as { id?: number } & typeof profileToCreate;
 
-			return await apiClient.createQualityProfile(profileToCreate);
+			return await apiClient.createQualityProfile(profileWithoutId);
 		} catch (createError) {
 			console.error("[DEPLOYMENT] Failed to create quality profile:", createError);
 			console.error("[DEPLOYMENT] Error details:", JSON.stringify(createError, null, 2));
@@ -748,6 +884,144 @@ export class DeploymentExecutorService {
 				`Failed to create quality profile: ${createError instanceof Error ? createError.message : "Unknown error"}`,
 			);
 		}
+	}
+
+	/**
+	 * Creates a quality profile from a cloned instance profile (completeQualityProfile).
+	 * This preserves the exact quality item structure from the source instance.
+	 */
+	private async createQualityProfileFromClonedProfile(
+		apiClient: ArrApiClient,
+		schema: any,
+		templateConfig: Record<string, any>,
+		templateCFs: TemplateCF[],
+		profileName: string,
+	): Promise<any> {
+		const clonedProfile = templateConfig.completeQualityProfile;
+
+		// Build a map of all qualities available in the target instance schema
+		const normalizeQualityName = (name: string) => name.replace(/[\s-]/g, "").toLowerCase();
+		const allAvailableQualities = new Map<number, any>();
+		const qualitiesByName = new Map<string, any>();
+
+		// Extract all qualities from schema - handles both individual items and group sub-items
+		const extractQualities = (items: any[]) => {
+			for (const item of items) {
+				// Items with quality wrapper (individual quality items)
+				if (item.quality) {
+					allAvailableQualities.set(item.quality.id, item);
+					qualitiesByName.set(normalizeQualityName(item.quality.name), item);
+				}
+				// Sub-items inside groups have id/name directly (no quality wrapper)
+				// e.g. {"id":15,"name":"WEBRip-1080p","source":"webRip","resolution":1080,"allowed":true}
+				else if (item.id !== undefined && item.name && !item.items) {
+					// Wrap it in a quality structure for consistency
+					const wrappedItem = {
+						quality: {
+							id: item.id,
+							name: item.name,
+							source: item.source,
+							resolution: item.resolution,
+						},
+						items: [],
+						allowed: item.allowed,
+					};
+					allAvailableQualities.set(item.id, wrappedItem);
+					qualitiesByName.set(normalizeQualityName(item.name), wrappedItem);
+				}
+				// Recurse into groups
+				if (item.items && Array.isArray(item.items)) {
+					extractQualities(item.items);
+				}
+			}
+		};
+		extractQualities(schema.items);
+
+		// Transform the cloned profile items to match the target instance's quality IDs
+		let customGroupId = 1000;
+		const qualityItems: any[] = [];
+
+		for (const sourceItem of clonedProfile.items || []) {
+			if (sourceItem.items && Array.isArray(sourceItem.items) && sourceItem.items.length > 0) {
+				// This is a quality GROUP
+				const groupQualities: any[] = [];
+
+				for (const subItem of sourceItem.items) {
+					// Find matching quality in target instance by ID or name
+					let targetQuality = allAvailableQualities.get(subItem.id);
+					if (!targetQuality && subItem.name) {
+						targetQuality = qualitiesByName.get(normalizeQualityName(subItem.name));
+					}
+
+					if (targetQuality) {
+						groupQualities.push({
+							quality: targetQuality.quality,
+							items: [],
+							allowed: subItem.allowed,
+						});
+					}
+				}
+
+				if (groupQualities.length > 0) {
+					qualityItems.push({
+						name: sourceItem.name,
+						items: groupQualities,
+						allowed: sourceItem.allowed,
+						id: customGroupId++,
+					});
+				}
+			} else if (sourceItem.quality) {
+				// This is an individual quality
+				let targetQuality = allAvailableQualities.get(sourceItem.quality.id);
+				if (!targetQuality && sourceItem.quality.name) {
+					targetQuality = qualitiesByName.get(normalizeQualityName(sourceItem.quality.name));
+				}
+
+				if (targetQuality) {
+					qualityItems.push({
+						...targetQuality,
+						allowed: sourceItem.allowed,
+					});
+				}
+			}
+		}
+
+		// Get fresh CFs list with IDs for score application
+		const allCFs = await apiClient.getCustomFormats();
+
+		// Apply CF scores from template to the schema's formatItems
+		const formatItemsWithScores = schema.formatItems.map((item: any) => {
+			const cf = allCFs.find((c) => c.id === item.format);
+			if (cf) {
+				const templateCF = templateCFs.find((tcf) => tcf.name === cf.name);
+				if (templateCF) {
+					const score = templateCF.scoreOverride ?? templateCF.defaultScore ?? 0;
+					return { ...item, score };
+				}
+			}
+			return item;
+		});
+
+		// Build the profile to create
+		const profileToCreate = {
+			...schema,
+			name: profileName,
+			upgradeAllowed: clonedProfile.upgradeAllowed,
+			cutoff: clonedProfile.cutoff,
+			items: qualityItems,
+			minFormatScore: clonedProfile.minFormatScore ?? 0,
+			cutoffFormatScore: clonedProfile.cutoffFormatScore ?? 10000,
+			minUpgradeFormatScore: clonedProfile.minUpgradeFormatScore ?? 1,
+			formatItems: formatItemsWithScores,
+			...(clonedProfile.language && {
+				language: clonedProfile.language,
+			}),
+		};
+
+		// Remove the id field
+		const { id: _unusedId, ...profileWithoutId } = profileToCreate as { id?: number } & typeof profileToCreate;
+
+		return await apiClient.createQualityProfile(profileWithoutId);
 	}
 
 	/**
@@ -788,11 +1062,7 @@ export class DeploymentExecutorService {
 				where: { id: deploymentHistoryId },
 				data: {
 					status:
-						errors.length === 0
-							? "SUCCESS"
-							: counts.skipped > 0
-								? "PARTIAL_SUCCESS"
-								: "SUCCESS",
+						errors.length === 0 ? "SUCCESS" : counts.skipped > 0 ? "PARTIAL_SUCCESS" : "SUCCESS",
 					duration,
 					appliedCFs: counts.created + counts.updated,
 					failedCFs: counts.skipped,
@@ -1029,7 +1299,8 @@ export class DeploymentExecutorService {
 				return settled.value;
 			}
 			// Convert rejection to a failed deployment result
-			const errorMessage = settled.reason instanceof Error ? settled.reason.message : "Deployment failed";
+			const errorMessage =
+				settled.reason instanceof Error ? settled.reason.message : "Deployment failed";
 			return {
 				instanceId: instanceIds[index] ?? `unknown-${index}`,
 				instanceLabel: `Instance ${index + 1}`,
@@ -1088,12 +1359,12 @@ export class DeploymentExecutorService {
 			if (spec.fields) {
 				// Handle both array and object format
 				if (Array.isArray(spec.fields)) {
-					const trashIdField = spec.fields.find(f => f.name === 'trash_id');
+					const trashIdField = spec.fields.find((f) => f.name === "trash_id");
 					if (trashIdField) {
 						return String(trashIdField.value);
 					}
-				} else if (typeof spec.fields === 'object') {
-					if ('trash_id' in spec.fields) {
+				} else if (typeof spec.fields === "object") {
+					if ("trash_id" in spec.fields) {
 						return String((spec.fields as any).trash_id);
 					}
 				}

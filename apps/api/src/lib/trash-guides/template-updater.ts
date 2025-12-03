@@ -3,9 +3,14 @@
  *
  * Manages synchronization between TRaSH Guides GitHub repository and user templates.
  * Detects when new versions are available and handles update logic based on user preferences.
+ *
+ * Note: This module intentionally uses `any` types for dynamic JSON data from external
+ * TRaSH Guides API responses and template configurations. The data structures are determined
+ * at runtime from external sources.
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import type {
 	TrashConfigType,
 	TemplateConfig,
@@ -18,7 +23,7 @@ import type { VersionTracker, VersionInfo } from "./version-tracker.js";
 import type { TrashCacheManager } from "./cache-manager.js";
 import type { TrashGitHubFetcher } from "./github-fetcher.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
-import { deepEqual } from "../utils/deep-equal.js";
+import { dequal as deepEqual } from "dequal";
 
 // ============================================================================
 // Types
@@ -304,12 +309,12 @@ export class TemplateUpdater {
 	}> {
 		try {
 			const [cfCache, groupCache] = await Promise.all([
-				this.cacheManager.get(serviceType, "CUSTOM_FORMATS"),
-				this.cacheManager.get(serviceType, "CF_GROUPS"),
+				this.cacheManager.get<{ data: TrashCustomFormat[] }>(serviceType, "CUSTOM_FORMATS"),
+				this.cacheManager.get<{ data: TrashCustomFormatGroup[] }>(serviceType, "CF_GROUPS"),
 			]);
 
-			const customFormats = ((cfCache as any)?.data || []) as TrashCustomFormat[];
-			const customFormatGroups = ((groupCache as any)?.data || []) as TrashCustomFormatGroup[];
+			const customFormats = cfCache?.data ?? [];
+			const customFormatGroups = groupCache?.data ?? [];
 
 			return {
 				success: true,

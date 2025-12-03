@@ -135,9 +135,10 @@ export const QualityProfileBrowser = ({
 											key={profile.trashId}
 											type="button"
 											onClick={() => handleSelectProfile(profile)}
-											className="group relative rounded-xl border border-border bg-bg-subtle/50 p-6 text-left transition hover:border-primary hover:bg-bg-hover"
+											className="group relative flex flex-col rounded-xl border border-border bg-bg-subtle/50 p-6 text-left transition hover:border-primary hover:bg-bg-hover"
 										>
-											<div className="space-y-3">
+											{/* Variable height content */}
+											<div className="flex-1 space-y-3">
 												<div className="flex items-start justify-between">
 													<h3 className="font-medium text-fg">{profile.name}</h3>
 													{profile.scoreSet && (
@@ -170,7 +171,10 @@ export const QualityProfileBrowser = ({
 														</span>
 													)}
 												</div>
+											</div>
 
+											{/* Fixed bottom section */}
+											<div className="mt-auto pt-3">
 												<div className="flex items-center justify-between text-xs">
 													<span className="text-fg-muted">Cutoff: {profile.cutoff}</span>
 													<span

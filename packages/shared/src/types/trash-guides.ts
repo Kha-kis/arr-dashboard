@@ -54,6 +54,17 @@ export type TrashScheduleFrequency =
 // ============================================================================
 
 /**
+ * Custom Format Specification
+ */
+export interface CustomFormatSpecification {
+	name: string;
+	implementation: string;
+	negate: boolean;
+	required: boolean;
+	fields: Record<string, unknown>;
+}
+
+/**
  * Custom Format from TRaSH Guides
  */
 export interface TrashCustomFormat {
@@ -61,13 +72,7 @@ export interface TrashCustomFormat {
 	name: string;
 	score?: number; // Default score from TRaSH Guides
 	includeCustomFormatWhenRenaming?: boolean;
-	specifications: Array<{
-		name: string;
-		implementation: string;
-		negate: boolean;
-		required: boolean;
-		fields: Record<string, unknown>;
-	}>;
+	specifications: CustomFormatSpecification[];
 }
 
 /**
@@ -241,6 +246,7 @@ export interface TemplateConfig {
 export interface CompleteQualityProfile {
 	// Source information
 	sourceInstanceId: string; // Instance this was imported from
+	sourceInstanceLabel?: string; // Friendly name of source instance
 	sourceProfileId: number; // *arr quality profile ID
 	sourceProfileName: string; // Original profile name
 	importedAt: string; // When it was imported
@@ -251,8 +257,8 @@ export interface CompleteQualityProfile {
 	cutoffQuality?: {
 		id: number;
 		name: string;
-		source: string;
-		resolution: number;
+		source?: string; // Optional - may not be resolved from all sources
+		resolution?: number; // Optional - may not be resolved from all sources
 	};
 
 	// Quality items with ordering
@@ -260,14 +266,14 @@ export interface CompleteQualityProfile {
 		quality?: {
 			id: number;
 			name: string;
-			source: string;
-			resolution: number;
+			source?: string;
+			resolution?: number;
 		};
 		items?: Array<{
 			id: number;
 			name: string;
-			source: string;
-			resolution: number;
+			source?: string;
+			resolution?: number;
 			allowed: boolean;
 		}>;
 		allowed: boolean;
@@ -651,8 +657,8 @@ export interface CustomFormatDiff {
 	changeType: DiffChangeType;
 	currentScore?: number;
 	newScore?: number;
-	currentSpecifications?: any[];
-	newSpecifications?: any[];
+	currentSpecifications?: CustomFormatSpecification[];
+	newSpecifications?: CustomFormatSpecification[];
 	hasSpecificationChanges: boolean;
 }
 

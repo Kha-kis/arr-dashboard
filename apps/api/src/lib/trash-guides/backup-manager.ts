@@ -4,7 +4,7 @@
  * Creates and manages backups of Radarr/Sonarr configurations before sync operations
  */
 
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import type { ServiceInstance } from "@prisma/client";
 
 // ============================================================================
@@ -118,7 +118,8 @@ export class BackupManager {
 				instanceId,
 				userId,
 				backupData: backupJson,
-				expiresAt: effectiveRetentionDays > 0 ? this.calculateExpirationDate(effectiveRetentionDays) : null,
+				expiresAt:
+					effectiveRetentionDays > 0 ? this.calculateExpirationDate(effectiveRetentionDays) : null,
 			},
 		});
 
@@ -126,11 +127,18 @@ export class BackupManager {
 	}
 
 	/**
-	 * Get backup by ID
+	 * Get backup by ID with ownership verification.
+	 * Returns null if backup not found or user does not own the backup.
+	 * This prevents information leakage about backup existence.
 	 */
-	async getBackup(backupId: string): Promise<BackupData | null> {
-		const backup = await this.prisma.trashBackup.findUnique({
-			where: { id: backupId },
+	async getBackup(backupId: string, requestingUserId: string): Promise<BackupData | null> {
+		// Query with both id and userId to verify ownership in a single query
+		// Returns null for both non-existent and unauthorized backups
+		const backup = await this.prisma.trashBackup.findFirst({
+			where: {
+				id: backupId,
+				userId: requestingUserId,
+			},
 		});
 
 		if (!backup) {
@@ -146,15 +154,30 @@ export class BackupManager {
 	}
 
 	/**
-	 * List backups for an instance
+	 * List backups for an instance with ownership verification
 	 */
 	async listBackups(
 		instanceId: string,
+		userId: string,
 		limit = 10,
 		offset = 0,
 	): Promise<BackupInfo[]> {
+		// Verify user owns the instance
+		const instance = await this.prisma.serviceInstance.findUnique({
+			where: { id: instanceId },
+			select: { userId: true },
+		});
+
+		if (!instance) {
+			throw new Error(`Instance not found: ${instanceId}`);
+		}
+
+		if (instance.userId !== userId) {
+			throw new Error(`Unauthorized: User does not own instance ${instanceId}`);
+		}
+
 		const backups = await this.prisma.trashBackup.findMany({
-			where: { instanceId },
+			where: { instanceId, userId },
 			orderBy: { createdAt: "desc" },
 			take: limit,
 			skip: offset,
@@ -171,7 +194,10 @@ export class BackupManager {
 					configCount: data.customFormats.length,
 				});
 			} catch (error) {
-				console.error(`Failed to parse backup data for backup ${backup.id}, instanceId ${backup.instanceId}:`, error);
+				console.error(
+					`Failed to parse backup data for backup ${backup.id}, instanceId ${backup.instanceId}:`,
+					error,
+				);
 				// Skip corrupted backups instead of crashing
 			}
 			return result;
@@ -257,9 +283,23 @@ export class BackupManager {
 	}
 
 	/**
-	 * Delete specific backup
+	 * Delete specific backup with ownership verification
 	 */
-	async deleteBackup(backupId: string): Promise<boolean> {
+	async deleteBackup(backupId: string, userId: string): Promise<boolean> {
+		// First verify ownership
+		const backup = await this.prisma.trashBackup.findUnique({
+			where: { id: backupId },
+			select: { userId: true },
+		});
+
+		if (!backup) {
+			throw new Error(`Backup not found: ${backupId}`);
+		}
+
+		if (backup.userId !== userId) {
+			throw new Error(`Unauthorized: User does not own backup ${backupId}`);
+		}
+
 		try {
 			await this.prisma.trashBackup.delete({
 				where: { id: backupId },
@@ -281,24 +321,53 @@ export class BackupManager {
 	}
 
 	/**
-	 * Get backup count for instance
+	 * Get backup count for instance with ownership verification
 	 */
-	async getBackupCount(instanceId: string): Promise<number> {
+	async getBackupCount(instanceId: string, userId: string): Promise<number> {
+		// Verify user owns the instance
+		const instance = await this.prisma.serviceInstance.findUnique({
+			where: { id: instanceId },
+			select: { userId: true },
+		});
+
+		if (!instance) {
+			throw new Error(`Instance not found: ${instanceId}`);
+		}
+
+		if (instance.userId !== userId) {
+			throw new Error(`Unauthorized: User does not own instance ${instanceId}`);
+		}
+
 		return await this.prisma.trashBackup.count({
-			where: { instanceId },
+			where: { instanceId, userId },
 		});
 	}
 
 	/**
-	 * Enforce backup retention limit (keep only N most recent)
+	 * Enforce backup retention limit (keep only N most recent) with ownership verification
 	 */
 	async enforceRetentionLimit(
 		instanceId: string,
+		userId: string,
 		maxBackups = 10,
 	): Promise<number> {
-		// Get all backups for instance, ordered by creation date
+		// Verify user owns the instance
+		const instance = await this.prisma.serviceInstance.findUnique({
+			where: { id: instanceId },
+			select: { userId: true },
+		});
+
+		if (!instance) {
+			throw new Error(`Instance not found: ${instanceId}`);
+		}
+
+		if (instance.userId !== userId) {
+			throw new Error(`Unauthorized: User does not own instance ${instanceId}`);
+		}
+
+		// Get all backups for instance owned by user, ordered by creation date
 		const backups = await this.prisma.trashBackup.findMany({
-			where: { instanceId },
+			where: { instanceId, userId },
 			orderBy: { createdAt: "desc" },
 			select: { id: true },
 		});
@@ -315,6 +384,7 @@ export class BackupManager {
 		const result = await this.prisma.trashBackup.deleteMany({
 			where: {
 				id: { in: deleteIds },
+				userId, // Extra safety: only delete user's own backups
 			},
 		});
 
@@ -322,10 +392,10 @@ export class BackupManager {
 	}
 
 	/**
-	 * Restore from backup
+	 * Restore from backup with ownership verification
 	 * Returns the restored backup data for use by API client
 	 */
-	async restoreBackup(backupId: string): Promise<BackupData> {
+	async restoreBackup(backupId: string, userId: string): Promise<BackupData> {
 		const backup = await this.prisma.trashBackup.findUnique({
 			where: { id: backupId },
 		});
@@ -334,10 +404,17 @@ export class BackupManager {
 			throw new Error(`Backup not found: ${backupId}`);
 		}
 
+		// Verify ownership authorization
+		if (backup.userId !== userId) {
+			throw new Error(`Unauthorized: User does not own backup ${backupId}`);
+		}
+
 		try {
 			return JSON.parse(backup.backupData) as BackupData;
 		} catch (parseError) {
-			throw new Error(`Backup ${backupId} contains invalid JSON data: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+			throw new Error(
+				`Backup ${backupId} contains invalid JSON data: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+			);
 		}
 	}
 }

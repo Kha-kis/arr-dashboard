@@ -56,6 +56,16 @@ export async function registerQualityProfileRoutes(
 	app: FastifyInstance,
 	_opts: FastifyPluginOptions,
 ) {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
 	const fetcher = createTrashFetcher();
 	const cacheManager = createCacheManager(app.prisma);
 	const templateService = createTemplateService(app.prisma);
@@ -210,8 +220,8 @@ export async function registerQualityProfileRoutes(
 					}
 
 					// Get score from CF's trash_scores using profile's trash_score_set
-					let score: number = 0; // Default to 0 for zero-score CFs
-					if (fullCF && fullCF.trash_scores) {
+					let score = 0; // Default to 0 for zero-score CFs
+					if (fullCF?.trash_scores) {
 						const scoreSet = profile.trash_score_set;
 						if (scoreSet && fullCF.trash_scores[scoreSet] !== undefined) {
 							score = fullCF.trash_scores[scoreSet];
@@ -253,7 +263,7 @@ export async function registerQualityProfileRoutes(
 						const description = descriptionMap.get(slug);
 
 						// Get score from CF's trash_scores using profile's trash_score_set
-						let score: number = 0; // Default to 0 for zero-score CFs
+						let score = 0; // Default to 0 for zero-score CFs
 						if (customFormat.trash_scores) {
 							const scoreSet = profile.trash_score_set;
 							if (scoreSet && customFormat.trash_scores[scoreSet] !== undefined) {
@@ -314,14 +324,6 @@ export async function registerQualityProfileRoutes(
 	app.post<{
 		Body: z.infer<typeof importQualityProfileSchema>;
 	}>("/import", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				statusCode: 401,
-				error: "Unauthorized",
-				message: "Authentication required",
-			});
-		}
-
 		try {
 			const { serviceType, trashId, templateName, templateDescription, selectedCFGroups, customFormatSelections } =
 				importQualityProfileSchema.parse(request.body);
@@ -434,7 +436,7 @@ export async function registerQualityProfileRoutes(
 			}
 
 			// Create template
-			const template = await templateService.createTemplate(request.currentUser.id, {
+			const template = await templateService.createTemplate(request.currentUser?.id, {
 				name: templateName,
 				description:
 					templateDescription ||
@@ -480,14 +482,6 @@ export async function registerQualityProfileRoutes(
 		Params: { templateId: string };
 		Body: z.infer<typeof updateQualityProfileTemplateSchema>;
 	}>("/update/:templateId", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				statusCode: 401,
-				error: "Unauthorized",
-				message: "Authentication required",
-			});
-		}
-
 		try {
 			const { templateId } = request.params;
 			const { serviceType, templateName, templateDescription, selectedCFGroups, customFormatSelections } =
@@ -496,7 +490,7 @@ export async function registerQualityProfileRoutes(
 			// Get existing template to preserve quality profile settings
 			const existingTemplate = await templateService.getTemplate(
 				templateId,
-				request.currentUser.id,
+				request.currentUser?.id,
 			);
 
 			if (!existingTemplate) {
@@ -571,7 +565,7 @@ export async function registerQualityProfileRoutes(
 			// Update template
 			const template = await templateService.updateTemplate(
 				templateId,
-				request.currentUser.id,
+				request.currentUser?.id,
 				{
 					name: templateName,
 					description: templateDescription,

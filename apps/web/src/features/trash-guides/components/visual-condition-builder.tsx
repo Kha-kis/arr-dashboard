@@ -11,9 +11,16 @@
 
 "use client";
 
-import { useState, useMemo } from "react";
-import { Button, Alert, AlertDescription, Select, SelectOption, Input } from "../../../components/ui";
-import { Plus, Trash2, Info, Code } from "lucide-react";
+import { Code, Info, Plus, Trash2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+	Alert,
+	AlertDescription,
+	Button,
+	Input,
+	Select,
+	SelectOption,
+} from "../../../components/ui";
 
 interface Condition {
 	id: string;
@@ -40,16 +47,43 @@ const FIELDS = [
 ];
 
 const OPERATORS = [
-	{ value: "contains", label: "Contains", pattern: (v: string, cs: boolean) => cs ? v : `(?i)${v}` },
-	{ value: "notContains", label: "Does Not Contain", pattern: (v: string, cs: boolean) => cs ? `^(?!.*${v}).*$` : `(?i)^(?!.*${v}).*$` },
-	{ value: "startsWith", label: "Starts With", pattern: (v: string, cs: boolean) => cs ? `^${v}` : `(?i)^${v}` },
-	{ value: "endsWith", label: "Ends With", pattern: (v: string, cs: boolean) => cs ? `${v}$` : `(?i)${v}$` },
-	{ value: "equals", label: "Equals (Exact)", pattern: (v: string, cs: boolean) => cs ? `^${v}$` : `(?i)^${v}$` },
+	{
+		value: "contains",
+		label: "Contains",
+		pattern: (v: string, cs: boolean) => (cs ? v : `(?i)${v}`),
+	},
+	{
+		value: "notContains",
+		label: "Does Not Contain",
+		pattern: (v: string, cs: boolean) => (cs ? `^(?!.*${v}).*$` : `(?i)^(?!.*${v}).*$`),
+	},
+	{
+		value: "startsWith",
+		label: "Starts With",
+		pattern: (v: string, cs: boolean) => (cs ? `^${v}` : `(?i)^${v}`),
+	},
+	{
+		value: "endsWith",
+		label: "Ends With",
+		pattern: (v: string, cs: boolean) => (cs ? `${v}$` : `(?i)${v}$`),
+	},
+	{
+		value: "equals",
+		label: "Equals (Exact)",
+		pattern: (v: string, cs: boolean) => (cs ? `^${v}$` : `(?i)^${v}$`),
+	},
 	{ value: "matches", label: "Matches Pattern (Regex)", pattern: (v: string) => v },
-	{ value: "wordBoundary", label: "Word (Standalone)", pattern: (v: string, cs: boolean) => cs ? `\\b${v}\\b` : `(?i)\\b${v}\\b` },
+	{
+		value: "wordBoundary",
+		label: "Word (Standalone)",
+		pattern: (v: string, cs: boolean) => (cs ? `\\b${v}\\b` : `(?i)\\b${v}\\b`),
+	},
 	{ value: "isEmpty", label: "Is Empty", pattern: () => "^$" },
 	{ value: "isNotEmpty", label: "Is Not Empty", pattern: () => ".+" },
 ];
+
+// Counter for generating unique condition IDs (avoids collisions with rapid additions)
+let conditionIdCounter = 0;
 
 // Common value presets for different fields
 const FIELD_PRESETS: Record<string, string[]> = {
@@ -61,13 +95,10 @@ const FIELD_PRESETS: Record<string, string[]> = {
 	edition: ["Director.*Cut", "Extended", "Unrated", "IMAX", "Remastered", "Theatrical"],
 };
 
-export function VisualConditionBuilder({
-	onPatternChange,
-	onClose,
-}: VisualConditionBuilderProps) {
-	const [conditions, setConditions] = useState<Condition[]>([
+export function VisualConditionBuilder({ onPatternChange, onClose }: VisualConditionBuilderProps) {
+	const [conditions, setConditions] = useState<Condition[]>(() => [
 		{
-			id: Date.now().toString(),
+			id: `condition-${++conditionIdCounter}-${Date.now()}`,
 			field: "releaseTitle",
 			operator: "contains",
 			value: "",
@@ -76,45 +107,58 @@ export function VisualConditionBuilder({
 	]);
 	const [logicOperator, setLogicOperator] = useState<"AND" | "OR">("AND");
 
-	// Positional operators that cannot use lookahead approach
+	// Positional operators that cannot use lookahead approach (use anchors in pattern)
 	const POSITIONAL_OPERATORS = ["startsWith", "endsWith", "equals"];
 
+	// Operators that use anchors in their patterns and break when wrapped in lookaheads
+	// These need special handling for AND combinations
+	const ANCHOR_OPERATORS = ["notContains", "isEmpty"];
+
 	// Generate regex pattern from conditions
-	const { generatedPattern, hasPositionalAnd } = useMemo(() => {
-		const validConditions = conditions.filter(c => c.value.trim() || c.operator === "isEmpty" || c.operator === "isNotEmpty");
+	const { generatedPattern, hasPositionalAnd, hasMixedCaseSensitivity } = useMemo(() => {
+		const validConditions = conditions.filter(
+			(c) => c.value.trim() || c.operator === "isEmpty" || c.operator === "isNotEmpty",
+		);
 
 		if (validConditions.length === 0) {
-			return { generatedPattern: "", hasPositionalAnd: false };
+			return { generatedPattern: "", hasPositionalAnd: false, hasMixedCaseSensitivity: false };
 		}
 
-		const patterns = validConditions.map(condition => {
-			const operator = OPERATORS.find(op => op.value === condition.operator);
+		const patterns = validConditions.map((condition) => {
+			const operator = OPERATORS.find((op) => op.value === condition.operator);
 			if (!operator) return "";
 
 			const escapedValue = condition.value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-			return operator.pattern(condition.operator === "matches" ? condition.value : escapedValue, condition.caseSensitive);
+			return operator.pattern(
+				condition.operator === "matches" ? condition.value : escapedValue,
+				condition.caseSensitive,
+			);
 		});
 
 		if (patterns.length === 1) {
-			return { generatedPattern: patterns[0], hasPositionalAnd: false };
+			return {
+				generatedPattern: patterns[0],
+				hasPositionalAnd: false,
+				hasMixedCaseSensitivity: false,
+			};
 		}
 
 		// Combine with AND/OR logic
 		if (logicOperator === "AND") {
 			// Check if any condition uses positional operators
-			const hasPositional = validConditions.some(c => POSITIONAL_OPERATORS.includes(c.operator));
+			const hasPositional = validConditions.some((c) => POSITIONAL_OPERATORS.includes(c.operator));
 
 			if (hasPositional) {
 				// Cannot synthesize a single regex for AND with positional operators
 				// Build a composed pattern when possible, otherwise signal that function-based matching is needed
 
 				// Analyze the conditions to see if we can compose a valid anchored pattern
-				const startsWithConditions = validConditions.filter(c => c.operator === "startsWith");
-				const endsWithConditions = validConditions.filter(c => c.operator === "endsWith");
-				const equalsConditions = validConditions.filter(c => c.operator === "equals");
-				const containsConditions = validConditions.filter(c => c.operator === "contains");
-				const otherConditions = validConditions.filter(c =>
-					!["startsWith", "endsWith", "equals", "contains"].includes(c.operator)
+				const startsWithConditions = validConditions.filter((c) => c.operator === "startsWith");
+				const endsWithConditions = validConditions.filter((c) => c.operator === "endsWith");
+				const equalsConditions = validConditions.filter((c) => c.operator === "equals");
+				const containsConditions = validConditions.filter((c) => c.operator === "contains");
+				const otherConditions = validConditions.filter(
+					(c) => !["startsWith", "endsWith", "equals", "contains"].includes(c.operator),
 				);
 
 				// If multiple startsWith, endsWith, or equals, or mixed equals with others - impossible to AND
@@ -122,26 +166,46 @@ export function VisualConditionBuilder({
 					startsWithConditions.length > 1 ||
 					endsWithConditions.length > 1 ||
 					equalsConditions.length > 1 ||
-					(equalsConditions.length > 0 && (startsWithConditions.length > 0 || endsWithConditions.length > 0 || containsConditions.length > 0)) ||
+					(equalsConditions.length > 0 &&
+						(startsWithConditions.length > 0 ||
+							endsWithConditions.length > 0 ||
+							containsConditions.length > 0)) ||
 					otherConditions.length > 0
 				) {
 					// Cannot synthesize - return a marker pattern that signals function-based matching needed
-					return { generatedPattern: patterns.join(" && "), hasPositionalAnd: true };
+					return {
+						generatedPattern: patterns.join(" && "),
+						hasPositionalAnd: true,
+						hasMixedCaseSensitivity: false,
+					};
 				}
 
-				// Build composed pattern: ^startsWith.*contains.*contains.*endsWith$
-				const getCaseFlag = (conditions: Condition[]) => {
-					// If any condition is case-insensitive, use (?i)
-					return conditions.some(c => !c.caseSensitive) ? "(?i)" : "";
-				};
+				// Build composed pattern with per-segment case sensitivity using inline flags
+				const allConditions = [
+					...startsWithConditions,
+					...containsConditions,
+					...endsWithConditions,
+				];
 
-				let composed = "";
-				const allConditions = [...startsWithConditions, ...containsConditions, ...endsWithConditions];
-				const caseFlag = getCaseFlag(allConditions);
+				// Detect mixed case sensitivity: some case-sensitive, some case-insensitive
+				const caseSensitiveConditions = allConditions.filter((c) => c.caseSensitive);
+				const caseInsensitiveConditions = allConditions.filter((c) => !c.caseSensitive);
+				const hasMixed = caseSensitiveConditions.length > 0 && caseInsensitiveConditions.length > 0;
 
-				if (caseFlag) {
-					composed = caseFlag;
+				// If mixed case sensitivity, we cannot compose a valid single regex pattern
+				// because inline flags like (?i:...) don't work reliably across all regex engines
+				// and the global (?i) flag would incorrectly affect all segments
+				if (hasMixed) {
+					return {
+						generatedPattern: patterns.join(" && "),
+						hasPositionalAnd: false,
+						hasMixedCaseSensitivity: true,
+					};
 				}
+
+				// All conditions have the same case sensitivity - safe to use global flag
+				const useGlobalCaseInsensitive = caseInsensitiveConditions.length > 0;
+				let composed = useGlobalCaseInsensitive ? "(?i)" : "";
 
 				// Start anchor if startsWith present
 				const startsWithCond = startsWithConditions[0];
@@ -167,17 +231,56 @@ export function VisualConditionBuilder({
 					composed += ".*$";
 				}
 
-				return { generatedPattern: composed, hasPositionalAnd: false };
+				return {
+					generatedPattern: composed,
+					hasPositionalAnd: false,
+					hasMixedCaseSensitivity: false,
+				};
 			}
 
-			// No positional operators - safe to use lookahead approach
+			// Check if any condition uses anchor-based operators (notContains, isEmpty)
+			// These cannot be wrapped in lookaheads as the anchors break
+			const hasAnchorOperators = validConditions.some((c) =>
+				ANCHOR_OPERATORS.includes(c.operator),
+			);
+
+			if (hasAnchorOperators) {
+				// Cannot synthesize - return a marker pattern that signals function-based matching needed
+				return {
+					generatedPattern: patterns.join(" && "),
+					hasPositionalAnd: true,
+					hasMixedCaseSensitivity: false,
+				};
+			}
+
+			// No positional or anchor operators - safe to use lookahead approach
+			// But first check for mixed case sensitivity
+			const caseSensitiveCount = validConditions.filter((c) => c.caseSensitive).length;
+			const caseInsensitiveCount = validConditions.filter((c) => !c.caseSensitive).length;
+			const hasMixedCase = caseSensitiveCount > 0 && caseInsensitiveCount > 0;
+
+			if (hasMixedCase) {
+				// Cannot reliably combine mixed case sensitivity in lookaheads
+				// because (?i) flag behavior varies across regex engines
+				return {
+					generatedPattern: patterns.join(" && "),
+					hasPositionalAnd: false,
+					hasMixedCaseSensitivity: true,
+				};
+			}
+
 			return {
-				generatedPattern: patterns.map(p => `(?=.*${p})`).join("") + ".*",
-				hasPositionalAnd: false
+				generatedPattern: patterns.map((p) => `(?=.*${p})`).join("") + ".*",
+				hasPositionalAnd: false,
+				hasMixedCaseSensitivity: false,
 			};
 		} else {
 			// For OR, just join with pipe
-			return { generatedPattern: patterns.join("|"), hasPositionalAnd: false };
+			return {
+				generatedPattern: patterns.join("|"),
+				hasPositionalAnd: false,
+				hasMixedCaseSensitivity: false,
+			};
 		}
 	}, [conditions, logicOperator]);
 
@@ -194,7 +297,7 @@ export function VisualConditionBuilder({
 		setConditions([
 			...conditions,
 			{
-				id: Date.now().toString(),
+				id: `condition-${++conditionIdCounter}-${Date.now()}`,
 				field: "releaseTitle",
 				operator: "contains",
 				value: "",
@@ -206,15 +309,13 @@ export function VisualConditionBuilder({
 	// Remove condition
 	const removeCondition = (id: string) => {
 		if (conditions.length > 1) {
-			setConditions(conditions.filter(c => c.id !== id));
+			setConditions(conditions.filter((c) => c.id !== id));
 		}
 	};
 
 	// Update condition
 	const updateCondition = (id: string, updates: Partial<Condition>) => {
-		setConditions(conditions.map(c =>
-			c.id === id ? { ...c, ...updates } : c
-		));
+		setConditions(conditions.map((c) => (c.id === id ? { ...c, ...updates } : c)));
 	};
 
 	// Insert preset value
@@ -236,8 +337,8 @@ export function VisualConditionBuilder({
 			<Alert>
 				<Info className="h-4 w-4" />
 				<AlertDescription className="text-xs">
-					Build conditions visually. Each condition is converted to a regex pattern.
-					Combine multiple conditions with AND/OR logic.
+					Build conditions visually. Each condition is converted to a regex pattern. Combine
+					multiple conditions with AND/OR logic.
 				</AlertDescription>
 			</Alert>
 
@@ -267,7 +368,7 @@ export function VisualConditionBuilder({
 			{/* Conditions */}
 			<div className="space-y-3">
 				{conditions.map((condition, index) => {
-					const field = FIELDS.find(f => f.value === condition.field);
+					const field = FIELDS.find((f) => f.value === condition.field);
 					const presets = FIELD_PRESETS[condition.field] || [];
 					const showValueInput = !["isEmpty", "isNotEmpty"].includes(condition.operator);
 
@@ -275,15 +376,9 @@ export function VisualConditionBuilder({
 						<div key={condition.id} className="rounded border border-border/30 p-3 space-y-3">
 							{/* Header */}
 							<div className="flex items-center justify-between">
-								<span className="text-xs font-medium text-fg-muted">
-									Condition {index + 1}
-								</span>
+								<span className="text-xs font-medium text-fg-muted">Condition {index + 1}</span>
 								{conditions.length > 1 && (
-									<Button
-										size="sm"
-										variant="ghost"
-										onClick={() => removeCondition(condition.id)}
-									>
+									<Button size="sm" variant="ghost" onClick={() => removeCondition(condition.id)}>
 										<Trash2 className="h-4 w-4" />
 									</Button>
 								)}
@@ -292,36 +387,30 @@ export function VisualConditionBuilder({
 							{/* Field Selection */}
 							<div className="grid grid-cols-1 md:grid-cols-2 gap-3">
 								<div>
-									<label className="block text-xs font-medium text-fg-muted mb-1">
-										Field
-									</label>
+									<label className="block text-xs font-medium text-fg-muted mb-1">Field</label>
 									<Select
 										value={condition.field}
 										onChange={(e) => updateCondition(condition.id, { field: e.target.value })}
 										className="w-full"
 									>
-										{FIELDS.map(field => (
+										{FIELDS.map((field) => (
 											<SelectOption key={field.value} value={field.value}>
 												{field.label}
 											</SelectOption>
 										))}
 									</Select>
-									{field && (
-										<p className="text-xs text-fg-muted mt-1">{field.description}</p>
-									)}
+									{field && <p className="text-xs text-fg-muted mt-1">{field.description}</p>}
 								</div>
 
 								{/* Operator Selection */}
 								<div>
-									<label className="block text-xs font-medium text-fg-muted mb-1">
-										Operator
-									</label>
+									<label className="block text-xs font-medium text-fg-muted mb-1">Operator</label>
 									<Select
 										value={condition.operator}
 										onChange={(e) => updateCondition(condition.id, { operator: e.target.value })}
 										className="w-full"
 									>
-										{OPERATORS.map(op => (
+										{OPERATORS.map((op) => (
 											<SelectOption key={op.value} value={op.value}>
 												{op.label}
 											</SelectOption>
@@ -333,15 +422,15 @@ export function VisualConditionBuilder({
 							{/* Value Input */}
 							{showValueInput && (
 								<div>
-									<label className="block text-xs font-medium text-fg-muted mb-1">
-										Value
-									</label>
+									<label className="block text-xs font-medium text-fg-muted mb-1">Value</label>
 									<Input
 										type="text"
 										value={condition.value}
 										onChange={(e) => updateCondition(condition.id, { value: e.target.value })}
 										className="w-full"
-										placeholder={condition.operator === "matches" ? "Enter regex pattern..." : "Enter value..."}
+										placeholder={
+											condition.operator === "matches" ? "Enter regex pattern..." : "Enter value..."
+										}
 									/>
 
 									{/* Presets */}
@@ -371,10 +460,15 @@ export function VisualConditionBuilder({
 										type="checkbox"
 										id={`case-${condition.id}`}
 										checked={condition.caseSensitive}
-										onChange={(e) => updateCondition(condition.id, { caseSensitive: e.target.checked })}
+										onChange={(e) =>
+											updateCondition(condition.id, { caseSensitive: e.target.checked })
+										}
 										className="h-4 w-4 rounded border-border bg-bg-hover text-primary focus:ring-primary cursor-pointer"
 									/>
-									<label htmlFor={`case-${condition.id}`} className="text-sm text-fg cursor-pointer">
+									<label
+										htmlFor={`case-${condition.id}`}
+										className="text-sm text-fg cursor-pointer"
+									>
 										Case sensitive
 									</label>
 								</div>
@@ -385,12 +479,7 @@ export function VisualConditionBuilder({
 			</div>
 
 			{/* Add Condition Button */}
-			<Button
-				size="sm"
-				variant="secondary"
-				onClick={addCondition}
-				className="w-full"
-			>
+			<Button size="sm" variant="secondary" onClick={addCondition} className="w-full">
 				<Plus className="h-4 w-4 mr-2" />
 				Add Condition
 			</Button>
@@ -402,17 +491,26 @@ export function VisualConditionBuilder({
 						<Code className="h-4 w-4 text-fg-muted" />
 						<span className="text-xs font-medium text-fg-muted">Generated Pattern:</span>
 					</div>
-					<code className="text-xs font-mono text-fg break-all">
-						{generatedPattern}
-					</code>
+					<code className="text-xs font-mono text-fg break-all">{generatedPattern}</code>
 					{hasPositionalAnd && (
 						<Alert className="mt-3">
 							<Info className="h-4 w-4" />
 							<AlertDescription className="text-xs">
 								<strong>Note:</strong> This combination of AND conditions with positional operators
-								(Starts With, Ends With, Equals) cannot be expressed as a single regex pattern.
-								The pattern shown uses &quot;&amp;&amp;&quot; notation to indicate multiple conditions
+								(Starts With, Ends With, Equals) cannot be expressed as a single regex pattern. The
+								pattern shown uses &quot;&amp;&amp;&quot; notation to indicate multiple conditions
 								that must all match. Consider using OR logic, or simplify to compatible conditions.
+							</AlertDescription>
+						</Alert>
+					)}
+					{hasMixedCaseSensitivity && (
+						<Alert className="mt-3">
+							<Info className="h-4 w-4" />
+							<AlertDescription className="text-xs">
+								<strong>Mixed Case Sensitivity:</strong> Your conditions have different case
+								sensitivity settings which cannot be combined into a single regex pattern. Either
+								make all conditions case-sensitive or all case-insensitive, or use OR logic to keep
+								them separate.
 							</AlertDescription>
 						</Alert>
 					)}
@@ -428,7 +526,7 @@ export function VisualConditionBuilder({
 				)}
 				<Button
 					onClick={applyPattern}
-					disabled={!generatedPattern || hasPositionalAnd}
+					disabled={!generatedPattern || hasPositionalAnd || hasMixedCaseSensitivity}
 				>
 					Apply Pattern
 				</Button>

@@ -10,18 +10,12 @@
 
 "use client";
 
-import { useEffect, useRef } from "react";
+import type { CompleteQualityProfile } from "@arr/shared";
+import { AlertCircle, Award, CheckCircle, Info, Target, TrendingUp } from "lucide-react";
+import { useEffect } from "react";
 import { Alert, AlertDescription } from "../../../components/ui/alert";
 import { usePreviewProfileDeployment } from "../../../hooks/api/useProfileClone";
-import type { CompleteQualityProfile } from "@arr/shared";
-import {
-	CheckCircle,
-	AlertCircle,
-	Info,
-	TrendingUp,
-	Target,
-	Award,
-} from "lucide-react";
+import { useDeepCompareEffect } from "../../../hooks/useDeepCompareEffect";
 
 interface QualityProfilePreviewProps {
 	instanceId: string;
@@ -38,35 +32,15 @@ export function QualityProfilePreview({
 }: QualityProfilePreviewProps) {
 	const previewMutation = usePreviewProfileDeployment();
 
-	// Track previous values for deep comparison
-	const prevDataRef = useRef<{
-		instanceId: string;
-		profileKey: string;
-		formatsKey: string;
-	} | null>(null);
-
-	useEffect(() => {
-		// Create stable keys for comparison (computed once per effect, not every render)
-		const profileKey = `${profile.sourceProfileId}-${profile.sourceInstanceId}-${JSON.stringify(profile.items)}`;
-		const formatsKey = JSON.stringify(customFormats);
-
-		// Skip if data hasn't changed
-		if (
-			prevDataRef.current?.instanceId === instanceId &&
-			prevDataRef.current?.profileKey === profileKey &&
-			prevDataRef.current?.formatsKey === formatsKey
-		) {
-			return;
-		}
-
-		// Update ref and trigger mutation
-		prevDataRef.current = { instanceId, profileKey, formatsKey };
+	// Use deep comparison for profile and customFormats to avoid unnecessary mutations
+	useDeepCompareEffect(() => {
 		previewMutation.mutate({
 			instanceId,
 			profile,
 			customFormats,
 		});
-	}, [instanceId, profile, customFormats, previewMutation]);
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [instanceId, profile, customFormats]);
 
 	useEffect(() => {
 		if (previewMutation.isSuccess && previewMutation.data) {
@@ -117,9 +91,7 @@ export function QualityProfilePreview({
 				<div className="grid grid-cols-2 gap-3 text-sm">
 					<div>
 						<span className="text-fg-muted">Cutoff Quality:</span>
-						<div className="font-medium text-fg">
-							{preview.qualityDefinitions.cutoff}
-						</div>
+						<div className="font-medium text-fg">{preview.qualityDefinitions.cutoff}</div>
 					</div>
 					<div>
 						<span className="text-fg-muted">Upgrade Allowed:</span>
@@ -133,15 +105,11 @@ export function QualityProfilePreview({
 					</div>
 					<div>
 						<span className="text-fg-muted">Total Qualities:</span>
-						<div className="font-medium text-fg">
-							{preview.qualityDefinitions.totalQualities}
-						</div>
+						<div className="font-medium text-fg">{preview.qualityDefinitions.totalQualities}</div>
 					</div>
 					<div>
 						<span className="text-fg-muted">Allowed Qualities:</span>
-						<div className="font-medium text-fg">
-							{preview.qualityDefinitions.allowedQualities}
-						</div>
+						<div className="font-medium text-fg">{preview.qualityDefinitions.allowedQualities}</div>
 					</div>
 				</div>
 			</div>
@@ -156,23 +124,15 @@ export function QualityProfilePreview({
 				<div className="grid grid-cols-3 gap-3 text-sm">
 					<div>
 						<span className="text-fg-muted">Total Selected:</span>
-						<div className="font-medium text-fg">
-							{preview.customFormats.total}
-						</div>
+						<div className="font-medium text-fg">{preview.customFormats.total}</div>
 					</div>
 					<div>
 						<span className="text-fg-muted">Matched:</span>
-						<div className="font-medium text-success">
-							{preview.customFormats.matched}
-						</div>
+						<div className="font-medium text-success">{preview.customFormats.matched}</div>
 					</div>
 					<div>
 						<span className="text-fg-muted">Unmatched:</span>
-						<div
-							className={`font-medium ${
-								hasUnmatched ? "text-warning" : "text-fg-muted"
-							}`}
-						>
+						<div className={`font-medium ${hasUnmatched ? "text-warning" : "text-fg-muted"}`}>
 							{preview.customFormats.unmatched.length}
 						</div>
 					</div>
@@ -183,8 +143,7 @@ export function QualityProfilePreview({
 						<AlertCircle className="h-4 w-4" />
 						<AlertDescription className="text-xs">
 							<div className="font-medium mb-1">
-								The following custom formats were not found on the target
-								instance:
+								The following custom formats were not found on the target instance:
 							</div>
 							<ul className="list-disc list-inside space-y-0.5">
 								{preview.customFormats.unmatched.map((cf) => (
@@ -192,8 +151,8 @@ export function QualityProfilePreview({
 								))}
 							</ul>
 							<div className="mt-2 text-xs">
-								These custom formats will need to be created on the instance
-								before deployment, or they will be skipped.
+								These custom formats will need to be created on the instance before deployment, or
+								they will be skipped.
 							</div>
 						</AlertDescription>
 					</Alert>
@@ -210,21 +169,15 @@ export function QualityProfilePreview({
 				<div className="grid grid-cols-3 gap-3 text-sm">
 					<div>
 						<span className="text-fg-muted">Minimum Score:</span>
-						<div className="font-medium text-fg">
-							{preview.formatScores.minScore}
-						</div>
+						<div className="font-medium text-fg">{preview.formatScores.minScore}</div>
 					</div>
 					<div>
 						<span className="text-fg-muted">Cutoff Score:</span>
-						<div className="font-medium text-fg">
-							{preview.formatScores.cutoffScore}
-						</div>
+						<div className="font-medium text-fg">{preview.formatScores.cutoffScore}</div>
 					</div>
 					<div>
 						<span className="text-fg-muted">Average Score:</span>
-						<div className="font-medium text-fg">
-							{preview.formatScores.avgScore}
-						</div>
+						<div className="font-medium text-fg">{preview.formatScores.avgScore}</div>
 					</div>
 				</div>
 			</div>
@@ -234,8 +187,7 @@ export function QualityProfilePreview({
 				<Alert>
 					<CheckCircle className="h-4 w-4 text-success" />
 					<AlertDescription className="text-xs">
-						All custom formats were matched successfully. Profile is ready to
-						deploy.
+						All custom formats were matched successfully. Profile is ready to deploy.
 					</AlertDescription>
 				</Alert>
 			)}

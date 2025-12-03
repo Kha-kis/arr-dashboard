@@ -612,7 +612,7 @@ export const DeploymentPreviewModal = ({
 			</DialogFooter>
 
 			{/* Instance Override Editor Modal */}
-			{showOverrideEditor && data?.data && (
+			{showOverrideEditor && data?.data && templateId && instanceId && (
 				<InstanceOverrideEditor
 					open={showOverrideEditor}
 					onClose={() => setShowOverrideEditor(false)}

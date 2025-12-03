@@ -5,11 +5,83 @@
 
 "use client";
 
+import { AlertCircle } from "lucide-react";
 import React, { Component, type ReactNode } from "react";
 import { Alert, AlertDescription } from "./ui";
-import { AlertCircle } from "lucide-react";
 
 const MAX_RETRIES = 3;
+const DEFAULT_ERROR_MESSAGE = "An unexpected error occurred";
+const MAX_MESSAGE_LENGTH = 200;
+
+/**
+ * Sanitizes error messages to avoid exposing sensitive details to users.
+ * Removes URLs, file paths, API keys, tokens, and other sensitive patterns.
+ * Enforces max length and returns a safe default on failure or suspicious content.
+ */
+function sanitizeErrorMessage(message: string | undefined | null): string {
+	try {
+		if (!message || typeof message !== "string" || message.trim().length === 0) {
+			return DEFAULT_ERROR_MESSAGE;
+		}
+
+		let sanitized = message;
+
+		// Patterns that indicate sensitive content - return default immediately
+		const sensitivePatterns = [
+			/\{[\s\S]*"[\w]+":[\s\S]*\}/, // JSON blobs
+			/at\s+[\w.]+\s*\(.*:\d+:\d+\)/, // Stack trace lines
+			/Error:\s*at\s+/i, // Stack trace headers
+			/BEGIN\s+(RSA|PRIVATE|CERTIFICATE)/i, // Crypto keys
+		];
+
+		for (const pattern of sensitivePatterns) {
+			if (pattern.test(sanitized)) {
+				return DEFAULT_ERROR_MESSAGE;
+			}
+		}
+
+		// Scrub patterns that might leak sensitive info
+		const scrubPatterns: [RegExp, string][] = [
+			// URLs (http, https, ftp, ws, wss)
+			[/\b(https?|ftp|wss?):\/\/[^\s<>"{}|\\^`\[\]]+/gi, "[URL]"],
+			// File system paths (Unix and Windows)
+			[/\b(?:\/(?:[\w.-]+\/)+[\w.-]*|[A-Za-z]:\\(?:[\w.-]+\\)+[\w.-]*)/g, "[PATH]"],
+			// Long hex strings (32+ chars, likely tokens/hashes)
+			[/\b[0-9a-f]{32,}\b/gi, "[REDACTED]"],
+			// API keys (common patterns)
+			[/\b(?:api[_-]?key|token|secret|password|auth)[=:]\s*["']?[\w-]{8,}["']?/gi, "[REDACTED]"],
+			// Bearer tokens
+			[/\bBearer\s+[\w.-]+/gi, "[REDACTED]"],
+			// UUID-like strings
+			[/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi, "[ID]"],
+			// Email addresses
+			[/\b[\w.+-]+@[\w.-]+\.\w{2,}\b/gi, "[EMAIL]"],
+			// IP addresses
+			[/\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?\b/g, "[IP]"],
+		];
+
+		for (const [pattern, replacement] of scrubPatterns) {
+			sanitized = sanitized.replace(pattern, replacement);
+		}
+
+		// Collapse multiple whitespace and trim
+		sanitized = sanitized.replace(/\s+/g, " ").trim();
+
+		// If message is now too short after scrubbing, use default
+		if (sanitized.length < 5) {
+			return DEFAULT_ERROR_MESSAGE;
+		}
+
+		// Truncate if too long
+		if (sanitized.length > MAX_MESSAGE_LENGTH) {
+			sanitized = `${sanitized.slice(0, MAX_MESSAGE_LENGTH - 3)}...`;
+		}
+
+		return sanitized;
+	} catch {
+		return DEFAULT_ERROR_MESSAGE;
+	}
+}
 
 interface Props {
 	children: ReactNode;
@@ -70,7 +142,7 @@ export class ErrorBoundary extends Component<Props, State> {
 						<div className="space-y-2">
 							<p className="font-semibold">Something went wrong</p>
 							<p className="text-sm text-muted-foreground">
-								{this.state.error?.message || "An unexpected error occurred"}
+								{sanitizeErrorMessage(this.state.error?.message)}
 							</p>
 							{canRetry ? (
 								<div className="space-y-1">
@@ -78,6 +150,7 @@ export class ErrorBoundary extends Component<Props, State> {
 										type="button"
 										onClick={this.handleRetry}
 										className="text-sm underline hover:no-underline"
+										aria-label="Try again"
 									>
 										Try again
 									</button>
@@ -87,13 +160,12 @@ export class ErrorBoundary extends Component<Props, State> {
 								</div>
 							) : (
 								<div className="space-y-1">
-									<p className="text-xs text-muted-foreground">
-										Maximum retry attempts reached.
-									</p>
+									<p className="text-xs text-muted-foreground">Maximum retry attempts reached.</p>
 									<button
 										type="button"
 										onClick={this.handleReload}
 										className="text-sm underline hover:no-underline"
+										aria-label="Reload the page"
 									>
 										Reload page
 									</button>

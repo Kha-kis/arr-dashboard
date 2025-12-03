@@ -14,7 +14,42 @@ import type {
 	TrashQualityProfile,
 	TrashCFDescription,
 } from "@arr/shared";
+import DOMPurify from "isomorphic-dompurify";
 import { marked } from "marked";
+
+// ============================================================================
+// HTML Sanitization Configuration
+// ============================================================================
+
+/**
+ * Sanitization config for HTML generated from TRaSH Guide markdown.
+ * Uses allowlist approach to prevent XSS attacks while preserving
+ * necessary formatting for guide descriptions.
+ */
+const DOMPURIFY_CONFIG = {
+	ALLOWED_TAGS: [
+		"p", "br", "b", "i", "strong", "em", "a", "ul", "ol", "li",
+		"code", "pre", "blockquote", "h1", "h2", "h3", "h4", "h5", "h6",
+		"span", "div", "table", "thead", "tbody", "tr", "th", "td",
+	],
+	ALLOWED_ATTR: [
+		"href", "target", "rel", "class", "id", "title",
+	],
+};
+
+/**
+ * Sanitize HTML content to prevent XSS attacks.
+ * Should be called immediately after marked.parse() output.
+ */
+function sanitizeHtml(html: string): string {
+	// Add noopener noreferrer to all links with target="_blank"
+	const sanitized = DOMPurify.sanitize(html, DOMPURIFY_CONFIG);
+	// DOMPurify handles most security concerns; add rel attributes for external links
+	return sanitized.replace(
+		/<a([^>]*?)target="_blank"([^>]*?)>/gi,
+		'<a$1target="_blank" rel="noopener noreferrer"$2>'
+	);
+}
 
 // ============================================================================
 // Constants
@@ -73,7 +108,7 @@ function buildHeaders(githubToken?: string, isGitHubApi = false): Record<string,
 
 	// Add authentication for GitHub API requests if token is provided
 	if (githubToken && isGitHubApi) {
-		headers["Authorization"] = `Bearer ${githubToken}`;
+		headers.Authorization = `Bearer ${githubToken}`;
 		headers["X-GitHub-Api-Version"] = "2022-11-28";
 	}
 
@@ -140,9 +175,7 @@ async function fetchWithRetry(url: string, options: FetchOptions = {}): Promise<
 
 				if (!githubToken) {
 					console.warn(
-						`GitHub rate limit hit (unauthenticated: 60 req/hour). ` +
-						`Consider setting GITHUB_TOKEN for 5,000 req/hour. ` +
-						`Retrying after ${waitTime}ms`
+						`GitHub rate limit hit (unauthenticated: 60 req/hour). Consider setting GITHUB_TOKEN for 5,000 req/hour. Retrying after ${waitTime}ms`
 					);
 				} else {
 					console.warn(
@@ -417,12 +450,13 @@ export class TrashGitHubFetcher {
 				.replace(/\{:.*?\}/g, "") // Remove any other Kramdown inline attributes
 				.trim();
 
-			// Convert markdown to HTML using marked
-			const description = await marked.parse(cleanedMarkdown, {
+			// Convert markdown to HTML using marked, then sanitize to prevent XSS
+			const rawHtml = await marked.parse(cleanedMarkdown, {
 				async: true,
 				breaks: true, // Convert line breaks to <br>
 				gfm: true, // Enable GitHub Flavored Markdown
 			});
+			const description = sanitizeHtml(rawHtml);
 
 			return {
 				cfName,

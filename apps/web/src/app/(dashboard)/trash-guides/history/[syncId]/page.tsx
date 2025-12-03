@@ -38,10 +38,16 @@ export default function SyncDetailPage() {
 	const [showRollbackConfirm, setShowRollbackConfirm] = useState(false);
 
 	const handleRollback = async () => {
+		if (!sync?.instanceId) {
+			setShowRollbackConfirm(false);
+			toast.error("Cannot rollback: sync data is unavailable");
+			return;
+		}
+
 		try {
 			await rollbackMutation.mutateAsync({
 				syncId,
-				instanceId: sync?.instanceId,
+				instanceId: sync.instanceId,
 			});
 			setShowRollbackConfirm(false);
 			toast.success("Rollback completed successfully");

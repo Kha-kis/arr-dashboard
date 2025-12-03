@@ -89,16 +89,21 @@ function transformLanguageProfiles(raw: unknown): Array<{ id: number; name: stri
  * - POST /discover/test-options - Get configuration options without saved instance
  */
 export const registerOptionsRoutes: FastifyPluginCallback = (app, _opts, done) => {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
 	/**
 	 * GET /discover/options
 	 * Fetches quality profiles, root folders, and language profiles for an instance
 	 */
 	app.get("/discover/options", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-			return reply.send();
-		}
-
 		const parsed = discoverInstanceOptionsRequestSchema.parse(request.query ?? {});
 		const instance = await app.prisma.serviceInstance.findFirst({
 			where: {
@@ -166,11 +171,6 @@ export const registerOptionsRoutes: FastifyPluginCallback = (app, _opts, done) =
 	 * Used during service setup before instance is saved to database
 	 */
 	app.post("/discover/test-options", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-			return reply.send();
-		}
-
 		const parsed = discoverTestOptionsRequestSchema.parse(request.body ?? {});
 		const service = parsed.service.toLowerCase() as "sonarr" | "radarr";
 

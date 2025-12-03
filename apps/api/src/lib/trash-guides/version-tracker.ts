@@ -127,8 +127,7 @@ async function fetchWithRetry(url: string, options: FetchOptions = {}, headers?:
 			}
 
 			if (attempt < retries) {
-				await delay(retryDelay * attempt); // Exponential backoff
-				continue;
+				await delay(retryDelay * 2 ** (attempt - 1)); // Exponential backoff (1x, 2x, 4x...)
 			}
 		}
 	}

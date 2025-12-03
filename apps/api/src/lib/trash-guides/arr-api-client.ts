@@ -18,6 +18,7 @@ export interface ArrInstance {
 export interface CustomFormat {
 	id?: number;
 	name: string;
+	trash_id?: string;
 	includeCustomFormatWhenRenaming?: boolean;
 	specifications: CustomFormatSpecification[];
 }
@@ -61,24 +62,34 @@ export interface ApiError {
 	response?: unknown;
 }
 
+export interface QualityDefinition {
+	id: number;
+	name: string;
+	source?: string; // Optional - may not be present in all contexts
+	resolution?: number; // Optional - may not be present in all contexts
+}
+
 export interface QualityProfile {
 	id: number;
 	name: string;
 	upgradeAllowed: boolean;
 	cutoff: number;
+	cutoffQuality?: QualityDefinition;
 	items: QualityProfileItem[];
 	minFormatScore: number;
 	cutoffFormatScore: number;
+	minUpgradeFormatScore?: number;
 	formatItems: FormatItem[];
-	language?: unknown;
+	language?: { id: number; name: string };
+	languages?: Array<{ id: number; name: string; allowed: boolean }>;
 }
 
 export interface QualityProfileItem {
 	id?: number;
 	name?: string;
-	quality?: unknown;
-	items?: QualityProfileItem[];
-	allowed?: boolean;
+	quality?: QualityDefinition;
+	items?: Array<QualityDefinition & { allowed: boolean }>;
+	allowed: boolean;
 }
 
 export interface FormatItem {

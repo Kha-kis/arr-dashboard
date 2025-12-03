@@ -4,7 +4,7 @@
  * Routes for managing custom format scores across multiple templates
  */
 
-import { FastifyPluginCallback } from "fastify";
+import type { FastifyPluginCallback } from "fastify";
 import { createBulkScoreManager } from "../../lib/trash-guides/bulk-score-manager.js";
 import type {
 	BulkScoreFilters,
@@ -19,20 +19,22 @@ import type {
 // ============================================================================
 
 const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
 	/**
 	 * GET /api/trash-guides/bulk-scores
 	 * Get all custom format scores with filtering
 	 */
 	app.get("/", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				statusCode: 401,
-				error: "Unauthorized",
-				message: "Authentication required",
-			});
-		}
-
-		const userId = request.currentUser.id;
+		const userId = request.currentUser?.id;
 		const query = request.query as any;
 
 		// Build filters from query parameters
@@ -69,15 +71,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Update scores for multiple CFs across templates
 	 */
 	app.post("/update", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				statusCode: 401,
-				error: "Unauthorized",
-				message: "Authentication required",
-			});
-		}
-
-		const userId = request.currentUser.id;
+		const userId = request.currentUser?.id;
 		const update = request.body as BulkScoreUpdate;
 
 		try {
@@ -101,15 +95,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Copy scores from one template to others
 	 */
 	app.post("/copy", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				statusCode: 401,
-				error: "Unauthorized",
-				message: "Authentication required",
-			});
-		}
-
-		const userId = request.currentUser.id;
+		const userId = request.currentUser?.id;
 		const copy = request.body as BulkScoreCopy;
 
 		try {
@@ -133,15 +119,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Reset scores to TRaSH Guides defaults
 	 */
 	app.post("/reset", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				statusCode: 401,
-				error: "Unauthorized",
-				message: "Authentication required",
-			});
-		}
-
-		const userId = request.currentUser.id;
+		const userId = request.currentUser?.id;
 		const reset = request.body as BulkScoreReset;
 
 		try {
@@ -165,15 +143,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Export scores to JSON
 	 */
 	app.post("/export", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				statusCode: 401,
-				error: "Unauthorized",
-				message: "Authentication required",
-			});
-		}
-
-		const userId = request.currentUser.id;
+		const userId = request.currentUser?.id;
 		const { templateIds, serviceType } = request.body as {
 			templateIds: string[];
 			serviceType?: "RADARR" | "SONARR";
@@ -205,15 +175,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Import scores from JSON
 	 */
 	app.post("/import", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				statusCode: 401,
-				error: "Unauthorized",
-				message: "Authentication required",
-			});
-		}
-
-		const userId = request.currentUser.id;
+		const userId = request.currentUser?.id;
 		const importData = request.body as BulkScoreImport;
 
 		try {

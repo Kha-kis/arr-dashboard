@@ -301,6 +301,49 @@ export async function importQualityProfile(
 }
 
 /**
+ * Cloned Profile Template Creation Types and Functions
+ */
+
+export type CreateClonedTemplatePayload = {
+	serviceType: "RADARR" | "SONARR";
+	trashId: string;
+	templateName: string;
+	templateDescription?: string;
+	customFormatSelections: Record<string, {
+		selected: boolean;
+		scoreOverride?: number;
+		conditionsEnabled: Record<string, boolean>;
+	}>;
+	sourceInstanceId: string;
+	sourceProfileId: number;
+	sourceProfileName: string;
+	sourceInstanceLabel: string;
+	profileConfig: {
+		upgradeAllowed: boolean;
+		cutoff: number;
+		minFormatScore: number;
+		cutoffFormatScore?: number;
+		items?: unknown[];
+		language?: unknown;
+	};
+};
+
+/**
+ * Create template from cloned profile (instance-based, not TRaSH cache)
+ */
+export async function createClonedProfileTemplate(
+	payload: CreateClonedTemplatePayload,
+): Promise<ImportQualityProfileResponse> {
+	return await apiRequest<ImportQualityProfileResponse>(
+		"/api/trash-guides/profile-clone/create-template",
+		{
+			method: "POST",
+			json: payload,
+		},
+	);
+}
+
+/**
  * Update quality profile template
  */
 export async function updateQualityProfileTemplate(
@@ -312,6 +355,128 @@ export async function updateQualityProfileTemplate(
 		{
 			method: "PUT",
 			json: restPayload,
+		},
+	);
+}
+
+// ============================================================================
+// CF Validation Types & Functions (Clone from Instance)
+// ============================================================================
+
+export type MatchConfidence = "exact" | "name_only" | "specs_similar" | "no_match";
+
+export type CFMatchDetails = {
+	nameMatch: boolean;
+	specsMatch: boolean;
+	specsDiffer?: string[];
+};
+
+export type CFMatchResult = {
+	instanceCF: {
+		id: number;
+		name: string;
+		trash_id?: string;
+		score?: number;
+	};
+	trashCF: {
+		trash_id: string;
+		name: string;
+		score?: number;
+	} | null;
+	confidence: MatchConfidence;
+	matchDetails: CFMatchDetails;
+	recommendedScore?: number;
+	scoreSet?: string;
+};
+
+export type CFValidationSummary = {
+	total: number;
+	exactMatches: number;
+	nameMatches: number;
+	specsSimilar: number;
+	noMatch: number;
+};
+
+export type CFValidationResponse = {
+	success: boolean;
+	profileName: string;
+	summary: CFValidationSummary;
+	results: CFMatchResult[];
+};
+
+export type ValidateCFsPayload = {
+	instanceId: string;
+	profileId: number;
+	serviceType: "RADARR" | "SONARR";
+};
+
+/**
+ * Validate instance Custom Formats against TRaSH cache
+ * Used when cloning a profile from an instance to identify which CFs match TRaSH Guides
+ */
+export async function validateClonedCFs(
+	payload: ValidateCFsPayload,
+): Promise<CFValidationResponse> {
+	return await apiRequest<CFValidationResponse>(
+		"/api/trash-guides/profile-clone/validate-cfs",
+		{
+			method: "POST",
+			json: payload,
+		},
+	);
+}
+
+// ============================================================================
+// Profile Name Matching Types & Functions (Recommendations)
+// ============================================================================
+
+export type RecommendedCF = {
+	trash_id: string;
+	name: string;
+	score: number;
+	source: "profile" | "group";
+	groupName?: string;
+	required: boolean;
+};
+
+export type ProfileMatchResult = {
+	success: boolean;
+	matched: boolean;
+	matchType?: "exact" | "fuzzy" | "partial";
+	reason?: string;
+	availableProfiles?: string[];
+	matchedProfile?: {
+		trash_id: string;
+		name: string;
+		description?: string;
+		scoreSet?: string;
+	};
+	recommendations?: {
+		total: number;
+		mandatory: number;
+		fromGroups: number;
+		customFormats: RecommendedCF[];
+		recommendedTrashIds: string[];
+	};
+};
+
+export type MatchProfilePayload = {
+	profileName: string;
+	serviceType: "RADARR" | "SONARR";
+};
+
+/**
+ * Match instance profile name to TRaSH Guides quality profiles
+ * Returns CF recommendations based on the matched profile
+ */
+export async function matchProfileToTrash(
+	payload: MatchProfilePayload,
+): Promise<ProfileMatchResult> {
+	return await apiRequest<ProfileMatchResult>(
+		"/api/trash-guides/profile-clone/match-profile",
+		{
+			method: "POST",
+			json: payload,
 		},
 	);
 }

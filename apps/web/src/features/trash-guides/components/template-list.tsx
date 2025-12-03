@@ -21,6 +21,7 @@ import { DeploymentPreviewModal } from "./deployment-preview-modal";
 import { BulkDeploymentModal } from "./bulk-deployment-modal";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { EnhancedTemplateExportModal } from "./enhanced-template-export-modal";
 import { EnhancedTemplateImportModal } from "./enhanced-template-import-modal";
 
@@ -109,13 +110,14 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 			setDeleteConfirm(null);
 		} catch (error) {
 			console.error("Delete failed:", error);
-			alert("Failed to delete template");
+			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+			toast.error("Failed to delete template", { description: errorMessage });
 		}
 	};
 
 	const handleDuplicate = async (templateId: string) => {
 		if (!duplicateName.trim()) {
-			alert("Please enter a name for the duplicate");
+			toast.error("Please enter a name for the duplicate");
 			return;
 		}
 
@@ -128,7 +130,8 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 			setDuplicateName("");
 		} catch (error) {
 			console.error("Duplicate failed:", error);
-			alert("Failed to duplicate template");
+			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+			toast.error("Failed to duplicate template", { description: errorMessage });
 		}
 	};
 
@@ -152,7 +155,8 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 			});
 		} catch (error) {
 			console.error("Sync execution failed:", error);
-			alert("Failed to start sync operation");
+			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+			toast.error("Failed to start sync operation", { description: errorMessage });
 		}
 	};
 
@@ -176,7 +180,8 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 			setUnlinkConfirm(null);
 		} catch (error) {
 			console.error("Unlink failed:", error);
-			alert("Failed to unlink template from instance");
+			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+			toast.error("Failed to unlink template from instance", { description: errorMessage });
 		} finally {
 			setUnlinking(false);
 		}
@@ -333,7 +338,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 					{templates.map((template) => (
 						<article
 							key={template.id}
-							className="group relative rounded-xl border border-border bg-bg-subtle/50 p-6 transition hover:border-border/80 hover:bg-bg-hover"
+							className="group relative flex flex-col rounded-xl border border-border bg-bg-subtle/50 p-6 transition hover:border-border/80 hover:bg-bg-hover"
 						>
 							{/* Delete Confirmation Overlay */}
 							{deleteConfirm === template.id && (
@@ -397,138 +402,144 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 							)}
 
 							{/* Template Card Content */}
-							<div className="space-y-3">
-								<div className="flex items-start justify-between">
-									<div>
-										<h3 className="font-medium text-fg">{template.name}</h3>
-										<p className="mt-1 text-xs text-fg-muted">{template.serviceType}</p>
-									</div>
-									<span className="text-xs text-fg-muted">
-										v{template.updatedAt ? new Date(template.updatedAt).toLocaleDateString() : ""}
-									</span>
-								</div>
-
-								{template.description && (
-									<p className="text-sm text-fg-muted line-clamp-2">{template.description}</p>
-								)}
-
-								<div className="space-y-2">
-									<div className="flex items-center gap-2 text-xs text-fg-muted">
-										<span>{template.config.customFormats.length} formats</span>
-										<span>•</span>
-										<span>{template.config.customFormatGroups.length} groups</span>
-									</div>
-									{template.config.qualityProfile && (
-										<div className="flex flex-wrap gap-1.5">
-											{template.config.qualityProfile.language && (
-												<span className="inline-flex items-center gap-1 rounded bg-blue-500/20 px-1.5 py-0.5 text-xs font-medium text-blue-300">
-													🌐 {template.config.qualityProfile.language}
-												</span>
-											)}
-											{template.config.qualityProfile.trash_score_set && (
-												<span className="inline-flex items-center gap-1 rounded bg-purple-500/20 px-1.5 py-0.5 text-xs font-medium text-purple-300">
-													📊 {template.config.qualityProfile.trash_score_set}
-												</span>
-											)}
-											{template.config.qualityProfile.cutoff && (
-												<span className="inline-flex items-center gap-1 rounded bg-green-500/20 px-1.5 py-0.5 text-xs font-medium text-green-300">
-													🎬 {template.config.qualityProfile.cutoff}
-												</span>
-											)}
+							<div className="flex flex-1 flex-col">
+								{/* Variable height content section */}
+								<div className="space-y-3">
+									<div className="flex items-start justify-between">
+										<div>
+											<h3 className="font-medium text-fg">{template.name}</h3>
+											<p className="mt-1 text-xs text-fg-muted">{template.serviceType}</p>
 										</div>
+										<span className="text-xs text-fg-muted">
+											v{template.updatedAt ? new Date(template.updatedAt).toLocaleDateString() : ""}
+										</span>
+									</div>
+
+									{template.description && (
+										<p className="text-sm text-fg-muted line-clamp-2">{template.description}</p>
+									)}
+
+									<div className="space-y-2">
+										<div className="flex items-center gap-2 text-xs text-fg-muted">
+											<span>{template.config.customFormats.length} formats</span>
+											<span>•</span>
+											<span>{template.config.customFormatGroups.length} groups</span>
+										</div>
+										{template.config.qualityProfile && (
+											<div className="flex flex-wrap gap-1.5">
+												{template.config.qualityProfile.language && (
+													<span className="inline-flex items-center gap-1 rounded bg-blue-500/20 px-1.5 py-0.5 text-xs font-medium text-blue-300">
+														🌐 {template.config.qualityProfile.language}
+													</span>
+												)}
+												{template.config.qualityProfile.trash_score_set && (
+													<span className="inline-flex items-center gap-1 rounded bg-purple-500/20 px-1.5 py-0.5 text-xs font-medium text-purple-300">
+														📊 {template.config.qualityProfile.trash_score_set}
+													</span>
+												)}
+												{template.config.qualityProfile.cutoff && (
+													<span className="inline-flex items-center gap-1 rounded bg-green-500/20 px-1.5 py-0.5 text-xs font-medium text-green-300">
+														🎬 {template.config.qualityProfile.cutoff}
+													</span>
+												)}
+											</div>
+										)}
+									</div>
+
+									{/* Update Notification Banner */}
+									{updatesData?.data.templatesWithUpdates.find((u) => u.templateId === template.id) && (
+										<TemplateUpdateBanner
+											update={updatesData.data.templatesWithUpdates.find((u) => u.templateId === template.id)!}
+											onSyncSuccess={() => {
+												// Refetch templates and updates after successful sync
+												queryClient.invalidateQueries({ queryKey: ["trash-guides", "templates"] });
+												queryClient.invalidateQueries({ queryKey: ["trash-guides", "updates"] });
+											}}
+										/>
 									)}
 								</div>
 
-								{/* Update Notification Banner */}
-								{updatesData?.data.templatesWithUpdates.find((u) => u.templateId === template.id) && (
-									<TemplateUpdateBanner
-										update={updatesData.data.templatesWithUpdates.find((u) => u.templateId === template.id)!}
-										onSyncSuccess={() => {
-											// Refetch templates and updates after successful sync
-											queryClient.invalidateQueries({ queryKey: ["trash-guides", "templates"] });
-											queryClient.invalidateQueries({ queryKey: ["trash-guides", "updates"] });
+								{/* Fixed bottom section - always aligned across cards */}
+								<div className="mt-auto space-y-3 pt-3">
+									{/* Template Stats */}
+									<TemplateStats
+										templateId={template.id}
+										templateName={template.name}
+										onDeploy={(instanceId, instanceLabel) => {
+											setDeploymentModal({
+												templateId: template.id,
+												templateName: template.name,
+												instanceId,
+												instanceLabel,
+											});
+										}}
+										onUnlinkInstance={(instanceId, instanceName) => {
+											setUnlinkConfirm({
+												templateId: template.id,
+												templateName: template.name,
+												instanceId,
+												instanceName,
+											});
 										}}
 									/>
-								)}
 
-								{/* Template Stats */}
-								<TemplateStats
-									templateId={template.id}
-									templateName={template.name}
-									onDeploy={(instanceId, instanceLabel) => {
-										setDeploymentModal({
+									{/* Primary Deploy Button */}
+									<Button
+										variant="primary"
+										onClick={() => setInstanceSelectorTemplate({
 											templateId: template.id,
 											templateName: template.name,
-											instanceId,
-											instanceLabel,
-										});
-									}}
-									onUnlinkInstance={(instanceId, instanceName) => {
-										setUnlinkConfirm({
-											templateId: template.id,
-											templateName: template.name,
-											instanceId,
-											instanceName,
-										});
-									}}
-								/>
+											serviceType: template.serviceType
+										})}
+										className="w-full gap-2"
+										title="Deploy this template to an instance"
+									>
+										<Rocket className="h-4 w-4" />
+										Deploy to Instance
+									</Button>
 
-								{/* Primary Deploy Button */}
-								<Button
-									variant="primary"
-									onClick={() => setInstanceSelectorTemplate({
-										templateId: template.id,
-										templateName: template.name,
-										serviceType: template.serviceType
-									})}
-									className="w-full gap-2"
-									title="Deploy this template to an instance"
-								>
-									<Rocket className="h-4 w-4" />
-									Deploy to Instance
-								</Button>
-
-								{/* Action Buttons */}
-								<div className="flex gap-2 pt-2">
-									<Button
-										variant="secondary"
-										size="sm"
-										onClick={() => onEdit(template)}
-										className="flex-1"
-										title="Edit template"
-									>
-										<Edit className="mx-auto h-4 w-4" />
-									</Button>
-									<Button
-										variant="secondary"
-										size="sm"
-										onClick={() => {
-											setDuplicatingId(template.id);
-											setDuplicateName(`${template.name} Copy`);
-										}}
-										className="flex-1"
-										title="Duplicate template"
-									>
-										<Copy className="mx-auto h-4 w-4" />
-									</Button>
-									<Button
-										variant="secondary"
-										size="sm"
-										onClick={() => setExportModal({ templateId: template.id, templateName: template.name })}
-										className="flex-1"
-										title="Export template with metadata"
-									>
-										<Download className="mx-auto h-4 w-4" />
-									</Button>
-									<Button
-										variant="danger"
-										size="sm"
-										onClick={() => setDeleteConfirm(template.id)}
-										className="flex-1"
-										title="Delete template"
-									>
-										<Trash2 className="mx-auto h-4 w-4" />
-									</Button>
+									{/* Action Buttons */}
+									<div className="flex gap-2">
+										<Button
+											variant="secondary"
+											size="sm"
+											onClick={() => onEdit(template)}
+											className="flex-1"
+											title="Edit template"
+										>
+											<Edit className="mx-auto h-4 w-4" />
+										</Button>
+										<Button
+											variant="secondary"
+											size="sm"
+											onClick={() => {
+												setDuplicatingId(template.id);
+												setDuplicateName(`${template.name} Copy`);
+											}}
+											className="flex-1"
+											title="Duplicate template"
+										>
+											<Copy className="mx-auto h-4 w-4" />
+										</Button>
+										<Button
+											variant="secondary"
+											size="sm"
+											onClick={() => setExportModal({ templateId: template.id, templateName: template.name })}
+											className="flex-1"
+											title="Export template with metadata"
+										>
+											<Download className="mx-auto h-4 w-4" />
+										</Button>
+										<Button
+											variant="danger"
+											size="sm"
+											onClick={() => setDeleteConfirm(template.id)}
+											className="flex-1"
+											title="Delete template"
+										>
+											<Trash2 className="mx-auto h-4 w-4" />
+										</Button>
+									</div>
 								</div>
 							</div>
 						</article>

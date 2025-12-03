@@ -21,12 +21,17 @@ const manualImportQuerySchema = manualImportFetchQuerySchema.extend({
 });
 
 const manualImportRoute: FastifyPluginCallback = (app, _opts, done) => {
-	app.get("/manual-import", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-			return { candidates: [] as ManualImportCandidate[] };
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
 		}
+	});
 
+	app.get("/manual-import", async (request, reply) => {
 		const query = manualImportQuerySchema.parse(request.query ?? {});
 
 		if (!query.downloadId && !query.folder) {
@@ -74,11 +79,6 @@ const manualImportRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.post("/manual-import", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-			return { success: false };
-		}
-
 		const body = manualImportSubmissionSchema.parse(request.body ?? {}) as ManualImportSubmission;
 
 		const instance = await app.prisma.serviceInstance.findFirst({

@@ -33,11 +33,14 @@ export const QualityProfileSelection = ({
 			(item) => item.id !== undefined && item.id < 0
 		).length;
 
+		// Use friendly instance label if available, fall back to instance ID
+		const instanceDisplayName = importedProfile.sourceInstanceLabel || importedProfile.sourceInstanceId;
+
 		// Convert CompleteQualityProfile to QualityProfileSummary format for wizard
 		const profileSummary: QualityProfileSummary = {
 			trashId: `cloned-${importedProfile.sourceInstanceId}-${importedProfile.sourceProfileId}-${uniqueSuffix}`,
 			name: importedProfile.sourceProfileName,
-			description: `Cloned from instance ${importedProfile.sourceInstanceId}`,
+			description: `Cloned from ${instanceDisplayName}`,
 			scoreSet: undefined,
 			customFormatCount,
 			qualityCount: importedProfile.items.length,
@@ -101,6 +104,7 @@ export const QualityProfileSelection = ({
 				</div>
 
 				<QualityProfileImporter
+					serviceType={serviceType}
 					onImportComplete={handleProfileImported}
 					onClose={() => setShowCloneImporter(false)}
 				/>

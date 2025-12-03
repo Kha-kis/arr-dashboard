@@ -8,6 +8,31 @@
 import type { PrismaClient } from "@prisma/client";
 import type { Encryptor } from "../auth/encryption.js";
 import type { CompleteQualityProfile } from "@arr/shared";
+import { ArrApiClient, type ApiError, type QualityProfile, type QualityProfileItem } from "./arr-api-client.js";
+
+/**
+ * Recursively find quality by ID in quality profile items
+ * Quality profiles have nested structure where groups contain items
+ */
+function findQualityById(items: QualityProfileItem[], targetId: number): { id: number; name: string } | undefined {
+	for (const item of items) {
+		// Check if this item's quality matches
+		if (item.quality?.id === targetId) {
+			return { id: item.quality.id, name: item.quality.name };
+		}
+		// Check if this item has an id that matches (for groups)
+		if (item.id === targetId && item.name) {
+			return { id: item.id, name: item.name };
+		}
+		// Recursively check nested items (quality groups)
+		if (item.items && Array.isArray(item.items)) {
+			// Cast to QualityProfileItem[] for recursive call
+			const found = findQualityById(item.items as unknown as QualityProfileItem[], targetId);
+			if (found) return found;
+		}
+	}
+	return undefined;
+}
 
 interface QualityProfileImportOptions {
 	instanceId: string;
@@ -28,6 +53,46 @@ export class ProfileCloner {
 	) {}
 
 	/**
+	 * Helper to create an ArrApiClient for an instance
+	 * Validates that the instance belongs to the specified user
+	 */
+	private async getClientForInstance(
+		instanceId: string,
+		userId: string,
+	): Promise<{ client: ArrApiClient; instanceLabel: string } | { error: string }> {
+		if (!userId) {
+			return { error: "User ID is required" };
+		}
+
+		const instance = await this.prisma.serviceInstance.findFirst({
+			where: { id: instanceId, userId },
+		});
+
+		if (!instance) {
+			return { error: "Instance not found" };
+		}
+
+		const apiKey = this.encryptor.decrypt({
+			value: instance.encryptedApiKey,
+			iv: instance.encryptionIv,
+		});
+		const baseUrl = instance.baseUrl?.replace(/\/$/, "") || "";
+
+		if (!baseUrl || !apiKey) {
+			return { error: "Instance credentials incomplete" };
+		}
+
+		const client = new ArrApiClient({
+			id: instance.id,
+			baseUrl,
+			apiKey,
+			service: instance.service as "RADARR" | "SONARR",
+		});
+
+		return { client, instanceLabel: instance.label };
+	}
+
+	/**
 	 * Fetch complete quality profile data from *arr instance
 	 */
 	async importQualityProfile(
@@ -36,80 +101,32 @@ export class ProfileCloner {
 		try {
 			const { instanceId, profileId, userId } = options;
 
-			// Get instance configuration
-			const instance = await this.prisma.serviceInstance.findFirst({
-				where: {
-					id: instanceId,
-				},
-			});
-
-			if (!instance) {
-				return {
-					success: false,
-					error: "Instance not found",
-				};
+			// Get ArrApiClient for instance (validates user ownership)
+			const clientResult = await this.getClientForInstance(instanceId, userId);
+			if ("error" in clientResult) {
+				return { success: false, error: clientResult.error };
 			}
 
-			// Decrypt API key
-			const apiKey = this.encryptor.decrypt({
-				value: instance.encryptedApiKey,
-				iv: instance.encryptionIv,
-			});
-			const baseUrl = instance.baseUrl?.replace(/\/$/, "") || "";
+			// Fetch quality profile using ArrApiClient
+			const profileData = await clientResult.client.getQualityProfile(profileId);
 
-			if (!baseUrl || !apiKey) {
-				return {
-					success: false,
-					error: "Instance credentials incomplete",
-				};
+			// Resolve cutoff quality name from items if not directly available
+			let cutoffQuality = profileData.cutoffQuality;
+			if (!cutoffQuality && profileData.cutoff && profileData.items) {
+				cutoffQuality = findQualityById(profileData.items, profileData.cutoff);
 			}
-
-			// Fetch quality profile from *arr API
-			const profileUrl = `${baseUrl}/api/v3/qualityprofile/${profileId}`;
-			const controller1 = new AbortController();
-			const timeoutId1 = setTimeout(() => controller1.abort(), 30000);
-
-			let response: Response;
-			try {
-				response = await fetch(profileUrl, {
-					headers: {
-						"X-Api-Key": apiKey,
-						Accept: "application/json",
-					},
-					signal: controller1.signal,
-				});
-			} catch (error) {
-				clearTimeout(timeoutId1);
-				if (error instanceof Error && error.name === "AbortError") {
-					return {
-						success: false,
-						error: "Request timed out while fetching quality profile",
-					};
-				}
-				throw error;
-			} finally {
-				clearTimeout(timeoutId1);
-			}
-
-			if (!response.ok) {
-				return {
-					success: false,
-					error: `Failed to fetch profile: ${response.statusText}`,
-				};
-			}
-
-			const profileData = await response.json();
 
 			// Transform to CompleteQualityProfile format
 			const completeProfile: CompleteQualityProfile = {
 				sourceInstanceId: instanceId,
+				sourceInstanceLabel: clientResult.instanceLabel,
 				sourceProfileId: profileData.id,
 				sourceProfileName: profileData.name,
 				importedAt: new Date().toISOString(),
 
 				upgradeAllowed: profileData.upgradeAllowed ?? true,
 				cutoff: profileData.cutoff,
-				cutoffQuality: profileData.cutoffQuality,
+				cutoffQuality,
 
 				items: profileData.items || [],
 
@@ -127,9 +144,10 @@ export class ProfileCloner {
 			};
 		} catch (error) {
 			console.error("Failed to import quality profile:", error);
+			const apiError = error as ApiError;
 			return {
 				success: false,
-				error: error instanceof Error ? error.message : "Unknown error",
+				error: apiError.message || (error instanceof Error ? error.message : "Unknown error"),
 			};
 		}
 	}
@@ -153,75 +171,21 @@ export class ProfileCloner {
 		error?: string;
 	}> {
 		try {
-			// Get instance configuration
-			const instance = await this.prisma.serviceInstance.findFirst({
-				where: {
-					id: instanceId,
-				},
-			});
-
-			if (!instance) {
-				return {
-					success: false,
-					error: "Instance not found",
-				};
+			// Get ArrApiClient for instance (validates user ownership)
+			const clientResult = await this.getClientForInstance(instanceId, userId);
+			if ("error" in clientResult) {
+				return { success: false, error: clientResult.error };
 			}
-
-			// Decrypt API key
-			const apiKey = this.encryptor.decrypt({
-				value: instance.encryptedApiKey,
-				iv: instance.encryptionIv,
-			});
-			const baseUrl = instance.baseUrl?.replace(/\/$/, "") || "";
-
-			if (!baseUrl || !apiKey) {
-				return {
-					success: false,
-					error: "Instance credentials incomplete",
-				};
-			}
+			const client = clientResult.client;
 
 			// Fetch custom formats from instance to map trash_ids to instance IDs
-			const cfsUrl = `${baseUrl}/api/v3/customformat`;
-			const cfsController = new AbortController();
-			const cfsTimeoutId = setTimeout(() => cfsController.abort(), 30000);
-
-			let cfsResponse: Response;
-			try {
-				cfsResponse = await fetch(cfsUrl, {
-					headers: {
-						"X-Api-Key": apiKey,
-						Accept: "application/json",
-					},
-					signal: cfsController.signal,
-				});
-			} catch (error) {
-				clearTimeout(cfsTimeoutId);
-				if (error instanceof Error && error.name === "AbortError") {
-					return {
-						success: false,
-						error: "Request timed out while fetching custom formats",
-					};
-				}
-				throw error;
-			} finally {
-				clearTimeout(cfsTimeoutId);
-			}
-
-			if (!cfsResponse.ok) {
-				return {
-					success: false,
-					error: "Failed to fetch custom formats from instance",
-				};
-			}
-
-			const instanceCFs = await cfsResponse.json();
+			const instanceCFs = await client.getCustomFormats();
 
 			// Map trash_ids to instance custom format IDs
 			// Prefer exact trash_id match, fall back to name match if trash_id is absent
 			const formatItems = customFormats
 				.map((cf) => {
-					const instanceCF = instanceCFs.find((icf: any) => {
+					const instanceCF = instanceCFs.find((icf) => {
 						// First try exact trash_id match if the instance CF has one
 						if (icf.trash_id) {
 							return icf.trash_id === cf.trash_id;
@@ -252,48 +216,17 @@ export class ProfileCloner {
 			};
 
 			// Create or update profile
-			const method = options.existingProfileId ? "PUT" : "POST";
-			const url = options.existingProfileId
-				? `${baseUrl}/api/v3/qualityprofile/${options.existingProfileId}`
-				: `${baseUrl}/api/v3/qualityprofile`;
-
-			const deployController = new AbortController();
-			const deployTimeoutId = setTimeout(() => deployController.abort(), 30000);
-
-			let deployResponse: Response;
-			try {
-				deployResponse = await fetch(url, {
-					method,
-					headers: {
-						"X-Api-Key": apiKey,
-						"Content-Type": "application/json",
-						Accept: "application/json",
-					},
-					body: JSON.stringify(profilePayload),
-					signal: deployController.signal,
-				});
-			} catch (error) {
-				clearTimeout(deployTimeoutId);
-				if (error instanceof Error && error.name === "AbortError") {
-					return {
-						success: false,
-						error: "Request timed out while deploying profile",
-					};
-				}
-				throw error;
-			} finally {
-				clearTimeout(deployTimeoutId);
+			let deployedProfile: QualityProfile;
+			if (options.existingProfileId) {
+				deployedProfile = await client.updateQualityProfile(
+					options.existingProfileId,
+					// biome-ignore lint/suspicious/noExplicitAny: ARR API accepts partial payload with id
+					{ id: options.existingProfileId, ...profilePayload } as any,
+				);
+			} else {
+				// biome-ignore lint/suspicious/noExplicitAny: ARR API accepts partial payload for creation
+				deployedProfile = await client.createQualityProfile(profilePayload as any);
 			}
-
-			if (!deployResponse.ok) {
-				const errorText = await deployResponse.text();
-				return {
-					success: false,
-					error: `Failed to deploy profile: ${deployResponse.statusText} - ${errorText}`,
-				};
-			}
-
-			const deployedProfile = await deployResponse.json();
 
 			return {
 				success: true,
@@ -301,9 +234,10 @@ export class ProfileCloner {
 			};
 		} catch (error) {
 			console.error("Failed to deploy complete profile:", error);
+			const apiError = error as ApiError;
 			return {
 				success: false,
-				error: error instanceof Error ? error.message : "Unknown error",
+				error: apiError.message || (error instanceof Error ? error.message : "Unknown error"),
 			};
 		}
 	}
@@ -340,64 +274,17 @@ export class ProfileCloner {
 		error?: string;
 	}> {
 		try {
-			// Get instance to fetch custom formats
-			const instance = await this.prisma.serviceInstance.findFirst({
-				where: {
-					id: instanceId,
-				},
-			});
-
-			if (!instance) {
-				return {
-					success: false,
-					error: "Instance not found",
-				};
+			// Get ArrApiClient for instance (validates user ownership)
+			const clientResult = await this.getClientForInstance(instanceId, userId);
+			if ("error" in clientResult) {
+				return { success: false, error: clientResult.error };
 			}
 
-			const apiKey = this.encryptor.decrypt({
-				value: instance.encryptedApiKey,
-				iv: instance.encryptionIv,
-			});
-			const baseUrl = instance.baseUrl?.replace(/\/$/, "") || "";
-
-			// Fetch custom formats
-			const cfsUrl = `${baseUrl}/api/v3/customformat`;
-			const previewController = new AbortController();
-			const previewTimeoutId = setTimeout(() => previewController.abort(), 30000);
-
-			let cfsResponse: Response;
-			try {
-				cfsResponse = await fetch(cfsUrl, {
-					headers: {
-						"X-Api-Key": apiKey,
-						Accept: "application/json",
-					},
-					signal: previewController.signal,
-				});
-			} catch (error) {
-				clearTimeout(previewTimeoutId);
-				if (error instanceof Error && error.name === "AbortError") {
-					return {
-						success: false,
-						error: "Request timed out while fetching custom formats",
-					};
-				}
-				throw error;
-			} finally {
-				clearTimeout(previewTimeoutId);
-			}
-
-			if (!cfsResponse.ok) {
-				return {
-					success: false,
-					error: "Failed to fetch custom formats",
-				};
-			}
-
-			const instanceCFs = await cfsResponse.json();
+			// Fetch custom formats using ArrApiClient
+			const instanceCFs = await clientResult.client.getCustomFormats();
 
 			// Match custom formats - prefer trash_id match, fall back to name match
-			const matchesCF = (icf: any, trashId: string) => {
+			const matchesCF = (icf: { trash_id?: string; name: string }, trashId: string) => {
 				if (icf.trash_id) {
 					return icf.trash_id === trashId;
 				}
@@ -405,12 +292,12 @@ export class ProfileCloner {
 			};
 
 			const matched = customFormats.filter((cf) =>
-				instanceCFs.some((icf: any) => matchesCF(icf, cf.trash_id)),
+				instanceCFs.some((icf) => matchesCF(icf, cf.trash_id)),
 			);
 
 			const unmatched = customFormats
 				.filter(
-					(cf) => !instanceCFs.some((icf: any) => matchesCF(icf, cf.trash_id)),
+					(cf) => !instanceCFs.some((icf) => matchesCF(icf, cf.trash_id)),
 				)
 				.map((cf) => cf.trash_id);
 
@@ -451,9 +338,10 @@ export class ProfileCloner {
 				},
 			};
 		} catch (error) {
+			const apiError = error as ApiError;
 			return {
 				success: false,
-				error: error instanceof Error ? error.message : "Unknown error",
+				error: apiError.message || (error instanceof Error ? error.message : "Unknown error"),
 			};
 		}
 	}

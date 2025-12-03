@@ -22,6 +22,37 @@ interface UseCFConfigurationOptions {
 	editingTemplate?: any;
 }
 
+/**
+ * Check if a trashId indicates a cloned profile from an instance
+ * Cloned profile trashIds have format: cloned-{instanceId}-{profileId}-{uuid}
+ */
+function isClonedProfile(trashId: string | undefined): boolean {
+	return !!trashId && trashId.startsWith("cloned-");
+}
+
+/**
+ * Parse cloned profile trashId to extract instanceId and profileId
+ */
+function parseClonedProfileId(trashId: string): { instanceId: string; profileId: string } | null {
+	if (!isClonedProfile(trashId)) return null;
+
+	// Format: cloned-{instanceId}-{profileId}-{uuid}
+	const parts = trashId.split("-");
+	if (parts.length < 4) return null;
+
+	// instanceId is the second part (could be a UUID with dashes)
+	// profileId is after instanceId, before the final uuid
+	// Example: cloned-cmgpfmpu90001og0k8e4zhji1-9-0343e401-360b-46cb-973d-cf61f1321f53
+	// instanceId = cmgpfmpu90001og0k8e4zhji1, profileId = 9
+
+	const instanceId = parts[1];
+	const profileId = parts[2];
+
+	if (!instanceId || !profileId) return null;
+
+	return { instanceId, profileId };
+}
+
 export function useCFConfiguration({
 	serviceType,
 	qualityProfile,
@@ -30,15 +61,21 @@ export function useCFConfiguration({
 }: UseCFConfigurationOptions) {
 	// In normal mode, we need a valid trashId to fetch profile data
 	const hasValidTrashId = !!qualityProfile.trashId;
+	const isCloned = isClonedProfile(qualityProfile.trashId);
 
 	return useQuery({
 		queryKey: isEditMode
 			? ["template-edit-data", editingTemplate?.id]
-			: ["quality-profile-details", serviceType, qualityProfile.trashId],
+			: isCloned
+				? ["cloned-profile-details", qualityProfile.trashId]
+				: ["quality-profile-details", serviceType, qualityProfile.trashId],
 		queryFn: async () => {
 			try {
 				if (isEditMode && editingTemplate) {
 					return await fetchEditModeData(serviceType, editingTemplate);
+				} else if (isCloned && qualityProfile.trashId) {
+					// Handle cloned profile - fetch from source instance
+					return await fetchClonedProfileData(qualityProfile.trashId);
 				} else {
 					// Guard: trashId must exist in normal mode
 					if (!qualityProfile.trashId) {
@@ -102,6 +139,80 @@ async function fetchEditModeData(serviceType: string, editingTemplate: any) {
 			optionalGroupCount: templateCFGroups.length,
 			totalOptionalCFs: availableFormats.length,
 		},
+	};
+}
+
+/**
+ * Fetch data for a cloned profile from the source instance
+ */
+async function fetchClonedProfileData(trashId: string) {
+	const parsedId = parseClonedProfileId(trashId);
+
+	if (!parsedId) {
+		throw new Error("Invalid cloned profile ID format");
+	}
+
+	const { instanceId, profileId } = parsedId;
+
+	// Fetch profile details from the source instance
+	const response = await apiRequest<any>(
+		`/api/trash-guides/profile-clone/profile-details/${instanceId}/${profileId}`
+	);
+
+	if (!response.success || !response.data) {
+		throw new Error(response.error || "Failed to fetch profile details from instance");
+	}
+
+	const { profile, customFormats, allCustomFormats } = response.data;
+
+	// Convert instance CFs to the format expected by the wizard
+	const mandatoryCFs = customFormats.map((cf: any) => ({
+		trash_id: cf.trash_id,
+		name: cf.name,
+		displayName: cf.name,
+		description: "",
+		score: cf.score,
+		defaultScore: cf.score,
+		source: "instance" as const,
+		locked: false,
+		specifications: cf.specifications,
+		originalConfig: {
+			name: cf.name,
+			specifications: cf.specifications,
+			includeCustomFormatWhenRenaming: cf.includeCustomFormatWhenRenaming,
+		},
+	}));
+
+	// All instance CFs as available formats
+	const availableFormats = allCustomFormats.map((cf: any) => ({
+		trash_id: cf.trash_id,
+		name: cf.name,
+		displayName: cf.name,
+		description: "",
+		score: 0, // Instance CFs don't have TRaSH scores by default
+		originalConfig: {
+			name: cf.name,
+			specifications: cf.specifications,
+			includeCustomFormatWhenRenaming: cf.includeCustomFormatWhenRenaming,
+		},
+	}));
+
+	return {
+		cfGroups: [], // Cloned profiles don't have CF groups
+		mandatoryCFs,
+		availableFormats,
+		profile: {
+			name: profile.name,
+			upgradeAllowed: profile.upgradeAllowed,
+			cutoff: profile.cutoff,
+			minFormatScore: profile.minFormatScore,
+		},
+		stats: {
+			mandatoryCount: customFormats.length,
+			optionalGroupCount: 0,
+			totalOptionalCFs: allCustomFormats.length,
+		},
+		isClonedProfile: true,
 	};
 }
 

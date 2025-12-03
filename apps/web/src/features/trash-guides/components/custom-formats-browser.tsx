@@ -310,7 +310,7 @@ export const CustomFormatsBrowser = () => {
 						return (
 						<Card
 							key={selectionKey}
-							className={`cursor-pointer transition ${
+							className={`flex flex-col cursor-pointer transition ${
 								selectedFormats.has(selectionKey)
 									? "ring-2 ring-primary bg-primary/10"
 									: "hover:border-white/20"
@@ -334,8 +334,9 @@ export const CustomFormatsBrowser = () => {
 									)}
 								</div>
 							</CardHeader>
-							<CardContent>
-								<div className="space-y-3">
+							<CardContent className="flex flex-1 flex-col">
+								{/* Variable height content */}
+								<div className="flex-1 space-y-3">
 									{/* Description */}
 									{(() => {
 										const description = getDescription(format);
@@ -357,7 +358,10 @@ export const CustomFormatsBrowser = () => {
 									<div className="flex items-center justify-between text-xs text-white/50">
 										<span>{format.specifications.length} conditions</span>
 									</div>
+								</div>
 
+								{/* Fixed bottom section */}
+								<div className="mt-auto pt-3">
 									{/* View Details Button */}
 									<Button
 										variant="secondary"

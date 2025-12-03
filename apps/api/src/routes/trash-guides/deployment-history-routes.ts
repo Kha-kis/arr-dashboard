@@ -5,16 +5,23 @@
  */
 
 import type { FastifyPluginAsync } from "fastify";
-import {
-	createArrApiClient,
-	type CustomFormat,
-} from "../../lib/trash-guides/arr-api-client.js";
+import { type CustomFormat, createArrApiClient } from "../../lib/trash-guides/arr-api-client.js";
 
 // ============================================================================
 // Route Handlers
 // ============================================================================
 
 export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
 	/**
 	 * GET /api/trash-guides/deployment/history
 	 * Get all deployment history (global view)
@@ -22,14 +29,6 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 	app.get<{
 		Querystring: { limit?: number; offset?: number };
 	}>("/history", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				statusCode: 401,
-				error: "Unauthorized",
-				message: "Authentication required",
-			});
-		}
-
 		try {
 			const limit = request.query.limit ? Number(request.query.limit) : 50;
 			const offset = request.query.offset ? Number(request.query.offset) : 0;
@@ -38,7 +37,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			const history = await app.prisma.templateDeploymentHistory.findMany({
 				where: {
 					template: {
-						userId: request.currentUser.id,
+						userId: request.currentUser?.id,
 					},
 				},
 				include: {
@@ -68,7 +67,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			const total = await app.prisma.templateDeploymentHistory.count({
 				where: {
 					template: {
-						userId: request.currentUser.id,
+						userId: request.currentUser?.id,
 					},
 				},
 			});
@@ -86,17 +85,11 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 				},
 			});
 		} catch (error) {
-			app.log.error(
-				{ err: error },
-				"Failed to retrieve global deployment history",
-			);
+			app.log.error({ err: error }, "Failed to retrieve global deployment history");
 			return reply.status(500).send({
 				statusCode: 500,
 				error: "InternalServerError",
-				message:
-					error instanceof Error
-						? error.message
-						: "Failed to retrieve deployment history",
+				message: error instanceof Error ? error.message : "Failed to retrieve deployment history",
 			});
 		}
 	});
@@ -109,14 +102,6 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 		Params: { templateId: string };
 		Querystring: { limit?: number; offset?: number };
 	}>("/history/template/:templateId", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				statusCode: 401,
-				error: "Unauthorized",
-				message: "Authentication required",
-			});
-		}
-
 		try {
 			const { templateId } = request.params;
 			const limit = request.query.limit ? Number(request.query.limit) : 50;
@@ -126,7 +111,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			const template = await app.prisma.trashTemplate.findFirst({
 				where: {
 					id: templateId,
-					userId: request.currentUser.id,
+					userId: request.currentUser?.id,
 				},
 			});
 
@@ -177,17 +162,11 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 				},
 			});
 		} catch (error) {
-			app.log.error(
-				{ err: error },
-				"Failed to retrieve deployment history for template",
-			);
+			app.log.error({ err: error }, "Failed to retrieve deployment history for template");
 			return reply.status(500).send({
 				statusCode: 500,
 				error: "InternalServerError",
-				message:
-					error instanceof Error
-						? error.message
-						: "Failed to retrieve deployment history",
+				message: error instanceof Error ? error.message : "Failed to retrieve deployment history",
 			});
 		}
 	});
@@ -200,23 +179,16 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 		Params: { instanceId: string };
 		Querystring: { limit?: number; offset?: number };
 	}>("/history/instance/:instanceId", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				statusCode: 401,
-				error: "Unauthorized",
-				message: "Authentication required",
-			});
-		}
-
 		try {
 			const { instanceId } = request.params;
 			const limit = request.query.limit ? Number(request.query.limit) : 50;
 			const offset = request.query.offset ? Number(request.query.offset) : 0;
 
-			// Verify instance exists and belongs to the user
+			// Verify instance exists and belongs to the user (combined check prevents info leakage)
 			const instance = await app.prisma.serviceInstance.findFirst({
 				where: {
 					id: instanceId,
+					userId: request.currentUser?.id,
 				},
 			});
 
@@ -225,15 +197,6 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 					statusCode: 404,
 					error: "NotFound",
 					message: "Instance not found",
-				});
-			}
-
-			// Verify user owns this instance
-			if (instance.userId !== request.currentUser.id) {
-				return reply.status(403).send({
-					statusCode: 403,
-					error: "Forbidden",
-					message: "Not authorized to access this instance's deployment history",
 				});
 			}
 
@@ -276,17 +239,11 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 				},
 			});
 		} catch (error) {
-			app.log.error(
-				{ err: error },
-				"Failed to retrieve deployment history for instance",
-			);
+			app.log.error({ err: error }, "Failed to retrieve deployment history for instance");
 			return reply.status(500).send({
 				statusCode: 500,
 				error: "InternalServerError",
-				message:
-					error instanceof Error
-						? error.message
-						: "Failed to retrieve deployment history",
+				message: error instanceof Error ? error.message : "Failed to retrieve deployment history",
 			});
 		}
 	});
@@ -298,14 +255,6 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 	app.get<{
 		Params: { historyId: string };
 	}>("/history/:historyId", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				statusCode: 401,
-				error: "Unauthorized",
-				message: "Authentication required",
-			});
-		}
-
 		try {
 			const { historyId } = request.params;
 
@@ -347,7 +296,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			}
 
 			// Verify ownership - template must belong to user
-			if (history.template.userId !== request.currentUser.id) {
+			if (history.template.userId !== request.currentUser?.id) {
 				return reply.status(404).send({
 					statusCode: 404,
 					error: "NotFound",
@@ -378,17 +327,12 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 				},
 			});
 		} catch (error) {
-			app.log.error(
-				{ err: error },
-				"Failed to retrieve deployment history details",
-			);
+			app.log.error({ err: error }, "Failed to retrieve deployment history details");
 			return reply.status(500).send({
 				statusCode: 500,
 				error: "InternalServerError",
 				message:
-					error instanceof Error
-						? error.message
-						: "Failed to retrieve deployment history details",
+					error instanceof Error ? error.message : "Failed to retrieve deployment history details",
 			});
 		}
 	});
@@ -400,14 +344,6 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 	app.delete<{
 		Params: { historyId: string };
 	}>("/history/:historyId", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				statusCode: 401,
-				error: "Unauthorized",
-				message: "Authentication required",
-			});
-		}
-
 		try {
 			const { historyId } = request.params;
 
@@ -433,7 +369,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 
 			// Verify deployment history belongs to user
 			// Check against history.userId directly (always present) rather than relying on template relation
-			if (history.userId !== request.currentUser.id) {
+			if (history.userId !== request.currentUser?.id) {
 				return reply.status(403).send({
 					statusCode: 403,
 					error: "Forbidden",
@@ -456,10 +392,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			return reply.status(500).send({
 				statusCode: 500,
 				error: "InternalServerError",
-				message:
-					error instanceof Error
-						? error.message
-						: "Failed to delete deployment history",
+				message: error instanceof Error ? error.message : "Failed to delete deployment history",
 			});
 		}
 	});
@@ -472,14 +405,6 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 	app.post<{
 		Params: { historyId: string };
 	}>("/history/:historyId/undeploy", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				statusCode: 401,
-				error: "Unauthorized",
-				message: "Authentication required",
-			});
-		}
-
 		try {
 			const { historyId } = request.params;
 
@@ -518,7 +443,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 
 			// Verify deployment history belongs to user
 			// Check against history.userId directly (always present) rather than relying on template relation
-			if (history.userId !== request.currentUser.id) {
+			if (history.userId !== request.currentUser?.id) {
 				return reply.status(403).send({
 					statusCode: 403,
 					error: "Forbidden",
@@ -535,7 +460,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 				try {
 					const templateConfig = JSON.parse(configSource);
 					deployedCFNames = (templateConfig.customFormats || []).map(
-						(cf: { name: string }) => cf.name
+						(cf: { name: string }) => cf.name,
 					);
 				} catch {
 					// If we can't parse the config, we can't undeploy
@@ -617,10 +542,10 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			// 1. Were part of this deployment
 			// 2. Are NOT shared with other templates
 			// 3. Currently exist on the instance
-			let deleted = 0;
+			const deletedCFs: string[] = [];
 			const skippedShared: string[] = [];
 			const notFound: string[] = [];
-			const errors: string[] = [];
+			const deletionErrors: string[] = [];
 
 			for (const cfName of deployedCFNames) {
 				if (sharedCFNames.has(cfName)) {
@@ -636,48 +561,118 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 
 				try {
 					await apiClient.deleteCustomFormat(currentCF.id);
-					deleted++;
+					deletedCFs.push(cfName);
 				} catch (error) {
-					errors.push(
-						`Failed to delete CF "${cfName}": ${error instanceof Error ? error.message : "Unknown error"}`
+					deletionErrors.push(
+						`Failed to delete CF "${cfName}": ${error instanceof Error ? error.message : "Unknown error"}`,
 					);
 				}
 			}
 
-			// Mark deployment as undeployed (using rolledBack field for backwards compatibility)
-			await app.prisma.templateDeploymentHistory.update({
-				where: { id: historyId },
-				data: {
-					rolledBack: true,
-					rolledBackAt: new Date(),
-				},
-			});
+			// Update deployment status based on undeploy result
+			const isFullSuccess = deletionErrors.length === 0;
+			const now = new Date();
+
+			// Attempt to update the database to reflect the current state
+			let dbUpdateSucceeded = false;
+			let dbUpdateError: string | null = null;
+
+			try {
+				if (isFullSuccess) {
+					// Full success: mark as rolled back
+					await app.prisma.templateDeploymentHistory.update({
+						where: { id: historyId },
+						data: {
+							rolledBack: true,
+							rolledBackAt: now,
+							rolledBackBy: request.currentUser?.id,
+							errors: JSON.stringify({
+								undeploySucceeded: true,
+								deletedCFs,
+								skippedShared,
+								notFound,
+								completedAt: now.toISOString(),
+							}),
+						},
+					});
+				} else {
+					// Partial failure: update status and store errors for investigation/retry
+					await app.prisma.templateDeploymentHistory.update({
+						where: { id: historyId },
+						data: {
+							status: "PARTIAL_UNDEPLOY",
+							errors: JSON.stringify({
+								undeployErrors: deletionErrors,
+								undeployAttemptedAt: now.toISOString(),
+								deletedCFs,
+								deletedCount: deletedCFs.length,
+								failedCount: deletionErrors.length,
+								skippedShared,
+								notFound,
+							}),
+						},
+					});
+				}
+				dbUpdateSucceeded = true;
+			} catch (error) {
+				dbUpdateError = error instanceof Error ? error.message : "Database update failed";
+				app.log.error(
+					{
+						err: error,
+						historyId,
+						deletedCFs,
+						deletionErrors,
+					},
+					"Failed to update deployment history after undeploy - database state may be inconsistent",
+				);
+			}
+
+			// Build response based on actual outcome
+			const responseData = {
+				deleted: deletedCFs.length,
+				deletedCFs,
+				skippedShared,
+				skippedSharedCount: skippedShared.length,
+				notFound,
+				notFoundCount: notFound.length,
+				errors: deletionErrors,
+				totalInTemplate: deployedCFNames.length,
+				dbUpdateSucceeded,
+				...(dbUpdateError && { dbUpdateError }),
+			};
+
+			// If DB update failed but deletions occurred, return partial success with warning
+			if (!dbUpdateSucceeded && deletedCFs.length > 0) {
+				return reply.status(207).send({
+					success: false,
+					message: `Deleted ${deletedCFs.length} Custom Format(s) but failed to update database. Manual cleanup may be required.`,
+					warning: "Database state may not reflect actual changes. Please verify and retry if needed.",
+					data: responseData,
+				});
+			}
+
+			// If DB update failed and no deletions occurred (or only errors), return error
+			if (!dbUpdateSucceeded) {
+				return reply.status(500).send({
+					success: false,
+					message: `Undeploy operation encountered errors: ${dbUpdateError}`,
+					data: responseData,
+				});
+			}
 
 			return reply.send({
-				success: errors.length === 0,
-				message:
-					errors.length === 0
-						? `Successfully undeployed ${deleted} Custom Format(s)`
-						: `Undeploy completed with ${errors.length} error(s)`,
-				data: {
-					deleted,
-					skippedShared,
-					skippedSharedCount: skippedShared.length,
-					notFound,
-					notFoundCount: notFound.length,
-					errors,
-					totalInTemplate: deployedCFNames.length,
-				},
+				success: isFullSuccess,
+				message: isFullSuccess
+					? `Successfully undeployed ${deletedCFs.length} Custom Format(s)`
+					: `Undeploy completed with ${deletionErrors.length} error(s)`,
+				data: responseData,
 			});
 		} catch (error) {
 			app.log.error({ err: error }, "Failed to undeploy");
 			return reply.status(500).send({
 				statusCode: 500,
 				error: "InternalServerError",
-				message:
-					error instanceof Error
-						? error.message
-						: "Failed to undeploy",
+				message: error instanceof Error ? error.message : "Failed to undeploy",
 			});
 		}
 	});

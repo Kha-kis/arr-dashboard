@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useImportTemplate } from "../../../hooks/api/useTemplates";
 import { Alert, AlertDescription, Input, Button } from "../../../components/ui";
 import { Upload, X } from "lucide-react";
@@ -14,6 +14,7 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 	const [jsonData, setJsonData] = useState("");
 	const [parseError, setParseError] = useState<string | null>(null);
 	const importMutation = useImportTemplate();
+	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	const handleImport = async () => {
 		if (!jsonData.trim()) {
@@ -64,6 +65,10 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 				// Validate that the result is non-empty before setting
 				if (result.trim()) {
 					setJsonData(result);
+					// Reset file input to allow re-selecting the same file
+					if (fileInputRef.current) {
+						fileInputRef.current.value = "";
+					}
 				} else {
 					setParseError("File is empty. Please select a valid JSON file.");
 					setJsonData("");
@@ -123,6 +128,7 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 					<button
 						type="button"
 						onClick={onClose}
+						aria-label="Close"
 						className="rounded p-1 text-white/60 hover:bg-white/10 hover:text-white"
 					>
 						<X className="h-5 w-5" />
@@ -148,6 +154,7 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 							Upload JSON File
 						</label>
 						<Input
+							ref={fileInputRef}
 							type="file"
 							accept=".json,application/json"
 							onChange={handleFileUpload}

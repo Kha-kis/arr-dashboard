@@ -18,16 +18,21 @@ import {
  * - GET /discover/search - Search for movies or series across instances
  */
 export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) => {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
 	/**
 	 * GET /discover/search
 	 * Searches for movies or series across all enabled Sonarr/Radarr instances
 	 */
 	app.get("/discover/search", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-			return discoverSearchResponseSchema.parse({ results: [], totalCount: 0 });
-		}
-
 		const parsed = discoverSearchRequestSchema.parse(request.query ?? {});
 		const type = parsed.type;
 		const prismaService = type === "movie" ? "RADARR" : "SONARR";

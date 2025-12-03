@@ -17,7 +17,7 @@ import { isoBase64URL } from "@simplewebauthn/server/helpers";
 
 // Polyfill WebCrypto for Node.js < 19
 if (!globalThis.crypto) {
-	globalThis.crypto = webcrypto as any;
+	globalThis.crypto = webcrypto as typeof globalThis.crypto;
 }
 
 /**

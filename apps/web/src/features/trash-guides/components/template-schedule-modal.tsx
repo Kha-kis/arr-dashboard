@@ -1,15 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
-import { Button, Input, Select, SelectOption, Alert } from "../../../components/ui";
+import { useState, useEffect, useRef } from "react";
+import { Button, Select, SelectOption, Alert } from "../../../components/ui";
 import { Clock, X, Calendar, AlertCircle } from "lucide-react";
 
 interface TemplateScheduleModalProps {
 	open: boolean;
 	onClose: () => void;
-	templateId: string;
 	templateName: string;
-	instanceId: string;
 	instanceName: string;
 	existingSchedule?: {
 		id: string;
@@ -29,9 +27,7 @@ interface TemplateScheduleModalProps {
 export const TemplateScheduleModal = ({
 	open,
 	onClose,
-	templateId,
 	templateName,
-	instanceId,
 	instanceName,
 	existingSchedule,
 	onSave,
@@ -47,6 +43,15 @@ export const TemplateScheduleModal = ({
 
 	const modalRef = useRef<HTMLDivElement>(null);
 	const previousActiveElement = useRef<HTMLElement | null>(null);
+	const previousOpenRef = useRef<boolean>(false);
+
+	// Restore focus when modal closes (transitions from open to closed)
+	useEffect(() => {
+		if (previousOpenRef.current === true && open === false) {
+			previousActiveElement.current?.focus();
+		}
+		previousOpenRef.current = open;
+	}, [open]);
 
 	// Reset form state when modal opens or existingSchedule changes
 	useEffect(() => {
@@ -98,8 +103,6 @@ export const TemplateScheduleModal = ({
 		document.addEventListener("keydown", handleKeyDown);
 		return () => {
 			document.removeEventListener("keydown", handleKeyDown);
-			// Restore focus when modal closes
-			previousActiveElement.current?.focus();
 		};
 	}, [open, onClose]);
 

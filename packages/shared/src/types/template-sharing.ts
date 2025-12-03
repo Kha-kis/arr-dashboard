@@ -4,6 +4,8 @@
  * Enhanced types for template export/import with metadata and validation
  */
 
+import type { TemplateConfig } from "./trash-guides.js";
+
 export interface TemplateExportFormat {
 	// Format version
 	version: string;
@@ -17,7 +19,7 @@ export interface TemplateExportFormat {
 		name: string;
 		description: string | null;
 		serviceType: "RADARR" | "SONARR";
-		config: any; // TemplateConfig from trash-guides.ts
+		config: TemplateConfig;
 
 		// Enhanced metadata
 		metadata?: TemplateMetadata;
@@ -77,8 +79,8 @@ export interface ValidationWarning {
 export interface TemplateConflict {
 	type: "name" | "customFormat" | "qualityProfile" | "version";
 	message: string;
-	existingValue?: any;
-	incomingValue?: any;
+	existingValue?: unknown;
+	incomingValue?: unknown;
 	resolution?: "rename" | "replace" | "merge" | "skip";
 }
 

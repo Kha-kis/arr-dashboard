@@ -296,7 +296,9 @@ export const TemplateDiffModal = ({
 																<span className="text-sm font-medium truncate">
 																	{diff.name}
 																</span>
-																{diff.currentScore !== undefined && diff.changeType !== "added" && (
+																{diff.currentScore !== undefined &&
+																	diff.changeType !== "added" &&
+																	!(diff.changeType === "modified" && diff.currentScore !== diff.newScore) && (
 																	<span className="text-xs opacity-70 shrink-0">
 																		Score: {diff.currentScore}
 																	</span>

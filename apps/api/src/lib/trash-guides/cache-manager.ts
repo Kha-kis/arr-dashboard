@@ -5,7 +5,7 @@
  * Handles cache versioning, staleness detection, and automatic cleanup.
  */
 
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import { gzip, gunzip } from "node:zlib";
 import { promisify } from "node:util";
 import type { TrashConfigType, TrashCacheEntry, TrashCacheStatus } from "@arr/shared";

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
 	Dialog,
 	DialogHeader,
@@ -9,7 +9,6 @@ import {
 	DialogContent,
 	DialogFooter,
 } from "../../../components/ui/dialog";
-import { Skeleton } from "../../../components/ui";
 import {
 	AlertCircle,
 	CheckCircle2,
@@ -22,8 +21,7 @@ import {
 	Hand,
 	ChevronDown,
 } from "lucide-react";
-import { useDeploymentPreview } from "../../../hooks/api/useDeploymentPreview";
-import { executeBulkDeployment } from "../../../lib/api-client/trash-guides";
+import { useBulkDeploymentPreviews, useExecuteBulkDeployment } from "../../../hooks/api/useDeploymentPreview";
 import { cn } from "../../../lib/utils";
 
 type SyncStrategy = "auto" | "manual" | "notify";
@@ -136,153 +134,110 @@ export const BulkDeploymentModal = ({
 	instances,
 	onDeploySuccess,
 }: BulkDeploymentModalProps) => {
-	const [instancePreviews, setInstancePreviews] = useState<InstancePreview[]>([]);
-	const [isLoadingPreviews, setIsLoadingPreviews] = useState(false);
-	const [hasLoadedPreviews, setHasLoadedPreviews] = useState(false);
+	// Track selection state and sync strategies per instance
+	const [selectedInstances, setSelectedInstances] = useState<Set<string>>(new Set());
+	const [syncStrategies, setSyncStrategies] = useState<Record<string, SyncStrategy>>({});
 
-	// Store templateId in a ref to avoid useCallback/useEffect dependency issues
-	const templateIdRef = useRef(templateId);
-	templateIdRef.current = templateId;
+	// Get all instance IDs for the bulk preview query
+	const allInstanceIds = useMemo(() => instances.map((i) => i.instanceId), [instances]);
 
-	// Define loadPreviewsForInstances first (before any useEffect that depends on it)
-	const loadPreviewsForInstances = useCallback(async (instancesToLoad: InstancePreview[]) => {
-		const currentTemplateId = templateIdRef.current;
-		if (!currentTemplateId) return;
+	// Use React Query hook for fetching all previews in parallel
+	const { results: previewResults, isLoading: isLoadingPreviews } = useBulkDeploymentPreviews(
+		open ? templateId : null, // Only fetch when modal is open
+		open ? allInstanceIds : [], // Only fetch when modal is open
+	);
 
-		setIsLoadingPreviews(true);
+	// Use React Query mutation for bulk deployment
+	const bulkDeployMutation = useExecuteBulkDeployment();
 
-		// Load previews for all selected instances in parallel
-		const selectedInstances = instancesToLoad.filter((inst) => inst.selected);
+	// Build combined instance preview data from React Query results
+	const instancePreviews: InstancePreview[] = useMemo(() => {
+		return instances.map((inst) => {
+			const result = previewResults.find((r) => r.instanceId === inst.instanceId);
+			const preview = result?.data?.data;
 
-		const previewPromises = selectedInstances.map(async (inst) => {
-			try {
-				setInstancePreviews((prev) =>
-					prev.map((i) =>
-						i.instanceId === inst.instanceId ? { ...i, loading: true } : i,
-					),
-				);
-
-				const response = await fetch("/api/trash-guides/deployment/preview", {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({
-						templateId: currentTemplateId,
-						instanceId: inst.instanceId,
-					}),
-				});
-
-				if (!response.ok) {
-					throw new Error("Failed to load preview");
-				}
-
-				const data = await response.json();
-
-				setInstancePreviews((prev) =>
-					prev.map((i) =>
-						i.instanceId === inst.instanceId
-							? {
-									...i,
-									loading: false,
-									preview: {
-										reachable: data.data.instanceReachable,
-										totalItems: data.data.summary.totalItems,
-										newCustomFormats: data.data.summary.newCustomFormats,
-										updatedCustomFormats: data.data.summary.updatedCustomFormats,
-										conflicts: data.data.summary.totalConflicts,
-										canDeploy: data.data.canDeploy,
-									},
-								}
-							: i,
-					),
-				);
-			} catch (error) {
-				setInstancePreviews((prev) =>
-					prev.map((i) =>
-						i.instanceId === inst.instanceId
-							? {
-									...i,
-									loading: false,
-									error: error instanceof Error ? error : new Error("Unknown error"),
-								}
-							: i,
-					),
-				);
-			}
+			return {
+				instanceId: inst.instanceId,
+				instanceLabel: inst.instanceLabel,
+				selected: selectedInstances.has(inst.instanceId),
+				syncStrategy: syncStrategies[inst.instanceId] ?? "notify",
+				loading: result?.isLoading ?? true,
+				error: result?.error ?? undefined,
+				preview: preview
+					? {
+							reachable: preview.instanceReachable,
+							totalItems: preview.summary.totalItems,
+							newCustomFormats: preview.summary.newCustomFormats,
+							updatedCustomFormats: preview.summary.updatedCustomFormats,
+							conflicts: preview.summary.totalConflicts,
+							canDeploy: preview.canDeploy,
+						}
+					: undefined,
+			};
 		});
+	}, [instances, previewResults, selectedInstances, syncStrategies]);
 
-		await Promise.all(previewPromises);
-		setIsLoadingPreviews(false);
-	}, []); // No dependencies - uses ref for templateId
+	// Initialize selection state when modal opens
+	useEffect(() => {
+		if (open && instances.length > 0) {
+			// Select all instances by default
+			setSelectedInstances(new Set(instances.map((i) => i.instanceId)));
+			// Initialize sync strategies
+			const strategies: Record<string, SyncStrategy> = {};
+			for (const inst of instances) {
+				strategies[inst.instanceId] = "notify";
+			}
+			setSyncStrategies(strategies);
+		}
+	}, [open, instances]);
 
 	// Reset state when modal closes
 	useEffect(() => {
 		if (!open) {
-			setHasLoadedPreviews(false);
-			setInstancePreviews([]);
+			setSelectedInstances(new Set());
+			setSyncStrategies({});
+			bulkDeployMutation.reset();
 		}
-	}, [open]);
-
-	// Initialize instance previews with all instances selected and auto-load previews
-	useEffect(() => {
-		if (open && instances.length > 0 && !hasLoadedPreviews) {
-			const initialPreviews = instances.map((inst) => ({
-				instanceId: inst.instanceId,
-				instanceLabel: inst.instanceLabel,
-				selected: true,
-				syncStrategy: "notify" as const,
-				loading: true, // Start in loading state
-			}));
-			setInstancePreviews(initialPreviews);
-			setHasLoadedPreviews(true);
-
-			// Auto-load previews after setting initial state
-			loadPreviewsForInstances(initialPreviews);
-		}
-	}, [open, instances, hasLoadedPreviews, loadPreviewsForInstances]);
+	}, [open]); // Intentionally exclude bulkDeployMutation to avoid reset loops
 
 	const toggleInstance = (instanceId: string) => {
-		setInstancePreviews((prev) =>
-			prev.map((inst) =>
-				inst.instanceId === instanceId
-					? { ...inst, selected: !inst.selected }
-					: inst,
-			),
-		);
+		setSelectedInstances((prev) => {
+			const next = new Set(prev);
+			if (next.has(instanceId)) {
+				next.delete(instanceId);
+			} else {
+				next.add(instanceId);
+			}
+			return next;
+		});
 	};
 
 	const updateInstanceStrategy = (instanceId: string, strategy: SyncStrategy) => {
-		setInstancePreviews((prev) =>
-			prev.map((inst) =>
-				inst.instanceId === instanceId
-					? { ...inst, syncStrategy: strategy }
-					: inst,
-			),
-		);
+		setSyncStrategies((prev) => ({
+			...prev,
+			[instanceId]: strategy,
+		}));
 	};
 
 	const setAllStrategies = (strategy: SyncStrategy) => {
-		setInstancePreviews((prev) =>
-			prev.map((inst) => ({ ...inst, syncStrategy: strategy })),
-		);
+		setSyncStrategies((prev) => {
+			const next: Record<string, SyncStrategy> = {};
+			for (const id of Object.keys(prev)) {
+				next[id] = strategy;
+			}
+			return next;
+		});
 	};
 
 	const selectAll = () => {
-		setInstancePreviews((prev) =>
-			prev.map((inst) => ({ ...inst, selected: true })),
-		);
+		setSelectedInstances(new Set(instances.map((i) => i.instanceId)));
 	};
 
 	const deselectAll = () => {
-		setInstancePreviews((prev) =>
-			prev.map((inst) => ({ ...inst, selected: false })),
-		);
+		setSelectedInstances(new Set());
 	};
 
-	const [isDeploying, setIsDeploying] = useState(false);
-	const [deploymentError, setDeploymentError] = useState<string | null>(null);
-	const [deploymentSuccess, setDeploymentSuccess] = useState(false);
-
-	const handleDeploy = async () => {
+	const handleDeploy = () => {
 		if (!templateId) return;
 
 		const deployableInstances = instancePreviews.filter(
@@ -291,45 +246,31 @@ export const BulkDeploymentModal = ({
 
 		if (deployableInstances.length === 0) return;
 
-		setIsDeploying(true);
-		setDeploymentError(null);
-		setDeploymentSuccess(false);
+		// Build per-instance sync strategies map
+		const instanceSyncStrategies: Record<string, SyncStrategy> = {};
+		for (const inst of deployableInstances) {
+			instanceSyncStrategies[inst.instanceId] = inst.syncStrategy;
+		}
 
-		try {
-			// Build per-instance sync strategies map
-			const instanceSyncStrategies: Record<string, SyncStrategy> = {};
-			deployableInstances.forEach((inst) => {
-				instanceSyncStrategies[inst.instanceId] = inst.syncStrategy;
-			});
-
-			const response = await executeBulkDeployment({
+		bulkDeployMutation.mutate(
+			{
 				templateId,
 				instanceIds: deployableInstances.map((inst) => inst.instanceId),
 				instanceSyncStrategies,
-			});
-
-			if (response.success) {
-				setDeploymentSuccess(true);
-				// Notify parent component of success
-				onDeploySuccess?.();
-				// Close after showing success message for 2 seconds
-				setTimeout(() => {
-					onClose();
-				}, 2000);
-			} else {
-				setDeploymentError(
-					`${response.result.failedInstances} of ${response.result.totalInstances} deployments failed`,
-				);
-			}
-		} catch (error) {
-			setDeploymentError(
-				error instanceof Error
-					? error.message
-					: "Failed to execute bulk deployment",
-			);
-		} finally {
-			setIsDeploying(false);
-		}
+			},
+			{
+				onSuccess: (response) => {
+					if (response.success) {
+						// Notify parent component of success
+						onDeploySuccess?.();
+						// Close after showing success message for 2 seconds
+						setTimeout(() => {
+							onClose();
+						}, 2000);
+					}
+				},
+			},
+		);
 	};
 
 	const selectedCount = instancePreviews.filter((inst) => inst.selected).length;
@@ -527,16 +468,30 @@ export const BulkDeploymentModal = ({
 			</DialogContent>
 
 			<DialogFooter>
-				{deploymentError && (
+				{bulkDeployMutation.isError && (
 					<div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 mr-auto">
 						<AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
 						<div>
 							<p className="text-sm font-medium text-fg">Deployment Failed</p>
-							<p className="text-sm text-fg-muted mt-1">{deploymentError}</p>
+							<p className="text-sm text-fg-muted mt-1">
+								{bulkDeployMutation.error?.message ?? "Failed to execute bulk deployment"}
+							</p>
 						</div>
 					</div>
 				)}
-				{deploymentSuccess && (
+				{bulkDeployMutation.isSuccess && !bulkDeployMutation.data?.success && (
+					<div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 mr-auto">
+						<AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
+						<div>
+							<p className="text-sm font-medium text-fg">Deployment Partially Failed</p>
+							<p className="text-sm text-fg-muted mt-1">
+								{bulkDeployMutation.data?.result.failedInstances} of{" "}
+								{bulkDeployMutation.data?.result.totalInstances} deployments failed
+							</p>
+						</div>
+					</div>
+				)}
+				{bulkDeployMutation.isSuccess && bulkDeployMutation.data?.success && (
 					<div className="flex items-start gap-2 rounded-lg border border-green-500/30 bg-green-500/10 p-3 mr-auto">
 						<CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 mt-0.5 shrink-0" />
 						<div>
@@ -548,7 +503,7 @@ export const BulkDeploymentModal = ({
 				<button
 					type="button"
 					onClick={onClose}
-					disabled={isDeploying}
+					disabled={bulkDeployMutation.isPending}
 					className="px-4 py-2 text-sm font-medium text-fg-muted hover:text-fg transition-colors disabled:opacity-50"
 				>
 					Cancel
@@ -556,7 +511,7 @@ export const BulkDeploymentModal = ({
 				<button
 					type="button"
 					onClick={handleDeploy}
-					disabled={!canDeploy || isDeploying || deploymentSuccess}
+					disabled={!canDeploy || bulkDeployMutation.isPending || bulkDeployMutation.isSuccess}
 					className="px-4 py-2 text-sm font-medium bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center gap-2"
 				>
 					{previewsLoading ? (
@@ -564,7 +519,7 @@ export const BulkDeploymentModal = ({
 							<div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
 							Loading Previews...
 						</>
-					) : isDeploying ? (
+					) : bulkDeployMutation.isPending ? (
 						<>
 							<div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
 							Deploying to {deployableCount} Instance{deployableCount !== 1 ? "s" : ""}...

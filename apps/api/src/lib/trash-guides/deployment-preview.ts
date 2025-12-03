@@ -3,9 +3,12 @@
  *
  * Generates deployment preview by comparing template configuration with
  * actual Custom Formats in Radarr/Sonarr instance, detecting conflicts.
+ *
+ * Note: This module uses `any` types for dynamic ARR API response structures.
  */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import type {
 	DeploymentPreview,
 	CustomFormatDeploymentItem,
@@ -15,7 +18,7 @@ import type {
 } from "@arr/shared";
 import { createArrApiClient } from "./arr-api-client.js";
 import type { CustomFormat, CustomFormatSpecification } from "./arr-api-client.js";
-import { deepEqual } from "../utils/deep-equal.js";
+import { dequal as deepEqual } from "dequal";
 
 // ============================================================================
 // Score Calculation Helper
@@ -163,7 +166,9 @@ function specArraysAreEqual(templateSpecs: any[], instanceSpecs: CustomFormatSpe
 	normalizedInstance.sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
 
 	for (let i = 0; i < normalizedTemplate.length; i++) {
-		if (!specsAreEqual(normalizedTemplate[i]!, normalizedInstance[i]!)) {
+		const templateSpec = normalizedTemplate[i];
+		const instanceSpec = normalizedInstance[i];
+		if (templateSpec && instanceSpec && !specsAreEqual(templateSpec, instanceSpec)) {
 			return false;
 		}
 	}
@@ -345,7 +350,7 @@ export class DeploymentPreviewService {
 		const deploymentItems: CustomFormatDeploymentItem[] = [];
 		let newCount = 0;
 		let updateCount = 0;
-		let skipCount = 0;
+		const skipCount = 0;
 		let totalConflicts = 0;
 		let unresolvedConflicts = 0;
 
@@ -459,14 +464,12 @@ export class DeploymentPreviewService {
 		const warnings: string[] = [];
 		if (totalConflicts > 0) {
 			warnings.push(
-				`${totalConflicts} Custom Format${totalConflicts === 1 ? "" : "s"} differ${totalConflicts === 1 ? "s" : ""} between the template and instance. ` +
-				`By default, deploying will update these to match the template. You can review and skip specific CFs if needed.`
+				`${totalConflicts} Custom Format${totalConflicts === 1 ? "" : "s"} differ${totalConflicts === 1 ? "s" : ""} between the template and instance. By default, deploying will update these to match the template. You can review and skip specific CFs if needed.`
 			);
 		}
 		if (unmatchedCFs.length > 0) {
 			warnings.push(
-				`${unmatchedCFs.length} Custom Format${unmatchedCFs.length === 1 ? "" : "s"} in the instance ${unmatchedCFs.length === 1 ? "is" : "are"} not part of this template. ` +
-				`These will not be modified by this deployment.`
+				`${unmatchedCFs.length} Custom Format${unmatchedCFs.length === 1 ? "" : "s"} in the instance ${unmatchedCFs.length === 1 ? "is" : "are"} not part of this template. These will not be modified by this deployment.`
 			);
 		}
 
@@ -475,7 +478,7 @@ export class DeploymentPreviewService {
 			templateName: template.name,
 			instanceId,
 			instanceLabel: instance.label,
-			instanceServiceType: instance.service as "RADARR" | "SONARR",
+			instanceServiceType: instance.service.toUpperCase() as "RADARR" | "SONARR",
 
 			summary: {
 				totalItems: deploymentItems.length,
@@ -518,7 +521,7 @@ export class DeploymentPreviewService {
 				} else if (typeof spec.fields === 'object') {
 					// Check common field patterns for trash_id
 					const fields = spec.fields as Record<string, unknown>;
-					const trashIdValue = fields["trash_id"] || fields["trashId"];
+					const trashIdValue = fields.trash_id || fields.trashId;
 					if (typeof trashIdValue === "string" && trashIdValue.length > 0) {
 						return trashIdValue;
 					}
@@ -529,7 +532,7 @@ export class DeploymentPreviewService {
 		// Strategy 2: Check for TRaSH ID pattern in CF name
 		// TRaSH Guides CFs may have format: "CF Name [trash_id]" or similar
 		const trashIdMatch = cf.name.match(/\[([a-f0-9-]{36})\]$/i);
-		if (trashIdMatch && trashIdMatch[1]) {
+		if (trashIdMatch?.[1]) {
 			return trashIdMatch[1];
 		}
 

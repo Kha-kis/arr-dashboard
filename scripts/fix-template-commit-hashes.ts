@@ -72,7 +72,7 @@ async function main() {
 
   console.log(`Latest commit hash: ${latestCommitHash}\n`);
 
-  // Find templates without commit hash
+  // Find templates without commit hash (need backfilling)
   const templatesWithoutHash = await prisma.trashTemplate.findMany({
     where: {
       deletedAt: null,
@@ -83,6 +83,8 @@ async function main() {
       name: true,
       serviceType: true,
       createdAt: true,
+      trashGuidesCommitHash: true,
+      changeLog: true,
     },
   });
 
@@ -97,63 +99,123 @@ async function main() {
     console.log(`  - ${template.name} (${template.serviceType}) - ID: ${template.id}`);
   }
 
-  console.log("\nUpdating templates...\n");
+  console.log("\nPreparing updates...\n");
 
   const now = new Date();
-  let successfulUpdates = 0;
+
+  // Build array of update operations for atomic transaction
+  type UpdateOperation = {
+    templateId: string;
+    templateName: string;
+    data: {
+      trashGuidesCommitHash: string;
+      lastSyncedAt: Date;
+      changeLog?: string;
+    };
+    updateType: "hash_only" | "full";
+  };
+
+  const updateOperations: UpdateOperation[] = [];
 
   for (const template of templatesWithoutHash) {
-    try {
-      // Get current changeLog
-      const fullTemplate = await prisma.trashTemplate.findUnique({
-        where: { id: template.id },
-        select: { changeLog: true },
-      });
+    // Parse changeLog from initial query (avoids N+1 queries)
+    let changeLog: Array<{
+      timestamp: string;
+      userId?: string;
+      changeType: string;
+      description: string;
+      commitHash?: string;
+    }> = [];
 
-      let changeLog: Array<{
-        timestamp: string;
-        userId?: string;
-        changeType: string;
-        description: string;
-        commitHash?: string;
-      }> = [];
-
-      if (fullTemplate?.changeLog) {
-        try {
-          changeLog = JSON.parse(fullTemplate.changeLog as string);
-        } catch {
-          changeLog = [];
-        }
+    if (template.changeLog == null) {
+      changeLog = [];
+    } else if (typeof template.changeLog === "string") {
+      try {
+        changeLog = JSON.parse(template.changeLog);
+      } catch {
+        changeLog = [];
       }
+    } else if (Array.isArray(template.changeLog)) {
+      changeLog = template.changeLog as typeof changeLog;
+    } else {
+      // Unexpected type, reset to empty array
+      changeLog = [];
+    }
 
-      // Add migration entry to changelog
-      changeLog.push({
-        timestamp: now.toISOString(),
-        changeType: "migration",
-        description: "Backfilled commit hash for version tracking",
-        commitHash: latestCommitHash,
-      });
+    // Check if migration entry with this commit hash already exists
+    const existingMigrationEntry = changeLog.find(
+      (entry) =>
+        entry.changeType === "migration" && entry.commitHash === latestCommitHash
+    );
 
-      await prisma.trashTemplate.update({
-        where: { id: template.id },
+    if (existingMigrationEntry) {
+      // Update only trashGuidesCommitHash since changelog entry already exists
+      updateOperations.push({
+        templateId: template.id,
+        templateName: template.name,
         data: {
           trashGuidesCommitHash: latestCommitHash,
           lastSyncedAt: now,
-          changeLog: JSON.stringify(changeLog),
         },
+        updateType: "hash_only",
       });
-
-      successfulUpdates++;
-      console.log(`  ✅ Updated: ${template.name}`);
-    } catch (error) {
-      console.error(`  ❌ Failed to update ${template.name}:`, error);
+      continue;
     }
+
+    // Add migration entry to changelog
+    changeLog.push({
+      timestamp: now.toISOString(),
+      changeType: "migration",
+      description: "Backfilled commit hash for version tracking",
+      commitHash: latestCommitHash,
+    });
+
+    updateOperations.push({
+      templateId: template.id,
+      templateName: template.name,
+      data: {
+        trashGuidesCommitHash: latestCommitHash,
+        lastSyncedAt: now,
+        changeLog: JSON.stringify(changeLog),
+      },
+      updateType: "full",
+    });
   }
 
-  console.log("\n=== Migration Complete ===");
-  console.log(`Updated ${successfulUpdates} templates with commit hash: ${latestCommitHash.substring(0, 7)}`);
-  if (successfulUpdates < templatesWithoutHash.length) {
-    console.log(`  ⚠️ ${templatesWithoutHash.length - successfulUpdates} templates failed to update`);
+  if (updateOperations.length === 0) {
+    console.log("No templates need updating.");
+    console.log("\n=== Migration Complete ===");
+    return;
+  }
+
+  console.log(`\nExecuting ${updateOperations.length} updates in a single transaction...\n`);
+
+  // Execute all updates atomically in a single transaction
+  try {
+    await prisma.$transaction(
+      updateOperations.map((op) =>
+        prisma.trashTemplate.update({
+          where: { id: op.templateId },
+          data: op.data,
+        })
+      )
+    );
+
+    // Log success for each operation after transaction commits
+    for (const op of updateOperations) {
+      if (op.updateType === "hash_only") {
+        console.log(`  ✅ Updated hash only: ${op.templateName} (changelog entry already exists)`);
+      } else {
+        console.log(`  ✅ Updated: ${op.templateName}`);
+      }
+    }
+
+    console.log("\n=== Migration Complete ===");
+    console.log(`Updated ${updateOperations.length} templates with commit hash: ${latestCommitHash.substring(0, 7)}`);
+  } catch (error) {
+    console.error("\n❌ Transaction failed - no templates were updated.");
+    console.error("Error:", error instanceof Error ? error.message : error);
+    throw new Error("Failed to update templates. Database remains unchanged.");
   }
 }
 

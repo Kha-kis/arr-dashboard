@@ -23,6 +23,7 @@ export const useTagsManagement = () => {
 		newTagName,
 		setNewTagName,
 		handleCreateTag,
+		createTagMutation,
 		deleteTagMutation,
 	};
 };

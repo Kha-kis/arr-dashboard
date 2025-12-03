@@ -10,17 +10,21 @@ import { grabProwlarrRelease } from "../../lib/search/prowlarr-api.js";
  * - POST /search/grab - Grab a search result and send it to the download client
  */
 export const registerGrabRoutes: FastifyPluginCallback = (app, _opts, done) => {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
 	/**
 	 * POST /search/grab
 	 * Grabs a search result and sends it to the configured download client in Prowlarr.
 	 */
 	app.post("/search/grab", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-
-			return { success: false };
-		}
-
 		const payload = searchGrabRequestSchema.parse(request.body ?? {});
 
 		const instance = await app.prisma.serviceInstance.findFirst({

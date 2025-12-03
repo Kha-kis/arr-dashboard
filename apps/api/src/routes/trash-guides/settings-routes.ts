@@ -54,6 +54,16 @@ export async function registerSettingsRoutes(
 	app: FastifyInstance,
 	opts: FastifyPluginOptions,
 ) {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
 	/**
 	 * GET /api/trash-guides/settings
 	 *
@@ -62,15 +72,8 @@ export async function registerSettingsRoutes(
 	 */
 	app.get(
 		"/",
-		{
-			preHandler: async (request: FastifyRequest, reply: FastifyReply) => {
-				if (!request.currentUser) {
-					return reply.status(401).send({ error: "Unauthorized" });
-				}
-			},
-		},
 		async (request: FastifyRequest, reply: FastifyReply) => {
-			const userId = request.currentUser!.id;
+			const userId = request.currentUser?.id;
 
 			// Get or create settings
 			let settings = await app.prisma.trashSettings.findUnique({
@@ -114,15 +117,8 @@ export async function registerSettingsRoutes(
 	 */
 	app.patch(
 		"/",
-		{
-			preHandler: async (request: FastifyRequest, reply: FastifyReply) => {
-				if (!request.currentUser) {
-					return reply.status(401).send({ error: "Unauthorized" });
-				}
-			},
-		},
 		async (request: FastifyRequest, reply: FastifyReply) => {
-			const userId = request.currentUser!.id;
+			const userId = request.currentUser?.id;
 
 			// Validate request body
 			const parseResult = updateSettingsSchema.safeParse(request.body);
@@ -160,15 +156,8 @@ export async function registerSettingsRoutes(
 	 */
 	app.get(
 		"/backup-stats",
-		{
-			preHandler: async (request: FastifyRequest, reply: FastifyReply) => {
-				if (!request.currentUser) {
-					return reply.status(401).send({ error: "Unauthorized" });
-				}
-			},
-		},
 		async (request: FastifyRequest, reply: FastifyReply) => {
-			const userId = request.currentUser!.id;
+			const userId = request.currentUser?.id;
 
 			// Get user's settings
 			const settings = await app.prisma.trashSettings.findUnique({

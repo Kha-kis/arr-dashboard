@@ -13,6 +13,7 @@ import type { QualityProfileSummary } from "../../../../lib/api-client/trash-gui
 import { ConditionEditor } from "../condition-editor";
 import { useCFConfiguration } from "../../../../hooks/api/useCFConfiguration";
 import { ErrorBoundary } from "../../../../components/error-boundary";
+import type { ResolvedCF } from "./cf-resolution";
 
 interface CustomFormatItem {
 	displayName?: string;
@@ -57,6 +58,7 @@ interface CFConfigurationProps {
 	onBack?: () => void; // Optional - undefined means hide back button
 	isEditMode?: boolean; // Edit mode flag to skip API call
 	editingTemplate?: any; // Template being edited (contains all CF data)
+	cfResolutions?: ResolvedCF[]; // CF resolutions from cf-resolution step (for cloned profiles)
 }
 
 export const CFConfiguration = ({
@@ -69,6 +71,7 @@ export const CFConfiguration = ({
 	onBack,
 	isEditMode = false,
 	editingTemplate,
+	cfResolutions,
 }: CFConfigurationProps) => {
 	const [selections, setSelections] = useState(initialSelections);
 	const [templateName, setTemplateName] = useState(initialTemplateName);
@@ -80,7 +83,10 @@ export const CFConfiguration = ({
 	} | null>(null);
 	const hasInitializedSelections = useRef(false);
 
-	// Fetch CF configuration data using extracted hook
+	// Check if we're in cloned profile mode (cfResolutions provided from previous step)
+	const isClonedProfileMode = !!cfResolutions && cfResolutions.length > 0;
+
+	// Fetch CF configuration data using extracted hook (skip if we have cfResolutions)
 	const { data, isLoading, error } = useCFConfiguration({
 		serviceType,
 		qualityProfile,
@@ -88,9 +94,31 @@ export const CFConfiguration = ({
 		editingTemplate,
 	});
 
-	// Initialize selections when data loads (one-time only)
+	// Initialize selections from cfResolutions (for cloned profiles)
 	useEffect(() => {
-		if (!data || hasInitializedSelections.current) {
+		if (!isClonedProfileMode || hasInitializedSelections.current) {
+			return;
+		}
+
+		const newSelections: Record<string, any> = {};
+
+		for (const resolution of cfResolutions) {
+			// Use trashId if linked to TRaSH, otherwise use instance CF name as key
+			const cfKey = resolution.trashId || `instance-${resolution.instanceCFId}`;
+			newSelections[cfKey] = {
+				selected: true, // All resolved CFs are selected
+				scoreOverride: undefined, // Start with recommended/instance score, user can override
+				conditionsEnabled: {},
+			};
+		}
+
+		hasInitializedSelections.current = true;
+		setSelections(newSelections);
+	}, [isClonedProfileMode, cfResolutions]);
+
+	// Initialize selections when data loads (one-time only) - for non-cloned profiles
+	useEffect(() => {
+		if (isClonedProfileMode || !data || hasInitializedSelections.current) {
 			return;
 		}
 
@@ -134,7 +162,7 @@ export const CFConfiguration = ({
 
 		hasInitializedSelections.current = true;
 		setSelections(newSelections);
-	}, [data]);
+	}, [isClonedProfileMode, data]);
 
 	const toggleCF = (cfTrashId: string, isRequired: boolean = false) => {
 		// Allow toggling all CFs, including required ones
@@ -232,7 +260,8 @@ export const CFConfiguration = ({
 		onNext(selections, templateName.trim(), templateDescription.trim());
 	};
 
-	if (isLoading) {
+	// For cloned profile mode, skip loading state (we have cfResolutions)
+	if (!isClonedProfileMode && isLoading) {
 		return (
 			<div className="space-y-6 animate-in fade-in duration-300">
 				{/* Header Skeleton */}
@@ -264,7 +293,7 @@ export const CFConfiguration = ({
 		);
 	}
 
-	if (error) {
+	if (!isClonedProfileMode && error) {
 		return (
 			<div className="animate-in fade-in duration-300">
 				<Alert variant="danger">
@@ -279,9 +308,217 @@ export const CFConfiguration = ({
 		);
 	}
 
+	// === CLONED PROFILE MODE ===
+	// Render simplified UI for CFs resolved from the previous step
+	if (isClonedProfileMode && cfResolutions) {
+		const selectedCount = Object.values(selections).filter(s => s?.selected).length;
+
+		// Group resolutions by decision type
+		const linkedToTrash = cfResolutions.filter(r => r.decision === "use_trash");
+		const keepInstance = cfResolutions.filter(r => r.decision === "keep_instance");
+
+		const renderResolutionCard = (resolution: ResolvedCF) => {
+			const cfKey = resolution.trashId || `instance-${resolution.instanceCFId}`;
+			const selection = selections[cfKey];
+			const scoreOverride = selection?.scoreOverride;
+			const defaultScore = resolution.decision === "use_trash"
+				? resolution.recommendedScore ?? 0
+				: resolution.instanceScore ?? 0;
+
+			return (
+				<div
+					key={cfKey}
+					className="rounded-lg p-4 border border-border/50 bg-bg-subtle transition-all hover:border-primary/50 hover:shadow-md"
+				>
+					<div className="flex items-start gap-3">
+						<input
+							type="checkbox"
+							checked={selection?.selected ?? true}
+							onChange={() => toggleCF(cfKey)}
+							className="mt-1 h-5 w-5 rounded border-border/50 bg-bg-subtle text-primary focus:ring-2 focus:ring-primary/50 cursor-pointer transition"
+						/>
+						<div className="flex-1">
+							<div className="flex items-center gap-2 mb-2">
+								<span className="font-medium text-fg">{resolution.instanceCFName}</span>
+								{resolution.decision === "use_trash" && resolution.trashId && (
+									<span className="inline-flex items-center gap-1 rounded bg-green-500/20 px-2 py-0.5 text-xs font-medium text-green-300">
+										Linked to TRaSH
+									</span>
+								)}
+								{resolution.decision === "keep_instance" && (
+									<span className="inline-flex items-center gap-1 rounded bg-blue-500/20 px-2 py-0.5 text-xs font-medium text-blue-300">
+										Instance Only
+									</span>
+								)}
+								{scoreOverride !== undefined && (
+									<span className="inline-flex items-center gap-1 rounded bg-purple-500/20 px-2 py-0.5 text-xs font-medium text-purple-300">
+										Custom Score
+									</span>
+								)}
+							</div>
+
+							<div className="space-y-2">
+								{/* Show score info */}
+								<div className="flex items-center gap-2 text-xs text-fg-muted">
+									<span>Current: {scoreOverride ?? defaultScore}</span>
+									{resolution.decision === "use_trash" && resolution.recommendedScore !== undefined && (
+										<span>• TRaSH Recommended: {resolution.recommendedScore}</span>
+									)}
+									{resolution.instanceScore !== undefined && resolution.instanceScore !== defaultScore && (
+										<span>• Instance Score: {resolution.instanceScore}</span>
+									)}
+								</div>
+
+								{/* Score input */}
+								<div className="flex items-center gap-2 flex-wrap">
+									<label className="text-sm text-fg-muted">Override Score:</label>
+									<input
+										type="number"
+										value={scoreOverride ?? ""}
+										onChange={(e) => updateScore(cfKey, e.target.value)}
+										placeholder={defaultScore.toString()}
+										className="w-20 rounded border border-border/50 bg-bg px-2 py-1 text-sm text-fg focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50 transition"
+									/>
+									{scoreOverride !== undefined && (
+										<button
+											type="button"
+											onClick={() => updateScore(cfKey, "")}
+											className="text-xs text-primary hover:text-primary/80 transition"
+											title="Reset to default"
+										>
+											<RotateCcw className="h-3 w-3 inline mr-1" />
+											Reset
+										</button>
+									)}
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+			);
+		};
+
+		return (
+			<div className="space-y-6 animate-in fade-in duration-500">
+				{/* Header */}
+				<Card className="border-primary/30 bg-primary/5">
+					<CardHeader>
+						<CardTitle>Configure Custom Format Scores</CardTitle>
+						<CardDescription>
+							Review and adjust scores for the {cfResolutions.length} custom formats from your profile.
+							{selectedCount} formats selected for the template.
+						</CardDescription>
+					</CardHeader>
+				</Card>
+
+				{/* Template Name & Description */}
+				<div className="space-y-4">
+					<div className="space-y-2">
+						<label className="text-sm font-medium text-fg">Template Name</label>
+						<input
+							type="text"
+							value={templateName}
+							onChange={(e) => setTemplateName(e.target.value)}
+							placeholder="Enter template name"
+							className="w-full rounded-lg border border-border/50 bg-bg px-4 py-2 text-fg placeholder:text-fg-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition"
+						/>
+					</div>
+					<div className="space-y-2">
+						<label className="text-sm font-medium text-fg">Description (optional)</label>
+						<textarea
+							value={templateDescription}
+							onChange={(e) => setTemplateDescription(e.target.value)}
+							placeholder="Enter template description"
+							rows={2}
+							className="w-full rounded-lg border border-border/50 bg-bg px-4 py-2 text-fg placeholder:text-fg-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition resize-none"
+						/>
+					</div>
+				</div>
+
+				{/* Search */}
+				<div className="relative">
+					<Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
+					<input
+						type="text"
+						value={searchQuery}
+						onChange={(e) => setSearchQuery(e.target.value)}
+						placeholder="Search custom formats..."
+						className="w-full rounded-lg border border-border/50 bg-bg py-3 pl-10 pr-4 text-fg placeholder:text-fg-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition"
+					/>
+				</div>
+
+				{/* Linked to TRaSH CFs */}
+				{linkedToTrash.length > 0 && (
+					<div className="space-y-3">
+						<div className="flex items-center justify-between">
+							<h3 className="text-lg font-medium text-fg flex items-center gap-2">
+								<span className="w-2 h-2 rounded-full bg-green-500" />
+								Linked to TRaSH Guides
+							</h3>
+							<span className="text-sm text-fg-muted">{linkedToTrash.length} formats</span>
+						</div>
+						<p className="text-sm text-fg-muted">
+							These CFs are linked to TRaSH Guides and will receive recommended scores and updates.
+						</p>
+						<div className="space-y-2">
+							{linkedToTrash
+								.filter(r => !searchQuery || r.instanceCFName.toLowerCase().includes(searchQuery.toLowerCase()))
+								.map(renderResolutionCard)}
+						</div>
+					</div>
+				)}
+
+				{/* Instance Only CFs */}
+				{keepInstance.length > 0 && (
+					<div className="space-y-3">
+						<div className="flex items-center justify-between">
+							<h3 className="text-lg font-medium text-fg flex items-center gap-2">
+								<span className="w-2 h-2 rounded-full bg-blue-500" />
+								Instance Custom Formats
+							</h3>
+							<span className="text-sm text-fg-muted">{keepInstance.length} formats</span>
+						</div>
+						<p className="text-sm text-fg-muted">
+							These CFs are unique to your instance and will keep their current configuration.
+						</p>
+						<div className="space-y-2">
+							{keepInstance
+								.filter(r => !searchQuery || r.instanceCFName.toLowerCase().includes(searchQuery.toLowerCase()))
+								.map(renderResolutionCard)}
+						</div>
+					</div>
+				)}
+
+				{/* Navigation Buttons */}
+				<div className="flex items-center justify-between pt-4 border-t border-border/50">
+					{onBack && (
+						<button
+							type="button"
+							onClick={onBack}
+							className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-fg-muted hover:text-fg hover:bg-bg-hover transition"
+						>
+							<ChevronLeft className="h-4 w-4" />
+							Back
+						</button>
+					)}
+					<button
+						type="button"
+						onClick={handleNext}
+						disabled={!templateName.trim()}
+						className="ml-auto inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-2 font-medium text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition"
+					>
+						Continue
+						<ChevronRight className="h-4 w-4" />
+					</button>
+				</div>
+			</div>
+		);
+	}
+
 	const cfGroups = data?.cfGroups || [];
 	const mandatoryCFs = data?.mandatoryCFs || [];
 	const selectedCount = Object.values(selections).filter(s => s?.selected).length;
+	const isClonedProfile = data?.isClonedProfile === true;
 
 	// Build CF Groups with their CFs
 	// CF Groups already have enriched data from the API
@@ -722,25 +959,42 @@ export const CFConfiguration = ({
 				<Alert>
 					<Info className="h-4 w-4" />
 					<AlertDescription>
-						<strong>TRaSH Recommended Formats</strong> are marked with ⭐ but can be toggled on/off based on your preferences. <strong>CF Groups</strong> can be toggled individually or in bulk. Browse all available formats below to add any additional custom formats.
+						{isClonedProfile ? (
+							<>
+								<strong>Custom Formats from Instance</strong> - These are the custom formats configured in your source instance&apos;s quality profile. You can adjust scores, toggle formats, or add additional formats from the instance&apos;s catalog.
+							</>
+						) : (
+							<>
+								<strong>TRaSH Recommended Formats</strong> are marked with ⭐ but can be toggled on/off based on your preferences. <strong>CF Groups</strong> can be toggled individually or in bulk. Browse all available formats below to add any additional custom formats.
+							</>
+						)}
 					</AlertDescription>
 				</Alert>
 			)}
 
-			{/* TRaSH Recommended Custom Formats (from profile.formatItems) */}
+			{/* Profile Custom Formats (TRaSH Recommended or Instance CFs) */}
 			{filteredMandatoryCFs.length > 0 && (
-				<Card className="border-amber-500/30 bg-amber-500/5">
+				<Card className={isClonedProfile ? "border-blue-500/30 bg-blue-500/5" : "border-amber-500/30 bg-amber-500/5"}>
 					<CardHeader>
 						<CardTitle className="flex items-center gap-2">
-							<span className="inline-flex items-center gap-1 rounded bg-amber-500/20 px-2 py-1 text-sm font-medium text-amber-300">
-								⭐ TRaSH Recommended Formats
-							</span>
+							{isClonedProfile ? (
+								<span className="inline-flex items-center gap-1 rounded bg-blue-500/20 px-2 py-1 text-sm font-medium text-blue-300">
+									📦 Instance Custom Formats
+								</span>
+							) : (
+								<span className="inline-flex items-center gap-1 rounded bg-amber-500/20 px-2 py-1 text-sm font-medium text-amber-300">
+									⭐ TRaSH Recommended Formats
+								</span>
+							)}
 							<span className="text-sm font-normal text-fg-muted">
 								({filteredMandatoryCFs.length}{searchQuery ? ` of ${mandatoryCFs.length}` : ""} formats)
 							</span>
 						</CardTitle>
 						<CardDescription>
-							These custom formats are recommended by TRaSH Guides for this quality profile. You can toggle them on/off and override their scores.
+							{isClonedProfile
+								? "These custom formats are configured in the source instance's quality profile. You can toggle them on/off and override their scores."
+								: "These custom formats are recommended by TRaSH Guides for this quality profile. You can toggle them on/off and override their scores."
+							}
 						</CardDescription>
 					</CardHeader>
 					<CardContent>
@@ -753,7 +1007,11 @@ export const CFConfiguration = ({
 								return (
 									<div
 										key={cf.trash_id}
-										className="rounded-lg p-4 border border-amber-500/30 bg-amber-500/10 transition-all hover:border-amber-500/50 hover:bg-amber-500/15 hover:shadow-md"
+										className={`rounded-lg p-4 border transition-all hover:shadow-md ${
+											isClonedProfile
+												? "border-blue-500/30 bg-blue-500/10 hover:border-blue-500/50 hover:bg-blue-500/15"
+												: "border-amber-500/30 bg-amber-500/10 hover:border-amber-500/50 hover:bg-amber-500/15"
+										}`}
 									>
 										<div className="flex items-start gap-3">
 											<input
@@ -765,9 +1023,15 @@ export const CFConfiguration = ({
 											<div className="flex-1">
 												<div className="flex items-center gap-2 mb-2">
 													<span className="font-medium text-fg">{cf.displayName || cf.name}</span>
-													<span className="inline-flex items-center gap-1 rounded bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-300" title="TRaSH Guides recommends this format">
-														⭐ Recommended
-													</span>
+													{isClonedProfile ? (
+														<span className="inline-flex items-center gap-1 rounded bg-blue-500/20 px-2 py-0.5 text-xs font-medium text-blue-300" title="From source instance">
+															Score: {displayScore}
+														</span>
+													) : (
+														<span className="inline-flex items-center gap-1 rounded bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-300" title="TRaSH Guides recommends this format">
+															⭐ Recommended
+														</span>
+													)}
 												</div>
 
 												{cf.description && (
@@ -1167,9 +1431,12 @@ export const CFConfiguration = ({
 					<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
 						<h3 className="text-lg font-semibold text-fg">
 							<span className="flex flex-col sm:inline-flex sm:items-center sm:gap-2">
-								<span>Browse All Custom Formats</span>
+								<span>{isClonedProfile ? "Browse Instance Custom Formats" : "Browse All Custom Formats"}</span>
 								<span className="text-sm font-normal text-fg-muted">
-									(Add any additional custom formats to your template)
+									{isClonedProfile
+										? "(Add additional formats from the instance's catalog)"
+										: "(Add any additional custom formats to your template)"
+									}
 								</span>
 							</span>
 						</h3>
@@ -1196,11 +1463,16 @@ export const CFConfiguration = ({
 						</span>
 					</div>
 
-					<Card className="border-purple-500/30 bg-purple-500/5">
+					<Card className={isClonedProfile ? "border-blue-500/30 bg-blue-500/5" : "border-purple-500/30 bg-purple-500/5"}>
 						<CardHeader>
-							<CardTitle className="text-base">Additional Custom Formats Catalog</CardTitle>
+							<CardTitle className="text-base">
+								{isClonedProfile ? "Instance Custom Formats Catalog" : "Additional Custom Formats Catalog"}
+							</CardTitle>
 							<CardDescription>
-								Browse and select any additional custom formats from the TRaSH Guides catalog. Formats already in your template are hidden.
+								{isClonedProfile
+									? "Browse and select any additional custom formats from your instance. Formats already in your template are hidden."
+									: "Browse and select any additional custom formats from the TRaSH Guides catalog. Formats already in your template are hidden."
+								}
 							</CardDescription>
 						</CardHeader>
 						<CardContent>
@@ -1243,7 +1515,9 @@ export const CFConfiguration = ({
 										return (
 											<div
 												key={cf.trash_id}
-												className="rounded-lg p-3 border border-border/50 bg-bg-subtle transition-all hover:border-purple-500/50 hover:bg-bg-hover hover:shadow-md cursor-pointer"
+												className={`rounded-lg p-3 border border-border/50 bg-bg-subtle transition-all hover:bg-bg-hover hover:shadow-md cursor-pointer ${
+													isClonedProfile ? "hover:border-blue-500/50" : "hover:border-purple-500/50"
+												}`}
 												onClick={() => toggleCF(cf.trash_id, false)}
 											>
 												<div className="flex items-start gap-3">
@@ -1251,7 +1525,9 @@ export const CFConfiguration = ({
 														type="checkbox"
 														checked={isSelected}
 														onChange={() => toggleCF(cf.trash_id, false)}
-														className="mt-1 h-4 w-4 rounded border-border bg-bg-hover text-purple-500 focus:ring-purple-500 focus:ring-offset-0 cursor-pointer"
+														className={`mt-1 h-4 w-4 rounded border-border bg-bg-hover focus:ring-offset-0 cursor-pointer ${
+															isClonedProfile ? "text-blue-500 focus:ring-blue-500" : "text-purple-500 focus:ring-purple-500"
+														}`}
 														onClick={(e) => e.stopPropagation()}
 													/>
 													<div className="flex-1">
@@ -1264,7 +1540,9 @@ export const CFConfiguration = ({
 
 														{cf.description && (
 															<details className="mb-2 group">
-																<summary className="cursor-pointer text-xs text-purple-400 hover:text-purple-300 transition flex items-center gap-1">
+																<summary className={`cursor-pointer text-xs transition flex items-center gap-1 ${
+																	isClonedProfile ? "text-blue-400 hover:text-blue-300" : "text-purple-400 hover:text-purple-300"
+																}`}>
 																	<span className="group-open:rotate-90 transition-transform">▶</span>
 																	<span>What is this?</span>
 																</summary>
@@ -1292,7 +1570,9 @@ export const CFConfiguration = ({
 																	}}
 																	onClick={(e) => e.stopPropagation()}
 																	placeholder={`Default: ${displayScore}`}
-																	className="w-24 rounded border border-border bg-bg-hover px-2 py-1 text-xs text-fg focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-500"
+																	className={`w-24 rounded border border-border bg-bg-hover px-2 py-1 text-xs text-fg focus:outline-none focus:ring-1 ${
+																		isClonedProfile ? "focus:border-blue-500 focus:ring-blue-500" : "focus:border-purple-500 focus:ring-purple-500"
+																	}`}
 																/>
 																<span className="text-xs text-fg-muted">
 																	(leave empty for default: {displayScore})
@@ -1315,7 +1595,10 @@ export const CFConfiguration = ({
 				<CardHeader>
 					<CardTitle>Create Template</CardTitle>
 					<CardDescription>
-						Name your template and add an optional description
+						{isClonedProfile
+							? "Create a template from this cloned profile with an optional description"
+							: "Name your template and add an optional description"
+						}
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-4">

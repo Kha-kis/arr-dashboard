@@ -4,11 +4,15 @@
  * Extended template export/import with metadata and validation
  */
 
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient, TrashTemplate } from "@prisma/client";
 import type {
+	TemplateCompatibility,
+	TemplateConfig,
+	TemplateCustomFormat,
 	TemplateExportFormat,
 	TemplateExportOptions,
 	TemplateImportOptions,
+	TemplateImportValidation,
 	TemplateMetadata,
 } from "@arr/shared";
 import { createTemplateValidator } from "./template-validator.js";
@@ -48,23 +52,23 @@ export class EnhancedTemplateService {
 		};
 
 		// Filter config based on options
-		let config: any;
+		let config: TemplateConfig;
 		try {
-			config = JSON.parse(template.configData);
+			config = JSON.parse(template.configData) as TemplateConfig;
 		} catch (parseError) {
 			throw new Error(`Invalid template config data: ${parseError instanceof Error ? parseError.message : "Parse error"}`);
 		}
 		if (!options.includeQualitySettings) {
 			const { qualityProfile, completeQualityProfile, qualitySize, ...rest } = config;
-			config = rest;
+			config = rest as TemplateConfig;
 		}
 
 		if (!options.includeCustomConditions) {
 			// Remove custom specification modifications
 			if (config.customFormats) {
-				config.customFormats = config.customFormats.map((cf: any) => {
+				config.customFormats = config.customFormats.map((cf: TemplateCustomFormat) => {
 					const { specifications, ...rest } = cf;
-					return rest;
+					return rest as TemplateCustomFormat;
 				});
 			}
 		}
@@ -94,8 +98,8 @@ export class EnhancedTemplateService {
 		options: TemplateImportOptions = {},
 	): Promise<{
 		success: boolean;
-		template?: any;
-		validation?: any;
+		template?: TrashTemplate;
+		validation?: TemplateImportValidation;
 		error?: string;
 	}> {
 		try {
@@ -136,7 +140,7 @@ export class EnhancedTemplateService {
 						validation,
 						error: "Template name already exists",
 					};
-				} else if (options.onNameConflict === "rename" || !options.onNameConflict) {
+				}if (options.onNameConflict === "rename" || !options.onNameConflict) {
 					// Auto-rename with upper bound to prevent infinite loop
 					const MAX_RENAME_ATTEMPTS = 1000;
 					const baseName = importData.template.name;
@@ -171,15 +175,15 @@ export class EnhancedTemplateService {
 			if (!options.includeCustomConditions) {
 				// Remove custom specification modifications
 				if (config.customFormats) {
-					config.customFormats = config.customFormats.map((cf: any) => {
+					config.customFormats = config.customFormats.map((cf: TemplateCustomFormat) => {
 						const { specifications, ...rest } = cf;
-						return rest;
+						return rest as TemplateCustomFormat;
 					});
 				}
 			}
 
 			// Create or update template
-			let template;
+			let template: TrashTemplate | undefined;
 			if (options.onNameConflict === "replace" && nameConflict) {
 				// Update existing template
 				const existing = await this.prisma.trashTemplate.findFirst({
@@ -237,8 +241,8 @@ export class EnhancedTemplateService {
 		jsonData: string,
 	): Promise<{
 		valid: boolean;
-		validation: any;
-		compatibility: any;
+		validation: TemplateImportValidation;
+		compatibility: TemplateCompatibility;
 	}> {
 		try {
 			const importData: TemplateExportFormat = JSON.parse(jsonData);

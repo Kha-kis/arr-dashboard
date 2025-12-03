@@ -274,7 +274,7 @@ export const SettingsClient = () => {
 						onNewTagNameChange={tagsManagement.setNewTagName}
 						onCreateTag={tagsManagement.handleCreateTag}
 						onDeleteTag={(id) => tagsManagement.deleteTagMutation.mutate(id)}
-						isCreatingTag={tagsManagement.deleteTagMutation.isPending}
+						isCreatingTag={tagsManagement.createTagMutation.isPending}
 						isDeletingTag={tagsManagement.deleteTagMutation.isPending}
 					/>
 				</div>
