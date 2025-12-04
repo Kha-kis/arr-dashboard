@@ -25,7 +25,19 @@ legacy/node_modules
 # Build caches
 *.tsbuildinfo
 .eslintcache
+.stylelintcache
 .cache
+.parcel-cache
+.nyc_output
+
+# Next.js specific
+.vercel
+.output
+storybook-static
+
+# Test coverage
+*.lcov
+coverage/
 
 # Database files
 *.db
@@ -56,6 +68,22 @@ $RECYCLE.BIN/
 # Temporary files
 *.tmp
 nul
+*.pid
+*.seed
+
+# Package manager
+.yarn/
+.pnp.*
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Runtime
+*.pid
+*.seed
+*.pid.lock
 
 # Sensitive data - must never be committed
 secrets.json
