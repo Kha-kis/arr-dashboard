@@ -617,9 +617,3 @@ export function createTrashFetcher(options: FetchOptions = {}): TrashGitHubFetch
 
 	return new TrashGitHubFetcher(resolvedOptions);
 }
-
-/**
- * Singleton instance for convenience.
- * Uses GITHUB_TOKEN from environment if available.
- */
-export const defaultFetcher = createTrashFetcher();

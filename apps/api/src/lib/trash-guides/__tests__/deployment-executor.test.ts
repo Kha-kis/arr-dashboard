@@ -7,7 +7,8 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { PrismaClient } from "@prisma/client";
 import { DeploymentExecutorService } from "../deployment-executor.js";
-import type { CustomFormat, CustomFormatSpecification } from "../arr-api-client.js";
+import type { CustomFormatSpecification } from "@arr/shared";
+import type { CustomFormat } from "../arr-api-client.js";
 
 // Type for array-format fields (some arr instances return this format)
 interface ArrayFieldFormat {

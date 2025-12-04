@@ -273,7 +273,7 @@ export class SyncEngine {
 					completedAt: new Date(),
 					duration,
 					configsApplied: deployResult.customFormatsCreated + deployResult.customFormatsUpdated,
-					configsFailed: deployResult.details?.failed.length || 0,
+					configsFailed: deployResult.details?.failed?.length ?? 0,
 					configsSkipped: deployResult.customFormatsSkipped,
 					appliedConfigs: JSON.stringify([
 						...(deployResult.details?.created || []).map((name) => ({ name })),
@@ -296,7 +296,7 @@ export class SyncEngine {
 					deployResult.customFormatsUpdated +
 					deployResult.customFormatsSkipped,
 				appliedConfigs: deployResult.customFormatsCreated + deployResult.customFormatsUpdated,
-				failedConfigs: deployResult.details?.failed.length || 0,
+				failedConfigs: deployResult.details?.failed?.length ?? 0,
 				errors,
 			});
 
@@ -306,7 +306,7 @@ export class SyncEngine {
 				status,
 				duration,
 				configsApplied: deployResult.customFormatsCreated + deployResult.customFormatsUpdated,
-				configsFailed: deployResult.details?.failed.length || 0,
+				configsFailed: deployResult.details?.failed?.length ?? 0,
 				configsSkipped: deployResult.customFormatsSkipped,
 				errors,
 			};

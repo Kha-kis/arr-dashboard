@@ -329,9 +329,8 @@ export default function SyncDetailPage() {
 
 			{/* Rollback Confirmation Modal */}
 			{showRollbackConfirm && (
-				<div 
+				<div
 					className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-					aria-hidden="true"
 					onClick={(e) => {
 						// Close on backdrop click only if not pending
 						if (e.target === e.currentTarget && !rollbackMutation.isPending) {

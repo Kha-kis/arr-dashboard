@@ -373,12 +373,12 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 			let cfUpdated = false;
 
 			for (const cf of customFormats) {
-				// Match by custom format ID (stored in originalConfig)
-				if (cf.originalConfig?.id === customFormatId) {
+				// Match by instance custom format ID (stored in originalConfig._instanceCFId)
+				if (cf.originalConfig?._instanceCFId === customFormatId) {
 					cf.scoreOverride = override.score;
 					cfUpdated = true;
 					request.server.log.info(
-						{ cfName: cf.name, cfId: customFormatId, newScore: override.score },
+						{ cfName: cf.name, instanceCFId: customFormatId, newScore: override.score },
 						"Updated CF scoreOverride in template",
 					);
 					break;

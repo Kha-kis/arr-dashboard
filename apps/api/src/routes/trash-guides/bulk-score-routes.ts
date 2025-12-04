@@ -5,6 +5,7 @@
  */
 
 import type { FastifyPluginCallback } from "fastify";
+import { z } from "zod";
 import { createBulkScoreManager } from "../../lib/trash-guides/bulk-score-manager.js";
 import type {
 	BulkScoreFilters,
@@ -13,6 +14,18 @@ import type {
 	BulkScoreReset,
 	BulkScoreImport,
 } from "@arr/shared";
+
+// ============================================================================
+// Validation Schemas
+// ============================================================================
+
+const bulkScoreUpdateSchema = z.object({
+	targetTrashIds: z.array(z.string()).min(1, "At least one trash ID is required"),
+	targetTemplateIds: z.array(z.string()).optional(),
+	targetScoreSets: z.array(z.string()).optional(),
+	newScore: z.number().int(),
+	resetToDefault: z.boolean().optional(),
+});
 
 // ============================================================================
 // Routes
@@ -72,7 +85,23 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 */
 	app.post("/update", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
-		const update = request.body as BulkScoreUpdate;
+
+		// Validate request body
+		const parseResult = bulkScoreUpdateSchema.safeParse(request.body);
+		if (!parseResult.success) {
+			return reply.status(400).send({
+				success: false,
+				message: "Invalid request body",
+				errors: parseResult.error.errors.map((e) => ({
+					path: e.path.join("."),
+					message: e.message,
+				})),
+				affectedTemplates: 0,
+				affectedCustomFormats: 0,
+			});
+		}
+
+		const update: BulkScoreUpdate = parseResult.data;
 
 		try {
 			const bulkScoreManager = createBulkScoreManager(app.prisma, app.encryptor);

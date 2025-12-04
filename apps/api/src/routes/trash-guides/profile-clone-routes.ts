@@ -10,6 +10,7 @@ import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
 import { createCFMatcher, type InstanceCustomFormat } from "../../lib/trash-guides/cf-matcher.js";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
+import { findCutoffQualityName } from "../../lib/utils/quality-utils.js";
 import type { CompleteQualityProfile, TrashQualityProfile, TrashCustomFormatGroup, TrashCustomFormat, TemplateConfig, CustomFormatSpecification } from "@arr/shared";
 
 // ============================================================================
@@ -17,20 +18,22 @@ import type { CompleteQualityProfile, TrashQualityProfile, TrashCustomFormatGrou
 // ============================================================================
 
 const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
 	/**
 	 * POST /api/trash-guides/profile-clone/import
 	 * Import complete quality profile from *arr instance
 	 */
 	app.post("/import", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				statusCode: 401,
-				error: "Unauthorized",
-				message: "Authentication required",
-			});
-		}
-
-		const userId = request.currentUser.id;
+		const userId = request.currentUser!.id;
 		const {
 			instanceId,
 			profileId,
@@ -74,15 +77,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Preview deployment of complete quality profile
 	 */
 	app.post("/preview", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				statusCode: 401,
-				error: "Unauthorized",
-				message: "Authentication required",
-			});
-		}
-
-		const userId = request.currentUser.id;
+		const userId = request.currentUser!.id;
 		const {
 			instanceId,
 			profile,
@@ -127,15 +122,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Deploy complete quality profile to *arr instance
 	 */
 	app.post("/deploy", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				statusCode: 401,
-				error: "Unauthorized",
-				message: "Authentication required",
-			});
-		}
-
-		const userId = request.currentUser.id;
+		const userId = request.currentUser!.id;
 		const {
 			instanceId,
 			profile,
@@ -190,14 +177,6 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Get list of quality profiles from an instance
 	 */
 	app.get("/profiles/:instanceId", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				statusCode: 401,
-				error: "Unauthorized",
-				message: "Authentication required",
-			});
-		}
-
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
 		const { instanceId } = request.params as { instanceId: string };
 
@@ -225,49 +204,18 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 
 			const profiles = await response.json();
 
-			// Helper to find cutoff quality name from profile items
-			// The cutoff ID can match:
-			// 1. A single quality item (item.quality.id)
-			// 2. A quality group (item.id with item.name, has item.items)
-			// 3. A quality inside a group (subItem.quality.id or subItem.id)
-			const findCutoffQualityName = (items: any[], cutoffId: number): string | undefined => {
-				for (const item of items) {
-					// Check if this is a single quality item matching the cutoff
-					if (item.quality?.id === cutoffId) {
-						return item.quality.name;
-					}
-					// Check if this is a quality GROUP matching the cutoff (group has id + name + items)
-					if (item.id === cutoffId && item.name && item.items) {
-						return item.name;
-					}
-					// Check if this is a group containing the cutoff quality
-					if (item.items && Array.isArray(item.items)) {
-						for (const subItem of item.items) {
-							// Sub-items can have quality wrapper or direct id/name
-							if (subItem.quality?.id === cutoffId) {
-								return subItem.quality.name;
-							}
-							if (subItem.id === cutoffId && subItem.name) {
-								return subItem.name;
-							}
-						}
-					}
-				}
-				return undefined;
-			};
-
 			return reply.status(200).send({
 				success: true,
 				data: {
 					profiles: profiles.map((p: any) => {
 						// Resolve cutoff ID to quality name from profile items
-						const cutoffName = p.cutoff ? findCutoffQualityName(p.items || [], p.cutoff) : undefined;
+						const cutoffName = p.cutoff ? findCutoffQualityName(p.items || [], p.cutoff) : null;
 						return {
 							id: p.id,
 							name: p.name,
 							upgradeAllowed: p.upgradeAllowed,
 							cutoff: p.cutoff,
-							cutoffQuality: cutoffName ? { id: p.cutoff, name: cutoffName } : undefined,
+							cutoffQuality: cutoffName && cutoffName !== "Unknown" ? { id: p.cutoff, name: cutoffName } : undefined,
 							minFormatScore: p.minFormatScore,
 							formatItemsCount: p.formatItems?.length || 0,
 						};
@@ -288,14 +236,6 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Get detailed quality profile with custom formats from an instance
 	 */
 	app.get("/profile-details/:instanceId/:profileId", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				statusCode: 401,
-				error: "Unauthorized",
-				message: "Authentication required",
-			});
-		}
-
 		const { instanceId, profileId } = request.params as {
 			instanceId: string;
 			profileId: string;
@@ -388,14 +328,6 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Used when cloning a profile to identify which CFs match TRaSH Guides
 	 */
 	app.post("/validate-cfs", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				statusCode: 401,
-				error: "Unauthorized",
-				message: "Authentication required",
-			});
-		}
-
 		const { instanceId, profileId, serviceType } = request.body as {
 			instanceId: string;
 			profileId: number;
@@ -524,14 +456,6 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * This helps users identify which CFs are expected to be in a profile based on TRaSH Guides
 	 */
 	app.post("/match-profile", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				statusCode: 401,
-				error: "Unauthorized",
-				message: "Authentication required",
-			});
-		}
-
 		const { profileName, serviceType } = request.body as {
 			profileName: string;
 			serviceType: "RADARR" | "SONARR";
@@ -752,15 +676,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Create a template from a cloned instance profile with resolved CF mappings
 	 */
 	app.post("/create-template", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({
-				statusCode: 401,
-				error: "Unauthorized",
-				message: "Authentication required",
-			});
-		}
-
-		const userId = request.currentUser.id;
+		const userId = request.currentUser!.id;
 		const {
 			serviceType,
 			trashId,
@@ -888,37 +804,6 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 					}
 				}
 			}
-
-			// Helper function to find cutoff quality name from profile items
-			// The cutoff ID can match:
-			// 1. A single quality item (item.quality.id)
-			// 2. A quality group (item.id with item.name, has item.items)
-			// 3. A quality inside a group (subItem.quality.id or subItem.id)
-			const findCutoffQualityName = (items: any[], cutoffId: number): string => {
-				for (const item of items) {
-					// Check if this is a single quality item matching the cutoff
-					if (item.quality?.id === cutoffId) {
-						return item.quality.name;
-					}
-					// Check if this is a quality GROUP matching the cutoff (group has id + name + items)
-					if (item.id === cutoffId && item.name && item.items) {
-						return item.name;
-					}
-					// Check if this is a group containing the cutoff quality
-					if (item.items && Array.isArray(item.items)) {
-						for (const subItem of item.items) {
-							// Sub-items can have quality wrapper or direct id/name
-							if (subItem.quality?.id === cutoffId) {
-								return subItem.quality.name;
-							}
-							if (subItem.id === cutoffId && subItem.name) {
-								return subItem.name;
-							}
-						}
-					}
-				}
-				return "Unknown";
-			};
 
 			// Build the CompleteQualityProfile from the fetched profile
 			const cutoffId = fullProfile.cutoff ?? profileConfig?.cutoff ?? 0;

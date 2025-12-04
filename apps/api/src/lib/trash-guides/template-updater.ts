@@ -54,6 +54,7 @@ export interface SyncResult {
 	previousCommit: string | null;
 	newCommit: string;
 	errors?: string[];
+	errorType?: "not_found" | "not_authorized" | "sync_failed";
 	mergeStats?: MergeStats;
 }
 
@@ -102,15 +103,16 @@ export class TemplateUpdater {
 	}
 
 	/**
-	 * Check for available updates across all templates
+	 * Check for available updates across templates owned by the specified user
 	 */
-	async checkForUpdates(): Promise<UpdateCheckResult> {
+	async checkForUpdates(userId: string): Promise<UpdateCheckResult> {
 		// Get latest commit from GitHub
 		const latestCommit = await this.versionTracker.getLatestCommit();
 
-		// Get all active templates with their deployment mappings
+		// Get all active templates owned by this user with their deployment mappings
 		const templates = await this.prisma.trashTemplate.findMany({
 			where: {
+				userId,
 				deletedAt: null,
 			},
 			select: {
@@ -179,8 +181,38 @@ export class TemplateUpdater {
 	async syncTemplate(
 		templateId: string,
 		targetCommitHash?: string,
+		userId?: string,
 	): Promise<SyncResult> {
-		// Get template
+		// First check if template exists at all
+		const templateExists = await this.prisma.trashTemplate.findUnique({
+			where: { id: templateId },
+			select: { id: true, userId: true },
+		});
+
+		if (!templateExists) {
+			return {
+				success: false,
+				templateId,
+				previousCommit: null,
+				newCommit: targetCommitHash || "",
+				errors: ["Template not found"],
+				errorType: "not_found",
+			};
+		}
+
+		// Verify ownership if userId is provided
+		if (userId && templateExists.userId !== userId) {
+			return {
+				success: false,
+				templateId,
+				previousCommit: null,
+				newCommit: targetCommitHash || "",
+				errors: ["Not authorized to modify this template"],
+				errorType: "not_authorized",
+			};
+		}
+
+		// Get full template data
 		const template = await this.prisma.trashTemplate.findUnique({
 			where: { id: templateId },
 		});
@@ -192,6 +224,7 @@ export class TemplateUpdater {
 				previousCommit: null,
 				newCommit: targetCommitHash || "",
 				errors: ["Template not found"],
+				errorType: "not_found",
 			};
 		}
 
@@ -301,12 +334,12 @@ export class TemplateUpdater {
 	}> {
 		try {
 			const [cfCache, groupCache] = await Promise.all([
-				this.cacheManager.get<{ data: TrashCustomFormat[] }>(serviceType, "CUSTOM_FORMATS"),
-				this.cacheManager.get<{ data: TrashCustomFormatGroup[] }>(serviceType, "CF_GROUPS"),
+				this.cacheManager.get<TrashCustomFormat[]>(serviceType, "CUSTOM_FORMATS"),
+				this.cacheManager.get<TrashCustomFormatGroup[]>(serviceType, "CF_GROUPS"),
 			]);
 
-			const customFormats = cfCache?.data ?? [];
-			const customFormatGroups = groupCache?.data ?? [];
+			const customFormats = cfCache ?? [];
+			const customFormatGroups = groupCache ?? [];
 
 			return {
 				success: true,
@@ -563,13 +596,13 @@ export class TemplateUpdater {
 	 * Process automatic updates for templates with auto-sync enabled
 	 * Also triggers automatic deployment to mapped instances after successful sync
 	 */
-	async processAutoUpdates(): Promise<{
+	async processAutoUpdates(userId: string): Promise<{
 		processed: number;
 		successful: number;
 		failed: number;
 		results: SyncResult[];
 	}> {
-		const updateCheck = await this.checkForUpdates();
+		const updateCheck = await this.checkForUpdates(userId);
 
 		// Filter templates eligible for auto-sync
 		const autoSyncTemplates = updateCheck.templatesWithUpdates.filter(
@@ -669,8 +702,8 @@ export class TemplateUpdater {
 	/**
 	 * Get templates requiring user attention (not auto-synced or have user modifications)
 	 */
-	async getTemplatesNeedingAttention(): Promise<TemplateUpdateInfo[]> {
-		const updateCheck = await this.checkForUpdates();
+	async getTemplatesNeedingAttention(userId: string): Promise<TemplateUpdateInfo[]> {
+		const updateCheck = await this.checkForUpdates(userId);
 
 		// Templates that can't auto-sync need user attention
 		return updateCheck.templatesWithUpdates.filter(
@@ -684,6 +717,7 @@ export class TemplateUpdater {
 	async getTemplateDiff(
 		templateId: string,
 		targetCommitHash?: string,
+		userId?: string,
 	): Promise<{
 		templateId: string;
 		templateName: string;
@@ -714,7 +748,22 @@ export class TemplateUpdater {
 		}>;
 		hasUserModifications: boolean;
 	}> {
-		// Get template
+		// First check if template exists at all
+		const templateExists = await this.prisma.trashTemplate.findUnique({
+			where: { id: templateId },
+			select: { id: true, userId: true },
+		});
+
+		if (!templateExists) {
+			throw new Error("Template not found");
+		}
+
+		// Verify ownership if userId is provided
+		if (userId && templateExists.userId !== userId) {
+			throw new Error("Not authorized to access this template");
+		}
+
+		// Get full template data
 		const template = await this.prisma.trashTemplate.findUnique({
 			where: { id: templateId },
 		});

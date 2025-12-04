@@ -58,7 +58,7 @@ export async function registerUpdateRoutes(
 	 */
 	app.get("/", async (request, reply) => {
 		try {
-			const updateCheck = await templateUpdater.checkForUpdates();
+			const updateCheck = await templateUpdater.checkForUpdates(request.currentUser!.id);
 
 			return reply.send({
 				success: true,
@@ -88,7 +88,7 @@ export async function registerUpdateRoutes(
 	 */
 	app.get("/attention", async (request, reply) => {
 		try {
-			const templates = await templateUpdater.getTemplatesNeedingAttention();
+			const templates = await templateUpdater.getTemplatesNeedingAttention(request.currentUser!.id);
 
 			return reply.send({
 				success: true,
@@ -122,6 +122,7 @@ export async function registerUpdateRoutes(
 			const result = await templateUpdater.syncTemplate(
 				id,
 				body.targetCommitHash,
+				request.currentUser!.id,
 			);
 
 			if (result.success) {
@@ -133,6 +134,21 @@ export async function registerUpdateRoutes(
 						newCommit: result.newCommit,
 						message: "Template synced successfully",
 					},
+				});
+			}
+
+			// Handle specific error types with appropriate HTTP status codes
+			if (result.errorType === "not_found") {
+				return reply.status(404).send({
+					success: false,
+					error: "Template not found",
+				});
+			}
+
+			if (result.errorType === "not_authorized") {
+				return reply.status(403).send({
+					success: false,
+					error: "Not authorized to modify this template",
 				});
 			}
 
@@ -165,7 +181,7 @@ export async function registerUpdateRoutes(
 	 */
 	app.post("/process-auto", async (request, reply) => {
 		try {
-			const result = await templateUpdater.processAutoUpdates();
+			const result = await templateUpdater.processAutoUpdates(request.currentUser!.id);
 
 			return reply.send({
 				success: true,
@@ -200,21 +216,26 @@ export async function registerUpdateRoutes(
 			const { id } = request.params;
 			const { targetCommit } = request.query;
 
-			const diffResult = await templateUpdater.getTemplateDiff(id, targetCommit);
+			const diffResult = await templateUpdater.getTemplateDiff(id, targetCommit, request.currentUser!.id);
 
 			return reply.send({
 				success: true,
 				data: diffResult,
 			});
 		} catch (error: unknown) {
-			if (
-				error instanceof Error &&
-				error.message === "Template not found"
-			) {
-				return reply.status(404).send({
-					success: false,
-					error: "Template not found",
-				});
+			if (error instanceof Error) {
+				if (error.message === "Template not found") {
+					return reply.status(404).send({
+						success: false,
+						error: "Template not found",
+					});
+				}
+				if (error.message === "Not authorized to access this template") {
+					return reply.status(403).send({
+						success: false,
+						error: "Not authorized to access this template",
+					});
+				}
 			}
 
 			request.log.error({ error }, "Failed to generate diff");

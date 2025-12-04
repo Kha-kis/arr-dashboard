@@ -182,17 +182,10 @@ export class ProfileCloner {
 			const instanceCFs = await client.getCustomFormats();
 
 			// Map trash_ids to instance custom format IDs
-			// Prefer exact trash_id match, fall back to name match if trash_id is absent
+			// Match by trash_id only (cf only contains trash_id and score)
 			const formatItems = customFormats
 				.map((cf) => {
-					const instanceCF = instanceCFs.find((icf) => {
-						// First try exact trash_id match if the instance CF has one
-						if (icf.trash_id) {
-							return icf.trash_id === cf.trash_id;
-						}
-						// Fall back to name match only if trash_id is absent
-						return icf.name === cf.trash_id;
-					});
+					const instanceCF = instanceCFs.find((icf) => icf.trash_id === cf.trash_id);
 					if (!instanceCF) return null;
 
 					return {

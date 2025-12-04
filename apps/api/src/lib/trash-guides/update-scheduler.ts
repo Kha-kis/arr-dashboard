@@ -217,17 +217,57 @@ export class UpdateScheduler {
 				errors.push(...sonarrCacheResult.errors.map((e: string) => `Sonarr: ${e}`));
 			}
 
-			// Check for template updates
-			const updateCheck = await this.templateUpdater.checkForUpdates();
+			// Get all distinct user IDs with templates to process updates per-user
+			const templatesWithUsers = await this.prisma.trashTemplate.findMany({
+				where: {
+					deletedAt: null,
+					trashGuidesCommitHash: { not: null },
+				},
+				select: { userId: true },
+				distinct: ["userId"],
+			});
+			const usersWithTemplates = templatesWithUsers.map((t) => ({ id: t.userId }));
+
+			let totalTemplatesChecked = 0;
+			let totalOutdated = 0;
+
+			// Process each user's templates
+			for (const user of usersWithTemplates) {
+				// Check for template updates for this user
+				const updateCheck = await this.templateUpdater.checkForUpdates(user.id);
+				totalTemplatesChecked += updateCheck.totalTemplates;
+				totalOutdated += updateCheck.outdatedTemplates;
+
+				if (updateCheck.outdatedTemplates > 0) {
+					// Process auto-sync templates for this user
+					const autoSyncResult = await this.templateUpdater.processAutoUpdates(user.id);
+					templatesAutoSynced += autoSyncResult.successful;
+
+					if (autoSyncResult.failed > 0) {
+						const failedResults = autoSyncResult.results.filter((r: SyncResult) => !r.success);
+						errors.push(
+							...failedResults.flatMap((r: SyncResult) => r.errors || []),
+						);
+					}
+
+					// Get templates needing user attention for this user
+					const attentionTemplates = await this.templateUpdater.getTemplatesNeedingAttention(user.id);
+					templatesNeedingAttention += attentionTemplates.length;
+
+					if (attentionTemplates.length > 0) {
+						await this.createUpdateNotifications(attentionTemplates);
+					}
+				}
+			}
 
 			this.logger.info(
-				`Found ${updateCheck.outdatedTemplates} outdated templates out of ${updateCheck.totalTemplates}`,
+				`Found ${totalOutdated} outdated templates out of ${totalTemplatesChecked}`,
 			);
 
-			if (updateCheck.outdatedTemplates === 0) {
+			if (totalOutdated === 0) {
 				this.stats.lastCheckAt = new Date();
 				this.stats.lastCheckResult = {
-					templatesChecked: updateCheck.totalTemplates,
+					templatesChecked: totalTemplatesChecked,
 					templatesOutdated: 0,
 					templatesAutoSynced: 0,
 					templatesWithAutoStrategy,
@@ -243,56 +283,22 @@ export class UpdateScheduler {
 				return;
 			}
 
-			// Process auto-sync templates (respects per-template syncStrategy)
-			const autoSyncResult = await this.templateUpdater.processAutoUpdates();
-
-			templatesAutoSynced = autoSyncResult.successful;
-
-			if (autoSyncResult.failed > 0) {
-				const failedResults = autoSyncResult.results.filter((r: SyncResult) => !r.success);
-				this.logger.warn(
-					`${autoSyncResult.failed} templates failed to auto-sync`,
-					{
-						failures: failedResults,
-					},
-				);
-
-				errors.push(
-					...failedResults.flatMap((r: SyncResult) => r.errors || []),
-				);
-			}
-
 			this.logger.info(
-				`Auto-synced ${templatesAutoSynced} templates (${autoSyncResult.failed} failed)`,
+				`Auto-synced ${templatesAutoSynced} templates`,
 			);
-
-			// Get templates needing user attention
-			const attentionTemplates =
-				await this.templateUpdater.getTemplatesNeedingAttention();
-			templatesNeedingAttention = attentionTemplates.length;
 
 			if (templatesNeedingAttention > 0) {
 				this.logger.info(
 					`${templatesNeedingAttention} templates need user attention`,
-					{
-						templates: attentionTemplates.map((t: TemplateUpdateInfo) => ({
-							id: t.templateId,
-							name: t.templateName,
-							hasModifications: t.hasUserModifications,
-						})),
-					},
 				);
-
-				// Create notifications for templates needing attention
-				await this.createUpdateNotifications(attentionTemplates);
 			}
 
 			// Update statistics
 			const duration = Date.now() - startTime;
 			this.stats.lastCheckAt = new Date();
 			this.stats.lastCheckResult = {
-				templatesChecked: updateCheck.totalTemplates,
-				templatesOutdated: updateCheck.outdatedTemplates,
+				templatesChecked: totalTemplatesChecked,
+				templatesOutdated: totalOutdated,
 				templatesAutoSynced,
 				templatesWithAutoStrategy,
 				templatesWithNotifyStrategy,

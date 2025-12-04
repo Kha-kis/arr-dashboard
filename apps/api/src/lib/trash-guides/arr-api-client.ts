@@ -4,6 +4,8 @@
  * Handles Custom Format operations for Radarr and Sonarr instances
  */
 
+import type { CustomFormatSpecification } from "@arr/shared";
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -21,14 +23,6 @@ export interface CustomFormat {
 	trash_id?: string;
 	includeCustomFormatWhenRenaming?: boolean;
 	specifications: CustomFormatSpecification[];
-}
-
-export interface CustomFormatSpecification {
-	name: string;
-	implementation: string;
-	negate: boolean;
-	required: boolean;
-	fields: Record<string, unknown>;
 }
 
 export interface SystemStatus {

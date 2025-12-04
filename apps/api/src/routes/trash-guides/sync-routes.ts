@@ -48,6 +48,42 @@ const syncHistoryQuerySchema = z.object({
 // ============================================================================
 
 const progressStore = new Map<string, SyncProgress>();
+const cleanupTimers = new Map<string, NodeJS.Timeout>();
+
+// TTL for progress entries (5 minutes - enough time for clients to poll/reconnect)
+const PROGRESS_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Schedule cleanup of a progress entry after TTL expires.
+ * Cancels any existing timer for the same syncId to avoid duplicate cleanups.
+ */
+function scheduleProgressCleanup(syncId: string, ttlMs: number = PROGRESS_TTL_MS): void {
+	// Cancel existing timer if present
+	const existingTimer = cleanupTimers.get(syncId);
+	if (existingTimer) {
+		clearTimeout(existingTimer);
+	}
+
+	// Schedule new cleanup
+	const timer = setTimeout(() => {
+		progressStore.delete(syncId);
+		cleanupTimers.delete(syncId);
+	}, ttlMs);
+
+	cleanupTimers.set(syncId, timer);
+}
+
+/**
+ * Immediately remove a progress entry and cancel its cleanup timer.
+ */
+function removeProgress(syncId: string): void {
+	const timer = cleanupTimers.get(syncId);
+	if (timer) {
+		clearTimeout(timer);
+		cleanupTimers.delete(syncId);
+	}
+	progressStore.delete(syncId);
+}
 
 // ============================================================================
 // Routes
@@ -138,9 +174,12 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 		};
 
 		progressStore.set(result.syncId, finalProgress);
+		// Schedule cleanup to prevent memory leak
+		scheduleProgressCleanup(result.syncId);
 
 		return reply.send(result);
 	});
+
 	/**
 	 * Stream sync progress (SSE endpoint)
 	 * GET /api/trash-guides/sync/:syncId/stream
@@ -178,21 +217,12 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 			}
 		};
 
-		// Register callback
+		// Register callback FIRST to avoid race condition where sync completes
+		// between registration and currentProgress check
 		syncEngine.onProgress(syncId, streamProgress);
 
-		// Send current progress if available
-		const currentProgress = progressStore.get(syncId);
-		if (currentProgress) {
-			streamProgress(currentProgress);
-		} else {
-			// No progress found, send error and close
-			reply.raw.write(`data: ${JSON.stringify({ type: "error", message: "Sync not found" })}\n\n`);
-			reply.raw.end();
-			return;
-		}
-
-		// Clean up on client disconnect
+		// Set up cleanup handler immediately after registration to ensure
+		// listener is always removed on client disconnect (even on early return)
 		request.raw.on("close", () => {
 			// Remove the progress listener to prevent memory leaks
 			syncEngine.removeProgressListener(syncId, streamProgress);
@@ -200,6 +230,18 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 				reply.raw.end();
 			}
 		});
+
+		// Now check current progress - callback is already registered so we won't miss updates
+		const currentProgress = progressStore.get(syncId);
+		if (currentProgress) {
+			streamProgress(currentProgress);
+		} else {
+			// No progress found, remove listener and send error
+			syncEngine.removeProgressListener(syncId, streamProgress);
+			reply.raw.write(`data: ${JSON.stringify({ type: "error", message: "Sync not found" })}\n\n`);
+			reply.raw.end();
+			return;
+		}
 	});
 
 	/**

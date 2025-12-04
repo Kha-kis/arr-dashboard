@@ -15,9 +15,10 @@ import type {
 	CustomFormatConflict,
 	DeploymentAction,
 	UnmatchedCustomFormat,
+	CustomFormatSpecification,
 } from "@arr/shared";
 import { createArrApiClient } from "./arr-api-client.js";
-import type { CustomFormat, CustomFormatSpecification } from "./arr-api-client.js";
+import type { CustomFormat } from "./arr-api-client.js";
 import { dequal as deepEqual } from "dequal";
 
 // ============================================================================

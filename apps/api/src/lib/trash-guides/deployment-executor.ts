@@ -540,18 +540,23 @@ export class DeploymentExecutorService {
 				const currentTemplateCFNames = new Set(templateCFs.map((cf) => cf.name));
 				const cfByName = new Map(allCFs.map((cf) => [cf.name, cf]));
 
+				// Track already-added format IDs to prevent duplicates
+				const addedFormatIds = new Set(formatItems.map((item) => item.format));
+
 				for (const prevCF of previouslyDeployedCFs) {
 					// If this CF was previously deployed but is no longer in the template
 					if (!currentTemplateCFNames.has(prevCF.name)) {
 						const instanceCF = cfByName.get(prevCF.name);
-						if (instanceCF?.id) {
+						// Only add if the format ID isn't already in formatItems
+						if (instanceCF?.id && !addedFormatIds.has(instanceCF.id)) {
 							// Set score to 0 to neutralize it
 							formatItems.push({
-							format: instanceCF.id,
-							score: 0,
-						});
-						orphanedCFs.push(prevCF.name);
-					}
+								format: instanceCF.id,
+								score: 0,
+							});
+							addedFormatIds.add(instanceCF.id);
+							orphanedCFs.push(prevCF.name);
+						}
 					}
 				}
 
