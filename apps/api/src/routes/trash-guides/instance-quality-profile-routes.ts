@@ -343,18 +343,36 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 				});
 			}
 
-			// Get the template
-			const template = await request.server.prisma.trashTemplate.findUnique({
-				where: { id: templateId, userId },
-			});
+			// Ensure this profile is actually mapped to the requested template
+			const templateMapping =
+				await request.server.prisma.templateQualityProfileMapping.findUnique({
+					where: {
+						instanceId_qualityProfileId: {
+							instanceId,
+							qualityProfileId: profileIdNum,
+						},
+					},
+					include: { template: true },
+				});
 
-			if (!template) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: "Template not found or access denied",
+			if (!templateMapping || templateMapping.templateId !== templateId) {
+				return reply.status(400).send({
+					statusCode: 400,
+					error: "BadRequest",
+					message: "Quality profile is not mapped to the specified template",
 				});
 			}
+
+			// Verify the user owns this template
+			if (templateMapping.template.userId !== userId) {
+				return reply.status(403).send({
+					statusCode: 403,
+					error: "Forbidden",
+					message: "You do not have access to this template",
+				});
+			}
+
+			const template = templateMapping.template;
 
 			// Parse template config
 			let configData: Record<string, any>;

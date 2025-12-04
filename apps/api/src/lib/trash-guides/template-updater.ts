@@ -661,6 +661,19 @@ export class TemplateUpdater {
 			return;
 		}
 
+		// Query the template to get the owner's userId for proper authorization
+		const template = await this.prisma.trashTemplate.findUnique({
+			where: { id: templateId },
+			select: { userId: true, name: true },
+		});
+
+		if (!template) {
+			console.error(
+				`[TemplateUpdater] Cannot auto-deploy: template ${templateId} not found`
+			);
+			return;
+		}
+
 		// Get only instances mapped with auto sync strategy
 		// Manual and notify strategies require user intervention
 		const mappings = await this.prisma.templateQualityProfileMapping.findMany({
@@ -677,28 +690,28 @@ export class TemplateUpdater {
 			return; // No auto-sync instances mapped, nothing to deploy
 		}
 
-		// Deploy to each mapped instance
-		// Note: Using a system user ID for auto-deployments
-		const SYSTEM_USER_ID = "system";
+		// Deploy to each mapped instance using the template owner's userId
 		for (const mapping of mappings) {
 			try {
 				const result = await this.deploymentExecutor.deploySingleInstance(
 					templateId,
 					mapping.instanceId,
-					SYSTEM_USER_ID,
+					template.userId,
 				);
 
 				if (!result.success) {
 					console.error(
-						`Failed to auto-deploy template ${templateId} to instance ${mapping.instance.label}:`,
+						`[TemplateUpdater] Failed to auto-deploy template "${template.name}" (${templateId}) to instance ${mapping.instance.label}:`,
 						result.errors
 					);
 				}
 			} catch (error) {
 				console.error(
-					`Error auto-deploying template ${templateId} to instance ${mapping.instanceId}:`,
-					error
+					`[TemplateUpdater] Error auto-deploying template "${template.name}" (${templateId}) to instance ${mapping.instanceId}:`,
+					error instanceof Error ? error.message : error
 				);
+				// Re-throw to make failures visible to callers
+				throw error;
 			}
 		}
 	}
