@@ -6,10 +6,10 @@ import {
 	useTemplates,
 	useDeleteTemplate,
 	useDuplicateTemplate,
+	TEMPLATES_QUERY_KEY,
 } from "../../../hooks/api/useTemplates";
 import { Alert, AlertTitle, AlertDescription, EmptyState, Skeleton, Button } from "../../../components/ui";
 import { AlertCircle, Plus, Download, Copy, Trash2, Edit, FileText, RefreshCw, Star, Rocket, Layers, X } from "lucide-react";
-import { exportTemplate } from "../../../lib/api-client/templates";
 import { useUnlinkTemplateFromInstance } from "../../../hooks/api/useDeploymentPreview";
 import { TemplateStats } from "./template-stats";
 import { SyncValidationModal } from "./sync-validation-modal";
@@ -176,10 +176,6 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 			{
 				onSuccess: () => {
 					setUnlinkConfirm(null);
-				},
-				onError: (error) => {
-					console.error("Unlink failed:", error);
-					toast.error("Failed to unlink template from instance", { description: error.message });
 				},
 			}
 		);
@@ -450,11 +446,6 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 										return templateUpdate ? (
 											<TemplateUpdateBanner
 												update={templateUpdate}
-												onSyncSuccess={() => {
-													// Refetch templates and updates after successful sync
-													queryClient.invalidateQueries({ queryKey: ["trash-guides", "templates"] });
-													queryClient.invalidateQueries({ queryKey: ["trash-guides", "updates"] });
-												}}
 											/>
 										) : null;
 									})()}
@@ -579,12 +570,6 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 					templateName={deploymentModal.templateName}
 					instanceId={deploymentModal.instanceId}
 					instanceLabel={deploymentModal.instanceLabel}
-					onDeploySuccess={() => {
-						// Refetch templates, updates, and deployment history after successful deployment
-						queryClient.invalidateQueries({ queryKey: ["trash-guides", "templates"] });
-						queryClient.invalidateQueries({ queryKey: ["trash-guides", "updates"] });
-						queryClient.invalidateQueries({ queryKey: ["deployment-history"] });
-					}}
 				/>
 			)}
 
@@ -723,7 +708,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 					<div className="bg-bg-subtle rounded-xl shadow-2xl border border-border max-w-2xl w-full max-h-[90vh] overflow-auto">
 						<EnhancedTemplateImportModal
 							onImportComplete={() => {
-								queryClient.invalidateQueries({ queryKey: ["trash-guides", "templates"] });
+								queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
 								setImportModal(false);
 							}}
 							onClose={() => setImportModal(false)}
@@ -788,7 +773,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 					instances={bulkDeployModal.instances}
 					onDeploySuccess={() => {
 						setBulkDeployModal(null);
-						queryClient.invalidateQueries({ queryKey: ["trash-guides", "templates"] });
+						queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
 					}}
 				/>
 			)}

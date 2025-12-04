@@ -1,8 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { fetchTemplateStats, fetchTemplate } from "../../../lib/api-client/templates";
+import { useTemplateStats, useTemplate } from "../../../hooks/api/useTemplates";
 import type { TemplateStatsResponse } from "../../../lib/api-client/templates";
 import { ChevronDown, ChevronUp, Calendar, Package, Activity, Rocket, Layers, History, SlidersHorizontal, Unlink2, RefreshCw, Bell, Hand, X } from "lucide-react";
 import { BulkDeploymentModal } from "./bulk-deployment-modal";
@@ -54,17 +53,10 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 	const bulkUpdateSyncStrategyMutation = useBulkUpdateSyncStrategy();
 
 	const handleBulkSyncStrategyChange = (newStrategy: "auto" | "manual" | "notify") => {
-		bulkUpdateSyncStrategyMutation.mutate(
-			{ templateId, syncStrategy: newStrategy },
-			{
-				onError: (error) => {
-					console.error("Failed to bulk update sync strategy:", error);
-					toast.error("Failed to update sync strategy", {
-						description: error.message,
-					});
-				},
-			}
-		);
+		bulkUpdateSyncStrategyMutation.mutate({
+			templateId,
+			syncStrategy: newStrategy,
+		});
 	};
 
 	const handleSyncStrategyChange = (instanceId: string, newStrategy: "auto" | "manual" | "notify") => {
@@ -73,27 +65,14 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 			{ templateId, instanceId, syncStrategy: newStrategy },
 			{
 				onSettled: () => setUpdatingStrategyInstanceId(null),
-				onError: (error) => {
-					console.error("Failed to update sync strategy:", error);
-					toast.error("Failed to update sync strategy", {
-						description: error.message,
-					});
-				},
 			}
 		);
 	};
 
 	// Fetch template data when override modal is open (to get customFormats)
-	const { data: templateData, isLoading: templateLoading } = useQuery({
-		queryKey: ["template", templateId],
-		queryFn: () => fetchTemplate(templateId),
-		enabled: !!overrideModal,
-	});
+	const { data: templateData, isLoading: templateLoading } = useTemplate(overrideModal ? templateId : null);
 
-	const { data, isLoading } = useQuery<TemplateStatsResponse>({
-		queryKey: ["template-stats", templateId],
-		queryFn: () => fetchTemplateStats(templateId),
-	});
+	const { data, isLoading } = useTemplateStats(templateId);
 
 	if (isLoading && expanded) {
 		return (

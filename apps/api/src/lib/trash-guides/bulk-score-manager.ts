@@ -54,10 +54,11 @@ export class BulkScoreManager {
 		}
 
 		// Fetch the specific instance with ownership verification
+		// Including userId in the where clause ensures only user-owned instances can be accessed
 		const instance = await this.prisma.serviceInstance.findFirst({
 			where: {
 				id: filters.instanceId,
-				userId,
+				userId, // Authorization check: ensures instance belongs to the requesting user
 				enabled: true,
 			},
 			select: {

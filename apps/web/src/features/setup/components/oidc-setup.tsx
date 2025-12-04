@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { apiRequest } from "../../../lib/api-client/base";
 import type { OIDCProviderType } from "@arr/shared";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Alert, AlertDescription } from "../../../components/ui";
+import { useOIDCSetup } from "../../../hooks/api/useAuth";
 
 export const OIDCSetup = () => {
 	const [formState, setFormState] = useState({
@@ -16,12 +16,10 @@ export const OIDCSetup = () => {
 		issuer: "",
 		scopes: "openid,email,profile",
 	});
-	const [error, setError] = useState<string | null>(null);
-	const [isSubmitting, setIsSubmitting] = useState(false);
+	const oidcSetupMutation = useOIDCSetup();
 
 	const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
-		setError(null);
 
 		// Validation
 		if (
@@ -30,30 +28,15 @@ export const OIDCSetup = () => {
 			!formState.clientSecret ||
 			!formState.issuer
 		) {
-			setError("All fields are required");
 			return;
 		}
 
-		setIsSubmitting(true);
-
 		try {
-			// Configure OIDC provider
-			await apiRequest("/auth/oidc/setup", {
-				method: "POST",
-				json: formState,
-			});
-
-			// Initiate OIDC login
-			const response = await apiRequest<{ authorizationUrl: string }>("/auth/oidc/login", {
-				method: "POST",
-				json: { provider: formState.type },
-			});
-
+			const result = await oidcSetupMutation.mutateAsync(formState);
 			// Redirect to OIDC provider
-			window.location.href = response.authorizationUrl;
-		} catch (err: any) {
-			setError(err.message ?? "Failed to configure OIDC provider");
-			setIsSubmitting(false);
+			window.location.href = result.authorizationUrl;
+		} catch (err) {
+			// Error handling is done by the mutation hook
 		}
 	};
 
@@ -122,13 +105,15 @@ export const OIDCSetup = () => {
 					placeholder="openid,email,profile"
 				/>
 			</div>
-			{error && (
+			{oidcSetupMutation.isError && (
 				<Alert variant="danger">
-					<AlertDescription>{error}</AlertDescription>
+					<AlertDescription>
+						{oidcSetupMutation.error?.message ?? "Failed to configure OIDC provider"}
+					</AlertDescription>
 				</Alert>
 			)}
-			<Button type="submit" disabled={isSubmitting} className="w-full">
-				{isSubmitting ? "Configuring..." : "Continue with OIDC"}
+			<Button type="submit" disabled={oidcSetupMutation.isPending} className="w-full">
+				{oidcSetupMutation.isPending ? "Configuring..." : "Continue with OIDC"}
 			</Button>
 			<p className="text-xs text-fg-muted text-center">
 				You&apos;ll be redirected to your OIDC provider to complete authentication. The first user

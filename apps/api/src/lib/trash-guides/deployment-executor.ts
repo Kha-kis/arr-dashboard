@@ -199,8 +199,11 @@ export class DeploymentExecutorService {
 		}
 
 		// Get instance with ownership verification
-		const instance = await this.prisma.serviceInstance.findUnique({
-			where: { id: instanceId, userId },
+		const instance = await this.prisma.serviceInstance.findFirst({
+			where: { 
+				id: instanceId, 
+				userId 
+			},
 		});
 
 		if (!instance) {
@@ -544,14 +547,11 @@ export class DeploymentExecutorService {
 						if (instanceCF?.id) {
 							// Set score to 0 to neutralize it
 							formatItems.push({
-								format: instanceCF.id,
-								score: 0,
-							});
-							orphanedCFs.push(prevCF.name);
-							console.log(
-								`[DEPLOYMENT] Orphaned CF "${prevCF.name}" (${prevCF.trashId}) - setting score to 0`,
-							);
-						}
+							format: instanceCF.id,
+							score: 0,
+						});
+						orphanedCFs.push(prevCF.name);
+					}
 					}
 				}
 
@@ -574,19 +574,6 @@ export class DeploymentExecutorService {
 				if (templateConfig.completeQualityProfile) {
 					const clonedProfile = templateConfig.completeQualityProfile;
 					const schema = await apiClient.getQualityProfileSchema();
-
-					// DEBUG: Log the cloned profile items from template config
-					console.log("[DEPLOYMENT] ===== CLONED PROFILE FROM TEMPLATE =====");
-					console.log(`[DEPLOYMENT] Cloned profile items count: ${clonedProfile.items?.length || 0}`);
-					console.log(`[DEPLOYMENT] First 3 items: ${JSON.stringify(clonedProfile.items?.slice(0, 3), null, 2)}`);
-					const allowedFromTemplate = clonedProfile.items?.filter((i: any) => i.allowed === true) || [];
-					console.log(`[DEPLOYMENT] Allowed items from template (${allowedFromTemplate.length}): ${allowedFromTemplate.map((i: any) => i.quality?.name || i.name || 'group').join(', ')}`);
-					const groupsWithAllowedFromTemplate = clonedProfile.items?.filter((i: any) => i.items?.some((sub: any) => sub.allowed === true)) || [];
-					console.log(`[DEPLOYMENT] Groups with allowed sub-items (${groupsWithAllowedFromTemplate.length}): ${JSON.stringify(groupsWithAllowedFromTemplate.map((g: any) => ({
-						name: g.name,
-						allowed: g.allowed,
-						subItems: g.items?.filter((sub: any) => sub.allowed).map((sub: any) => sub.name || 'unknown')
-					})), null, 2)}`);
 
 					// Build quality items from cloned profile
 					const normalizeQualityName = (name: string) => name.replace(/[\s-]/g, "").toLowerCase();
@@ -667,17 +654,6 @@ export class DeploymentExecutorService {
 						}
 					}
 
-					// DEBUG: Log what we built
-					console.log(`[DEPLOYMENT] Built qualityItems count: ${qualityItems.length}`);
-					const builtAllowedItems = qualityItems.filter((i: any) => i.allowed === true);
-					console.log(`[DEPLOYMENT] Built allowed items (${builtAllowedItems.length}): ${builtAllowedItems.map((i: any) => i.quality?.name || i.name || 'group').join(', ')}`);
-					const builtGroupsWithAllowed = qualityItems.filter((i: any) => i.items?.some((sub: any) => sub.allowed === true));
-					console.log(`[DEPLOYMENT] Built groups with allowed (${builtGroupsWithAllowed.length}): ${JSON.stringify(builtGroupsWithAllowed.map((g: any) => ({
-						name: g.name,
-						allowed: g.allowed,
-						subItems: g.items?.filter((sub: any) => sub.allowed).map((sub: any) => sub.quality?.name || 'unknown')
-					})), null, 2)}`);
-
 					// Update profile with cloned quality settings
 					updatedProfile = {
 						...updatedProfile,
@@ -691,7 +667,6 @@ export class DeploymentExecutorService {
 					};
 				}
 
-				console.log(`[DEPLOYMENT] Sending updatedProfile.items count: ${updatedProfile.items?.length}`);
 				await apiClient.updateQualityProfile(targetProfile.id, updatedProfile);
 
 				// Create/update mapping to track that this profile is managed by this template
@@ -1437,6 +1412,11 @@ export class DeploymentExecutorService {
 	 * Extract trash_id from Custom Format
 	 * Checks specifications for a field named "trash_id"
 	 */
+	/**
+	 * Extract trash_id from Custom Format specifications.
+	 * Returns null if no trash_id is found, allowing callers to distinguish
+	 * between ID-based matching and name-based matching.
+	 */
 	private extractTrashId(cf: CustomFormat): string | null {
 		// Try to find trash_id in specifications
 		for (const spec of cf.specifications || []) {
@@ -1455,8 +1435,8 @@ export class DeploymentExecutorService {
 			}
 		}
 
-		// Fallback to name if trash_id not found
-		return cf.name;
+		// No trash_id found - return null to allow explicit name-based matching
+		return null;
 	}
 
 	/**

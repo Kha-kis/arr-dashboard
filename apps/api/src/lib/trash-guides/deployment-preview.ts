@@ -213,8 +213,11 @@ export class DeploymentPreviewService {
 		}
 
 		// Get instance with ownership verification
-		const instance = await this.prisma.serviceInstance.findUnique({
-			where: { id: instanceId, userId },
+		const instance = await this.prisma.serviceInstance.findFirst({
+			where: { 
+				id: instanceId, 
+				userId 
+			},
 		});
 
 		if (!instance) {

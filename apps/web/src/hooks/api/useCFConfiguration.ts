@@ -32,23 +32,33 @@ function isClonedProfile(trashId: string | undefined): boolean {
 
 /**
  * Parse cloned profile trashId to extract instanceId and profileId
+ * Format: cloned-{instanceId}-{profileId}-{uuid}
+ * Parses from the end to handle instanceIds that contain hyphens
  */
-function parseClonedProfileId(trashId: string): { instanceId: string; profileId: string } | null {
+function parseClonedProfileId(trashId: string): { instanceId: string; profileId: number } | null {
 	if (!isClonedProfile(trashId)) return null;
 
-	// Format: cloned-{instanceId}-{profileId}-{uuid}
-	const parts = trashId.split("-");
-	if (parts.length < 4) return null;
+	// Strip the "cloned-" prefix
+	const withoutPrefix = trashId.slice(7); // "cloned-".length === 7
+	if (!withoutPrefix) return null;
 
-	// instanceId is the second part (could be a UUID with dashes)
-	// profileId is after instanceId, before the final uuid
-	// Example: cloned-cmgpfmpu90001og0k8e4zhji1-9-0343e401-360b-46cb-973d-cf61f1321f53
-	// instanceId = cmgpfmpu90001og0k8e4zhji1, profileId = 9
+	// Find the last hyphen (for uuid)
+	const lastHyphenIndex = withoutPrefix.lastIndexOf("-");
+	if (lastHyphenIndex === -1) return null;
 
-	const instanceId = parts[1];
-	const profileId = parts[2];
+	// Find the second-last hyphen (for profileId)
+	const beforeLastHyphen = withoutPrefix.slice(0, lastHyphenIndex);
+	const secondLastHyphenIndex = beforeLastHyphen.lastIndexOf("-");
+	if (secondLastHyphenIndex === -1) return null;
 
-	if (!instanceId || !profileId) return null;
+	// Extract profileId (between second-last and last hyphen)
+	const profileIdStr = beforeLastHyphen.slice(secondLastHyphenIndex + 1);
+	const profileId = parseInt(profileIdStr, 10);
+	if (isNaN(profileId) || profileId < 0) return null;
+
+	// Extract instanceId (everything between prefix and second-last hyphen)
+	const instanceId = beforeLastHyphen.slice(0, secondLastHyphenIndex);
+	if (!instanceId) return null;
 
 	return { instanceId, profileId };
 }

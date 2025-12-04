@@ -21,8 +21,9 @@ import {
 	useRestoreBackupFromFile,
 	useBackupSettings,
 	useUpdateBackupSettings,
+	useReadBackupFile,
+	useDownloadBackup,
 } from "../../../hooks/api/useBackup";
-import { backupApi } from "../../../lib/api-client/backup";
 import type { BackupFileInfo, BackupIntervalType } from "@arr/shared";
 
 export const BackupTab = () => {
@@ -52,6 +53,8 @@ export const BackupTab = () => {
 	const deleteBackupMutation = useDeleteBackup();
 	const restoreBackupFromFileMutation = useRestoreBackupFromFile();
 	const updateSettingsMutation = useUpdateBackupSettings();
+	const readBackupFileMutation = useReadBackupFile();
+	const downloadBackupMutation = useDownloadBackup();
 
 	// Initialize settings state when data loads
 	useEffect(() => {
@@ -91,7 +94,7 @@ export const BackupTab = () => {
 
 		try {
 			// Read the backup file
-			const backupData = await backupApi.readBackupFile(restoreFile);
+			const backupData = await readBackupFileMutation.mutateAsync(restoreFile);
 
 			// Restore the backup
 			const response = await restoreBackupMutation.mutateAsync({
@@ -136,8 +139,8 @@ export const BackupTab = () => {
 	};
 
 	// Handle download backup from list
-	const handleDownloadBackup = (backup: BackupFileInfo) => {
-		backupApi.downloadBackupById(backup.id, backup.filename);
+	const handleDownloadBackup = async (backup: BackupFileInfo) => {
+		await downloadBackupMutation.mutateAsync({ id: backup.id, filename: backup.filename });
 	};
 
 	// Handle delete backup from list

@@ -237,6 +237,9 @@ export class UpdateScheduler {
 					cachesFailed: totalCacheFailed,
 					errors: [],
 				};
+				// Calculate next check time
+				const intervalMs = this.config.intervalHours * 60 * 60 * 1000;
+				this.stats.nextCheckAt = new Date(Date.now() + intervalMs);
 				return;
 			}
 
@@ -322,6 +325,10 @@ export class UpdateScheduler {
 				cachesFailed: 0,
 				errors,
 			};
+
+			// Calculate next check time
+			const intervalMs = this.config.intervalHours * 60 * 60 * 1000;
+			this.stats.nextCheckAt = new Date(Date.now() + intervalMs);
 
 			throw error;
 		} finally {

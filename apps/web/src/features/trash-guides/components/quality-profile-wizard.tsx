@@ -21,18 +21,40 @@ function isClonedProfile(trashId: string | undefined): boolean {
 
 /**
  * Parse cloned profile trashId to extract instanceId and profileId
+ * Format: cloned-{instanceId}-{profileId}-{uuid}
+ * Where instanceId can contain dashes, profileId is a number, and uuid is a UUID (5 parts with dashes)
  */
 function parseClonedProfileId(trashId: string): { instanceId: string; profileId: number } | null {
 	if (!isClonedProfile(trashId)) return null;
 
-	// Format: cloned-{instanceId}-{profileId}-{uuid}
-	const parts = trashId.split("-");
-	if (parts.length < 4) return null;
+	// Remove "cloned-" prefix
+	const withoutPrefix = trashId.slice(7); // "cloned-".length = 7
+	if (!withoutPrefix) return null;
 
-	const instanceId = parts[1];
-	const profileId = parseInt(parts[2] || "", 10);
+	// Split by "-"
+	const parts = withoutPrefix.split("-");
+	
+	// Need at least: instanceId (1+ parts) + profileId (1 part) + uuid (5 parts) = 7 parts minimum
+	// UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (5 parts)
+	if (parts.length < 7) return null;
 
-	if (!instanceId || isNaN(profileId)) return null;
+	// UUID is always the last 5 parts (standard UUID format)
+	// profileId is the part before the UUID (second-to-last)
+	// instanceId is everything before the profileId
+	const uuidParts = parts.slice(-5);
+	const profileIdStr = parts[parts.length - 6]; // Second-to-last before UUID
+	const instanceIdParts = parts.slice(0, parts.length - 6); // Everything before profileId
+	const instanceId = instanceIdParts.join("-");
+
+	// Validate that profileId and instanceId are non-empty
+	if (!instanceId || !profileIdStr) return null;
+
+	// Validate UUID format (should be 5 parts)
+	if (uuidParts.length !== 5) return null;
+
+	// Parse profileId as number
+	const profileId = parseInt(profileIdStr, 10);
+	if (isNaN(profileId) || profileId < 0) return null;
 
 	return { instanceId, profileId };
 }

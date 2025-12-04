@@ -198,14 +198,18 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 			});
 		}
 
-		const userId = request.currentUser.id;
+		const userId = request.currentUser!.id; // preHandler guarantees authentication
 		const { instanceId } = request.params as { instanceId: string };
 
 		try {
-			// Get instance - ServiceInstances are shared across all authenticated users
-			// (no per-user ownership model; security is at the authentication layer)
-			const instance = await app.prisma.serviceInstance.findUnique({
-				where: { id: instanceId, userId: request.currentUser?.id },
+			// Get instance - verify ownership by including userId in where clause.
+			// Including userId ensures non-owned instances return null,
+			// preventing instance enumeration attacks (all non-owned instances return 404).
+			const instance = await app.prisma.serviceInstance.findFirst({
+				where: { 
+					id: instanceId, 
+					userId 
+				},
 			});
 
 			if (!instance) {
@@ -298,9 +302,12 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 		};
 
 		try {
-			// Get instance
-			const instance = await app.prisma.serviceInstance.findUnique({
-				where: { id: instanceId, userId: request.currentUser?.id },
+			// Get instance - verify ownership by including userId in where clause
+			const instance = await app.prisma.serviceInstance.findFirst({
+				where: { 
+					id: instanceId, 
+					userId: request.currentUser!.id 
+				},
 			});
 
 			if (!instance) {
@@ -403,9 +410,12 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 		}
 
 		try {
-			// Get instance
-			const instance = await app.prisma.serviceInstance.findUnique({
-				where: { id: instanceId, userId: request.currentUser?.id },
+			// Get instance - verify ownership by including userId in where clause
+			const instance = await app.prisma.serviceInstance.findFirst({
+				where: { 
+					id: instanceId, 
+					userId: request.currentUser!.id 
+				},
 			});
 
 			if (!instance) {
@@ -794,9 +804,12 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 		}
 
 		try {
-			// Get instance to fetch the actual CFs
-			const instance = await app.prisma.serviceInstance.findUnique({
-				where: { id: sourceInstanceId, userId: request.currentUser?.id },
+			// Get instance to fetch the actual CFs - verify ownership by including userId in where clause
+			const instance = await app.prisma.serviceInstance.findFirst({
+				where: { 
+					id: sourceInstanceId, 
+					userId: request.currentUser!.id 
+				},
 			});
 
 			if (!instance) {

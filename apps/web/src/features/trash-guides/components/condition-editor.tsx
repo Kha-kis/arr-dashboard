@@ -90,13 +90,32 @@ export function ConditionEditor({
 		}
 	};
 
-	// Get pattern from specification fields
-	const getPattern = (spec: Specification): string => {
+	// Get pattern from specification fields and return both value and key name
+	const getPattern = (spec: Specification): { value: string; key: string } => {
 		if (spec.implementation === "ReleaseTitleSpecification") {
-			return String(spec.fields.value || "");
+			return {
+				value: String(spec.fields.value || ""),
+				key: "value",
+			};
 		}
-		// Add other implementations as needed
-		return String(spec.fields.value || spec.fields.pattern || "");
+		// Check which key exists - prefer pattern if both exist, otherwise use whichever is present
+		if ("pattern" in spec.fields && spec.fields.pattern !== undefined) {
+			return {
+				value: String(spec.fields.pattern || ""),
+				key: "pattern",
+			};
+		}
+		if ("value" in spec.fields && spec.fields.value !== undefined) {
+			return {
+				value: String(spec.fields.value || ""),
+				key: "value",
+			};
+		}
+		// Default to "value" if neither exists
+		return {
+			value: "",
+			key: "value",
+		};
 	};
 
 	// Check if pattern is valid regex
@@ -126,7 +145,9 @@ export function ConditionEditor({
 			{/* Specifications Table */}
 			<div className="space-y-2">
 				{specifications.map((spec, index) => {
-					const pattern = getPattern(spec);
+					const patternInfo = getPattern(spec);
+					const pattern = patternInfo.value;
+					const patternKey = patternInfo.key;
 					const isValid = isValidPattern(pattern);
 					const isEditing = editingSpec === index;
 					const isTesting = testingSpec === index;
@@ -216,8 +237,9 @@ export function ConditionEditor({
 									<textarea
 										value={pattern}
 										onChange={(e) => {
+											// Write back to the same key that was read from
 											updateSpecification(index, {
-												value: e.target.value,
+												[patternKey]: e.target.value,
 											});
 										}}
 										rows={2}

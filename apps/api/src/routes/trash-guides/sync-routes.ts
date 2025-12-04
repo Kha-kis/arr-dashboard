@@ -232,13 +232,17 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 	}>("/history/:instanceId", async (request, reply) => {
 		const { instanceId } = request.params;
 		const query = syncHistoryQuerySchema.parse(request.query);
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id; // preHandler guarantees authentication
 
-		// Verify instance exists - ServiceInstance is scoped to a specific user via userId owner.
+		// Verify instance exists and is owned by the current user.
+		// Including userId in the where clause ensures non-owned instances return null,
+		// preventing instance enumeration attacks (all non-owned instances return 404).
 		// Sync history is filtered by userId (line 279) to ensure user-specific access.
-		// ServiceInstance records cascade-delete when the owning user is removed (see schema.prisma).
-		const instance = await app.prisma.serviceInstance.findUnique({
-			where: { id: instanceId, userId: request.currentUser?.id },
+		const instance = await app.prisma.serviceInstance.findFirst({
+			where: { 
+				id: instanceId, 
+				userId 
+			},
 		});
 
 		if (!instance) {

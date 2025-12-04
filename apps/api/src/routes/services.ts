@@ -121,17 +121,20 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		const payload = parsed.data;
+		const userId = request.currentUser!.id; // preHandler guarantees authentication
+		
+		// Verify instance exists and is owned by the current user.
+		// Including userId in the where clause ensures non-owned instances return null,
+		// preventing instance enumeration attacks (all non-owned instances return 404).
 		const existing = await app.prisma.serviceInstance.findFirst({
-			where: { id },
+			where: { 
+				id, 
+				userId 
+			},
 		});
 
 		if (!existing) {
 			return reply.status(404).send({ error: "Service instance not found" });
-		}
-
-		// Verify ownership authorization
-		if (existing.userId !== request.currentUser?.id) {
-			return reply.status(403).send({ error: "Forbidden: You do not own this instance" });
 		}
 
 		const updateData = buildUpdateData(payload, app.encryptor);
@@ -158,8 +161,12 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			await updateInstanceTags(app.prisma, id, payload.tags);
 		}
 
-		const fresh = await app.prisma.serviceInstance.findUnique({
-			where: { id },
+		// Fetch updated instance - include userId to ensure we only get owned instances
+		const fresh = await app.prisma.serviceInstance.findFirst({
+			where: { 
+				id, 
+				userId 
+			},
 			include: { tags: { include: { tag: true } } },
 		});
 
@@ -174,18 +181,20 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	app.delete("/services/:id", async (request, reply) => {
 		const { id } = request.params as { id: string };
+		const userId = request.currentUser!.id; // preHandler guarantees authentication
 
+		// Verify instance exists and is owned by the current user.
+		// Including userId in the where clause ensures non-owned instances return null,
+		// preventing instance enumeration attacks (all non-owned instances return 404).
 		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { id },
+			where: { 
+				id, 
+				userId 
+			},
 		});
 
 		if (!instance) {
 			return reply.status(404).send({ error: "Service instance not found" });
-		}
-
-		// Verify ownership authorization
-		if (instance.userId !== request.currentUser?.id) {
-			return reply.status(403).send({ error: "Forbidden: You do not own this instance" });
 		}
 
 		await app.prisma.serviceInstance.delete({ where: { id } });
@@ -260,18 +269,20 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	app.post("/services/:id/test", async (request, reply) => {
 		const { id } = request.params as { id: string };
+		const userId = request.currentUser!.id; // preHandler guarantees authentication
 
+		// Verify instance exists and is owned by the current user.
+		// Including userId in the where clause ensures non-owned instances return null,
+		// preventing instance enumeration attacks (all non-owned instances return 404).
 		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { id },
+			where: { 
+				id, 
+				userId 
+			},
 		});
 
 		if (!instance) {
 			return reply.status(404).send({ error: "Service instance not found" });
-		}
-
-		// Verify ownership authorization
-		if (instance.userId !== request.currentUser?.id) {
-			return reply.status(403).send({ error: "Forbidden: You do not own this instance" });
 		}
 
 		const apiKey = app.encryptor.decrypt({

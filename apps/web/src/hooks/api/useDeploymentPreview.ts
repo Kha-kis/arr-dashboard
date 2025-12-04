@@ -1,4 +1,6 @@
 import { useQuery, useMutation, useQueryClient, useQueries } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { TEMPLATES_QUERY_KEY } from "./useTemplates";
 import {
 	getDeploymentPreview,
 	executeDeployment,
@@ -60,7 +62,7 @@ export function useExecuteDeployment() {
 				queryKey: ["deployment-history"],
 			});
 			queryClient.invalidateQueries({
-				queryKey: ["trash-guides", "templates"],
+				queryKey: TEMPLATES_QUERY_KEY,
 			});
 		},
 	});
@@ -83,7 +85,7 @@ export function useExecuteBulkDeployment() {
 				queryKey: ["deployment-history"],
 			});
 			queryClient.invalidateQueries({
-				queryKey: ["trash-guides", "templates"],
+				queryKey: TEMPLATES_QUERY_KEY,
 			});
 		},
 	});
@@ -145,6 +147,12 @@ export function useUpdateSyncStrategy() {
 				queryKey: ["trash-guides", "deployment"],
 			});
 		},
+		onError: (error) => {
+			console.error("Failed to update sync strategy:", error);
+			toast.error("Failed to update sync strategy", {
+				description: error.message,
+			});
+		},
 	});
 }
 
@@ -166,6 +174,12 @@ export function useBulkUpdateSyncStrategy() {
 				queryKey: ["trash-guides", "deployment"],
 			});
 		},
+		onError: (error) => {
+			console.error("Failed to bulk update sync strategy:", error);
+			toast.error("Failed to update sync strategy", {
+				description: error.message,
+			});
+		},
 	});
 }
 
@@ -177,18 +191,29 @@ export function useUnlinkTemplateFromInstance() {
 
 	return useMutation<UnlinkTemplateResponse, Error, UnlinkTemplatePayload>({
 		mutationFn: (payload) => unlinkTemplateFromInstance(payload),
-		onSuccess: (_data, variables) => {
+		onSuccess: (data) => {
+			// Show success toast
+			toast.success("Template unlinked", {
+				description: data.message,
+			});
+
 			// Invalidate templates list
 			queryClient.invalidateQueries({
-				queryKey: ["trash-guides", "templates"],
+				queryKey: TEMPLATES_QUERY_KEY,
 			});
 			// Invalidate template stats for the specific template
 			queryClient.invalidateQueries({
-				queryKey: ["template-stats", variables.templateId],
+				queryKey: ["template-stats", data.data.templateId],
 			});
 			// Invalidate deployment queries
 			queryClient.invalidateQueries({
 				queryKey: ["trash-guides", "deployment"],
+			});
+		},
+		onError: (error) => {
+			console.error("Unlink failed:", error);
+			toast.error("Failed to unlink template from instance", {
+				description: error.message,
 			});
 		},
 	});

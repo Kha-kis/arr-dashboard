@@ -269,14 +269,6 @@ export class TemplateUpdater {
 				},
 			});
 
-			console.log(
-				`[TemplateUpdater] Successfully synced template ${templateId}: ` +
-				`${mergeResult.stats.customFormatsAdded} CFs added, ` +
-				`${mergeResult.stats.customFormatsRemoved} removed, ` +
-				`${mergeResult.stats.customFormatsUpdated} updated, ` +
-				`${mergeResult.stats.customFormatsPreserved} preserved`
-			);
-
 			return {
 				success: true,
 				templateId,
@@ -633,7 +625,6 @@ export class TemplateUpdater {
 	private async deployToMappedInstances(templateId: string): Promise<void> {
 		// Skip if deployment executor not provided
 		if (!this.deploymentExecutor) {
-			console.log(`Template ${templateId} synced, but no deployment executor available`);
 			return;
 		}
 
@@ -646,11 +637,8 @@ export class TemplateUpdater {
 		});
 
 		if (mappings.length === 0) {
-			console.log(`Template ${templateId} synced, but no instances mapped`);
 			return; // No instances mapped, nothing to deploy
 		}
-
-		console.log(`Auto-deploying template ${templateId} to ${mappings.length} instances...`);
 
 		// Deploy to each mapped instance
 		// Note: Using a system user ID for auto-deployments
@@ -663,12 +651,7 @@ export class TemplateUpdater {
 					SYSTEM_USER_ID,
 				);
 
-				if (result.success) {
-					console.log(
-						`Successfully auto-deployed template ${templateId} to instance ${mapping.instance.label}: ` +
-						`${result.customFormatsCreated} created, ${result.customFormatsUpdated} updated`
-					);
-				} else {
+				if (!result.success) {
 					console.error(
 						`Failed to auto-deploy template ${templateId} to instance ${mapping.instance.label}:`,
 						result.errors

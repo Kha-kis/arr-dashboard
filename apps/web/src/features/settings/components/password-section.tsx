@@ -11,10 +11,8 @@ import {
 	CardDescription,
 } from "../../../components/ui/card";
 import { Alert, AlertDescription } from "../../../components/ui";
-import { useUpdateAccountMutation, useRemovePasswordMutation } from "../../../hooks/api/useAuth";
+import { useUpdateAccountMutation, useRemovePasswordMutation, usePasskeyCredentials } from "../../../hooks/api/useAuth";
 import { useOIDCProviders } from "../../../hooks/api/useOIDCProviders";
-import { useQuery } from "@tanstack/react-query";
-import { getPasskeyCredentials } from "../../../lib/api-client/auth";
 import { validatePassword } from "../lib/settings-utils";
 import type { CurrentUser } from "@arr/shared";
 
@@ -40,10 +38,7 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 	const updateAccountMutation = useUpdateAccountMutation();
 	const removePasswordMutation = useRemovePasswordMutation();
 	const { data: oidcProviders = [] } = useOIDCProviders();
-	const { data: passkeys = [] } = useQuery({
-		queryKey: ["passkey-credentials"],
-		queryFn: getPasskeyCredentials,
-	});
+	const { data: passkeys = [] } = usePasskeyCredentials();
 
 	const hasOIDC = oidcProviders.length > 0;
 	const hasPasskeys = passkeys.length > 0;

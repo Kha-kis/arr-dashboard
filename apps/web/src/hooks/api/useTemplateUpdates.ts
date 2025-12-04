@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { TEMPLATES_QUERY_KEY } from "./useTemplates";
 import {
 	checkForUpdates,
 	getTemplatesNeedingAttention,
@@ -82,7 +83,7 @@ export function useSyncTemplate() {
 			queryClient.invalidateQueries({
 				queryKey: ["trash-guides", "updates", "attention"],
 			});
-			queryClient.invalidateQueries({ queryKey: ["trash-guides", "templates"] });
+			queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
 		},
 	});
 }
@@ -101,7 +102,7 @@ export function useProcessAutoUpdates() {
 			queryClient.invalidateQueries({
 				queryKey: ["trash-guides", "updates", "attention"],
 			});
-			queryClient.invalidateQueries({ queryKey: ["trash-guides", "templates"] });
+			queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
 		},
 	});
 }

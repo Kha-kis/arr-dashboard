@@ -257,10 +257,16 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 	}>("/history/:historyId", async (request, reply) => {
 		try {
 			const { historyId } = request.params;
+			const userId = request.currentUser!.id; // preHandler guarantees authentication
 
-			// Get deployment history with all relations
-			const history = await app.prisma.templateDeploymentHistory.findUnique({
-				where: { id: historyId },
+			// Get deployment history with all relations - verify ownership by including userId in where clause.
+			// Including userId ensures non-owned histories return null,
+			// preventing enumeration attacks (all non-owned histories return 404).
+			const history = await app.prisma.templateDeploymentHistory.findFirst({
+				where: { 
+					id: historyId,
+					userId 
+				},
 				include: {
 					instance: {
 						select: {
@@ -288,15 +294,6 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			});
 
 			if (!history) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: "Deployment history not found",
-				});
-			}
-
-			// Verify ownership - template must belong to user
-			if (history.template.userId !== request.currentUser?.id) {
 				return reply.status(404).send({
 					statusCode: 404,
 					error: "NotFound",
@@ -347,35 +344,32 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 		try {
 			const { historyId } = request.params;
 
-			// Get deployment history with template to verify ownership
-			const history = await app.prisma.templateDeploymentHistory.findUnique({
-				where: { id: historyId },
-				include: {
-					template: {
-						select: {
-							userId: true,
-						},
+		const userId = request.currentUser!.id; // preHandler guarantees authentication
+		
+		// Get deployment history - verify ownership by including userId in where clause.
+		// Including userId ensures non-owned histories return null,
+		// preventing enumeration attacks (all non-owned histories return 404).
+		const history = await app.prisma.templateDeploymentHistory.findFirst({
+			where: { 
+				id: historyId,
+				userId 
+			},
+			include: {
+				template: {
+					select: {
+						userId: true,
 					},
 				},
+			},
+		});
+
+		if (!history) {
+			return reply.status(404).send({
+				statusCode: 404,
+				error: "NotFound",
+				message: "Deployment history not found",
 			});
-
-			if (!history) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: "Deployment history not found",
-				});
-			}
-
-			// Verify deployment history belongs to user
-			// Check against history.userId directly (always present) rather than relying on template relation
-			if (history.userId !== request.currentUser?.id) {
-				return reply.status(403).send({
-					statusCode: 403,
-					error: "Forbidden",
-					message: "Not authorized to delete this deployment history",
-				});
-			}
+		}
 
 			// Delete the deployment history entry
 			// Note: Associated backup will be cascade deleted if configured, otherwise it remains
@@ -407,10 +401,16 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 	}>("/history/:historyId/undeploy", async (request, reply) => {
 		try {
 			const { historyId } = request.params;
+			const userId = request.currentUser!.id; // preHandler guarantees authentication
 
-			// Get deployment history with template config
-			const history = await app.prisma.templateDeploymentHistory.findUnique({
-				where: { id: historyId },
+			// Get deployment history with template config - verify ownership by including userId in where clause.
+			// Including userId ensures non-owned histories return null,
+			// preventing enumeration attacks (all non-owned histories return 404).
+			const history = await app.prisma.templateDeploymentHistory.findFirst({
+				where: { 
+					id: historyId,
+					userId 
+				},
 				include: {
 					instance: true,
 					template: {
@@ -438,16 +438,6 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 					statusCode: 400,
 					error: "BadRequest",
 					message: "This deployment has already been undeployed",
-				});
-			}
-
-			// Verify deployment history belongs to user
-			// Check against history.userId directly (always present) rather than relying on template relation
-			if (history.userId !== request.currentUser?.id) {
-				return reply.status(403).send({
-					statusCode: 403,
-					error: "Forbidden",
-					message: "Not authorized to undeploy this deployment",
 				});
 			}
 

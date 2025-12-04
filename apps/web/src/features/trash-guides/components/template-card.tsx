@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import type { TrashTemplate } from "@arr/shared";
-import { useQuery } from "@tanstack/react-query";
 import {
 	Badge,
 	DropdownMenu,
@@ -32,7 +31,8 @@ import {
 	Unlink2,
 } from "lucide-react";
 import { cn } from "../../../lib/utils";
-import { fetchTemplateStats, type TemplateStatsResponse, type TemplateInstanceInfo } from "../../../lib/api-client/templates";
+import { useTemplateStats } from "../../../hooks/api/useTemplates";
+import type { TemplateStatsResponse, TemplateInstanceInfo } from "../../../lib/api-client/templates";
 import { useUpdateSyncStrategy } from "../../../hooks/api/useDeploymentPreview";
 
 interface TemplateCardProps {
@@ -82,12 +82,7 @@ export const TemplateCard = ({
 	const updateSyncStrategyMutation = useUpdateSyncStrategy();
 
 	// Fetch stats when card is expanded (lazy loading)
-	const { data: statsData, isLoading: statsLoading } = useQuery<TemplateStatsResponse>({
-		queryKey: ["template-stats", template.id],
-		queryFn: () => fetchTemplateStats(template.id),
-		enabled: expanded, // Only fetch when expanded
-		staleTime: 30000, // Cache for 30 seconds
-	});
+	const { data: statsData, isLoading: statsLoading } = useTemplateStats(expanded ? template.id : null);
 
 	const handleSyncStrategyChange = (instanceId: string, newStrategy: "auto" | "manual" | "notify") => {
 		setUpdatingStrategyInstanceId(instanceId);
@@ -95,10 +90,6 @@ export const TemplateCard = ({
 			{ templateId: template.id, instanceId, syncStrategy: newStrategy },
 			{
 				onSettled: () => setUpdatingStrategyInstanceId(null),
-				onError: (error) => {
-					console.error("Failed to update sync strategy:", error);
-					toast.error("Failed to update sync strategy. Please try again.");
-				},
 			}
 		);
 	};

@@ -21,6 +21,7 @@ import {
 	validateClonedCFs,
 	matchProfileToTrash,
 } from "../../lib/api-client/trash-guides";
+import { TEMPLATES_QUERY_KEY } from "./useTemplates";
 
 /**
  * Hook to fetch TRaSH Guides quality profiles for a service
@@ -57,7 +58,7 @@ export const useImportQualityProfile = () => {
 		mutationFn: (payload) => importQualityProfile(payload),
 		onSuccess: () => {
 			// Invalidate templates query to show newly created template
-			void queryClient.invalidateQueries({ queryKey: ["templates"] });
+			void queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
 		},
 	});
 };
@@ -75,7 +76,7 @@ export const useImportQualityProfileWizard = () => {
 		mutationFn: (payload) => importQualityProfile(payload),
 		onSuccess: () => {
 			// Invalidate templates query to show newly created template
-			void queryClient.invalidateQueries({ queryKey: ["templates"] });
+			void queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
 		},
 	});
 };
@@ -93,7 +94,7 @@ export const useUpdateQualityProfileTemplate = () => {
 		mutationFn: (payload) => updateQualityProfileTemplate(payload),
 		onSuccess: () => {
 			// Invalidate templates query to show updated template
-			void queryClient.invalidateQueries({ queryKey: ["templates"] });
+			void queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
 		},
 	});
 };
@@ -108,7 +109,7 @@ export const useCreateClonedProfileTemplate = () => {
 		mutationFn: (payload) => createClonedProfileTemplate(payload),
 		onSuccess: () => {
 			// Invalidate templates query to show newly created template
-			void queryClient.invalidateQueries({ queryKey: ["templates"] });
+			void queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
 		},
 	});
 };

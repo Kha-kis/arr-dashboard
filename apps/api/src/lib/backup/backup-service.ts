@@ -155,7 +155,6 @@ export class BackupService {
 			await fs.rename(tempPath, this.secretsPath);
 			await fs.chmod(this.secretsPath, 0o600);
 
-			console.log("Generated new backup password for development (stored in secrets.json)");
 			return newPassword;
 		} catch (error) {
 			// If secrets file doesn't exist, create it with just the backup password
@@ -176,7 +175,6 @@ export class BackupService {
 					});
 					await fs.chmod(this.secretsPath, 0o600);
 
-					console.log("Created secrets.json with generated backup password for development");
 					return newPassword;
 				} catch (writeError) {
 					// If write failed because file now exists (race condition), read and return existing password

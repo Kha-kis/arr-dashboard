@@ -221,7 +221,10 @@ export const CFResolution = ({
 
 	// Initialize decisions from initial resolutions or default based on match confidence
 	useEffect(() => {
-		if (data?.results && Object.keys(decisions).length === 0) {
+		if (data?.results) {
+			// Only initialize if decisions haven't been set yet
+			if (Object.keys(decisions).length > 0) return;
+
 			const initialDecisions: Record<number, CFResolutionDecision> = {};
 
 			// First check for pre-existing resolutions
@@ -242,7 +245,7 @@ export const CFResolution = ({
 
 			setDecisions(initialDecisions);
 		}
-	}, [data, initialResolutions, decisions]);
+	}, [data, initialResolutions]); // Remove decisions from deps to prevent re-runs
 
 	// Split results into active, recommended (not configured), and excluded sections
 	// Takes into account: auto-excluded (score/recommendation logic), manually excluded, and manually included

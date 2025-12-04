@@ -156,6 +156,11 @@ export function useBulkUpdateScores() {
 			};
 		},
 		onSuccess: (result) => {
+			// Show success toast
+			toast.success(
+				`Successfully saved ${result.successCount} custom format score change${result.successCount === 1 ? "" : "s"}`,
+			);
+
 			// Invalidate cache keys for all successfully updated profiles
 			queryClient.invalidateQueries({
 				queryKey: ["bulk-scores"],
@@ -173,6 +178,12 @@ export function useBulkUpdateScores() {
 					});
 				}
 			}
+		},
+		onError: (error) => {
+			console.error("Failed to bulk update scores:", error);
+			toast.error("Failed to update custom format scores", {
+				description: error.message,
+			});
 		},
 	});
 }

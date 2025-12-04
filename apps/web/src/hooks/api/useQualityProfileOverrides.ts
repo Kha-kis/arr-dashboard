@@ -1,4 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { TEMPLATES_QUERY_KEY } from "./useTemplates";
+import { toast } from "sonner";
 import {
 	getQualityProfileOverrides,
 	promoteOverrideToTemplate,
@@ -50,7 +52,7 @@ export function usePromoteOverride() {
 			});
 			// Invalidate templates query (template was updated)
 			queryClient.invalidateQueries({
-				queryKey: ["trash-guides", "templates"],
+				queryKey: TEMPLATES_QUERY_KEY,
 			});
 			// Invalidate specific template
 			queryClient.invalidateQueries({
@@ -76,10 +78,24 @@ export function useDeleteOverride() {
 			qualityProfileId: number;
 			customFormatId: number;
 		}) => deleteQualityProfileOverride(instanceId, qualityProfileId, customFormatId),
-		onSuccess: (_, variables) => {
+		onSuccess: (data, variables) => {
 			// Invalidate override queries for this profile
 			queryClient.invalidateQueries({
 				queryKey: ["quality-profile-overrides", variables.instanceId, variables.qualityProfileId],
+			});
+			// Invalidate bulk-scores query used by bulk score manager
+			queryClient.invalidateQueries({
+				queryKey: ["bulk-scores"],
+			});
+			// Show success toast if message is provided
+			if (data.message) {
+				toast.success(data.message);
+			}
+		},
+		onError: (error) => {
+			console.error("Failed to delete override:", error);
+			toast.error("Failed to delete override", {
+				description: error.message,
 			});
 		},
 	});
@@ -101,10 +117,24 @@ export function useBulkDeleteOverrides() {
 			qualityProfileId: number;
 			payload: BulkDeleteOverridesPayload;
 		}) => bulkDeleteQualityProfileOverrides(instanceId, qualityProfileId, payload),
-		onSuccess: (_, variables) => {
+		onSuccess: (data, variables) => {
 			// Invalidate override queries for this profile
 			queryClient.invalidateQueries({
 				queryKey: ["quality-profile-overrides", variables.instanceId, variables.qualityProfileId],
+			});
+			// Invalidate bulk-scores query used by bulk score manager
+			queryClient.invalidateQueries({
+				queryKey: ["bulk-scores"],
+			});
+			// Show success toast if message is provided
+			if (data.message) {
+				toast.success(data.message);
+			}
+		},
+		onError: (error) => {
+			console.error("Failed to bulk delete overrides:", error);
+			toast.error("Failed to delete overrides", {
+				description: error.message,
 			});
 		},
 	});

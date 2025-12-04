@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
 	Dialog,
 	DialogHeader,
@@ -57,6 +57,8 @@ export const DeploymentPreviewModal = ({
 	const [syncStrategy, setSyncStrategy] = useState<"auto" | "manual" | "notify">("notify");
 	// Track user's conflict resolution choices: trashId -> resolution
 	const [conflictResolutions, setConflictResolutions] = useState<Record<string, ConflictResolution>>({});
+	// Track if conflict resolutions have been initialized to prevent overwriting user selections
+	const initializedRef = useRef(false);
 
 	// Initialize syncStrategy from existing deployment (if any) when data loads
 	useEffect(() => {
@@ -65,19 +67,45 @@ export const DeploymentPreviewModal = ({
 		}
 	}, [data?.data?.existingSyncStrategy]);
 
-	// Initialize conflict resolutions when data loads
+	// Initialize conflict resolutions only once when customFormats first arrive
+	// Merge with existing state to preserve user selections during background refetches
 	useEffect(() => {
-		if (data?.data?.customFormats) {
-			const initialResolutions: Record<string, ConflictResolution> = {};
-			for (const cf of data.data.customFormats) {
-				if (cf.hasConflicts) {
-					// Default to use_template (update to match template)
-					initialResolutions[cf.trashId] = "use_template";
+		const customFormats = data?.data?.customFormats;
+		if (customFormats && customFormats.length > 0) {
+			// Only initialize on first load, or merge new conflicts with existing selections
+			if (!initializedRef.current) {
+				// First initialization: set defaults for all conflicts
+				const initialResolutions: Record<string, ConflictResolution> = {};
+				for (const cf of customFormats) {
+					if (cf.hasConflicts) {
+						// Default to use_template (update to match template)
+						initialResolutions[cf.trashId] = "use_template";
+					}
 				}
+				setConflictResolutions(initialResolutions);
+				initializedRef.current = true;
+			} else {
+				// Subsequent updates: merge new conflicts with existing user choices
+				setConflictResolutions((prev) => {
+					const merged = { ...prev };
+					for (const cf of customFormats) {
+						if (cf.hasConflicts && !(cf.trashId in merged)) {
+							// Only add defaults for new conflicts that user hasn't resolved yet
+							merged[cf.trashId] = "use_template";
+						}
+					}
+					return merged;
+				});
 			}
-			setConflictResolutions(initialResolutions);
 		}
-	}, [data]);
+	}, [data?.data?.customFormats]);
+
+	// Reset initialization flag when modal closes or template/instance changes
+	useEffect(() => {
+		if (!open) {
+			initializedRef.current = false;
+		}
+	}, [open, templateId, instanceId]);
 
 	const toggleConflict = (trashId: string) => {
 		setExpandedConflicts((prev) => {

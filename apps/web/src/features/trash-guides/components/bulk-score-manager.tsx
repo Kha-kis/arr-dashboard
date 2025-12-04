@@ -224,19 +224,12 @@ export function BulkScoreManager({
 			}
 		);
 
-		const changeCount = modifiedScores.size;
-
 		try {
 			await bulkUpdateScores.mutateAsync(entries);
-			toast.success(
-				`Successfully saved ${changeCount} custom format score change${changeCount === 1 ? "" : "s"}`
-			);
 			setModifiedScores(new Map());
-			await queryClient.invalidateQueries({ queryKey: ["bulk-scores"] });
 			onOperationComplete?.();
 		} catch (error) {
 			console.error("Error saving scores:", error);
-			toast.error(error instanceof Error ? error.message : "Failed to save scores");
 		}
 	};
 
@@ -278,13 +271,9 @@ export function BulkScoreManager({
 				qualityProfileId: profileId,
 				customFormatId,
 			});
-
-			// Refresh scores to show updated values
-			await queryClient.invalidateQueries({ queryKey: ["bulk-scores"] });
-			toast.success(`Override removed for "${customFormatName}"`);
+			// Success toast and cache invalidation handled by mutation hook
 		} catch (error) {
-			console.error("Failed to delete override:", error);
-			toast.error(error instanceof Error ? error.message : "Failed to delete override");
+			// Error toast handled by mutation hook
 		}
 	};
 
@@ -352,9 +341,8 @@ export function BulkScoreManager({
 			// Clear selection
 			setSelectedCFs(new Set());
 
-			// Refresh scores
-			await queryClient.invalidateQueries({ queryKey: ["bulk-scores"] });
-
+			// Cache invalidation handled by individual mutation hooks
+			// Show aggregated success toast
 			toast.success(`Successfully reset ${totalDeleted} override${totalDeleted === 1 ? "" : "s"} to template defaults`);
 		} catch (error) {
 			console.error("Failed to bulk reset:", error);

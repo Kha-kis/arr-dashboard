@@ -34,7 +34,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Get all custom format scores with filtering
 	 */
 	app.get("/", async (request, reply) => {
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id; // preHandler guarantees authentication
 		const query = request.query as any;
 
 		// Build filters from query parameters
@@ -71,7 +71,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Update scores for multiple CFs across templates
 	 */
 	app.post("/update", async (request, reply) => {
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id; // preHandler guarantees authentication
 		const update = request.body as BulkScoreUpdate;
 
 		try {
@@ -95,7 +95,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Copy scores from one template to others
 	 */
 	app.post("/copy", async (request, reply) => {
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id; // preHandler guarantees authentication
 		const copy = request.body as BulkScoreCopy;
 
 		try {
@@ -119,7 +119,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Reset scores to TRaSH Guides defaults
 	 */
 	app.post("/reset", async (request, reply) => {
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id; // preHandler guarantees authentication
 		const reset = request.body as BulkScoreReset;
 
 		try {
@@ -143,7 +143,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Export scores to JSON
 	 */
 	app.post("/export", async (request, reply) => {
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id; // preHandler guarantees authentication
 		const { templateIds, serviceType } = request.body as {
 			templateIds: string[];
 			serviceType?: "RADARR" | "SONARR";
@@ -175,7 +175,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Import scores from JSON
 	 */
 	app.post("/import", async (request, reply) => {
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id; // preHandler guarantees authentication
 		const importData = request.body as BulkScoreImport;
 
 		try {

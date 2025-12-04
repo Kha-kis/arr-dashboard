@@ -65,9 +65,12 @@ export class BackupManager {
 		reason = "Pre-sync backup",
 		retentionDays?: number,
 	): Promise<string> {
-		// Get instance details with ownership info
-		const instance = await this.prisma.serviceInstance.findUnique({
-			where: { id: instanceId },
+		// Get instance details - verify ownership by including userId in where clause
+		const instance = await this.prisma.serviceInstance.findFirst({
+			where: { 
+				id: instanceId, 
+				userId 
+			},
 			select: {
 				id: true,
 				label: true,
@@ -78,11 +81,6 @@ export class BackupManager {
 
 		if (!instance) {
 			throw new Error(`Instance not found: ${instanceId}`);
-		}
-
-		// Verify ownership authorization
-		if (instance.userId !== userId) {
-			throw new Error(`Unauthorized: User does not own instance ${instanceId}`);
 		}
 
 		// Determine retention days: use provided value, or fetch from user settings, or default to 30
@@ -162,18 +160,17 @@ export class BackupManager {
 		limit = 10,
 		offset = 0,
 	): Promise<BackupInfo[]> {
-		// Verify user owns the instance
-		const instance = await this.prisma.serviceInstance.findUnique({
-			where: { id: instanceId },
+		// Verify user owns the instance - include userId in where clause
+		const instance = await this.prisma.serviceInstance.findFirst({
+			where: { 
+				id: instanceId, 
+				userId 
+			},
 			select: { userId: true },
 		});
 
 		if (!instance) {
 			throw new Error(`Instance not found: ${instanceId}`);
-		}
-
-		if (instance.userId !== userId) {
-			throw new Error(`Unauthorized: User does not own instance ${instanceId}`);
 		}
 
 		const backups = await this.prisma.trashBackup.findMany({
@@ -324,18 +321,17 @@ export class BackupManager {
 	 * Get backup count for instance with ownership verification
 	 */
 	async getBackupCount(instanceId: string, userId: string): Promise<number> {
-		// Verify user owns the instance
-		const instance = await this.prisma.serviceInstance.findUnique({
-			where: { id: instanceId },
+		// Verify user owns the instance - include userId in where clause
+		const instance = await this.prisma.serviceInstance.findFirst({
+			where: { 
+				id: instanceId, 
+				userId 
+			},
 			select: { userId: true },
 		});
 
 		if (!instance) {
 			throw new Error(`Instance not found: ${instanceId}`);
-		}
-
-		if (instance.userId !== userId) {
-			throw new Error(`Unauthorized: User does not own instance ${instanceId}`);
 		}
 
 		return await this.prisma.trashBackup.count({
@@ -351,18 +347,17 @@ export class BackupManager {
 		userId: string,
 		maxBackups = 10,
 	): Promise<number> {
-		// Verify user owns the instance
-		const instance = await this.prisma.serviceInstance.findUnique({
-			where: { id: instanceId },
+		// Verify user owns the instance - include userId in where clause
+		const instance = await this.prisma.serviceInstance.findFirst({
+			where: { 
+				id: instanceId, 
+				userId 
+			},
 			select: { userId: true },
 		});
 
 		if (!instance) {
 			throw new Error(`Instance not found: ${instanceId}`);
-		}
-
-		if (instance.userId !== userId) {
-			throw new Error(`Unauthorized: User does not own instance ${instanceId}`);
 		}
 
 		// Get all backups for instance owned by user, ordered by creation date

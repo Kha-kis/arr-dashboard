@@ -186,52 +186,6 @@ function compareSpecArrays(
 }
 
 // ============================================================================
-// Trash ID Extraction
-// ============================================================================
-
-/**
- * Extract trash_id from instance CF
- * Strategy 1: Check if CF already has trash_id property
- * Strategy 2: Check specifications for trash_id in fields
- * Strategy 3: Check for TRaSH ID pattern in CF name [uuid]
- */
-function extractTrashId(cf: InstanceCustomFormat): string | null {
-	// Strategy 1: Direct property
-	if (cf.trash_id && cf.trash_id.length > 0) {
-		return cf.trash_id;
-	}
-
-	// Strategy 2: Check specifications for trash_id in fields
-	for (const spec of cf.specifications || []) {
-		if (spec.fields) {
-			// Handle array format (Instance API)
-			if (Array.isArray(spec.fields)) {
-				const trashIdField = spec.fields.find((f) => f.name === "trash_id");
-				if (trashIdField && typeof trashIdField.value === "string") {
-					return trashIdField.value;
-				}
-			}
-			// Handle object format
-			else if (typeof spec.fields === "object") {
-				const fields = spec.fields as Record<string, unknown>;
-				const trashIdValue = fields.trash_id || fields.trashId;
-				if (typeof trashIdValue === "string" && trashIdValue.length > 0) {
-					return trashIdValue;
-				}
-			}
-		}
-	}
-
-	// Strategy 3: Check for TRaSH ID pattern in CF name
-	const trashIdMatch = cf.name.match(/\[([a-f0-9-]{36})\]$/i);
-	if (trashIdMatch?.[1]) {
-		return trashIdMatch[1];
-	}
-
-	return null;
-}
-
-// ============================================================================
 // CF Matcher Class
 // ============================================================================
 
@@ -278,7 +232,7 @@ export class CFMatcher {
 		const trashByName = new Map(trashCFs.map((cf) => [cf.name.toLowerCase(), cf]));
 
 		// Extract trash_id from instance CF (rare - only if previously TRaSH-deployed)
-		const extractedTrashId = extractTrashId(instanceCF);
+		const extractedTrashId = this.extractTrashId(instanceCF);
 
 		const matchDetails = {
 			nameMatch: false,
@@ -381,23 +335,6 @@ export class CFMatcher {
 		// Build lookup maps once
 		const trashByTrashId = new Map(trashCFs.map((cf) => [cf.trash_id, cf]));
 		const trashByName = new Map(trashCFs.map((cf) => [cf.name.toLowerCase(), cf]));
-
-		// Debug: Log TRaSH cache stats and check for HDR10+ Boost specifically
-		console.log(`[cf-matcher] TRaSH cache for ${serviceType}: ${trashCFs.length} CFs total`);
-
-		// Check if HDR10+ Boost exists in cache - critical for debugging exclusion issue
-		const hdr10Boost = trashCFs.find(cf =>
-			cf.name.toLowerCase().includes('hdr10+') && cf.name.toLowerCase().includes('boost')
-		);
-		if (hdr10Boost) {
-			console.log(`[cf-matcher] Found "HDR10+ Boost" in TRaSH cache: name="${hdr10Boost.name}", trash_id=${hdr10Boost.trash_id}`);
-		} else {
-			// Find any similar names
-			const similar = trashCFs.filter(cf =>
-				cf.name.toLowerCase().includes('hdr10') || cf.name.toLowerCase().includes('boost')
-			);
-			console.log(`[cf-matcher] "HDR10+ Boost" NOT in cache! Similar: ${similar.map(cf => `"${cf.name}" (${cf.trash_id})`).join(', ')}`);
-		}
 
 		const results: CFMatchResult[] = [];
 

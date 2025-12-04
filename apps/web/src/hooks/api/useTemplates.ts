@@ -10,6 +10,7 @@ import {
 	deleteTemplate,
 	duplicateTemplate,
 	importTemplate,
+	exportTemplate,
 	fetchTemplateStats,
 	type TemplateListResponse,
 	type TemplateResponse,
@@ -19,6 +20,17 @@ import {
 	importEnhancedTemplate,
 	type EnhancedImportTemplatePayload,
 } from "../../lib/api-client/trash-guides";
+
+// ============================================================================
+// Query Key Constants
+// ============================================================================
+
+/**
+ * Query key prefix for templates queries.
+ * Used for invalidation to match all template queries regardless of params.
+ * The actual query key is ["trash-guides", "templates", params], so this prefix will match all variations.
+ */
+export const TEMPLATES_QUERY_KEY = ["trash-guides", "templates"] as const;
 
 // ============================================================================
 // Query Hooks
@@ -37,7 +49,7 @@ export const useTemplates = (params?: {
 	offset?: number;
 }) =>
 	useQuery<TemplateListResponse>({
-		queryKey: ["templates", params],
+		queryKey: ["trash-guides", "templates", params],
 		queryFn: () => fetchTemplates(params),
 		staleTime: 2 * 60 * 1000, // 2 minutes
 		refetchOnMount: true,
@@ -48,7 +60,7 @@ export const useTemplates = (params?: {
  */
 export const useTemplate = (templateId: string | null) =>
 	useQuery<TemplateResponse>({
-		queryKey: ["template", templateId],
+		queryKey: ["trash-guides", "template", templateId],
 		queryFn: () => fetchTemplate(templateId!),
 		enabled: !!templateId,
 		staleTime: 5 * 60 * 1000, // 5 minutes
@@ -78,7 +90,7 @@ export const useCreateTemplate = () => {
 	return useMutation({
 		mutationFn: (payload: CreateTemplateRequest) => createTemplate(payload),
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["templates"] });
+			void queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
 		},
 	});
 };
@@ -93,8 +105,8 @@ export const useUpdateTemplate = () => {
 		mutationFn: ({ templateId, payload }: { templateId: string; payload: UpdateTemplateRequest }) =>
 			updateTemplate(templateId, payload),
 		onSuccess: (_, variables) => {
-			void queryClient.invalidateQueries({ queryKey: ["templates"] });
-			void queryClient.invalidateQueries({ queryKey: ["template", variables.templateId] });
+			void queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
+			void queryClient.invalidateQueries({ queryKey: ["trash-guides", "template", variables.templateId] });
 		},
 	});
 };
@@ -108,7 +120,7 @@ export const useDeleteTemplate = () => {
 	return useMutation({
 		mutationFn: (templateId: string) => deleteTemplate(templateId),
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["templates"] });
+			void queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
 		},
 	});
 };
@@ -123,7 +135,7 @@ export const useDuplicateTemplate = () => {
 		mutationFn: ({ templateId, newName }: { templateId: string; newName: string }) =>
 			duplicateTemplate(templateId, newName),
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["templates"] });
+			void queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
 		},
 	});
 };
@@ -137,7 +149,7 @@ export const useImportTemplate = () => {
 	return useMutation({
 		mutationFn: (jsonData: string) => importTemplate(jsonData),
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["templates"] });
+			void queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
 		},
 	});
 };
@@ -151,7 +163,17 @@ export const useEnhancedImportTemplate = () => {
 	return useMutation({
 		mutationFn: (payload: EnhancedImportTemplatePayload) => importEnhancedTemplate(payload),
 		onSuccess: () => {
-			void queryClient.invalidateQueries({ queryKey: ["templates"] });
+			void queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
 		},
+	});
+};
+
+/**
+ * Hook to export a template as JSON
+ * Returns the template JSON as a string
+ */
+export const useExportTemplate = () => {
+	return useMutation({
+		mutationFn: (templateId: string) => exportTemplate(templateId),
 	});
 };
