@@ -8,6 +8,10 @@
     "enabled": true,
     "rules": {
       "recommended": true,
+      "style": {
+        "noNonNullAssertion": "warn",
+        "noUselessElse": "warn"
+      },
       "suspicious": {
         "noExplicitAny": "warn"
       }

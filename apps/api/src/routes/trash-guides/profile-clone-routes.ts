@@ -4,7 +4,7 @@
  * Routes for importing complete quality profiles from *arr instances
  */
 
-import { FastifyPluginCallback } from "fastify";
+import type { FastifyPluginCallback } from "fastify";
 import { createProfileCloner } from "../../lib/trash-guides/profile-cloner.js";
 import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
 import { createCFMatcher, type InstanceCustomFormat } from "../../lib/trash-guides/cf-matcher.js";
@@ -866,7 +866,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				} else if (cfKey.startsWith("instance-")) {
 					// This is an instance-only CF (not linked to TRaSH)
 					// Extract the instance CF id from the key format "instance-{id}"
-					const instanceCFId = parseInt(cfKey.replace("instance-", ""), 10);
+					const instanceCFId = Number.parseInt(cfKey.replace("instance-", ""), 10);
 					const instanceCF = cfLookup.get(instanceCFId);
 
 					if (instanceCF) {

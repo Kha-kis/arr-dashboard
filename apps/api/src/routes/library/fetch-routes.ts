@@ -44,7 +44,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			userId: string;
 		} = {
 			enabled: true,
-			userId: request.currentUser!.id,
+			userId: request.currentUser?.id ?? "",
 		};
 
 		if (parsed.instanceId) {

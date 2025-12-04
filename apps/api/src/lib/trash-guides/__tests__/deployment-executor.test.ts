@@ -28,9 +28,13 @@ const createSpecWithArrayFields = (
 	fields: fields as unknown as Record<string, unknown>,
 });
 
-// Type for accessing private extractTrashId method in tests
-type ServiceWithPrivate = DeploymentExecutorService & {
-	extractTrashId: (cf: CustomFormat) => string | null;
+// Helper to access private extractTrashId method in tests
+// Uses index signature to bypass TypeScript's private member checking
+const getExtractTrashId = (
+	service: DeploymentExecutorService
+): ((cf: CustomFormat) => string | null) => {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	return (service as unknown as { extractTrashId: (cf: CustomFormat) => string | null }).extractTrashId.bind(service);
 };
 
 describe("DeploymentExecutorService - extractTrashId", () => {
@@ -58,8 +62,9 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			],
 		};
 
-		// Access private method via type assertion
-		const trashId = (service as ServiceWithPrivate).extractTrashId(cf);
+		// Access private method via helper
+		const extractTrashId = getExtractTrashId(service);
+		const trashId = extractTrashId(cf);
 		expect(trashId).toBe("test-uuid-123");
 	});
 
@@ -81,7 +86,8 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			],
 		};
 
-		const trashId = (service as ServiceWithPrivate).extractTrashId(cf);
+		const extractTrashId = getExtractTrashId(service);
+		const trashId = extractTrashId(cf);
 		expect(trashId).toBe("test-uuid-456");
 	});
 
@@ -96,7 +102,8 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			],
 		};
 
-		const trashId = (service as ServiceWithPrivate).extractTrashId(cf);
+		const extractTrashId = getExtractTrashId(service);
+		const trashId = extractTrashId(cf);
 		expect(trashId).toBeNull();
 	});
 
@@ -107,18 +114,21 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			specifications: [],
 		};
 
-		const trashId = (service as ServiceWithPrivate).extractTrashId(cf);
+		const extractTrashId = getExtractTrashId(service);
+		const trashId = extractTrashId(cf);
 		expect(trashId).toBeNull();
 	});
 
 	it("should return null when specifications are undefined", () => {
+		// Create object with undefined specifications via type assertion
 		const cf = {
 			id: 1,
 			name: "Test CF",
 			specifications: undefined,
-		} as CustomFormat;
+		} as unknown as CustomFormat;
 
-		const trashId = (service as ServiceWithPrivate).extractTrashId(cf);
+		const extractTrashId = getExtractTrashId(service);
+		const trashId = extractTrashId(cf);
 		expect(trashId).toBeNull();
 	});
 
@@ -144,7 +154,8 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			],
 		};
 
-		const trashId = (service as ServiceWithPrivate).extractTrashId(cf);
+		const extractTrashId = getExtractTrashId(service);
+		const trashId = extractTrashId(cf);
 		expect(trashId).toBeNull();
 	});
 
@@ -165,7 +176,8 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			],
 		};
 
-		const trashId = (service as ServiceWithPrivate).extractTrashId(cf);
+		const extractTrashId = getExtractTrashId(service);
+		const trashId = extractTrashId(cf);
 		expect(trashId).toBe("first-uuid");
 	});
 
@@ -180,7 +192,8 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			],
 		};
 
-		const trashId = (service as ServiceWithPrivate).extractTrashId(cf);
+		const extractTrashId = getExtractTrashId(service);
+		const trashId = extractTrashId(cf);
 		expect(trashId).toBe("12345");
 		expect(typeof trashId).toBe("string");
 	});
@@ -197,7 +210,8 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			],
 		};
 
-		const trashId = (service as ServiceWithPrivate).extractTrashId(cfWithoutId);
+		const extractTrashId = getExtractTrashId(service);
+		const trashId = extractTrashId(cfWithoutId);
 		expect(trashId).toBeNull();
 
 		// This null return allows callers to:
