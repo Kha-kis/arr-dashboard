@@ -811,12 +811,12 @@ export class TemplateUpdater {
 			templateConfig.customFormatGroups?.map((g: any) => [g.trashId, g]) || [],
 		);
 
-		// Parse latest cache data
-		const latestCFsData = ((customFormatsCache as any)?.data || []) as any[];
+		// Parse latest cache data (cache returns array directly, not wrapped in { data: T })
+		const latestCFsData = (customFormatsCache as any[] | null) ?? [];
 		const latestCFs = new Map(
 			latestCFsData.map((cf: any) => [cf.trash_id, cf]),
 		);
-		const latestGroupsData = ((cfGroupsCache as any)?.data || []) as any[];
+		const latestGroupsData = (cfGroupsCache as any[] | null) ?? [];
 		const latestGroups = new Map(
 			latestGroupsData.map((g: any) => [g.trash_id, g]),
 		);
@@ -833,12 +833,12 @@ export class TemplateUpdater {
 			const currentCF = currentCFs.get(trashId) as any;
 
 			if (!currentCF) {
-				// CF is new in latest
+				// CF is new in latest - use TRaSH's default score
 				customFormatDiffs.push({
 					trashId,
 					name: (latestCF as any).name,
 					changeType: "added",
-					newScore: 0, // Default score
+					newScore: (latestCF as any).score ?? 0,
 					newSpecifications: (latestCF as any).specifications || [],
 					hasSpecificationChanges: false,
 				});
@@ -850,13 +850,16 @@ export class TemplateUpdater {
 				const latestSpecs = (latestCF as any).specifications ?? null;
 				const specificationsChanged = !deepEqual(currentSpecs, latestSpecs);
 
+				// Use scoreOverride if set, otherwise fall back to base score
+				const effectiveScore = currentCF.scoreOverride ?? currentCF.score;
+
 				if (specificationsChanged) {
 					customFormatDiffs.push({
 						trashId,
 						name: (latestCF as any).name,
 						changeType: "modified",
-						currentScore: currentCF.scoreOverride,
-						newScore: currentCF.scoreOverride, // Keep user's score
+						currentScore: effectiveScore,
+						newScore: effectiveScore, // Keep user's effective score
 						currentSpecifications: currentCF.originalConfig?.specifications || [],
 						newSpecifications: (latestCF as any).specifications || [],
 						hasSpecificationChanges: true,
@@ -867,8 +870,8 @@ export class TemplateUpdater {
 						trashId,
 						name: (latestCF as any).name,
 						changeType: "unchanged",
-						currentScore: currentCF.scoreOverride,
-						newScore: currentCF.scoreOverride,
+						currentScore: effectiveScore,
+						newScore: effectiveScore,
 						currentSpecifications: currentCF.originalConfig?.specifications || [],
 						newSpecifications: (latestCF as any).specifications || [],
 						hasSpecificationChanges: false,
@@ -882,11 +885,13 @@ export class TemplateUpdater {
 		for (const [trashId, currentCF] of currentCFs) {
 			if (!latestCFs.has(trashId)) {
 				const cf = currentCF as any;
+				// Use scoreOverride if set, otherwise fall back to base score
+				const effectiveScore = cf.scoreOverride ?? cf.score;
 				customFormatDiffs.push({
 					trashId,
 					name: cf.name,
 					changeType: "removed",
-					currentScore: cf.scoreOverride,
+					currentScore: effectiveScore,
 					currentSpecifications: cf.originalConfig?.specifications || [],
 					hasSpecificationChanges: false,
 				});

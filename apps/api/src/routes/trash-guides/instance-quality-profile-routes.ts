@@ -879,6 +879,10 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 					// Priority 4: Explicit zero (remains 0)
 
 					templateScores.set(cfId, score);
+				} else {
+					// CF not found in template - set to 0 to neutralize the override in ARR
+					// This matches single-DELETE behavior and ensures ARR doesn't retain hidden overrides
+					templateScores.set(cfId, 0);
 				}
 			}
 
