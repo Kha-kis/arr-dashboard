@@ -51,6 +51,28 @@ export const ManualImportModal = ({
 
 	const { toggleEpisode, selectAllEpisodes, clearEpisodes } = useEpisodeSelection();
 
+	// Select all candidates with their episodes
+	const handleSelectAll = useCallback(() => {
+		for (const candidate of candidates) {
+			const defaults = buildSubmissionDefaults(candidate, downloadId);
+			if (!defaults) {
+				continue;
+			}
+			// Only add if not already selected
+			const existing = getSelectionForCandidate(selections, candidate);
+			if (!existing) {
+				toggleSelection(candidate, instanceId, defaults.downloadId, defaults.values);
+			}
+			// Select all episodes for Sonarr candidates
+			selectAllEpisodes(candidate);
+		}
+	}, [candidates, downloadId, selections, toggleSelection, instanceId, selectAllEpisodes]);
+
+	// Clear all selections
+	const handleClearAll = useCallback(() => {
+		clear();
+	}, [clear]);
+
 	const {
 		submit,
 		error: selectionError,
@@ -213,6 +235,24 @@ export const ManualImportModal = ({
 							/>
 							Show selected only
 						</label>
+						<div className="ml-auto flex gap-2">
+							<Button
+								variant="ghost"
+								className="px-3 py-1.5 text-xs"
+								onClick={handleSelectAll}
+								disabled={isPending || candidates.length === 0}
+							>
+								Select All
+							</Button>
+							<Button
+								variant="ghost"
+								className="px-3 py-1.5 text-xs"
+								onClick={handleClearAll}
+								disabled={isPending || selectedCount === 0}
+							>
+								Clear All
+							</Button>
+						</div>
 					</div>
 				</div>
 
