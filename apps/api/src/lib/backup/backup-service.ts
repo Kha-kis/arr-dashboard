@@ -360,7 +360,7 @@ export class BackupService {
 			const message = `Backup size estimate (${estimatedSizeMB.toFixed(2)} MB) exceeds recommended limit (${RECOMMENDED_MAX_BACKUP_SIZE_MB} MB). This may cause memory issues or timeouts. Consider implementing backup streaming or pruning old data.`;
 			console.error(message);
 			throw new Error(message);
-		}if (estimatedSizeMB > WARNING_BACKUP_SIZE_MB) {
+		} else if (estimatedSizeMB > WARNING_BACKUP_SIZE_MB) {
 			console.warn(
 				`Backup size estimate (${estimatedSizeMB.toFixed(2)} MB) is large. Consider monitoring memory usage and implementing streaming for larger datasets.`
 			);

@@ -140,7 +140,7 @@ export class EnhancedTemplateService {
 						validation,
 						error: "Template name already exists",
 					};
-				}if (options.onNameConflict === "rename" || !options.onNameConflict) {
+				} else if (options.onNameConflict === "rename" || !options.onNameConflict) {
 					// Auto-rename with upper bound to prevent infinite loop
 					const MAX_RENAME_ATTEMPTS = 1000;
 					const baseName = importData.template.name;

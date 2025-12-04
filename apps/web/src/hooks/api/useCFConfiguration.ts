@@ -234,6 +234,11 @@ async function fetchNormalModeData(
 		`/api/trash-guides/quality-profiles/${serviceType}/${trashId}`
 	);
 
+	// Check for error response (quality profile route returns { statusCode, error, message } on error)
+	if (profileData.statusCode || profileData.error) {
+		throw new Error(profileData.message || profileData.error || "Failed to fetch quality profile details");
+	}
+
 	const availableFormats = await fetchAvailableFormats(serviceType);
 
 	return {

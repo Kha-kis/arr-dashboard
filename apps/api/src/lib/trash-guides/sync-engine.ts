@@ -231,10 +231,24 @@ export class SyncEngine {
 				throw new Error("Deployment executor not available");
 			}
 
+			// Convert conflict resolutions from Map format to Record format expected by deployment executor
+			// Map "REPLACE" → "use_template" and "SKIP" → "keep_existing"
+			const deploymentConflictResolutions: Record<string, "use_template" | "keep_existing"> | undefined =
+				conflictResolutions
+					? Object.fromEntries(
+							Array.from(conflictResolutions.entries()).map(([key, value]) => [
+								key,
+								value === "REPLACE" ? "use_template" : "keep_existing",
+							]),
+						)
+					: undefined;
+
 			const deployResult = await this.deploymentExecutor.deploySingleInstance(
 				options.templateId,
 				options.instanceId,
 				options.userId,
+				undefined, // syncStrategy - not used in sync engine
+				deploymentConflictResolutions,
 			);
 
 			// Calculate duration and status

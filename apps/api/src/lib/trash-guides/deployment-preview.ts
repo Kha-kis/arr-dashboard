@@ -292,6 +292,15 @@ export class DeploymentPreviewService {
 		const scoreOverridesMap = overridesForInstance.scoreOverrides || {};
 		const cfOverridesMap = overridesForInstance.cfOverrides || {};
 
+		// Count CFs that are disabled for this instance (will be skipped)
+		let skipCount = 0;
+		for (const cf of rawTemplateCFs) {
+			const cfOverride = cfOverridesMap[cf.trashId];
+			if (cfOverride?.enabled === false) {
+				skipCount++;
+			}
+		}
+
 		// Build template CFs with both default and instance override scores
 		const templateCFs = rawTemplateCFs
 			.filter((cf) => {
@@ -335,14 +344,61 @@ export class DeploymentPreviewService {
 			instanceCFByName.set(instanceCF.name, instanceCF);
 		}
 
+		// Initialize warnings array early so we can add warnings during profile matching
+		const warnings: string[] = [];
+
 		// Build map of CF scores from the target quality profile in the instance
 		// This allows us to detect score conflicts (when instance score differs from template)
+		// Prefer matching by quality profile ID from mapping, fall back to name-based matching
 		const instanceCFScoreMap = new Map<number, number>(); // CF ID -> score
-		const targetProfileName = template.name || "TRaSH Guides HD/UHD";
-		const targetProfile = instanceQualityProfiles.find(p => p.name === targetProfileName);
-		if (targetProfile) {
-			for (const formatItem of targetProfile.formatItems || []) {
-				instanceCFScoreMap.set(formatItem.format, formatItem.score);
+		let targetProfile: typeof instanceQualityProfiles[0] | undefined;
+
+		// Strategy 1: Try to find quality profile by ID from TemplateQualityProfileMapping
+		// This is the most reliable method as it uses the actual instance profile ID
+		const qualityProfileMapping = await this.prisma.templateQualityProfileMapping.findFirst({
+			where: {
+				templateId,
+				instanceId,
+			},
+		});
+
+		if (qualityProfileMapping) {
+			targetProfile = instanceQualityProfiles.find(
+				(p) => p.id === qualityProfileMapping.qualityProfileId,
+			);
+			if (targetProfile) {
+				// Successfully matched by ID - this is the preferred method
+				for (const formatItem of targetProfile.formatItems || []) {
+					instanceCFScoreMap.set(formatItem.format, formatItem.score);
+				}
+			} else {
+				// Mapping exists but profile not found in instance (may have been deleted/renamed)
+				warnings.push(
+					`Quality profile mapping found (ID: ${qualityProfileMapping.qualityProfileId}) but profile not found in instance. The profile may have been deleted or renamed. Score conflict detection will be limited.`,
+				);
+			}
+		}
+
+		// Strategy 2: Fall back to name-based matching if ID-based matching failed
+		if (!targetProfile) {
+			// Try sourceQualityProfileName first (more reliable than template.name)
+			const profileNameToMatch =
+				template.sourceQualityProfileName || template.name || "TRaSH Guides HD/UHD";
+			targetProfile = instanceQualityProfiles.find((p) => p.name === profileNameToMatch);
+
+			if (targetProfile) {
+				// Matched by name - add warning that this is a fallback
+				warnings.push(
+					`Quality profile matched by name ("${profileNameToMatch}") rather than ID. If the profile was renamed in the instance, consider re-mapping it to ensure reliable matching.`,
+				);
+				for (const formatItem of targetProfile.formatItems || []) {
+					instanceCFScoreMap.set(formatItem.format, formatItem.score);
+				}
+			} else {
+				// No profile found at all
+				warnings.push(
+					`No matching quality profile found in instance. Attempted to match by ID (from mapping) and by name ("${profileNameToMatch}"). Score conflict detection will be unavailable.`,
+				);
 			}
 		}
 
@@ -353,7 +409,6 @@ export class DeploymentPreviewService {
 		const deploymentItems: CustomFormatDeploymentItem[] = [];
 		let newCount = 0;
 		let updateCount = 0;
-		const skipCount = 0;
 		let totalConflicts = 0;
 		let unresolvedConflicts = 0;
 
@@ -463,8 +518,8 @@ export class DeploymentPreviewService {
 		// Indicate if there are conflicts that the user should review
 		const requiresConflictResolution = unresolvedConflicts > 0;
 
-		// Build warnings list
-		const warnings: string[] = [];
+		// Add additional warnings for conflicts and unmatched CFs
+		// (warnings array was initialized earlier during profile matching)
 		if (totalConflicts > 0) {
 			warnings.push(
 				`${totalConflicts} Custom Format${totalConflicts === 1 ? "" : "s"} differ${totalConflicts === 1 ? "s" : ""} between the template and instance. By default, deploying will update these to match the template. You can review and skip specific CFs if needed.`

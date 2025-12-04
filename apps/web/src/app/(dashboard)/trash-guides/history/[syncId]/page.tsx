@@ -12,7 +12,7 @@ import {
 	RotateCcw,
 } from "lucide-react";
 import { useSyncDetail, useRollbackSync } from "../../../../../hooks/api/useSync";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 
 const STATUS_ICONS = {
@@ -30,12 +30,17 @@ const STATUS_COLORS = {
 export default function SyncDetailPage() {
 	const params = useParams();
 	const router = useRouter();
-	const syncId = params.syncId as string;
+	const syncId = Array.isArray(params.syncId) ? params.syncId[0] : (params.syncId as string);
 
 	const { data: sync, isLoading, error } = useSyncDetail(syncId);
 	const rollbackMutation = useRollbackSync();
 
 	const [showRollbackConfirm, setShowRollbackConfirm] = useState(false);
+	
+	// Accessibility refs for modal
+	const modalRef = useRef<HTMLDivElement>(null);
+	const titleRef = useRef<HTMLHeadingElement>(null);
+	const previousActiveElementRef = useRef<HTMLElement | null>(null);
 
 	const handleRollback = async () => {
 		if (!sync?.instanceId) {
@@ -57,6 +62,88 @@ export default function SyncDetailPage() {
 		}
 	};
 
+	// Focus management and accessibility for modal
+	useEffect(() => {
+		if (!showRollbackConfirm) return;
+
+		// Save the element that had focus before opening
+		previousActiveElementRef.current = document.activeElement as HTMLElement;
+
+		// Prevent body scrolling
+		document.body.style.overflow = "hidden";
+
+		// Focus the modal container or title when opened
+		const focusTarget = titleRef.current || modalRef.current;
+		if (focusTarget) {
+			// Use setTimeout to ensure the modal is rendered
+			setTimeout(() => {
+				if (titleRef.current) {
+					titleRef.current.focus();
+				} else if (modalRef.current) {
+					modalRef.current.focus();
+				}
+			}, 0);
+		}
+
+		// Get all focusable elements within the modal
+		const getFocusableElements = (): HTMLElement[] => {
+			if (!modalRef.current) return [];
+			const focusableSelectors = [
+				'button:not([disabled])',
+				'[href]',
+				'input:not([disabled])',
+				'select:not([disabled])',
+				'textarea:not([disabled])',
+				'[tabindex]:not([tabindex="-1"])',
+			].join(', ');
+			return Array.from(modalRef.current.querySelectorAll<HTMLElement>(focusableSelectors));
+		};
+
+		// Handle keyboard events
+		const handleKeyDown = (e: KeyboardEvent) => {
+			// Escape key: close modal only if not pending
+			if (e.key === "Escape" && !rollbackMutation.isPending) {
+				setShowRollbackConfirm(false);
+				return;
+			}
+
+			// Focus trap: cycle focus within modal
+			if (e.key === "Tab" && modalRef.current) {
+				const focusableElements = getFocusableElements();
+				if (focusableElements.length === 0) return;
+
+				const firstElement = focusableElements[0];
+				const lastElement = focusableElements[focusableElements.length - 1];
+
+				if (e.shiftKey) {
+					// Shift+Tab: if on first element, wrap to last
+					if (document.activeElement === firstElement && lastElement) {
+						e.preventDefault();
+						lastElement.focus();
+					}
+				} else {
+					// Tab: if on last element, wrap to first
+					if (document.activeElement === lastElement && firstElement) {
+						e.preventDefault();
+						firstElement.focus();
+					}
+				}
+			}
+		};
+
+		document.addEventListener("keydown", handleKeyDown);
+
+		return () => {
+			document.removeEventListener("keydown", handleKeyDown);
+			document.body.style.overflow = "";
+			
+			// Restore focus to the element that had focus before opening
+			if (previousActiveElementRef.current) {
+				previousActiveElementRef.current.focus();
+			}
+		};
+	}, [showRollbackConfirm, rollbackMutation.isPending]);
+
 	const formatDuration = (ms: number | null) => {
 		if (!ms) return "N/A";
 		const seconds = Math.floor(ms / 1000);
@@ -66,7 +153,7 @@ export default function SyncDetailPage() {
 	};
 
 	const formatDate = (isoString: string) => {
-		return new Date(isoString).toLocaleString("en-US", {
+		return new Date(isoString).toLocaleString(undefined, {
 			month: "short",
 			day: "numeric",
 			year: "numeric",
@@ -241,10 +328,38 @@ export default function SyncDetailPage() {
 
 			{/* Rollback Confirmation Modal */}
 			{showRollbackConfirm && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-					<div className="w-full max-w-md rounded-xl border border-border bg-bg p-6">
-						<h3 className="text-xl font-semibold text-fg">Confirm Rollback</h3>
-						<p className="mt-2 text-sm text-fg-muted">
+				<div 
+					className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+					aria-hidden="true"
+					onClick={(e) => {
+						// Close on backdrop click only if not pending
+						if (e.target === e.currentTarget && !rollbackMutation.isPending) {
+							setShowRollbackConfirm(false);
+						}
+					}}
+				>
+					<div
+						ref={modalRef}
+						tabIndex={-1}
+						role="dialog"
+						aria-modal="true"
+						aria-labelledby="rollback-confirm-title"
+						aria-describedby="rollback-confirm-description"
+						className="w-full max-w-md rounded-xl border border-border bg-bg p-6 focus:outline-none"
+						onClick={(e) => e.stopPropagation()}
+					>
+						<h3 
+							id="rollback-confirm-title"
+							ref={titleRef}
+							tabIndex={-1}
+							className="text-xl font-semibold text-fg focus:outline-none"
+						>
+							Confirm Rollback
+						</h3>
+						<p 
+							id="rollback-confirm-description"
+							className="mt-2 text-sm text-fg-muted"
+						>
 							This will restore the instance to its state before this sync operation. All configurations
 							applied during this sync will be removed.
 						</p>
@@ -253,7 +368,7 @@ export default function SyncDetailPage() {
 								type="button"
 								onClick={() => setShowRollbackConfirm(false)}
 								disabled={rollbackMutation.isPending}
-								className="rounded-lg border border-border bg-bg-subtle px-4 py-2 text-sm font-medium text-fg transition hover:bg-bg-subtle/80"
+								className="rounded-lg border border-border bg-bg-subtle px-4 py-2 text-sm font-medium text-fg transition hover:bg-bg-subtle/80 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								Cancel
 							</button>
@@ -261,7 +376,7 @@ export default function SyncDetailPage() {
 								type="button"
 								onClick={handleRollback}
 								disabled={rollbackMutation.isPending}
-								className="flex items-center gap-2 rounded-lg bg-yellow-500 px-4 py-2 text-sm font-medium text-black transition hover:bg-yellow-400 disabled:opacity-50"
+								className="flex items-center gap-2 rounded-lg bg-yellow-500 px-4 py-2 text-sm font-medium text-black transition hover:bg-yellow-400 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								{rollbackMutation.isPending ? (
 									<>
@@ -277,7 +392,7 @@ export default function SyncDetailPage() {
 							</button>
 						</div>
 						{rollbackMutation.error && (
-							<div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 p-3">
+							<div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/10 p-3" role="alert">
 								<p className="text-sm text-red-300">{rollbackMutation.error.message}</p>
 							</div>
 						)}

@@ -12,7 +12,7 @@ import {
 	CardTitle,
 	CardDescription,
 } from "../../../components/ui/card";
-import { Alert, AlertDescription } from "../../../components/ui";
+import { Alert, AlertDescription, toast } from "../../../components/ui";
 import {
 	useCreateBackup,
 	useRestoreBackup,
@@ -140,7 +140,15 @@ export const BackupTab = () => {
 
 	// Handle download backup from list
 	const handleDownloadBackup = async (backup: BackupFileInfo) => {
-		await downloadBackupMutation.mutateAsync({ id: backup.id, filename: backup.filename });
+		try {
+			await downloadBackupMutation.mutateAsync({ id: backup.id, filename: backup.filename });
+		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : "Unknown error";
+			console.error("Failed to download backup:", error);
+			toast.error("Failed to download backup", {
+				description: errorMessage,
+			});
+		}
 	};
 
 	// Handle delete backup from list

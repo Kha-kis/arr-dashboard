@@ -582,7 +582,7 @@ export const CFConfiguration = ({
 				}
 
 				// If not found in CF groups, search in availableFormats (for browse section selections)
-				if (data.availableFormats) {
+				if (data?.availableFormats) {
 					const foundInAvailable = data.availableFormats.find((cf: any) => cf.trash_id === trashId);
 					if (foundInAvailable) {
 						return {

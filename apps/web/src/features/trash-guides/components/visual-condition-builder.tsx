@@ -22,6 +22,20 @@ import {
 	SelectOption,
 } from "../../../components/ui";
 
+/**
+ * Generate a stable, unique ID for React components.
+ * Uses crypto.randomUUID() when available (browser/Node 19+), with fallback for SSR/older environments.
+ * Safe for concurrent rendering, HMR, and SSR.
+ */
+function generateConditionId(): string {
+	if (typeof crypto !== "undefined" && crypto.randomUUID) {
+		return `condition-${crypto.randomUUID()}`;
+	}
+	// Fallback for SSR or environments without crypto.randomUUID
+	// Use timestamp + random to ensure uniqueness
+	return `condition-${Date.now()}-${Math.random().toString(36).substring(2, 11)}`;
+}
+
 interface Condition {
 	id: string;
 	field: string;
@@ -82,11 +96,20 @@ const OPERATORS = [
 	{ value: "isNotEmpty", label: "Is Not Empty", pattern: () => ".+" },
 ];
 
-// Counter for generating unique condition IDs (avoids collisions with rapid additions)
-let conditionIdCounter = 0;
+// Plain value presets for non-regex operators (contains, equals, startsWith, etc.)
+// These are literal strings without regex metacharacters
+const FIELD_PRESETS_PLAIN: Record<string, string[]> = {
+	resolution: ["720p", "1080p", "2160p", "4320p", "480p", "576p"],
+	hdr: ["HDR10", "HDR10Plus", "HDR10+", "Dolby Vision", "DV", "HLG"],
+	source: ["BluRay", "WEB-DL", "WEBRip", "HDTV", "REMUX", "DVD", "BR-DISK"],
+	audio: ["DTS-HD.MA", "TrueHD", "FLAC", "AAC", "DD+", "EAC3", "Atmos", "DTS-X"],
+	videoCodec: ["x264", "x265", "HEVC", "AVC", "H.264", "H.265", "VP9", "AV1"],
+	edition: ["Director's Cut", "Extended", "Unrated", "IMAX", "Remastered", "Theatrical"],
+};
 
-// Common value presets for different fields
-const FIELD_PRESETS: Record<string, string[]> = {
+// Regex-ready presets for the "matches" operator
+// These contain regex metacharacters and patterns
+const FIELD_PRESETS_REGEX: Record<string, string[]> = {
 	resolution: ["720p", "1080p", "2160p", "4320p", "480p", "576p"],
 	hdr: ["HDR10", "HDR10Plus", "HDR10\\+", "Dolby.?Vision", "\\bDV\\b", "HLG"],
 	source: ["BluRay", "WEB-DL", "WEBRip", "HDTV", "REMUX", "DVD", "BR-DISK"],
@@ -98,7 +121,7 @@ const FIELD_PRESETS: Record<string, string[]> = {
 export function VisualConditionBuilder({ onPatternChange, onClose }: VisualConditionBuilderProps) {
 	const [conditions, setConditions] = useState<Condition[]>(() => [
 		{
-			id: `condition-${++conditionIdCounter}-${Date.now()}`,
+			id: generateConditionId(),
 			field: "releaseTitle",
 			operator: "contains",
 			value: "",
@@ -297,7 +320,7 @@ export function VisualConditionBuilder({ onPatternChange, onClose }: VisualCondi
 		setConditions([
 			...conditions,
 			{
-				id: `condition-${++conditionIdCounter}-${Date.now()}`,
+				id: generateConditionId(),
 				field: "releaseTitle",
 				operator: "contains",
 				value: "",
@@ -369,7 +392,11 @@ export function VisualConditionBuilder({ onPatternChange, onClose }: VisualCondi
 			<div className="space-y-3">
 				{conditions.map((condition, index) => {
 					const field = FIELDS.find((f) => f.value === condition.field);
-					const presets = FIELD_PRESETS[condition.field] || [];
+					// Select appropriate preset set based on operator
+					const presets =
+						condition.operator === "matches"
+							? FIELD_PRESETS_REGEX[condition.field] || []
+							: FIELD_PRESETS_PLAIN[condition.field] || [];
 					const showValueInput = !["isEmpty", "isNotEmpty"].includes(condition.operator);
 
 					return (

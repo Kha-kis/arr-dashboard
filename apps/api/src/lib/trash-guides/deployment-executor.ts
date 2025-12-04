@@ -1004,13 +1004,17 @@ export class DeploymentExecutorService {
 		// Get fresh CFs list with IDs for score application
 		const allCFs = await apiClient.getCustomFormats();
 
+		// Extract score set from template config (same as non-cloned profile method)
+		const scoreSet = templateConfig.qualityProfile?.trash_score_set;
+
 		// Apply CF scores from template to the schema's formatItems
 		const formatItemsWithScores = schema.formatItems.map((item: any) => {
 			const cf = allCFs.find((c) => c.id === item.format);
 			if (cf) {
 				const templateCF = templateCFs.find((tcf) => tcf.name === cf.name);
 				if (templateCF) {
-					const score = templateCF.scoreOverride ?? templateCF.defaultScore ?? 0;
+					// Use helper to calculate score (no instance override in create flow)
+					const { score } = calculateScoreAndSource(templateCF, scoreSet);
 					return { ...item, score };
 				}
 			}

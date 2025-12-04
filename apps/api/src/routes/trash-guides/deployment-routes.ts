@@ -451,8 +451,15 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				instanceSyncStrategies,
 			);
 
+			// Derive top-level success from per-deployment statuses
+			// success: true only when all deployments succeeded
+			// Check both failedInstances count and individual result.success flags
+			const hasFailures =
+				result.failedInstances > 0 ||
+				result.results.some((deployment) => !deployment.success);
+
 			return reply.send({
-				success: true,
+				success: !hasFailures,
 				data: result,
 			});
 		} catch (error) {

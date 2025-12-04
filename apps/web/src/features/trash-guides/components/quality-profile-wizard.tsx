@@ -22,7 +22,9 @@ function isClonedProfile(trashId: string | undefined): boolean {
 /**
  * Parse cloned profile trashId to extract instanceId and profileId
  * Format: cloned-{instanceId}-{profileId}-{uuid}
- * Where instanceId can contain dashes, profileId is a number, and uuid is a UUID (5 parts with dashes)
+ * Where instanceId can contain dashes, profileId is a number, and uuid can be:
+ * - Standard UUID: 5 parts (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx)
+ * - Fallback: 2 parts (timestamp-random alphanumeric)
  */
 function parseClonedProfileId(trashId: string): { instanceId: string; profileId: number } | null {
 	if (!isClonedProfile(trashId)) return null;
@@ -34,23 +36,49 @@ function parseClonedProfileId(trashId: string): { instanceId: string; profileId:
 	// Split by "-"
 	const parts = withoutPrefix.split("-");
 	
-	// Need at least: instanceId (1+ parts) + profileId (1 part) + uuid (5 parts) = 7 parts minimum
-	// UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx (5 parts)
-	if (parts.length < 7) return null;
+	// Need at least: instanceId (1+ parts) + profileId (1 part) + uuid (2 or 5 parts) = 4 or 7 parts minimum
+	if (parts.length < 4) return null;
 
-	// UUID is always the last 5 parts (standard UUID format)
-	// profileId is the part before the UUID (second-to-last)
-	// instanceId is everything before the profileId
-	const uuidParts = parts.slice(-5);
-	const profileIdStr = parts[parts.length - 6]; // Second-to-last before UUID
-	const instanceIdParts = parts.slice(0, parts.length - 6); // Everything before profileId
+	// Try to detect UUID format by testing the last segments
+	// First, try standard 5-part UUID format
+	const uuidParts5 = parts.slice(-5);
+	const uuidCandidate5 = uuidParts5.join("-");
+	// UUID regex: 8-4-4-4-12 hex digits
+	const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+	
+	let profileIdIndex: number;
+	let idSegmentLength: number;
+	
+	if (uuidRegex.test(uuidCandidate5) && parts.length >= 7) {
+		// Standard 5-part UUID format detected
+		idSegmentLength = 5;
+		profileIdIndex = parts.length - 6; // profileId is second-to-last before UUID
+	} else {
+		// Try fallback 2-part format (timestamp-random)
+		const uuidParts2 = parts.slice(-2);
+		if (parts.length < 4) return null; // Need at least instanceId + profileId + 2-part ID
+		
+		// Check if first part is numeric (timestamp) and second is alphanumeric
+		const timestampPart = uuidParts2[0];
+		const randomPart = uuidParts2[1];
+		
+		if (timestampPart && randomPart && /^\d+$/.test(timestampPart) && /^[a-z0-9]+$/i.test(randomPart)) {
+			// Fallback 2-part format detected
+			idSegmentLength = 2;
+			profileIdIndex = parts.length - 3; // profileId is third-to-last before 2-part ID
+		} else {
+			// Neither format matches
+			return null;
+		}
+	}
+
+	// Extract profileId and instanceId based on detected format
+	const profileIdStr = parts[profileIdIndex];
+	const instanceIdParts = parts.slice(0, profileIdIndex);
 	const instanceId = instanceIdParts.join("-");
 
 	// Validate that profileId and instanceId are non-empty
 	if (!instanceId || !profileIdStr) return null;
-
-	// Validate UUID format (should be 5 parts)
-	if (uuidParts.length !== 5) return null;
 
 	// Parse profileId as number
 	const profileId = parseInt(profileIdStr, 10);

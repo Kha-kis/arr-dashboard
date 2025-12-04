@@ -62,6 +62,9 @@ export const InstanceOverrideEditor = ({
 	const updateMutation = useUpdateInstanceOverrides();
 	const deleteMutation = useDeleteInstanceOverrides();
 
+	// Combined mutation state to prevent concurrent requests
+	const isMutating = updateMutation.isPending || deleteMutation.isPending;
+
 	const [editedOverrides, setEditedOverrides] = useState<CustomFormatOverrideRow[]>([]);
 	const [hasChanges, setHasChanges] = useState(false);
 
@@ -268,7 +271,7 @@ export const InstanceOverrideEditor = ({
 									variant="secondary"
 									size="sm"
 									onClick={handleResetAll}
-									disabled={updateMutation.isPending || totalOverrides === 0}
+									disabled={isMutating || totalOverrides === 0}
 									title="Reset all to template defaults"
 									className="gap-2"
 								>
@@ -303,14 +306,15 @@ export const InstanceOverrideEditor = ({
 														hasOverride && "bg-primary/5",
 													)}
 												>
-													<td className="p-3">
-														<input
-															type="checkbox"
-															checked={row.enabled}
-															onChange={(e) => handleEnabledChange(row.trashId, e.target.checked)}
-															className="w-4 h-4 rounded border-border"
-														/>
-													</td>
+												<td className="p-3">
+													<input
+														type="checkbox"
+														checked={row.enabled}
+														onChange={(e) => handleEnabledChange(row.trashId, e.target.checked)}
+														aria-label={`Enable ${row.name || row.trashId}`}
+														className="w-4 h-4 rounded border-border"
+													/>
+												</td>
 													<td className="p-3">
 														<span className={cn(
 															"text-sm",
@@ -367,7 +371,7 @@ export const InstanceOverrideEditor = ({
 				<Button
 					variant="danger"
 					onClick={handleDeleteAll}
-					disabled={deleteMutation.isPending || totalOverrides === 0}
+					disabled={isMutating || totalOverrides === 0}
 					className="mr-auto gap-1"
 					title="Delete all instance overrides"
 				>
@@ -382,7 +386,7 @@ export const InstanceOverrideEditor = ({
 				<Button
 					variant="primary"
 					onClick={handleSave}
-					disabled={!hasChanges || updateMutation.isPending}
+					disabled={!hasChanges || isMutating}
 					className="gap-2"
 				>
 					{updateMutation.isPending ? (

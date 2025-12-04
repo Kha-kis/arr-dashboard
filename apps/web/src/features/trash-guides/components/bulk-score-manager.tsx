@@ -80,7 +80,7 @@ export function BulkScoreManager({
 	}, [allOverrides]);
 
 	// Fetch overrides for multiple quality profiles using bulk API
-	const fetchOverridesForProfiles = useCallback(async (profileIds: number[]) => {
+	const fetchOverridesForProfiles = useCallback(async (profileIds: number[], signal?: AbortSignal) => {
 		if (!instanceId || profileIds.length === 0) return;
 
 		try {
@@ -89,6 +89,7 @@ export function BulkScoreManager({
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ profileIds }),
+				signal,
 			});
 
 			if (!response.ok) {
@@ -115,7 +116,12 @@ export function BulkScoreManager({
 
 			setAllOverrides(newOverrides);
 		} catch (error) {
+			// Don't show error toast for aborted requests
+			if (error instanceof Error && error.name === 'AbortError') {
+				return;
+			}
 			console.error("Error fetching bulk overrides:", error);
+			toast.error("Failed to fetch quality profile overrides");
 		}
 	}, [instanceId]);
 
@@ -140,8 +146,16 @@ export function BulkScoreManager({
 			const profileIdArray = Array.from(profileIds);
 			setQualityProfileIds(profileIdArray);
 
+			// Create AbortController for request cancellation
+			const controller = new AbortController();
+
 			// Fetch overrides for all quality profiles
-			void fetchOverridesForProfiles(profileIdArray);
+			void fetchOverridesForProfiles(profileIdArray, controller.signal);
+
+			// Cleanup: abort request if component unmounts or dependencies change
+			return () => {
+				controller.abort();
+			};
 		}
 	}, [bulkScoresData, fetchOverridesForProfiles]);
 
