@@ -106,8 +106,22 @@ export class TemplateUpdater {
 	 * Check for available updates across templates owned by the specified user
 	 */
 	async checkForUpdates(userId: string): Promise<UpdateCheckResult> {
-		// Get latest commit from GitHub
-		const latestCommit = await this.versionTracker.getLatestCommit();
+		// Get latest commit from GitHub with error handling
+		let latestCommit;
+		try {
+			latestCommit = await this.versionTracker.getLatestCommit();
+		} catch (error) {
+			console.error(
+				`[TemplateUpdater] Failed to get latest commit from GitHub: ${error instanceof Error ? error.message : String(error)}`
+			);
+			// Return empty result when version tracker fails
+			return {
+				templatesWithUpdates: [],
+				latestCommit: { commitHash: "", commitDate: "", commitMessage: "", commitUrl: "" },
+				totalTemplates: 0,
+				outdatedTemplates: 0,
+			};
+		}
 
 		// Get all active templates owned by this user with their deployment mappings
 		const templates = await this.prisma.trashTemplate.findMany({
@@ -228,10 +242,22 @@ export class TemplateUpdater {
 			};
 		}
 
-		// Determine target commit (default to latest)
-		const targetCommit = targetCommitHash
-			? await this.versionTracker.getCommitInfo(targetCommitHash)
-			: await this.versionTracker.getLatestCommit();
+		// Determine target commit (default to latest) with error handling
+		let targetCommit;
+		try {
+			targetCommit = targetCommitHash
+				? await this.versionTracker.getCommitInfo(targetCommitHash)
+				: await this.versionTracker.getLatestCommit();
+		} catch (error) {
+			return {
+				success: false,
+				templateId,
+				previousCommit: template.trashGuidesCommitHash,
+				newCommit: targetCommitHash || "",
+				errors: [`Failed to get commit info from GitHub: ${error instanceof Error ? error.message : String(error)}`],
+				errorType: "sync_failed",
+			};
+		}
 
 		const previousCommit = template.trashGuidesCommitHash;
 		const serviceType = template.serviceType as "RADARR" | "SONARR";
@@ -259,6 +285,21 @@ export class TemplateUpdater {
 					previousCommit,
 					newCommit: targetCommit.commitHash,
 					errors: [`Failed to fetch TRaSH data: ${fetchResult.error}`],
+					errorType: "sync_failed",
+				};
+			}
+
+			// Validate that cache data matches the target commit to prevent data/version mismatch
+			if (fetchResult.cacheCommitHash && fetchResult.cacheCommitHash !== targetCommit.commitHash) {
+				return {
+					success: false,
+					templateId,
+					previousCommit,
+					newCommit: targetCommit.commitHash,
+					errors: [
+						`Cache/version mismatch: cache contains data for commit ${fetchResult.cacheCommitHash}, but syncing to ${targetCommit.commitHash}. Please refresh the cache and try again.`,
+					],
+					errorType: "sync_failed",
 				};
 			}
 
@@ -330,27 +371,39 @@ export class TemplateUpdater {
 		success: boolean;
 		customFormats: TrashCustomFormat[];
 		customFormatGroups: TrashCustomFormatGroup[];
+		cacheCommitHash: string | null;
 		error?: string;
 	}> {
 		try {
-			const [cfCache, groupCache] = await Promise.all([
+			const [cfCache, groupCache, cacheCommitHash] = await Promise.all([
 				this.cacheManager.get<TrashCustomFormat[]>(serviceType, "CUSTOM_FORMATS"),
 				this.cacheManager.get<TrashCustomFormatGroup[]>(serviceType, "CF_GROUPS"),
+				this.cacheManager.getCommitHash(serviceType, "CUSTOM_FORMATS"),
 			]);
 
-			const customFormats = cfCache ?? [];
-			const customFormatGroups = groupCache ?? [];
+			// Detect cache misses - returning empty arrays would wipe template CFs
+			if (cfCache == null || groupCache == null) {
+				return {
+					success: false,
+					customFormats: [],
+					customFormatGroups: [],
+					cacheCommitHash: null,
+					error: "TRaSH cache miss: CUSTOM_FORMATS or CF_GROUPS not ready",
+				};
+			}
 
 			return {
 				success: true,
-				customFormats,
-				customFormatGroups,
+				customFormats: cfCache,
+				customFormatGroups: groupCache,
+				cacheCommitHash,
 			};
 		} catch (error) {
 			return {
 				success: false,
 				customFormats: [],
 				customFormatGroups: [],
+				cacheCommitHash: null,
 				error: error instanceof Error ? error.message : String(error),
 			};
 		}
