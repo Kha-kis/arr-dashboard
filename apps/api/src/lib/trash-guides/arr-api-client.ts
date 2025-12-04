@@ -159,10 +159,10 @@ export class ArrApiClient {
 				throw error;
 			}
 
-			// Handle empty responses
+			// Handle empty responses (e.g., DELETE operations return no content)
 			const contentType = response.headers.get("content-type");
 			if (!contentType?.includes("application/json")) {
-				return {} as T;
+				return undefined as unknown as T;
 			}
 
 			return (await response.json()) as T;

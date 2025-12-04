@@ -27,6 +27,37 @@ const bulkScoreUpdateSchema = z.object({
 	resetToDefault: z.boolean().optional(),
 });
 
+const bulkScoreExportSchema = z.object({
+	version: z.string(),
+	exportedAt: z.string(),
+	serviceType: z.enum(["RADARR", "SONARR"]),
+	templates: z.array(z.object({
+		templateId: z.string(),
+		templateName: z.string(),
+		scores: z.record(z.string(), z.number()),
+	})),
+});
+
+const bulkScoreImportSchema = z.object({
+	data: bulkScoreExportSchema,
+	targetTemplateIds: z.array(z.string()).optional(),
+	overwriteExisting: z.boolean().optional(),
+	createMissing: z.boolean().optional(),
+});
+
+const bulkScoreResetSchema = z.object({
+	templateIds: z.array(z.string()).min(1, "At least one template ID is required"),
+	cfTrashIds: z.array(z.string()).optional(),
+	resetModificationsFlag: z.boolean().optional(),
+});
+
+const bulkScoreCopySchema = z.object({
+	sourceTemplateId: z.string().min(1, "Source template ID is required"),
+	targetTemplateIds: z.array(z.string()).min(1, "At least one target template ID is required"),
+	cfTrashIds: z.array(z.string()).optional(),
+	overwriteModified: z.boolean().optional(),
+});
+
 // ============================================================================
 // Routes
 // ============================================================================
@@ -125,7 +156,23 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 */
 	app.post("/copy", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
-		const copy = request.body as BulkScoreCopy;
+
+		// Validate request body
+		const parseResult = bulkScoreCopySchema.safeParse(request.body);
+		if (!parseResult.success) {
+			return reply.status(400).send({
+				success: false,
+				message: "Invalid request body",
+				errors: parseResult.error.errors.map((e) => ({
+					path: e.path.join("."),
+					message: e.message,
+				})),
+				affectedTemplates: 0,
+				affectedCustomFormats: 0,
+			});
+		}
+
+		const copy: BulkScoreCopy = parseResult.data;
 
 		try {
 			const bulkScoreManager = createBulkScoreManager(app.prisma, app.encryptor);
@@ -149,7 +196,23 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 */
 	app.post("/reset", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
-		const reset = request.body as BulkScoreReset;
+
+		// Validate request body
+		const parseResult = bulkScoreResetSchema.safeParse(request.body);
+		if (!parseResult.success) {
+			return reply.status(400).send({
+				success: false,
+				message: "Invalid request body",
+				errors: parseResult.error.errors.map((e) => ({
+					path: e.path.join("."),
+					message: e.message,
+				})),
+				affectedTemplates: 0,
+				affectedCustomFormats: 0,
+			});
+		}
+
+		const reset: BulkScoreReset = parseResult.data;
 
 		try {
 			const bulkScoreManager = createBulkScoreManager(app.prisma, app.encryptor);
@@ -205,7 +268,23 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 */
 	app.post("/import", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
-		const importData = request.body as BulkScoreImport;
+
+		// Validate request body
+		const parseResult = bulkScoreImportSchema.safeParse(request.body);
+		if (!parseResult.success) {
+			return reply.status(400).send({
+				success: false,
+				message: "Invalid import data",
+				errors: parseResult.error.errors.map((e) => ({
+					path: e.path.join("."),
+					message: e.message,
+				})),
+				affectedTemplates: 0,
+				affectedCustomFormats: 0,
+			});
+		}
+
+		const importData: BulkScoreImport = parseResult.data;
 
 		try {
 			const bulkScoreManager = createBulkScoreManager(app.prisma, app.encryptor);

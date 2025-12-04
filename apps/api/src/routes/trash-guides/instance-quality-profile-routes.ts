@@ -857,7 +857,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 			const templateScores = new Map<number, number>();
 			for (const cfId of customFormatIds) {
 				const templateCf = templateConfigParsed.customFormats?.find(
-					(cf: any) => cf.originalConfig?.id === cfId,
+					(cf: any) => cf.originalConfig?._instanceCFId === cfId,
 				);
 				if (templateCf) {
 					// Priority 1: User's score override from wizard

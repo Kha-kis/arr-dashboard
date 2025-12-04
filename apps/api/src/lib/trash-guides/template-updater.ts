@@ -661,16 +661,20 @@ export class TemplateUpdater {
 			return;
 		}
 
-		// Get all instances mapped to this template
+		// Get only instances mapped with auto sync strategy
+		// Manual and notify strategies require user intervention
 		const mappings = await this.prisma.templateQualityProfileMapping.findMany({
-			where: { templateId },
+			where: {
+				templateId,
+				syncStrategy: "auto",
+			},
 			include: {
 				instance: true,
 			},
 		});
 
 		if (mappings.length === 0) {
-			return; // No instances mapped, nothing to deploy
+			return; // No auto-sync instances mapped, nothing to deploy
 		}
 
 		// Deploy to each mapped instance

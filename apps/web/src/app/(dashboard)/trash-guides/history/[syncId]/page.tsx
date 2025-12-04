@@ -146,7 +146,7 @@ export default function SyncDetailPage() {
 	}, [showRollbackConfirm, rollbackMutation.isPending]);
 
 	const formatDuration = (ms: number | null) => {
-		if (!ms) return "N/A";
+		if (ms == null) return "N/A";
 		const seconds = Math.floor(ms / 1000);
 		const minutes = Math.floor(seconds / 60);
 		const remainingSeconds = seconds % 60;
