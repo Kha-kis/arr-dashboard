@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import {
 	Button,
 	Alert,
@@ -20,6 +21,7 @@ import { ServiceInstancesTable, QueueFilters } from "../../../components/present
 import { useDashboardData } from "../hooks/useDashboardData";
 import { useDashboardFilters } from "../hooks/useDashboardFilters";
 import { useDashboardQueue } from "../hooks/useDashboardQueue";
+import { useQueueGrouping } from "../hooks";
 import { useIncognitoMode } from "../../../lib/incognito";
 
 export const DashboardClient = () => {
@@ -43,7 +45,26 @@ export const DashboardClient = () => {
 		isLoading,
 	} = useDashboardData();
 
-	// Filter hooks
+	// Filter hooks - handles filtering and pagination state
+	// Note: We'll pass summary rows after grouping for correct pagination
+	const filterState = useDashboardFilters(queueAggregated);
+
+	// Group FILTERED items into summary rows
+	// This is the correct order: filter → group → paginate
+	const allSummaryRows = useQueueGrouping(filterState.filteredItems);
+
+	// Re-calculate pagination based on grouped rows
+	const paginatedRows = useMemo(() => {
+		const start = (filterState.page - 1) * filterState.pageSize;
+		return allSummaryRows.slice(start, start + filterState.pageSize);
+	}, [allSummaryRows, filterState.page, filterState.pageSize]);
+
+	// Get all items from paginated rows (for selection/actions)
+	const paginatedItems = useMemo(() => {
+		return paginatedRows.flatMap((row) => row.items);
+	}, [paginatedRows]);
+
+	// Destructure filter state for easier access
 	const {
 		serviceFilter,
 		setServiceFilter,
@@ -56,12 +77,11 @@ export const DashboardClient = () => {
 		pageSize,
 		setPageSize,
 		filteredItems,
-		paginatedItems,
 		filtersActive,
 		emptyMessage,
 		resetFilters,
 		SERVICE_FILTERS,
-	} = useDashboardFilters(queueAggregated);
+	} = filterState;
 
 	// Queue action hooks
 	const {
@@ -167,7 +187,7 @@ export const DashboardClient = () => {
 			>
 				<div className="mb-3 flex justify-end">
 					<Typography variant="caption">
-						Showing {filteredItems.length} of {totalQueueItems} items
+						Showing {paginatedRows.length} of {allSummaryRows.length} cards ({filteredItems.length} items)
 					</Typography>
 				</div>
 
@@ -198,10 +218,10 @@ export const DashboardClient = () => {
 						</AlertDescription>
 					</Alert>
 				)}
-				{filteredItems.length > 0 && (
+				{allSummaryRows.length > 0 && (
 					<Pagination
 						currentPage={page}
-						totalItems={filteredItems.length}
+						totalItems={allSummaryRows.length}
 						pageSize={pageSize}
 						onPageChange={setPage}
 						onPageSizeChange={setPageSize}
@@ -210,6 +230,7 @@ export const DashboardClient = () => {
 				)}
 				<QueueTable
 					items={paginatedItems}
+					summaryRows={paginatedRows}
 					loading={queueLoading}
 					pending={queueActionsPending}
 					onRetry={handleQueueRetry}
@@ -223,10 +244,10 @@ export const DashboardClient = () => {
 					onChangeCategory={handleQueueChangeCategory}
 					emptyMessage={emptyMessage}
 				/>
-				{filteredItems.length > 0 && (
+				{allSummaryRows.length > 0 && (
 					<Pagination
 						currentPage={page}
-						totalItems={filteredItems.length}
+						totalItems={allSummaryRows.length}
 						pageSize={pageSize}
 						onPageChange={setPage}
 						onPageSizeChange={setPageSize}

@@ -876,6 +876,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 							scoreOverride: selection.scoreOverride,
 							conditionsEnabled: selection.conditionsEnabled || {},
 							originalConfig: {
+								trash_id: cfKey, // Use the instance-prefixed key as trash_id
 								name: instanceCF.name,
 								specifications: (instanceCF.specifications ?? []) as CustomFormatSpecification[],
 								// Mark as instance-sourced for future reference

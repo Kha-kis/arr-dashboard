@@ -2,7 +2,11 @@
  * Dashboard Filters Hook
  *
  * Manages queue filtering and pagination state.
- * Handles service, instance, and status filters with pagination.
+ * Handles service, instance, and status filters.
+ *
+ * IMPORTANT: This hook handles FILTERING only. Pagination should happen
+ * AFTER grouping in the component to ensure the correct number of visual
+ * cards (groups/items) are displayed per page.
  */
 
 import { useMemo, useState } from "react";
@@ -15,7 +19,7 @@ const SERVICE_FILTERS = [
 ] as const;
 
 /**
- * Hook for dashboard queue filtering and pagination
+ * Hook for dashboard queue filtering and pagination state
  *
  * @param queueItems - All queue items to filter
  * @returns Filter state, filtered items, and control functions
@@ -28,7 +32,7 @@ export const useDashboardFilters = (queueItems: QueueItem[]) => {
 	const [page, setPage] = useState(1);
 	const [pageSize, setPageSize] = useState(25);
 
-	// Apply all filters
+	// Apply all filters to raw items
 	const filteredItems = useMemo(() => {
 		return queueItems.filter((item) => {
 			if (serviceFilter !== "all" && item.service !== serviceFilter) {
@@ -44,12 +48,6 @@ export const useDashboardFilters = (queueItems: QueueItem[]) => {
 			return true;
 		});
 	}, [queueItems, serviceFilter, instanceFilter, statusFilter]);
-
-	// Paginate filtered items
-	const paginatedItems = useMemo(() => {
-		const start = (page - 1) * pageSize;
-		return filteredItems.slice(start, start + pageSize);
-	}, [filteredItems, page, pageSize]);
 
 	// Status summary for filtered items
 	const statusSummary = useMemo(() => {
@@ -76,9 +74,7 @@ export const useDashboardFilters = (queueItems: QueueItem[]) => {
 		setPage(1);
 	};
 
-	const handleServiceFilterChange = (
-		value: (typeof SERVICE_FILTERS)[number]["value"]
-	) => {
+	const handleServiceFilterChange = (value: (typeof SERVICE_FILTERS)[number]["value"]) => {
 		setPage(1);
 		setServiceFilter(value);
 	};
@@ -107,7 +103,7 @@ export const useDashboardFilters = (queueItems: QueueItem[]) => {
 		statusFilter,
 		setStatusFilter: handleStatusFilterChange,
 
-		// Pagination state
+		// Pagination state (managed here, but pagination should be done on grouped rows)
 		page,
 		setPage,
 		pageSize,
@@ -115,7 +111,6 @@ export const useDashboardFilters = (queueItems: QueueItem[]) => {
 
 		// Computed values
 		filteredItems,
-		paginatedItems,
 		statusSummary,
 		filtersActive,
 		emptyMessage,

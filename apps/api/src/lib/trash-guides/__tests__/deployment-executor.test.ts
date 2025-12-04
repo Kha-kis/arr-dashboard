@@ -5,9 +5,33 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@prisma/client";
 import { DeploymentExecutorService } from "../deployment-executor.js";
-import type { CustomFormat } from "../arr-api-client.js";
+import type { CustomFormat, CustomFormatSpecification } from "../arr-api-client.js";
+
+// Type for array-format fields (some arr instances return this format)
+interface ArrayFieldFormat {
+	name: string;
+	value: unknown;
+}
+
+// Helper to create a specification with array-format fields
+const createSpecWithArrayFields = (
+	name: string,
+	fields: ArrayFieldFormat[]
+): CustomFormatSpecification => ({
+	name,
+	implementation: "test",
+	negate: false,
+	required: false,
+	// Cast to the expected type since API can return array or object format
+	fields: fields as unknown as Record<string, unknown>,
+});
+
+// Type for accessing private extractTrashId method in tests
+type ServiceWithPrivate = DeploymentExecutorService & {
+	extractTrashId: (cf: CustomFormat) => string | null;
+};
 
 describe("DeploymentExecutorService - extractTrashId", () => {
 	let service: DeploymentExecutorService;
@@ -27,21 +51,15 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			id: 1,
 			name: "Test CF",
 			specifications: [
-				{
-					name: "test",
-					implementation: "test",
-					negate: false,
-					required: false,
-					fields: [
-						{ name: "trash_id", value: "test-uuid-123" },
-						{ name: "other_field", value: "other_value" },
-					] as any,
-				},
+				createSpecWithArrayFields("test", [
+					{ name: "trash_id", value: "test-uuid-123" },
+					{ name: "other_field", value: "other_value" },
+				]),
 			],
 		};
 
 		// Access private method via type assertion
-		const trashId = (service as any).extractTrashId(cf);
+		const trashId = (service as ServiceWithPrivate).extractTrashId(cf);
 		expect(trashId).toBe("test-uuid-123");
 	});
 
@@ -63,7 +81,7 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			],
 		};
 
-		const trashId = (service as any).extractTrashId(cf);
+		const trashId = (service as ServiceWithPrivate).extractTrashId(cf);
 		expect(trashId).toBe("test-uuid-456");
 	});
 
@@ -72,19 +90,13 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			id: 1,
 			name: "Test CF Without Trash ID",
 			specifications: [
-				{
-					name: "test",
-					implementation: "test",
-					negate: false,
-					required: false,
-					fields: [
-						{ name: "other_field", value: "other_value" },
-					] as any,
-				},
+				createSpecWithArrayFields("test", [
+					{ name: "other_field", value: "other_value" },
+				]),
 			],
 		};
 
-		const trashId = (service as any).extractTrashId(cf);
+		const trashId = (service as ServiceWithPrivate).extractTrashId(cf);
 		expect(trashId).toBeNull();
 	});
 
@@ -95,7 +107,7 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			specifications: [],
 		};
 
-		const trashId = (service as any).extractTrashId(cf);
+		const trashId = (service as ServiceWithPrivate).extractTrashId(cf);
 		expect(trashId).toBeNull();
 	});
 
@@ -104,9 +116,9 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			id: 1,
 			name: "Test CF",
 			specifications: undefined,
-		} as any;
+		} as CustomFormat;
 
-		const trashId = (service as any).extractTrashId(cf);
+		const trashId = (service as ServiceWithPrivate).extractTrashId(cf);
 		expect(trashId).toBeNull();
 	});
 
@@ -120,19 +132,19 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 					implementation: "test",
 					negate: false,
 					required: false,
-					fields: undefined as any,
+					fields: undefined as unknown as Record<string, unknown>,
 				},
 				{
 					name: "test2",
 					implementation: "test",
 					negate: false,
 					required: false,
-					fields: null as any,
+					fields: null as unknown as Record<string, unknown>,
 				},
 			],
 		};
 
-		const trashId = (service as any).extractTrashId(cf);
+		const trashId = (service as ServiceWithPrivate).extractTrashId(cf);
 		expect(trashId).toBeNull();
 	});
 
@@ -141,37 +153,19 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			id: 1,
 			name: "Test CF",
 			specifications: [
-				{
-					name: "test1",
-					implementation: "test",
-					negate: false,
-					required: false,
-					fields: [
-						{ name: "other_field", value: "value" },
-					] as any,
-				},
-				{
-					name: "test2",
-					implementation: "test",
-					negate: false,
-					required: false,
-					fields: [
-						{ name: "trash_id", value: "first-uuid" },
-					] as any,
-				},
-				{
-					name: "test3",
-					implementation: "test",
-					negate: false,
-					required: false,
-					fields: [
-						{ name: "trash_id", value: "second-uuid" },
-					] as any,
-				},
+				createSpecWithArrayFields("test1", [
+					{ name: "other_field", value: "value" },
+				]),
+				createSpecWithArrayFields("test2", [
+					{ name: "trash_id", value: "first-uuid" },
+				]),
+				createSpecWithArrayFields("test3", [
+					{ name: "trash_id", value: "second-uuid" },
+				]),
 			],
 		};
 
-		const trashId = (service as any).extractTrashId(cf);
+		const trashId = (service as ServiceWithPrivate).extractTrashId(cf);
 		expect(trashId).toBe("first-uuid");
 	});
 
@@ -180,19 +174,13 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			id: 1,
 			name: "Test CF",
 			specifications: [
-				{
-					name: "test",
-					implementation: "test",
-					negate: false,
-					required: false,
-					fields: [
-						{ name: "trash_id", value: 12345 },
-					] as any,
-				},
+				createSpecWithArrayFields("test", [
+					{ name: "trash_id", value: 12345 },
+				]),
 			],
 		};
 
-		const trashId = (service as any).extractTrashId(cf);
+		const trashId = (service as ServiceWithPrivate).extractTrashId(cf);
 		expect(trashId).toBe("12345");
 		expect(typeof trashId).toBe("string");
 	});
@@ -203,21 +191,15 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			id: 1,
 			name: "My Custom Format",
 			specifications: [
-				{
-					name: "test",
-					implementation: "test",
-					negate: false,
-					required: false,
-					fields: [
-						{ name: "some_field", value: "value" },
-					] as any,
-				},
+				createSpecWithArrayFields("test", [
+					{ name: "some_field", value: "value" },
+				]),
 			],
 		};
 
-		const trashId = (service as any).extractTrashId(cfWithoutId);
+		const trashId = (service as ServiceWithPrivate).extractTrashId(cfWithoutId);
 		expect(trashId).toBeNull();
-		
+
 		// This null return allows callers to:
 		// 1. Skip ID-based matching (existingCFMap.get(null) returns undefined)
 		// 2. Explicitly use name-based matching (existingCFByName.get(cf.name))
@@ -241,15 +223,9 @@ describe("DeploymentExecutorService - ID-based vs name-based matching", () => {
 			id: 1,
 			name: "CF With ID",
 			specifications: [
-				{
-					name: "test",
-					implementation: "test",
-					negate: false,
-					required: false,
-					fields: [
-						{ name: "trash_id", value: "uuid-123" },
-					] as any,
-				},
+				createSpecWithArrayFields("test", [
+					{ name: "trash_id", value: "uuid-123" },
+				]),
 			],
 		};
 
@@ -258,15 +234,9 @@ describe("DeploymentExecutorService - ID-based vs name-based matching", () => {
 			id: 2,
 			name: "CF Without ID",
 			specifications: [
-				{
-					name: "test",
-					implementation: "test",
-					negate: false,
-					required: false,
-					fields: [
-						{ name: "other_field", value: "value" },
-					] as any,
-				},
+				createSpecWithArrayFields("test", [
+					{ name: "other_field", value: "value" },
+				]),
 			],
 		};
 
@@ -274,7 +244,9 @@ describe("DeploymentExecutorService - ID-based vs name-based matching", () => {
 		const mockExtractTrashId = (cf: CustomFormat): string | null => {
 			for (const spec of cf.specifications || []) {
 				if (spec.fields && Array.isArray(spec.fields)) {
-					const trashIdField = spec.fields.find((f) => f.name === "trash_id");
+					const trashIdField = (spec.fields as ArrayFieldFormat[]).find(
+						(f) => f.name === "trash_id"
+					);
 					if (trashIdField) {
 						return String(trashIdField.value);
 					}

@@ -73,6 +73,10 @@ export interface TrashCustomFormat {
 	score?: number; // Default score from TRaSH Guides
 	includeCustomFormatWhenRenaming?: boolean;
 	specifications: CustomFormatSpecification[];
+	// Optional metadata for instance-sourced CFs (not from TRaSH Guides)
+	_source?: "instance" | "trash";
+	_instanceId?: string;
+	_instanceCFId?: number;
 }
 
 /**
