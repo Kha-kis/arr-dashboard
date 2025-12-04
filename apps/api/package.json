@@ -31,7 +31,7 @@
 		"dotenv": "^16.4.5",
 		"fastify": "4.29.1",
 		"fastify-plugin": "^4.5.1",
-		"isomorphic-dompurify": "2.16.0",
+		"isomorphic-dompurify": "^2.33.0",
 		"lucia": "^3.2.2",
 		"marked": "^17.0.0",
 		"oauth4webapi": "^3.8.2",
