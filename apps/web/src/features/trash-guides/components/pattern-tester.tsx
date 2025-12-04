@@ -210,7 +210,7 @@ export function PatternTester({
 												{line}
 											</code>
 
-											{exec && exec.length > 1 && lineMatches && (
+											{exec && exec.length > 1 && finalMatch && (
 												<div className="mt-2 space-y-1">
 													<p className="text-xs text-fg-muted">Captured groups:</p>
 													{exec.slice(1).map((group, groupIndex) => (

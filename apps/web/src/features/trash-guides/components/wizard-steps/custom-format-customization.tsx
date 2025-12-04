@@ -126,7 +126,9 @@ export const CustomFormatCustomization = ({
 	};
 
 	const updateScoreOverride = (cfTrashId: string, score: string) => {
-		const scoreValue = score === "" ? undefined : Number.parseInt(score, 10);
+		const trimmed = score.trim();
+		const parsed = Number.parseInt(trimmed, 10);
+		const scoreValue = trimmed === "" || Number.isNaN(parsed) ? undefined : parsed;
 		setSelections((prev) => ({
 			...prev,
 			[cfTrashId]: {

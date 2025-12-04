@@ -816,7 +816,7 @@ export class DeploymentExecutorService {
 			});
 
 			// Find the cutoff quality ID from the template's cutoff name
-			let cutoffId = 31; // Default to Remux-2160p
+			let cutoffId: number | null = null;
 			if (templateConfig.qualityProfile?.cutoff) {
 				const cutoffName = templateConfig.qualityProfile.cutoff;
 
@@ -851,6 +851,13 @@ export class DeploymentExecutorService {
 				}
 			}
 
+			// If no cutoff found, use the highest quality item or first item
+			if (cutoffId === null && qualityItems.length > 0) {
+				const lastItem = qualityItems[qualityItems.length - 1];
+				cutoffId = lastItem.id ?? lastItem.quality?.id ?? 1;
+				console.warn(`[DEPLOYMENT] Could not resolve cutoff, defaulting to: ${cutoffId}`);
+			}
+
 			// Check if any CF scores are actually defined
 			// If all scores are 0 or undefined, override minFormatScore to 0
 			const hasDefinedScores = formatItemsWithScores.some(
@@ -864,7 +871,7 @@ export class DeploymentExecutorService {
 				...schema,
 				name: profileName,
 				upgradeAllowed: templateConfig.qualityProfile?.upgradeAllowed ?? true,
-				cutoff: cutoffId,
+				cutoff: cutoffId ?? 1,
 				items: qualityItems,
 				minFormatScore: effectiveMinScore,
 				cutoffFormatScore: templateConfig.qualityProfile?.cutoffFormatScore ?? 10000,
@@ -1058,16 +1065,19 @@ export class DeploymentExecutorService {
 		const duration = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
 
 		// Update TrashSyncHistory
+		// Note: counts.skipped includes both intentional skips (keep_existing) and failures
+		// We use details.failed.length for actual failures, and compute intentional skips
+		const intentionalSkips = counts.skipped - details.failed.length;
 		if (historyId) {
 			await this.prisma.trashSyncHistory.update({
 				where: { id: historyId },
 				data: {
-					status: errors.length === 0 ? "SUCCESS" : "PARTIAL_SUCCESS",
+					status: details.failed.length === 0 ? "SUCCESS" : "PARTIAL_SUCCESS",
 					completedAt: endTime,
 					duration,
 					configsApplied: counts.created + counts.updated,
-					configsFailed: counts.skipped,
-					configsSkipped: 0,
+					configsFailed: details.failed.length,
+					configsSkipped: intentionalSkips,
 					appliedConfigs: JSON.stringify([...details.created, ...details.updated]),
 					failedConfigs: details.failed.length > 0 ? JSON.stringify(details.failed) : null,
 					errorLog: errors.length > 0 ? errors.join("\n") : null,
@@ -1080,11 +1090,10 @@ export class DeploymentExecutorService {
 			await this.prisma.templateDeploymentHistory.update({
 				where: { id: deploymentHistoryId },
 				data: {
-					status:
-						errors.length === 0 ? "SUCCESS" : counts.skipped > 0 ? "PARTIAL_SUCCESS" : "SUCCESS",
+					status: details.failed.length === 0 ? "SUCCESS" : "PARTIAL_SUCCESS",
 					duration,
 					appliedCFs: counts.created + counts.updated,
-					failedCFs: counts.skipped,
+					failedCFs: details.failed.length,
 					appliedConfigs: JSON.stringify(
 						details.created
 							.map((name) => ({ name, action: "created" }))

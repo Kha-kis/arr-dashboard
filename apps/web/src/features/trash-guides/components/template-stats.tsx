@@ -53,17 +53,35 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 	const bulkUpdateSyncStrategyMutation = useBulkUpdateSyncStrategy();
 
 	const handleBulkSyncStrategyChange = (newStrategy: "auto" | "manual" | "notify") => {
-		bulkUpdateSyncStrategyMutation.mutate({
-			templateId,
-			syncStrategy: newStrategy,
-		});
+		const strategyLabel = getSyncStrategyInfo(newStrategy).label;
+		bulkUpdateSyncStrategyMutation.mutate(
+			{
+				templateId,
+				syncStrategy: newStrategy,
+			},
+			{
+				onSuccess: () => {
+					toast.success(`All instances set to ${strategyLabel}`);
+				},
+				onError: (error) => {
+					toast.error(`Failed to update sync strategy: ${error instanceof Error ? error.message : "Unknown error"}`);
+				},
+			}
+		);
 	};
 
 	const handleSyncStrategyChange = (instanceId: string, newStrategy: "auto" | "manual" | "notify") => {
+		const strategyLabel = getSyncStrategyInfo(newStrategy).label;
 		setUpdatingStrategyInstanceId(instanceId);
 		updateSyncStrategyMutation.mutate(
 			{ templateId, instanceId, syncStrategy: newStrategy },
 			{
+				onSuccess: () => {
+					toast.success(`Sync strategy updated to ${strategyLabel}`);
+				},
+				onError: (error) => {
+					toast.error(`Failed to update sync strategy: ${error instanceof Error ? error.message : "Unknown error"}`);
+				},
 				onSettled: () => setUpdatingStrategyInstanceId(null),
 			}
 		);
