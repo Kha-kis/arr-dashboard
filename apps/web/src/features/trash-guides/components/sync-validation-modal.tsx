@@ -138,17 +138,17 @@ export const SyncValidationModal = ({
 			<div
 				ref={dialogRef}
 				tabIndex={-1}
-				className="w-full max-w-2xl rounded-xl border border-white/10 bg-[#0d1117] shadow-2xl focus:outline-none"
+				className="w-full max-w-2xl rounded-xl border border-border bg-bg shadow-2xl focus:outline-none"
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="sync-validation-title"
 			>
 				{/* Header */}
-				<div className="border-b border-white/10 p-6">
-					<h2 id="sync-validation-title" className="text-xl font-semibold text-white">Validate Sync</h2>
-					<p className="mt-1 text-sm text-white/60">
-						Template: <span className="font-medium text-white">{templateName}</span> →
-						Instance: <span className="font-medium text-white">{instanceName}</span>
+				<div className="border-b border-border p-6">
+					<h2 id="sync-validation-title" className="text-xl font-semibold text-fg">Validate Sync</h2>
+					<p className="mt-1 text-sm text-fg/60">
+						Template: <span className="font-medium text-fg">{templateName}</span> →
+						Instance: <span className="font-medium text-fg">{instanceName}</span>
 					</p>
 				</div>
 
@@ -157,7 +157,7 @@ export const SyncValidationModal = ({
 					{isValidating && (
 						<div className="flex items-center justify-center py-12">
 							<div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-							<span className="ml-3 text-white/60">Validating...</span>
+							<span className="ml-3 text-fg/60">Validating...</span>
 						</div>
 					)}
 
@@ -199,14 +199,14 @@ export const SyncValidationModal = ({
 
 							{/* Conflicts */}
 							{hasConflicts && validation.conflicts && (
-								<div className="rounded-lg border border-white/10 bg-white/5 p-4">
+								<div className="rounded-lg border border-border bg-bg-subtle p-4">
 									<div className="flex items-start gap-3">
 										<Info className="h-5 w-5 flex-shrink-0 text-blue-400" />
 										<div className="flex-1">
-											<h3 className="font-medium text-white">
+											<h3 className="font-medium text-fg">
 												{validation.conflicts.length} Conflict{validation.conflicts.length !== 1 ? "s" : ""} Detected
 											</h3>
-											<p className="mt-1 text-sm text-white/60">
+											<p className="mt-1 text-sm text-fg/60">
 												Choose how to handle existing Custom Formats with the same name
 											</p>
 
@@ -214,12 +214,12 @@ export const SyncValidationModal = ({
 												{validation.conflicts.map((conflict) => (
 													<div
 														key={conflict.configName}
-														className="rounded-lg border border-white/10 bg-white/5 p-3"
+														className="rounded-lg border border-border bg-bg-subtle p-3"
 													>
 														<div className="flex items-center justify-between">
 															<div className="flex-1">
-																<p className="font-medium text-white">{conflict.configName}</p>
-																<p className="mt-0.5 text-xs text-white/50">{conflict.reason}</p>
+																<p className="font-medium text-fg">{conflict.configName}</p>
+																<p className="mt-0.5 text-xs text-fg/50">{conflict.reason}</p>
 															</div>
 
 															<div className="flex gap-2">
@@ -280,7 +280,7 @@ export const SyncValidationModal = ({
 				</div>
 
 				{/* Footer */}
-				<div className="flex items-center justify-end gap-3 border-t border-white/10 p-6">
+				<div className="flex items-center justify-end gap-3 border-t border-border p-6">
 					<Button variant="secondary" onClick={onCancel}>
 						Cancel
 					</Button>

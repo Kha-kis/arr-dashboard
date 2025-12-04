@@ -1,3 +1,5 @@
+"use client";
+
 /**
  * Queue Filters - Presentational Component
  *
@@ -48,17 +50,16 @@ export const QueueFilters = ({
 	onReset,
 }: QueueFiltersProps) => {
 	return (
-		<div className="flex flex-wrap items-end gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-3">
+		<div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-bg-subtle px-4 py-3">
 			<FormField label="Service" htmlFor="queue-service-filter" className="min-w-[160px]">
 				<select
 					id="queue-service-filter"
 					value={serviceFilter}
 					onChange={(event) => onServiceFilterChange(event.target.value)}
-					className="rounded-md border border-white/20 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
-					style={{ color: "#f8fafc" }}
+					className="rounded-md border border-border bg-bg px-3 py-2 text-sm text-fg focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
 				>
 					{serviceOptions.map((option) => (
-						<option key={option.value} value={option.value} className="bg-slate-900 text-white">
+						<option key={option.value} value={option.value} className="bg-bg text-fg">
 							{option.label}
 						</option>
 					))}
@@ -70,14 +71,13 @@ export const QueueFilters = ({
 					id="queue-instance-filter"
 					value={instanceFilter}
 					onChange={(event) => onInstanceFilterChange(event.target.value)}
-					className="rounded-md border border-white/20 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
-					style={{ color: "#f8fafc" }}
+					className="rounded-md border border-border bg-bg px-3 py-2 text-sm text-fg focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
 				>
-					<option value="all" className="bg-slate-900 text-white">
+					<option value="all" className="bg-bg text-fg">
 						All instances
 					</option>
 					{instanceOptions.map((option) => (
-						<option key={option.value} value={option.value} className="bg-slate-900 text-white">
+						<option key={option.value} value={option.value} className="bg-bg text-fg">
 							{option.label}
 						</option>
 					))}
@@ -89,14 +89,13 @@ export const QueueFilters = ({
 					id="queue-status-filter"
 					value={statusFilter}
 					onChange={(event) => onStatusFilterChange(event.target.value)}
-					className="rounded-md border border-white/20 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
-					style={{ color: "#f8fafc" }}
+					className="rounded-md border border-border bg-bg px-3 py-2 text-sm text-fg focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
 				>
-					<option value="all" className="bg-slate-900 text-white">
+					<option value="all" className="bg-bg text-fg">
 						All statuses
 					</option>
 					{statusOptions.map((option) => (
-						<option key={option.value} value={option.value} className="bg-slate-900 text-white">
+						<option key={option.value} value={option.value} className="bg-bg text-fg">
 							{option.label}
 						</option>
 					))}

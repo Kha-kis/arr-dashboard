@@ -403,15 +403,15 @@ export function BulkScoreManager({
 			{/* Header */}
 			<div className="flex items-center justify-between">
 				<div>
-					<h2 className="text-2xl font-semibold text-white">Bulk Score Management</h2>
-					<p className="text-sm text-white/70">
+					<h2 className="text-2xl font-semibold text-fg">Bulk Score Management</h2>
+					<p className="text-sm text-fg/70">
 						Manage custom format scores across multiple templates
 					</p>
 				</div>
 			</div>
 
 			{/* Filters */}
-			<div className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/5 p-4 sm:flex-row sm:items-center sm:flex-wrap">
+			<div className="flex flex-col gap-3 rounded-lg border border-border bg-bg-subtle p-4 sm:flex-row sm:items-center sm:flex-wrap">
 				<Select
 					value={instanceId}
 					onChange={(e) => setInstanceId(e.target.value)}
@@ -429,7 +429,7 @@ export function BulkScoreManager({
 
 				<div className="flex-1 min-w-[200px]">
 					<div className="relative">
-						<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" />
+						<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-fg/40" />
 						<Input
 							type="text"
 							placeholder="Search custom formats..."
@@ -440,19 +440,19 @@ export function BulkScoreManager({
 					</div>
 				</div>
 
-				<label className="flex items-center gap-2 px-4 py-2 rounded-lg bg-white/10 cursor-pointer hover:bg-white/20 text-sm text-white whitespace-nowrap">
+				<label className="flex items-center gap-2 px-4 py-2 rounded-lg bg-bg-subtle cursor-pointer hover:bg-bg-hover text-sm text-fg whitespace-nowrap">
 					<input
 						type="checkbox"
 						checked={modifiedOnly}
 						onChange={(e) => setModifiedOnly(e.target.checked)}
-						className="rounded border-white/20"
+						className="rounded border-border"
 					/>
 					<span>Modified Only</span>
 				</label>
 
 				{isLoading && (
-					<div className="flex items-center gap-2 text-sm text-white/60">
-						<div className="h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-primary" />
+					<div className="flex items-center gap-2 text-sm text-fg/60">
+						<div className="h-4 w-4 animate-spin rounded-full border-2 border-border border-t-primary" />
 						<span>Loading...</span>
 					</div>
 				)}
@@ -466,7 +466,7 @@ export function BulkScoreManager({
 							<div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/20">
 								<span className="text-sm font-semibold text-primary">{modifiedScores.size}</span>
 							</div>
-							<p className="text-sm text-white">
+							<p className="text-sm text-fg">
 								{modifiedScores.size} custom format{modifiedScores.size === 1 ? '' : 's'} modified
 							</p>
 						</div>
@@ -475,7 +475,7 @@ export function BulkScoreManager({
 								type="button"
 								onClick={handleDiscardChanges}
 								disabled={bulkUpdateScores.isPending}
-								className="inline-flex items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20 disabled:opacity-50"
+								className="inline-flex items-center gap-2 rounded-lg border border-border bg-bg-subtle px-4 py-2 text-sm font-medium text-fg transition hover:bg-bg-hover disabled:opacity-50"
 							>
 								Discard Changes
 							</button>
@@ -483,7 +483,7 @@ export function BulkScoreManager({
 								type="button"
 								onClick={handleSaveChanges}
 								disabled={bulkUpdateScores.isPending}
-								className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary/90 disabled:opacity-50"
+								className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-fg transition hover:bg-primary/90 disabled:opacity-50"
 							>
 								<Save className="h-4 w-4" />
 								{bulkUpdateScores.isPending ? "Saving..." : "Save Changes"}
@@ -501,14 +501,14 @@ export function BulkScoreManager({
 							<div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/20">
 								<span className="text-sm font-semibold text-amber-400">{selectedCFs.size}</span>
 							</div>
-							<p className="text-sm text-white">
+							<p className="text-sm text-fg">
 								{selectedCFs.size} custom format{selectedCFs.size === 1 ? '' : 's'} selected
 							</p>
 						</div>
 						<button
 							type="button"
 							onClick={handleBulkResetToTemplate}
-							className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-amber-700"
+							className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-fg transition hover:bg-amber-700"
 						>
 							<RotateCcw className="h-4 w-4" />
 							Reset to Template
@@ -518,20 +518,20 @@ export function BulkScoreManager({
 			)}
 
 			{/* Scores Table */}
-			<div className="overflow-x-auto rounded-lg border border-white/10">
+			<div className="overflow-x-auto rounded-lg border border-border">
 				<table className="w-full table-fixed">
-					<thead className="border-b border-white/10 bg-white/5">
+					<thead className="border-b border-border bg-bg-subtle">
 						<tr>
-							<th className="sticky left-0 z-20 w-12 bg-white/5 px-3 py-3 text-center">
+							<th className="sticky left-0 z-20 w-12 bg-bg-subtle px-3 py-3 text-center">
 								<input
 									type="checkbox"
 									checked={filteredScores.length > 0 && selectedCFs.size === filteredScores.length}
 									onChange={toggleSelectAll}
-									className="rounded border-white/20"
+									className="rounded border-border"
 									title="Select/deselect all"
 								/>
 							</th>
-							<th className="sticky left-12 z-10 w-64 bg-white/5 px-4 py-3 text-left text-sm font-medium text-white">
+							<th className="sticky left-12 z-10 w-64 bg-bg-subtle px-4 py-3 text-left text-sm font-medium text-fg">
 								Custom Format
 							</th>
 							{/* Dynamic columns for each unique template */}
@@ -539,11 +539,11 @@ export function BulkScoreManager({
 								filteredScores[0]?.templateScores.map((templateScore) => (
 									<th
 										key={templateScore.templateId}
-										className="w-24 px-3 py-3 text-center text-sm font-medium text-white"
+										className="w-24 px-3 py-3 text-center text-sm font-medium text-fg"
 									>
 										<div className="flex flex-col gap-0.5">
-											<div className="text-xs text-white/90">{templateScore.qualityProfileName}</div>
-											<div className="text-xs font-normal text-white/50">
+											<div className="text-xs text-fg/90">{templateScore.qualityProfileName}</div>
+											<div className="text-xs font-normal text-fg/50">
 												{templateScore.templateName}
 											</div>
 										</div>
@@ -554,7 +554,7 @@ export function BulkScoreManager({
 					<tbody>
 						{filteredScores.length === 0 ? (
 							<tr>
-								<td colSpan={100} className="px-4 py-8 text-center text-white/60">
+								<td colSpan={100} className="px-4 py-8 text-center text-fg/60">
 									{instanceId ? "No scores found for this instance." : "Select an instance to view scores."}
 								</td>
 							</tr>
@@ -562,17 +562,17 @@ export function BulkScoreManager({
 							filteredScores.map((score) => (
 								<tr
 									key={score.trashId}
-									className="border-t border-white/10 transition hover:bg-white/5"
+									className="border-t border-border transition hover:bg-bg-subtle"
 								>
-									<td className="sticky left-0 z-20 bg-white/5 px-3 py-2 text-center hover:bg-white/10">
+									<td className="sticky left-0 z-20 bg-bg-subtle px-3 py-2 text-center hover:bg-bg-subtle">
 										<input
 											type="checkbox"
 											checked={selectedCFs.has(score.trashId)}
 											onChange={() => toggleCFSelection(score.trashId)}
-											className="rounded border-white/20"
+											className="rounded border-border"
 										/>
 									</td>
-									<td className="sticky left-12 z-10 bg-white/5 px-4 py-2 text-sm text-white hover:bg-white/10">
+									<td className="sticky left-12 z-10 bg-bg-subtle px-4 py-2 text-sm text-fg hover:bg-bg-subtle">
 										<div className="flex items-center gap-2">
 											<span>{score.name}</span>
 											{score.hasAnyModifications && (
@@ -613,7 +613,7 @@ export function BulkScoreManager({
 																? "border-blue-500/50 bg-blue-500/10 font-semibold text-blue-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
 																: templateScore.isModified
 																? "border-yellow-500/50 bg-yellow-500/10 font-semibold text-yellow-200 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500"
-																: "border-white/20 bg-white/5 text-white/70 focus:border-primary focus:ring-1 focus:ring-primary"
+																: "border-border bg-bg-subtle text-fg/70 focus:border-primary focus:ring-1 focus:ring-primary"
 														}`}
 														title={
 															showOverrideUI
@@ -629,7 +629,7 @@ export function BulkScoreManager({
 														<button
 															type="button"
 															onClick={() => handleDeleteOverride(templateScore.templateId, cfId, score.name)}
-															className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 border border-white/20 text-white hover:bg-blue-600 transition"
+															className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 border border-border text-fg hover:bg-blue-600 transition"
 															title="Remove override (revert to template score on next sync)"
 														>
 															<X className="h-3 w-3" />
@@ -647,7 +647,7 @@ export function BulkScoreManager({
 			</div>
 
 			{/* Summary */}
-			<div className="text-sm text-white/60">
+			<div className="text-sm text-fg/60">
 				Showing {filteredScores.length} custom format{filteredScores.length === 1 ? '' : 's'}
 				{modifiedScores.size > 0 && ` • ${modifiedScores.size} unsaved change${modifiedScores.size === 1 ? '' : 's'}`}
 			</div>

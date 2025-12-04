@@ -13,6 +13,7 @@ import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { createSyncEngine } from "../../lib/trash-guides/sync-engine.js";
 import type { SyncProgress } from "../../lib/trash-guides/sync-engine.js";
 import { createTemplateUpdater } from "../../lib/trash-guides/template-updater.js";
+import { safeJsonParse } from "../../lib/utils/json.js";
 import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js";
 
 // ============================================================================
@@ -237,7 +238,7 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 		// Sync history is filtered by userId (line 279) to ensure user-specific access.
 		// ServiceInstance records cascade-delete when the owning user is removed (see schema.prisma).
 		const instance = await app.prisma.serviceInstance.findUnique({
-			where: { id: instanceId },
+			where: { id: instanceId, userId: request.currentUser?.id },
 		});
 
 		if (!instance) {
@@ -336,8 +337,8 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 			configsApplied: sync.configsApplied,
 			configsFailed: sync.configsFailed,
 			configsSkipped: sync.configsSkipped,
-			appliedConfigs: sync.appliedConfigs ? JSON.parse(sync.appliedConfigs) : null,
-			failedConfigs: sync.failedConfigs ? JSON.parse(sync.failedConfigs) : null,
+			appliedConfigs: safeJsonParse(sync.appliedConfigs),
+			failedConfigs: safeJsonParse(sync.failedConfigs),
 			errorLog: sync.errorLog,
 			backupId: sync.backupId,
 		});

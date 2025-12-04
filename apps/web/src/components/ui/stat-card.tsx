@@ -28,9 +28,9 @@ interface StatCardProps {
 export const StatCard = ({ label, value, description, className }: StatCardProps) => {
 	return (
 		<Card className={cn("p-6", className)}>
-			<p className="text-sm uppercase tracking-wide text-white/60">{label}</p>
-			<p className="mt-2 text-3xl font-semibold text-white">{value}</p>
-			{description && <p className="mt-1 text-sm text-white/70">{description}</p>}
+			<p className="text-sm uppercase tracking-wide text-fg-muted">{label}</p>
+			<p className="mt-2 text-3xl font-semibold text-fg">{value}</p>
+			{description && <p className="mt-1 text-sm text-fg-muted">{description}</p>}
 		</Card>
 	);
 };

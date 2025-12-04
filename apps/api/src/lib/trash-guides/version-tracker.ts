@@ -107,9 +107,12 @@ async function fetchWithRetry(url: string, options: FetchOptions = {}, headers?:
 				const rateLimitRemaining = response.headers.get("X-RateLimit-Remaining");
 				if (rateLimitRemaining === "0") {
 					const resetTime = response.headers.get("X-RateLimit-Reset");
-					throw new Error(
-						`GitHub API rate limit exceeded. Resets at ${resetTime ? new Date(Number.parseInt(resetTime) * 1000).toISOString() : "unknown"}`,
-					);
+					const resetTimestamp = resetTime ? Number.parseInt(resetTime, 10) : Number.NaN;
+					const resetDateStr =
+						Number.isFinite(resetTimestamp)
+							? new Date(resetTimestamp * 1000).toISOString()
+							: "unknown";
+					throw new Error(`GitHub API rate limit exceeded. Resets at ${resetDateStr}`);
 				}
 			}
 

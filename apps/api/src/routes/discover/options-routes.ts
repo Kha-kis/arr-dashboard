@@ -109,6 +109,7 @@ export const registerOptionsRoutes: FastifyPluginCallback = (app, _opts, done) =
 			where: {
 				id: parsed.instanceId,
 				enabled: true,
+				userId: request.currentUser?.id,
 			},
 		});
 

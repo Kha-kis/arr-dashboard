@@ -25,6 +25,7 @@ import {
 	createArrApiClient,
 } from "./arr-api-client.js";
 import type { Encryptor } from "../auth/encryption.js";
+import { safeJsonParse } from "../utils/json.js";
 
 // ============================================================================
 // Bulk Score Manager Class
@@ -52,10 +53,11 @@ export class BulkScoreManager {
 			throw new Error("instanceId filter is required for bulk score management");
 		}
 
-		// Fetch the specific instance
+		// Fetch the specific instance with ownership verification
 		const instance = await this.prisma.serviceInstance.findFirst({
 			where: {
 				id: filters.instanceId,
+				userId,
 				enabled: true,
 			},
 			select: {
@@ -69,7 +71,7 @@ export class BulkScoreManager {
 		});
 
 		if (!instance) {
-			throw new Error("Instance not found or not enabled");
+			throw new Error("Instance not found, not enabled, or access denied");
 		}
 
 		const instances = [instance]; // Wrap in array to reuse existing logic
@@ -456,9 +458,15 @@ export class BulkScoreManager {
 			};
 		}
 
-		const sourceConfig = JSON.parse(
-			sourceTemplate.configData,
-		) as TemplateConfig;
+		const sourceConfig = safeJsonParse<TemplateConfig>(sourceTemplate.configData);
+		if (!sourceConfig) {
+			return {
+				success: false,
+				message: "Source template has invalid configuration data",
+				affectedTemplates: 0,
+				affectedCustomFormats: 0,
+			};
+		}
 
 		// Build score map from source
 		const scoreMap = new Map<string, number>();
@@ -635,20 +643,25 @@ export class BulkScoreManager {
 			throw new Error("All templates must be the same service type for export");
 		}
 
-		const exportTemplates = templates.map((template) => {
-			const config = JSON.parse(template.configData) as TemplateConfig;
-			const scores: Record<string, number> = {};
+		const exportTemplates = templates
+			.map((template) => {
+				const config = safeJsonParse<TemplateConfig>(template.configData);
+				if (!config) {
+					return null; // Skip templates with invalid config
+				}
+				const scores: Record<string, number> = {};
 
-			for (const cf of config.customFormats) {
-				scores[cf.trashId] = cf.score ?? 0;
-			}
+				for (const cf of config.customFormats) {
+					scores[cf.trashId] = cf.score ?? 0;
+				}
 
-			return {
-				templateId: template.id,
-				templateName: template.name,
-				scores,
-			};
-		});
+				return {
+					templateId: template.id,
+					templateName: template.name,
+					scores,
+				};
+			})
+			.filter((t): t is NonNullable<typeof t> => t !== null);
 
 		return {
 			version: "1.0",
@@ -701,7 +714,11 @@ export class BulkScoreManager {
 					continue;
 				}
 
-				const config = JSON.parse(template.configData) as TemplateConfig;
+				const config = safeJsonParse<TemplateConfig>(template.configData);
+				if (!config) {
+					errors.push(`Template "${template.name}" has invalid configuration data`);
+					continue;
+				}
 				let modified = false;
 
 				// Update scores

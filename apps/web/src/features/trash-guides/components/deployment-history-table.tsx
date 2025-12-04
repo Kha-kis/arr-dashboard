@@ -35,9 +35,9 @@ export function DeploymentHistoryTable({
 
 	if (isLoading) {
 		return (
-			<div className="flex items-center justify-center p-8 rounded-xl border border-white/10 bg-white/5">
+			<div className="flex items-center justify-center p-8 rounded-xl border border-border bg-bg-subtle">
 				<div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-				<span className="ml-3 text-sm text-white/60">
+				<span className="ml-3 text-sm text-fg/60">
 					Loading deployment history...
 				</span>
 			</div>
@@ -57,8 +57,8 @@ export function DeploymentHistoryTable({
 
 	if (!data?.data?.history || data.data.history.length === 0) {
 		return (
-			<div className="rounded-xl border border-dashed border-white/20 bg-white/5 p-8 text-center">
-				<p className="text-sm text-white/60">
+			<div className="rounded-xl border border-dashed border-border bg-bg-subtle p-8 text-center">
+				<p className="text-sm text-fg/60">
 					No deployment history found
 				</p>
 			</div>
@@ -79,48 +79,48 @@ export function DeploymentHistoryTable({
 
 	return (
 		<div className="space-y-4">
-			<div className="overflow-hidden rounded-xl border border-white/10 bg-white/5">
+			<div className="overflow-hidden rounded-xl border border-border bg-bg-subtle">
 				<div className="overflow-x-auto">
 					<table className="w-full">
-						<thead className="border-b border-white/10 bg-white/5">
+						<thead className="border-b border-border bg-bg-subtle">
 							<tr>
-								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-white/60">
+								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-fg/60">
 									Timestamp
 								</th>
 								{!templateId && !instanceId && (
-									<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-white/60">
+									<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-fg/60">
 										Template
 									</th>
 								)}
-								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-white/60">
+								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-fg/60">
 									{templateId ? "Instance" : instanceId ? "Template" : "Instance"}
 								</th>
-								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-white/60">
+								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-fg/60">
 									Status
 								</th>
-								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-white/60">
+								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-fg/60">
 									Duration
 								</th>
-								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-white/60">
+								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-fg/60">
 									Results
 								</th>
-								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-white/60">
+								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-fg/60">
 									Actions
 								</th>
 							</tr>
 						</thead>
-						<tbody className="divide-y divide-white/10">
+						<tbody className="divide-y divide-border">
 							{history.map((entry) => (
 								<tr
 									key={entry.id}
-									className="transition hover:bg-white/5"
+									className="transition hover:bg-bg-subtle"
 								>
 									<td className="px-6 py-4 text-sm">
 										<div className="flex flex-col">
-											<span className="font-medium text-white">
+											<span className="font-medium text-fg">
 												{format(new Date(entry.deployedAt), "MMM d, yyyy")}
 											</span>
-											<span className="text-xs text-white/60">
+											<span className="text-xs text-fg/60">
 												{format(new Date(entry.deployedAt), "h:mm a")}
 											</span>
 										</div>
@@ -128,10 +128,10 @@ export function DeploymentHistoryTable({
 									{!templateId && !instanceId && (
 										<td className="px-6 py-4 text-sm">
 											<div className="flex flex-col">
-												<span className="font-medium text-white">
+												<span className="font-medium text-fg">
 													{entry.template?.name || "Unknown"}
 												</span>
-												<span className="text-xs text-white/60">
+												<span className="text-xs text-fg/60">
 													{entry.template?.serviceType}
 												</span>
 											</div>
@@ -140,19 +140,19 @@ export function DeploymentHistoryTable({
 									<td className="px-6 py-4 text-sm">
 										{templateId || !instanceId ? (
 											<div className="flex flex-col">
-												<span className="font-medium text-white">
+												<span className="font-medium text-fg">
 													{entry.instance?.label || "Unknown"}
 												</span>
-												<span className="text-xs text-white/60">
+												<span className="text-xs text-fg/60">
 													{entry.instance?.service}
 												</span>
 											</div>
 										) : (
 											<div className="flex flex-col">
-												<span className="font-medium text-white">
+												<span className="font-medium text-fg">
 													{entry.template?.name || "Unknown"}
 												</span>
-												<span className="text-xs text-white/60">
+												<span className="text-xs text-fg/60">
 													{entry.template?.serviceType}
 												</span>
 											</div>
@@ -161,7 +161,7 @@ export function DeploymentHistoryTable({
 									<td className="px-6 py-4">
 										<StatusBadge status={entry.status} />
 									</td>
-									<td className="px-6 py-4 text-sm text-white/60">
+									<td className="px-6 py-4 text-sm text-fg/60">
 										{entry.duration ? `${entry.duration}s` : "-"}
 									</td>
 									<td className="px-6 py-4 text-sm">
@@ -253,7 +253,7 @@ export function DeploymentHistoryTable({
 													variant="ghost"
 													size="sm"
 													onClick={() => setDeleteConfirmId(entry.id)}
-													className="gap-1.5 text-white/60 hover:text-red-400"
+													className="gap-1.5 text-fg/60 hover:text-red-400"
 												>
 													<Trash2 className="h-3.5 w-3.5" />
 												</Button>
@@ -269,10 +269,10 @@ export function DeploymentHistoryTable({
 
 			{/* Pagination Controls */}
 			<div className="flex items-center justify-between">
-				<p className="text-sm text-white/70">
-					Showing <span className="font-medium text-white">{offset + 1}</span> to{" "}
-					<span className="font-medium text-white">{offset + history.length}</span> of{" "}
-					<span className="font-medium text-white">{pagination.total}</span> deployments
+				<p className="text-sm text-fg/70">
+					Showing <span className="font-medium text-fg">{offset + 1}</span> to{" "}
+					<span className="font-medium text-fg">{offset + history.length}</span> of{" "}
+					<span className="font-medium text-fg">{pagination.total}</span> deployments
 				</p>
 				<div className="flex gap-2">
 					<Button

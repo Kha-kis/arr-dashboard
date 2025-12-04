@@ -34,6 +34,7 @@ export const registerAddRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			where: {
 				id: payload.instanceId,
 				enabled: true,
+				userId: request.currentUser?.id,
 			},
 		});
 

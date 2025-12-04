@@ -125,27 +125,27 @@ export const CFGroupSelection = ({
 		<div className="space-y-6">
 			{/* Introduction */}
 			<div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
-				<h4 className="font-medium text-white mb-2">🎯 TRaSH Guides Recommendations</h4>
-				<p className="text-sm text-white/70 mb-3">
-					TRaSH Guides has pre-configured this quality profile with specific Custom Format Groups. <strong className="text-white">Groups marked as &quot;Recommended&quot; are suggested by TRaSH for optimal results.</strong>
+				<h4 className="font-medium text-fg mb-2">🎯 TRaSH Guides Recommendations</h4>
+				<p className="text-sm text-fg/70 mb-3">
+					TRaSH Guides has pre-configured this quality profile with specific Custom Format Groups. <strong className="text-fg">Groups marked as &quot;Recommended&quot; are suggested by TRaSH for optimal results.</strong>
 				</p>
-				<div className="space-y-2 text-sm text-white/70 ml-4 mb-3">
-					<div>• <strong className="text-white">✅ Enabled CFs</strong> - Will be automatically enabled based on TRaSH recommendations</div>
-					<div>• <strong className="text-white">⚪ Available CFs</strong> - Optional formats you can enable in the next step</div>
-					<div>• <strong className="text-white">🔒 Required CFs</strong> - Must be enabled for this profile</div>
+				<div className="space-y-2 text-sm text-fg/70 ml-4 mb-3">
+					<div>• <strong className="text-fg">✅ Enabled CFs</strong> - Will be automatically enabled based on TRaSH recommendations</div>
+					<div>• <strong className="text-fg">⚪ Available CFs</strong> - Optional formats you can enable in the next step</div>
+					<div>• <strong className="text-fg">🔒 Required CFs</strong> - Must be enabled for this profile</div>
 				</div>
-				<p className="text-xs text-white/60 italic">
+				<p className="text-xs text-fg/60 italic">
 					💡 Tip: Start with recommended groups. Expand each group to see exactly which Custom Formats will be enabled.
 				</p>
 			</div>
 
 			{/* Overview */}
-			<div className="rounded-xl border border-white/10 bg-white/5 p-6">
-				<h3 className="text-lg font-medium text-white">{qualityProfile.name}</h3>
-				<p className="mt-2 text-sm text-white/70">
+			<div className="rounded-xl border border-border bg-bg-subtle p-6">
+				<h3 className="text-lg font-medium text-fg">{qualityProfile.name}</h3>
+				<p className="mt-2 text-sm text-fg/70">
 					The following Custom Format Groups are applicable to this quality profile. Select the ones you want to include.
 				</p>
-				<div className="mt-4 flex items-center gap-2 text-sm text-white/60">
+				<div className="mt-4 flex items-center gap-2 text-sm text-fg/60">
 					<Info className="h-4 w-4" />
 					<span>
 						{cfGroups.length} CF Groups available • {selectedGroups.size} selected
@@ -158,14 +158,14 @@ export const CFGroupSelection = ({
 				<button
 					type="button"
 					onClick={selectAll}
-					className="rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
+					className="rounded-lg bg-bg-subtle px-4 py-2 text-sm font-medium text-fg transition hover:bg-bg-hover"
 				>
 					Select All
 				</button>
 				<button
 					type="button"
 					onClick={deselectAll}
-					className="rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
+					className="rounded-lg bg-bg-subtle px-4 py-2 text-sm font-medium text-fg transition hover:bg-bg-hover"
 				>
 					Deselect All
 				</button>
@@ -208,7 +208,7 @@ export const CFGroupSelection = ({
 							className={`rounded-xl border transition ${
 								isSelected
 									? "border-primary bg-primary/10"
-									: "border-white/10 bg-white/5"
+									: "border-border bg-bg-subtle"
 							}`}
 						>
 							<div className="flex items-start gap-4 p-6">
@@ -217,14 +217,14 @@ export const CFGroupSelection = ({
 									type="checkbox"
 									checked={isSelected}
 									onChange={() => toggleGroup(group.trash_id)}
-									className="mt-1 h-5 w-5 rounded border-white/20 bg-white/10 text-primary focus:ring-primary"
+									className="mt-1 h-5 w-5 rounded border-border bg-bg-subtle text-primary focus:ring-primary"
 								/>
 
 								<div className="flex-1">
 									<div className="flex items-start justify-between">
 										<div className="flex-1">
 											<div className="flex items-center gap-2 flex-wrap">
-												<h4 className="font-medium text-white">{group.name}</h4>
+												<h4 className="font-medium text-fg">{group.name}</h4>
 												{isRecommended && (
 													<span className="inline-flex items-center gap-1 rounded bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-300">
 														<Star className="h-3 w-3" />
@@ -240,12 +240,12 @@ export const CFGroupSelection = ({
 
 											{group.trash_description && (
 												<p
-													className="mt-2 text-sm text-white/70"
+													className="mt-2 text-sm text-fg/70"
 													dangerouslySetInnerHTML={createSanitizedHtml(group.trash_description)}
 												/>
 											)}
 
-											<div className="mt-3 flex items-center gap-3 text-xs text-white/60">
+											<div className="mt-3 flex items-center gap-3 text-xs text-fg/60">
 												<span>{cfCount} Custom Formats</span>
 												{enabledCFsCount > 0 && (
 													<>
@@ -268,7 +268,7 @@ export const CFGroupSelection = ({
 										<button
 											type="button"
 											onClick={() => toggleExpand(group.trash_id)}
-											className="rounded p-1 text-white/60 hover:bg-white/10 hover:text-white transition"
+											className="rounded p-1 text-fg/60 hover:bg-bg-subtle hover:text-fg transition"
 										>
 											<ChevronDown
 												className={`h-5 w-5 transition-transform ${
@@ -280,8 +280,8 @@ export const CFGroupSelection = ({
 
 									{/* Expanded Custom Formats List */}
 									{isExpanded && customFormats.length > 0 && (
-										<div className="mt-4 space-y-2 border-t border-white/10 pt-4">
-											<p className="text-xs font-medium text-white/70 uppercase tracking-wide">
+										<div className="mt-4 space-y-2 border-t border-border pt-4">
+											<p className="text-xs font-medium text-fg/70 uppercase tracking-wide">
 												Custom Formats in this group:
 											</p>
 											<div className="space-y-1">
@@ -298,7 +298,7 @@ export const CFGroupSelection = ({
 															className={`rounded px-3 py-2 text-sm flex items-center justify-between ${
 																willBeEnabled
 																	? "bg-green-500/10 border border-green-500/30 text-green-200"
-																	: "bg-white/5 text-white/70"
+																	: "bg-bg-subtle text-fg/70"
 															}`}
 														>
 															<div className="flex items-center gap-2">
@@ -316,7 +316,7 @@ export const CFGroupSelection = ({
 													);
 												})}
 											</div>
-											<p className="mt-3 text-xs text-white/60 italic">
+											<p className="mt-3 text-xs text-fg/60 italic">
 												✅ Green items will be enabled by default based on TRaSH recommendations
 												<br />
 												⚪ Gray items are available but not recommended for this profile
@@ -331,19 +331,19 @@ export const CFGroupSelection = ({
 			</div>
 
 			{cfGroups.length === 0 && (
-				<div className="rounded-xl border border-white/10 bg-white/5 p-8 text-center">
-					<p className="text-white/60">
+				<div className="rounded-xl border border-border bg-bg-subtle p-8 text-center">
+					<p className="text-fg/60">
 						No Custom Format Groups available for this quality profile.
 					</p>
 				</div>
 			)}
 
 			{/* Navigation */}
-			<div className="flex items-center justify-between border-t border-white/10 pt-6">
+			<div className="flex items-center justify-between border-t border-border pt-6">
 				<button
 					type="button"
 					onClick={onBack}
-					className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
+					className="inline-flex items-center gap-2 rounded-lg bg-bg-subtle px-4 py-2 text-sm font-medium text-fg transition hover:bg-bg-hover"
 				>
 					<ChevronLeft className="h-4 w-4" />
 					Back
@@ -354,7 +354,7 @@ export const CFGroupSelection = ({
 						<button
 							type="button"
 							onClick={onSkip}
-							className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
+							className="inline-flex items-center gap-2 rounded-lg bg-bg-subtle px-4 py-2 text-sm font-medium text-fg transition hover:bg-bg-hover"
 							title="Skip group selection and customize individual formats"
 						>
 							Skip (Power User)
@@ -363,7 +363,7 @@ export const CFGroupSelection = ({
 					<button
 						type="button"
 						onClick={() => onNext(selectedGroups)}
-						className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary/90"
+						className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-fg transition hover:bg-primary/90"
 					>
 						Next: Customize Formats
 						<ChevronRight className="h-4 w-4" />

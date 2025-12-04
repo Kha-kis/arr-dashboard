@@ -50,10 +50,10 @@ export const StatisticsClient = () => {
 		<section className="flex flex-col gap-10">
 			<header className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
 				<div>
-					<p className="text-sm font-medium uppercase text-white/60">Systems overview</p>
-					<h1 className="text-3xl font-semibold text-white">Statistics</h1>
+					<p className="text-sm font-medium uppercase text-fg-muted">Systems overview</p>
+					<h1 className="text-3xl font-semibold text-fg">Statistics</h1>
 				</div>
-				<div className="flex items-center gap-3 text-sm text-white/60">
+				<div className="flex items-center gap-3 text-sm text-fg-muted">
 					<span>Aggregated health and library metrics across all configured instances.</span>
 					<Button
 						variant="ghost"
@@ -77,10 +77,10 @@ export const StatisticsClient = () => {
 							{allHealthIssues.map((issue) => (
 								<div
 									key={`${issue.service}-${issue.instanceId}-${issue.type}-${issue.message}`}
-									className="flex flex-col gap-2 border-b border-white/10 pb-3 last:border-0 last:pb-0"
+									className="flex flex-col gap-2 border-b border-border pb-3 last:border-0 last:pb-0"
 								>
 									<div className="flex items-start gap-3">
-										<span className="min-w-[80px] pt-1 text-xs uppercase text-white/40">
+										<span className="min-w-[80px] pt-1 text-xs uppercase text-fg-muted">
 											{issue.service}
 										</span>
 										<div className="flex-1 space-y-2">
@@ -88,7 +88,7 @@ export const StatisticsClient = () => {
 												href={`${incognitoMode ? getLinuxUrl(issue.instanceBaseUrl) : issue.instanceBaseUrl}/system/status`}
 												target="_blank"
 												rel="noopener noreferrer"
-												className="inline-flex items-center gap-2 rounded-lg border border-white/20 bg-white/10 px-3 py-1.5 text-sm font-medium transition-colors hover:border-white/30 hover:bg-white/20"
+												className="inline-flex items-center gap-2 rounded-lg border border-border bg-bg-subtle px-3 py-1.5 text-sm font-medium transition-colors hover:border-border hover:bg-bg-subtle/80"
 											>
 												<span>
 													View in{" "}
@@ -108,7 +108,7 @@ export const StatisticsClient = () => {
 											<p className="text-sm">
 												{incognitoMode ? anonymizeHealthMessage(issue.message) : issue.message}
 											</p>
-											{issue.source && <p className="text-xs text-white/50">Source: {issue.source}</p>}
+											{issue.source && <p className="text-xs text-fg-muted">Source: {issue.source}</p>}
 										</div>
 									</div>
 								</div>
@@ -128,8 +128,8 @@ export const StatisticsClient = () => {
 
 			<section className="space-y-4">
 				<div className="flex items-center justify-between">
-					<h2 className="text-xl font-semibold text-white">Sonarr</h2>
-					<p className="text-sm text-white/60">Series coverage and disk utilisation.</p>
+					<h2 className="text-xl font-semibold text-fg">Sonarr</h2>
+					<p className="text-sm text-fg-muted">Series coverage and disk utilisation.</p>
 				</div>
 				<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
 					<StatsCard title="Series" value={sonarrTotals.totalSeries} />
@@ -154,8 +154,8 @@ export const StatisticsClient = () => {
 						description={`${formatBytes(sonarrTotals.diskUsed)} used / ${formatBytes(sonarrTotals.diskTotal)} total`}
 					/>
 					<StatsCard title="Avg Episode Size" value={formatBytes(sonarrTotals.averageEpisodeSize)} />
-					<div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
-						<p className="mb-3 text-xs uppercase text-white/50">Quality Distribution</p>
+					<div className="rounded-xl border border-border bg-bg-subtle px-4 py-3">
+						<p className="mb-3 text-xs uppercase text-fg-muted">Quality Distribution</p>
 						<QualityBreakdown breakdown={sonarrTotals.qualityBreakdown} />
 					</div>
 				</div>
@@ -179,8 +179,8 @@ export const StatisticsClient = () => {
 
 			<section className="space-y-4">
 				<div className="flex items-center justify-between">
-					<h2 className="text-xl font-semibold text-white">Radarr</h2>
-					<p className="text-sm text-white/60">Movie library status and storage usage.</p>
+					<h2 className="text-xl font-semibold text-fg">Radarr</h2>
+					<p className="text-sm text-fg-muted">Movie library status and storage usage.</p>
 				</div>
 				<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
 					<StatsCard title="Movies" value={radarrTotals.totalMovies} />
@@ -202,8 +202,8 @@ export const StatisticsClient = () => {
 						description={`${formatBytes(radarrTotals.diskUsed)} / ${formatBytes(radarrTotals.diskTotal)}`}
 					/>
 				</div>
-				<div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3">
-					<p className="mb-3 text-xs uppercase text-white/50">Quality Distribution</p>
+				<div className="rounded-xl border border-border bg-bg-subtle px-4 py-3">
+					<p className="mb-3 text-xs uppercase text-fg-muted">Quality Distribution</p>
 					<QualityBreakdown breakdown={radarrTotals.qualityBreakdown} />
 				</div>
 				<InstanceTable
@@ -226,8 +226,8 @@ export const StatisticsClient = () => {
 
 			<section className="space-y-4">
 				<div className="flex items-center justify-between">
-					<h2 className="text-xl font-semibold text-white">Prowlarr</h2>
-					<p className="text-sm text-white/60">Indexer performance and activity.</p>
+					<h2 className="text-xl font-semibold text-fg">Prowlarr</h2>
+					<p className="text-sm text-fg-muted">Indexer performance and activity.</p>
 				</div>
 				<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
 					<StatsCard title="Indexers" value={prowlarrTotals.totalIndexers} />
@@ -285,10 +285,10 @@ export const StatisticsClient = () => {
 					]}
 				/>
 				{prowlarrTotals.indexers.length > 0 && (
-					<div className="rounded-xl border border-white/10 bg-white/5 p-4">
-						<h3 className="text-lg font-semibold text-white">Top Indexers</h3>
-						<table className="mt-3 w-full table-fixed text-sm text-white/80">
-							<thead className="text-left text-xs uppercase tracking-wide text-white/60">
+					<div className="rounded-xl border border-border bg-bg-subtle p-4">
+						<h3 className="text-lg font-semibold text-fg">Top Indexers</h3>
+						<table className="mt-3 w-full table-fixed text-sm text-fg-muted">
+							<thead className="text-left text-xs uppercase tracking-wide text-fg-muted">
 								<tr>
 									<th className="w-2/5 py-2">Name</th>
 									<th className="w-1/5 text-right">Queries</th>
@@ -296,15 +296,15 @@ export const StatisticsClient = () => {
 									<th className="w-1/5 text-right">Success</th>
 								</tr>
 							</thead>
-							<tbody className="divide-y divide-white/10">
-								{prowlarrTotals.indexers.map((indexer: ProwlarrIndexerStat) => (
-									<tr key={indexer.name}>
-										<td className="py-2 text-white">
+							<tbody className="divide-y divide-border">
+								{prowlarrTotals.indexers.map((indexer: ProwlarrIndexerStat, index: number) => (
+									<tr key={`${index}-${indexer.name}`}>
+										<td className="py-2 text-fg">
 											{incognitoMode ? getLinuxIndexer(indexer.name) : indexer.name}
 										</td>
-										<td className="py-2 text-right text-white/70">{integer.format(indexer.queries)}</td>
-										<td className="py-2 text-right text-white/70">{integer.format(indexer.grabs)}</td>
-										<td className="py-2 text-right text-white/70">
+										<td className="py-2 text-right text-fg-muted">{integer.format(indexer.queries)}</td>
+										<td className="py-2 text-right text-fg-muted">{integer.format(indexer.grabs)}</td>
+										<td className="py-2 text-right text-fg-muted">
 											{formatPercent(indexer.successRate)}
 										</td>
 									</tr>

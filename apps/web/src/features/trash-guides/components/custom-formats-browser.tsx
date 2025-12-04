@@ -234,11 +234,11 @@ export const CustomFormatsBrowser = () => {
 	return (
 		<div className="space-y-6">
 			{/* Header and Controls */}
-			<div className="rounded-lg border border-white/10 bg-white/5 p-6">
+			<div className="rounded-lg border border-border bg-bg-subtle p-6">
 				<div className="space-y-4">
 					<div>
-						<h3 className="text-lg font-semibold text-white">Browse Custom Formats</h3>
-						<p className="text-white/70 mt-1">
+						<h3 className="text-lg font-semibold text-fg">Browse Custom Formats</h3>
+						<p className="text-fg-muted mt-1">
 							Browse and deploy individual TRaSH Guides custom formats directly to your instances
 							without creating templates.
 						</p>
@@ -260,7 +260,7 @@ export const CustomFormatsBrowser = () => {
 
 						{/* Search */}
 						<div className="relative flex-1 min-w-[200px]">
-							<Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/40" />
+							<Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
 							<Input
 								type="text"
 								placeholder="Search custom formats..."
@@ -313,7 +313,7 @@ export const CustomFormatsBrowser = () => {
 							className={`flex flex-col cursor-pointer transition ${
 								selectedFormats.has(selectionKey)
 									? "ring-2 ring-primary bg-primary/10"
-									: "hover:border-white/20"
+									: "hover:border-border"
 							}`}
 							onClick={() => toggleFormat(selectionKey)}
 						>
@@ -345,7 +345,7 @@ export const CustomFormatsBrowser = () => {
 
 											if (cleaned) {
 												return (
-													<p className="text-sm text-white/70">
+													<p className="text-sm text-fg-muted">
 														{cleaned}
 													</p>
 												);
@@ -355,7 +355,7 @@ export const CustomFormatsBrowser = () => {
 									})()}
 
 									{/* Metadata */}
-									<div className="flex items-center justify-between text-xs text-white/50">
+									<div className="flex items-center justify-between text-xs text-fg-muted">
 										<span>{format.specifications.length} conditions</span>
 									</div>
 								</div>
@@ -412,7 +412,7 @@ export const CustomFormatsBrowser = () => {
 							</Alert>
 						) : (
 							<div className="space-y-2">
-								<label className="text-sm font-medium text-white">Select Instance</label>
+								<label className="text-sm font-medium text-fg">Select Instance</label>
 								<Select
 									value={selectedInstance}
 									onChange={(e) => setSelectedInstance(e.target.value)}
@@ -477,9 +477,9 @@ export const CustomFormatsBrowser = () => {
 								{/* Description */}
 								{description && (
 									<div className="space-y-2">
-										<h3 className="text-sm font-semibold text-white">Description</h3>
+										<h3 className="text-sm font-semibold text-fg">Description</h3>
 										<div
-											className="rounded-lg border border-white/10 bg-white/5 p-4 text-sm text-white/80 prose prose-invert prose-sm max-w-none"
+											className="rounded-lg border border-border bg-bg-subtle p-4 text-sm text-fg-muted prose prose-invert prose-sm max-w-none"
 											dangerouslySetInnerHTML={createSanitizedHtml(description.description)}
 										/>
 									</div>
@@ -487,29 +487,29 @@ export const CustomFormatsBrowser = () => {
 
 								{/* Metadata */}
 								<div className="space-y-2">
-									<h3 className="text-sm font-semibold text-white">Information</h3>
-									<div className="rounded-lg border border-white/10 bg-white/5 p-4 space-y-2 text-sm">
+									<h3 className="text-sm font-semibold text-fg">Information</h3>
+									<div className="rounded-lg border border-border bg-bg-subtle p-4 space-y-2 text-sm">
 										<div className="flex justify-between">
-											<span className="text-white/60">TRaSH ID:</span>
-											<span className="text-white font-mono text-xs">{selectedFormatForDetails.trash_id}</span>
+											<span className="text-fg-muted">TRaSH ID:</span>
+											<span className="text-fg font-mono text-xs">{selectedFormatForDetails.trash_id}</span>
 										</div>
 										<div className="flex justify-between">
-											<span className="text-white/60">Conditions:</span>
-											<span className="text-white">{selectedFormatForDetails.specifications.length}</span>
+											<span className="text-fg-muted">Conditions:</span>
+											<span className="text-fg">{selectedFormatForDetails.specifications.length}</span>
 										</div>
 									</div>
 								</div>
 
 							{/* Specifications/Conditions */}
 							<div className="space-y-2">
-								<h3 className="text-sm font-semibold text-white">Conditions</h3>
+								<h3 className="text-sm font-semibold text-fg">Conditions</h3>
 								<div className="space-y-2">
 									{selectedFormatForDetails.specifications.map((spec, index) => (
-										<div key={index} className="rounded-lg border border-white/10 bg-white/5 p-4">
+										<div key={index} className="rounded-lg border border-border bg-bg-subtle p-4">
 											<div className="flex items-start justify-between mb-2">
 												<div className="flex-1">
-													<div className="font-medium text-white">{spec.name}</div>
-													<div className="text-xs text-white/60 mt-1">
+													<div className="font-medium text-fg">{spec.name}</div>
+													<div className="text-xs text-fg-muted mt-1">
 														{spec.implementation}
 														{spec.negate && <Badge variant="warning" className="ml-2">Negated</Badge>}
 														{spec.required && <Badge variant="default" className="ml-2">Required</Badge>}
@@ -520,8 +520,8 @@ export const CustomFormatsBrowser = () => {
 												<div className="mt-3 space-y-1">
 													{Object.entries(spec.fields).map(([key, value]) => (
 														<div key={key} className="text-xs">
-															<span className="text-white/60">{key}:</span>{" "}
-															<span className="text-white/80 font-mono">
+															<span className="text-fg-muted">{key}:</span>{" "}
+															<span className="text-fg-muted font-mono">
 																{typeof value === 'object' ? JSON.stringify(value) : String(value)}
 															</span>
 														</div>

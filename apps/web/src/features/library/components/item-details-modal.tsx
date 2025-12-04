@@ -118,9 +118,9 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 					<div className="mb-6">
 						<h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-2">Genres</h3>
 						<div className="flex flex-wrap gap-2">
-							{genreEntries.map((genre) => (
+							{genreEntries.map((genre, index) => (
 								<span
-									key={genre}
+									key={`${index}-${genre}`}
 									className="rounded-full border border-border bg-bg-muted/50 px-3 py-1 text-sm text-fg-muted"
 								>
 									{genre}
@@ -134,9 +134,9 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 					<div className="mb-6">
 						<h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-2">Tags</h3>
 						<div className="flex flex-wrap gap-2">
-							{tagEntries.map((tag) => (
+							{tagEntries.map((tag, index) => (
 								<span
-									key={tag}
+									key={`${index}-${tag}`}
 									className="rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-sm text-fg"
 								>
 									{tag}

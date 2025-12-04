@@ -47,7 +47,7 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 	app.get("/search/indexers", async (request, reply) => {
 
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { enabled: true, service: "PROWLARR" },
+			where: { enabled: true, service: "PROWLARR", userId: request.currentUser?.id },
 		});
 
 		if (instances.length === 0) {
@@ -130,7 +130,7 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 			where: {
 				enabled: true,
 				service: "PROWLARR",
-				id: instanceId,
+				id: instanceId, userId: request.currentUser?.id,
 			},
 		});
 
@@ -199,7 +199,7 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 		const instanceId = payload.instanceId ?? paramInstanceId;
 
 		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { enabled: true, service: "PROWLARR", id: instanceId },
+			where: { enabled: true, service: "PROWLARR", id: instanceId, userId: request.currentUser?.id },
 		});
 
 		if (!instance) {
@@ -267,7 +267,7 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 			where: {
 				enabled: true,
 				service: "PROWLARR",
-				id: payload.instanceId,
+				id: payload.instanceId, userId: request.currentUser?.id,
 			},
 		});
 

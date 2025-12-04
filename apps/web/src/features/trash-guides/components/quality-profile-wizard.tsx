@@ -328,7 +328,7 @@ export const QualityProfileWizard = ({
 											<div
 												className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium transition ${
 													isActive
-														? "bg-primary text-white ring-2 ring-primary/30"
+														? "bg-primary text-primary-fg ring-2 ring-primary/30"
 														: isCompleted
 															? "bg-primary/20 text-primary"
 															: "bg-bg-hover text-fg-muted"

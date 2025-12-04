@@ -264,23 +264,23 @@ export const TemplateCreation = ({
 		<div className="space-y-6">
 			{/* Introduction */}
 			<div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
-				<h4 className="font-medium text-white mb-2">✅ {isEditMode ? 'Ready to Save!' : 'Almost Done!'}</h4>
-				<p className="text-sm text-white/70 mb-3">
+				<h4 className="font-medium text-fg mb-2">✅ {isEditMode ? 'Ready to Save!' : 'Almost Done!'}</h4>
+				<p className="text-sm text-fg/70 mb-3">
 					{isEditMode
 						? `You've made changes to your template. Review and save to apply the updates.`
 						: `You've completed the configuration. Now just name your template and you're ready to deploy it to your ${serviceType} instances.`}
 				</p>
 				{!isEditMode && (
-					<p className="text-xs text-white/60 italic">
+					<p className="text-xs text-fg/60 italic">
 						💡 Tip: Choose a descriptive name that reflects the quality preferences (e.g., &quot;4K HDR Optimized&quot;, &quot;Anime Quality Profile&quot;).
 					</p>
 				)}
 			</div>
 
 			{/* Summary */}
-			<div className="rounded-xl border border-white/10 bg-white/5 p-6">
+			<div className="rounded-xl border border-border bg-bg-subtle p-6">
 				<div className="flex items-center justify-between mb-4">
-					<h3 className="text-lg font-medium text-white">{isEditMode ? 'Review & Update Template' : 'Review & Create Template'}</h3>
+					<h3 className="text-lg font-medium text-fg">{isEditMode ? 'Review & Update Template' : 'Review & Create Template'}</h3>
 					{onEditStep && !isEditMode && (
 						<button
 							type="button"
@@ -292,15 +292,15 @@ export const TemplateCreation = ({
 						</button>
 					)}
 				</div>
-				<p className="text-white/70">
+				<p className="text-fg/70">
 					Review your selections below. You can go back to make changes if needed.
 				</p>
 
 				<div className="mt-6 space-y-4">
 					{/* Quality Profile */}
-					<div className="rounded-lg border border-white/10 bg-white/5 p-4">
+					<div className="rounded-lg border border-border bg-bg-subtle p-4">
 						<div className="flex items-center justify-between">
-							<div className="flex items-center gap-2 text-sm font-medium text-white">
+							<div className="flex items-center gap-2 text-sm font-medium text-fg">
 								<CheckCircle className="h-4 w-4 text-green-400" />
 								Quality Profile
 							</div>
@@ -308,13 +308,13 @@ export const TemplateCreation = ({
 								<button
 									type="button"
 									onClick={() => onEditStep("profile")}
-									className="text-xs text-white/60 hover:text-primary transition"
+									className="text-xs text-fg/60 hover:text-primary transition"
 								>
 									Change
 								</button>
 							)}
 						</div>
-						<p className="mt-2 text-sm text-white/70">{wizardState.selectedProfile.name}</p>
+						<p className="mt-2 text-sm text-fg/70">{wizardState.selectedProfile.name}</p>
 						<div className="mt-3 flex flex-wrap gap-2">
 							{wizardState.selectedProfile.language && (
 								<span className="inline-flex items-center gap-1 rounded bg-blue-500/20 px-2 py-1 text-xs font-medium text-blue-300">
@@ -334,9 +334,9 @@ export const TemplateCreation = ({
 
 					{/* CF Groups */}
 					{selectedCFGroups.length > 0 && (
-						<div className="rounded-lg border border-white/10 bg-white/5 p-4">
+						<div className="rounded-lg border border-border bg-bg-subtle p-4">
 							<div className="flex items-center justify-between">
-								<div className="flex items-center gap-2 text-sm font-medium text-white">
+								<div className="flex items-center gap-2 text-sm font-medium text-fg">
 									<CheckCircle className="h-4 w-4 text-green-400" />
 									Custom Format Groups ({selectedCFGroups.length})
 								</div>
@@ -344,7 +344,7 @@ export const TemplateCreation = ({
 									<button
 										type="button"
 										onClick={() => onEditStep("customize")}
-										className="text-xs text-white/60 hover:text-primary transition"
+										className="text-xs text-fg/60 hover:text-primary transition"
 									>
 										Edit Custom Formats
 									</button>
@@ -352,7 +352,7 @@ export const TemplateCreation = ({
 							</div>
 							<div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
 								{selectedCFGroups.map((group: any) => (
-									<div key={group.trash_id} className="text-sm text-white/70 flex items-start gap-2">
+									<div key={group.trash_id} className="text-sm text-fg/70 flex items-start gap-2">
 										<span className="text-green-400 mt-0.5">•</span>
 										<span>{group.name}</span>
 									</div>
@@ -362,9 +362,9 @@ export const TemplateCreation = ({
 					)}
 
 					{/* Custom Formats Breakdown */}
-					<div className="rounded-lg border border-white/10 bg-white/5 p-4">
+					<div className="rounded-lg border border-border bg-bg-subtle p-4">
 						<div className="flex items-center justify-between">
-							<div className="flex items-center gap-2 text-sm font-medium text-white">
+							<div className="flex items-center gap-2 text-sm font-medium text-fg">
 								<CheckCircle className="h-4 w-4 text-green-400" />
 								Custom Formats ({selectedCFs.length} total)
 							</div>
@@ -372,7 +372,7 @@ export const TemplateCreation = ({
 								<button
 									type="button"
 									onClick={() => onEditStep("customize")}
-									className="text-xs text-white/60 hover:text-primary transition"
+									className="text-xs text-fg/60 hover:text-primary transition"
 								>
 									Customize
 								</button>
@@ -383,44 +383,44 @@ export const TemplateCreation = ({
 						<div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
 							<div className="rounded bg-amber-500/10 border border-amber-500/20 p-3">
 								<div className="text-xs font-medium text-amber-300">🔒 Mandatory</div>
-								<div className="text-2xl font-bold text-white mt-1">{mandatoryCount}</div>
-								<div className="text-xs text-white/60 mt-1">From profile</div>
+								<div className="text-2xl font-bold text-fg mt-1">{mandatoryCount}</div>
+								<div className="text-xs text-fg/60 mt-1">From profile</div>
 							</div>
 							<div className="rounded bg-green-500/10 border border-green-500/20 p-3">
 								<div className="text-xs font-medium text-green-300">📦 From Groups</div>
-								<div className="text-2xl font-bold text-white mt-1">{fromGroupsCount}</div>
-								<div className="text-xs text-white/60 mt-1">Auto-selected</div>
+								<div className="text-2xl font-bold text-fg mt-1">{fromGroupsCount}</div>
+								<div className="text-xs text-fg/60 mt-1">Auto-selected</div>
 							</div>
 							<div className="rounded bg-blue-500/10 border border-blue-500/20 p-3">
 								<div className="text-xs font-medium text-blue-300">✋ Manual</div>
-								<div className="text-2xl font-bold text-white mt-1">{manuallySelectedCount}</div>
-								<div className="text-xs text-white/60 mt-1">User added</div>
+								<div className="text-2xl font-bold text-fg mt-1">{manuallySelectedCount}</div>
+								<div className="text-xs text-fg/60 mt-1">User added</div>
 							</div>
 						</div>
 
 						{/* Score Distribution */}
 						{scoreOverridesCount > 0 && (
-							<div className="mt-4 pt-4 border-t border-white/10">
-								<div className="flex items-center gap-2 text-xs font-medium text-white/70 mb-3">
+							<div className="mt-4 pt-4 border-t border-border">
+								<div className="flex items-center gap-2 text-xs font-medium text-fg/70 mb-3">
 									<Info className="h-3 w-3" />
 									Score Overrides ({scoreOverridesCount})
 								</div>
 								<div className="grid grid-cols-3 gap-2">
 									<div className="flex items-center gap-2 text-xs">
 										<TrendingUp className="h-3 w-3 text-green-400" />
-										<span className="text-white/70">
+										<span className="text-fg/70">
 											<span className="font-medium text-green-400">{positiveScores}</span> positive
 										</span>
 									</div>
 									<div className="flex items-center gap-2 text-xs">
 										<TrendingDown className="h-3 w-3 text-red-400" />
-										<span className="text-white/70">
+										<span className="text-fg/70">
 											<span className="font-medium text-red-400">{negativeScores}</span> negative
 										</span>
 									</div>
 									<div className="flex items-center gap-2 text-xs">
 										<Minus className="h-3 w-3 text-gray-400" />
-										<span className="text-white/70">
+										<span className="text-fg/70">
 											<span className="font-medium text-gray-400">{neutralScores}</span> neutral
 										</span>
 									</div>
@@ -434,7 +434,7 @@ export const TemplateCreation = ({
 			{/* Template Details */}
 			<div className="space-y-4">
 				<div>
-					<label className="mb-2 block text-sm font-medium text-white">
+					<label className="mb-2 block text-sm font-medium text-fg">
 						Template Name <span className="text-red-400">*</span>
 					</label>
 					<input
@@ -442,12 +442,12 @@ export const TemplateCreation = ({
 						value={templateName}
 						onChange={(e) => setTemplateName(e.target.value)}
 						placeholder="Enter template name"
-						className="w-full rounded border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+						className="w-full rounded border border-border bg-bg-subtle px-3 py-2 text-sm text-fg placeholder:text-fg/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
 					/>
 				</div>
 
 				<div>
-					<label className="mb-2 block text-sm font-medium text-white">
+					<label className="mb-2 block text-sm font-medium text-fg">
 						Description (Optional)
 					</label>
 					<textarea
@@ -455,7 +455,7 @@ export const TemplateCreation = ({
 						onChange={(e) => setTemplateDescription(e.target.value)}
 						placeholder="Enter template description"
 						rows={4}
-						className="w-full rounded border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+						className="w-full rounded border border-border bg-bg-subtle px-3 py-2 text-sm text-fg placeholder:text-fg/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
 					/>
 				</div>
 			</div>
@@ -492,12 +492,12 @@ export const TemplateCreation = ({
 			)}
 
 			{/* Navigation */}
-			<div className="flex items-center justify-between border-t border-white/10 pt-6">
+			<div className="flex items-center justify-between border-t border-border pt-6">
 				<button
 					type="button"
 					onClick={onBack}
 					disabled={importMutation.isPending || updateMutation.isPending || clonedMutation.isPending}
-					className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20 disabled:opacity-50"
+					className="inline-flex items-center gap-2 rounded-lg bg-bg-subtle px-4 py-2 text-sm font-medium text-fg transition hover:bg-bg-hover disabled:opacity-50"
 				>
 					<ChevronLeft className="h-4 w-4" />
 					Back
@@ -507,11 +507,11 @@ export const TemplateCreation = ({
 					type="button"
 					onClick={handleSubmit}
 					disabled={!templateName.trim() || importMutation.isPending || updateMutation.isPending || clonedMutation.isPending}
-					className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary/90 disabled:opacity-50"
+					className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-fg transition hover:bg-primary/90 disabled:opacity-50"
 				>
 					{(importMutation.isPending || updateMutation.isPending || clonedMutation.isPending) ? (
 						<>
-							<div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+							<div className="h-4 w-4 animate-spin rounded-full border-2 border-border border-t-fg" />
 							{isEditMode ? 'Updating Template...' : 'Creating Template...'}
 						</>
 					) : (

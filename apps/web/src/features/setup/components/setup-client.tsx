@@ -31,7 +31,7 @@ export const SetupClient = () => {
 			</CardHeader>
 			<CardContent>
 				{/* Tab navigation */}
-				<div className="flex items-center gap-2 border-b border-white/10 pb-4 mb-6">
+				<div className="flex items-center gap-2 border-b border-border pb-4 mb-6">
 					<Button
 						type="button"
 						variant={activeMethod === "passkey" ? "primary" : "ghost"}
@@ -39,7 +39,7 @@ export const SetupClient = () => {
 						onClick={() => setActiveMethod("passkey")}
 						className={cn(
 							"flex-1",
-							activeMethod !== "passkey" && "text-white/60 hover:text-white",
+							activeMethod !== "passkey" && "text-fg-muted hover:text-fg",
 						)}
 					>
 						Passkey
@@ -51,7 +51,7 @@ export const SetupClient = () => {
 						onClick={() => setActiveMethod("password")}
 						className={cn(
 							"flex-1",
-							activeMethod !== "password" && "text-white/60 hover:text-white",
+							activeMethod !== "password" && "text-fg-muted hover:text-fg",
 						)}
 					>
 						Password
@@ -63,7 +63,7 @@ export const SetupClient = () => {
 						onClick={() => setActiveMethod("oidc")}
 						className={cn(
 							"flex-1",
-							activeMethod !== "oidc" && "text-white/60 hover:text-white",
+							activeMethod !== "oidc" && "text-fg-muted hover:text-fg",
 						)}
 					>
 						OIDC

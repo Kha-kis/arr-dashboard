@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import type { ServiceInstanceSummary } from "@arr/shared";
 import { Alert, AlertDescription, AlertTitle } from "../../../components/ui";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useDiscoverActions } from "../hooks/useDiscoverActions";
@@ -24,7 +25,7 @@ import { TMDBCarousel } from "./tmdb-carousel";
  *
  * @component
  */
-export const DiscoverClient: React.FC = () => {
+export const DiscoverClient = () => {
 	const { data: services = [] } = useServicesQuery();
 
 	// Search functionality
@@ -45,7 +46,7 @@ export const DiscoverClient: React.FC = () => {
 	const relevantInstances = useMemo(
 		() =>
 			services.filter(
-				(service) =>
+				(service: ServiceInstanceSummary) =>
 					service.enabled &&
 					(searchType === "movie" ? service.service === "radarr" : service.service === "sonarr"),
 			),
@@ -72,11 +73,11 @@ export const DiscoverClient: React.FC = () => {
 		<div className="space-y-12">
 			<header className="space-y-8">
 				<div className="space-y-2">
-					<p className="text-xs uppercase tracking-[0.4em] text-white/40">Discover</p>
-					<h1 className="text-3xl font-semibold text-white">
+					<p className="text-xs uppercase tracking-[0.4em] text-fg-muted">Discover</p>
+					<h1 className="text-3xl font-semibold text-fg">
 						Find new content for your *arr stack
 					</h1>
-					<p className="text-sm text-white/60">
+					<p className="text-sm text-fg-muted">
 						Search across your configured {searchType === "movie" ? "Radarr" : "Sonarr"} instances
 						and add titles with smart defaults.
 					</p>
@@ -88,7 +89,7 @@ export const DiscoverClient: React.FC = () => {
 					</Alert>
 				)}
 
-				<div className="flex flex-col gap-6 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+				<div className="flex flex-col gap-6 rounded-2xl border border-border bg-bg-subtle p-6 backdrop-blur">
 					<MediaTypeToggle
 						searchType={searchType}
 						onTypeChange={setSearchType}

@@ -44,7 +44,8 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		Params: { instanceId: string; profileId: string };
 		Body: z.infer<typeof updateScoresSchema>;
 	}>("/:instanceId/quality-profiles/:profileId/scores", async (request, reply) => {
-		const userId = request.currentUser?.id;
+		// userId is guaranteed by preHandler authentication check
+		const userId = request.currentUser!.id;
 		const { instanceId, profileId } = request.params;
 		const profileIdNum = Number.parseInt(profileId);
 
@@ -60,10 +61,11 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 			// Validate request body
 			const { scoreUpdates } = updateScoresSchema.parse(request.body);
 
-			// Get the instance from database
+			// Get the instance from database with ownership verification
 			const instance = await request.server.prisma.serviceInstance.findFirst({
 				where: {
 					id: instanceId,
+					userId,
 					service: {
 						in: ["RADARR", "SONARR"],
 					},
@@ -81,7 +83,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 				return reply.status(404).send({
 					statusCode: 404,
 					error: "NotFound",
-					message: "Instance not found or not a Radarr/Sonarr instance",
+					message: "Instance not found or access denied",
 				});
 			}
 
@@ -226,6 +228,8 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 	app.get<{
 		Params: { instanceId: string; profileId: string };
 	}>("/:instanceId/quality-profiles/:profileId/overrides", async (request, reply) => {
+		// userId is guaranteed by preHandler authentication check
+		const userId = request.currentUser!.id;
 		const { instanceId, profileId } = request.params;
 		const profileIdNum = Number.parseInt(profileId);
 
@@ -238,6 +242,23 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		}
 
 		try {
+			// Verify the user owns this instance before returning overrides
+			const instance = await request.server.prisma.serviceInstance.findFirst({
+				where: {
+					id: instanceId,
+					userId,
+				},
+				select: { id: true },
+			});
+
+			if (!instance) {
+				return reply.status(403).send({
+					statusCode: 403,
+					error: "Forbidden",
+					message: "You do not have access to this instance",
+				});
+			}
+
 			// Get all overrides for this quality profile
 			const overrides = await request.server.prisma.instanceQualityProfileOverride.findMany({
 				where: {
@@ -271,7 +292,8 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		Params: { instanceId: string; profileId: string };
 		Body: { customFormatId: number; templateId: string };
 	}>("/:instanceId/quality-profiles/:profileId/promote-override", async (request, reply) => {
-		const userId = request.currentUser?.id;
+		// userId is guaranteed by preHandler authentication check
+		const userId = request.currentUser!.id;
 		const { instanceId, profileId } = request.params;
 		const profileIdNum = Number.parseInt(profileId);
 		const { customFormatId, templateId } = request.body;
@@ -285,6 +307,23 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		}
 
 		try {
+			// Verify the user owns this instance first
+			const instance = await request.server.prisma.serviceInstance.findFirst({
+				where: {
+					id: instanceId,
+					userId,
+				},
+				select: { id: true },
+			});
+
+			if (!instance) {
+				return reply.status(403).send({
+					statusCode: 403,
+					error: "Forbidden",
+					message: "You do not have access to this instance",
+				});
+			}
+
 			// Get the instance override
 			const override = await request.server.prisma.instanceQualityProfileOverride.findUnique({
 				where: {
@@ -406,6 +445,8 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		Params: { instanceId: string };
 		Body: { profileIds: number[] };
 	}>("/:instanceId/quality-profiles/bulk-overrides", async (request, reply) => {
+		// userId is guaranteed by preHandler authentication check
+		const userId = request.currentUser!.id;
 		const { instanceId } = request.params;
 		const { profileIds } = request.body;
 
@@ -428,6 +469,23 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		}
 
 		try {
+			// Verify the user owns this instance before returning overrides
+			const instance = await request.server.prisma.serviceInstance.findFirst({
+				where: {
+					id: instanceId,
+					userId,
+				},
+				select: { id: true },
+			});
+
+			if (!instance) {
+				return reply.status(403).send({
+					statusCode: 403,
+					error: "Forbidden",
+					message: "You do not have access to this instance",
+				});
+			}
+
 			// Fetch all overrides for the specified profiles in a single query
 			const overrides = await request.server.prisma.instanceQualityProfileOverride.findMany({
 				where: {
@@ -490,6 +548,8 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 	}>(
 		"/:instanceId/quality-profiles/:profileId/overrides/:customFormatId",
 		async (request, reply) => {
+			// userId is guaranteed by preHandler authentication check
+			const userId = request.currentUser!.id;
 			const { instanceId, profileId, customFormatId } = request.params;
 			const profileIdNum = Number.parseInt(profileId);
 			const customFormatIdNum = Number.parseInt(customFormatId);
@@ -586,6 +646,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 				const instance = await request.server.prisma.serviceInstance.findFirst({
 					where: {
 						id: instanceId,
+						userId,
 						service: {
 							in: ["RADARR", "SONARR"],
 						},
@@ -603,7 +664,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 					return reply.status(404).send({
 						statusCode: 404,
 						error: "NotFound",
-						message: "Instance not found or not a Radarr/Sonarr instance",
+						message: "Instance not found or access denied",
 					});
 				}
 
@@ -695,6 +756,8 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		Params: { instanceId: string; profileId: string };
 		Body: { customFormatIds: number[] };
 	}>("/:instanceId/quality-profiles/:profileId/overrides/bulk-delete", async (request, reply) => {
+		// userId is guaranteed by preHandler authentication check
+		const userId = request.currentUser!.id;
 		const { instanceId, profileId } = request.params;
 		const profileIdNum = Number.parseInt(profileId);
 		const { customFormatIds } = request.body;
@@ -749,10 +812,11 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 				});
 			}
 
-			// Get the instance from database
+			// Get the instance from database with ownership verification
 			const instance = await request.server.prisma.serviceInstance.findFirst({
 				where: {
 					id: instanceId,
+					userId,
 					service: {
 						in: ["RADARR", "SONARR"],
 					},
@@ -770,7 +834,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 				return reply.status(404).send({
 					statusCode: 404,
 					error: "NotFound",
-					message: "Instance not found or not a Radarr/Sonarr instance",
+					message: "Instance not found or access denied",
 				});
 			}
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { fetchTemplateStats, fetchTemplate } from "../../../lib/api-client/templates";
 import type { TemplateStatsResponse } from "../../../lib/api-client/templates";
 import { ChevronDown, ChevronUp, Calendar, Package, Activity, Rocket, Layers, History, SlidersHorizontal, Unlink2, RefreshCw, Bell, Hand, X } from "lucide-react";
@@ -17,7 +17,7 @@ import {
 	DialogContent,
 	DialogFooter,
 } from "../../../components/ui/dialog";
-import { updateSyncStrategy, bulkUpdateSyncStrategy } from "../../../lib/api-client/trash-guides";
+import { useUpdateSyncStrategy, useBulkUpdateSyncStrategy } from "../../../hooks/api/useDeploymentPreview";
 import { cn } from "../../../lib/utils";
 import { toast } from "sonner";
 
@@ -48,54 +48,39 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 		instanceId: string;
 		instanceName: string;
 	} | null>(null);
-	const [updatingStrategy, setUpdatingStrategy] = useState<string | null>(null);
-	const [bulkUpdating, setBulkUpdating] = useState(false);
-	const queryClient = useQueryClient();
+	const [updatingStrategyInstanceId, setUpdatingStrategyInstanceId] = useState<string | null>(null);
 
-	const handleBulkSyncStrategyChange = async (
-		newStrategy: "auto" | "manual" | "notify"
-	) => {
-		setBulkUpdating(true);
-		try {
-			await bulkUpdateSyncStrategy({
-				templateId,
-				syncStrategy: newStrategy,
-			});
-			// Invalidate and refetch stats
-			queryClient.invalidateQueries({ queryKey: ["template-stats", templateId] });
-		} catch (error) {
-			console.error("Failed to bulk update sync strategy:", error);
-			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-			toast.error("Failed to update sync strategy", {
-				description: errorMessage,
-			});
-		} finally {
-			setBulkUpdating(false);
-		}
+	const updateSyncStrategyMutation = useUpdateSyncStrategy();
+	const bulkUpdateSyncStrategyMutation = useBulkUpdateSyncStrategy();
+
+	const handleBulkSyncStrategyChange = (newStrategy: "auto" | "manual" | "notify") => {
+		bulkUpdateSyncStrategyMutation.mutate(
+			{ templateId, syncStrategy: newStrategy },
+			{
+				onError: (error) => {
+					console.error("Failed to bulk update sync strategy:", error);
+					toast.error("Failed to update sync strategy", {
+						description: error.message,
+					});
+				},
+			}
+		);
 	};
 
-	const handleSyncStrategyChange = async (
-		instanceId: string,
-		newStrategy: "auto" | "manual" | "notify"
-	) => {
-		setUpdatingStrategy(instanceId);
-		try {
-			await updateSyncStrategy({
-				templateId,
-				instanceId,
-				syncStrategy: newStrategy,
-			});
-			// Invalidate and refetch stats
-			queryClient.invalidateQueries({ queryKey: ["template-stats", templateId] });
-		} catch (error) {
-			console.error("Failed to update sync strategy:", error);
-			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-			toast.error("Failed to update sync strategy", {
-				description: errorMessage,
-			});
-		} finally {
-			setUpdatingStrategy(null);
-		}
+	const handleSyncStrategyChange = (instanceId: string, newStrategy: "auto" | "manual" | "notify") => {
+		setUpdatingStrategyInstanceId(instanceId);
+		updateSyncStrategyMutation.mutate(
+			{ templateId, instanceId, syncStrategy: newStrategy },
+			{
+				onSettled: () => setUpdatingStrategyInstanceId(null),
+				onError: (error) => {
+					console.error("Failed to update sync strategy:", error);
+					toast.error("Failed to update sync strategy", {
+						description: error.message,
+					});
+				},
+			}
+		);
 	};
 
 	// Fetch template data when override modal is open (to get customFormats)
@@ -112,8 +97,8 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 
 	if (isLoading && expanded) {
 		return (
-			<div className="rounded-lg border border-white/10 bg-white/5 p-4">
-				<div className="flex items-center gap-2 text-sm text-white/60">
+			<div className="rounded-lg border border-border bg-bg-subtle p-4">
+				<div className="flex items-center gap-2 text-sm text-fg-muted">
 					<Activity className="h-4 w-4 animate-spin" />
 					<span>Loading stats...</span>
 				</div>
@@ -129,33 +114,33 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 			<button
 				type="button"
 				onClick={() => setExpanded(!expanded)}
-				className="flex w-full items-center justify-between rounded-lg border border-white/10 bg-white/5 p-3 text-left transition hover:bg-white/10"
+				className="flex w-full items-center justify-between rounded-lg border border-border bg-bg-subtle p-3 text-left transition hover:bg-bg-subtle/80"
 			>
 				<div className="flex items-center gap-3">
 					<Activity className="h-4 w-4 text-primary" />
-					<span className="text-sm font-medium text-white">Template Stats</span>
+					<span className="text-sm font-medium text-fg">Template Stats</span>
 					{stats && stats.instances.length > 0 && (
-						<span className="text-xs text-white/60">
+						<span className="text-xs text-fg-muted">
 							{stats.instances.length} instance{stats.instances.length !== 1 ? "s" : ""}
 						</span>
 					)}
 				</div>
 				{expanded ? (
-					<ChevronUp className="h-4 w-4 text-white/40" />
+					<ChevronUp className="h-4 w-4 text-fg-muted" />
 				) : (
-					<ChevronDown className="h-4 w-4 text-white/40" />
+					<ChevronDown className="h-4 w-4 text-fg-muted" />
 				)}
 			</button>
 
 			{/* Expanded Stats Details */}
 			{expanded && stats && (
-				<div className="rounded-lg border border-white/10 bg-white/5 p-4 space-y-4">
+				<div className="rounded-lg border border-border bg-bg-subtle p-4 space-y-4">
 					{/* Action Buttons */}
 					<div className="flex items-center gap-2 justify-center">
 						<button
 							type="button"
 							onClick={() => setShowHistory(true)}
-							className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm font-medium text-white transition hover:bg-white/10"
+							className="flex items-center gap-2 rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm font-medium text-fg transition hover:bg-bg-subtle/80"
 						>
 							<History className="h-4 w-4" />
 							View Deployment History
@@ -165,27 +150,27 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 					{/* Metrics Grid */}
 					<div className="grid grid-cols-3 gap-4">
 						<div className="space-y-1 text-center">
-							<div className="flex items-center gap-2 text-xs text-white/60 justify-center">
+							<div className="flex items-center gap-2 text-xs text-fg-muted justify-center">
 								<Package className="h-3 w-3" />
 								<span>Formats</span>
 							</div>
-							<p className="text-lg font-semibold text-white">{stats.formatCount}</p>
+							<p className="text-lg font-semibold text-fg">{stats.formatCount}</p>
 						</div>
 
 						<div className="space-y-1 text-center">
-							<div className="flex items-center gap-2 text-xs text-white/60 justify-center">
+							<div className="flex items-center gap-2 text-xs text-fg-muted justify-center">
 								<Package className="h-3 w-3" />
 								<span>Groups</span>
 							</div>
-							<p className="text-lg font-semibold text-white">{stats.groupCount}</p>
+							<p className="text-lg font-semibold text-fg">{stats.groupCount}</p>
 						</div>
 
 						<div className="space-y-1 text-center">
-							<div className="flex items-center gap-2 text-xs text-white/60 justify-center">
+							<div className="flex items-center gap-2 text-xs text-fg-muted justify-center">
 								<Calendar className="h-3 w-3" />
 								<span>Last Deployed</span>
 							</div>
-							<p className="text-xs font-medium text-white">
+							<p className="text-xs font-medium text-fg">
 								{stats.lastUsedAt ? new Date(stats.lastUsedAt).toLocaleDateString() : "Never"}
 							</p>
 						</div>
@@ -195,7 +180,7 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 					{stats.instances.length > 0 && (
 						<div className="space-y-2">
 							<div className="flex flex-col items-center gap-2">
-								<h4 className="text-sm font-medium text-white/70">Instances Using This Template</h4>
+								<h4 className="text-sm font-medium text-fg-muted">Instances Using This Template</h4>
 								{stats.instances.length > 1 && (
 									<div className="flex items-center gap-2">
 										<button
@@ -215,12 +200,12 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 											trigger={
 												<div
 													className={cn(
-														"flex items-center gap-1 rounded bg-white/10 px-2 py-1 text-xs font-medium text-white/80 transition hover:bg-white/20 cursor-pointer",
-														bulkUpdating && "opacity-50 pointer-events-none"
+														"flex items-center gap-1 rounded border border-border bg-bg-subtle px-2 py-1 text-xs font-medium text-fg-muted transition hover:bg-bg-subtle/80 cursor-pointer",
+														bulkUpdateSyncStrategyMutation.isPending && "opacity-50 pointer-events-none"
 													)}
 													title="Set sync strategy for all instances"
 												>
-													{bulkUpdating ? (
+													{bulkUpdateSyncStrategyMutation.isPending ? (
 														<RefreshCw className="h-3 w-3 animate-spin" />
 													) : (
 														<SlidersHorizontal className="h-3 w-3" />
@@ -233,21 +218,21 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 											<DropdownMenuItem
 												icon={<RefreshCw className="h-4 w-4 text-green-500" />}
 												onClick={() => handleBulkSyncStrategyChange("auto")}
-												disabled={bulkUpdating}
+												disabled={bulkUpdateSyncStrategyMutation.isPending}
 											>
 												All Auto-sync
 											</DropdownMenuItem>
 											<DropdownMenuItem
 												icon={<Bell className="h-4 w-4 text-blue-500" />}
 												onClick={() => handleBulkSyncStrategyChange("notify")}
-												disabled={bulkUpdating}
+												disabled={bulkUpdateSyncStrategyMutation.isPending}
 											>
 												All Notify Only
 											</DropdownMenuItem>
 											<DropdownMenuItem
 												icon={<Hand className="h-4 w-4 text-amber-500" />}
 												onClick={() => handleBulkSyncStrategyChange("manual")}
-												disabled={bulkUpdating}
+												disabled={bulkUpdateSyncStrategyMutation.isPending}
 											>
 												All Manual
 											</DropdownMenuItem>
@@ -259,16 +244,16 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 								{stats.instances.map((instance) => {
 									const strategyInfo = getSyncStrategyInfo(instance.syncStrategy);
 									const StrategyIcon = strategyInfo.icon;
-									const isUpdating = updatingStrategy === instance.instanceId;
+									const isUpdating = updatingStrategyInstanceId === instance.instanceId;
 
 									return (
 									<div
 										key={instance.instanceId}
-										className="flex flex-col gap-2 rounded border border-white/10 bg-white/5 p-2"
+										className="flex flex-col gap-2 rounded border border-border bg-bg-subtle p-2"
 									>
 										{/* Top: Instance name + strategy badge */}
 										<div className="flex items-center justify-center gap-2">
-											<span className="text-sm font-medium text-white">{instance.instanceName}</span>
+											<span className="text-sm font-medium text-fg">{instance.instanceName}</span>
 											<Badge variant={strategyInfo.variant} className="text-[10px] px-1.5 py-0 flex items-center gap-1">
 												<StrategyIcon className={cn("h-2.5 w-2.5", isUpdating && "animate-spin")} />
 												{strategyInfo.label}
@@ -293,7 +278,7 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 											{/* Sync Strategy Dropdown */}
 											<DropdownMenu
 												trigger={
-													<div className="flex items-center justify-center rounded bg-white/10 p-1.5 text-white/80 transition hover:bg-white/20 cursor-pointer" title="Change sync strategy">
+													<div className="flex items-center justify-center rounded border border-border bg-bg-subtle p-1.5 text-fg-muted transition hover:bg-bg-subtle/80 cursor-pointer" title="Change sync strategy">
 														<StrategyIcon className={cn("h-3.5 w-3.5", strategyInfo.color, isUpdating && "animate-spin")} />
 													</div>
 												}
@@ -330,7 +315,7 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 														instanceName: instance.instanceName,
 													});
 												}}
-												className="flex items-center justify-center rounded bg-white/10 p-1.5 text-white/80 transition hover:bg-white/20"
+												className="flex items-center justify-center rounded border border-border bg-bg-subtle p-1.5 text-fg-muted transition hover:bg-bg-subtle/80"
 												title="Manage instance score overrides"
 											>
 												<SlidersHorizontal className="h-3.5 w-3.5" />
@@ -357,8 +342,8 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 					)}
 
 					{stats.instances.length === 0 && (
-						<div className="rounded border border-white/10 bg-white/5 p-4 text-center">
-							<p className="text-sm text-white/60">No instances have used this template yet.</p>
+						<div className="rounded border border-border bg-bg-subtle p-4 text-center">
+							<p className="text-sm text-fg-muted">No instances have used this template yet.</p>
 						</div>
 					)}
 				</div>

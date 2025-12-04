@@ -69,7 +69,7 @@ export const SchedulerStatusDashboard = () => {
 	}
 
 	return (
-		<div className="rounded-xl border border-white/10 bg-white/5 p-6">
+		<div className="rounded-xl border border-border bg-bg-subtle p-6">
 			<div className="space-y-6">
 				{/* Header */}
 				<div className="flex items-center justify-between">
@@ -101,7 +101,7 @@ export const SchedulerStatusDashboard = () => {
 				{/* Stats Grid */}
 				<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
 					{/* Last Check */}
-					<div className="rounded-lg border border-white/10 bg-white/5 p-4">
+					<div className="rounded-lg border border-border bg-bg-subtle p-4">
 						<div className="flex items-center gap-2 text-fg-muted mb-2">
 							<Clock className="h-4 w-4" />
 							<span className="text-xs font-medium">Last Check</span>
@@ -112,7 +112,7 @@ export const SchedulerStatusDashboard = () => {
 					</div>
 
 					{/* Next Check */}
-					<div className="rounded-lg border border-white/10 bg-white/5 p-4">
+					<div className="rounded-lg border border-border bg-bg-subtle p-4">
 						<div className="flex items-center gap-2 text-fg-muted mb-2">
 							<RefreshCw className="h-4 w-4" />
 							<span className="text-xs font-medium">Next Check</span>
@@ -123,7 +123,7 @@ export const SchedulerStatusDashboard = () => {
 					</div>
 
 					{/* Templates Checked */}
-					<div className="rounded-lg border border-white/10 bg-white/5 p-4">
+					<div className="rounded-lg border border-border bg-bg-subtle p-4">
 						<div className="flex items-center gap-2 text-fg-muted mb-2">
 							<CheckCircle2 className="h-4 w-4" />
 							<span className="text-xs font-medium">Templates Checked</span>
@@ -134,7 +134,7 @@ export const SchedulerStatusDashboard = () => {
 					</div>
 
 					{/* Outdated */}
-					<div className="rounded-lg border border-white/10 bg-white/5 p-4">
+					<div className="rounded-lg border border-border bg-bg-subtle p-4">
 						<div className="flex items-center gap-2 text-fg-muted mb-2">
 							<AlertCircle className="h-4 w-4" />
 							<span className="text-xs font-medium">Outdated</span>
@@ -147,7 +147,7 @@ export const SchedulerStatusDashboard = () => {
 
 				{/* Last Check Results */}
 				{schedulerData.lastCheckResult && (
-					<div className="rounded-lg border border-white/10 bg-white/5 p-4">
+					<div className="rounded-lg border border-border bg-bg-subtle p-4">
 						<h4 className="text-sm font-medium text-fg mb-3">Last Check Results</h4>
 
 						{/* Template Version Check Results */}
@@ -194,7 +194,7 @@ export const SchedulerStatusDashboard = () => {
 						</div>
 
 						{/* Cache Refresh Results */}
-						<div className="pt-3 border-t border-white/10">
+						<div className="pt-3 border-t border-border">
 							<div className="mb-2">
 								<h5 className="text-xs font-medium text-fg mb-1">TRaSH Guides Data Cache</h5>
 								<p className="text-xs text-fg-muted">
@@ -222,8 +222,8 @@ export const SchedulerStatusDashboard = () => {
 							<div className="mt-3 rounded border border-red-500/30 bg-red-500/10 p-3">
 								<p className="text-xs font-medium text-red-600 dark:text-red-400 mb-2">Errors:</p>
 								<ul className="text-xs text-fg-muted space-y-1">
-									{schedulerData.lastCheckResult.errors.map((error) => (
-										<li key={error}>• {error}</li>
+									{schedulerData.lastCheckResult.errors.map((error, index) => (
+										<li key={`${index}-${error.slice(0, 50)}`}>• {error}</li>
 									))}
 								</ul>
 							</div>
@@ -232,12 +232,12 @@ export const SchedulerStatusDashboard = () => {
 				)}
 
 				{/* Actions */}
-				<div className="flex items-center justify-end gap-2 pt-2 border-t border-white/10">
+				<div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
 					<button
 						type="button"
 						onClick={handleManualTrigger}
 						disabled={triggerCheck.isPending || !schedulerData.isRunning}
-						className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
+						className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-fg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm font-medium"
 					>
 						<Play className="h-4 w-4" />
 						{triggerCheck.isPending ? "Triggering..." : "Trigger Check Now"}

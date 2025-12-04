@@ -505,7 +505,7 @@ export const CFConfiguration = ({
 						type="button"
 						onClick={handleNext}
 						disabled={!templateName.trim()}
-						className="ml-auto inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-2 font-medium text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition"
+						className="ml-auto inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-2 font-medium text-primary-fg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition"
 					>
 						Continue
 						<ChevronRight className="h-4 w-4" />
@@ -651,7 +651,7 @@ export const CFConfiguration = ({
 									<button
 										type="button"
 										onClick={() => setConditionEditorFormat({ trashId: cf.trash_id, format: cf })}
-										className="inline-flex items-center gap-1 rounded bg-white/10 px-2 py-1 text-xs font-medium text-white transition hover:bg-white/20"
+										className="inline-flex items-center gap-1 rounded bg-bg-subtle px-2 py-1 text-xs font-medium text-fg transition hover:bg-bg-hover"
 										title="Advanced condition editing"
 									>
 										<Settings className="h-3 w-3" />
@@ -842,7 +842,7 @@ export const CFConfiguration = ({
 						type="button"
 						onClick={handleNext}
 						disabled={!templateName.trim() || selectedCount === 0}
-						className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+						className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-fg transition hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
 					>
 						Continue to Review
 						<ChevronRight className="h-4 w-4" />
@@ -863,13 +863,13 @@ export const CFConfiguration = ({
 				}));
 
 				return (
-					<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-						<div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-white/20 bg-gradient-to-br from-slate-900 to-slate-800 p-6">
+					<div className="fixed inset-0 z-[60] flex items-center justify-center bg-bg/80 backdrop-blur-sm">
+						<div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-bg-subtle p-6">
 							{/* Close button */}
 							<button
 								type="button"
 								onClick={() => setConditionEditorFormat(null)}
-								className="absolute top-4 right-4 rounded p-1 text-white/60 hover:bg-white/10 hover:text-white z-10"
+								className="absolute top-4 right-4 rounded p-1 text-fg-muted hover:bg-bg-hover hover:text-fg z-10"
 								aria-label="Close"
 							>
 								<svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1647,7 +1647,7 @@ export const CFConfiguration = ({
 					type="button"
 					onClick={handleNext}
 					disabled={!templateName.trim() || selectedCount === 0}
-					className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white transition hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
+					className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-fg transition hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
 				>
 					<span>Next: Review</span>
 					<ChevronRight className="h-4 w-4" />

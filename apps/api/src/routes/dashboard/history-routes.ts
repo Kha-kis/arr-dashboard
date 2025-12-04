@@ -35,7 +35,7 @@ export const historyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const { page, pageSize, startDate, endDate } = historyQuerySchema.parse(request.query ?? {});
 
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { enabled: true },
+			where: { enabled: true, userId: request.currentUser?.id },
 		});
 
 		const results: Array<{

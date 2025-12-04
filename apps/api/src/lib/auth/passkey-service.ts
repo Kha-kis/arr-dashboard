@@ -145,13 +145,22 @@ export class PasskeyService {
 		const options = await generateAuthenticationOptions({
 			rpID: this.config.rpID,
 			// If user-specific, limit to their credentials
-			allowCredentials: allowCredentials.map((cred) => ({
-				id: cred.id,
-				type: "public-key",
-				transports: cred.transports
-					? (JSON.parse(cred.transports) as AuthenticatorTransportFuture[])
-					: undefined,
-			})),
+			allowCredentials: allowCredentials.map((cred) => {
+				let transports: AuthenticatorTransportFuture[] | undefined;
+				if (cred.transports) {
+					try {
+						transports = JSON.parse(cred.transports) as AuthenticatorTransportFuture[];
+					} catch {
+						// Skip invalid transport data, use undefined
+						transports = undefined;
+					}
+				}
+				return {
+					id: cred.id,
+					type: "public-key",
+					transports,
+				};
+			}),
 			userVerification: "required",
 		});
 

@@ -57,7 +57,7 @@ export const calendarRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const endIso = formatDateOnly(endDate);
 
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { enabled: true },
+			where: { enabled: true, userId: request.currentUser?.id },
 		});
 
 		const results: Array<{

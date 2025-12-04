@@ -1,3 +1,5 @@
+"use client";
+
 import type { TrashGuidesTab } from "../../features/trash-guides/hooks/use-trash-guides-state";
 
 interface TrashGuidesTabsProps {
@@ -26,7 +28,7 @@ export const TrashGuidesTabs = ({ activeTab, onTabChange }: TrashGuidesTabsProps
 	];
 
 	return (
-		<div className="border-b border-white/10">
+		<div className="border-b border-border">
 			<nav className="flex gap-6">
 				{tabs.map((tab) => (
 					<button
@@ -35,8 +37,8 @@ export const TrashGuidesTabs = ({ activeTab, onTabChange }: TrashGuidesTabsProps
 						onClick={() => onTabChange(tab.id)}
 						className={`border-b-2 px-1 pb-3 text-sm font-medium transition ${
 							activeTab === tab.id
-								? "border-primary text-white"
-								: "border-transparent text-white/60 hover:text-white"
+								? "border-primary text-fg"
+								: "border-transparent text-fg-muted hover:text-fg"
 						}`}
 					>
 						{tab.label}

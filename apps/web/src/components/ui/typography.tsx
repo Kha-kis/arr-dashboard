@@ -11,14 +11,14 @@ interface TypographyProps {
 }
 
 const variantStyles = {
-	h1: "text-4xl font-semibold text-white",
-	h2: "text-2xl font-bold text-white",
-	h3: "text-xl font-semibold text-white",
-	h4: "text-lg font-semibold text-white",
-	body: "text-base text-white/70",
-	small: "text-sm text-white/60",
-	caption: "text-xs text-white/50",
-	overline: "text-sm font-medium uppercase tracking-wide text-white/60",
+	h1: "text-4xl font-semibold text-fg",
+	h2: "text-2xl font-bold text-fg",
+	h3: "text-xl font-semibold text-fg",
+	h4: "text-lg font-semibold text-fg",
+	body: "text-base text-fg-muted",
+	small: "text-sm text-fg-muted",
+	caption: "text-xs text-fg-muted",
+	overline: "text-sm font-medium uppercase tracking-wide text-fg-muted",
 };
 
 const defaultElements: Record<string, string> = {

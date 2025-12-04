@@ -3,11 +3,20 @@ import {
 	getDeploymentPreview,
 	executeDeployment,
 	executeBulkDeployment,
+	updateSyncStrategy,
+	bulkUpdateSyncStrategy,
+	unlinkTemplateFromInstance,
 	type DeploymentPreviewResponse,
 	type ExecuteDeploymentPayload,
 	type ExecuteDeploymentResponse,
 	type ExecuteBulkDeploymentPayload,
 	type ExecuteBulkDeploymentResponse,
+	type UpdateSyncStrategyPayload,
+	type UpdateSyncStrategyResponse,
+	type BulkUpdateSyncStrategyPayload,
+	type BulkUpdateSyncStrategyResponse,
+	type UnlinkTemplatePayload,
+	type UnlinkTemplateResponse,
 } from "../../lib/api-client/trash-guides";
 
 export type InstancePreviewResult = {
@@ -116,4 +125,71 @@ export function useBulkDeploymentPreviews(
 		isLoading: queries.some((q) => q.isLoading),
 		hasErrors: queries.some((q) => q.isError),
 	};
+}
+
+/**
+ * Hook to update sync strategy for a single instance deployment
+ */
+export function useUpdateSyncStrategy() {
+	const queryClient = useQueryClient();
+
+	return useMutation<UpdateSyncStrategyResponse, Error, UpdateSyncStrategyPayload>({
+		mutationFn: (payload) => updateSyncStrategy(payload),
+		onSuccess: (_data, variables) => {
+			// Invalidate template stats for the specific template
+			queryClient.invalidateQueries({
+				queryKey: ["template-stats", variables.templateId],
+			});
+			// Also invalidate deployment queries
+			queryClient.invalidateQueries({
+				queryKey: ["trash-guides", "deployment"],
+			});
+		},
+	});
+}
+
+/**
+ * Hook to bulk update sync strategy for all instances of a template
+ */
+export function useBulkUpdateSyncStrategy() {
+	const queryClient = useQueryClient();
+
+	return useMutation<BulkUpdateSyncStrategyResponse, Error, BulkUpdateSyncStrategyPayload>({
+		mutationFn: (payload) => bulkUpdateSyncStrategy(payload),
+		onSuccess: (_data, variables) => {
+			// Invalidate template stats for the specific template
+			queryClient.invalidateQueries({
+				queryKey: ["template-stats", variables.templateId],
+			});
+			// Also invalidate deployment queries
+			queryClient.invalidateQueries({
+				queryKey: ["trash-guides", "deployment"],
+			});
+		},
+	});
+}
+
+/**
+ * Hook to unlink a template from an instance
+ */
+export function useUnlinkTemplateFromInstance() {
+	const queryClient = useQueryClient();
+
+	return useMutation<UnlinkTemplateResponse, Error, UnlinkTemplatePayload>({
+		mutationFn: (payload) => unlinkTemplateFromInstance(payload),
+		onSuccess: (_data, variables) => {
+			// Invalidate templates list
+			queryClient.invalidateQueries({
+				queryKey: ["trash-guides", "templates"],
+			});
+			// Invalidate template stats for the specific template
+			queryClient.invalidateQueries({
+				queryKey: ["template-stats", variables.templateId],
+			});
+			// Invalidate deployment queries
+			queryClient.invalidateQueries({
+				queryKey: ["trash-guides", "deployment"],
+			});
+		},
+	});
 }

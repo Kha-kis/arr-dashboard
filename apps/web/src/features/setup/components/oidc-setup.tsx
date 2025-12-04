@@ -60,7 +60,7 @@ export const OIDCSetup = () => {
 	return (
 		<form className="space-y-4" onSubmit={handleSubmit}>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-white/60">Provider Type</label>
+				<label className="text-xs uppercase text-fg-muted">Provider Type</label>
 				<select
 					value={formState.type}
 					onChange={(e) =>
@@ -74,7 +74,7 @@ export const OIDCSetup = () => {
 				</select>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-white/60">Display Name</label>
+				<label className="text-xs uppercase text-fg-muted">Display Name</label>
 				<Input
 					value={formState.displayName}
 					onChange={(e) => setFormState({ ...formState, displayName: e.target.value })}
@@ -84,7 +84,7 @@ export const OIDCSetup = () => {
 				/>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-white/60">Client ID</label>
+				<label className="text-xs uppercase text-fg-muted">Client ID</label>
 				<Input
 					value={formState.clientId}
 					onChange={(e) => setFormState({ ...formState, clientId: e.target.value })}
@@ -93,7 +93,7 @@ export const OIDCSetup = () => {
 				/>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-white/60">Client Secret</label>
+				<label className="text-xs uppercase text-fg-muted">Client Secret</label>
 				<Input
 					type="password"
 					value={formState.clientSecret}
@@ -103,19 +103,19 @@ export const OIDCSetup = () => {
 				/>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-white/60">Issuer URL</label>
+				<label className="text-xs uppercase text-fg-muted">Issuer URL</label>
 				<Input
 					value={formState.issuer}
 					onChange={(e) => setFormState({ ...formState, issuer: e.target.value })}
 					placeholder="https://auth.example.com"
 					required
 				/>
-				<p className="text-xs text-white/50">
+				<p className="text-xs text-fg-muted">
 					The base URL of your OIDC provider (without .well-known path)
 				</p>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-white/60">Scopes (comma-separated)</label>
+				<label className="text-xs uppercase text-fg-muted">Scopes (comma-separated)</label>
 				<Input
 					value={formState.scopes}
 					onChange={(e) => setFormState({ ...formState, scopes: e.target.value })}
@@ -130,7 +130,7 @@ export const OIDCSetup = () => {
 			<Button type="submit" disabled={isSubmitting} className="w-full">
 				{isSubmitting ? "Configuring..." : "Continue with OIDC"}
 			</Button>
-			<p className="text-xs text-white/50 text-center">
+			<p className="text-xs text-fg-muted text-center">
 				You&apos;ll be redirected to your OIDC provider to complete authentication. The first user
 				will become an admin.
 			</p>

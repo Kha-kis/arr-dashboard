@@ -600,11 +600,11 @@ export const CFResolution = ({
 						Failed to validate Custom Formats: {error instanceof Error ? error.message : "Unknown error"}
 					</AlertDescription>
 				</Alert>
-				<div className="flex items-center justify-between border-t border-white/10 pt-6">
+				<div className="flex items-center justify-between border-t border-border pt-6">
 					<button
 						type="button"
 						onClick={onBack}
-						className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
+						className="inline-flex items-center gap-2 rounded-lg bg-bg-subtle px-4 py-2 text-sm font-medium text-fg transition hover:bg-bg-subtle"
 					>
 						<ChevronLeft className="h-4 w-4" />
 						Back
@@ -633,14 +633,14 @@ export const CFResolution = ({
 		<div className="space-y-6">
 			{/* Header */}
 			<div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
-				<h4 className="font-medium text-white mb-2">🔗 Link Custom Formats to TRaSH Guides</h4>
-				<p className="text-sm text-white/70">
-					We found <span className="font-medium text-white">{matchStats?.matched || 0}</span> Custom Formats in &quot;{profileName}&quot; that match TRaSH Guides entries.
+				<h4 className="font-medium text-fg mb-2">🔗 Link Custom Formats to TRaSH Guides</h4>
+				<p className="text-sm text-fg/70">
+					We found <span className="font-medium text-fg">{matchStats?.matched || 0}</span> Custom Formats in &quot;{profileName}&quot; that match TRaSH Guides entries.
 					{matchStats && matchStats.excludedCount > 0 && (
 						<> (<span className="text-amber-400">{matchStats.excludedCount}</span> auto-excluded based on scores/recommendations)</>
 					)}
 				</p>
-				<p className="text-sm text-white/60 mt-1">
+				<p className="text-sm text-fg/60 mt-1">
 					Choose which CFs to include in your template and whether to link them (for automatic updates) or keep instance versions.
 				</p>
 			</div>
@@ -660,15 +660,15 @@ export const CFResolution = ({
 							<div>
 								{profileMatchData.matched ? (
 									<>
-										<h5 className="font-medium text-white mb-1">
+										<h5 className="font-medium text-fg mb-1">
 											Matched to TRaSH Profile: <span className="text-purple-300">{profileMatchData.matchedProfile?.name}</span>
 										</h5>
-										<p className="text-xs text-white/70 mb-2">
+										<p className="text-xs text-fg/70 mb-2">
 											{profileMatchData.matchType === "exact" && "Exact name match"}
 											{profileMatchData.matchType === "fuzzy" && "Fuzzy name match"}
 											{profileMatchData.matchType === "partial" && "Partial name match"}
 											{profileMatchData.matchedProfile?.description && (
-												<span className="text-white/50"> — {profileMatchData.matchedProfile.description}</span>
+												<span className="text-fg/50"> — {profileMatchData.matchedProfile.description}</span>
 											)}
 										</p>
 										{profileMatchData.recommendations && (
@@ -676,12 +676,12 @@ export const CFResolution = ({
 												<span className="text-purple-300">
 													{profileMatchData.recommendations.total} recommended CFs
 												</span>
-												<span className="text-white/50">•</span>
-												<span className="text-white/60">
+												<span className="text-fg/50">•</span>
+												<span className="text-fg/60">
 													{profileMatchData.recommendations.mandatory} mandatory
 												</span>
-												<span className="text-white/50">•</span>
-												<span className="text-white/60">
+												<span className="text-fg/50">•</span>
+												<span className="text-fg/60">
 													{profileMatchData.recommendations.fromGroups} from groups
 												</span>
 											</div>
@@ -689,10 +689,10 @@ export const CFResolution = ({
 									</>
 								) : (
 									<>
-										<h5 className="font-medium text-white/80 mb-1">
+										<h5 className="font-medium text-fg/80 mb-1">
 											No matching TRaSH Profile found
 										</h5>
-										<p className="text-xs text-white/60">
+										<p className="text-xs text-fg/60">
 											{profileMatchData.reason || "Profile name doesn't match any TRaSH Guides quality profiles"}
 										</p>
 									</>
@@ -702,7 +702,7 @@ export const CFResolution = ({
 						{/* Toggle for recommendations */}
 						{profileMatchData.matched && profileMatchData.recommendations && (
 							<div className="flex items-center gap-2 flex-shrink-0">
-								<label htmlFor="use-recommendations" className="text-xs text-white/70 cursor-pointer">
+								<label htmlFor="use-recommendations" className="text-xs text-fg/70 cursor-pointer">
 									Auto-exclude non-recommended
 								</label>
 								<button
@@ -712,7 +712,7 @@ export const CFResolution = ({
 									aria-checked={useRecommendations}
 									onClick={() => setUseRecommendations(!useRecommendations)}
 									className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-										useRecommendations ? "bg-purple-500" : "bg-white/20"
+										useRecommendations ? "bg-purple-500" : "bg-bg-hover"
 									}`}
 								>
 									<span
@@ -729,10 +729,10 @@ export const CFResolution = ({
 
 			{/* Loading state for profile match */}
 			{isLoadingMatch && (
-				<div className="rounded-xl border border-white/10 bg-white/5 p-4">
+				<div className="rounded-xl border border-border bg-bg-subtle p-4">
 					<div className="flex items-center gap-3">
 						<div className="h-5 w-5 rounded-full border-2 border-purple-400 border-t-transparent animate-spin" />
-						<span className="text-sm text-white/70">Matching profile to TRaSH Guides...</span>
+						<span className="text-sm text-fg/70">Matching profile to TRaSH Guides...</span>
 					</div>
 				</div>
 			)}
@@ -745,8 +745,8 @@ export const CFResolution = ({
 						<div className="text-xs text-primary/70 uppercase tracking-wide mb-3 text-center">Template Summary</div>
 						<div className="grid grid-cols-3 gap-4">
 							<div className="text-center">
-								<div className="text-3xl font-bold text-white">{matchStats.totalInTemplate}</div>
-								<div className="text-xs text-white/60">CFs in Template</div>
+								<div className="text-3xl font-bold text-fg">{matchStats.totalInTemplate}</div>
+								<div className="text-xs text-fg/60">CFs in Template</div>
 							</div>
 							<div className="text-center">
 								<div className="text-3xl font-bold text-primary">{matchStats.willBeLinkingToTrash}</div>
@@ -761,9 +761,9 @@ export const CFResolution = ({
 
 					{/* Row 2: Breakdown Stats */}
 					<div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-						<div className="rounded-lg border border-white/10 bg-white/5 p-3">
-							<div className="text-2xl font-bold text-white">{matchStats.activeCount}</div>
-							<div className="text-xs text-white/60">Active CFs</div>
+						<div className="rounded-lg border border-border bg-bg-subtle p-3">
+							<div className="text-2xl font-bold text-fg">{matchStats.activeCount}</div>
+							<div className="text-xs text-fg/60">Active CFs</div>
 						</div>
 						<div className="rounded-lg border border-purple-500/20 bg-purple-500/5 p-3">
 							<div className="text-2xl font-bold text-purple-400">{matchStats.recommendedCount}</div>
@@ -797,8 +797,8 @@ export const CFResolution = ({
 			)}
 
 			{/* Bulk Actions */}
-			<div className="flex flex-wrap items-center gap-2 py-2 border-y border-white/10">
-				<span className="text-xs text-white/60 mr-2">Bulk Actions:</span>
+			<div className="flex flex-wrap items-center gap-2 py-2 border-y border-border">
+				<span className="text-xs text-fg/60 mr-2">Bulk Actions:</span>
 				<button
 					type="button"
 					onClick={() => handleBulkAction("use_trash_all")}
@@ -818,7 +818,7 @@ export const CFResolution = ({
 				<button
 					type="button"
 					onClick={() => handleBulkAction("reset")}
-					className="inline-flex items-center gap-1 rounded bg-white/10 px-2 py-1 text-xs text-white/70 hover:bg-white/20 transition"
+					className="inline-flex items-center gap-1 rounded bg-bg-subtle px-2 py-1 text-xs text-fg/70 hover:bg-bg-subtle transition"
 				>
 					<RotateCcw className="h-3 w-3" />
 					Reset to Defaults
@@ -828,11 +828,11 @@ export const CFResolution = ({
 			{/* Filter and Search */}
 			<div className="flex flex-col sm:flex-row gap-3">
 				<div className="flex items-center gap-2">
-					<Filter className="h-4 w-4 text-white/60" />
+					<Filter className="h-4 w-4 text-fg/60" />
 					<select
 						value={filterMode}
 						onChange={(e) => setFilterMode(e.target.value as FilterMode)}
-						className="rounded border border-white/20 bg-white/10 px-2 py-1 text-sm text-white focus:border-primary focus:outline-none"
+						className="rounded border border-border bg-bg-subtle px-2 py-1 text-sm text-fg focus:border-primary focus:outline-none"
 					>
 						<option value="all">All ({data?.results?.length ?? 0})</option>
 						<option value="matched">Matched ({matchStats?.matched || 0})</option>
@@ -840,26 +840,26 @@ export const CFResolution = ({
 					</select>
 				</div>
 				<div className="flex-1 relative">
-					<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/40" />
+					<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-fg/40" />
 					<input
 						type="text"
 						value={searchQuery}
 						onChange={(e) => setSearchQuery(e.target.value)}
 						placeholder="Search Custom Formats..."
-						className="w-full rounded border border-white/20 bg-white/10 pl-9 pr-3 py-1 text-sm text-white placeholder:text-white/40 focus:border-primary focus:outline-none"
+						className="w-full rounded border border-border bg-bg-subtle pl-9 pr-3 py-1 text-sm text-fg placeholder:text-fg/40 focus:border-primary focus:outline-none"
 					/>
 				</div>
 			</div>
 
 			{/* Active CF List */}
 			<div className="space-y-2">
-				<h5 className="text-sm font-medium text-white/80 flex items-center gap-2">
+				<h5 className="text-sm font-medium text-fg/80 flex items-center gap-2">
 					<CheckCircle className="h-4 w-4 text-green-400" />
 					Active Custom Formats ({filteredResults.length})
 				</h5>
 				<div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
 					{filteredResults.length === 0 ? (
-						<div className="text-center py-8 text-white/60">
+						<div className="text-center py-8 text-fg/60">
 							No Custom Formats match your filter criteria.
 						</div>
 					) : (
@@ -906,7 +906,7 @@ export const CFResolution = ({
 								<Info className="h-4 w-4 text-purple-400 mt-0.5 flex-shrink-0" />
 								<div className="text-xs text-purple-200/80">
 									<p>
-										These Custom Formats exist in your instance but have a <span className="font-medium text-white">score of 0</span> in this profile.
+										These Custom Formats exist in your instance but have a <span className="font-medium text-fg">score of 0</span> in this profile.
 										TRaSH Guides recommends enabling them. They will be included in your template with TRaSH&apos;s recommended scores.
 									</p>
 								</div>
@@ -976,7 +976,7 @@ export const CFResolution = ({
 											for the matched &quot;{profileMatchData.matchedProfile?.name}&quot; profile.
 										</p>
 									)}
-									<p className="text-white/60">
+									<p className="text-fg/60">
 										Click <Plus className="h-3 w-3 inline" /> to include any CF in your template.
 									</p>
 								</div>
@@ -1007,10 +1007,10 @@ export const CFResolution = ({
 
 			{/* Info about unmatched */}
 			{matchStats && matchStats.unmatched > 0 && (
-				<div className="flex items-start gap-2 rounded-lg border border-white/10 bg-white/5 p-3">
-					<Info className="h-4 w-4 text-white/60 mt-0.5 flex-shrink-0" />
-					<div className="text-xs text-white/60">
-						<span className="font-medium text-white/80">{matchStats.unmatched} Custom Format{matchStats.unmatched > 1 ? "s" : ""}</span> couldn&apos;t be matched to TRaSH Guides.
+				<div className="flex items-start gap-2 rounded-lg border border-border bg-bg-subtle p-3">
+					<Info className="h-4 w-4 text-fg/60 mt-0.5 flex-shrink-0" />
+					<div className="text-xs text-fg/60">
+						<span className="font-medium text-fg/80">{matchStats.unmatched} Custom Format{matchStats.unmatched > 1 ? "s" : ""}</span> couldn&apos;t be matched to TRaSH Guides.
 						These are likely custom formats you created or from a different source.
 						They will be included in the template as-is.
 					</div>
@@ -1018,11 +1018,11 @@ export const CFResolution = ({
 			)}
 
 			{/* Navigation */}
-			<div className="flex items-center justify-between border-t border-white/10 pt-6">
+			<div className="flex items-center justify-between border-t border-border pt-6">
 				<button
 					type="button"
 					onClick={onBack}
-					className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
+					className="inline-flex items-center gap-2 rounded-lg bg-bg-subtle px-4 py-2 text-sm font-medium text-fg transition hover:bg-bg-subtle"
 				>
 					<ChevronLeft className="h-4 w-4" />
 					Back
@@ -1031,7 +1031,7 @@ export const CFResolution = ({
 				<button
 					type="button"
 					onClick={handleContinue}
-					className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary/90"
+					className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-fg transition hover:bg-primary/90"
 				>
 					Continue
 					<ChevronRight className="h-4 w-4" />
@@ -1079,8 +1079,8 @@ const CFResolutionItem = ({ result, decision, onDecisionChange, onExclude, isRec
 					: hasMatch
 						? decision === "use_trash"
 							? "border-green-500/30 bg-green-500/5"
-							: "border-white/10 bg-white/5"
-						: "border-white/10 bg-white/5 opacity-75"
+							: "border-border bg-bg-subtle"
+						: "border-border bg-bg-subtle opacity-75"
 			}`}
 		>
 			{/* Main Row */}
@@ -1089,7 +1089,7 @@ const CFResolutionItem = ({ result, decision, onDecisionChange, onExclude, isRec
 					{/* CF Info */}
 					<div className="flex-1 min-w-0">
 						<div className="flex items-center gap-2 flex-wrap">
-							<span className="font-medium text-white truncate">{result.instanceCF.name}</span>
+							<span className="font-medium text-fg truncate">{result.instanceCF.name}</span>
 							<span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs ${badge.className}`}>
 								<BadgeIcon className="h-3 w-3" />
 								{badge.label}
@@ -1137,9 +1137,9 @@ const CFResolutionItem = ({ result, decision, onDecisionChange, onExclude, isRec
 
 						{/* Match details */}
 						{hasMatch && result.trashCF && (
-							<div className="mt-1 flex items-center gap-1 text-xs text-white/60">
+							<div className="mt-1 flex items-center gap-1 text-xs text-fg/60">
 								<ArrowRight className="h-3 w-3" />
-								<span>TRaSH: <span className="text-white/80">{result.trashCF.name}</span></span>
+								<span>TRaSH: <span className="text-fg/80">{result.trashCF.name}</span></span>
 							</div>
 						)}
 
@@ -1166,7 +1166,7 @@ const CFResolutionItem = ({ result, decision, onDecisionChange, onExclude, isRec
 								className={`rounded px-2 py-1 text-xs transition ${
 									isExpanded
 										? "bg-blue-500/30 text-blue-300"
-										: "bg-white/10 text-white/60 hover:bg-white/20"
+										: "bg-bg-subtle text-fg/60 hover:bg-bg-subtle"
 								}`}
 								title={isExpanded ? "Hide comparison" : "View detailed comparison"}
 							>
@@ -1193,7 +1193,7 @@ const CFResolutionItem = ({ result, decision, onDecisionChange, onExclude, isRec
 									className={`rounded px-2 py-1 text-xs transition ${
 										decision === "use_trash"
 											? "bg-green-500/30 text-green-300"
-											: "bg-white/10 text-white/60 hover:bg-white/20"
+											: "bg-bg-subtle text-fg/60 hover:bg-bg-subtle"
 									}`}
 									title="Link to TRaSH Guides (receive updates)"
 								>
@@ -1205,7 +1205,7 @@ const CFResolutionItem = ({ result, decision, onDecisionChange, onExclude, isRec
 									className={`rounded px-2 py-1 text-xs transition ${
 										decision === "keep_instance"
 											? "bg-gray-500/30 text-gray-300"
-											: "bg-white/10 text-white/60 hover:bg-white/20"
+											: "bg-bg-subtle text-fg/60 hover:bg-bg-subtle"
 									}`}
 									title="Keep instance version (no TRaSH link)"
 								>
@@ -1216,7 +1216,7 @@ const CFResolutionItem = ({ result, decision, onDecisionChange, onExclude, isRec
 
 						{/* Instance score for unmatched */}
 						{!hasMatch && result.instanceCF.score !== undefined && (
-							<div className="text-xs text-white/60 flex-shrink-0">
+							<div className="text-xs text-fg/60 flex-shrink-0">
 								Score: {result.instanceCF.score}
 							</div>
 						)}
@@ -1226,7 +1226,7 @@ const CFResolutionItem = ({ result, decision, onDecisionChange, onExclude, isRec
 
 			{/* Expanded Comparison View */}
 			{isExpanded && hasComparableData && (
-				<div className="border-t border-white/10 p-3 bg-black/20">
+				<div className="border-t border-border p-3 bg-black/20">
 					<CFComparisonView
 						instanceCF={result.instanceCF as any}
 						trashCF={result.trashCF as any}
@@ -1278,26 +1278,26 @@ const CFComparisonView = ({ instanceCF, trashCF, matchDetails, recommendedScore,
 			<div className="grid grid-cols-2 gap-3">
 				<div className="bg-amber-500/10 rounded-lg p-2.5 border border-amber-500/20">
 					<p className="font-semibold text-amber-600 dark:text-amber-400 mb-1.5">Instance:</p>
-					<div className="text-white">
+					<div className="text-fg">
 						<div>Score: <span className="font-bold">{instanceCF.score ?? "Not set"}</span></div>
-						<div className="text-white/60">{instanceSpecs.length} specification{instanceSpecs.length !== 1 ? "s" : ""}</div>
+						<div className="text-fg/60">{instanceSpecs.length} specification{instanceSpecs.length !== 1 ? "s" : ""}</div>
 					</div>
 				</div>
 				<div className="bg-green-500/10 rounded-lg p-2.5 border border-green-500/20">
 					<p className="font-semibold text-green-600 dark:text-green-400 mb-1.5">TRaSH Guides:</p>
-					<div className="text-white">
+					<div className="text-fg">
 						<div>
 							Score: <span className="font-bold">{recommendedScore ?? trashCF?.score ?? "N/A"}</span>
-							{scoreSet && <span className="text-white/60 ml-1">({scoreSet})</span>}
+							{scoreSet && <span className="text-fg/60 ml-1">({scoreSet})</span>}
 						</div>
-						<div className="text-white/60">{trashSpecs.length} specification{trashSpecs.length !== 1 ? "s" : ""}</div>
+						<div className="text-fg/60">{trashSpecs.length} specification{trashSpecs.length !== 1 ? "s" : ""}</div>
 					</div>
 					{trashCF?.trash_scores && Object.keys(trashCF.trash_scores).length > 1 && (
 						<details className="mt-2">
 							<summary className="text-green-400 cursor-pointer hover:text-green-300">
 								All score sets ({Object.keys(trashCF.trash_scores).length})
 							</summary>
-							<div className="mt-1 text-white/70 space-y-0.5">
+							<div className="mt-1 text-fg/70 space-y-0.5">
 								{Object.entries(trashCF.trash_scores).map(([set, score]) => (
 									<div key={set} className={set === scoreSet ? "text-green-300 font-medium" : ""}>
 										{set}: {score}
@@ -1312,11 +1312,11 @@ const CFComparisonView = ({ instanceCF, trashCF, matchDetails, recommendedScore,
 			{/* Specification Comparison - same JSON display pattern as template-diff-modal */}
 			{(instanceSpecs.length > 0 || trashSpecs.length > 0) && (
 				<div className="space-y-2">
-					<p className="font-medium text-white/80">Specifications:</p>
+					<p className="font-medium text-fg/80">Specifications:</p>
 					<div className="grid grid-cols-2 gap-3">
 						<div className="bg-amber-500/10 rounded-lg p-2.5 border border-amber-500/20">
 							<p className="font-semibold text-amber-600 dark:text-amber-400 mb-1.5">Instance:</p>
-							<pre className="p-2 rounded bg-black/20 overflow-auto max-h-48 whitespace-pre-wrap break-words text-white/70 font-mono text-[10px]">
+							<pre className="p-2 rounded bg-black/20 overflow-auto max-h-48 whitespace-pre-wrap break-words text-fg/70 font-mono text-[10px]">
 								{instanceSpecs.length > 0
 									? JSON.stringify(instanceSpecs, null, 2)
 									: "(no specifications)"}
@@ -1324,7 +1324,7 @@ const CFComparisonView = ({ instanceCF, trashCF, matchDetails, recommendedScore,
 						</div>
 						<div className="bg-green-500/10 rounded-lg p-2.5 border border-green-500/20">
 							<p className="font-semibold text-green-600 dark:text-green-400 mb-1.5">TRaSH Guides:</p>
-							<pre className="p-2 rounded bg-black/20 overflow-auto max-h-48 whitespace-pre-wrap break-words text-white/70 font-mono text-[10px]">
+							<pre className="p-2 rounded bg-black/20 overflow-auto max-h-48 whitespace-pre-wrap break-words text-fg/70 font-mono text-[10px]">
 								{trashSpecs.length > 0
 									? JSON.stringify(trashSpecs, null, 2)
 									: "(no specifications)"}
@@ -1335,7 +1335,7 @@ const CFComparisonView = ({ instanceCF, trashCF, matchDetails, recommendedScore,
 			)}
 
 			{/* Match Details Summary - only show meaningful comparisons for instance imports */}
-			<div className="flex flex-wrap gap-2 pt-2 border-t border-white/10">
+			<div className="flex flex-wrap gap-2 pt-2 border-t border-border">
 				<span className={`rounded px-2 py-1 ${matchDetails.nameMatch ? "bg-green-500/20 text-green-300" : "bg-yellow-500/20 text-yellow-300"}`}>
 					Name: {matchDetails.nameMatch ? "Matched" : "Similar"}
 				</span>
@@ -1418,7 +1418,7 @@ const ExcludedCFItem = ({
 					{/* CF Info */}
 					<div className="flex-1 min-w-0">
 						<div className="flex items-center gap-2 flex-wrap">
-							<span className="font-medium text-white truncate">{result.instanceCF.name}</span>
+							<span className="font-medium text-fg truncate">{result.instanceCF.name}</span>
 							<span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs ${badge.className}`}>
 								<BadgeIcon className="h-3 w-3" />
 								{badge.label}
@@ -1441,9 +1441,9 @@ const ExcludedCFItem = ({
 
 						{/* Match details */}
 						{result.trashCF && (
-							<div className="mt-1 flex items-center gap-1 text-xs text-white/60">
+							<div className="mt-1 flex items-center gap-1 text-xs text-fg/60">
 								<ArrowRight className="h-3 w-3" />
-								<span>TRaSH: <span className="text-white/80">{result.trashCF.name}</span></span>
+								<span>TRaSH: <span className="text-fg/80">{result.trashCF.name}</span></span>
 							</div>
 						)}
 
@@ -1470,7 +1470,7 @@ const ExcludedCFItem = ({
 								className={`rounded px-2 py-1 text-xs transition ${
 									isExpanded
 										? "bg-blue-500/30 text-blue-300"
-										: "bg-white/10 text-white/60 hover:bg-white/20"
+										: "bg-bg-subtle text-fg/60 hover:bg-bg-subtle"
 								}`}
 								title={isExpanded ? "Hide comparison" : "View detailed comparison"}
 							>
@@ -1493,7 +1493,7 @@ const ExcludedCFItem = ({
 
 			{/* Expanded Comparison View */}
 			{isExpanded && hasComparableData && (
-				<div className="border-t border-white/10 p-3 bg-black/20">
+				<div className="border-t border-border p-3 bg-black/20">
 					<CFComparisonView
 						instanceCF={result.instanceCF as any}
 						trashCF={result.trashCF as any}

@@ -145,16 +145,16 @@ export const SyncProgressModal = ({
 				aria-labelledby="sync-progress-title"
 				aria-describedby="sync-progress-description"
 				tabIndex={-1}
-				className="w-full max-w-3xl rounded-xl border border-white/10 bg-[#0d1117] shadow-2xl outline-none"
+				className="w-full max-w-3xl rounded-xl border border-border bg-bg shadow-2xl outline-none"
 			>
 				{/* Header */}
-				<div className="border-b border-white/10 p-6">
+				<div className="border-b border-border p-6">
 					<div className="flex items-center justify-between">
 						<div>
-							<h2 id="sync-progress-title" className="text-xl font-semibold text-white">Sync Progress</h2>
-							<p id="sync-progress-description" className="mt-1 text-sm text-white/60">
-								Template: <span className="font-medium text-white">{templateName}</span> →
-								Instance: <span className="font-medium text-white">{instanceName}</span>
+							<h2 id="sync-progress-title" className="text-xl font-semibold text-fg">Sync Progress</h2>
+							<p id="sync-progress-description" className="mt-1 text-sm text-fg-muted">
+								Template: <span className="font-medium text-fg">{templateName}</span> →
+								Instance: <span className="font-medium text-fg">{instanceName}</span>
 							</p>
 						</div>
 						{isPolling && (
@@ -170,7 +170,7 @@ export const SyncProgressModal = ({
 					{isLoading && (
 						<div className="flex items-center justify-center py-12">
 							<div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-							<span className="ml-3 text-white/60">Connecting...</span>
+							<span className="ml-3 text-fg-muted">Connecting...</span>
 						</div>
 					)}
 
@@ -196,7 +196,7 @@ export const SyncProgressModal = ({
 																	? "border-green-500 bg-green-500/10"
 																	: isActive
 																		? "border-primary bg-primary/10"
-																		: "border-white/20 bg-white/5"
+																		: "border-border bg-bg-subtle"
 														}`}
 													>
 														{isCurrentFailed ? (
@@ -206,12 +206,12 @@ export const SyncProgressModal = ({
 														) : isActive ? (
 															<Loader2 className="h-5 w-5 animate-spin text-primary" />
 														) : (
-															<span className="text-sm font-medium text-white/40">{index + 1}</span>
+															<span className="text-sm font-medium text-fg-muted">{index + 1}</span>
 														)}
 													</div>
 													<span
 														className={`mt-2 text-xs font-medium ${
-															isActive ? "text-white" : "text-white/50"
+															isActive ? "text-fg" : "text-fg-muted"
 														}`}
 													>
 														{STAGE_LABELS[stage]}
@@ -222,7 +222,7 @@ export const SyncProgressModal = ({
 												{index < visibleStages.length - 1 && (
 													<div
 														className={`mx-2 h-0.5 flex-1 transition ${
-															isPast || isCompleted ? "bg-green-500" : "bg-white/20"
+															isPast || isCompleted ? "bg-green-500" : "bg-border"
 														}`}
 													/>
 												)}
@@ -235,10 +235,10 @@ export const SyncProgressModal = ({
 							{/* Progress Bar */}
 							<div>
 								<div className="mb-2 flex items-center justify-between text-sm">
-									<span className="font-medium text-white">{progress.currentStep}</span>
-									<span className="text-white/60">{Math.round(progress.progress)}%</span>
+									<span className="font-medium text-fg">{progress.currentStep}</span>
+									<span className="text-fg-muted">{Math.round(progress.progress)}%</span>
 								</div>
-								<div className="h-2 overflow-hidden rounded-full bg-white/10">
+								<div className="h-2 overflow-hidden rounded-full bg-bg-subtle">
 									<div
 										className={`h-full transition-all duration-300 ${
 											isFailed ? "bg-red-500" : isCompleted ? "bg-green-500" : "bg-primary"
@@ -250,9 +250,9 @@ export const SyncProgressModal = ({
 
 							{/* Statistics */}
 							<div className="grid grid-cols-3 gap-4">
-								<div className="rounded-lg border border-white/10 bg-white/5 p-4">
-									<p className="text-sm text-white/60">Total Configs</p>
-									<p className="mt-1 text-2xl font-semibold text-white">{progress.totalConfigs}</p>
+								<div className="rounded-lg border border-border bg-bg-subtle p-4">
+									<p className="text-sm text-fg-muted">Total Configs</p>
+									<p className="mt-1 text-2xl font-semibold text-fg">{progress.totalConfigs}</p>
 								</div>
 								<div className="rounded-lg border border-green-500/20 bg-green-500/10 p-4">
 									<p className="text-sm text-green-400">Applied</p>
@@ -322,14 +322,14 @@ export const SyncProgressModal = ({
 				</div>
 
 				{/* Footer */}
-				<div className="flex items-center justify-end gap-3 border-t border-white/10 p-6">
+				<div className="flex items-center justify-end gap-3 border-t border-border p-6">
 					{(isCompleted || isFailed) && (
 						<Button variant="secondary" onClick={onClose}>
 							Close
 						</Button>
 					)}
 					{!isCompleted && !isFailed && (
-						<div className="flex items-center gap-2 text-sm text-white/60">
+						<div className="flex items-center gap-2 text-sm text-fg-muted">
 							<Loader2 className="h-4 w-4 animate-spin" />
 							Sync in progress...
 						</div>

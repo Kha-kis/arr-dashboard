@@ -13,7 +13,7 @@ const percentFormatter = new Intl.NumberFormat(undefined, {
  * Format bytes to human-readable size
  */
 export const formatBytes = (value?: number): string => {
-	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+	if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
 		return "-";
 	}
 	const units = ["B", "KB", "MB", "GB", "TB", "PB"] as const;

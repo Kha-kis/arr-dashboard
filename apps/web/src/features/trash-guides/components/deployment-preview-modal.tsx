@@ -25,8 +25,7 @@ import {
 	ChevronDown,
 	ChevronUp,
 } from "lucide-react";
-import { useDeploymentPreview } from "../../../hooks/api/useDeploymentPreview";
-import { executeDeployment } from "../../../lib/api-client/trash-guides";
+import { useDeploymentPreview, useExecuteDeployment } from "../../../hooks/api/useDeploymentPreview";
 import { cn } from "../../../lib/utils";
 import type { DeploymentAction, ConflictResolution } from "../../../lib/api-client/trash-guides";
 import { InstanceOverrideEditor } from "./instance-override-editor";
@@ -141,43 +140,39 @@ export const DeploymentPreviewModal = ({
 		}
 	};
 
-	const [isDeploying, setIsDeploying] = useState(false);
-	const [deploymentError, setDeploymentError] = useState<string | null>(null);
+	const deploymentMutation = useExecuteDeployment();
 
-	const handleDeploy = async () => {
+	const handleDeploy = () => {
 		if (!templateId || !instanceId) return;
 
-		setIsDeploying(true);
-		setDeploymentError(null);
-
-		try {
-			const response = await executeDeployment({
+		deploymentMutation.mutate(
+			{
 				templateId,
 				instanceId,
 				syncStrategy,
 				conflictResolutions: Object.keys(conflictResolutions).length > 0 ? conflictResolutions : undefined,
-			});
-
-			if (response.success) {
-				// Notify parent component of success
-				onDeploySuccess?.();
-				onClose();
-			} else {
-				const errors = response.result?.errors;
-				setDeploymentError(
-					Array.isArray(errors) && errors.length > 0
-						? errors.join(", ")
-						: "Deployment failed",
-				);
-			}
-		} catch (error) {
-			setDeploymentError(
-				error instanceof Error ? error.message : "Failed to execute deployment",
-			);
-		} finally {
-			setIsDeploying(false);
-		}
+			},
+			{
+				onSuccess: (response) => {
+					if (response.success) {
+						onDeploySuccess?.();
+						onClose();
+					}
+				},
+			},
+		);
 	};
+
+	// Derive error message from mutation state
+	const deploymentError = deploymentMutation.isError
+		? deploymentMutation.error instanceof Error
+			? deploymentMutation.error.message
+			: "Failed to execute deployment"
+		: deploymentMutation.data && !deploymentMutation.data.success
+			? Array.isArray(deploymentMutation.data.result?.errors) && deploymentMutation.data.result.errors.length > 0
+				? deploymentMutation.data.result.errors.join(", ")
+				: "Deployment failed"
+			: null;
 
 	return (
 		<Dialog open={open} onOpenChange={onClose} size="xl">
@@ -255,7 +250,7 @@ export const DeploymentPreviewModal = ({
 								<button
 									type="button"
 									onClick={() => setShowOverrideEditor(true)}
-									className="ml-auto flex items-center gap-2 rounded bg-white/10 px-3 py-2 text-xs font-medium text-white transition hover:bg-white/20"
+									className="ml-auto flex items-center gap-2 rounded border border-border bg-bg-subtle px-3 py-2 text-xs font-medium text-fg transition hover:bg-bg-subtle/80"
 									title="Customize scores and enable/disable CFs for this instance"
 								>
 									<Settings className="h-3 w-3" />
@@ -593,7 +588,7 @@ export const DeploymentPreviewModal = ({
 						</div>
 					</div>
 				)}
-				<Button variant="ghost" onClick={onClose} disabled={isDeploying}>
+				<Button variant="ghost" onClick={onClose} disabled={deploymentMutation.isPending}>
 					Cancel
 				</Button>
 				<Button
@@ -603,11 +598,11 @@ export const DeploymentPreviewModal = ({
 						!data?.data ||
 						!data.data.canDeploy ||
 						data.data.summary.totalItems === 0 ||
-						isDeploying
+						deploymentMutation.isPending
 					}
 					className="gap-2"
 				>
-					{isDeploying ? (
+					{deploymentMutation.isPending ? (
 						<>
 							<div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
 							Deploying...

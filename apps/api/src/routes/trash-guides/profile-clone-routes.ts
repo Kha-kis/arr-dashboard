@@ -205,7 +205,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 			// Get instance - ServiceInstances are shared across all authenticated users
 			// (no per-user ownership model; security is at the authentication layer)
 			const instance = await app.prisma.serviceInstance.findUnique({
-				where: { id: instanceId },
+				where: { id: instanceId, userId: request.currentUser?.id },
 			});
 
 			if (!instance) {
@@ -300,7 +300,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 		try {
 			// Get instance
 			const instance = await app.prisma.serviceInstance.findUnique({
-				where: { id: instanceId },
+				where: { id: instanceId, userId: request.currentUser?.id },
 			});
 
 			if (!instance) {
@@ -405,7 +405,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 		try {
 			// Get instance
 			const instance = await app.prisma.serviceInstance.findUnique({
-				where: { id: instanceId },
+				where: { id: instanceId, userId: request.currentUser?.id },
 			});
 
 			if (!instance) {
@@ -796,7 +796,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 		try {
 			// Get instance to fetch the actual CFs
 			const instance = await app.prisma.serviceInstance.findUnique({
-				where: { id: sourceInstanceId },
+				where: { id: sourceInstanceId, userId: request.currentUser?.id },
 			});
 
 			if (!instance) {

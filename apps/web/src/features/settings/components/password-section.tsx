@@ -162,18 +162,18 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 				{/* Add/Change Password Section */}
 				<form onSubmit={handlePasswordUpdate} className="space-y-4">
 					<div className="space-y-4">
-						<h3 className="text-sm font-semibold text-white">
+						<h3 className="text-sm font-semibold text-fg">
 							{currentUser?.hasPassword ? "Change Password" : "Add Password"}
 						</h3>
 						{!currentUser?.hasPassword && (
-							<p className="text-xs text-white/60">
+							<p className="text-xs text-fg-muted">
 								Your account uses passwordless authentication. You can optionally add a password
 								for additional login options.
 							</p>
 						)}
 						{currentUser?.hasPassword && (
 							<div className="space-y-2">
-								<label className="text-xs uppercase text-white/60">Current Password</label>
+								<label className="text-xs uppercase text-fg-muted">Current Password</label>
 								<Input
 									type="password"
 									value={currentPassword}
@@ -183,7 +183,7 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 							</div>
 						)}
 						<div className="space-y-2">
-							<label className="text-xs uppercase text-white/60">
+							<label className="text-xs uppercase text-fg-muted">
 								{currentUser?.hasPassword ? "New Password" : "Password"}
 							</label>
 							<Input
@@ -192,12 +192,12 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 								onChange={(e) => setNewPassword(e.target.value)}
 								placeholder="At least 8 characters"
 							/>
-							<p className="text-xs text-white/50">
+							<p className="text-xs text-fg-muted">
 								Must include uppercase, lowercase, number, and special character
 							</p>
 						</div>
 						<div className="space-y-2">
-							<label className="text-xs uppercase text-white/60">
+							<label className="text-xs uppercase text-fg-muted">
 								{currentUser?.hasPassword ? "Confirm New Password" : "Confirm Password"}
 							</label>
 							<Input
@@ -222,11 +222,11 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 
 				{/* Remove Password Section */}
 				{currentUser?.hasPassword && (
-					<div className="border-t border-white/10 pt-6">
-						<h3 className="text-sm font-semibold text-white mb-4">Remove Password</h3>
+					<div className="border-t border-border pt-6">
+						<h3 className="text-sm font-semibold text-fg mb-4">Remove Password</h3>
 						{hasAlternativeAuth ? (
 							<>
-								<p className="text-xs text-white/60 mb-4">
+								<p className="text-xs text-fg-muted mb-4">
 									You can remove your password and use only OIDC or passkeys to sign in.
 									<br />
 									Alternative authentication methods available:
@@ -245,7 +245,7 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 								) : (
 									<div className="space-y-4">
 										<div className="space-y-2">
-											<label className="text-xs uppercase text-white/60">
+											<label className="text-xs uppercase text-fg-muted">
 												Confirm Current Password
 											</label>
 											<Input

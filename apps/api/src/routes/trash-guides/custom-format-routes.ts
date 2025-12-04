@@ -95,7 +95,7 @@ export async function registerCustomFormatRoutes(
 		try {
 			// Get instance
 			const instance = await app.prisma.serviceInstance.findUnique({
-				where: { id: instanceId },
+				where: { id: instanceId, userId: request.currentUser?.id },
 			});
 
 			if (!instance) {

@@ -113,9 +113,9 @@ export const SearchClient = () => {
 		<section className="flex flex-col gap-10">
 			<header className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
 				<div>
-					<p className="text-sm font-medium uppercase text-white/60">Multi-indexer search</p>
-					<h1 className="text-3xl font-semibold text-white">Manual Search</h1>
-					<p className="mt-2 text-sm text-white/60">
+					<p className="text-sm font-medium uppercase text-fg/60">Multi-indexer search</p>
+					<h1 className="text-3xl font-semibold text-fg">Manual Search</h1>
+					<p className="mt-2 text-sm text-fg/60">
 						Query your configured Prowlarr instances and send releases directly to your download
 						clients.
 					</p>
@@ -135,7 +135,7 @@ export const SearchClient = () => {
 			)}
 
 			{noIndexers ? (
-				<Card className="border-dashed border-white/20 bg-white/5">
+				<Card className="border-dashed border-border bg-bg-subtle">
 					<CardHeader>
 						<CardTitle className="text-xl">Prowlarr configuration required</CardTitle>
 						<CardDescription>

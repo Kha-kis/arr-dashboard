@@ -56,7 +56,7 @@ export const SyncStrategyControl = ({
 					<div
 						id="sync-strategy-tooltip"
 						role="tooltip"
-						className="invisible group-hover:visible group-focus:visible absolute left-0 top-6 z-10 w-64 rounded-lg border border-white/10 bg-bg p-3 text-xs text-fg-muted shadow-lg"
+						className="invisible group-hover:visible group-focus:visible absolute left-0 top-6 z-10 w-64 rounded-lg border border-border bg-bg p-3 text-xs text-fg-muted shadow-lg"
 					>
 						<p>
 							Controls how this template handles TRaSH Guides updates from
@@ -82,7 +82,7 @@ export const SyncStrategyControl = ({
 						className={`w-full text-left rounded-lg border p-3 transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
 							value === strategy.value
 								? `${strategy.borderColor} ${strategy.bgColor}`
-								: "border-white/10 bg-white/5 hover:border-white/20 hover:bg-white/10"
+								: "border-border bg-bg-subtle hover:border-border-hover hover:bg-bg-hover"
 						}`}
 					>
 						<div className="flex items-start justify-between gap-3">

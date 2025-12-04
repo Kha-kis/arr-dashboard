@@ -57,7 +57,7 @@ export const TemplateUpdateBanner = ({
 				<button
 					type="button"
 					onClick={() => setShowDetails(!showDetails)}
-					className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-fg-muted hover:text-fg hover:bg-white/10 rounded transition-colors shrink-0"
+					className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-fg-muted hover:text-fg hover:bg-bg-subtle rounded transition-colors shrink-0"
 				>
 					{showDetails ? (
 						<>
@@ -78,7 +78,7 @@ export const TemplateUpdateBanner = ({
 				<button
 					type="button"
 					onClick={handleViewChanges}
-					className="px-4 py-1.5 text-xs font-medium bg-blue-600 text-white hover:bg-blue-700 rounded transition-colors"
+					className="px-4 py-1.5 text-xs font-medium bg-blue-600 text-primary-fg hover:bg-blue-700 rounded transition-colors"
 				>
 					View Changes
 				</button>

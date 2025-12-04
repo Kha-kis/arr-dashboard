@@ -73,7 +73,7 @@ const SyncStrategySelector = ({
 	disabled?: boolean;
 }) => {
 	const [isOpen, setIsOpen] = useState(false);
-	const current = syncStrategyOptions.find((opt) => opt.value === value)!;
+	const current = syncStrategyOptions.find((opt) => opt.value === value) ?? syncStrategyOptions[0];
 	const Icon = current.icon;
 
 	return (
@@ -512,16 +512,16 @@ export const BulkDeploymentModal = ({
 					type="button"
 					onClick={handleDeploy}
 					disabled={!canDeploy || bulkDeployMutation.isPending || bulkDeployMutation.isSuccess}
-					className="px-4 py-2 text-sm font-medium bg-primary text-white hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center gap-2"
+					className="px-4 py-2 text-sm font-medium bg-primary text-primary-fg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center gap-2"
 				>
 					{previewsLoading ? (
 						<>
-							<div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+							<div className="h-4 w-4 animate-spin rounded-full border-2 border-primary-fg border-t-transparent" />
 							Loading Previews...
 						</>
 					) : bulkDeployMutation.isPending ? (
 						<>
-							<div className="h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+							<div className="h-4 w-4 animate-spin rounded-full border-2 border-primary-fg border-t-transparent" />
 							Deploying to {deployableCount} Instance{deployableCount !== 1 ? "s" : ""}...
 						</>
 					) : (

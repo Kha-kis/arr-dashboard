@@ -14,11 +14,11 @@ interface StatsCardProps {
 }
 
 export const StatsCard = ({ title, value, description }: StatsCardProps) => (
-	<div className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80">
-		<p className="text-xs uppercase text-white/50">{title}</p>
-		<p className="text-2xl font-semibold text-white">
+	<div className="rounded-xl border border-border bg-bg-subtle px-4 py-3 text-sm text-fg-muted">
+		<p className="text-xs uppercase text-fg-muted">{title}</p>
+		<p className="text-2xl font-semibold text-fg">
 			{typeof value === "number" ? integer.format(value) : value}
 		</p>
-		{description ? <p className="text-xs text-white/50">{description}</p> : null}
+		{description ? <p className="text-xs text-fg-muted">{description}</p> : null}
 	</div>
 );

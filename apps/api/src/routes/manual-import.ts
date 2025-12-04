@@ -44,6 +44,7 @@ const manualImportRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const instance = await app.prisma.serviceInstance.findFirst({
 			where: {
 				id: query.instanceId,
+				userId: request.currentUser?.id,
 			},
 		});
 
@@ -84,6 +85,7 @@ const manualImportRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const instance = await app.prisma.serviceInstance.findFirst({
 			where: {
 				id: body.instanceId,
+				userId: request.currentUser?.id,
 			},
 		});
 

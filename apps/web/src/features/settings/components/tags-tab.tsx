@@ -53,7 +53,7 @@ export const TagsTab = ({
 				<CardContent>
 					<form className="space-y-4" onSubmit={onCreateTag}>
 						<div className="space-y-2">
-							<label className="text-xs uppercase text-white/60">Name</label>
+							<label className="text-xs uppercase text-fg-muted">Name</label>
 							<Input
 								value={newTagName}
 								onChange={(event) => onNewTagNameChange(event.target.value)}
@@ -79,7 +79,7 @@ export const TagsTab = ({
 				</CardHeader>
 				<CardContent className="space-y-2">
 					{tags.length === 0 ? (
-						<p className="text-sm text-white/60">No tags created yet.</p>
+						<p className="text-sm text-fg-muted">No tags created yet.</p>
 					) : (
 						<ul className="space-y-2">
 							{tags.map((tag) => (

@@ -1306,7 +1306,7 @@ export class DeploymentExecutorService {
 			// Add orphaned CFs to details
 			cfResult.details.orphaned = profileResult.orphanedCFs;
 
-			// Step 9: Finalize deployment history with success
+			// Step 10: Finalize deployment history with success
 			await this.finalizeDeploymentHistory(
 				historyId,
 				deploymentHistoryId,

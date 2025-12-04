@@ -1,15 +1,14 @@
+"use client";
+
 /**
  * HTML Sanitization Utility
  * Provides safe HTML rendering to prevent XSS attacks
  *
- * Uses DOMPurify only on the client side to avoid SSR issues.
- * On the server, returns empty string (content will hydrate on client).
+ * This module is client-only to ensure consistent hydration.
+ * Only import from client components ("use client").
  */
 
-// Only import DOMPurify on the client
-const DOMPurify = typeof window !== "undefined"
-	? require("dompurify").default
-	: null;
+import DOMPurify from "isomorphic-dompurify";
 
 // Track if hooks have been initialized
 let hooksInitialized = false;
@@ -18,7 +17,7 @@ let hooksInitialized = false;
  * Initialize DOMPurify hooks for link security
  */
 function initializeHooks(): void {
-	if (hooksInitialized || !DOMPurify) return;
+	if (hooksInitialized) return;
 
 	// Add hook to enforce noopener noreferrer on external links to prevent reverse tabnapping
 	DOMPurify.addHook("afterSanitizeAttributes", (node: Element) => {
@@ -63,9 +62,6 @@ const SANITIZE_CONFIG = {
  */
 export function sanitizeHtml(html: string | undefined | null): string {
 	if (!html) return "";
-
-	// On server, return empty string - content will hydrate on client
-	if (!DOMPurify) return "";
 
 	// Initialize hooks on first use
 	initializeHooks();

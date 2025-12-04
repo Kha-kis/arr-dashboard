@@ -27,8 +27,8 @@ export const PageHeader = ({ title, description, actions, className }: PageHeade
 	return (
 		<header className={cn("flex items-start justify-between gap-4", className)}>
 			<div className="space-y-2">
-				<h1 className="text-3xl font-bold text-white">{title}</h1>
-				{description && <p className="text-base text-white/70">{description}</p>}
+				<h1 className="text-3xl font-bold text-fg">{title}</h1>
+				{description && <p className="text-base text-fg-muted">{description}</p>}
 			</div>
 			{actions && <div className="flex items-center gap-2">{actions}</div>}
 		</header>

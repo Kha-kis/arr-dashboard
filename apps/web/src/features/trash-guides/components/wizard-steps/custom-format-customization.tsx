@@ -208,27 +208,27 @@ export const CustomFormatCustomization = ({
 		<div className="space-y-6">
 			{/* Introduction */}
 			<div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
-				<h4 className="font-medium text-white mb-2">⚙️ Review & Customize Formats</h4>
-				<p className="text-sm text-white/70 mb-3">
-					TRaSH Guides recommends specific Custom Formats for this profile. <strong className="text-white">Pre-selected formats are based on the quality profile&apos;s configuration</strong>. You can adjust as needed:
+				<h4 className="font-medium text-fg mb-2">⚙️ Review & Customize Formats</h4>
+				<p className="text-sm text-fg/70 mb-3">
+					TRaSH Guides recommends specific Custom Formats for this profile. <strong className="text-fg">Pre-selected formats are based on the quality profile&apos;s configuration</strong>. You can adjust as needed:
 				</p>
-				<div className="space-y-2 text-sm text-white/70 ml-4 mb-3">
-					<div>• <strong className="text-white">Pre-selected</strong> - Recommended by TRaSH for this profile</div>
-					<div>• <strong className="text-white">Unselected</strong> - Optional, choose based on your preferences</div>
-					<div>• <strong className="text-white">Score overrides</strong> - Click gear icon to customize priority/conditions</div>
+				<div className="space-y-2 text-sm text-fg/70 ml-4 mb-3">
+					<div>• <strong className="text-fg">Pre-selected</strong> - Recommended by TRaSH for this profile</div>
+					<div>• <strong className="text-fg">Unselected</strong> - Optional, choose based on your preferences</div>
+					<div>• <strong className="text-fg">Score overrides</strong> - Click gear icon to customize priority/conditions</div>
 				</div>
-				<p className="text-xs text-white/60 italic">
+				<p className="text-xs text-fg/60 italic">
 					💡 Tip: The defaults are carefully chosen for this quality profile. Only change if you have specific requirements.
 				</p>
 			</div>
 
 			{/* Overview */}
-			<div className="rounded-xl border border-white/10 bg-white/5 p-6">
-				<h3 className="text-lg font-medium text-white">Customize Custom Formats</h3>
-				<p className="mt-2 text-sm text-white/70">
+			<div className="rounded-xl border border-border bg-bg-subtle p-6">
+				<h3 className="text-lg font-medium text-fg">Customize Custom Formats</h3>
+				<p className="mt-2 text-sm text-fg/70">
 					Review and customize the Custom Formats from your selected CF Groups.
 				</p>
-				<div className="mt-4 flex items-center gap-2 text-sm text-white/60">
+				<div className="mt-4 flex items-center gap-2 text-sm text-fg/60">
 					<Info className="h-4 w-4" />
 					<span>
 						{cfList.length} Custom Formats available • {selectedCount} selected
@@ -250,7 +250,7 @@ export const CustomFormatCustomization = ({
 							className={`rounded-xl border ${
 								isSelected
 									? "border-primary/50 bg-primary/5"
-									: "border-white/10 bg-white/5"
+									: "border-border bg-bg-subtle"
 							}`}
 						>
 							<div className="flex items-start gap-4 p-6">
@@ -259,14 +259,14 @@ export const CustomFormatCustomization = ({
 									type="checkbox"
 									checked={isSelected}
 									onChange={() => toggleCF(cf.trash_id)}
-									className="mt-1 h-5 w-5 rounded border-white/20 bg-white/10 text-primary focus:ring-primary"
+									className="mt-1 h-5 w-5 rounded border-border bg-bg-subtle text-primary focus:ring-primary"
 								/>
 
 								<div className="flex-1">
 									<div className="flex items-start justify-between">
 										<div>
 											<div className="flex items-center gap-2 flex-wrap">
-												<h4 className="font-medium text-white">{cf.name}</h4>
+												<h4 className="font-medium text-fg">{cf.name}</h4>
 												{cf.isRequired && (
 													<span className="inline-flex items-center gap-1 rounded bg-red-500/20 px-2 py-0.5 text-xs font-medium text-red-300">
 														Required
@@ -275,7 +275,7 @@ export const CustomFormatCustomization = ({
 											</div>
 											{cf.trash_description && (
 												<p
-													className="mt-1 text-sm text-white/70"
+													className="mt-1 text-sm text-fg/70"
 													dangerouslySetInnerHTML={createSanitizedHtml(cf.trash_description)}
 												/>
 											)}
@@ -284,7 +284,7 @@ export const CustomFormatCustomization = ({
 										<button
 											type="button"
 											onClick={() => setExpandedCF(isExpanded ? null : cf.trash_id)}
-											className="rounded p-1 text-white/60 hover:bg-white/10 hover:text-white"
+											className="rounded p-1 text-fg/60 hover:bg-bg-subtle hover:text-fg"
 											disabled={!isSelected}
 										>
 											<Settings className="h-4 w-4" />
@@ -293,10 +293,10 @@ export const CustomFormatCustomization = ({
 
 									{/* Expanded Options */}
 									{isExpanded && isSelected && (
-										<div className="mt-4 space-y-4 border-t border-white/10 pt-4">
+										<div className="mt-4 space-y-4 border-t border-border pt-4">
 											{/* Score Override */}
 											<div>
-												<label className="mb-2 block text-sm font-medium text-white">
+												<label className="mb-2 block text-sm font-medium text-fg">
 													Score Override (optional)
 												</label>
 												<input
@@ -304,29 +304,29 @@ export const CustomFormatCustomization = ({
 													value={scoreOverride ?? ""}
 													onChange={(e) => updateScoreOverride(cf.trash_id, e.target.value)}
 													placeholder="Leave empty for default score"
-													className="w-full rounded border border-white/20 bg-white/10 px-3 py-2 text-sm text-white placeholder:text-white/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+													className="w-full rounded border border-border bg-bg-subtle px-3 py-2 text-sm text-fg placeholder:text-fg/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
 												/>
 											</div>
 
 											{/* Conditions */}
 											{cf.specifications && cf.specifications.length > 0 && (
 												<div>
-													<label className="mb-2 block text-sm font-medium text-white">
+													<label className="mb-2 block text-sm font-medium text-fg">
 														Conditions ({cf.specifications.length})
 													</label>
 													<div className="space-y-2">
 														{cf.specifications.map((spec: any) => (
 															<label
 																key={spec.name}
-																className="flex items-center gap-2 rounded bg-white/5 px-3 py-2"
+																className="flex items-center gap-2 rounded bg-bg-subtle px-3 py-2"
 															>
 																<input
 																	type="checkbox"
 																	checked={conditionsEnabled[spec.name] ?? true}
 																	onChange={() => toggleCondition(cf.trash_id, spec.name)}
-																	className="h-4 w-4 rounded border-white/20 bg-white/10 text-primary focus:ring-primary"
+																	className="h-4 w-4 rounded border-border bg-bg-subtle text-primary focus:ring-primary"
 																/>
-																<span className="text-sm text-white/70">{spec.name}</span>
+																<span className="text-sm text-fg/70">{spec.name}</span>
 															</label>
 														))}
 													</div>
@@ -342,19 +342,19 @@ export const CustomFormatCustomization = ({
 			</div>
 
 			{cfList.length === 0 && (
-				<div className="rounded-xl border border-white/10 bg-white/5 p-8 text-center">
-					<p className="text-white/60">
+				<div className="rounded-xl border border-border bg-bg-subtle p-8 text-center">
+					<p className="text-fg/60">
 						No Custom Formats available. Please select some CF Groups in the previous step.
 					</p>
 				</div>
 			)}
 
 			{/* Navigation */}
-			<div className="flex items-center justify-between border-t border-white/10 pt-6">
+			<div className="flex items-center justify-between border-t border-border pt-6">
 				<button
 					type="button"
 					onClick={onBack}
-					className="inline-flex items-center gap-2 rounded-lg bg-white/10 px-4 py-2 text-sm font-medium text-white transition hover:bg-white/20"
+					className="inline-flex items-center gap-2 rounded-lg bg-bg-subtle px-4 py-2 text-sm font-medium text-fg transition hover:bg-bg-hover"
 				>
 					<ChevronLeft className="h-4 w-4" />
 					Back
@@ -364,7 +364,7 @@ export const CustomFormatCustomization = ({
 					type="button"
 					onClick={() => onNext(selections)}
 					disabled={selectedCount === 0}
-					className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary/90 disabled:opacity-50"
+					className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-fg transition hover:bg-primary/90 disabled:opacity-50"
 				>
 					Next: Create Template
 					<ChevronRight className="h-4 w-4" />

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { TrashTemplate } from "@arr/shared";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import {
 	Badge,
 	DropdownMenu,
@@ -33,7 +33,7 @@ import {
 } from "lucide-react";
 import { cn } from "../../../lib/utils";
 import { fetchTemplateStats, type TemplateStatsResponse, type TemplateInstanceInfo } from "../../../lib/api-client/templates";
-import { updateSyncStrategy } from "../../../lib/api-client/trash-guides";
+import { useUpdateSyncStrategy } from "../../../hooks/api/useDeploymentPreview";
 
 interface TemplateCardProps {
 	template: TrashTemplate;
@@ -77,8 +77,9 @@ export const TemplateCard = ({
 	onViewHistory,
 }: TemplateCardProps) => {
 	const [expanded, setExpanded] = useState(false);
-	const [updatingStrategy, setUpdatingStrategy] = useState<string | null>(null);
-	const queryClient = useQueryClient();
+	const [updatingStrategyInstanceId, setUpdatingStrategyInstanceId] = useState<string | null>(null);
+
+	const updateSyncStrategyMutation = useUpdateSyncStrategy();
 
 	// Fetch stats when card is expanded (lazy loading)
 	const { data: statsData, isLoading: statsLoading } = useQuery<TemplateStatsResponse>({
@@ -88,25 +89,18 @@ export const TemplateCard = ({
 		staleTime: 30000, // Cache for 30 seconds
 	});
 
-	const handleSyncStrategyChange = async (
-		instanceId: string,
-		newStrategy: "auto" | "manual" | "notify"
-	) => {
-		setUpdatingStrategy(instanceId);
-		try {
-			await updateSyncStrategy({
-				templateId: template.id,
-				instanceId,
-				syncStrategy: newStrategy,
-			});
-			// Invalidate and refetch stats
-			queryClient.invalidateQueries({ queryKey: ["template-stats", template.id] });
-		} catch (error) {
-			console.error("Failed to update sync strategy:", error);
-			toast.error("Failed to update sync strategy. Please try again.");
-		} finally {
-			setUpdatingStrategy(null);
-		}
+	const handleSyncStrategyChange = (instanceId: string, newStrategy: "auto" | "manual" | "notify") => {
+		setUpdatingStrategyInstanceId(instanceId);
+		updateSyncStrategyMutation.mutate(
+			{ templateId: template.id, instanceId, syncStrategy: newStrategy },
+			{
+				onSettled: () => setUpdatingStrategyInstanceId(null),
+				onError: (error) => {
+					console.error("Failed to update sync strategy:", error);
+					toast.error("Failed to update sync strategy. Please try again.");
+				},
+			}
+		);
 	};
 
 	const formatCount = template.config.customFormats.length;
@@ -227,7 +221,7 @@ export const TemplateCard = ({
 				<button
 					type="button"
 					onClick={onDeploy}
-					className="w-full flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-primary/90"
+					className="w-full flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-fg transition-colors hover:bg-primary/90"
 				>
 					<Rocket className="h-4 w-4" />
 					Deploy
@@ -247,7 +241,7 @@ export const TemplateCard = ({
 							{stats.instances.map((instance) => {
 								const strategyInfo = getSyncStrategyInfo(instance.syncStrategy);
 								const StrategyIcon = strategyInfo.icon;
-								const isUpdating = updatingStrategy === instance.instanceId;
+								const isUpdating = updatingStrategyInstanceId === instance.instanceId;
 
 								return (
 									<div

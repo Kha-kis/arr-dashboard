@@ -76,7 +76,7 @@ export const CalendarClient = () => {
 				</Alert>
 			)}
 
-			<div className="rounded-2xl border border-white/10 bg-slate-950/40 p-4">
+			<div className="rounded-2xl border border-border bg-bg-subtle p-4">
 				<CalendarGrid
 					days={daysInView}
 					currentMonth={monthStart}

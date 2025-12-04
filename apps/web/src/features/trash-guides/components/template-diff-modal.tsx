@@ -235,7 +235,7 @@ export const TemplateDiffModal = ({
 												<div className="mt-0.5">
 													{selectedStrategy === strategy ? (
 														<div className="h-5 w-5 rounded-full bg-primary flex items-center justify-center">
-															<Check className="h-3 w-3 text-white" />
+															<Check className="h-3 w-3 text-primary-fg" />
 														</div>
 													) : (
 														<div className="h-5 w-5 rounded-full border-2 border-border" />

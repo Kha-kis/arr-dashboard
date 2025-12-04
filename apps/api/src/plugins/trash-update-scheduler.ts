@@ -26,12 +26,19 @@ const trashUpdateSchedulerPlugin = fastifyPlugin(
 			app.log.info("Initializing TRaSH Guides update scheduler");
 
 			// Get configuration from environment or use defaults
+			const DEFAULT_INTERVAL_HOURS = 12;
+			const parsedInterval = Number.parseInt(
+				process.env.TRASH_UPDATE_CHECK_INTERVAL_HOURS || "",
+				10,
+			);
+			const intervalHours =
+				Number.isFinite(parsedInterval) && parsedInterval > 0
+					? Math.floor(parsedInterval)
+					: DEFAULT_INTERVAL_HOURS;
+
 			const config = {
 				enabled: process.env.TRASH_UPDATE_SCHEDULER_ENABLED !== "false", // Enabled by default
-				intervalHours: Number.parseInt(
-					process.env.TRASH_UPDATE_CHECK_INTERVAL_HOURS || "12",
-					10,
-				),
+				intervalHours,
 			};
 
 			// Create services

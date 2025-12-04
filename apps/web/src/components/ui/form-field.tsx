@@ -48,14 +48,14 @@ export const FormField = ({
 		<div className={cn("flex flex-col gap-1.5", className)}>
 			<label
 				htmlFor={htmlFor}
-				className="text-sm font-medium text-white/90"
+				className="text-sm font-medium text-fg"
 			>
 				{label}
 				{required && <span className="ml-1 text-danger">*</span>}
 			</label>
 			{children}
 			{hint && !error && (
-				<p className="text-xs text-white/50">{hint}</p>
+				<p className="text-xs text-fg-muted">{hint}</p>
 			)}
 			{error && (
 				<p className="text-xs text-danger">{error}</p>

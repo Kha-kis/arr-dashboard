@@ -69,11 +69,19 @@ const listTemplatesQuerySchema = z.object({
 	limit: z
 		.string()
 		.optional()
-		.transform((val) => (val ? Number.parseInt(val, 10) : undefined)),
+		.transform((val) => {
+			if (!val) return undefined;
+			const parsed = Number.parseInt(val, 10);
+			return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+		}),
 	offset: z
 		.string()
 		.optional()
-		.transform((val) => (val ? Number.parseInt(val, 10) : undefined)),
+		.transform((val) => {
+			if (!val) return undefined;
+			const parsed = Number.parseInt(val, 10);
+			return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+		}),
 });
 
 const duplicateTemplateSchema = z.object({
@@ -701,6 +709,7 @@ export async function registerTemplateRoutes(
 			const instance = await app.prisma.serviceInstance.findFirst({
 				where: {
 					id: instanceId,
+					userId: request.currentUser?.id,
 				},
 			});
 
@@ -783,6 +792,7 @@ export async function registerTemplateRoutes(
 			const instances = await app.prisma.serviceInstance.findMany({
 				where: {
 					id: { in: instanceIds },
+					userId: request.currentUser?.id,
 				},
 			});
 

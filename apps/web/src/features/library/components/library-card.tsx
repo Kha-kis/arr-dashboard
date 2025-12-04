@@ -227,14 +227,14 @@ export const LibraryCard = ({
 	const genreEntries = (item.genres ?? []).filter(Boolean);
 
 	return (
-		<Card className="border-white/10 bg-white/5 p-4">
+		<Card className="border-border bg-bg-subtle p-4">
 			<CardContent className="flex flex-col gap-3">
 				<div className="flex gap-3">
-					<div className="h-36 w-24 overflow-hidden rounded-lg border border-white/10 bg-gradient-to-br from-slate-700 to-slate-900 shadow-md flex-shrink-0">
+					<div className="h-36 w-24 overflow-hidden rounded-lg border border-border bg-bg-hover shadow-md flex-shrink-0">
 						{item.poster ? (
 							<img src={item.poster} alt={item.title} className="h-full w-full object-cover" />
 						) : (
-							<div className="flex h-full w-full items-center justify-center text-xs text-white/40">
+							<div className="flex h-full w-full items-center justify-center text-xs text-fg-muted">
 								{item.type === "movie" ? "Poster" : "Artwork"}
 							</div>
 						)}
@@ -243,19 +243,19 @@ export const LibraryCard = ({
 					<div className="flex-1 min-w-0 space-y-2">
 						<div>
 							<div className="flex flex-wrap items-baseline gap-2">
-								<h3 className="text-base font-semibold text-white">{item.title}</h3>
+								<h3 className="text-base font-semibold text-fg">{item.title}</h3>
 								{item.year && item.type === "movie" ? (
-									<span className="text-xs text-white/50">{item.year}</span>
+									<span className="text-xs text-fg-muted">{item.year}</span>
 								) : null}
 							</div>
-							<p className="text-xs text-white/50">
+							<p className="text-xs text-fg-muted">
 							{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}
 						</p>
 						</div>
 
 						{item.overview ? (
 							<div className="group relative">
-								<p className="text-xs leading-relaxed text-white/70 line-clamp-2">
+								<p className="text-xs leading-relaxed text-fg-muted line-clamp-2">
 									{item.overview}
 								</p>
 								{item.overview.length > 120 && onExpandDetails ? (
@@ -277,10 +277,10 @@ export const LibraryCard = ({
 							))}
 						</div>
 
-						<div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/60">
+						<div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted">
 							{metadata.slice(0, 4).map((entry) => (
 								<span key={`${item.id}-${entry.label}`}>
-									<span className="text-white/40">{entry.label}:</span> {entry.value}
+									<span className="text-fg-muted/70">{entry.label}:</span> {entry.value}
 								</span>
 							))}
 						</div>
@@ -290,20 +290,20 @@ export const LibraryCard = ({
 								{genreEntries.slice(0, 3).map((genre) => (
 									<span
 										key={`${item.id}-genre-${genre}`}
-										className="rounded-full border border-white/10 bg-white/10 px-2 py-0.5 text-white/70"
+										className="rounded-full border border-border bg-bg-hover px-2 py-0.5 text-fg-muted"
 									>
 										{genre}
 									</span>
 								))}
 								{genreEntries.length > 3 && (
-									<span className="text-white/40">+{genreEntries.length - 3} more</span>
+									<span className="text-fg-muted">+{genreEntries.length - 3} more</span>
 								)}
 							</div>
 						) : null}
 					</div>
 				</div>
 
-				<div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-3">
+				<div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
 					<div className="flex flex-wrap gap-1.5">
 						{item.type === "series" && hasSeasonProgress && onViewSeasons ? (
 							<Button

@@ -31,7 +31,7 @@ export const registerGrabRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			where: {
 				enabled: true,
 				service: "PROWLARR",
-				id: payload.instanceId,
+				id: payload.instanceId, userId: request.currentUser?.id,
 			},
 		});
 

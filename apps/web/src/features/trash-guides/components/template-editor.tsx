@@ -392,7 +392,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 					}));
 
 					return (
-						<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+						<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm">
 							<div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-bg-subtle p-6">
 								{/* Close button */}
 								<Button

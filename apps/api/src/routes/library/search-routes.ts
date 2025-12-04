@@ -38,6 +38,7 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 			where: {
 				id: payload.instanceId,
 				enabled: true,
+				userId: request.currentUser?.id,
 			},
 		});
 
@@ -102,6 +103,7 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 			where: {
 				id: payload.instanceId,
 				enabled: true,
+				userId: request.currentUser?.id,
 			},
 		});
 
@@ -159,6 +161,7 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 			where: {
 				id: payload.instanceId,
 				enabled: true,
+				userId: request.currentUser?.id,
 			},
 		});
 
@@ -216,6 +219,7 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 			where: {
 				id: payload.instanceId,
 				enabled: true,
+				userId: request.currentUser?.id,
 			},
 		});
 

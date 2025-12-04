@@ -117,19 +117,19 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 			role="presentation"
 		>
 			<div
-				className="relative w-full max-w-2xl rounded-xl border border-white/10 bg-slate-900 p-6 shadow-xl"
+				className="relative w-full max-w-2xl rounded-xl border border-border bg-bg p-6 shadow-xl"
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="import-template-title"
 			>
 				{/* Header */}
 				<div className="mb-4 flex items-center justify-between">
-					<h2 id="import-template-title" className="text-xl font-semibold text-white">Import Template</h2>
+					<h2 id="import-template-title" className="text-xl font-semibold text-fg">Import Template</h2>
 					<button
 						type="button"
 						onClick={onClose}
 						aria-label="Close"
-						className="rounded p-1 text-white/60 hover:bg-white/10 hover:text-white"
+						className="rounded p-1 text-fg-muted hover:bg-bg-subtle hover:text-fg"
 					>
 						<X className="h-5 w-5" />
 					</button>
@@ -150,7 +150,7 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 
 					{/* File Upload */}
 					<div>
-						<label className="mb-2 block text-sm font-medium text-white">
+						<label className="mb-2 block text-sm font-medium text-fg">
 							Upload JSON File
 						</label>
 						<Input
@@ -163,14 +163,14 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 					</div>
 
 					<div className="flex items-center gap-4">
-						<div className="h-px flex-1 bg-white/10" />
-						<span className="text-sm text-white/60">or</span>
-						<div className="h-px flex-1 bg-white/10" />
+						<div className="h-px flex-1 bg-border" />
+						<span className="text-sm text-fg-muted">or</span>
+						<div className="h-px flex-1 bg-border" />
 					</div>
 
 					{/* Paste JSON */}
 					<div>
-						<label className="mb-2 block text-sm font-medium text-white">
+						<label className="mb-2 block text-sm font-medium text-fg">
 							Paste JSON Data
 						</label>
 						<textarea

@@ -36,7 +36,7 @@ export const QualityBreakdown = ({ breakdown }: QualityBreakdownProps) => {
 	if (!breakdown) return null;
 
 	const total = Object.values(breakdown).reduce((sum, val) => sum + val, 0);
-	if (total === 0) return <p className="text-sm text-white/50">No quality data</p>;
+	if (total === 0) return <p className="text-sm text-fg-muted">No quality data</p>;
 
 	return (
 		<div className="space-y-2">
@@ -46,7 +46,7 @@ export const QualityBreakdown = ({ breakdown }: QualityBreakdownProps) => {
 				const labelId = `quality-label-${key}`;
 				return (
 					<div key={key} className="flex items-center gap-3">
-						<div id={labelId} className="w-20 text-xs text-white/70">
+						<div id={labelId} className="w-20 text-xs text-fg-muted">
 							{getQualityLabel(key)}
 						</div>
 						<div className="flex-1">
@@ -56,12 +56,12 @@ export const QualityBreakdown = ({ breakdown }: QualityBreakdownProps) => {
 								aria-valuemin={0}
 								aria-valuemax={100}
 								aria-labelledby={labelId}
-								className="h-2 overflow-hidden rounded-full bg-white/10"
+								className="h-2 overflow-hidden rounded-full bg-bg-subtle"
 							>
 								<div className="h-full bg-blue-500/80" style={{ width: `${percentage}%` }} />
 							</div>
 						</div>
-						<div className="w-16 text-right text-xs text-white/70">
+						<div className="w-16 text-right text-xs text-fg-muted">
 							{integer.format(count)} ({percentFormatter.format(percentage)}%)
 						</div>
 					</div>

@@ -99,12 +99,12 @@ export const TrashGuidesClient = () => {
 		<div className="space-y-6">
 			<header className="space-y-4">
 				<div className="space-y-2">
-					<h1 className="text-4xl font-semibold text-white">TRaSH Guides</h1>
-					<p className="text-white/70">
+					<h1 className="text-4xl font-semibold text-fg">TRaSH Guides</h1>
+					<p className="text-fg/70">
 						Manage and deploy TRaSH Guides expert configurations for your Radarr and Sonarr instances.
 					</p>
 					{cacheStatus?.stats && (
-						<div className="mt-4 flex gap-4 text-sm text-white/60">
+						<div className="mt-4 flex gap-4 text-sm text-fg/60">
 							<span className="flex items-center gap-1">
 								<HardDrive className="h-4 w-4" />
 								{cacheStatus.stats.totalEntries} total entries
@@ -157,9 +157,9 @@ export const TrashGuidesClient = () => {
 				<SchedulerStatusDashboard />
 			) : activeTab === "history" ? (
 				<div className="space-y-6">
-					<div className="rounded-lg border border-white/10 bg-white/5 p-6">
-						<h3 className="text-lg font-semibold text-white mb-4">Deployment History</h3>
-						<p className="text-white/70 mb-4">
+					<div className="rounded-lg border border-border bg-bg-subtle p-6">
+						<h3 className="text-lg font-semibold text-fg mb-4">Deployment History</h3>
+						<p className="text-fg/70 mb-4">
 							View all template deployments across your instances. Track deployment status, review applied configurations, and undeploy when needed.
 						</p>
 					</div>
@@ -168,7 +168,7 @@ export const TrashGuidesClient = () => {
 					<DeploymentHistoryTable />
 				</div>
 			) : activeTab === "bulk-scores" ? (
-				<div className="rounded-lg border border-white/10 bg-white/5 p-6">
+				<div className="rounded-lg border border-border bg-bg-subtle p-6">
 					{isAuthLoading ? (
 						<div className="flex items-center justify-center py-8">
 							<div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
@@ -182,7 +182,7 @@ export const TrashGuidesClient = () => {
 							}}
 						/>
 					) : (
-						<div className="text-center py-8 text-white/60">
+						<div className="text-center py-8 text-fg/60">
 							Please log in to manage bulk scores
 						</div>
 					)}

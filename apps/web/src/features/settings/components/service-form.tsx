@@ -84,7 +84,7 @@ export const ServiceForm = ({
 			<CardContent>
 				<form className="space-y-4" onSubmit={onSubmit}>
 					<div className="space-y-2">
-						<label className="text-xs uppercase text-white/60">Service</label>
+						<label className="text-xs uppercase text-fg-muted">Service</label>
 						<div className="flex gap-2">
 							{SERVICE_TYPES.map((service) => (
 								<button
@@ -104,8 +104,8 @@ export const ServiceForm = ({
 									className={cn(
 										"flex-1 rounded-lg border px-3 py-2 text-sm capitalize transition",
 										formState.service === service
-											? "border-sky-400 bg-sky-500/20 text-white"
-											: "border-white/10 bg-white/5 text-white/60 hover:text-white",
+											? "border-sky-400 bg-sky-500/20 text-fg"
+											: "border-border bg-bg-subtle text-fg-muted hover:text-fg",
 									)}
 								>
 									{service}
@@ -188,7 +188,7 @@ export const ServiceForm = ({
 						)}
 					</div>
 					<div className="space-y-2">
-						<label className="text-xs uppercase text-white/60">Tags</label>
+						<label className="text-xs uppercase text-fg-muted">Tags</label>
 						<Input
 							value={formState.tags}
 							onChange={(event) =>
@@ -207,12 +207,12 @@ export const ServiceForm = ({
 						</datalist>
 					</div>
 					{formState.service !== "prowlarr" && (
-						<div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
+						<div className="space-y-3 rounded-xl border border-border bg-bg-subtle p-4">
 							<div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-								<p className="text-xs uppercase tracking-widest text-white/40">
+								<p className="text-xs uppercase tracking-widest text-fg-muted">
 									Default add settings
 								</p>
-								<span className="text-xs text-white/50">
+								<span className="text-xs text-fg-muted">
 									Applied when using Discover and library tools.
 								</span>
 							</div>
@@ -220,10 +220,10 @@ export const ServiceForm = ({
 						</div>
 					)}
 					<div className="flex items-center gap-3">
-						<label className="flex items-center gap-2 text-sm text-white/70">
+						<label className="flex items-center gap-2 text-sm text-fg-muted">
 							<input
 								type="checkbox"
-								className="h-4 w-4 border border-white/20 bg-white/10"
+								className="h-4 w-4 border border-border bg-bg-subtle"
 								checked={formState.enabled}
 								onChange={(event) =>
 									onFormStateChange((prev) => ({
@@ -235,10 +235,10 @@ export const ServiceForm = ({
 							Enabled
 						</label>
 						{formState.service !== "prowlarr" && (
-							<label className="flex items-center gap-2 text-sm text-white/70">
+							<label className="flex items-center gap-2 text-sm text-fg-muted">
 								<input
 									type="checkbox"
-									className="h-4 w-4 border border-white/20 bg-white/10"
+									className="h-4 w-4 border border-border bg-bg-subtle"
 									checked={formState.isDefault}
 									onChange={(event) =>
 										onFormStateChange((prev) => ({

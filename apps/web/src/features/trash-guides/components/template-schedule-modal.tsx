@@ -135,16 +135,16 @@ export const TemplateScheduleModal = ({
 				aria-modal="true"
 				aria-labelledby="schedule-modal-title"
 				tabIndex={-1}
-				className="relative w-full max-w-2xl overflow-hidden rounded-xl border border-white/10 bg-slate-900 shadow-xl"
+				className="relative w-full max-w-2xl overflow-hidden rounded-xl border border-border bg-bg shadow-xl"
 			>
 				{/* Header */}
-				<div className="flex items-center justify-between border-b border-white/10 bg-slate-900/95 p-6 backdrop-blur">
+				<div className="flex items-center justify-between border-b border-border bg-bg p-6">
 					<div>
-						<h2 id="schedule-modal-title" className="text-xl font-semibold text-white flex items-center gap-2">
+						<h2 id="schedule-modal-title" className="text-xl font-semibold text-fg flex items-center gap-2">
 							<Clock className="h-5 w-5 text-primary" />
 							{existingSchedule ? "Edit Sync Schedule" : "Create Sync Schedule"}
 						</h2>
-						<p className="mt-1 text-sm text-white/60">
+						<p className="mt-1 text-sm text-fg-muted">
 							Automatically sync &quot;{templateName}&quot; to {instanceName}
 						</p>
 					</div>
@@ -152,7 +152,7 @@ export const TemplateScheduleModal = ({
 						type="button"
 						onClick={onClose}
 						aria-label="Close dialog"
-						className="rounded p-1 text-white/60 hover:bg-white/10 hover:text-white"
+						className="rounded p-1 text-fg-muted hover:bg-bg-subtle hover:text-fg"
 					>
 						<X className="h-5 w-5" />
 					</button>
@@ -173,7 +173,7 @@ export const TemplateScheduleModal = ({
 
 					{/* Frequency */}
 					<div>
-						<label className="mb-2 block text-sm font-medium text-white">
+						<label className="mb-2 block text-sm font-medium text-fg">
 							Sync Frequency
 						</label>
 						<Select
@@ -185,14 +185,14 @@ export const TemplateScheduleModal = ({
 							<SelectOption value="WEEKLY">Weekly</SelectOption>
 							<SelectOption value="MONTHLY">Monthly</SelectOption>
 						</Select>
-						<p className="mt-1 text-xs text-white/60">
+						<p className="mt-1 text-xs text-fg-muted">
 							How often the template should sync to this instance
 						</p>
 					</div>
 
 					{/* Options */}
-					<div className="space-y-4 rounded-lg border border-white/10 bg-white/5 p-4">
-						<h3 className="text-sm font-medium text-white">Sync Options</h3>
+					<div className="space-y-4 rounded-lg border border-border bg-bg-subtle p-4">
+						<h3 className="text-sm font-medium text-fg">Sync Options</h3>
 
 						{/* Enabled */}
 						<label className="flex items-start gap-3 cursor-pointer">
@@ -200,11 +200,11 @@ export const TemplateScheduleModal = ({
 								type="checkbox"
 								checked={enabled}
 								onChange={(e) => setEnabled(e.target.checked)}
-								className="mt-1 h-4 w-4 rounded border-white/20 bg-white/10 text-primary focus:ring-2 focus:ring-primary/20"
+								className="mt-1 h-4 w-4 rounded border-border bg-bg-subtle text-primary focus:ring-2 focus:ring-primary/20"
 							/>
 							<div className="flex-1">
-								<span className="text-sm font-medium text-white">Enable Schedule</span>
-								<p className="text-xs text-white/60 mt-0.5">
+								<span className="text-sm font-medium text-fg">Enable Schedule</span>
+								<p className="text-xs text-fg-muted mt-0.5">
 									Turn this schedule on or off without deleting it
 								</p>
 							</div>
@@ -216,11 +216,11 @@ export const TemplateScheduleModal = ({
 								type="checkbox"
 								checked={autoApply}
 								onChange={(e) => setAutoApply(e.target.checked)}
-								className="mt-1 h-4 w-4 rounded border-white/20 bg-white/10 text-primary focus:ring-2 focus:ring-primary/20"
+								className="mt-1 h-4 w-4 rounded border-border bg-bg-subtle text-primary focus:ring-2 focus:ring-primary/20"
 							/>
 							<div className="flex-1">
-								<span className="text-sm font-medium text-white">Auto-Apply Changes</span>
-								<p className="text-xs text-white/60 mt-0.5">
+								<span className="text-sm font-medium text-fg">Auto-Apply Changes</span>
+								<p className="text-xs text-fg-muted mt-0.5">
 									Automatically deploy changes to {instanceName} without manual approval
 								</p>
 							</div>
@@ -232,11 +232,11 @@ export const TemplateScheduleModal = ({
 								type="checkbox"
 								checked={notifyUser}
 								onChange={(e) => setNotifyUser(e.target.checked)}
-								className="mt-1 h-4 w-4 rounded border-white/20 bg-white/10 text-primary focus:ring-2 focus:ring-primary/20"
+								className="mt-1 h-4 w-4 rounded border-border bg-bg-subtle text-primary focus:ring-2 focus:ring-primary/20"
 							/>
 							<div className="flex-1">
-								<span className="text-sm font-medium text-white">Notify on Sync</span>
-								<p className="text-xs text-white/60 mt-0.5">
+								<span className="text-sm font-medium text-fg">Notify on Sync</span>
+								<p className="text-xs text-fg-muted mt-0.5">
 									Get notified when scheduled syncs complete
 								</p>
 							</div>
@@ -260,7 +260,7 @@ export const TemplateScheduleModal = ({
 				</div>
 
 				{/* Footer */}
-				<div className="flex justify-end gap-2 border-t border-white/10 bg-slate-900/95 p-6 backdrop-blur">
+				<div className="flex justify-end gap-2 border-t border-border bg-bg p-6">
 					<Button variant="secondary" onClick={onClose}>
 						Cancel
 					</Button>

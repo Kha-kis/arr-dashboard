@@ -10,7 +10,7 @@ import {
 import { Alert, AlertTitle, AlertDescription, EmptyState, Skeleton, Button } from "../../../components/ui";
 import { AlertCircle, Plus, Download, Copy, Trash2, Edit, FileText, RefreshCw, Star, Rocket, Layers, X } from "lucide-react";
 import { exportTemplate } from "../../../lib/api-client/templates";
-import { unlinkTemplateFromInstance } from "../../../lib/api-client/trash-guides";
+import { useUnlinkTemplateFromInstance } from "../../../hooks/api/useDeploymentPreview";
 import { TemplateStats } from "./template-stats";
 import { SyncValidationModal } from "./sync-validation-modal";
 import { SyncProgressModal } from "./sync-progress-modal";
@@ -59,6 +59,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 	const deleteMutation = useDeleteTemplate();
 	const duplicateMutation = useDuplicateTemplate();
 	const executeSync = useExecuteSync();
+	const unlinkMutation = useUnlinkTemplateFromInstance();
 	const queryClient = useQueryClient();
 
 	const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
@@ -97,7 +98,6 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 		instanceId: string;
 		instanceName: string;
 	} | null>(null);
-	const [unlinking, setUnlinking] = useState(false);
 	const [bulkDeployModal, setBulkDeployModal] = useState<{
 		templateId: string;
 		templateName: string;
@@ -165,26 +165,24 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 		// Optionally refetch templates or show success message
 	};
 
-	const handleUnlinkInstance = async () => {
+	const handleUnlinkInstance = () => {
 		if (!unlinkConfirm) return;
 
-		setUnlinking(true);
-		try {
-			await unlinkTemplateFromInstance({
+		unlinkMutation.mutate(
+			{
 				templateId: unlinkConfirm.templateId,
 				instanceId: unlinkConfirm.instanceId,
-			});
-			// Refetch templates and stats after unlinking
-			queryClient.invalidateQueries({ queryKey: ["trash-guides", "templates"] });
-			queryClient.invalidateQueries({ queryKey: ["template-stats", unlinkConfirm.templateId] });
-			setUnlinkConfirm(null);
-		} catch (error) {
-			console.error("Unlink failed:", error);
-			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
-			toast.error("Failed to unlink template from instance", { description: errorMessage });
-		} finally {
-			setUnlinking(false);
-		}
+			},
+			{
+				onSuccess: () => {
+					setUnlinkConfirm(null);
+				},
+				onError: (error) => {
+					console.error("Unlink failed:", error);
+					toast.error("Failed to unlink template from instance", { description: error.message });
+				},
+			}
+		);
 	};
 
 	if (isLoading) {
@@ -447,16 +445,19 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 									</div>
 
 									{/* Update Notification Banner */}
-									{updatesData?.data.templatesWithUpdates.find((u) => u.templateId === template.id) && (
-										<TemplateUpdateBanner
-											update={updatesData.data.templatesWithUpdates.find((u) => u.templateId === template.id)!}
-											onSyncSuccess={() => {
-												// Refetch templates and updates after successful sync
-												queryClient.invalidateQueries({ queryKey: ["trash-guides", "templates"] });
-												queryClient.invalidateQueries({ queryKey: ["trash-guides", "updates"] });
-											}}
-										/>
-									)}
+									{(() => {
+										const templateUpdate = updatesData?.data.templatesWithUpdates.find((u) => u.templateId === template.id);
+										return templateUpdate ? (
+											<TemplateUpdateBanner
+												update={templateUpdate}
+												onSyncSuccess={() => {
+													// Refetch templates and updates after successful sync
+													queryClient.invalidateQueries({ queryKey: ["trash-guides", "templates"] });
+													queryClient.invalidateQueries({ queryKey: ["trash-guides", "updates"] });
+												}}
+											/>
+										) : null;
+									})()}
 								</div>
 
 								{/* Fixed bottom section - always aligned across cards */}
@@ -752,17 +753,17 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 								<Button
 									variant="secondary"
 									onClick={() => setUnlinkConfirm(null)}
-									disabled={unlinking}
+									disabled={unlinkMutation.isPending}
 								>
 									Cancel
 								</Button>
 								<Button
 									variant="danger"
 									onClick={handleUnlinkInstance}
-									disabled={unlinking}
+									disabled={unlinkMutation.isPending}
 									className="gap-2"
 								>
-									{unlinking ? (
+									{unlinkMutation.isPending ? (
 										<>
 											<RefreshCw className="h-4 w-4 animate-spin" />
 											Unlinking...

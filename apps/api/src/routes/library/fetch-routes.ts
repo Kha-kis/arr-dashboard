@@ -41,8 +41,10 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			enabled: boolean;
 			service?: ServiceType | { in: ServiceType[] };
 			id?: string;
+			userId: string;
 		} = {
 			enabled: true,
+			userId: request.currentUser!.id,
 		};
 
 		if (parsed.instanceId) {
@@ -116,6 +118,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			where: {
 				id: parsed.instanceId,
 				enabled: true,
+				userId: request.currentUser?.id,
 			},
 		});
 

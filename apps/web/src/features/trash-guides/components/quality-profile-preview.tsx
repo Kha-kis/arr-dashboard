@@ -146,8 +146,8 @@ export function QualityProfilePreview({
 								The following custom formats were not found on the target instance:
 							</div>
 							<ul className="list-disc list-inside space-y-0.5">
-								{preview.customFormats.unmatched.map((cf) => (
-									<li key={cf}>{cf}</li>
+								{preview.customFormats.unmatched.map((cf, index) => (
+									<li key={`${index}-${cf}`}>{cf}</li>
 								))}
 							</ul>
 							<div className="mt-2 text-xs">
