@@ -616,7 +616,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 					});
 				}
 				const templateCf = templateConfigReset.customFormats?.find(
-					(cf: any) => cf.originalConfig?.id === customFormatIdNum,
+					(cf: any) => cf.originalConfig?._instanceCFId === customFormatIdNum,
 				);
 
 				// Calculate the template score (if CF not in template, default to 0)
