@@ -232,6 +232,7 @@ export const LibraryCard = ({
 				<div className="flex gap-3">
 					<div className="h-36 w-24 overflow-hidden rounded-lg border border-border bg-bg-hover shadow-md flex-shrink-0">
 						{item.poster ? (
+							/* eslint-disable-next-line @next/next/no-img-element -- External poster from arr instance */
 							<img src={item.poster} alt={item.title} className="h-full w-full object-cover" />
 						) : (
 							<div className="flex h-full w-full items-center justify-center text-xs text-fg-muted">

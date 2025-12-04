@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useClonedCFValidation, useProfileMatch } from "../../../../hooks/api/useQualityProfiles";
 import { Alert, AlertDescription, Skeleton } from "../../../../components/ui";
 import {
@@ -203,7 +203,7 @@ export const CFResolution = ({
 	}, [profileMatchData]);
 
 	// Determine if a CF should be excluded (combines score logic and recommendation logic)
-	const shouldBeExcluded = (result: CFMatchResult): { excluded: boolean; reason: "score" | "recommendation" | null } => {
+	const shouldBeExcluded = useCallback((result: CFMatchResult): { excluded: boolean; reason: "score" | "recommendation" | null } => {
 		// First check score-based exclusion
 		if (shouldBeExcludedByScore(result)) {
 			return { excluded: true, reason: "score" };
@@ -217,7 +217,7 @@ export const CFResolution = ({
 		}
 
 		return { excluded: false, reason: null };
-	};
+	}, [useRecommendations, recommendedTrashIds]);
 
 	// Initialize decisions from initial resolutions or default based on match confidence
 	useEffect(() => {
@@ -245,7 +245,8 @@ export const CFResolution = ({
 
 			setDecisions(initialDecisions);
 		}
-	}, [data, initialResolutions]); // Remove decisions from deps to prevent re-runs
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- Intentionally exclude decisions to prevent re-initialization
+	}, [data, initialResolutions]);
 
 	// Split results into active, recommended (not configured), and excluded sections
 	// Takes into account: auto-excluded (score/recommendation logic), manually excluded, and manually included
@@ -300,7 +301,7 @@ export const CFResolution = ({
 		}
 
 		return { activeCFs: active, recommendedCFs: recommended, excludedCFs: excluded, exclusionReasons: reasons };
-	}, [data, includedExcluded, manuallyExcluded, useRecommendations, recommendedTrashIds]);
+	}, [data, includedExcluded, manuallyExcluded, shouldBeExcluded]);
 
 	// Filter and search results (applies to active CFs only for the main list)
 	const filteredResults = useMemo(() => {

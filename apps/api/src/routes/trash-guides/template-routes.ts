@@ -127,7 +127,7 @@ export async function registerTemplateRoutes(
 				const query = listTemplatesQuerySchema.parse(request.query);
 
 				const templates = await templateService.listTemplates({
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id,
 					serviceType: query.serviceType,
 					includeDeleted: query.includeDeleted,
 					active: query.active,
@@ -173,7 +173,7 @@ export async function registerTemplateRoutes(
 					});
 				}
 
-				const template = await templateService.createTemplate(request.currentUser?.id, body);
+				const template = await templateService.createTemplate(request.currentUser!.id, body);
 
 				return reply.status(201).send({ template });
 			} catch (error) {
@@ -196,7 +196,7 @@ export async function registerTemplateRoutes(
 			try {
 				const { templateId } = getTemplateParamsSchema.parse(request.params);
 
-				const template = await templateService.getTemplate(templateId, request.currentUser?.id);
+				const template = await templateService.getTemplate(templateId, request.currentUser!.id);
 
 				if (!template) {
 					return reply.status(404).send({
@@ -244,7 +244,7 @@ export async function registerTemplateRoutes(
 
 				const template = await templateService.updateTemplate(
 					templateId,
-					request.currentUser?.id,
+					request.currentUser!.id,
 					body,
 				);
 
@@ -278,7 +278,7 @@ export async function registerTemplateRoutes(
 			try {
 				const { templateId } = getTemplateParamsSchema.parse(request.params);
 
-				await templateService.deleteTemplate(templateId, request.currentUser?.id);
+				await templateService.deleteTemplate(templateId, request.currentUser!.id);
 
 				return reply.send({
 					message: "Template deleted successfully",
@@ -316,7 +316,7 @@ export async function registerTemplateRoutes(
 
 				const template = await templateService.duplicateTemplate(
 					templateId,
-					request.currentUser?.id,
+					request.currentUser!.id,
 					newName,
 				);
 
@@ -361,7 +361,7 @@ export async function registerTemplateRoutes(
 			try {
 				const { templateId } = getTemplateParamsSchema.parse(request.params);
 
-				const jsonData = await templateService.exportTemplate(templateId, request.currentUser?.id);
+				const jsonData = await templateService.exportTemplate(templateId, request.currentUser!.id);
 
 				reply.header("Content-Type", "application/json");
 				reply.header("Content-Disposition", `attachment; filename="template-${templateId}.json"`);
@@ -396,7 +396,7 @@ export async function registerTemplateRoutes(
 			try {
 				const { jsonData } = importTemplateSchema.parse(request.body);
 
-				const template = await templateService.importTemplate(request.currentUser?.id, jsonData);
+				const template = await templateService.importTemplate(request.currentUser!.id, jsonData);
 
 				return reply.status(201).send({
 					template,
@@ -439,7 +439,7 @@ export async function registerTemplateRoutes(
 			try {
 				const { templateId } = getTemplateParamsSchema.parse(request.params);
 
-				const stats = await templateService.getTemplateStats(templateId, request.currentUser?.id);
+				const stats = await templateService.getTemplateStats(templateId, request.currentUser!.id);
 
 				if (!stats) {
 					return reply.status(404).send({
@@ -477,7 +477,7 @@ export async function registerTemplateRoutes(
 			const template = await app.prisma.trashTemplate.findFirst({
 				where: {
 					id: templateId,
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id,
 				},
 			});
 
@@ -533,7 +533,7 @@ export async function registerTemplateRoutes(
 			const template = await app.prisma.trashTemplate.findFirst({
 				where: {
 					id: templateId,
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id,
 				},
 			});
 
@@ -599,7 +599,7 @@ export async function registerTemplateRoutes(
 			const template = await app.prisma.trashTemplate.findFirst({
 				where: {
 					id: templateId,
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id,
 				},
 			});
 
@@ -693,7 +693,7 @@ export async function registerTemplateRoutes(
 			const template = await app.prisma.trashTemplate.findFirst({
 				where: {
 					id: templateId,
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id,
 				},
 			});
 
@@ -709,7 +709,7 @@ export async function registerTemplateRoutes(
 			const instance = await app.prisma.serviceInstance.findFirst({
 				where: {
 					id: instanceId,
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id,
 				},
 			});
 
@@ -726,7 +726,7 @@ export async function registerTemplateRoutes(
 			const result = await deploymentExecutor.deploySingleInstance(
 				templateId,
 				instanceId,
-				request.currentUser?.id,
+				request.currentUser!.id,
 			);
 
 			return reply.send({
@@ -776,7 +776,7 @@ export async function registerTemplateRoutes(
 			const template = await app.prisma.trashTemplate.findFirst({
 				where: {
 					id: templateId,
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id,
 				},
 			});
 
@@ -792,7 +792,7 @@ export async function registerTemplateRoutes(
 			const instances = await app.prisma.serviceInstance.findMany({
 				where: {
 					id: { in: instanceIds },
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id,
 				},
 			});
 
@@ -809,7 +809,7 @@ export async function registerTemplateRoutes(
 			const result = await deploymentExecutor.deployBulkInstances(
 				templateId,
 				instanceIds,
-				request.currentUser?.id,
+				request.currentUser!.id,
 			);
 
 			return reply.send({

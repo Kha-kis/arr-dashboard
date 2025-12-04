@@ -10,7 +10,7 @@ import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
 import { createCFMatcher, type InstanceCustomFormat } from "../../lib/trash-guides/cf-matcher.js";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
-import type { CompleteQualityProfile, TrashQualityProfile, TrashCustomFormatGroup, TrashCustomFormat, TemplateConfig } from "@arr/shared";
+import type { CompleteQualityProfile, TrashQualityProfile, TrashCustomFormatGroup, TrashCustomFormat, TemplateConfig, CustomFormatSpecification } from "@arr/shared";
 
 // ============================================================================
 // Routes
@@ -877,7 +877,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 							conditionsEnabled: selection.conditionsEnabled || {},
 							originalConfig: {
 								name: instanceCF.name,
-								specifications: instanceCF.specifications,
+								specifications: (instanceCF.specifications ?? []) as CustomFormatSpecification[],
 								// Mark as instance-sourced for future reference
 								_source: "instance",
 								_instanceId: sourceInstanceId,

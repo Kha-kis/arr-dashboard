@@ -118,6 +118,13 @@ const FIELD_PRESETS_REGEX: Record<string, string[]> = {
 	edition: ["Director.*Cut", "Extended", "Unrated", "IMAX", "Remastered", "Theatrical"],
 };
 
+// Positional operators that cannot use lookahead approach (use anchors in pattern)
+const POSITIONAL_OPERATORS = ["startsWith", "endsWith", "equals"];
+
+// Operators that use anchors in their patterns and break when wrapped in lookaheads
+// These need special handling for AND combinations
+const ANCHOR_OPERATORS = ["notContains", "isEmpty"];
+
 export function VisualConditionBuilder({ onPatternChange, onClose }: VisualConditionBuilderProps) {
 	const [conditions, setConditions] = useState<Condition[]>(() => [
 		{
@@ -129,13 +136,6 @@ export function VisualConditionBuilder({ onPatternChange, onClose }: VisualCondi
 		},
 	]);
 	const [logicOperator, setLogicOperator] = useState<"AND" | "OR">("AND");
-
-	// Positional operators that cannot use lookahead approach (use anchors in pattern)
-	const POSITIONAL_OPERATORS = ["startsWith", "endsWith", "equals"];
-
-	// Operators that use anchors in their patterns and break when wrapped in lookaheads
-	// These need special handling for AND combinations
-	const ANCHOR_OPERATORS = ["notContains", "isEmpty"];
 
 	// Generate regex pattern from conditions
 	const { generatedPattern, hasPositionalAnd, hasMixedCaseSensitivity } = useMemo(() => {

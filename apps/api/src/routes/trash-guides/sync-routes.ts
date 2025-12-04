@@ -86,7 +86,7 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 	 */
 	app.post("/validate", async (request: FastifyRequest, reply) => {
 		const body = validateSyncSchema.parse(request.body);
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 
 		const validation = await syncEngine.validate({
 			templateId: body.templateId,
@@ -104,7 +104,7 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 	 */
 	app.post("/execute", async (request: FastifyRequest, reply) => {
 		const body = executeSyncSchema.parse(request.body);
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 
 		// Convert conflictResolutions object to Map
 		const resolutionsMap = body.conflictResolutions

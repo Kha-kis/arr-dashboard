@@ -97,7 +97,7 @@ export const ManualImportModal = ({
 		setSelectionError(undefined);
 		setShowSelectedOnly(false);
 		setImportMode("auto");
-	}, [open, clear, instanceId, service, downloadId, folder]);
+	}, [open, clear, instanceId, service, downloadId, folder, setSelectionError]);
 
 	const visibleCandidates = useMemo(() => {
 		let list = candidates;
@@ -118,7 +118,7 @@ export const ManualImportModal = ({
 			}
 			onOpenChange(next);
 		},
-		[clear, onOpenChange],
+		[clear, onOpenChange, setSelectionError],
 	);
 
 	const handleToggleCandidate = useCallback(

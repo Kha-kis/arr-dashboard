@@ -73,7 +73,7 @@ export async function registerSettingsRoutes(
 	app.get(
 		"/",
 		async (request: FastifyRequest, reply: FastifyReply) => {
-			const userId = request.currentUser?.id;
+			const userId = request.currentUser!.id;
 
 			// Get or create settings
 			let settings = await app.prisma.trashSettings.findUnique({
@@ -118,7 +118,7 @@ export async function registerSettingsRoutes(
 	app.patch(
 		"/",
 		async (request: FastifyRequest, reply: FastifyReply) => {
-			const userId = request.currentUser?.id;
+			const userId = request.currentUser!.id;
 
 			// Validate request body
 			const parseResult = updateSettingsSchema.safeParse(request.body);
@@ -157,7 +157,7 @@ export async function registerSettingsRoutes(
 	app.get(
 		"/backup-stats",
 		async (request: FastifyRequest, reply: FastifyReply) => {
-			const userId = request.currentUser?.id;
+			const userId = request.currentUser!.id;
 
 			// Get user's settings
 			const settings = await app.prisma.trashSettings.findUnique({

@@ -110,7 +110,7 @@ export const CustomFormatsBrowser = () => {
 		const service = Array.from(selectedServicesSet)[0];
 		// Case-insensitive comparison since API returns lowercase "radarr"/"sonarr"
 		return instances.filter(inst => inst.service.toUpperCase() === service);
-	}, [instances, selectedFormats, customFormats]);
+	}, [instances, selectedFormats]);
 
 	// Helper to create combined selection key
 	const getSelectionKey = (format: { service: string; trash_id: string }) =>

@@ -82,9 +82,10 @@ const buildProwlarrRows = (
 export const useStatisticsData = () => {
 	const { data, isLoading, isFetching, error, refetch } = useDashboardStatisticsQuery();
 
-	const sonarrInstances = data?.sonarr.instances ?? [];
-	const radarrInstances = data?.radarr.instances ?? [];
-	const prowlarrInstances = data?.prowlarr.instances ?? [];
+	// Memoize instance arrays to prevent dependency changes on every render
+	const sonarrInstances = useMemo(() => data?.sonarr.instances ?? [], [data?.sonarr.instances]);
+	const radarrInstances = useMemo(() => data?.radarr.instances ?? [], [data?.radarr.instances]);
+	const prowlarrInstances = useMemo(() => data?.prowlarr.instances ?? [], [data?.prowlarr.instances]);
 
 	const sonarrRows = useMemo(() => buildSonarrRows(sonarrInstances), [sonarrInstances]);
 	const radarrRows = useMemo(() => buildRadarrRows(radarrInstances), [radarrInstances]);

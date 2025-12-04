@@ -52,7 +52,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	app.get("/services", async (request, reply) => {
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId: request.currentUser?.id },
+			where: { userId: request.currentUser!.id },
 			include: {
 				tags: {
 					include: {
@@ -89,7 +89,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		const created = await app.prisma.serviceInstance.create({
 			data: {
-				userId: request.currentUser?.id,
+				userId: request.currentUser!.id,
 				service: serviceEnum,
 				encryptedApiKey: encrypted.value,
 				encryptionIv: encrypted.iv,

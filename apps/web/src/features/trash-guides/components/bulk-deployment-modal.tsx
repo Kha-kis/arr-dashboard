@@ -73,7 +73,7 @@ const SyncStrategySelector = ({
 	disabled?: boolean;
 }) => {
 	const [isOpen, setIsOpen] = useState(false);
-	const current = syncStrategyOptions.find((opt) => opt.value === value) ?? syncStrategyOptions[0];
+	const current = syncStrategyOptions.find((opt) => opt.value === value) ?? syncStrategyOptions[0]!;
 	const Icon = current.icon;
 
 	return (
@@ -198,7 +198,8 @@ export const BulkDeploymentModal = ({
 			setSyncStrategies({});
 			bulkDeployMutation.reset();
 		}
-	}, [open]); // Intentionally exclude bulkDeployMutation to avoid reset loops
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- Intentionally exclude bulkDeployMutation to avoid reset loops
+	}, [open]);
 
 	const toggleInstance = (instanceId: string) => {
 		setSelectedInstances((prev) => {

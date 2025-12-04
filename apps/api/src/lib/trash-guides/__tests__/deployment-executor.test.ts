@@ -100,11 +100,11 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 	});
 
 	it("should return null when specifications are undefined", () => {
-		const cf: CustomFormat = {
+		const cf = {
 			id: 1,
 			name: "Test CF",
 			specifications: undefined,
-		};
+		} as any;
 
 		const trashId = (service as any).extractTrashId(cf);
 		expect(trashId).toBeNull();

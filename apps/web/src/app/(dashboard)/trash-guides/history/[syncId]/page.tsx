@@ -30,7 +30,8 @@ const STATUS_COLORS = {
 export default function SyncDetailPage() {
 	const params = useParams();
 	const router = useRouter();
-	const syncId = Array.isArray(params.syncId) ? params.syncId[0] : (params.syncId as string);
+	const rawSyncId = Array.isArray(params.syncId) ? params.syncId[0] : params.syncId;
+	const syncId = rawSyncId ?? null;
 
 	const { data: sync, isLoading, error } = useSyncDetail(syncId);
 	const rollbackMutation = useRollbackSync();
@@ -51,7 +52,7 @@ export default function SyncDetailPage() {
 
 		try {
 			await rollbackMutation.mutateAsync({
-				syncId,
+				syncId: syncId!,
 				instanceId: sync.instanceId,
 			});
 			setShowRollbackConfirm(false);

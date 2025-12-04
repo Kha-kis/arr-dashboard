@@ -91,6 +91,7 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 					<div className="flex gap-4">
 						{item.poster && (
 							<div className="h-48 w-32 overflow-hidden rounded-lg border border-border bg-bg-muted shadow-md flex-shrink-0">
+								{/* eslint-disable-next-line @next/next/no-img-element -- External poster from arr instance */}
 								<img src={item.poster} alt={item.title} className="h-full w-full object-cover" />
 							</div>
 						)}

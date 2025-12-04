@@ -64,11 +64,14 @@ export class EnhancedTemplateService {
 		}
 
 		if (!options.includeCustomConditions) {
-			// Remove custom specification modifications
+			// Remove custom specification modifications from originalConfig
 			if (config.customFormats) {
 				config.customFormats = config.customFormats.map((cf: TemplateCustomFormat) => {
-					const { specifications, ...rest } = cf;
-					return rest as TemplateCustomFormat;
+					if (cf.originalConfig?.specifications) {
+						const { specifications: _specifications, ...restOriginal } = cf.originalConfig;
+						return { ...cf, originalConfig: restOriginal } as TemplateCustomFormat;
+					}
+					return cf;
 				});
 			}
 		}
@@ -173,11 +176,14 @@ export class EnhancedTemplateService {
 			}
 
 			if (!options.includeCustomConditions) {
-				// Remove custom specification modifications
+				// Remove custom specification modifications from originalConfig
 				if (config.customFormats) {
 					config.customFormats = config.customFormats.map((cf: TemplateCustomFormat) => {
-						const { specifications, ...rest } = cf;
-						return rest as TemplateCustomFormat;
+						if (cf.originalConfig?.specifications) {
+							const { specifications: _specifications, ...restOriginal } = cf.originalConfig;
+							return { ...cf, originalConfig: restOriginal } as TemplateCustomFormat;
+						}
+						return cf;
 					});
 				}
 			}
