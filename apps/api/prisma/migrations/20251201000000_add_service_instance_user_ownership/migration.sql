@@ -5,43 +5,31 @@
 -- SAFETY GUARD: Prevent data loss when ServiceInstances exist but no Users
 -- ============================================================================
 -- SQLite doesn't have procedural blocks like PostgreSQL's DO/RAISE EXCEPTION.
--- This guard creates a temporary table that will cause a UNIQUE constraint violation
--- if the dangerous condition is detected (instances exist but no users).
--- The error message will guide operators to create a user first.
+-- This guard uses a CHECK constraint violation to abort the migration if
+-- ServiceInstances exist but no Users are found.
 
--- Create a guard table to detect dangerous condition
-CREATE TEMPORARY TABLE IF NOT EXISTS "_migration_guard" (
-    "check_name" TEXT PRIMARY KEY,
-    "message" TEXT NOT NULL
+-- Create a guard table that will fail with a constraint violation if the
+-- dangerous condition is detected (instances exist but no users).
+CREATE TABLE "_migration_safety_check" (
+    "id" INTEGER PRIMARY KEY,
+    "status" TEXT NOT NULL CHECK("status" != 'BLOCKED')
 );
 
--- This INSERT succeeds only if there are NO ServiceInstances OR there IS at least one User
--- If ServiceInstances exist AND no Users exist, the SELECT returns a row
--- which will be inserted, and then we force an error
-INSERT INTO "_migration_guard" ("check_name", "message")
-SELECT
-    'MIGRATION_BLOCKED',
-    'ERROR: Cannot migrate ServiceInstance table - instances exist but no users found. ' ||
-    'This migration would silently DROP all existing ServiceInstance data. ' ||
-    'Please create at least one user before running this migration. ' ||
-    'Run: INSERT INTO User (id, email, name, createdAt, updatedAt) VALUES (...)'
-WHERE EXISTS (SELECT 1 FROM "ServiceInstance")
-  AND NOT EXISTS (SELECT 1 FROM "User");
+-- Insert 'OK' if safe, 'BLOCKED' if dangerous - the CHECK constraint will reject 'BLOCKED'
+-- This safely handles all cases:
+-- 1. No ServiceInstances exist -> inserts 'OK' (safe)
+-- 2. ServiceInstances exist AND Users exist -> inserts 'OK' (safe)
+-- 3. ServiceInstances exist AND no Users -> inserts 'BLOCKED' (fails with constraint violation)
+INSERT INTO "_migration_safety_check" ("id", "status")
+SELECT 1,
+    CASE
+        WHEN EXISTS (SELECT 1 FROM "ServiceInstance") AND NOT EXISTS (SELECT 1 FROM "User")
+        THEN 'BLOCKED'
+        ELSE 'OK'
+    END;
 
--- Force an error if the guard was triggered by selecting from a non-existent table
--- The table name encodes the error message for clarity in logs
-SELECT CASE
-    WHEN EXISTS (SELECT 1 FROM "_migration_guard" WHERE "check_name" = 'MIGRATION_BLOCKED')
-    THEN (
-        -- This subquery forces a runtime error by referencing a deliberately non-existent table
-        -- The table name contains the error message for visibility in error logs
-        SELECT "error" FROM "MIGRATION_ABORTED__ServiceInstances_exist_but_no_Users__Create_a_user_first"
-    )
-    ELSE 'OK'
-END AS "migration_guard_check";
-
--- Clean up guard table
-DROP TABLE IF EXISTS "_migration_guard";
+-- If we reach here, the check passed - clean up
+DROP TABLE "_migration_safety_check";
 
 -- ============================================================================
 -- END SAFETY GUARD
