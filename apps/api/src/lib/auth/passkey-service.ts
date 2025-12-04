@@ -15,9 +15,58 @@ import {
 } from "@simplewebauthn/server";
 import { isoBase64URL } from "@simplewebauthn/server/helpers";
 
-// Polyfill WebCrypto for Node.js < 19
-if (!globalThis.crypto) {
-	globalThis.crypto = webcrypto as typeof globalThis.crypto;
+/**
+ * Verify that a crypto implementation has the required Web Crypto API methods.
+ * @simplewebauthn/server requires getRandomValues() and crypto.subtle for cryptographic operations.
+ */
+function hasRequiredCryptoMethods(cryptoImpl: unknown): cryptoImpl is Crypto {
+	if (!cryptoImpl || typeof cryptoImpl !== "object") {
+		return false;
+	}
+
+	const crypto = cryptoImpl as Record<string, unknown>;
+
+	// Check for getRandomValues method (required for random value generation)
+	if (typeof crypto.getRandomValues !== "function") {
+		return false;
+	}
+
+	// Check for subtle property (required for cryptographic operations)
+	if (!crypto.subtle || typeof crypto.subtle !== "object") {
+		return false;
+	}
+
+	// Verify subtle has required methods (at minimum, we need encrypt/decrypt/sign/verify)
+	const subtle = crypto.subtle as Record<string, unknown>;
+	const requiredMethods = ["encrypt", "decrypt", "sign", "verify", "generateKey"];
+	for (const method of requiredMethods) {
+		if (typeof subtle[method] !== "function") {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+/**
+ * Polyfill WebCrypto for Node.js < 19
+ * 
+ * Safely checks for existing crypto implementation and verifies compatibility
+ * before using webcrypto as a fallback. This prevents runtime errors from
+ * incomplete or incompatible crypto implementations.
+ */
+if (!hasRequiredCryptoMethods(globalThis.crypto)) {
+	// Verify webcrypto has required methods before using as fallback
+	if (hasRequiredCryptoMethods(webcrypto)) {
+		globalThis.crypto = webcrypto as typeof globalThis.crypto;
+	} else {
+		// This should not happen on Node.js 15+ where webcrypto is available
+		// But we provide a clear error message if it does
+		throw new Error(
+			"Web Crypto API is not available. This application requires Node.js 15+ with Web Crypto API support. " +
+			"Please upgrade to Node.js 19+ for native support, or ensure webcrypto is available in your Node.js version.",
+		);
+	}
 }
 
 /**
