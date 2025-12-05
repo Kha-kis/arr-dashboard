@@ -843,7 +843,7 @@ export class TemplateUpdater {
 		}
 
 		// Determine target commit (default to latest)
-		let targetCommit: { commitHash: string; commitDate: Date };
+		let targetCommit: VersionInfo;
 		try {
 			targetCommit = targetCommitHash
 				? await this.versionTracker.getCommitInfo(targetCommitHash)
