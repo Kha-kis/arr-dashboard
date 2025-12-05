@@ -1,32 +1,65 @@
 # Arr Dashboard
 
-> **⚠️ Version 2.0 - Complete Rewrite**
-> This is a ground-up rewrite with modern architecture, zero-config Docker deployment, and improved features. Not compatible with v1.x.
+> **Version 2.4** - Now with TRaSH Guides Integration
 
-A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances.
+A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
 [![CI](https://github.com/Kha-kis/arr-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/Kha-kis/arr-dashboard/actions/workflows/ci.yml)
+[![Docker Pulls](https://img.shields.io/docker/pulls/khak1s/arr-dashboard)](https://hub.docker.com/r/khak1s/arr-dashboard)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+## Screenshots
+
+<details>
+<summary>Click to expand screenshots</summary>
+
+<!-- TODO: Add screenshots -->
+- Dashboard view
+- Library management
+- TRaSH Guides templates
+- Settings interface
+
+</details>
 
 ## Features
 
-- 📊 **Unified Dashboard** - View queue, calendar, and history across all instances
-- 🔍 **Global Search** - Search for content across all your indexers
-- 📚 **Library Management** - Manage your movies and TV shows in one place
-- 📈 **Statistics** - View aggregated statistics and health monitoring
-- 🎬 **Discover** - Find new content with TMDB integration
-- 🏷️ **Tag Management** - Organize instances with custom tags
-- 🔒 **Secure** - Encrypted API keys, session management, and rate limiting
-- 🔐 **Multi-Authentication** - Password, OIDC (Authelia/Authentik), or Passkeys (WebAuthn)
-- 💾 **Backup & Restore** - Encrypted backups for easy migration and disaster recovery
+### Core Features
+- **Unified Dashboard** - View queue, calendar, and history across all Sonarr/Radarr instances
+- **Global Search** - Search for content across all your indexers simultaneously
+- **Library Management** - Manage your movies and TV shows in one place
+- **Statistics & Health** - View aggregated statistics and monitor instance health
+- **Calendar View** - See upcoming releases across all instances
+- **History Tracking** - View download and import history from all services
 
-## Quick Start with Docker (Recommended)
+### Content Discovery
+- **TMDB Integration** - Discover trending, popular, and upcoming content
+- **One-Click Add** - Add discovered content to any Radarr/Sonarr instance
+- **Search Integration** - Search TMDB directly and add results to your library
 
-### Prerequisites
+### TRaSH Guides Integration (New!)
+- **Quality Profiles** - Apply TRaSH Guides quality profiles to your instances
+- **Custom Formats** - Sync custom formats with recommended scores
+- **Templates** - Create reusable configuration templates
+- **Auto-Sync** - Keep your configurations up-to-date with TRaSH Guides
+- **Deployment Preview** - Preview changes before applying to instances
+- **Conflict Resolution** - Smart handling of configuration conflicts
+- **Backup & Rollback** - Automatic backups before changes with rollback support
 
-- Docker and Docker Compose installed
-- At least one Sonarr, Radarr, or Prowlarr instance
+### Security & Authentication
+- **Multi-Auth Support** - Password, OIDC (Authelia/Authentik), or Passkeys (WebAuthn)
+- **Encrypted Storage** - All API keys encrypted at rest (AES-256-GCM)
+- **Session Management** - Secure HTTP-only cookie sessions
+- **Rate Limiting** - Built-in protection against abuse
+- **Zero-Config Security** - Auto-generated encryption keys
 
-### Using Docker Run
+### Management
+- **Tag Organization** - Organize instances with custom tags
+- **Backup & Restore** - Encrypted backups for easy migration and disaster recovery
+- **Multi-Instance** - Manage unlimited Sonarr, Radarr, and Prowlarr instances
+
+## Quick Start
+
+### Docker (Recommended)
 
 ```bash
 docker run -d \
@@ -37,9 +70,7 @@ docker run -d \
   khak1s/arr-dashboard:latest
 ```
 
-### Using Docker Compose
-
-Create a `docker-compose.yml` file:
+### Docker Compose
 
 ```yaml
 services:
@@ -53,175 +84,65 @@ services:
     restart: unless-stopped
 ```
 
-Then start the container:
+Then start:
 
 ```bash
 docker-compose up -d
 ```
 
-**Version Tags:**
-- `latest` - Latest stable release (currently v2.2.0)
-- `2.2.0` - Latest stable version with OIDC and passkey authentication
-- `2.1.1` - Previous stable version
-
-**For Unraid users:** See [UNRAID_DEPLOYMENT.md](UNRAID_DEPLOYMENT.md) for step-by-step installation instructions.
-
-### Building from Source (Optional)
-
-If you prefer to build the image yourself:
-
-```bash
-# Clone the repository
-git clone https://github.com/Kha-kis/arr-dashboard.git
-cd arr-dashboard
-
-# Build and start
-docker build -t arr-dashboard:latest .
-docker run -d --name arr-dashboard -p 3000:3000 -v ./data:/app/data arr-dashboard:latest
-```
-
-**First Time Setup:**
+### First Time Setup
 
 1. Open `http://your-server-ip:3000`
-2. Create your admin account on first run (supports Password, OIDC, or Passkey authentication)
+2. Create your admin account on first run
 3. Add your Sonarr/Radarr/Prowlarr instances in Settings
+4. Start managing your media!
 
-For authentication setup details, see [AUTHENTICATION.md](AUTHENTICATION.md).
+## Version Tags
 
-For backup and restore instructions, see [BACKUP_RESTORE.md](BACKUP_RESTORE.md).
-
-**Parameters:**
-
-| Parameter | Function |
-|-----------|----------|
-| `-p 3000:3000` | Web UI port |
-| `-v ./data:/app/data` | Database and configuration storage |
-
-## Manual Installation (Development)
-
-### Prerequisites
-
-- Node.js 20 or higher
-- pnpm 9.12.0 or higher
-
-### Installation Steps
-
-```bash
-# Install dependencies
-pnpm install
-
-# Configure environment
-cp apps/api/.env.example apps/api/.env
-
-# Edit apps/api/.env with your configuration
-# Generate secure keys for ENCRYPTION_KEY and SESSION_COOKIE_SECRET
-
-# Generate Prisma client
-cd apps/api
-pnpm run db:generate
-
-# Run database migrations
-pnpm run db:migrate
-
-# Return to root
-cd ../..
-
-# Start development servers
-pnpm run dev
-```
-
-The API will be available at `http://localhost:3001` and the web app at `http://localhost:3000`.
-
-## Production Deployment
-
-### Building for Production
-
-```bash
-# Build all packages
-pnpm run build
-
-# Run database migrations
-cd apps/api
-pnpm run db:migrate
-
-# Start production servers
-cd apps/api
-pnpm run start
-
-# In another terminal
-cd apps/web
-pnpm run start
-```
-
-### Docker Deployment
-
-**Using Pre-built Image (Recommended):**
-
-```bash
-docker-compose up -d
-```
-
-Image available at: [khak1s/arr-dashboard](https://hub.docker.com/r/khak1s/arr-dashboard)
-
-**Building from Source:**
-
-```bash
-docker build -t arr-dashboard:latest .
-docker run -d --name arr-dashboard -p 3000:3000 -v ./data:/app/data arr-dashboard:latest
-```
+| Tag | Description |
+|-----|-------------|
+| `latest` | Latest stable release |
+| `2.4.x` | Current version with TRaSH Guides integration |
+| `2.3.x` | Stability improvements and bug fixes |
+| `2.2.x` | OIDC and Passkey authentication |
 
 ## Configuration
 
-### Zero Configuration Required! 🎉
+### Zero Configuration Required
 
-The application auto-generates all necessary security keys on first run and persists them to the Docker volume.
+The application auto-generates all necessary security keys on first run. No environment variables needed for basic operation.
 
-### Optional: Advanced Configuration
-
-See `.env.production.example` for advanced customization options.
-
-**When you might need custom configuration:**
-- **Migration**: Preserve encryption keys from another installation
-- **Compliance**: Corporate security requires specific key management
-- **Port Conflicts**: Default ports 3000/3001 are already in use
-- **Network Setup**: Custom reverse proxy or network configuration
-
-To customize, create a `.env` file with your overrides. See the example file for details.
-
-### User-Configurable Settings (in Settings Page)
-
-These are set per-user in the web interface, not in environment variables:
-
-| Setting | Where | Description |
-|---------|-------|-------------|
-| **TMDB API Key** | Settings → Account | For trending/popular content in Discover page |
-| **Service Instances** | Settings → Services | Sonarr, Radarr, and Prowlarr connections |
-| **Tags** | Settings → Tags | Organize and filter instances |
-
-### Advanced Configuration (Built-in Defaults)
-
-These are managed by the application and don't need to be set:
+### Optional Environment Variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `API_PORT` | `3001` | API server port |
-| `API_HOST` | `0.0.0.0` | API bind address |
-| `API_CORS_ORIGIN` | `http://localhost:3000` | Allowed CORS origins |
-| `SESSION_TTL_HOURS` | `24` | Session expiration |
+| `DATABASE_URL` | `file:/app/data/prod.db` | Database connection string |
+| `SESSION_TTL_HOURS` | `24` | Session expiration time |
 | `API_RATE_LIMIT_MAX` | `200` | Max requests per minute |
-| `APP_URL` | `http://localhost:3000` | Frontend URL |
 
-To override defaults, add them to your `.env` file or docker-compose.yml.
+### User Settings (Web Interface)
 
-### Database
+Configure these in Settings after login:
+- **TMDB API Key** - For Discover page trending/popular content
+- **Service Instances** - Sonarr, Radarr, Prowlarr connections
+- **Tags** - Organize and filter instances
+- **TRaSH Guides Templates** - Quality profile configurations
 
-By default, the application uses SQLite for data storage. The database file is stored in:
-- Development: `apps/api/dev.db`
-- Docker: `/app/data/prod.db` (persisted in volume)
+## Platform Support
+
+### Unraid
+
+Community Applications template available. See [UNRAID_DEPLOYMENT.md](UNRAID_DEPLOYMENT.md) for detailed instructions.
+
+### Synology/QNAP
+
+Use Docker Compose method with appropriate volume paths.
+
+### Kubernetes
+
+Helm charts coming soon. For now, use standard Kubernetes manifests with the Docker image.
 
 ## Architecture
-
-This is a monorepo using pnpm workspaces and Turbo:
 
 ```
 arr-dashboard/
@@ -229,83 +150,80 @@ arr-dashboard/
 │   ├── api/          # Fastify API server
 │   └── web/          # Next.js 14 frontend (App Router)
 └── packages/
-    └── shared/       # Shared TypeScript types and schemas
+    └── shared/       # Shared TypeScript types and Zod schemas
 ```
 
 ### Technology Stack
 
-- **Frontend**: Next.js 14, React 18, TailwindCSS, Tanstack Query
-- **Backend**: Fastify 4, Prisma, Lucia Auth
-- **Database**: SQLite (default), supports PostgreSQL/MySQL
-- **Validation**: Zod schemas
-- **Build**: Turbo, pnpm workspaces
+| Layer | Technology |
+|-------|------------|
+| Frontend | Next.js 14, React 18, TailwindCSS, Tanstack Query |
+| Backend | Fastify 4, Prisma ORM, Lucia Auth |
+| Database | SQLite (default), PostgreSQL, MySQL |
+| Validation | Zod schemas (shared between frontend/backend) |
+| Build | Turbo, pnpm workspaces |
 
-## Database Setup
+## Development
 
-### Automatic Migrations (Docker)
+### Prerequisites
 
-When using Docker, migrations run automatically on container startup. The startup script:
-1. Runs `prisma migrate deploy` to apply pending migrations
-2. Starts the API server
+- Node.js 20+
+- pnpm 9.12.0+
 
-### Manual Migrations
+### Setup
+
+```bash
+# Clone the repository
+git clone https://github.com/Kha-kis/arr-dashboard.git
+cd arr-dashboard
+
+# Install dependencies
+pnpm install
+
+# Start development servers
+pnpm run dev
+```
+
+The API runs at `http://localhost:3001` and the web app at `http://localhost:3000`.
+
+### Building from Source
+
+```bash
+# Build all packages
+pnpm run build
+
+# Build Docker image
+docker build -t arr-dashboard:local .
+```
+
+### Database Commands
 
 ```bash
 cd apps/api
 
-# Development - Push schema without creating migration
+# Development - push schema changes
 pnpm run db:push
 
-# Production - Apply migrations
+# Production - run migrations
 pnpm run db:migrate
+
+# Generate Prisma client
+pnpm run db:generate
 ```
 
-### Creating New Migrations
+## Security
 
-When you modify the Prisma schema:
+### Best Practices
 
-```bash
-cd apps/api
-npx prisma migrate dev --name your_migration_name
-```
+1. **Use HTTPS** - Set up a reverse proxy (nginx, Caddy, Traefik) with TLS
+2. **Keep Private** - Don't expose Sonarr/Radarr/Prowlarr directly to the internet
+3. **Regular Backups** - Use the built-in encrypted backup feature
+4. **Strong Passwords** - Use unique, strong passwords for all services
+5. **Keep Updated** - Pull latest Docker images regularly
 
-This will:
-1. Generate a new migration file
-2. Apply it to your development database
-3. Regenerate the Prisma Client
-
-## Resetting Admin Password
-
-If you forget your password (for password-based authentication):
-
-```bash
-cd apps/api
-pnpm run reset-admin-password
-```
-
-Follow the prompts to reset the password.
-
-**Note:** This only applies to password authentication. If you use OIDC or passkey authentication, password reset is not needed.
-
-## Security Considerations
-
-1. **Always generate unique, secure values** for `ENCRYPTION_KEY` and `SESSION_COOKIE_SECRET`
-2. **Never commit** `.env` files with real credentials
-3. **Use HTTPS** in production with a reverse proxy (nginx, Caddy, Traefik)
-4. **Keep your instances private** - Don't expose Sonarr/Radarr/Prowlarr to the internet
-5. **Regular backups** - Use the built-in encrypted backup feature (see [BACKUP_RESTORE.md](BACKUP_RESTORE.md))
-
-## Reverse Proxy Example (nginx)
+### Reverse Proxy Example (nginx)
 
 ```nginx
-server {
-    listen 80;
-    server_name dashboard.example.com;
-
-    # Redirect to HTTPS
-    return 301 https://$server_name$request_uri;
-}
-
 server {
     listen 443 ssl http2;
     server_name dashboard.example.com;
@@ -313,7 +231,6 @@ server {
     ssl_certificate /path/to/cert.pem;
     ssl_certificate_key /path/to/key.pem;
 
-    # Frontend
     location / {
         proxy_pass http://localhost:3000;
         proxy_http_version 1.1;
@@ -321,13 +238,6 @@ server {
         proxy_set_header Connection 'upgrade';
         proxy_set_header Host $host;
         proxy_cache_bypass $http_upgrade;
-    }
-
-    # API (if accessed directly)
-    location /api {
-        proxy_pass http://localhost:3001;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
     }
 }
 ```
@@ -337,66 +247,66 @@ server {
 ### Docker
 
 ```bash
-# Pull latest image
 docker-compose pull
-
-# Restart container
 docker-compose up -d
 ```
 
-### Manual
+### Manual Installation
 
 ```bash
-# Pull latest code
 git pull
-
-# Install dependencies
 pnpm install
-
-# Run migrations
-cd apps/api
-pnpm run db:migrate
-
-# Rebuild
-cd ../..
-pnpm run build
-
-# Restart services
+cd apps/api && pnpm run db:migrate
+cd ../.. && pnpm run build
 ```
 
 ## Troubleshooting
 
-### Port Already in Use
+### Common Issues
 
-If ports 3000 or 3001 are already in use, modify the ports in `docker-compose.yml`:
+| Issue | Solution |
+|-------|----------|
+| Port in use | Change port mapping: `-p 8080:3000` |
+| Database locked | Ensure only one instance is running |
+| Connection refused | Check container logs: `docker logs arr-dashboard` |
+| Login issues | Reset password: `pnpm run reset-admin-password` |
 
-```yaml
-ports:
-  - "8080:3000"  # Change 8080 to your desired port
-```
+### Getting Help
 
-### Database Locked Error
+1. Check container logs: `docker logs arr-dashboard`
+2. Review [existing issues](https://github.com/Kha-kis/arr-dashboard/issues)
+3. Open a new issue with:
+   - Version number
+   - Deployment method
+   - Error messages
+   - Steps to reproduce
 
-If you see "database is locked" errors:
-1. Ensure only one instance of the API is running
-2. Check file permissions on the database file
-3. Consider using PostgreSQL for multi-instance deployments
+## Documentation
 
-### Connection Issues
-
-If you can't access the dashboard:
-1. Ensure port 3000 is not already in use
-2. Check container logs: `docker logs arr-dashboard`
-3. Verify the container is running: `docker ps`
+- [Authentication Guide](AUTHENTICATION.md) - OIDC, Passkeys, and password setup
+- [Backup & Restore](BACKUP_RESTORE.md) - Encrypted backup system
+- [Unraid Deployment](UNRAID_DEPLOYMENT.md) - Unraid-specific instructions
+- [Development Guide](CLAUDE.md) - Technical architecture for contributors
 
 ## Contributing
 
-Contributions are welcome! Please open an issue or pull request.
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Submit a pull request
 
 ## License
 
-MIT License - see [LICENSE](LICENSE) for details
+MIT License - see [LICENSE](LICENSE) for details.
 
-## Support
+## Acknowledgments
 
-For issues and questions, please open an issue on GitHub.
+- [Sonarr](https://sonarr.tv/) / [Radarr](https://radarr.video/) / [Prowlarr](https://prowlarr.com/) - The amazing *arr stack
+- [TRaSH Guides](https://trash-guides.info/) - Quality profile recommendations
+- [TMDB](https://www.themoviedb.org/) - Movie and TV show metadata
+
+---
+
+**Made with love for the self-hosted community**
