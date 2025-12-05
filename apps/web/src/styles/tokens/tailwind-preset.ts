@@ -6,6 +6,7 @@
  */
 
 import type { Config } from "tailwindcss";
+import plugin from "tailwindcss/plugin";
 
 const preset: Partial<Config> = {
 	theme: {
@@ -17,6 +18,8 @@ const preset: Partial<Config> = {
 					subtle: "hsl(var(--color-bg-subtle) / <alpha-value>)",
 					muted: "hsl(var(--color-bg-muted) / <alpha-value>)",
 					overlay: "hsl(var(--color-bg-overlay) / <alpha-value>)",
+					hover: "hsl(var(--color-bg-subtle) / <alpha-value>)", // Same as subtle
+					active: "hsl(var(--color-bg-muted) / <alpha-value>)", // Same as muted
 				},
 				fg: {
 					DEFAULT: "hsl(var(--color-fg) / <alpha-value>)",
@@ -140,6 +143,48 @@ const preset: Partial<Config> = {
 			},
 		},
 	},
+	plugins: [
+		plugin(({ addUtilities }) => {
+			addUtilities({
+				// Semantic typography utilities
+				".text-h1": {
+					fontSize: "var(--text-3xl)",
+					lineHeight: "var(--leading-tight)",
+					fontWeight: "var(--font-bold)",
+				},
+				".text-h2": {
+					fontSize: "var(--text-2xl)",
+					lineHeight: "var(--leading-tight)",
+					fontWeight: "var(--font-bold)",
+				},
+				".text-h3": {
+					fontSize: "var(--text-xl)",
+					lineHeight: "var(--leading-normal)",
+					fontWeight: "var(--font-semibold)",
+				},
+				".text-h4": {
+					fontSize: "var(--text-lg)",
+					lineHeight: "var(--leading-normal)",
+					fontWeight: "var(--font-semibold)",
+				},
+				".text-body": {
+					fontSize: "var(--text-base)",
+					lineHeight: "var(--leading-normal)",
+					fontWeight: "var(--font-normal)",
+				},
+				".text-small": {
+					fontSize: "var(--text-sm)",
+					lineHeight: "var(--leading-normal)",
+					fontWeight: "var(--font-normal)",
+				},
+				".text-caption": {
+					fontSize: "var(--text-xs)",
+					lineHeight: "var(--leading-normal)",
+					fontWeight: "var(--font-normal)",
+				},
+			});
+		}),
+	],
 };
 
 export default preset;

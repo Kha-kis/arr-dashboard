@@ -1,6 +1,6 @@
 import { arrServiceTypeSchema } from "@arr/shared";
 import type { ServiceType } from "@prisma/client";
-import type { FastifyPluginCallback, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { testServiceConnection } from "../lib/services/connection-tester.js";
 import { formatServiceInstance } from "../lib/services/service-formatter.js";
@@ -40,21 +40,19 @@ const tagCreateSchema = z.object({
 });
 
 const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
-	const requireUser = (request: FastifyRequest, reply: FastifyReply) => {
-		if (!request.currentUser) {
-			reply.status(401).send({ error: "Unauthorized" });
-			return null;
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
 		}
-		return request.currentUser;
-	};
+	});
 
 	app.get("/services", async (request, reply) => {
-		const user = requireUser(request, reply);
-		if (!user) {
-			return;
-		}
-
 		const instances = await app.prisma.serviceInstance.findMany({
+			where: { userId: request.currentUser!.id },
 			include: {
 				tags: {
 					include: {
@@ -70,11 +68,6 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.post("/services", async (request, reply) => {
-		const user = requireUser(request, reply);
-		if (!user) {
-			return;
-		}
-
 		const parsed = servicePayloadSchema.safeParse(request.body);
 		if (!parsed.success) {
 			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
@@ -96,6 +89,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		const created = await app.prisma.serviceInstance.create({
 			data: {
+				userId: request.currentUser!.id,
 				service: serviceEnum,
 				encryptedApiKey: encrypted.value,
 				encryptionIv: encrypted.iv,
@@ -120,11 +114,6 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.put("/services/:id", async (request, reply) => {
-		const user = requireUser(request, reply);
-		if (!user) {
-			return;
-		}
-
 		const { id } = request.params as { id: string };
 		const parsed = serviceUpdateSchema.safeParse(request.body);
 		if (!parsed.success) {
@@ -132,8 +121,16 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		const payload = parsed.data;
+		const userId = request.currentUser!.id; // preHandler guarantees authentication
+		
+		// Verify instance exists and is owned by the current user.
+		// Including userId in the where clause ensures non-owned instances return null,
+		// preventing instance enumeration attacks (all non-owned instances return 404).
 		const existing = await app.prisma.serviceInstance.findFirst({
-			where: { id },
+			where: { 
+				id, 
+				userId 
+			},
 		});
 
 		if (!existing) {
@@ -164,8 +161,12 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			await updateInstanceTags(app.prisma, id, payload.tags);
 		}
 
-		const fresh = await app.prisma.serviceInstance.findUnique({
-			where: { id },
+		// Fetch updated instance - include userId to ensure we only get owned instances
+		const fresh = await app.prisma.serviceInstance.findFirst({
+			where: { 
+				id, 
+				userId 
+			},
 			include: { tags: { include: { tag: true } } },
 		});
 
@@ -179,15 +180,17 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.delete("/services/:id", async (request, reply) => {
-		const user = requireUser(request, reply);
-		if (!user) {
-			return;
-		}
-
 		const { id } = request.params as { id: string };
+		const userId = request.currentUser!.id; // preHandler guarantees authentication
 
+		// Verify instance exists and is owned by the current user.
+		// Including userId in the where clause ensures non-owned instances return null,
+		// preventing instance enumeration attacks (all non-owned instances return 404).
 		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { id },
+			where: { 
+				id, 
+				userId 
+			},
 		});
 
 		if (!instance) {
@@ -199,11 +202,6 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.get("/tags", async (request, reply) => {
-		const user = requireUser(request, reply);
-		if (!user) {
-			return;
-		}
-
 		const tags = await app.prisma.serviceTag.findMany({
 			orderBy: { name: "asc" },
 		});
@@ -212,11 +210,6 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.post("/tags", async (request, reply) => {
-		const user = requireUser(request, reply);
-		if (!user) {
-			return;
-		}
-
 		const parsed = tagCreateSchema.safeParse(request.body);
 		if (!parsed.success) {
 			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
@@ -232,11 +225,6 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.delete("/tags/:id", async (request, reply) => {
-		const user = requireUser(request, reply);
-		if (!user) {
-			return;
-		}
-
 		const { id } = request.params as { id: string };
 
 		await app.prisma.serviceTag
@@ -251,11 +239,6 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.post("/services/test-connection", async (request, reply) => {
-		const user = requireUser(request, reply);
-		if (!user) {
-			return;
-		}
-
 		const payload = request.body as {
 			baseUrl?: unknown;
 			apiKey?: unknown;
@@ -285,15 +268,17 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.post("/services/:id/test", async (request, reply) => {
-		const user = requireUser(request, reply);
-		if (!user) {
-			return;
-		}
-
 		const { id } = request.params as { id: string };
+		const userId = request.currentUser!.id; // preHandler guarantees authentication
 
+		// Verify instance exists and is owned by the current user.
+		// Including userId in the where clause ensures non-owned instances return null,
+		// preventing instance enumeration attacks (all non-owned instances return 404).
 		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { id },
+			where: { 
+				id, 
+				userId 
+			},
 		});
 
 		if (!instance) {

@@ -14,22 +14,28 @@ import { toNumber } from "../../lib/library/type-converters.js";
  * - POST /library/episode/monitor - Toggle monitoring for episodes
  */
 export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) => {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
 	/**
 	 * POST /library/monitor
 	 * Toggles monitoring status for movies, series, or specific seasons
 	 */
 	app.post("/library/monitor", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-			return reply.send({ message: "Unauthorized" });
-		}
-
 		const payload = libraryToggleMonitorRequestSchema.parse(request.body ?? {});
 
 		const instance = await app.prisma.serviceInstance.findFirst({
 			where: {
 				id: payload.instanceId,
 				enabled: true,
+				userId: request.currentUser?.id,
 			},
 		});
 
@@ -111,17 +117,13 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 	 * Toggles monitoring status for specific episodes
 	 */
 	app.post("/library/episode/monitor", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-			return reply.send({ message: "Unauthorized" });
-		}
-
 		const payload = libraryEpisodeMonitorRequestSchema.parse(request.body ?? {});
 
 		const instance = await app.prisma.serviceInstance.findFirst({
 			where: {
 				id: payload.instanceId,
 				enabled: true,
+				userId: request.currentUser?.id,
 			},
 		});
 

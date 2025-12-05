@@ -19,15 +19,21 @@ type OidcProviderInput = z.infer<typeof oidcProviderSchema>;
 type UpdateOidcProviderInput = z.infer<typeof updateOidcProviderSchema>;
 
 export default async function oidcProvidersRoutes(app: FastifyInstance) {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
 	/**
 	 * GET /api/oidc-providers
 	 * List all OIDC providers (admin only)
 	 */
 	app.get("/api/oidc-providers", async (request, reply) => {
-		// Require authentication (single-admin architecture)
-		if (!request.currentUser) {
-			return reply.status(403).send({ error: "Authentication required" });
-		}
 
 		const providers = await app.prisma.oIDCProvider.findMany({
 			orderBy: { createdAt: "asc" },
@@ -53,11 +59,6 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	 * Create a new OIDC provider (admin only)
 	 */
 	app.post<{ Body: OidcProviderInput }>("/api/oidc-providers", async (request, reply) => {
-		// Require authentication (single-admin architecture)
-		if (!request.currentUser) {
-			return reply.status(403).send({ error: "Authentication required" });
-		}
-
 		const validation = oidcProviderSchema.safeParse(request.body);
 		if (!validation.success) {
 			return reply.status(400).send({ error: validation.error.errors });
@@ -117,11 +118,6 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	app.put<{ Params: { id: string }; Body: UpdateOidcProviderInput }>(
 		"/api/oidc-providers/:id",
 		async (request, reply) => {
-			// Require authentication (single-admin architecture)
-			if (!request.currentUser) {
-				return reply.status(403).send({ error: "Authentication required" });
-			}
-
 			const validation = updateOidcProviderSchema.safeParse(request.body);
 			if (!validation.success) {
 				return reply.status(400).send({ error: validation.error.errors });
@@ -184,11 +180,6 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	 * Delete an OIDC provider (admin only)
 	 */
 	app.delete<{ Params: { id: string } }>("/api/oidc-providers/:id", async (request, reply) => {
-		// Require authentication (single-admin architecture)
-		if (!request.currentUser) {
-			return reply.status(403).send({ error: "Authentication required" });
-		}
-
 		const { id } = request.params;
 
 		// Check if provider exists

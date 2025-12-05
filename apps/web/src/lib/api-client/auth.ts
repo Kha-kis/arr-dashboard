@@ -91,9 +91,25 @@ interface OIDCLoginResponse {
 	authorizationUrl: string;
 }
 
+export interface OIDCSetupPayload {
+	type: OIDCProviderType;
+	displayName: string;
+	clientId: string;
+	clientSecret: string;
+	issuer: string;
+	scopes?: string;
+}
+
 export async function getOIDCProviders(): Promise<OIDCProvider[]> {
 	const data = await apiRequest<OIDCProvidersResponse>("/auth/oidc/providers");
 	return data.providers;
+}
+
+export async function setupOIDCProvider(payload: OIDCSetupPayload): Promise<void> {
+	await apiRequest("/auth/oidc/setup", {
+		method: "POST",
+		json: payload,
+	});
 }
 
 export async function initiateOIDCLogin(provider: OIDCProviderType): Promise<string> {

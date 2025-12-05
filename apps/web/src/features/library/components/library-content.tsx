@@ -111,7 +111,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 	return (
 		<>
 			{isLoading ? (
-				<div className="flex items-center gap-3 text-white/60">
+				<div className="flex items-center gap-3 text-fg-muted">
 					<Loader2 className="h-5 w-5 animate-spin" /> Loading library from your instances...
 				</div>
 			) : null}
@@ -158,7 +158,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 					{grouped.movies.length > 0 ? (
 						<section className="space-y-4">
 							<div className="flex items-center justify-between">
-								<h2 className="text-xl font-semibold text-white">Movies</h2>
+								<h2 className="text-xl font-semibold text-fg">Movies</h2>
 							</div>
 							<div className="grid gap-4 lg:grid-cols-2">
 								{grouped.movies.map((item) => (
@@ -180,7 +180,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 					{grouped.series.length > 0 ? (
 						<section className="space-y-4">
 							<div className="flex items-center justify-between">
-								<h2 className="text-xl font-semibold text-white">Series</h2>
+								<h2 className="text-xl font-semibold text-fg">Series</h2>
 							</div>
 							<div className="grid gap-4 lg:grid-cols-2">
 								{grouped.series.map((item) => (

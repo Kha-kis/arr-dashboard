@@ -178,12 +178,12 @@ export const OIDCProviderSection = () => {
 
 				{/* Create Form */}
 				{showCreateForm && (
-					<div className="space-y-4 rounded-lg border border-white/10 bg-white/5 p-4">
-						<h3 className="text-sm font-semibold text-white">New OIDC Provider</h3>
+					<div className="space-y-4 rounded-lg border border-border bg-bg-subtle p-4">
+						<h3 className="text-sm font-semibold text-fg">New OIDC Provider</h3>
 
 						<div className="space-y-3">
 							<div>
-								<label className="text-xs text-white/60">Provider Type</label>
+								<label className="text-xs text-fg-muted">Provider Type</label>
 								<select
 									value={formData.type}
 									onChange={(e) =>
@@ -198,7 +198,7 @@ export const OIDCProviderSection = () => {
 							</div>
 
 							<div>
-								<label className="text-xs text-white/60">Display Name</label>
+								<label className="text-xs text-fg-muted">Display Name</label>
 								<Input
 									value={formData.displayName}
 									onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
@@ -207,7 +207,7 @@ export const OIDCProviderSection = () => {
 							</div>
 
 							<div>
-								<label className="text-xs text-white/60">Client ID</label>
+								<label className="text-xs text-fg-muted">Client ID</label>
 								<Input
 									value={formData.clientId}
 									onChange={(e) => setFormData({ ...formData, clientId: e.target.value })}
@@ -216,7 +216,7 @@ export const OIDCProviderSection = () => {
 							</div>
 
 							<div>
-								<label className="text-xs text-white/60">Client Secret</label>
+								<label className="text-xs text-fg-muted">Client Secret</label>
 								<Input
 									type="password"
 									value={formData.clientSecret}
@@ -226,7 +226,7 @@ export const OIDCProviderSection = () => {
 							</div>
 
 							<div>
-								<label className="text-xs text-white/60">Issuer URL</label>
+								<label className="text-xs text-fg-muted">Issuer URL</label>
 								<Input
 									value={formData.issuer}
 									onChange={(e) => setFormData({ ...formData, issuer: e.target.value })}
@@ -235,7 +235,7 @@ export const OIDCProviderSection = () => {
 							</div>
 
 							<div>
-								<label className="text-xs text-white/60">Redirect URI</label>
+								<label className="text-xs text-fg-muted">Redirect URI</label>
 								<Input
 									value={formData.redirectUri}
 									onChange={(e) => setFormData({ ...formData, redirectUri: e.target.value })}
@@ -244,7 +244,7 @@ export const OIDCProviderSection = () => {
 							</div>
 
 							<div>
-								<label className="text-xs text-white/60">Scopes (comma-separated)</label>
+								<label className="text-xs text-fg-muted">Scopes (comma-separated)</label>
 								<Input
 									value={formData.scopes}
 									onChange={(e) => setFormData({ ...formData, scopes: e.target.value })}
@@ -257,9 +257,9 @@ export const OIDCProviderSection = () => {
 									type="checkbox"
 									checked={formData.enabled}
 									onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
-									className="h-4 w-4 rounded border-white/20 bg-white/5"
+									className="h-4 w-4 rounded border-border bg-bg-subtle"
 								/>
-								<label className="text-sm text-white/70">Enable provider</label>
+								<label className="text-sm text-fg-muted">Enable provider</label>
 							</div>
 						</div>
 
@@ -277,17 +277,17 @@ export const OIDCProviderSection = () => {
 				{/* Existing Providers */}
 				{providers && providers.length > 0 ? (
 					<div className="space-y-4">
-						<h3 className="text-sm font-semibold text-white">Configured Providers</h3>
+						<h3 className="text-sm font-semibold text-fg">Configured Providers</h3>
 						<div className="space-y-3">
 							{providers.map((provider) => (
 								<div
 									key={provider.id}
-									className="rounded-lg border border-white/10 bg-white/5 p-4"
+									className="rounded-lg border border-border bg-bg-subtle p-4"
 								>
 									{editingId === provider.id ? (
 										<div className="space-y-3">
 											<div>
-												<label className="text-xs text-white/60">Display Name</label>
+												<label className="text-xs text-fg-muted">Display Name</label>
 												<Input
 													value={editData.displayName}
 													onChange={(e) => setEditData({ ...editData, displayName: e.target.value })}
@@ -295,7 +295,7 @@ export const OIDCProviderSection = () => {
 											</div>
 
 											<div>
-												<label className="text-xs text-white/60">Client ID</label>
+												<label className="text-xs text-fg-muted">Client ID</label>
 												<Input
 													value={editData.clientId}
 													onChange={(e) => setEditData({ ...editData, clientId: e.target.value })}
@@ -303,7 +303,7 @@ export const OIDCProviderSection = () => {
 											</div>
 
 											<div>
-												<label className="text-xs text-white/60">
+												<label className="text-xs text-fg-muted">
 													Client Secret (leave empty to keep current)
 												</label>
 												<Input
@@ -315,7 +315,7 @@ export const OIDCProviderSection = () => {
 											</div>
 
 											<div>
-												<label className="text-xs text-white/60">Issuer URL</label>
+												<label className="text-xs text-fg-muted">Issuer URL</label>
 												<Input
 													value={editData.issuer}
 													onChange={(e) => setEditData({ ...editData, issuer: e.target.value })}
@@ -323,7 +323,7 @@ export const OIDCProviderSection = () => {
 											</div>
 
 											<div>
-												<label className="text-xs text-white/60">Redirect URI</label>
+												<label className="text-xs text-fg-muted">Redirect URI</label>
 												<Input
 													value={editData.redirectUri}
 													onChange={(e) => setEditData({ ...editData, redirectUri: e.target.value })}
@@ -331,7 +331,7 @@ export const OIDCProviderSection = () => {
 											</div>
 
 											<div>
-												<label className="text-xs text-white/60">Scopes</label>
+												<label className="text-xs text-fg-muted">Scopes</label>
 												<Input
 													value={editData.scopes}
 													onChange={(e) => setEditData({ ...editData, scopes: e.target.value })}
@@ -343,9 +343,9 @@ export const OIDCProviderSection = () => {
 													type="checkbox"
 													checked={editData.enabled}
 													onChange={(e) => setEditData({ ...editData, enabled: e.target.checked })}
-													className="h-4 w-4 rounded border-white/20 bg-white/5"
+													className="h-4 w-4 rounded border-border bg-bg-subtle"
 												/>
-												<label className="text-sm text-white/70">Enable provider</label>
+												<label className="text-sm text-fg-muted">Enable provider</label>
 											</div>
 
 											<div className="flex gap-2">
@@ -366,7 +366,7 @@ export const OIDCProviderSection = () => {
 											<div className="flex items-start justify-between">
 												<div className="flex-1">
 													<div className="flex items-center gap-2">
-														<p className="text-sm font-medium text-white">{provider.displayName}</p>
+														<p className="text-sm font-medium text-fg">{provider.displayName}</p>
 														<span className="rounded bg-blue-500/20 px-2 py-0.5 text-xs text-blue-300">
 															{PROVIDER_DISPLAY_NAMES[provider.type as OIDCProviderType]}
 														</span>
@@ -376,15 +376,15 @@ export const OIDCProviderSection = () => {
 															</span>
 														)}
 													</div>
-													<p className="mt-1 text-xs text-white/50">Issuer: {provider.issuer}</p>
-													<p className="text-xs text-white/50">Client ID: {provider.clientId}</p>
+													<p className="mt-1 text-xs text-fg-muted">Issuer: {provider.issuer}</p>
+													<p className="text-xs text-fg-muted">Client ID: {provider.clientId}</p>
 												</div>
 												<div className="flex gap-2">
 													<Button
 														size="sm"
 														variant="secondary"
 														onClick={() => startEdit(provider)}
-														className="text-white/70 hover:text-white"
+														className="text-fg-muted hover:text-fg"
 													>
 														Edit
 													</Button>
@@ -407,9 +407,9 @@ export const OIDCProviderSection = () => {
 					</div>
 				) : (
 					!showCreateForm && (
-						<div className="rounded-lg border border-white/10 bg-white/5 p-6 text-center">
+						<div className="rounded-lg border border-border bg-bg-subtle p-6 text-center">
 							<svg
-								className="mx-auto h-12 w-12 text-white/20"
+								className="mx-auto h-12 w-12 text-fg-muted"
 								fill="none"
 								stroke="currentColor"
 								viewBox="0 0 24 24"
@@ -421,8 +421,8 @@ export const OIDCProviderSection = () => {
 									d="M13 10V3L4 14h7v7l9-11h-7z"
 								/>
 							</svg>
-							<p className="mt-4 text-sm text-white/60">No OIDC providers configured</p>
-							<p className="mt-1 text-xs text-white/40">
+							<p className="mt-4 text-sm text-fg-muted">No OIDC providers configured</p>
+							<p className="mt-1 text-xs text-fg-muted">
 								Add an OIDC provider to enable external authentication
 							</p>
 						</div>
