@@ -2,6 +2,7 @@
 
 import { Button } from "../../../components/ui";
 import { SORT_OPTIONS, type SortKey } from "../lib/search-utils";
+import { OPTION_STYLE } from "../../settings/lib/settings-constants";
 
 interface SortControlsProps {
 	/**
@@ -37,17 +38,16 @@ export const SortControls = ({
 	return (
 		<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
 			<div>
-				<label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-white/60">
+				<label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg-muted">
 					Sort results by
 				</label>
 				<select
 					value={sortKey}
 					onChange={(event) => onSortKeyChange(event.target.value as SortKey)}
-					className="w-full rounded-md border border-white/20 bg-slate-900/80 px-3 py-2 text-sm text-white hover:border-sky-400/80 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
-					style={{ color: "#f8fafc" }}
+					className="w-full rounded-md border border-border bg-bg-subtle px-3 py-2 text-sm text-fg hover:border-sky-400/80 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
 				>
 					{SORT_OPTIONS.map((option) => (
-						<option key={option.value} value={option.value} className="bg-slate-900 text-white">
+						<option key={option.value} value={option.value} style={OPTION_STYLE}>
 							{option.label}
 						</option>
 					))}
@@ -55,7 +55,7 @@ export const SortControls = ({
 			</div>
 
 			<div className="flex flex-col justify-end gap-2">
-				<label className="text-xs font-semibold uppercase tracking-wide text-white/60">
+				<label className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
 					Sort direction
 				</label>
 				<div className="flex gap-2">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import type { RecommendationItem } from "@arr/shared";
 import { Loader2, Star, ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -72,7 +72,7 @@ export const TMDBCarousel: React.FC<TMDBCarouselProps> = ({
 		});
 	};
 
-	const handleScroll = () => {
+	const handleScroll = useCallback(() => {
 		checkScrollButtons();
 
 		// Check if we're near the end and should load more
@@ -85,7 +85,7 @@ export const TMDBCarousel: React.FC<TMDBCarouselProps> = ({
 		if (scrollPercentage > 0.8 && onLoadMore) {
 			onLoadMore();
 		}
-	};
+	}, [hasNextPage, isFetchingNextPage, onLoadMore]);
 
 	useEffect(() => {
 		checkScrollButtons();
@@ -98,7 +98,7 @@ export const TMDBCarousel: React.FC<TMDBCarouselProps> = ({
 				window.removeEventListener("resize", checkScrollButtons);
 			};
 		}
-	}, [items, hasNextPage, isFetchingNextPage]);
+	}, [items, handleScroll]);
 
 	if (isLoading) {
 		return (
@@ -153,6 +153,7 @@ export const TMDBCarousel: React.FC<TMDBCarouselProps> = ({
 						>
 							<div className="relative aspect-[2/3] w-full overflow-hidden bg-gradient-to-br from-slate-700 to-slate-900">
 								{item.posterUrl ? (
+									/* eslint-disable-next-line @next/next/no-img-element -- External TMDB image with dynamic URL */
 									<img
 										src={item.posterUrl}
 										alt={item.title}

@@ -263,7 +263,11 @@ export class OIDCProvider {
 		// Convert base64url to base64 (replace - with + and _ with /)
 		const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
 		const decoded = Buffer.from(base64, "base64").toString("utf-8");
-		return JSON.parse(decoded);
+		try {
+			return JSON.parse(decoded);
+		} catch {
+			throw new Error("Invalid ID token payload: malformed JSON");
+		}
 	}
 }
 

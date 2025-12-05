@@ -69,10 +69,10 @@ COPY --from=builder /app/apps/web/.next/static ./web/apps/web/.next/static
 WORKDIR /app/api
 RUN npx prisma generate --schema prisma/schema.prisma
 
-# Copy startup script
+# Copy startup script and fix line endings (in case of CRLF from Windows)
 WORKDIR /app
 COPY docker/start-combined.sh ./start.sh
-RUN chmod +x ./start.sh
+RUN sed -i 's/\r$//' ./start.sh && chmod +x ./start.sh
 
 # Create default non-root user (will be updated by start.sh if PUID/PGID are set)
 RUN addgroup -g 1000 nodejs && \

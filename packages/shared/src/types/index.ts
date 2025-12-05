@@ -8,3 +8,5 @@ export * from "./manual-import.js";
 export * from "./recommendations.js";
 export * from "./oidc-provider.js";
 export * from "./backup.js";
+export * from "./trash-guides.js";
+export * from "./template-sharing.js";

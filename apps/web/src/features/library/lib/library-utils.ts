@@ -4,7 +4,7 @@ import type { LibraryItem, ServiceInstanceSummary } from "@arr/shared";
  * Format bytes into human-readable string (e.g., "1.5 GB")
  */
 export const formatBytes = (value?: number): string | null => {
-	if (!value || value <= 0) {
+	if (value == null || value < 0) {
 		return null;
 	}
 
@@ -18,7 +18,7 @@ export const formatBytes = (value?: number): string | null => {
  * Format runtime in minutes into human-readable string (e.g., "2h 30m")
  */
 export const formatRuntime = (value?: number | null): string | null => {
-	if (!value || value <= 0) {
+	if (value == null || value < 0) {
 		return null;
 	}
 

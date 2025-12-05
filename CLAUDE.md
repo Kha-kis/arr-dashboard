@@ -126,7 +126,46 @@ Uses **signed, HTTP-only cookies** with Lucia Auth:
 - `apps/web/middleware.ts` - Session cookie check for routing (skips /api and /auth paths)
 - `apps/web/next.config.mjs` - API proxy rewrites with automatic cookie forwarding
 
-### 4. Database Schema (Prisma)
+### 4. Route Authorization Pattern (CRITICAL)
+
+**Every route that accesses user-owned resources MUST verify ownership.**
+
+All route plugins use a `preHandler` hook to enforce authentication:
+```typescript
+app.addHook("preHandler", async (request, reply) => {
+  if (!request.currentUser?.id) {
+    return reply.status(401).send({ error: "Authentication required" });
+  }
+});
+```
+
+**Required Pattern for ServiceInstance Access:**
+```typescript
+// ✅ CORRECT: Always include userId in where clause
+const instance = await request.server.prisma.serviceInstance.findFirst({
+  where: {
+    id: instanceId,
+    userId: request.currentUser!.id,  // Use ! assertion - preHandler guarantees auth
+  },
+});
+
+if (!instance) {
+  return reply.status(404).send({ message: "Instance not found or access denied" });
+}
+
+// ❌ WRONG: Missing userId check allows access to other users' instances
+const instance = await request.server.prisma.serviceInstance.findFirst({
+  where: { id: instanceId },  // SECURITY VULNERABILITY!
+});
+```
+
+**Key Points:**
+- Use `request.currentUser!.id` (non-null assertion) since preHandler guarantees authentication
+- Always include `userId` in queries for user-owned resources (ServiceInstance, TrashTemplate, etc.)
+- Return 404 "not found or access denied" to avoid leaking existence of other users' resources
+- This pattern applies to: ServiceInstance, TrashTemplate, TrashSyncHistory, TrashBackup, etc.
+
+### 5. Database Schema (Prisma)
 
 **Key Models:**
 - `User` - User accounts (single-admin architecture, no role/email fields)
@@ -146,7 +185,7 @@ Uses **signed, HTTP-only cookies** with Lucia Auth:
 **Authentication:**
 - Multi-authentication support: Password (optional), OIDC, and/or Passkeys
 - User model simplified: no email or role fields (single-admin architecture)
-- Service instances are global, not per-user (removed userId foreign key)
+- Service instances are per-user (each instance has a `userId` foreign key for ownership)
 
 **Migrations:**
 - Development: `pnpm run db:push` (no migration files)
@@ -158,7 +197,7 @@ Uses **signed, HTTP-only cookies** with Lucia Auth:
 - Docker: `file:/app/data/prod.db`
 - Dev: `file:./dev.db`
 
-### 5. ARR Instance Communication
+### 6. ARR Instance Communication
 
 **All communication with Sonarr/Radarr/Prowlarr happens server-side.**
 
@@ -183,7 +222,7 @@ const response = await fetcher('/api/v3/movie');  // Calls Radarr API
 - Easy aggregation across multiple instances
 - CORS issues avoided
 
-### 6. Frontend Data Fetching Pattern
+### 7. Frontend Data Fetching Pattern
 
 **All API calls use Tanstack Query hooks:**
 
@@ -210,7 +249,7 @@ export function useMovies() {
 }
 ```
 
-### 7. Next.js App Router Conventions
+### 8. Next.js App Router Conventions
 
 **App directory structure:** `apps/web/app/`
 - Each folder = route segment
@@ -517,10 +556,11 @@ pnpm run start    # Start production server
 6. **Invalidate queries** - After mutations, invalidate relevant query keys
 7. **Check Prisma schema** - Understand relationships before querying
 8. **Test in Docker** - Local dev and Docker behave differently (env vars, paths)
+9. **Always verify resource ownership** - Include `userId` in all queries for user-owned resources (ServiceInstance, TrashTemplate, etc.)
 
 ---
 
-**Last Updated:** 2025-10-08
+**Last Updated:** 2025-12-04
 **Version:** 2.0.0
 **Node Version:** 20+
 **pnpm Version:** 9.12.0+

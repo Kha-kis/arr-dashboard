@@ -17,20 +17,25 @@ const historyQuerySchema = z.object({
  * History-related routes for the dashboard
  */
 export const historyRoutes: FastifyPluginCallback = (app, _opts, done) => {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
 	/**
 	 * GET /dashboard/history
 	 * Fetches download history from all enabled Sonarr, Radarr, and Prowlarr instances
 	 */
 	app.get("/dashboard/history", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-			return { instances: [], aggregated: [], totalCount: 0, page: 1, pageSize: 25 };
-		}
-
 		const { page, pageSize, startDate, endDate } = historyQuerySchema.parse(request.query ?? {});
 
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { enabled: true },
+			where: { enabled: true, userId: request.currentUser?.id },
 		});
 
 		const results: Array<{

@@ -12,7 +12,7 @@ import {
 	CardTitle,
 	CardDescription,
 } from "../../../components/ui/card";
-import { Alert, AlertDescription } from "../../../components/ui";
+import { Alert, AlertDescription, toast } from "../../../components/ui";
 import {
 	useCreateBackup,
 	useRestoreBackup,
@@ -21,8 +21,9 @@ import {
 	useRestoreBackupFromFile,
 	useBackupSettings,
 	useUpdateBackupSettings,
+	useReadBackupFile,
+	useDownloadBackup,
 } from "../../../hooks/api/useBackup";
-import { backupApi } from "../../../lib/api-client/backup";
 import type { BackupFileInfo, BackupIntervalType } from "@arr/shared";
 
 export const BackupTab = () => {
@@ -52,6 +53,8 @@ export const BackupTab = () => {
 	const deleteBackupMutation = useDeleteBackup();
 	const restoreBackupFromFileMutation = useRestoreBackupFromFile();
 	const updateSettingsMutation = useUpdateBackupSettings();
+	const readBackupFileMutation = useReadBackupFile();
+	const downloadBackupMutation = useDownloadBackup();
 
 	// Initialize settings state when data loads
 	useEffect(() => {
@@ -91,7 +94,7 @@ export const BackupTab = () => {
 
 		try {
 			// Read the backup file
-			const backupData = await backupApi.readBackupFile(restoreFile);
+			const backupData = await readBackupFileMutation.mutateAsync(restoreFile);
 
 			// Restore the backup
 			const response = await restoreBackupMutation.mutateAsync({
@@ -136,8 +139,16 @@ export const BackupTab = () => {
 	};
 
 	// Handle download backup from list
-	const handleDownloadBackup = (backup: BackupFileInfo) => {
-		backupApi.downloadBackupById(backup.id, backup.filename);
+	const handleDownloadBackup = async (backup: BackupFileInfo) => {
+		try {
+			await downloadBackupMutation.mutateAsync({ id: backup.id, filename: backup.filename });
+		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : "Unknown error";
+			console.error("Failed to download backup:", error);
+			toast.error("Failed to download backup", {
+				description: errorMessage,
+			});
+		}
 	};
 
 	// Handle delete backup from list
@@ -254,7 +265,7 @@ export const BackupTab = () => {
 			case "update":
 				return "text-purple-400";
 			default:
-				return "text-white/60";
+				return "text-fg-muted";
 		}
 	};
 
@@ -280,7 +291,7 @@ export const BackupTab = () => {
 				<CardContent>
 					<div className="space-y-4">
 						<div className="space-y-2">
-							<label className="text-xs uppercase text-white/60">Backup Interval</label>
+							<label className="text-xs uppercase text-fg-muted">Backup Interval</label>
 							<Select
 								value={intervalType}
 								onChange={(e) => setIntervalType(e.target.value as BackupIntervalType)}
@@ -295,7 +306,7 @@ export const BackupTab = () => {
 
 						{intervalType === "HOURLY" && (
 							<div className="space-y-2">
-								<label className="text-xs uppercase text-white/60">Hours Between Backups</label>
+								<label className="text-xs uppercase text-fg-muted">Hours Between Backups</label>
 								<Input
 									type="number"
 									min={1}
@@ -304,13 +315,13 @@ export const BackupTab = () => {
 									onChange={(e) => setIntervalValue(Number.parseInt(e.target.value))}
 									disabled={settingsLoading || updateSettingsMutation.isPending}
 								/>
-								<p className="text-xs text-white/50">Run a backup every {intervalValue} hour{intervalValue !== 1 ? "s" : ""}</p>
+								<p className="text-xs text-fg-muted">Run a backup every {intervalValue} hour{intervalValue !== 1 ? "s" : ""}</p>
 							</div>
 						)}
 
 						{intervalType === "DAILY" && (
 							<div className="space-y-2">
-								<label className="text-xs uppercase text-white/60">Days Between Backups</label>
+								<label className="text-xs uppercase text-fg-muted">Days Between Backups</label>
 								<Input
 									type="number"
 									min={1}
@@ -319,13 +330,13 @@ export const BackupTab = () => {
 									onChange={(e) => setIntervalValue(Number.parseInt(e.target.value))}
 									disabled={settingsLoading || updateSettingsMutation.isPending}
 								/>
-								<p className="text-xs text-white/50">Run a backup every {intervalValue} day{intervalValue !== 1 ? "s" : ""}</p>
+								<p className="text-xs text-fg-muted">Run a backup every {intervalValue} day{intervalValue !== 1 ? "s" : ""}</p>
 							</div>
 						)}
 
 						{intervalType !== "DISABLED" && (
 							<div className="space-y-2">
-								<label className="text-xs uppercase text-white/60">Retention Count</label>
+								<label className="text-xs uppercase text-fg-muted">Retention Count</label>
 								<Input
 									type="number"
 									min={1}
@@ -334,7 +345,7 @@ export const BackupTab = () => {
 									onChange={(e) => setRetentionCount(Number.parseInt(e.target.value))}
 									disabled={settingsLoading || updateSettingsMutation.isPending}
 								/>
-								<p className="text-xs text-white/50">Keep the {retentionCount} most recent scheduled backup{retentionCount !== 1 ? "s" : ""}</p>
+								<p className="text-xs text-fg-muted">Keep the {retentionCount} most recent scheduled backup{retentionCount !== 1 ? "s" : ""}</p>
 							</div>
 						)}
 
@@ -458,7 +469,7 @@ export const BackupTab = () => {
 
 							<form onSubmit={handleRestoreBackup} className="space-y-4">
 								<div className="space-y-2">
-									<label className="text-xs uppercase text-white/60">Backup File</label>
+									<label className="text-xs uppercase text-fg-muted">Backup File</label>
 									<Input
 										type="file"
 										accept=".json"
@@ -466,7 +477,7 @@ export const BackupTab = () => {
 										disabled={restoreBackupMutation.isPending}
 									/>
 									{restoreFile && (
-										<p className="text-xs text-white/50">Selected: {restoreFile.name}</p>
+										<p className="text-xs text-fg-muted">Selected: {restoreFile.name}</p>
 									)}
 								</div>
 
@@ -519,7 +530,7 @@ export const BackupTab = () => {
 				<CardContent>
 					{backupsLoading ? (
 						<div className="flex items-center justify-center py-12">
-							<p className="text-white/60">Loading backups...</p>
+							<p className="text-fg-muted">Loading backups...</p>
 						</div>
 					) : backupsError ? (
 						<Alert variant="danger">
@@ -527,9 +538,9 @@ export const BackupTab = () => {
 						</Alert>
 					) : backups.length === 0 ? (
 						<div className="flex flex-col items-center justify-center py-12 text-center">
-							<FileText className="h-16 w-16 text-white/20 mb-4" />
-							<p className="text-white/60 mb-2">No backups found</p>
-							<p className="text-sm text-white/40">
+							<FileText className="h-16 w-16 text-fg-muted/40 mb-4" />
+							<p className="text-fg-muted mb-2">No backups found</p>
+							<p className="text-sm text-fg-muted">
 								Create a backup above to get started
 							</p>
 						</div>
@@ -537,20 +548,20 @@ export const BackupTab = () => {
 						<div className="overflow-x-auto">
 							<table className="w-full">
 								<thead>
-									<tr className="border-b border-white/10">
-										<th className="text-left py-3 px-4 text-xs font-medium uppercase text-white/60">
+									<tr className="border-b border-border">
+										<th className="text-left py-3 px-4 text-xs font-medium uppercase text-fg-muted">
 											Type
 										</th>
-										<th className="text-left py-3 px-4 text-xs font-medium uppercase text-white/60">
+										<th className="text-left py-3 px-4 text-xs font-medium uppercase text-fg-muted">
 											Filename
 										</th>
-										<th className="text-left py-3 px-4 text-xs font-medium uppercase text-white/60">
+										<th className="text-left py-3 px-4 text-xs font-medium uppercase text-fg-muted">
 											Date
 										</th>
-										<th className="text-left py-3 px-4 text-xs font-medium uppercase text-white/60">
+										<th className="text-left py-3 px-4 text-xs font-medium uppercase text-fg-muted">
 											Size
 										</th>
-										<th className="text-right py-3 px-4 text-xs font-medium uppercase text-white/60">
+										<th className="text-right py-3 px-4 text-xs font-medium uppercase text-fg-muted">
 											Actions
 										</th>
 									</tr>
@@ -559,7 +570,7 @@ export const BackupTab = () => {
 									{backups.map((backup) => (
 										<tr
 											key={backup.id}
-											className="border-b border-white/5 hover:bg-white/5 transition-colors"
+											className="border-b border-border/50 hover:bg-bg-subtle transition-colors"
 										>
 											<td className="py-3 px-4">
 												<span className={`text-sm font-medium ${getTypeColor(backup.type)}`}>
@@ -567,15 +578,15 @@ export const BackupTab = () => {
 												</span>
 											</td>
 											<td className="py-3 px-4">
-												<span className="text-sm text-white/80">{backup.filename}</span>
+												<span className="text-sm text-fg-muted">{backup.filename}</span>
 											</td>
 											<td className="py-3 px-4">
-												<span className="text-sm text-white/60">
+												<span className="text-sm text-fg-muted">
 													{formatDate(backup.timestamp)}
 												</span>
 											</td>
 											<td className="py-3 px-4">
-												<span className="text-sm text-white/60">{formatBytes(backup.size)}</span>
+												<span className="text-sm text-fg-muted">{formatBytes(backup.size)}</span>
 											</td>
 											<td className="py-3 px-4">
 												<div className="flex items-center justify-end gap-2">
@@ -636,9 +647,9 @@ export const BackupTab = () => {
 
 							<div className="space-y-4">
 								<div className="space-y-2">
-									<label className="text-sm font-medium text-white/80">Backup File</label>
-									<p className="text-sm text-white/60">{selectedBackupForRestore.filename}</p>
-									<p className="text-xs text-white/40">
+									<label className="text-sm font-medium text-fg-muted">Backup File</label>
+									<p className="text-sm text-fg-muted">{selectedBackupForRestore.filename}</p>
+									<p className="text-xs text-fg-muted">
 										Created: {formatDate(selectedBackupForRestore.timestamp)}
 									</p>
 								</div>

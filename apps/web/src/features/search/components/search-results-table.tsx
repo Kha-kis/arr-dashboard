@@ -13,7 +13,7 @@ import {
 const integer = new Intl.NumberFormat();
 
 const formatBytes = (value?: number): string => {
-	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+	if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
 		return "-";
 	}
 	const units = ["B", "KB", "MB", "GB", "TB", "PB"] as const;
@@ -113,12 +113,12 @@ const protocolBadgeClass = (protocol: SearchResult["protocol"]): string => {
 		case "usenet":
 			return "border-sky-400/40 bg-sky-500/10 text-sky-200";
 		default:
-			return "border-white/20 bg-white/10 text-white/70";
+			return "border-border bg-bg-subtle text-fg-muted";
 	}
 };
 
 const metricBadgeClass =
-	"inline-flex items-center gap-1 rounded-full border border-white/15 bg-white/8 px-2 py-0.5 text-[11px] text-white/70";
+	"inline-flex items-center gap-1 rounded-full border border-border bg-bg-subtle px-2 py-0.5 text-[11px] text-fg-muted";
 
 interface SearchResultsTableProps {
 	results: SearchResult[];
@@ -146,7 +146,7 @@ export const SearchResultsTable = ({
 
 	if (loading) {
 		return (
-			<div className="rounded-xl border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-white/70">
+			<div className="rounded-xl border border-border bg-bg-subtle px-4 py-6 text-center text-sm text-fg-muted">
 				Searching across selected indexers...
 			</div>
 		);
@@ -154,22 +154,22 @@ export const SearchResultsTable = ({
 
 	if (results.length === 0) {
 		return (
-			<div className="rounded-xl border border-white/10 bg-white/5 px-4 py-6 text-center text-sm text-white/70">
+			<div className="rounded-xl border border-border bg-bg-subtle px-4 py-6 text-center text-sm text-fg-muted">
 				{emptyMessage ?? "No results yet. Submit a query to begin."}
 			</div>
 		);
 	}
 
 	return (
-		<div className="rounded-xl border border-white/10 bg-white/5">
-			<table className="w-full divide-y divide-white/10 text-sm text-white/80">
-				<thead className="bg-white/10 text-left text-xs uppercase tracking-wide text-white/60">
+		<div className="rounded-xl border border-border bg-bg-subtle">
+			<table className="w-full divide-y divide-border text-sm text-fg-muted">
+				<thead className="bg-bg-subtle text-left text-xs uppercase tracking-wide text-fg-muted">
 					<tr>
 						<th className="px-4 py-3">Release</th>
 						<th className="px-4 py-3 text-right">Actions</th>
 					</tr>
 				</thead>
-				<tbody className="divide-y divide-white/10">
+				<tbody className="divide-y divide-border">
 					{results.map((result) => {
 						const key = buildRowKey(result);
 						const copyable = Boolean(result.magnetUrl ?? result.downloadUrl ?? result.link);
@@ -185,8 +185,8 @@ export const SearchResultsTable = ({
 								: null;
 
 						return (
-							<tr key={key} className="align-top hover:bg-white/10">
-								<td className="px-4 py-4 text-white">
+							<tr key={key} className="align-top hover:bg-bg-subtle">
+								<td className="px-4 py-4 text-fg">
 									<div className="space-y-3 break-words">
 										<div className="flex flex-wrap items-center gap-2">
 											<span className="font-semibold leading-tight break-words">
@@ -198,7 +198,7 @@ export const SearchResultsTable = ({
 												{result.protocol.toUpperCase()}
 											</span>
 											{qualityLabel ? (
-												<span className="inline-flex items-center rounded-full border border-white/20 px-2 py-0.5 text-[11px] text-white/70">
+												<span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[11px] text-fg-muted">
 													{qualityLabel}
 												</span>
 											) : null}
@@ -209,17 +209,17 @@ export const SearchResultsTable = ({
 											) : null}
 										</div>
 
-										<div className="flex flex-wrap items-center gap-3 text-xs text-white/60">
-											<span className="font-medium text-white/80">
+										<div className="flex flex-wrap items-center gap-3 text-xs text-fg-muted">
+											<span className="font-medium text-fg-muted">
 												{incognitoMode ? getLinuxIndexer(result.indexer) : result.indexer}
 											</span>
-											<span className="text-white/45">#{result.indexerId}</span>
-											<span className="text-white/45">
+											<span className="text-fg-muted">#{result.indexerId}</span>
+											<span className="text-fg-muted">
 												{incognitoMode ? getLinuxInstanceName(result.instanceName) : result.instanceName}
 											</span>
 										</div>
 
-										<div className="flex flex-wrap gap-2 text-[11px] text-white/70">
+										<div className="flex flex-wrap gap-2 text-[11px] text-fg-muted">
 											<span className={metricBadgeClass}>Size {sizeLabel}</span>
 											<span className={metricBadgeClass}>
 												Seeders {integer.format(result.seeders ?? 0)}
@@ -238,15 +238,15 @@ export const SearchResultsTable = ({
 										</div>
 
 										{result.categories?.length ? (
-											<div className="flex flex-wrap gap-2 text-xs text-white/50">
-												<span className="uppercase text-white/40">Categories</span>
+											<div className="flex flex-wrap gap-2 text-xs text-fg-muted">
+												<span className="uppercase text-fg-muted">Categories</span>
 												<span>{result.categories.join(", ")}</span>
 											</div>
 										) : null}
 
 										{result.languages?.length ? (
-											<div className="flex flex-wrap gap-2 text-xs text-white/50">
-												<span className="uppercase text-white/40">Languages</span>
+											<div className="flex flex-wrap gap-2 text-xs text-fg-muted">
+												<span className="uppercase text-fg-muted">Languages</span>
 												<span>{result.languages.map((language) => language.name).join(", ")}</span>
 											</div>
 										) : null}
@@ -258,7 +258,7 @@ export const SearchResultsTable = ({
 										) : null}
 									</div>
 								</td>
-								<td className="px-4 py-4 text-right text-white/70">
+								<td className="px-4 py-4 text-right text-fg-muted">
 									<div className="flex flex-col items-end gap-2 sm:flex-row sm:justify-end sm:gap-3">
 										<Button
 											variant="secondary"

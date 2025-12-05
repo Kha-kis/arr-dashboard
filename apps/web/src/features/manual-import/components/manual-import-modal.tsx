@@ -51,6 +51,28 @@ export const ManualImportModal = ({
 
 	const { toggleEpisode, selectAllEpisodes, clearEpisodes } = useEpisodeSelection();
 
+	// Select all candidates with their episodes
+	const handleSelectAll = useCallback(() => {
+		for (const candidate of candidates) {
+			const defaults = buildSubmissionDefaults(candidate, downloadId);
+			if (!defaults) {
+				continue;
+			}
+			// Only add if not already selected
+			const existing = getSelectionForCandidate(selections, candidate);
+			if (!existing) {
+				toggleSelection(candidate, instanceId, defaults.downloadId, defaults.values);
+			}
+			// Select all episodes for Sonarr candidates
+			selectAllEpisodes(candidate);
+		}
+	}, [candidates, downloadId, selections, toggleSelection, instanceId, selectAllEpisodes]);
+
+	// Clear all selections
+	const handleClearAll = useCallback(() => {
+		clear();
+	}, [clear]);
+
 	const {
 		submit,
 		error: selectionError,
@@ -97,7 +119,7 @@ export const ManualImportModal = ({
 		setSelectionError(undefined);
 		setShowSelectedOnly(false);
 		setImportMode("auto");
-	}, [open, clear, instanceId, service, downloadId, folder]);
+	}, [open, clear, instanceId, service, downloadId, folder, setSelectionError]);
 
 	const visibleCandidates = useMemo(() => {
 		let list = candidates;
@@ -118,7 +140,7 @@ export const ManualImportModal = ({
 			}
 			onOpenChange(next);
 		},
-		[clear, onOpenChange],
+		[clear, onOpenChange, setSelectionError],
 	);
 
 	const handleToggleCandidate = useCallback(
@@ -149,8 +171,8 @@ export const ManualImportModal = ({
 			<div className={panelClasses}>
 				<div className="flex items-start justify-between gap-3">
 					<div>
-						<h2 className="text-lg font-semibold text-white">Manual Import - {instanceName}</h2>
-						<p className="text-xs text-white/60">
+						<h2 className="text-lg font-semibold text-fg">Manual Import - {instanceName}</h2>
+						<p className="text-xs text-fg-muted">
 							{downloadId
 								? `Download: ${downloadId}`
 								: folder
@@ -176,34 +198,34 @@ export const ManualImportModal = ({
 					</div>
 				)}
 
-				<div className="flex flex-col gap-3 rounded-lg border border-white/10 bg-white/5 px-3 py-3 text-sm text-white/80">
-					<div className="flex flex-wrap items-center gap-3 text-xs text-white/60">
+				<div className="flex flex-col gap-3 rounded-lg border border-border bg-bg-subtle px-3 py-3 text-sm text-fg-muted">
+					<div className="flex flex-wrap items-center gap-3 text-xs text-fg-muted">
 						<span>Total files: {totalCandidates}</span>
 						<span>Visible: {visibleCount}</span>
 						<span>Selected: {selectedCount}</span>
 						{rejectionCount > 0 && <span>{rejectionCount} rejected</span>}
 					</div>
 					<div className="flex flex-wrap items-center gap-3">
-						<label className="flex flex-col gap-1 text-xs uppercase text-white/50">
+						<label className="flex flex-col gap-1 text-xs uppercase text-fg-muted">
 							Import mode
 							<select
 								value={importMode}
 								onChange={(event) => setImportMode(event.target.value as ImportMode)}
-								className="rounded-md border border-white/20 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
+								className="rounded-md border border-border bg-bg-subtle px-3 py-2 text-sm text-fg focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
 								disabled={isPending}
 							>
 								{importModeOptions.map((option) => (
 									<option
 										key={option.value}
 										value={option.value}
-										className="bg-slate-900 text-white"
+										className="bg-bg text-fg"
 									>
 										{option.label}
 									</option>
 								))}
 							</select>
 						</label>
-						<label className="flex items-center gap-2 text-xs text-white/70">
+						<label className="flex items-center gap-2 text-xs text-fg-muted">
 							<input
 								type="checkbox"
 								className="h-4 w-4"
@@ -213,18 +235,36 @@ export const ManualImportModal = ({
 							/>
 							Show selected only
 						</label>
+						<div className="ml-auto flex gap-2">
+							<Button
+								variant="ghost"
+								className="px-3 py-1.5 text-xs"
+								onClick={handleSelectAll}
+								disabled={isPending || candidates.length === 0}
+							>
+								Select All
+							</Button>
+							<Button
+								variant="ghost"
+								className="px-3 py-1.5 text-xs"
+								onClick={handleClearAll}
+								disabled={isPending || selectedCount === 0}
+							>
+								Clear All
+							</Button>
+						</div>
 					</div>
 				</div>
 
 				<div className="flex max-h-[420px] flex-col gap-2 overflow-y-auto pr-1">
 					{query.isLoading && (
-						<div className="rounded-md border border-white/10 bg-white/5 px-3 py-6 text-center text-sm text-white/60">
+						<div className="rounded-md border border-border bg-bg-subtle px-3 py-6 text-center text-sm text-fg-muted">
 							Loading manual import candidates...
 						</div>
 					)}
 
 					{!query.isLoading && visibleCandidates.length === 0 && (
-						<div className="rounded-md border border-dashed border-white/10 bg-white/5 px-3 py-6 text-center text-sm text-white/60">
+						<div className="rounded-md border border-dashed border-border bg-bg-subtle px-3 py-6 text-center text-sm text-fg-muted">
 							No files match the current filters.
 						</div>
 					)}
@@ -255,7 +295,7 @@ export const ManualImportModal = ({
 				</div>
 
 				<div className="flex items-center justify-between pt-2">
-					<div className="text-xs text-white/50">
+					<div className="text-xs text-fg-muted">
 						{rejectionCount > 0 ? "Some files may require manual mapping." : ""}
 					</div>
 					<div className="flex items-center gap-2">

@@ -117,3 +117,31 @@ export function useUpdateBackupSettings() {
 		},
 	});
 }
+
+/**
+ * Read a backup file and return it as a base64 string.
+ * Uses chunked processing to avoid call stack overflow on large files.
+ *
+ * @returns A React Query mutation that accepts a File and returns a base64 string
+ */
+export function useReadBackupFile() {
+	return useMutation({
+		mutationFn: async (file: File) => {
+			return backupApi.readBackupFile(file);
+		},
+	});
+}
+
+/**
+ * Download a backup file by ID.
+ * Triggers a browser download of the backup file.
+ *
+ * @returns A React Query mutation that accepts backup id and filename, and triggers a download
+ */
+export function useDownloadBackup() {
+	return useMutation({
+		mutationFn: async ({ id, filename }: { id: string; filename: string }) => {
+			return backupApi.downloadBackupById(id, filename);
+		},
+	});
+}
