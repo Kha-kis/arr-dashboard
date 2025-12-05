@@ -20,28 +20,31 @@ import { libraryQuerySchema } from "../../lib/library/validation-schemas.js";
  * - GET /library/episodes - Fetch episodes for a series
  */
 export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
 	/**
 	 * GET /library
 	 * Fetches library items (movies/series) from enabled instances
 	 */
 	app.get("/library", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-			return multiInstanceLibraryResponseSchema.parse({
-				instances: [],
-				aggregated: [],
-				totalCount: 0,
-			});
-		}
-
 		const parsed = libraryQuerySchema.parse(request.query ?? {});
 
 		const where: {
 			enabled: boolean;
 			service?: ServiceType | { in: ServiceType[] };
 			id?: string;
+			userId: string;
 		} = {
 			enabled: true,
+			userId: request.currentUser?.id ?? "",
 		};
 
 		if (parsed.instanceId) {
@@ -109,17 +112,13 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 	 * Fetches episodes for a specific series from a Sonarr instance
 	 */
 	app.get("/library/episodes", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-			return reply.send({ message: "Unauthorized" });
-		}
-
 		const parsed = libraryEpisodesRequestSchema.parse(request.query ?? {});
 
 		const instance = await app.prisma.serviceInstance.findFirst({
 			where: {
 				id: parsed.instanceId,
 				enabled: true,
+				userId: request.currentUser?.id,
 			},
 		});
 

@@ -61,15 +61,15 @@ export const CalendarGrid = ({
 						isSelected
 							? "border-sky-400 bg-sky-500/15 shadow-lg shadow-sky-500/20"
 							: hasEvents
-								? "border-white/15 bg-slate-900/60 hover:border-sky-400"
-								: "border-white/10 bg-slate-900/40 hover:border-white/25",
-						inCurrentMonth ? "text-white" : "text-white/40",
+								? "border-border bg-bg-subtle hover:border-sky-400"
+								: "border-border bg-bg hover:border-border",
+						inCurrentMonth ? "text-fg" : "text-fg-muted",
 					)}
 				>
 					<div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide">
 						<span>{formatDayNumber(date)}</span>
 						{hasEvents && (
-							<span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] text-white/80">
+							<span className="rounded-full bg-bg-subtle px-2 py-0.5 text-[10px] text-fg-muted">
 								{events.length}
 							</span>
 						)}
@@ -78,20 +78,20 @@ export const CalendarGrid = ({
 						{events.slice(0, 3).map((event) => (
 							<div
 								key={`${key}:${String(event.id)}`}
-								className="truncate rounded-md bg-white/15 px-2 py-1 text-xs text-white/80"
+								className="truncate rounded-md bg-bg-subtle px-2 py-1 text-xs text-fg-muted"
 							>
-								<span className="font-medium text-white">
+								<span className="font-medium text-fg">
 									{event.service === "sonarr"
 										? (event.seriesTitle ?? event.title)
 										: (event.movieTitle ?? event.title)}
 								</span>
 								{event.type === "episode" && event.episodeTitle && (
-									<span className="ml-1 text-white/60">{event.episodeTitle}</span>
+									<span className="ml-1 text-fg-muted">{event.episodeTitle}</span>
 								)}
 							</div>
 						))}
 						{events.length > 3 && (
-							<p className="text-[11px] text-white/60">+{events.length - 3} more</p>
+							<p className="text-[11px] text-fg-muted">+{events.length - 3} more</p>
 						)}
 					</div>
 				</button>

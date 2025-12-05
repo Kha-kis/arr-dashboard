@@ -15,6 +15,7 @@ const NAV_ITEMS = [
 	{ href: "/calendar", label: "Calendar" },
 	{ href: "/statistics", label: "Statistics" },
 	{ href: "/history", label: "History" },
+	{ href: "/trash-guides", label: "TRaSH Guides" },
 	{ href: "/settings", label: "Settings" },
 ];
 
@@ -42,7 +43,7 @@ export const Sidebar = () => {
 						className={cn(
 							"group relative rounded-xl px-4 py-2 text-sm transition-all duration-200",
 							pathname === item.href
-								? "bg-primary text-white shadow-lg shadow-primary/20"
+								? "bg-primary text-primary-fg shadow-lg shadow-primary/20"
 								: "hover:bg-bg-subtle/50 hover:text-fg",
 						)}
 					>

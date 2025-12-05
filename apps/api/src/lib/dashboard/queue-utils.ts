@@ -129,10 +129,22 @@ export const deriveQueueActions = (item: unknown): QueueActionCapabilities => {
 	const appearsCompleted =
 		status.includes("completed") || status.includes("downloadclientunavailable");
 
+	// Check if the download is in import-related states
+	const isImportState =
+		trackedState.includes("importpending") ||
+		trackedState.includes("importfailed") ||
+		trackedState.includes("importblocked");
+
+	// Check if there's a warning that typically indicates manual import is needed
+	const hasImportWarning =
+		trackedStatus.includes("warning") &&
+		(isPendingState || appearsCompleted || isImportState);
+
 	const canManualImport = Boolean(
 		hasDownloadId &&
 			(manualImportReason ||
-				trackedState.includes("importpending") ||
+				isImportState ||
+				hasImportWarning ||
 				(isPendingState && appearsCompleted) ||
 				(trackedStatus.includes("pending") && appearsCompleted)),
 	);

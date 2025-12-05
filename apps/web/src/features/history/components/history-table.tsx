@@ -23,7 +23,7 @@ interface HistoryTableProps {
 }
 
 const formatBytes = (value?: number): string => {
-	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+	if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
 		return "-";
 	}
 	const units = ["B", "KB", "MB", "GB", "TB"];
@@ -78,7 +78,7 @@ const getEventTypeBadgeClass = (eventType: string): string => {
 	if (normalized.includes("ignored") || normalized.includes("skip")) {
 		return "bg-amber-500/20 text-amber-200";
 	}
-	return "bg-white/10 text-white/70";
+	return "bg-bg-subtle text-fg-muted";
 };
 
 const getDisplayTitle = (item: HistoryItem): string => {
@@ -177,7 +177,7 @@ export const HistoryTable = ({
 
 	if (loading) {
 		return (
-			<div className="rounded-xl border border-white/10 bg-white/5 p-6 text-sm text-white/70">
+			<div className="rounded-xl border border-border bg-bg-subtle p-6 text-sm text-fg-muted">
 				Fetching history records...
 			</div>
 		);
@@ -185,16 +185,16 @@ export const HistoryTable = ({
 
 	if (groups.length === 0) {
 		return (
-			<div className="rounded-xl border border-white/10 bg-white/5 p-6 text-sm text-white/70">
+			<div className="rounded-xl border border-border bg-bg-subtle p-6 text-sm text-fg-muted">
 				{emptyMessage ?? "No history records available."}
 			</div>
 		);
 	}
 
 	return (
-		<div className="overflow-hidden rounded-xl border border-white/10 bg-white/5">
-			<table className="min-w-full divide-y divide-white/10 text-sm text-white/80">
-				<thead className="bg-white/5 text-left text-xs uppercase tracking-wide text-white/60">
+		<div className="overflow-hidden rounded-xl border border-border bg-bg-subtle">
+			<table className="min-w-full divide-y divide-border text-sm text-fg-muted">
+				<thead className="bg-bg-subtle text-left text-xs uppercase tracking-wide text-fg-muted">
 					<tr>
 						<th className="px-4 py-3">Event</th>
 						<th className="px-4 py-3">Title</th>
@@ -204,7 +204,7 @@ export const HistoryTable = ({
 						<th className="px-4 py-3">Date</th>
 					</tr>
 				</thead>
-				<tbody className="divide-y divide-white/5">
+				<tbody className="divide-y divide-border/50">
 					{groups.map((group, groupIndex) => {
 						const isGrouped = groupingEnabled && group.items.length > 1;
 						const isRssGroup = group.groupType === "rss";
@@ -218,7 +218,7 @@ export const HistoryTable = ({
 							const eventCount = group.items.length;
 
 							return (
-								<tr key={key} className="hover:bg-white/10">
+								<tr key={key} className="hover:bg-bg-subtle/80">
 									<td className="px-4 py-3">
 										<div className="flex flex-col gap-1">
 											<div className="mb-1 text-xs text-sky-400 font-semibold">
@@ -227,7 +227,7 @@ export const HistoryTable = ({
 											<span className="inline-flex w-fit rounded-full px-2 py-0.5 text-xs font-semibold bg-blue-500/20 text-blue-200">
 												indexerRss
 											</span>
-											<span className="text-xs text-white/50 capitalize">
+											<span className="text-xs text-fg-muted capitalize">
 												{firstItem?.instanceName
 													? incognitoMode
 														? getLinuxInstanceName(firstItem.instanceName)
@@ -236,17 +236,17 @@ export const HistoryTable = ({
 											</span>
 										</div>
 									</td>
-									<td className="px-4 py-3 text-white">
+									<td className="px-4 py-3 text-fg">
 										<div className="truncate">RSS Feed Sync</div>
 									</td>
-									<td className="px-4 py-3 text-white/70">-</td>
-									<td className="px-4 py-3 text-white/70">
-										<div className="text-xs text-white/50">
+									<td className="px-4 py-3 text-fg-muted">-</td>
+									<td className="px-4 py-3 text-fg-muted">
+										<div className="text-xs text-fg-muted">
 											{eventCount} {eventCount === 1 ? "feed" : "feeds"}
 										</div>
 									</td>
-									<td className="px-4 py-3 text-right text-white/70">-</td>
-									<td className="px-4 py-3 text-white/70 whitespace-nowrap">
+									<td className="px-4 py-3 text-right text-fg-muted">-</td>
+									<td className="px-4 py-3 text-fg-muted whitespace-nowrap">
 										{firstItem?.date ? formatDateTime(firstItem.date) : "-"}
 									</td>
 								</tr>
@@ -307,7 +307,7 @@ export const HistoryTable = ({
 							return (
 								<tr
 									key={key}
-									className={`hover:bg-white/10 ${isGrouped ? "border-l-2 border-l-sky-500/50" : ""} ${isGrouped && !isLastInGroup ? "border-b-0" : ""}`}
+									className={`hover:bg-bg-subtle/80 ${isGrouped ? "border-l-2 border-l-primary/50" : ""} ${isGrouped && !isLastInGroup ? "border-b-0" : ""}`}
 								>
 									<td className={`px-4 py-3 ${isGrouped && !isFirstInGroup ? "pl-8" : ""}`}>
 										<div className="flex flex-col gap-1">
@@ -321,20 +321,20 @@ export const HistoryTable = ({
 											>
 												{eventType}
 											</span>
-											<span className="text-xs text-white/50">
+											<span className="text-xs text-fg-muted">
 												{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}
 											</span>
 										</div>
 									</td>
-									<td className="max-w-xs px-4 py-3 text-white" title={anonymizedTitle}>
+									<td className="max-w-xs px-4 py-3 text-fg" title={anonymizedTitle}>
 										<div className="truncate">{anonymizedTitle}</div>
 									</td>
-									<td className="px-4 py-3 text-white/70">
+									<td className="px-4 py-3 text-fg-muted">
 										{(item.quality as { quality?: { name?: string } })?.quality?.name ?? "-"}
 									</td>
-									<td className="px-4 py-3 text-white/70">{sourceClient}</td>
-									<td className="px-4 py-3 text-right text-white/70">{formatBytes(item.size)}</td>
-									<td className="px-4 py-3 text-white/70 whitespace-nowrap">
+									<td className="px-4 py-3 text-fg-muted">{sourceClient}</td>
+									<td className="px-4 py-3 text-right text-fg-muted">{formatBytes(item.size)}</td>
+									<td className="px-4 py-3 text-fg-muted whitespace-nowrap">
 										{formatDateTime(item.date)}
 									</td>
 								</tr>

@@ -94,6 +94,7 @@ export const RecommendationCarousel: React.FC<RecommendationCarouselProps> = ({
 							>
 								<div className="relative aspect-[2/3] w-full overflow-hidden bg-gradient-to-br from-slate-700 to-slate-900">
 									{result.images?.poster ? (
+										/* eslint-disable-next-line @next/next/no-img-element -- External TMDB image with dynamic URL */
 										<img
 											src={result.images.poster}
 											alt={result.title ?? "Poster"}

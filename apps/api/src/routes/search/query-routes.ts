@@ -11,28 +11,26 @@ import { performProwlarrSearch } from "../../lib/search/prowlarr-api.js";
  * - POST /search/query - Perform a manual search across Prowlarr instances
  */
 export const registerQueryRoutes: FastifyPluginCallback = (app, _opts, done) => {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
 	/**
 	 * POST /search/query
 	 * Performs a manual search query across one or more Prowlarr instances.
 	 * Supports filtering by indexer IDs and categories per instance.
 	 */
 	app.post("/search/query", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-
-			return multiInstanceSearchResponseSchema.parse({
-				instances: [],
-
-				aggregated: [],
-
-				totalCount: 0,
-			});
-		}
-
 		const payload = searchRequestSchema.parse(request.body ?? {});
 
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { enabled: true, service: "PROWLARR" },
+			where: { enabled: true, service: "PROWLARR", userId: request.currentUser?.id },
 		});
 
 		if (instances.length === 0) {

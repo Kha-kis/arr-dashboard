@@ -78,7 +78,7 @@ export const PasswordSetup = () => {
 	return (
 		<form className="space-y-4" onSubmit={handleSubmit}>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-white/60">Username</label>
+				<label className="text-xs uppercase text-fg-muted">Username</label>
 				<Input
 					type="text"
 					value={formState.username}
@@ -90,7 +90,7 @@ export const PasswordSetup = () => {
 				/>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-white/60">Password</label>
+				<label className="text-xs uppercase text-fg-muted">Password</label>
 				<Input
 					type="password"
 					value={formState.password}
@@ -99,12 +99,12 @@ export const PasswordSetup = () => {
 					required
 					minLength={8}
 				/>
-				<p className="text-xs text-white/50">
+				<p className="text-xs text-fg-muted">
 					Must include uppercase, lowercase, number, and special character
 				</p>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-white/60">Confirm Password</label>
+				<label className="text-xs uppercase text-fg-muted">Confirm Password</label>
 				<Input
 					type="password"
 					value={formState.confirmPassword}
