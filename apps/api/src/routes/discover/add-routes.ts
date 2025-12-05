@@ -14,21 +14,27 @@ import {
  * - POST /discover/add - Add a movie or series to an instance
  */
 export const registerAddRoutes: FastifyPluginCallback = (app, _opts, done) => {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
 	/**
 	 * POST /discover/add
 	 * Adds a movie or series to the specified Sonarr/Radarr instance
 	 */
 	app.post("/discover/add", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-			return reply.send({ message: "Unauthorized" });
-		}
-
 		const payload = discoverAddRequestSchema.parse(request.body ?? {});
 		const instance = await app.prisma.serviceInstance.findFirst({
 			where: {
 				id: payload.instanceId,
 				enabled: true,
+				userId: request.currentUser?.id,
 			},
 		});
 

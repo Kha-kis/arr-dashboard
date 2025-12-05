@@ -71,3 +71,26 @@ export const useDeleteServiceMutation = () => {
 		},
 	});
 };
+
+// Service Connection Testing
+import {
+	testServiceConnection,
+	testConnectionBeforeAdd,
+	type TestConnectionResponse,
+} from "../../lib/api-client/services";
+
+export const useTestServiceConnection = () => {
+	return useMutation<TestConnectionResponse, Error, string>({
+		mutationFn: (id: string) => testServiceConnection(id),
+	});
+};
+
+export const useTestConnectionBeforeAdd = () => {
+	return useMutation<
+		TestConnectionResponse,
+		Error,
+		{ baseUrl: string; apiKey: string; service: "sonarr" | "radarr" | "prowlarr" }
+	>({
+		mutationFn: ({ baseUrl, apiKey, service }) => testConnectionBeforeAdd(baseUrl, apiKey, service),
+	});
+};

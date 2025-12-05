@@ -169,7 +169,7 @@ export const LoginForm = () => {
 	if (setupLoading) {
 		return (
 			<div className="flex min-h-[60vh] flex-col items-center justify-center">
-				<div className="h-10 w-10 animate-spin rounded-full border-4 border-white/20 border-t-white" />
+				<div className="h-10 w-10 animate-spin rounded-full border-4 border-border border-t-fg" />
 			</div>
 		);
 	}
@@ -182,19 +182,19 @@ export const LoginForm = () => {
 	return (
 		<div className="flex min-h-[60vh] flex-col items-center justify-center gap-6">
 			<div className="text-center">
-				<p className="text-sm uppercase tracking-[0.3em] text-white/50">Arr Control Center</p>
-				<h1 className="mt-2 text-3xl font-semibold text-white">Sign in to your dashboard</h1>
-				<p className="mt-2 text-sm text-white/60">
+				<p className="text-sm uppercase tracking-[0.3em] text-fg-muted">Arr Control Center</p>
+				<h1 className="mt-2 text-3xl font-semibold text-fg">Sign in to your dashboard</h1>
+				<p className="mt-2 text-sm text-fg-muted">
 					{hasAlternativeMethods
 						? "Choose your preferred authentication method."
 						: "Use your admin credentials to continue."}
 				</p>
 			</div>
 
-			<Card className="w-full max-w-sm border-white/10 bg-white/5">
+			<Card className="w-full max-w-sm border-border bg-bg-subtle">
 				<CardHeader>
-					<CardTitle className="text-xl text-white">Welcome back</CardTitle>
-					<CardDescription className="text-white/60">
+					<CardTitle className="text-xl text-fg">Welcome back</CardTitle>
+					<CardDescription className="text-fg-muted">
 						Sign in to manage your Sonarr, Radarr, and Prowlarr instances.
 					</CardDescription>
 				</CardHeader>
@@ -204,13 +204,13 @@ export const LoginForm = () => {
 						<Button
 							type="button"
 							variant="secondary"
-							className="w-full border-white/20 bg-white/5 text-white hover:bg-white/10"
+							className="w-full border-border bg-bg-subtle text-fg hover:bg-bg-subtle/80"
 							onClick={handlePasskeyLogin}
 							disabled={disabled}
 						>
 							{passkeyLoading ? (
 								<>
-									<div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+									<div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-border border-t-fg" />
 									Authenticating with passkey...
 								</>
 							) : (
@@ -242,13 +242,13 @@ export const LoginForm = () => {
 									key={provider.type}
 									type="button"
 									variant="secondary"
-									className="w-full border-white/20 bg-white/5 text-white hover:bg-white/10"
+									className="w-full border-border bg-bg-subtle text-fg hover:bg-bg-subtle/80"
 									onClick={() => handleOIDCLogin(provider.type)}
 									disabled={disabled}
 								>
 									{oidcLoading ? (
 										<>
-											<div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+											<div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-border border-t-fg" />
 											Redirecting...
 										</>
 									) : (
@@ -278,10 +278,10 @@ export const LoginForm = () => {
 					{hasAlternativeMethods && (
 						<div className="relative">
 							<div className="absolute inset-0 flex items-center">
-								<div className="w-full border-t border-white/10" />
+								<div className="w-full border-t border-border" />
 							</div>
 							<div className="relative flex justify-center text-xs uppercase">
-								<span className="bg-[#0a0a0a] px-2 text-white/40">Or continue with</span>
+								<span className="bg-bg px-2 text-fg-muted">Or continue with</span>
 							</div>
 						</div>
 					)}
@@ -291,7 +291,7 @@ export const LoginForm = () => {
 						<div className="space-y-2">
 							<label
 								htmlFor="username"
-								className="block text-xs font-semibold uppercase tracking-wide text-white/60"
+								className="block text-xs font-semibold uppercase tracking-wide text-fg-muted"
 							>
 								Username
 							</label>
@@ -310,7 +310,7 @@ export const LoginForm = () => {
 						<div className="space-y-2">
 							<label
 								htmlFor="password"
-								className="block text-xs font-semibold uppercase tracking-wide text-white/60"
+								className="block text-xs font-semibold uppercase tracking-wide text-fg-muted"
 							>
 								Password
 							</label>
@@ -334,10 +334,10 @@ export const LoginForm = () => {
 								name="rememberMe"
 								checked={rememberMe}
 								onChange={(e) => setRememberMe(e.target.checked)}
-								className="h-4 w-4 rounded border-white/20 bg-white/5 text-primary focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 focus:ring-offset-bg"
+								className="h-4 w-4 rounded border-border bg-bg-subtle text-primary focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 focus:ring-offset-bg"
 								disabled={disabled}
 							/>
-							<label htmlFor="rememberMe" className="text-sm text-white/70 cursor-pointer">
+							<label htmlFor="rememberMe" className="text-sm text-fg-muted cursor-pointer">
 								Remember me for 30 days
 							</label>
 						</div>
@@ -355,9 +355,9 @@ export const LoginForm = () => {
 				</CardContent>
 			</Card>
 
-			<p className="text-xs text-white/40">
+			<p className="text-xs text-fg-muted">
 				Need to configure services? Head over to{" "}
-				<Link href="/settings" className="text-white/70 underline hover:text-white">
+				<Link href="/settings" className="text-fg-muted underline hover:text-fg">
 					Settings
 				</Link>{" "}
 				after signing in.

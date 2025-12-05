@@ -1,21 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import type {
-	DiscoverAddRequest,
-	DiscoverSearchResult,
-	DiscoverSearchType,
-	RecommendationItem,
-} from "@arr/shared";
+import { useMemo } from "react";
+import type { ServiceInstanceSummary } from "@arr/shared";
 import { Alert, AlertDescription, AlertTitle } from "../../../components/ui";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
-import {
-	useDiscoverAddMutation,
-	useDiscoverSearchQuery,
-	useInfiniteRecommendationsQuery,
-} from "../../../hooks/api/useDiscover";
-import { useLibraryQuery } from "../../../hooks/api/useLibrary";
-import { deduplicateItems, filterExistingItems } from "../lib/discover-utils";
+import { useDiscoverActions } from "../hooks/useDiscoverActions";
+import { useDiscoverRecommendations } from "../hooks/useDiscoverRecommendations";
+import { useDiscoverSearch } from "../hooks/useDiscoverSearch";
 import { AddToLibraryDialog } from "./add-to-library-dialog";
 import { MediaTypeToggle } from "./media-type-toggle";
 import { SearchForm } from "./search-form";
@@ -30,228 +21,63 @@ import { TMDBCarousel } from "./tmdb-carousel";
  * - TMDB recommendations (trending, popular, top rated, upcoming)
  * - Adding titles to library instances
  *
+ * Refactored to use business logic hooks for better separation of concerns.
+ *
  * @component
  */
-export const DiscoverClient: React.FC = () => {
-	const [searchType, setSearchType] = useState<DiscoverSearchType>("movie");
-	const [searchInput, setSearchInput] = useState("");
-	const [submittedQuery, setSubmittedQuery] = useState("");
-	const [selectedResult, setSelectedResult] = useState<DiscoverSearchResult | null>(null);
-	const [feedback, setFeedback] = useState<{
-		type: "success" | "error";
-		message: string;
-	} | null>(null);
-
+export const DiscoverClient = () => {
 	const { data: services = [] } = useServicesQuery();
-	const { data: libraryData } = useLibraryQuery();
 
+	// Search functionality
+	const {
+		searchType,
+		setSearchType,
+		searchInput,
+		setSearchInput,
+		handleSubmit,
+		searchResults,
+		isLoading,
+		hasQuery,
+		isError,
+		error,
+	} = useDiscoverSearch();
+
+	// Filter relevant service instances
 	const relevantInstances = useMemo(
 		() =>
 			services.filter(
-				(service) =>
+				(service: ServiceInstanceSummary) =>
 					service.enabled &&
 					(searchType === "movie" ? service.service === "radarr" : service.service === "sonarr"),
 			),
 		[services, searchType],
 	);
 
-	const searchQuery = useDiscoverSearchQuery({
-		query: submittedQuery,
-		type: searchType,
-		enabled: submittedQuery.trim().length > 0,
-	});
-
-	const addMutation = useDiscoverAddMutation();
-
-	useEffect(() => {
-		if (!feedback) {
-			return;
-		}
-		const timer = window.setTimeout(() => setFeedback(null), 4000);
-		return () => window.clearTimeout(timer);
-	}, [feedback]);
-
-	const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-		event.preventDefault();
-		const trimmed = searchInput.trim();
-		if (trimmed.length === 0) {
-			return;
-		}
-		setSubmittedQuery(trimmed);
-	};
-
-	const handleSelectItem = (item: RecommendationItem) => {
-		// Convert RecommendationItem to DiscoverSearchResult format
-		const fakeResult: DiscoverSearchResult = {
-			id: `tmdb-${item.tmdbId}`,
-			title: item.title,
-			type: searchType,
-			year: item.releaseDate ? new Date(item.releaseDate).getFullYear() : undefined,
-			overview: item.overview,
-			remoteIds: {
-				tmdbId: item.tmdbId,
-			},
-			images: {
-				poster: item.posterUrl,
-				fanart: item.backdropUrl,
-			},
-			ratings: item.rating
-				? {
-						value: item.rating,
-						votes: item.voteCount,
-					}
-				: undefined,
-			// Create fake instance states - all available since we don't know which instances have it
-			instanceStates: relevantInstances.map((instance) => ({
-				instanceId: instance.id,
-				instanceName: instance.label,
-				service: instance.service as "sonarr" | "radarr",
-				exists: false,
-				monitored: false,
-				hasFile: false,
-			})),
-		};
-		setSelectedResult(fakeResult);
-	};
-
-	const handleAdd = async (requestPayload: DiscoverAddRequest) => {
-		try {
-			await addMutation.mutateAsync(requestPayload);
-			if (selectedResult) {
-				setFeedback({
-					type: "success",
-					message: `Added '${selectedResult.title ?? "Title"}' to your library.`,
-				});
-			}
-			setSelectedResult(null);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : "Failed to add title";
-			setFeedback({ type: "error", message });
-		}
-	};
-
-	const searchResults = searchQuery.data?.results ?? [];
-	const isLoading = searchQuery.isFetching || searchQuery.isLoading;
-	const hasQuery = submittedQuery.trim().length > 0;
 	const canSearch = relevantInstances.length > 0;
 
-	// Query for TMDB recommendations with infinite scroll
-	const trendingQuery = useInfiniteRecommendationsQuery(
-		{
-			type: "trending",
-			mediaType: searchType === "movie" ? "movie" : "series",
-		},
-		!hasQuery && canSearch,
-	);
+	// TMDB recommendations (only when not searching)
+	const recommendations = useDiscoverRecommendations(searchType, !hasQuery && canSearch);
 
-	const popularQuery = useInfiniteRecommendationsQuery(
-		{
-			type: "popular",
-			mediaType: searchType === "movie" ? "movie" : "series",
-		},
-		!hasQuery && canSearch,
-	);
-
-	const topRatedQuery = useInfiniteRecommendationsQuery(
-		{
-			type: "top_rated",
-			mediaType: searchType === "movie" ? "movie" : "series",
-		},
-		!hasQuery && canSearch,
-	);
-
-	const upcomingQuery = useInfiniteRecommendationsQuery(
-		{
-			type: searchType === "movie" ? "upcoming" : "airing_today",
-			mediaType: searchType === "movie" ? "movie" : "series",
-		},
-		!hasQuery && canSearch,
-	);
-
-	// Auto-load more pages if filtered results are too few (minimum 10 items)
-	const MIN_VISIBLE_ITEMS = 10;
-
-	useEffect(() => {
-		const allItems = trendingQuery.data?.pages.flatMap((p) => p.items) || [];
-		const uniqueItems = deduplicateItems(allItems);
-		const trendingItems = filterExistingItems(
-			uniqueItems,
-			libraryData?.aggregated,
-			searchType === "movie" ? "movie" : "series",
-		);
-		if (
-			trendingItems.length < MIN_VISIBLE_ITEMS &&
-			trendingQuery.hasNextPage &&
-			!trendingQuery.isFetchingNextPage &&
-			!trendingQuery.isLoading
-		) {
-			trendingQuery.fetchNextPage();
-		}
-	}, [trendingQuery.data, libraryData, searchType, trendingQuery.hasNextPage]);
-
-	useEffect(() => {
-		const allItems = popularQuery.data?.pages.flatMap((p) => p.items) || [];
-		const uniqueItems = deduplicateItems(allItems);
-		const popularItems = filterExistingItems(
-			uniqueItems,
-			libraryData?.aggregated,
-			searchType === "movie" ? "movie" : "series",
-		);
-		if (
-			popularItems.length < MIN_VISIBLE_ITEMS &&
-			popularQuery.hasNextPage &&
-			!popularQuery.isFetchingNextPage &&
-			!popularQuery.isLoading
-		) {
-			popularQuery.fetchNextPage();
-		}
-	}, [popularQuery.data, libraryData, searchType, popularQuery.hasNextPage]);
-
-	useEffect(() => {
-		const allItems = topRatedQuery.data?.pages.flatMap((p) => p.items) || [];
-		const uniqueItems = deduplicateItems(allItems);
-		const topRatedItems = filterExistingItems(
-			uniqueItems,
-			libraryData?.aggregated,
-			searchType === "movie" ? "movie" : "series",
-		);
-		if (
-			topRatedItems.length < MIN_VISIBLE_ITEMS &&
-			topRatedQuery.hasNextPage &&
-			!topRatedQuery.isFetchingNextPage &&
-			!topRatedQuery.isLoading
-		) {
-			topRatedQuery.fetchNextPage();
-		}
-	}, [topRatedQuery.data, libraryData, searchType, topRatedQuery.hasNextPage]);
-
-	useEffect(() => {
-		const allItems = upcomingQuery.data?.pages.flatMap((p) => p.items) || [];
-		const uniqueItems = deduplicateItems(allItems);
-		const upcomingItems = filterExistingItems(
-			uniqueItems,
-			libraryData?.aggregated,
-			searchType === "movie" ? "movie" : "series",
-		);
-		if (
-			upcomingItems.length < MIN_VISIBLE_ITEMS &&
-			upcomingQuery.hasNextPage &&
-			!upcomingQuery.isFetchingNextPage &&
-			!upcomingQuery.isLoading
-		) {
-			upcomingQuery.fetchNextPage();
-		}
-	}, [upcomingQuery.data, libraryData, searchType, upcomingQuery.hasNextPage]);
+	// Action handlers (selection, add, feedback)
+	const {
+		selectedResult,
+		feedback,
+		isSubmitting,
+		handleSelectItem,
+		handleSelectResult,
+		handleAdd,
+		handleCloseDialog,
+	} = useDiscoverActions(searchType, relevantInstances);
 
 	return (
 		<div className="space-y-12">
 			<header className="space-y-8">
 				<div className="space-y-2">
-					<p className="text-xs uppercase tracking-[0.4em] text-white/40">Discover</p>
-					<h1 className="text-3xl font-semibold text-white">
+					<p className="text-xs uppercase tracking-[0.4em] text-fg-muted">Discover</p>
+					<h1 className="text-3xl font-semibold text-fg">
 						Find new content for your *arr stack
 					</h1>
-					<p className="text-sm text-white/60">
+					<p className="text-sm text-fg-muted">
 						Search across your configured {searchType === "movie" ? "Radarr" : "Sonarr"} instances
 						and add titles with smart defaults.
 					</p>
@@ -263,7 +89,7 @@ export const DiscoverClient: React.FC = () => {
 					</Alert>
 				)}
 
-				<div className="flex flex-col gap-6 rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur">
+				<div className="flex flex-col gap-6 rounded-2xl border border-border bg-bg-subtle p-6 backdrop-blur">
 					<MediaTypeToggle
 						searchType={searchType}
 						onTypeChange={setSearchType}
@@ -285,16 +111,12 @@ export const DiscoverClient: React.FC = () => {
 				<TMDBCarousel
 					title="Trending Now"
 					description={`Popular ${searchType === "movie" ? "movies" : "series"} trending this week`}
-					items={filterExistingItems(
-						deduplicateItems(trendingQuery.data?.pages.flatMap((p) => p.items) || []),
-						libraryData?.aggregated,
-						searchType === "movie" ? "movie" : "series",
-					)}
+					items={recommendations.trending.items}
 					onSelectItem={handleSelectItem}
-					isLoading={trendingQuery.isLoading}
-					isFetchingNextPage={trendingQuery.isFetchingNextPage}
-					hasNextPage={trendingQuery.hasNextPage}
-					onLoadMore={() => trendingQuery.fetchNextPage()}
+					isLoading={recommendations.trending.query.isLoading}
+					isFetchingNextPage={recommendations.trending.query.isFetchingNextPage}
+					hasNextPage={recommendations.trending.query.hasNextPage}
+					onLoadMore={() => recommendations.trending.query.fetchNextPage()}
 				/>
 			)}
 
@@ -302,16 +124,12 @@ export const DiscoverClient: React.FC = () => {
 				<TMDBCarousel
 					title="Popular Releases"
 					description={`Most popular ${searchType === "movie" ? "movies" : "series"} right now`}
-					items={filterExistingItems(
-						deduplicateItems(popularQuery.data?.pages.flatMap((p) => p.items) || []),
-						libraryData?.aggregated,
-						searchType === "movie" ? "movie" : "series",
-					)}
+					items={recommendations.popular.items}
 					onSelectItem={handleSelectItem}
-					isLoading={popularQuery.isLoading}
-					isFetchingNextPage={popularQuery.isFetchingNextPage}
-					hasNextPage={popularQuery.hasNextPage}
-					onLoadMore={() => popularQuery.fetchNextPage()}
+					isLoading={recommendations.popular.query.isLoading}
+					isFetchingNextPage={recommendations.popular.query.isFetchingNextPage}
+					hasNextPage={recommendations.popular.query.hasNextPage}
+					onLoadMore={() => recommendations.popular.query.fetchNextPage()}
 				/>
 			)}
 
@@ -319,16 +137,12 @@ export const DiscoverClient: React.FC = () => {
 				<TMDBCarousel
 					title="Top Rated"
 					description={`Highest rated ${searchType === "movie" ? "movies" : "series"} of all time`}
-					items={filterExistingItems(
-						deduplicateItems(topRatedQuery.data?.pages.flatMap((p) => p.items) || []),
-						libraryData?.aggregated,
-						searchType === "movie" ? "movie" : "series",
-					)}
+					items={recommendations.topRated.items}
 					onSelectItem={handleSelectItem}
-					isLoading={topRatedQuery.isLoading}
-					isFetchingNextPage={topRatedQuery.isFetchingNextPage}
-					hasNextPage={topRatedQuery.hasNextPage}
-					onLoadMore={() => topRatedQuery.fetchNextPage()}
+					isLoading={recommendations.topRated.query.isLoading}
+					isFetchingNextPage={recommendations.topRated.query.isFetchingNextPage}
+					hasNextPage={recommendations.topRated.query.hasNextPage}
+					onLoadMore={() => recommendations.topRated.query.fetchNextPage()}
 				/>
 			)}
 
@@ -338,16 +152,12 @@ export const DiscoverClient: React.FC = () => {
 					description={
 						searchType === "movie" ? "Upcoming movies to watch out for" : "TV shows airing today"
 					}
-					items={filterExistingItems(
-						deduplicateItems(upcomingQuery.data?.pages.flatMap((p) => p.items) || []),
-						libraryData?.aggregated,
-						searchType === "movie" ? "movie" : "series",
-					)}
+					items={recommendations.upcoming.items}
 					onSelectItem={handleSelectItem}
-					isLoading={upcomingQuery.isLoading}
-					isFetchingNextPage={upcomingQuery.isFetchingNextPage}
-					hasNextPage={upcomingQuery.hasNextPage}
-					onLoadMore={() => upcomingQuery.fetchNextPage()}
+					isLoading={recommendations.upcoming.query.isLoading}
+					isFetchingNextPage={recommendations.upcoming.query.isFetchingNextPage}
+					hasNextPage={recommendations.upcoming.query.hasNextPage}
+					onLoadMore={() => recommendations.upcoming.query.fetchNextPage()}
 				/>
 			)}
 
@@ -357,7 +167,7 @@ export const DiscoverClient: React.FC = () => {
 					searchType={searchType}
 					relevantInstances={relevantInstances}
 					isLoading={isLoading}
-					onAddClick={setSelectedResult}
+					onAddClick={handleSelectResult}
 				/>
 			)}
 
@@ -366,21 +176,16 @@ export const DiscoverClient: React.FC = () => {
 				result={selectedResult}
 				type={searchType}
 				instances={relevantInstances}
-				submitting={addMutation.isPending}
-				onClose={() => {
-					if (!addMutation.isPending) {
-						setSelectedResult(null);
-					}
-				}}
+				submitting={isSubmitting}
+				onClose={handleCloseDialog}
 				onSubmit={handleAdd}
 			/>
 
-			{searchQuery.isError && (
+			{isError && (
 				<Alert variant="danger">
 					<AlertTitle>Search failed</AlertTitle>
 					<AlertDescription>
-						{(searchQuery.error as Error | undefined)?.message ??
-							"An error occurred while searching."}
+						{error?.message ?? "An error occurred while searching."}
 					</AlertDescription>
 				</Alert>
 			)}

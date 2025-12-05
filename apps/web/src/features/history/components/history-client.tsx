@@ -78,10 +78,10 @@ export const HistoryClient = () => {
 			<header className="space-y-2">
 				<div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
 					<div>
-						<p className="text-sm font-medium uppercase text-white/60">Activity</p>
-						<h1 className="text-3xl font-semibold text-white">Download History</h1>
+						<p className="text-sm font-medium uppercase text-fg-muted">Activity</p>
+						<h1 className="text-3xl font-semibold text-fg">Download History</h1>
 					</div>
-					<div className="flex items-center gap-3 text-sm text-white/60">
+					<div className="flex items-center gap-3 text-sm text-fg-muted">
 						<span>
 							Tracking {allItems.length} event
 							{allItems.length === 1 ? "" : "s"} across {data?.instances?.length ?? 0} instance
@@ -92,7 +92,7 @@ export const HistoryClient = () => {
 						</Button>
 					</div>
 				</div>
-				<p className="text-sm text-white/60">
+				<p className="text-sm text-fg-muted">
 					Review recent activity from all configured Sonarr, Radarr, and Prowlarr instances.
 				</p>
 			</header>
@@ -103,18 +103,18 @@ export const HistoryClient = () => {
 					return (
 						<div
 							key={service.value}
-							className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/80"
+							className="rounded-xl border border-border bg-bg-subtle px-4 py-3 text-sm text-fg-muted"
 						>
-							<p className="text-xs uppercase text-white/50">{service.label}</p>
-							<p className="text-2xl font-semibold text-white">{count}</p>
+							<p className="text-xs uppercase text-fg-muted">{service.label}</p>
+							<p className="text-2xl font-semibold text-fg">{count}</p>
 						</div>
 					);
 				})}
 			</div>
 
-			<div className="flex flex-wrap items-end gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-3">
-				<div className="flex min-w-[140px] flex-col gap-1 text-sm text-white/80">
-					<label className="text-xs uppercase text-white/50" htmlFor="history-start-date">
+			<div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-bg-subtle px-4 py-3">
+				<div className="flex min-w-[140px] flex-col gap-1 text-sm text-fg-muted">
+					<label className="text-xs uppercase text-fg-muted" htmlFor="history-start-date">
 						From Date
 					</label>
 					<Input
@@ -125,11 +125,11 @@ export const HistoryClient = () => {
 							actions.setStartDate(event.target.value);
 							actions.setPage(1);
 						}}
-						className="border-white/20 bg-white/10 text-white"
+						className="border-border bg-bg-subtle text-fg"
 					/>
 				</div>
-				<div className="flex min-w-[140px] flex-col gap-1 text-sm text-white/80">
-					<label className="text-xs uppercase text-white/50" htmlFor="history-end-date">
+				<div className="flex min-w-[140px] flex-col gap-1 text-sm text-fg-muted">
+					<label className="text-xs uppercase text-fg-muted" htmlFor="history-end-date">
 						To Date
 					</label>
 					<Input
@@ -140,11 +140,11 @@ export const HistoryClient = () => {
 							actions.setEndDate(event.target.value);
 							actions.setPage(1);
 						}}
-						className="border-white/20 bg-white/10 text-white"
+						className="border-border bg-bg-subtle text-fg"
 					/>
 				</div>
-				<div className="flex min-w-[200px] flex-col gap-1 text-sm text-white/80">
-					<label className="text-xs uppercase text-white/50" htmlFor="history-search">
+				<div className="flex min-w-[200px] flex-col gap-1 text-sm text-fg-muted">
+					<label className="text-xs uppercase text-fg-muted" htmlFor="history-search">
 						Search
 					</label>
 					<Input
@@ -152,11 +152,11 @@ export const HistoryClient = () => {
 						value={searchTerm}
 						onChange={(event) => actions.setSearchTerm(event.target.value)}
 						placeholder="Search title, client, or indexer"
-						className="border-white/20 bg-white/10 text-white placeholder:text-white/40"
+						className="border-border bg-bg-subtle text-fg placeholder:text-fg-muted"
 					/>
 				</div>
-				<div className="flex min-w-[160px] flex-col gap-1 text-sm text-white/80">
-					<label className="text-xs uppercase text-white/50" htmlFor="history-service-filter">
+				<div className="flex min-w-[160px] flex-col gap-1 text-sm text-fg-muted">
+					<label className="text-xs uppercase text-fg-muted" htmlFor="history-service-filter">
 						Service
 					</label>
 					<select
@@ -167,7 +167,7 @@ export const HistoryClient = () => {
 								event.target.value as (typeof SERVICE_FILTERS)[number]["value"],
 							)
 						}
-						className="rounded-md border border-white/20 bg-white/10 px-2 py-1 text-sm text-white focus:border-sky-400 focus:outline-none [&>option]:bg-slate-800 [&>option]:text-white"
+						className="rounded-md border border-border bg-bg-subtle px-2 py-1 text-sm text-fg focus:border-primary focus:outline-none [&>option]:bg-bg [&>option]:text-fg"
 					>
 						{SERVICE_FILTERS.map((option) => (
 							<option key={option.value} value={option.value}>
@@ -176,15 +176,15 @@ export const HistoryClient = () => {
 						))}
 					</select>
 				</div>
-				<div className="flex min-w-[200px] flex-col gap-1 text-sm text-white/80">
-					<label className="text-xs uppercase text-white/50" htmlFor="history-instance-filter">
+				<div className="flex min-w-[200px] flex-col gap-1 text-sm text-fg-muted">
+					<label className="text-xs uppercase text-fg-muted" htmlFor="history-instance-filter">
 						Instance
 					</label>
 					<select
 						id="history-instance-filter"
 						value={instanceFilter}
 						onChange={(event) => actions.setInstanceFilter(event.target.value)}
-						className="rounded-md border border-white/20 bg-white/10 px-2 py-1 text-sm text-white focus:border-sky-400 focus:outline-none [&>option]:bg-slate-800 [&>option]:text-white"
+						className="rounded-md border border-border bg-bg-subtle px-2 py-1 text-sm text-fg focus:border-primary focus:outline-none [&>option]:bg-bg [&>option]:text-fg"
 					>
 						<option value="all">All instances</option>
 						{instanceOptions.map((option) => (
@@ -194,15 +194,15 @@ export const HistoryClient = () => {
 						))}
 					</select>
 				</div>
-				<div className="flex min-w-[200px] flex-col gap-1 text-sm text-white/80">
-					<label className="text-xs uppercase text-white/50" htmlFor="history-status-filter">
+				<div className="flex min-w-[200px] flex-col gap-1 text-sm text-fg-muted">
+					<label className="text-xs uppercase text-fg-muted" htmlFor="history-status-filter">
 						Status
 					</label>
 					<select
 						id="history-status-filter"
 						value={statusFilter}
 						onChange={(event) => actions.setStatusFilter(event.target.value)}
-						className="rounded-md border border-white/20 bg-white/10 px-2 py-1 text-sm text-white focus:border-sky-400 focus:outline-none [&>option]:bg-slate-800 [&>option]:text-white"
+						className="rounded-md border border-border bg-bg-subtle px-2 py-1 text-sm text-fg focus:border-primary focus:outline-none [&>option]:bg-bg [&>option]:text-fg"
 					>
 						<option value="all">All statuses</option>
 						{statusOptions.map((option) => (
@@ -213,7 +213,7 @@ export const HistoryClient = () => {
 					</select>
 				</div>
 				<div className="ml-auto flex items-center gap-3">
-					<label className="flex items-center gap-2 text-sm text-white/70 cursor-pointer">
+					<label className="flex items-center gap-2 text-sm text-fg-muted cursor-pointer">
 						<input
 							type="checkbox"
 							checked={groupByDownload}
@@ -221,7 +221,7 @@ export const HistoryClient = () => {
 								actions.setGroupByDownload(e.target.checked);
 								actions.setPage(1);
 							}}
-							className="rounded border-white/20 bg-white/10 text-sky-500 focus:ring-sky-400"
+							className="rounded border-border bg-bg-subtle text-primary focus:ring-primary"
 						/>
 						Group by download
 					</label>
@@ -247,13 +247,13 @@ export const HistoryClient = () => {
 
 			{statusSummary.length > 0 && (
 				<div className="flex flex-wrap gap-3">
-					{statusSummary.map(([label, count]) => (
+					{statusSummary.map(([label, count], index) => (
 						<div
-							key={label}
-							className="flex flex-col gap-1 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-white/80"
+							key={`${index}-${label}`}
+							className="flex flex-col gap-1 rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg-muted"
 						>
-							<span className="text-xs uppercase text-white/50">{label}</span>
-							<span className="text-lg font-semibold text-white">{count}</span>
+							<span className="text-xs uppercase text-fg-muted">{label}</span>
+							<span className="text-lg font-semibold text-fg">{count}</span>
 						</div>
 					))}
 				</div>

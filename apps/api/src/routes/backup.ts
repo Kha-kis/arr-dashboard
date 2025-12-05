@@ -20,6 +20,16 @@ const RESTORE_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };
 const DELETE_RATE_LIMIT = { max: 5, timeWindow: "5 minutes" };
 
 const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
 	// Helper to create backup service instance
 	const getBackupService = () => {
 		// Use app.config.DATABASE_URL (includes env schema defaults) not process.env
@@ -33,10 +43,6 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * List all backups from filesystem
 	 */
 	app.get("/", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({ error: "Unauthorized" });
-		}
-
 		try {
 			const backupService = getBackupService();
 			const backups = await backupService.listBackups();
@@ -57,10 +63,6 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		"/create",
 		{ config: { rateLimit: BACKUP_RATE_LIMIT } },
 		async (request, reply) => {
-			if (!request.currentUser) {
-				return reply.status(401).send({ error: "Unauthorized" });
-			}
-
 			const parsed = createBackupRequestSchema.safeParse(request.body);
 			if (!parsed.success) {
 				return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
@@ -77,7 +79,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 				request.log.info(
 					{
-						userId: request.currentUser.id,
+						userId: request.currentUser?.id,
 						backupId: backupInfo.id,
 						backupSize: backupInfo.size,
 						timestamp: backupInfo.timestamp,
@@ -103,10 +105,6 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		"/restore",
 		{ config: { rateLimit: RESTORE_RATE_LIMIT } },
 		async (request, reply) => {
-			if (!request.currentUser) {
-				return reply.status(401).send({ error: "Unauthorized" });
-			}
-
 			const parsed = restoreBackupRequestSchema.safeParse(request.body);
 			if (!parsed.success) {
 				return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
@@ -122,7 +120,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 				request.log.info(
 					{
-						userId: request.currentUser.id,
+						userId: request.currentUser?.id,
 						backupTimestamp: metadata.timestamp,
 						backupVersion: metadata.version,
 						backupAppVersion: metadata.appVersion,
@@ -167,10 +165,6 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		"/restore-from-file",
 		{ config: { rateLimit: RESTORE_RATE_LIMIT } },
 		async (request, reply) => {
-			if (!request.currentUser) {
-				return reply.status(401).send({ error: "Unauthorized" });
-			}
-
 			const parsed = restoreBackupFromFileRequestSchema.safeParse(request.body);
 			if (!parsed.success) {
 				return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
@@ -184,7 +178,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 				request.log.info(
 					{
-						userId: request.currentUser.id,
+						userId: request.currentUser?.id,
 						backupId: parsed.data.id,
 						backupTimestamp: metadata.timestamp,
 						backupVersion: metadata.version,
@@ -231,10 +225,6 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Download a backup file by ID
 	 */
 	app.get("/:id/download", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({ error: "Unauthorized" });
-		}
-
 		const params = request.params as { id: string };
 
 		try {
@@ -247,7 +237,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			request.log.info(
 				{
-					userId: request.currentUser.id,
+					userId: request.currentUser?.id,
 					backupId: params.id,
 					filename: backup.filename,
 				},
@@ -274,10 +264,6 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		"/:id",
 		{ config: { rateLimit: DELETE_RATE_LIMIT } },
 		async (request, reply) => {
-			if (!request.currentUser) {
-				return reply.status(401).send({ error: "Unauthorized" });
-			}
-
 			const params = request.params as { id: string };
 			const parsed = deleteBackupRequestSchema.safeParse({ id: params.id });
 			if (!parsed.success) {
@@ -292,7 +278,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 				request.log.info(
 					{
-						userId: request.currentUser.id,
+						userId: request.currentUser?.id,
 						backupId: parsed.data.id,
 					},
 					"Backup deleted successfully",
@@ -318,10 +304,6 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Get backup settings
 	 */
 	app.get("/settings", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({ error: "Unauthorized" });
-		}
-
 		try {
 			// Get or create settings atomically
 			const settings = await app.prisma.backupSettings.upsert({
@@ -354,10 +336,6 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Update backup settings
 	 */
 	app.put("/settings", async (request, reply) => {
-		if (!request.currentUser) {
-			return reply.status(401).send({ error: "Unauthorized" });
-		}
-
 		const parsed = updateBackupSettingsRequestSchema.safeParse(request.body);
 		if (!parsed.success) {
 			return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
@@ -407,7 +385,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			request.log.info(
 				{
-					userId: request.currentUser.id,
+					userId: request.currentUser?.id,
 					settings: parsed.data,
 				},
 				"Backup settings updated",

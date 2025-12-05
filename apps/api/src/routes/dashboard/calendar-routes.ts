@@ -17,16 +17,21 @@ const calendarQuerySchema = z.object({
  * Calendar-related routes for the dashboard
  */
 export const calendarRoutes: FastifyPluginCallback = (app, _opts, done) => {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
 	/**
 	 * GET /dashboard/calendar
 	 * Fetches upcoming releases from all enabled Sonarr and Radarr instances
 	 */
 	app.get("/dashboard/calendar", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-			return { instances: [], aggregated: [], totalCount: 0 };
-		}
-
 		const { start, end, unmonitored } = calendarQuerySchema.parse(request.query ?? {});
 		const now = new Date();
 		const defaultStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
@@ -52,7 +57,7 @@ export const calendarRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const endIso = formatDateOnly(endDate);
 
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { enabled: true },
+			where: { enabled: true, userId: request.currentUser?.id },
 		});
 
 		const results: Array<{

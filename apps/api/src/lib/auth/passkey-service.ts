@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { webcrypto } from "node:crypto";
 import {
 	generateAuthenticationOptions,
 	generateRegistrationOptions,
@@ -13,6 +14,60 @@ import {
 	type VerifiedRegistrationResponse,
 } from "@simplewebauthn/server";
 import { isoBase64URL } from "@simplewebauthn/server/helpers";
+
+/**
+ * Verify that a crypto implementation has the required Web Crypto API methods.
+ * @simplewebauthn/server requires getRandomValues() and crypto.subtle for cryptographic operations.
+ */
+function hasRequiredCryptoMethods(cryptoImpl: unknown): cryptoImpl is Crypto {
+	if (!cryptoImpl || typeof cryptoImpl !== "object") {
+		return false;
+	}
+
+	const crypto = cryptoImpl as Record<string, unknown>;
+
+	// Check for getRandomValues method (required for random value generation)
+	if (typeof crypto.getRandomValues !== "function") {
+		return false;
+	}
+
+	// Check for subtle property (required for cryptographic operations)
+	if (!crypto.subtle || typeof crypto.subtle !== "object") {
+		return false;
+	}
+
+	// Verify subtle has required methods (at minimum, we need encrypt/decrypt/sign/verify)
+	const subtle = crypto.subtle as Record<string, unknown>;
+	const requiredMethods = ["encrypt", "decrypt", "sign", "verify", "generateKey"];
+	for (const method of requiredMethods) {
+		if (typeof subtle[method] !== "function") {
+			return false;
+		}
+	}
+
+	return true;
+}
+
+/**
+ * Polyfill WebCrypto for Node.js < 19
+ * 
+ * Safely checks for existing crypto implementation and verifies compatibility
+ * before using webcrypto as a fallback. This prevents runtime errors from
+ * incomplete or incompatible crypto implementations.
+ */
+if (!hasRequiredCryptoMethods(globalThis.crypto)) {
+	// Verify webcrypto has required methods before using as fallback
+	if (hasRequiredCryptoMethods(webcrypto)) {
+		globalThis.crypto = webcrypto as typeof globalThis.crypto;
+	} else {
+		// This should not happen on Node.js 15+ where webcrypto is available
+		// But we provide a clear error message if it does
+		throw new Error(
+			"Web Crypto API is not available. This application requires Node.js 15+ with Web Crypto API support. " +
+			"Please upgrade to Node.js 19+ for native support, or ensure webcrypto is available in your Node.js version.",
+		);
+	}
+}
 
 /**
  * WebAuthn Relying Party configuration
@@ -139,13 +194,22 @@ export class PasskeyService {
 		const options = await generateAuthenticationOptions({
 			rpID: this.config.rpID,
 			// If user-specific, limit to their credentials
-			allowCredentials: allowCredentials.map((cred) => ({
-				id: cred.id,
-				type: "public-key",
-				transports: cred.transports
-					? (JSON.parse(cred.transports) as AuthenticatorTransportFuture[])
-					: undefined,
-			})),
+			allowCredentials: allowCredentials.map((cred) => {
+				let transports: AuthenticatorTransportFuture[] | undefined;
+				if (cred.transports) {
+					try {
+						transports = JSON.parse(cred.transports) as AuthenticatorTransportFuture[];
+					} catch {
+						// Skip invalid transport data, use undefined
+						transports = undefined;
+					}
+				}
+				return {
+					id: cred.id,
+					type: "public-key",
+					transports,
+				};
+			}),
 			userVerification: "required",
 		});
 
