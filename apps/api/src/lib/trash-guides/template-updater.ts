@@ -843,9 +843,23 @@ export class TemplateUpdater {
 		}
 
 		// Determine target commit (default to latest)
-		const targetCommit = targetCommitHash
-			? await this.versionTracker.getCommitInfo(targetCommitHash)
-			: await this.versionTracker.getLatestCommit();
+		let targetCommit: { commitHash: string; commitDate: Date };
+		try {
+			targetCommit = targetCommitHash
+				? await this.versionTracker.getCommitInfo(targetCommitHash)
+				: await this.versionTracker.getLatestCommit();
+		} catch (error) {
+			const context = targetCommitHash
+				? `commit ${targetCommitHash}`
+				: "latest commit";
+			const errorMsg = error instanceof Error ? error.message : String(error);
+			console.error(
+				`[TemplateUpdater] Failed to fetch ${context} for template diff: ${errorMsg}`,
+			);
+			throw new Error(
+				`Failed to fetch version info for ${context}: ${errorMsg}`,
+			);
+		}
 
 		const serviceType = template.serviceType as "RADARR" | "SONARR";
 
