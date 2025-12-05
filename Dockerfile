@@ -74,9 +74,11 @@ WORKDIR /app
 COPY docker/start-combined.sh ./start.sh
 RUN sed -i 's/\r$//' ./start.sh && chmod +x ./start.sh
 
-# Create default non-root user (will be updated by start.sh if PUID/PGID are set)
-RUN addgroup -g 1000 nodejs && \
-    adduser -D -u 1000 -G nodejs arruser
+# Create non-root user for running the app
+# node:alpine already has 'node' user (uid:gid 1000:1000), we'll use a different uid/gid
+# The start.sh script will adjust ownership based on PUID/PGID environment variables
+RUN addgroup -g 1001 arrgroup && \
+    adduser -D -u 1001 -G arrgroup arruser
 
 # Note: We start as root to allow PUID/PGID changes, then drop privileges in start.sh
 
