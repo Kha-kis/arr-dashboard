@@ -1096,7 +1096,7 @@ export class TemplateUpdater {
 		const errors: string[] = [];
 
 		// Get latest commit for version tagging
-		let latestCommit: { commitHash: string; commitDate: Date };
+		let latestCommit: VersionInfo;
 		try {
 			latestCommit = await this.versionTracker.getLatestCommit();
 		} catch (error) {
