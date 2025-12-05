@@ -18,6 +18,13 @@ export class UnauthorizedError extends ApiError {
 	}
 }
 
+export class BadRequestError extends ApiError {
+	constructor(message = "Bad Request") {
+		super(message, 400);
+		this.name = "BadRequestError";
+	}
+}
+
 type RequestOptions = RequestInit & { json?: unknown };
 
 const resolveUrl = (path: string): string => {
@@ -45,6 +52,19 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 
 	if (response.status === 401) {
 		throw new UnauthorizedError();
+	}
+
+	if (response.status === 400) {
+		const contentType = response.headers.get("content-type");
+		const errorPayload =
+			contentType && contentType.includes("application/json")
+				? await response.json().catch(() => undefined)
+				: await response.text();
+		const message =
+			errorPayload && typeof errorPayload === "object" && "message" in errorPayload
+				? (errorPayload as { message: string }).message
+				: "Bad Request";
+		throw new BadRequestError(message);
 	}
 
 	if (response.status === 204) {
