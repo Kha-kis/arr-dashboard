@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import type { ServiceInstanceSummary } from "@arr/shared";
 import { Alert, AlertDescription, AlertTitle } from "../../../components/ui";
+import { useCurrentUser } from "../../../hooks/api/useAuth";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useDiscoverActions } from "../hooks/useDiscoverActions";
 import { useDiscoverRecommendations } from "../hooks/useDiscoverRecommendations";
@@ -26,7 +27,9 @@ import { TMDBCarousel } from "./tmdb-carousel";
  * @component
  */
 export const DiscoverClient = () => {
+	const { data: currentUser } = useCurrentUser();
 	const { data: services = [] } = useServicesQuery();
+	const hasTmdbApiKey = currentUser?.hasTmdbApiKey ?? false;
 
 	// Search functionality
 	const {
@@ -55,8 +58,8 @@ export const DiscoverClient = () => {
 
 	const canSearch = relevantInstances.length > 0;
 
-	// TMDB recommendations (only when not searching)
-	const recommendations = useDiscoverRecommendations(searchType, !hasQuery && canSearch);
+	// TMDB recommendations (only when not searching and TMDB API key is configured)
+	const recommendations = useDiscoverRecommendations(searchType, !hasQuery && canSearch && hasTmdbApiKey);
 
 	// Action handlers (selection, add, feedback)
 	const {
@@ -107,7 +110,29 @@ export const DiscoverClient = () => {
 				</div>
 			</header>
 
-			{!hasQuery && (
+			{!hasQuery && !hasTmdbApiKey && (
+				<Alert variant="info">
+					<AlertTitle>TMDB API Key Required</AlertTitle>
+					<AlertDescription>
+						To browse trending, popular, and upcoming content, please add your TMDB API key in{" "}
+						<a href="/settings" className="underline hover:text-fg">
+							Settings → Account
+						</a>
+						. You can get a free API key from{" "}
+						<a
+							href="https://www.themoviedb.org/settings/api"
+							target="_blank"
+							rel="noopener noreferrer"
+							className="underline hover:text-fg"
+						>
+							themoviedb.org
+						</a>
+						.
+					</AlertDescription>
+				</Alert>
+			)}
+
+			{!hasQuery && hasTmdbApiKey && (
 				<TMDBCarousel
 					title="Trending Now"
 					description={`Popular ${searchType === "movie" ? "movies" : "series"} trending this week`}
@@ -120,7 +145,7 @@ export const DiscoverClient = () => {
 				/>
 			)}
 
-			{!hasQuery && (
+			{!hasQuery && hasTmdbApiKey && (
 				<TMDBCarousel
 					title="Popular Releases"
 					description={`Most popular ${searchType === "movie" ? "movies" : "series"} right now`}
@@ -133,7 +158,7 @@ export const DiscoverClient = () => {
 				/>
 			)}
 
-			{!hasQuery && (
+			{!hasQuery && hasTmdbApiKey && (
 				<TMDBCarousel
 					title="Top Rated"
 					description={`Highest rated ${searchType === "movie" ? "movies" : "series"} of all time`}
@@ -146,7 +171,7 @@ export const DiscoverClient = () => {
 				/>
 			)}
 
-			{!hasQuery && (
+			{!hasQuery && hasTmdbApiKey && (
 				<TMDBCarousel
 					title={searchType === "movie" ? "Coming Soon" : "Airing Today"}
 					description={
