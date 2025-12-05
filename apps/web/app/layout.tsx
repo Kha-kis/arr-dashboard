@@ -11,6 +11,13 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
 	title: "Arr Control Center",
 	description: "Centralized management dashboard for Sonarr, Radarr, and Prowlarr",
+	icons: {
+		icon: [
+			{ url: "/icon.svg", type: "image/svg+xml" },
+			{ url: "/icon.png", type: "image/png" },
+		],
+		apple: "/icon.png",
+	},
 };
 
 interface RootLayoutProps {
