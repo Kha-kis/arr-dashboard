@@ -93,17 +93,17 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 	return (
 		<header className="space-y-4">
 			<div className="space-y-1.5">
-				<p className="text-xs uppercase tracking-[0.4em] text-white/40">Library</p>
-				<h1 className="text-2xl font-semibold text-white">Everything your *arr instances manage</h1>
-				<p className="text-sm text-white/60">
+				<p className="text-xs uppercase tracking-[0.4em] text-fg-muted">Library</p>
+				<h1 className="text-2xl font-semibold text-fg">Everything your *arr instances manage</h1>
+				<p className="text-sm text-fg-muted">
 					Browse, filter, and adjust monitoring for movies and series across every connected
 					instance.
 				</p>
 			</div>
 
-			<div className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+			<div className="flex flex-col gap-4 rounded-2xl border border-border bg-bg-subtle p-4 backdrop-blur">
 				<div className="flex flex-wrap items-center gap-3">
-					<div className="inline-flex rounded-full bg-white/10 p-1">
+					<div className="inline-flex rounded-full bg-bg-hover p-1">
 						{SERVICE_OPTIONS.map((option) => (
 							<Button
 								key={option.value}
@@ -119,21 +119,20 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 					</div>
 
 					<div className="flex items-center gap-3">
-						<label className="text-xs uppercase tracking-[0.3em] text-white/40">Instance</label>
+						<label className="text-xs uppercase tracking-[0.3em] text-fg-muted">Instance</label>
 						<select
 							value={instanceFilter}
 							onChange={(event) => onInstanceFilterChange(event.target.value)}
-							className="rounded-md border border-white/20 bg-slate-900/80 px-3 py-2 text-sm text-white hover:border-sky-400/80 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
+							className="rounded-md border border-border bg-bg-subtle px-3 py-2 text-sm text-fg hover:border-sky-400/80 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
 							disabled={instanceOptions.length === 0}
-							style={{ color: "#f8fafc" }}
 						>
-							<option value="all" className="bg-slate-900 text-white">
+							<option value="all" className="bg-bg text-fg">
 								All instances
 							</option>
 							{instanceOptions
 								.filter((option) => serviceFilter === "all" || option.service === serviceFilter)
 								.map((option) => (
-									<option key={option.id} value={option.id} className="bg-slate-900 text-white">
+									<option key={option.id} value={option.id} className="bg-bg text-fg">
 										{option.label}
 									</option>
 								))}
@@ -141,17 +140,16 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 					</div>
 
 					<div className="flex items-center gap-3">
-						<label className="text-xs uppercase tracking-[0.3em] text-white/40">Status</label>
+						<label className="text-xs uppercase tracking-[0.3em] text-fg-muted">Status</label>
 						<select
 							value={statusFilter}
 							onChange={(event) =>
 								onStatusFilterChange(event.target.value as (typeof STATUS_FILTERS)[number]["value"])
 							}
-							className="rounded-md border border-white/20 bg-slate-900/80 px-3 py-2 text-sm text-white hover:border-sky-400/80 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
-							style={{ color: "#f8fafc" }}
+							className="rounded-md border border-border bg-bg-subtle px-3 py-2 text-sm text-fg hover:border-sky-400/80 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
 						>
 							{STATUS_FILTERS.map((option) => (
-								<option key={option.value} value={option.value} className="bg-slate-900 text-white">
+								<option key={option.value} value={option.value} className="bg-bg text-fg">
 									{option.label}
 								</option>
 							))}
@@ -159,17 +157,16 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 					</div>
 
 					<div className="flex items-center gap-3">
-						<label className="text-xs uppercase tracking-[0.3em] text-white/40">Files</label>
+						<label className="text-xs uppercase tracking-[0.3em] text-fg-muted">Files</label>
 						<select
 							value={fileFilter}
 							onChange={(event) =>
 								onFileFilterChange(event.target.value as (typeof FILE_FILTERS)[number]["value"])
 							}
-							className="rounded-md border border-white/20 bg-slate-900/80 px-3 py-2 text-sm text-white hover:border-sky-400/80 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
-							style={{ color: "#f8fafc" }}
+							className="rounded-md border border-border bg-bg-subtle px-3 py-2 text-sm text-fg hover:border-sky-400/80 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
 						>
 							{FILE_FILTERS.map((option) => (
-								<option key={option.value} value={option.value} className="bg-slate-900 text-white">
+								<option key={option.value} value={option.value} className="bg-bg text-fg">
 									{option.label}
 								</option>
 							))}

@@ -27,6 +27,8 @@ model User {
   sessions            Session[]
   oidcAccounts        OIDCAccount[]
   webauthnCredentials WebAuthnCredential[]
+  trashSettings       TrashSettings?
+  serviceInstances    ServiceInstance[]
 }
 
 model Session {
@@ -50,6 +52,7 @@ model ServiceTag {
 
 model ServiceInstance {
   id              String              @id @default(cuid())
+  userId          String
   service         ServiceType
   label           String
   baseUrl         String
@@ -63,9 +66,19 @@ model ServiceInstance {
   defaultSeasonFolder Boolean?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
-  tags            ServiceInstanceTag[]
+
+  // Relations
+  user                        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tags                        ServiceInstanceTag[]
+  trashSyncHistory            TrashSyncHistory[]
+  trashBackups                TrashBackup[]
+  trashSchedules              TrashSyncSchedule[]
+  qualityProfileOverrides     InstanceQualityProfileOverride[]
+  qualityProfileMappings      TemplateQualityProfileMapping[]
+  deploymentHistory           TemplateDeploymentHistory[]
 
   @@index([service])
+  @@index([userId])
 }
 
 model ServiceInstanceTag {
@@ -153,4 +166,285 @@ model BackupSettings {
   updatedAt         DateTime            @updatedAt
 
   @@map("backup_settings")
+}
+
+// ============================================================================
+// TRaSH Guides Integration Models
+// ============================================================================
+
+// TRaSH Guides cache storage for fetched JSON data from GitHub
+model TrashCache {
+  id            String      @id @default(cuid())
+  serviceType   ServiceType // RADARR, SONARR
+  configType    String      // CUSTOM_FORMATS, CF_GROUPS, QUALITY_SIZE, NAMING
+  data          String      // JSON blob (will be compressed in application layer)
+  version       Int         @default(1)
+  commitHash    String?     // TRaSH Guides GitHub commit hash at time of fetch
+  fetchedAt     DateTime    @default(now())
+  lastCheckedAt DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([serviceType, configType])
+  @@index([serviceType, configType])
+  @@index([commitHash])
+  @@map("trash_cache")
+}
+
+// User-created templates for TRaSH configurations
+model TrashTemplate {
+  id          String      @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  serviceType ServiceType // RADARR, SONARR
+  configData  String      // JSON blob with user customizations
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  deletedAt   DateTime?   // Soft delete
+
+  // Source Quality Profile Information
+  sourceQualityProfileTrashId String? // TRaSH quality profile trash_id this template was created from
+  sourceQualityProfileName    String? // TRaSH quality profile name (e.g., "HD Bluray + WEB")
+
+  // Phase 3: Versioning & Metadata
+  trashGuidesCommitHash    String?   // TRaSH Guides commit hash at time of import
+  trashGuidesVersion       String?   // Semantic version if available
+  importedAt               DateTime  @default(now())
+  lastSyncedAt             DateTime? // Last time template was synced with TRaSH Guides
+
+  // Phase 3: Customization Tracking
+  hasUserModifications     Boolean   @default(false) // True if user has modified scores/selections
+  modifiedFields           String?   // JSON array: ["scores", "cf_selections", "conditions"]
+  lastModifiedAt           DateTime?
+  lastModifiedBy           String?   // userId who made last modification
+
+  // Phase 3: Change History (optional, for audit trail)
+  changeLog                String?   // JSON array of change records
+
+  // Phase 3: Instance-specific Overrides
+  instanceOverrides        String?   // JSON object: { [instanceId]: { cfOverrides, scoreOverrides } }
+
+  syncHistory               TrashSyncHistory[]
+  schedules                 TrashSyncSchedule[]
+  qualityProfileMappings    TemplateQualityProfileMapping[]
+  deploymentHistory         TemplateDeploymentHistory[]
+
+  @@index([userId])
+  @@index([serviceType])
+  @@index([trashGuidesCommitHash])
+  @@index([lastSyncedAt])
+  @@map("trash_templates")
+}
+
+// Sync operation history and audit log
+model TrashSyncHistory {
+  id          String    @id @default(cuid())
+  instanceId  String
+  templateId  String?
+  userId      String
+  syncType    String    // MANUAL, SCHEDULED
+  status      String    // SUCCESS, PARTIAL_SUCCESS, FAILED
+  startedAt   DateTime  @default(now())
+  completedAt DateTime?
+  duration    Int?      // seconds
+
+  // Sync statistics
+  configsApplied   Int @default(0)
+  configsFailed    Int @default(0)
+  configsSkipped   Int @default(0)
+
+  // Detailed sync data (JSON blobs)
+  appliedConfigs String  // JSON array of applied config IDs
+  failedConfigs  String? // JSON array with error details
+  errorLog       String? // Full error log
+
+  // Rollback reference
+  backupId       String?
+  rolledBack     Boolean @default(false)
+  rolledBackAt   DateTime?
+
+  instance   ServiceInstance   @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  template   TrashTemplate?    @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  backup     TrashBackup?      @relation(fields: [backupId], references: [id], onDelete: SetNull)
+
+  @@index([instanceId])
+  @@index([templateId])
+  @@index([userId])
+  @@index([startedAt])
+  @@map("trash_sync_history")
+}
+
+// Backup snapshots of instance configs before sync operations
+model TrashBackup {
+  id         String      @id @default(cuid())
+  instanceId String
+  userId     String
+  backupData String      // JSON blob (compressed) - full instance config snapshot
+  createdAt  DateTime    @default(now())
+  expiresAt  DateTime?   // Auto-delete after retention period
+
+  instance          ServiceInstance             @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  syncHistory       TrashSyncHistory[]
+  deploymentHistory TemplateDeploymentHistory[]
+
+  @@index([instanceId])
+  @@index([createdAt])
+  @@index([expiresAt])
+  @@map("trash_backups")
+}
+
+// Scheduled sync configuration for automated TRaSH updates
+model TrashSyncSchedule {
+  id          String      @id @default(cuid())
+  instanceId  String?
+  templateId  String?
+  userId      String
+  enabled     Boolean     @default(true)
+
+  // Schedule configuration
+  frequency   String      // DAILY, WEEKLY, MONTHLY
+  lastRunAt   DateTime?
+  nextRunAt   DateTime?
+
+  // Sync behavior
+  autoApply   Boolean     @default(false) // Auto-apply or just notify
+  notifyUser  Boolean     @default(true)
+
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  instance ServiceInstance? @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  template TrashTemplate?   @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId])
+  @@index([templateId])
+  @@index([nextRunAt])
+  @@map("trash_sync_schedules")
+}
+
+// User preferences for TRaSH Guides feature
+model TrashSettings {
+  id                 String   @id @default(cuid())
+  userId             String   @unique
+
+  // Update check settings
+  checkFrequency     Int      @default(12) // hours
+  autoRefreshCache   Boolean  @default(true)
+
+  // Notification preferences
+  notifyOnUpdates    Boolean  @default(true)
+  notifyOnSyncFail   Boolean  @default(true)
+
+  // Backup settings
+  backupRetention    Int      @default(10) // number of backups to keep per instance
+  backupRetentionDays Int     @default(30) // days before backup auto-expires (0 = never expire)
+
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("trash_settings")
+}
+
+// Template to Quality Profile Mapping
+// Tracks which quality profiles in Radarr/Sonarr instances are managed by which templates
+// This enables proper detection of template-managed vs user-created profiles
+model TemplateQualityProfileMapping {
+  id                  String   @id @default(cuid())
+  templateId          String   // The TRaSH template managing this profile
+  instanceId          String   // The Radarr/Sonarr instance
+  qualityProfileId    Int      // The quality profile ID in Radarr/Sonarr
+  qualityProfileName  String   // The quality profile name for reference
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  lastSyncedAt        DateTime @default(now())
+
+  // Sync strategy for this specific instance deployment
+  // "auto" = automatically apply TRaSH updates to this instance
+  // "manual" = user must manually trigger sync
+  // "notify" = notify user of updates but don't auto-apply
+  syncStrategy        String   @default("notify")
+
+  template TrashTemplate      @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  instance ServiceInstance    @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, qualityProfileId])
+  @@index([templateId])
+  @@index([instanceId])
+  @@index([templateId, instanceId])
+  @@map("template_quality_profile_mappings")
+}
+
+// Instance-level quality profile score overrides
+// Tracks manual score changes made directly to instance quality profiles
+// These take precedence over template scores during sync operations
+model InstanceQualityProfileOverride {
+  id                  String   @id @default(cuid())
+  instanceId          String
+  qualityProfileId    Int      // The Radarr/Sonarr quality profile ID
+  customFormatId      Int      // The Radarr/Sonarr custom format ID
+  score               Int      // The overridden score
+  userId              String   // User who made the override
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, qualityProfileId, customFormatId])
+  @@index([instanceId])
+  @@index([instanceId, qualityProfileId])
+  @@map("instance_quality_profile_overrides")
+}
+
+// Phase 4: Template Deployment History
+model TemplateDeploymentHistory {
+  id          String    @id @default(cuid())
+  templateId  String
+  instanceId  String
+  userId      String
+
+  // Deployment metadata
+  deployedAt  DateTime  @default(now())
+  deployedBy  String    // User ID or "system" for scheduled
+  duration    Int?      // Duration in seconds
+
+  // Deployment status
+  status      String    // SUCCESS, PARTIAL_SUCCESS, FAILED, IN_PROGRESS, PARTIAL_UNDEPLOY
+
+  // Deployment statistics
+  appliedCFs      Int @default(0)  // Successfully applied custom formats
+  failedCFs       Int @default(0)  // Failed custom format applications
+  totalCFs        Int @default(0)  // Total custom formats in template
+  conflictsCount  Int @default(0)  // Number of conflicts encountered
+
+  // Detailed deployment data (JSON blobs)
+  appliedConfigs      String?  // JSON array of successfully applied config details
+  failedConfigs       String?  // JSON array with failure details and error messages
+  conflictResolutions String?  // JSON array of how conflicts were resolved
+  errors              String?  // JSON array of error messages
+  warnings            String?  // JSON array of warning messages
+
+  // Rollback capability
+  backupId    String?   // Reference to backup created before deployment
+  canRollback Boolean   @default(false)
+  rolledBack  Boolean   @default(false)
+  rolledBackAt DateTime?
+  rolledBackBy String?
+
+  // Additional metadata
+  deploymentNotes String?  // User or system notes about deployment
+  templateSnapshot String? // JSON snapshot of template config at deployment time
+
+  // Relations
+  template TrashTemplate    @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  instance ServiceInstance  @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  backup   TrashBackup?     @relation(fields: [backupId], references: [id], onDelete: SetNull)
+
+  @@index([templateId])
+  @@index([instanceId])
+  @@index([userId])
+  @@index([deployedAt])
+  @@index([status])
+  @@map("template_deployment_history")
 }

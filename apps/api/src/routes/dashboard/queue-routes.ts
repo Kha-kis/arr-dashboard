@@ -15,18 +15,23 @@ import { ManualImportError, autoImportByDownloadId } from "../manual-import-util
  * Queue-related routes for the dashboard
  */
 export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
 	/**
 	 * GET /dashboard/queue
 	 * Fetches the download queue from all enabled Sonarr and Radarr instances
 	 */
 	app.get("/dashboard/queue", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-			return { instances: [], aggregated: [], totalCount: 0 };
-		}
-
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { enabled: true },
+			where: { enabled: true, userId: request.currentUser?.id },
 		});
 
 		const results: Array<{
@@ -81,14 +86,9 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Performs an action on a single queue item (remove, retry, or manual import)
 	 */
 	app.post("/dashboard/queue/action", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-			return { success: false };
-		}
-
 		const body = queueActionRequestSchema.parse(request.body);
 		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { id: body.instanceId },
+			where: { id: body.instanceId, userId: request.currentUser?.id },
 		});
 
 		if (!instance || instance.service.toLowerCase() !== body.service) {
@@ -180,14 +180,9 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Performs an action on multiple queue items at once
 	 */
 	app.post("/dashboard/queue/bulk", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-			return { success: false };
-		}
-
 		const body = queueBulkActionRequestSchema.parse(request.body);
 		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { id: body.instanceId },
+			where: { id: body.instanceId, userId: request.currentUser?.id },
 		});
 
 		if (!instance || instance.service.toLowerCase() !== body.service) {

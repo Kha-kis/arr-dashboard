@@ -13,8 +13,11 @@
 		"isolatedModules": true,
 		"jsx": "preserve",
 		"incremental": true,
-		"plugins": [{ "name": "next" }]
+		"plugins": [{ "name": "next" }],
+		"esModuleInterop": true,
+		"allowSyntheticDefaultImports": true,
+		"types": ["react", "react-dom", "node"]
 	},
-	"include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", "**/*.cjs", ".next/types/**/*.ts"],
+	"include": ["next-env.d.ts", "src/types/**/*.d.ts", "**/*.ts", "**/*.tsx", "**/*.cjs", ".next/types/**/*.ts"],
 	"exclude": ["node_modules"]
 }

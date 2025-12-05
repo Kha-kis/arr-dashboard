@@ -30,25 +30,24 @@ import {
  * - POST /search/indexers/test - Test an indexer connection
  */
 export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) => {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
 	/**
 	 * GET /search/indexers
 	 * Retrieves all indexers from all enabled Prowlarr instances for the current user.
 	 */
 	app.get("/search/indexers", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-
-			return searchIndexersResponseSchema.parse({
-				instances: [],
-
-				aggregated: [],
-
-				totalCount: 0,
-			});
-		}
 
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { enabled: true, service: "PROWLARR" },
+			where: { enabled: true, service: "PROWLARR", userId: request.currentUser?.id },
 		});
 
 		if (instances.length === 0) {
@@ -122,11 +121,6 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 			Number.isFinite(indexerId) ? indexerId : 0,
 		);
 
-		if (!request.currentUser) {
-			reply.status(401);
-			return searchIndexerDetailsResponseSchema.parse({ indexer: fallback });
-		}
-
 		if (!Number.isFinite(indexerId)) {
 			reply.status(400);
 			return searchIndexerDetailsResponseSchema.parse({ indexer: fallback });
@@ -136,7 +130,7 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 			where: {
 				enabled: true,
 				service: "PROWLARR",
-				id: instanceId,
+				id: instanceId, userId: request.currentUser?.id,
 			},
 		});
 
@@ -199,20 +193,13 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 			});
 		}
 
-		if (!request.currentUser) {
-			reply.status(401);
-			return searchIndexerDetailsResponseSchema.parse({
-				indexer: buildIndexerDetailsFallback(paramInstanceId, "", undefined, indexerIdValue),
-			});
-		}
-
 		const payload: SearchIndexerUpdateRequest = searchIndexerUpdateRequestSchema.parse(
 			request.body ?? {},
 		);
 		const instanceId = payload.instanceId ?? paramInstanceId;
 
 		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { enabled: true, service: "PROWLARR", id: instanceId },
+			where: { enabled: true, service: "PROWLARR", id: instanceId, userId: request.currentUser?.id },
 		});
 
 		if (!instance) {
@@ -274,22 +261,13 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 	 * Tests an indexer connection to verify it's working correctly.
 	 */
 	app.post("/search/indexers/test", async (request, reply) => {
-		if (!request.currentUser) {
-			reply.status(401);
-
-			return searchIndexerTestResponseSchema.parse({
-				success: false,
-				message: "Unauthorized",
-			});
-		}
-
 		const payload = searchIndexerTestRequestSchema.parse(request.body ?? {});
 
 		const instance = await app.prisma.serviceInstance.findFirst({
 			where: {
 				enabled: true,
 				service: "PROWLARR",
-				id: payload.instanceId,
+				id: payload.instanceId, userId: request.currentUser?.id,
 			},
 		});
 
