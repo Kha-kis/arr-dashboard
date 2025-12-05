@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.4** - Now with TRaSH Guides Integration
+> **Version 2.4.1** - Now with TRaSH Guides Integration
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
