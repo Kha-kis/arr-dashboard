@@ -1,5 +1,13 @@
 # Release Notes
 
+## Version 2.4.3
+
+### Improvements
+- **Favicon/Tab Icon** - Added browser tab icon for better identification
+- **README Screenshots** - Added screenshots showcasing all major features
+
+---
+
 ## Version 2.4.2
 
 ### New Features
