@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.4.3** - Now with TRaSH Guides Integration
+> **Version 2.5.0** - Now with LinuxServer.io-style `/config` volume
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -90,7 +90,7 @@ A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances
 docker run -d \
   --name arr-dashboard \
   -p 3000:3000 \
-  -v /path/to/data:/app/data \
+  -v /path/to/config:/config \
   -e PUID=1000 \
   -e PGID=1000 \
   --restart unless-stopped \
@@ -108,7 +108,7 @@ services:
       - PUID=1000  # Set to your user ID (run `id -u` on host)
       - PGID=1000  # Set to your group ID (run `id -g` on host)
     volumes:
-      - ./data:/app/data
+      - ./config:/config
     ports:
       - 3000:3000
     restart: unless-stopped
@@ -132,11 +132,13 @@ docker-compose up -d
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.5.0` | ⚠️ **Breaking:** Volume path changed to `/config` (LinuxServer.io convention) |
 | `2.4.3` | Favicon, README screenshots |
-| `2.4.2` | PUID/PGID support, improved incognito mode, discover page fixes |
-| `2.4.x` | TRaSH Guides integration |
+| `2.4.x` | TRaSH Guides integration, PUID/PGID support |
 | `2.3.x` | Stability improvements and bug fixes |
 | `2.2.x` | OIDC and Passkey authentication |
+
+> ⚠️ **Upgrading from 2.4.x?** See [RELEASE_NOTES.md](RELEASE_NOTES.md) for migration instructions. The volume mount path changed from `/app/data` to `/config`.
 
 ## Configuration
 
@@ -150,11 +152,11 @@ The application auto-generates all necessary security keys on first run. No envi
 |----------|---------|-------------|
 | `PUID` | `911` | User ID for file permissions (LinuxServer.io style) |
 | `PGID` | `911` | Group ID for file permissions (LinuxServer.io style) |
-| `DATABASE_URL` | `file:/app/data/prod.db` | Database connection string |
+| `DATABASE_URL` | `file:/config/prod.db` | Database connection string |
 | `SESSION_TTL_HOURS` | `24` | Session expiration time |
 | `API_RATE_LIMIT_MAX` | `200` | Max requests per minute |
 
-> **Note:** Set `PUID` and `PGID` to match the owner of your data directory. Run `id -u` and `id -g` on your host to find your user/group IDs. This follows the [LinuxServer.io](https://docs.linuxserver.io/general/understanding-puid-and-pgid) convention for consistent file permissions.
+> **Note:** Set `PUID` and `PGID` to match the owner of your config directory. Run `id -u` and `id -g` on your host to find your user/group IDs. This follows the [LinuxServer.io](https://docs.linuxserver.io/general/understanding-puid-and-pgid) convention for consistent file permissions.
 
 ### User Settings (Web Interface)
 
@@ -256,6 +258,27 @@ pnpm run db:generate
 3. **Regular Backups** - Use the built-in encrypted backup feature
 4. **Strong Passwords** - Use unique, strong passwords for all services
 5. **Keep Updated** - Pull latest Docker images regularly
+
+### Docker Security Hardening (Optional)
+
+For additional security, you can run the container with these options:
+
+```bash
+docker run -d \
+  --name arr-dashboard \
+  --security-opt=no-new-privileges:true \
+  --cap-drop=ALL \
+  -p 3000:3000 \
+  -v /path/to/config:/config \
+  -e PUID=1000 \
+  -e PGID=1000 \
+  khak1s/arr-dashboard:latest
+```
+
+| Option | Description |
+|--------|-------------|
+| `--security-opt=no-new-privileges:true` | Prevents privilege escalation inside container |
+| `--cap-drop=ALL` | Drops all Linux capabilities (container runs with minimal permissions) |
 
 ### Reverse Proxy Example (nginx)
 
