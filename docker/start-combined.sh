@@ -5,7 +5,45 @@ echo "=========================================="
 echo "Arr Dashboard - Combined Container"
 echo "=========================================="
 
-# Function to handle shutdown gracefully
+# ============================================
+# PUID/PGID handling (LinuxServer convention)
+# ============================================
+
+PUID=${PUID:-911}
+PGID=${PGID:-911}
+
+echo ""
+echo "Setting up user/group..."
+echo "  - PUID: $PUID"
+echo "  - PGID: $PGID"
+
+# Modify abc group GID if different from default
+if [ "$(id -g abc)" != "$PGID" ]; then
+    groupmod -o -g "$PGID" abc
+fi
+
+# Modify abc user UID if different from default
+if [ "$(id -u abc)" != "$PUID" ]; then
+    usermod -o -u "$PUID" abc
+fi
+
+# ============================================
+# Directory setup and permissions
+# ============================================
+
+echo ""
+echo "Setting up directories and permissions..."
+
+# Ensure data directory exists
+mkdir -p /app/data
+
+# Set ownership of writable directories
+chown -R abc:abc /app/data
+
+# ============================================
+# Signal handling
+# ============================================
+
 shutdown() {
     echo ""
     echo "Shutting down services..."
@@ -25,31 +63,25 @@ shutdown() {
     exit 0
 }
 
-# Trap signals
 trap shutdown SIGTERM SIGINT
 
-echo ""
-echo "Ensuring data directory permissions..."
-# Ensure the data directory exists and is writable
-mkdir -p /app/data
-# Try to create a test file to check permissions
-if ! touch /app/data/.permissions_test 2>/dev/null; then
-    echo "WARNING: /app/data is not writable. Database operations may fail."
-    echo "Please ensure the mounted volume has proper permissions for UID 1001."
-else
-    rm -f /app/data/.permissions_test
-fi
+# ============================================
+# Database migrations (run as abc user)
+# ============================================
 
 echo ""
 echo "Running database migrations..."
 cd /app/api
-npx prisma migrate deploy --schema prisma/schema.prisma
+su-exec abc npx prisma migrate deploy --schema prisma/schema.prisma
+
+# ============================================
+# Start services (as abc user)
+# ============================================
 
 echo ""
 echo "Starting API server on port 3001..."
 cd /app/api
-# API server needs API_HOST=0.0.0.0 for binding
-API_HOST=0.0.0.0 node dist/index.js &
+su-exec abc sh -c 'API_HOST=0.0.0.0 node dist/index.js' &
 API_PID=$!
 echo "API started with PID $API_PID"
 
@@ -59,8 +91,7 @@ sleep 2
 echo ""
 echo "Starting Web server on port 3000..."
 cd /app/web
-# Web server needs API_HOST=http://localhost:3001 for proxying
-API_HOST=http://localhost:3001 node apps/web/server.js &
+su-exec abc sh -c 'API_HOST=http://localhost:3001 node apps/web/server.js' &
 WEB_PID=$!
 echo "Web started with PID $WEB_PID"
 
@@ -69,6 +100,7 @@ echo "=========================================="
 echo "Arr Dashboard is ready!"
 echo "Web UI: http://localhost:3000"
 echo "API: http://localhost:3001"
+echo "Running as UID:$PUID GID:$PGID"
 echo "=========================================="
 
 # Wait for both processes
