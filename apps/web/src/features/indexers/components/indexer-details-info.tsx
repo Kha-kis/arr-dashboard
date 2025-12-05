@@ -66,12 +66,12 @@ export const IndexerDetailsInfo = ({
 
 			{capabilities.length > 0 ? (
 				<div className="space-y-2">
-					<p className="text-xs uppercase tracking-widest text-white/40">Capabilities</p>
+					<p className="text-xs uppercase tracking-widest text-fg-muted">Capabilities</p>
 					<div className="flex flex-wrap gap-2">
-						{capabilities.map((capability) => (
+						{capabilities.map((capability, index) => (
 							<span
-								key={capability}
-								className="rounded-full border border-white/15 px-3 py-1 text-xs text-white/70"
+								key={`${index}-${capability}`}
+								className="rounded-full border border-border px-3 py-1 text-xs text-fg-muted"
 							>
 								{capability}
 							</span>
@@ -82,12 +82,12 @@ export const IndexerDetailsInfo = ({
 
 			{categories.length > 0 ? (
 				<div className="space-y-2">
-					<p className="text-xs uppercase tracking-widest text-white/40">Categories</p>
+					<p className="text-xs uppercase tracking-widest text-fg-muted">Categories</p>
 					<div className="flex flex-wrap gap-2">
-						{categories.map((category) => (
+						{categories.map((category, index) => (
 							<span
-								key={category}
-								className="rounded-full border border-white/15 px-3 py-1 text-xs text-white/70"
+								key={`${index}-${category}`}
+								className="rounded-full border border-border px-3 py-1 text-xs text-fg-muted"
 							>
 								{category}
 							</span>

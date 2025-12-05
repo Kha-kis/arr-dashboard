@@ -3,16 +3,18 @@
 import type { ReactNode } from "react";
 import type { ServiceInstanceSummary } from "@arr/shared";
 import type { ServiceFormState } from "../lib/settings-utils";
-import { Button } from "../../../components/ui/button";
-import { Input } from "../../../components/ui/input";
 import {
+	Button,
+	Input,
 	Card,
 	CardContent,
 	CardHeader,
 	CardTitle,
 	CardDescription,
-} from "../../../components/ui/card";
-import { Alert, AlertDescription } from "../../../components/ui";
+	Alert,
+	AlertDescription,
+	FormField,
+} from "../../../components/ui";
 import { cn } from "../../../lib/utils";
 import { SERVICE_TYPES, SELECT_CLASS, OPTION_STYLE } from "../lib/settings-constants";
 import { getServicePlaceholders } from "../lib/settings-utils";
@@ -82,7 +84,7 @@ export const ServiceForm = ({
 			<CardContent>
 				<form className="space-y-4" onSubmit={onSubmit}>
 					<div className="space-y-2">
-						<label className="text-xs uppercase text-white/60">Service</label>
+						<label className="text-xs uppercase text-fg-muted">Service</label>
 						<div className="flex gap-2">
 							{SERVICE_TYPES.map((service) => (
 								<button
@@ -102,8 +104,8 @@ export const ServiceForm = ({
 									className={cn(
 										"flex-1 rounded-lg border px-3 py-2 text-sm capitalize transition",
 										formState.service === service
-											? "border-sky-400 bg-sky-500/20 text-white"
-											: "border-white/10 bg-white/5 text-white/60 hover:text-white",
+											? "border-sky-400 bg-sky-500/20 text-fg"
+											: "border-border bg-bg-subtle text-fg-muted hover:text-fg",
 									)}
 								>
 									{service}
@@ -111,9 +113,14 @@ export const ServiceForm = ({
 							))}
 						</div>
 					</div>
-					<div className="space-y-2">
-						<label className="text-xs uppercase text-white/60">Label</label>
+					<FormField
+						label="Label"
+						htmlFor="service-label"
+						hint={`Friendly name for this ${formState.service} instance`}
+						required
+					>
 						<Input
+							id="service-label"
 							value={formState.label}
 							onChange={(event) =>
 								onFormStateChange((prev) => ({
@@ -124,10 +131,15 @@ export const ServiceForm = ({
 							placeholder={placeholders.label}
 							required
 						/>
-					</div>
-					<div className="space-y-2">
-						<label className="text-xs uppercase text-white/60">Base URL</label>
+					</FormField>
+					<FormField
+						label="Base URL"
+						htmlFor="service-baseurl"
+						hint="Full URL including http:// or https://"
+						required
+					>
 						<Input
+							id="service-baseurl"
 							type="url"
 							value={formState.baseUrl}
 							onChange={(event) =>
@@ -139,10 +151,15 @@ export const ServiceForm = ({
 							placeholder={placeholders.baseUrl}
 							required
 						/>
-					</div>
-					<div className="space-y-2">
-						<label className="text-xs uppercase text-white/60">API Key</label>
+					</FormField>
+					<FormField
+						label="API Key"
+						htmlFor="service-apikey"
+						hint={selectedService ? "Leave empty to keep current key" : "Found in Settings > General"}
+						required={!selectedService}
+					>
 						<Input
+							id="service-apikey"
 							type="password"
 							value={formState.apiKey}
 							onChange={(event) =>
@@ -154,7 +171,7 @@ export const ServiceForm = ({
 							placeholder={selectedService ? "Leave blank to keep current key" : "Your API key"}
 							required={!selectedService}
 						/>
-					</div>
+					</FormField>
 					<div className="space-y-2">
 						<Button
 							type="button"
@@ -171,7 +188,7 @@ export const ServiceForm = ({
 						)}
 					</div>
 					<div className="space-y-2">
-						<label className="text-xs uppercase text-white/60">Tags</label>
+						<label className="text-xs uppercase text-fg-muted">Tags</label>
 						<Input
 							value={formState.tags}
 							onChange={(event) =>
@@ -190,29 +207,23 @@ export const ServiceForm = ({
 						</datalist>
 					</div>
 					{formState.service !== "prowlarr" && (
-						<div className="space-y-3 rounded-xl border border-white/10 bg-white/5 p-4">
+						<div className="space-y-3 rounded-xl border border-border bg-bg-subtle p-4">
 							<div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-								<p className="text-xs uppercase tracking-widest text-white/40">
+								<p className="text-xs uppercase tracking-widest text-fg-muted">
 									Default add settings
 								</p>
-								{selectedService ? (
-									<span className="text-xs text-white/50">
-										Applied when using Discover and library tools.
-									</span>
-								) : (
-									<span className="text-xs text-white/40">
-										Save the service before configuring defaults.
-									</span>
-								)}
+								<span className="text-xs text-fg-muted">
+									Applied when using Discover and library tools.
+								</span>
 							</div>
 							{defaultSectionContent}
 						</div>
 					)}
 					<div className="flex items-center gap-3">
-						<label className="flex items-center gap-2 text-sm text-white/70">
+						<label className="flex items-center gap-2 text-sm text-fg-muted">
 							<input
 								type="checkbox"
-								className="h-4 w-4 border border-white/20 bg-white/10"
+								className="h-4 w-4 border border-border bg-bg-subtle"
 								checked={formState.enabled}
 								onChange={(event) =>
 									onFormStateChange((prev) => ({
@@ -224,10 +235,10 @@ export const ServiceForm = ({
 							Enabled
 						</label>
 						{formState.service !== "prowlarr" && (
-							<label className="flex items-center gap-2 text-sm text-white/70">
+							<label className="flex items-center gap-2 text-sm text-fg-muted">
 								<input
 									type="checkbox"
-									className="h-4 w-4 border border-white/20 bg-white/10"
+									className="h-4 w-4 border border-border bg-bg-subtle"
 									checked={formState.isDefault}
 									onChange={(event) =>
 										onFormStateChange((prev) => ({

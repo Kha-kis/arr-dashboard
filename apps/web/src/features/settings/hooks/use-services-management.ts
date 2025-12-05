@@ -6,8 +6,9 @@ import {
 	useCreateServiceMutation,
 	useDeleteServiceMutation,
 	useUpdateServiceMutation,
+	useTestServiceConnection,
+	useTestConnectionBeforeAdd,
 } from "../../../hooks/api/useServiceMutations";
-import { testServiceConnection, testConnectionBeforeAdd } from "../../../lib/api-client/services";
 import { parseNumericValue, parseSeasonFolderValue } from "../lib/settings-utils";
 
 /**
@@ -17,6 +18,8 @@ export const useServicesManagement = () => {
 	const createServiceMutation = useCreateServiceMutation();
 	const updateServiceMutation = useUpdateServiceMutation();
 	const deleteServiceMutation = useDeleteServiceMutation();
+	const testServiceConnectionMutation = useTestServiceConnection();
+	const testConnectionBeforeAddMutation = useTestConnectionBeforeAdd();
 
 	const [testingConnection, setTestingConnection] = useState<string | null>(null);
 	const [testResult, setTestResult] = useState<{
@@ -123,7 +126,7 @@ export const useServicesManagement = () => {
 		setTestResult(null);
 
 		try {
-			const result = await testServiceConnection(instance.id);
+			const result = await testServiceConnectionMutation.mutateAsync(instance.id);
 
 			if (result.success) {
 				setTestResult({
@@ -162,11 +165,11 @@ export const useServicesManagement = () => {
 		setFormTestResult(null);
 
 		try {
-			const result = await testConnectionBeforeAdd(
-				formState.baseUrl.trim(),
-				formState.apiKey.trim(),
-				formState.service,
-			);
+			const result = await testConnectionBeforeAddMutation.mutateAsync({
+				baseUrl: formState.baseUrl.trim(),
+				apiKey: formState.apiKey.trim(),
+				service: formState.service,
+			});
 
 			if (result.success) {
 				setFormTestResult({

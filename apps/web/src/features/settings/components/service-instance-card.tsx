@@ -50,19 +50,19 @@ export const ServiceInstanceCard = ({
 	const [incognitoMode] = useIncognitoMode();
 
 	return (
-		<div className="flex flex-col gap-2 rounded-lg border border-white/10 bg-white/5 p-4">
+		<div className="flex flex-col gap-2 rounded-lg border border-border bg-bg-subtle p-4">
 			<div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
 				<div>
 					<div className="flex items-center gap-3">
-						<span className="rounded-md bg-white/10 px-2 py-1 text-xs uppercase text-white/60">
+						<span className="rounded-md bg-bg-subtle px-2 py-1 text-xs uppercase text-fg-muted">
 							{instance.service}
 						</span>
-						<h3 className="text-base font-semibold text-white">{instance.label}</h3>
+						<h3 className="text-base font-semibold text-fg">{instance.label}</h3>
 					</div>
-					<p className="text-xs text-white/50">
+					<p className="text-xs text-fg-muted">
 						{incognitoMode ? getLinuxUrl(instance.baseUrl) : instance.baseUrl}
 					</p>
-					<p className="text-xs text-white/50">
+					<p className="text-xs text-fg-muted">
 						Tags:{" "}
 						{instance.tags.length === 0 ? "-" : instance.tags.map((tag) => tag.name).join(", ")}
 					</p>

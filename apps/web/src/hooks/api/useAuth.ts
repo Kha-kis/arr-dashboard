@@ -10,6 +10,11 @@ import {
 	updateAccount,
 	checkSetupRequired,
 	removePassword,
+	getPasskeyCredentials,
+	setupOIDCProvider,
+	initiateOIDCLogin,
+	type PasskeyCredential,
+	type OIDCSetupPayload,
 } from "../../lib/api-client/auth";
 
 // Login
@@ -125,3 +130,28 @@ export const useSetupRequired = () =>
 		refetchOnWindowFocus: false,
 		refetchOnReconnect: false,
 	});
+
+// Passkey Credentials
+export const usePasskeyCredentials = () =>
+	useQuery<PasskeyCredential[]>({
+		queryKey: ["passkey-credentials"],
+		queryFn: getPasskeyCredentials,
+		staleTime: 5 * 60 * 1000, // 5 minutes
+	});
+
+// OIDC Setup
+export const useOIDCSetup = () => {
+	return useMutation<
+		{ authorizationUrl: string },
+		Error,
+		OIDCSetupPayload
+	>({
+		mutationFn: async (payload) => {
+			// First, configure the OIDC provider
+			await setupOIDCProvider(payload);
+			// Then, initiate OIDC login to get authorization URL
+			const authorizationUrl = await initiateOIDCLogin(payload.type);
+			return { authorizationUrl };
+		},
+	});
+};

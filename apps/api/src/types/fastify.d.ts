@@ -15,5 +15,6 @@ declare module "fastify" {
 	interface FastifyRequest {
 		currentUser: User | null;
 		sessionToken: string | null;
+		userId?: string;
 	}
 }

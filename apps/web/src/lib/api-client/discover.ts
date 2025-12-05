@@ -4,6 +4,8 @@ import type {
 	DiscoverInstanceOptionsResponse,
 	DiscoverSearchResponse,
 	DiscoverSearchType,
+	DiscoverTestOptionsRequest,
+	DiscoverTestOptionsResponse,
 	RecommendationsRequest,
 	RecommendationsResponse,
 } from "@arr/shared";
@@ -40,6 +42,15 @@ export async function fetchDiscoverOptions(
 	search.set("type", type);
 
 	return apiRequest<DiscoverInstanceOptionsResponse>(`/api/discover/options?${search.toString()}`);
+}
+
+export async function fetchTestOptions(
+	payload: DiscoverTestOptionsRequest,
+): Promise<DiscoverTestOptionsResponse> {
+	return apiRequest<DiscoverTestOptionsResponse>("/api/discover/test-options", {
+		method: "POST",
+		json: payload,
+	});
 }
 
 export async function addDiscoverItem(payload: DiscoverAddRequest): Promise<DiscoverAddResponse> {

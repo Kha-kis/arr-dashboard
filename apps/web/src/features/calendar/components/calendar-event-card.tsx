@@ -89,13 +89,13 @@ export const CalendarEventCard = ({
 	return (
 		<div
 			key={`${event.service}:${event.instanceId}:${String(event.id)}`}
-			className="rounded-xl border border-white/10 bg-white/5 p-4 shadow-sm"
+			className="rounded-xl border border-border bg-bg-subtle p-4 shadow-sm"
 		>
 			<div className="flex flex-wrap items-start justify-between gap-3">
-				<div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wide text-white/60">
-					<span className="rounded-full bg-white/15 px-2 py-0.5 text-white/80">{serviceLabel}</span>
-					{event.instanceName && <span className="text-white/60">{event.instanceName}</span>}
-					<span aria-hidden="true" className="text-white/30">
+				<div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wide text-fg-muted">
+					<span className="rounded-full bg-bg px-2 py-0.5 text-fg-muted">{serviceLabel}</span>
+					{event.instanceName && <span className="text-fg-muted">{event.instanceName}</span>}
+					<span aria-hidden="true" className="text-fg-muted">
 						&bull;
 					</span>
 					<span>{formatTime(event.airDateUtc ?? event.airDate)}</span>
@@ -103,23 +103,23 @@ export const CalendarEventCard = ({
 				{externalLink && (
 					<Button
 						variant="secondary"
-						className="h-8 rounded-md px-3 text-xs font-semibold text-white/90"
+						className="h-8 rounded-md px-3 text-xs font-semibold text-fg"
 						onClick={() => onOpenExternal(externalLink)}
 					>
 						{actionLabel}
 					</Button>
 				)}
 			</div>
-			<h3 className="mt-3 text-base font-semibold text-white">{title}</h3>
+			<h3 className="mt-3 text-base font-semibold text-fg">{title}</h3>
 			{event.overview && (
-				<p className="mt-2 text-sm leading-relaxed text-white/70">{event.overview}</p>
+				<p className="mt-2 text-sm leading-relaxed text-fg-muted">{event.overview}</p>
 			)}
 			{detailRows.length > 0 && (
-				<dl className="mt-3 grid gap-3 text-sm text-white/70 sm:grid-cols-2">
+				<dl className="mt-3 grid gap-3 text-sm text-fg-muted sm:grid-cols-2">
 					{detailRows.map((row) => (
 						<div key={row.label} className="flex flex-col gap-0.5">
-							<dt className="text-xs uppercase tracking-wide text-white/40">{row.label}</dt>
-							<dd className="text-white/80">{row.value}</dd>
+							<dt className="text-xs uppercase tracking-wide text-fg-muted">{row.label}</dt>
+							<dd className="text-fg-muted">{row.value}</dd>
 						</div>
 					))}
 				</dl>

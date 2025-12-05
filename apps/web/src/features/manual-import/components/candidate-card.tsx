@@ -86,8 +86,8 @@ export const CandidateCard = ({
 		<div
 			key={key}
 			className={cn(
-				"rounded-xl border border-white/10 bg-white/5 p-4 transition",
-				selected && "border-white/40",
+				"rounded-xl border border-border bg-bg-subtle p-4 transition",
+				selected && "border-primary/40",
 				rejection && "border-amber-500/40",
 				!downloadAvailable && "border-red-500/40",
 			)}
@@ -103,15 +103,15 @@ export const CandidateCard = ({
 					/>
 					<div className="min-w-0 space-y-2">
 						<div className="space-y-1">
-							<p className="font-medium text-white">{describeCandidate(candidate)}</p>
-							<p className="break-words text-xs text-white/60">{candidateDisplayPath(candidate)}</p>
+							<p className="font-medium text-fg">{describeCandidate(candidate)}</p>
+							<p className="break-words text-xs text-fg-muted">{candidateDisplayPath(candidate)}</p>
 						</div>
 						{chips.length > 0 && (
-							<div className="flex flex-wrap gap-2 text-xs text-white/60">
+							<div className="flex flex-wrap gap-2 text-xs text-fg-muted">
 								{chips.map((chip, index) => (
 									<span
 										key={`${key}:chip:${index}`}
-										className="rounded-full border border-white/15 px-2 py-0.5"
+										className="rounded-full border border-border px-2 py-0.5"
 									>
 										{chip}
 									</span>
@@ -120,33 +120,35 @@ export const CandidateCard = ({
 						)}
 					</div>
 				</div>
-				<div className="space-y-2 text-sm text-white/80">
+				<div className="space-y-2 text-sm text-fg-muted">
 					<div>
-						<p className="text-xs uppercase text-white/50">Mapping</p>
+						<p className="text-xs uppercase text-fg-muted">Mapping</p>
 						<p>{mappingSummary}</p>
 					</div>
-					{selected && isSonarrCandidate(candidate) && episodes.length > 0 && (
-						<div className="space-y-2 rounded-md border border-white/10 bg-slate-900/50 p-3 text-xs text-white/70">
+					{isSonarrCandidate(candidate) && episodes.length > 0 && (
+						<div className="space-y-2 rounded-md border border-border bg-bg-hover p-3 text-xs text-fg-muted">
 							<div className="flex flex-wrap items-center justify-between gap-2">
-								<span>Episodes</span>
-								<div className="flex gap-2">
-									<button
-										type="button"
-										className="text-sky-300 hover:underline disabled:opacity-50"
-										onClick={onSelectAllEpisodes}
-										disabled={disabled}
-									>
-										Select all
-									</button>
-									<button
-										type="button"
-										className="text-sky-300 hover:underline disabled:opacity-50"
-										onClick={onClearEpisodes}
-										disabled={disabled}
-									>
-										Clear
-									</button>
-								</div>
+								<span>Episodes ({episodes.length})</span>
+								{selected && (
+									<div className="flex gap-2">
+										<button
+											type="button"
+											className="text-sky-300 hover:underline disabled:opacity-50"
+											onClick={onSelectAllEpisodes}
+											disabled={disabled}
+										>
+											Select all
+										</button>
+										<button
+											type="button"
+											className="text-sky-300 hover:underline disabled:opacity-50"
+											onClick={onClearEpisodes}
+											disabled={disabled}
+										>
+											Clear
+										</button>
+									</div>
+								)}
 							</div>
 							<div className="grid gap-1 sm:grid-cols-2">
 								{episodes.map((episode) => {
@@ -154,18 +156,21 @@ export const CandidateCard = ({
 									if (episodeId === undefined) {
 										return null;
 									}
-									const checked = episodeIds.includes(episodeId);
+									const checked = selected && episodeIds.includes(episodeId);
 									return (
 										<label
 											key={`${key}:episode:${episodeId}`}
-											className="flex items-center gap-2 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-white/80"
+											className={cn(
+												"flex items-center gap-2 rounded-md border border-border bg-bg-subtle px-2 py-1 text-fg-muted",
+												!selected && "opacity-60",
+											)}
 										>
 											<input
 												type="checkbox"
 												className="h-3.5 w-3.5"
 												checked={checked}
 												onChange={() => onToggleEpisode(episodeId)}
-												disabled={disabled}
+												disabled={disabled || !selected}
 											/>
 											<span className="truncate text-xs">
 												{describeEpisode(episode as Parameters<typeof describeEpisode>[0])}
@@ -174,10 +179,13 @@ export const CandidateCard = ({
 									);
 								})}
 							</div>
+							{!selected && (
+								<p className="text-xs text-fg-muted/70 italic">Select file to enable episode selection</p>
+							)}
 						</div>
 					)}
 				</div>
-				<div className="flex flex-col items-end gap-3 text-xs text-white/60">
+				<div className="flex flex-col items-end gap-3 text-xs text-fg-muted">
 					<span className={statusToneClasses[statusTone]}>{statusText}</span>
 					<Button
 						variant={selected ? "secondary" : "ghost"}

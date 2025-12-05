@@ -124,14 +124,16 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				message: "OIDC provider configured successfully",
 				provider: { type: provider.type, displayName: provider.displayName },
 			});
-		} catch (error: any) {
-			if (error.message === "SETUP_CLOSED") {
-				return reply.status(403).send({
-					error: "OIDC setup is only allowed during initial setup. Use the admin panel to configure OIDC providers.",
-				});
-			}
-			if (error.message === "PROVIDER_EXISTS") {
-				return reply.status(409).send({ error: `OIDC provider '${type}' already configured` });
+		} catch (error) {
+			if (error instanceof Error) {
+				if (error.message === "SETUP_CLOSED") {
+					return reply.status(403).send({
+						error: "OIDC setup is only allowed during initial setup. Use the admin panel to configure OIDC providers.",
+					});
+				}
+				if (error.message === "PROVIDER_EXISTS") {
+					return reply.status(409).send({ error: `OIDC provider '${type}' already configured` });
+				}
 			}
 			throw error;
 		}
@@ -318,8 +320,8 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 						});
 
 						user = newUser;
-					} catch (error: any) {
-						if (error.message === "SETUP_COMPLETE") {
+					} catch (error) {
+						if (error instanceof Error && error.message === "SETUP_COMPLETE") {
 							// Setup already completed by concurrent request
 							return reply.status(401).send({
 								error: "Cannot link OIDC account without authentication. Please log in first and add OIDC from settings.",

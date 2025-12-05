@@ -60,9 +60,9 @@ export const FilterControls = ({
 	onReset,
 }: FilterControlsProps) => {
 	return (
-		<div className="space-y-4 rounded-xl border border-white/10 bg-white/5 p-4">
+		<div className="space-y-4 rounded-xl border border-border bg-bg-subtle p-4">
 			<div className="flex flex-wrap items-center justify-between gap-2">
-				<h3 className="text-sm font-semibold text-white">Result filters</h3>
+				<h3 className="text-sm font-semibold text-fg">Result filters</h3>
 				<Button
 					type="button"
 					variant="ghost"
@@ -75,17 +75,16 @@ export const FilterControls = ({
 
 			<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
 				<div>
-					<label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-white/60">
+					<label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg-muted">
 						Protocol
 					</label>
 					<select
 						value={protocolFilter}
 						onChange={(event) => onProtocolFilterChange(event.target.value as ProtocolFilter)}
-						className="w-full rounded-md border border-white/20 bg-slate-900/80 px-3 py-2 text-sm text-white hover:border-sky-400/80 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
-						style={{ color: "#f8fafc" }}
+						className="w-full rounded-md border border-border bg-bg-subtle px-3 py-2 text-sm text-fg hover:border-sky-400/80 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
 					>
 						{PROTOCOL_FILTERS.map((option) => (
-							<option key={option.value} value={option.value} className="bg-slate-900 text-white">
+							<option key={option.value} value={option.value} className="bg-bg text-fg">
 								{option.label}
 							</option>
 						))}
@@ -93,7 +92,7 @@ export const FilterControls = ({
 				</div>
 
 				<div>
-					<label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-white/60">
+					<label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg-muted">
 						Minimum seeders
 					</label>
 					<Input
@@ -106,7 +105,7 @@ export const FilterControls = ({
 				</div>
 
 				<div>
-					<label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-white/60">
+					<label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg-muted">
 						Maximum age (hours)
 					</label>
 					<Input
@@ -119,7 +118,7 @@ export const FilterControls = ({
 				</div>
 
 				<div className="flex flex-col justify-end gap-2">
-					<label className="text-xs font-semibold uppercase tracking-wide text-white/60">
+					<label className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
 						Visibility
 					</label>
 					<Button

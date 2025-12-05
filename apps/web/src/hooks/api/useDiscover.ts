@@ -7,6 +7,8 @@ import type {
 	DiscoverInstanceOptionsResponse,
 	DiscoverSearchResponse,
 	DiscoverSearchType,
+	DiscoverTestOptionsRequest,
+	DiscoverTestOptionsResponse,
 	RecommendationsRequest,
 	RecommendationsResponse,
 } from "@arr/shared";
@@ -15,6 +17,7 @@ import {
 	fetchDiscoverOptions,
 	fetchDiscoverResults,
 	fetchRecommendations,
+	fetchTestOptions,
 } from "../../lib/api-client/discover";
 
 interface DiscoverSearchQueryOptions {
@@ -44,6 +47,17 @@ export const useDiscoverOptionsQuery = (
 		queryKey: ["discover", "options", { instanceId, type }],
 		queryFn: () => (instanceId ? fetchDiscoverOptions(instanceId, type) : Promise.resolve(null)),
 		enabled: enabled && Boolean(instanceId),
+		staleTime: 5 * 60 * 1000,
+	});
+
+export const useDiscoverTestOptionsQuery = (
+	request: DiscoverTestOptionsRequest | null,
+	enabled = false,
+) =>
+	useQuery<DiscoverTestOptionsResponse | null>({
+		queryKey: ["discover", "test-options", request],
+		queryFn: () => (request ? fetchTestOptions(request) : Promise.resolve(null)),
+		enabled: enabled && Boolean(request?.baseUrl && request?.apiKey && request?.service),
 		staleTime: 5 * 60 * 1000,
 	});
 
