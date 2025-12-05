@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { Prisma, type PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import type { BackupData, BackupFileInfo, BackupFileInfoInternal, BackupMetadata } from "@arr/shared";
 
 const BACKUP_VERSION = "1.0";
@@ -116,8 +116,9 @@ export class BackupService {
 			const newPassword = crypto.randomBytes(32).toString("base64");
 
 			// Guard against race condition: Check again before writing in case another process wrote a password
+			let recheckContent: string | null = null;
 			try {
-				const recheckContent = await fs.readFile(this.secretsPath, "utf-8");
+				recheckContent = await fs.readFile(this.secretsPath, "utf-8");
 				const recheckSecrets = JSON.parse(recheckContent);
 				if (recheckSecrets.backupPassword && typeof recheckSecrets.backupPassword === "string") {
 					return recheckSecrets.backupPassword;
@@ -126,18 +127,14 @@ export class BackupService {
 				// Only proceed if file is missing or invalid JSON; re-throw other errors
 				if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
 					// File disappeared, proceed with write
-				} else if (error instanceof SyntaxError) {
+				} else if (error instanceof SyntaxError && recheckContent) {
 					// Invalid JSON - try to salvage backupPassword before overwriting
 					console.warn("secrets.json has invalid JSON; attempting to salvage backupPassword...");
-					try {
-						// Attempt regex extraction as fallback (recheckContent is already available from outer try block)
-						const backupPasswordMatch = recheckContent.match(/"backupPassword"\s*:\s*"([^"]+)"/);
-						if (backupPasswordMatch && backupPasswordMatch[1]) {
-							console.warn("Found existing backupPassword in invalid JSON, preserving it");
-							return backupPasswordMatch[1];
-						}
-					} catch {
-						// Salvage attempt failed, continue to overwrite
+					// Use the already-read recheckContent instead of re-reading the file
+					const backupPasswordMatch = recheckContent.match(/"backupPassword"\s*:\s*"([^"]+)"/);
+					if (backupPasswordMatch?.[1]) {
+						console.warn("Found existing backupPassword in invalid JSON, preserving it");
+						return backupPasswordMatch[1];
 					}
 					console.warn("Could not salvage backupPassword; existing backups may become inaccessible");
 					// Proceed with write
@@ -158,7 +155,6 @@ export class BackupService {
 			await fs.rename(tempPath, this.secretsPath);
 			await fs.chmod(this.secretsPath, 0o600);
 
-			console.log("Generated new backup password for development (stored in secrets.json)");
 			return newPassword;
 		} catch (error) {
 			// If secrets file doesn't exist, create it with just the backup password
@@ -179,7 +175,6 @@ export class BackupService {
 					});
 					await fs.chmod(this.secretsPath, 0o600);
 
-					console.log("Created secrets.json with generated backup password for development");
 					return newPassword;
 				} catch (writeError) {
 					// If write failed because file now exists (race condition), read and return existing password
@@ -362,14 +357,12 @@ export class BackupService {
 		const estimatedSizeMB = (estimatedRecordCount * 1024) / (1024 * 1024);
 
 		if (estimatedSizeMB > RECOMMENDED_MAX_BACKUP_SIZE_MB) {
-			const message = `Backup size estimate (${estimatedSizeMB.toFixed(2)} MB) exceeds recommended limit (${RECOMMENDED_MAX_BACKUP_SIZE_MB} MB). ` +
-				`This may cause memory issues or timeouts. Consider implementing backup streaming or pruning old data.`;
+			const message = `Backup size estimate (${estimatedSizeMB.toFixed(2)} MB) exceeds recommended limit (${RECOMMENDED_MAX_BACKUP_SIZE_MB} MB). This may cause memory issues or timeouts. Consider implementing backup streaming or pruning old data.`;
 			console.error(message);
 			throw new Error(message);
 		} else if (estimatedSizeMB > WARNING_BACKUP_SIZE_MB) {
 			console.warn(
-				`Backup size estimate (${estimatedSizeMB.toFixed(2)} MB) is large. ` +
-				`Consider monitoring memory usage and implementing streaming for larger datasets.`
+				`Backup size estimate (${estimatedSizeMB.toFixed(2)} MB) is large. Consider monitoring memory usage and implementing streaming for larger datasets.`
 			);
 		}
 
@@ -784,7 +777,6 @@ export class BackupService {
 				this.validateRecords(data.users, "user", ["id", "username"]);
 				await tx.user.createMany({
 					data: data.users as Prisma.UserCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 
@@ -793,7 +785,6 @@ export class BackupService {
 				this.validateRecords(data.sessions, "session", ["id", "userId", "expiresAt"]);
 				await tx.session.createMany({
 					data: data.sessions as Prisma.SessionCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 
@@ -816,7 +807,6 @@ export class BackupService {
 				this.validateRecords(data.oidcAccounts, "oidcAccount", ["id", "userId", "provider"]);
 				await tx.oIDCAccount.createMany({
 					data: data.oidcAccounts as Prisma.OIDCAccountCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 
@@ -825,7 +815,6 @@ export class BackupService {
 				this.validateRecords(data.webAuthnCredentials, "webAuthnCredential", ["id", "userId", "publicKey"]);
 				await tx.webAuthnCredential.createMany({
 					data: data.webAuthnCredentials as Prisma.WebAuthnCredentialCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 
@@ -834,7 +823,6 @@ export class BackupService {
 				this.validateRecords(data.serviceInstances, "serviceInstance", ["id", "service", "baseUrl"]);
 				await tx.serviceInstance.createMany({
 					data: data.serviceInstances as Prisma.ServiceInstanceCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 
@@ -843,7 +831,6 @@ export class BackupService {
 				this.validateRecords(data.serviceTags, "serviceTag", ["id", "name"]);
 				await tx.serviceTag.createMany({
 					data: data.serviceTags as Prisma.ServiceTagCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 
@@ -852,7 +839,6 @@ export class BackupService {
 				this.validateRecords(data.serviceInstanceTags, "serviceInstanceTag", ["instanceId", "tagId"]);
 				await tx.serviceInstanceTag.createMany({
 					data: data.serviceInstanceTags as Prisma.ServiceInstanceTagCreateManyInput[],
-					skipDuplicates: false,
 				});
 			}
 		});
@@ -979,7 +965,13 @@ export class BackupService {
 		// Input:  2025-10-15T13-27-36-897Z
 		// Output: 2025-10-15T13:27:36.897Z
 		const rawTimestamp = match[1];
+		if (!rawTimestamp) {
+			return fallbackMtime.toISOString();
+		}
 		const [datePart, timePart] = rawTimestamp.split("T");
+		if (!timePart) {
+			return fallbackMtime.toISOString();
+		}
 
 		// Convert time portion: 13-27-36-897Z -> 13:27:36.897Z
 		const timeConverted = timePart

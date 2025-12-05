@@ -4,6 +4,8 @@ import fastifyRateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance } from "fastify";
 import { type ApiEnv, envSchema } from "./config/env.js";
 import backupSchedulerPlugin from "./plugins/backup-scheduler.js";
+import trashBackupCleanupPlugin from "./plugins/trash-backup-cleanup.js";
+import trashUpdateSchedulerPlugin from "./plugins/trash-update-scheduler.js";
 import lifecyclePlugin from "./plugins/lifecycle.js";
 import { prismaPlugin } from "./plugins/prisma.js";
 import { securityPlugin } from "./plugins/security.js";
@@ -21,6 +23,7 @@ import { registerRecommendationsRoutes } from "./routes/recommendations.js";
 import { registerSearchRoutes } from "./routes/search.js";
 import { registerServiceRoutes } from "./routes/services.js";
 import { registerSystemRoutes } from "./routes/system.js";
+import { registerTrashGuidesRoutes } from "./routes/trash-guides/index.js";
 
 export type ServerOptions = {
 	logger?: boolean;
@@ -55,11 +58,13 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		timeWindow: env.API_RATE_LIMIT_WINDOW,
 	});
 
-	// Register Prisma, Security, Lifecycle, and Backup Scheduler plugins
+	// Register Prisma, Security, Lifecycle, and Scheduler plugins
 	app.register(prismaPlugin);
 	app.register(securityPlugin);
 	app.register(lifecyclePlugin);
 	app.register(backupSchedulerPlugin);
+	app.register(trashBackupCleanupPlugin);
+	app.register(trashUpdateSchedulerPlugin);
 
 	app.decorateRequest("currentUser", null);
 	app.decorateRequest("sessionToken", null);
@@ -101,6 +106,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(registerRecommendationsRoutes, { prefix: "/api" });
 	app.register(registerBackupRoutes, { prefix: "/api/backup" });
 	app.register(registerSystemRoutes, { prefix: "/api/system" });
+	app.register(registerTrashGuidesRoutes, { prefix: "/api/trash-guides" });
 
 	return app;
 };

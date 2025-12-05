@@ -40,9 +40,9 @@ export const CalendarFilters = ({
 		includeUnmonitored;
 
 	return (
-		<div className="flex flex-wrap items-end gap-3 rounded-lg border border-white/10 bg-white/5 px-4 py-3">
-			<div className="flex min-w-[200px] flex-col gap-1 text-sm text-white/80">
-				<label className="text-xs uppercase text-white/50" htmlFor="calendar-search">
+		<div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-bg-subtle px-4 py-3">
+			<div className="flex min-w-[200px] flex-col gap-1 text-sm text-fg-muted">
+				<label className="text-xs uppercase text-fg-muted" htmlFor="calendar-search">
 					Search
 				</label>
 				<Input
@@ -50,49 +50,47 @@ export const CalendarFilters = ({
 					value={searchTerm}
 					onChange={(event) => onSearchChange(event.target.value)}
 					placeholder="Search titles or descriptions"
-					className="border-white/20 bg-slate-900/80 text-white placeholder:text-white/40"
+					className="border-border bg-bg text-fg placeholder:text-fg-muted"
 				/>
 			</div>
-			<div className="flex min-w-[160px] flex-col gap-1 text-sm text-white/80">
-				<label className="text-xs uppercase text-white/50" htmlFor="calendar-service-filter">
+			<div className="flex min-w-[160px] flex-col gap-1 text-sm text-fg-muted">
+				<label className="text-xs uppercase text-fg-muted" htmlFor="calendar-service-filter">
 					Service
 				</label>
 				<select
 					id="calendar-service-filter"
 					value={serviceFilter}
 					onChange={(event) => onServiceFilterChange(event.target.value as ServiceFilterValue)}
-					className="rounded-md border border-white/20 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
-					style={{ color: "#f8fafc" }}
+					className="rounded-md border border-border bg-bg px-3 py-2 text-sm text-fg focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
 				>
 					{SERVICE_FILTERS.map((option) => (
-						<option key={option.value} value={option.value} className="bg-slate-900 text-white">
+						<option key={option.value} value={option.value} className="bg-bg text-fg">
 							{option.label}
 						</option>
 					))}
 				</select>
 			</div>
-			<div className="flex min-w-[200px] flex-col gap-1 text-sm text-white/80">
-				<label className="text-xs uppercase text-white/50" htmlFor="calendar-instance-filter">
+			<div className="flex min-w-[200px] flex-col gap-1 text-sm text-fg-muted">
+				<label className="text-xs uppercase text-fg-muted" htmlFor="calendar-instance-filter">
 					Instance
 				</label>
 				<select
 					id="calendar-instance-filter"
 					value={instanceFilter}
 					onChange={(event) => onInstanceFilterChange(event.target.value)}
-					className="rounded-md border border-white/20 bg-slate-900/80 px-3 py-2 text-sm text-white focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
-					style={{ color: "#f8fafc" }}
+					className="rounded-md border border-border bg-bg px-3 py-2 text-sm text-fg focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
 				>
-					<option value="all" className="bg-slate-900 text-white">
+					<option value="all" className="bg-bg text-fg">
 						All instances
 					</option>
 					{instanceOptions.map((option) => (
-						<option key={option.value} value={option.value} className="bg-slate-900 text-white">
+						<option key={option.value} value={option.value} className="bg-bg text-fg">
 							{option.label}
 						</option>
 					))}
 				</select>
 			</div>
-			<label className="flex items-center gap-2 text-sm text-white/70">
+			<label className="flex items-center gap-2 text-sm text-fg-muted">
 				<input
 					type="checkbox"
 					checked={includeUnmonitored}

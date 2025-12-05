@@ -1,13 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import type { SearchResult } from "@arr/shared";
-import {
-	useSearchIndexersQuery,
-	useManualSearchMutation,
-	useGrabSearchResultMutation,
-} from "../../../hooks/api/useSearch";
+import { useSearchIndexersQuery } from "../../../hooks/api/useSearch";
 import {
 	Button,
 	Card,
@@ -22,21 +16,31 @@ import {
 	Pagination,
 } from "../../../components/ui";
 import { SearchResultsTable } from "./search-results-table";
-import { safeOpenUrl } from "../../../lib/utils/url-validation";
 import { IndexerSelector } from "./indexer-selector";
 import { SearchForm } from "./search-form";
 import { FilterControls } from "./filter-controls";
 import { SortControls } from "./sort-controls";
 import { ResultsSummary } from "./results-summary";
-import { buildFilters, deriveGrabErrorMessage } from "../lib/search-utils";
 import { useSearchState } from "../hooks/use-search-state";
 import { useSearchData } from "../hooks/use-search-data";
+import { useSearchPagination } from "../hooks/use-search-pagination";
+import { useSearchActions } from "../hooks/use-search-actions";
+import { useSearchIndexers } from "../hooks/use-search-indexers";
 
+/**
+ * Main search client component for manual indexer searches.
+ * Orchestrates the search flow including:
+ * - Indexer selection and initialization
+ * - Search query and filtering
+ * - Results display and pagination
+ * - Grabbing releases and copying links
+ *
+ * Refactored to use business logic hooks for better separation of concerns.
+ *
+ * @component
+ */
 export const SearchClient = () => {
-	const [results, setResults] = useState<SearchResult[]>([]);
-	const [page, setPage] = useState(1);
-	const [pageSize, setPageSize] = useState(25);
-
+	// Search state management
 	const searchState = useSearchState();
 	const {
 		query,
@@ -51,155 +55,32 @@ export const SearchClient = () => {
 		actions,
 	} = searchState;
 
+	// Indexers data
 	const indexersQuery = useSearchIndexersQuery();
-	const searchMutation = useManualSearchMutation();
-	const grabMutation = useGrabSearchResultMutation();
 
+	// Initialize indexer selection
+	useSearchIndexers(indexersQuery, actions);
+
+	// Search and action handlers
+	const {
+		results,
+		handleSearch,
+		handleSubmit,
+		handleGrab,
+		handleCopyMagnet,
+		handleOpenInfo,
+		isSearching,
+	} = useSearchActions(query, searchType, selectedIndexers, actions);
+
+	// Filter and sort results
 	const processed = useSearchData(results, {
 		...filters,
 		...sort,
 	});
 
-	const paginatedResults = useMemo(() => {
-		const start = (page - 1) * pageSize;
-		return processed.results.slice(start, start + pageSize);
-	}, [processed.results, page, pageSize]);
-
-	useEffect(() => {
-		if (!indexersQuery.data || indexersQuery.data.instances.length === 0) {
-			actions.setSelectedIndexers({});
-			return;
-		}
-
-		actions.setSelectedIndexers((current) => {
-			if (Object.keys(current).length > 0) {
-				return current;
-			}
-
-			const initial: Record<string, number[]> = {};
-			for (const instance of indexersQuery.data.instances) {
-				const enabled = instance.data
-					.filter((indexer) => indexer.enable)
-					.map((indexer) => indexer.id);
-				initial[instance.instanceId] = enabled;
-			}
-			return initial;
-		});
-	}, [indexersQuery.data, actions]);
-
-	const handleSearch = () => {
-		if (!query.trim()) {
-			actions.setValidationError("Enter a search query first.");
-			actions.setFeedback(null);
-			return;
-		}
-
-		const filterPayload = buildFilters(selectedIndexers);
-		if (filterPayload.length === 0) {
-			actions.setValidationError("Select at least one indexer to search against.");
-			actions.setFeedback(null);
-			return;
-		}
-
-		actions.setValidationError(null);
-		actions.setFeedback(null);
-
-		searchMutation.mutate(
-			{
-				query: query.trim(),
-				type: searchType,
-				filters: filterPayload,
-			},
-			{
-				onSuccess: (data) => {
-					actions.setHasSearched(true);
-					setResults(data.aggregated);
-					const total = data.totalCount;
-					actions.setFeedback({
-						type: "success",
-						message:
-							total > 0
-								? `Found ${total} result${total === 1 ? "" : "s"}.`
-								: "No results found for that query.",
-					});
-				},
-				onError: (error) => {
-					const message = error instanceof Error ? error.message : "Search failed";
-					actions.setFeedback({ type: "error", message });
-				},
-			},
-		);
-	};
-
-	const handleSubmit = (event: React.FormEvent) => {
-		event.preventDefault();
-		if (!searchMutation.isPending) {
-			handleSearch();
-		}
-	};
-
-	const handleGrab = async (result: SearchResult) => {
-		const rowKey = `${result.instanceId}:${result.indexerId}:${result.id}`;
-		actions.setGrabbingKey(rowKey);
-		actions.setFeedback(null);
-		try {
-			await grabMutation.mutateAsync({
-				instanceId: result.instanceId,
-				result,
-			});
-			actions.setFeedback({
-				type: "success",
-				message: `Sent "${result.title}" to the download client.`,
-			});
-		} catch (error) {
-			const message = deriveGrabErrorMessage(error);
-			actions.setFeedback({ type: "error", message });
-		} finally {
-			actions.setGrabbingKey(null);
-		}
-	};
-
-	const handleCopyMagnet = useCallback(
-		async (result: SearchResult) => {
-			const link = result.magnetUrl ?? result.downloadUrl ?? result.link;
-			if (!link) {
-				actions.setFeedback({
-					type: "error",
-					message: "No copyable magnet or download link is available for this release.",
-				});
-				return;
-			}
-
-			try {
-				await navigator.clipboard.writeText(link);
-				actions.setFeedback({ type: "success", message: "Copied link to clipboard." });
-			} catch (error) {
-				const message = error instanceof Error ? error.message : "Clipboard copy failed.";
-				actions.setFeedback({
-					type: "error",
-					message: `Unable to copy link: ${message}`,
-				});
-			}
-		},
-		[actions],
-	);
-
-	const handleOpenInfo = useCallback(
-		(result: SearchResult) => {
-			const target = result.infoUrl ?? result.link ?? result.downloadUrl ?? result.magnetUrl;
-			if (!target) {
-				actions.setFeedback({
-					type: "error",
-					message: "This release did not provide a public info link.",
-				});
-				return;
-			}
-			if (!safeOpenUrl(target)) {
-				actions.setFeedback({ type: "error", message: "Invalid or unsafe URL." });
-			}
-		},
-		[actions],
-	);
+	// Pagination
+	const { page, pageSize, paginatedResults, setPage, setPageSize } =
+		useSearchPagination(processed.results);
 
 	if (indexersQuery.isLoading) {
 		return (
@@ -232,9 +113,9 @@ export const SearchClient = () => {
 		<section className="flex flex-col gap-10">
 			<header className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
 				<div>
-					<p className="text-sm font-medium uppercase text-white/60">Multi-indexer search</p>
-					<h1 className="text-3xl font-semibold text-white">Manual Search</h1>
-					<p className="mt-2 text-sm text-white/60">
+					<p className="text-sm font-medium uppercase text-fg/60">Multi-indexer search</p>
+					<h1 className="text-3xl font-semibold text-fg">Manual Search</h1>
+					<p className="mt-2 text-sm text-fg/60">
 						Query your configured Prowlarr instances and send releases directly to your download
 						clients.
 					</p>
@@ -254,7 +135,7 @@ export const SearchClient = () => {
 			)}
 
 			{noIndexers ? (
-				<Card className="border-dashed border-white/20 bg-white/5">
+				<Card className="border-dashed border-border bg-bg-subtle">
 					<CardHeader>
 						<CardTitle className="text-xl">Prowlarr configuration required</CardTitle>
 						<CardDescription>
@@ -282,7 +163,7 @@ export const SearchClient = () => {
 							<SearchForm
 								query={query}
 								searchType={searchType}
-								isSearching={searchMutation.isPending}
+								isSearching={isSearching}
 								onQueryChange={actions.setQuery}
 								onSearchTypeChange={actions.setSearchType}
 								onSubmit={handleSubmit}
@@ -343,7 +224,7 @@ export const SearchClient = () => {
 
 					<SearchResultsTable
 						results={paginatedResults}
-						loading={searchMutation.isPending}
+						loading={isSearching}
 						onGrab={handleGrab}
 						grabbingKey={grabbingKey}
 						onCopyMagnet={handleCopyMagnet}
@@ -357,10 +238,7 @@ export const SearchClient = () => {
 							totalItems={processed.results.length}
 							pageSize={pageSize}
 							onPageChange={setPage}
-							onPageSizeChange={(size) => {
-								setPageSize(size);
-								setPage(1);
-							}}
+							onPageSizeChange={setPageSize}
 							pageSizeOptions={[25, 50, 100]}
 						/>
 					)}

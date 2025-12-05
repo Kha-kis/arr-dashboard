@@ -73,9 +73,9 @@ export function useLibraryData(params: LibraryDataParams): LibraryData {
 	// Fetch services data
 	const servicesQuery = useServicesQuery();
 
-	// Extract raw data
-	const items = libraryQuery.data?.aggregated ?? [];
-	const instances = libraryQuery.data?.instances ?? [];
+	// Extract raw data - memoize to prevent dependency changes on every render
+	const items = useMemo(() => libraryQuery.data?.aggregated ?? [], [libraryQuery.data?.aggregated]);
+	const instances = useMemo(() => libraryQuery.data?.instances ?? [], [libraryQuery.data?.instances]);
 
 	// Create service lookup map
 	const serviceLookup = useMemo<Record<string, ServiceInstanceSummary>>(() => {

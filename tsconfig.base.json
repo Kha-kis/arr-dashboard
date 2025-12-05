@@ -14,7 +14,6 @@
     "noImplicitOverride": true,
     "noUncheckedIndexedAccess": true,
     "allowSyntheticDefaultImports": true,
-    "types": [],
     "baseUrl": ".",
     "paths": {
       "@arr/shared": ["packages/shared/src/index.ts"],

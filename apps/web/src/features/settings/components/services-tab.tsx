@@ -63,9 +63,9 @@ export const ServicesTab = ({
 			</CardHeader>
 			<CardContent className="space-y-4">
 				{isLoading ? (
-					<p className="text-sm text-white/60">Loading services...</p>
+					<p className="text-sm text-fg-muted">Loading services...</p>
 				) : services.length === 0 ? (
-					<p className="text-sm text-white/60">No services configured yet.</p>
+					<p className="text-sm text-fg-muted">No services configured yet.</p>
 				) : (
 					<div className="space-y-3">
 						{services.map((instance) => (

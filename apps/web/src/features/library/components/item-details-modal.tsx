@@ -91,6 +91,7 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 					<div className="flex gap-4">
 						{item.poster && (
 							<div className="h-48 w-32 overflow-hidden rounded-lg border border-border bg-bg-muted shadow-md flex-shrink-0">
+								{/* eslint-disable-next-line @next/next/no-img-element -- External poster from arr instance */}
 								<img src={item.poster} alt={item.title} className="h-full w-full object-cover" />
 							</div>
 						)}
@@ -118,9 +119,9 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 					<div className="mb-6">
 						<h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-2">Genres</h3>
 						<div className="flex flex-wrap gap-2">
-							{genreEntries.map((genre) => (
+							{genreEntries.map((genre, index) => (
 								<span
-									key={genre}
+									key={`${index}-${genre}`}
 									className="rounded-full border border-border bg-bg-muted/50 px-3 py-1 text-sm text-fg-muted"
 								>
 									{genre}
@@ -134,9 +135,9 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 					<div className="mb-6">
 						<h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-2">Tags</h3>
 						<div className="flex flex-wrap gap-2">
-							{tagEntries.map((tag) => (
+							{tagEntries.map((tag, index) => (
 								<span
-									key={tag}
+									key={`${index}-${tag}`}
 									className="rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-sm text-fg"
 								>
 									{tag}
