@@ -9,7 +9,7 @@ import type {
 	RecommendationsRequest,
 	RecommendationsResponse,
 } from "@arr/shared";
-import { apiRequest, UnauthorizedError } from "./base";
+import { apiRequest, UnauthorizedError, BadRequestError } from "./base";
 
 export interface DiscoverSearchParams {
 	query: string;
@@ -73,7 +73,9 @@ export async function fetchRecommendations(
 	try {
 		return await apiRequest<RecommendationsResponse>(`/api/recommendations?${search.toString()}`);
 	} catch (error) {
-		if (error instanceof UnauthorizedError) {
+		// Return empty results for auth errors or missing TMDB API key (400)
+		// Setting totalPages to 0 prevents infinite pagination attempts
+		if (error instanceof UnauthorizedError || error instanceof BadRequestError) {
 			return {
 				type: params.type,
 				mediaType: params.mediaType,

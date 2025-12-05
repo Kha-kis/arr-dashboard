@@ -149,5 +149,69 @@ export function anonymizeHealthMessage(message: string): string {
 	return anonymized;
 }
 
+// Anonymize queue status/error messages
+export function anonymizeStatusMessage(message: string): string {
+	let anonymized = message;
+
+	// Replace episode patterns like "Episode 1x02" with generic version
+	// Keep the episode number pattern but anonymize the context
+	anonymized = anonymized.replace(
+		/Episode\s+(\d+x\d+)\s+was not found in the grabbed release:\s*(.+)$/gi,
+		(_, episode) => `Episode ${episode} was not found in the grabbed release: linux-distribution-v1.0-x86_64`
+	);
+
+	// Replace "grabbed release: Title S01 1080p..." patterns
+	anonymized = anonymized.replace(
+		/grabbed release:\s*[^\n]+/gi,
+		"grabbed release: linux-distribution-v1.0-x86_64"
+	);
+
+	// Replace release names with resolution and codec info (most comprehensive pattern)
+	// Matches: "Title S01E02 1080p WEB-DL...", "Title 1986 S01E01 Episode Name 1080p..."
+	// This catches scene release naming conventions
+	anonymized = anonymized.replace(
+		/[A-Za-z0-9\s.'\-:]+(?:\d{4}\s+)?S\d{1,2}E\d{1,2}[A-Za-z0-9\s.'\-:]*\d{3,4}p[^\n]*/gi,
+		"linux-distribution-v1.0-x86_64"
+	);
+
+	// Replace release names that look like media (contain resolution, codec info)
+	// Pattern matches things like "Show Name S01E02 1080p WEB-DL..."
+	anonymized = anonymized.replace(
+		/[A-Za-z0-9\s.'\-:]+\s+S\d{1,2}(?:E\d{1,2})?\s+\d{3,4}p[^\n,]*/gi,
+		"linux-distribution-v1.0-x86_64"
+	);
+
+	// Replace movie release patterns "Movie Name (2024) 1080p..."
+	anonymized = anonymized.replace(
+		/[A-Za-z0-9\s.'\-:]+\s+\(\d{4}\)\s+\d{3,4}p[^\n,]*/gi,
+		"linux-distribution-v1.0-x86_64"
+	);
+
+	// Replace standalone release names with resolution (720p, 1080p, 2160p, etc.)
+	// and common release group suffixes
+	anonymized = anonymized.replace(
+		/[A-Za-z0-9\s.'\-:]{10,}\d{3,4}p[A-Za-z0-9\s.\-]*(?:WEB|HDTV|BluRay|BDRip|DVDRip|REMUX|NF|AMZN|DSNP|HMAX)[^\n]*/gi,
+		"linux-distribution-v1.0-x86_64"
+	);
+
+	// Replace "expected in this release" messages
+	anonymized = anonymized.replace(
+		/expected in this release were not imported/gi,
+		"expected in this distribution were not verified"
+	);
+
+	// Replace show/movie titles after common prefixes
+	anonymized = anonymized.replace(
+		/(for|from|in|of)\s+['"]?[A-Z][A-Za-z0-9\s.'\-:]+['"]?\s*(S\d|Season|\()/gi,
+		(_, prefix) => `${prefix} linux-distribution (`
+	);
+
+	// Keep generic messages as-is
+	// "Episode has a TBA title and recently aired" - this is generic enough
+	// "One or more episodes expected..." - contains no identifying info
+
+	return anonymized;
+}
+
 // Re-export the hook from context
 export { useIncognitoMode } from "../contexts/IncognitoContext";
