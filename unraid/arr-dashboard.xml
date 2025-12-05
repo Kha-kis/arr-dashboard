@@ -14,11 +14,11 @@
   <TemplateURL>https://raw.githubusercontent.com/Kha-kis/arr-dashboard/main/unraid/arr-dashboard.xml</TemplateURL>
   <Icon>https://raw.githubusercontent.com/Kha-kis/arr-dashboard/main/apps/web/public/icon.png</Icon>
   <Description>Arr Dashboard provides a unified interface to manage all your Sonarr, Radarr, and Prowlarr instances from one place. View queues, calendars, and history across all instances. Search content globally across all indexers. Manage your media library with tag-based organization. Monitor health and statistics. Discover new content with TMDB integration. Built with modern architecture featuring zero-config Docker deployment, encrypted API keys, and secure session management.</Description>
-  <Config Name="Web UI Port" Target="3000" Default="3000" Mode="tcp" Description="Port for the web interface" Type="Port" Display="always" Required="true" Mask="false">3000</Config>
-  <Config Name="API Port" Target="3001" Default="3001" Mode="tcp" Description="Port for the API (optional, only needed for direct API access)" Type="Port" Display="advanced" Required="false" Mask="false">3001</Config>
-  <Config Name="Config" Target="/config" Default="/mnt/user/appdata/arr-dashboard" Mode="rw" Description="Database and configuration storage" Type="Path" Display="advanced" Required="true" Mask="false">/mnt/user/appdata/arr-dashboard</Config>
-  <Config Name="Database URL" Target="DATABASE_URL" Default="file:/config/prod.db" Mode="" Description="Database connection string (leave default for SQLite)" Type="Variable" Display="advanced" Required="false" Mask="false">file:/config/prod.db</Config>
-  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User ID for file permissions" Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
-  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group ID for file permissions" Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
-  <Config Name="Session TTL (Hours)" Target="SESSION_TTL_HOURS" Default="24" Mode="" Description="Session expiration time in hours" Type="Variable" Display="advanced" Required="false" Mask="false">24</Config>
+  <Config Name="Web UI Port" Target="3000" Default="3000" Mode="tcp" Description="Port for the web interface" Type="Port" Display="always" Required="true" Mask="false"/>
+  <Config Name="API Port" Target="3001" Default="3001" Mode="tcp" Description="Port for the API (optional, only needed for direct API access)" Type="Port" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Config" Target="/config" Default="/mnt/user/appdata/arr-dashboard" Mode="rw" Description="Database and configuration storage" Type="Path" Display="advanced" Required="true" Mask="false"/>
+  <Config Name="Database URL" Target="DATABASE_URL" Default="file:/config/prod.db" Mode="" Description="Database connection string (leave default for SQLite)" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User ID for file permissions" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group ID for file permissions" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="Session TTL (Hours)" Target="SESSION_TTL_HOURS" Default="24" Mode="" Description="Session expiration time in hours" Type="Variable" Display="advanced" Required="false" Mask="false"/>
 </Container>
