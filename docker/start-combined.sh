@@ -34,11 +34,11 @@ fi
 echo ""
 echo "Setting up directories and permissions..."
 
-# Ensure data directory exists
-mkdir -p /app/data
+# Ensure config directory exists (LinuxServer convention)
+mkdir -p /config
 
 # Set ownership of writable directories
-chown -R abc:abc /app/data
+chown -R abc:abc /config
 
 # ============================================
 # Signal handling

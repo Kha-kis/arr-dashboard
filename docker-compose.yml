@@ -3,10 +3,10 @@ services:
     image: khak1s/arr-dashboard:latest
     container_name: arr-dashboard
     environment:
-      - PUID=99  # Set to your user ID (run `id -u` on host)
-      - PGID=100  # Set to your group ID (run `id -g` on host)
+      - PUID=1000  # Set to your user ID (run `id -u` on host)
+      - PGID=1000  # Set to your group ID (run `id -g` on host)
     volumes:
-      - ./data:/app/data
+      - ./config:/config
     ports:
       - 3000:3000
     restart: unless-stopped

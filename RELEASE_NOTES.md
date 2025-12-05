@@ -1,5 +1,49 @@
 # Release Notes
 
+## Version 2.5.0
+
+### ⚠️ Breaking Change: Volume Path Update
+
+**The Docker volume mount path has changed from `/app/data` to `/config`** to follow [LinuxServer.io conventions](https://docs.linuxserver.io/general/running-our-containers/).
+
+#### Migration Steps
+
+1. Stop your container:
+   ```bash
+   docker stop arr-dashboard
+   ```
+
+2. Update your volume mount:
+   ```yaml
+   # Old (2.4.x)
+   volumes:
+     - ./data:/app/data
+
+   # New (2.5.0+)
+   volumes:
+     - ./config:/config
+   ```
+
+3. Rename your data directory (optional but recommended):
+   ```bash
+   mv ./data ./config
+   ```
+
+4. Restart:
+   ```bash
+   docker-compose up -d
+   ```
+
+> **Note:** Your data (database, secrets) will be preserved. Only the mount path has changed.
+
+### Why This Change?
+
+- **Industry Standard** - Matches LinuxServer.io, hotio, and other popular container maintainers
+- **Consistency** - Works alongside Sonarr, Radarr, Prowlarr which all use `/config`
+- **Easier Support** - "Where is my data?" → "Always in `/config`"
+
+---
+
 ## Version 2.4.3
 
 ### Improvements

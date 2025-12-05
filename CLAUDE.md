@@ -96,7 +96,7 @@ Implementation in `apps/api/src/lib/auth/secret-manager.ts`:
 - Only generates if not provided via environment variables
 
 **Location:**
-- Docker: `/app/data/secrets.json`
+- Docker: `/config/secrets.json`
 - Dev: `./secrets.json` (next to `dev.db`)
 
 **Key Files:**
@@ -194,7 +194,7 @@ const instance = await request.server.prisma.serviceInstance.findFirst({
 
 **Database URL:**
 - Auto-configured in `apps/api/src/config/env.ts` (lines 39-43)
-- Docker: `file:/app/data/prod.db`
+- Docker: `file:/config/prod.db`
 - Dev: `file:./dev.db`
 
 ### 6. ARR Instance Communication
@@ -366,7 +366,7 @@ pnpm run start  # Port 3000
 docker run -d \
   --name arr-dashboard \
   -p 3000:3000 \
-  -v /path/to/data:/app/data \
+  -v /path/to/config:/config \
   khak1s/arr-dashboard:latest
 
 # Or with docker-compose
@@ -380,7 +380,7 @@ docker-compose up -d
 - `UNRAID_DEPLOYMENT.md` - Unraid installation guide
 
 **Environment Variables:**
-- `DATABASE_URL`: Database path (default: `file:/app/data/prod.db`)
+- `DATABASE_URL`: Database path (default: `file:/config/prod.db`)
 - `API_PORT`: API port (default: `3001`)
 - `PORT`: Web port (default: `3000`)
 - `SESSION_TTL_HOURS`: Session expiration (default: `24`)
@@ -461,9 +461,9 @@ const results = await Promise.all(
 - Secrets auto-generated if not provided
 
 ### 7. Docker Volume Persistence
-- All state persisted to `/app/data/` in Docker
+- All state persisted to `/config/` in Docker (LinuxServer.io convention)
 - Contains: `prod.db`, `secrets.json`
-- Mount: `./data:/app/data` in docker-compose
+- Mount: `./config:/config` in docker-compose
 
 ## Testing
 
