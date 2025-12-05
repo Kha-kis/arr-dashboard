@@ -863,6 +863,17 @@ export class TemplateUpdater {
 
 		const serviceType = template.serviceType as "RADARR" | "SONARR";
 
+		// Validate cache commit matches target to ensure accurate diff
+		const cacheCommitHash = await this.cacheManager.getCommitHash(
+			serviceType,
+			"CUSTOM_FORMATS",
+		);
+		if (cacheCommitHash && cacheCommitHash !== targetCommit.commitHash) {
+			throw new Error(
+				`Cache is stale (${cacheCommitHash}), refresh before viewing diff for ${targetCommit.commitHash}`,
+			);
+		}
+
 		// Get latest cache data for comparison
 		const customFormatsCache = await this.cacheManager.get(
 			serviceType,
