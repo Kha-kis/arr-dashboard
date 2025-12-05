@@ -1071,7 +1071,14 @@ export class TemplateUpdater {
 		const errors: string[] = [];
 
 		// Get latest commit for version tagging
-		const latestCommit = await this.versionTracker.getLatestCommit();
+		let latestCommit: { commitHash: string; commitDate: Date };
+		try {
+			latestCommit = await this.versionTracker.getLatestCommit();
+		} catch (error) {
+			const errorMsg = `[TemplateUpdater] Failed to fetch latest commit: ${error instanceof Error ? error.message : String(error)}`;
+			errors.push(errorMsg);
+			return { refreshed: 0, failed: configTypes.length, errors };
+		}
 
 		for (const configType of configTypes) {
 			try {
