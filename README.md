@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.4.2** - Now with TRaSH Guides Integration
+> **Version 2.4.3** - Now with TRaSH Guides Integration
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -132,6 +132,7 @@ docker-compose up -d
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.4.3` | Favicon, README screenshots |
 | `2.4.2` | PUID/PGID support, improved incognito mode, discover page fixes |
 | `2.4.x` | TRaSH Guides integration |
 | `2.3.x` | Stability improvements and bug fixes |
