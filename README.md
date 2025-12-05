@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.4.1** - Now with TRaSH Guides Integration
+> **Version 2.4.2** - Now with TRaSH Guides Integration
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -51,6 +51,7 @@ A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances
 - **Session Management** - Secure HTTP-only cookie sessions
 - **Rate Limiting** - Built-in protection against abuse
 - **Zero-Config Security** - Auto-generated encryption keys
+- **Incognito Mode** - Hide sensitive media titles for screenshots/demos (disguises as Linux ISOs)
 
 ### Management
 - **Tag Organization** - Organize instances with custom tags
@@ -66,6 +67,8 @@ docker run -d \
   --name arr-dashboard \
   -p 3000:3000 \
   -v /path/to/data:/app/data \
+  -e PUID=1000 \
+  -e PGID=1000 \
   --restart unless-stopped \
   khak1s/arr-dashboard:latest
 ```
@@ -77,6 +80,9 @@ services:
   arr-dashboard:
     image: khak1s/arr-dashboard:latest
     container_name: arr-dashboard
+    environment:
+      - PUID=1000  # Set to your user ID (run `id -u` on host)
+      - PGID=1000  # Set to your group ID (run `id -g` on host)
     volumes:
       - ./data:/app/data
     ports:
@@ -102,7 +108,8 @@ docker-compose up -d
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
-| `2.4.x` | Current version with TRaSH Guides integration |
+| `2.4.2` | PUID/PGID support, improved incognito mode, discover page fixes |
+| `2.4.x` | TRaSH Guides integration |
 | `2.3.x` | Stability improvements and bug fixes |
 | `2.2.x` | OIDC and Passkey authentication |
 
@@ -116,9 +123,13 @@ The application auto-generates all necessary security keys on first run. No envi
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `PUID` | `911` | User ID for file permissions (LinuxServer.io style) |
+| `PGID` | `911` | Group ID for file permissions (LinuxServer.io style) |
 | `DATABASE_URL` | `file:/app/data/prod.db` | Database connection string |
 | `SESSION_TTL_HOURS` | `24` | Session expiration time |
 | `API_RATE_LIMIT_MAX` | `200` | Max requests per minute |
+
+> **Note:** Set `PUID` and `PGID` to match the owner of your data directory. Run `id -u` and `id -g` on your host to find your user/group IDs. This follows the [LinuxServer.io](https://docs.linuxserver.io/general/understanding-puid-and-pgid) convention for consistent file permissions.
 
 ### User Settings (Web Interface)
 
