@@ -1,0 +1,1 @@
+Release notes for Version 2.4.
