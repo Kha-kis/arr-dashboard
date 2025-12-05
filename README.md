@@ -13,11 +13,35 @@ A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances
 <details>
 <summary>Click to expand screenshots</summary>
 
-<!-- TODO: Add screenshots -->
-- Dashboard view
-- Library management
-- TRaSH Guides templates
-- Settings interface
+### Dashboard
+![Dashboard](https://github.com/user-attachments/assets/fbbbaccc-b9e3-4120-8a02-86894574e27f)
+
+### Library
+![Library](https://github.com/user-attachments/assets/6da80d26-5539-4bb4-b531-aa05843eaf0d)
+
+### Calendar
+![Calendar](https://github.com/user-attachments/assets/70816679-d696-4adf-ab69-a1233a4465b3)
+
+### Discover
+![Discover](https://github.com/user-attachments/assets/09ca830c-6ce3-4891-8de7-e439adb2dbc4)
+
+### Search
+![Search](https://github.com/user-attachments/assets/13e3426d-4f61-48fa-995d-71d000d16373)
+
+### Indexers
+![Indexers](https://github.com/user-attachments/assets/48be82e1-493f-4b45-abae-ceafe7adcb57)
+
+### History
+![History](https://github.com/user-attachments/assets/4db1599c-2933-4680-b384-37ff997709ae)
+
+### Statistics
+![Statistics](https://github.com/user-attachments/assets/164dd3b7-8c3b-458e-82eb-82125b89e55e)
+
+### TRaSH Guides
+![TRaSH Guides](https://github.com/user-attachments/assets/9ef10da0-7ac6-4d07-8d7a-90b52285abb3)
+
+### Settings
+![Settings](https://github.com/user-attachments/assets/11e1dbfd-3e43-4990-8a8a-057a4e6037eb)
 
 </details>
 
