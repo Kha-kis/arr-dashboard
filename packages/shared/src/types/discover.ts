@@ -168,3 +168,24 @@ export const discoverInstanceOptionsResponseSchema = z.object({
 export type DiscoverInstanceOptionsResponse = z.infer<
   typeof discoverInstanceOptionsResponseSchema
 >;
+
+export const discoverTestOptionsRequestSchema = z.object({
+  baseUrl: z.string().url(),
+  apiKey: z.string().min(1),
+  service: discoverServiceSchema,
+});
+
+export type DiscoverTestOptionsRequest = z.infer<
+  typeof discoverTestOptionsRequestSchema
+>;
+
+export const discoverTestOptionsResponseSchema = z.object({
+  service: discoverServiceSchema,
+  qualityProfiles: z.array(discoverQualityProfileSchema),
+  rootFolders: z.array(discoverRootFolderSchema),
+  languageProfiles: z.array(discoverLanguageProfileSchema).optional(),
+});
+
+export type DiscoverTestOptionsResponse = z.infer<
+  typeof discoverTestOptionsResponseSchema
+>;

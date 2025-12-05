@@ -352,8 +352,8 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 						});
 
 						user = newUser;
-					} catch (error: any) {
-						if (error.message === "SETUP_COMPLETE") {
+					} catch (error) {
+						if (error instanceof Error && error.message === "SETUP_COMPLETE") {
 							// Setup already completed by concurrent request
 							return reply.status(401).send({
 								error: "Cannot link OIDC account without authentication. Please log in first and add OIDC from settings.",

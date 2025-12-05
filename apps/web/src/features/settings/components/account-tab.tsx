@@ -67,7 +67,7 @@ export const AccountTab = ({
 				<CardContent>
 					<form className="space-y-4" onSubmit={onAccountUpdate}>
 						<div className="space-y-2">
-							<label className="text-xs uppercase text-white/60">Username</label>
+							<label className="text-xs uppercase text-fg-muted">Username</label>
 							<Input
 								value={accountForm.username}
 								onChange={(event) =>
@@ -78,12 +78,12 @@ export const AccountTab = ({
 								}
 								placeholder={currentUser?.username ?? ""}
 							/>
-							<p className="text-xs text-white/40">Current: {currentUser?.username}</p>
+							<p className="text-xs text-fg-muted">Current: {currentUser?.username}</p>
 						</div>
-						<div className="border-t border-white/10 pt-4 mt-6">
-							<h3 className="text-sm font-semibold text-white mb-4">TMDB API Integration</h3>
+						<div className="border-t border-border pt-4 mt-6">
+							<h3 className="text-sm font-semibold text-fg mb-4">TMDB API Integration</h3>
 							<div className="space-y-2">
-								<label className="text-xs uppercase text-white/60">TMDB API Key</label>
+								<label className="text-xs uppercase text-fg-muted">TMDB API Key</label>
 								<Input
 									type="password"
 									value={accountForm.tmdbApiKey}
@@ -97,7 +97,7 @@ export const AccountTab = ({
 										currentUser?.hasTmdbApiKey ? "••••••••••••••••" : "Enter your TMDB API key"
 									}
 								/>
-								<p className="text-xs text-white/50">
+								<p className="text-xs text-fg-muted">
 									{currentUser?.hasTmdbApiKey ? (
 										<>TMDB API key is configured. Enter a new key to update it.</>
 									) : (
@@ -137,8 +137,8 @@ export const AccountTab = ({
 				</CardHeader>
 				<CardContent className="space-y-4">
 					<div className="space-y-1">
-						<p className="text-xs uppercase text-white/60">Created</p>
-						<p className="text-sm text-white">
+						<p className="text-xs uppercase text-fg-muted">Created</p>
+						<p className="text-sm text-fg">
 							{currentUser?.createdAt ? new Date(currentUser.createdAt).toLocaleDateString() : "-"}
 						</p>
 					</div>

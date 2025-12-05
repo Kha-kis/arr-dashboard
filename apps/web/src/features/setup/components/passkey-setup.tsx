@@ -122,7 +122,7 @@ export const PasskeySetup = () => {
 	return (
 		<form className="space-y-4" onSubmit={handleSubmit}>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-white/60">Username</label>
+				<label className="text-xs uppercase text-fg-muted">Username</label>
 				<Input
 					type="text"
 					value={formState.username}
@@ -135,7 +135,7 @@ export const PasskeySetup = () => {
 				/>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-white/60">Password (Fallback)</label>
+				<label className="text-xs uppercase text-fg-muted">Password (Fallback)</label>
 				<Input
 					type="password"
 					value={formState.password}
@@ -144,12 +144,12 @@ export const PasskeySetup = () => {
 					required
 					minLength={8}
 				/>
-				<p className="text-xs text-white/50">
+				<p className="text-xs text-fg-muted">
 					Required as a backup login method. Must include uppercase, lowercase, number, and special character.
 				</p>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-white/60">Confirm Password</label>
+				<label className="text-xs uppercase text-fg-muted">Confirm Password</label>
 				<Input
 					type="password"
 					value={formState.confirmPassword}
@@ -159,14 +159,14 @@ export const PasskeySetup = () => {
 				/>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-white/60">Passkey Name (Optional)</label>
+				<label className="text-xs uppercase text-fg-muted">Passkey Name (Optional)</label>
 				<Input
 					value={formState.passkeyName}
 					onChange={(e) => setFormState((prev) => ({ ...prev, passkeyName: e.target.value }))}
 					placeholder="e.g., My Laptop"
 					maxLength={100}
 				/>
-				<p className="text-xs text-white/50">
+				<p className="text-xs text-fg-muted">
 					Give this passkey a friendly name to identify it later
 				</p>
 			</div>
@@ -178,7 +178,7 @@ export const PasskeySetup = () => {
 			<Button type="submit" disabled={isSubmitting} className="w-full">
 				{isSubmitting ? "Creating account..." : "Create Admin Account"}
 			</Button>
-			<p className="text-xs text-white/50 text-center">
+			<p className="text-xs text-fg-muted text-center">
 				You&apos;ll be prompted to register a passkey using your device&apos;s biometrics or security key.
 				The password serves as a backup login method if passkey authentication fails.
 			</p>

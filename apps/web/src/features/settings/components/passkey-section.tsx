@@ -160,7 +160,7 @@ export const PasskeySection = () => {
 			<CardContent className="space-y-6">
 				{/* Register New Passkey */}
 				<div className="space-y-4">
-					<h3 className="text-sm font-semibold text-white">Register New Passkey</h3>
+					<h3 className="text-sm font-semibold text-fg">Register New Passkey</h3>
 					<div className="flex gap-2">
 						<Input
 							value={passkeyName}
@@ -173,7 +173,7 @@ export const PasskeySection = () => {
 							{registeringPasskey ? "Registering..." : "Add Passkey"}
 						</Button>
 					</div>
-					<p className="text-xs text-white/50">
+					<p className="text-xs text-fg-muted">
 						You&apos;ll be prompted to use your device&apos;s biometric authentication or security key.
 					</p>
 				</div>
@@ -193,12 +193,12 @@ export const PasskeySection = () => {
 				{/* Existing Passkeys */}
 				{credentials.length > 0 ? (
 					<div className="space-y-4">
-						<h3 className="text-sm font-semibold text-white">Your Passkeys</h3>
+						<h3 className="text-sm font-semibold text-fg">Your Passkeys</h3>
 						<div className="space-y-3">
 							{credentials.map((credential) => (
 								<div
 									key={credential.id}
-									className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 p-4"
+									className="flex items-center justify-between rounded-lg border border-border bg-bg-subtle p-4"
 								>
 									<div className="flex-1">
 										{editingId === credential.id ? (
@@ -220,7 +220,7 @@ export const PasskeySection = () => {
 											<>
 												<div className="flex items-center gap-2">
 													<svg
-														className="h-4 w-4 text-white/60"
+														className="h-4 w-4 text-fg-muted"
 														fill="none"
 														stroke="currentColor"
 														viewBox="0 0 24 24"
@@ -232,7 +232,7 @@ export const PasskeySection = () => {
 															d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
 														/>
 													</svg>
-													<p className="text-sm font-medium text-white">
+													<p className="text-sm font-medium text-fg">
 														{credential.friendlyName || "Unnamed Passkey"}
 													</p>
 													{credential.backedUp && (
@@ -241,7 +241,7 @@ export const PasskeySection = () => {
 														</span>
 													)}
 												</div>
-												<p className="mt-1 text-xs text-white/50">
+												<p className="mt-1 text-xs text-fg-muted">
 													Created: {formatDate(credential.createdAt)} • Last used:{" "}
 													{formatDate(credential.lastUsedAt)}
 												</p>
@@ -254,7 +254,7 @@ export const PasskeySection = () => {
 												size="sm"
 												variant="secondary"
 												onClick={() => startEdit(credential)}
-												className="text-white/70 hover:text-white"
+												className="text-fg-muted hover:text-fg"
 											>
 												Rename
 											</Button>
@@ -273,9 +273,9 @@ export const PasskeySection = () => {
 						</div>
 					</div>
 				) : (
-					<div className="rounded-lg border border-white/10 bg-white/5 p-6 text-center">
+					<div className="rounded-lg border border-border bg-bg-subtle p-6 text-center">
 						<svg
-							className="mx-auto h-12 w-12 text-white/20"
+							className="mx-auto h-12 w-12 text-fg-muted"
 							fill="none"
 							stroke="currentColor"
 							viewBox="0 0 24 24"
@@ -287,8 +287,8 @@ export const PasskeySection = () => {
 								d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
 							/>
 						</svg>
-						<p className="mt-4 text-sm text-white/60">No passkeys registered yet</p>
-						<p className="mt-1 text-xs text-white/40">
+						<p className="mt-4 text-sm text-fg-muted">No passkeys registered yet</p>
+						<p className="mt-1 text-xs text-fg-muted">
 							Add a passkey above to enable passwordless sign-in
 						</p>
 					</div>

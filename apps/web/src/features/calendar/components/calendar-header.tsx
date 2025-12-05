@@ -22,14 +22,14 @@ export const CalendarHeader = ({
 		<header className="flex flex-col gap-4">
 			<div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
 				<div>
-					<p className="text-sm font-medium uppercase text-white/60">Schedule</p>
-					<h1 className="text-3xl font-semibold text-white">Upcoming Releases</h1>
+					<p className="text-sm font-medium uppercase text-fg-muted">Schedule</p>
+					<h1 className="text-3xl font-semibold text-fg">Upcoming Releases</h1>
 				</div>
 				<div className="flex items-center gap-2">
 					<Button variant="ghost" onClick={onPreviousMonth}>
 						&larr; Prev
 					</Button>
-					<span className="min-w-[160px] text-center text-sm text-white/80">
+					<span className="min-w-[160px] text-center text-sm text-fg-muted">
 						{formatMonthLabel(monthStart)}
 					</span>
 					<Button variant="ghost" onClick={onNextMonth}>
@@ -43,7 +43,7 @@ export const CalendarHeader = ({
 					</Button>
 				</div>
 			</div>
-			<p className="text-sm text-white/60">
+			<p className="text-sm text-fg-muted">
 				Combined calendar view for Sonarr and Radarr instances. Use the filters below to drill into
 				specific services or hosts.
 			</p>

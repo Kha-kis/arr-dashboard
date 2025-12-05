@@ -9,9 +9,9 @@ import { QueueItemCard } from "./queue-item-card";
 import { QueueSelectionToolbar } from "./queue-selection-toolbar";
 import {
 	useQueueSelection,
-	useQueueGrouping,
 	useQueueExpansion,
 	filterItemsForAction,
+	type SummaryRow,
 } from "../hooks";
 
 type QueueActionHandler = (
@@ -20,7 +20,10 @@ type QueueActionHandler = (
 ) => Promise<void> | void;
 
 interface QueueTableProps {
+	/** Raw queue items (used for selection state) */
 	items: QueueItem[];
+	/** Pre-grouped and paginated summary rows to display */
+	summaryRows: SummaryRow[];
 	loading?: boolean;
 	pending?: boolean;
 	onRetry?: QueueActionHandler;
@@ -34,17 +37,22 @@ interface QueueTableProps {
  * Main queue table component that displays queue items with grouping and actions
  *
  * This component orchestrates the queue view by:
- * - Grouping related queue items together
+ * - Receiving pre-grouped summary rows (grouping happens BEFORE pagination in parent)
  * - Managing selection state across items and groups
  * - Handling expansion state for groups
  * - Delegating rendering to specialized card components
  * - Coordinating actions (retry, manual import, remove, change category)
+ *
+ * IMPORTANT: This component receives pre-paginated summaryRows to ensure
+ * the correct number of cards are displayed per page (e.g., exactly 25 cards
+ * when pageSize is 25, regardless of how items are grouped).
  *
  * The component maintains minimal local state while delegating most logic
  * to custom hooks and child components.
  */
 export const QueueTable = ({
 	items,
+	summaryRows,
 	loading,
 	pending,
 	onRetry,
@@ -54,7 +62,6 @@ export const QueueTable = ({
 	emptyMessage,
 }: QueueTableProps) => {
 	// Custom hooks for state management
-	const summaryRows = useQueueGrouping(items);
 	const selection = useQueueSelection(items);
 	const expansion = useQueueExpansion();
 

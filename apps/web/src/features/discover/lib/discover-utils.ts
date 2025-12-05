@@ -1,5 +1,10 @@
-import type { RecommendationItem } from "@arr/shared";
-import type { LibraryItem } from "@arr/shared";
+import type {
+	DiscoverSearchResult,
+	DiscoverSearchType,
+	LibraryItem,
+	RecommendationItem,
+	ServiceInstanceSummary,
+} from "@arr/shared";
 
 /**
  * Formats a runtime value (in minutes) to a human-readable string.
@@ -131,13 +136,12 @@ export const getRecentlyAdded = (
 };
 
 /**
- * Gets top rated items from the library, sorted by runtime.
- * Note: This appears to be sorting by runtime, not rating - may need adjustment.
+ * Gets items from the library with the longest runtime, sorted by runtime (longest first).
  *
  * @param libraryItems - Array of library items
  * @param mediaType - The media type to filter by ("movie" or "series")
  * @param limit - Maximum number of items to return (default: 5)
- * @returns Array of top rated library items
+ * @returns Array of library items sorted by runtime (longest first)
  */
 export const getTopRated = (
 	libraryItems: LibraryItem[] | undefined,
@@ -157,9 +161,67 @@ export const getTopRated = (
 	return matchingItems
 		.filter((item) => item.statistics?.runtime && item.statistics.runtime > 0)
 		.sort((a, b) => {
-			const ratingA = a.statistics?.runtime || 0;
-			const ratingB = b.statistics?.runtime || 0;
-			return ratingB - ratingA;
+			const runtimeA = a.statistics?.runtime || 0;
+			const runtimeB = b.statistics?.runtime || 0;
+			return runtimeB - runtimeA;
 		})
 		.slice(0, limit);
+};
+
+/**
+ * Converts a RecommendationItem to DiscoverSearchResult format.
+ * Creates fake instance states marking all instances as "not existing" since
+ * recommendation items don't include instance availability data.
+ *
+ * @param item - The recommendation item to convert
+ * @param searchType - Current media type ("movie" or "series")
+ * @param relevantInstances - Service instances relevant to current search type
+ * @returns DiscoverSearchResult formatted for the add dialog
+ *
+ * @example
+ * const result = convertRecommendationToSearchResult(
+ *   recommendationItem,
+ *   "movie",
+ *   radarrInstances
+ * );
+ */
+export const convertRecommendationToSearchResult = (
+	item: RecommendationItem,
+	searchType: DiscoverSearchType,
+	relevantInstances: ServiceInstanceSummary[],
+): DiscoverSearchResult => {
+	return {
+		id: `tmdb-${item.tmdbId}`,
+		title: item.title,
+		type: searchType,
+		year: item.releaseDate ? new Date(item.releaseDate).getFullYear() : undefined,
+		overview: item.overview,
+		remoteIds: {
+			tmdbId: item.tmdbId,
+		},
+		images: {
+			poster: item.posterUrl,
+			fanart: item.backdropUrl,
+		},
+		ratings: item.rating
+			? {
+					value: item.rating,
+					votes: item.voteCount,
+				}
+			: undefined,
+		// Initialize instance states as "not existing" - actual status will be fetched separately
+		instanceStates: relevantInstances
+			.filter(
+				(instance): instance is typeof instance & { service: "sonarr" | "radarr" } =>
+					instance.service === "sonarr" || instance.service === "radarr"
+			)
+			.map((instance) => ({
+				instanceId: instance.id,
+				instanceName: instance.label,
+				service: instance.service,
+				exists: false,
+				monitored: false,
+				hasFile: false,
+			})),
+	};
 };

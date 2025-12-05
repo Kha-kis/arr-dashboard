@@ -18,7 +18,7 @@ import { PasskeySetup } from "./passkey-setup";
 type SetupMethod = "password" | "oidc" | "passkey";
 
 export const SetupClient = () => {
-	const [activeMethod, setActiveMethod] = useState<SetupMethod>("password");
+	const [activeMethod, setActiveMethod] = useState<SetupMethod>("passkey");
 
 	return (
 		<Card className="w-full max-w-2xl">
@@ -31,7 +31,19 @@ export const SetupClient = () => {
 			</CardHeader>
 			<CardContent>
 				{/* Tab navigation */}
-				<div className="flex items-center gap-2 border-b border-white/10 pb-4 mb-6">
+				<div className="flex items-center gap-2 border-b border-border pb-4 mb-6">
+					<Button
+						type="button"
+						variant={activeMethod === "passkey" ? "primary" : "ghost"}
+						size="sm"
+						onClick={() => setActiveMethod("passkey")}
+						className={cn(
+							"flex-1",
+							activeMethod !== "passkey" && "text-fg-muted hover:text-fg",
+						)}
+					>
+						Passkey
+					</Button>
 					<Button
 						type="button"
 						variant={activeMethod === "password" ? "primary" : "ghost"}
@@ -39,7 +51,7 @@ export const SetupClient = () => {
 						onClick={() => setActiveMethod("password")}
 						className={cn(
 							"flex-1",
-							activeMethod !== "password" && "text-white/60 hover:text-white",
+							activeMethod !== "password" && "text-fg-muted hover:text-fg",
 						)}
 					>
 						Password
@@ -51,29 +63,17 @@ export const SetupClient = () => {
 						onClick={() => setActiveMethod("oidc")}
 						className={cn(
 							"flex-1",
-							activeMethod !== "oidc" && "text-white/60 hover:text-white",
+							activeMethod !== "oidc" && "text-fg-muted hover:text-fg",
 						)}
 					>
 						OIDC
 					</Button>
-					<Button
-						type="button"
-						variant={activeMethod === "passkey" ? "primary" : "ghost"}
-						size="sm"
-						onClick={() => setActiveMethod("passkey")}
-						className={cn(
-							"flex-1",
-							activeMethod !== "passkey" && "text-white/60 hover:text-white",
-						)}
-					>
-						Passkey
-					</Button>
 				</div>
 
 				{/* Method-specific forms */}
+				{activeMethod === "passkey" && <PasskeySetup />}
 				{activeMethod === "password" && <PasswordSetup />}
 				{activeMethod === "oidc" && <OIDCSetup />}
-				{activeMethod === "passkey" && <PasskeySetup />}
 			</CardContent>
 		</Card>
 	);

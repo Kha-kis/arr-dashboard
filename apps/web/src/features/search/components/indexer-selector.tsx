@@ -47,16 +47,16 @@ export const IndexerSelector = ({
 				return (
 					<div
 						key={instance.instanceId}
-						className="rounded-xl border border-white/10 bg-white/5 p-4"
+						className="rounded-xl border border-border bg-bg-subtle p-4"
 					>
 						<div className="mb-3 flex flex-wrap items-center justify-between gap-2">
 							<div>
-								<p className="text-sm font-semibold text-white">
+								<p className="text-sm font-semibold text-fg">
 									{incognitoMode
 										? getLinuxInstanceName(instance.instanceName)
 										: instance.instanceName}
 								</p>
-								<p className="text-xs text-white/50">
+								<p className="text-xs text-fg-muted">
 									{ids.length} of {instance.data.length} indexers selected
 								</p>
 							</div>
@@ -78,8 +78,8 @@ export const IndexerSelector = ({
 										onClick={() => onToggleIndexer(instance.instanceId, indexer.id)}
 										className={`rounded-full border px-3 py-1 text-xs transition ${
 											isSelected
-												? "border-sky-400 bg-sky-500/20 text-white"
-												: "border-white/20 bg-transparent text-white/70 hover:border-white/40"
+												? "border-sky-400 bg-sky-500/20 text-fg"
+												: "border-border bg-transparent text-fg-muted hover:border-primary/40"
 										}`}
 									>
 										{incognitoMode ? getLinuxIndexer(indexer.name) : indexer.name}
@@ -87,7 +87,7 @@ export const IndexerSelector = ({
 								);
 							})}
 							{instance.data.length === 0 && (
-								<span className="text-xs text-white/50">
+								<span className="text-xs text-fg-muted">
 									No indexers configured on this instance.
 								</span>
 							)}
