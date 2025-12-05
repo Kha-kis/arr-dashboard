@@ -14,7 +14,9 @@ The easiest way to deploy Arr Dashboard on Unraid is using the combined Docker i
    - **Network Type:** `Bridge`
    - **WebUI:** `http://[IP]:[PORT:3000]`
    - **Port:** `3000` → `3000` (TCP)
-   - **Path:** `/app/data` → `/mnt/user/appdata/arr-dashboard`
+   - **Path:** `/config` → `/mnt/user/appdata/arr-dashboard`
+   - **Variable:** `PUID` → `99` (Unraid default)
+   - **Variable:** `PGID` → `100` (Unraid default)
 4. Click **Apply**
 
 ### Method 2: Using Docker Compose Manager Plugin
@@ -23,15 +25,17 @@ The easiest way to deploy Arr Dashboard on Unraid is using the combined Docker i
 2. Create a new compose stack with:
 
 ```yaml
-version: '3.8'
 services:
   arr-dashboard:
     image: khak1s/arr-dashboard:latest
     container_name: arr-dashboard
+    environment:
+      - PUID=99
+      - PGID=100
     ports:
       - "3000:3000"
     volumes:
-      - /mnt/user/appdata/arr-dashboard:/app/data
+      - /mnt/user/appdata/arr-dashboard:/config
     restart: unless-stopped
 ```
 
@@ -101,6 +105,8 @@ Add these in the Unraid Docker template under "Add another Path, Port, Variable,
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `PUID` | `911` | User ID for file permissions (Unraid default: 99) |
+| `PGID` | `911` | Group ID for file permissions (Unraid default: 100) |
 | `SESSION_TTL_HOURS` | `24` | How long sessions last before re-login |
 | `API_RATE_LIMIT_MAX` | `200` | Max API requests per minute |
 

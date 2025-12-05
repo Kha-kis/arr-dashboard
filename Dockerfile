@@ -48,6 +48,17 @@ RUN pnpm --filter @arr/api --prod deploy /app/deploy-api
 # ===== RUNTIME STAGE =====
 # Use plain Alpine for clean slate (no pre-existing node user)
 FROM alpine:3.21 AS runner
+
+# OCI Image Labels (must be in final stage)
+LABEL org.opencontainers.image.title="Arr Dashboard" \
+      org.opencontainers.image.description="Unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances" \
+      org.opencontainers.image.source="https://github.com/Kha-kis/arr-dashboard" \
+      org.opencontainers.image.url="https://github.com/Kha-kis/arr-dashboard" \
+      org.opencontainers.image.documentation="https://github.com/Kha-kis/arr-dashboard#readme" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.vendor="khak1s" \
+      maintainer="khak1s"
+
 WORKDIR /app
 
 # Install runtime dependencies
@@ -59,7 +70,7 @@ WORKDIR /app
 RUN apk add --no-cache nodejs npm tini su-exec shadow
 
 # Create directory structure
-RUN mkdir -p /app/api /app/web /app/data
+RUN mkdir -p /app/api /app/web /config
 
 # Copy API files
 COPY --from=builder /app/deploy-api/node_modules ./api/node_modules
@@ -85,14 +96,14 @@ RUN sed -i 's/\r$//' ./start.sh && chmod +x ./start.sh
 RUN addgroup -g 911 abc && \
     adduser -D -u 911 -G abc abc
 
-# Set ownership of app directories to abc user
-RUN chown -R abc:abc /app
+# Set ownership of app and config directories to abc user
+RUN chown -R abc:abc /app /config
 
 # Expose both ports
 EXPOSE 3000 3001
 
 # Environment variables
-ENV DATABASE_URL="file:/app/data/prod.db" \
+ENV DATABASE_URL="file:/config/prod.db" \
     API_PORT=3001 \
     PORT=3000 \
     HOSTNAME=0.0.0.0 \
