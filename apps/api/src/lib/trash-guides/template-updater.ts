@@ -107,7 +107,7 @@ export class TemplateUpdater {
 	 */
 	async checkForUpdates(userId: string): Promise<UpdateCheckResult> {
 		// Get latest commit from GitHub with error handling
-		let latestCommit;
+		let latestCommit: VersionInfo;
 		try {
 			latestCommit = await this.versionTracker.getLatestCommit();
 		} catch (error) {
@@ -243,7 +243,7 @@ export class TemplateUpdater {
 		}
 
 		// Determine target commit (default to latest) with error handling
-		let targetCommit;
+		let targetCommit: VersionInfo;
 		try {
 			targetCommit = targetCommitHash
 				? await this.versionTracker.getCommitInfo(targetCommitHash)
