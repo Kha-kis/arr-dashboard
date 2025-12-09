@@ -82,6 +82,9 @@ COPY --from=builder /app/apps/api/prisma ./api/prisma
 COPY --from=builder /app/apps/web/.next/standalone ./web
 COPY --from=builder /app/apps/web/.next/static ./web/apps/web/.next/static
 
+# Copy custom server wrapper for runtime API_HOST configuration
+COPY --from=builder /app/apps/web/server.js ./web/server.js
+
 # Generate Prisma client for API
 WORKDIR /app/api
 RUN npx prisma generate --schema prisma/schema.prisma
@@ -112,9 +115,9 @@ ENV DATABASE_URL="file:/config/prod.db" \
     PUID=911 \
     PGID=911
 
-# Health check (checks web UI)
+# Health check (checks web UI, respects custom PORT)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000/', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+  CMD node -e "const port=process.env.PORT||3000; require('http').get('http://localhost:'+port+'/', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
 
 # Use tini to handle signals properly
 ENTRYPOINT ["/sbin/tini", "--"]

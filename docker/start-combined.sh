@@ -128,7 +128,8 @@ sleep 2
 echo ""
 echo "Starting Web server on port $PORT..."
 cd /app/web
-su-exec abc sh -c "API_HOST=http://localhost:$API_PORT BASE_PATH='$BASE_PATH' PORT=$PORT HOSTNAME=0.0.0.0 node apps/web/server.js" &
+# Use custom server wrapper for runtime API_HOST configuration
+su-exec abc sh -c "API_HOST=http://localhost:$API_PORT BASE_PATH='$BASE_PATH' PORT=$PORT HOSTNAME=0.0.0.0 node server.js" &
 WEB_PID=$!
 echo "Web started with PID $WEB_PID"
 
