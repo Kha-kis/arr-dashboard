@@ -27,7 +27,7 @@ jobs:
     # Only run if CI passed (workflow_run fires on any completion)
     if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     permissions:
-      contents: write
+      contents: read
       packages: write
     strategy:
       fail-fast: false
@@ -96,7 +96,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: build
     permissions:
-      contents: write
+      contents: read
       packages: write
 
     steps:
@@ -142,27 +142,3 @@ jobs:
             -t ${{ env.GHCR_IMAGE }}:dev \
             -t ${{ env.GHCR_IMAGE }}:${{ steps.dev-tag.outputs.tag }} \
             $(printf '${{ env.DOCKERHUB_IMAGE }}@sha256:%s ' *)
-
-      - name: Checkout for comment
-        uses: actions/checkout@v4
-
-      - name: Comment on commit (if triggered by push)
-        if: github.event_name == 'push'
-        uses: peter-evans/commit-comment@v3
-        with:
-          body: |
-            🐳 Dev Docker image built and pushed!
-
-            **Docker Hub:**
-            - `${{ env.DOCKERHUB_IMAGE }}:dev`
-            - `${{ env.DOCKERHUB_IMAGE }}:${{ steps.dev-tag.outputs.tag }}`
-
-            **GHCR:**
-            - `${{ env.GHCR_IMAGE }}:dev`
-            - `${{ env.GHCR_IMAGE }}:${{ steps.dev-tag.outputs.tag }}`
-
-            To test:
-            ```bash
-            docker pull ${{ env.DOCKERHUB_IMAGE }}:dev
-            docker-compose -f docker-compose.dev.yml up -d
-            ```
