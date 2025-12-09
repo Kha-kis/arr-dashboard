@@ -126,13 +126,13 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			if (result.success) {
 				return reply.send({
 					success: true,
-					data: result,
+					result: result,
 				});
 			}
 				return reply.status(400).send({
 					success: false,
 					error: "Deployment failed",
-					data: result,
+					result: result,
 				});
 		} catch (error) {
 			if (
@@ -460,7 +460,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 
 			return reply.send({
 				success: !hasFailures,
-				data: result,
+				result: result,
 			});
 		} catch (error) {
 			if (error instanceof Error && error.message.includes("not found")) {
