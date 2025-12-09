@@ -1,7 +1,7 @@
 "use client";
 
 import type { DiscoverSearchResult, DiscoverSearchType, ServiceInstanceSummary } from "@arr/shared";
-import { PlusCircle } from "lucide-react";
+import { ExternalLink, PlusCircle } from "lucide-react";
 import { Button, Card, CardContent } from "../../../components/ui";
 import { formatRuntime } from "../lib/discover-utils";
 import { InstanceBadge } from "./instance-badge";
@@ -107,10 +107,40 @@ export const MediaCard: React.FC<MediaCardProps> = ({
 				</div>
 
 				<div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
-					<div className="flex flex-wrap items-center gap-2 text-xs text-white/50">
-						{result.remoteIds?.tmdbId && <span>TMDB #{result.remoteIds.tmdbId}</span>}
-						{result.remoteIds?.tvdbId && <span>TVDB #{result.remoteIds.tvdbId}</span>}
-						{result.remoteIds?.imdbId && <span>IMDB {result.remoteIds.imdbId}</span>}
+					<div className="flex flex-wrap items-center gap-3 text-xs">
+						{result.remoteIds?.tmdbId && (
+							<a
+								href={`https://www.themoviedb.org/${searchType === "movie" ? "movie" : "tv"}/${result.remoteIds.tmdbId}`}
+								target="_blank"
+								rel="noopener noreferrer"
+								className="inline-flex items-center gap-1 text-white/50 transition-colors hover:text-white/80"
+							>
+								TMDB
+								<ExternalLink className="h-3 w-3" />
+							</a>
+						)}
+						{result.remoteIds?.tvdbId && (
+							<a
+								href={`https://www.thetvdb.com/dereferrer/series/${result.remoteIds.tvdbId}`}
+								target="_blank"
+								rel="noopener noreferrer"
+								className="inline-flex items-center gap-1 text-white/50 transition-colors hover:text-white/80"
+							>
+								TVDB
+								<ExternalLink className="h-3 w-3" />
+							</a>
+						)}
+						{result.remoteIds?.imdbId && (
+							<a
+								href={`https://www.imdb.com/title/${result.remoteIds.imdbId}`}
+								target="_blank"
+								rel="noopener noreferrer"
+								className="inline-flex items-center gap-1 text-white/50 transition-colors hover:text-white/80"
+							>
+								IMDB
+								<ExternalLink className="h-3 w-3" />
+							</a>
+						)}
 					</div>
 					<Button
 						type="button"

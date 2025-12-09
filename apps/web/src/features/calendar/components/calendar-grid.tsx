@@ -57,7 +57,7 @@ export const CalendarGrid = ({
 					type="button"
 					onClick={() => onSelectDate(date)}
 					className={cn(
-						"flex min-h-[110px] flex-col rounded-xl border px-3 py-2 text-left transition",
+						"flex h-[140px] flex-col rounded-xl border px-3 py-2 text-left transition",
 						isSelected
 							? "border-sky-400 bg-sky-500/15 shadow-lg shadow-sky-500/20"
 							: hasEvents
@@ -66,7 +66,7 @@ export const CalendarGrid = ({
 						inCurrentMonth ? "text-fg" : "text-fg-muted",
 					)}
 				>
-					<div className="flex items-center justify-between text-xs font-semibold uppercase tracking-wide">
+					<div className="flex shrink-0 items-center justify-between text-xs font-semibold uppercase tracking-wide">
 						<span>{formatDayNumber(date)}</span>
 						{hasEvents && (
 							<span className="rounded-full bg-bg-subtle px-2 py-0.5 text-[10px] text-fg-muted">
@@ -74,8 +74,8 @@ export const CalendarGrid = ({
 							</span>
 						)}
 					</div>
-					<div className="mt-2 space-y-1">
-						{events.slice(0, 3).map((event) => (
+					<div className="mt-2 min-h-0 flex-1 space-y-1 overflow-y-auto [&::-webkit-scrollbar]:w-1 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-white/20 [&::-webkit-scrollbar-track]:bg-transparent">
+						{events.map((event) => (
 							<div
 								key={`${key}:${String(event.id)}`}
 								className="truncate rounded-md bg-bg-subtle px-2 py-1 text-xs text-fg-muted"
@@ -90,9 +90,6 @@ export const CalendarGrid = ({
 								)}
 							</div>
 						))}
-						{events.length > 3 && (
-							<p className="text-[11px] text-fg-muted">+{events.length - 3} more</p>
-						)}
 					</div>
 				</button>
 			);

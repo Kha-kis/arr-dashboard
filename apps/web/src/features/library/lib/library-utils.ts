@@ -43,6 +43,8 @@ export const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/,
 
 /**
  * Build external link to item in Sonarr/Radarr UI
+ * - Radarr uses TMDB ID in URLs: /movie/{tmdbId}
+ * - Sonarr uses title slug in URLs: /series/{titleSlug}
  */
 export const buildLibraryExternalLink = (
 	item: LibraryItem,
@@ -53,15 +55,21 @@ export const buildLibraryExternalLink = (
 	}
 
 	const baseUrl = normalizeBaseUrl(instance.baseUrl);
-	const idSegment = encodeURIComponent(String(item.id));
-	const slugSegment = item.titleSlug ? encodeURIComponent(item.titleSlug) : idSegment;
+	const slugSegment = item.titleSlug ? encodeURIComponent(item.titleSlug) : null;
 
 	if (item.service === "sonarr") {
-		return `${baseUrl}/series/${slugSegment}`;
+		// Sonarr uses titleSlug, fallback to id
+		const segment = slugSegment ?? encodeURIComponent(String(item.id));
+		return `${baseUrl}/series/${segment}`;
 	}
 
 	if (item.service === "radarr") {
-		return `${baseUrl}/movie/${idSegment}`;
+		// Radarr uses TMDB ID in URLs, not internal database ID
+		const tmdbId = item.remoteIds?.tmdbId;
+		if (!tmdbId) {
+			return null;
+		}
+		return `${baseUrl}/movie/${encodeURIComponent(String(tmdbId))}`;
 	}
 
 	return null;
