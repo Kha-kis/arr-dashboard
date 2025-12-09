@@ -1,8 +1,11 @@
 name: Build and Push Dev Docker Image
 
 on:
-  # Auto-build on every push to main
-  push:
+  # Run after CI workflow completes successfully on main
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
     branches:
       - main
   # Or manually trigger from Actions tab
@@ -21,6 +24,8 @@ jobs:
   # Build each platform in parallel for speed
   build:
     runs-on: ubuntu-latest
+    # Only run if CI passed (workflow_run fires on any completion)
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     permissions:
       contents: write
       packages: write
