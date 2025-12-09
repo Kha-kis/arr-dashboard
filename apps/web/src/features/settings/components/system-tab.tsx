@@ -8,8 +8,12 @@ import { apiRequest } from "../../../lib/api-client/base";
 
 interface SystemSettings {
 	urlBase: string;
+	apiPort: number;
+	webPort: number;
 	appName: string;
 	effectiveBasePath: string;
+	effectiveApiPort: number;
+	effectiveWebPort: number;
 	requiresRestart: boolean;
 	updatedAt: string;
 }
@@ -26,6 +30,8 @@ async function getSystemSettings(): Promise<SystemSettingsResponse> {
 
 async function updateSystemSettings(data: {
 	urlBase?: string;
+	apiPort?: number;
+	webPort?: number;
 	appName?: string;
 }): Promise<SystemSettingsResponse> {
 	return apiRequest<SystemSettingsResponse>("/api/system/settings", {
@@ -43,6 +49,8 @@ async function restartSystem(): Promise<{ success: boolean; message: string }> {
 export function SystemTab() {
 	const queryClient = useQueryClient();
 	const [urlBase, setUrlBase] = useState("");
+	const [apiPort, setApiPort] = useState(3001);
+	const [webPort, setWebPort] = useState(3000);
 	const [hasChanges, setHasChanges] = useState(false);
 
 	const { data: settings, isLoading } = useQuery({
@@ -76,16 +84,56 @@ export function SystemTab() {
 	useEffect(() => {
 		if (settings?.data) {
 			setUrlBase(settings.data.urlBase);
+			setApiPort(settings.data.apiPort);
+			setWebPort(settings.data.webPort);
 		}
 	}, [settings?.data]);
 
+	// Check if any value has changed
+	const checkForChanges = (newUrlBase: string, newApiPort: number, newWebPort: number) => {
+		const originalUrlBase = settings?.data?.urlBase ?? "";
+		const originalApiPort = settings?.data?.apiPort ?? 3001;
+		const originalWebPort = settings?.data?.webPort ?? 3000;
+
+		setHasChanges(
+			newUrlBase !== originalUrlBase ||
+			newApiPort !== originalApiPort ||
+			newWebPort !== originalWebPort
+		);
+	};
+
 	const handleUrlBaseChange = (value: string) => {
 		setUrlBase(value);
-		setHasChanges(value !== (settings?.data?.urlBase ?? ""));
+		checkForChanges(value, apiPort, webPort);
+	};
+
+	const handleApiPortChange = (value: string) => {
+		const port = Number.parseInt(value, 10) || 0;
+		setApiPort(port);
+		checkForChanges(urlBase, port, webPort);
+	};
+
+	const handleWebPortChange = (value: string) => {
+		const port = Number.parseInt(value, 10) || 0;
+		setWebPort(port);
+		checkForChanges(urlBase, apiPort, port);
 	};
 
 	const handleSave = () => {
-		updateMutation.mutate({ urlBase });
+		// Validate ports before saving
+		if (apiPort < 1 || apiPort > 65535) {
+			toast.error("API Port must be between 1 and 65535");
+			return;
+		}
+		if (webPort < 1 || webPort > 65535) {
+			toast.error("Web Port must be between 1 and 65535");
+			return;
+		}
+		if (apiPort === webPort) {
+			toast.error("API Port and Web Port cannot be the same");
+			return;
+		}
+		updateMutation.mutate({ urlBase, apiPort, webPort });
 	};
 
 	const handleRestart = () => {
@@ -118,15 +166,97 @@ export function SystemTab() {
 				</div>
 			</div>
 
-			{/* URL Base Section */}
-			<div className="rounded-lg border border-border bg-bg-card p-6 space-y-4">
-				<div className="flex items-start justify-between">
-					<div>
-						<h3 className="text-lg font-medium text-fg">URL Base</h3>
-						<p className="text-sm text-fg-muted mt-1">
-							Set a base path for reverse proxy deployments (e.g., /arr-dashboard)
+			{/* Restart Warning Banner */}
+			{requiresRestart && (
+				<div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+					<AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+					<div className="text-sm flex-1">
+						<p className="font-medium text-amber-700 dark:text-amber-400">
+							Restart Required
+						</p>
+						<p className="text-amber-600 dark:text-amber-500 mt-0.5">
+							Changes to URL Base or port settings require a container restart to take effect.
 						</p>
 					</div>
+					{!hasChanges && (
+						<button
+							type="button"
+							onClick={handleRestart}
+							disabled={restartMutation.isPending}
+							className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-amber-700 dark:text-amber-400 bg-amber-500/20 border border-amber-500/30 rounded-lg hover:bg-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+						>
+							<RefreshCw className={`h-4 w-4 ${restartMutation.isPending ? "animate-spin" : ""}`} />
+							{restartMutation.isPending ? "Restarting..." : "Restart Now"}
+						</button>
+					)}
+				</div>
+			)}
+
+			{/* Port Configuration Section */}
+			<div className="rounded-lg border border-border bg-bg-card p-6 space-y-4">
+				<div>
+					<h3 className="text-lg font-medium text-fg">Port Configuration</h3>
+					<p className="text-sm text-fg-muted mt-1">
+						Configure the ports for the web UI and API server
+					</p>
+				</div>
+
+				<div className="grid gap-4 sm:grid-cols-2 max-w-lg">
+					<div>
+						<label htmlFor="webPort" className="block text-sm font-medium text-fg mb-1">
+							Web UI Port
+						</label>
+						<input
+							id="webPort"
+							type="number"
+							min="1"
+							max="65535"
+							value={webPort}
+							onChange={(e) => handleWebPortChange(e.target.value)}
+							className="w-full rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+						/>
+						<div className="flex items-center gap-1 mt-1 text-xs text-fg-muted">
+							<Info className="h-3 w-3" />
+							<span>
+								Currently: <code className="px-1 py-0.5 bg-bg-subtle rounded font-mono">{settings?.data?.effectiveWebPort}</code>
+							</span>
+						</div>
+					</div>
+
+					<div>
+						<label htmlFor="apiPort" className="block text-sm font-medium text-fg mb-1">
+							API Port
+						</label>
+						<input
+							id="apiPort"
+							type="number"
+							min="1"
+							max="65535"
+							value={apiPort}
+							onChange={(e) => handleApiPortChange(e.target.value)}
+							className="w-full rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+						/>
+						<div className="flex items-center gap-1 mt-1 text-xs text-fg-muted">
+							<Info className="h-3 w-3" />
+							<span>
+								Currently: <code className="px-1 py-0.5 bg-bg-subtle rounded font-mono">{settings?.data?.effectiveApiPort}</code>
+							</span>
+						</div>
+					</div>
+				</div>
+
+				<p className="text-xs text-fg-muted">
+					Note: When changing ports, make sure to update your Docker port mappings accordingly.
+				</p>
+			</div>
+
+			{/* URL Base Section */}
+			<div className="rounded-lg border border-border bg-bg-card p-6 space-y-4">
+				<div>
+					<h3 className="text-lg font-medium text-fg">URL Base</h3>
+					<p className="text-sm text-fg-muted mt-1">
+						Set a base path for reverse proxy deployments (e.g., /arr-dashboard)
+					</p>
 				</div>
 
 				<div className="space-y-3">
@@ -157,21 +287,6 @@ export function SystemTab() {
 							</code>
 						</span>
 					</div>
-
-					{/* Restart warning */}
-					{requiresRestart && (
-						<div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
-							<AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
-							<div className="text-sm">
-								<p className="font-medium text-amber-700 dark:text-amber-400">
-									Restart Required
-								</p>
-								<p className="text-amber-600 dark:text-amber-500 mt-0.5">
-									URL Base changes require a container restart to take effect.
-								</p>
-							</div>
-						</div>
-					)}
 				</div>
 
 				{/* Example configuration */}
@@ -224,16 +339,10 @@ traefik.http.routers.arr-dashboard.middlewares=arr-strip`}
 					{updateMutation.isPending ? "Saving..." : "Save Changes"}
 				</button>
 
-				{requiresRestart && (
-					<button
-						type="button"
-						onClick={handleRestart}
-						disabled={restartMutation.isPending || hasChanges}
-						className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-amber-700 dark:text-amber-400 bg-amber-500/10 border border-amber-500/30 rounded-lg hover:bg-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-					>
-						<RefreshCw className={`h-4 w-4 ${restartMutation.isPending ? "animate-spin" : ""}`} />
-						{restartMutation.isPending ? "Restarting..." : "Restart to Apply"}
-					</button>
+				{requiresRestart && hasChanges && (
+					<p className="text-sm text-fg-muted">
+						Save changes first, then restart to apply.
+					</p>
 				)}
 			</div>
 		</div>

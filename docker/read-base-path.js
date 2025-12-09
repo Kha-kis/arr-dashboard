@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Helper script to read BASE_PATH from database
- * Used by start-combined.sh to set environment variable before starting web server
+ * Helper script to read system settings from database
+ * Used by start-combined.sh to set environment variables before starting services
  *
- * Outputs the urlBase value if set, otherwise outputs nothing
- * Exit code 0 regardless (missing setting is not an error)
+ * Outputs JSON with all settings: { urlBase, apiPort, webPort }
+ * Exit code 0 regardless (missing settings is not an error)
  */
 
 const { PrismaClient } = require('@prisma/client');
@@ -15,16 +15,25 @@ async function main() {
   try {
     const settings = await prisma.systemSettings.findUnique({
       where: { id: 1 },
-      select: { urlBase: true },
+      select: { urlBase: true, apiPort: true, webPort: true },
     });
 
-    if (settings?.urlBase) {
-      // Output the value without newline so it can be captured by shell
-      process.stdout.write(settings.urlBase);
-    }
+    // Output JSON with settings (or defaults if not found)
+    const output = {
+      urlBase: settings?.urlBase || '',
+      apiPort: settings?.apiPort || 3001,
+      webPort: settings?.webPort || 3000,
+    };
+
+    process.stdout.write(JSON.stringify(output));
   } catch (error) {
     // Silently ignore errors (table might not exist on first run)
-    // The startup will continue with default empty BASE_PATH
+    // Output defaults so startup can continue
+    process.stdout.write(JSON.stringify({
+      urlBase: '',
+      apiPort: 3001,
+      webPort: 3000,
+    }));
   } finally {
     await prisma.$disconnect();
   }
@@ -32,5 +41,11 @@ async function main() {
 
 main().catch(() => {
   // Ensure we exit cleanly even on unexpected errors
+  // Output defaults so startup can continue
+  process.stdout.write(JSON.stringify({
+    urlBase: '',
+    apiPort: 3001,
+    webPort: 3000,
+  }));
   process.exit(0);
 });

@@ -75,13 +75,46 @@ cd /app/api
 su-exec abc npx prisma migrate deploy --schema prisma/schema.prisma
 
 # ============================================
-# Start services (as abc user)
+# Read system settings from database
 # ============================================
 
 echo ""
-echo "Starting API server on port 3001..."
+echo "Loading system settings from database..."
+
+# Read settings as JSON from database
+DB_SETTINGS=$(su-exec abc node /app/read-base-path.js 2>/dev/null || echo '{"urlBase":"","apiPort":3001,"webPort":3000}')
+
+# Parse JSON values using node (since jq might not be available)
+DB_URL_BASE=$(echo "$DB_SETTINGS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).urlBase||''))")
+DB_API_PORT=$(echo "$DB_SETTINGS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).apiPort||3001))")
+DB_WEB_PORT=$(echo "$DB_SETTINGS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).webPort||3000))")
+
+# Use environment variables if set, otherwise use database values
+# Environment variables take precedence over database settings
+if [ -z "$BASE_PATH" ]; then
+    export BASE_PATH="$DB_URL_BASE"
+fi
+
+if [ -z "$API_PORT" ]; then
+    export API_PORT="$DB_API_PORT"
+fi
+
+if [ -z "$PORT" ]; then
+    export PORT="$DB_WEB_PORT"
+fi
+
+echo "  - URL Base: ${BASE_PATH:-(root)}"
+echo "  - API Port: $API_PORT"
+echo "  - Web Port: $PORT"
+
+# ============================================
+# Start API server (as abc user)
+# ============================================
+
+echo ""
+echo "Starting API server on port $API_PORT..."
 cd /app/api
-su-exec abc sh -c 'API_HOST=0.0.0.0 node dist/index.js' &
+su-exec abc sh -c "API_HOST=0.0.0.0 API_PORT=$API_PORT node dist/index.js" &
 API_PID=$!
 echo "API started with PID $API_PID"
 
@@ -89,36 +122,21 @@ echo "API started with PID $API_PID"
 sleep 2
 
 # ============================================
-# Read BASE_PATH from database (if not set via env)
+# Start Web server (as abc user)
 # ============================================
 
-if [ -z "$BASE_PATH" ]; then
-    echo ""
-    echo "Checking database for URL Base setting..."
-    DB_BASE_PATH=$(su-exec abc node /app/read-base-path.js 2>/dev/null || echo "")
-    if [ -n "$DB_BASE_PATH" ]; then
-        export BASE_PATH="$DB_BASE_PATH"
-        echo "  - Using URL Base from database: $BASE_PATH"
-    else
-        echo "  - No URL Base configured (using root path)"
-    fi
-else
-    echo ""
-    echo "Using URL Base from environment: $BASE_PATH"
-fi
-
 echo ""
-echo "Starting Web server on port 3000..."
+echo "Starting Web server on port $PORT..."
 cd /app/web
-su-exec abc sh -c "API_HOST=http://localhost:3001 BASE_PATH='$BASE_PATH' node apps/web/server.js" &
+su-exec abc sh -c "API_HOST=http://localhost:$API_PORT BASE_PATH='$BASE_PATH' PORT=$PORT HOSTNAME=0.0.0.0 node apps/web/server.js" &
 WEB_PID=$!
 echo "Web started with PID $WEB_PID"
 
 echo ""
 echo "=========================================="
 echo "Arr Dashboard is ready!"
-echo "Web UI: http://localhost:3000"
-echo "API: http://localhost:3001"
+echo "Web UI: http://localhost:$PORT"
+echo "API: http://localhost:$API_PORT"
 echo "Running as UID:$PUID GID:$PGID"
 echo "=========================================="
 
