@@ -88,10 +88,29 @@ echo "API started with PID $API_PID"
 # Give API a moment to start
 sleep 2
 
+# ============================================
+# Read BASE_PATH from database (if not set via env)
+# ============================================
+
+if [ -z "$BASE_PATH" ]; then
+    echo ""
+    echo "Checking database for URL Base setting..."
+    DB_BASE_PATH=$(su-exec abc node /app/read-base-path.js 2>/dev/null || echo "")
+    if [ -n "$DB_BASE_PATH" ]; then
+        export BASE_PATH="$DB_BASE_PATH"
+        echo "  - Using URL Base from database: $BASE_PATH"
+    else
+        echo "  - No URL Base configured (using root path)"
+    fi
+else
+    echo ""
+    echo "Using URL Base from environment: $BASE_PATH"
+fi
+
 echo ""
 echo "Starting Web server on port 3000..."
 cd /app/web
-su-exec abc sh -c 'API_HOST=http://localhost:3001 node apps/web/server.js' &
+su-exec abc sh -c "API_HOST=http://localhost:3001 BASE_PATH='$BASE_PATH' node apps/web/server.js" &
 WEB_PID=$!
 echo "Web started with PID $WEB_PID"
 
