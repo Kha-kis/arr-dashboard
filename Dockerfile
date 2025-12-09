@@ -86,9 +86,10 @@ COPY --from=builder /app/apps/web/.next/static ./web/apps/web/.next/static
 WORKDIR /app/api
 RUN npx prisma generate --schema prisma/schema.prisma
 
-# Copy startup script and fix line endings (in case of CRLF from Windows)
+# Copy startup script and helper scripts, fix line endings (in case of CRLF from Windows)
 WORKDIR /app
 COPY docker/start-combined.sh ./start.sh
+COPY docker/read-base-path.js ./read-base-path.js
 RUN sed -i 's/\r$//' ./start.sh && chmod +x ./start.sh
 
 # Create abc user following LinuxServer convention

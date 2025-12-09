@@ -23,6 +23,7 @@ import { OIDCProviderSection } from "./oidc-provider-section";
 import { PasskeySection } from "./passkey-section";
 import { PasswordSection } from "./password-section";
 import { BackupTab } from "./backup-tab";
+import { SystemTab } from "./system-tab";
 
 /**
  * Main settings client component
@@ -50,6 +51,7 @@ export const SettingsClient = () => {
 		account: null,
 		authentication: null,
 		backup: null,
+		system: null,
 	});
 
 	// Keyboard navigation handler for tabs
@@ -320,6 +322,17 @@ export const SettingsClient = () => {
 					aria-labelledby="settings-tab-backup"
 				>
 					<BackupTab />
+				</div>
+			)}
+
+			{/* System tab */}
+			{activeTab === "system" && (
+				<div
+					role="tabpanel"
+					id="settings-panel-system"
+					aria-labelledby="settings-tab-system"
+				>
+					<SystemTab />
 				</div>
 			)}
 		</section>

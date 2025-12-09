@@ -166,6 +166,25 @@ model BackupSettings {
   @@map("backup_settings")
 }
 
+// System-wide settings (singleton table, only one row)
+// These settings affect the entire application and may require restart to take effect
+model SystemSettings {
+  id                Int       @id @default(1)
+
+  // URL Base for reverse proxy subpath support (e.g., "/arr-dashboard")
+  // Must NOT have trailing slash, empty string if not used
+  // Requires container restart to take effect
+  urlBase           String    @default("")
+
+  // Application metadata
+  appName           String    @default("Arr Dashboard")
+
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@map("system_settings")
+}
+
 // ============================================================================
 // TRaSH Guides Integration Models
 // ============================================================================

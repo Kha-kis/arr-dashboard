@@ -14,6 +14,6 @@ export const OPTION_STYLE = {
 	color: "hsl(var(--color-fg))",
 } as const;
 
-export const TABS = ["services", "tags", "account", "authentication", "backup"] as const;
+export const TABS = ["services", "tags", "account", "authentication", "backup", "system"] as const;
 
 export type TabType = (typeof TABS)[number];
