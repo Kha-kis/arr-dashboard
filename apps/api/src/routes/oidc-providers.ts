@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import {
 	createOidcProviderSchema,
 	updateOidcProviderSchema,
+	type ErrorResponse,
 	type OIDCProvider,
 	type OIDCProviderResponse,
 } from "@arr/shared";
@@ -30,7 +31,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	 * GET /api/oidc-providers
 	 * Get the configured OIDC provider (admin only)
 	 */
-	app.get<{ Reply: OIDCProviderResponse }>("/api/oidc-providers", async (request, reply) => {
+	app.get<{ Reply: OIDCProviderResponse | ErrorResponse }>("/api/oidc-providers", async (request, reply) => {
 		// Require authentication (single-admin architecture)
 		if (!request.currentUser) {
 			return reply.status(403).send({ error: "Authentication required" });
@@ -52,7 +53,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	 * POST /api/oidc-providers
 	 * Create the OIDC provider (admin only - only one allowed)
 	 */
-	app.post<{ Body: unknown; Reply: OIDCProvider }>("/api/oidc-providers", async (request, reply) => {
+	app.post<{ Body: unknown; Reply: OIDCProvider | ErrorResponse }>("/api/oidc-providers", async (request, reply) => {
 		// Require authentication (single-admin architecture)
 		if (!request.currentUser) {
 			return reply.status(403).send({ error: "Authentication required" });
@@ -60,7 +61,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 
 		const validation = createOidcProviderSchema.safeParse(request.body);
 		if (!validation.success) {
-			return reply.status(400).send({ error: validation.error.errors });
+			return reply.status(400).send({ error: "Validation failed", details: validation.error.errors });
 		}
 
 		const data = validation.data;
@@ -110,7 +111,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	 * PUT /api/oidc-providers
 	 * Update the OIDC provider (admin only, singleton)
 	 */
-	app.put<{ Body: unknown; Reply: OIDCProvider }>(
+	app.put<{ Body: unknown; Reply: OIDCProvider | ErrorResponse }>(
 		"/api/oidc-providers",
 		async (request, reply) => {
 			// Require authentication (single-admin architecture)
@@ -120,7 +121,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 
 			const validation = updateOidcProviderSchema.safeParse(request.body);
 			if (!validation.success) {
-				return reply.status(400).send({ error: validation.error.errors });
+				return reply.status(400).send({ error: "Validation failed", details: validation.error.errors });
 			}
 
 			const data = validation.data;
@@ -167,7 +168,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	 * DELETE /api/oidc-providers
 	 * Delete the OIDC provider (admin only, singleton)
 	 */
-	app.delete("/api/oidc-providers", async (request, reply) => {
+	app.delete<{ Reply: ErrorResponse | undefined }>("/api/oidc-providers", async (request, reply) => {
 		// Require authentication (single-admin architecture)
 		if (!request.currentUser) {
 			return reply.status(403).send({ error: "Authentication required" });
