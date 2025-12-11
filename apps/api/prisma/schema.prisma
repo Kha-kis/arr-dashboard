@@ -171,16 +171,17 @@ model BackupSettings {
 model SystemSettings {
   id                Int       @id @default(1)
 
-  // URL Base for reverse proxy subpath support (e.g., "/arr-dashboard")
-  // Must NOT have trailing slash, empty string if not used
-  // Requires container restart to take effect
-  urlBase           String    @default("")
-
   // Port configuration
   // These override the default ports (API: 3001, Web: 3000)
   // Requires container restart to take effect
   apiPort           Int       @default(3001)
   webPort           Int       @default(3000)
+
+  // Listen address configuration
+  // Default: 0.0.0.0 (all interfaces) for Docker compatibility
+  // Options: 127.0.0.1 (localhost only), 0.0.0.0 (all interfaces), or specific IP
+  // Requires container restart to take effect
+  listenAddress     String    @default("0.0.0.0")
 
   // Application metadata
   appName           String    @default("Arr Dashboard")

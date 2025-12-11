@@ -1,0 +1,10 @@
+-- CreateTable
+CREATE TABLE "system_settings" (
+    "id" INTEGER NOT NULL PRIMARY KEY DEFAULT 1,
+    "urlBase" TEXT NOT NULL DEFAULT '',
+    "apiPort" INTEGER NOT NULL DEFAULT 3001,
+    "webPort" INTEGER NOT NULL DEFAULT 3000,
+    "appName" TEXT NOT NULL DEFAULT 'Arr Dashboard',
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" DATETIME NOT NULL
+);

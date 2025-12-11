@@ -24,17 +24,19 @@ interface RootLayoutProps {
 	readonly children: React.ReactNode;
 }
 
-const RootLayout = ({ children }: RootLayoutProps) => (
-	<html lang="en" suppressHydrationWarning>
-		<body className={inter.className}>
-			<RootProviders>
-				<AuthGate>
-					<LayoutWrapper>{children}</LayoutWrapper>
-				</AuthGate>
-				<Toaster />
-			</RootProviders>
-		</body>
-	</html>
-);
+const RootLayout = ({ children }: RootLayoutProps) => {
+	return (
+		<html lang="en" suppressHydrationWarning>
+			<body className={inter.className}>
+				<RootProviders>
+					<AuthGate>
+						<LayoutWrapper>{children}</LayoutWrapper>
+					</AuthGate>
+					<Toaster />
+				</RootProviders>
+			</body>
+		</html>
+	);
+};
 
 export default RootLayout;

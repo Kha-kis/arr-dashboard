@@ -15,7 +15,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 	/**
 	 * GET /system/settings
-	 * Get system-wide settings (URL Base, ports, app name, etc.)
+	 * Get system-wide settings (ports, listen address, app name, etc.)
 	 */
 	app.get("/settings", async (_request, reply) => {
 		// Get or create system settings (singleton)
@@ -30,26 +30,26 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		// Get effective values from environment (what's currently running)
-		const effectiveBasePath = process.env.BASE_PATH || "";
 		const effectiveApiPort = Number(process.env.API_PORT) || 3001;
 		const effectiveWebPort = Number(process.env.PORT) || 3000;
+		const effectiveListenAddress = process.env.HOST || process.env.HOSTNAME || "0.0.0.0";
 
-		// Check if any settings differ from what's currently running
+		// Check if settings differ from what's currently running
 		const requiresRestart =
-			settings.urlBase !== effectiveBasePath ||
 			settings.apiPort !== effectiveApiPort ||
-			settings.webPort !== effectiveWebPort;
+			settings.webPort !== effectiveWebPort ||
+			settings.listenAddress !== effectiveListenAddress;
 
 		return reply.send({
 			success: true,
 			data: {
-				urlBase: settings.urlBase,
 				apiPort: settings.apiPort,
 				webPort: settings.webPort,
+				listenAddress: settings.listenAddress,
 				appName: settings.appName,
-				effectiveBasePath,
 				effectiveApiPort,
 				effectiveWebPort,
+				effectiveListenAddress,
 				requiresRestart,
 				updatedAt: settings.updatedAt,
 			},
@@ -59,42 +59,17 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	/**
 	 * PUT /system/settings
 	 * Update system-wide settings
-	 * Note: URL Base and port changes require container restart to take effect
+	 * Note: Port and listen address changes require container restart to take effect
 	 */
 	app.put<{
 		Body: {
-			urlBase?: string;
 			apiPort?: number;
 			webPort?: number;
+			listenAddress?: string;
 			appName?: string;
 		};
 	}>("/settings", async (request, reply) => {
-		const { urlBase, apiPort, webPort, appName } = request.body;
-
-		// Validate urlBase format if provided
-		if (urlBase !== undefined) {
-			// Must start with / or be empty
-			if (urlBase !== "" && !urlBase.startsWith("/")) {
-				return reply.status(400).send({
-					success: false,
-					error: "URL Base must start with / or be empty",
-				});
-			}
-			// Must not have trailing slash
-			if (urlBase.endsWith("/")) {
-				return reply.status(400).send({
-					success: false,
-					error: "URL Base must not have trailing slash",
-				});
-			}
-			// Basic path validation
-			if (urlBase && !/^\/[a-zA-Z0-9_-]+(\/[a-zA-Z0-9_-]+)*$/.test(urlBase)) {
-				return reply.status(400).send({
-					success: false,
-					error: "URL Base contains invalid characters. Use only letters, numbers, hyphens, and underscores.",
-				});
-			}
-		}
+		const { apiPort, webPort, listenAddress, appName } = request.body;
 
 		// Validate port numbers if provided
 		if (apiPort !== undefined) {
@@ -125,41 +100,56 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
+		// Validate listen address if provided
+		if (listenAddress !== undefined) {
+			// Must be a valid IP address or 0.0.0.0 or localhost
+			const validAddresses = ["0.0.0.0", "127.0.0.1", "localhost", "::"];
+			const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+			const isValidIp = validAddresses.includes(listenAddress) || ipv4Regex.test(listenAddress);
+
+			if (!isValidIp) {
+				return reply.status(400).send({
+					success: false,
+					error: "Listen address must be a valid IP address (e.g., 0.0.0.0, 127.0.0.1)",
+				});
+			}
+		}
+
 		// Update or create settings
 		const settings = await app.prisma.systemSettings.upsert({
 			where: { id: 1 },
 			update: {
-				...(urlBase !== undefined && { urlBase }),
 				...(apiPort !== undefined && { apiPort }),
 				...(webPort !== undefined && { webPort }),
+				...(listenAddress !== undefined && { listenAddress }),
 				...(appName !== undefined && { appName }),
 			},
 			create: {
 				id: 1,
-				urlBase: urlBase || "",
 				apiPort: apiPort || 3001,
 				webPort: webPort || 3000,
+				listenAddress: listenAddress || "0.0.0.0",
 				appName: appName || "Arr Dashboard",
 			},
 		});
 
 		// Get currently running values
-		const currentBasePath = process.env.BASE_PATH || "";
 		const currentApiPort = Number(process.env.API_PORT) || 3001;
 		const currentWebPort = Number(process.env.PORT) || 3000;
+		const currentListenAddress = process.env.HOST || process.env.HOSTNAME || "0.0.0.0";
 
-		// Check if restart is needed
+		// Check if restart is needed (for port or listen address changes)
 		const requiresRestart =
-			settings.urlBase !== currentBasePath ||
 			settings.apiPort !== currentApiPort ||
-			settings.webPort !== currentWebPort;
+			settings.webPort !== currentWebPort ||
+			settings.listenAddress !== currentListenAddress;
 
 		request.log.info(
 			{
 				userId: request.currentUser?.id,
-				urlBase: settings.urlBase,
 				apiPort: settings.apiPort,
 				webPort: settings.webPort,
+				listenAddress: settings.listenAddress,
 				requiresRestart,
 			},
 			"System settings updated",
@@ -168,18 +158,18 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		return reply.send({
 			success: true,
 			data: {
-				urlBase: settings.urlBase,
 				apiPort: settings.apiPort,
 				webPort: settings.webPort,
+				listenAddress: settings.listenAddress,
 				appName: settings.appName,
-				effectiveBasePath: currentBasePath,
 				effectiveApiPort: currentApiPort,
 				effectiveWebPort: currentWebPort,
+				effectiveListenAddress: currentListenAddress,
 				requiresRestart,
 				updatedAt: settings.updatedAt,
 			},
 			message: requiresRestart
-				? "Settings saved. Container restart required for changes to take effect."
+				? "Settings saved. Container restart required for port changes to take effect."
 				: "Settings saved successfully.",
 		});
 	});

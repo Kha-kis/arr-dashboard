@@ -1,8 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { startRegistration } from "@simplewebauthn/browser";
+import { useRouter } from "next/navigation";
 import { apiRequest } from "../../../lib/api-client/base";
 import type { CurrentUser } from "@arr/shared";
 import { Button } from "../../../components/ui/button";
