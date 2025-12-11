@@ -330,7 +330,7 @@ export async function registerTrashCacheRoutes(
 			const { serviceType } = request.query;
 
 			try {
-				const results: any = {};
+				const results: Record<string, unknown> = {};
 
 				// Fetch custom formats for requested service types
 				const serviceTypes = serviceType ? [serviceType] : ["RADARR", "SONARR"];
@@ -372,7 +372,7 @@ export async function registerTrashCacheRoutes(
 		const { serviceType } = request.query;
 
 		try {
-			const results: any = {};
+			const results: Record<string, unknown> = {};
 			const serviceTypes = serviceType ? [serviceType] : ["RADARR", "SONARR"];
 
 			for (const service of serviceTypes) {

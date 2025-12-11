@@ -10,7 +10,7 @@ import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
 import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js";
-import type { TrashQualityProfile, TemplateConfig } from "@arr/shared";
+import type { TrashQualityProfile, TemplateConfig, GroupCustomFormat, TrashCustomFormat } from "@arr/shared";
 
 // ============================================================================
 // Request Schemas
@@ -199,12 +199,12 @@ export async function registerQualityProfileRoutes(
 				return !isExcluded;
 			}).map((group) => {
 				// Enrich each CF in the group with full details
-				const enrichedCFs = group.custom_formats?.map((cf: any) => {
+				const enrichedCFs = group.custom_formats?.map((cf: GroupCustomFormat | string) => {
 					const cfTrashId = typeof cf === 'string' ? cf : cf.trash_id;
 					const cfName = typeof cf === 'string' ? cf : cf.name;
 
 					// Find the full CF definition
-					const fullCF = customFormats?.find((f: any) => f.trash_id === cfTrashId);
+					const fullCF = customFormats?.find((f: TrashCustomFormat) => f.trash_id === cfTrashId);
 
 					// Find description
 					let description = null;

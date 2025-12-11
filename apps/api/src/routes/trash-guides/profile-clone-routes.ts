@@ -14,6 +14,55 @@ import { findCutoffQualityName } from "../../lib/utils/quality-utils.js";
 import type { CompleteQualityProfile, TrashQualityProfile, TrashCustomFormatGroup, TrashCustomFormat, TemplateConfig, CustomFormatSpecification } from "@arr/shared";
 
 // ============================================================================
+// ARR API Response Types
+// ============================================================================
+
+interface ArrQualityProfileResponse {
+	id: number;
+	name: string;
+	upgradeAllowed: boolean;
+	cutoff: number;
+	minFormatScore: number;
+	cutoffFormatScore?: number;
+	minUpgradeFormatScore?: number;
+	formatItems?: Array<{ format: number; score: number }>;
+	items?: ArrQualityItem[];
+	language?: { id: number; name: string };
+}
+
+interface ArrQualityItem {
+	id?: number;
+	name?: string;
+	quality?: {
+		id: number;
+		name: string;
+		source?: string;
+		resolution?: number;
+	};
+	items?: Array<{
+		id?: number;
+		name?: string;
+		source?: string;
+		resolution?: number;
+		allowed?: boolean;
+		quality?: { id: number; name: string; source?: string; resolution?: number };
+	}>;
+	allowed: boolean;
+}
+
+interface ArrCustomFormatResponse {
+	id: number;
+	name: string;
+	specifications?: unknown[];
+	includeCustomFormatWhenRenaming?: boolean;
+}
+
+/** Extended TrashCustomFormat with trash_scores from cache data */
+interface TrashCustomFormatWithScores extends TrashCustomFormat {
+	trash_scores?: Record<string, number>;
+}
+
+// ============================================================================
 // Routes
 // ============================================================================
 
@@ -202,12 +251,12 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 			const fetcher = createInstanceFetcher(app, instance);
 			const response = await fetcher("/api/v3/qualityprofile");
 
-			const profiles = await response.json();
+			const profiles = await response.json() as ArrQualityProfileResponse[];
 
 			return reply.status(200).send({
 				success: true,
 				data: {
-					profiles: profiles.map((p: any) => {
+					profiles: profiles.map((p) => {
 						// Resolve cutoff ID to quality name from profile items
 						const cutoffName = p.cutoff ? findCutoffQualityName(p.items || [], p.cutoff) : null;
 						return {
@@ -419,7 +468,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 							// Include full specifications for comparison view
 							specifications: result.trashCF.specifications,
 							// Include all trash_scores for score comparison
-							trash_scores: (result.trashCF as any).trash_scores,
+							trash_scores: (result.trashCF as TrashCustomFormatWithScores).trash_scores,
 						}
 					: null,
 				confidence: result.confidence,
@@ -740,7 +789,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 
 			// Fetch the full quality profile to get quality items
 			const profileResponse = await fetcher(`/api/v3/qualityprofile/${sourceProfileId}`);
-			const fullProfile = await profileResponse.json();
+			const fullProfile = await profileResponse.json() as ArrQualityProfileResponse;
 
 			const cfResponse = await fetcher("/api/v3/customformat");
 			const allCustomFormats = await cfResponse.json();
@@ -826,19 +875,20 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				} : undefined,
 
 				// Quality items with full structure
-				items: (fullProfile.items || []).map((item: any) => ({
+				items: (fullProfile.items || []).map((item) => ({
 					quality: item.quality ? {
 						id: item.quality.id,
 						name: item.quality.name,
 						source: item.quality.source,
 						resolution: item.quality.resolution,
 					} : undefined,
-					items: item.items?.map((subItem: any) => ({
-						id: subItem.id ?? subItem.quality?.id,
-						name: subItem.name ?? subItem.quality?.name,
+					items: item.items?.map((subItem) => ({
+						// Required fields must have defaults
+						id: subItem.id ?? subItem.quality?.id ?? 0,
+						name: subItem.name ?? subItem.quality?.name ?? "",
 						source: subItem.source ?? subItem.quality?.source,
 						resolution: subItem.resolution ?? subItem.quality?.resolution,
-						allowed: subItem.allowed,
+						allowed: subItem.allowed ?? false,
 					})),
 					allowed: item.allowed,
 					id: item.id,
@@ -859,8 +909,8 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 
 			// Debug: Log the built completeQualityProfile items
 			app.log.info(`[create-template] Built completeQualityProfile items count: ${completeQualityProfile.items?.length || 0}`);
-			const allowedItems = completeQualityProfile.items?.filter((item: any) => item.allowed);
-			app.log.info(`[create-template] Allowed quality items: ${allowedItems?.map((item: any) => item.quality?.name || item.name || 'group').join(', ')}`);
+			const allowedItems = completeQualityProfile.items?.filter((item) => item.allowed);
+			app.log.info(`[create-template] Allowed quality items: ${allowedItems?.map((item) => item.quality?.name || item.name || 'group').join(', ')}`);
 
 			// Build qualityProfile metadata for template card badges
 			// This provides display info (language, cutoff) for the template list

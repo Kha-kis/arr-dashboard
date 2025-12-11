@@ -3,12 +3,7 @@
  *
  * Manages synchronization between TRaSH Guides GitHub repository and user templates.
  * Detects when new versions are available and handles update logic based on user preferences.
- *
- * Note: This module intentionally uses `any` types for dynamic JSON data from external
- * TRaSH Guides API responses and template configurations. The data structures are determined
- * at runtime from external sources.
  */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import type { PrismaClient } from "@prisma/client";
 import type {
@@ -18,6 +13,9 @@ import type {
 	TemplateCustomFormatGroup,
 	TrashCustomFormat,
 	TrashCustomFormatGroup,
+	CustomFormatDiff,
+	CustomFormatGroupDiff,
+	TemplateDiffResult,
 } from "@arr/shared";
 import type { VersionTracker, VersionInfo } from "./version-tracker.js";
 import type { TrashCacheManager } from "./cache-manager.js";
@@ -788,36 +786,7 @@ export class TemplateUpdater {
 		templateId: string,
 		targetCommitHash?: string,
 		userId?: string,
-	): Promise<{
-		templateId: string;
-		templateName: string;
-		currentCommit: string | null;
-		latestCommit: string;
-		summary: {
-			totalChanges: number;
-			addedCFs: number;
-			removedCFs: number;
-			modifiedCFs: number;
-			unchangedCFs: number;
-		};
-		customFormatDiffs: Array<{
-			trashId: string;
-			name: string;
-			changeType: "added" | "removed" | "modified" | "unchanged";
-			currentScore?: number;
-			newScore?: number;
-			currentSpecifications?: any[];
-			newSpecifications?: any[];
-			hasSpecificationChanges: boolean;
-		}>;
-		customFormatGroupDiffs: Array<{
-			trashId: string;
-			name: string;
-			changeType: "added" | "removed" | "modified" | "unchanged";
-			customFormatDiffs: any[];
-		}>;
-		hasUserModifications: boolean;
-	}> {
+	): Promise<TemplateDiffResult> {
 		// First check if template exists at all
 		const templateExists = await this.prisma.trashTemplate.findUnique({
 			where: { id: templateId },
@@ -883,11 +852,11 @@ export class TemplateUpdater {
 
 		// Parse template config with error handling for corrupted data
 		let templateConfig: {
-			customFormats?: any[];
-			customFormatGroups?: any[];
+			customFormats?: TemplateCustomFormat[];
+			customFormatGroups?: TemplateCustomFormatGroup[];
 		} = {};
 		try {
-			templateConfig = JSON.parse(template.configData);
+			templateConfig = JSON.parse(template.configData) as typeof templateConfig;
 		} catch (parseError) {
 			console.error(
 				`Failed to parse configData for template "${template.name}" (id: ${template.id}): ${parseError instanceof Error ? parseError.message : "Unknown error"}`,
@@ -895,25 +864,25 @@ export class TemplateUpdater {
 			// Fall back to empty config - updater can continue with empty state
 			templateConfig = {};
 		}
-		const currentCFs = new Map<string, any>(
-			templateConfig.customFormats?.map((cf: any) => [cf.trashId, cf]) || [],
+		const currentCFs = new Map<string, TemplateCustomFormat>(
+			templateConfig.customFormats?.map((cf) => [cf.trashId, cf]) || [],
 		);
-		const currentGroups = new Map<string, any>(
-			templateConfig.customFormatGroups?.map((g: any) => [g.trashId, g]) || [],
+		const currentGroups = new Map<string, TemplateCustomFormatGroup>(
+			templateConfig.customFormatGroups?.map((g) => [g.trashId, g]) || [],
 		);
 
 		// Parse latest cache data (cache returns array directly, not wrapped in { data: T })
-		const latestCFsData = (customFormatsCache as any[] | null) ?? [];
-		const latestCFs = new Map(
-			latestCFsData.map((cf: any) => [cf.trash_id, cf]),
+		const latestCFsData = (customFormatsCache as TrashCustomFormat[] | null) ?? [];
+		const latestCFs = new Map<string, TrashCustomFormat>(
+			latestCFsData.map((cf) => [cf.trash_id, cf]),
 		);
-		const latestGroupsData = (cfGroupsCache as any[] | null) ?? [];
-		const latestGroups = new Map(
-			latestGroupsData.map((g: any) => [g.trash_id, g]),
+		const latestGroupsData = (cfGroupsCache as TrashCustomFormatGroup[] | null) ?? [];
+		const latestGroups = new Map<string, TrashCustomFormatGroup>(
+			latestGroupsData.map((g) => [g.trash_id, g]),
 		);
 
 		// Compare Custom Formats
-		const customFormatDiffs: any[] = [];
+		const customFormatDiffs: CustomFormatDiff[] = [];
 		let addedCFs = 0;
 		let removedCFs = 0;
 		let modifiedCFs = 0;
@@ -921,16 +890,16 @@ export class TemplateUpdater {
 
 		// Check for added or modified CFs
 		for (const [trashId, latestCF] of latestCFs) {
-			const currentCF = currentCFs.get(trashId) as any;
+			const currentCF = currentCFs.get(trashId);
 
 			if (!currentCF) {
 				// CF is new in latest - use TRaSH's default score
 				customFormatDiffs.push({
 					trashId,
-					name: (latestCF as any).name,
+					name: latestCF.name,
 					changeType: "added",
-					newScore: (latestCF as any).score ?? 0,
-					newSpecifications: (latestCF as any).specifications || [],
+					newScore: latestCF.score ?? 0,
+					newSpecifications: latestCF.specifications || [],
 					hasSpecificationChanges: false,
 				});
 				addedCFs++;
@@ -938,7 +907,7 @@ export class TemplateUpdater {
 				// CF exists, check for modifications
 				// Use deepEqual for deterministic comparison (handles different key ordering)
 				const currentSpecs = currentCF.originalConfig?.specifications ?? null;
-				const latestSpecs = (latestCF as any).specifications ?? null;
+				const latestSpecs = latestCF.specifications ?? null;
 				const specificationsChanged = !deepEqual(currentSpecs, latestSpecs);
 
 				// Use scoreOverride if set, otherwise fall back to base score
@@ -947,24 +916,24 @@ export class TemplateUpdater {
 				if (specificationsChanged) {
 					customFormatDiffs.push({
 						trashId,
-						name: (latestCF as any).name,
+						name: latestCF.name,
 						changeType: "modified",
 						currentScore: effectiveScore,
 						newScore: effectiveScore, // Keep user's effective score
 						currentSpecifications: currentCF.originalConfig?.specifications || [],
-						newSpecifications: (latestCF as any).specifications || [],
+						newSpecifications: latestCF.specifications || [],
 						hasSpecificationChanges: true,
 					});
 					modifiedCFs++;
 				} else {
 					customFormatDiffs.push({
 						trashId,
-						name: (latestCF as any).name,
+						name: latestCF.name,
 						changeType: "unchanged",
 						currentScore: effectiveScore,
 						newScore: effectiveScore,
 						currentSpecifications: currentCF.originalConfig?.specifications || [],
-						newSpecifications: (latestCF as any).specifications || [],
+						newSpecifications: latestCF.specifications || [],
 						hasSpecificationChanges: false,
 					});
 					unchangedCFs++;
@@ -975,15 +944,14 @@ export class TemplateUpdater {
 		// Check for removed CFs
 		for (const [trashId, currentCF] of currentCFs) {
 			if (!latestCFs.has(trashId)) {
-				const cf = currentCF as any;
 				// Use scoreOverride if set, otherwise fall back to base score
-				const effectiveScore = cf.scoreOverride ?? cf.score;
+				const effectiveScore = currentCF.scoreOverride ?? currentCF.score;
 				customFormatDiffs.push({
 					trashId,
-					name: cf.name,
+					name: currentCF.name,
 					changeType: "removed",
 					currentScore: effectiveScore,
-					currentSpecifications: cf.originalConfig?.specifications || [],
+					currentSpecifications: currentCF.originalConfig?.specifications || [],
 					hasSpecificationChanges: false,
 				});
 				removedCFs++;
@@ -991,15 +959,15 @@ export class TemplateUpdater {
 		}
 
 		// Compare Custom Format Groups
-		const customFormatGroupDiffs: any[] = [];
+		const customFormatGroupDiffs: CustomFormatGroupDiff[] = [];
 
 		for (const [trashId, latestGroup] of latestGroups) {
-			const currentGroup = currentGroups.get(trashId) as any;
+			const currentGroup = currentGroups.get(trashId);
 
 			if (!currentGroup) {
 				customFormatGroupDiffs.push({
 					trashId,
-					name: (latestGroup as any).name,
+					name: latestGroup.name,
 					changeType: "added",
 					customFormatDiffs: [],
 				});
@@ -1007,7 +975,7 @@ export class TemplateUpdater {
 				// Simple comparison - just note if group exists
 				customFormatGroupDiffs.push({
 					trashId,
-					name: (latestGroup as any).name,
+					name: latestGroup.name,
 					changeType: "unchanged",
 					customFormatDiffs: [],
 				});
@@ -1016,10 +984,9 @@ export class TemplateUpdater {
 
 		for (const [trashId, currentGroup] of currentGroups) {
 			if (!latestGroups.has(trashId)) {
-				const group = currentGroup as any;
 				customFormatGroupDiffs.push({
 					trashId,
-					name: group.name,
+					name: currentGroup.name,
 					changeType: "removed",
 					customFormatDiffs: [],
 				});

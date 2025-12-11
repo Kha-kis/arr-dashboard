@@ -79,7 +79,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 */
 	app.get("/", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
-		const query = request.query as any;
+		const query = request.query as Record<string, string | undefined>;
 
 		// Build filters from query parameters
 		const filters: BulkScoreFilters = {

@@ -3,16 +3,14 @@
  *
  * Endpoints for deploying individual custom formats to instances
  * Deploys custom formats directly without affecting quality profiles
- *
- * Note: This module uses `any` types for dynamic ARR API custom format structures.
  */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { createArrApiClient } from "../../lib/trash-guides/arr-api-client.js";
+import type { TrashCustomFormat, CustomFormatSpecification } from "@arr/shared";
 
 // ============================================================================
 // Validation Schemas
@@ -32,7 +30,7 @@ const deployMultipleSchema = z.object({
  * Transform specification fields from object format to array format
  * This matches the format expected by Radarr/Sonarr API
  */
-function transformFieldsToArray(fields: any): Array<{ name: string; value: unknown }> {
+function transformFieldsToArray(fields: Record<string, unknown> | Array<{ name: string; value: unknown }> | null | undefined): Array<{ name: string; value: unknown }> {
 	// If fields is already an array, return it as-is
 	if (Array.isArray(fields)) {
 		return fields;
@@ -118,19 +116,19 @@ export async function registerCustomFormatRoutes(
 
 			// Get custom formats from cache
 			const isFresh = await cacheManager.isFresh(serviceType, "CUSTOM_FORMATS");
-			let allCustomFormats: any[];
+			let allCustomFormats: TrashCustomFormat[];
 
 			if (!isFresh) {
 				const data = await fetcher.fetchConfigs(serviceType, "CUSTOM_FORMATS");
 				await cacheManager.set(serviceType, "CUSTOM_FORMATS", data);
-				allCustomFormats = data;
+				allCustomFormats = data as TrashCustomFormat[];
 			} else {
-				const data = await cacheManager.get<any[]>(serviceType, "CUSTOM_FORMATS");
+				const data = await cacheManager.get<TrashCustomFormat[]>(serviceType, "CUSTOM_FORMATS");
 				allCustomFormats = data || [];
 			}
 
 			// Filter to only requested custom formats
-			const customFormats = allCustomFormats.filter((cf: any) =>
+			const customFormats = allCustomFormats.filter((cf) =>
 				trashIds.includes(cf.trash_id)
 			);
 
@@ -146,7 +144,7 @@ export async function registerCustomFormatRoutes(
 
 			// Get existing Custom Formats from instance
 			const existingFormats = await arrClient.getCustomFormats();
-			const existingByName = new Map<string, any>();
+			const existingByName = new Map<string, (typeof existingFormats)[number]>();
 			for (const cf of existingFormats) {
 				existingByName.set(cf.name, cf);
 			}
@@ -164,7 +162,7 @@ export async function registerCustomFormatRoutes(
 					const existing = existingByName.get(customFormat.name);
 
 					// Transform specifications: convert fields from object to array format
-					const specifications = (customFormat.specifications || []).map((spec: any) => {
+					const specifications = (customFormat.specifications || []).map((spec: CustomFormatSpecification) => {
 						const transformedFields = transformFieldsToArray(spec.fields);
 						return {
 							...spec,
@@ -174,19 +172,23 @@ export async function registerCustomFormatRoutes(
 
 					if (existing?.id) {
 						// Update existing custom format
+						// Note: The ARR API expects fields as array, but CustomFormat type uses Record
+						// Using type assertion to bridge the gap
 						const updatedCF = {
 							...existing,
 							name: customFormat.name,
-							specifications,
+							specifications: specifications as unknown as CustomFormatSpecification[],
 						};
 						await arrClient.updateCustomFormat(existing.id, updatedCF);
 						results.updated.push(customFormat.name);
 					} else {
 						// Create new custom format
+						// Note: The ARR API expects fields as array, but CustomFormat type uses Record
+						// Using type assertion to bridge the gap
 						const newCF = {
 							name: customFormat.name,
 							includeCustomFormatWhenRenaming: customFormat.includeCustomFormatWhenRenaming ?? false,
-							specifications,
+							specifications: specifications as unknown as CustomFormatSpecification[],
 						};
 						await arrClient.createCustomFormat(newCF);
 						results.created.push(customFormat.name);

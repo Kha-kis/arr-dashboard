@@ -185,7 +185,8 @@ export class OIDCProvider {
 
 		// Check for OAuth errors - check if params has 'error' property
 		if ('error' in params) {
-			throw new Error(`OAuth error: ${params.error} - ${(params as any).error_description || 'Unknown error'}`);
+			const errorDesc = 'error_description' in params ? String(params.error_description) : 'Unknown error';
+			throw new Error(`OAuth error: ${params.error} - ${errorDesc}`);
 		}
 
 		// Exchange the authorization code for tokens
@@ -214,7 +215,8 @@ export class OIDCProvider {
 
 		// Check for OAuth error response
 		if ('error' in result) {
-			throw new Error(`OIDC token exchange failed: ${result.error} - ${(result as any).error_description || 'Unknown error'}`);
+			const errorDesc = 'error_description' in result ? String(result.error_description) : 'Unknown error';
+			throw new Error(`OIDC token exchange failed: ${result.error} - ${errorDesc}`);
 		}
 
 		return result;
