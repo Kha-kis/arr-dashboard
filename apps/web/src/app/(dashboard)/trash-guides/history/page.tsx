@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Calendar, Clock, CheckCircle2, XCircle, AlertCircle, ChevronRight, ChevronLeft } from "lucide-react";
 import { useSyncHistory } from "../../../../hooks/api/useSync";
 import { Button, Badge } from "../../../../components/ui";

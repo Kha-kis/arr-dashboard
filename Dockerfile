@@ -45,7 +45,17 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     npx prisma generate --schema prisma/schema.prisma
 
 # Prepare web output (consolidate standalone + static + custom server)
-RUN cp /app/apps/web/server.js /app/apps/web/.next/standalone/server.js
+RUN cp /app/apps/web/server.js /app/apps/web/.next/standalone/server.js && \
+    chmod 644 /app/apps/web/.next/standalone/server.js
+
+# Fix pnpm's node_modules structure for standalone - create symlinks for top-level modules
+RUN cd /app/apps/web/.next/standalone/node_modules && \
+    for pkg in .pnpm/*/node_modules/*; do \
+        name=$(basename "$pkg"); \
+        if [ ! -e "$name" ] && [ -d "$pkg" ]; then \
+            ln -sf "$pkg" "$name"; \
+        fi; \
+    done
 
 # ===== RUNTIME STAGE =====
 FROM node:20-alpine AS runner
@@ -77,7 +87,8 @@ COPY --from=builder --chown=abc:abc /app/apps/web/.next/standalone ./web
 COPY --from=builder --chown=abc:abc /app/apps/web/.next/static ./web/apps/web/.next/static
 
 # Copy startup scripts and fix line endings (single layer)
-COPY --chown=abc:abc docker/start-combined.sh docker/read-base-path.js ./
+COPY --chown=abc:abc docker/start-combined.sh ./
+COPY --chown=abc:abc docker/read-base-path.cjs ./api/
 RUN sed -i 's/\r$//' ./start-combined.sh && chmod +x ./start-combined.sh \
     && mv start-combined.sh start.sh
 

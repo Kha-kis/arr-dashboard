@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname } from "next/navigation";
+import Link from "next/link";
 import { cn } from "../../lib/utils";
 import { useState } from "react";
 import { Menu, X } from "lucide-react";

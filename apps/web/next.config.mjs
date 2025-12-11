@@ -1,13 +1,7 @@
 /** @type {import('next').NextConfig} */
 
-// URL Base for reverse proxy subpath support (e.g., "/arr-dashboard")
-// Must NOT have trailing slash, empty string if not used
-const basePath = process.env.BASE_PATH || "";
-
 const nextConfig = {
 	output: "standalone",
-	// Enable subpath routing for reverse proxy support
-	...(basePath && { basePath }),
 	eslint: {
 		dirs: ["app", "src"],
 	},

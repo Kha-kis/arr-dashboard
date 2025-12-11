@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
+import Link from "next/link";
 import { EyeOff, Eye } from "lucide-react";
 import type { CurrentUser } from "@arr/shared";
 import { useCurrentUser, useLogoutMutation } from "../../hooks/api/useAuth";

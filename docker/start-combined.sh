@@ -81,20 +81,16 @@ su-exec abc npx prisma migrate deploy --schema prisma/schema.prisma
 echo ""
 echo "Loading system settings from database..."
 
-# Read settings as JSON from database
-DB_SETTINGS=$(su-exec abc node /app/read-base-path.js 2>/dev/null || echo '{"urlBase":"","apiPort":3001,"webPort":3000}')
+# Read settings as JSON from database (script is in api dir to access prisma client)
+DB_SETTINGS=$(su-exec abc node /app/api/read-base-path.cjs 2>/dev/null || echo '{"apiPort":3001,"webPort":3000,"listenAddress":"0.0.0.0"}')
 
 # Parse JSON values using node (since jq might not be available)
-DB_URL_BASE=$(echo "$DB_SETTINGS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).urlBase||''))")
 DB_API_PORT=$(echo "$DB_SETTINGS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).apiPort||3001))")
 DB_WEB_PORT=$(echo "$DB_SETTINGS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).webPort||3000))")
+DB_LISTEN_ADDRESS=$(echo "$DB_SETTINGS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).listenAddress||'0.0.0.0'))")
 
 # Use environment variables if set, otherwise use database values
 # Environment variables take precedence over database settings
-if [ -z "$BASE_PATH" ]; then
-    export BASE_PATH="$DB_URL_BASE"
-fi
-
 if [ -z "$API_PORT" ]; then
     export API_PORT="$DB_API_PORT"
 fi
@@ -103,7 +99,11 @@ if [ -z "$PORT" ]; then
     export PORT="$DB_WEB_PORT"
 fi
 
-echo "  - URL Base: ${BASE_PATH:-(root)}"
+if [ -z "$HOST" ]; then
+    export HOST="$DB_LISTEN_ADDRESS"
+fi
+
+echo "  - Listen Address: $HOST"
 echo "  - API Port: $API_PORT"
 echo "  - Web Port: $PORT"
 
@@ -112,9 +112,9 @@ echo "  - Web Port: $PORT"
 # ============================================
 
 echo ""
-echo "Starting API server on port $API_PORT..."
+echo "Starting API server on $HOST:$API_PORT..."
 cd /app/api
-su-exec abc sh -c "API_HOST=0.0.0.0 API_PORT=$API_PORT node dist/index.js" &
+su-exec abc sh -c "API_HOST=$HOST API_PORT=$API_PORT HOST=$HOST node dist/index.js" &
 API_PID=$!
 echo "API started with PID $API_PID"
 
@@ -126,10 +126,10 @@ sleep 2
 # ============================================
 
 echo ""
-echo "Starting Web server on port $PORT..."
+echo "Starting Web server on $HOST:$PORT..."
 cd /app/web
 # Use custom server wrapper for runtime API_HOST configuration
-su-exec abc sh -c "API_HOST=http://localhost:$API_PORT BASE_PATH='$BASE_PATH' PORT=$PORT HOSTNAME=0.0.0.0 node server.js" &
+su-exec abc sh -c "API_HOST=http://localhost:$API_PORT PORT=$PORT HOSTNAME=$HOST HOST=$HOST node server.js" &
 WEB_PID=$!
 echo "Web started with PID $WEB_PID"
 
