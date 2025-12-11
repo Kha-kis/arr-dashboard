@@ -30,7 +30,7 @@ export const useDashboardFilters = (queueItems: QueueItem[]) => {
 	const [instanceFilter, setInstanceFilter] = useState<string>("all");
 	const [statusFilter, setStatusFilter] = useState<string>("all");
 	const [page, setPage] = useState(1);
-	const [pageSize, setPageSize] = useState(25);
+	const [pageSize, setPageSize] = useState(5);
 
 	// Apply all filters to raw items
 	const filteredItems = useMemo(() => {
