@@ -9,6 +9,30 @@ import { z } from "zod";
 import { createArrApiClient } from "../../lib/trash-guides/arr-api-client.js";
 
 // ============================================================================
+// Type Definitions
+// ============================================================================
+
+/** Represents a custom format entry in a parsed template config */
+interface ParsedTemplateCustomFormat {
+	trashId?: string;
+	name?: string;
+	scoreOverride?: number;
+	conditionsEnabled?: Record<string, boolean>;
+	originalConfig?: {
+		_instanceCFId?: number;
+		trash_scores?: Record<string, number>;
+		[key: string]: unknown;
+	};
+}
+
+/** Parsed template configuration data structure */
+interface ParsedTemplateConfig {
+	customFormats?: ParsedTemplateCustomFormat[];
+	scoreSet?: string;
+	[key: string]: unknown;
+}
+
+// ============================================================================
 // Validation Schemas
 // ============================================================================
 
@@ -623,9 +647,9 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 				}
 
 				// Parse template config to get the template score for this custom format
-				let templateConfigReset: Record<string, any>;
+				let templateConfigReset: ParsedTemplateConfig;
 				try {
-					templateConfigReset = JSON.parse(templateMapping.template.configData);
+					templateConfigReset = JSON.parse(templateMapping.template.configData) as ParsedTemplateConfig;
 				} catch (parseError) {
 					return reply.status(500).send({
 						statusCode: 500,
@@ -634,7 +658,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 					});
 				}
 				const templateCf = templateConfigReset.customFormats?.find(
-					(cf: any) => cf.originalConfig?._instanceCFId === customFormatIdNum,
+					(cf: ParsedTemplateCustomFormat) => cf.originalConfig?._instanceCFId === customFormatIdNum,
 				);
 
 				// Calculate the template score (if CF not in template, default to 0)
@@ -650,7 +674,8 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 						templateConfigReset.scoreSet &&
 						templateCf.originalConfig?.trash_scores?.[templateConfigReset.scoreSet] !== undefined
 					) {
-						templateScore = templateCf.originalConfig.trash_scores[templateConfigReset.scoreSet];
+						// Non-null assertion safe because we've just checked !== undefined
+						templateScore = templateCf.originalConfig.trash_scores[templateConfigReset.scoreSet]!;
 					}
 					// Priority 3: TRaSH Guides default score
 					else if (templateCf.originalConfig?.trash_scores?.default !== undefined) {
@@ -875,7 +900,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 			const templateScores = new Map<number, number>();
 			for (const cfId of customFormatIds) {
 				const templateCf = templateConfigParsed.customFormats?.find(
-					(cf: any) => cf.originalConfig?._instanceCFId === cfId,
+					(cf: ParsedTemplateCustomFormat) => cf.originalConfig?._instanceCFId === cfId,
 				);
 				if (templateCf) {
 					// Priority 1: User's score override from wizard

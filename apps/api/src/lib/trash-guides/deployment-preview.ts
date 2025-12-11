@@ -3,10 +3,7 @@
  *
  * Generates deployment preview by comparing template configuration with
  * actual Custom Formats in Radarr/Sonarr instance, detecting conflicts.
- *
- * Note: This module uses `any` types for dynamic ARR API response structures.
  */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 import type { PrismaClient } from "@prisma/client";
 import type {
@@ -16,10 +13,46 @@ import type {
 	DeploymentAction,
 	UnmatchedCustomFormat,
 	CustomFormatSpecification,
+	TemplateCustomFormat,
 } from "@arr/shared";
 import { createArrApiClient } from "./arr-api-client.js";
 import type { CustomFormat } from "./arr-api-client.js";
 import { dequal as deepEqual } from "dequal";
+
+// ============================================================================
+// Types for Template Config and Instance Overrides
+// ============================================================================
+
+/**
+ * Raw specification from either TRaSH (object fields) or Radarr (array fields)
+ */
+interface RawSpecification {
+	name?: string;
+	implementation?: string;
+	negate?: boolean;
+	required?: boolean;
+	fields?: unknown;
+}
+
+/**
+ * Instance-specific overrides structure stored in template.instanceOverrides JSON
+ */
+interface InstanceOverridesMap {
+	[instanceId: string]: {
+		scoreOverrides?: Record<string, number>;
+		cfOverrides?: Record<string, { enabled?: boolean }>;
+	};
+}
+
+/**
+ * Template config structure parsed from configData JSON
+ */
+interface ParsedTemplateConfig {
+	customFormats?: TemplateCustomFormat[];
+	qualityProfile?: {
+		trash_score_set?: string;
+	};
+}
 
 // ============================================================================
 // Score Calculation Helper
@@ -109,7 +142,7 @@ function normalizeFields(fields: unknown): Record<string, unknown> {
 /**
  * Normalize a specification to a consistent format for comparison
  */
-function normalizeSpec(spec: any): NormalizedSpec {
+function normalizeSpec(spec: RawSpecification): NormalizedSpec {
 	return {
 		name: spec.name || '',
 		implementation: spec.implementation || '',
@@ -153,7 +186,7 @@ function specsAreEqual(spec1: NormalizedSpec, spec2: NormalizedSpec): boolean {
 /**
  * Compare two specification arrays for equality (order-independent)
  */
-function specArraysAreEqual(templateSpecs: any[], instanceSpecs: CustomFormatSpecification[]): boolean {
+function specArraysAreEqual(templateSpecs: RawSpecification[], instanceSpecs: CustomFormatSpecification[]): boolean {
 	if (templateSpecs.length !== instanceSpecs.length) {
 		return false;
 	}
@@ -256,21 +289,18 @@ export class DeploymentPreviewService {
 		}
 
 		// Parse template config - fail fast on corrupted data
-		let templateConfig: {
-			customFormats?: Array<any>;
-			qualityProfile?: {
-				trash_score_set?: string;
-			};
-		};
+		let templateConfig: ParsedTemplateConfig;
 		try {
-			templateConfig = JSON.parse(template.configData);
+			templateConfig = JSON.parse(template.configData) as ParsedTemplateConfig;
 		} catch (parseError) {
 			throw new Error(
 				`Template ${template.id} has corrupted configData: ${parseError instanceof Error ? parseError.message : String(parseError)}`
 			);
 		}
 		const scoreSet = templateConfig.qualityProfile?.trash_score_set;
-		const rawTemplateCFs = (templateConfig.customFormats || []) as Array<{
+		// Convert via unknown since TemplateCustomFormat's originalConfig (TrashCustomFormat)
+		// doesn't have an index signature but we need to access trash_scores
+		const rawTemplateCFs = (templateConfig.customFormats || []) as unknown as Array<{
 			trashId: string;
 			name: string;
 			scoreOverride?: number;
@@ -281,10 +311,10 @@ export class DeploymentPreviewService {
 		}>;
 
 		// Get instance-specific overrides if they exist
-		let instanceOverrides: Record<string, any> = {};
+		let instanceOverrides: InstanceOverridesMap = {};
 		try {
 			instanceOverrides = template.instanceOverrides
-				? JSON.parse(template.instanceOverrides)
+				? (JSON.parse(template.instanceOverrides) as InstanceOverridesMap)
 				: {};
 		} catch (parseError) {
 			console.warn(`Failed to parse instanceOverrides for template ${template.id}:`, parseError);
@@ -437,7 +467,7 @@ export class DeploymentPreviewService {
 				// Compare specifications using normalized comparison
 				// This handles the format difference between TRaSH (object) and Radarr (array)
 				const rawTemplateSpecs = templateCF.originalConfig?.specifications;
-				const templateSpecs: any[] = Array.isArray(rawTemplateSpecs) ? rawTemplateSpecs : [];
+				const templateSpecs: RawSpecification[] = Array.isArray(rawTemplateSpecs) ? (rawTemplateSpecs as RawSpecification[]) : [];
 				const instanceSpecs = instanceCF.specifications || [];
 
 				if (!specArraysAreEqual(templateSpecs, instanceSpecs)) {

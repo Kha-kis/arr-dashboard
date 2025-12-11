@@ -120,13 +120,14 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				message: "OIDC provider configured successfully",
 				provider: { displayName: provider.displayName },
 			});
-		} catch (error: any) {
-			if (error.message === "SETUP_CLOSED") {
+		} catch (error: unknown) {
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			if (errorMessage === "SETUP_CLOSED") {
 				return reply.status(403).send({
 					error: "OIDC setup is only allowed during initial setup. Use the admin panel to configure OIDC providers.",
 				});
 			}
-			if (error.message === "PROVIDER_EXISTS") {
+			if (errorMessage === "PROVIDER_EXISTS") {
 				return reply.status(409).send({ error: "OIDC provider already configured" });
 			}
 			throw error;
@@ -191,10 +192,10 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Handles OIDC callback after user authorization
 	 */
 	app.get("/oidc/callback", async (request, reply) => {
-		request.log.info({ hasCode: "code" in (request.query as any), url: request.url }, "OIDC callback received");
+		const queryParams = request.query as Record<string, unknown>;
+		request.log.info({ hasCode: "code" in queryParams, url: request.url }, "OIDC callback received");
 
 		// Check if OIDC provider returned an error
-		const queryParams = request.query as Record<string, unknown>;
 		if (queryParams.error) {
 			const errorDescription = queryParams.error_description || 'Unknown error';
 			request.log.error({ error: queryParams.error, description: errorDescription }, "OIDC provider returned error");
@@ -371,24 +372,26 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			// Redirect to root - Next.js middleware will redirect to dashboard if authenticated
 			request.log.info({ userId: user.id, username: user.username }, "OIDC authentication successful, redirecting to root");
 			return reply.redirect("/", 302);
-		} catch (error: any) {
-			request.log.error({ err: error, errorMessage: error?.message, errorStack: error?.stack }, "OIDC callback failed");
+		} catch (error: unknown) {
+			const errMsg = error instanceof Error ? error.message : String(error);
+			const errStack = error instanceof Error ? error.stack : undefined;
+			request.log.error({ err: error, errorMessage: errMsg, errorStack: errStack }, "OIDC callback failed");
 
 			// Return more specific error messages
 			let errorMessage = "OIDC authentication failed";
-			if (error?.message?.includes("OAuth error")) {
-				errorMessage = `Authentication failed: ${error.message}`;
-			} else if (error?.message?.includes("state")) {
+			if (errMsg?.includes("OAuth error")) {
+				errorMessage = `Authentication failed: ${errMsg}`;
+			} else if (errMsg?.includes("state")) {
 				errorMessage = "State validation failed. Please try logging in again.";
-			} else if (error?.message?.includes("nonce")) {
+			} else if (errMsg?.includes("nonce")) {
 				errorMessage = "Nonce validation failed. Please try logging in again.";
-			} else if (error?.message?.includes("code")) {
+			} else if (errMsg?.includes("code")) {
 				errorMessage = "Authorization code validation failed. Please try logging in again.";
 			}
 
 			return reply.status(500).send({
 				error: errorMessage,
-				details: error?.message
+				details: errMsg
 			});
 		}
 	});

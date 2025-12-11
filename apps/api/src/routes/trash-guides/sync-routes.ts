@@ -449,8 +449,8 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 				const currentFormats = await apiClient.getCustomFormats();
 
 				// Parse applied configs from sync history
-				const appliedConfigs = sync.appliedConfigs ? JSON.parse(sync.appliedConfigs) : [];
-				const appliedNames = new Set(appliedConfigs.map((c: any) => c.name));
+				const appliedConfigs = sync.appliedConfigs ? JSON.parse(sync.appliedConfigs) as Array<{ name: string }> : [];
+				const appliedNames = new Set(appliedConfigs.map((c) => c.name));
 
 				let restoredCount = 0;
 				let failedCount = 0;

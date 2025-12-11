@@ -2,18 +2,31 @@
  * TRaSH Guides Template Service
  *
  * Manages template CRUD operations, validation, and metadata tracking
- *
- * Note: This module uses `any` types for dynamic template configuration structures.
  */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient, Prisma, TrashTemplate as PrismaTrashTemplate } from "@prisma/client";
 import type {
 	TrashTemplate,
 	CreateTemplateRequest,
 	UpdateTemplateRequest,
 	TemplateConfig,
 } from "@arr/shared";
+
+/**
+ * Expected structure for template import JSON
+ */
+interface TemplateImportData {
+	template: {
+		name: string;
+		serviceType: "RADARR" | "SONARR";
+		config: TemplateConfig;
+		description?: string;
+		sourceQualityProfileTrashId?: string;
+		sourceQualityProfileName?: string;
+	};
+	version?: string;
+	exportedAt?: string;
+}
 
 // ============================================================================
 // Utilities
@@ -164,7 +177,7 @@ export class TemplateService {
 	 */
 	async listTemplates(options: TemplateListOptions = {}): Promise<TrashTemplate[]> {
 		// Build where clause with search
-		const whereClause: any = {
+		const whereClause: Prisma.TrashTemplateWhereInput = {
 			...(options.userId && { userId: options.userId }),
 			...(options.serviceType && { serviceType: options.serviceType }),
 			...(options.includeDeleted ? {} : { deletedAt: null }),
@@ -184,7 +197,7 @@ export class TemplateService {
 		const includeSyncHistory = options.sortBy === "usageCount";
 
 		// Build orderBy clause
-		let orderBy: any = { updatedAt: "desc" }; // Default sort
+		let orderBy: Prisma.TrashTemplateOrderByWithRelationInput = { updatedAt: "desc" }; // Default sort
 		if (options.sortBy) {
 			const sortOrder = options.sortOrder || "desc";
 			switch (options.sortBy) {
@@ -202,7 +215,7 @@ export class TemplateService {
 		}
 
 		// Build include clause based on what we need
-		const includeClause: any = {};
+		const includeClause: Prisma.TrashTemplateInclude = {};
 		if (includeSchedules) {
 			includeClause.schedules = {
 				select: {
@@ -240,8 +253,8 @@ export class TemplateService {
 		if (options.sortBy === "usageCount") {
 			const sortOrder = options.sortOrder || "desc";
 			filteredTemplates.sort((a, b) => {
-				const countA = "_count" in a ? (a._count as any).syncHistory : 0;
-				const countB = "_count" in b ? (b._count as any).syncHistory : 0;
+				const countA = "_count" in a ? (a._count as { syncHistory: number }).syncHistory : 0;
+				const countB = "_count" in b ? (b._count as { syncHistory: number }).syncHistory : 0;
 				return sortOrder === "asc" ? countA - countB : countB - countA;
 			});
 		}
@@ -296,7 +309,7 @@ export class TemplateService {
 		const now = new Date();
 
 		// Build update data with Phase 3 metadata
-		const updateData: any = {
+		const updateData: Prisma.TrashTemplateUpdateInput = {
 			...(request.name && { name: request.name }),
 			...(request.description !== undefined && { description: request.description || null }),
 			...(request.config && { configData: JSON.stringify(request.config) }),
@@ -417,9 +430,9 @@ export class TemplateService {
 	 * Import template from JSON
 	 */
 	async importTemplate(userId: string, jsonData: string): Promise<TrashTemplate> {
-		let data: any;
+		let data: TemplateImportData;
 		try {
-			data = JSON.parse(jsonData);
+			data = JSON.parse(jsonData) as TemplateImportData;
 		} catch (parseError) {
 			throw new Error(`Invalid JSON format: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
 		}
@@ -628,7 +641,7 @@ export class TemplateService {
 	/**
 	 * Map Prisma model to TrashTemplate
 	 */
-	private mapToTemplate(prismaTemplate: any): TrashTemplate {
+	private mapToTemplate(prismaTemplate: PrismaTrashTemplate): TrashTemplate {
 		const templateId = prismaTemplate.id;
 
 		// Parse configData with fallback to empty config on failure
@@ -645,7 +658,8 @@ export class TemplateService {
 			userId: prismaTemplate.userId,
 			name: prismaTemplate.name,
 			description: prismaTemplate.description || undefined,
-			serviceType: prismaTemplate.serviceType,
+			// Cast to narrower type - templates only support RADARR | SONARR (not PROWLARR)
+			serviceType: prismaTemplate.serviceType as "RADARR" | "SONARR",
 			config,
 			createdAt: prismaTemplate.createdAt.toISOString(),
 			updatedAt: prismaTemplate.updatedAt.toISOString(),
