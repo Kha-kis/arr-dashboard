@@ -86,14 +86,14 @@ export const fetchCalendarItems = async (
 		start: options.start,
 		end: options.end,
 	});
-	if (typeof options.unmonitored === "boolean") {
-		params.set("unmonitored", String(options.unmonitored));
-	}
+	// Sonarr uses 'unmonitored' parameter, Radarr uses 'includeUnmonitored'
+	const includeUnmonitored = options.unmonitored === true;
 	if (service === "sonarr") {
+		params.set("unmonitored", String(includeUnmonitored));
 		params.set("includeSeries", "true");
 		params.set("includeEpisodeFile", "true");
 	} else {
-		params.set("includeUnmonitored", "true");
+		params.set("includeUnmonitored", String(includeUnmonitored));
 	}
 	const response = await fetcher(`${calendarApiPath(service)}?${params.toString()}`);
 	const payload = await response.json();
