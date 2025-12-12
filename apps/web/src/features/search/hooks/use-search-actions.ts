@@ -6,6 +6,7 @@ import {
 } from "../../../hooks/api/useSearch";
 import { buildFilters, deriveGrabErrorMessage } from "../lib/search-utils";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
+import { copyToClipboard } from "../../../lib/utils/clipboard";
 import type { SearchStateActions } from "./use-search-state";
 
 /**
@@ -138,6 +139,7 @@ export function useSearchActions(
 
 	/**
 	 * Handles copying magnet/download link to clipboard.
+	 * Uses fallback method for non-HTTPS environments.
 	 */
 	const handleCopyMagnet = useCallback(
 		async (result: SearchResult) => {
@@ -151,7 +153,7 @@ export function useSearchActions(
 			}
 
 			try {
-				await navigator.clipboard.writeText(link);
+				await copyToClipboard(link);
 				stateActions.setFeedback({ type: "success", message: "Copied link to clipboard." });
 			} catch (error) {
 				const message = error instanceof Error ? error.message : "Clipboard copy failed.";
