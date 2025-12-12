@@ -26,8 +26,11 @@ export function useDiscoverRecommendations(
 	searchType: DiscoverSearchType,
 	enabled: boolean,
 ) {
-	const { data: libraryData } = useLibraryQuery();
+	const { data: libraryData, isLoading: libraryIsLoading } = useLibraryQuery();
 	const mediaType = searchType === "movie" ? "movie" : "series";
+
+	// Wait for library data before filtering to prevent items from appearing then disappearing
+	const libraryReady = !libraryIsLoading && libraryData !== undefined;
 
 	// Parallel queries for all recommendation types
 	const trendingQuery = useInfiniteRecommendationsQuery(
@@ -63,29 +66,34 @@ export function useDiscoverRecommendations(
 	);
 
 	// Process and filter items for each carousel
+	// Only filter when library data is ready to prevent items from appearing then disappearing
 	const trendingItems = useMemo(() => {
+		if (!libraryReady) return []; // Wait for library data
 		const allItems = trendingQuery.data?.pages.flatMap((p) => p.items) || [];
 		const uniqueItems = deduplicateItems(allItems);
 		return filterExistingItems(uniqueItems, libraryData?.aggregated, mediaType);
-	}, [trendingQuery.data, libraryData, mediaType]);
+	}, [trendingQuery.data, libraryData, mediaType, libraryReady]);
 
 	const popularItems = useMemo(() => {
+		if (!libraryReady) return []; // Wait for library data
 		const allItems = popularQuery.data?.pages.flatMap((p) => p.items) || [];
 		const uniqueItems = deduplicateItems(allItems);
 		return filterExistingItems(uniqueItems, libraryData?.aggregated, mediaType);
-	}, [popularQuery.data, libraryData, mediaType]);
+	}, [popularQuery.data, libraryData, mediaType, libraryReady]);
 
 	const topRatedItems = useMemo(() => {
+		if (!libraryReady) return []; // Wait for library data
 		const allItems = topRatedQuery.data?.pages.flatMap((p) => p.items) || [];
 		const uniqueItems = deduplicateItems(allItems);
 		return filterExistingItems(uniqueItems, libraryData?.aggregated, mediaType);
-	}, [topRatedQuery.data, libraryData, mediaType]);
+	}, [topRatedQuery.data, libraryData, mediaType, libraryReady]);
 
 	const upcomingItems = useMemo(() => {
+		if (!libraryReady) return []; // Wait for library data
 		const allItems = upcomingQuery.data?.pages.flatMap((p) => p.items) || [];
 		const uniqueItems = deduplicateItems(allItems);
 		return filterExistingItems(uniqueItems, libraryData?.aggregated, mediaType);
-	}, [upcomingQuery.data, libraryData, mediaType]);
+	}, [upcomingQuery.data, libraryData, mediaType, libraryReady]);
 
 	// Auto-load more pages for trending if filtered results are too few
 	const {
@@ -96,6 +104,7 @@ export function useDiscoverRecommendations(
 	} = trendingQuery;
 	useEffect(() => {
 		if (
+			libraryReady && // Only auto-load after library data is ready
 			trendingItems.length < MIN_VISIBLE_ITEMS &&
 			trendingHasNextPage &&
 			!trendingIsFetchingNextPage &&
@@ -104,6 +113,7 @@ export function useDiscoverRecommendations(
 			fetchNextTrending();
 		}
 	}, [
+		libraryReady,
 		trendingItems.length,
 		trendingHasNextPage,
 		trendingIsFetchingNextPage,
@@ -120,6 +130,7 @@ export function useDiscoverRecommendations(
 	} = popularQuery;
 	useEffect(() => {
 		if (
+			libraryReady && // Only auto-load after library data is ready
 			popularItems.length < MIN_VISIBLE_ITEMS &&
 			popularHasNextPage &&
 			!popularIsFetchingNextPage &&
@@ -128,6 +139,7 @@ export function useDiscoverRecommendations(
 			fetchNextPopular();
 		}
 	}, [
+		libraryReady,
 		popularItems.length,
 		popularHasNextPage,
 		popularIsFetchingNextPage,
@@ -144,6 +156,7 @@ export function useDiscoverRecommendations(
 	} = topRatedQuery;
 	useEffect(() => {
 		if (
+			libraryReady && // Only auto-load after library data is ready
 			topRatedItems.length < MIN_VISIBLE_ITEMS &&
 			topRatedHasNextPage &&
 			!topRatedIsFetchingNextPage &&
@@ -152,6 +165,7 @@ export function useDiscoverRecommendations(
 			fetchNextTopRated();
 		}
 	}, [
+		libraryReady,
 		topRatedItems.length,
 		topRatedHasNextPage,
 		topRatedIsFetchingNextPage,
@@ -168,6 +182,7 @@ export function useDiscoverRecommendations(
 	} = upcomingQuery;
 	useEffect(() => {
 		if (
+			libraryReady && // Only auto-load after library data is ready
 			upcomingItems.length < MIN_VISIBLE_ITEMS &&
 			upcomingHasNextPage &&
 			!upcomingIsFetchingNextPage &&
@@ -176,6 +191,7 @@ export function useDiscoverRecommendations(
 			fetchNextUpcoming();
 		}
 	}, [
+		libraryReady,
 		upcomingItems.length,
 		upcomingHasNextPage,
 		upcomingIsFetchingNextPage,
@@ -200,5 +216,8 @@ export function useDiscoverRecommendations(
 			query: upcomingQuery,
 			items: upcomingItems,
 		},
+		// Library loading state - carousels should show loading until library is ready
+		libraryReady,
+		libraryIsLoading,
 	};
 }
