@@ -139,7 +139,7 @@ export const DiscoverClient = () => {
 					items={recommendations.trending.items}
 					mediaType={searchType}
 					onSelectItem={handleSelectItem}
-					isLoading={recommendations.trending.query.isLoading}
+					isLoading={recommendations.trending.query.isLoading || recommendations.libraryIsLoading}
 					isFetchingNextPage={recommendations.trending.query.isFetchingNextPage}
 					hasNextPage={recommendations.trending.query.hasNextPage}
 					onLoadMore={() => recommendations.trending.query.fetchNextPage()}
@@ -153,7 +153,7 @@ export const DiscoverClient = () => {
 					items={recommendations.popular.items}
 					mediaType={searchType}
 					onSelectItem={handleSelectItem}
-					isLoading={recommendations.popular.query.isLoading}
+					isLoading={recommendations.popular.query.isLoading || recommendations.libraryIsLoading}
 					isFetchingNextPage={recommendations.popular.query.isFetchingNextPage}
 					hasNextPage={recommendations.popular.query.hasNextPage}
 					onLoadMore={() => recommendations.popular.query.fetchNextPage()}
@@ -167,7 +167,7 @@ export const DiscoverClient = () => {
 					items={recommendations.topRated.items}
 					mediaType={searchType}
 					onSelectItem={handleSelectItem}
-					isLoading={recommendations.topRated.query.isLoading}
+					isLoading={recommendations.topRated.query.isLoading || recommendations.libraryIsLoading}
 					isFetchingNextPage={recommendations.topRated.query.isFetchingNextPage}
 					hasNextPage={recommendations.topRated.query.hasNextPage}
 					onLoadMore={() => recommendations.topRated.query.fetchNextPage()}
@@ -183,7 +183,7 @@ export const DiscoverClient = () => {
 					items={recommendations.upcoming.items}
 					mediaType={searchType}
 					onSelectItem={handleSelectItem}
-					isLoading={recommendations.upcoming.query.isLoading}
+					isLoading={recommendations.upcoming.query.isLoading || recommendations.libraryIsLoading}
 					isFetchingNextPage={recommendations.upcoming.query.isFetchingNextPage}
 					hasNextPage={recommendations.upcoming.query.hasNextPage}
 					onLoadMore={() => recommendations.upcoming.query.fetchNextPage()}
