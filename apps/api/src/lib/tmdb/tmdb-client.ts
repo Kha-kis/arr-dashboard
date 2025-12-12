@@ -3,6 +3,75 @@ export interface TMDBClientConfig {
 	imageBaseUrl: string;
 }
 
+// ============================================================================
+// In-Memory Cache Implementation
+// ============================================================================
+
+interface CacheEntry<T> {
+	data: T;
+	timestamp: number;
+	ttl: number;
+}
+
+// Cache for list responses (trending, popular, etc.) - 10 minute TTL
+const listCache = new Map<string, CacheEntry<unknown>>();
+const LIST_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+// Cache for external IDs - 24 hour TTL (these rarely change)
+const externalIdsCache = new Map<string, CacheEntry<TMDBExternalIds>>();
+const EXTERNAL_IDS_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+function getCacheKey(type: string, ...args: (string | number)[]): string {
+	return `${type}:${args.join(":")}`;
+}
+
+function getFromCache<T>(cache: Map<string, CacheEntry<T>>, key: string): T | null {
+	const entry = cache.get(key);
+	if (!entry) return null;
+
+	const now = Date.now();
+	if (now - entry.timestamp > entry.ttl) {
+		cache.delete(key);
+		return null;
+	}
+
+	return entry.data;
+}
+
+function setInCache<T>(cache: Map<string, CacheEntry<T>>, key: string, data: T, ttl: number): void {
+	cache.set(key, { data, timestamp: Date.now(), ttl });
+}
+
+// Periodic cache cleanup to prevent memory leaks (runs every 5 minutes)
+let cleanupInterval: ReturnType<typeof setInterval> | null = null;
+
+function cleanupCache<T>(cache: Map<string, CacheEntry<T>>): void {
+	const now = Date.now();
+	const keysToDelete: string[] = [];
+
+	cache.forEach((entry, key) => {
+		if (now - entry.timestamp > entry.ttl) {
+			keysToDelete.push(key);
+		}
+	});
+
+	for (const key of keysToDelete) {
+		cache.delete(key);
+	}
+}
+
+function startCacheCleanup(): void {
+	if (cleanupInterval) return;
+
+	cleanupInterval = setInterval(() => {
+		cleanupCache(listCache as Map<string, CacheEntry<unknown>>);
+		cleanupCache(externalIdsCache);
+	}, 5 * 60 * 1000); // Every 5 minutes
+}
+
+// Start cleanup on module load
+startCacheCleanup();
+
 export interface TMDBMovie {
 	id: number;
 	title: string;
@@ -69,8 +138,13 @@ export async function getTrendingMovies(
 	timeWindow: "day" | "week" = "week",
 	page = 1,
 ): Promise<TMDBResponse<TMDBMovie>> {
-	// Fetch 3 pages at once to account for library filtering
-	const pagesToFetch = 3;
+	// Check cache first
+	const cacheKey = getCacheKey("trending_movies", timeWindow, page);
+	const cached = getFromCache<TMDBResponse<TMDBMovie>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey);
+	if (cached) return cached;
+
+	// Fetch 2 pages at once (reduced from 3 to minimize API calls)
+	const pagesToFetch = 2;
 	const startPage = (page - 1) * pagesToFetch + 1;
 
 	const responses = await Promise.all(
@@ -87,13 +161,17 @@ export async function getTrendingMovies(
 	const allMovies = responses.flatMap((r) => r.results);
 
 	const data = responses[0];
-	return {
+	const result: TMDBResponse<TMDBMovie> = {
 		...data,
 		page,
 		results: allMovies,
 		total_results: data?.total_results ?? 0,
 		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
 	};
+
+	// Cache the result
+	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey, result, LIST_CACHE_TTL_MS);
+	return result;
 }
 
 export async function getTrendingTV(
@@ -102,8 +180,13 @@ export async function getTrendingTV(
 	timeWindow: "day" | "week" = "week",
 	page = 1,
 ): Promise<TMDBResponse<TMDBTVShow>> {
-	// Fetch 3 pages at once to account for library filtering
-	const pagesToFetch = 3;
+	// Check cache first
+	const cacheKey = getCacheKey("trending_tv", timeWindow, page);
+	const cached = getFromCache<TMDBResponse<TMDBTVShow>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey);
+	if (cached) return cached;
+
+	// Fetch 2 pages at once (reduced from 3 to minimize API calls)
+	const pagesToFetch = 2;
 	const startPage = (page - 1) * pagesToFetch + 1;
 
 	const responses = await Promise.all(
@@ -120,13 +203,17 @@ export async function getTrendingTV(
 	const allShows = responses.flatMap((r) => r.results);
 
 	const data = responses[0];
-	return {
+	const result: TMDBResponse<TMDBTVShow> = {
 		...data,
 		page,
 		results: allShows,
 		total_results: data?.total_results ?? 0,
 		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
 	};
+
+	// Cache the result
+	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey, result, LIST_CACHE_TTL_MS);
+	return result;
 }
 
 export async function getPopularMovies(
@@ -134,8 +221,13 @@ export async function getPopularMovies(
 	config: TMDBClientConfig,
 	page = 1,
 ): Promise<TMDBResponse<TMDBMovie>> {
-	// Fetch 3 pages at once to account for library filtering
-	const pagesToFetch = 3;
+	// Check cache first
+	const cacheKey = getCacheKey("popular_movies", page);
+	const cached = getFromCache<TMDBResponse<TMDBMovie>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey);
+	if (cached) return cached;
+
+	// Fetch 2 pages at once (reduced from 3 to minimize API calls)
+	const pagesToFetch = 2;
 	const startPage = (page - 1) * pagesToFetch + 1;
 
 	const responses = await Promise.all(
@@ -147,13 +239,17 @@ export async function getPopularMovies(
 	const allMovies = responses.flatMap((r) => r.results);
 
 	const data = responses[0];
-	return {
+	const result: TMDBResponse<TMDBMovie> = {
 		...data,
 		page,
 		results: allMovies,
 		total_results: data?.total_results ?? 0,
 		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
 	};
+
+	// Cache the result
+	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey, result, LIST_CACHE_TTL_MS);
+	return result;
 }
 
 export async function getPopularTV(
@@ -161,8 +257,13 @@ export async function getPopularTV(
 	config: TMDBClientConfig,
 	page = 1,
 ): Promise<TMDBResponse<TMDBTVShow>> {
-	// Fetch 3 pages at once to account for library filtering
-	const pagesToFetch = 3;
+	// Check cache first
+	const cacheKey = getCacheKey("popular_tv", page);
+	const cached = getFromCache<TMDBResponse<TMDBTVShow>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey);
+	if (cached) return cached;
+
+	// Fetch 2 pages at once (reduced from 3 to minimize API calls)
+	const pagesToFetch = 2;
 	const startPage = (page - 1) * pagesToFetch + 1;
 
 	const responses = await Promise.all(
@@ -174,13 +275,17 @@ export async function getPopularTV(
 	const allShows = responses.flatMap((r) => r.results);
 
 	const data = responses[0];
-	return {
+	const result: TMDBResponse<TMDBTVShow> = {
 		...data,
 		page,
 		results: allShows,
 		total_results: data?.total_results ?? 0,
 		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
 	};
+
+	// Cache the result
+	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey, result, LIST_CACHE_TTL_MS);
+	return result;
 }
 
 export async function getTopRatedMovies(
@@ -188,8 +293,13 @@ export async function getTopRatedMovies(
 	config: TMDBClientConfig,
 	page = 1,
 ): Promise<TMDBResponse<TMDBMovie>> {
-	// Fetch 3 pages at once to account for library filtering
-	const pagesToFetch = 3;
+	// Check cache first
+	const cacheKey = getCacheKey("top_rated_movies", page);
+	const cached = getFromCache<TMDBResponse<TMDBMovie>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey);
+	if (cached) return cached;
+
+	// Fetch 2 pages at once (reduced from 3 to minimize API calls)
+	const pagesToFetch = 2;
 	const startPage = (page - 1) * pagesToFetch + 1;
 
 	const responses = await Promise.all(
@@ -201,13 +311,17 @@ export async function getTopRatedMovies(
 	const allMovies = responses.flatMap((r) => r.results);
 
 	const data = responses[0];
-	return {
+	const result: TMDBResponse<TMDBMovie> = {
 		...data,
 		page,
 		results: allMovies,
 		total_results: data?.total_results ?? 0,
 		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
 	};
+
+	// Cache the result
+	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey, result, LIST_CACHE_TTL_MS);
+	return result;
 }
 
 export async function getTopRatedTV(
@@ -215,8 +329,13 @@ export async function getTopRatedTV(
 	config: TMDBClientConfig,
 	page = 1,
 ): Promise<TMDBResponse<TMDBTVShow>> {
-	// Fetch 3 pages at once to account for library filtering
-	const pagesToFetch = 3;
+	// Check cache first
+	const cacheKey = getCacheKey("top_rated_tv", page);
+	const cached = getFromCache<TMDBResponse<TMDBTVShow>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey);
+	if (cached) return cached;
+
+	// Fetch 2 pages at once (reduced from 3 to minimize API calls)
+	const pagesToFetch = 2;
 	const startPage = (page - 1) * pagesToFetch + 1;
 
 	const responses = await Promise.all(
@@ -228,13 +347,17 @@ export async function getTopRatedTV(
 	const allShows = responses.flatMap((r) => r.results);
 
 	const data = responses[0];
-	return {
+	const result: TMDBResponse<TMDBTVShow> = {
 		...data,
 		page,
 		results: allShows,
 		total_results: data?.total_results ?? 0,
 		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
 	};
+
+	// Cache the result
+	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey, result, LIST_CACHE_TTL_MS);
+	return result;
 }
 
 export async function getUpcomingMovies(
@@ -242,8 +365,13 @@ export async function getUpcomingMovies(
 	config: TMDBClientConfig,
 	page = 1,
 ): Promise<TMDBResponse<TMDBMovie>> {
-	// Fetch 5 pages at once to account for date filtering
-	const pagesToFetch = 5;
+	// Check cache first
+	const cacheKey = getCacheKey("upcoming_movies", page);
+	const cached = getFromCache<TMDBResponse<TMDBMovie>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey);
+	if (cached) return cached;
+
+	// Fetch 3 pages at once (reduced from 5, but needs more for date filtering)
+	const pagesToFetch = 3;
 	const startPage = (page - 1) * pagesToFetch + 1;
 
 	const responses = await Promise.all(
@@ -264,13 +392,17 @@ export async function getUpcomingMovies(
 	});
 
 	const data = responses[0];
-	return {
+	const result: TMDBResponse<TMDBMovie> = {
 		...data,
 		page,
 		results: futureMovies,
 		total_results: data?.total_results ?? 0,
 		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
 	};
+
+	// Cache the result
+	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey, result, LIST_CACHE_TTL_MS);
+	return result;
 }
 
 export async function getAiringTodayTV(
@@ -278,8 +410,13 @@ export async function getAiringTodayTV(
 	config: TMDBClientConfig,
 	page = 1,
 ): Promise<TMDBResponse<TMDBTVShow>> {
-	// Fetch 3 pages at once to account for library filtering
-	const pagesToFetch = 3;
+	// Check cache first
+	const cacheKey = getCacheKey("airing_today_tv", page);
+	const cached = getFromCache<TMDBResponse<TMDBTVShow>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey);
+	if (cached) return cached;
+
+	// Fetch 2 pages at once (reduced from 3 to minimize API calls)
+	const pagesToFetch = 2;
 	const startPage = (page - 1) * pagesToFetch + 1;
 
 	const responses = await Promise.all(
@@ -291,13 +428,17 @@ export async function getAiringTodayTV(
 	const allShows = responses.flatMap((r) => r.results);
 
 	const data = responses[0];
-	return {
+	const result: TMDBResponse<TMDBTVShow> = {
 		...data,
 		page,
 		results: allShows,
 		total_results: data?.total_results ?? 0,
 		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
 	};
+
+	// Cache the result
+	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey, result, LIST_CACHE_TTL_MS);
+	return result;
 }
 
 export function getTMDBImageUrl(
@@ -319,6 +460,7 @@ export interface TMDBExternalIds {
 
 /**
  * Fetches external IDs (IMDB, TVDB, etc.) for a movie or TV show
+ * Results are cached for 24 hours since external IDs rarely change
  */
 export async function getExternalIds(
 	apiKey: string,
@@ -326,6 +468,11 @@ export async function getExternalIds(
 	tmdbId: number,
 	mediaType: "movie" | "tv",
 ): Promise<TMDBExternalIds> {
+	// Check cache first - external IDs rarely change so use long TTL
+	const cacheKey = getCacheKey("external_ids", mediaType, tmdbId);
+	const cached = getFromCache(externalIdsCache, cacheKey);
+	if (cached) return cached;
+
 	const url = `${config.baseUrl}/${mediaType}/${tmdbId}/external_ids?api_key=${apiKey}`;
 	const response = await fetch(url);
 
@@ -333,7 +480,11 @@ export async function getExternalIds(
 		return {};
 	}
 
-	return response.json();
+	const result = await response.json();
+
+	// Cache the result with 24 hour TTL
+	setInCache(externalIdsCache, cacheKey, result, EXTERNAL_IDS_CACHE_TTL_MS);
+	return result;
 }
 
 /**
