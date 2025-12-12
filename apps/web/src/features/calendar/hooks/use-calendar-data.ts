@@ -3,6 +3,75 @@ import type { CalendarItem, ServiceInstanceSummary } from "@arr/shared";
 import { formatDateOnly } from "../lib/calendar-formatters";
 import type { CalendarFilters } from "./use-calendar-state";
 
+/**
+ * Extended calendar item with information about all instances where this content appears
+ */
+export interface DeduplicatedCalendarItem extends CalendarItem {
+	/** All instances where this content appears */
+	allInstances: Array<{ instanceId: string; instanceName: string }>;
+}
+
+/**
+ * Generate a unique content key for deduplication.
+ * Movies: tmdbId > imdbId > movieTitle+airDate
+ * Episodes: (tmdbId|imdbId|seriesTitle) + seasonNumber + episodeNumber
+ */
+const getContentKey = (item: CalendarItem): string => {
+	if (item.type === "movie") {
+		// For movies, prefer tmdbId, then imdbId, then title+date
+		if (item.tmdbId) {
+			return `movie:tmdb:${item.tmdbId}`;
+		}
+		if (item.imdbId) {
+			return `movie:imdb:${item.imdbId}`;
+		}
+		// Fallback to title + air date
+		const title = item.movieTitle ?? item.title ?? "";
+		const date = item.airDate ?? item.airDateUtc ?? "";
+		return `movie:title:${title.toLowerCase()}:${date.split("T")[0]}`;
+	}
+	// For episodes, need series identifier + season + episode
+	const seasonEp = `S${String(item.seasonNumber ?? 0).padStart(2, "0")}E${String(item.episodeNumber ?? 0).padStart(2, "0")}`;
+	if (item.tmdbId) {
+		return `episode:tmdb:${item.tmdbId}:${seasonEp}`;
+	}
+	if (item.imdbId) {
+		return `episode:imdb:${item.imdbId}:${seasonEp}`;
+	}
+	// Fallback to series title
+	const seriesTitle = item.seriesTitle ?? item.title ?? "";
+	return `episode:title:${seriesTitle.toLowerCase()}:${seasonEp}`;
+};
+
+/**
+ * Deduplicate calendar items that appear in multiple instances.
+ * Returns deduplicated items with allInstances array showing where content appears.
+ */
+const deduplicateEvents = (events: CalendarItem[]): DeduplicatedCalendarItem[] => {
+	const contentMap = new Map<string, DeduplicatedCalendarItem>();
+
+	for (const item of events) {
+		const key = getContentKey(item);
+		const existing = contentMap.get(key);
+
+		if (existing) {
+			// Add this instance to the existing item's allInstances
+			existing.allInstances.push({
+				instanceId: item.instanceId,
+				instanceName: item.instanceName,
+			});
+		} else {
+			// First occurrence - create deduplicated item
+			contentMap.set(key, {
+				...item,
+				allInstances: [{ instanceId: item.instanceId, instanceName: item.instanceName }],
+			});
+		}
+	}
+
+	return Array.from(contentMap.values());
+};
+
 export interface CalendarDataHookResult {
 	aggregated: CalendarItem[];
 	instances: Array<{
@@ -12,8 +81,8 @@ export interface CalendarDataHookResult {
 		data: CalendarItem[];
 	}>;
 	instanceOptions: Array<{ value: string; label: string }>;
-	filteredEvents: CalendarItem[];
-	eventsByDate: Map<string, CalendarItem[]>;
+	filteredEvents: DeduplicatedCalendarItem[];
+	eventsByDate: Map<string, DeduplicatedCalendarItem[]>;
 	serviceMap: Map<string, ServiceInstanceSummary>;
 }
 
@@ -56,7 +125,7 @@ export const useCalendarData = (
 
 	const filteredEvents = useMemo(() => {
 		const term = filters.searchTerm.trim().toLowerCase();
-		return aggregated.filter((item) => {
+		const filtered = aggregated.filter((item) => {
 			if (filters.serviceFilter !== "all" && item.service !== filters.serviceFilter) {
 				return false;
 			}
@@ -79,10 +148,12 @@ export const useCalendarData = (
 			}
 			return true;
 		});
+		// Deduplicate events that appear in multiple instances
+		return deduplicateEvents(filtered);
 	}, [aggregated, filters]);
 
 	const eventsByDate = useMemo(() => {
-		const map = new Map<string, CalendarItem[]>();
+		const map = new Map<string, DeduplicatedCalendarItem[]>();
 		for (const item of filteredEvents) {
 			const iso = item.airDateUtc ?? item.airDate;
 			if (!iso) {
