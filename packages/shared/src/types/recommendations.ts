@@ -13,6 +13,8 @@ export type RecommendationType = z.infer<typeof recommendationTypeSchema>;
 export const recommendationItemSchema = z.object({
   id: z.number(),
   tmdbId: z.number(),
+  imdbId: z.string().optional(),
+  tvdbId: z.number().optional(),
   title: z.string(),
   overview: z.string().optional(),
   posterUrl: z.string().optional(),

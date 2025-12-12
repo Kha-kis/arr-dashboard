@@ -137,6 +137,7 @@ export const DiscoverClient = () => {
 					title="Trending Now"
 					description={`Popular ${searchType === "movie" ? "movies" : "series"} trending this week`}
 					items={recommendations.trending.items}
+					mediaType={searchType}
 					onSelectItem={handleSelectItem}
 					isLoading={recommendations.trending.query.isLoading}
 					isFetchingNextPage={recommendations.trending.query.isFetchingNextPage}
@@ -150,6 +151,7 @@ export const DiscoverClient = () => {
 					title="Popular Releases"
 					description={`Most popular ${searchType === "movie" ? "movies" : "series"} right now`}
 					items={recommendations.popular.items}
+					mediaType={searchType}
 					onSelectItem={handleSelectItem}
 					isLoading={recommendations.popular.query.isLoading}
 					isFetchingNextPage={recommendations.popular.query.isFetchingNextPage}
@@ -163,6 +165,7 @@ export const DiscoverClient = () => {
 					title="Top Rated"
 					description={`Highest rated ${searchType === "movie" ? "movies" : "series"} of all time`}
 					items={recommendations.topRated.items}
+					mediaType={searchType}
 					onSelectItem={handleSelectItem}
 					isLoading={recommendations.topRated.query.isLoading}
 					isFetchingNextPage={recommendations.topRated.query.isFetchingNextPage}
@@ -178,6 +181,7 @@ export const DiscoverClient = () => {
 						searchType === "movie" ? "Upcoming movies to watch out for" : "TV shows airing today"
 					}
 					items={recommendations.upcoming.items}
+					mediaType={searchType}
 					onSelectItem={handleSelectItem}
 					isLoading={recommendations.upcoming.query.isLoading}
 					isFetchingNextPage={recommendations.upcoming.query.isFetchingNextPage}
