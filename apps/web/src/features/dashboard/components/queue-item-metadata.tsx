@@ -5,6 +5,7 @@
  */
 
 import type { QueueItem } from "@arr/shared";
+import { ExternalLink } from "lucide-react";
 import { formatSizeGB } from "../lib/queue-utils";
 import {
 	useIncognitoMode,
@@ -15,6 +16,7 @@ import {
 
 interface QueueItemMetadataProps {
 	item: QueueItem;
+	instanceUrl?: string;
 	showGroupCount?: boolean;
 	groupCount?: number;
 }
@@ -22,17 +24,29 @@ interface QueueItemMetadataProps {
 /**
  * Displays metadata information for a queue item
  */
-export const QueueItemMetadata = ({ item, showGroupCount, groupCount }: QueueItemMetadataProps) => {
+export const QueueItemMetadata = ({ item, instanceUrl, showGroupCount, groupCount }: QueueItemMetadataProps) => {
 	const [incognitoMode] = useIncognitoMode();
 	const sizeText = formatSizeGB(item.size);
+	const displayName = incognitoMode ? getLinuxInstanceName(item.instanceName ?? "") : item.instanceName;
 
 	return (
-		<div className="mt-1 flex flex-wrap gap-2 text-xs text-white/60">
+		<div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-white/60">
 			<span className="capitalize">{item.service}</span>
 			{item.instanceName && (
-				<span>
-					{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}
-				</span>
+				instanceUrl ? (
+					<a
+						href={instanceUrl}
+						target="_blank"
+						rel="noopener noreferrer"
+						className="inline-flex items-center gap-1 hover:text-sky-400 transition-colors"
+						title={`Open ${item.instanceName} in new tab`}
+					>
+						{displayName}
+						<ExternalLink className="h-3 w-3 opacity-50" />
+					</a>
+				) : (
+					<span>{displayName}</span>
+				)
 			)}
 			{item.downloadClient && (
 				<span>

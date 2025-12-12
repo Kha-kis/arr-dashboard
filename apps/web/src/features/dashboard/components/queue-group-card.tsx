@@ -7,6 +7,7 @@
 import type { QueueItem } from "@arr/shared";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
+import type { InstanceUrlMap } from "./dashboard-client";
 import type { QueueAction } from "./queue-action-buttons";
 import { QueueActionButtons } from "./queue-action-buttons";
 import type { IssueSummary } from "./queue-issue-badge";
@@ -22,6 +23,8 @@ interface QueueGroupCardProps {
 	title: string;
 	service: QueueItem["service"];
 	instanceName?: string;
+	instanceUrl?: string;
+	instanceUrlMap?: InstanceUrlMap;
 	items: QueueItem[];
 	groupCount: number;
 	progressValue?: number;
@@ -49,6 +52,8 @@ export const QueueGroupCard = ({
 	title,
 	service,
 	instanceName,
+	instanceUrl,
+	instanceUrlMap,
 	items,
 	groupCount,
 	progressValue,
@@ -105,7 +110,7 @@ export const QueueGroupCard = ({
 							{incognitoMode ? getLinuxIsoName(title) : title}
 						</span>
 						</button>
-						<QueueItemMetadata item={metadataItem} showGroupCount groupCount={groupCount} />
+						<QueueItemMetadata item={metadataItem} instanceUrl={instanceUrl} showGroupCount groupCount={groupCount} />
 					</div>
 				</div>
 
@@ -129,18 +134,22 @@ export const QueueGroupCard = ({
 			{/* Expanded items */}
 			{expanded && (
 				<div className="space-y-3 border-t border-white/10 p-4">
-					{items.map((item) => (
-						<QueueItemCard
-							key={buildKey(item)}
-							item={item}
-							issueLines={collectStatusLines(item)}
-							selected={isItemSelected(item)}
-							pending={pending}
-							showChangeCategory={showChangeCategory}
-							onToggleSelect={() => onToggleItemSelect(item)}
-							onAction={(action, actionOptions) => void onItemAction(item, action, actionOptions)}
-						/>
-					))}
+					{items.map((item) => {
+						const itemUrl = instanceUrlMap?.get(item.instanceId);
+						return (
+							<QueueItemCard
+								key={buildKey(item)}
+								item={item}
+								instanceUrl={itemUrl}
+								issueLines={collectStatusLines(item)}
+								selected={isItemSelected(item)}
+								pending={pending}
+								showChangeCategory={showChangeCategory}
+								onToggleSelect={() => onToggleItemSelect(item)}
+								onAction={(action, actionOptions) => void onItemAction(item, action, actionOptions)}
+							/>
+						);
+					})}
 				</div>
 			)}
 		</div>

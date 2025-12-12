@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import type { ServiceInstanceSummary } from "@arr/shared";
 import {
 	Button,
 	Alert,
@@ -24,6 +25,9 @@ import { useDashboardFilters } from "../hooks/useDashboardFilters";
 import { useDashboardQueue } from "../hooks/useDashboardQueue";
 import { useQueueGrouping } from "../hooks";
 import { useIncognitoMode } from "../../../lib/incognito";
+
+/** Map of instanceId to baseUrl for linking to instances */
+export type InstanceUrlMap = Map<string, string>;
 
 export const DashboardClient = () => {
 	const [incognitoMode] = useIncognitoMode();
@@ -54,6 +58,15 @@ export const DashboardClient = () => {
 	// Group FILTERED items into summary rows
 	// This is the correct order: filter → group → paginate
 	const allSummaryRows = useQueueGrouping(filterState.filteredItems);
+
+	// Build instanceId → baseUrl map for linking to instances
+	const instanceUrlMap = useMemo<InstanceUrlMap>(() => {
+		const map = new Map<string, string>();
+		for (const service of services) {
+			map.set(service.id, service.baseUrl);
+		}
+		return map;
+	}, [services]);
 
 	// Re-calculate pagination based on grouped rows
 	const paginatedRows = useMemo(() => {
@@ -246,6 +259,7 @@ export const DashboardClient = () => {
 					<QueueTable
 						items={paginatedItems}
 						summaryRows={paginatedRows}
+						instanceUrlMap={instanceUrlMap}
 						loading={queueLoading}
 						pending={queueActionsPending}
 						onRetry={handleQueueRetry}

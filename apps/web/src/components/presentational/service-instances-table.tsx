@@ -7,6 +7,7 @@
  */
 
 import type { ServiceInstanceSummary } from "@arr/shared";
+import { ExternalLink } from "lucide-react";
 import { getLinuxUrl } from "../../lib/incognito";
 
 interface ServiceInstancesTableProps {
@@ -30,7 +31,18 @@ export const ServiceInstancesTable = ({ instances, incognitoMode }: ServiceInsta
 				<tbody className="divide-y divide-border/50">
 					{instances.map((instance) => (
 						<tr key={instance.id}>
-							<td className="px-4 py-3 font-medium text-fg">{instance.label}</td>
+							<td className="px-4 py-3 font-medium text-fg">
+								<a
+									href={instance.baseUrl}
+									target="_blank"
+									rel="noopener noreferrer"
+									className="inline-flex items-center gap-1.5 text-fg hover:text-sky-400 transition-colors"
+									title={`Open ${instance.label} in new tab`}
+								>
+									{instance.label}
+									<ExternalLink className="h-3 w-3 opacity-50" />
+								</a>
+							</td>
 							<td className="px-4 py-3 capitalize">{instance.service}</td>
 							<td className="px-4 py-3 text-fg-muted">
 								{incognitoMode ? getLinuxUrl(instance.baseUrl) : instance.baseUrl}
