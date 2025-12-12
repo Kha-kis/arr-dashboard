@@ -35,11 +35,11 @@ export const QueueItemMetadata = ({ item, instanceUrl, showGroupCount, groupCoun
 			{item.instanceName && (
 				instanceUrl ? (
 					<a
-						href={instanceUrl}
+						href={`${instanceUrl}/activity/queue`}
 						target="_blank"
 						rel="noopener noreferrer"
 						className="inline-flex items-center gap-1 hover:text-sky-400 transition-colors"
-						title={`Open ${item.instanceName} in new tab`}
+						title={`Open ${item.instanceName} queue`}
 					>
 						{displayName}
 						<ExternalLink className="h-3 w-3 opacity-50" />
