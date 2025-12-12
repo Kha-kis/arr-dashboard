@@ -1,14 +1,14 @@
-﻿"use client";
+"use client";
 
-import type { CalendarItem } from "@arr/shared";
 import { cn } from "../../../lib/utils";
+import type { DeduplicatedCalendarItem } from "../hooks/use-calendar-data";
 
 interface CalendarGridProps {
 	readonly days: Date[];
 	readonly currentMonth: Date;
 	readonly selectedDate: Date | null;
 	readonly onSelectDate: (date: Date) => void;
-	readonly eventsByDate: Map<string, CalendarItem[]>;
+	readonly eventsByDate: Map<string, DeduplicatedCalendarItem[]>;
 	readonly className?: string;
 }
 

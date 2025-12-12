@@ -1,10 +1,11 @@
-import type { CalendarItem, ServiceInstanceSummary } from "@arr/shared";
+import type { ServiceInstanceSummary } from "@arr/shared";
+import type { DeduplicatedCalendarItem } from "../hooks/use-calendar-data";
 import { formatLongDate } from "../lib/calendar-formatters";
 import { CalendarEventCard } from "./calendar-event-card";
 
 interface CalendarEventListProps {
 	selectedDate: Date | null;
-	selectedEvents: CalendarItem[];
+	selectedEvents: DeduplicatedCalendarItem[];
 	serviceMap: Map<string, ServiceInstanceSummary>;
 	onOpenExternal: (href: string) => void;
 }

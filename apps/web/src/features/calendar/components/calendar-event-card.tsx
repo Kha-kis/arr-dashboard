@@ -1,5 +1,6 @@
 import type { CalendarItem, ServiceInstanceSummary } from "@arr/shared";
 import { Button } from "../../../components/ui/button";
+import type { DeduplicatedCalendarItem } from "../hooks/use-calendar-data";
 import {
 	buildExternalLink,
 	extractEventDetails,
@@ -8,7 +9,7 @@ import {
 } from "../lib/calendar-formatters";
 
 interface CalendarEventCardProps {
-	event: CalendarItem;
+	event: DeduplicatedCalendarItem;
 	serviceMap: Map<string, ServiceInstanceSummary>;
 	onOpenExternal: (href: string) => void;
 }
@@ -86,6 +87,12 @@ export const CalendarEventCard = ({
 		});
 	}
 
+	// Check if content appears in multiple instances
+	const hasMultipleInstances = event.allInstances.length > 1;
+	const instancesDisplay = hasMultipleInstances
+		? event.allInstances.map((inst) => inst.instanceName).join(", ")
+		: event.instanceName;
+
 	return (
 		<div
 			key={`${event.service}:${event.instanceId}:${String(event.id)}`}
@@ -94,7 +101,14 @@ export const CalendarEventCard = ({
 			<div className="flex flex-wrap items-start justify-between gap-3">
 				<div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wide text-fg-muted">
 					<span className="rounded-full bg-bg px-2 py-0.5 text-fg-muted">{serviceLabel}</span>
-					{event.instanceName && <span className="text-fg-muted">{event.instanceName}</span>}
+					{instancesDisplay && (
+						<span className="text-fg-muted" title={hasMultipleInstances ? "Present in multiple instances" : undefined}>
+							{instancesDisplay}
+							{hasMultipleInstances && (
+								<span className="ml-1 text-sky-400">({event.allInstances.length})</span>
+							)}
+						</span>
+					)}
 					<span aria-hidden="true" className="text-fg-muted">
 						&bull;
 					</span>
