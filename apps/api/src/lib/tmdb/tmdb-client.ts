@@ -308,3 +308,55 @@ export function getTMDBImageUrl(
 	if (!path) return null;
 	return `${config.imageBaseUrl}/${size}${path}`;
 }
+
+export interface TMDBExternalIds {
+	imdb_id?: string | null;
+	tvdb_id?: number | null;
+	facebook_id?: string | null;
+	instagram_id?: string | null;
+	twitter_id?: string | null;
+}
+
+/**
+ * Fetches external IDs (IMDB, TVDB, etc.) for a movie or TV show
+ */
+export async function getExternalIds(
+	apiKey: string,
+	config: TMDBClientConfig,
+	tmdbId: number,
+	mediaType: "movie" | "tv",
+): Promise<TMDBExternalIds> {
+	const url = `${config.baseUrl}/${mediaType}/${tmdbId}/external_ids?api_key=${apiKey}`;
+	const response = await fetch(url);
+
+	if (!response.ok) {
+		return {};
+	}
+
+	return response.json();
+}
+
+/**
+ * Fetches external IDs for multiple items in parallel with error handling
+ */
+export async function getExternalIdsForItems(
+	apiKey: string,
+	config: TMDBClientConfig,
+	items: Array<{ id: number }>,
+	mediaType: "movie" | "tv",
+): Promise<Map<number, TMDBExternalIds>> {
+	const results = new Map<number, TMDBExternalIds>();
+
+	const promises = items.map(async (item) => {
+		try {
+			const externalIds = await getExternalIds(apiKey, config, item.id, mediaType);
+			results.set(item.id, externalIds);
+		} catch {
+			// If fetching external IDs fails for an item, continue without them
+			results.set(item.id, {});
+		}
+	});
+
+	await Promise.all(promises);
+	return results;
+}

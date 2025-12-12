@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { RecommendationItem } from "@arr/shared";
-import { Loader2, Star, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, Star, ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
 
 /**
  * Props for the TMDBCarousel component
@@ -14,6 +14,8 @@ interface TMDBCarouselProps {
 	description?: string;
 	/** Array of recommendation items to display */
 	items: RecommendationItem[];
+	/** Media type for generating correct TMDB links */
+	mediaType: "movie" | "series";
 	/** Callback when an item is selected */
 	onSelectItem: (item: RecommendationItem) => void;
 	/** Whether the initial data is loading */
@@ -46,6 +48,7 @@ export const TMDBCarousel: React.FC<TMDBCarouselProps> = ({
 	title,
 	description,
 	items,
+	mediaType,
 	onSelectItem,
 	isLoading,
 	isFetchingNextPage,
@@ -170,6 +173,43 @@ export const TMDBCarousel: React.FC<TMDBCarouselProps> = ({
 										{item.rating.toFixed(1)}
 									</div>
 								)}
+								<div
+								className="absolute bottom-2 left-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
+								onClick={(e) => e.stopPropagation()}
+							>
+								<a
+									href={`https://www.themoviedb.org/${mediaType === "movie" ? "movie" : "tv"}/${item.tmdbId}`}
+									target="_blank"
+									rel="noopener noreferrer"
+									className="flex items-center gap-1 rounded-full border border-white/20 bg-black/60 px-2 py-1 text-xs text-white/70 backdrop-blur-sm transition-colors hover:bg-black/80 hover:text-white"
+									title="View on TMDB"
+								>
+									TMDB
+									<ExternalLink className="h-3 w-3" />
+								</a>
+								{item.imdbId && (
+									<a
+										href={`https://www.imdb.com/title/${item.imdbId}`}
+										target="_blank"
+										rel="noopener noreferrer"
+										className="flex items-center gap-1 rounded-full border border-white/20 bg-black/60 px-2 py-1 text-xs text-white/70 backdrop-blur-sm transition-colors hover:bg-black/80 hover:text-white"
+										title="View on IMDB"
+									>
+										IMDB
+									</a>
+								)}
+								{item.tvdbId && (
+									<a
+										href={`https://www.thetvdb.com/dereferrer/series/${item.tvdbId}`}
+										target="_blank"
+										rel="noopener noreferrer"
+										className="flex items-center gap-1 rounded-full border border-white/20 bg-black/60 px-2 py-1 text-xs text-white/70 backdrop-blur-sm transition-colors hover:bg-black/80 hover:text-white"
+										title="View on TVDB"
+									>
+										TVDB
+									</a>
+								)}
+							</div>
 							</div>
 							<div className="p-2">
 								<p className="truncate text-sm font-medium text-fg">{item.title}</p>
