@@ -19,6 +19,7 @@ import { useIncognitoMode, getLinuxIsoName } from "../../../lib/incognito";
 
 export interface QueueItemCardProps {
 	item: QueueItem;
+	instanceUrl?: string;
 	issueLines: StatusLine[];
 	selected: boolean;
 	pending?: boolean;
@@ -33,6 +34,7 @@ export interface QueueItemCardProps {
  */
 export const QueueItemCard = ({
 	item,
+	instanceUrl,
 	issueLines,
 	selected,
 	pending,
@@ -81,7 +83,7 @@ export const QueueItemCard = ({
 									? getLinuxIsoName(item.title ?? "Unnamed item")
 									: (item.title ?? "Unnamed item")}
 							</p>
-							<QueueItemMetadata item={item} />
+							<QueueItemMetadata item={item} instanceUrl={instanceUrl} />
 						</div>
 						{issueLines.length > 0 && <QueueStatusMessages lines={issueLines} />}
 					</div>
