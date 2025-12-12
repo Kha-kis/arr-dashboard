@@ -82,7 +82,7 @@ export const ServiceForm = ({
 				</CardDescription>
 			</CardHeader>
 			<CardContent>
-				<form className="space-y-4" onSubmit={onSubmit}>
+				<form className="space-y-4" onSubmit={onSubmit} autoComplete="off">
 					<div className="space-y-2">
 						<label className="text-xs uppercase text-fg-muted">Service</label>
 						<div className="flex gap-2">
@@ -130,6 +130,7 @@ export const ServiceForm = ({
 							}
 							placeholder={placeholders.label}
 							required
+							autoComplete="off"
 						/>
 					</FormField>
 					<FormField
@@ -150,6 +151,10 @@ export const ServiceForm = ({
 							}
 							placeholder={placeholders.baseUrl}
 							required
+							autoComplete="off"
+							data-1p-ignore
+							data-lpignore="true"
+							data-form-type="other"
 						/>
 					</FormField>
 					<FormField
@@ -170,6 +175,10 @@ export const ServiceForm = ({
 							}
 							placeholder={selectedService ? "Leave blank to keep current key" : "Your API key"}
 							required={!selectedService}
+							autoComplete="off"
+							data-1p-ignore
+							data-lpignore="true"
+							data-form-type="other"
 						/>
 					</FormField>
 					<div className="space-y-2">
