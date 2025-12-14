@@ -37,8 +37,9 @@ echo "Setting up directories and permissions..."
 # Ensure config directory exists (LinuxServer convention)
 mkdir -p /config
 
-# Set ownership of writable directories
-chown -R abc:abc /config
+# Set ownership of writable directories using numeric IDs
+# This ensures correct permissions even when mounting pre-existing directories
+chown -R $PUID:$PGID /config
 
 # ============================================
 # Signal handling

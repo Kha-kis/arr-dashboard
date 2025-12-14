@@ -33,6 +33,17 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.post("/register", { config: { rateLimit: REGISTER_RATE_LIMIT } }, async (request, reply) => {
+		// Check if OIDC provider is enabled - if so, password registration is disabled
+		const oidcProvider = await app.prisma.oIDCProvider.findFirst({
+			where: { enabled: true },
+		});
+
+		if (oidcProvider) {
+			return reply.status(403).send({
+				error: "Password registration is disabled. Please use OIDC authentication.",
+			});
+		}
+
 		const parsed = registerSchema.safeParse(request.body);
 		if (!parsed.success) {
 			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
@@ -104,6 +115,17 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.post("/login", { config: { rateLimit: LOGIN_RATE_LIMIT } }, async (request, reply) => {
+		// Check if OIDC provider is enabled - if so, password auth is disabled
+		const oidcProvider = await app.prisma.oIDCProvider.findFirst({
+			where: { enabled: true },
+		});
+
+		if (oidcProvider) {
+			return reply.status(403).send({
+				error: "Password authentication is disabled. Please sign in with OIDC.",
+			});
+		}
+
 		const parsed = loginSchema.safeParse(request.body);
 		if (!parsed.success) {
 			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
@@ -251,6 +273,19 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		const { username, currentPassword, newPassword, tmdbApiKey } = parsed.data;
 
+		// Check if OIDC provider is enabled - if so, password changes are disabled
+		if (newPassword) {
+			const oidcProvider = await app.prisma.oIDCProvider.findFirst({
+				where: { enabled: true },
+			});
+
+			if (oidcProvider) {
+				return reply.status(403).send({
+					error: "Password authentication is disabled. Cannot add or change password while OIDC is enabled.",
+				});
+			}
+		}
+
 		// Check if at least one field is being updated
 		if (!username && !newPassword && tmdbApiKey === undefined) {
 			return reply.status(400).send({ error: "No updates provided" });
@@ -336,6 +371,14 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			data: updateData,
 		});
 
+		// If password was changed, invalidate all other sessions (security best practice)
+		if (newPassword && request.sessionToken) {
+			await app.sessionService.invalidateAllUserSessions(
+				request.currentUser.id,
+				request.sessionToken
+			);
+		}
+
 		return reply.send({
 			user: {
 				id: updatedUser.id,
@@ -382,18 +425,15 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		// Check for alternative authentication methods
+		// Per authentication rules: passkeys REQUIRE password, so only OIDC is a valid alternative
 		const oidcAccounts = await app.prisma.oIDCAccount.count({
 			where: { userId: request.currentUser.id },
 		});
 
-		const passkeys = await app.prisma.webAuthnCredential.count({
-			where: { userId: request.currentUser.id },
-		});
-
-		if (oidcAccounts === 0 && passkeys === 0) {
+		if (oidcAccounts === 0) {
 			return reply.status(400).send({
 				error:
-					"Cannot remove password without alternative authentication method. Please add an OIDC provider or passkey first.",
+					"Cannot remove password without OIDC authentication. Passkeys require password authentication.",
 			});
 		}
 
@@ -402,6 +442,14 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			where: { id: request.currentUser.id },
 			data: { hashedPassword: null },
 		});
+
+		// Invalidate all other sessions (keep current session since user still has OIDC/passkeys)
+		if (request.sessionToken) {
+			await app.sessionService.invalidateAllUserSessions(
+				request.currentUser.id,
+				request.sessionToken
+			);
+		}
 
 		return reply.send({
 			success: true,
