@@ -437,6 +437,18 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
+		// Verify OIDC provider is enabled (not just that accounts exist)
+		const oidcProvider = await app.prisma.oIDCProvider.findUnique({
+			where: { id: 1 },
+		});
+
+		if (!oidcProvider || !oidcProvider.enabled) {
+			return reply.status(400).send({
+				error:
+					"Cannot remove password. OIDC provider is disabled. Please enable OIDC or keep your password.",
+			});
+		}
+
 		// Remove password
 		await app.prisma.user.update({
 			where: { id: request.currentUser.id },

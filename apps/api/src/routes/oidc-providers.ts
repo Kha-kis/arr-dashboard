@@ -188,8 +188,21 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 			});
 
 			// If critical settings changed, invalidate all sessions to force re-authentication
-			if (data.clientSecret || data.issuer || data.enabled !== undefined) {
-				await app.prisma.session.deleteMany({});
+			const enabledChanged = data.enabled !== undefined && data.enabled !== existing.enabled;
+			if (data.clientSecret || data.issuer || enabledChanged) {
+				if (request.sessionToken) {
+					// Preserve current session while invalidating all others
+					await app.sessionService.invalidateAllUserSessions(
+						request.currentUser!.id,
+						request.sessionToken
+					);
+					// Also invalidate sessions for other users (single-admin architecture)
+					await app.prisma.session.deleteMany({
+						where: { userId: { not: request.currentUser!.id } },
+					});
+				} else {
+					await app.prisma.session.deleteMany({});
+				}
 				request.log.info("Invalidated all sessions due to OIDC provider configuration change");
 			}
 
@@ -277,7 +290,19 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 		});
 
 		// Invalidate all sessions to force re-authentication with new method
-		await app.prisma.session.deleteMany({});
+		if (request.sessionToken) {
+			// Preserve current session while invalidating all others
+			await app.sessionService.invalidateAllUserSessions(
+				request.currentUser!.id,
+				request.sessionToken
+			);
+			// Also invalidate sessions for other users (single-admin architecture)
+			await app.prisma.session.deleteMany({
+				where: { userId: { not: request.currentUser!.id } },
+			});
+		} else {
+			await app.prisma.session.deleteMany({});
+		}
 
 		return reply.status(204).send();
 	});
