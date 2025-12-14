@@ -3,10 +3,12 @@ import type { FastifyInstance } from "fastify";
 import {
 	createOidcProviderSchema,
 	updateOidcProviderSchema,
+	deleteOidcProviderSchema,
 	type ErrorResponse,
 	type OIDCProvider,
 	type OIDCProviderResponse,
 } from "@arr/shared";
+import { hashPassword } from "../lib/auth/password.js";
 
 /**
  * Transform a Prisma OIDCProvider model to the public DTO shape
@@ -135,6 +137,31 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 				return reply.status(404).send({ error: "OIDC provider not found" });
 			}
 
+			// If disabling provider, check if users would be locked out
+			if (data.enabled === false) {
+				const usersWithOidcOnly = await app.prisma.user.findMany({
+					where: {
+						hashedPassword: null,
+						oidcAccounts: {
+							some: {},
+						},
+					},
+					include: {
+						webauthnCredentials: true,
+					},
+				});
+
+				const lockedOutUsers = usersWithOidcOnly.filter(
+					user => user.webauthnCredentials.length === 0
+				);
+
+				if (lockedOutUsers.length > 0) {
+					return reply.status(400).send({
+						error: `Cannot disable OIDC provider. ${lockedOutUsers.length} user(s) would be locked out. Please use DELETE with a replacement password instead to switch to password-based authentication.`,
+					});
+				}
+			}
+
 			// Prepare update data
 			const updateData: Prisma.OIDCProviderUpdateInput = {
 				...(data.displayName && { displayName: data.displayName }),
@@ -160,6 +187,12 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 				data: updateData,
 			});
 
+			// If critical settings changed, invalidate all sessions to force re-authentication
+			if (data.clientSecret || data.issuer || data.enabled !== undefined) {
+				await app.prisma.session.deleteMany({});
+				request.log.info("Invalidated all sessions due to OIDC provider configuration change");
+			}
+
 			return toPublicProvider(provider);
 		},
 	);
@@ -167,12 +200,24 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	/**
 	 * DELETE /api/oidc-providers
 	 * Delete the OIDC provider (admin only, singleton)
+	 * Requires replacement password to prevent lockout
 	 */
-	app.delete<{ Reply: ErrorResponse | undefined }>("/api/oidc-providers", async (request, reply) => {
+	app.delete<{ Body: unknown; Reply: ErrorResponse | undefined }>("/api/oidc-providers", async (request, reply) => {
 		// Require authentication (single-admin architecture)
 		if (!request.currentUser) {
 			return reply.status(403).send({ error: "Authentication required" });
 		}
+
+		// Validate request body - must include replacement password
+		const validation = deleteOidcProviderSchema.safeParse(request.body);
+		if (!validation.success) {
+			return reply.status(400).send({
+				error: "Replacement password required. You must provide a password to switch to password-based authentication.",
+				details: validation.error.errors,
+			});
+		}
+
+		const { replacementPassword } = validation.data;
 
 		// Check if provider exists (singleton with id=1)
 		const existing = await app.prisma.oIDCProvider.findUnique({
@@ -183,10 +228,56 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 			return reply.status(404).send({ error: "OIDC provider not found" });
 		}
 
+		// Check if any users would be locked out (users with OIDC-only and no password/passkeys)
+		const usersWithOidcOnly = await app.prisma.user.findMany({
+			where: {
+				hashedPassword: null, // No password
+				oidcAccounts: {
+					some: {}, // Has OIDC linked
+				},
+			},
+			include: {
+				webauthnCredentials: true,
+			},
+		});
+
+		const lockedOutUsers = usersWithOidcOnly.filter(
+			user => user.webauthnCredentials.length === 0
+		);
+
+		if (lockedOutUsers.length > 0) {
+			// Hash the replacement password
+			const hashedPassword = await hashPassword(replacementPassword);
+
+			// Set password for all OIDC-only users to prevent lockout
+			await app.prisma.$transaction(
+				lockedOutUsers.map(user =>
+					app.prisma.user.update({
+						where: { id: user.id },
+						data: {
+							hashedPassword,
+							mustChangePassword: user.id !== request.currentUser!.id, // Force password change for other users
+						},
+					})
+				)
+			);
+
+			request.log.info(
+				{ userCount: lockedOutUsers.length },
+				"Set replacement password for OIDC-only users"
+			);
+		}
+
+		// Delete all OIDC account links (cascade will handle this, but explicit for clarity)
+		await app.prisma.oIDCAccount.deleteMany({});
+
 		// Delete provider (singleton with id=1)
 		await app.prisma.oIDCProvider.delete({
 			where: { id: 1 },
 		});
+
+		// Invalidate all sessions to force re-authentication with new method
+		await app.prisma.session.deleteMany({});
 
 		return reply.status(204).send();
 	});
