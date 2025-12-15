@@ -620,6 +620,7 @@ export class DeploymentExecutorService {
 
 					let customGroupId = 1000;
 					const qualityItems: any[] = [];
+					const sourceIdToNewId = new Map<number, number>(); // Maps source item IDs to new IDs
 
 					for (const sourceItem of clonedProfile.items || []) {
 						if (sourceItem.items && Array.isArray(sourceItem.items) && sourceItem.items.length > 0) {
@@ -638,11 +639,16 @@ export class DeploymentExecutorService {
 								}
 							}
 							if (groupQualities.length > 0) {
+								const newGroupId = customGroupId++;
+								// Map source group ID to new group ID for cutoff remapping
+								if (sourceItem.id !== undefined) {
+									sourceIdToNewId.set(sourceItem.id, newGroupId);
+								}
 								qualityItems.push({
 									name: sourceItem.name,
 									items: groupQualities,
 									allowed: sourceItem.allowed,
-									id: customGroupId++,
+									id: newGroupId,
 								});
 							}
 						} else if (sourceItem.quality) {
@@ -651,6 +657,11 @@ export class DeploymentExecutorService {
 								targetQuality = qualitiesByName.get(normalizeQualityName(sourceItem.quality.name));
 							}
 							if (targetQuality) {
+								// Map source quality ID to target quality ID
+								const newId = targetQuality.quality?.id ?? sourceItem.quality.id;
+								if (sourceItem.quality.id !== undefined) {
+									sourceIdToNewId.set(sourceItem.quality.id, newId);
+								}
 								qualityItems.push({
 									...targetQuality,
 									allowed: sourceItem.allowed,
@@ -659,11 +670,21 @@ export class DeploymentExecutorService {
 						}
 					}
 
+					// Remap cutoff ID from source profile to new quality items
+					let remappedCutoff = clonedProfile.cutoff;
+					if (sourceIdToNewId.has(clonedProfile.cutoff)) {
+						remappedCutoff = sourceIdToNewId.get(clonedProfile.cutoff)!;
+					} else if (qualityItems.length > 0) {
+						// Cutoff ID not found - use fallback
+						const lastItem = qualityItems[qualityItems.length - 1];
+						remappedCutoff = lastItem.id ?? lastItem.quality?.id ?? clonedProfile.cutoff;
+					}
+
 					// Update profile with cloned quality settings
 					updatedProfile = {
 						...updatedProfile,
 						upgradeAllowed: clonedProfile.upgradeAllowed,
-						cutoff: clonedProfile.cutoff,
+						cutoff: remappedCutoff,
 						items: qualityItems,
 						minFormatScore: clonedProfile.minFormatScore ?? updatedProfile.minFormatScore,
 						cutoffFormatScore: clonedProfile.cutoffFormatScore ?? updatedProfile.cutoffFormatScore,
@@ -965,8 +986,10 @@ export class DeploymentExecutorService {
 		extractQualities(schema.items);
 
 		// Transform the cloned profile items to match the target instance's quality IDs
+		// Also build a mapping from source IDs to new IDs for cutoff remapping
 		let customGroupId = 1000;
 		const qualityItems: any[] = [];
+		const sourceIdToNewId = new Map<number, number>(); // Maps source item IDs to new IDs
 
 		for (const sourceItem of clonedProfile.items || []) {
 			if (sourceItem.items && Array.isArray(sourceItem.items) && sourceItem.items.length > 0) {
@@ -990,11 +1013,16 @@ export class DeploymentExecutorService {
 				}
 
 				if (groupQualities.length > 0) {
+					const newGroupId = customGroupId++;
+					// Map source group ID to new group ID for cutoff remapping
+					if (sourceItem.id !== undefined) {
+						sourceIdToNewId.set(sourceItem.id, newGroupId);
+					}
 					qualityItems.push({
 						name: sourceItem.name,
 						items: groupQualities,
 						allowed: sourceItem.allowed,
-						id: customGroupId++,
+						id: newGroupId,
 					});
 				}
 			} else if (sourceItem.quality) {
@@ -1005,11 +1033,30 @@ export class DeploymentExecutorService {
 				}
 
 				if (targetQuality) {
+					// Map source quality ID to target quality ID
+					const newId = targetQuality.quality?.id ?? sourceItem.quality.id;
+					if (sourceItem.quality.id !== undefined) {
+						sourceIdToNewId.set(sourceItem.quality.id, newId);
+					}
 					qualityItems.push({
 						...targetQuality,
 						allowed: sourceItem.allowed,
 					});
 				}
+			}
+		}
+
+		// Remap cutoff ID from source profile to new quality items
+		let remappedCutoff = clonedProfile.cutoff;
+		if (sourceIdToNewId.has(clonedProfile.cutoff)) {
+			remappedCutoff = sourceIdToNewId.get(clonedProfile.cutoff)!;
+		} else {
+			// Cutoff ID not found in mapping - try to find a valid fallback
+			// This can happen if the cutoff quality was filtered out during transformation
+			if (qualityItems.length > 0) {
+				const lastItem = qualityItems[qualityItems.length - 1];
+				remappedCutoff = lastItem.id ?? lastItem.quality?.id ?? 1;
+				console.warn(`[DEPLOYMENT] Cutoff ID ${clonedProfile.cutoff} not found in remapped items, defaulting to: ${remappedCutoff}`);
 			}
 		}
 
@@ -1038,7 +1085,7 @@ export class DeploymentExecutorService {
 			...schema,
 			name: profileName,
 			upgradeAllowed: clonedProfile.upgradeAllowed,
-			cutoff: clonedProfile.cutoff,
+			cutoff: remappedCutoff,
 			items: qualityItems,
 			minFormatScore: clonedProfile.minFormatScore ?? 0,
 			cutoffFormatScore: clonedProfile.cutoffFormatScore ?? 10000,
