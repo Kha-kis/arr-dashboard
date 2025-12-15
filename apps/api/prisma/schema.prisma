@@ -76,6 +76,8 @@ model ServiceInstance {
   qualityProfileOverrides     InstanceQualityProfileOverride[]
   qualityProfileMappings      TemplateQualityProfileMapping[]
   deploymentHistory           TemplateDeploymentHistory[]
+  huntConfig                  HuntConfig?
+  huntLogs                    HuntLog[]
 
   @@index([service])
   @@index([userId])
@@ -471,4 +473,93 @@ model TemplateDeploymentHistory {
   @@index([deployedAt])
   @@index([status])
   @@map("template_deployment_history")
+}
+
+// ============================================================================
+// Hunting Feature Models
+// Automated discovery of missing content and quality upgrades
+// ============================================================================
+
+/// Hunt configuration per service instance (admin-only feature)
+model HuntConfig {
+  id                    String          @id @default(cuid())
+  instanceId            String          @unique
+  instance              ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  // Feature toggles
+  huntMissingEnabled    Boolean         @default(false)
+  huntUpgradesEnabled   Boolean         @default(false)
+
+  // Missing content settings
+  missingBatchSize      Int             @default(5)      // Items per cycle
+  missingIntervalMins   Int             @default(60)     // Minutes between cycles
+
+  // Upgrade settings
+  upgradeBatchSize      Int             @default(3)      // Items per cycle
+  upgradeIntervalMins   Int             @default(120)    // Minutes between cycles
+
+  // Rate limiting
+  hourlyApiCap          Int             @default(100)    // Max API calls per hour
+  queueThreshold        Int             @default(25)     // Pause if queue exceeds this
+
+  // State tracking
+  lastMissingHunt       DateTime?
+  lastUpgradeHunt       DateTime?
+  apiCallsThisHour      Int             @default(0)
+  apiCallsResetAt       DateTime?
+
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  // Relations
+  exclusions            HuntExclusion[]
+
+  @@map("hunt_configs")
+}
+
+/// Exclusions - series/movies to skip during hunting
+model HuntExclusion {
+  id            String      @id @default(cuid())
+  configId      String
+  config        HuntConfig  @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  // What to exclude
+  mediaType     String      // "series" | "movie"
+  mediaId       Int         // Sonarr series ID or Radarr movie ID
+  title         String      // For display purposes
+
+  // Why excluded (optional)
+  reason        String?
+
+  createdAt     DateTime    @default(now())
+
+  @@unique([configId, mediaType, mediaId])
+  @@index([configId])
+  @@map("hunt_exclusions")
+}
+
+/// Log of hunt activity
+model HuntLog {
+  id            String          @id @default(cuid())
+  instanceId    String
+  instance      ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  huntType      String          // "missing" | "upgrade"
+  itemsSearched Int             @default(0)
+  itemsFound    Int             @default(0)
+
+  // Details of what was searched (JSON arrays)
+  searchedItems String?         // JSON: [{ id, title, type }]
+  foundItems    String?         // JSON: [{ id, title, type, quality? }]
+
+  status        String          // "completed" | "partial" | "skipped" | "error"
+  message       String?         // Error message or skip reason
+  durationMs    Int?            // Duration in milliseconds
+
+  startedAt     DateTime        @default(now())
+  completedAt   DateTime?
+
+  @@index([instanceId, huntType, startedAt])
+  @@index([startedAt])
+  @@map("hunt_logs")
 }
