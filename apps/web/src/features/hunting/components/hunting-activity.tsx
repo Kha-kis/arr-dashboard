@@ -281,11 +281,23 @@ const ActivityLogEntry = ({ log }: ActivityLogEntryProps) => {
 	);
 };
 
+/**
+ * Format a date string to the local time with two-digit hour and minute.
+ *
+ * @param dateString - A date/time string parseable by the JavaScript `Date` constructor (for example, an ISO 8601 timestamp).
+ * @returns The localized time string formatted with 2-digit hour and 2-digit minute (e.g., "08:05").
+ */
 function formatTime(dateString: string): string {
 	const date = new Date(dateString);
 	return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
 }
 
+/**
+ * Format a byte count into a human-readable size string using 1024-based units.
+ *
+ * @param bytes - Number of bytes to format (expected >= 0)
+ * @returns A string with one decimal precision and a unit suffix (`B`, `KB`, `MB`, `GB`, `TB`); `"0 B"` for an input of `0`
+ */
 function formatSize(bytes: number): string {
 	if (bytes === 0) return "0 B";
 	const k = 1024;

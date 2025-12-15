@@ -7,8 +7,12 @@ import {
 } from "./constants.js";
 
 /**
- * Execute a promise with a timeout
- * Throws an error if the promise doesn't resolve within the specified time
+ * Run a promise and fail if it does not settle within the specified timeout.
+ *
+ * @param promise - The promise to race against the timeout
+ * @param timeoutMs - Timeout duration in milliseconds
+ * @param timeoutMessage - Error message used if the timeout elapses
+ * @returns The resolved value of `promise`
  */
 async function withTimeout<T>(
 	promise: Promise<T>,
@@ -473,7 +477,9 @@ class HuntingScheduler {
 let scheduler: HuntingScheduler | null = null;
 
 /**
- * Get the hunting scheduler singleton
+ * Retrieve the singleton HuntingScheduler instance.
+ *
+ * @returns The global HuntingScheduler singleton.
  */
 export function getHuntingScheduler(): HuntingScheduler {
 	if (!scheduler) {

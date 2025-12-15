@@ -17,6 +17,16 @@ import { hashPassword } from "../src/utils/password.js";
 
 const prisma = new PrismaClient();
 
+/**
+ * Creates an initial admin user in the database if one does not already exist.
+ *
+ * Reads ADMIN_USERNAME (defaults to "admin") and ADMIN_PASSWORD (defaults to "admin1234"),
+ * checks for an existing user with that username, and if none is found creates a new user
+ * with the password hashed. Writes the new user to the database and logs the outcome.
+ *
+ * The plaintext password is included in the log only when NODE_ENV is "development" or
+ * DEV_SHOW_PASSWORD is set to "true"; otherwise a generic success message is logged.
+ */
 async function main() {
   const password = process.env.ADMIN_PASSWORD ?? "admin1234";
   const username = process.env.ADMIN_USERNAME ?? "admin";

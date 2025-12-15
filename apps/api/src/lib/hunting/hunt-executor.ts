@@ -145,8 +145,10 @@ interface ParsedFilters {
 }
 
 /**
- * Fisher-Yates shuffle algorithm for randomizing candidate selection
- * This prevents always searching the same "stuck" items that are sorted to the top
+ * Randomizes the order of elements in an array.
+ *
+ * @param array - The input array to shuffle
+ * @returns A new array containing the elements of `array` in randomized order
  */
 function shuffleArray<T>(array: T[]): T[] {
 	const shuffled = [...array];
@@ -160,8 +162,10 @@ function shuffleArray<T>(array: T[]): T[] {
 }
 
 /**
- * Check if content is released/aired (not in the future)
- * Always filters out future content regardless of other settings
+ * Determine whether a release date is in the past or present.
+ *
+ * @param releaseDate - The release or air date as an ISO date string, or `null`/`undefined` if unknown
+ * @returns `true` if `releaseDate` is present and not in the future, `false` otherwise
  */
 function isContentReleased(releaseDate: string | undefined | null): boolean {
 	if (!releaseDate) return false; // No release date = treat as unreleased
@@ -194,10 +198,13 @@ const SONARR_STATUS_HIERARCHY: Record<string, string[]> = {
 };
 
 /**
- * Expand status filters to include hierarchically related statuses
- * @param statuses - The statuses selected by user
- * @param service - "sonarr" or "radarr"
- * @returns Expanded set of statuses to match against
+ * Expand a list of status keys to include lifecycle-related statuses for the specified service.
+ *
+ * Unknown statuses are preserved (converted to lowercase) so they can still be matched.
+ *
+ * @param statuses - Status keys selected by the user
+ * @param service - Either `"sonarr"` or `"radarr"`, which determines the expansion hierarchy
+ * @returns A `Set` of lowercased statuses containing the original statuses and any hierarchically related statuses
  */
 function expandStatusFilters(statuses: string[], service: "sonarr" | "radarr"): Set<string> {
 	const hierarchy = service === "sonarr" ? SONARR_STATUS_HIERARCHY : RADARR_STATUS_HIERARCHY;
@@ -219,9 +226,11 @@ function expandStatusFilters(statuses: string[], service: "sonarr" | "radarr"): 
 }
 
 /**
- * Parse filter settings from HuntConfig
- * @param config - The hunt configuration
- * @param service - The service type for status hierarchy expansion
+ * Create a ParsedFilters object from a HuntConfig by parsing JSON-encoded arrays and expanding statuses for the target service.
+ *
+ * @param config - Hunt configuration containing raw filter values (JSON arrays encoded as strings and scalar filter settings)
+ * @param service - Target service ("sonarr" or "radarr") used to expand provided statuses into the service-specific status hierarchy
+ * @returns A ParsedFilters object with parsed include/exclude tag and quality profile arrays, includeStatuses, expandedStatuses, year range, ageThresholdDays, filterLogic, and monitoredOnly flag
  */
 function parseFilters(config: HuntConfig, service: "sonarr" | "radarr"): ParsedFilters {
 	const parseJsonArray = (value: string | null | undefined): number[] | string[] => {
@@ -251,7 +260,21 @@ function parseFilters(config: HuntConfig, service: "sonarr" | "radarr"): ParsedF
 }
 
 /**
- * Check if an item passes a single filter condition
+ * Evaluate whether a single filter condition is satisfied for a candidate item.
+ *
+ * @param item - Candidate item's relevant fields: `tags`, `qualityProfileId`, `status`, `year`, `monitored`, and optional `releaseDate`
+ * @param filters - ParsedFilters containing the filter criteria to evaluate against
+ * @param conditionName - The filter condition to check. Accepted values:
+ *   - "monitored"
+ *   - "includeTags"
+ *   - "excludeTags"
+ *   - "includeQualityProfiles"
+ *   - "excludeQualityProfiles"
+ *   - "includeStatuses"
+ *   - "yearMin"
+ *   - "yearMax"
+ *   - "ageThreshold"
+ * @returns `true` if the item satisfies the specified condition, `false` otherwise.
  */
 function checkFilterCondition(
 	item: { tags: number[]; qualityProfileId: number; status: string; year: number; monitored: boolean; releaseDate?: string },
@@ -305,7 +328,11 @@ function checkFilterCondition(
 }
 
 /**
- * Apply all filters to an item
+ * Determine whether a media item satisfies the provided filters.
+ *
+ * @param item - Metadata for the media item used for filtering: `tags` (tag IDs), `qualityProfileId`, `status`, `year`, `monitored`, and optional `releaseDate` (ISO string).
+ * @param filters - ParsedFilters that define inclusion/exclusion criteria and filter logic.
+ * @returns `true` if the item passes the filters and is not excluded, `false` otherwise.
  */
 function passesFilters(
 	item: { tags: number[]; qualityProfileId: number; status: string; year: number; monitored: boolean; releaseDate?: string },
@@ -380,7 +407,13 @@ function passesFilters(
 }
 
 /**
- * Execute a hunt for missing content or quality upgrades
+ * Orchestrates a hunt run against a Sonarr or Radarr instance to search for missing content or quality upgrades.
+ *
+ * Performs queue threshold validation, parses and applies configured filters, avoids recently searched items,
+ * executes service-specific search flows (season/episode searches for Sonarr, movie searches for Radarr),
+ * records searches in history, and detects grabbed items after searches.
+ *
+ * @returns A HuntResult summarizing the hunt, including counts of searched and grabbed items, arrays of searched and grabbed item details, a human-readable message, and a status of `completed`, `partial`, `skipped`, or `error`.
  */
 export async function executeHunt(
 	app: FastifyInstance,
@@ -433,7 +466,12 @@ export async function executeHunt(
 }
 
 /**
- * Check if the instance queue is below the threshold
+ * Determine whether the service instance's queue is below a configured threshold.
+ *
+ * If `threshold` is less than or equal to zero the check is treated as disabled and considered passing.
+ *
+ * @param threshold - The maximum allowed number of items in the instance queue; when the queue count is greater than or equal to this value the check fails
+ * @returns An object with `ok` set to `true` when the queue is considered below the threshold (or the check is disabled or failed to be performed), `false` when the queue meets or exceeds the threshold, and a `message` describing the observed state
  */
 async function checkQueueThreshold(
 	fetcher: InstanceFetcher,
@@ -464,8 +502,16 @@ async function checkQueueThreshold(
 }
 
 /**
- * Detect grabbed items using history API (more reliable than queue checking)
- * History persists even after downloads complete, and has clear "grabbed" event type
+ * Detects which of the recently searched items were grabbed by inspecting the service history.
+ *
+ * Queries the service history for "grabbed" events occurring after searchStartTime and returns matching grabbed items for any searched movie, series, or episode IDs; if history lookup fails, falls back to queue-based detection.
+ *
+ * @param fetcher - Function to call the instance API endpoints
+ * @param searchStartTime - The earliest event time to consider when matching grabbed records
+ * @param searchedMovieIds - Movie IDs that were searched during this run
+ * @param searchedSeriesIds - Series IDs that were searched during this run
+ * @param searchedEpisodeIds - Episode IDs that were searched during this run
+ * @returns An array of GrabbedItem objects describing matched grabs (title, optional quality, indexer, and size)
  */
 async function detectGrabbedItemsFromHistory(
 	fetcher: InstanceFetcher,
@@ -553,7 +599,13 @@ async function detectGrabbedItemsFromHistory(
 }
 
 /**
- * Fallback: Detect grabbed items from queue (less reliable but works if history fails)
+ * Detect grabbed items by scanning the service queue for entries that match previously searched IDs.
+ *
+ * @param fetcher - Function used to call the instance API
+ * @param searchedMovieIds - Movie IDs that were searched
+ * @param searchedSeriesIds - Series IDs that were searched
+ * @param searchedEpisodeIds - Episode IDs that were searched
+ * @returns An array of `GrabbedItem` objects for queue entries that match the provided searched IDs
  */
 async function detectGrabbedItemsFromQueue(
 	fetcher: InstanceFetcher,
@@ -590,7 +642,14 @@ async function detectGrabbedItemsFromQueue(
 }
 
 /**
- * Execute hunt for Sonarr instance
+ * Orchestrates a Sonarr hunt: selects episodes to search based on filters and history, triggers season/episode searches, records the searches, and detects any resulting grabs.
+ *
+ * @param fetcher - Function to perform authenticated HTTP requests against the Sonarr instance.
+ * @param type - Hunt type: `"missing"` searches wanted/missing episodes, `"upgrade"` searches wanted/cutoff episodes.
+ * @param batchSize - Maximum number of episodes to search (season searches count as their episode totals toward this limit).
+ * @param filters - Parsed filter criteria that determine which series/episodes are eligible for searching.
+ * @param historyManager - Manager used to avoid recently searched items and to record new searches.
+ * @returns A HuntResult summarizing the run, including counts of items searched and grabbed, lists of searched and grabbed items, a human-readable message, and a final status (`"completed" | "partial" | "skipped" | "error"`).
  */
 async function executeSonarrHunt(
 	fetcher: InstanceFetcher,
@@ -890,7 +949,18 @@ async function executeSonarrHunt(
 }
 
 /**
- * Execute hunt for Radarr instance
+ * Run a hunt on a Radarr instance to trigger searches for missing or upgradeable movies.
+ *
+ * Applies configured filters, skips recently searched movies, triggers up to `batchSize`
+ * MoviesSearch commands (throttled with delays), records the searches in history, and
+ * detects what was actually grabbed via Radarr history.
+ *
+ * @param fetcher - Function used to call the Radarr HTTP API for this instance
+ * @param type - Hunt type: `"missing"` to search for missing movies, `"upgrade"` to search for movies below quality cutoff
+ * @param batchSize - Maximum number of movies to trigger searches for in this run
+ * @param filters - Parsed filter set to apply to candidate movies
+ * @param historyManager - Manager used to filter recently searched items and record new searches
+ * @returns A HuntResult summarizing items searched and grabbed, the searched titles and grabbed item details, a human-readable message, and a status (`"completed"`, `"partial"`, or `"error"`)
  */
 async function executeRadarrHunt(
 	fetcher: InstanceFetcher,

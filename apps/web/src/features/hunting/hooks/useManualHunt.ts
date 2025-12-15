@@ -6,6 +6,13 @@ interface TriggerHuntResponse {
 	queued: boolean;
 }
 
+/**
+ * Trigger a manual hunt for a specific instance.
+ *
+ * @param instanceId - The identifier of the instance to trigger the hunt for
+ * @param type - The hunt type: `"missing"` to find missing items or `"upgrade"` to find available upgrades
+ * @returns The API response containing a `message` and a `queued` flag indicating whether the hunt was accepted
+ */
 async function triggerHunt(instanceId: string, type: "missing" | "upgrade"): Promise<TriggerHuntResponse> {
 	return apiRequest<TriggerHuntResponse>(`/api/hunting/trigger/${instanceId}`, {
 		method: "POST",
@@ -13,6 +20,15 @@ async function triggerHunt(instanceId: string, type: "missing" | "upgrade"): Pro
 	});
 }
 
+/**
+ * Utilities for triggering a manual hunt for an instance and observing the trigger state.
+ *
+ * @returns An object containing:
+ * - `triggerHunt(instanceId, type)` — triggers a hunt for the given instance and resolves to the `TriggerHuntResponse` from the API.
+ * - `isTriggering` — `true` while the trigger request is pending, `false` otherwise.
+ * - `error` — the last mutation error, if any.
+ * - `isCooldownError(error)` — type guard that returns `true` if `error` is an `ApiError` with HTTP status `429`.
+ */
 export function useManualHunt() {
 	const queryClient = useQueryClient();
 
