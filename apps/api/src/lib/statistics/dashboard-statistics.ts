@@ -554,8 +554,11 @@ export const fetchProwlarrStatistics = async (
 				"Unknown";
 		}
 
-		const eventType =
-			toStringValue((record as { eventType?: unknown }).eventType)?.toLowerCase() ?? "";
+		// Prowlarr returns eventType as a number:
+		// 1 = releaseGrabbed (Grab), 2 = releaseRejected, 3 = indexerQuery, 4 = indexerRss, 5 = indexerAuth
+		const rawEventType = (record as { eventType?: unknown }).eventType;
+		const eventTypeNum = toNumber(rawEventType);
+		const eventTypeStr = toStringValue(rawEventType)?.toLowerCase() ?? "";
 		const successful = (record as { successful?: unknown }).successful !== false;
 
 		if (!indexerStatsMap.has(indexerName)) {
@@ -573,13 +576,15 @@ export const fetchProwlarrStatistics = async (
 			stats.successful += 1;
 		}
 
-		// Count grabs (specific event type)
-		if (
-			eventType === "grab" ||
-			eventType === "releaseGrabbed" ||
-			eventType === "grabbed" ||
-			eventType === "releasegrab"
-		) {
+		// Count grabs - check both numeric (1 = releaseGrabbed) and string event types
+		const isGrab =
+			eventTypeNum === 1 ||
+			eventTypeStr === "grab" ||
+			eventTypeStr === "releasegrabbed" ||
+			eventTypeStr === "grabbed" ||
+			eventTypeStr === "releasegrab";
+
+		if (isGrab) {
 			stats.grabs += 1;
 		}
 	}
