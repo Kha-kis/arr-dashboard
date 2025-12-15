@@ -253,12 +253,8 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 			include: { huntConfig: true },
 		});
 
-		if (!instance) {
+		if (!instance?.huntConfig) {
 			return reply.status(404).send({ error: "Not found or access denied" });
-		}
-
-		if (!instance.huntConfig) {
-			return reply.status(404).send({ error: "Hunt config not found for this instance" });
 		}
 
 		const config = await app.prisma.huntConfig.update({
@@ -374,12 +370,8 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 			include: { huntConfig: true },
 		});
 
-		if (!instance) {
+		if (!instance?.huntConfig) {
 			return reply.status(404).send({ error: "Not found or access denied" });
-		}
-
-		if (!instance.huntConfig) {
-			return reply.status(400).send({ error: "Hunt config not found for this instance" });
 		}
 
 		const huntType = body.type === "upgrade" ? "upgrade" : "missing";
@@ -495,12 +487,8 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 			include: { huntConfig: true },
 		});
 
-		if (!instance) {
+		if (!instance?.huntConfig) {
 			return reply.status(404).send({ error: "Not found or access denied" });
-		}
-
-		if (!instance.huntConfig) {
-			return reply.status(404).send({ error: "Hunt config not found for this instance" });
 		}
 
 		const configId = instance.huntConfig.id;
@@ -570,12 +558,8 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 			include: { huntConfig: true },
 		});
 
-		if (!instance) {
+		if (!instance?.huntConfig) {
 			return reply.status(404).send({ error: "Not found or access denied" });
-		}
-
-		if (!instance.huntConfig) {
-			return reply.status(404).send({ error: "Hunt config not found for this instance" });
 		}
 
 		const configId = instance.huntConfig.id;
