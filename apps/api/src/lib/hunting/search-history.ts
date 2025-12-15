@@ -41,7 +41,14 @@ export interface SearchHistoryManager {
 }
 
 /**
- * Create a search history manager for a specific hunt config
+ * Create a manager for tracking and filtering recently searched items for a specific hunt configuration.
+ *
+ * The manager uses a sliding window defined by `researchAfterDays` to consider entries "recently searched" and
+ * exposes utilities to check, filter, record, and count filtered items. Season-less items use a sentinel season
+ * number of `-1` when persisted or checked.
+ *
+ * @param researchAfterDays - Number of days to treat a previous search as "recent"; items searched within this window are considered recent
+ * @returns A SearchHistoryManager scoped to the provided `configId` and `huntType` that can check/ filter recent items, record searches (updates or creates entries and tolerates unique-constraint race conditions), and report the number of items filtered due to recent searches
  */
 export async function createSearchHistoryManager(
 	prisma: PrismaClient,
@@ -178,9 +185,12 @@ export async function createSearchHistoryManager(
 }
 
 /**
- * Clean up old search history entries for a specific user
- * Called periodically to prevent the table from growing indefinitely
- * Scoped to user's configs to prevent cross-user data deletion
+ * Delete search history entries older than the retention window for all hunt configs belonging to a specific user.
+ *
+ * @param prisma - Prisma client used to perform the deletion
+ * @param userId - ID of the user whose config-scoped history should be cleaned
+ * @param retentionDays - Number of days to retain history (entries older than this are deleted); defaults to 90
+ * @returns The number of search history records deleted
  */
 export async function cleanupOldSearchHistory(
 	prisma: PrismaClient,

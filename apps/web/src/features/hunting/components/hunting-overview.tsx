@@ -304,6 +304,12 @@ const ApiUsageIndicator = ({ current, max }: ApiUsageIndicatorProps) => {
 	);
 };
 
+/**
+ * Formats an ISO- or parseable-date string into a compact, human-friendly relative time.
+ *
+ * @param dateString - A date string recognized by the JavaScript Date constructor.
+ * @returns `"Just now"` if less than 1 minute; `"<m>m ago"` if less than 60 minutes; `"<h>h ago"` if less than 24 hours; otherwise `"<d>d ago"`
+ */
 function formatRelativeTime(dateString: string): string {
 	const date = new Date(dateString);
 	const now = new Date();

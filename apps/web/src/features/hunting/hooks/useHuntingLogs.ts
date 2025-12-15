@@ -17,6 +17,12 @@ interface HuntingLogsResponse {
 	totalCount: number;
 }
 
+/**
+ * Fetches hunting logs from the server using the provided query filters.
+ *
+ * @param params - Optional filters and pagination: `type`, `status`, `instanceId`, `page`, and `pageSize`
+ * @returns An object with `logs` (array of `HuntLog`) and `totalCount` (number)
+ */
 async function fetchHuntingLogs(params: UseHuntingLogsParams): Promise<HuntingLogsResponse> {
 	const searchParams = new URLSearchParams();
 	if (params.type) searchParams.set("type", params.type);
@@ -29,6 +35,18 @@ async function fetchHuntingLogs(params: UseHuntingLogsParams): Promise<HuntingLo
 	return apiRequest<HuntingLogsResponse>(`/api/hunting/logs${queryString ? `?${queryString}` : ""}`);
 }
 
+/**
+ * Fetches hunting logs with optional filters and exposes query state and controls.
+ *
+ * @param params - Optional filters and options: `type`, `status`, `instanceId`, `page`, `pageSize`; include `hasRunningHunts` to request faster polling when true.
+ * @returns An object with the fetched logs and query state:
+ * - `logs`: Array of `HuntLog` entries matching the filters.
+ * - `totalCount`: Total number of matching logs.
+ * - `isLoading`: `true` while the query is loading.
+ * - `error`: Query error, if any.
+ * - `refetch`: Function to manually refetch the logs.
+ * - `hasRunningHunts`: `true` if any returned log has `status === "running"`.
+ */
 export function useHuntingLogs(params: UseHuntingLogsParams = {}) {
 	const { hasRunningHunts, ...queryParams } = params;
 

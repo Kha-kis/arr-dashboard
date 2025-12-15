@@ -45,6 +45,11 @@ const validatePassword = (
   return { valid: true };
 };
 
+/**
+ * Resets the password for the first-created user (single-admin setup).
+ *
+ * Prompts for a new password and confirmation, validates it against the application's password policy, hashes and stores it on the user record, resets failed login attempts and lockout, invalidates all sessions for that user, and closes resources. Exits the process with code 1 on validation failures or if no user exists.
+ */
 async function main() {
   console.log("\n=== Admin Password Reset Tool ===\n");
 

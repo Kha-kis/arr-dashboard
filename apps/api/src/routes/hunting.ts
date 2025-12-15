@@ -17,8 +17,13 @@ import {
 import { cleanupOldSearchHistory } from "../lib/hunting/search-history.js";
 
 /**
- * Safely parse JSON, returning null on parse errors
- * Logs a warning with context when parsing fails
+ * Parse a JSON string into an array, returning null when the input is null or parsing fails.
+ *
+ * Logs a warning containing `context.recordId` and `context.field` if parsing fails.
+ *
+ * @param json - The JSON string to parse, or `null` to indicate no data
+ * @param context - Context used in the warning log: `recordId` identifies the record and `field` identifies the JSON field
+ * @returns The parsed array when successful, or `null` if `json` is `null` or invalid
  */
 function parseJsonSafe(json: string | null, context: { recordId: string; field: string }): unknown[] | null {
 	if (!json) return null;
