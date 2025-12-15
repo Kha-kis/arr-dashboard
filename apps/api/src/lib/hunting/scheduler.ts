@@ -175,6 +175,9 @@ class HuntingScheduler {
 
 		console.log(`[HuntingScheduler] Starting manual ${type} hunt for ${instanceId}`);
 
+		// Update hunt times immediately to prevent race conditions with rapid API calls
+		this.updateHuntTimes(instanceId, type);
+
 		// Run hunt immediately in background (don't await - let API return quickly)
 		this.runHunt(instanceId, type, true).catch((error) => {
 			console.error(`[HuntingScheduler] Manual hunt failed for ${instanceId}:`, error);
