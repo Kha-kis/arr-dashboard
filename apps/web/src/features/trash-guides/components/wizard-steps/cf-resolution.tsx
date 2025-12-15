@@ -94,25 +94,18 @@ function getConfidenceBadge(confidence: MatchConfidence) {
 
 /**
  * Determine if a CF should be in the "excluded" section based on score logic
- * Excluded = instance score is 0 AND TRaSH doesn't recommend it (score is also 0)
- * This indicates the CF exists in the instance but isn't configured AND isn't recommended
  *
- * If TRaSH recommends a non-zero score, we DON'T exclude - we want users to see
- * these CFs so they can adopt TRaSH's recommendation when cloning.
+ * IMPORTANT: All CFs we receive are from the profile's formatItems - meaning
+ * the user explicitly added them to this profile. We should NOT auto-exclude
+ * based on score alone. Score 0 means "track but don't affect ranking", which
+ * is a valid configuration choice.
+ *
+ * We only use this for recommendation-based filtering now, not score-based exclusion.
  */
-function shouldBeExcludedByScore(result: CFMatchResult): boolean {
-	// Only applies to matched CFs
-	if (result.confidence === "no_match") return false;
-
-	// Check if instance score is 0 and TRaSH also recommends 0 (or no recommendation)
-	// This means: not active in instance AND not recommended by TRaSH = exclude
-	const instanceScore = result.instanceCF.score ?? 0;
-	const trashScore = result.recommendedScore ?? 0;
-
-	// Only exclude if BOTH are 0 - if TRaSH recommends it, keep it active
-	const isExcluded = instanceScore === 0 && trashScore === 0;
-
-	return isExcluded;
+function shouldBeExcludedByScore(_result: CFMatchResult): boolean {
+	// Never auto-exclude based on score - CFs in formatItems are intentionally configured
+	// Users can manually exclude if they don't want a CF
+	return false;
 }
 
 /**
