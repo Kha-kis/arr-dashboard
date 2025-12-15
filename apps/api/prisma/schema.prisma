@@ -582,7 +582,7 @@ model HuntSearchHistory {
   // What was searched
   mediaType     String      // "movie" | "series" | "season" | "episode"
   mediaId       Int         // ID in Sonarr/Radarr (movieId, seriesId, episodeId)
-  seasonNumber  Int?        // For season-level tracking (null for movies/episodes)
+  seasonNumber  Int         @default(-1)  // For season-level tracking (-1 for movies/series/episodes)
   title         String      // For display/debugging
 
   // Search tracking
