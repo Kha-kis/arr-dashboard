@@ -187,6 +187,9 @@ const instance = await request.server.prisma.serviceInstance.findFirst({
 - User model simplified: no email or role fields (single-admin architecture)
 - Service instances are per-user (each instance has a `userId` foreign key for ownership)
 
+**Single-Admin Architecture:**
+This application assumes a single administrator. The `User` model intentionally has no `role` or `isAdmin` field - admin privileges are enforced by convention: the first (and typically only) user created via the setup flow is treated as the administrator. This simplifies the codebase for the common home-server use case. If multi-user support with role-based access control is needed in the future, a schema migration would be required to add a `role` field to the `User` model. Scripts like `reset-admin-password.ts` and `seed-admin.ts` operate under this assumption.
+
 **Migrations:**
 - Development: `pnpm run db:push` (no migration files)
 - Production: `pnpm run db:migrate` (applies migrations)

@@ -45,22 +45,31 @@ const validatePassword = (
   return { valid: true };
 };
 
+/**
+ * Resets the password for the first-created user (single-admin setup).
+ *
+ * Prompts for a new password and confirmation, validates it against the application's password policy, hashes and stores it on the user record, resets failed login attempts and lockout, invalidates all sessions for that user, and closes resources. Exits the process with code 1 on validation failures or if no user exists.
+ */
 async function main() {
   console.log("\n=== Admin Password Reset Tool ===\n");
 
-  // Find admin user
+  // Single-admin architecture: This application assumes a single administrator.
+  // The User model has no role/isAdmin field - admin privileges are enforced
+  // by convention: the first (and typically only) user created via the setup
+  // flow is treated as the administrator. This script targets that user.
+  // If multi-user support with roles is needed in the future, a schema change
+  // would be required to add role-based access control.
   const admin = await prisma.user.findFirst({
-    where: { role: "ADMIN" },
+    orderBy: { createdAt: "asc" },
   });
 
   if (!admin) {
-    console.error("Error: No admin user found in the database.");
-    console.log("Please run the setup flow to create an admin account.");
+    console.error("Error: No user found in the database.");
+    console.log("Please run the setup flow to create an account.");
     process.exit(1);
   }
 
-  console.log("Found admin account:");
-  console.log(`  Email: ${admin.email}`);
+  console.log("Found user account:");
   console.log(`  Username: ${admin.username}\n`);
 
   // Get new password

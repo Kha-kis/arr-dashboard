@@ -76,6 +76,8 @@ model ServiceInstance {
   qualityProfileOverrides     InstanceQualityProfileOverride[]
   qualityProfileMappings      TemplateQualityProfileMapping[]
   deploymentHistory           TemplateDeploymentHistory[]
+  huntConfig                  HuntConfig?
+  huntLogs                    HuntLog[]
 
   @@index([service])
   @@index([userId])
@@ -471,4 +473,125 @@ model TemplateDeploymentHistory {
   @@index([deployedAt])
   @@index([status])
   @@map("template_deployment_history")
+}
+
+// ============================================================================
+// Hunting Feature Models
+// Automated discovery of missing content and quality upgrades
+// ============================================================================
+
+/// Hunt configuration per service instance (admin-only feature)
+model HuntConfig {
+  id                    String          @id @default(cuid())
+  instanceId            String          @unique
+  instance              ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  // Feature toggles
+  huntMissingEnabled    Boolean         @default(false)
+  huntUpgradesEnabled   Boolean         @default(false)
+
+  // Missing content settings
+  missingBatchSize      Int             @default(5)      // Items per cycle
+  missingIntervalMins   Int             @default(60)     // Minutes between cycles
+
+  // Upgrade settings
+  upgradeBatchSize      Int             @default(3)      // Items per cycle
+  upgradeIntervalMins   Int             @default(120)    // Minutes between cycles
+
+  // Rate limiting
+  hourlyApiCap          Int             @default(100)    // Max API calls per hour
+  queueThreshold        Int             @default(25)     // Pause if queue exceeds this
+
+  // === FILTER SETTINGS ===
+  // Filter logic: how multiple filters combine
+  filterLogic           String          @default("AND")  // "AND" or "OR"
+
+  // Monitored filter
+  monitoredOnly         Boolean         @default(true)   // Only hunt monitored content
+
+  // Tag filters (JSON arrays of tag IDs)
+  includeTags           String?                          // JSON: [1, 5, 12] - only hunt items with these tags
+  excludeTags           String?                          // JSON: [3, 7] - skip items with these tags
+
+  // Quality profile filters (JSON arrays of profile IDs)
+  includeQualityProfiles String?                         // JSON: [1, 2] - only hunt items with these profiles
+  excludeQualityProfiles String?                         // JSON: [3] - skip items with these profiles
+
+  // Status filters (JSON array of status strings)
+  // Sonarr: "continuing", "ended", "upcoming", "deleted"
+  // Radarr: "tba", "announced", "inCinemas", "released", "deleted"
+  includeStatuses       String?                          // JSON: ["continuing", "ended"]
+
+  // Year range filter
+  yearMin               Int?                             // Minimum release year (inclusive)
+  yearMax               Int?                             // Maximum release year (inclusive)
+
+  // Age threshold - skip content released recently (avoid hammering indexers)
+  ageThresholdDays      Int?                             // Don't hunt content newer than X days
+
+  // Re-search settings
+  researchAfterDays     Int             @default(7)      // Re-search items after X days (0 = never re-search)
+
+  // State tracking
+  lastMissingHunt       DateTime?
+  lastUpgradeHunt       DateTime?
+  apiCallsThisHour      Int             @default(0)
+  apiCallsResetAt       DateTime?
+
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  // Relations
+  searchHistory         HuntSearchHistory[]
+
+  @@map("hunt_configs")
+}
+
+/// Log of hunt activity
+model HuntLog {
+  id            String          @id @default(cuid())
+  instanceId    String
+  instance      ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  huntType      String          // "missing" | "upgrade"
+  itemsSearched Int             @default(0)
+  itemsFound    Int             @default(0)
+
+  // Details of what was searched (JSON arrays)
+  searchedItems String?         // JSON: [{ id, title, type }]
+  foundItems    String?         // JSON: [{ id, title, type, quality? }]
+
+  status        String          // "completed" | "partial" | "skipped" | "error"
+  message       String?         // Error message or skip reason
+  durationMs    Int?            // Duration in milliseconds
+
+  startedAt     DateTime        @default(now())
+  completedAt   DateTime?
+
+  @@index([instanceId, huntType, startedAt])
+  @@index([startedAt])
+  @@map("hunt_logs")
+}
+
+/// Track searched items to avoid re-searching too frequently
+model HuntSearchHistory {
+  id            String      @id @default(cuid())
+  configId      String
+  config        HuntConfig  @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  // What was searched
+  mediaType     String      // "movie" | "series" | "season" | "episode"
+  mediaId       Int         // ID in Sonarr/Radarr (movieId, seriesId, episodeId)
+  seasonNumber  Int?        // For season-level tracking (null for movies/series/episodes)
+  title         String      // For display/debugging
+
+  // Search tracking
+  huntType      String      // "missing" | "upgrade"
+  searchedAt    DateTime    @default(now())
+  searchCount   Int         @default(1)  // How many times this item has been searched
+
+  @@unique([configId, huntType, mediaType, mediaId, seasonNumber])
+  @@index([configId, huntType, searchedAt])
+  @@index([searchedAt])
+  @@map("hunt_search_history")
 }
