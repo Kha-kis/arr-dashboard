@@ -1,5 +1,5 @@
 import type { CurrentUser, CurrentUserResponse, OIDCProvider as SharedOIDCProvider } from "@arr/shared";
-import { apiRequest, UnauthorizedError } from "./base";
+import { apiRequest, UnauthorizedError, NetworkError } from "./base";
 
 export async function fetchCurrentUser(): Promise<CurrentUser | null> {
 	try {
@@ -73,7 +73,11 @@ export async function checkSetupRequired(): Promise<boolean> {
 		const data = await apiRequest<SetupRequiredResponse>("/auth/setup-required");
 		return data.required;
 	} catch (error) {
-		// If the endpoint fails, assume setup is not required
+		// Propagate network errors so the UI can show a helpful message
+		if (error instanceof NetworkError) {
+			throw error;
+		}
+		// For other errors, assume setup is not required
 		return false;
 	}
 }

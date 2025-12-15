@@ -45,7 +45,7 @@ export const LoginForm = () => {
 	const searchParams = useSearchParams();
 	const queryClient = useQueryClient();
 	const loginMutation = useLoginMutation();
-	const { data: setupRequired, isLoading: setupLoading } = useSetupRequired();
+	const { data: setupRequired, isLoading: setupLoading, error: setupError } = useSetupRequired();
 
 	const [username, setUsername] = useState("");
 	const [password, setPassword] = useState("");
@@ -164,6 +164,57 @@ export const LoginForm = () => {
 		return (
 			<div className="flex min-h-[60vh] flex-col items-center justify-center">
 				<div className="h-10 w-10 animate-spin rounded-full border-4 border-white/20 border-t-white" />
+			</div>
+		);
+	}
+
+	// Show API connection error
+	if (setupError) {
+		const isNetworkError = setupError.name === "NetworkError";
+		return (
+			<div className="flex min-h-[60vh] flex-col items-center justify-center gap-6">
+				<div className="text-center">
+					<p className="text-sm uppercase tracking-[0.3em] text-white/50">Arr Control Center</p>
+					<h1 className="mt-2 text-3xl font-semibold text-white">Connection Error</h1>
+				</div>
+
+				<Card className="w-full max-w-md border-red-500/30 bg-red-500/10">
+					<CardHeader>
+						<CardTitle className="flex items-center gap-2 text-xl text-red-400">
+							<svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+							</svg>
+							{isNetworkError ? "Cannot Connect to API" : "Server Error"}
+						</CardTitle>
+						<CardDescription className="text-white/70">
+							{isNetworkError
+								? "The dashboard cannot reach the API server. This usually means:"
+								: "An unexpected error occurred while connecting to the server."}
+						</CardDescription>
+					</CardHeader>
+					<CardContent className="space-y-4">
+						{isNetworkError && (
+							<ul className="list-disc space-y-2 pl-5 text-sm text-white/60">
+								<li>The API server is not running or starting up</li>
+								<li>The API port configuration is incorrect</li>
+								<li>A firewall or network issue is blocking the connection</li>
+							</ul>
+						)}
+						<div className="rounded bg-black/30 p-3 font-mono text-xs text-white/50">
+							{setupError.message}
+						</div>
+						<Button
+							variant="secondary"
+							className="w-full border-white/20 bg-white/5 text-white hover:bg-white/10"
+							onClick={() => window.location.reload()}
+						>
+							<svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+							</svg>
+							Retry Connection
+						</Button>
+					</CardContent>
+				</Card>
 			</div>
 		);
 	}
