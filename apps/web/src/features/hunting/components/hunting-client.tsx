@@ -12,7 +12,6 @@ import { HuntingTabs, type HuntingTab } from "./hunting-tabs";
 import { HuntingOverview } from "./hunting-overview";
 import { HuntingActivity } from "./hunting-activity";
 import { HuntingConfig } from "./hunting-config";
-import { HuntingExclusions } from "./hunting-exclusions";
 import { useHuntingStatus } from "../hooks/useHuntingStatus";
 
 export const HuntingClient = () => {
@@ -65,13 +64,11 @@ export const HuntingClient = () => {
 				activeTab={activeTab}
 				onTabChange={setActiveTab}
 				activityCount={status?.recentActivityCount}
-				exclusionCount={status?.totalExclusions}
 			/>
 
 			{activeTab === "overview" && <HuntingOverview status={status} onRefresh={refetch} />}
 			{activeTab === "activity" && <HuntingActivity />}
 			{activeTab === "config" && <HuntingConfig />}
-			{activeTab === "exclusions" && <HuntingExclusions />}
 		</section>
 	);
 };

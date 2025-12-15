@@ -502,6 +502,36 @@ model HuntConfig {
   hourlyApiCap          Int             @default(100)    // Max API calls per hour
   queueThreshold        Int             @default(25)     // Pause if queue exceeds this
 
+  // === FILTER SETTINGS ===
+  // Filter logic: how multiple filters combine
+  filterLogic           String          @default("AND")  // "AND" or "OR"
+
+  // Monitored filter
+  monitoredOnly         Boolean         @default(true)   // Only hunt monitored content
+
+  // Tag filters (JSON arrays of tag IDs)
+  includeTags           String?                          // JSON: [1, 5, 12] - only hunt items with these tags
+  excludeTags           String?                          // JSON: [3, 7] - skip items with these tags
+
+  // Quality profile filters (JSON arrays of profile IDs)
+  includeQualityProfiles String?                         // JSON: [1, 2] - only hunt items with these profiles
+  excludeQualityProfiles String?                         // JSON: [3] - skip items with these profiles
+
+  // Status filters (JSON array of status strings)
+  // Sonarr: "continuing", "ended", "upcoming", "deleted"
+  // Radarr: "tba", "announced", "inCinemas", "released", "deleted"
+  includeStatuses       String?                          // JSON: ["continuing", "ended"]
+
+  // Year range filter
+  yearMin               Int?                             // Minimum release year (inclusive)
+  yearMax               Int?                             // Maximum release year (inclusive)
+
+  // Age threshold - skip content released recently (avoid hammering indexers)
+  ageThresholdDays      Int?                             // Don't hunt content newer than X days
+
+  // Re-search settings
+  researchAfterDays     Int             @default(7)      // Re-search items after X days (0 = never re-search)
+
   // State tracking
   lastMissingHunt       DateTime?
   lastUpgradeHunt       DateTime?
@@ -512,30 +542,9 @@ model HuntConfig {
   updatedAt             DateTime        @updatedAt
 
   // Relations
-  exclusions            HuntExclusion[]
+  searchHistory         HuntSearchHistory[]
 
   @@map("hunt_configs")
-}
-
-/// Exclusions - series/movies to skip during hunting
-model HuntExclusion {
-  id            String      @id @default(cuid())
-  configId      String
-  config        HuntConfig  @relation(fields: [configId], references: [id], onDelete: Cascade)
-
-  // What to exclude
-  mediaType     String      // "series" | "movie"
-  mediaId       Int         // Sonarr series ID or Radarr movie ID
-  title         String      // For display purposes
-
-  // Why excluded (optional)
-  reason        String?
-
-  createdAt     DateTime    @default(now())
-
-  @@unique([configId, mediaType, mediaId])
-  @@index([configId])
-  @@map("hunt_exclusions")
 }
 
 /// Log of hunt activity
@@ -562,4 +571,27 @@ model HuntLog {
   @@index([instanceId, huntType, startedAt])
   @@index([startedAt])
   @@map("hunt_logs")
+}
+
+/// Track searched items to avoid re-searching too frequently
+model HuntSearchHistory {
+  id            String      @id @default(cuid())
+  configId      String
+  config        HuntConfig  @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  // What was searched
+  mediaType     String      // "movie" | "series" | "season" | "episode"
+  mediaId       Int         // ID in Sonarr/Radarr (movieId, seriesId, episodeId)
+  seasonNumber  Int?        // For season-level tracking (null for movies/episodes)
+  title         String      // For display/debugging
+
+  // Search tracking
+  huntType      String      // "missing" | "upgrade"
+  searchedAt    DateTime    @default(now())
+  searchCount   Int         @default(1)  // How many times this item has been searched
+
+  @@unique([configId, huntType, mediaType, mediaId, seasonNumber])
+  @@index([configId, huntType, searchedAt])
+  @@index([searchedAt])
+  @@map("hunt_search_history")
 }

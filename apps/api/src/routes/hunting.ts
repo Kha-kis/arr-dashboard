@@ -1,31 +1,56 @@
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { getHuntingScheduler } from "../lib/hunting/scheduler.js";
+import { createInstanceFetcher } from "../lib/arr/arr-fetcher.js";
+import {
+	MIN_MISSING_INTERVAL_MINS,
+	MIN_UPGRADE_INTERVAL_MINS,
+	MAX_INTERVAL_MINS,
+	MIN_BATCH_SIZE,
+	MAX_BATCH_SIZE,
+	MIN_HOURLY_API_CAP,
+	MAX_HOURLY_API_CAP,
+	MAX_QUEUE_THRESHOLD,
+	MIN_RESEARCH_AFTER_DAYS,
+	MAX_RESEARCH_AFTER_DAYS,
+} from "../lib/hunting/constants.js";
+import { cleanupOldSearchHistory } from "../lib/hunting/search-history.js";
 
 const huntConfigUpdateSchema = z.object({
+	// Feature toggles
 	huntMissingEnabled: z.boolean().optional(),
 	huntUpgradesEnabled: z.boolean().optional(),
-	missingBatchSize: z.number().int().min(1).max(50).optional(),
-	missingIntervalMins: z.number().int().min(15).max(1440).optional(),
-	upgradeBatchSize: z.number().int().min(1).max(50).optional(),
-	upgradeIntervalMins: z.number().int().min(15).max(1440).optional(),
-	hourlyApiCap: z.number().int().min(10).max(500).optional(),
-	queueThreshold: z.number().int().min(0).max(100).optional(),
+	// Batch settings (using constants for validation)
+	missingBatchSize: z.number().int().min(MIN_BATCH_SIZE).max(MAX_BATCH_SIZE).optional(),
+	missingIntervalMins: z.number().int().min(MIN_MISSING_INTERVAL_MINS).max(MAX_INTERVAL_MINS).optional(),
+	upgradeBatchSize: z.number().int().min(MIN_BATCH_SIZE).max(MAX_BATCH_SIZE).optional(),
+	upgradeIntervalMins: z.number().int().min(MIN_UPGRADE_INTERVAL_MINS).max(MAX_INTERVAL_MINS).optional(),
+	// Rate limiting
+	hourlyApiCap: z.number().int().min(MIN_HOURLY_API_CAP).max(MAX_HOURLY_API_CAP).optional(),
+	queueThreshold: z.number().int().min(0).max(MAX_QUEUE_THRESHOLD).optional(),
+	// Filter settings
+	filterLogic: z.enum(["AND", "OR"]).optional(),
+	monitoredOnly: z.boolean().optional(),
+	includeTags: z.string().nullable().optional(), // JSON array string
+	excludeTags: z.string().nullable().optional(),
+	includeQualityProfiles: z.string().nullable().optional(),
+	excludeQualityProfiles: z.string().nullable().optional(),
+	includeStatuses: z.string().nullable().optional(),
+	yearMin: z.number().int().min(1900).max(2100).nullable().optional(),
+	yearMax: z.number().int().min(1900).max(2100).nullable().optional(),
+	ageThresholdDays: z.number().int().min(0).max(365).nullable().optional(),
+	// Re-search settings (0 = never re-search already searched items)
+	researchAfterDays: z.number().int().min(0).max(MAX_RESEARCH_AFTER_DAYS).optional(),
 });
 
 const huntConfigCreateSchema = z.object({
 	instanceId: z.string().min(1),
 });
 
-const exclusionCreateSchema = z.object({
-	instanceId: z.string().min(1),
-	mediaType: z.enum(["series", "movie"]),
-	mediaId: z.number().int(),
-	title: z.string().min(1),
-	reason: z.string().optional(),
-});
-
 const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
+	// Initialize scheduler with app reference (enables manual hunts even when scheduler is stopped)
+	getHuntingScheduler().initialize(app);
+
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
 		if (!request.currentUser?.id) {
@@ -78,15 +103,6 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 			},
 		});
 
-		// Get total exclusions
-		const totalExclusions = await app.prisma.huntExclusion.count({
-			where: {
-				config: {
-					instance: { userId },
-				},
-			},
-		});
-
 		const scheduler = getHuntingScheduler();
 
 		const instanceStatuses = instances.map((inst) => {
@@ -112,7 +128,6 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 			schedulerRunning: scheduler.isRunning(),
 			instances: instanceStatuses,
 			recentActivityCount,
-			totalExclusions,
 		});
 	});
 
@@ -256,8 +271,12 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 			pageSize?: string;
 		};
 
-		const page = Number.parseInt(query.page ?? "1", 10);
-		const pageSize = Math.min(Number.parseInt(query.pageSize ?? "20", 10), 100);
+		let page = Number.parseInt(query.page ?? "1", 10);
+		let pageSize = Number.parseInt(query.pageSize ?? "20", 10);
+		// Validate pagination inputs
+		if (Number.isNaN(page) || page < 1) page = 1;
+		if (Number.isNaN(pageSize) || pageSize < 1) pageSize = 20;
+		pageSize = Math.min(pageSize, 100);
 		const skip = (page - 1) * pageSize;
 
 		const where: Record<string, unknown> = {
@@ -292,10 +311,10 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 			service: log.instance.service.toLowerCase() as "sonarr" | "radarr",
 			huntType: log.huntType as "missing" | "upgrade",
 			itemsSearched: log.itemsSearched,
-			itemsFound: log.itemsFound,
+			itemsGrabbed: log.itemsFound, // DB field is itemsFound, API returns as itemsGrabbed
 			searchedItems: log.searchedItems ? JSON.parse(log.searchedItems) : null,
-			foundItems: log.foundItems ? JSON.parse(log.foundItems) : null,
-			status: log.status as "completed" | "partial" | "skipped" | "error",
+			grabbedItems: log.foundItems ? JSON.parse(log.foundItems) : null, // DB field is foundItems
+			status: log.status as "running" | "completed" | "partial" | "skipped" | "error",
 			message: log.message,
 			durationMs: log.durationMs,
 			startedAt: log.startedAt.toISOString(),
@@ -306,157 +325,6 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 			logs: formattedLogs,
 			totalCount,
 		});
-	});
-
-	// Get hunt exclusions
-	app.get("/hunting/exclusions", async (request, reply) => {
-		const userId = request.currentUser!.id;
-		const query = request.query as {
-			mediaType?: string;
-			instanceId?: string;
-			page?: string;
-			pageSize?: string;
-		};
-
-		const page = Number.parseInt(query.page ?? "1", 10);
-		const pageSize = Math.min(Number.parseInt(query.pageSize ?? "20", 10), 100);
-		const skip = (page - 1) * pageSize;
-
-		const where: Record<string, unknown> = {
-			config: {
-				instance: { userId },
-			},
-		};
-
-		if (query.mediaType && query.mediaType !== "all") {
-			where.mediaType = query.mediaType;
-		}
-		if (query.instanceId && query.instanceId !== "all") {
-			where.config = {
-				instance: { userId, id: query.instanceId },
-			};
-		}
-
-		const [exclusions, totalCount, instances] = await Promise.all([
-			app.prisma.huntExclusion.findMany({
-				where,
-				include: {
-					config: {
-						include: { instance: true },
-					},
-				},
-				orderBy: { createdAt: "desc" },
-				skip,
-				take: pageSize,
-			}),
-			app.prisma.huntExclusion.count({ where }),
-			app.prisma.serviceInstance.findMany({
-				where: {
-					userId,
-					service: { in: ["SONARR", "RADARR"] },
-				},
-				select: { id: true, label: true, service: true },
-			}),
-		]);
-
-		const formattedExclusions = exclusions.map((ex) => ({
-			id: ex.id,
-			configId: ex.configId,
-			instanceName: ex.config.instance.label,
-			service: ex.config.instance.service.toLowerCase() as "sonarr" | "radarr",
-			mediaType: ex.mediaType as "series" | "movie",
-			mediaId: ex.mediaId,
-			title: ex.title,
-			reason: ex.reason,
-			createdAt: ex.createdAt.toISOString(),
-		}));
-
-		const instanceSummaries = instances.map((inst) => ({
-			id: inst.id,
-			label: inst.label,
-			service: inst.service.toLowerCase() as "sonarr" | "radarr",
-		}));
-
-		return reply.send({
-			exclusions: formattedExclusions,
-			instances: instanceSummaries,
-			totalCount,
-		});
-	});
-
-	// Add exclusion
-	app.post("/hunting/exclusions", async (request, reply) => {
-		const parsed = exclusionCreateSchema.safeParse(request.body);
-		if (!parsed.success) {
-			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
-		}
-
-		const userId = request.currentUser!.id;
-		const { instanceId, mediaType, mediaId, title, reason } = parsed.data;
-
-		// Verify instance ownership and get config
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { id: instanceId, userId },
-			include: { huntConfig: true },
-		});
-
-		if (!instance) {
-			return reply.status(404).send({ error: "Instance not found" });
-		}
-
-		if (!instance.huntConfig) {
-			return reply.status(400).send({ error: "Hunt config not found for this instance" });
-		}
-
-		const exclusion = await app.prisma.huntExclusion.create({
-			data: {
-				configId: instance.huntConfig.id,
-				mediaType,
-				mediaId,
-				title,
-				reason,
-			},
-			include: {
-				config: {
-					include: { instance: true },
-				},
-			},
-		});
-
-		return reply.status(201).send({
-			id: exclusion.id,
-			configId: exclusion.configId,
-			instanceName: exclusion.config.instance.label,
-			service: exclusion.config.instance.service.toLowerCase() as "sonarr" | "radarr",
-			mediaType: exclusion.mediaType as "series" | "movie",
-			mediaId: exclusion.mediaId,
-			title: exclusion.title,
-			reason: exclusion.reason,
-			createdAt: exclusion.createdAt.toISOString(),
-		});
-	});
-
-	// Remove exclusion
-	app.delete("/hunting/exclusions/:id", async (request, reply) => {
-		const { id } = request.params as { id: string };
-		const userId = request.currentUser!.id;
-
-		// Verify ownership through the config's instance
-		const exclusion = await app.prisma.huntExclusion.findFirst({
-			where: {
-				id,
-				config: {
-					instance: { userId },
-				},
-			},
-		});
-
-		if (!exclusion) {
-			return reply.status(404).send({ error: "Exclusion not found" });
-		}
-
-		await app.prisma.huntExclusion.delete({ where: { id } });
-		return reply.status(204).send();
 	});
 
 	// Toggle scheduler
@@ -475,7 +343,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 		});
 	});
 
-	// Manual hunt trigger (for testing)
+	// Manual hunt trigger (with cooldown enforcement)
 	app.post("/hunting/trigger/:instanceId", async (request, reply) => {
 		const { instanceId } = request.params as { instanceId: string };
 		const body = request.body as { type?: string };
@@ -497,13 +365,225 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		const huntType = body.type === "upgrade" ? "upgrade" : "missing";
 
-		// Queue hunt job (will be implemented with scheduler)
+		// Queue hunt job with cooldown check
 		const scheduler = getHuntingScheduler();
-		scheduler.queueManualHunt(instanceId, huntType);
+		const result = scheduler.queueManualHunt(instanceId, huntType);
+
+		if (!result.queued) {
+			// Return 429 Too Many Requests with cooldown message
+			return reply.status(429).send({
+				message: result.message,
+				queued: false,
+			});
+		}
 
 		return reply.send({
 			message: `${huntType} hunt queued for ${instance.label}`,
 			queued: true,
+		});
+	});
+
+	// Get filter options (tags, quality profiles) from an instance
+	app.get("/hunting/filter-options/:instanceId", async (request, reply) => {
+		const { instanceId } = request.params as { instanceId: string };
+		const userId = request.currentUser!.id;
+
+		// Verify instance ownership
+		const instance = await app.prisma.serviceInstance.findFirst({
+			where: { id: instanceId, userId },
+		});
+
+		if (!instance) {
+			return reply.status(404).send({ error: "Instance not found" });
+		}
+
+		const service = instance.service.toLowerCase();
+
+		try {
+			const fetcher = createInstanceFetcher(app, instance);
+
+			interface ArrTag {
+				id: number;
+				label: string;
+			}
+
+			interface ArrQualityProfile {
+				id: number;
+				name: string;
+			}
+
+			// Fetch tags and quality profiles in parallel
+			const [tagsRes, profilesRes] = await Promise.all([
+				fetcher("/api/v3/tag"),
+				fetcher("/api/v3/qualityprofile"),
+			]);
+
+			const tagsData = (await tagsRes.json()) as ArrTag[];
+			const profilesData = (await profilesRes.json()) as ArrQualityProfile[];
+
+			const tags = tagsData.map((tag) => ({
+				id: tag.id,
+				label: tag.label,
+			}));
+
+			const qualityProfiles = profilesData.map((profile) => ({
+				id: profile.id,
+				name: profile.name,
+			}));
+
+			// Define available statuses based on service type
+			const statuses =
+				service === "sonarr"
+					? [
+							{ value: "continuing", label: "Continuing" },
+							{ value: "ended", label: "Ended" },
+							{ value: "upcoming", label: "Upcoming" },
+						]
+					: [
+							{ value: "tba", label: "TBA" },
+							{ value: "announced", label: "Announced" },
+							{ value: "inCinemas", label: "In Cinemas" },
+							{ value: "released", label: "Released" },
+						];
+
+			return reply.send({
+				service,
+				tags,
+				qualityProfiles,
+				statuses,
+			});
+		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : "Unknown error";
+			return reply.status(500).send({
+				error: "Failed to fetch filter options from instance",
+				details: errorMessage,
+			});
+		}
+	});
+
+	// ==================== SEARCH HISTORY MANAGEMENT ====================
+
+	// Get search history stats for an instance
+	app.get<{
+		Params: { instanceId: string };
+	}>("/hunting/history/:instanceId", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { instanceId } = request.params;
+
+		// Verify instance belongs to user
+		const instance = await app.prisma.serviceInstance.findFirst({
+			where: { id: instanceId, userId },
+			include: { huntConfig: true },
+		});
+
+		if (!instance) {
+			return reply.status(404).send({ error: "Instance not found" });
+		}
+
+		if (!instance.huntConfig) {
+			return reply.status(404).send({ error: "Hunt config not found for this instance" });
+		}
+
+		const configId = instance.huntConfig.id;
+
+		// Get search history counts
+		const [totalSearched, missingSearched, upgradeSearched, recentSearched] = await Promise.all([
+			app.prisma.huntSearchHistory.count({
+				where: { configId },
+			}),
+			app.prisma.huntSearchHistory.count({
+				where: { configId, huntType: "missing" },
+			}),
+			app.prisma.huntSearchHistory.count({
+				where: { configId, huntType: "upgrade" },
+			}),
+			// Items searched in the last researchAfterDays period (still "protected")
+			app.prisma.huntSearchHistory.count({
+				where: {
+					configId,
+					searchedAt: {
+						gte: new Date(Date.now() - instance.huntConfig.researchAfterDays * 24 * 60 * 60 * 1000),
+					},
+				},
+			}),
+		]);
+
+		// Get recent search samples
+		const recentSearches = await app.prisma.huntSearchHistory.findMany({
+			where: { configId },
+			orderBy: { searchedAt: "desc" },
+			take: 10,
+			select: {
+				mediaType: true,
+				title: true,
+				huntType: true,
+				searchedAt: true,
+				searchCount: true,
+			},
+		});
+
+		return reply.send({
+			instanceId,
+			researchAfterDays: instance.huntConfig.researchAfterDays,
+			stats: {
+				totalSearched,
+				missingSearched,
+				upgradeSearched,
+				recentlySearched: recentSearched,
+				eligibleForResearch: totalSearched - recentSearched,
+			},
+			recentSearches,
+		});
+	});
+
+	// Clear search history for an instance
+	app.delete<{
+		Params: { instanceId: string };
+		Querystring: { huntType?: "missing" | "upgrade" };
+	}>("/hunting/history/:instanceId", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { instanceId } = request.params;
+		const { huntType } = request.query;
+
+		// Verify instance belongs to user
+		const instance = await app.prisma.serviceInstance.findFirst({
+			where: { id: instanceId, userId },
+			include: { huntConfig: true },
+		});
+
+		if (!instance) {
+			return reply.status(404).send({ error: "Instance not found" });
+		}
+
+		if (!instance.huntConfig) {
+			return reply.status(404).send({ error: "Hunt config not found for this instance" });
+		}
+
+		const configId = instance.huntConfig.id;
+
+		// Delete history (optionally filtered by hunt type)
+		const result = await app.prisma.huntSearchHistory.deleteMany({
+			where: {
+				configId,
+				...(huntType && { huntType }),
+			},
+		});
+
+		return reply.send({
+			message: `Cleared ${result.count} search history entries`,
+			deleted: result.count,
+			huntType: huntType ?? "all",
+		});
+	});
+
+	// Cleanup old search history (scoped to current user's configs)
+	app.post("/hunting/history/cleanup", async (request, reply) => {
+		// Clean up entries older than 90 days for this user's configs only
+		const deleted = await cleanupOldSearchHistory(app.prisma, request.currentUser!.id, 90);
+
+		return reply.send({
+			message: `Cleaned up ${deleted} old search history entries`,
+			deleted,
 		});
 	});
 

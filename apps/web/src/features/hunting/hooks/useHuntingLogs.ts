@@ -8,6 +8,8 @@ interface UseHuntingLogsParams {
 	instanceId?: string;
 	page?: number;
 	pageSize?: number;
+	/** Faster polling when hunts are running (default: 5000ms for running, 60000ms otherwise) */
+	hasRunningHunts?: boolean;
 }
 
 interface HuntingLogsResponse {
@@ -28,17 +30,25 @@ async function fetchHuntingLogs(params: UseHuntingLogsParams): Promise<HuntingLo
 }
 
 export function useHuntingLogs(params: UseHuntingLogsParams = {}) {
+	const { hasRunningHunts, ...queryParams } = params;
+
 	const query = useQuery({
-		queryKey: ["hunting", "logs", params],
-		queryFn: () => fetchHuntingLogs(params),
-		refetchInterval: 60000, // Refresh every minute
+		queryKey: ["hunting", "logs", queryParams],
+		queryFn: () => fetchHuntingLogs(queryParams),
+		// Poll faster when hunts are running to show progress updates
+		refetchInterval: hasRunningHunts ? 5000 : 60000,
 	});
 
+	// Check if any logs are currently running
+	const logs = query.data?.logs ?? [];
+	const hasRunning = logs.some(log => log.status === "running");
+
 	return {
-		logs: query.data?.logs ?? [],
+		logs,
 		totalCount: query.data?.totalCount ?? 0,
 		isLoading: query.isLoading,
 		error: query.error,
 		refetch: query.refetch,
+		hasRunningHunts: hasRunning,
 	};
 }

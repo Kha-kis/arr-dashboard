@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
 	EmptyState,
 	Badge,
@@ -9,7 +9,7 @@ import {
 	Pagination,
 } from "../../../components/ui";
 import { Section } from "../../../components/layout";
-import { Activity, Search, ArrowUpCircle, CheckCircle2, AlertCircle, Clock, Download } from "lucide-react";
+import { Activity, Search, ArrowUpCircle, CheckCircle2, AlertCircle, Clock, ListChecks, Loader2, Download, HardDrive } from "lucide-react";
 import { useHuntingLogs } from "../hooks/useHuntingLogs";
 import type { HuntLog } from "../lib/hunting-types";
 
@@ -19,12 +19,22 @@ export const HuntingActivity = () => {
 	const [page, setPage] = useState(1);
 	const [pageSize, setPageSize] = useState(20);
 
-	const { logs, totalCount, isLoading, error } = useHuntingLogs({
+	const [hasRunningHunts, setHasRunningHunts] = useState(false);
+
+	const { logs, totalCount, isLoading, error, hasRunningHunts: logsHaveRunning } = useHuntingLogs({
 		type: typeFilter === "all" ? undefined : typeFilter,
 		status: statusFilter === "all" ? undefined : statusFilter,
 		page,
 		pageSize,
+		hasRunningHunts,
 	});
+
+	// Update running state to enable/disable fast polling
+	useEffect(() => {
+		if (logsHaveRunning !== hasRunningHunts) {
+			setHasRunningHunts(logsHaveRunning);
+		}
+	}, [logsHaveRunning, hasRunningHunts]);
 
 	if (isLoading) {
 		return (
@@ -75,6 +85,7 @@ export const HuntingActivity = () => {
 					}}
 				>
 					<SelectOption value="all">All Status</SelectOption>
+					<SelectOption value="running">Running</SelectOption>
 					<SelectOption value="completed">Completed</SelectOption>
 					<SelectOption value="partial">Partial</SelectOption>
 					<SelectOption value="skipped">Skipped</SelectOption>
@@ -123,11 +134,14 @@ const ActivityLogEntry = ({ log }: ActivityLogEntryProps) => {
 
 	type BadgeVariant = "success" | "warning" | "danger" | "default" | "info";
 	const statusConfig: Record<string, { variant: BadgeVariant; icon: React.ElementType }> = {
+		running: { variant: "info", icon: Loader2 },
 		completed: { variant: "success", icon: CheckCircle2 },
 		partial: { variant: "warning", icon: AlertCircle },
 		skipped: { variant: "default", icon: Clock },
 		error: { variant: "danger", icon: AlertCircle },
 	};
+
+	const isRunning = log.status === "running";
 
 	const statusInfo = statusConfig[log.status] ?? statusConfig.error!;
 	const StatusIcon = statusInfo.icon;
@@ -148,8 +162,8 @@ const ActivityLogEntry = ({ log }: ActivityLogEntryProps) => {
 								{log.service}
 							</Badge>
 							<Badge variant={statusInfo.variant} className="text-xs">
-								<StatusIcon className="h-3 w-3 mr-1" />
-								{log.status}
+								<StatusIcon className={`h-3 w-3 mr-1 ${isRunning ? "animate-spin" : ""}`} />
+								{isRunning ? "In Progress" : log.status}
 							</Badge>
 						</div>
 						<div className="text-xs text-fg-muted mt-0.5">
@@ -159,16 +173,36 @@ const ActivityLogEntry = ({ log }: ActivityLogEntryProps) => {
 				</div>
 
 				<div className="flex items-center gap-4 text-sm text-fg-muted">
-					<div className="flex items-center gap-1">
-						<Search className="h-3 w-3" />
-						<span>{log.itemsSearched}</span>
-					</div>
-					<div className="flex items-center gap-1">
-						<Download className="h-3 w-3" />
-						<span>{log.itemsFound}</span>
+					<div className="flex items-center gap-3">
+						<div className="flex items-center gap-1" title="Items searched">
+							{isRunning ? (
+								<>
+									<Loader2 className="h-3 w-3 animate-spin" />
+									<span>Searching...</span>
+								</>
+							) : (
+								<>
+									<ListChecks className="h-3 w-3" />
+									<span>{log.itemsSearched} searched</span>
+								</>
+							)}
+						</div>
+						{!isRunning && (
+							<div
+								className={`flex items-center gap-1 ${log.itemsGrabbed > 0 ? "text-green-500" : "text-fg-muted"}`}
+								title={log.itemsGrabbed > 0 ? "Items grabbed" : "No releases grabbed"}
+							>
+								<Download className="h-3 w-3" />
+								<span>{log.itemsGrabbed} grabbed</span>
+							</div>
+						)}
 					</div>
 					<div className="text-xs">
-						{formatTime(log.startedAt)}
+						{isRunning ? (
+							<span className="text-blue-500">Started {formatTime(log.startedAt)}</span>
+						) : (
+							formatTime(log.startedAt)
+						)}
 					</div>
 				</div>
 			</button>
@@ -189,18 +223,53 @@ const ActivityLogEntry = ({ log }: ActivityLogEntryProps) => {
 						)}
 					</div>
 
-					{log.foundItems && log.foundItems.length > 0 && (
+					{log.grabbedItems && log.grabbedItems.length > 0 && (
 						<div className="mt-3">
-							<h4 className="text-xs font-medium text-fg-muted mb-2">Found Items:</h4>
+							<h4 className="text-xs font-medium text-green-500 mb-2 flex items-center gap-1">
+								<Download className="h-3 w-3" />
+								Grabbed Releases:
+							</h4>
+							<div className="space-y-1">
+								{log.grabbedItems.slice(0, 10).map((item, i) => (
+									<div key={i} className="flex items-center gap-2 text-xs bg-green-500/10 rounded px-2 py-1">
+										<span className="font-medium text-fg">{item.title}</span>
+										{item.quality && (
+											<Badge variant="success" className="text-xs">
+												{item.quality}
+											</Badge>
+										)}
+										{item.indexer && (
+											<span className="text-fg-muted">{item.indexer}</span>
+										)}
+										{item.size && (
+											<span className="text-fg-muted flex items-center gap-0.5">
+												<HardDrive className="h-3 w-3" />
+												{formatSize(item.size)}
+											</span>
+										)}
+									</div>
+								))}
+								{log.grabbedItems.length > 10 && (
+									<div className="text-xs text-fg-muted">
+										+{log.grabbedItems.length - 10} more grabbed
+									</div>
+								)}
+							</div>
+						</div>
+					)}
+
+					{log.searchedItems && log.searchedItems.length > 0 && (
+						<div className="mt-3">
+							<h4 className="text-xs font-medium text-fg-muted mb-2">Searched Items:</h4>
 							<div className="flex flex-wrap gap-1">
-								{log.foundItems.slice(0, 10).map((item, i) => (
+								{log.searchedItems.slice(0, 10).map((item, i) => (
 									<Badge key={i} variant="default" className="text-xs">
 										{item}
 									</Badge>
 								))}
-								{log.foundItems.length > 10 && (
+								{log.searchedItems.length > 10 && (
 									<Badge variant="default" className="text-xs">
-										+{log.foundItems.length - 10} more
+										+{log.searchedItems.length - 10} more
 									</Badge>
 								)}
 							</div>
@@ -215,4 +284,12 @@ const ActivityLogEntry = ({ log }: ActivityLogEntryProps) => {
 function formatTime(dateString: string): string {
 	const date = new Date(dateString);
 	return date.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatSize(bytes: number): string {
+	if (bytes === 0) return "0 B";
+	const k = 1024;
+	const sizes = ["B", "KB", "MB", "GB", "TB"];
+	const i = Math.floor(Math.log(bytes) / Math.log(k));
+	return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
 }

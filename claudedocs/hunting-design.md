@@ -15,7 +15,10 @@ The hunting feature automates the "Search Missing" and "Search Cutoff Unmet" fun
 - **Auto-Start** - If hunting is enabled, it automatically starts on server boot
 - **Dedicated Sidebar Section** - Own navigation area, not buried in settings
 - **Activity Log** - Required, shows what was found and searched
-- **Exclusions** - Users can exclude specific series/movies from hunting
+- **Filters** - Rule-based filtering by tags, quality profiles, status, year, and age threshold
+- **Search History** - Tracks searched items to avoid re-searching too frequently
+
+**Note:** Exclusions feature was removed as redundant with filters and native Sonarr/Radarr unmonitor controls.
 
 ## Data Model
 
@@ -52,29 +55,6 @@ model HuntConfig {
 
   createdAt             DateTime        @default(now())
   updatedAt             DateTime        @updatedAt
-
-  // Relations
-  exclusions            HuntExclusion[]
-}
-
-/// Exclusions - series/movies to skip during hunting
-model HuntExclusion {
-  id            String      @id @default(cuid())
-  configId      String
-  config        HuntConfig  @relation(fields: [configId], references: [id], onDelete: Cascade)
-
-  // What to exclude
-  mediaType     String      // "series" | "movie"
-  mediaId       Int         // Sonarr series ID or Radarr movie ID
-  title         String      // For display purposes
-
-  // Why excluded (optional)
-  reason        String?
-
-  createdAt     DateTime    @default(now())
-
-  @@unique([configId, mediaType, mediaId])
-  @@index([configId])
 }
 
 /// Log of hunt activity
@@ -331,7 +311,6 @@ Add "Hunting" as a dedicated sidebar section (like Dashboard, Library, etc.):
 /hunting              # Overview/status page (default)
 /hunting/activity     # Activity log with found items
 /hunting/config       # Instance configuration
-/hunting/exclusions   # Manage exclusions
 ```
 
 ### Page 1: Hunting Overview (`/hunting`)
@@ -342,7 +321,7 @@ Main status dashboard for hunting:
 ┌─────────────────────────────────────────────────────────────────┐
 │ 🎯 Hunting                                                       │
 ├─────────────────────────────────────────────────────────────────┤
-│ [Overview] [Activity] [Config] [Exclusions]                     │
+│ [Overview] [Activity] [Config]                                  │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │ ┌─────────────────────────┐  ┌─────────────────────────┐        │
@@ -387,7 +366,7 @@ Detailed log of all hunt activity with found items:
 ┌─────────────────────────────────────────────────────────────────┐
 │ 🎯 Hunting > Activity                                            │
 ├─────────────────────────────────────────────────────────────────┤
-│ [Overview] [Activity] [Config] [Exclusions]                     │
+│ [Overview] [Activity] [Config]                                  │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │ Filters: [All Instances ▼] [All Types ▼] [Found Only ○] [24h ▼]│
@@ -434,7 +413,7 @@ Per-instance hunt settings:
 ┌─────────────────────────────────────────────────────────────────┐
 │ 🎯 Hunting > Configuration                                       │
 ├─────────────────────────────────────────────────────────────────┤
-│ [Overview] [Activity] [Config] [Exclusions]                     │
+│ [Overview] [Activity] [Config]                                  │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │ ┌─────────────────────────────────────────────────────────────┐ │
@@ -461,8 +440,6 @@ Per-instance hunt settings:
 │ │ │ Queue Threshold    [25   ] pause if queue exceeds       │ │ │
 │ │ └─────────────────────────────────────────────────────────┘ │ │
 │ │                                                             │ │
-│ │ Exclusions: 3 series excluded                [Manage →]     │ │
-│ │                                                             │ │
 │ │                              [Save Changes]                 │ │
 │ └─────────────────────────────────────────────────────────────┘ │
 │                                                                  │
@@ -474,58 +451,10 @@ Per-instance hunt settings:
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Page 4: Exclusions (`/hunting/exclusions`)
-
-Manage excluded series/movies:
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ 🎯 Hunting > Exclusions                                          │
-├─────────────────────────────────────────────────────────────────┤
-│ [Overview] [Activity] [Config] [Exclusions]                     │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                  │
-│ Excluded items will be skipped during hunting.                  │
-│                                                                  │
-│ Filter: [All Instances ▼] [Series ○ Movies ○ All ●]            │
-│                                                                  │
-│ ┌─────────────────────────────────────────────────────────────┐ │
-│ │ 📺 Series                                                   │ │
-│ ├─────────────────────────────────────────────────────────────┤ │
-│ │ Breaking Bad          │ Sonarr Main │ Complete     │ [🗑️]   │ │
-│ │ Game of Thrones       │ Sonarr Main │ Quality OK   │ [🗑️]   │ │
-│ │ The Simpsons          │ Sonarr Main │ Too many eps │ [🗑️]   │ │
-│ └─────────────────────────────────────────────────────────────┘ │
-│                                                                  │
-│ ┌─────────────────────────────────────────────────────────────┐ │
-│ │ 🎬 Movies                                                   │ │
-│ ├─────────────────────────────────────────────────────────────┤ │
-│ │ Avatar (2009)         │ Radarr 4K   │ Waiting 4K   │ [🗑️]   │ │
-│ │ Tenet (2020)          │ Radarr Main │ Quality OK   │ [🗑️]   │ │
-│ └─────────────────────────────────────────────────────────────┘ │
-│                                                                  │
-│ ┌─────────────────────────────────────────────────────────────┐ │
-│ │ + Add Exclusion                                             │ │
-│ │                                                             │ │
-│ │ Instance: [Sonarr Main ▼]                                   │ │
-│ │ Search:   [_________________________] 🔍                    │ │
-│ │                                                             │ │
-│ │ Results:                                                    │ │
-│ │   ○ The Office (2005) - 201 episodes                        │ │
-│ │   ○ The Office (UK) (2001) - 14 episodes                    │ │
-│ │                                                             │ │
-│ │ Reason:   [_________________________] (optional)            │ │
-│ │                                                             │ │
-│ │                                   [Add Exclusion]           │ │
-│ └─────────────────────────────────────────────────────────────┘ │
-│                                                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
 ## Implementation Phases
 
 ### Phase 1: Foundation
-- [ ] Add Prisma models (HuntConfig, HuntLog, HuntExclusion)
+- [ ] Add Prisma models (HuntConfig, HuntLog)
 - [ ] Create database migration
 - [ ] Add sidebar navigation entry for Hunting
 - [ ] Create hunt configuration API endpoints
@@ -541,10 +470,7 @@ Manage excluded series/movies:
 - [ ] API rate limiting enforcement
 - [ ] Queue threshold checking
 
-### Phase 3: Exclusions & Polish
-- [ ] Exclusions model and API
-- [ ] Exclusions page (`/hunting/exclusions`)
-- [ ] Search within instance for adding exclusions
+### Phase 3: Polish & Statistics
 - [ ] Statistics cards on overview page
 - [ ] "Next scheduled" countdown display
 
@@ -575,10 +501,8 @@ apps/
     │       ├── layout.tsx            # Hunting layout with tabs
     │       ├── activity/
     │       │   └── page.tsx          # Activity log
-    │       ├── config/
-    │       │   └── page.tsx          # Configuration
-    │       └── exclusions/
-    │           └── page.tsx          # Exclusions management
+    │       └── config/
+    │           └── page.tsx          # Configuration
     └── src/
         ├── features/
         │   └── hunting/
@@ -586,14 +510,12 @@ apps/
         │       │   ├── hunting-overview.tsx
         │       │   ├── hunting-activity.tsx
         │       │   ├── hunting-config.tsx
-        │       │   ├── hunting-exclusions.tsx
         │       │   ├── instance-status-card.tsx
         │       │   └── activity-log-entry.tsx
         │       └── hooks/
         │           ├── useHuntingStatus.ts
         │           ├── useHuntingConfig.ts
-        │           ├── useHuntingLogs.ts
-        │           └── useHuntingExclusions.ts
+        │           └── useHuntingLogs.ts
         └── hooks/
             └── api/
                 └── useHunting.ts     # React Query hooks

@@ -14,14 +14,14 @@ async function fetchHuntingConfigs(): Promise<HuntingConfigsResponse> {
 async function updateHuntConfig(instanceId: string, data: HuntConfigUpdate): Promise<HuntConfigWithInstance> {
 	return apiRequest<HuntConfigWithInstance>(`/api/hunting/configs/${instanceId}`, {
 		method: "PATCH",
-		body: JSON.stringify(data),
+		json: data,
 	});
 }
 
 async function createHuntConfig(instanceId: string): Promise<HuntConfigWithInstance> {
 	return apiRequest<HuntConfigWithInstance>("/api/hunting/configs", {
 		method: "POST",
-		body: JSON.stringify({ instanceId }),
+		json: { instanceId },
 	});
 }
 

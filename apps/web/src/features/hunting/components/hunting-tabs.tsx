@@ -1,25 +1,23 @@
 "use client";
 
-import { Target, Activity, Settings, Ban } from "lucide-react";
+import { Target, Activity, Settings } from "lucide-react";
 
-export type HuntingTab = "overview" | "activity" | "config" | "exclusions";
+export type HuntingTab = "overview" | "activity" | "config";
 
 interface HuntingTabsProps {
 	activeTab: HuntingTab;
 	onTabChange: (tab: HuntingTab) => void;
 	activityCount?: number;
-	exclusionCount?: number;
 }
 
 /**
  * Tab navigation component for Hunting interface.
  */
-export const HuntingTabs = ({ activeTab, onTabChange, activityCount, exclusionCount }: HuntingTabsProps) => {
+export const HuntingTabs = ({ activeTab, onTabChange, activityCount }: HuntingTabsProps) => {
 	const tabs: Array<{ id: HuntingTab; label: string; icon: React.ElementType; badge?: number }> = [
 		{ id: "overview", label: "Overview", icon: Target },
 		{ id: "activity", label: "Activity", icon: Activity, badge: activityCount },
 		{ id: "config", label: "Configuration", icon: Settings },
-		{ id: "exclusions", label: "Exclusions", icon: Ban, badge: exclusionCount },
 	];
 
 	return (

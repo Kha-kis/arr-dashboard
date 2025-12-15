@@ -1,9 +1,12 @@
 "use client";
 
-import { Button, StatCard, EmptyState, Badge } from "../../../components/ui";
+import { useState } from "react";
+import { StatCard, EmptyState, Badge, toast, Button } from "../../../components/ui";
 import { Section } from "../../../components/layout";
-import { Play, Pause, Search, ArrowUpCircle, Clock, CheckCircle2, AlertCircle } from "lucide-react";
+import { Play, Search, ArrowUpCircle, Clock, CheckCircle2, AlertCircle, Gauge, Loader2, ChevronDown } from "lucide-react";
 import type { HuntingStatus, InstanceHuntStatus } from "../lib/hunting-types";
+import { API_USAGE_WARNING_THRESHOLD, API_USAGE_DANGER_THRESHOLD } from "../lib/constants";
+import { useManualHunt } from "../hooks/useManualHunt";
 
 interface HuntingOverviewProps {
 	status: HuntingStatus | null;
@@ -55,7 +58,7 @@ export const HuntingOverview = ({ status, onRefresh }: HuntingOverviewProps) => 
 			<Section title="Instance Status" description="Current hunting status for each configured instance">
 				<div className="grid gap-4 md:grid-cols-2">
 					{status.instances.map((instance) => (
-						<InstanceStatusCard key={instance.instanceId} instance={instance} />
+						<InstanceStatusCard key={instance.instanceId} instance={instance} onRefresh={onRefresh} />
 					))}
 				</div>
 			</Section>
@@ -63,12 +66,100 @@ export const HuntingOverview = ({ status, onRefresh }: HuntingOverviewProps) => 
 	);
 };
 
-interface InstanceStatusCardProps {
+interface HuntDropdownProps {
 	instance: InstanceHuntStatus;
+	isTriggering: boolean;
+	onTrigger: (type: "missing" | "upgrade") => void;
 }
 
-const InstanceStatusCard = ({ instance }: InstanceStatusCardProps) => {
+const HuntDropdown = ({ instance, isTriggering, onTrigger }: HuntDropdownProps) => {
+	const [isOpen, setIsOpen] = useState(false);
+
+	const handleSelect = (type: "missing" | "upgrade") => {
+		setIsOpen(false);
+		onTrigger(type);
+	};
+
+	return (
+		<div className="relative">
+			<Button
+				variant="secondary"
+				size="sm"
+				onClick={() => setIsOpen(!isOpen)}
+				disabled={isTriggering}
+			>
+				{isTriggering ? (
+					<Loader2 className="h-4 w-4 animate-spin" />
+				) : (
+					<>
+						<Play className="h-4 w-4" />
+						Hunt
+						<ChevronDown className="h-3 w-3 ml-1" />
+					</>
+				)}
+			</Button>
+			{isOpen && (
+				<>
+					<div
+						className="fixed inset-0 z-40"
+						onClick={() => setIsOpen(false)}
+					/>
+					<div className="absolute right-0 mt-1 min-w-[160px] py-1 rounded-lg border border-border bg-bg shadow-lg z-50">
+						{instance.huntMissingEnabled && (
+							<button
+								type="button"
+								className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-fg-muted hover:text-fg hover:bg-bg-muted/50 transition-colors"
+								onClick={() => handleSelect("missing")}
+							>
+								<Search className="h-4 w-4" />
+								Hunt Missing
+							</button>
+						)}
+						{instance.huntUpgradesEnabled && (
+							<button
+								type="button"
+								className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-fg-muted hover:text-fg hover:bg-bg-muted/50 transition-colors"
+								onClick={() => handleSelect("upgrade")}
+							>
+								<ArrowUpCircle className="h-4 w-4" />
+								Hunt Upgrades
+							</button>
+						)}
+					</div>
+				</>
+			)}
+		</div>
+	);
+};
+
+interface InstanceStatusCardProps {
+	instance: InstanceHuntStatus;
+	onRefresh: () => void;
+}
+
+const InstanceStatusCard = ({ instance, onRefresh }: InstanceStatusCardProps) => {
 	const isActive = instance.huntMissingEnabled || instance.huntUpgradesEnabled;
+	const { triggerHunt, isTriggering, isCooldownError } = useManualHunt();
+	const [triggeringType, setTriggeringType] = useState<"missing" | "upgrade" | null>(null);
+
+	const handleTriggerHunt = async (type: "missing" | "upgrade") => {
+		setTriggeringType(type);
+		try {
+			const result = await triggerHunt(instance.instanceId, type);
+			toast.success(result.message);
+			onRefresh();
+		} catch (error) {
+			if (isCooldownError(error)) {
+				toast.warning(error.message);
+			} else {
+				toast.error(error instanceof Error ? error.message : "Failed to trigger hunt");
+			}
+		} finally {
+			setTriggeringType(null);
+		}
+	};
+
+	const isCurrentlyTriggering = isTriggering && triggeringType !== null;
 
 	return (
 		<div className="rounded-xl border border-border bg-bg-subtle/50 p-4">
@@ -94,6 +185,15 @@ const InstanceStatusCard = ({ instance }: InstanceStatusCardProps) => {
 						)}
 					</div>
 				</div>
+
+				{/* Manual Hunt Dropdown */}
+				{isActive && (
+					<HuntDropdown
+						instance={instance}
+						isTriggering={isCurrentlyTriggering}
+						onTrigger={handleTriggerHunt}
+					/>
+				)}
 			</div>
 
 			<div className="grid grid-cols-2 gap-4 text-sm">
@@ -137,6 +237,68 @@ const InstanceStatusCard = ({ instance }: InstanceStatusCardProps) => {
 				<div className="text-fg-muted">
 					<span className="font-medium text-fg">{instance.itemsFoundToday}</span> items found
 				</div>
+			</div>
+
+			{/* API Usage Indicator */}
+			<ApiUsageIndicator
+				current={instance.apiCallsThisHour}
+				max={instance.hourlyApiCap}
+			/>
+		</div>
+	);
+};
+
+interface ApiUsageIndicatorProps {
+	current: number;
+	max: number;
+}
+
+const ApiUsageIndicator = ({ current, max }: ApiUsageIndicatorProps) => {
+	const percentage = max > 0 ? Math.min((current / max) * 100, 100) : 0;
+
+	// Determine color based on usage thresholds
+	const getColorClass = () => {
+		if (percentage >= API_USAGE_DANGER_THRESHOLD) return "bg-red-500";
+		if (percentage >= API_USAGE_WARNING_THRESHOLD) return "bg-yellow-500";
+		return "bg-green-500";
+	};
+
+	const getStatusText = () => {
+		if (percentage >= API_USAGE_DANGER_THRESHOLD) return "Near limit";
+		if (percentage >= API_USAGE_WARNING_THRESHOLD) return "Moderate";
+		return "Healthy";
+	};
+
+	const getBadgeVariant = () => {
+		if (percentage >= API_USAGE_DANGER_THRESHOLD) return "danger" as const;
+		if (percentage >= API_USAGE_WARNING_THRESHOLD) return "warning" as const;
+		return "success" as const;
+	};
+
+	return (
+		<div className="mt-3 pt-3 border-t border-border">
+			<div className="flex items-center justify-between text-xs mb-1.5">
+				<div className="flex items-center gap-1.5 text-fg-muted">
+					<Gauge className="h-3.5 w-3.5" />
+					<span>API Usage (hourly)</span>
+				</div>
+				<div className="flex items-center gap-2">
+					<span className="text-fg-muted">
+						<span className="font-medium text-fg">{current}</span>/{max}
+					</span>
+					<Badge
+						variant={getBadgeVariant()}
+						className="text-[10px] px-1.5 py-0"
+					>
+						{getStatusText()}
+					</Badge>
+				</div>
+			</div>
+			<div className="h-1.5 bg-bg-subtle rounded-full overflow-hidden">
+				<div
+					className={`h-full transition-all duration-300 rounded-full ${getColorClass()}`}
+					style={{ width: `${percentage}%` }}
+				/>
 			</div>
 		</div>
 	);

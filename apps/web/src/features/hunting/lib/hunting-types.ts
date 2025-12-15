@@ -6,7 +6,6 @@ export interface HuntingStatus {
 	schedulerRunning: boolean;
 	instances: InstanceHuntStatus[];
 	recentActivityCount: number;
-	totalExclusions: number;
 }
 
 export interface InstanceHuntStatus {
@@ -26,14 +25,31 @@ export interface InstanceHuntStatus {
 export interface HuntConfig {
 	id: string;
 	instanceId: string;
+	// Feature toggles
 	huntMissingEnabled: boolean;
 	huntUpgradesEnabled: boolean;
+	// Batch settings
 	missingBatchSize: number;
 	missingIntervalMins: number;
 	upgradeBatchSize: number;
 	upgradeIntervalMins: number;
+	// Rate limiting
 	hourlyApiCap: number;
 	queueThreshold: number;
+	// Filter settings
+	filterLogic: "AND" | "OR";
+	monitoredOnly: boolean;
+	includeTags: string | null; // JSON array
+	excludeTags: string | null;
+	includeQualityProfiles: string | null;
+	excludeQualityProfiles: string | null;
+	includeStatuses: string | null;
+	yearMin: number | null;
+	yearMax: number | null;
+	ageThresholdDays: number | null;
+	// Re-search settings
+	researchAfterDays: number;
+	// State tracking
 	lastMissingHunt: string | null;
 	lastUpgradeHunt: string | null;
 	apiCallsThisHour: number;
@@ -48,14 +64,37 @@ export interface HuntConfigWithInstance extends HuntConfig {
 }
 
 export interface HuntConfigUpdate {
+	// Feature toggles
 	huntMissingEnabled?: boolean;
 	huntUpgradesEnabled?: boolean;
+	// Batch settings
 	missingBatchSize?: number;
 	missingIntervalMins?: number;
 	upgradeBatchSize?: number;
 	upgradeIntervalMins?: number;
+	// Rate limiting
 	hourlyApiCap?: number;
 	queueThreshold?: number;
+	// Filter settings
+	filterLogic?: "AND" | "OR";
+	monitoredOnly?: boolean;
+	includeTags?: string | null;
+	excludeTags?: string | null;
+	includeQualityProfiles?: string | null;
+	excludeQualityProfiles?: string | null;
+	includeStatuses?: string | null;
+	yearMin?: number | null;
+	yearMax?: number | null;
+	ageThresholdDays?: number | null;
+	// Re-search settings
+	researchAfterDays?: number;
+}
+
+export interface GrabbedItem {
+	title: string;
+	quality?: string;
+	indexer?: string;
+	size?: number;
 }
 
 export interface HuntLog {
@@ -65,30 +104,41 @@ export interface HuntLog {
 	service: "sonarr" | "radarr";
 	huntType: "missing" | "upgrade";
 	itemsSearched: number;
-	itemsFound: number;
+	itemsGrabbed: number;
 	searchedItems: string[] | null;
-	foundItems: string[] | null;
-	status: "completed" | "partial" | "skipped" | "error";
+	grabbedItems: GrabbedItem[] | null;
+	status: "running" | "completed" | "partial" | "skipped" | "error";
 	message: string | null;
 	durationMs: number | null;
 	startedAt: string;
 	completedAt: string | null;
 }
 
-export interface HuntExclusion {
-	id: string;
-	configId: string;
-	instanceName: string;
-	service: "sonarr" | "radarr";
-	mediaType: "series" | "movie";
-	mediaId: number;
-	title: string;
-	reason: string | null;
-	createdAt: string;
-}
-
 export interface InstanceSummary {
 	id: string;
 	label: string;
 	service: "sonarr" | "radarr";
+}
+
+// Filter options fetched from instances
+export interface FilterTag {
+	id: number;
+	label: string;
+}
+
+export interface FilterQualityProfile {
+	id: number;
+	name: string;
+}
+
+export interface FilterStatus {
+	value: string;
+	label: string;
+}
+
+export interface FilterOptions {
+	service: "sonarr" | "radarr";
+	tags: FilterTag[];
+	qualityProfiles: FilterQualityProfile[];
+	statuses: FilterStatus[];
 }

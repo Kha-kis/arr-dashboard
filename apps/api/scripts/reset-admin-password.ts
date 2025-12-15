@@ -48,19 +48,18 @@ const validatePassword = (
 async function main() {
   console.log("\n=== Admin Password Reset Tool ===\n");
 
-  // Find admin user
+  // Find user (single-admin architecture - first user is admin)
   const admin = await prisma.user.findFirst({
-    where: { role: "ADMIN" },
+    orderBy: { createdAt: "asc" },
   });
 
   if (!admin) {
-    console.error("Error: No admin user found in the database.");
-    console.log("Please run the setup flow to create an admin account.");
+    console.error("Error: No user found in the database.");
+    console.log("Please run the setup flow to create an account.");
     process.exit(1);
   }
 
-  console.log("Found admin account:");
-  console.log(`  Email: ${admin.email}`);
+  console.log("Found user account:");
   console.log(`  Username: ${admin.username}\n`);
 
   // Get new password
