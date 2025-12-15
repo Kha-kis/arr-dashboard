@@ -365,11 +365,15 @@ class HuntingScheduler {
 	private async runHunt(instanceId: string, type: "missing" | "upgrade", isManual = false): Promise<void> {
 		if (!this.app) return;
 
-		// Enforce cooldown (additional check - manual hunts already checked in queueManualHunt)
-		const cooldownCheck = this.checkCooldown(instanceId, type, isManual);
-		if (!cooldownCheck.ok) {
-			console.log(`[HuntingScheduler] Hunt skipped due to cooldown: ${cooldownCheck.message}`);
-			return;
+		// For scheduled hunts, enforce cooldown check here
+		// For manual hunts, skip this check since triggerManualHunt already checked
+		// and called updateHuntTimes (which would cause this check to fail)
+		if (!isManual) {
+			const cooldownCheck = this.checkCooldown(instanceId, type, false);
+			if (!cooldownCheck.ok) {
+				console.log(`[HuntingScheduler] Hunt skipped due to cooldown: ${cooldownCheck.message}`);
+				return;
+			}
 		}
 
 		const startTime = Date.now();
