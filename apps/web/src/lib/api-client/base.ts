@@ -25,6 +25,13 @@ export class BadRequestError extends ApiError {
 	}
 }
 
+export class NetworkError extends Error {
+	constructor(message = "Cannot connect to API server") {
+		super(message);
+		this.name = "NetworkError";
+	}
+}
+
 type RequestOptions = RequestInit & { json?: unknown };
 
 const resolveUrl = (path: string): string => {
@@ -38,17 +45,26 @@ const resolveUrl = (path: string): string => {
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
 	const { json, headers, ...rest } = options;
-	const response = await fetch(resolveUrl(path), {
-		method: json ? "POST" : (options.method ?? "GET"),
-		credentials: "include",
-		headers: {
-			Accept: "application/json",
-			...(json ? { "Content-Type": "application/json" } : {}),
-			...headers,
-		},
-		body: json ? JSON.stringify(json) : options.body,
-		...rest,
-	});
+
+	let response: Response;
+	try {
+		response = await fetch(resolveUrl(path), {
+			method: json ? "POST" : (options.method ?? "GET"),
+			credentials: "include",
+			headers: {
+				Accept: "application/json",
+				...(json ? { "Content-Type": "application/json" } : {}),
+				...headers,
+			},
+			body: json ? JSON.stringify(json) : options.body,
+			...rest,
+		});
+	} catch (error) {
+		// Network error (API unreachable, CORS, etc.)
+		throw new NetworkError(
+			error instanceof Error ? `Cannot connect to API server: ${error.message}` : "Cannot connect to API server"
+		);
+	}
 
 	if (response.status === 401) {
 		throw new UnauthorizedError();
