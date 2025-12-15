@@ -25,9 +25,24 @@ const createFetcher = (baseUrl: string, apiKey: string): Fetcher => {
 			...(init.headers ?? {}),
 		};
 
-		// Create AbortController for timeout
+		// Create AbortController for timeout, wired to preserve caller's signal
 		const controller = new AbortController();
 		const timeoutId = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+
+		// Wire caller's signal to our controller so external cancellation works
+		const callerSignal = init.signal;
+		let callerAbortHandler: (() => void) | undefined;
+
+		if (callerSignal) {
+			if (callerSignal.aborted) {
+				// Caller's signal already aborted - abort immediately
+				controller.abort();
+			} else {
+				// Listen for caller's abort and propagate to our controller
+				callerAbortHandler = () => controller.abort();
+				callerSignal.addEventListener("abort", callerAbortHandler);
+			}
+		}
 
 		try {
 			const response = await fetch(`${cleanBaseUrl}${path}`, {
@@ -50,7 +65,11 @@ const createFetcher = (baseUrl: string, apiKey: string): Fetcher => {
 			}
 			throw error;
 		} finally {
+			// Clean up to avoid memory leaks
 			clearTimeout(timeoutId);
+			if (callerSignal && callerAbortHandler) {
+				callerSignal.removeEventListener("abort", callerAbortHandler);
+			}
 		}
 	};
 };
