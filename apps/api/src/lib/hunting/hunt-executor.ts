@@ -10,6 +10,26 @@ import { createSearchHistoryManager, type SearchHistoryManager, type SearchedIte
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * API call counter for tracking actual API usage during hunts
+ */
+interface ApiCallCounter {
+	count: number;
+}
+
+/**
+ * Creates a fetcher wrapper that tracks API call count
+ */
+function createTrackingFetcher(
+	fetcher: InstanceFetcher,
+	counter: ApiCallCounter,
+): InstanceFetcher {
+	return ((path: string, init?: RequestInit) => {
+		counter.count++;
+		return fetcher(path, init);
+	}) as InstanceFetcher;
+}
+
+/**
  * Hunt Executor
  *
  * Executes hunts against Sonarr/Radarr instances to find missing content
@@ -31,7 +51,11 @@ export interface HuntResult {
 	grabbedItems: GrabbedItem[];  // Items that were actually grabbed/downloaded
 	message: string;
 	status: "completed" | "partial" | "skipped" | "error";
+	apiCallsMade: number;  // Actual count of API calls made to the arr instance
 }
+
+// Internal type for sub-functions (apiCallsMade added by executeHunt)
+type HuntResultWithoutApiCount = Omit<HuntResult, "apiCallsMade">;
 
 // Sonarr types
 interface SonarrSeries {
@@ -421,7 +445,10 @@ export async function executeHunt(
 	config: HuntConfig,
 	type: "missing" | "upgrade",
 ): Promise<HuntResult> {
-	const fetcher = createInstanceFetcher(app, instance);
+	const baseFetcher = createInstanceFetcher(app, instance);
+	const apiCallCounter: ApiCallCounter = { count: 0 };
+	const fetcher = createTrackingFetcher(baseFetcher, apiCallCounter);
+
 	const service = instance.service.toLowerCase() as "sonarr" | "radarr";
 	const filters = parseFilters(config, service);
 
@@ -435,6 +462,7 @@ export async function executeHunt(
 			grabbedItems: [],
 			message: queueCheck.message,
 			status: "skipped",
+			apiCallsMade: apiCallCounter.count,
 		};
 	}
 
@@ -449,10 +477,12 @@ export async function executeHunt(
 	const batchSize = type === "missing" ? config.missingBatchSize : config.upgradeBatchSize;
 
 	if (service === "sonarr") {
-		return executeSonarrHunt(fetcher, type, batchSize, filters, historyManager);
+		const result = await executeSonarrHunt(fetcher, type, batchSize, filters, historyManager);
+		return { ...result, apiCallsMade: apiCallCounter.count };
 	}
 	if (service === "radarr") {
-		return executeRadarrHunt(fetcher, type, batchSize, filters, historyManager);
+		const result = await executeRadarrHunt(fetcher, type, batchSize, filters, historyManager);
+		return { ...result, apiCallsMade: apiCallCounter.count };
 	}
 
 	return {
@@ -462,6 +492,7 @@ export async function executeHunt(
 		grabbedItems: [],
 		message: `Unsupported service type: ${service}`,
 		status: "error",
+		apiCallsMade: apiCallCounter.count,
 	};
 }
 
@@ -657,7 +688,7 @@ async function executeSonarrHunt(
 	batchSize: number,
 	filters: ParsedFilters,
 	historyManager: SearchHistoryManager,
-): Promise<HuntResult> {
+): Promise<HuntResultWithoutApiCount> {
 	try {
 		// First, get all series to have filter data available
 		const seriesResponse = await fetcher("/api/v3/series");
@@ -966,7 +997,7 @@ async function executeRadarrHunt(
 	batchSize: number,
 	filters: ParsedFilters,
 	historyManager: SearchHistoryManager,
-): Promise<HuntResult> {
+): Promise<HuntResultWithoutApiCount> {
 	try {
 		let movies: RadarrMovie[] = [];
 

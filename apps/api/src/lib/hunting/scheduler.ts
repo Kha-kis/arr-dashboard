@@ -419,9 +419,9 @@ class HuntingScheduler {
 			});
 
 			// Update config timestamps and API call count (only if we actually made API calls)
-			if (result.status !== "skipped") {
+			if (result.status !== "skipped" && result.apiCallsMade > 0) {
 				const updateData: Record<string, unknown> = {
-					apiCallsThisHour: { increment: 1 },
+					apiCallsThisHour: { increment: result.apiCallsMade },
 				};
 
 				if (type === "missing") {
