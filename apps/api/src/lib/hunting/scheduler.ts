@@ -307,13 +307,17 @@ class HuntingScheduler {
 		for (const config of configs) {
 			// Reset hourly API cap if needed
 			if (config.apiCallsResetAt && config.apiCallsResetAt < now) {
+				const newResetAt = new Date(now.getTime() + 60 * 60 * 1000);
 				await this.app.prisma.huntConfig.update({
 					where: { id: config.id },
 					data: {
 						apiCallsThisHour: 0,
-						apiCallsResetAt: new Date(now.getTime() + 60 * 60 * 1000),
+						apiCallsResetAt: newResetAt,
 					},
 				});
+				// Update in-memory object to avoid stale cap check
+				config.apiCallsThisHour = 0;
+				config.apiCallsResetAt = newResetAt;
 			}
 
 			// Check if we're over API cap
