@@ -342,12 +342,23 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 		});
 	});
 
-	// Toggle scheduler
-	// Note: This is a global operation affecting all users. This is intentional
-	// for the single-admin architecture where only one administrator exists.
-	// If multi-user support is added in the future, this should be restricted
-	// to admin users only (see CLAUDE.md for architecture details).
+	// Toggle scheduler (admin-only operation)
+	// Security: Authentication enforced by plugin-level preHandler.
+	// This is a global operation affecting all users' scheduled hunts.
+	// Current architecture: Single-admin (authenticated user IS the admin).
+	// Future multi-user: Add role check here (e.g., request.currentUser.role === 'admin').
 	app.post("/hunting/scheduler/toggle", async (request, reply) => {
+		// Explicit auth check for clarity (also enforced by plugin preHandler)
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({ error: "Authentication required" });
+		}
+
+		// In single-admin architecture, any authenticated user can control the scheduler.
+		// For multi-user support, add role-based check here:
+		// if (request.currentUser.role !== 'admin') {
+		//   return reply.status(403).send({ error: "Admin access required" });
+		// }
+
 		const scheduler = getHuntingScheduler();
 		const wasRunning = scheduler.isRunning();
 
