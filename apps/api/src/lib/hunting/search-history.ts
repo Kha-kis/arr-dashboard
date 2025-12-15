@@ -11,7 +11,7 @@ import { Prisma, type PrismaClient } from "@prisma/client";
 export interface SearchedItem {
 	mediaType: "movie" | "series" | "season" | "episode";
 	mediaId: number;
-	seasonNumber?: number; // Use -1 for non-season items (movies, series, episodes)
+	seasonNumber?: number | null; // null for non-season items (movies, series, episodes)
 	title: string;
 }
 
@@ -44,8 +44,8 @@ export interface SearchHistoryManager {
  * Create a manager for tracking and filtering recently searched items for a specific hunt configuration.
  *
  * The manager uses a sliding window defined by `researchAfterDays` to consider entries "recently searched" and
- * exposes utilities to check, filter, record, and count filtered items. Season-less items use a sentinel season
- * number of `-1` when persisted or checked.
+ * exposes utilities to check, filter, record, and count filtered items. Season-less items use `null` for the
+ * seasonNumber field when persisted or checked.
  *
  * @param researchAfterDays - Number of days to treat a previous search as "recent"; items searched within this window are considered recent
  * @returns A SearchHistoryManager scoped to the provided `configId` and `huntType` that can check/ filter recent items, record searches (updates or creates entries and tolerates unique-constraint race conditions), and report the number of items filtered due to recent searches
@@ -77,16 +77,16 @@ export async function createSearchHistoryManager(
 	});
 
 	// Create a Set for fast lookups
-	// Key format: "mediaType:mediaId:seasonNumber" (seasonNumber is -1 for non-season items)
+	// Key format: "mediaType:mediaId:seasonNumber" (seasonNumber is null for non-season items)
 	const recentlySearchedSet = new Set(
-		recentSearches.map((s) => `${s.mediaType}:${s.mediaId}:${s.seasonNumber}`),
+		recentSearches.map((s) => `${s.mediaType}:${s.mediaId}:${s.seasonNumber ?? null}`),
 	);
 
 	let filteredCount = 0;
 
 	return {
 		wasRecentlySearched(item: SearchedItem): boolean {
-			const key = `${item.mediaType}:${item.mediaId}:${item.seasonNumber ?? -1}`;
+			const key = `${item.mediaType}:${item.mediaId}:${item.seasonNumber ?? null}`;
 			return recentlySearchedSet.has(key);
 		},
 
@@ -96,7 +96,7 @@ export async function createSearchHistoryManager(
 		): T[] {
 			const filtered = items.filter((item) => {
 				const searchedItem = getSearchedItem(item);
-				const key = `${searchedItem.mediaType}:${searchedItem.mediaId}:${searchedItem.seasonNumber ?? -1}`;
+				const key = `${searchedItem.mediaType}:${searchedItem.mediaId}:${searchedItem.seasonNumber ?? null}`;
 				const wasSearched = recentlySearchedSet.has(key);
 				if (wasSearched) {
 					filteredCount++;
@@ -113,7 +113,7 @@ export async function createSearchHistoryManager(
 			// If a concurrent insert happens, catch the unique constraint error and retry as update
 			await Promise.all(
 				items.map(async (item) => {
-					const seasonNum = item.seasonNumber ?? -1; // Use -1 sentinel for non-season items
+					const seasonNum = item.seasonNumber ?? null; // null for non-season items
 					const whereClause = {
 						configId,
 						huntType,
