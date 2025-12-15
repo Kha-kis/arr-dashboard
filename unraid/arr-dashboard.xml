@@ -18,4 +18,5 @@
   <Config Name="Config" Target="/config" Default="/mnt/user/appdata/arr-dashboard" Mode="rw" Description="Database and configuration storage" Type="Path" Display="always" Required="true" Mask="false"/>
   <Config Name="PUID" Target="PUID" Default="99" Mode="" Description="User ID for file permissions" Type="Variable" Display="advanced" Required="false" Mask="false"/>
   <Config Name="PGID" Target="PGID" Default="100" Mode="" Description="Group ID for file permissions" Type="Variable" Display="advanced" Required="false" Mask="false"/>
+  <Config Name="DATABASE_URL" Target="DATABASE_URL" Default="" Mode="" Description="Optional: PostgreSQL connection string (e.g., postgresql://user:password@host:5432/database). Leave empty to use default SQLite database." Type="Variable" Display="advanced" Required="false" Mask="false"/>
 </Container>
