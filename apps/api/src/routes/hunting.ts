@@ -16,6 +16,20 @@ import {
 } from "../lib/hunting/constants.js";
 import { cleanupOldSearchHistory } from "../lib/hunting/search-history.js";
 
+/**
+ * Safely parse JSON, returning null on parse errors
+ * Logs a warning with context when parsing fails
+ */
+function parseJsonSafe(json: string | null, context: { recordId: string; field: string }): unknown[] | null {
+	if (!json) return null;
+	try {
+		return JSON.parse(json) as unknown[];
+	} catch {
+		console.warn(`[HuntingRoute] Failed to parse ${context.field} for record ${context.recordId}`);
+		return null;
+	}
+}
+
 const huntConfigUpdateSchema = z.object({
 	// Feature toggles
 	huntMissingEnabled: z.boolean().optional(),
@@ -312,8 +326,8 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 			huntType: log.huntType as "missing" | "upgrade",
 			itemsSearched: log.itemsSearched,
 			itemsGrabbed: log.itemsFound, // DB field is itemsFound, API returns as itemsGrabbed
-			searchedItems: log.searchedItems ? JSON.parse(log.searchedItems) : null,
-			grabbedItems: log.foundItems ? JSON.parse(log.foundItems) : null, // DB field is foundItems
+			searchedItems: parseJsonSafe(log.searchedItems, { recordId: log.id, field: "searchedItems" }),
+			grabbedItems: parseJsonSafe(log.foundItems, { recordId: log.id, field: "foundItems" }), // DB field is foundItems
 			status: log.status as "running" | "completed" | "partial" | "skipped" | "error",
 			message: log.message,
 			durationMs: log.durationMs,
