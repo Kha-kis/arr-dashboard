@@ -37,7 +37,13 @@ async function main() {
     },
   });
 
-  console.log(`Seeded admin user "${user.username}" (password: ${password})`);
+  // Only show password in development or when explicitly requested
+  const showPassword = process.env.NODE_ENV === "development" || process.env.DEV_SHOW_PASSWORD === "true";
+  if (showPassword) {
+    console.log(`Seeded admin user "${user.username}" (password: ${password})`);
+  } else {
+    console.log(`Seeded admin user "${user.username}" successfully`);
+  }
 }
 
 main()
