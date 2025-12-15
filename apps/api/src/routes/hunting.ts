@@ -189,7 +189,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 		});
 
 		if (!instance) {
-			return reply.status(404).send({ error: "Instance not found" });
+			return reply.status(404).send({ error: "Not found or access denied" });
 		}
 
 		// Check if config already exists
@@ -235,7 +235,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 		});
 
 		if (!instance) {
-			return reply.status(404).send({ error: "Instance not found" });
+			return reply.status(404).send({ error: "Not found or access denied" });
 		}
 
 		if (!instance.huntConfig) {
@@ -356,7 +356,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 		});
 
 		if (!instance) {
-			return reply.status(404).send({ error: "Instance not found" });
+			return reply.status(404).send({ error: "Not found or access denied" });
 		}
 
 		if (!instance.huntConfig) {
@@ -394,7 +394,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 		});
 
 		if (!instance) {
-			return reply.status(404).send({ error: "Instance not found" });
+			return reply.status(404).send({ error: "Not found or access denied" });
 		}
 
 		const service = instance.service.toLowerCase();
@@ -477,7 +477,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 		});
 
 		if (!instance) {
-			return reply.status(404).send({ error: "Instance not found" });
+			return reply.status(404).send({ error: "Not found or access denied" });
 		}
 
 		if (!instance.huntConfig) {
@@ -552,7 +552,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 		});
 
 		if (!instance) {
-			return reply.status(404).send({ error: "Instance not found" });
+			return reply.status(404).send({ error: "Not found or access denied" });
 		}
 
 		if (!instance.huntConfig) {
