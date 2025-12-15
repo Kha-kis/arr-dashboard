@@ -89,6 +89,12 @@ async function testProwlarrPing(normalizedBaseUrl: string): Promise<ConnectionTe
 			signal: AbortSignal.timeout(3000),
 		});
 
+		// 401/403 means server is reachable but requires auth (reverse proxy with forward auth)
+		// This is fine - we'll authenticate properly in the actual API test
+		if (pingResponse.status === 401 || pingResponse.status === 403) {
+			return { success: true };
+		}
+
 		if (!pingResponse.ok && pingResponse.status !== 404) {
 			return {
 				success: false,
