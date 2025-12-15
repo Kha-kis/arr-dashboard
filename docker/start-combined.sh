@@ -66,12 +66,47 @@ shutdown() {
 trap shutdown SIGTERM SIGINT
 
 # ============================================
+# Database provider detection and Prisma setup
+# ============================================
+
+echo ""
+echo "Detecting database type..."
+cd /app/api
+
+# Detect if DATABASE_URL is PostgreSQL
+if echo "$DATABASE_URL" | grep -qE "^postgres(ql)?://"; then
+    echo "  - PostgreSQL database detected"
+    DB_PROVIDER="postgresql"
+else
+    echo "  - SQLite database detected"
+    DB_PROVIDER="sqlite"
+fi
+
+# Check current provider in schema
+CURRENT_PROVIDER=$(grep 'provider = ' prisma/schema.prisma | head -1 | sed 's/.*provider = "\([^"]*\)".*/\1/')
+
+# If provider needs to change, update schema and regenerate client
+if [ "$CURRENT_PROVIDER" != "$DB_PROVIDER" ]; then
+    echo "  - Switching Prisma provider from $CURRENT_PROVIDER to $DB_PROVIDER..."
+
+    # Update the provider in schema.prisma
+    sed -i "s/provider = \"$CURRENT_PROVIDER\"/provider = \"$DB_PROVIDER\"/" prisma/schema.prisma
+
+    # Regenerate Prisma client for new provider
+    echo "  - Regenerating Prisma client..."
+    su-exec abc npx prisma generate --schema prisma/schema.prisma
+
+    echo "  - Provider switched successfully"
+else
+    echo "  - Prisma provider already set to $DB_PROVIDER"
+fi
+
+# ============================================
 # Database migrations (run as abc user)
 # ============================================
 
 echo ""
 echo "Running database migrations..."
-cd /app/api
 su-exec abc npx prisma migrate deploy --schema prisma/schema.prisma
 
 # ============================================
