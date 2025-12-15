@@ -14,6 +14,7 @@ const NAV_ITEMS = [
 	{ href: "/indexers", label: "Indexers" },
 	{ href: "/calendar", label: "Calendar" },
 	{ href: "/statistics", label: "Statistics" },
+	{ href: "/hunting", label: "Hunting" },
 	{ href: "/history", label: "History" },
 	{ href: "/trash-guides", label: "TRaSH Guides" },
 	{ href: "/settings", label: "Settings" },
