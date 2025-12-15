@@ -253,6 +253,7 @@ const InstanceConfigCard = ({ config, onSaved }: InstanceConfigCardProps) => {
 		yearMin: config.yearMin,
 		yearMax: config.yearMax,
 		ageThresholdDays: config.ageThresholdDays,
+		researchAfterDays: config.researchAfterDays,
 	});
 
 	return (
