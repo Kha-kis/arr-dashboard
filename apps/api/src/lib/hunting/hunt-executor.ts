@@ -853,7 +853,6 @@ async function executeSonarrHunt(
 			}
 
 			try {
-				console.log(`[HuntExecutor] Sonarr search ${searchIndex}/${totalSearches}: ${title} Season ${seasonNumber}`);
 				await fetcher("/api/v3/command", {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
@@ -884,7 +883,6 @@ async function executeSonarrHunt(
 			}
 
 			try {
-				console.log(`[HuntExecutor] Sonarr search ${searchIndex}/${totalSearches}: ${epTitle}`);
 				await fetcher("/api/v3/command", {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
@@ -1079,7 +1077,6 @@ async function executeRadarrHunt(
 			}
 
 			try {
-				console.log(`[HuntExecutor] Radarr search ${i + 1}/${moviesToSearch.length}: ${movie.title}`);
 				await fetcher("/api/v3/command", {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },

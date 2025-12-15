@@ -71,7 +71,6 @@ class HuntingScheduler {
 	 */
 	initialize(app: FastifyInstance): void {
 		this.app = app;
-		console.log("[HuntingScheduler] Initialized");
 
 		// Clean up any stuck hunts from previous runs
 		this.cleanupStuckHunts().catch((error) => {
@@ -92,8 +91,6 @@ class HuntingScheduler {
 			});
 
 			if (stuckHunts.length > 0) {
-				console.log(`[HuntingScheduler] Found ${stuckHunts.length} stuck hunt(s), marking as error`);
-
 				await this.app.prisma.huntLog.updateMany({
 					where: { status: "running" },
 					data: {
@@ -113,7 +110,6 @@ class HuntingScheduler {
 	 */
 	start(app: FastifyInstance): void {
 		if (this.running) {
-			console.log("[HuntingScheduler] Already running");
 			return;
 		}
 
@@ -129,8 +125,6 @@ class HuntingScheduler {
 				console.error("[HuntingScheduler] Scheduler tick failed:", error);
 			});
 		}, 60 * 1000);
-
-		console.log("[HuntingScheduler] Started");
 	}
 
 	/**
@@ -139,7 +133,6 @@ class HuntingScheduler {
 	 */
 	stop(): void {
 		if (!this.running) {
-			console.log("[HuntingScheduler] Not running");
 			return;
 		}
 
@@ -150,7 +143,6 @@ class HuntingScheduler {
 
 		this.running = false;
 		// Keep app reference so manual hunts still work
-		console.log("[HuntingScheduler] Stopped (manual hunts still available)");
 	}
 
 	/**
@@ -168,16 +160,12 @@ class HuntingScheduler {
 		// Check cooldowns before running
 		const cooldownCheck = this.checkCooldown(instanceId, type, true);
 		if (!cooldownCheck.ok) {
-			console.log(`[HuntingScheduler] Manual ${type} hunt for ${instanceId} rejected: ${cooldownCheck.message}`);
 			return { queued: false, message: cooldownCheck.message };
 		}
 
 		if (!this.app) {
-			console.log(`[HuntingScheduler] Manual ${type} hunt for ${instanceId} rejected: Scheduler not started`);
 			return { queued: false, message: "Scheduler not started" };
 		}
-
-		console.log(`[HuntingScheduler] Starting manual ${type} hunt for ${instanceId}`);
 
 		// Update hunt times immediately to prevent race conditions with rapid API calls
 		this.updateHuntTimes(instanceId, type);
@@ -289,7 +277,6 @@ class HuntingScheduler {
 		const hunt = this.manualQueue.shift();
 		if (!hunt) return;
 
-		console.log(`[HuntingScheduler] Processing manual ${hunt.type} hunt for ${hunt.instanceId}`);
 		await this.runHunt(hunt.instanceId, hunt.type, true);
 	}
 
@@ -341,7 +328,6 @@ class HuntingScheduler {
 				const nextMissing = new Date(lastMissing.getTime() + config.missingIntervalMins * 60 * 1000);
 
 				if (now >= nextMissing) {
-					console.log(`[HuntingScheduler] Running scheduled missing hunt for ${config.instance.label}`);
 					await this.runHunt(config.instanceId, "missing");
 				}
 			}
@@ -352,7 +338,6 @@ class HuntingScheduler {
 				const nextUpgrade = new Date(lastUpgrade.getTime() + config.upgradeIntervalMins * 60 * 1000);
 
 				if (now >= nextUpgrade) {
-					console.log(`[HuntingScheduler] Running scheduled upgrade hunt for ${config.instance.label}`);
 					await this.runHunt(config.instanceId, "upgrade");
 				}
 			}
@@ -371,7 +356,6 @@ class HuntingScheduler {
 		if (!isManual) {
 			const cooldownCheck = this.checkCooldown(instanceId, type, false);
 			if (!cooldownCheck.ok) {
-				console.log(`[HuntingScheduler] Hunt skipped due to cooldown: ${cooldownCheck.message}`);
 				return;
 			}
 		}
@@ -404,8 +388,6 @@ class HuntingScheduler {
 		this.updateHuntTimes(instanceId, type);
 
 		try {
-			console.log(`[HuntingScheduler] Executing ${type} hunt for ${config.instance.label} (timeout: ${MAX_HUNT_DURATION_MS / 1000}s)`);
-
 			// Execute the actual hunt using hunt-executor with timeout protection
 			const result: HuntResult = await withTimeout(
 				executeHunt(
@@ -457,10 +439,6 @@ class HuntingScheduler {
 					data: updateData,
 				});
 			}
-
-			console.log(
-				`[HuntingScheduler] Completed ${type} hunt for ${config.instance.label} in ${durationMs}ms: ${result.message}`,
-			);
 		} catch (error) {
 			const durationMs = Date.now() - startTime;
 			const message = error instanceof Error ? error.message : "Unknown error";
