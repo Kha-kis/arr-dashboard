@@ -117,25 +117,32 @@ echo ""
 echo "Loading system settings from database..."
 
 # Read settings as JSON from database (script is in api dir to access prisma client)
-DB_SETTINGS=$(su-exec abc node /app/api/read-base-path.cjs 2>/dev/null || echo '{"apiPort":3001,"webPort":3000,"listenAddress":"0.0.0.0"}')
+DB_SETTINGS=$(su-exec abc node /app/api/read-base-path.cjs 2>/dev/null || echo '{"apiPort":null,"webPort":null,"listenAddress":null}')
 
 # Parse JSON values using node (since jq might not be available)
-DB_API_PORT=$(echo "$DB_SETTINGS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).apiPort||3001))")
-DB_WEB_PORT=$(echo "$DB_SETTINGS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).webPort||3000))")
-DB_LISTEN_ADDRESS=$(echo "$DB_SETTINGS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).listenAddress||'0.0.0.0'))")
+DB_API_PORT=$(echo "$DB_SETTINGS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const v=JSON.parse(d).apiPort;console.log(v||'')})")
+DB_WEB_PORT=$(echo "$DB_SETTINGS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const v=JSON.parse(d).webPort;console.log(v||'')})")
+DB_LISTEN_ADDRESS=$(echo "$DB_SETTINGS" | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>{const v=JSON.parse(d).listenAddress;console.log(v||'')})")
 
-# Use environment variables if set, otherwise use database values
-# Environment variables take precedence over database settings
-if [ -z "$API_PORT" ]; then
+# Priority: Database settings > Environment variables > Defaults
+# Database settings take precedence because users configure them via the UI
+# Environment variables are typically Dockerfile defaults, not user-configured
+if [ -n "$DB_API_PORT" ]; then
     export API_PORT="$DB_API_PORT"
+elif [ -z "$API_PORT" ]; then
+    export API_PORT="3001"
 fi
 
-if [ -z "$PORT" ]; then
+if [ -n "$DB_WEB_PORT" ]; then
     export PORT="$DB_WEB_PORT"
+elif [ -z "$PORT" ]; then
+    export PORT="3000"
 fi
 
-if [ -z "$HOST" ]; then
+if [ -n "$DB_LISTEN_ADDRESS" ]; then
     export HOST="$DB_LISTEN_ADDRESS"
+elif [ -z "$HOST" ]; then
+    export HOST="0.0.0.0"
 fi
 
 echo "  - Listen Address: $HOST"
