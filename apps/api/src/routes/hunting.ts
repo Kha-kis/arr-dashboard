@@ -343,6 +343,10 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	// Toggle scheduler
+	// Note: This is a global operation affecting all users. This is intentional
+	// for the single-admin architecture where only one administrator exists.
+	// If multi-user support is added in the future, this should be restricted
+	// to admin users only (see CLAUDE.md for architecture details).
 	app.post("/hunting/scheduler/toggle", async (request, reply) => {
 		const scheduler = getHuntingScheduler();
 		const wasRunning = scheduler.isRunning();
