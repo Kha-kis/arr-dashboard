@@ -82,15 +82,16 @@ else
     DB_PROVIDER="sqlite"
 fi
 
-# Check current provider in schema
-CURRENT_PROVIDER=$(grep 'provider = ' prisma/schema.prisma | head -1 | sed 's/.*provider = "\([^"]*\)".*/\1/')
+# Check current datasource provider in schema (not the generator provider)
+# Look for provider inside datasource block specifically
+CURRENT_PROVIDER=$(grep -A2 'datasource db' prisma/schema.prisma | grep 'provider' | sed 's/.*provider = "\([^"]*\)".*/\1/')
 
 # If provider needs to change, update schema and regenerate client
 if [ "$CURRENT_PROVIDER" != "$DB_PROVIDER" ]; then
-    echo "  - Switching Prisma provider from $CURRENT_PROVIDER to $DB_PROVIDER..."
+    echo "  - Switching Prisma datasource provider from $CURRENT_PROVIDER to $DB_PROVIDER..."
 
-    # Update the provider in schema.prisma
-    sed -i "s/provider = \"$CURRENT_PROVIDER\"/provider = \"$DB_PROVIDER\"/" prisma/schema.prisma
+    # Update only the datasource provider in schema.prisma (not the generator)
+    sed -i '/datasource db/,/^}/ s/provider = "[^"]*"/provider = "'"$DB_PROVIDER"'"/' prisma/schema.prisma
 
     # Regenerate Prisma client for new provider
     echo "  - Regenerating Prisma client..."
