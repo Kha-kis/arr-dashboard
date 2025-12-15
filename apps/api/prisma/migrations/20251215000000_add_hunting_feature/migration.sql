@@ -53,7 +53,7 @@ CREATE TABLE "hunt_search_history" (
     "configId" TEXT NOT NULL,
     "mediaType" TEXT NOT NULL,
     "mediaId" INTEGER NOT NULL,
-    "seasonNumber" INTEGER NOT NULL DEFAULT -1,
+    "seasonNumber" INTEGER,
     "title" TEXT NOT NULL,
     "huntType" TEXT NOT NULL,
     "searchedAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
