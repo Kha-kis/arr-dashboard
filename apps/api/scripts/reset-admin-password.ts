@@ -48,7 +48,12 @@ const validatePassword = (
 async function main() {
   console.log("\n=== Admin Password Reset Tool ===\n");
 
-  // Find user (single-admin architecture - first user is admin)
+  // Single-admin architecture: This application assumes a single administrator.
+  // The User model has no role/isAdmin field - admin privileges are enforced
+  // by convention: the first (and typically only) user created via the setup
+  // flow is treated as the administrator. This script targets that user.
+  // If multi-user support with roles is needed in the future, a schema change
+  // would be required to add role-based access control.
   const admin = await prisma.user.findFirst({
     orderBy: { createdAt: "asc" },
   });
