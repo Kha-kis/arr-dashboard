@@ -15,7 +15,7 @@ import { useStatisticsData } from "../hooks/useStatisticsData";
 import { StatsCard } from "../../../components/presentational/stats-card";
 import { QualityBreakdown } from "../../../components/presentational/quality-breakdown";
 import { InstanceTable } from "../../../components/presentational/instance-table";
-import { formatBytes, formatPercent } from "../lib/formatters";
+import { formatBytes, formatPercent, formatRuntime } from "../lib/formatters";
 import { StatisticsTabs, type StatisticsTab } from "./statistics-tabs";
 
 const integer = new Intl.NumberFormat();
@@ -295,17 +295,35 @@ export const StatisticsClient = () => {
 							description="Episodes eligible for upgrade"
 						/>
 					</div>
-					<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+					<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+						<StatsCard
+							title="Added (7 Days)"
+							value={sonarrTotals.recentlyAdded7Days}
+							description="Series added recently"
+						/>
+						<StatsCard
+							title="Added (30 Days)"
+							value={sonarrTotals.recentlyAdded30Days}
+							description="Series added this month"
+						/>
 						<StatsCard
 							title="Disk Usage"
 							value={formatPercent(sonarrTotals.diskPercent)}
-							description={`${formatBytes(sonarrTotals.diskUsed)} used / ${formatBytes(sonarrTotals.diskTotal)} total`}
+							description={`${formatBytes(sonarrTotals.diskUsed)} / ${formatBytes(sonarrTotals.diskTotal)}`}
 						/>
 						<StatsCard title="Avg Episode Size" value={formatBytes(sonarrTotals.averageEpisodeSize)} />
+					</div>
+					<div className="grid gap-3 sm:grid-cols-2">
 						<div className="rounded-xl border border-border bg-bg-subtle px-4 py-3">
 							<p className="mb-3 text-xs uppercase text-fg-muted">Quality Distribution</p>
 							<QualityBreakdown breakdown={sonarrTotals.qualityBreakdown} />
 						</div>
+						{sonarrTotals.tagBreakdown && Object.keys(sonarrTotals.tagBreakdown).length > 0 && (
+							<div className="rounded-xl border border-border bg-bg-subtle px-4 py-3">
+								<p className="mb-3 text-xs uppercase text-fg-muted">Tag Distribution</p>
+								<QualityBreakdown breakdown={sonarrTotals.tagBreakdown} />
+							</div>
+						)}
 					</div>
 					<InstanceTable
 						rows={sonarrRows}
@@ -353,9 +371,34 @@ export const StatisticsClient = () => {
 							description={`${formatBytes(radarrTotals.diskUsed)} / ${formatBytes(radarrTotals.diskTotal)}`}
 						/>
 					</div>
-					<div className="rounded-xl border border-border bg-bg-subtle px-4 py-3">
-						<p className="mb-3 text-xs uppercase text-fg-muted">Quality Distribution</p>
-						<QualityBreakdown breakdown={radarrTotals.qualityBreakdown} />
+					<div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+						<StatsCard
+							title="Added (7 Days)"
+							value={radarrTotals.recentlyAdded7Days}
+							description="Movies added recently"
+						/>
+						<StatsCard
+							title="Added (30 Days)"
+							value={radarrTotals.recentlyAdded30Days}
+							description="Movies added this month"
+						/>
+						<StatsCard
+							title="Total Runtime"
+							value={formatRuntime(radarrTotals.totalRuntime)}
+							description="Combined movie duration"
+						/>
+					</div>
+					<div className="grid gap-3 sm:grid-cols-2">
+						<div className="rounded-xl border border-border bg-bg-subtle px-4 py-3">
+							<p className="mb-3 text-xs uppercase text-fg-muted">Quality Distribution</p>
+							<QualityBreakdown breakdown={radarrTotals.qualityBreakdown} />
+						</div>
+						{radarrTotals.tagBreakdown && Object.keys(radarrTotals.tagBreakdown).length > 0 && (
+							<div className="rounded-xl border border-border bg-bg-subtle px-4 py-3">
+								<p className="mb-3 text-xs uppercase text-fg-muted">Tag Distribution</p>
+								<QualityBreakdown breakdown={radarrTotals.tagBreakdown} />
+							</div>
+						)}
 					</div>
 					<InstanceTable
 						rows={radarrRows}
