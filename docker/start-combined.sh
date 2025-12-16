@@ -102,6 +102,13 @@ if [ "$CURRENT_PROVIDER" != "$DB_PROVIDER" ]; then
     # Update only the datasource provider in schema.prisma (not the generator)
     sed -i '/datasource db/,/^}/ s/provider = "[^"]*"/provider = "'"$DB_PROVIDER"'"/' prisma/schema.prisma
 
+    # Update migration_lock.toml if it exists (required when switching providers)
+    MIGRATION_LOCK="prisma/migrations/migration_lock.toml"
+    if [ -f "$MIGRATION_LOCK" ]; then
+        echo "  - Updating migration lock file..."
+        sed -i 's/provider = "[^"]*"/provider = "'"$DB_PROVIDER"'"/' "$MIGRATION_LOCK"
+    fi
+
     # Regenerate Prisma client for new provider
     echo "  - Regenerating Prisma client..."
     su-exec abc npx prisma generate --schema prisma/schema.prisma
