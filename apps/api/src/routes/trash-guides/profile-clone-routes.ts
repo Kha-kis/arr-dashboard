@@ -803,6 +803,10 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 			// Get TRaSH cache for matching
 			const cacheManager = createCacheManager(app.prisma);
 			const trashCFs = (await cacheManager.get(serviceType, "CUSTOM_FORMATS")) as TrashCustomFormat[] | null;
+
+			// Get current commit hash to enable TRaSH Guides sync for cloned templates
+			const currentCommitHash = await cacheManager.getCommitHash(serviceType, "CUSTOM_FORMATS");
+
 			const trashCFLookup = new Map<string, TrashCustomFormat>();
 			if (trashCFs) {
 				for (const cf of trashCFs) {
@@ -941,6 +945,8 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				// Store source information for reference
 				sourceQualityProfileTrashId: trashId,
 				sourceQualityProfileName: sourceProfileName,
+				// Enable TRaSH Guides sync by storing the current commit hash
+				trashGuidesCommitHash: currentCommitHash || undefined,
 			});
 
 			app.log.info(`Created template "${templateName}" from cloned profile ${sourceProfileName} (${customFormatsConfig.length} CFs)`);
