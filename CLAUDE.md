@@ -1,137 +1,373 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code when working with this repository.
+
+## Quick Start
+
+```bash
+pnpm install && pnpm run dev  # Starts API (3001) + Web (3000)
+```
+
+**Critical Rules:**
+1. **API Proxy**: Frontend calls `/api/*` → Next.js rewrites to backend (NOT direct `localhost:3001` calls)
+2. **Ownership**: Always include `userId: request.currentUser!.id` in queries for user-owned resources
+3. **Encryption**: All API keys encrypted with AES-256-GCM via `app.encryptor.encrypt()`
+4. **Auth Check**: Protected routes use preHandler hook checking `request.currentUser?.id`
+
+**Key Paths:**
+- API routes: `apps/api/src/routes/`
+- Frontend pages: `apps/web/app/`
+- Shared types: `packages/shared/src/types/`
+- Prisma schema: `apps/api/prisma/schema.prisma`
+
+---
 
 ## Project Overview
 
-This is a **unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances**. Version 2.0 is a complete rewrite with modern architecture and zero-config Docker deployment.
+Unified dashboard for managing multiple **Sonarr**, **Radarr**, and **Prowlarr** instances with:
 
-**Key Features:**
-- Unified view of queue, calendar, history across all instances
-- Global search across all indexers
-- Library management for movies and TV shows
-- Statistics and health monitoring
-- TMDB integration for content discovery
-- Tag-based instance organization
-- Encrypted API keys with session-based authentication
+- Multi-instance aggregation (queue, calendar, history, library)
+- Global indexer search via Prowlarr
+- TRaSH Guides integration for quality profile management
+- Automated hunting for missing content and upgrades
+- TMDB discovery and recommendations
+- Multi-auth: Password, OIDC (Authelia/Authentik), Passkeys (WebAuthn)
+- Encrypted API keys with zero-config secret generation
+- Automated backup system
 
-## Architecture Overview
+**Architecture**: Single-admin, self-hosted application optimized for home server deployment.
 
-### Monorepo Structure (pnpm + Turbo)
+---
+
+## Architecture
+
+### Monorepo Structure
 
 ```
 arr-dashboard/
 ├── apps/
-│   ├── api/          # Fastify API server (port 3001)
-│   └── web/          # Next.js 14 App Router frontend (port 3000)
-└── packages/
-    └── shared/       # Shared TypeScript types and Zod schemas
+│   ├── api/           # Fastify 4 server (port 3001)
+│   └── web/           # Next.js 14 App Router (port 3000)
+├── packages/
+│   └── shared/        # Zod schemas + TypeScript types
+└── docker/
+    └── start-combined.sh  # Single-container startup
 ```
 
-**Important:** This is a pnpm workspace monorepo managed by Turbo. Always run commands from the root directory using `pnpm run <script>` or use `pnpm --filter @arr/<package>` for package-specific commands.
+**Package Manager**: pnpm 9.12.0 with Turbo for builds.
 
 ### Technology Stack
 
-**Backend (@arr/api):**
-- Fastify 4 (high-performance Node.js web framework)
-- Prisma ORM with SQLite (default), supports PostgreSQL/MySQL
-- Lucia Auth (session-based authentication, NOT JWT)
-- Zod for validation
-- Custom encryption using Node crypto (AES-256-GCM)
+| Layer | Technology | Notes |
+|-------|------------|-------|
+| **Backend** | Fastify 4, Prisma, Zod | Session-based auth (NOT JWT) |
+| **Frontend** | Next.js 14 App Router, React 18 | Server Components default |
+| **UI** | TailwindCSS, shadcn/ui | Dark mode via next-themes |
+| **Data** | Tanstack Query | 25+ custom hooks |
+| **Database** | SQLite (default) | PostgreSQL/MySQL supported |
+| **Encryption** | AES-256-GCM | Auto-generated keys |
 
-**Frontend (@arr/web):**
-- Next.js 14 App Router (NOT Pages Router)
-- React 18 with Server Components
-- TailwindCSS + shadcn/ui components
-- Tanstack Query (React Query) for data fetching
-- Zustand for minimal local state (only used in manual-import feature)
-- next-themes for dark mode
-- Framer Motion for animations
+### Database Models
 
-**Shared (@arr/shared):**
-- Zod schemas exported as both ESM and CJS
-- TypeScript types derived from Zod schemas
-- Used by both frontend and backend for type safety
+#### Core Models
+| Model | File | Purpose |
+|-------|------|---------|
+| `User` | schema.prisma:1-15 | Single admin (no roles) |
+| `Session` | schema.prisma:17-23 | Hashed tokens with expiry |
+| `ServiceInstance` | schema.prisma:25-40 | Sonarr/Radarr/Prowlarr connections |
+| `ServiceTag` | schema.prisma:42-48 | Instance organization |
 
-## Critical Architectural Decisions
+#### Authentication Models
+| Model | Purpose |
+|-------|---------|
+| `OIDCProvider` | Singleton OIDC config (encrypted secret) |
+| `OIDCAccount` | User ↔ OIDC provider links |
+| `WebAuthnCredential` | Passkey credentials with counter |
 
-### 1. API Proxy Pattern (CRITICAL - Recent Fix)
+#### Feature Models
+| Model | Purpose |
+|-------|---------|
+| `TrashTemplate` | User quality profile templates |
+| `TrashSyncHistory` | Sync operation audit log |
+| `TrashBackup` | Pre-sync snapshots |
+| `TrashCache` | GitHub JSON cache |
+| `HuntConfig` | Per-instance hunt settings |
+| `HuntLog` | Hunt activity log |
+| `BackupSettings` | Singleton backup config |
+| `SystemSettings` | Singleton system config |
 
-**The web app does NOT make direct API calls to `http://localhost:3001`.**
+---
 
-Instead, it uses Next.js rewrites to proxy all `/api/*` and `/auth/*` requests to the backend. This is handled in `apps/web/next.config.mjs`.
+## Authentication System
 
+### Overview
+
+Three mutually-exclusive authentication methods during setup:
+
+| Method | Requires | Disabled When |
+|--------|----------|---------------|
+| **Password** | Username + password | OIDC enabled |
+| **OIDC** | External provider | - |
+| **Passkeys** | Password as prerequisite | OIDC enabled |
+
+**Key Files:**
+- `apps/api/src/routes/auth.ts` - Password auth
+- `apps/api/src/routes/auth-oidc.ts` - OIDC flow
+- `apps/api/src/routes/auth-passkey.ts` - WebAuthn
+- `apps/api/src/lib/auth/session.ts` - Session management
+- `apps/api/src/lib/auth/password.ts` - Argon2id hashing
+- `apps/api/src/lib/auth/encryption.ts` - AES-256-GCM
+- `apps/api/src/lib/auth/passkey-service.ts` - WebAuthn wrapper
+
+### Session Management
+
+**Flow:**
+1. Login → Generate 32-byte token → SHA-256 hash → Store in DB
+2. Signed HTTP-only cookie sent to client (`arr_session`)
+3. Each request: Extract cookie → Hash → Lookup → Validate expiry
+4. `request.currentUser` populated by preHandler hook
+
+**Cookie Configuration:**
 ```typescript
-// Frontend makes requests to relative paths
-fetch("/api/services")  // NOT http://localhost:3001/api/services
-
-// Next.js rewrites proxy to backend
-// Development: http://localhost:3001
-// Docker: http://api:3001
+{
+  httpOnly: true,
+  sameSite: 'lax',      // CSRF protection
+  secure: false,         // Allow HTTP for local networks
+  maxAge: rememberMe ? 30 days : SESSION_TTL_HOURS
+}
 ```
 
-**Why this matters:**
-- Eliminates CORS issues
-- Next.js handles cookie forwarding automatically via rewrites
-- Works seamlessly in Docker without exposing backend port
-- Middleware (`apps/web/middleware.ts`) now only handles route protection and session checks
-- Recent commits (f7c52f7, c9f24b7, 8b80c82, 917aa92) fixed race conditions and cookie forwarding issues
-
-**Key Files:**
-- `apps/web/next.config.mjs` - Rewrites configuration for API proxying
-- `apps/web/middleware.ts` - Session-based route protection (skips /api and /auth paths)
-
-**Environment Variables:**
-- Frontend: `API_HOST` environment variable (Docker: `http://api:3001`, Dev: `http://localhost:3001`)
-- NOT `NEXT_PUBLIC_API_BASE_URL` - that's only for documentation/legacy
-
-### 2. Zero-Config Security (Auto-Generated Secrets)
-
-**The API auto-generates encryption keys and session secrets on first run.**
-
-Implementation in `apps/api/src/lib/auth/secret-manager.ts`:
-- Generates `ENCRYPTION_KEY` (32 bytes hex)
-- Generates `SESSION_COOKIE_SECRET` (32 bytes hex)
-- Persists to `secrets.json` next to database file
-- Only generates if not provided via environment variables
-
-**Location:**
-- Docker: `/config/secrets.json`
-- Dev: `./secrets.json` (next to `dev.db`)
-
-**Key Files:**
-- `apps/api/src/plugins/security.ts` - Initializes SecretManager
-- `apps/api/src/lib/auth/encryption.ts` - AES-256-GCM encryption
-- `apps/api/src/lib/auth/session.ts` - Session management with Lucia
-
-### 3. Session-Based Authentication (NOT JWT)
-
-Uses **signed, HTTP-only cookies** with Lucia Auth:
-- Cookie name: `arr_session` (configurable)
-- Session tokens are hashed (SHA-256) before storage
-- Sessions validated on every request via `preHandler` hook
-- `request.currentUser` contains user object if authenticated
-- CSRF protection via `sameSite: 'lax'` + CORS restrictions
-
-**Auth Flow:**
-1. Login creates session in database
-2. Signed cookie sent to client
-3. Middleware checks for session cookie presence to handle routing (redirect to /login if missing)
-4. API requests are proxied via Next.js rewrites (cookie forwarded automatically)
-5. `request.currentUser` populated in Fastify context by preHandler hook
-
-**Important Files:**
-- `apps/api/src/routes/auth.ts` - Login/logout routes
-- `apps/api/src/server.ts` - Authentication preHandler hook (lines 58-66)
-- `apps/web/middleware.ts` - Session cookie check for routing (skips /api and /auth paths)
-- `apps/web/next.config.mjs` - API proxy rewrites with automatic cookie forwarding
-
-### 4. Route Authorization Pattern (CRITICAL)
-
-**Every route that accesses user-owned resources MUST verify ownership.**
-
-All route plugins use a `preHandler` hook to enforce authentication:
+**Session Operations** (`apps/api/src/lib/auth/session.ts`):
 ```typescript
+// Create session
+const session = await app.sessionService.createSession(userId, rememberMe);
+app.sessionService.attachCookie(reply, session.token, rememberMe);
+
+// Invalidate
+await app.sessionService.invalidateSession(token);
+await app.sessionService.invalidateAllUserSessions(userId, exceptToken?);
+```
+
+### Password Authentication
+
+**Hashing** (Argon2id):
+- Memory: 19,456 KiB
+- Iterations: 2
+- Parallelism: 1
+
+**Account Lockout:**
+- 5 failed attempts → 15-minute lockout
+- 200ms delay on failed login (timing attack mitigation)
+- Reset on successful login
+
+**Validation** (`packages/shared/src/types/password.ts`):
+```typescript
+export const passwordSchema = z.string()
+  .min(8).max(128)
+  .regex(/[a-z]/, "lowercase required")
+  .regex(/[A-Z]/, "uppercase required")
+  .regex(/[0-9]/, "number required")
+  .regex(/[^a-zA-Z0-9]/, "special char required");
+```
+
+### OIDC Authentication
+
+**Library**: oauth4webapi
+
+**Flow:**
+1. `POST /auth/oidc/login` → Generate state, nonce, PKCE verifier
+2. Redirect to provider authorization URL
+3. `GET /auth/oidc/callback` → Validate state, exchange code
+4. Verify ID token nonce, get user info
+5. Create/link OIDCAccount, create session
+
+**Security:**
+- PKCE (Proof Key for Code Exchange)
+- State parameter (CSRF protection)
+- Nonce validation (replay attack prevention)
+- Subject claim consistency check
+
+**Configuration** (`apps/api/src/routes/oidc-providers.ts`):
+- Singleton pattern (only one provider)
+- Client secret encrypted at rest
+- Auto-generated redirect URI
+
+### Passkey Authentication
+
+**Library**: @simplewebauthn/server v13+
+
+**Constraints:**
+- Requires password as prerequisite
+- Disabled when OIDC enabled
+- Cannot delete last passkey without alternative auth
+
+**Registration Flow:**
+1. `POST /auth/passkey/register/options` → Generate challenge (5min expiry)
+2. Client creates credential via WebAuthn API
+3. `POST /auth/passkey/register/verify` → Verify, store credential
+
+**Login Flow:**
+1. `POST /auth/passkey/login/options` → Generate challenge + temp sessionId
+2. Client authenticates via WebAuthn API
+3. `POST /auth/passkey/login/verify` → Verify, validate counter, create session
+
+**Counter Validation:**
+```typescript
+// Prevents replay attacks
+if (credential.counter > 0 && response.counter <= credential.counter) {
+  throw new Error("Counter not incremented - possible replay attack");
+}
+```
+
+### Security Features
+
+**Encryption** (`apps/api/src/lib/auth/encryption.ts`):
+```typescript
+// Encrypt
+const { value, iv } = app.encryptor.encrypt(plaintext);
+// Store both value and iv in database
+
+// Decrypt
+const plaintext = app.encryptor.decrypt({ value, iv });
+```
+
+**Auto-Generated Secrets** (`apps/api/src/lib/auth/secret-manager.ts`):
+- `ENCRYPTION_KEY`: 32 bytes hex
+- `SESSION_COOKIE_SECRET`: 32 bytes hex
+- Persisted to `/config/secrets.json` (Docker) or `./secrets.json` (dev)
+
+**Session Invalidation Pattern:**
+```typescript
+// After credential changes, invalidate other sessions
+if (request.sessionToken) {
+  await app.sessionService.invalidateAllUserSessions(
+    request.currentUser.id,
+    request.sessionToken  // Keep current session
+  );
+} else {
+  // Fallback: invalidate all sessions
+  await app.sessionService.invalidateAllUserSessions(request.currentUser.id);
+}
+```
+
+---
+
+## API Layer
+
+### Route Structure
+
+All routes in `apps/api/src/routes/`. Protected routes use preHandler authentication.
+
+#### Authentication Routes (`/auth`)
+| Method | Route | Auth | Purpose |
+|--------|-------|------|---------|
+| GET | `/auth/setup-required` | No | Check if setup needed |
+| POST | `/auth/register` | No | Initial user creation |
+| POST | `/auth/login` | No | Password login |
+| POST | `/auth/logout` | Yes | End session |
+| GET | `/auth/me` | Yes | Current user info |
+| PATCH | `/auth/account` | Yes | Update username/password/TMDB key |
+| DELETE | `/auth/password` | Yes | Remove password (requires OIDC) |
+| DELETE | `/auth/account` | Yes | Delete account (no auth methods) |
+
+#### OIDC Routes (`/auth/oidc`)
+| Method | Route | Auth | Purpose |
+|--------|-------|------|---------|
+| GET | `/auth/oidc/providers` | No | Get configured provider |
+| POST | `/auth/oidc/setup` | No | Configure during setup |
+| POST | `/auth/oidc/login` | No | Initiate OIDC flow |
+| GET | `/auth/oidc/callback` | No | Handle provider callback |
+
+#### Passkey Routes (`/auth/passkey`)
+| Method | Route | Auth | Purpose |
+|--------|-------|------|---------|
+| POST | `/passkey/register/options` | Yes | Generate registration challenge |
+| POST | `/passkey/register/verify` | Yes | Complete registration |
+| POST | `/passkey/login/options` | No | Generate auth challenge |
+| POST | `/passkey/login/verify` | No | Complete authentication |
+| GET | `/passkey/credentials` | Yes | List user passkeys |
+| DELETE | `/passkey/credentials` | Yes | Delete passkey |
+| PATCH | `/passkey/credentials` | Yes | Rename passkey |
+
+#### Service Management (`/api/services`)
+| Method | Route | Purpose |
+|--------|-------|---------|
+| GET | `/services` | List all instances |
+| POST | `/services` | Add instance |
+| PUT | `/services/:id` | Update instance |
+| DELETE | `/services/:id` | Remove instance |
+| POST | `/services/test-connection` | Test before saving |
+| POST | `/services/:id/test` | Test existing |
+
+#### Dashboard (`/api/dashboard`)
+| Route | Purpose | Refresh |
+|-------|---------|---------|
+| `/dashboard/queue` | Download queue | 30s |
+| `/dashboard/history` | Download history | 60s |
+| `/dashboard/calendar` | Upcoming releases | 60s |
+| `/dashboard/statistics` | Aggregate stats | 120s |
+
+#### Library (`/api/library`)
+| Route | Purpose |
+|-------|---------|
+| `/library` | Movies/series list |
+| `/library/episodes` | Series episodes |
+| `/library/monitor` | Toggle monitoring |
+| `/library/search` | Search for content |
+
+#### TRaSH Guides (`/api/trash-guides`)
+| Route | Purpose |
+|-------|---------|
+| `/trash-guides/cache` | GitHub JSON cache |
+| `/trash-guides/templates` | User templates CRUD |
+| `/trash-guides/sync` | Manual sync |
+| `/trash-guides/deployment` | Deploy to instances |
+| `/trash-guides/quality-profiles` | Profile management |
+| `/trash-guides/custom-formats` | Custom format management |
+
+#### Additional Routes
+| Prefix | Purpose |
+|--------|---------|
+| `/api/search` | Prowlarr indexer search |
+| `/api/discover` | TMDB discovery |
+| `/api/hunting` | Auto-search configuration |
+| `/api/backup` | Backup management |
+| `/api/system` | System settings |
+| `/api/oidc-providers` | OIDC admin config |
+
+### Key Patterns
+
+#### Resource Ownership (CRITICAL)
+```typescript
+// ✅ CORRECT: Always include userId
+const instance = await app.prisma.serviceInstance.findFirst({
+  where: {
+    id: instanceId,
+    userId: request.currentUser!.id,  // preHandler guarantees auth
+  },
+});
+
+if (!instance) {
+  return reply.status(404).send({ error: "Not found or access denied" });
+}
+
+// ❌ WRONG: Security vulnerability!
+const instance = await app.prisma.serviceInstance.findFirst({
+  where: { id: instanceId },  // Missing userId check
+});
+```
+
+#### ARR Instance Fetcher
+```typescript
+// apps/api/src/lib/arr/arr-fetcher.ts
+const fetcher = createInstanceFetcher(app, instance);
+const response = await fetcher('/api/v3/movie');
+const data = await response.json();
+```
+
+#### Route Protection
+```typescript
+// Every protected route plugin
 app.addHook("preHandler", async (request, reply) => {
   if (!request.currentUser?.id) {
     return reply.status(401).send({ error: "Authentication required" });
@@ -139,431 +375,362 @@ app.addHook("preHandler", async (request, reply) => {
 });
 ```
 
-**Required Pattern for ServiceInstance Access:**
+#### Validation
 ```typescript
-// ✅ CORRECT: Always include userId in where clause
-const instance = await request.server.prisma.serviceInstance.findFirst({
-  where: {
-    id: instanceId,
-    userId: request.currentUser!.id,  // Use ! assertion - preHandler guarantees auth
-  },
-});
-
-if (!instance) {
-  return reply.status(404).send({ message: "Instance not found or access denied" });
-}
-
-// ❌ WRONG: Missing userId check allows access to other users' instances
-const instance = await request.server.prisma.serviceInstance.findFirst({
-  where: { id: instanceId },  // SECURITY VULNERABILITY!
-});
-```
-
-**Key Points:**
-- Use `request.currentUser!.id` (non-null assertion) since preHandler guarantees authentication
-- Always include `userId` in queries for user-owned resources (ServiceInstance, TrashTemplate, etc.)
-- Return 404 "not found or access denied" to avoid leaking existence of other users' resources
-- This pattern applies to: ServiceInstance, TrashTemplate, TrashSyncHistory, TrashBackup, etc.
-
-### 5. Database Schema (Prisma)
-
-**Key Models:**
-- `User` - User accounts (single-admin architecture, no role/email fields)
-- `Session` - Active sessions linked to users
-- `OIDCAccount` - OIDC provider account links (Authelia/Authentik/Generic)
-- `OIDCProvider` - OIDC provider configurations
-- `WebAuthnCredential` - Passkey credentials for passwordless auth
-- `ServiceInstance` - Sonarr/Radarr/Prowlarr connections (API keys encrypted)
-- `ServiceTag` - Tags for organizing instances
-- `ServiceInstanceTag` - Many-to-many join table
-
-**Encrypted Fields:**
-- All `ServiceInstance.encryptedApiKey` + `encryptionIv` pairs
-- All `OIDCProvider.encryptedClientSecret` + `clientSecretIv` pairs
-- User TMDB API keys (optional)
-
-**Authentication:**
-- Multi-authentication support: Password (optional), OIDC, and/or Passkeys
-- User model simplified: no email or role fields (single-admin architecture)
-- Service instances are per-user (each instance has a `userId` foreign key for ownership)
-
-**Single-Admin Architecture:**
-This application assumes a single administrator. The `User` model intentionally has no `role` or `isAdmin` field - admin privileges are enforced by convention: the first (and typically only) user created via the setup flow is treated as the administrator. This simplifies the codebase for the common home-server use case. If multi-user support with role-based access control is needed in the future, a schema migration would be required to add a `role` field to the `User` model. Scripts like `reset-admin-password.ts` and `seed-admin.ts` operate under this assumption.
-
-**Migrations:**
-- Development: `pnpm run db:push` (no migration files)
-- Production: `pnpm run db:migrate` (applies migrations)
-- Docker: Auto-runs migrations on startup via `start.sh`
-
-**Database URL:**
-- Auto-configured in `apps/api/src/config/env.ts` (lines 39-43)
-- Docker: `file:/config/prod.db`
-- Dev: `file:./dev.db`
-
-### 6. ARR Instance Communication
-
-**All communication with Sonarr/Radarr/Prowlarr happens server-side.**
-
-Pattern:
-1. Frontend requests data from API (e.g., `/api/library/movies`)
-2. API fetches user's service instances from database
-3. API decrypts API keys using `encryptor.decrypt()`
-4. API creates authenticated fetchers via `createInstanceFetcher()`
-5. API makes parallel requests to all instances
-6. API aggregates and returns data to frontend
-
-**Key File:** `apps/api/src/lib/arr/arr-fetcher.ts`
-
-```typescript
-const fetcher = createInstanceFetcher(app, instance);
-const response = await fetcher('/api/v3/movie');  // Calls Radarr API
-```
-
-**Why server-side only:**
-- User API keys never exposed to browser
-- Centralized authentication
-- Easy aggregation across multiple instances
-- CORS issues avoided
-
-### 7. Frontend Data Fetching Pattern
-
-**All API calls use Tanstack Query hooks:**
-
-Located in `apps/web/src/hooks/api/`:
-- `useAuth.ts` - Login, logout, current user
-- `useServicesQuery.ts` - Fetch service instances
-- `useDashboard.ts` - Queue, calendar, history
-- `useLibrary.ts` - Movies, series, search
-- `useSearch.ts` - Global indexer search
-- `useDiscover.ts` - TMDB trending/popular content
-
-**API client structure:**
-- `apps/web/src/lib/api-client/base.ts` - Base `apiRequest()` function
-- `apps/web/src/lib/api-client/*.ts` - Typed API functions per domain
-
-**Pattern:**
-```typescript
-// Hook wraps Tanstack Query
-export function useMovies() {
-  return useQuery({
-    queryKey: ['movies'],
-    queryFn: () => libraryApi.getMovies(),  // Calls /api/library/movies
+const parsed = schema.safeParse(request.body);
+if (!parsed.success) {
+  return reply.status(400).send({
+    error: "Invalid payload",
+    details: parsed.error.flatten()
   });
 }
 ```
 
-### 8. Next.js App Router Conventions
+---
 
-**App directory structure:** `apps/web/app/`
-- Each folder = route segment
-- `page.tsx` = UI for route
-- `layout.tsx` = Shared layout
-- Server Components by default, add `"use client"` only when needed
+## Frontend
 
-**Key layouts/components:**
-- `app/layout.tsx` - Root layout with providers
-- `src/components/layout/layout-wrapper.tsx` - Main app shell (sidebar, nav)
-- `src/components/auth/auth-gate.tsx` - Client-side auth check
+### Route Structure
 
-**Route structure:**
+All pages in `apps/web/app/`. Protected routes require session cookie.
+
+| Route | Auth | Purpose |
+|-------|------|---------|
+| `/` | - | Redirect to /dashboard or /login |
+| `/login` | Public | Login page (password, OIDC, passkeys) |
+| `/setup` | Public | Initial admin setup |
+| `/dashboard` | Protected | Queue, statistics overview |
+| `/calendar` | Protected | Release calendar |
+| `/library` | Protected | Movies/series management |
+| `/search` | Protected | Global indexer search |
+| `/discover` | Protected | TMDB trending/popular |
+| `/indexers` | Protected | Prowlarr indexer management |
+| `/history` | Protected | Download history |
+| `/statistics` | Protected | Detailed statistics |
+| `/hunting` | Protected | Manual import hunting |
+| `/settings` | Protected | User/service settings |
+| `/trash-guides` | Protected | Quality profile wizard |
+
+### Data Fetching
+
+**Pattern**: API client → React Query hook → Component
+
+**API Client** (`apps/web/src/lib/api-client/`):
+```typescript
+// base.ts - All requests use credentials: "include"
+export async function apiRequest<T>(path: string, options?: RequestInit): Promise<T>
+
+// domain-specific modules
+authApi.login(username, password)
+servicesApi.fetchServices()
+dashboardApi.fetchMultiInstanceQueue()
 ```
-/login         - Login page (public)
-/setup         - First-time setup (public)
-/dashboard     - Main dashboard (protected)
-/library       - Movies/series management (protected)
-/search        - Global search (protected)
-/discover      - TMDB content discovery (protected)
-/settings      - User settings, service management (protected)
+
+**React Query Hooks** (`apps/web/src/hooks/api/`):
+```typescript
+// Pattern
+export function useMultiInstanceQueue() {
+  return useQuery({
+    queryKey: ['dashboard', 'queue'],
+    queryFn: () => dashboardApi.fetchMultiInstanceQueue(),
+    refetchInterval: 30000,
+  });
+}
 ```
 
-## Development Workflows
+**Query Key Convention:**
+```typescript
+['services']                    // All services
+['dashboard', 'queue']          // Dashboard queue
+['dashboard', 'history', params] // History with filters
+['current-user']                // Logged in user
+['passkey-credentials']         // User passkeys
+```
 
-### Local Development Setup
+### API Proxy Configuration
+
+**Next.js Rewrites** (`apps/web/next.config.mjs`):
+```javascript
+rewrites() {
+  return [
+    { source: "/api/:path*", destination: `${API_HOST}/api/:path*` },
+    { source: "/auth/:path*", destination: `${API_HOST}/auth/:path*` }
+  ];
+}
+```
+
+**Why This Pattern:**
+- Eliminates CORS issues
+- Cookies forwarded automatically
+- Backend port never exposed to browser
+- Works in Docker without network complexity
+
+### Middleware
+
+**File**: `apps/web/middleware.ts`
+
+**Purpose**: Route protection only (NOT API proxying)
+
+- Checks for `arr_session` cookie presence
+- Redirects unauthenticated users to `/login`
+- Skips `/api/*`, `/auth/*`, static files
+
+---
+
+## Features Guide
+
+### TRaSH Guides Integration
+
+**Purpose**: Apply TRaSH Guides quality profiles to Sonarr/Radarr instances.
+
+**Key Files:**
+- Routes: `apps/api/src/routes/trash-guides/` (13 modules)
+- Frontend: `apps/web/src/features/trash-guides/`
+
+**Workflow:**
+1. Fetch TRaSH JSON from GitHub → Cache in `TrashCache`
+2. Create templates from TRaSH recommendations
+3. Map templates to quality profiles
+4. Deploy to instances (creates backup first)
+
+**Models:**
+- `TrashTemplate` - User templates with version history
+- `TrashBackup` - Pre-deployment snapshots
+- `TrashSyncHistory` - Audit log
+
+### Hunting/Auto-Search
+
+**Purpose**: Automatically search for missing content and upgrades.
+
+**Key Files:**
+- Routes: `apps/api/src/routes/hunting/`
+- Models: `HuntConfig`, `HuntLog`, `HuntSearchHistory`
+
+**Configuration Per Instance:**
+- Enable/disable missing content hunt
+- Enable/disable upgrade hunt
+- Batch size and interval
+- Rate limiting (hourly API cap)
+- Filters: monitored-only, tags, quality profiles, age threshold
+
+### Backup System
+
+**Purpose**: Automated database backups with retention.
+
+**Key Files:**
+- Routes: `apps/api/src/routes/backup.ts`
+- Plugin: `apps/api/src/plugins/backup-scheduler.ts`
+- Model: `BackupSettings` (singleton)
+
+**Configuration:**
+- Enable/disable automated backups
+- Interval: HOURLY, DAILY, WEEKLY
+- Retention count (auto-cleanup old backups)
+
+---
+
+## Development
+
+### Setup
 
 ```bash
-# Install dependencies
+# Install and start
 pnpm install
+pnpm run dev        # API (3001) + Web (3000) in parallel
 
-# Start dev servers (from root) - this will auto-generate Prisma client
-pnpm run dev  # Runs both API and web in parallel
-
-# If you need to run database migrations separately
+# Database
 cd apps/api
-pnpm run db:generate  # Generate Prisma client after schema changes
-pnpm run db:push      # Push schema changes (development)
-pnpm run db:migrate   # Run migrations (production)
+pnpm run db:push    # Development (no migrations)
+pnpm run db:migrate # Production (applies migrations)
+pnpm run db:generate # Regenerate Prisma client
 ```
 
-**URLs:**
-- Frontend: http://localhost:3000
-- API: http://localhost:3001
-- API Health: http://localhost:3001/health
+### Adding Features
 
-### Common Tasks
+**New API Route:**
+1. Create `apps/api/src/routes/<domain>.ts`
+2. Register in `apps/api/src/server.ts`
+3. Add types to `packages/shared/src/types/<domain>.ts`
+4. Add client to `apps/web/src/lib/api-client/<domain>.ts`
+5. Add hook to `apps/web/src/hooks/api/use<Domain>.ts`
 
-**Add a new dependency:**
-```bash
-# For API
-pnpm --filter @arr/api add <package>
+**New Frontend Page:**
+1. Create `apps/web/app/<route>/page.tsx`
+2. Add components to `apps/web/src/features/<feature>/`
+3. Use hooks from `src/hooks/api/`
 
-# For web
-pnpm --filter @arr/web add <package>
-
-# For shared
-pnpm --filter @arr/shared add <package>
-```
-
-**Database changes:**
+**Database Changes:**
 ```bash
 cd apps/api
-
-# 1. Edit prisma/schema.prisma
-# 2. Create migration
+# Edit prisma/schema.prisma
 npx prisma migrate dev --name <migration_name>
-
-# OR for quick dev iteration
+# Or for quick iteration
 pnpm run db:push
 ```
 
-**Add a new API route:**
-1. Create route file in `apps/api/src/routes/<domain>.ts`
-2. Register in `apps/api/src/server.ts`
-3. Add types to `packages/shared/src/types/<domain>.ts`
-4. Add API client function in `apps/web/src/lib/api-client/<domain>.ts`
-5. Create React Query hook in `apps/web/src/hooks/api/use<Domain>.ts`
+### Code Style
 
-**Add a new page:**
-1. Create `apps/web/app/<route>/page.tsx`
-2. Add client components in `apps/web/src/features/<feature>/`
-3. Use hooks from `src/hooks/api/`
-
-### Build and Deployment
-
-**Production build:**
+**Formatter**: Biome (NOT ESLint/Prettier)
 ```bash
-pnpm run build  # Builds all packages via Turbo
-
-# Run production
-cd apps/api
-pnpm run start  # Port 3001
-
-cd apps/web
-pnpm run start  # Port 3000
+pnpm run lint    # Check
+pnpm run format  # Fix
 ```
 
-**Docker:**
-- Single container image with both API and Web services
-- Uses multi-stage builds for optimization
-- Main Dockerfile: `Dockerfile` (root directory)
-- Startup script: `docker/start-combined.sh` - Manages both services
-- Compose file: `docker-compose.yml`
-- Published to Docker Hub: `khak1s/arr-dashboard`
-- Unraid template: `unraid/arr-dashboard.xml`
+**TypeScript**: Strict mode with `noUncheckedIndexedAccess: true`
 
-## Docker Deployment
+---
 
-**Single Container (Recommended):**
+## Deployment
+
+### Docker (Single Container)
 
 ```bash
-# Using pre-built image
 docker run -d \
   --name arr-dashboard \
   -p 3000:3000 \
   -v /path/to/config:/config \
+  -e PUID=1000 \
+  -e PGID=1000 \
   khak1s/arr-dashboard:latest
-
-# Or with docker-compose
-docker-compose up -d
 ```
 
-**Key Files:**
-- `Dockerfile` - Combined image build (API + Web)
-- `docker/start-combined.sh` - Startup script managing both processes
-- `unraid/arr-dashboard.xml` - Unraid Community Applications template
-- `UNRAID_DEPLOYMENT.md` - Unraid installation guide
+**Volume**: `/config/` contains `prod.db`, `secrets.json`
 
-**Environment Variables:**
-- `DATABASE_URL`: Database path (default: `file:/config/prod.db`)
-- `API_PORT`: API port (default: `3001`)
-- `PORT`: Web port (default: `3000`)
-- `SESSION_TTL_HOURS`: Session expiration (default: `24`)
+**Startup**: `docker/start-combined.sh` manages API + Web processes
 
-**Note:** API and Web use the same `API_HOST` variable differently:
-- API server: Set to `0.0.0.0` (bind address)
-- Web server: Set to `http://localhost:3001` (proxy URL)
-- This is handled automatically in `docker/start-combined.sh`
+### Environment Variables
 
-## Code Style and Tooling
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `DATABASE_URL` | `file:/config/prod.db` | Database path |
+| `API_PORT` | `3001` | API server port |
+| `PORT` | `3000` | Web server port |
+| `HOST` | `0.0.0.0` | Listen address |
+| `PUID` | `911` | Process user ID |
+| `PGID` | `911` | Process group ID |
+| `SESSION_TTL_HOURS` | `24` | Session expiration |
+| `SESSION_COOKIE_NAME` | `arr_session` | Cookie name |
+| `ENCRYPTION_KEY` | Auto-generated | 32-byte hex |
+| `SESSION_COOKIE_SECRET` | Auto-generated | 32-byte hex |
+| `API_CORS_ORIGIN` | - | CORS whitelist |
+| `API_RATE_LIMIT_MAX` | - | Rate limit max |
+| `WEBAUTHN_RP_ID` | `localhost` | Passkey RP ID |
+| `WEBAUTHN_ORIGIN` | `http://localhost:3000` | Passkey origin |
 
-**Formatter/Linter:** Biome (NOT ESLint/Prettier)
-- Config: `biome.json`
-- Line width: 100 characters
-- Recommended rules enabled
-- Run: `pnpm run format` or `pnpm run lint`
+### CI/CD
 
-**TypeScript:**
-- Strict mode enabled
-- `noUncheckedIndexedAccess: true` (always check array access)
-- Path aliases configured in `tsconfig.base.json`:
-  - `@arr/shared` - Shared package
-  - `@arr/api/*` - API source files
-  - `@arr/web/*` - Web source files
-
-**Package Manager:** pnpm 9.12.0 (enforced via `packageManager` field)
-
-## Important Gotchas and Patterns
-
-### 1. Path Aliases Don't Work Everywhere
-- Next.js app directory can use `@arr/web/*` for `src/` imports
-- Server Components may need relative imports for some paths
-- Always test imports when adding new files
-
-### 2. Encryption Pattern
-```typescript
-// Encrypt (API)
-const result = app.encryptor.encrypt(plaintext);
-// Store result.value and result.iv in database
-
-// Decrypt (API)
-const plaintext = app.encryptor.decrypt({ value, iv });
-```
-
-### 3. Service Instance Fetcher Pattern
-```typescript
-// In route handler
-const instances = await app.prisma.serviceInstance.findMany({
-  where: { userId: request.currentUser.id, service: 'RADARR' }
-});
-
-const results = await Promise.all(
-  instances.map(async (instance) => {
-    const fetch = createInstanceFetcher(app, instance);
-    return fetch('/api/v3/movie');
-  })
-);
-```
-
-### 4. Protected Routes
-- Backend: Check `request.currentUser` (populated by preHandler hook)
-- Frontend: `AuthGate` component handles client-side redirect
-- Middleware handles SSR redirects for protected routes (does NOT proxy API requests)
-
-### 5. React Query Key Conventions
-```typescript
-// Pattern: [domain, action, ...params]
-['services']                    // All services
-['services', instanceId]        // Specific service
-['movies', { instanceId }]      // Movies for instance
-['queue', 'all']               // All queue items
-```
-
-### 6. Environment Variables
-- API: Defined in `apps/api/src/config/env.ts` with Zod schema
-- Web: Only `API_HOST` needed (for Next.js rewrites configuration in next.config.mjs)
-- NO `NEXT_PUBLIC_*` variables needed for API communication
-- Secrets auto-generated if not provided
-
-### 7. Docker Volume Persistence
-- All state persisted to `/config/` in Docker (LinuxServer.io convention)
-- Contains: `prod.db`, `secrets.json`
-- Mount: `./config:/config` in docker-compose
-
-## Testing
-
-**Test Runner:** Vitest
-- Config in each package's `package.json`
-- Run: `pnpm run test` from root
-- Note: Test coverage is minimal in current codebase
-
-## Recent Bug Fixes to Remember
-
-1. **Login race condition** (f7c52f7): Query cache must be updated immediately after login
-2. **Cookie forwarding** (c9f24b7): Next.js rewrites automatically forward cookies (no manual forwarding needed)
-3. **API proxy** (8b80c82, 917aa92): Use Next.js rewrites (next.config.mjs) instead of client-side API URLs
-4. **Secret generation** (8fbb72f): Register cookie plugin AFTER secret generation
-5. **Hex key detection** (af87b0d): Encryption key auto-detects hex/base64/utf8 encoding
-
-## Git Workflow
-
-- Main branch: `main`
-- Recent version: 2.0 (complete rewrite, NOT compatible with v1.x)
-- Docker images published on releases
-- Commit style: Conventional commits (feat:, fix:, chore:, docs:)
-
-## Future Considerations
-
-1. **CSRF tokens** - Currently relying on sameSite cookies + CORS, could add @fastify/csrf-protection
-2. **PostgreSQL** - SQLite works for single-instance, but PostgreSQL better for multi-instance deployments
-3. **Test coverage** - Minimal tests currently, Vitest configured but underutilized
-4. **Rate limiting** - Currently global, could be per-user
-5. **Webhook support** - Could add webhook receivers for arr services
-
-## Quick Reference: File Locations
-
-**Backend:**
-- Entry: `apps/api/src/index.ts`
-- Server setup: `apps/api/src/server.ts`
-- Routes: `apps/api/src/routes/*.ts`
-- Auth: `apps/api/src/lib/auth/`
-- ARR clients: `apps/api/src/lib/arr/`
-- Prisma schema: `apps/api/prisma/schema.prisma`
-
-**Frontend:**
-- Entry: `apps/web/app/layout.tsx`
-- Pages: `apps/web/app/**/page.tsx`
-- Components: `apps/web/src/components/`
-- Features: `apps/web/src/features/` (page-specific components)
-- Hooks: `apps/web/src/hooks/api/`
-- API client: `apps/web/src/lib/api-client/`
-- Middleware: `apps/web/middleware.ts` (route protection only, skips /api and /auth)
-- Config: `apps/web/next.config.mjs` (API proxy rewrites)
-
-**Shared:**
-- Types: `packages/shared/src/types/*.ts`
-- Export: `packages/shared/src/index.ts`
-
-## Key npm Scripts
-
-```bash
-# Root-level (via Turbo)
-pnpm run dev      # Start all dev servers (API + Web in parallel)
-pnpm run build    # Build all packages
-pnpm run lint     # Lint all packages with Biome
-pnpm run format   # Format all packages with Biome
-pnpm run test     # Run tests with Vitest
-
-# API-specific
-cd apps/api
-pnpm run dev                    # Start API dev server
-pnpm run build                  # Build for production
-pnpm run start                  # Start production server
-pnpm run db:generate            # Generate Prisma client after schema changes
-pnpm run db:migrate             # Run migrations (production)
-pnpm run db:push                # Push schema changes (development)
-pnpm run reset-admin-password   # Reset admin password utility
-
-# Web-specific
-cd apps/web
-pnpm run dev      # Start Next.js dev server
-pnpm run build    # Build for production
-pnpm run start    # Start production server
-```
-
-## When Working on This Codebase
-
-1. **Understand the proxy architecture** - API requests are proxied via Next.js rewrites (next.config.mjs), NOT middleware. Middleware only handles route protection.
-2. **Never commit secrets** - `.env` files are gitignored
-3. **Use relative paths in API** - Avoid absolute imports in Fastify routes
-4. **Server Components by default** - Only add `"use client"` when necessary
-5. **Encrypt all service API keys** - Use `app.encryptor.encrypt()`
-6. **Invalidate queries** - After mutations, invalidate relevant query keys
-7. **Check Prisma schema** - Understand relationships before querying
-8. **Test in Docker** - Local dev and Docker behave differently (env vars, paths)
-9. **Always verify resource ownership** - Include `userId` in all queries for user-owned resources (ServiceInstance, TrashTemplate, etc.)
+**Workflow**: `.github/workflows/ci.yml`
+- Lint & Type Check (all PRs)
+- Docker Build (fork-safe, skips login for external PRs)
 
 ---
 
-**Last Updated:** 2025-12-04
-**Version:** 2.0.0
-**Node Version:** 20+
-**pnpm Version:** 9.12.0+
+## Patterns & Gotchas
+
+### Security Patterns
+
+**Always Encrypt API Keys:**
+```typescript
+const { value, iv } = app.encryptor.encrypt(apiKey);
+await prisma.serviceInstance.create({
+  data: { encryptedApiKey: value, encryptionIv: iv, ... }
+});
+```
+
+**Always Verify Ownership:**
+```typescript
+// Include userId in ALL queries for user-owned resources
+where: { id, userId: request.currentUser!.id }
+```
+
+**Session Invalidation After Credential Changes:**
+```typescript
+// Password change, passkey deletion, etc.
+await app.sessionService.invalidateAllUserSessions(userId, exceptToken);
+```
+
+### Common Gotchas
+
+1. **API Proxy**: Frontend uses `/api/*` paths, NOT `localhost:3001`
+2. **Middleware**: Only does route protection, NOT API proxying
+3. **Server Components**: Default in Next.js, add `"use client"` when needed
+4. **Query Invalidation**: Always invalidate after mutations
+5. **Path Aliases**: May need relative imports in some Server Components
+6. **Docker vs Dev**: Different env vars and paths
+
+### Error Responses
+
+```typescript
+// 400 Bad Request
+{ error: "Invalid payload", details: {...} }
+
+// 401 Unauthorized
+{ error: "Invalid credentials" }
+{ error: "Authentication required" }
+
+// 403 Forbidden
+{ error: "Password registration is disabled" }
+
+// 404 Not Found
+{ error: "Not found or access denied" }
+
+// 423 Locked
+{ error: "Account locked. Try again in X minutes." }
+```
+
+---
+
+## Quick Reference
+
+### File Locations
+
+| Purpose | Path |
+|---------|------|
+| API entry | `apps/api/src/index.ts` |
+| API server | `apps/api/src/server.ts` |
+| API routes | `apps/api/src/routes/*.ts` |
+| Auth library | `apps/api/src/lib/auth/` |
+| ARR fetcher | `apps/api/src/lib/arr/arr-fetcher.ts` |
+| Prisma schema | `apps/api/prisma/schema.prisma` |
+| Frontend pages | `apps/web/app/**/page.tsx` |
+| Frontend features | `apps/web/src/features/` |
+| API hooks | `apps/web/src/hooks/api/` |
+| API client | `apps/web/src/lib/api-client/` |
+| Shared types | `packages/shared/src/types/` |
+| Docker startup | `docker/start-combined.sh` |
+
+### npm Scripts
+
+```bash
+# Root (Turbo)
+pnpm run dev      # Start all
+pnpm run build    # Build all
+pnpm run lint     # Lint all
+pnpm run test     # Test all
+
+# API
+pnpm --filter @arr/api run db:push
+pnpm --filter @arr/api run db:migrate
+pnpm --filter @arr/api run reset-admin-password
+
+# Web
+pnpm --filter @arr/web run build
+```
+
+### Request Decorations
+
+```typescript
+request.currentUser   // User object (if authenticated)
+request.sessionToken  // Session token string
+app.prisma            // Prisma client
+app.encryptor         // AES-256-GCM encryption
+app.sessionService    // Session management
+app.config            // Environment config
+```
+
+---
+
+**Last Updated:** 2025-12-16
+**Version:** 2.1.0
+**Node:** 20+
+**pnpm:** 9.12.0+
