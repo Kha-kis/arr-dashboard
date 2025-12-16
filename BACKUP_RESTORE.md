@@ -6,13 +6,15 @@ This guide covers the built-in encrypted backup and restore functionality in Arr
 
 - [Overview](#overview)
 - [Features](#features)
+- [Backup Password Configuration](#backup-password-configuration)
 - [Creating a Backup](#creating-a-backup)
 - [Restoring from Backup](#restoring-from-backup)
+- [Automated Backups](#automated-backups)
 - [Backup File Format](#backup-file-format)
 - [Security](#security)
 - [Best Practices](#best-practices)
 - [Troubleshooting](#troubleshooting)
-- [API Usage](#api-usage)
+- [API Reference](#api-reference)
 
 ## Overview
 
@@ -20,19 +22,21 @@ Arr Dashboard includes a built-in backup and restore system that allows you to:
 
 - **Export** your entire configuration (database + secrets) as an encrypted file
 - **Restore** from a backup to migrate between installations or recover from issues
+- **Automate** backups with configurable intervals and retention
 - **Secure** your data with AES-256-GCM encryption and password-based encryption
 
 The backup system is designed to be simple, secure, and portable across different installations.
 
 ## Features
 
-- ✅ **Encrypted Backups** - AES-256-GCM encryption with PBKDF2 key derivation
-- ✅ **Complete Backup** - Includes all database data and encryption keys
-- ✅ **Password Protected** - Choose your own backup password (not stored anywhere)
-- ✅ **Portable** - Works across different servers and Docker installations
-- ✅ **Version Tracking** - Backups include app version and timestamp metadata
-- ✅ **Automatic Restart** - App automatically restarts after restore in production
-- ✅ **Manual Restart** - Separate endpoint for manual application restarts
+- **Encrypted Backups** - AES-256-GCM encryption with PBKDF2 key derivation (600,000 iterations)
+- **Complete Backup** - Includes all database data and encryption keys
+- **Server-Side Storage** - Backups stored on filesystem for easy management
+- **Automated Scheduling** - Configurable backup intervals (hourly, daily, weekly)
+- **Retention Policy** - Automatic cleanup of old backups
+- **Multiple Backup Types** - Manual, scheduled, and pre-update backups
+- **Version Tracking** - Backups include app version and timestamp metadata
+- **Automatic Restart** - App automatically restarts after restore in production
 
 ### What's Included in Backups
 
@@ -42,8 +46,8 @@ A backup includes:
 - User accounts (passwords, TMDB API keys)
 - User sessions
 - Service instances (Sonarr/Radarr/Prowlarr configurations)
-- Service tags
-- OIDC provider configurations
+- Service tags and instance-tag mappings
+- OIDC provider configuration
 - OIDC account links
 - WebAuthn passkey credentials
 
@@ -52,25 +56,47 @@ A backup includes:
 - Session cookie secret
 
 **Metadata:**
+- Backup version (1.0)
 - App version at backup time
 - Backup timestamp
-- Data size
+
+## Backup Password Configuration
+
+### Production (Docker)
+
+In production, you **must** set the `BACKUP_PASSWORD` environment variable:
+
+```yaml
+services:
+  arr-dashboard:
+    image: khak1s/arr-dashboard:latest
+    environment:
+      - BACKUP_PASSWORD=your-very-strong-password-here
+    volumes:
+      - ./config:/config
+```
+
+Without this variable, backup operations will fail in production with:
+> "FATAL: BACKUP_PASSWORD environment variable is required in production."
+
+### Development
+
+In development mode, a secure random password is automatically generated and stored in `secrets.json`. You don't need to configure anything.
+
+### Password Requirements
+
+- Use at least 16 characters
+- Mix uppercase, lowercase, numbers, and symbols
+- Store this password securely - **you'll need it to restore backups**
 
 ## Creating a Backup
 
 ### Via Web UI (Recommended)
 
 1. **Login** to your Arr Dashboard
-2. Navigate to **Settings → Account** (or **Settings → Backup** if there's a dedicated tab)
-3. Scroll to the **Backup & Restore** section
-4. Enter a **strong password** for encrypting the backup
-5. Click **Create Backup**
-6. The encrypted backup file will be downloaded automatically
-
-**Filename Format:**
-```
-arr-dashboard-backup-2025-10-14T12-30-00-000Z.enc
-```
+2. Navigate to **Settings → Backup**
+3. Click **Create Backup**
+4. The backup is created and stored on the server
 
 ### Via API
 
@@ -78,92 +104,123 @@ arr-dashboard-backup-2025-10-14T12-30-00-000Z.enc
 curl -X POST http://localhost:3000/api/backup/create \
   -H "Content-Type: application/json" \
   -H "Cookie: arr_session=your-session-cookie" \
-  -d '{"password": "your-strong-password"}' \
-  -o backup.enc
+  -d '{}'
+```
+
+### Backup Storage Location
+
+Backups are stored in `/config/backups/` organized by type:
+```
+/config/backups/
+├── manual/       # Manually created backups
+├── scheduled/    # Automated backups
+└── update/       # Pre-update backups
+```
+
+**Filename Format:**
+```
+arr-dashboard-backup-2025-10-14T12-30-00-000Z.json
 ```
 
 ## Restoring from Backup
 
 ### Via Web UI (Recommended)
 
-1. **Login** to your Arr Dashboard (or create a new account if fresh install)
-2. Navigate to **Settings → Account** (or **Settings → Backup**)
-3. Scroll to the **Backup & Restore** section
-4. Click **Choose File** and select your `.enc` backup file
-5. Enter the **password** you used when creating the backup
-6. Click **Restore Backup**
-7. Wait for the restore to complete
+**Option 1: From Server-Stored Backup**
+1. Navigate to **Settings → Backup**
+2. View the list of available backups
+3. Click **Restore** on the desired backup
+4. Confirm the restore operation
 
-**After Restore:**
-
-- **Production/Docker**: The application will automatically restart in a few seconds
-- **Development**: You'll see a message to manually restart the server
+**Option 2: Upload Backup File**
+1. Navigate to **Settings → Backup**
+2. Click **Upload Backup**
+3. Select your backup `.json` file
+4. Confirm the restore operation
 
 ### Via API
 
+**From Server-Stored Backup:**
 ```bash
-# First, read the backup file as base64
-BACKUP_DATA=$(base64 -w 0 backup.enc)  # Linux/Mac
-# OR
-BACKUP_DATA=$(certutil -encode backup.enc -encodehex | findstr /v CERTIFICATE)  # Windows
+curl -X POST http://localhost:3000/api/backup/restore-from-file \
+  -H "Content-Type: application/json" \
+  -H "Cookie: arr_session=your-session-cookie" \
+  -d '{"id": "backup-id-here"}'
+```
 
-# Then restore
+**From Uploaded File:**
+```bash
+# Base64 encode the backup file
+BACKUP_DATA=$(base64 -w 0 backup.json)
+
 curl -X POST http://localhost:3000/api/backup/restore \
   -H "Content-Type: application/json" \
   -H "Cookie: arr_session=your-session-cookie" \
-  -d "{\"encryptedBackup\": \"$BACKUP_DATA\", \"password\": \"your-strong-password\"}"
+  -d "{\"backupData\": \"$BACKUP_DATA\"}"
 ```
 
-### Important Notes
+### After Restore
 
-#### Automatic Restart
+- **Production/Docker**: The application will automatically restart within a few seconds
+- **Development**: You'll see a message to manually restart the server
+- Your current session will be invalidated - log in with restored credentials
 
-After a successful restore, the application will:
+**Important**: Restore completely overwrites your current database. Create a backup first if needed.
 
-1. **Production/Docker**: Automatically restart within 1-2 seconds
-   - The container must have a restart policy (`restart: unless-stopped`)
-   - Or be managed by a process manager (pm2, systemd, etc.)
+## Automated Backups
 
-2. **Development**: Show a message to manually restart
-   - Stop the dev server (Ctrl+C)
-   - Run `pnpm run dev` again
+### Configuration
 
-#### Session Expiration
+Configure automated backups in **Settings → Backup**:
 
-- Your current session will be invalidated after restore
-- You'll need to log back in with the restored credentials
-- Any active sessions from the backup will be restored
+| Setting | Options | Description |
+|---------|---------|-------------|
+| **Enabled** | On/Off | Enable or disable scheduled backups |
+| **Interval Type** | Hourly, Daily, Weekly, Disabled | Backup frequency |
+| **Interval Value** | 1-N | Multiplier for interval (e.g., every 2 days) |
+| **Retention Count** | 1-N | Number of backups to keep (older ones deleted) |
 
-#### Data Overwrite
+### Via API
 
-- **⚠️ Warning**: Restore completely overwrites your current database
-- All existing data will be replaced with the backup data
-- This action cannot be undone - create a backup first if needed
+**Get Settings:**
+```bash
+curl http://localhost:3000/api/backup/settings \
+  -H "Cookie: arr_session=your-session-cookie"
+```
+
+**Update Settings:**
+```bash
+curl -X PUT http://localhost:3000/api/backup/settings \
+  -H "Content-Type: application/json" \
+  -H "Cookie: arr_session=your-session-cookie" \
+  -d '{
+    "enabled": true,
+    "intervalType": "DAILY",
+    "intervalValue": 1,
+    "retentionCount": 7
+  }'
+```
 
 ## Backup File Format
 
 ### Structure
 
-Backups use a layered encryption approach:
+Backups use a JSON envelope with encrypted payload:
 
-```
-┌─────────────────────────────────────────┐
-│  Encrypted Container (.enc file)        │
-│  ┌───────────────────────────────────┐  │
-│  │ Salt (32 bytes)                   │  │
-│  │ IV (16 bytes)                     │  │
-│  │ Auth Tag (16 bytes)               │  │
-│  │ Encrypted Payload                 │  │
-│  │  ┌─────────────────────────────┐  │  │
-│  │  │ JSON Backup Data            │  │  │
-│  │  │ - version: "1.0"            │  │  │
-│  │  │ - appVersion: "2.2.0"       │  │  │
-│  │  │ - timestamp: "2025-10-14..." │  │  │
-│  │  │ - data: { ... }             │  │  │
-│  │  │ - secrets: { ... }          │  │  │
-│  │  └─────────────────────────────┘  │  │
-│  └───────────────────────────────────┘  │
-└─────────────────────────────────────────┘
+```json
+{
+  "version": "1.0",
+  "kdfParams": {
+    "algorithm": "pbkdf2",
+    "hash": "sha256",
+    "iterations": 600000,
+    "saltLength": 32
+  },
+  "salt": "base64-encoded-salt",
+  "iv": "base64-encoded-iv",
+  "tag": "base64-encoded-auth-tag",
+  "cipherText": "base64-encoded-encrypted-backup"
+}
 ```
 
 ### Encryption Details
@@ -174,13 +231,12 @@ Backups use a layered encryption approach:
 - **Mode**: GCM combines encryption and authentication
 
 **Key Derivation**: PBKDF2
-- **Iterations**: 100,000
+- **Iterations**: 600,000 (OWASP recommendation for PBKDF2-SHA256)
 - **Key Length**: 32 bytes (256 bits)
 - **Digest**: SHA-256
 - **Salt**: 32 random bytes (unique per backup)
 
-**Encoding**: Base64
-- The entire encrypted container is base64-encoded for safe transmission
+**IV (Initialization Vector)**: 12 bytes (NIST recommended for GCM)
 
 ### Version Compatibility
 
@@ -188,34 +244,24 @@ Backups use a layered encryption approach:
 
 The backup system includes version checks:
 - Backups from unsupported versions will be rejected
-- App version is stored for reference (e.g., "2.2.0")
+- App version is stored for reference
 - Future versions may support migration from older backup formats
 
 ## Security
 
-### Password Security
+### Backup Password Security
 
-**Choosing a Strong Password:**
-- Use at least 16 characters
-- Mix uppercase, lowercase, numbers, and symbols
-- Don't reuse your login password
-- Consider using a password manager
-
-**Password Storage:**
-- ⚠️ **Your backup password is NOT stored anywhere**
-- You must remember it or store it securely
+**Key Points:**
+- Your backup password is stored as `BACKUP_PASSWORD` environment variable
+- In development, it's auto-generated and stored in `secrets.json`
 - Lost passwords = unrecoverable backups
+- Use a strong password (16+ characters)
 
 ### Encryption Strength
 
 **Industry Standard:**
-- AES-256-GCM is used by:
-  - U.S. Government for classified information
-  - Major cloud providers (AWS, Google, Azure)
-  - Signal, WhatsApp, and other secure messaging apps
-
-**Key Derivation:**
-- PBKDF2 with 100,000 iterations makes brute-force attacks impractical
+- AES-256-GCM is used by U.S. Government, major cloud providers, and secure messaging apps
+- PBKDF2 with 600,000 iterations makes brute-force attacks impractical
 - Unique salt per backup prevents rainbow table attacks
 
 ### What's Protected
@@ -230,57 +276,17 @@ The backup system includes version checks:
 
 ### Encryption Keys in Backups
 
-**Important Security Consideration:**
+Backup files include the encryption keys used to decrypt service API keys. This is intentional:
 
-Backup files contain the encryption keys used to decrypt service API keys stored in the database. This is intentional and follows industry-standard practices for self-hosted applications.
-
-**Why Encryption Keys Are Included:**
-
-1. **Complete Portability**: Backups can be restored on any server without manual key management
-2. **Industry Standard**: Other self-hosted applications (Sonarr, Radarr, Prowlarr) store API keys in plain text in their databases
-3. **Security Perimeter**: The backup password is the security boundary - it protects all data including keys
-4. **Practical Security**: Without this approach, backups would be incomplete and unusable for disaster recovery
-
-**Security Implications:**
-
-- **Your backup password is the master key** - Anyone with the password can decrypt ALL data
-- The backup file is as sensitive as the password you choose to protect it
-- Service API keys are protected by TWO layers: the backup encryption password AND the included encryption key
-- This is more secure than how most self-hosted apps handle API keys (which store them in plain text)
+1. **Complete Portability**: Backups can be restored on any server
+2. **Industry Standard**: Other self-hosted apps store API keys in plain text
+3. **Security Perimeter**: The backup password protects all data including keys
+4. **Double Encryption**: API keys are encrypted in DB AND encrypted in backup
 
 **Best Practices:**
-
-1. **Use a very strong backup password** (minimum 16 characters)
-2. **Store backups securely** - treat them as highly sensitive data
-3. **Physical/filesystem security** - Ensure your backup storage location is secure
-4. **Regular rotation** - Create new backups periodically and securely delete old ones
-5. **Access control** - Limit who has access to backup files and passwords
-
-**Comparison with Other Applications:**
-
-- **Sonarr/Radarr/Prowlarr**: Store all API keys in plain text in SQLite database
-- **Arr Dashboard**: Encrypts API keys in database, then encrypts entire backup including keys
-- **Result**: Arr Dashboard provides double encryption for API keys in backups
-
-**The Bottom Line:**
-
-Including encryption keys in backups is the correct approach for a self-hosted application. The backup password is your security perimeter - choose it wisely and protect it like you would protect access to your entire system.
-
-### Storage Recommendations
-
-1. **Store backups securely**:
-   - Encrypted cloud storage (Google Drive, Dropbox, etc.)
-   - Password-protected USB drives
-   - Secure network storage
-
-2. **Multiple copies** (3-2-1 rule):
-   - 3 total copies of your data
-   - 2 different storage types
-   - 1 off-site backup
-
-3. **Regular testing**:
-   - Periodically test restoring from backup
-   - Verify backups aren't corrupted
+- Use a very strong backup password (minimum 16 characters)
+- Store backups securely - treat them as highly sensitive data
+- Limit who has access to backup files and passwords
 
 ## Best Practices
 
@@ -293,43 +299,29 @@ Including encryption keys in backups is the correct approach for a self-hosted a
 - Database migrations
 
 **Regular Schedule:**
+- Use automated backups for consistent protection
 - Weekly for active setups
 - Monthly for stable setups
-- After significant configuration changes
 
 ### Backup Rotation
 
-Keep multiple backup generations:
-- Latest daily backup
-- Weekly backups for the last month
-- Monthly backups for 6-12 months
-
-Example naming:
-```
-backups/
-├── daily/
-│   ├── arr-dashboard-backup-2025-10-14.enc
-│   ├── arr-dashboard-backup-2025-10-13.enc
-│   └── arr-dashboard-backup-2025-10-12.enc
-├── weekly/
-│   └── arr-dashboard-backup-2025-W42.enc
-└── monthly/
-    └── arr-dashboard-backup-2025-10.enc
-```
+Configure retention count based on your needs:
+- **Home use**: Keep 3-7 backups
+- **Critical data**: Keep 14-30 backups
+- **Limited storage**: Keep 2-3 backups
 
 ### Migration Workflow
 
 **Moving to a new server:**
 
 1. **Old Server:**
-   - Create a backup
-   - Verify backup downloaded successfully
-   - Note your backup password
+   - Create a manual backup
+   - Download the backup file via API or UI
+   - Note your `BACKUP_PASSWORD`
 
 2. **New Server:**
-   - Install Arr Dashboard (Docker recommended)
-   - Complete initial setup (create any user)
-   - Restore from backup
+   - Install Arr Dashboard with same `BACKUP_PASSWORD`
+   - Upload and restore the backup
    - Application will restart with migrated data
 
 3. **Verification:**
@@ -338,114 +330,49 @@ backups/
    - Verify TMDB API key (if set)
    - Test authentication methods (OIDC, passkeys)
 
-### Automation Ideas
-
-**Scheduled Backups (Advanced):**
-
-```bash
-#!/bin/bash
-# backup-arr-dashboard.sh
-# Schedule with cron: 0 2 * * * /path/to/backup-arr-dashboard.sh
-
-SESSION_COOKIE="your-session-cookie"
-PASSWORD="your-backup-password"
-BACKUP_DIR="/backups/arr-dashboard"
-DATE=$(date +%Y-%m-%d)
-
-curl -X POST http://localhost:3000/api/backup/create \
-  -H "Content-Type: application/json" \
-  -H "Cookie: arr_session=$SESSION_COOKIE" \
-  -d "{\"password\": \"$PASSWORD\"}" \
-  -o "$BACKUP_DIR/backup-$DATE.enc"
-
-# Keep only last 7 days
-find "$BACKUP_DIR" -name "backup-*.enc" -mtime +7 -delete
-```
-
-**Note**: Store session cookies and passwords securely (environment variables, secrets management).
-
-## Manual Restart
-
-The application provides a dedicated restart endpoint for manual restarts:
-
-### Via API
-
-```bash
-curl -X POST http://localhost:3000/api/system/restart \
-  -H "Cookie: arr_session=your-session-cookie"
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "message": "The application will restart automatically in a few seconds..."
-}
-```
-
-### When to Use
-
-- After changing environment variables
-- When troubleshooting issues
-- After manual database changes
-- Testing restart functionality
-
-### Rate Limiting
-
-The restart endpoint is rate-limited for security:
-- **Maximum**: 2 requests per 5 minutes
-- **Purpose**: Prevents restart loops and abuse
-- **Authentication**: Required
-
 ## Troubleshooting
 
 ### Backup Creation Issues
+
+#### "BACKUP_PASSWORD environment variable is required in production"
+
+**Solution:** Set the `BACKUP_PASSWORD` environment variable in your Docker configuration.
 
 #### "Failed to create backup"
 
 **Causes:**
 - Database connection issues
 - Disk space full
-- Permission errors on secrets file
+- Permission errors
 
 **Solutions:**
 ```bash
 # Check disk space
 df -h
 
-# Check database file permissions (Docker)
-docker exec arr-dashboard ls -la /app/data/
+# Check permissions (Docker)
+docker exec arr-dashboard ls -la /config/
 
 # Check logs
 docker logs arr-dashboard
 ```
 
-#### "Backup file too large"
-
-**Cause**: Large database (many services, history, etc.)
-
-**Solutions:**
-- Database size is normal for large setups
-- Ensure adequate network bandwidth for download
-- Consider compressing backup file externally if needed
-
 ### Restore Issues
 
-#### "Invalid password or corrupted backup file"
+#### "Failed to decrypt backup: invalid password or corrupted data"
 
 **Causes:**
-- Wrong password entered
-- Backup file corrupted during download/transfer
-- Backup file modified
+- Wrong `BACKUP_PASSWORD` configured
+- Backup file corrupted during transfer
 
 **Solutions:**
-- Double-check password (case-sensitive)
+- Ensure `BACKUP_PASSWORD` matches what was used when backup was created
 - Re-download backup file
-- Verify file integrity (compare file size)
+- Verify file integrity
 
 #### "Unsupported backup version"
 
-**Cause**: Backup from newer/older incompatible version
+**Cause:** Backup from incompatible version
 
 **Solution:**
 - Update Arr Dashboard to latest version
@@ -459,126 +386,71 @@ docker logs arr-dashboard
 - File truncated during transfer
 
 **Solutions:**
-- Verify file is complete (check file size)
-- Use binary mode for file transfers (not text mode)
+- Verify file is complete
+- Use binary mode for file transfers
 - Try re-downloading the backup
 
 ### Restart Issues
 
 #### "Application not restarting after restore (Docker)"
 
-**Cause**: Container doesn't have restart policy
+**Cause:** Container doesn't have restart policy
 
 **Solution:**
 ```yaml
-# docker-compose.yml
 services:
   arr-dashboard:
-    image: khak1s/arr-dashboard:latest
-    restart: unless-stopped  # Add this line
+    restart: unless-stopped
 ```
 
-#### "Application not restarting after restore (Manual)"
+## API Reference
 
-**Cause**: Development mode without process manager
+### List Backups
 
-**Solution:**
-- Development: Manually restart with `pnpm run dev`
-- Production: Use process manager (pm2, systemd)
-- Or use the built-in launcher: `pnpm run dev:launcher`
-
-#### "Manual restart not working"
-
-**Possible Causes:**
-- Not authenticated
-- Rate limit exceeded (2 per 5 minutes)
-- Server configuration issues
-
-**Check:**
-```bash
-# View logs
-docker logs arr-dashboard
-
-# Check authentication
-curl -X GET http://localhost:3000/auth/me \
-  -H "Cookie: arr_session=your-session-cookie"
-```
-
-### Database Issues After Restore
-
-#### "Database is locked"
-
-**Cause**: Multiple processes accessing database
-
-**Solution:**
-```bash
-# Docker: Ensure only one container is running
-docker ps | grep arr-dashboard
-
-# Stop any duplicates
-docker stop <container-id>
-```
-
-#### "Session expired immediately after restore"
-
-**Expected Behavior**: Sessions from the NEW database are restored, your OLD session is invalidated.
-
-**Solution**: Log in again with credentials from the backup.
-
-### File Transfer Issues
-
-#### "Backup file won't upload"
-
-**Causes:**
-- File too large for web server limits
-- Network timeout
-- Browser limitations
-
-**Solutions:**
-- Use API endpoint instead of web UI
-- Adjust upload limits (nginx, etc.)
-- Split restore into smaller operations (advanced)
-
-## API Usage
-
-### Endpoints
-
-#### Create Backup
-
-**Endpoint**: `POST /api/backup/create`
-
-**Request:**
-```json
-{
-  "password": "your-strong-password"
-}
-```
+**Endpoint**: `GET /api/backup`
 
 **Response:**
 ```json
 {
-  "encryptedBackup": "base64-encoded-backup-data",
-  "metadata": {
-    "version": "1.0",
-    "appVersion": "2.2.0",
-    "timestamp": "2025-10-14T12:30:00.000Z",
-    "dataSize": 12345
-  },
-  "filename": "arr-dashboard-backup-2025-10-14T12-30-00-000Z.enc"
+  "backups": [
+    {
+      "id": "abc123def456",
+      "filename": "arr-dashboard-backup-2025-10-14T12-30-00-000Z.json",
+      "type": "manual",
+      "timestamp": "2025-10-14T12:30:00.000Z",
+      "size": 12345
+    }
+  ]
+}
+```
+
+### Create Backup
+
+**Endpoint**: `POST /api/backup/create`
+
+**Request:** `{}`
+
+**Response:**
+```json
+{
+  "id": "abc123def456",
+  "filename": "arr-dashboard-backup-2025-10-14T12-30-00-000Z.json",
+  "type": "manual",
+  "timestamp": "2025-10-14T12:30:00.000Z",
+  "size": 12345
 }
 ```
 
 **Rate Limit**: 3 requests per 5 minutes
 
-#### Restore Backup
+### Restore from Upload
 
 **Endpoint**: `POST /api/backup/restore`
 
 **Request:**
 ```json
 {
-  "encryptedBackup": "base64-encoded-backup-data",
-  "password": "your-strong-password"
+  "backupData": "base64-encoded-backup-file-contents"
 }
 ```
 
@@ -586,11 +458,11 @@ docker stop <container-id>
 ```json
 {
   "success": true,
-  "message": "Backup restored successfully. The application will restart automatically in a few seconds...",
+  "message": "Backup restored successfully. Please restart the application...",
   "restoredAt": "2025-10-14T12:35:00.000Z",
   "metadata": {
     "version": "1.0",
-    "appVersion": "2.2.0",
+    "appVersion": "2.6.0",
     "timestamp": "2025-10-14T12:30:00.000Z",
     "dataSize": 12345
   }
@@ -599,65 +471,102 @@ docker stop <container-id>
 
 **Rate Limit**: 2 requests per 5 minutes
 
-#### Manual Restart
+### Restore from Server File
 
-**Endpoint**: `POST /api/system/restart`
+**Endpoint**: `POST /api/backup/restore-from-file`
 
-**Request**: No body required
+**Request:**
+```json
+{
+  "id": "backup-id-from-list"
+}
+```
+
+**Response:** Same as restore from upload
+
+**Rate Limit**: 2 requests per 5 minutes
+
+### Download Backup
+
+**Endpoint**: `GET /api/backup/:id/download`
+
+**Response:** Binary file download with `Content-Disposition` header
+
+### Delete Backup
+
+**Endpoint**: `DELETE /api/backup/:id`
 
 **Response:**
 ```json
 {
   "success": true,
-  "message": "The application will restart automatically in a few seconds..."
+  "message": "Backup deleted successfully"
 }
 ```
 
-**Rate Limit**: 2 requests per 5 minutes
+**Rate Limit**: 5 requests per 5 minutes
 
-### Authentication
+### Get Backup Settings
 
-All backup/restore/restart endpoints require authentication:
+**Endpoint**: `GET /api/backup/settings`
 
-**Cookie-based** (web UI):
+**Response:**
+```json
+{
+  "id": 1,
+  "enabled": true,
+  "intervalType": "DAILY",
+  "intervalValue": 1,
+  "retentionCount": 7,
+  "lastRunAt": "2025-10-14T02:00:00.000Z",
+  "nextRunAt": "2025-10-15T02:00:00.000Z",
+  "createdAt": "2025-10-01T00:00:00.000Z",
+  "updatedAt": "2025-10-14T02:00:00.000Z"
+}
 ```
-Cookie: arr_session=your-session-token
+
+### Update Backup Settings
+
+**Endpoint**: `PUT /api/backup/settings`
+
+**Request:**
+```json
+{
+  "enabled": true,
+  "intervalType": "DAILY",
+  "intervalValue": 1,
+  "retentionCount": 7
+}
 ```
 
-**Example with curl**:
-```bash
-# Login first to get session cookie
-curl -X POST http://localhost:3000/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"username": "admin", "password": "your-password"}' \
-  -c cookies.txt
-
-# Use cookie for backup
-curl -X POST http://localhost:3000/api/backup/create \
-  -H "Content-Type: application/json" \
-  -b cookies.txt \
-  -d '{"password": "backup-password"}' \
-  -o backup.enc
-```
+**Response:** Same as get backup settings
 
 ### Error Responses
 
-**400 Bad Request**:
+**400 Bad Request:**
 ```json
 {
   "error": "Invalid request",
-  "details": "Password is required"
+  "details": { ... }
 }
 ```
 
-**401 Unauthorized**:
+**401 Unauthorized:**
 ```json
 {
-  "error": "Unauthorized"
+  "success": false,
+  "error": "Authentication required"
 }
 ```
 
-**429 Too Many Requests**:
+**404 Not Found:**
+```json
+{
+  "error": "Backup not found"
+}
+```
+
+**429 Too Many Requests:**
 ```json
 {
   "statusCode": 429,
@@ -666,11 +575,10 @@ curl -X POST http://localhost:3000/api/backup/create \
 }
 ```
 
-**500 Internal Server Error**:
+**500 Internal Server Error:**
 ```json
 {
-  "error": "Failed to create backup",
-  "details": "Error message details"
+  "error": "Failed to create backup"
 }
 ```
 
@@ -679,7 +587,6 @@ curl -X POST http://localhost:3000/api/backup/create \
 - [Main README](README.md) - General setup and configuration
 - [Authentication Guide](AUTHENTICATION.md) - OIDC and passkey setup
 - [Unraid Deployment](UNRAID_DEPLOYMENT.md) - Unraid-specific instructions
-- [Project Documentation](CLAUDE.md) - Technical architecture
 
 ## Support
 
@@ -693,10 +600,10 @@ For issues with backup/restore:
    - Error messages
    - Steps to reproduce
 
-**⚠️ Security Note**: Never share your backup files or passwords when seeking support!
+**Security Note**: Never share your backup files or passwords when seeking support!
 
 ---
 
-**Last Updated**: 2025-10-14
-**App Version**: 2.2.0+
+**Last Updated**: 2025-12-16
+**App Version**: 2.6.0+
 **Backup Version**: 1.0

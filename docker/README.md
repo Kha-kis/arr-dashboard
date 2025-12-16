@@ -33,7 +33,9 @@ docker-compose up -d --build
 docker run -d \
   --name arr-dashboard \
   -p 3000:3000 \
-  -v /path/to/data:/app/data \
+  -v /path/to/config:/config \
+  -e PUID=1000 \
+  -e PGID=1000 \
   --restart unless-stopped \
   khak1s/arr-dashboard:latest
 ```
@@ -48,11 +50,14 @@ docker-compose up -d
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATABASE_URL` | `file:/app/data/prod.db` | Database connection string |
+| `DATABASE_URL` | `file:/config/prod.db` | Database connection string |
+| `PUID` | `911` | User ID for file permissions |
+| `PGID` | `911` | Group ID for file permissions |
 | `API_PORT` | `3001` | API server port |
 | `PORT` | `3000` | Web server port |
 | `SESSION_TTL_HOURS` | `24` | Session expiration time |
 | `API_RATE_LIMIT_MAX` | `200` | Max requests per minute |
+| `BACKUP_PASSWORD` | - | Required for encrypted backup feature |
 
 ## Ports
 
@@ -61,7 +66,7 @@ docker-compose up -d
 
 ## Volumes
 
-- `/app/data` - Database and configuration files
+- `/config` - Database and configuration files (LinuxServer.io convention)
 
 ## Health Check
 
@@ -111,7 +116,9 @@ To install manually in Unraid:
    - Name: `arr-dashboard`
    - Repository: `khak1s/arr-dashboard:latest`
    - Port: `3000` → `3000` (TCP)
-   - Path: `/app/data` → `/mnt/user/appdata/arr-dashboard`
+   - Path: `/config` → `/mnt/user/appdata/arr-dashboard`
+   - Variable: `PUID` → `99`
+   - Variable: `PGID` → `100`
 4. Click Apply
 
 ## Building for Multiple Platforms

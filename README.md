@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.5.0** - Now with LinuxServer.io-style `/config` volume
+> **Version 2.6.0** - Security improvements, TRaSH Guides sync enhancements, better error handling
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -78,6 +78,14 @@ A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances
 - **Zero-Config Security** - Auto-generated encryption keys
 - **Incognito Mode** - Hide sensitive media titles for screenshots/demos (disguises as Linux ISOs)
 
+### Automated Hunting
+- **Missing Content Search** - Automatically search for missing movies and episodes
+- **Quality Upgrades** - Find better quality versions of existing content
+- **Scheduler Control** - Enable/disable and configure search intervals per instance
+- **Advanced Filters** - Filter by quality profiles, tags, monitored status, and age
+- **Rate Limiting** - Configurable hourly API caps to prevent abuse
+- **Activity Logging** - Track all automated search activity with history
+
 ### Management
 - **Tag Organization** - Organize instances with custom tags
 - **Backup & Restore** - Encrypted backups for easy migration and disaster recovery
@@ -133,6 +141,7 @@ docker-compose up -d
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.6.0` | Security improvements, TRaSH Guides sync for cloned profiles, better error handling |
 | `2.5.0` | ⚠️ **Breaking:** Volume path changed to `/config` (LinuxServer.io convention) |
 | `2.4.3` | Favicon, README screenshots |
 | `2.4.x` | TRaSH Guides integration, PUID/PGID support |
@@ -156,6 +165,9 @@ The application auto-generates all necessary security keys on first run. No envi
 | `DATABASE_URL` | `file:/config/prod.db` | Database connection string |
 | `SESSION_TTL_HOURS` | `24` | Session expiration time |
 | `API_RATE_LIMIT_MAX` | `200` | Max requests per minute |
+| `BACKUP_PASSWORD` | - | **Required** for backup encryption in production |
+| `WEBAUTHN_RP_ID` | `localhost` | Passkey relying party ID (your domain) |
+| `WEBAUTHN_ORIGIN` | `http://localhost:3000` | Passkey origin URL |
 
 > **Note:** Set `PUID` and `PGID` to match the owner of your config directory. Run `id -u` and `id -g` on your host to find your user/group IDs. This follows the [LinuxServer.io](https://docs.linuxserver.io/general/understanding-puid-and-pgid) convention for consistent file permissions.
 
@@ -166,6 +178,8 @@ Configure these in Settings after login:
 - **Service Instances** - Sonarr, Radarr, Prowlarr connections
 - **Tags** - Organize and filter instances
 - **TRaSH Guides Templates** - Quality profile configurations
+- **Hunting Configuration** - Per-instance automated search settings
+- **Backup Settings** - Automated backup schedules and retention
 
 ## Platform Support
 
@@ -197,8 +211,10 @@ arr-dashboard/
 | Layer | Technology |
 |-------|------------|
 | Frontend | Next.js 14, React 18, TailwindCSS, Tanstack Query |
-| Backend | Fastify 4, Prisma ORM, Lucia Auth |
-| Database | SQLite (default), PostgreSQL, MySQL |
+| Backend | Fastify 4, Prisma ORM |
+| Database | SQLite (default), PostgreSQL |
+| Auth | Session-based with Argon2id password hashing |
+| Encryption | AES-256-GCM for secrets at rest |
 | Validation | Zod schemas (shared between frontend/backend) |
 | Build | Turbo, pnpm workspaces |
 

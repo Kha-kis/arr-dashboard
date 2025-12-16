@@ -1,8 +1,8 @@
 # Multi-Authentication Setup Guide
 
 Arr Dashboard supports multiple authentication methods:
-- **Password Authentication** - Traditional username/password login (default, always enabled)
-- **OIDC/OAuth2** - External authentication providers (Authelia, Authentik, or generic OIDC)
+- **Password Authentication** - Traditional username/password login (default)
+- **OIDC/OAuth2** - External authentication providers (Authelia, Authentik, Keycloak, etc.)
 - **Passkeys (WebAuthn)** - Passwordless authentication using biometrics or security keys
 
 ## Table of Contents
@@ -11,27 +11,38 @@ Arr Dashboard supports multiple authentication methods:
 - [Password Authentication](#password-authentication)
 - [Passkey Authentication](#passkey-authentication)
 - [OIDC Authentication](#oidc-authentication)
-  - [Authelia Setup](#authelia-setup)
-  - [Authentik Setup](#authentik-setup)
-  - [Generic OIDC Setup](#generic-oidc-setup)
+  - [Configuring OIDC](#configuring-oidc)
+  - [Provider Examples](#provider-examples)
 - [Environment Variables Reference](#environment-variables-reference)
 - [Security Considerations](#security-considerations)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Quick Start
 
-### Default Setup (Password Only)
+### Option 1: Password Authentication (Default)
 
 No configuration needed. Create the first user on initial setup:
 
 1. Navigate to `http://your-server:3000/setup`
-2. Create an admin account with username and password
-3. Log in with your credentials
+2. Select **Password** authentication
+3. Create an admin account with username and password
+4. Log in with your credentials
 
-### Adding Passkeys
+### Option 2: OIDC Authentication
 
-Passkeys are always available once logged in:
+Configure OIDC during initial setup:
+
+1. Navigate to `http://your-server:3000/setup`
+2. Select **OIDC** authentication
+3. Enter your OIDC provider details (client ID, secret, issuer URL)
+4. Complete login through your OIDC provider
+5. Admin account is created automatically from OIDC profile
+
+### Adding Passkeys (After Setup)
+
+Passkeys can be added to password-authenticated accounts:
 
 1. Log in to your account
 2. Go to **Settings** → **Account** tab
@@ -39,11 +50,13 @@ Passkeys are always available once logged in:
 4. Click **Add Passkey** and follow your device's prompts
 5. Next login, click **Sign in with passkey** button
 
+> **Note:** Passkeys are only available for password-authenticated accounts. OIDC users authenticate through their identity provider.
+
 ---
 
 ## Password Authentication
 
-Password authentication is the default method and cannot be disabled. It serves as a fallback if other methods fail.
+Password authentication is the default method for new installations.
 
 ### Password Requirements
 
@@ -66,6 +79,7 @@ Passkeys provide passwordless authentication using your device's biometrics (Tou
 
 ### Requirements
 
+- **Password account** - Passkeys are only available for password-authenticated users
 - **HTTPS** required in production (localhost works over HTTP for development)
 - Modern browser with WebAuthn support (Chrome, Firefox, Safari, Edge)
 - Device with biometric authentication or external security key
@@ -73,7 +87,7 @@ Passkeys provide passwordless authentication using your device's biometrics (Tou
 ### Environment Variables (WebAuthn)
 
 ```bash
-# Required for passkey authentication
+# Required for passkey authentication in production
 WEBAUTHN_RP_NAME="Arr Dashboard"                    # Relying Party name shown to users
 WEBAUTHN_RP_ID="arr-dashboard.example.com"          # Your domain (no protocol, no port)
 WEBAUTHN_ORIGIN="https://arr-dashboard.example.com" # Full URL with protocol
@@ -84,13 +98,17 @@ WEBAUTHN_ORIGIN="https://arr-dashboard.example.com" # Full URL with protocol
 - `WEBAUTHN_ORIGIN` must include protocol and match where users access the dashboard
 - For localhost development: `WEBAUTHN_RP_ID="localhost"` and `WEBAUTHN_ORIGIN="http://localhost:3000"`
 
-### Docker Example
+### Docker Example with Passkeys
 
 ```yaml
 services:
   arr-dashboard:
     image: khak1s/arr-dashboard:latest
+    volumes:
+      - ./config:/config
     environment:
+      - PUID=1000
+      - PGID=1000
       - WEBAUTHN_RP_NAME=Arr Dashboard
       - WEBAUTHN_RP_ID=arr.example.com
       - WEBAUTHN_ORIGIN=https://arr.example.com
@@ -108,13 +126,7 @@ Users can manage their passkeys in **Settings** → **Account**:
 
 ## OIDC Authentication
 
-OIDC (OpenID Connect) allows users to authenticate using external identity providers.
-
-### Supported Providers
-
-1. **Authelia** - Self-hosted authentication server
-2. **Authentik** - Open-source identity provider
-3. **Generic OIDC** - Any OpenID Connect-compliant provider
+OIDC (OpenID Connect) allows users to authenticate using external identity providers like Authelia, Authentik, Keycloak, Okta, and others.
 
 ### How It Works
 
@@ -129,9 +141,34 @@ OIDC (OpenID Connect) allows users to authenticate using external identity provi
      - **If user is logged in**: Link OIDC to existing account
      - **If user not logged in** (but users exist): Reject (must log in first to link OIDC)
 
----
+### Configuring OIDC
 
-### Authelia Setup
+OIDC is configured through the **web interface**, not environment variables.
+
+#### During Initial Setup
+
+1. Navigate to `/setup`
+2. Select **OIDC** authentication
+3. Fill in the configuration form:
+   - **Display Name**: How the provider appears on login page
+   - **Client ID**: From your OIDC provider
+   - **Client Secret**: From your OIDC provider
+   - **Issuer URL**: Your provider's OIDC issuer URL
+   - **Redirect URI**: Auto-generated (defaults to `https://your-domain/auth/oidc/callback`)
+   - **Scopes**: Comma-separated list (default: `openid,email,profile`)
+
+#### After Initial Setup (Admin Settings)
+
+1. Log in with your existing account
+2. Go to **Settings** → **OIDC** tab
+3. Configure the OIDC provider with the same fields as above
+4. Click **Save** to enable OIDC login
+
+> **Note:** Only one OIDC provider can be configured at a time. To change providers, delete the existing configuration first.
+
+### Provider Examples
+
+#### Authelia Setup
 
 **1. Configure Authelia**
 
@@ -160,33 +197,15 @@ identity_providers:
 
 **2. Configure Arr Dashboard**
 
-Set these environment variables:
+In the setup page or settings, enter:
+- **Display Name**: Authelia
+- **Client ID**: `arr-dashboard`
+- **Client Secret**: `your-secure-client-secret`
+- **Issuer URL**: `https://auth.example.com`
 
-```bash
-# Authelia OIDC Configuration
-OIDC_AUTHELIA_CLIENT_ID="arr-dashboard"
-OIDC_AUTHELIA_CLIENT_SECRET="your-secure-client-secret"
-OIDC_AUTHELIA_ISSUER="https://auth.example.com"
-OIDC_AUTHELIA_REDIRECT_URI="https://arr-dashboard.example.com/auth/oidc/callback"
-OIDC_AUTHELIA_SCOPES="openid,email,profile"  # Optional, defaults to these
-```
+The redirect URI is auto-generated based on your domain.
 
-**3. Docker Compose Example**
-
-```yaml
-services:
-  arr-dashboard:
-    image: khak1s/arr-dashboard:latest
-    environment:
-      - OIDC_AUTHELIA_CLIENT_ID=arr-dashboard
-      - OIDC_AUTHELIA_CLIENT_SECRET=your-secure-client-secret
-      - OIDC_AUTHELIA_ISSUER=https://auth.example.com
-      - OIDC_AUTHELIA_REDIRECT_URI=https://arr-dashboard.example.com/auth/oidc/callback
-```
-
----
-
-### Authentik Setup
+#### Authentik Setup
 
 **1. Create Application in Authentik**
 
@@ -208,19 +227,15 @@ services:
 
 **2. Configure Arr Dashboard**
 
-```bash
-# Authentik OIDC Configuration
-OIDC_AUTHENTIK_CLIENT_ID="arr-dashboard"
-OIDC_AUTHENTIK_CLIENT_SECRET="your-client-secret-from-authentik"
-OIDC_AUTHENTIK_ISSUER="https://authentik.example.com/application/o/arr-dashboard/"
-OIDC_AUTHENTIK_REDIRECT_URI="https://arr-dashboard.example.com/auth/oidc/callback"
-```
+In the setup page or settings, enter:
+- **Display Name**: Authentik
+- **Client ID**: `arr-dashboard`
+- **Client Secret**: Your client secret from Authentik
+- **Issuer URL**: `https://authentik.example.com/application/o/arr-dashboard/`
 
-**Note:** The issuer URL format for Authentik is typically `https://[authentik-domain]/application/o/[slug]/`
+> **Note:** The issuer URL format for Authentik is typically `https://[authentik-domain]/application/o/[slug]/`
 
----
-
-### Generic OIDC Setup
+#### Generic OIDC Provider
 
 For other OpenID Connect providers (Keycloak, Okta, Google, etc.):
 
@@ -234,14 +249,11 @@ In your OIDC provider:
 
 **2. Configure Arr Dashboard**
 
-```bash
-# Generic OIDC Configuration
-OIDC_GENERIC_CLIENT_ID="your-client-id"
-OIDC_GENERIC_CLIENT_SECRET="your-client-secret"
-OIDC_GENERIC_ISSUER="https://provider.example.com"
-OIDC_GENERIC_REDIRECT_URI="https://arr-dashboard.example.com/auth/oidc/callback"
-OIDC_GENERIC_SCOPES="openid,email,profile"  # Optional
-```
+In the setup page or settings, enter:
+- **Display Name**: Your provider name
+- **Client ID**: Your client ID
+- **Client Secret**: Your client secret
+- **Issuer URL**: Your provider's OIDC issuer URL (must support `.well-known/openid-configuration`)
 
 ---
 
@@ -255,35 +267,15 @@ OIDC_GENERIC_SCOPES="openid,email,profile"  # Optional
 | `WEBAUTHN_RP_ID` | No | `localhost` | Your domain without protocol (e.g., `arr.example.com`) |
 | `WEBAUTHN_ORIGIN` | No | `http://localhost:3000` | Full origin URL with protocol |
 
-### OIDC - Authelia
+### Session & Security
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `OIDC_AUTHELIA_CLIENT_ID` | Yes | OAuth client ID from Authelia config |
-| `OIDC_AUTHELIA_CLIENT_SECRET` | Yes | OAuth client secret from Authelia config |
-| `OIDC_AUTHELIA_ISSUER` | Yes | Authelia base URL (e.g., `https://auth.example.com`) |
-| `OIDC_AUTHELIA_REDIRECT_URI` | Yes | Callback URL: `https://your-dashboard/auth/oidc/callback` |
-| `OIDC_AUTHELIA_SCOPES` | No | Comma-separated scopes (default: `openid,email,profile`) |
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `SESSION_TTL_HOURS` | No | `24` | Session expiration time in hours |
+| `ENCRYPTION_KEY` | No | Auto-generated | 32-byte hex key for AES-256-GCM encryption |
+| `SESSION_COOKIE_SECRET` | No | Auto-generated | 32-byte hex key for cookie signing |
 
-### OIDC - Authentik
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `OIDC_AUTHENTIK_CLIENT_ID` | Yes | OAuth client ID from Authentik |
-| `OIDC_AUTHENTIK_CLIENT_SECRET` | Yes | OAuth client secret from Authentik |
-| `OIDC_AUTHENTIK_ISSUER` | Yes | Authentik issuer URL (includes `/application/o/[slug]/`) |
-| `OIDC_AUTHENTIK_REDIRECT_URI` | Yes | Callback URL: `https://your-dashboard/auth/oidc/callback` |
-| `OIDC_AUTHENTIK_SCOPES` | No | Comma-separated scopes (default: `openid,email,profile`) |
-
-### OIDC - Generic
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `OIDC_GENERIC_CLIENT_ID` | Yes | OAuth client ID from your provider |
-| `OIDC_GENERIC_CLIENT_SECRET` | Yes | OAuth client secret from your provider |
-| `OIDC_GENERIC_ISSUER` | Yes | OIDC issuer URL (used for discovery) |
-| `OIDC_GENERIC_REDIRECT_URI` | Yes | Callback URL: `https://your-dashboard/auth/oidc/callback` |
-| `OIDC_GENERIC_SCOPES` | No | Comma-separated scopes (default: `openid,email,profile`) |
+> **Note:** OIDC is NOT configured via environment variables. Use the web interface (Setup page or Settings) to configure OIDC providers. This allows secure storage of the client secret in the encrypted database.
 
 ---
 
@@ -298,37 +290,40 @@ OIDC_GENERIC_SCOPES="openid,email,profile"  # Optional
 
 Use a reverse proxy like Nginx, Caddy, or Traefik to handle TLS.
 
+### Authentication Method Selection
+
+Choose your authentication method based on your needs:
+
+| Method | Use Case | Notes |
+|--------|----------|-------|
+| **Password** | Simple setup, local network | Default, supports passkeys |
+| **OIDC** | Enterprise, SSO integration | Centralized auth management |
+| **Password + Passkeys** | Enhanced security | Passwordless option for password users |
+
 ### Account Linking
 
-When a user authenticates via OIDC:
-- OIDC accounts are linked based on the provider's unique user ID (not email)
+**OIDC accounts:**
+- Linked based on the provider's unique user ID (not email)
 - **During initial setup**: First OIDC login creates the admin account
-- **After setup**: User must be logged in to link new OIDC provider to their account
-- Users can have multiple auth methods (password + OIDC + passkeys)
+- **After setup**: User must be logged in to link OIDC provider to their account
 
-Passkeys:
+**Passkeys:**
 - Must be registered while logged in (Settings → Account → Passkeys)
 - Linked directly to the user account during registration
 - Can have multiple passkeys per account
-
-### Password Optional
-
-Users can authenticate without a password if they have:
-- OIDC linked OR
-- At least one passkey registered
-
-The database field `User.hashedPassword` is now optional to support OIDC/passkey-only users.
+- Only available for password-authenticated accounts
 
 ### Session Management
 
 - Sessions are stored server-side with signed HTTP-only cookies
 - Session duration: 24 hours (or 30 days with "Remember me")
 - CSRF protection via `sameSite: lax` cookie attribute
+- All sessions invalidated when security-critical settings change
 
 ### Secrets Storage
 
-- All API keys and secrets are encrypted at rest (AES-256-GCM)
-- Encryption keys auto-generated on first run (stored in `secrets.json`)
+- All secrets (API keys, OIDC client secrets) are encrypted at rest (AES-256-GCM)
+- Encryption keys auto-generated on first run (stored in `/config/secrets.json`)
 - OIDC state/nonce stored in-memory with 15-minute expiration
 - Passkey challenges stored in-memory with 5-minute expiration
 
@@ -356,17 +351,18 @@ The database field `User.hashedPassword` is now optional to support OIDC/passkey
 1. Verify callback URL matches exactly: `https://your-domain/auth/oidc/callback`
 2. Check OIDC provider logs for authentication errors
 3. Ensure scopes include `openid`, `email`, `profile`
-4. Verify client secret is correct
+4. Verify client secret is correct in Settings
 5. Check that issuer URL supports OIDC discovery (`.well-known/openid-configuration` should exist)
 
 ### "No OIDC providers configured"
 
-**Problem:** OIDC buttons don't appear on login page
+**Problem:** OIDC button doesn't appear on login page
 
 **Solutions:**
-1. Ensure all required environment variables are set (CLIENT_ID, CLIENT_SECRET, ISSUER, REDIRECT_URI)
-2. Restart the container/server after setting environment variables
-3. Check logs for OIDC configuration errors
+1. Configure OIDC through Settings → OIDC (not environment variables)
+2. Ensure the provider is enabled after configuration
+3. Restart the container/server after making changes
+4. Check logs for OIDC configuration errors
 
 ### OIDC Account Not Linked
 
@@ -376,17 +372,24 @@ The database field `User.hashedPassword` is now optional to support OIDC/passkey
 - To link OIDC to existing account: Log in with password first, then initiate OIDC login
 - During initial setup (no users exist): First OIDC login creates the account
 - OIDC accounts are linked by provider user ID, not email
-- After linking, you can use either password or OIDC to log in
+- After linking, you can use either method to log in
+
+### Passkeys Not Available
+
+**Problem:** Passkey option doesn't appear in Settings
+
+**Solutions:**
+1. Passkeys are only available for password-authenticated accounts
+2. If using OIDC, passkeys are managed by your identity provider
+3. Ensure WebAuthn environment variables are set for production
 
 ---
 
 ## Examples
 
-### Complete Docker Compose with Authelia and Passkeys
+### Docker Compose with Password + Passkeys
 
 ```yaml
-version: '3.8'
-
 services:
   arr-dashboard:
     image: khak1s/arr-dashboard:latest
@@ -394,58 +397,37 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./data:/app/data
+      - ./config:/config
     environment:
-      # Database
-      - DATABASE_URL=file:/app/data/prod.db
-
+      # User/Group IDs
+      - PUID=1000
+      - PGID=1000
       # WebAuthn (Passkeys)
       - WEBAUTHN_RP_NAME=Arr Dashboard
       - WEBAUTHN_RP_ID=arr.example.com
       - WEBAUTHN_ORIGIN=https://arr.example.com
-
-      # OIDC - Authelia
-      - OIDC_AUTHELIA_CLIENT_ID=arr-dashboard
-      - OIDC_AUTHELIA_CLIENT_SECRET=your-secure-client-secret
-      - OIDC_AUTHELIA_ISSUER=https://auth.example.com
-      - OIDC_AUTHELIA_REDIRECT_URI=https://arr.example.com/auth/oidc/callback
     restart: unless-stopped
 ```
 
-### Unraid Template with Multiple Auth Methods
+### Docker Compose for OIDC Setup
 
-```xml
-<Environment>
-  <Variable>
-    <Name>WEBAUTHN_RP_NAME</Name>
-    <Value>Arr Dashboard</Value>
-  </Variable>
-  <Variable>
-    <Name>WEBAUTHN_RP_ID</Name>
-    <Value>arr.example.com</Value>
-  </Variable>
-  <Variable>
-    <Name>WEBAUTHN_ORIGIN</Name>
-    <Value>https://arr.example.com</Value>
-  </Variable>
-  <Variable>
-    <Name>OIDC_AUTHELIA_CLIENT_ID</Name>
-    <Value>arr-dashboard</Value>
-  </Variable>
-  <Variable>
-    <Name>OIDC_AUTHELIA_CLIENT_SECRET</Name>
-    <Value>your-secret</Value>
-  </Variable>
-  <Variable>
-    <Name>OIDC_AUTHELIA_ISSUER</Name>
-    <Value>https://auth.example.com</Value>
-  </Variable>
-  <Variable>
-    <Name>OIDC_AUTHELIA_REDIRECT_URI</Name>
-    <Value>https://arr.example.com/auth/oidc/callback</Value>
-  </Variable>
-</Environment>
+```yaml
+services:
+  arr-dashboard:
+    image: khak1s/arr-dashboard:latest
+    container_name: arr-dashboard
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./config:/config
+    environment:
+      # User/Group IDs
+      - PUID=1000
+      - PGID=1000
+    restart: unless-stopped
 ```
+
+> **Note:** OIDC configuration is done through the web interface during setup or in Settings. No OIDC environment variables are needed.
 
 ---
 
@@ -459,4 +441,4 @@ When reporting issues, please include:
 - Authentication method being used
 - Browser and OS
 - Relevant error messages from browser console and server logs
-- Environment variable configuration (redact secrets)
+- OIDC provider type (if applicable)
