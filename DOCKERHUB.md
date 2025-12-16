@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.5.0** - Now with LinuxServer.io-style `/config` volume
+> **Version 2.6.0** - Security improvements, TRaSH Guides sync enhancements, better error handling
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -41,6 +41,7 @@ services:
 - **Library Management** - Manage your movies and TV shows in one place
 - **TMDB Integration** - Discover trending, popular, and upcoming content
 - **TRaSH Guides Integration** - Apply quality profiles and custom formats with auto-sync
+- **Automated Hunting** - Auto-search for missing content and quality upgrades
 - **Multi-Auth Support** - Password, OIDC (Authelia/Authentik), or Passkeys (WebAuthn)
 - **Encrypted Storage** - All API keys encrypted at rest (AES-256-GCM)
 - **Incognito Mode** - Hide sensitive media titles for screenshots/demos
@@ -55,6 +56,7 @@ services:
 | `DATABASE_URL` | `file:/config/prod.db` | Database connection string |
 | `SESSION_TTL_HOURS` | `24` | Session expiration time |
 | `API_RATE_LIMIT_MAX` | `200` | Max requests per minute |
+| `BACKUP_PASSWORD` | - | **Required** for encrypted backups |
 
 > **Note:** Set `PUID` and `PGID` to match the owner of your config directory. Run `id -u` and `id -g` on your host to find your user/group IDs. This follows the [LinuxServer.io](https://docs.linuxserver.io/general/understanding-puid-and-pgid) convention.
 
@@ -63,6 +65,7 @@ services:
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.6.0` | Security improvements, TRaSH Guides sync for cloned profiles, better error handling |
 | `2.5.0` | **Breaking:** Volume path changed to `/config` (LinuxServer.io convention) |
 | `2.4.x` | TRaSH Guides integration, PUID/PGID support (uses `/app/data`) |
 

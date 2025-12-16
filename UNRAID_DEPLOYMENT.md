@@ -110,12 +110,22 @@ Add these in the Unraid Docker template under "Add another Path, Port, Variable,
 | `SESSION_TTL_HOURS` | `24` | How long sessions last before re-login |
 | `API_RATE_LIMIT_MAX` | `200` | Max API requests per minute |
 
+### Backup Password (Recommended)
+
+For encrypted backups to work, add:
+- Key: `BACKUP_PASSWORD`
+- Value: A strong password (16+ characters)
+
+> **Important**: Store this password securely - you'll need it to restore backups or migrate to a new server.
+
 ### Using PostgreSQL Instead of SQLite
 
 1. Set up PostgreSQL (via Unraid Community Apps)
 2. Add environment variable:
    - Key: `DATABASE_URL`
    - Value: `postgresql://user:password@postgres:5432/arr_dashboard`
+
+The application automatically detects PostgreSQL and configures itself accordingly.
 
 ## Troubleshooting
 
@@ -142,12 +152,27 @@ Common issues:
 
 ## Backup
 
-To backup your data:
+### Method 1: Built-in Encrypted Backup (Recommended)
+
+1. Set `BACKUP_PASSWORD` environment variable (see above)
+2. Go to Settings → Backup
+3. Click "Create Backup" or configure automated schedules
+4. Backups are encrypted with AES-256-GCM and stored in `/config/backups/`
+
+To restore:
+1. Go to Settings → Backup
+2. Select a backup from the list and click "Restore"
+3. Or upload a backup file downloaded from another installation
+
+See [BACKUP_RESTORE.md](BACKUP_RESTORE.md) for detailed backup documentation.
+
+### Method 2: Manual File Backup
+
 1. Stop the container
 2. Copy `/mnt/user/appdata/arr-dashboard/` to your backup location
 3. Restart the container
 
-To restore:
+To restore manually:
 1. Stop the container
 2. Replace `/mnt/user/appdata/arr-dashboard/` with your backup
 3. Restart the container
