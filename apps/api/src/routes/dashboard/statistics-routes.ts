@@ -106,17 +106,24 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			}),
 		);
 
-		// Group results by service type
+		// Track storage groups GLOBALLY across all service types for disk deduplication
+		// This ensures that if Sonarr and Radarr share the same storage group,
+		// disk stats are only counted once total (not once per service type)
+		const globalSeenStorageGroups = new Set<string>();
+
+		// Group results by service type and mark which should count disk stats
 		const sonarrInstances: Array<{
 			instanceId: string;
 			instanceName: string;
 			storageGroupId: string | null;
+			shouldCountDisk: boolean;
 			data: DashboardStatisticsResponse["sonarr"]["instances"][number]["data"];
 		}> = [];
 		const radarrInstances: Array<{
 			instanceId: string;
 			instanceName: string;
 			storageGroupId: string | null;
+			shouldCountDisk: boolean;
 			data: DashboardStatisticsResponse["radarr"]["instances"][number]["data"];
 		}> = [];
 		const prowlarrInstances: Array<{
@@ -129,17 +136,33 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			if (!result) continue;
 
 			if (result.service === "sonarr") {
+				// Determine if this instance should count disk stats
+				const storageGroupId = result.storageGroupId;
+				const shouldCountDisk = !storageGroupId || !globalSeenStorageGroups.has(storageGroupId);
+				if (storageGroupId) {
+					globalSeenStorageGroups.add(storageGroupId);
+				}
+
 				sonarrInstances.push({
 					instanceId: result.instanceId,
 					instanceName: result.instanceName,
 					storageGroupId: result.storageGroupId,
+					shouldCountDisk,
 					data: result.data,
 				});
 			} else if (result.service === "radarr") {
+				// Determine if this instance should count disk stats
+				const storageGroupId = result.storageGroupId;
+				const shouldCountDisk = !storageGroupId || !globalSeenStorageGroups.has(storageGroupId);
+				if (storageGroupId) {
+					globalSeenStorageGroups.add(storageGroupId);
+				}
+
 				radarrInstances.push({
 					instanceId: result.instanceId,
 					instanceName: result.instanceName,
 					storageGroupId: result.storageGroupId,
+					shouldCountDisk,
 					data: result.data,
 				});
 			} else if (result.service === "prowlarr") {
