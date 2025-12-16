@@ -11,6 +11,7 @@ import type {
 	RadarrStatistics,
 	ProwlarrStatistics,
 	HealthIssue,
+	CombinedDiskStats,
 } from "@arr/shared";
 import { useDashboardStatisticsQuery } from "../../../hooks/api/useDashboard";
 
@@ -232,6 +233,24 @@ export const useStatisticsData = () => {
 	const totalHealthIssues =
 		sonarrTotals.healthIssues + radarrTotals.healthIssues + prowlarrTotals.healthIssues;
 
+	// Combined disk stats with proper cross-service deduplication
+	// Falls back to summing aggregates if combinedDisk is not available (backward compatibility)
+	const combinedDisk: CombinedDiskStats = useMemo(() => {
+		if (data?.combinedDisk) {
+			return data.combinedDisk;
+		}
+		// Fallback for backward compatibility (shouldn't happen with updated API)
+		const diskTotal = (sonarrAggregate?.diskTotal ?? 0) + (radarrAggregate?.diskTotal ?? 0);
+		const diskUsed = (sonarrAggregate?.diskUsed ?? 0) + (radarrAggregate?.diskUsed ?? 0);
+		const diskFree = (sonarrAggregate?.diskFree ?? 0) + (radarrAggregate?.diskFree ?? 0);
+		return {
+			diskTotal,
+			diskFree,
+			diskUsed,
+			diskUsagePercent: diskTotal > 0 ? (diskUsed / diskTotal) * 100 : 0,
+		};
+	}, [data?.combinedDisk, sonarrAggregate, radarrAggregate]);
+
 	return {
 		// Query state
 		isLoading,
@@ -248,6 +267,9 @@ export const useStatisticsData = () => {
 		sonarrTotals,
 		radarrTotals,
 		prowlarrTotals,
+
+		// Combined disk (properly deduplicated across all services)
+		combinedDisk,
 
 		// Health
 		allHealthIssues,

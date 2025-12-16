@@ -310,6 +310,20 @@ export const prowlarrStatisticsSchema = z.object({
 
 export type ProwlarrStatistics = z.infer<typeof prowlarrStatisticsSchema>;
 
+/**
+ * Combined disk statistics with proper cross-service deduplication.
+ * When multiple services (Sonarr + Radarr) share the same storage group,
+ * this field contains the correctly deduplicated totals.
+ */
+export const combinedDiskStatsSchema = z.object({
+  diskTotal: z.number(),
+  diskFree: z.number(),
+  diskUsed: z.number(),
+  diskUsagePercent: z.number(),
+});
+
+export type CombinedDiskStats = z.infer<typeof combinedDiskStatsSchema>;
+
 export const dashboardStatisticsResponseSchema = z.object({
   sonarr: z.object({
     instances: z.array(
@@ -341,6 +355,11 @@ export const dashboardStatisticsResponseSchema = z.object({
     ),
     aggregate: prowlarrStatisticsSchema.optional(),
   }),
+  /**
+   * Combined disk statistics with proper cross-service storage group deduplication.
+   * Use this for displaying total disk usage across all services.
+   */
+  combinedDisk: combinedDiskStatsSchema.optional(),
 });
 
 export type DashboardStatisticsResponse = z.infer<

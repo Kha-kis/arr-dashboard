@@ -36,6 +36,7 @@ export const StatisticsClient = () => {
 		sonarrTotals,
 		radarrTotals,
 		prowlarrTotals,
+		combinedDisk,
 		allHealthIssues,
 	} = useStatisticsData();
 
@@ -171,8 +172,8 @@ export const StatisticsClient = () => {
 							/>
 							<StatsCard
 								title="Total Storage"
-								value={formatBytes(sonarrTotals.diskUsed + radarrTotals.diskUsed)}
-								description={`of ${formatBytes(sonarrTotals.diskTotal + radarrTotals.diskTotal)} available`}
+								value={formatBytes(combinedDisk.diskUsed)}
+								description={`of ${formatBytes(combinedDisk.diskTotal)} available`}
 							/>
 						</div>
 					</div>
