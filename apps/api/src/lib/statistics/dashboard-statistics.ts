@@ -63,6 +63,33 @@ interface IndexerEntry {
 	enable?: unknown;
 }
 
+/**
+ * Interface for Prowlarr indexer stats response from /api/v1/indexerstats
+ */
+interface IndexerStatsResponse {
+	indexers?: IndexerStatEntry[];
+	userAgents?: unknown[];
+	hosts?: unknown[];
+}
+
+/**
+ * Interface for individual indexer statistics from Prowlarr
+ */
+interface IndexerStatEntry {
+	indexerId?: unknown;
+	indexerName?: unknown;
+	averageResponseTime?: unknown;
+	averageGrabResponseTime?: unknown;
+	numberOfQueries?: unknown;
+	numberOfRssQueries?: unknown;
+	numberOfAuthQueries?: unknown;
+	numberOfGrabs?: unknown;
+	numberOfFailedQueries?: unknown;
+	numberOfFailedGrabs?: unknown;
+	numberOfFailedRssQueries?: unknown;
+	numberOfFailedAuthQueries?: unknown;
+}
+
 const sumNumbers = (values: Array<number | undefined>): number => {
 	let total = 0;
 	for (const value of values) {
@@ -471,41 +498,10 @@ export const fetchProwlarrStatistics = async (
 	const indexers = (await safeRequestJson<unknown[]>(fetcher, "/api/v1/indexer")) ?? [];
 	const health = (await safeRequestJson<unknown[]>(fetcher, "/api/v1/health")) ?? [];
 
-	// Fetch history from last 30 days for more accurate statistics
-	const thirtyDaysAgo = new Date();
-	thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-	const startDate = thirtyDaysAgo.toISOString();
-
-	// Fetch multiple pages if needed (up to 5000 records total)
-	const historyRecords: unknown[] = [];
-	const pageSize = 1000;
-	const maxPages = 5;
-
-	for (let page = 1; page <= maxPages; page++) {
-		const history: HistoryResponse =
-			(await safeRequestJson<HistoryResponse>(
-				fetcher,
-				`/api/v1/history?page=${page}&pageSize=${pageSize}&eventType=1&eventType=2&eventType=3`,
-			)) ?? {};
-
-		const records = Array.isArray(history.records) ? history.records : [];
-		if (records.length === 0) {
-			break; // No more records
-		}
-
-		historyRecords.push(...records);
-
-		// If we got fewer records than the page size, we've reached the end
-		if (records.length < pageSize) {
-			break;
-		}
-
-		// Check if we've exceeded total records available
-		const totalRecords = toNumber(history.totalRecords) ?? 0;
-		if (historyRecords.length >= totalRecords) {
-			break;
-		}
-	}
+	// Use the dedicated indexerstats endpoint for accurate statistics
+	// This matches what Prowlarr's own Statistics page uses
+	const indexerStats: IndexerStatsResponse =
+		(await safeRequestJson<IndexerStatsResponse>(fetcher, "/api/v1/indexerstats")) ?? {};
 
 	const totalIndexers = indexers.length;
 	const activeIndexers = indexers.filter((entry) => {
@@ -514,109 +510,80 @@ export const fetchProwlarrStatistics = async (
 	}).length;
 	const pausedIndexers = totalIndexers - activeIndexers;
 
-	// Create indexer ID to name mapping
-	const indexerIdToName = new Map<number, string>();
-	for (const indexer of indexers) {
-		if (indexer && typeof indexer === "object") {
-			const id = toNumber((indexer as { id?: unknown }).id);
-			const name = toStringValue((indexer as { name?: unknown }).name);
-			if (id !== undefined && name) {
-				indexerIdToName.set(id, name);
-			}
-		}
-	}
+	// Process indexer statistics from the dedicated endpoint
+	const statsEntries = Array.isArray(indexerStats.indexers) ? indexerStats.indexers : [];
 
-	// Build statistics from history records
-	const indexerStatsMap = new Map<string, { queries: number; grabs: number; successful: number }>();
-
-	for (const record of historyRecords) {
-		if (!record || typeof record !== "object") {
-			continue;
-		}
-
-		// Try to get indexer ID and map it to name
-		const indexerId = toNumber(
-			(record as { indexerId?: unknown; indexer?: unknown }).indexerId ??
-				(record as { indexerId?: unknown; indexer?: unknown }).indexer,
-		);
-		let indexerName = "Unknown";
-
-		if (indexerId !== undefined && indexerIdToName.has(indexerId)) {
-			const name = indexerIdToName.get(indexerId);
-			if (name !== undefined) {
-				indexerName = name;
-			}
-		} else {
-			// Fallback to direct name field
-			indexerName =
-				toStringValue((record as { indexer?: unknown }).indexer) ??
-				toStringValue((record as { indexerName?: unknown }).indexerName) ??
-				"Unknown";
-		}
-
-		// Prowlarr returns eventType as a number:
-		// 1 = releaseGrabbed (Grab), 2 = releaseRejected, 3 = indexerQuery, 4 = indexerRss, 5 = indexerAuth
-		const rawEventType = (record as { eventType?: unknown }).eventType;
-		const eventTypeNum = toNumber(rawEventType);
-		const eventTypeStr = toStringValue(rawEventType)?.toLowerCase() ?? "";
-		const successful = (record as { successful?: unknown }).successful !== false;
-
-		if (!indexerStatsMap.has(indexerName)) {
-			indexerStatsMap.set(indexerName, { queries: 0, grabs: 0, successful: 0 });
-		}
-
-		const stats = indexerStatsMap.get(indexerName);
-		if (stats === undefined) {
-			continue;
-		}
-
-		// Count queries (any event is a query)
-		stats.queries += 1;
-		if (successful) {
-			stats.successful += 1;
-		}
-
-		// Count grabs - check both numeric (1 = releaseGrabbed) and string event types
-		const isGrab =
-			eventTypeNum === 1 ||
-			eventTypeStr === "grab" ||
-			eventTypeStr === "releasegrabbed" ||
-			eventTypeStr === "grabbed" ||
-			eventTypeStr === "releasegrab";
-
-		if (isGrab) {
-			stats.grabs += 1;
-		}
-	}
-
-	// Convert to normalized stats
-	const normalizedStats: ProwlarrIndexerStat[] = Array.from(indexerStatsMap.entries())
-		.map(([name, stats]) => {
-			const successRate = stats.queries > 0 ? (stats.successful / stats.queries) * 100 : 0;
-
-			return prowlarrIndexerStatSchema.parse({
-				name,
-				queries: stats.queries,
-				grabs: stats.grabs,
-				successRate: clampPercentage(successRate),
-			});
-		})
-		.filter((entry) => entry.queries > 0 || entry.grabs > 0);
-
-	const totalQueries = sumNumbers(normalizedStats.map((entry) => entry.queries));
-	const totalGrabs = sumNumbers(normalizedStats.map((entry) => entry.grabs));
-
+	// Aggregate totals from all indexers
+	let totalQueries = 0;
+	let totalGrabs = 0;
 	let successfulQueries = 0;
 	let failedQueries = 0;
+	let successfulGrabs = 0;
+	let failedGrabs = 0;
+	let totalResponseTime = 0;
+	let responseTimeCount = 0;
 
-	for (const stat of normalizedStats) {
-		const querySuccessCount = Math.round((stat.queries * stat.successRate) / 100);
-		successfulQueries += querySuccessCount;
-		failedQueries += stat.queries - querySuccessCount;
+	const normalizedStats: ProwlarrIndexerStat[] = [];
+
+	for (const entry of statsEntries) {
+		if (!entry || typeof entry !== "object") {
+			continue;
+		}
+
+		const name = toStringValue(entry.indexerName) ?? "Unknown";
+
+		// Get query counts (numberOfQueries excludes RSS and Auth which are tracked separately)
+		const queries = toNumber(entry.numberOfQueries) ?? 0;
+		const grabs = toNumber(entry.numberOfGrabs) ?? 0;
+		const failed = toNumber(entry.numberOfFailedQueries) ?? 0;
+		const failedGrabCount = toNumber(entry.numberOfFailedGrabs) ?? 0;
+		const avgResponseTime = toNumber(entry.averageResponseTime);
+
+		// Aggregate totals
+		totalQueries += queries;
+		totalGrabs += grabs;
+		failedQueries += failed;
+		failedGrabs += failedGrabCount;
+
+		// Successful = total - failed
+		const successfulQueryCount = Math.max(0, queries - failed);
+		const successfulGrabCount = Math.max(0, grabs - failedGrabCount);
+		successfulQueries += successfulQueryCount;
+		successfulGrabs += successfulGrabCount;
+
+		// Track response times for average calculation
+		if (avgResponseTime !== undefined && avgResponseTime > 0) {
+			totalResponseTime += avgResponseTime;
+			responseTimeCount += 1;
+		}
+
+		// Calculate success rate based on queries
+		const totalAttempts = queries + grabs;
+		const totalSuccessful = successfulQueryCount + successfulGrabCount;
+		const successRate =
+			totalAttempts > 0 ? clampPercentage((totalSuccessful / totalAttempts) * 100) : 100;
+
+		// Only include indexers with activity
+		if (queries > 0 || grabs > 0) {
+			normalizedStats.push(
+				prowlarrIndexerStatSchema.parse({
+					name,
+					queries,
+					grabs,
+					successRate,
+				}),
+			);
+		}
 	}
 
+	// Calculate grab rate (grabs / queries)
 	const grabRate = totalQueries > 0 ? clampPercentage((totalGrabs / totalQueries) * 100) : 0;
 
+	// Calculate average response time across all indexers
+	const averageResponseTime =
+		responseTimeCount > 0 ? Math.round(totalResponseTime / responseTimeCount) : undefined;
+
+	// Process health issues
 	const healthIssuesList = Array.isArray(health)
 		? health
 				.filter((item) => {
@@ -644,6 +611,7 @@ export const fetchProwlarrStatistics = async (
 		: [];
 	const healthIssues = healthIssuesList.length;
 
+	// Sort by queries descending and take top 10
 	const topIndexers = normalizedStats.sort((a, b) => b.queries - a.queries).slice(0, 10);
 
 	return prowlarrStatisticsSchema.parse({
@@ -654,10 +622,10 @@ export const fetchProwlarrStatistics = async (
 		totalGrabs,
 		successfulQueries,
 		failedQueries,
-		successfulGrabs: totalGrabs,
-		failedGrabs: Math.max(0, totalQueries - totalGrabs),
+		successfulGrabs,
+		failedGrabs,
 		grabRate,
-		averageResponseTime: undefined,
+		averageResponseTime,
 		healthIssues,
 		healthIssuesList,
 		indexers: topIndexers,
