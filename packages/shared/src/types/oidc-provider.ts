@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { passwordSchema } from "./password.js";
 
 /**
  * Public OIDC Provider shape (without client secret)
@@ -52,3 +53,13 @@ export const oidcProviderResponseSchema = z.object({
 });
 
 export type OIDCProviderResponse = z.infer<typeof oidcProviderResponseSchema>;
+
+/**
+ * Input schema for deleting OIDC provider
+ * Requires replacement password to prevent lockout
+ */
+export const deleteOidcProviderSchema = z.object({
+	replacementPassword: passwordSchema,
+});
+
+export type DeleteOIDCProvider = z.infer<typeof deleteOidcProviderSchema>;

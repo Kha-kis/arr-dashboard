@@ -58,6 +58,29 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(401).send({ error: "Unauthorized" });
 		}
 
+		// Check if OIDC provider is enabled - if so, passkey registration is disabled
+		const oidcProvider = await app.prisma.oIDCProvider.findFirst({
+			where: { enabled: true },
+		});
+
+		if (oidcProvider) {
+			return reply.status(403).send({
+				error: "Passkey authentication is disabled. Please use OIDC authentication.",
+			});
+		}
+
+		// Check if user has a password - passkeys require password authentication
+		const user = await app.prisma.user.findUnique({
+			where: { id: request.currentUser.id },
+			select: { hashedPassword: true },
+		});
+
+		if (!user?.hashedPassword) {
+			return reply.status(403).send({
+				error: "Passkeys require password authentication. Please set up a password first.",
+			});
+		}
+
 		const parsed = passkeyRegisterOptionsSchema.safeParse(request.body);
 		if (!parsed.success) {
 			return reply.status(400).send({ error: "Invalid request" });
@@ -128,6 +151,17 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Public endpoint (no authentication required)
 	 */
 	app.post("/passkey/login/options", async (request, reply) => {
+		// Check if OIDC provider is enabled - if so, passkey login is disabled
+		const oidcProvider = await app.prisma.oIDCProvider.findFirst({
+			where: { enabled: true },
+		});
+
+		if (oidcProvider) {
+			return reply.status(403).send({
+				error: "Passkey authentication is disabled. Please use OIDC authentication.",
+			});
+		}
+
 		try {
 			const options = await passkeyService.generateAuthenticationOptions();
 
@@ -279,6 +313,17 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			if (!deleted) {
 				return reply.status(404).send({ error: "Credential not found" });
+			}
+
+			// Invalidate all other sessions (keep current session)
+			if (request.sessionToken) {
+				await app.sessionService.invalidateAllUserSessions(
+					request.currentUser.id,
+					request.sessionToken
+				);
+			} else {
+				// Fallback: invalidate all sessions if sessionToken is somehow unavailable
+				await app.sessionService.invalidateAllUserSessions(request.currentUser.id);
 			}
 
 			return reply.send({ success: true, message: "Passkey deleted successfully" });

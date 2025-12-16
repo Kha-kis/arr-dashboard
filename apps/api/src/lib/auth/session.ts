@@ -65,6 +65,24 @@ export class SessionService {
 			.catch(() => undefined);
 	}
 
+	async invalidateAllUserSessions(userId: string, exceptToken?: string) {
+		if (exceptToken) {
+			// Invalidate all sessions except the current one
+			const hashedExceptToken = hashToken(exceptToken);
+			await this.prisma.session.deleteMany({
+				where: {
+					userId,
+					id: { not: hashedExceptToken },
+				},
+			});
+		} else {
+			// Invalidate ALL sessions for this user
+			await this.prisma.session.deleteMany({
+				where: { userId },
+			});
+		}
+	}
+
 	async validateRequest(request: FastifyRequest) {
 		const rawCookie = request.cookies?.[this.env.SESSION_COOKIE_NAME];
 		if (!rawCookie) {
