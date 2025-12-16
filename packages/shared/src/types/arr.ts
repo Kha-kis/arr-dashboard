@@ -22,6 +22,7 @@ export const serviceInstanceSchema = z.object({
   isDefault: z.boolean().default(false),
   enabled: z.boolean().default(true),
   tags: z.array(arrTagSchema).default([]),
+  storageGroupId: z.string().nullish(),
   createdAt: z.date().optional(),
   updatedAt: z.date().optional(),
 });

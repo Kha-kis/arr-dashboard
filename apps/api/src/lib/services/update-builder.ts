@@ -15,6 +15,7 @@ export interface UpdatePayload {
 	defaultLanguageProfileId?: number | null;
 	defaultRootFolderPath?: string | null;
 	defaultSeasonFolder?: boolean | null;
+	storageGroupId?: string | null;
 }
 
 export interface EncryptedData {
@@ -34,6 +35,7 @@ export interface UpdateData {
 	defaultLanguageProfileId?: number | null;
 	defaultRootFolderPath?: string | null;
 	defaultSeasonFolder?: boolean | null;
+	storageGroupId?: string | null;
 }
 
 /**
@@ -78,6 +80,9 @@ export function buildUpdateData(
 	}
 	if (Object.prototype.hasOwnProperty.call(payload, "defaultSeasonFolder")) {
 		updateData.defaultSeasonFolder = payload.defaultSeasonFolder ?? null;
+	}
+	if (Object.prototype.hasOwnProperty.call(payload, "storageGroupId")) {
+		updateData.storageGroupId = payload.storageGroupId ?? null;
 	}
 
 	return updateData;

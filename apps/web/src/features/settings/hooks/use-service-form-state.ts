@@ -37,6 +37,7 @@ export const useServiceFormState = () => {
 					: service.defaultSeasonFolder
 						? "true"
 						: "false",
+			storageGroupId: service.storageGroupId ?? "",
 		});
 	};
 

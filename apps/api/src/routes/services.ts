@@ -19,6 +19,7 @@ const servicePayloadSchema = z.object({
 	defaultLanguageProfileId: z.number().int().min(0).nullable().optional(),
 	defaultRootFolderPath: z.string().min(1).nullable().optional(),
 	defaultSeasonFolder: z.boolean().nullable().optional(),
+	storageGroupId: z.string().min(1).max(64).nullable().optional(),
 });
 
 const serviceUpdateSchema = servicePayloadSchema
