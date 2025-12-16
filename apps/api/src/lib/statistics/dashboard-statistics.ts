@@ -753,11 +753,14 @@ export const fetchProwlarrStatistics = async (
 };
 
 export const aggregateSonarrStatistics = (
-	instances: Array<{ data: SonarrStatistics }>,
+	instances: Array<{ storageGroupId?: string | null; data: SonarrStatistics }>,
 ): SonarrStatistics | undefined => {
 	if (instances.length === 0) {
 		return undefined;
 	}
+
+	// Track which storage groups we've already counted disk stats for
+	const seenStorageGroups = new Set<string>();
 
 	const totals = instances.reduce(
 		(acc, entry) => {
@@ -773,9 +776,21 @@ export const aggregateSonarrStatistics = (
 			acc.cutoffUnmetCount += data.cutoffUnmetCount ?? 0;
 			acc.recentlyAdded7Days += data.recentlyAdded7Days ?? 0;
 			acc.recentlyAdded30Days += data.recentlyAdded30Days ?? 0;
-			acc.diskTotal += data.diskTotal ?? 0;
-			acc.diskFree += data.diskFree ?? 0;
-			acc.diskUsed += data.diskUsed ?? 0;
+
+			// Deduplicate disk stats by storage group
+			// If storageGroupId is set, only count disk stats once per group
+			const storageGroupId = entry.storageGroupId;
+			const shouldCountDisk = !storageGroupId || !seenStorageGroups.has(storageGroupId);
+			if (storageGroupId) {
+				seenStorageGroups.add(storageGroupId);
+			}
+
+			if (shouldCountDisk) {
+				acc.diskTotal += data.diskTotal ?? 0;
+				acc.diskFree += data.diskFree ?? 0;
+				acc.diskUsed += data.diskUsed ?? 0;
+			}
+
 			acc.healthIssues += data.healthIssues ?? 0;
 			if (data.healthIssuesList) {
 				acc.healthIssuesList?.push(...data.healthIssuesList);
@@ -855,11 +870,14 @@ export const aggregateSonarrStatistics = (
 };
 
 export const aggregateRadarrStatistics = (
-	instances: Array<{ data: RadarrStatistics }>,
+	instances: Array<{ storageGroupId?: string | null; data: RadarrStatistics }>,
 ): RadarrStatistics | undefined => {
 	if (instances.length === 0) {
 		return undefined;
 	}
+
+	// Track which storage groups we've already counted disk stats for
+	const seenStorageGroups = new Set<string>();
 
 	const totals = instances.reduce(
 		(acc, entry) => {
@@ -872,9 +890,21 @@ export const aggregateRadarrStatistics = (
 			acc.recentlyAdded7Days += data.recentlyAdded7Days ?? 0;
 			acc.recentlyAdded30Days += data.recentlyAdded30Days ?? 0;
 			acc.totalRuntime += data.totalRuntime ?? 0;
-			acc.diskTotal += data.diskTotal ?? 0;
-			acc.diskFree += data.diskFree ?? 0;
-			acc.diskUsed += data.diskUsed ?? 0;
+
+			// Deduplicate disk stats by storage group
+			// If storageGroupId is set, only count disk stats once per group
+			const storageGroupId = entry.storageGroupId;
+			const shouldCountDisk = !storageGroupId || !seenStorageGroups.has(storageGroupId);
+			if (storageGroupId) {
+				seenStorageGroups.add(storageGroupId);
+			}
+
+			if (shouldCountDisk) {
+				acc.diskTotal += data.diskTotal ?? 0;
+				acc.diskFree += data.diskFree ?? 0;
+				acc.diskUsed += data.diskUsed ?? 0;
+			}
+
 			acc.healthIssues += data.healthIssues ?? 0;
 			if (data.healthIssuesList) {
 				acc.healthIssuesList?.push(...data.healthIssuesList);

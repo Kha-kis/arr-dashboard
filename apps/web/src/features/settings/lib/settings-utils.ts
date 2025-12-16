@@ -16,6 +16,7 @@ export type ServiceFormState = {
 	defaultLanguageProfileId: string;
 	defaultRootFolderPath: string;
 	defaultSeasonFolder: "" | "true" | "false";
+	storageGroupId: string;
 };
 
 /**
@@ -33,6 +34,7 @@ export const defaultFormState = (service: ServiceType): ServiceFormState => ({
 	defaultLanguageProfileId: "",
 	defaultRootFolderPath: "",
 	defaultSeasonFolder: "",
+	storageGroupId: "",
 });
 
 /**

@@ -25,6 +25,7 @@ export type CreateServicePayload = {
 	defaultLanguageProfileId?: number | null;
 	defaultRootFolderPath?: string | null;
 	defaultSeasonFolder?: boolean | null;
+	storageGroupId?: string | null;
 };
 
 export type UpdateServicePayload = Partial<CreateServicePayload>;

@@ -64,6 +64,7 @@ model ServiceInstance {
   defaultLanguageProfileId Int?
   defaultRootFolderPath String?
   defaultSeasonFolder Boolean?
+  storageGroupId  String?             // Group instances sharing same storage for accurate disk stats
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
 

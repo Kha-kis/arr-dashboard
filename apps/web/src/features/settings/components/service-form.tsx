@@ -216,6 +216,26 @@ export const ServiceForm = ({
 						</datalist>
 					</div>
 					{formState.service !== "prowlarr" && (
+						<FormField
+							label="Storage Group"
+							htmlFor="service-storage-group"
+							hint="Group instances sharing the same storage to avoid duplicate disk stats in statistics"
+						>
+							<Input
+								id="service-storage-group"
+								value={formState.storageGroupId}
+								onChange={(event) =>
+									onFormStateChange((prev) => ({
+										...prev,
+										storageGroupId: event.target.value,
+									}))
+								}
+								placeholder="e.g., main-nas, media-server"
+								autoComplete="off"
+							/>
+						</FormField>
+					)}
+					{formState.service !== "prowlarr" && (
 						<div className="space-y-3 rounded-xl border border-border bg-bg-subtle p-4">
 							<div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
 								<p className="text-xs uppercase tracking-widest text-fg-muted">

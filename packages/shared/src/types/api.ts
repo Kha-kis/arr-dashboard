@@ -17,6 +17,7 @@ export interface ServiceInstanceSummary {
   defaultLanguageProfileId: number | null;
   defaultRootFolderPath: string | null;
   defaultSeasonFolder: boolean | null;
+  storageGroupId: string | null;
   createdAt: string;
   updatedAt: string;
   tags: ServiceTagResponse[];

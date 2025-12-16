@@ -52,13 +52,13 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							instance.label,
 							instance.baseUrl,
 						);
-						return { service: "sonarr" as const, instanceId: instance.id, instanceName: instance.label, data };
+						return { service: "sonarr" as const, instanceId: instance.id, instanceName: instance.label, storageGroupId: instance.storageGroupId, data };
 					} catch (error) {
 						request.log.error(
 							{ err: error, instance: instance.id },
 							"sonarr statistics fetch failed",
 						);
-						return { service: "sonarr" as const, instanceId: instance.id, instanceName: instance.label, data: emptySonarrStatistics };
+						return { service: "sonarr" as const, instanceId: instance.id, instanceName: instance.label, storageGroupId: instance.storageGroupId, data: emptySonarrStatistics };
 					}
 				}
 
@@ -70,13 +70,13 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							instance.label,
 							instance.baseUrl,
 						);
-						return { service: "radarr" as const, instanceId: instance.id, instanceName: instance.label, data };
+						return { service: "radarr" as const, instanceId: instance.id, instanceName: instance.label, storageGroupId: instance.storageGroupId, data };
 					} catch (error) {
 						request.log.error(
 							{ err: error, instance: instance.id },
 							"radarr statistics fetch failed",
 						);
-						return { service: "radarr" as const, instanceId: instance.id, instanceName: instance.label, data: emptyRadarrStatistics };
+						return { service: "radarr" as const, instanceId: instance.id, instanceName: instance.label, storageGroupId: instance.storageGroupId, data: emptyRadarrStatistics };
 					}
 				}
 
@@ -110,11 +110,13 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const sonarrInstances: Array<{
 			instanceId: string;
 			instanceName: string;
+			storageGroupId: string | null;
 			data: DashboardStatisticsResponse["sonarr"]["instances"][number]["data"];
 		}> = [];
 		const radarrInstances: Array<{
 			instanceId: string;
 			instanceName: string;
+			storageGroupId: string | null;
 			data: DashboardStatisticsResponse["radarr"]["instances"][number]["data"];
 		}> = [];
 		const prowlarrInstances: Array<{
@@ -130,12 +132,14 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				sonarrInstances.push({
 					instanceId: result.instanceId,
 					instanceName: result.instanceName,
+					storageGroupId: result.storageGroupId,
 					data: result.data,
 				});
 			} else if (result.service === "radarr") {
 				radarrInstances.push({
 					instanceId: result.instanceId,
 					instanceName: result.instanceName,
+					storageGroupId: result.storageGroupId,
 					data: result.data,
 				});
 			} else if (result.service === "prowlarr") {

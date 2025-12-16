@@ -16,6 +16,7 @@ interface ServiceInstanceWithTags {
 	defaultLanguageProfileId: number | null;
 	defaultRootFolderPath: string | null;
 	defaultSeasonFolder: boolean | null;
+	storageGroupId: string | null;
 	tags: Array<{
 		tag: {
 			id: string;
@@ -38,6 +39,7 @@ export interface FormattedServiceInstance {
 	defaultLanguageProfileId: number | null;
 	defaultRootFolderPath: string | null;
 	defaultSeasonFolder: boolean | null;
+	storageGroupId: string | null;
 	tags: Array<{ id: string; name: string }>;
 }
 
@@ -59,6 +61,7 @@ export function formatServiceInstance(instance: ServiceInstanceWithTags): Format
 		defaultLanguageProfileId: instance.defaultLanguageProfileId,
 		defaultRootFolderPath: instance.defaultRootFolderPath,
 		defaultSeasonFolder: instance.defaultSeasonFolder,
+		storageGroupId: instance.storageGroupId,
 		tags: instance.tags.map(({ tag }) => ({ id: tag.id, name: tag.name })),
 	};
 }

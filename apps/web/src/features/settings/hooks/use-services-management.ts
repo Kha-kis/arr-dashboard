@@ -52,6 +52,10 @@ export const useServicesManagement = () => {
 		const defaultSeasonFolder =
 			formState.service === "sonarr" ? parseSeasonFolderValue(formState.defaultSeasonFolder) : null;
 
+		// Handle storage group: empty string becomes null
+		const trimmedStorageGroupId = formState.storageGroupId.trim();
+		const storageGroupId = trimmedStorageGroupId.length > 0 ? trimmedStorageGroupId : null;
+
 		const basePayload = {
 			label: formState.label.trim(),
 			baseUrl: formState.baseUrl.trim(),
@@ -64,6 +68,7 @@ export const useServicesManagement = () => {
 			defaultLanguageProfileId,
 			defaultRootFolderPath,
 			defaultSeasonFolder,
+			storageGroupId,
 		};
 
 		if (
