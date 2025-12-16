@@ -1,5 +1,23 @@
 # Release Notes
 
+## Version 2.6.2
+
+### 🐛 Bug Fixes
+
+- **Docker**
+  - Fix health check failing due to root path redirect (was checking `/` which returns 307, now uses `/auth/setup-required` which returns 200)
+
+### 📦 Upgrade Notes
+
+This is a non-breaking release. Simply pull the latest image:
+
+```bash
+docker-compose pull
+docker-compose up -d
+```
+
+---
+
 ## Version 2.6.1
 
 ### 🐛 Bug Fixes

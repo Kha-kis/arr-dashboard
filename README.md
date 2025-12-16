@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.6.1** - Fix disk statistics accuracy, TRaSH Guides deployment history, database migrations
+> **Version 2.6.2** - Fix Docker health check, disk statistics accuracy, TRaSH Guides deployment history
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -141,6 +141,7 @@ docker-compose up -d
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.6.2` | Fix Docker health check endpoint |
 | `2.6.1` | Fix disk statistics accuracy, TRaSH Guides deployment history, database migrations |
 | `2.6.0` | Security improvements, TRaSH Guides sync for cloned profiles, better error handling |
 | `2.5.0` | ⚠️ **Breaking:** Volume path changed to `/config` (LinuxServer.io convention) |
