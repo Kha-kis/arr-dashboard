@@ -7,6 +7,13 @@
 - **Docker**
   - Fix health check failing due to root path redirect (was checking `/` which returns 307, now uses `/auth/setup-required` which returns 200)
 
+### 🔧 Improvements
+
+- **Connection Testing**
+  - Simplify connection tester to use single `/api/vX/system/status` endpoint consistently across all services
+  - Add specific error messages for common HTTP status codes (401, 403, 404, 5xx)
+  - Better messaging for reverse proxy authentication issues
+
 ### 📦 Upgrade Notes
 
 This is a non-breaking release. Simply pull the latest image:
