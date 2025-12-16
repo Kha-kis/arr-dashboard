@@ -6,7 +6,7 @@ set -e
 
 echo "========================================="
 echo "  Arr Dashboard Pre-Release Checks"
-echo "  Version: 2.6.1"
+echo "  Version: 2.6.2"
 echo "========================================="
 echo ""
 
