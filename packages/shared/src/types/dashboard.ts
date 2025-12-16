@@ -229,6 +229,10 @@ export const healthIssueSchema = z.object({
 
 export type HealthIssue = z.infer<typeof healthIssueSchema>;
 
+export const tagBreakdownSchema = z.record(z.string(), z.number());
+
+export type TagBreakdown = z.infer<typeof tagBreakdownSchema>;
+
 export const sonarrStatisticsSchema = z.object({
   totalSeries: z.number(),
   monitoredSeries: z.number(),
@@ -241,6 +245,9 @@ export const sonarrStatisticsSchema = z.object({
   downloadedPercentage: z.number(),
   cutoffUnmetCount: z.number().optional(),
   qualityBreakdown: qualityBreakdownSchema.optional(),
+  tagBreakdown: tagBreakdownSchema.optional(),
+  recentlyAdded7Days: z.number().optional(),
+  recentlyAdded30Days: z.number().optional(),
   averageEpisodeSize: z.number().optional(),
   diskTotal: z.number().optional(),
   diskFree: z.number().optional(),
@@ -260,6 +267,10 @@ export const radarrStatisticsSchema = z.object({
   downloadedPercentage: z.number(),
   cutoffUnmetCount: z.number().optional(),
   qualityBreakdown: qualityBreakdownSchema.optional(),
+  tagBreakdown: tagBreakdownSchema.optional(),
+  recentlyAdded7Days: z.number().optional(),
+  recentlyAdded30Days: z.number().optional(),
+  totalRuntime: z.number().optional(),
   averageMovieSize: z.number().optional(),
   diskTotal: z.number().optional(),
   diskFree: z.number().optional(),
