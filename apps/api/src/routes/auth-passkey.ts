@@ -321,6 +321,9 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					request.currentUser.id,
 					request.sessionToken
 				);
+			} else {
+				// Fallback: invalidate all sessions if sessionToken is somehow unavailable
+				await app.sessionService.invalidateAllUserSessions(request.currentUser.id);
 			}
 
 			return reply.send({ success: true, message: "Passkey deleted successfully" });

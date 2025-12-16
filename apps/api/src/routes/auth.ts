@@ -1,15 +1,7 @@
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
+import { passwordSchema } from "@arr/shared";
 import { hashPassword, verifyPassword } from "../lib/auth/password.js";
-
-const passwordSchema = z
-	.string()
-	.min(8, "Password must be at least 8 characters")
-	.max(128, "Password must not exceed 128 characters")
-	.regex(/[a-z]/, "Password must contain at least one lowercase letter")
-	.regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-	.regex(/[0-9]/, "Password must contain at least one number")
-	.regex(/[^a-zA-Z0-9]/, "Password must contain at least one special character");
 
 const registerSchema = z.object({
 	username: z.string().min(3).max(50),
@@ -372,11 +364,16 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		});
 
 		// If password was changed, invalidate all other sessions (security best practice)
-		if (newPassword && request.sessionToken) {
-			await app.sessionService.invalidateAllUserSessions(
-				request.currentUser.id,
-				request.sessionToken
-			);
+		if (newPassword) {
+			if (request.sessionToken) {
+				await app.sessionService.invalidateAllUserSessions(
+					request.currentUser.id,
+					request.sessionToken
+				);
+			} else {
+				// Fallback: invalidate all sessions if sessionToken is somehow unavailable
+				await app.sessionService.invalidateAllUserSessions(request.currentUser.id);
+			}
 		}
 
 		return reply.send({
@@ -461,6 +458,9 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				request.currentUser.id,
 				request.sessionToken
 			);
+		} else {
+			// Fallback: invalidate all sessions if sessionToken is somehow unavailable
+			await app.sessionService.invalidateAllUserSessions(request.currentUser.id);
 		}
 
 		return reply.send({
