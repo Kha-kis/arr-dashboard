@@ -1,4 +1,4 @@
-# Release Testing Checklist v2.6.0
+# Release Testing Checklist v2.6.1
 
 Pre-release verification checklist for arr-dashboard. Complete all sections before tagging a release.
 

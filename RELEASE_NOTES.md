@@ -1,5 +1,43 @@
 # Release Notes
 
+## Version 2.6.1
+
+### 🐛 Bug Fixes
+
+- **Statistics**
+  - Fix disk statistics showing incorrect totals when instances share storage (storage group deduplication now works across services)
+  - Add `combinedDisk` API field for accurate cross-service disk usage totals
+
+- **TRaSH Guides**
+  - Fix "column errors does not exist" error in deployment history (#13)
+  - Add missing database columns for deployment history: `errors`, `warnings`, `canRollback`, `rolledBack`, `rolledBackAt`, `rolledBackBy`, `deploymentNotes`, `templateSnapshot`
+
+### 🏗️ Infrastructure
+
+- **Database Migrations**
+  - Add `storageGroupId` column to ServiceInstance for storage group tracking
+  - Add missing columns to `template_deployment_history` table
+  - Add missing `userId` index for deployment history queries
+
+### 📦 Upgrade Notes
+
+This is a non-breaking release. Simply pull the latest image:
+
+```bash
+docker-compose pull
+docker-compose up -d
+```
+
+Database migrations will run automatically on startup. If you encounter any issues with migrations, you can resolve them manually:
+
+```bash
+# If migrations fail due to existing columns (e.g., from db:push)
+docker exec arr-dashboard npx prisma migrate resolve --applied 20251216000000_add_storage_group_id
+docker exec arr-dashboard npx prisma migrate resolve --applied 20251216100000_add_deployment_history_columns
+```
+
+---
+
 ## Version 2.6.0
 
 ### 🔒 Security
