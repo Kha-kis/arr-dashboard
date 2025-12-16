@@ -82,9 +82,10 @@ WORKDIR /app
 # Copy API (single layer: node_modules + dist + prisma with generated client)
 COPY --from=builder --chown=abc:abc /app/deploy-api ./api
 
-# Copy Web (single layer: standalone + static + custom server)
+# Copy Web (single layer: standalone + static + public + custom server)
 COPY --from=builder --chown=abc:abc /app/apps/web/.next/standalone ./web
 COPY --from=builder --chown=abc:abc /app/apps/web/.next/static ./web/apps/web/.next/static
+COPY --from=builder --chown=abc:abc /app/apps/web/public ./web/apps/web/public
 
 # Copy startup scripts and fix line endings (single layer)
 COPY --chown=abc:abc docker/start-combined.sh ./
