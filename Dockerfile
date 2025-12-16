@@ -104,7 +104,7 @@ ENV DATABASE_URL="file:/config/prod.db" \
     PGID=911
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD node -e "const p=process.env.PORT||3000;require('http').get('http://localhost:'+p+'/',(r)=>{process.exit(r.statusCode===200?0:1)})"
+    CMD node -e "require('http').get('http://localhost:'+(process.env.API_PORT||3001)+'/auth/setup-required',(r)=>{process.exit(r.statusCode>=200&&r.statusCode<300?0:1)}).on('error',()=>process.exit(1))"
 
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["/app/start.sh"]
