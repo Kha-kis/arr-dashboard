@@ -36,3 +36,23 @@ export const formatPercent = (value?: number): string => {
 	}
 	return `${percentFormatter.format(value)}%`;
 };
+
+/**
+ * Format runtime in minutes to human-readable duration
+ */
+export const formatRuntime = (minutes?: number): string => {
+	if (typeof minutes !== "number" || !Number.isFinite(minutes) || minutes <= 0) {
+		return "-";
+	}
+	const days = Math.floor(minutes / (60 * 24));
+	const hours = Math.floor((minutes % (60 * 24)) / 60);
+	const remainingMinutes = minutes % 60;
+
+	if (days > 0) {
+		return `${days}d ${hours}h`;
+	}
+	if (hours > 0) {
+		return `${hours}h ${remainingMinutes}m`;
+	}
+	return `${remainingMinutes}m`;
+};

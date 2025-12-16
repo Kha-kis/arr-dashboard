@@ -129,6 +129,11 @@ export const useStatisticsData = () => {
 				sonarrAggregate?.cutoffUnmetCount ?? sum(sonarrInstances, (stats) => stats.cutoffUnmetCount),
 			averageEpisodeSize: sonarrAggregate?.averageEpisodeSize,
 			qualityBreakdown: sonarrAggregate?.qualityBreakdown,
+			tagBreakdown: sonarrAggregate?.tagBreakdown,
+			recentlyAdded7Days:
+				sonarrAggregate?.recentlyAdded7Days ?? sum(sonarrInstances, (stats) => stats.recentlyAdded7Days),
+			recentlyAdded30Days:
+				sonarrAggregate?.recentlyAdded30Days ?? sum(sonarrInstances, (stats) => stats.recentlyAdded30Days),
 		}),
 		[sonarrAggregate, sonarrInstances],
 	);
@@ -163,6 +168,13 @@ export const useStatisticsData = () => {
 				radarrAggregate?.cutoffUnmetCount ?? sum(radarrInstances, (stats) => stats.cutoffUnmetCount),
 			averageMovieSize: radarrAggregate?.averageMovieSize,
 			qualityBreakdown: radarrAggregate?.qualityBreakdown,
+			tagBreakdown: radarrAggregate?.tagBreakdown,
+			recentlyAdded7Days:
+				radarrAggregate?.recentlyAdded7Days ?? sum(radarrInstances, (stats) => stats.recentlyAdded7Days),
+			recentlyAdded30Days:
+				radarrAggregate?.recentlyAdded30Days ?? sum(radarrInstances, (stats) => stats.recentlyAdded30Days),
+			totalRuntime:
+				radarrAggregate?.totalRuntime ?? sum(radarrInstances, (stats) => stats.totalRuntime),
 		}),
 		[radarrAggregate, radarrInstances],
 	);
