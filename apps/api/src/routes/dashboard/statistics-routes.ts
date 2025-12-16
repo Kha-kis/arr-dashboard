@@ -38,6 +38,75 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			where: { enabled: true, userId: request.currentUser?.id },
 		});
 
+		// Fetch all instances in parallel for better performance
+		const fetchResults = await Promise.all(
+			instances.map(async (instance) => {
+				const service = instance.service.toLowerCase();
+				const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
+
+				if (service === "sonarr") {
+					try {
+						const data = await fetchSonarrStatistics(
+							fetcher,
+							instance.id,
+							instance.label,
+							instance.baseUrl,
+						);
+						return { service: "sonarr" as const, instanceId: instance.id, instanceName: instance.label, data };
+					} catch (error) {
+						request.log.error(
+							{ err: error, instance: instance.id },
+							"sonarr statistics fetch failed",
+						);
+						return { service: "sonarr" as const, instanceId: instance.id, instanceName: instance.label, data: emptySonarrStatistics };
+					}
+				}
+
+				if (service === "radarr") {
+					try {
+						const data = await fetchRadarrStatistics(
+							fetcher,
+							instance.id,
+							instance.label,
+							instance.baseUrl,
+						);
+						return { service: "radarr" as const, instanceId: instance.id, instanceName: instance.label, data };
+					} catch (error) {
+						request.log.error(
+							{ err: error, instance: instance.id },
+							"radarr statistics fetch failed",
+						);
+						return { service: "radarr" as const, instanceId: instance.id, instanceName: instance.label, data: emptyRadarrStatistics };
+					}
+				}
+
+				if (service === "prowlarr") {
+					try {
+						const data = await fetchProwlarrStatistics(
+							fetcher,
+							instance.id,
+							instance.label,
+							instance.baseUrl,
+						);
+						return { service: "prowlarr" as const, instanceId: instance.id, instanceName: instance.label, data };
+					} catch (error) {
+						request.log.error(
+							{ err: error, instance: instance.id },
+							"prowlarr statistics fetch failed",
+						);
+						return { service: "prowlarr" as const, instanceId: instance.id, instanceName: instance.label, data: emptyProwlarrStatistics };
+					}
+				}
+
+				request.log.warn(
+					{ service: instance.service, instanceId: instance.id },
+					"unknown service type for statistics",
+				);
+				return null;
+			}),
+		);
+
+		// Group results by service type
 		const sonarrInstances: Array<{
 			instanceId: string;
 			instanceName: string;
@@ -54,95 +123,28 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			data: DashboardStatisticsResponse["prowlarr"]["instances"][number]["data"];
 		}> = [];
 
-		for (const instance of instances) {
-			const service = instance.service.toLowerCase();
-			const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
+		for (const result of fetchResults) {
+			if (!result) continue;
 
-			if (service === "sonarr") {
-				try {
-					const data = await fetchSonarrStatistics(
-						fetcher,
-						instance.id,
-						instance.label,
-						instance.baseUrl,
-					);
-					sonarrInstances.push({
-						instanceId: instance.id,
-						instanceName: instance.label,
-						data,
-					});
-				} catch (error) {
-					request.log.error(
-						{ err: error, instance: instance.id },
-						"sonarr statistics fetch failed",
-					);
-					sonarrInstances.push({
-						instanceId: instance.id,
-						instanceName: instance.label,
-						data: emptySonarrStatistics,
-					});
-				}
-				continue;
+			if (result.service === "sonarr") {
+				sonarrInstances.push({
+					instanceId: result.instanceId,
+					instanceName: result.instanceName,
+					data: result.data,
+				});
+			} else if (result.service === "radarr") {
+				radarrInstances.push({
+					instanceId: result.instanceId,
+					instanceName: result.instanceName,
+					data: result.data,
+				});
+			} else if (result.service === "prowlarr") {
+				prowlarrInstances.push({
+					instanceId: result.instanceId,
+					instanceName: result.instanceName,
+					data: result.data,
+				});
 			}
-
-			if (service === "radarr") {
-				try {
-					const data = await fetchRadarrStatistics(
-						fetcher,
-						instance.id,
-						instance.label,
-						instance.baseUrl,
-					);
-					radarrInstances.push({
-						instanceId: instance.id,
-						instanceName: instance.label,
-						data,
-					});
-				} catch (error) {
-					request.log.error(
-						{ err: error, instance: instance.id },
-						"radarr statistics fetch failed",
-					);
-					radarrInstances.push({
-						instanceId: instance.id,
-						instanceName: instance.label,
-						data: emptyRadarrStatistics,
-					});
-				}
-				continue;
-			}
-
-			if (service === "prowlarr") {
-				try {
-					const data = await fetchProwlarrStatistics(
-						fetcher,
-						instance.id,
-						instance.label,
-						instance.baseUrl,
-					);
-					prowlarrInstances.push({
-						instanceId: instance.id,
-						instanceName: instance.label,
-						data,
-					});
-				} catch (error) {
-					request.log.error(
-						{ err: error, instance: instance.id },
-						"prowlarr statistics fetch failed",
-					);
-					prowlarrInstances.push({
-						instanceId: instance.id,
-						instanceName: instance.label,
-						data: emptyProwlarrStatistics,
-					});
-				}
-				continue;
-			}
-
-			request.log.warn(
-				{ service: instance.service, instanceId: instance.id },
-				"unknown service type for statistics",
-			);
 		}
 
 		const payload: DashboardStatisticsResponse = {
