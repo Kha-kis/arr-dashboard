@@ -11,7 +11,8 @@ export interface ConnectionTestResult {
 }
 
 /**
- * Tests connection to a service instance
+ * Tests connection to a service instance using the system/status endpoint.
+ * This is the standard approach used by most *arr integration tools.
  */
 export async function testServiceConnection(
 	baseUrl: string,
@@ -23,14 +24,6 @@ export async function testServiceConnection(
 		const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
 		const testUrl = `${normalizedBaseUrl}${apiPath}`;
 
-		// Try ping endpoint first for Prowlarr to verify basic connectivity
-		if (service === "prowlarr") {
-			const pingResult = await testProwlarrPing(normalizedBaseUrl);
-			if (!pingResult.success) {
-				return pingResult;
-			}
-		}
-
 		const response = await fetch(testUrl, {
 			headers: {
 				"X-Api-Key": apiKey,
@@ -40,19 +33,7 @@ export async function testServiceConnection(
 		});
 
 		if (!response.ok) {
-			const contentType = response.headers.get("content-type");
-			let details = "Check your base URL and API key";
-
-			if (contentType?.includes("text/html")) {
-				details =
-					"Received HTML instead of JSON. The base URL or API path might be incorrect. Ensure base URL includes the full path (e.g., http://localhost:7878 not http://localhost:7878/radarr)";
-			}
-
-			return {
-				success: false,
-				error: `HTTP ${response.status}: ${response.statusText}`,
-				details,
-			};
+			return handleHttpError(response, normalizedBaseUrl);
 		}
 
 		const contentType = response.headers.get("content-type");
@@ -79,43 +60,65 @@ export async function testServiceConnection(
 }
 
 /**
- * Tests Prowlarr ping endpoint for basic connectivity
+ * Handles HTTP error responses with specific messages for common status codes
  */
-async function testProwlarrPing(normalizedBaseUrl: string): Promise<ConnectionTestResult> {
-	const pingUrl = `${normalizedBaseUrl}/ping`;
-	try {
-		const pingResponse = await fetch(pingUrl, {
-			method: "GET",
-			signal: AbortSignal.timeout(3000),
-		});
+function handleHttpError(response: Response, baseUrl: string): ConnectionTestResult {
+	const status = response.status;
+	const contentType = response.headers.get("content-type");
 
-		// 401/403 means server is reachable but requires auth (reverse proxy with forward auth)
-		// This is fine - we'll authenticate properly in the actual API test
-		if (pingResponse.status === 401 || pingResponse.status === 403) {
-			return { success: true };
-		}
-
-		if (!pingResponse.ok && pingResponse.status !== 404) {
-			return {
-				success: false,
-				error: `Ping failed: HTTP ${pingResponse.status}`,
-				details: `Cannot reach ${pingUrl}. Check the base URL is correct.`,
-			};
-		}
-
-		return { success: true };
-	} catch (pingError: unknown) {
-		const message =
-			pingError && typeof pingError === "object" && "message" in pingError
-				? String(pingError.message)
-				: "Check if Prowlarr is running and the base URL is correct.";
-
+	// Authentication errors - API key issue or reverse proxy auth
+	if (status === 401) {
 		return {
 			success: false,
-			error: "Cannot reach Prowlarr",
-			details: `Ping to ${pingUrl} failed. ${message}`,
+			error: "Authentication failed (401)",
+			details:
+				"Invalid API key, or a reverse proxy is blocking the request. Verify the API key is correct and check any forward auth settings.",
 		};
 	}
+
+	if (status === 403) {
+		return {
+			success: false,
+			error: "Access forbidden (403)",
+			details:
+				"The API key may lack permissions, or a reverse proxy is denying access. Check your reverse proxy configuration if using one.",
+		};
+	}
+
+	// Server errors
+	if (status >= 500) {
+		return {
+			success: false,
+			error: `Server error (${status})`,
+			details: "The service encountered an internal error. Check the service logs for more details.",
+		};
+	}
+
+	// Not found - likely wrong URL
+	if (status === 404) {
+		return {
+			success: false,
+			error: "Endpoint not found (404)",
+			details: `The API endpoint was not found at ${baseUrl}. Check if the base URL is correct and the service is running.`,
+		};
+	}
+
+	// HTML response usually means wrong URL or proxy issue
+	if (contentType?.includes("text/html")) {
+		return {
+			success: false,
+			error: `HTTP ${status}: ${response.statusText}`,
+			details:
+				"Received HTML instead of JSON. The base URL might be incorrect, or a reverse proxy is returning an error page.",
+		};
+	}
+
+	// Generic error for other status codes
+	return {
+		success: false,
+		error: `HTTP ${status}: ${response.statusText}`,
+		details: "Check your base URL and API key are correct.",
+	};
 }
 
 /**
