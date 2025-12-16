@@ -37,8 +37,17 @@ echo "Setting up directories and permissions..."
 # Ensure config directory exists (LinuxServer convention)
 mkdir -p /config
 
-# Set ownership of writable directories
-chown -R abc:abc /config
+# Validate PUID/PGID are numeric (defense-in-depth)
+case "$PUID" in
+	''|*[!0-9]*) echo "Invalid PUID: $PUID (must be numeric)" >&2; exit 1 ;;
+esac
+case "$PGID" in
+	''|*[!0-9]*) echo "Invalid PGID: $PGID (must be numeric)" >&2; exit 1 ;;
+esac
+
+# Set ownership of writable directories using numeric IDs
+# This ensures correct permissions even when mounting pre-existing directories
+chown -R "${PUID}:${PGID}" /config
 
 # ============================================
 # Signal handling
