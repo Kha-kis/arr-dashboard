@@ -12,7 +12,7 @@
   <Category>MediaApp:Other MediaServer:Other</Category>
   <WebUI>http://[IP]:[PORT:3000]</WebUI>
   <TemplateURL>https://raw.githubusercontent.com/Kha-kis/arr-dashboard/main/unraid/arr-dashboard.xml</TemplateURL>
-  <Icon>https://raw.githubusercontent.com/Kha-kis/arr-dashboard/main/apps/web/app/icon.png</Icon>
+  <Icon>https://raw.githubusercontent.com/Kha-kis/arr-dashboard/main/assets/icon.png</Icon>
   <Description>Arr Dashboard provides a unified interface to manage all your Sonarr, Radarr, and Prowlarr instances from one place. View queues, calendars, and history across all instances. Search content globally across all indexers. Manage your media library with tag-based organization. Sync TRaSH Guides quality profiles and custom formats. Monitor health and statistics. Discover new content with TMDB integration. Supports OIDC (Authelia/Authentik) and passkey authentication. Built with modern architecture featuring zero-config Docker deployment, encrypted API keys, and secure session management.</Description>
   <Config Name="Web UI Port" Target="3000" Default="3000" Mode="tcp" Description="Port for the web interface" Type="Port" Display="always" Required="true" Mask="false"/>
   <Config Name="Config" Target="/config" Default="/mnt/user/appdata/arr-dashboard" Mode="rw" Description="Database and configuration storage" Type="Path" Display="always" Required="true" Mask="false"/>
