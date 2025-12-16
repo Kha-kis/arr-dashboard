@@ -753,14 +753,11 @@ export const fetchProwlarrStatistics = async (
 };
 
 export const aggregateSonarrStatistics = (
-	instances: Array<{ storageGroupId?: string | null; data: SonarrStatistics }>,
+	instances: Array<{ storageGroupId?: string | null; shouldCountDisk?: boolean; data: SonarrStatistics }>,
 ): SonarrStatistics | undefined => {
 	if (instances.length === 0) {
 		return undefined;
 	}
-
-	// Track which storage groups we've already counted disk stats for
-	const seenStorageGroups = new Set<string>();
 
 	const totals = instances.reduce(
 		(acc, entry) => {
@@ -777,13 +774,9 @@ export const aggregateSonarrStatistics = (
 			acc.recentlyAdded7Days += data.recentlyAdded7Days ?? 0;
 			acc.recentlyAdded30Days += data.recentlyAdded30Days ?? 0;
 
-			// Deduplicate disk stats by storage group
-			// If storageGroupId is set, only count disk stats once per group
-			const storageGroupId = entry.storageGroupId;
-			const shouldCountDisk = !storageGroupId || !seenStorageGroups.has(storageGroupId);
-			if (storageGroupId) {
-				seenStorageGroups.add(storageGroupId);
-			}
+			// Use pre-computed shouldCountDisk flag for cross-service deduplication
+			// If not provided (backward compatibility), default to counting disk
+			const shouldCountDisk = entry.shouldCountDisk ?? true;
 
 			if (shouldCountDisk) {
 				acc.diskTotal += data.diskTotal ?? 0;
@@ -870,14 +863,11 @@ export const aggregateSonarrStatistics = (
 };
 
 export const aggregateRadarrStatistics = (
-	instances: Array<{ storageGroupId?: string | null; data: RadarrStatistics }>,
+	instances: Array<{ storageGroupId?: string | null; shouldCountDisk?: boolean; data: RadarrStatistics }>,
 ): RadarrStatistics | undefined => {
 	if (instances.length === 0) {
 		return undefined;
 	}
-
-	// Track which storage groups we've already counted disk stats for
-	const seenStorageGroups = new Set<string>();
 
 	const totals = instances.reduce(
 		(acc, entry) => {
@@ -891,13 +881,9 @@ export const aggregateRadarrStatistics = (
 			acc.recentlyAdded30Days += data.recentlyAdded30Days ?? 0;
 			acc.totalRuntime += data.totalRuntime ?? 0;
 
-			// Deduplicate disk stats by storage group
-			// If storageGroupId is set, only count disk stats once per group
-			const storageGroupId = entry.storageGroupId;
-			const shouldCountDisk = !storageGroupId || !seenStorageGroups.has(storageGroupId);
-			if (storageGroupId) {
-				seenStorageGroups.add(storageGroupId);
-			}
+			// Use pre-computed shouldCountDisk flag for cross-service deduplication
+			// If not provided (backward compatibility), default to counting disk
+			const shouldCountDisk = entry.shouldCountDisk ?? true;
 
 			if (shouldCountDisk) {
 				acc.diskTotal += data.diskTotal ?? 0;
