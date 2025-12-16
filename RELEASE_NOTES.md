@@ -6,6 +6,7 @@
 
 - **Docker**
   - Fix health check failing due to root path redirect (was checking `/` which returns 307, now uses `/auth/setup-required` which returns 200)
+  - Fix Prisma migration lock error (P3019) when switching from SQLite to PostgreSQL (#12)
 
 ### 🔧 Improvements
 
