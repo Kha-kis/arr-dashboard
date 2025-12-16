@@ -162,6 +162,9 @@ export const emptySonarrStatistics: SonarrStatistics = sonarrStatisticsSchema.pa
 	downloadedPercentage: 0,
 	cutoffUnmetCount: 0,
 	qualityBreakdown: {},
+	tagBreakdown: {},
+	recentlyAdded7Days: 0,
+	recentlyAdded30Days: 0,
 	averageEpisodeSize: 0,
 	diskTotal: 0,
 	diskFree: 0,
@@ -179,6 +182,10 @@ export const emptyRadarrStatistics: RadarrStatistics = radarrStatisticsSchema.pa
 	downloadedPercentage: 0,
 	cutoffUnmetCount: 0,
 	qualityBreakdown: {},
+	tagBreakdown: {},
+	recentlyAdded7Days: 0,
+	recentlyAdded30Days: 0,
+	totalRuntime: 0,
 	averageMovieSize: 0,
 	diskTotal: 0,
 	diskFree: 0,
@@ -211,16 +218,17 @@ export const fetchSonarrStatistics = async (
 	instanceName: string,
 	instanceBaseUrl: string,
 ): Promise<SonarrStatistics> => {
-	const series = (await safeRequestJson<unknown[]>(fetcher, "/api/v3/series")) ?? [];
-	const diskspace = (await safeRequestJson<unknown[]>(fetcher, "/api/v3/diskspace")) ?? [];
-	const health = (await safeRequestJson<unknown[]>(fetcher, "/api/v3/health")) ?? [];
-	const cutoffUnmet: CutoffUnmetResponse =
-		(await safeRequestJson<CutoffUnmetResponse>(
-			fetcher,
-			"/api/v3/wanted/cutoff?page=1&pageSize=1",
-		)) ?? {};
-	const qualityProfiles =
-		(await safeRequestJson<unknown[]>(fetcher, "/api/v3/qualityprofile")) ?? [];
+	// Fetch all API endpoints in parallel for better performance
+	const [series, diskspace, health, cutoffUnmet, qualityProfiles, tags] = await Promise.all([
+		safeRequestJson<unknown[]>(fetcher, "/api/v3/series").then((r) => r ?? []),
+		safeRequestJson<unknown[]>(fetcher, "/api/v3/diskspace").then((r) => r ?? []),
+		safeRequestJson<unknown[]>(fetcher, "/api/v3/health").then((r) => r ?? []),
+		safeRequestJson<CutoffUnmetResponse>(fetcher, "/api/v3/wanted/cutoff?page=1&pageSize=1").then(
+			(r) => r ?? {},
+		),
+		safeRequestJson<unknown[]>(fetcher, "/api/v3/qualityprofile").then((r) => r ?? []),
+		safeRequestJson<unknown[]>(fetcher, "/api/v3/tag").then((r) => r ?? []),
+	]);
 
 	// Build a map of profile ID to profile name
 	const profileIdToName = new Map<number, string>();
@@ -235,6 +243,24 @@ export const fetchSonarrStatistics = async (
 		}
 	}
 
+	// Build a map of tag ID to tag label
+	const tagIdToLabel = new Map<number, string>();
+	for (const tag of tags) {
+		if (tag && typeof tag === "object") {
+			const tagId = toNumber((tag as { id?: unknown }).id);
+			const tagLabel = toStringValue((tag as { label?: unknown }).label);
+
+			if (tagId !== undefined && tagLabel) {
+				tagIdToLabel.set(tagId, tagLabel);
+			}
+		}
+	}
+
+	// Calculate time thresholds for recently added
+	const now = Date.now();
+	const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+	const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
+
 	let totalSeries = 0;
 	let monitoredSeries = 0;
 	let continuingSeries = 0;
@@ -244,9 +270,13 @@ export const fetchSonarrStatistics = async (
 	let downloadedEpisodes = 0;
 	let missingEpisodes = 0;
 	let totalFileSize = 0;
+	let recentlyAdded7Days = 0;
+	let recentlyAdded30Days = 0;
 
 	// Track quality distribution based on quality profiles
 	const qualityBreakdown: Record<string, number> = {};
+	// Track tag distribution
+	const tagBreakdown: Record<string, number> = {};
 
 	for (const entry of series) {
 		if (!entry || typeof entry !== "object") {
@@ -262,6 +292,34 @@ export const fetchSonarrStatistics = async (
 			continuingSeries += 1;
 		} else if (status === "ended") {
 			endedSeries += 1;
+		}
+
+		// Check added date for recently added
+		const addedStr = toStringValue((entry as { added?: unknown }).added);
+		if (addedStr) {
+			const addedTime = new Date(addedStr).getTime();
+			if (!Number.isNaN(addedTime)) {
+				if (addedTime >= sevenDaysAgo) {
+					recentlyAdded7Days += 1;
+				}
+				if (addedTime >= thirtyDaysAgo) {
+					recentlyAdded30Days += 1;
+				}
+			}
+		}
+
+		// Process tags
+		const entryTags = (entry as { tags?: unknown[] }).tags;
+		if (Array.isArray(entryTags)) {
+			for (const tagId of entryTags) {
+				const tagIdNum = toNumber(tagId);
+				if (tagIdNum !== undefined && tagIdToLabel.has(tagIdNum)) {
+					const tagLabel = tagIdToLabel.get(tagIdNum);
+					if (tagLabel !== undefined) {
+						tagBreakdown[tagLabel] = (tagBreakdown[tagLabel] ?? 0) + 1;
+					}
+				}
+			}
 		}
 
 		const stats: SeriesStatistics = ((entry as { statistics?: unknown }).statistics ??
@@ -350,6 +408,9 @@ export const fetchSonarrStatistics = async (
 			totalEpisodes > 0 ? clampPercentage((downloadedEpisodes / totalEpisodes) * 100) : 0,
 		cutoffUnmetCount,
 		qualityBreakdown,
+		tagBreakdown,
+		recentlyAdded7Days,
+		recentlyAdded30Days,
 		averageEpisodeSize,
 		diskTotal: diskTotals.total || undefined,
 		diskFree: diskTotals.free || undefined,
@@ -366,16 +427,15 @@ export const fetchRadarrStatistics = async (
 	instanceName: string,
 	instanceBaseUrl: string,
 ): Promise<RadarrStatistics> => {
-	const movies = (await safeRequestJson<unknown[]>(fetcher, "/api/v3/movie")) ?? [];
-	const diskspace = (await safeRequestJson<unknown[]>(fetcher, "/api/v3/diskspace")) ?? [];
-	const health = (await safeRequestJson<unknown[]>(fetcher, "/api/v3/health")) ?? [];
-	const cutoffUnmet: CutoffUnmetResponse =
-		(await safeRequestJson<CutoffUnmetResponse>(
-			fetcher,
-			"/api/v3/wanted/cutoff?page=1&pageSize=1",
-		)) ?? {};
-	const qualityProfiles =
-		(await safeRequestJson<unknown[]>(fetcher, "/api/v3/qualityprofile")) ?? [];
+	// Fetch all API endpoints in parallel for better performance
+	const [movies, diskspace, health, cutoffUnmet, qualityProfiles, tags] = await Promise.all([
+		safeRequestJson<unknown[]>(fetcher, "/api/v3/movie").then((r) => r ?? []),
+		safeRequestJson<unknown[]>(fetcher, "/api/v3/diskspace").then((r) => r ?? []),
+		safeRequestJson<unknown[]>(fetcher, "/api/v3/health").then((r) => r ?? []),
+		safeRequestJson<CutoffUnmetResponse>(fetcher, "/api/v3/wanted/cutoff?page=1&pageSize=1").then((r) => r ?? {}),
+		safeRequestJson<unknown[]>(fetcher, "/api/v3/qualityprofile").then((r) => r ?? []),
+		safeRequestJson<unknown[]>(fetcher, "/api/v3/tag").then((r) => r ?? []),
+	]);
 
 	// Build a map of profile ID to profile name
 	const profileIdToName = new Map<number, string>();
@@ -390,16 +450,72 @@ export const fetchRadarrStatistics = async (
 		}
 	}
 
+	// Build tag ID to label map
+	const tagIdToLabel = new Map<number, string>();
+	for (const tag of tags) {
+		if (tag && typeof tag === "object") {
+			const tagId = toNumber((tag as { id?: unknown }).id);
+			const tagLabel = toStringValue((tag as { label?: unknown }).label);
+			if (tagId !== undefined && tagLabel) {
+				tagIdToLabel.set(tagId, tagLabel);
+			}
+		}
+	}
+
+	// Calculate time thresholds for recently added
+	const now = Date.now();
+	const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+	const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
+
 	let monitoredMovies = 0;
 	let downloadedMovies = 0;
 	let totalFileSize = 0;
+	let recentlyAdded7Days = 0;
+	let recentlyAdded30Days = 0;
+	let totalRuntime = 0;
 
 	const qualityBreakdown: Record<string, number> = {};
+	const tagBreakdown: Record<string, number> = {};
 
 	for (const movie of movies) {
 		if (!movie || typeof movie !== "object") {
 			continue;
 		}
+
+		// Check added date for recently added counts
+		const addedStr = toStringValue((movie as { added?: unknown }).added);
+		if (addedStr) {
+			const addedTime = new Date(addedStr).getTime();
+			if (!Number.isNaN(addedTime)) {
+				if (addedTime >= sevenDaysAgo) {
+					recentlyAdded7Days += 1;
+				}
+				if (addedTime >= thirtyDaysAgo) {
+					recentlyAdded30Days += 1;
+				}
+			}
+		}
+
+		// Process tags for tag breakdown
+		const movieTags = (movie as { tags?: unknown[] }).tags;
+		if (Array.isArray(movieTags)) {
+			for (const tagId of movieTags) {
+				const numericTagId = toNumber(tagId);
+				if (numericTagId !== undefined && tagIdToLabel.has(numericTagId)) {
+					const tagLabel = tagIdToLabel.get(numericTagId);
+					if (tagLabel) {
+						tagBreakdown[tagLabel] = (tagBreakdown[tagLabel] ?? 0) + 1;
+					}
+				}
+			}
+		}
+
+		// Accumulate total runtime (in minutes)
+		const runtime = toNumber((movie as { runtime?: unknown }).runtime);
+		if (runtime !== undefined && runtime > 0) {
+			totalRuntime += runtime;
+		}
+
 		if ((movie as { monitored?: unknown }).monitored !== false) {
 			monitoredMovies += 1;
 		}
@@ -479,6 +595,10 @@ export const fetchRadarrStatistics = async (
 			monitoredMovies > 0 ? clampPercentage((downloadedMovies / monitoredMovies) * 100) : 0,
 		cutoffUnmetCount,
 		qualityBreakdown,
+		tagBreakdown,
+		recentlyAdded7Days,
+		recentlyAdded30Days,
+		totalRuntime: totalRuntime > 0 ? totalRuntime : undefined,
 		averageMovieSize,
 		diskTotal: diskTotals.total || undefined,
 		diskFree: diskTotals.free || undefined,
@@ -651,6 +771,8 @@ export const aggregateSonarrStatistics = (
 			acc.downloadedEpisodes += data.downloadedEpisodes;
 			acc.missingEpisodes += data.missingEpisodes;
 			acc.cutoffUnmetCount += data.cutoffUnmetCount ?? 0;
+			acc.recentlyAdded7Days += data.recentlyAdded7Days ?? 0;
+			acc.recentlyAdded30Days += data.recentlyAdded30Days ?? 0;
 			acc.diskTotal += data.diskTotal ?? 0;
 			acc.diskFree += data.diskFree ?? 0;
 			acc.diskUsed += data.diskUsed ?? 0;
@@ -661,6 +783,11 @@ export const aggregateSonarrStatistics = (
 			if (data.qualityBreakdown) {
 				for (const [profileName, count] of Object.entries(data.qualityBreakdown)) {
 					acc.qualityBreakdown[profileName] = (acc.qualityBreakdown[profileName] ?? 0) + count;
+				}
+			}
+			if (data.tagBreakdown) {
+				for (const [tagName, count] of Object.entries(data.tagBreakdown)) {
+					acc.tagBreakdown[tagName] = (acc.tagBreakdown[tagName] ?? 0) + count;
 				}
 			}
 			if (data.averageEpisodeSize) {
@@ -679,12 +806,15 @@ export const aggregateSonarrStatistics = (
 			downloadedEpisodes: 0,
 			missingEpisodes: 0,
 			cutoffUnmetCount: 0,
+			recentlyAdded7Days: 0,
+			recentlyAdded30Days: 0,
 			diskTotal: 0,
 			diskFree: 0,
 			diskUsed: 0,
 			healthIssues: 0,
 			healthIssuesList: [] as SonarrStatistics["healthIssuesList"],
 			qualityBreakdown: {} as Record<string, number>,
+			tagBreakdown: {} as Record<string, number>,
 			totalFileSize: 0,
 			totalFiles: 0,
 		},
@@ -711,6 +841,9 @@ export const aggregateSonarrStatistics = (
 		downloadedPercentage,
 		cutoffUnmetCount: totals.cutoffUnmetCount,
 		qualityBreakdown: totals.qualityBreakdown,
+		tagBreakdown: Object.keys(totals.tagBreakdown).length > 0 ? totals.tagBreakdown : undefined,
+		recentlyAdded7Days: totals.recentlyAdded7Days,
+		recentlyAdded30Days: totals.recentlyAdded30Days,
 		averageEpisodeSize,
 		diskTotal: totals.diskTotal || undefined,
 		diskFree: totals.diskFree || undefined,
@@ -736,6 +869,9 @@ export const aggregateRadarrStatistics = (
 			acc.downloadedMovies += data.downloadedMovies;
 			acc.missingMovies += data.missingMovies;
 			acc.cutoffUnmetCount += data.cutoffUnmetCount ?? 0;
+			acc.recentlyAdded7Days += data.recentlyAdded7Days ?? 0;
+			acc.recentlyAdded30Days += data.recentlyAdded30Days ?? 0;
+			acc.totalRuntime += data.totalRuntime ?? 0;
 			acc.diskTotal += data.diskTotal ?? 0;
 			acc.diskFree += data.diskFree ?? 0;
 			acc.diskUsed += data.diskUsed ?? 0;
@@ -746,6 +882,11 @@ export const aggregateRadarrStatistics = (
 			if (data.qualityBreakdown) {
 				for (const [profileName, count] of Object.entries(data.qualityBreakdown)) {
 					acc.qualityBreakdown[profileName] = (acc.qualityBreakdown[profileName] ?? 0) + count;
+				}
+			}
+			if (data.tagBreakdown) {
+				for (const [tagName, count] of Object.entries(data.tagBreakdown)) {
+					acc.tagBreakdown[tagName] = (acc.tagBreakdown[tagName] ?? 0) + count;
 				}
 			}
 			if (data.averageMovieSize) {
@@ -760,12 +901,16 @@ export const aggregateRadarrStatistics = (
 			downloadedMovies: 0,
 			missingMovies: 0,
 			cutoffUnmetCount: 0,
+			recentlyAdded7Days: 0,
+			recentlyAdded30Days: 0,
+			totalRuntime: 0,
 			diskTotal: 0,
 			diskFree: 0,
 			diskUsed: 0,
 			healthIssues: 0,
 			healthIssuesList: [] as RadarrStatistics["healthIssuesList"],
 			qualityBreakdown: {} as Record<string, number>,
+			tagBreakdown: {} as Record<string, number>,
 			totalFileSize: 0,
 			totalFiles: 0,
 		},
@@ -788,6 +933,10 @@ export const aggregateRadarrStatistics = (
 		downloadedPercentage,
 		cutoffUnmetCount: totals.cutoffUnmetCount,
 		qualityBreakdown: totals.qualityBreakdown,
+		tagBreakdown: Object.keys(totals.tagBreakdown).length > 0 ? totals.tagBreakdown : undefined,
+		recentlyAdded7Days: totals.recentlyAdded7Days,
+		recentlyAdded30Days: totals.recentlyAdded30Days,
+		totalRuntime: totals.totalRuntime > 0 ? totals.totalRuntime : undefined,
 		averageMovieSize,
 		diskTotal: totals.diskTotal || undefined,
 		diskFree: totals.diskFree || undefined,
