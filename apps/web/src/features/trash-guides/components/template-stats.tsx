@@ -272,37 +272,46 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 													<Rocket className="h-3.5 w-3.5" />
 												</button>
 											)}
-											{/* Sync Strategy Dropdown */}
-											<DropdownMenu
-												trigger={
-													<div className="flex items-center justify-center rounded border border-border bg-bg-subtle p-1.5 text-fg-muted transition hover:bg-bg-subtle/80 cursor-pointer" title="Change sync strategy">
-														<StrategyIcon className={cn("h-3.5 w-3.5", strategyInfo.color, isUpdating && "animate-spin")} />
-													</div>
-												}
-												align="right"
-											>
-												<DropdownMenuItem
-													icon={<RefreshCw className="h-4 w-4 text-green-500" />}
-													onClick={() => handleSyncStrategyChange(instance.instanceId, "auto")}
-													disabled={isUpdating || instance.syncStrategy === "auto"}
+											{/* Sync Strategy Dropdown - only enabled for mapped instances */}
+											{instance.hasMapping ? (
+												<DropdownMenu
+													trigger={
+														<div className="flex items-center justify-center rounded border border-border bg-bg-subtle p-1.5 text-fg-muted transition hover:bg-bg-subtle/80 cursor-pointer" title="Change sync strategy">
+															<StrategyIcon className={cn("h-3.5 w-3.5", strategyInfo.color, isUpdating && "animate-spin")} />
+														</div>
+													}
+													align="right"
 												>
-													Auto-sync
-												</DropdownMenuItem>
-												<DropdownMenuItem
-													icon={<Bell className="h-4 w-4 text-blue-500" />}
-													onClick={() => handleSyncStrategyChange(instance.instanceId, "notify")}
-													disabled={isUpdating || instance.syncStrategy === "notify"}
+													<DropdownMenuItem
+														icon={<RefreshCw className="h-4 w-4 text-green-500" />}
+														onClick={() => handleSyncStrategyChange(instance.instanceId, "auto")}
+														disabled={isUpdating || instance.syncStrategy === "auto"}
+													>
+														Auto-sync
+													</DropdownMenuItem>
+													<DropdownMenuItem
+														icon={<Bell className="h-4 w-4 text-blue-500" />}
+														onClick={() => handleSyncStrategyChange(instance.instanceId, "notify")}
+														disabled={isUpdating || instance.syncStrategy === "notify"}
+													>
+														Notify Only
+													</DropdownMenuItem>
+													<DropdownMenuItem
+														icon={<Hand className="h-4 w-4 text-amber-500" />}
+														onClick={() => handleSyncStrategyChange(instance.instanceId, "manual")}
+														disabled={isUpdating || instance.syncStrategy === "manual"}
+													>
+														Manual
+													</DropdownMenuItem>
+												</DropdownMenu>
+											) : (
+												<div
+													className="flex items-center justify-center rounded border border-border bg-bg-subtle p-1.5 text-fg-muted/50 cursor-not-allowed"
+													title="Re-deploy template to change sync strategy"
 												>
-													Notify Only
-												</DropdownMenuItem>
-												<DropdownMenuItem
-													icon={<Hand className="h-4 w-4 text-amber-500" />}
-													onClick={() => handleSyncStrategyChange(instance.instanceId, "manual")}
-													disabled={isUpdating || instance.syncStrategy === "manual"}
-												>
-													Manual
-												</DropdownMenuItem>
-											</DropdownMenu>
+													<StrategyIcon className="h-3.5 w-3.5 text-fg-muted/50" />
+												</div>
+											)}
 											<button
 												type="button"
 												onClick={(e) => {

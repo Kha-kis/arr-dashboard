@@ -26,6 +26,8 @@ export interface TemplateInstanceInfo {
 	lastAppliedAt?: string;
 	hasActiveSchedule: boolean;
 	syncStrategy: "auto" | "manual" | "notify";
+	/** Whether this instance has an active deployment mapping (can change sync strategy) */
+	hasMapping: boolean;
 }
 
 export interface TemplateStatsResponse {

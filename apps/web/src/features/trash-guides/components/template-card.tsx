@@ -281,27 +281,27 @@ export const TemplateCard = ({
 														<DropdownMenuDivider />
 													</>
 												)}
-												{/* Sync Strategy Options */}
+												{/* Sync Strategy Options - only enabled for mapped instances */}
 												<DropdownMenuItem
 													icon={<RefreshCw className="h-4 w-4 text-green-500" />}
 													onClick={() => handleSyncStrategyChange(instance.instanceId, "auto")}
-													disabled={isUpdating || instance.syncStrategy === "auto"}
+													disabled={isUpdating || instance.syncStrategy === "auto" || !instance.hasMapping}
 												>
-													Auto-sync
+													Auto-sync{!instance.hasMapping && " (re-deploy required)"}
 												</DropdownMenuItem>
 												<DropdownMenuItem
 													icon={<Bell className="h-4 w-4 text-blue-500" />}
 													onClick={() => handleSyncStrategyChange(instance.instanceId, "notify")}
-													disabled={isUpdating || instance.syncStrategy === "notify"}
+													disabled={isUpdating || instance.syncStrategy === "notify" || !instance.hasMapping}
 												>
-													Notify Only
+													Notify Only{!instance.hasMapping && " (re-deploy required)"}
 												</DropdownMenuItem>
 												<DropdownMenuItem
 													icon={<Hand className="h-4 w-4 text-amber-500" />}
 													onClick={() => handleSyncStrategyChange(instance.instanceId, "manual")}
-													disabled={isUpdating || instance.syncStrategy === "manual"}
+													disabled={isUpdating || instance.syncStrategy === "manual" || !instance.hasMapping}
 												>
-													Manual
+													Manual{!instance.hasMapping && " (re-deploy required)"}
 												</DropdownMenuItem>
 												{onUnlinkInstance && (
 													<>
