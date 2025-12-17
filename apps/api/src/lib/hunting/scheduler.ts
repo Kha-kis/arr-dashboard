@@ -5,6 +5,9 @@ import {
 	MIN_INSTANCE_COOLDOWN_MINS,
 	MAX_HUNT_DURATION_MS,
 } from "./constants.js";
+import { loggers } from "../logger.js";
+
+const log = loggers.hunting;
 
 /**
  * Run a promise and fail if it does not settle within the specified timeout.
@@ -74,7 +77,7 @@ class HuntingScheduler {
 
 		// Clean up any stuck hunts from previous runs
 		this.cleanupStuckHunts().catch((error) => {
-			console.error("[HuntingScheduler] Failed to cleanup stuck hunts on init:", error);
+			log.error({ err: error }, "Failed to cleanup stuck hunts on init");
 		});
 	}
 
@@ -101,7 +104,7 @@ class HuntingScheduler {
 				});
 			}
 		} catch (error) {
-			console.error("[HuntingScheduler] Failed to cleanup stuck hunts:", error);
+			log.error({ err: error }, "Failed to cleanup stuck hunts");
 		}
 	}
 
@@ -122,7 +125,7 @@ class HuntingScheduler {
 		// Check every minute for hunts that need to run
 		this.intervalId = setInterval(() => {
 			this.tick().catch((error) => {
-				console.error("[HuntingScheduler] Scheduler tick failed:", error);
+				log.error({ err: error }, "Scheduler tick failed");
 			});
 		}, 60 * 1000);
 	}
@@ -172,7 +175,7 @@ class HuntingScheduler {
 
 		// Run hunt immediately in background (don't await - let API return quickly)
 		this.runHunt(instanceId, type, true).catch((error) => {
-			console.error(`[HuntingScheduler] Manual hunt failed for ${instanceId}:`, error);
+			log.error({ err: error, instanceId }, "Manual hunt failed");
 		});
 
 		return { queued: true, message: `${type} hunt started` };
@@ -264,7 +267,7 @@ class HuntingScheduler {
 			// Then check for scheduled hunts
 			await this.processScheduledHunts();
 		} catch (error) {
-			console.error("[HuntingScheduler] Tick error:", error);
+			log.error({ err: error }, "Tick error");
 		}
 	}
 
@@ -370,12 +373,12 @@ class HuntingScheduler {
 		});
 
 		if (!config) {
-			console.error(`[HuntingScheduler] No config found for instance ${instanceId}`);
+			log.error({ instanceId }, "No config found for instance");
 			return;
 		}
 
 		// Create log entry with "running" status
-		const log = await this.app.prisma.huntLog.create({
+		const huntLogEntry = await this.app.prisma.huntLog.create({
 			data: {
 				instanceId,
 				huntType: type,
@@ -404,7 +407,7 @@ class HuntingScheduler {
 			// Update log with results
 			const durationMs = Date.now() - startTime;
 			await this.app.prisma.huntLog.update({
-				where: { id: log.id },
+				where: { id: huntLogEntry.id },
 				data: {
 					itemsSearched: result.itemsSearched,
 					itemsFound: result.itemsGrabbed,
@@ -445,7 +448,7 @@ class HuntingScheduler {
 			const message = error instanceof Error ? error.message : "Unknown error";
 
 			await this.app.prisma.huntLog.update({
-				where: { id: log.id },
+				where: { id: huntLogEntry.id },
 				data: {
 					status: "error",
 					message,
@@ -454,7 +457,7 @@ class HuntingScheduler {
 				},
 			});
 
-			console.error(`[HuntingScheduler] Hunt error for ${config.instance.label}:`, error);
+			log.error({ err: error, instanceLabel: config.instance.label }, "Hunt error");
 		}
 	}
 }

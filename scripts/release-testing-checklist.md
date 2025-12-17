@@ -216,7 +216,7 @@ docker run -d --name arr-pg-test \
 ```
 
 - [ ] App starts with PostgreSQL
-- [ ] Migrations apply correctly
+- [ ] Schema syncs correctly (db push)
 - [ ] All features work with PostgreSQL
 
 ## Security Checks

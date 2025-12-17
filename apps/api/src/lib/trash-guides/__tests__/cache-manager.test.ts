@@ -1,7 +1,8 @@
 /**
  * Integration tests for TrashCacheManager
  *
- * Tests cache operations, compression, staleness detection, and statistics
+ * Tests cache operations, compression, staleness detection, and statistics.
+ * These tests require database access and are skipped unless TEST_DB=true.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -9,7 +10,11 @@ import { PrismaClient } from "@prisma/client";
 import { TrashCacheManager } from "../cache-manager.js";
 import type { TrashConfigType } from "@arr/shared";
 
-describe("TrashCacheManager Integration Tests", () => {
+// Check if we should run integration tests (requires writable test database)
+const RUN_DB_TESTS = process.env.TEST_DB === "true";
+
+// All tests in this file require database access
+(RUN_DB_TESTS ? describe : describe.skip)("TrashCacheManager Integration Tests", () => {
 	let prisma: PrismaClient;
 	let cacheManager: TrashCacheManager;
 
