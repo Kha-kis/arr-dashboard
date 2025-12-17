@@ -51,6 +51,7 @@ apps/api/dev.db
 .pf/
 .claude/
 .serena/
+claudedocs/
 
 # IDE and Editor files
 .vscode/

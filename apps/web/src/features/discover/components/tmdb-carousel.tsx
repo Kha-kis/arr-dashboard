@@ -59,21 +59,21 @@ export const TMDBCarousel: React.FC<TMDBCarouselProps> = ({
 	const [canScrollLeft, setCanScrollLeft] = useState(false);
 	const [canScrollRight, setCanScrollRight] = useState(false);
 
-	const checkScrollButtons = () => {
+	const checkScrollButtons = useCallback(() => {
 		if (!scrollContainerRef.current) return;
 		const { scrollLeft, scrollWidth, clientWidth } = scrollContainerRef.current;
 		setCanScrollLeft(scrollLeft > 0);
 		setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 10);
-	};
+	}, []);
 
-	const scroll = (direction: "left" | "right") => {
+	const scroll = useCallback((direction: "left" | "right") => {
 		if (!scrollContainerRef.current) return;
 		const scrollAmount = scrollContainerRef.current.clientWidth * 0.8;
 		scrollContainerRef.current.scrollBy({
 			left: direction === "left" ? -scrollAmount : scrollAmount,
 			behavior: "smooth",
 		});
-	};
+	}, []);
 
 	const handleScroll = useCallback(() => {
 		checkScrollButtons();
@@ -88,7 +88,7 @@ export const TMDBCarousel: React.FC<TMDBCarouselProps> = ({
 		if (scrollPercentage > 0.8 && onLoadMore) {
 			onLoadMore();
 		}
-	}, [hasNextPage, isFetchingNextPage, onLoadMore]);
+	}, [checkScrollButtons, hasNextPage, isFetchingNextPage, onLoadMore]);
 
 	useEffect(() => {
 		checkScrollButtons();
@@ -101,7 +101,7 @@ export const TMDBCarousel: React.FC<TMDBCarouselProps> = ({
 				window.removeEventListener("resize", checkScrollButtons);
 			};
 		}
-	}, [items, handleScroll]);
+	}, [items.length, handleScroll, checkScrollButtons]);
 
 	if (isLoading) {
 		return (
@@ -131,6 +131,7 @@ export const TMDBCarousel: React.FC<TMDBCarouselProps> = ({
 			<div className="group/carousel relative">
 				{canScrollLeft && (
 					<button
+						type="button"
 						onClick={() => scroll("left")}
 						className="absolute left-0 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/80 p-2 text-white shadow-lg transition-all hover:bg-black/90 hover:scale-110"
 						aria-label="Scroll left"
@@ -140,6 +141,7 @@ export const TMDBCarousel: React.FC<TMDBCarouselProps> = ({
 				)}
 				{canScrollRight && (
 					<button
+						type="button"
 						onClick={() => scroll("right")}
 						className="absolute right-0 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/80 p-2 text-white shadow-lg transition-all hover:bg-black/90 hover:scale-110"
 						aria-label="Scroll right"

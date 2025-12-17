@@ -39,6 +39,7 @@ model Session {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([expiresAt]) // For cleanup queries
   @@map("sessions")
 }
 
@@ -271,6 +272,7 @@ model TrashTemplate {
   @@index([serviceType])
   @@index([trashGuidesCommitHash])
   @@index([lastSyncedAt])
+  @@index([deletedAt]) // For soft delete queries
   @@map("trash_templates")
 }
 
@@ -579,6 +581,8 @@ model HuntConfig {
   // Relations
   searchHistory         HuntSearchHistory[]
 
+  @@index([lastMissingHunt]) // For scheduling queries
+  @@index([lastUpgradeHunt]) // For scheduling queries
   @@map("hunt_configs")
 }
 
