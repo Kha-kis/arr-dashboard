@@ -1,5 +1,41 @@
 # Release Notes
 
+## Version 2.6.3
+
+### ✨ New Features
+
+- **Backup System**
+  - Password protection for backup files with optional encryption
+  - TRaSH data inclusion option - choose whether to include templates, cache, and sync history in backups
+  - Improved restore warning messages with clearer explanation of the replacement process
+
+- **TRaSH Guides**
+  - Standalone custom format deployment - deploy individual CFs without full profile sync
+  - Sync rollback support - revert deployments if something goes wrong
+  - Better deployment tracking and history
+
+- **History Page**
+  - External links on instance names - click to navigate directly to the relevant page in Sonarr/Radarr/Prowlarr
+  - Links to series/movie pages when viewing history for specific items
+
+### 🏗️ Infrastructure
+
+- **Database**
+  - Removed Prisma migrations in favor of `db push` for better multi-provider support
+  - Improved PostgreSQL compatibility and provider switching
+  - Simpler database initialization for fresh installs
+
+### 📦 Upgrade Notes
+
+This is a non-breaking release. Simply pull the latest image:
+
+```bash
+docker-compose pull
+docker-compose up -d
+```
+
+---
+
 ## Version 2.6.2
 
 ### 🐛 Bug Fixes
