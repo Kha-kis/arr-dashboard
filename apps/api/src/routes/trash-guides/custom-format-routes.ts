@@ -149,12 +149,25 @@ export async function registerCustomFormatRoutes(
 				existingByName.set(cf.name, cf);
 			}
 
+			// Get the commit hash from cache for tracking
+			const cacheEntry = await app.prisma.trashCache.findFirst({
+				where: {
+					serviceType,
+					configType: "CUSTOM_FORMATS",
+				},
+				select: { commitHash: true },
+			});
+			const commitHash = cacheEntry?.commitHash ?? "unknown";
+
 			// Deploy each custom format
 			const results = {
 				created: [] as string[],
 				updated: [] as string[],
 				failed: [] as Array<{ name: string; error: string }>,
 			};
+
+			// Track successful deployments for recording
+			const successfulDeployments: Array<{ trashId: string; name: string }> = [];
 
 			for (const customFormat of customFormats) {
 				try {
@@ -181,6 +194,7 @@ export async function registerCustomFormatRoutes(
 						};
 						await arrClient.updateCustomFormat(existing.id, updatedCF);
 						results.updated.push(customFormat.name);
+						successfulDeployments.push({ trashId: customFormat.trash_id, name: customFormat.name });
 					} else {
 						// Create new custom format
 						// Note: The ARR API expects fields as array, but CustomFormat type uses Record
@@ -192,6 +206,7 @@ export async function registerCustomFormatRoutes(
 						};
 						await arrClient.createCustomFormat(newCF);
 						results.created.push(customFormat.name);
+						successfulDeployments.push({ trashId: customFormat.trash_id, name: customFormat.name });
 					}
 				} catch (error) {
 					results.failed.push({
@@ -199,6 +214,36 @@ export async function registerCustomFormatRoutes(
 						error: error instanceof Error ? error.message : "Unknown error",
 					});
 				}
+			}
+
+			// Record successful deployments for update tracking
+			if (successfulDeployments.length > 0) {
+				const userId = request.currentUser!.id;
+				await Promise.all(
+					successfulDeployments.map((deployment) =>
+						app.prisma.standaloneCFDeployment.upsert({
+							where: {
+								instanceId_cfTrashId: {
+									instanceId,
+									cfTrashId: deployment.trashId,
+								},
+							},
+							update: {
+								cfName: deployment.name,
+								commitHash,
+								deployedAt: new Date(),
+							},
+							create: {
+								userId,
+								instanceId,
+								cfTrashId: deployment.trashId,
+								cfName: deployment.name,
+								serviceType,
+								commitHash,
+							},
+						})
+					)
+				);
 			}
 
 			const success = results.failed.length === 0;
@@ -222,6 +267,222 @@ export async function registerCustomFormatRoutes(
 			return reply.status(500).send({
 				error: "DEPLOYMENT_FAILED",
 				message: error instanceof Error ? error.message : "Failed to deploy custom formats",
+			});
+		}
+	});
+
+	/**
+	 * GET /api/trash-guides/custom-formats/standalone-updates
+	 * Check for updates to standalone deployed custom formats
+	 * Compares deployed commit hashes against current cache commit hash
+	 */
+	app.get<{
+		Querystring: {
+			instanceId?: string;
+			serviceType?: "RADARR" | "SONARR";
+		};
+	}>("/standalone-updates", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { instanceId, serviceType } = request.query;
+
+		try {
+			// Build query filter
+			const where: {
+				userId: string;
+				instanceId?: string;
+				serviceType?: "RADARR" | "SONARR";
+			} = { userId };
+
+			if (instanceId) {
+				where.instanceId = instanceId;
+			}
+			if (serviceType) {
+				where.serviceType = serviceType;
+			}
+
+			// Get all standalone deployments for this user
+			const deployments = await app.prisma.standaloneCFDeployment.findMany({
+				where,
+				include: {
+					instance: {
+						select: {
+							label: true,
+							service: true,
+						},
+					},
+				},
+			});
+
+			if (deployments.length === 0) {
+				return reply.send({
+					success: true,
+					hasUpdates: false,
+					updates: [],
+					message: "No standalone custom format deployments found",
+				});
+			}
+
+			// Get current cache commit hashes for each service type
+			const serviceTypes = [...new Set(deployments.map((d) => d.serviceType))];
+			const cacheCommitHashes = new Map<string, string>();
+
+			for (const svc of serviceTypes) {
+				const cache = await app.prisma.trashCache.findFirst({
+					where: {
+						serviceType: svc,
+						configType: "CUSTOM_FORMATS",
+					},
+					select: { commitHash: true },
+				});
+				if (cache?.commitHash) {
+					cacheCommitHashes.set(svc, cache.commitHash);
+				}
+			}
+
+			// Compare deployments to current cache
+			const updates: Array<{
+				cfTrashId: string;
+				cfName: string;
+				instanceId: string;
+				instanceLabel: string;
+				serviceType: string;
+				deployedCommitHash: string;
+				currentCommitHash: string;
+			}> = [];
+
+			for (const deployment of deployments) {
+				const currentHash = cacheCommitHashes.get(deployment.serviceType);
+				if (currentHash && currentHash !== deployment.commitHash) {
+					updates.push({
+						cfTrashId: deployment.cfTrashId,
+						cfName: deployment.cfName,
+						instanceId: deployment.instanceId,
+						instanceLabel: deployment.instance.label,
+						serviceType: deployment.serviceType,
+						deployedCommitHash: deployment.commitHash,
+						currentCommitHash: currentHash,
+					});
+				}
+			}
+
+			return reply.send({
+				success: true,
+				hasUpdates: updates.length > 0,
+				updates,
+				totalDeployed: deployments.length,
+				outdatedCount: updates.length,
+			});
+		} catch (error) {
+			app.log.error({ err: error, instanceId, serviceType }, "Failed to check standalone CF updates");
+			return reply.status(500).send({
+				error: "CHECK_FAILED",
+				message: error instanceof Error ? error.message : "Failed to check for updates",
+			});
+		}
+	});
+
+	/**
+	 * GET /api/trash-guides/custom-formats/standalone-deployments
+	 * List all standalone CF deployments for the current user
+	 */
+	app.get<{
+		Querystring: {
+			instanceId?: string;
+			serviceType?: "RADARR" | "SONARR";
+		};
+	}>("/standalone-deployments", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { instanceId, serviceType } = request.query;
+
+		try {
+			const where: {
+				userId: string;
+				instanceId?: string;
+				serviceType?: "RADARR" | "SONARR";
+			} = { userId };
+
+			if (instanceId) {
+				where.instanceId = instanceId;
+			}
+			if (serviceType) {
+				where.serviceType = serviceType;
+			}
+
+			const deployments = await app.prisma.standaloneCFDeployment.findMany({
+				where,
+				include: {
+					instance: {
+						select: {
+							label: true,
+							service: true,
+						},
+					},
+				},
+				orderBy: [
+					{ instanceId: "asc" },
+					{ cfName: "asc" },
+				],
+			});
+
+			return reply.send({
+				success: true,
+				deployments: deployments.map((d) => ({
+					id: d.id,
+					cfTrashId: d.cfTrashId,
+					cfName: d.cfName,
+					instanceId: d.instanceId,
+					instanceLabel: d.instance.label,
+					serviceType: d.serviceType,
+					commitHash: d.commitHash,
+					deployedAt: d.deployedAt,
+				})),
+				count: deployments.length,
+			});
+		} catch (error) {
+			app.log.error({ err: error, instanceId, serviceType }, "Failed to list standalone CF deployments");
+			return reply.status(500).send({
+				error: "LIST_FAILED",
+				message: error instanceof Error ? error.message : "Failed to list deployments",
+			});
+		}
+	});
+
+	/**
+	 * DELETE /api/trash-guides/custom-formats/standalone-deployments/:id
+	 * Remove tracking for a standalone CF deployment (does not remove CF from instance)
+	 */
+	app.delete<{
+		Params: { id: string };
+	}>("/standalone-deployments/:id", async (request, reply) => {
+		const userId = request.currentUser!.id;
+		const { id } = request.params;
+
+		try {
+			// Verify ownership
+			const deployment = await app.prisma.standaloneCFDeployment.findFirst({
+				where: { id, userId },
+			});
+
+			if (!deployment) {
+				return reply.status(404).send({
+					error: "NOT_FOUND",
+					message: "Deployment record not found",
+				});
+			}
+
+			await app.prisma.standaloneCFDeployment.delete({
+				where: { id },
+			});
+
+			return reply.send({
+				success: true,
+				message: `Stopped tracking updates for ${deployment.cfName}`,
+			});
+		} catch (error) {
+			app.log.error({ err: error, id }, "Failed to delete standalone CF deployment");
+			return reply.status(500).send({
+				error: "DELETE_FAILED",
+				message: error instanceof Error ? error.message : "Failed to delete deployment record",
 			});
 		}
 	});

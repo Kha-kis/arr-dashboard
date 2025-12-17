@@ -995,3 +995,57 @@ export interface DeployTemplateToInstanceRequest {
 export interface UpdateDeploymentSettingsRequest {
 	syncStrategy: SyncStrategyType;
 }
+
+// ============================================================================
+// Standalone Custom Format Deployment Types
+// ============================================================================
+
+/**
+ * A standalone custom format deployment record
+ * Tracks CFs deployed via the Custom Formats tab (outside of templates)
+ */
+export interface StandaloneCFDeployment {
+	id: string;
+	cfTrashId: string;
+	cfName: string;
+	instanceId: string;
+	instanceLabel: string;
+	serviceType: "RADARR" | "SONARR";
+	commitHash: string;
+	deployedAt: string;
+}
+
+/**
+ * Standalone CF update check result
+ * Indicates a CF that has been updated in TRaSH Guides since deployment
+ */
+export interface StandaloneCFUpdate {
+	cfTrashId: string;
+	cfName: string;
+	instanceId: string;
+	instanceLabel: string;
+	serviceType: string;
+	deployedCommitHash: string;
+	currentCommitHash: string;
+}
+
+/**
+ * Response from standalone CF updates check endpoint
+ */
+export interface StandaloneCFUpdatesResponse {
+	success: boolean;
+	hasUpdates: boolean;
+	updates: StandaloneCFUpdate[];
+	totalDeployed: number;
+	outdatedCount: number;
+	message?: string;
+}
+
+/**
+ * Response from standalone deployments list endpoint
+ */
+export interface StandaloneCFDeploymentsResponse {
+	success: boolean;
+	deployments: StandaloneCFDeployment[];
+	count: number;
+}

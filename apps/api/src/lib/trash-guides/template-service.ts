@@ -64,6 +64,8 @@ export interface TemplateInstanceInfo {
 	lastAppliedAt?: Date;
 	hasActiveSchedule: boolean;
 	syncStrategy: "auto" | "manual" | "notify";
+	/** Whether this instance has an active deployment mapping (can change sync strategy) */
+	hasMapping: boolean;
 }
 
 export interface TemplateStats {
@@ -551,6 +553,8 @@ export class TemplateService {
 					// Instance has "active schedule" if this deployment is set to auto-sync
 					hasActiveSchedule: strategy === "auto",
 					syncStrategy: strategy,
+					// Has mapping = can change sync strategy
+					hasMapping: true,
 				});
 			}
 		}
@@ -566,6 +570,8 @@ export class TemplateService {
 					// No active schedule if not mapped
 					hasActiveSchedule: false,
 					syncStrategy: "notify", // Default for unmapped instances
+					// No mapping = cannot change sync strategy (needs re-deployment)
+					hasMapping: false,
 				});
 			}
 		}

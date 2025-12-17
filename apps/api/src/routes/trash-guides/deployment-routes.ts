@@ -201,7 +201,8 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			if (!mapping) {
 				return reply.status(404).send({
 					success: false,
-					error: "No deployment mapping found for this template and instance",
+					error: "No active deployment found",
+					details: "This instance was synced in the past but is no longer linked to this template. Re-deploy the template to this instance to change sync strategy.",
 				});
 			}
 
@@ -213,7 +214,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				});
 			}
 
-			// Update the sync strategy
+			// Update the sync strategy (single instance)
 			const updated = await prisma.templateQualityProfileMapping.update({
 				where: { id: mapping.id },
 				data: {

@@ -434,75 +434,162 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 			});
 		}
 
-		// TODO: Implement rollback using deployment executor
-		return reply.status(501).send({
-			error: "NOT_IMPLEMENTED",
-			message: "Rollback functionality is not yet implemented with the new sync engine",
-		});
+		try {
+			// Create API client for the instance
+			const apiClient = createArrApiClient(sync.instance, app.encryptor);
 
-		/* Rollback implementation (disabled until deployment executor supports it):
+			// Parse backup data (contains the pre-sync state)
+			// Note: deployment-executor stores backupData as a raw array of CFs, not an object
+			interface BackupCustomFormat {
+				id?: number;
+				name: string;
+				specifications?: unknown[];
+				includeCustomFormatWhenRenaming?: boolean;
+				trash_id?: string;
+			}
+
+			let backupCFs: BackupCustomFormat[];
 			try {
-				// Create API client
-				const apiClient = createArrApiClient(sync.instance, app.encryptor);
+				const parsed = JSON.parse(sync.backup.backupData);
+				// Handle both formats: raw array (deployment-executor) or object with customFormats (backup-manager)
+				backupCFs = Array.isArray(parsed) ? parsed : (parsed.customFormats ?? []);
+			} catch {
+				return reply.status(400).send({
+					error: "INVALID_BACKUP",
+					message: "Backup data is corrupted or invalid",
+				});
+			}
 
-				// Get current Custom Formats to understand what changed
-				const currentFormats = await apiClient.getCustomFormats();
-
-				// Parse applied configs from sync history
-				const appliedConfigs = sync.appliedConfigs ? JSON.parse(sync.appliedConfigs) as Array<{ name: string }> : [];
-				const appliedNames = new Set(appliedConfigs.map((c) => c.name));
-
-				let restoredCount = 0;
-				let failedCount = 0;
-				const errors: string[] = [];
-
-				// Step 1: Delete Custom Formats that were created/updated during sync
-				for (const currentFormat of currentFormats) {
-					if (appliedNames.has(currentFormat.name)) {
-						try {
-							if (currentFormat.id) {
-								await apiClient.deleteCustomFormat(currentFormat.id);
-							}
-						} catch (deleteError) {
-							errors.push(`Failed to delete ${currentFormat.name}: ${deleteError instanceof Error ? deleteError.message : "Unknown error"}`);
-							failedCount++;
-						}
-					}
+			// Parse appliedConfigs to know which CFs were CREATED by the sync (not just updated)
+			// We only delete CFs that were created, not ones that existed before
+			interface AppliedConfig {
+				name: string;
+				action?: "created" | "updated";
+			}
+			let appliedConfigs: AppliedConfig[] = [];
+			try {
+				if (sync.appliedConfigs) {
+					appliedConfigs = JSON.parse(sync.appliedConfigs) as AppliedConfig[];
 				}
+			} catch {
+				// If we can't parse appliedConfigs, we'll skip the deletion step for safety
+				request.log.warn({ syncId }, "Could not parse appliedConfigs, skipping CF deletion");
+			}
 
-				// Step 2: Restore Custom Formats from backup
-				const backupData = JSON.parse(sync.backup.data);
-				for (const backupFormat of backupData.customFormats) {
-					try {
-						await apiClient.createCustomFormat(backupFormat as any);
+			// Build set of CF names that were CREATED (not updated) by the sync
+			const createdBySyncNames = new Set<string>();
+			for (const config of appliedConfigs) {
+				// Only add if explicitly marked as created, or if no action field (legacy: assume created)
+				if (config.action === "created" || !config.action) {
+					createdBySyncNames.add(config.name);
+				}
+			}
+			// Also check backup - if a CF was "created" but exists in backup, it was actually updated
+			const backupNames = new Set(backupCFs.map((cf) => cf.name));
+			for (const name of createdBySyncNames) {
+				if (backupNames.has(name)) {
+					createdBySyncNames.delete(name); // Was in backup, so it was updated not created
+				}
+			}
+
+			// Get current Custom Formats from instance
+			const currentFormats = await apiClient.getCustomFormats();
+
+			// Build lookup maps by name
+			const backupByName = new Map<string, BackupCustomFormat>();
+			for (const cf of backupCFs) {
+				backupByName.set(cf.name, cf);
+			}
+
+			const currentByName = new Map<string, typeof currentFormats[0]>();
+			for (const cf of currentFormats) {
+				currentByName.set(cf.name, cf);
+			}
+
+			let restoredCount = 0;
+			let deletedCount = 0;
+			let failedCount = 0;
+			const errors: string[] = [];
+
+			// Step 1: Update or restore Custom Formats that existed in backup
+			for (const [name, backupFormat] of backupByName) {
+				const currentFormat = currentByName.get(name);
+				// Remove trash_id for ARR API compatibility
+				const { trash_id: _trashId, ...formatWithoutTrashId } = backupFormat;
+
+				try {
+					if (currentFormat?.id) {
+						// CF exists in instance - update it to match backup
+						// Use current instance ID, not backup ID
+						const { id: _backupId, ...formatData } = formatWithoutTrashId;
+						await apiClient.updateCustomFormat(currentFormat.id, {
+							...formatData,
+							id: currentFormat.id,
+						} as Parameters<typeof apiClient.updateCustomFormat>[1]);
 						restoredCount++;
-					} catch (restoreError) {
-						errors.push(`Failed to restore ${(backupFormat as any).name}: ${restoreError instanceof Error ? restoreError.message : "Unknown error"}`);
+					} else {
+						// CF was deleted during sync - recreate it
+						// Remove id for creation (ARR assigns new ID)
+						const { id: _id, ...formatData } = formatWithoutTrashId;
+						await apiClient.createCustomFormat(formatData as Parameters<typeof apiClient.createCustomFormat>[0]);
+						restoredCount++;
+					}
+				} catch (error) {
+					errors.push(`Failed to restore "${name}": ${error instanceof Error ? error.message : "Unknown error"}`);
+					failedCount++;
+				}
+			}
+
+			// Step 2: Delete ONLY Custom Formats that were CREATED by the sync (not user-created ones)
+			for (const [name, currentFormat] of currentByName) {
+				// Only delete if: not in backup AND was created by sync AND has valid ID
+				if (!backupByName.has(name) && createdBySyncNames.has(name) && currentFormat.id) {
+					try {
+						await apiClient.deleteCustomFormat(currentFormat.id);
+						deletedCount++;
+					} catch (error) {
+						errors.push(`Failed to delete "${name}": ${error instanceof Error ? error.message : "Unknown error"}`);
 						failedCount++;
 					}
 				}
-
-				// Update sync history to mark as rolled back
-				await app.prisma.trashSyncHistory.update({
-					where: { id: syncId },
-					data: {
-						rolledBack: true,
-						rolledBackAt: new Date(),
-					},
-				});
-
-				return reply.send({
-					success: failedCount === 0,
-					restoredCount,
-					failedCount,
-					errors,
-				});
-			} catch (error) {
-				return reply.status(500).send({
-					error: "ROLLBACK_FAILED",
-					message: error instanceof Error ? error.message : "Rollback failed",
-				});
 			}
-			*/
+
+			// Mark sync as rolled back
+			await app.prisma.trashSyncHistory.update({
+				where: { id: syncId },
+				data: {
+					rolledBack: true,
+					rolledBackAt: new Date(),
+				},
+			});
+
+			request.log.info(
+				{
+					syncId,
+					restoredCount,
+					deletedCount,
+					failedCount,
+					userId,
+				},
+				"Sync rollback completed",
+			);
+
+			return reply.send({
+				success: failedCount === 0,
+				restoredCount,
+				deletedCount,
+				failedCount,
+				errors: errors.length > 0 ? errors : undefined,
+				message: failedCount === 0
+					? `Successfully rolled back: ${restoredCount} restored, ${deletedCount} deleted`
+					: `Rollback completed with errors: ${restoredCount} restored, ${deletedCount} deleted, ${failedCount} failed`,
+			});
+		} catch (error) {
+			request.log.error({ error, syncId }, "Sync rollback failed");
+			return reply.status(500).send({
+				error: "ROLLBACK_FAILED",
+				message: error instanceof Error ? error.message : "Rollback failed",
+			});
+		}
 	});
 }

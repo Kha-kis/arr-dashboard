@@ -13,6 +13,8 @@ import type {
 	TemplateCustomFormatGroup,
 	TrashCustomFormat,
 	TrashCustomFormatGroup,
+	TrashQualityProfile,
+	GroupCustomFormat,
 	CustomFormatDiff,
 	CustomFormatGroupDiff,
 	TemplateDiffResult,
@@ -301,11 +303,56 @@ export class TemplateUpdater {
 				};
 			}
 
+			// Get profile-relevant CF IDs to filter new CFs to only those
+			// that belong to the template's source quality profile
+			const profileRelevantCFIds = await this.getProfileRelevantCFIds(
+				serviceType,
+				template.sourceQualityProfileTrashId,
+			);
+
+			// Filter custom formats to only include:
+			// 1. CFs already in the template (always keep for update/removal)
+			// 2. New CFs that are relevant to the template's quality profile
+			const currentCFTrashIds = new Set(
+				(currentConfig.customFormats || []).map((cf) => cf.trashId),
+			);
+			const filteredCustomFormats = fetchResult.customFormats.filter((cf) => {
+				// Always include CFs that are already in the template
+				if (currentCFTrashIds.has(cf.trash_id)) {
+					return true;
+				}
+				// For new CFs, only include if profile-relevant (or if no profile filter available)
+				return !profileRelevantCFIds || profileRelevantCFIds.has(cf.trash_id);
+			});
+
+			// Filter CF Groups similarly
+			const currentGroupTrashIds = new Set(
+				(currentConfig.customFormatGroups || []).map((g) => g.trashId),
+			);
+			const filteredCFGroups = fetchResult.customFormatGroups.filter((group) => {
+				// Always include groups that are already in the template
+				if (currentGroupTrashIds.has(group.trash_id)) {
+					return true;
+				}
+				// For new groups, check if excluded from the template's quality profile
+				if (template.sourceQualityProfileTrashId) {
+					const isExcluded =
+						group.quality_profiles?.exclude &&
+						Object.values(group.quality_profiles.exclude).includes(
+							template.sourceQualityProfileTrashId,
+						);
+					if (isExcluded) {
+						return false;
+					}
+				}
+				return true;
+			});
+
 			// Perform merge: preserve user customizations, update specifications
 			const mergeResult = this.mergeTemplateConfig(
 				currentConfig,
-				fetchResult.customFormats,
-				fetchResult.customFormatGroups,
+				filteredCustomFormats,
+				filteredCFGroups,
 			);
 
 			if (!mergeResult.success) {
@@ -404,6 +451,81 @@ export class TemplateUpdater {
 				cacheCommitHash: null,
 				error: error instanceof Error ? error.message : String(error),
 			};
+		}
+	}
+
+	/**
+	 * Get the set of CF trash_ids that are relevant to a specific quality profile.
+	 * This includes:
+	 * - CFs directly referenced in the profile's formatItems (mandatory)
+	 * - CFs from CF Groups that apply to this profile (not excluded)
+	 *
+	 * @private
+	 */
+	private async getProfileRelevantCFIds(
+		serviceType: "RADARR" | "SONARR",
+		profileTrashId: string | null,
+	): Promise<Set<string> | null> {
+		// If no profile trash_id, we can't filter - return null to indicate no filtering
+		if (!profileTrashId) {
+			return null;
+		}
+
+		try {
+			// Get quality profiles from cache
+			const profiles = await this.cacheManager.get<TrashQualityProfile[]>(
+				serviceType,
+				"QUALITY_PROFILES",
+			);
+
+			if (!profiles) {
+				return null;
+			}
+
+			const profile = profiles.find((p) => p.trash_id === profileTrashId);
+			if (!profile) {
+				return null;
+			}
+
+			const relevantCFIds = new Set<string>();
+
+			// Add CFs from profile's formatItems (mandatory CFs)
+			if (profile.formatItems) {
+				for (const cfTrashId of Object.values(profile.formatItems)) {
+					relevantCFIds.add(cfTrashId);
+				}
+			}
+
+			// Get CF Groups from cache to find applicable groups
+			const cfGroups = await this.cacheManager.get<TrashCustomFormatGroup[]>(
+				serviceType,
+				"CF_GROUPS",
+			);
+
+			if (cfGroups) {
+				// Add CFs from CF Groups that apply to this profile
+				for (const group of cfGroups) {
+					// Check if this group is excluded from the profile
+					const isExcluded =
+						group.quality_profiles?.exclude &&
+						Object.values(group.quality_profiles.exclude).includes(profileTrashId);
+
+					if (!isExcluded && group.custom_formats) {
+						// Add all CFs from this applicable group
+						for (const cf of group.custom_formats) {
+							const cfTrashId = typeof cf === "string" ? cf : (cf as GroupCustomFormat).trash_id;
+							relevantCFIds.add(cfTrashId);
+						}
+					}
+				}
+			}
+
+			return relevantCFIds;
+		} catch (error) {
+			console.error(
+				`[TemplateUpdater] Failed to get profile-relevant CFs: ${error instanceof Error ? error.message : String(error)}`,
+			);
+			return null;
 		}
 	}
 
@@ -850,6 +972,13 @@ export class TemplateUpdater {
 		);
 		const cfGroupsCache = await this.cacheManager.get(serviceType, "CF_GROUPS");
 
+		// Get profile-relevant CF IDs to filter "added" CFs to only those
+		// that belong to the template's source quality profile
+		const profileRelevantCFIds = await this.getProfileRelevantCFIds(
+			serviceType,
+			template.sourceQualityProfileTrashId,
+		);
+
 		// Parse template config with error handling for corrupted data
 		let templateConfig: {
 			customFormats?: TemplateCustomFormat[];
@@ -893,7 +1022,15 @@ export class TemplateUpdater {
 			const currentCF = currentCFs.get(trashId);
 
 			if (!currentCF) {
-				// CF is new in latest - use TRaSH's default score
+				// CF is new in latest - only include if it's relevant to this template's quality profile
+				// If profileRelevantCFIds is null (no profile set), fall back to old behavior (show all)
+				// Otherwise, only show CFs that belong to the source quality profile
+				if (profileRelevantCFIds && !profileRelevantCFIds.has(trashId)) {
+					// Skip this CF - it's not part of the template's quality profile
+					continue;
+				}
+
+				// CF is new and relevant - use TRaSH's default score
 				customFormatDiffs.push({
 					trashId,
 					name: latestCF.name,
@@ -965,6 +1102,20 @@ export class TemplateUpdater {
 			const currentGroup = currentGroups.get(trashId);
 
 			if (!currentGroup) {
+				// CF Group is new - only include if it applies to this template's quality profile
+				// Check if the group is excluded from the profile
+				if (template.sourceQualityProfileTrashId) {
+					const isExcluded =
+						latestGroup.quality_profiles?.exclude &&
+						Object.values(latestGroup.quality_profiles.exclude).includes(
+							template.sourceQualityProfileTrashId,
+						);
+					if (isExcluded) {
+						// Skip this group - it's excluded from the template's quality profile
+						continue;
+					}
+				}
+
 				customFormatGroupDiffs.push({
 					trashId,
 					name: latestGroup.name,
