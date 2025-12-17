@@ -82,6 +82,13 @@ echo ""
 echo "Detecting database type..."
 cd /app/api
 
+# Default DATABASE_URL to SQLite if not set or empty
+# This handles cases where Unraid template sets DATABASE_URL="" which overrides Dockerfile default
+if [ -z "$DATABASE_URL" ]; then
+    export DATABASE_URL="file:/config/prod.db"
+    echo "  - DATABASE_URL not set, defaulting to SQLite: $DATABASE_URL"
+fi
+
 # Detect if DATABASE_URL is PostgreSQL
 if echo "$DATABASE_URL" | grep -qE "^postgres(ql)?://"; then
     echo "  - PostgreSQL database detected"
