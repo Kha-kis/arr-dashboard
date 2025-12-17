@@ -126,12 +126,15 @@ else
 fi
 
 # ============================================
-# Database migrations (run as abc user)
+# Database schema synchronization (run as abc user)
 # ============================================
 
 echo ""
-echo "Running database migrations..."
-su-exec abc npx prisma migrate deploy --schema prisma/schema.prisma
+echo "Synchronizing database schema..."
+# Use 'db push' instead of 'migrate deploy' to support multi-provider (SQLite/PostgreSQL)
+# Prisma migrations are provider-specific SQL, but db push generates correct SQL for any provider
+# This is the recommended approach for apps supporting multiple database backends
+su-exec abc npx prisma db push --schema prisma/schema.prisma --skip-generate
 
 # ============================================
 # Read system settings from database
