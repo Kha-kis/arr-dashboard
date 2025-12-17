@@ -83,6 +83,7 @@ export interface BackupData {
 	appVersion: string;
 	timestamp: string;
 	data: {
+		// Core authentication & services (always included)
 		users: unknown[];
 		sessions: unknown[];
 		serviceInstances: unknown[];
@@ -91,6 +92,31 @@ export interface BackupData {
 		oidcProviders?: unknown[]; // Optional for backward compatibility
 		oidcAccounts: unknown[];
 		webAuthnCredentials: unknown[];
+
+		// System settings
+		systemSettings?: unknown[]; // Optional for backward compatibility
+
+		// TRaSH Guides configuration (user templates & settings)
+		trashTemplates?: unknown[];
+		trashSettings?: unknown[];
+		trashSyncSchedules?: unknown[];
+		templateQualityProfileMappings?: unknown[];
+		instanceQualityProfileOverrides?: unknown[];
+		standaloneCFDeployments?: unknown[];
+
+		// TRaSH Guides history/audit (useful for tracking)
+		trashSyncHistory?: unknown[];
+		templateDeploymentHistory?: unknown[];
+
+		// TRaSH instance backups (ARR config snapshots) - optional, can be large
+		// Only included when BackupSettings.includeTrashBackups is true
+		// Limited to non-expired backups from last 7 days
+		trashBackups?: unknown[];
+
+		// Hunting feature configuration & history
+		huntConfigs?: unknown[];
+		huntLogs?: unknown[];
+		huntSearchHistory?: unknown[];
 	};
 	secrets: {
 		encryptionKey: string;
@@ -109,6 +135,7 @@ export const backupSettingsSchema = z.object({
 	intervalType: backupIntervalTypeSchema,
 	intervalValue: z.number(), // Hours for HOURLY, days for DAILY (1-7), 1 for WEEKLY
 	retentionCount: z.number(), // Number of scheduled backups to keep
+	includeTrashBackups: z.boolean(), // Include TRaSH ARR config snapshots (can be large)
 	lastRunAt: z.string().nullable(),
 	nextRunAt: z.string().nullable(),
 	createdAt: z.string(),
@@ -123,6 +150,22 @@ export const updateBackupSettingsRequestSchema = z.object({
 	intervalType: backupIntervalTypeSchema.optional(),
 	intervalValue: z.number().min(1).max(168).optional(), // 1 hour to 1 week
 	retentionCount: z.number().min(1).max(100).optional(),
+	includeTrashBackups: z.boolean().optional(), // Include TRaSH ARR config snapshots
 });
 
 export type UpdateBackupSettingsRequest = z.infer<typeof updateBackupSettingsRequestSchema>;
+
+// Backup password status
+export const backupPasswordStatusSchema = z.object({
+	configured: z.boolean(),
+	source: z.enum(["database", "environment", "none"]),
+});
+
+export type BackupPasswordStatus = z.infer<typeof backupPasswordStatusSchema>;
+
+// Set backup password request
+export const setBackupPasswordRequestSchema = z.object({
+	password: z.string().min(8, "Password must be at least 8 characters"),
+});
+
+export type SetBackupPasswordRequest = z.infer<typeof setBackupPasswordRequestSchema>;

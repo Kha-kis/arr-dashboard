@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Download, Upload, Trash2, FileText, Clock } from "lucide-react";
+import { Download, Upload, Trash2, FileText, Clock, Key, CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Select, SelectOption } from "../../../components/ui/select";
@@ -23,6 +23,9 @@ import {
 	useUpdateBackupSettings,
 	useReadBackupFile,
 	useDownloadBackup,
+	useBackupPasswordStatus,
+	useSetBackupPassword,
+	useRemoveBackupPassword,
 } from "../../../hooks/api/useBackup";
 import type { BackupFileInfo, BackupIntervalType } from "@arr/shared";
 
@@ -43,7 +46,14 @@ export const BackupTab = () => {
 	const [intervalType, setIntervalType] = useState<BackupIntervalType>("DISABLED");
 	const [intervalValue, setIntervalValue] = useState<number>(24);
 	const [retentionCount, setRetentionCount] = useState<number>(7);
+	const [includeTrashBackups, setIncludeTrashBackups] = useState<boolean>(false);
 	const [settingsSuccess, setSettingsSuccess] = useState(false);
+
+	// Password configuration state
+	const [showPasswordForm, setShowPasswordForm] = useState(false);
+	const [newPassword, setNewPassword] = useState("");
+	const [confirmPassword, setConfirmPassword] = useState("");
+	const [passwordSuccess, setPasswordSuccess] = useState(false);
 
 	// Queries and mutations
 	const { data: backupsData, isLoading: backupsLoading, error: backupsError } = useBackups();
@@ -55,6 +65,9 @@ export const BackupTab = () => {
 	const updateSettingsMutation = useUpdateBackupSettings();
 	const readBackupFileMutation = useReadBackupFile();
 	const downloadBackupMutation = useDownloadBackup();
+	const { data: passwordStatus, isLoading: passwordStatusLoading } = useBackupPasswordStatus();
+	const setPasswordMutation = useSetBackupPassword();
+	const removePasswordMutation = useRemoveBackupPassword();
 
 	// Initialize settings state when data loads
 	useEffect(() => {
@@ -62,6 +75,7 @@ export const BackupTab = () => {
 			setIntervalType(settings.intervalType);
 			setIntervalValue(settings.intervalValue);
 			setRetentionCount(settings.retentionCount);
+			setIncludeTrashBackups(settings.includeTrashBackups);
 		}
 	}, [settings, settingsLoading]);
 
@@ -178,6 +192,7 @@ export const BackupTab = () => {
 				intervalType,
 				intervalValue,
 				retentionCount,
+				includeTrashBackups,
 			});
 
 			setSettingsSuccess(true);
@@ -243,6 +258,52 @@ export const BackupTab = () => {
 		}
 	};
 
+	// Handle set password
+	const handleSetPassword = async (e: React.FormEvent) => {
+		e.preventDefault();
+
+		if (newPassword.length < 8) {
+			toast.error("Password must be at least 8 characters");
+			return;
+		}
+
+		if (newPassword !== confirmPassword) {
+			toast.error("Passwords do not match");
+			return;
+		}
+
+		try {
+			await setPasswordMutation.mutateAsync({ password: newPassword });
+			setPasswordSuccess(true);
+			setNewPassword("");
+			setConfirmPassword("");
+			setShowPasswordForm(false);
+			toast.success("Backup password updated successfully");
+
+			setTimeout(() => {
+				setPasswordSuccess(false);
+			}, 3000);
+		} catch (error: unknown) {
+			const errorMessage = error instanceof Error ? error.message : "Unknown error";
+			toast.error(`Failed to set password: ${errorMessage}`);
+		}
+	};
+
+	// Handle remove password
+	const handleRemovePassword = async () => {
+		if (!confirm("Are you sure you want to remove the backup password from the database?\n\nIf you have the BACKUP_PASSWORD environment variable set, backups will use that instead.")) {
+			return;
+		}
+
+		try {
+			await removePasswordMutation.mutateAsync();
+			toast.success("Backup password removed from database");
+		} catch (error: unknown) {
+			const errorMessage = error instanceof Error ? error.message : "Unknown error";
+			toast.error(`Failed to remove password: ${errorMessage}`);
+		}
+	};
+
 	// Utility functions for backups list
 	const formatBytes = (bytes: number) => {
 		if (bytes === 0) return "0 Bytes";
@@ -277,6 +338,131 @@ export const BackupTab = () => {
 
 	return (
 		<div className="space-y-6">
+			{/* Backup Encryption Password Section */}
+			<Card>
+				<CardHeader>
+					<div className="flex items-center gap-2">
+						<Key className="h-5 w-5 text-sky-400" />
+						<CardTitle>Backup Encryption</CardTitle>
+					</div>
+					<CardDescription>
+						Configure the password used to encrypt and decrypt backups. Without a password, backups cannot be created.
+					</CardDescription>
+				</CardHeader>
+				<CardContent>
+					<div className="space-y-4">
+						{/* Password Status */}
+						{passwordStatusLoading ? (
+							<div className="flex items-center gap-2 text-fg-muted">
+								<span>Checking password configuration...</span>
+							</div>
+						) : passwordStatus?.configured ? (
+							<div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+								<CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
+								<div className="flex-1">
+									<p className="text-sm font-medium text-emerald-400">Password Configured</p>
+									<p className="text-xs text-fg-muted">
+										{passwordStatus.source === "database"
+											? "Password is stored securely in the database."
+											: "Password is set via BACKUP_PASSWORD environment variable."}
+									</p>
+								</div>
+								{passwordStatus.source === "database" && (
+									<Button
+										variant="secondary"
+										size="sm"
+										onClick={handleRemovePassword}
+										disabled={removePasswordMutation.isPending}
+									>
+										{removePasswordMutation.isPending ? "Removing..." : "Remove"}
+									</Button>
+								)}
+							</div>
+						) : (
+							<div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+								<AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
+								<div className="flex-1">
+									<p className="text-sm font-medium text-amber-400">No Password Configured</p>
+									<p className="text-xs text-fg-muted">
+										Set a backup password to enable encrypted backups.
+									</p>
+								</div>
+							</div>
+						)}
+
+						{/* Password Form */}
+						{!showPasswordForm ? (
+							<Button
+								variant="secondary"
+								onClick={() => setShowPasswordForm(true)}
+							>
+								{passwordStatus?.configured ? "Change Password" : "Set Password"}
+							</Button>
+						) : (
+							<form onSubmit={handleSetPassword} className="space-y-4">
+								<div className="space-y-2">
+									<label className="text-xs uppercase text-fg-muted">New Password</label>
+									<Input
+										type="password"
+										value={newPassword}
+										onChange={(e) => setNewPassword(e.target.value)}
+										placeholder="Enter new password (min 8 characters)"
+										disabled={setPasswordMutation.isPending}
+										minLength={8}
+									/>
+								</div>
+
+								<div className="space-y-2">
+									<label className="text-xs uppercase text-fg-muted">Confirm Password</label>
+									<Input
+										type="password"
+										value={confirmPassword}
+										onChange={(e) => setConfirmPassword(e.target.value)}
+										placeholder="Confirm new password"
+										disabled={setPasswordMutation.isPending}
+									/>
+								</div>
+
+								<div className="flex gap-2">
+									<Button
+										type="submit"
+										disabled={setPasswordMutation.isPending || newPassword.length < 8 || newPassword !== confirmPassword}
+									>
+										{setPasswordMutation.isPending ? "Saving..." : "Save Password"}
+									</Button>
+									<Button
+										type="button"
+										variant="secondary"
+										onClick={() => {
+											setShowPasswordForm(false);
+											setNewPassword("");
+											setConfirmPassword("");
+										}}
+										disabled={setPasswordMutation.isPending}
+									>
+										Cancel
+									</Button>
+								</div>
+
+								{setPasswordMutation.isError && (
+									<Alert variant="danger">
+										<AlertDescription>
+											{setPasswordMutation.error?.message || "Failed to set password"}
+										</AlertDescription>
+									</Alert>
+								)}
+							</form>
+						)}
+
+						<Alert>
+							<AlertDescription>
+								<strong>Important:</strong> Remember this password! You will need it to restore backups. If you lose the password, your backups cannot be decrypted.
+							</AlertDescription>
+						</Alert>
+					</div>
+				</CardContent>
+			</Card>
+
 			{/* Scheduled Backups Settings Section */}
 			<Card>
 				<CardHeader>
@@ -348,6 +534,27 @@ export const BackupTab = () => {
 								<p className="text-xs text-fg-muted">Keep the {retentionCount} most recent scheduled backup{retentionCount !== 1 ? "s" : ""}</p>
 							</div>
 						)}
+
+						{/* Include TRaSH Backups option */}
+						<div className="space-y-2">
+							<div className="flex items-center gap-3">
+								<input
+									type="checkbox"
+									id="includeTrashBackups"
+									checked={includeTrashBackups}
+									onChange={(e) => setIncludeTrashBackups(e.target.checked)}
+									disabled={settingsLoading || updateSettingsMutation.isPending}
+									className="h-4 w-4 rounded border-border bg-bg-subtle text-sky-500 focus:ring-sky-500 focus:ring-offset-bg"
+								/>
+								<label htmlFor="includeTrashBackups" className="text-sm text-fg cursor-pointer">
+									Include TRaSH Guides instance backups
+								</label>
+							</div>
+							<p className="text-xs text-fg-muted ml-7">
+								When enabled, backups will include ARR config snapshots from the last 7 days (non-expired only).
+								This enables rollback capability after restore but may significantly increase backup size.
+							</p>
+						</div>
 
 						<div className="flex gap-2">
 							<Button

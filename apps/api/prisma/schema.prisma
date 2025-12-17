@@ -77,6 +77,7 @@ model ServiceInstance {
   qualityProfileOverrides     InstanceQualityProfileOverride[]
   qualityProfileMappings      TemplateQualityProfileMapping[]
   deploymentHistory           TemplateDeploymentHistory[]
+  standaloneCFDeployments     StandaloneCFDeployment[]
   huntConfig                  HuntConfig?
   huntLogs                    HuntLog[]
 
@@ -165,6 +166,16 @@ model BackupSettings {
   nextRunAt         DateTime?
   createdAt         DateTime            @default(now())
   updatedAt         DateTime            @updatedAt
+
+  // Encrypted backup password (used for encrypting/decrypting backups)
+  // If not set, falls back to BACKUP_PASSWORD env var
+  encryptedPassword String?
+  passwordIv        String?
+
+  // Optional: Include TRaSH instance backups (ARR config snapshots)
+  // When enabled, includes non-expired backups from last 7 days
+  // These can be large but enable rollback capability after restore
+  includeTrashBackups Boolean @default(false)
 
   @@map("backup_settings")
 }
@@ -474,6 +485,29 @@ model TemplateDeploymentHistory {
   @@index([deployedAt])
   @@index([status])
   @@map("template_deployment_history")
+}
+
+// Standalone Custom Format Deployment Tracking
+// Tracks CFs deployed via the Custom Formats tab (outside of templates)
+// Enables update notifications when TRaSH Guides updates these CFs
+model StandaloneCFDeployment {
+  id          String      @id @default(cuid())
+  userId      String
+  instanceId  String
+  cfTrashId   String      // TRaSH custom format trash_id
+  cfName      String      // CF name for display
+  serviceType ServiceType // RADARR or SONARR
+  commitHash  String      // TRaSH Guides commit hash at time of deployment
+  deployedAt  DateTime    @default(now())
+
+  // Relations
+  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, cfTrashId])
+  @@index([userId])
+  @@index([instanceId])
+  @@index([commitHash])
+  @@map("standalone_cf_deployments")
 }
 
 // ============================================================================

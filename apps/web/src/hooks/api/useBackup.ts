@@ -3,6 +3,7 @@ import type {
 	CreateBackupRequest,
 	RestoreBackupFromFileRequest,
 	RestoreBackupRequest,
+	SetBackupPasswordRequest,
 	UpdateBackupSettingsRequest,
 } from "@arr/shared";
 import { backupApi } from "../../lib/api-client/backup";
@@ -142,6 +143,56 @@ export function useDownloadBackup() {
 	return useMutation({
 		mutationFn: async ({ id, filename }: { id: string; filename: string }) => {
 			return backupApi.downloadBackupById(id, filename);
+		},
+	});
+}
+
+/**
+ * Retrieve the backup password configuration status.
+ *
+ * @returns The query result containing whether a password is configured and its source.
+ */
+export function useBackupPasswordStatus() {
+	return useQuery({
+		queryKey: ["backup-password-status"],
+		queryFn: () => backupApi.getPasswordStatus(),
+	});
+}
+
+/**
+ * Set or update the backup password.
+ * On success, invalidates the password status query.
+ *
+ * @returns A React Query mutation object for setting the backup password.
+ */
+export function useSetBackupPassword() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: async (request: SetBackupPasswordRequest) => {
+			return backupApi.setPassword(request);
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["backup-password-status"] });
+		},
+	});
+}
+
+/**
+ * Remove the backup password from the database.
+ * On success, invalidates the password status query.
+ *
+ * @returns A React Query mutation object for removing the backup password.
+ */
+export function useRemoveBackupPassword() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: async () => {
+			return backupApi.removePassword();
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["backup-password-status"] });
 		},
 	});
 }
