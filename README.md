@@ -289,13 +289,10 @@ docker build -t arr-dashboard:local .
 ```bash
 cd apps/api
 
-# Development - push schema changes
+# Sync schema to database (works for SQLite and PostgreSQL)
 pnpm run db:push
 
-# Production - run migrations
-pnpm run db:migrate
-
-# Generate Prisma client
+# Regenerate Prisma client only
 pnpm run db:generate
 ```
 
@@ -365,7 +362,7 @@ docker-compose up -d
 ```bash
 git pull
 pnpm install
-cd apps/api && pnpm run db:migrate
+cd apps/api && pnpm run db:push
 cd ../.. && pnpm run build
 ```
 

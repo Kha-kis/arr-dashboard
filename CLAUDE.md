@@ -540,12 +540,12 @@ pnpm run dev        # API (3001) + Web (3000) in parallel
 
 # Database
 cd apps/api
-pnpm run db:push      # Sync schema to database (recommended)
-pnpm run db:sync      # Same as db:push, skip regenerate
-pnpm run db:migrate   # Create new migration (dev only)
-pnpm run db:generate  # Regenerate Prisma client
+pnpm run db:push      # Sync schema to database (dev - also regenerates client)
+pnpm run db:sync      # Sync schema only, skip client regeneration (production)
+pnpm run db:generate  # Regenerate Prisma client only
 
-# Note: Production uses 'db push' for multi-provider support (SQLite/PostgreSQL)
+# Note: Uses 'db push' for multi-provider support (SQLite/PostgreSQL)
+# No migrations - schema.prisma is the single source of truth
 ```
 
 ### Adding Features
@@ -568,10 +568,10 @@ cd apps/api
 # Edit prisma/schema.prisma, then sync:
 pnpm run db:push
 
-# To create a migration (for tracking history in SQLite dev):
-npx prisma migrate dev --name <migration_name>
-
-# Note: Docker production uses 'db push' for SQLite/PostgreSQL compatibility
+# This uses 'db push' which:
+# - Generates correct SQL for SQLite or PostgreSQL automatically
+# - Updates the database schema to match schema.prisma
+# - Regenerates the Prisma client
 ```
 
 ### Code Style
@@ -715,8 +715,8 @@ pnpm run lint     # Lint all
 pnpm run test     # Test all
 
 # API
-pnpm --filter @arr/api run db:push    # Sync schema (recommended)
-pnpm --filter @arr/api run db:migrate # Create migration (dev)
+pnpm --filter @arr/api run db:push    # Sync schema to database
+pnpm --filter @arr/api run db:generate # Regenerate Prisma client
 pnpm --filter @arr/api run reset-admin-password
 
 # Web

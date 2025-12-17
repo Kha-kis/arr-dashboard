@@ -3,6 +3,9 @@
  *
  * Reads port configuration at startup before Prisma is initialized.
  * Priority: Environment variable > Database setting > Default
+ *
+ * Note: Direct database reading only works with SQLite. For PostgreSQL,
+ * settings are read via Prisma in docker/read-base-path.cjs at container startup.
  */
 import Database from "better-sqlite3";
 import { existsSync } from "node:fs";
@@ -26,10 +29,25 @@ const DEFAULT_API_PORT = 3001;
 const DEFAULT_WEB_PORT = 3000;
 
 /**
- * Get the database file path based on environment
+ * Check if DATABASE_URL is PostgreSQL
  */
-function getDatabasePath(): string {
+function isPostgresDatabase(): boolean {
 	const databaseUrl = process.env.DATABASE_URL;
+	if (!databaseUrl) return false;
+	return databaseUrl.startsWith("postgres://") || databaseUrl.startsWith("postgresql://");
+}
+
+/**
+ * Get the SQLite database file path based on environment.
+ * Returns null if DATABASE_URL is not SQLite.
+ */
+function getSqliteDatabasePath(): string | null {
+	const databaseUrl = process.env.DATABASE_URL;
+
+	// Not SQLite if PostgreSQL
+	if (isPostgresDatabase()) {
+		return null;
+	}
 
 	if (databaseUrl) {
 		// Extract path from file: URL (e.g., "file:/config/prod.db" or "file:./dev.db")
@@ -44,19 +62,25 @@ function getDatabasePath(): string {
 		}
 	}
 
-	// Default paths
+	// Default paths for SQLite
 	const isDocker =
 		process.env.NODE_ENV === "production" || process.cwd().startsWith("/app");
 	return isDocker ? "/app/data/prod.db" : resolve(process.cwd(), "dev.db");
 }
 
 /**
- * Read port settings from the database
+ * Read port settings from the database.
+ * Only works with SQLite - PostgreSQL users must use env vars or Docker's read-base-path.cjs
  */
 function readPortsFromDatabase(): DbSettings | null {
-	const dbPath = getDatabasePath();
+	// Skip direct DB access for PostgreSQL - it's handled by read-base-path.cjs in Docker
+	if (isPostgresDatabase()) {
+		return null;
+	}
 
-	if (!existsSync(dbPath)) {
+	const dbPath = getSqliteDatabasePath();
+
+	if (!dbPath || !existsSync(dbPath)) {
 		return null;
 	}
 
