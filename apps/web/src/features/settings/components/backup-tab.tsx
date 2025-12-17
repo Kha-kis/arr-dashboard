@@ -37,6 +37,7 @@ export const BackupTab = () => {
 	const [restoreFile, setRestoreFile] = useState<File | null>(null);
 	const [restoreSuccess, setRestoreSuccess] = useState(false);
 	const [showRestoreWarning, setShowRestoreWarning] = useState(false);
+	const [isRestarting, setIsRestarting] = useState(false);
 
 	// Backups list state
 	const [selectedBackupForRestore, setSelectedBackupForRestore] = useState<BackupFileInfo | null>(null);
@@ -102,7 +103,7 @@ export const BackupTab = () => {
 		e.preventDefault();
 
 		if (!restoreFile) {
-			alert("Please select a backup file");
+			toast.error("Please select a backup file");
 			return;
 		}
 
@@ -122,33 +123,48 @@ export const BackupTab = () => {
 			// Check if auto-restart will occur
 			const willAutoRestart = response.message.includes("restart automatically");
 
-			// Show success message
-			alert(
-				`Backup restored successfully!\n\nBackup from: ${new Date(response.metadata.timestamp).toLocaleString()}\n\n${response.message}${willAutoRestart ? "\n\nThe page will reload automatically once the server restarts." : ""}`,
-			);
-
-			// Only poll for restart if auto-restart is enabled
 			if (willAutoRestart) {
-				// Poll for server to come back up and reload page
-				const checkServerInterval = setInterval(async () => {
-					try {
-						const healthResponse = await fetch("/api/health");
-						if (healthResponse.ok) {
-							clearInterval(checkServerInterval);
-							window.location.href = "/login"; // Redirect to login after restart
-						}
-					} catch {
-						// Server not ready yet, keep polling
-					}
-				}, 1000);
+				// Show restarting modal and start polling immediately (non-blocking)
+				setIsRestarting(true);
 
-				// Stop polling after 30 seconds
-				setTimeout(() => {
-					clearInterval(checkServerInterval);
-				}, 30000);
+				// Poll for server to come back up
+				const pollServer = async () => {
+					const maxAttempts = 30;
+					let attempts = 0;
+
+					const checkServer = async (): Promise<void> => {
+						attempts++;
+						try {
+							const healthResponse = await fetch("/auth/setup-required");
+							if (healthResponse.ok) {
+								// Server is back, redirect to login
+								window.location.href = "/login";
+								return;
+							}
+						} catch {
+							// Server not ready yet
+						}
+
+						if (attempts < maxAttempts) {
+							setTimeout(checkServer, 1000);
+						} else {
+							// Timeout - just redirect anyway
+							window.location.href = "/login";
+						}
+					};
+
+					// Start polling after a short delay to let server begin restart
+					setTimeout(checkServer, 2000);
+				};
+
+				pollServer();
+			} else {
+				// No restart, show success toast
+				toast.success(`Backup restored from ${new Date(response.metadata.timestamp).toLocaleString()}`);
 			}
-		} catch (error: any) {
-			alert(`Failed to restore backup: ${error.message || "Unknown error"}`);
+		} catch (error: unknown) {
+			const errorMessage = error instanceof Error ? error.message : "Unknown error";
+			toast.error(`Failed to restore backup: ${errorMessage}`);
 		}
 	};
 
@@ -224,37 +240,52 @@ export const BackupTab = () => {
 			// Check if auto-restart will occur
 			const willAutoRestart = response.message.includes("restart automatically");
 
-			// Show success message
-			alert(
-				`Backup restored successfully!\n\nBackup from: ${new Date(response.metadata.timestamp).toLocaleString()}\n\n${response.message}${willAutoRestart ? "\n\nThe page will reload automatically once the server restarts." : ""}`,
-			);
-
 			// Close modal
 			setShowBackupRestoreModal(false);
 			setSelectedBackupForRestore(null);
 
-			// Only poll for restart if auto-restart is enabled
 			if (willAutoRestart) {
-				// Poll for server to come back up and reload page
-				const checkServerInterval = setInterval(async () => {
-					try {
-						const healthResponse = await fetch("/api/health");
-						if (healthResponse.ok) {
-							clearInterval(checkServerInterval);
-							window.location.href = "/login"; // Redirect to login after restart
-						}
-					} catch {
-						// Server not ready yet, keep polling
-					}
-				}, 1000);
+				// Show restarting modal and start polling immediately (non-blocking)
+				setIsRestarting(true);
 
-				// Stop polling after 30 seconds
-				setTimeout(() => {
-					clearInterval(checkServerInterval);
-				}, 30000);
+				// Poll for server to come back up
+				const pollServer = async () => {
+					const maxAttempts = 30;
+					let attempts = 0;
+
+					const checkServer = async (): Promise<void> => {
+						attempts++;
+						try {
+							const healthResponse = await fetch("/auth/setup-required");
+							if (healthResponse.ok) {
+								// Server is back, redirect to login
+								window.location.href = "/login";
+								return;
+							}
+						} catch {
+							// Server not ready yet
+						}
+
+						if (attempts < maxAttempts) {
+							setTimeout(checkServer, 1000);
+						} else {
+							// Timeout - just redirect anyway
+							window.location.href = "/login";
+						}
+					};
+
+					// Start polling after a short delay to let server begin restart
+					setTimeout(checkServer, 2000);
+				};
+
+				pollServer();
+			} else {
+				// No restart, show success toast
+				toast.success(`Backup restored from ${new Date(response.metadata.timestamp).toLocaleString()}`);
 			}
-		} catch (error: any) {
-			alert(`Failed to restore backup: ${error.message || "Unknown error"}`);
+		} catch (error: unknown) {
+			const errorMessage = error instanceof Error ? error.message : "Unknown error";
+			toast.error(`Failed to restore backup: ${errorMessage}`);
 		}
 	};
 
@@ -658,18 +689,19 @@ export const BackupTab = () => {
 								<AlertDescription>
 									<p className="font-medium mb-2">Warning: Destructive Operation</p>
 									<p className="mb-2">
-										Restoring a backup will <strong>permanently delete</strong> all current data,
-										including:
+										Restoring a backup will <strong>replace</strong> all current data with the backup contents:
 									</p>
 									<ul className="list-inside list-disc space-y-1 text-xs mb-2">
-										<li>All service instances and their settings</li>
+										<li>Service instances and their settings</li>
 										<li>Tags and organization</li>
 										<li>User accounts and authentication methods</li>
-										<li>All encrypted API keys and secrets</li>
+										<li>Encrypted API keys and secrets</li>
 									</ul>
+									<p className="mb-2">
+										Any changes made <strong>after</strong> this backup was created will be lost.
+									</p>
 									<p>
-										This action <strong>cannot be undone</strong>. Make sure you have a current backup
-										before proceeding.
+										Make sure you have a current backup of your existing data before proceeding.
 									</p>
 								</AlertDescription>
 							</Alert>
@@ -845,9 +877,11 @@ export const BackupTab = () => {
 							<Alert variant="danger" className="mb-4">
 								<AlertDescription>
 									<p className="font-medium mb-2">Warning: Destructive Operation</p>
+									<p className="text-sm mb-2">
+										Restoring this backup will <strong>replace</strong> all current data with the backup contents.
+									</p>
 									<p className="text-sm">
-										Restoring this backup will <strong>permanently delete</strong> all current
-										data. This action cannot be undone.
+										Any changes made <strong>after</strong> this backup was created will be lost.
 									</p>
 								</AlertDescription>
 							</Alert>
@@ -890,6 +924,28 @@ export const BackupTab = () => {
 										</AlertDescription>
 									</Alert>
 								)}
+							</div>
+						</CardContent>
+					</Card>
+				</div>
+			)}
+
+			{/* Server Restarting Modal */}
+			{isRestarting && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+					<Card className="w-full max-w-md">
+						<CardContent className="pt-6">
+							<div className="flex flex-col items-center text-center space-y-4">
+								<div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-400" />
+								<div>
+									<h3 className="text-lg font-semibold mb-2">Server Restarting</h3>
+									<p className="text-sm text-fg-muted">
+										Backup restored successfully. The server is restarting...
+									</p>
+									<p className="text-sm text-fg-muted mt-2">
+										You will be redirected to login automatically.
+									</p>
+								</div>
 							</div>
 						</CardContent>
 					</Card>
