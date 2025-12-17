@@ -56,7 +56,7 @@ services:
 | `DATABASE_URL` | `file:/config/prod.db` | Database connection string |
 | `SESSION_TTL_HOURS` | `24` | Session expiration time |
 | `API_RATE_LIMIT_MAX` | `200` | Max requests per minute |
-| `BACKUP_PASSWORD` | - | **Required** for encrypted backups |
+| `BACKUP_PASSWORD` | - | Optional password for encrypted backups |
 
 > **Note:** Set `PUID` and `PGID` to match the owner of your config directory. Run `id -u` and `id -g` on your host to find your user/group IDs. This follows the [LinuxServer.io](https://docs.linuxserver.io/general/understanding-puid-and-pgid) convention.
 
@@ -65,7 +65,8 @@ services:
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
-| `2.6.0` | Security improvements, TRaSH Guides sync for cloned profiles, better error handling |
+| `2.6.3` | Backup encryption, TRaSH standalone CF deployment, security & performance improvements |
+| `2.6.x` | PostgreSQL support, automated hunting, improved error handling |
 | `2.5.0` | **Breaking:** Volume path changed to `/config` (LinuxServer.io convention) |
 | `2.4.x` | TRaSH Guides integration, PUID/PGID support (uses `/app/data`) |
 
@@ -103,6 +104,16 @@ docker run -d \
   -e PUID=1000 \
   -e PGID=1000 \
   khak1s/arr-dashboard:latest
+```
+
+## Troubleshooting
+
+```bash
+# Check container logs
+docker logs arr-dashboard
+
+# Restart container
+docker restart arr-dashboard
 ```
 
 ## Links

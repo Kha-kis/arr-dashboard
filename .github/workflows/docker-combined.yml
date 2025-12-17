@@ -153,4 +153,4 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ env.DOCKERHUB_IMAGE }}
           short-description: ${{ github.event.repository.description }}
-          readme-filepath: ./docker/README.md
+          readme-filepath: ./DOCKERHUB.md
