@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import type { Prisma, PrismaClient } from "@prisma/client";
 import type { BackupData, BackupFileInfo, BackupFileInfoInternal, BackupMetadata } from "@arr/shared";
+import type { Encryptor } from "../auth/encryption.js";
 
 const BACKUP_VERSION = "1.0";
 const PBKDF2_ITERATIONS = 600000; // OWASP recommendation for PBKDF2-SHA256
@@ -40,6 +41,7 @@ export class BackupService {
 	constructor(
 		private prisma: PrismaClient,
 		private secretsPath: string,
+		private encryptor?: Encryptor,
 	) {
 		// Set backups directory next to the database file
 		const dataDir = path.dirname(secretsPath);
@@ -47,26 +49,48 @@ export class BackupService {
 	}
 
 	/**
-	 * Get the backup password from environment, fail closed in production,
-	 * or auto-generate and persist a secure password in development
+	 * Get the backup password from database (preferred), environment, or auto-generate in dev
+	 * Priority order:
+	 * 1. Database setting (encryptedPassword in BackupSettings)
+	 * 2. BACKUP_PASSWORD environment variable
+	 * 3. Auto-generated password in development mode only
 	 */
 	private async getBackupPassword(): Promise<string> {
-		// If explicitly set via environment, use it
+		// 1. Check database for encrypted password (if encryptor available)
+		if (this.encryptor) {
+			const settings = await this.prisma.backupSettings.findUnique({
+				where: { id: 1 },
+				select: { encryptedPassword: true, passwordIv: true },
+			});
+
+			if (settings?.encryptedPassword && settings?.passwordIv) {
+				try {
+					return this.encryptor.decrypt({
+						value: settings.encryptedPassword,
+						iv: settings.passwordIv,
+					});
+				} catch (error) {
+					// Log error but continue to fallback - decryption failure shouldn't block backups
+					console.error("Failed to decrypt backup password from database, falling back to env var:", error);
+				}
+			}
+		}
+
+		// 2. If explicitly set via environment, use it
 		const envPassword = process.env.BACKUP_PASSWORD;
 		if (envPassword) {
 			return envPassword;
 		}
 
-		// In production, fail closed - do not allow backups without explicit password
+		// 3. In production, fail closed - do not allow backups without explicit password
 		const isProduction = process.env.NODE_ENV === "production";
 		if (isProduction) {
 			throw new Error(
-				"FATAL: BACKUP_PASSWORD environment variable is required in production. " +
-				"Set a strong password to enable encrypted backups."
+				"Backup password not configured. Set a backup password in Settings > Backup or set the BACKUP_PASSWORD environment variable."
 			);
 		}
 
-		// In development, generate and persist a secure random password
+		// 4. In development, generate and persist a secure random password
 		return this.getOrGenerateDevBackupPassword();
 	}
 
@@ -318,16 +342,21 @@ export class BackupService {
 
 	/**
 	 * Create a backup and save it to filesystem (encrypted)
+	 *
+	 * @param appVersion - Application version string
+	 * @param type - Backup type (manual, scheduled, update)
+	 * @param options.includeTrashBackups - Include TRaSH ARR config snapshots (can be large)
 	 */
 	async createBackup(
 		appVersion: string,
 		type: BackupType = "manual",
+		options: { includeTrashBackups?: boolean } = {},
 	): Promise<BackupFileInfo> {
 		// 1. Ensure backups directory exists
 		await this.ensureBackupsDirectory();
 
 		// 2. Export all database data
-		const data = await this.exportDatabase();
+		const data = await this.exportDatabase({ includeTrashBackups: options.includeTrashBackups });
 
 		// 3. Read secrets file
 		const secrets = await this.readSecrets();
@@ -344,6 +373,7 @@ export class BackupService {
 		// 5. Estimate backup size before stringification to detect potential memory issues
 		// This is a rough estimate based on record counts to fail fast before JSON.stringify
 		const estimatedRecordCount =
+			// Core tables
 			data.users.length +
 			data.sessions.length +
 			data.serviceInstances.length +
@@ -351,7 +381,23 @@ export class BackupService {
 			data.serviceInstanceTags.length +
 			(data.oidcProviders?.length || 0) +
 			data.oidcAccounts.length +
-			data.webAuthnCredentials.length;
+			data.webAuthnCredentials.length +
+			// System settings
+			(data.systemSettings?.length || 0) +
+			// TRaSH Guides
+			(data.trashTemplates?.length || 0) +
+			(data.trashSettings?.length || 0) +
+			(data.trashSyncSchedules?.length || 0) +
+			(data.templateQualityProfileMappings?.length || 0) +
+			(data.instanceQualityProfileOverrides?.length || 0) +
+			(data.standaloneCFDeployments?.length || 0) +
+			(data.trashSyncHistory?.length || 0) +
+			(data.templateDeploymentHistory?.length || 0) +
+			(data.trashBackups?.length || 0) +
+			// Hunting
+			(data.huntConfigs?.length || 0) +
+			(data.huntLogs?.length || 0) +
+			(data.huntSearchHistory?.length || 0);
 
 		// Average ~1KB per record (conservative estimate including encrypted fields)
 		const estimatedSizeMB = (estimatedRecordCount * 1024) / (1024 * 1024);
@@ -508,6 +554,76 @@ export class BackupService {
 		}
 
 		await fs.unlink(backup.path);
+	}
+
+	/**
+	 * Check if a backup password is configured (either in database or env var)
+	 * Returns the source of the password configuration for UI display
+	 */
+	async getPasswordStatus(): Promise<{ configured: boolean; source: "database" | "environment" | "none" }> {
+		// Check database first
+		if (this.encryptor) {
+			const settings = await this.prisma.backupSettings.findUnique({
+				where: { id: 1 },
+				select: { encryptedPassword: true, passwordIv: true },
+			});
+
+			if (settings?.encryptedPassword && settings?.passwordIv) {
+				return { configured: true, source: "database" };
+			}
+		}
+
+		// Check environment variable
+		if (process.env.BACKUP_PASSWORD) {
+			return { configured: true, source: "environment" };
+		}
+
+		return { configured: false, source: "none" };
+	}
+
+	/**
+	 * Set the backup password in the database (encrypted)
+	 * This takes precedence over the BACKUP_PASSWORD environment variable
+	 */
+	async setPassword(password: string): Promise<void> {
+		if (!this.encryptor) {
+			throw new Error("Encryptor not available - cannot store encrypted password");
+		}
+
+		if (!password || password.length < 8) {
+			throw new Error("Password must be at least 8 characters");
+		}
+
+		// Encrypt the password
+		const { value, iv } = this.encryptor.encrypt(password);
+
+		// Upsert into backup settings
+		await this.prisma.backupSettings.upsert({
+			where: { id: 1 },
+			create: {
+				id: 1,
+				encryptedPassword: value,
+				passwordIv: iv,
+			},
+			update: {
+				encryptedPassword: value,
+				passwordIv: iv,
+			},
+		});
+	}
+
+	/**
+	 * Remove the backup password from the database
+	 * The system will fall back to BACKUP_PASSWORD env var if set
+	 */
+	async removePassword(): Promise<void> {
+		await this.prisma.backupSettings.updateMany({
+			where: { id: 1 },
+			data: {
+				encryptedPassword: null,
+				passwordIv: null,
+			},
+		});
 	}
 
 	/**
@@ -699,11 +815,14 @@ export class BackupService {
 	 * - Consider adding per-table size estimates before exporting
 	 *
 	 * Current size limits are enforced at ~100 MB in createBackup()
+	 *
+	 * @param options.includeTrashBackups - Include TRaSH ARR config snapshots (can be large)
 	 */
-	private async exportDatabase() {
-		// Export all tables in parallel
+	private async exportDatabase(options: { includeTrashBackups?: boolean } = {}) {
+		// Export all core tables in parallel
 		// NOTE: This loads all data into memory - see method documentation for scalability notes
 		const [
+			// Core authentication & services
 			users,
 			sessions,
 			serviceInstances,
@@ -712,7 +831,24 @@ export class BackupService {
 			oidcProviders,
 			oidcAccounts,
 			webAuthnCredentials,
+			// System settings
+			systemSettings,
+			// TRaSH Guides configuration
+			trashTemplates,
+			trashSettings,
+			trashSyncSchedules,
+			templateQualityProfileMappings,
+			instanceQualityProfileOverrides,
+			standaloneCFDeployments,
+			// TRaSH Guides history/audit
+			trashSyncHistory,
+			templateDeploymentHistory,
+			// Hunting feature
+			huntConfigs,
+			huntLogs,
+			huntSearchHistory,
 		] = await Promise.all([
+			// Core authentication & services
 			this.prisma.user.findMany(),
 			this.prisma.session.findMany(),
 			this.prisma.serviceInstance.findMany(),
@@ -721,9 +857,46 @@ export class BackupService {
 			this.prisma.oIDCProvider.findMany(),
 			this.prisma.oIDCAccount.findMany(),
 			this.prisma.webAuthnCredential.findMany(),
+			// System settings
+			this.prisma.systemSettings.findMany(),
+			// TRaSH Guides configuration
+			this.prisma.trashTemplate.findMany(),
+			this.prisma.trashSettings.findMany(),
+			this.prisma.trashSyncSchedule.findMany(),
+			this.prisma.templateQualityProfileMapping.findMany(),
+			this.prisma.instanceQualityProfileOverride.findMany(),
+			this.prisma.standaloneCFDeployment.findMany(),
+			// TRaSH Guides history/audit
+			this.prisma.trashSyncHistory.findMany(),
+			this.prisma.templateDeploymentHistory.findMany(),
+			// Hunting feature
+			this.prisma.huntConfig.findMany(),
+			this.prisma.huntLog.findMany(),
+			this.prisma.huntSearchHistory.findMany(),
 		]);
 
+		// Optionally include TRaSH instance backups (ARR config snapshots)
+		// Limited to non-expired backups from the last 7 days to control size
+		let trashBackups: unknown[] = [];
+		if (options.includeTrashBackups) {
+			const sevenDaysAgo = new Date();
+			sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+			trashBackups = await this.prisma.trashBackup.findMany({
+				where: {
+					// Only include backups from the last 7 days
+					createdAt: { gte: sevenDaysAgo },
+					// Only include non-expired backups (expiresAt is null OR in the future)
+					OR: [
+						{ expiresAt: null },
+						{ expiresAt: { gt: new Date() } },
+					],
+				},
+			});
+		}
+
 		return {
+			// Core authentication & services
 			users,
 			sessions,
 			serviceInstances,
@@ -732,6 +905,24 @@ export class BackupService {
 			oidcProviders,
 			oidcAccounts,
 			webAuthnCredentials,
+			// System settings
+			systemSettings,
+			// TRaSH Guides configuration
+			trashTemplates,
+			trashSettings,
+			trashSyncSchedules,
+			templateQualityProfileMappings,
+			instanceQualityProfileOverrides,
+			standaloneCFDeployments,
+			// TRaSH Guides history/audit
+			trashSyncHistory,
+			templateDeploymentHistory,
+			// TRaSH instance backups (optional)
+			trashBackups,
+			// Hunting feature
+			huntConfigs,
+			huntLogs,
+			huntSearchHistory,
 		};
 	}
 
@@ -761,7 +952,32 @@ export class BackupService {
 		// Use a transaction to ensure atomicity
 		// NOTE: This processes all data in a single transaction - see method documentation for scalability notes
 		await this.prisma.$transaction(async (tx) => {
-			// Delete all existing data (in reverse order of dependencies)
+			// =================================================================
+			// DELETE all existing data (in reverse order of dependencies)
+			// =================================================================
+
+			// Hunting feature (HuntSearchHistory → HuntLog → HuntConfig)
+			await tx.huntSearchHistory.deleteMany();
+			await tx.huntLog.deleteMany();
+			await tx.huntConfig.deleteMany();
+
+			// TRaSH history/audit (depends on templates, instances, backups)
+			await tx.templateDeploymentHistory.deleteMany();
+			await tx.trashSyncHistory.deleteMany();
+
+			// TRaSH configuration (depends on templates, instances)
+			await tx.templateQualityProfileMapping.deleteMany();
+			await tx.instanceQualityProfileOverride.deleteMany();
+			await tx.standaloneCFDeployment.deleteMany();
+			await tx.trashBackup.deleteMany();
+			await tx.trashSyncSchedule.deleteMany();
+			await tx.trashTemplate.deleteMany();
+			await tx.trashSettings.deleteMany();
+
+			// System settings (singleton)
+			await tx.systemSettings.deleteMany();
+
+			// Core tables (existing)
 			await tx.serviceInstanceTag.deleteMany();
 			await tx.serviceTag.deleteMany();
 			await tx.serviceInstance.deleteMany();
@@ -771,7 +987,12 @@ export class BackupService {
 			await tx.session.deleteMany();
 			await tx.user.deleteMany();
 
-			// Restore data (in order of dependencies)
+			// =================================================================
+			// RESTORE data (in order of dependencies)
+			// =================================================================
+
+			// --- Core authentication (no dependencies) ---
+
 			// Users first (no dependencies)
 			if (data.users.length > 0) {
 				this.validateRecords(data.users, "user", ["id", "username"]);
@@ -789,22 +1010,17 @@ export class BackupService {
 			}
 
 			// OIDC provider (singleton, no dependencies) - optional for backward compatibility
-			// Only restore the first provider if multiple are present (migration from old backups)
 			if (data.oidcProviders && data.oidcProviders.length > 0) {
 				this.validateRecords(data.oidcProviders, "oidcProvider", ["id", "clientId", "issuer"]);
 				const providerData = data.oidcProviders[0] as Prisma.OIDCProviderCreateInput;
-				// Force id to 1 for singleton pattern
 				await tx.oIDCProvider.create({
-					data: {
-						...providerData,
-						id: 1,
-					},
+					data: { ...providerData, id: 1 },
 				});
 			}
 
 			// OIDC accounts (depend on users)
 			if (data.oidcAccounts.length > 0) {
-				this.validateRecords(data.oidcAccounts, "oidcAccount", ["id", "userId", "provider"]);
+				this.validateRecords(data.oidcAccounts, "oidcAccount", ["id", "userId", "providerUserId"]);
 				await tx.oIDCAccount.createMany({
 					data: data.oidcAccounts as Prisma.OIDCAccountCreateManyInput[],
 				});
@@ -818,7 +1034,9 @@ export class BackupService {
 				});
 			}
 
-			// Service instances (no user dependency based on schema)
+			// --- Service instances & tags ---
+
+			// Service instances (depend on users)
 			if (data.serviceInstances.length > 0) {
 				this.validateRecords(data.serviceInstances, "serviceInstance", ["id", "service", "baseUrl"]);
 				await tx.serviceInstance.createMany({
@@ -839,6 +1057,118 @@ export class BackupService {
 				this.validateRecords(data.serviceInstanceTags, "serviceInstanceTag", ["instanceId", "tagId"]);
 				await tx.serviceInstanceTag.createMany({
 					data: data.serviceInstanceTags as Prisma.ServiceInstanceTagCreateManyInput[],
+				});
+			}
+
+			// --- System settings (singleton) ---
+
+			if (data.systemSettings && data.systemSettings.length > 0) {
+				this.validateRecords(data.systemSettings, "systemSettings", ["id"]);
+				const settingsData = data.systemSettings[0] as Prisma.SystemSettingsCreateInput;
+				await tx.systemSettings.create({
+					data: { ...settingsData, id: 1 },
+				});
+			}
+
+			// --- TRaSH Guides configuration ---
+
+			// TRaSH settings (depend on users)
+			if (data.trashSettings && data.trashSettings.length > 0) {
+				this.validateRecords(data.trashSettings, "trashSettings", ["id", "userId"]);
+				await tx.trashSettings.createMany({
+					data: data.trashSettings as Prisma.TrashSettingsCreateManyInput[],
+				});
+			}
+
+			// TRaSH templates (no FK dependencies for restore)
+			if (data.trashTemplates && data.trashTemplates.length > 0) {
+				this.validateRecords(data.trashTemplates, "trashTemplate", ["id", "name", "serviceType"]);
+				await tx.trashTemplate.createMany({
+					data: data.trashTemplates as Prisma.TrashTemplateCreateManyInput[],
+				});
+			}
+
+			// TRaSH sync schedules (depend on instances, templates - optional FKs)
+			if (data.trashSyncSchedules && data.trashSyncSchedules.length > 0) {
+				this.validateRecords(data.trashSyncSchedules, "trashSyncSchedule", ["id", "userId"]);
+				await tx.trashSyncSchedule.createMany({
+					data: data.trashSyncSchedules as Prisma.TrashSyncScheduleCreateManyInput[],
+				});
+			}
+
+			// TRaSH backups (depend on instances) - optional, can be large
+			if (data.trashBackups && data.trashBackups.length > 0) {
+				this.validateRecords(data.trashBackups, "trashBackup", ["id", "instanceId", "userId"]);
+				await tx.trashBackup.createMany({
+					data: data.trashBackups as Prisma.TrashBackupCreateManyInput[],
+				});
+			}
+
+			// Template quality profile mappings (depend on templates, instances)
+			if (data.templateQualityProfileMappings && data.templateQualityProfileMappings.length > 0) {
+				this.validateRecords(data.templateQualityProfileMappings, "templateQualityProfileMapping", ["id", "templateId", "instanceId"]);
+				await tx.templateQualityProfileMapping.createMany({
+					data: data.templateQualityProfileMappings as Prisma.TemplateQualityProfileMappingCreateManyInput[],
+				});
+			}
+
+			// Instance quality profile overrides (depend on instances)
+			if (data.instanceQualityProfileOverrides && data.instanceQualityProfileOverrides.length > 0) {
+				this.validateRecords(data.instanceQualityProfileOverrides, "instanceQualityProfileOverride", ["id", "instanceId"]);
+				await tx.instanceQualityProfileOverride.createMany({
+					data: data.instanceQualityProfileOverrides as Prisma.InstanceQualityProfileOverrideCreateManyInput[],
+				});
+			}
+
+			// Standalone CF deployments (depend on instances)
+			if (data.standaloneCFDeployments && data.standaloneCFDeployments.length > 0) {
+				this.validateRecords(data.standaloneCFDeployments, "standaloneCFDeployment", ["id", "instanceId", "cfTrashId"]);
+				await tx.standaloneCFDeployment.createMany({
+					data: data.standaloneCFDeployments as Prisma.StandaloneCFDeploymentCreateManyInput[],
+				});
+			}
+
+			// --- TRaSH Guides history/audit ---
+
+			// TRaSH sync history (depend on instances, templates, backups - optional FKs)
+			if (data.trashSyncHistory && data.trashSyncHistory.length > 0) {
+				this.validateRecords(data.trashSyncHistory, "trashSyncHistory", ["id", "instanceId", "userId"]);
+				await tx.trashSyncHistory.createMany({
+					data: data.trashSyncHistory as Prisma.TrashSyncHistoryCreateManyInput[],
+				});
+			}
+
+			// Template deployment history (depend on templates, instances, backups - optional FKs)
+			if (data.templateDeploymentHistory && data.templateDeploymentHistory.length > 0) {
+				this.validateRecords(data.templateDeploymentHistory, "templateDeploymentHistory", ["id", "templateId", "instanceId"]);
+				await tx.templateDeploymentHistory.createMany({
+					data: data.templateDeploymentHistory as Prisma.TemplateDeploymentHistoryCreateManyInput[],
+				});
+			}
+
+			// --- Hunting feature ---
+
+			// Hunt configs (depend on instances)
+			if (data.huntConfigs && data.huntConfigs.length > 0) {
+				this.validateRecords(data.huntConfigs, "huntConfig", ["id", "instanceId"]);
+				await tx.huntConfig.createMany({
+					data: data.huntConfigs as Prisma.HuntConfigCreateManyInput[],
+				});
+			}
+
+			// Hunt logs (depend on instances)
+			if (data.huntLogs && data.huntLogs.length > 0) {
+				this.validateRecords(data.huntLogs, "huntLog", ["id", "instanceId"]);
+				await tx.huntLog.createMany({
+					data: data.huntLogs as Prisma.HuntLogCreateManyInput[],
+				});
+			}
+
+			// Hunt search history (depend on hunt configs)
+			if (data.huntSearchHistory && data.huntSearchHistory.length > 0) {
+				this.validateRecords(data.huntSearchHistory, "huntSearchHistory", ["id", "configId"]);
+				await tx.huntSearchHistory.createMany({
+					data: data.huntSearchHistory as Prisma.HuntSearchHistoryCreateManyInput[],
 				});
 			}
 		});
@@ -1034,9 +1364,33 @@ export class BackupService {
 		}
 
 		// Optional fields for backward compatibility
-		// oidcProviders was added later, so old backups may not have it
-		if (b.data.oidcProviders !== undefined && !Array.isArray(b.data.oidcProviders)) {
-			throw new Error("Invalid backup format: oidcProviders must be an array");
+		// These fields were added in later versions, so old backups may not have them
+		const optionalArrayFields = [
+			"oidcProviders",
+			// System settings
+			"systemSettings",
+			// TRaSH Guides configuration
+			"trashTemplates",
+			"trashSettings",
+			"trashSyncSchedules",
+			"templateQualityProfileMappings",
+			"instanceQualityProfileOverrides",
+			"standaloneCFDeployments",
+			// TRaSH Guides history/audit
+			"trashSyncHistory",
+			"templateDeploymentHistory",
+			// TRaSH instance backups (optional, can be large)
+			"trashBackups",
+			// Hunting feature
+			"huntConfigs",
+			"huntLogs",
+			"huntSearchHistory",
+		];
+
+		for (const field of optionalArrayFields) {
+			if (dataRecord[field] !== undefined && !Array.isArray(dataRecord[field])) {
+				throw new Error(`Invalid backup format: ${field} must be an array`);
+			}
 		}
 
 		// Validate required secret fields

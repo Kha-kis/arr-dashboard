@@ -1,11 +1,13 @@
 import type {
 	BackupFileInfo,
+	BackupPasswordStatus,
 	BackupSettings,
 	CreateBackupRequest,
 	ListBackupsResponse,
 	RestoreBackupFromFileRequest,
 	RestoreBackupRequest,
 	RestoreBackupResponse,
+	SetBackupPasswordRequest,
 	UpdateBackupSettingsRequest,
 } from "@arr/shared";
 import { apiRequest } from "./base";
@@ -132,6 +134,32 @@ export const backupApi = {
 		return apiRequest<BackupSettings>("/api/backup/settings", {
 			method: "PUT",
 			json: request,
+		});
+	},
+
+	/**
+	 * Get backup password configuration status
+	 */
+	async getPasswordStatus(): Promise<BackupPasswordStatus> {
+		return apiRequest<BackupPasswordStatus>("/api/backup/password/status");
+	},
+
+	/**
+	 * Set or update the backup password
+	 */
+	async setPassword(request: SetBackupPasswordRequest): Promise<{ success: boolean; message: string }> {
+		return apiRequest<{ success: boolean; message: string }>("/api/backup/password", {
+			method: "PUT",
+			json: request,
+		});
+	},
+
+	/**
+	 * Remove the backup password from database
+	 */
+	async removePassword(): Promise<{ success: boolean; message: string }> {
+		return apiRequest<{ success: boolean; message: string }>("/api/backup/password", {
+			method: "DELETE",
 		});
 	},
 };

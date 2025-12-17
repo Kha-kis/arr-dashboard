@@ -35,7 +35,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		// Use app.config.DATABASE_URL (includes env schema defaults) not process.env
 		const databaseUrl = app.config.DATABASE_URL || "file:./dev.db";
 		const secretsPath = resolveSecretsPath(databaseUrl);
-		return new BackupService(app.prisma, secretsPath);
+		return new BackupService(app.prisma, secretsPath, app.encryptor);
 	};
 
 	/**
@@ -74,8 +74,15 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				// Get app version from root package.json
 				const appVersion = getAppVersion();
 
+				// Get backup settings to check if TRaSH backups should be included
+				const settings = await app.prisma.backupSettings.findFirst({
+					where: { id: 1 },
+				});
+
 				// Create backup and save to filesystem
-				const backupInfo = await backupService.createBackup(appVersion, "manual");
+				const backupInfo = await backupService.createBackup(appVersion, "manual", {
+					includeTrashBackups: settings?.includeTrashBackups ?? false,
+				});
 
 				request.log.info(
 					{
@@ -92,6 +99,24 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				return reply.send(response);
 			} catch (error) {
 				request.log.error({ err: error }, "Failed to create backup");
+
+				const errorMessage = error instanceof Error ? error.message : String(error);
+
+				// Check for specific configuration errors that the user can fix
+				if (errorMessage.includes("BACKUP_PASSWORD")) {
+					return reply.status(400).send({
+						error: "Backup password not configured",
+						details: "Set the BACKUP_PASSWORD environment variable to enable encrypted backups in production.",
+					});
+				}
+
+				if (errorMessage.includes("Failed to read secrets file")) {
+					return reply.status(500).send({
+						error: "Secrets file not found",
+						details: "The application secrets file is missing. This may indicate a configuration issue.",
+					});
+				}
+
 				return reply.status(500).send({ error: "Failed to create backup" });
 			}
 		},
@@ -318,6 +343,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				intervalType: settings.intervalType,
 				intervalValue: settings.intervalValue,
 				retentionCount: settings.retentionCount,
+				includeTrashBackups: settings.includeTrashBackups,
 				lastRunAt: settings.lastRunAt?.toISOString() || null,
 				nextRunAt: settings.nextRunAt?.toISOString() || null,
 				createdAt: settings.createdAt.toISOString(),
@@ -397,6 +423,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				intervalType: updated.intervalType,
 				intervalValue: updated.intervalValue,
 				retentionCount: updated.retentionCount,
+				includeTrashBackups: updated.includeTrashBackups,
 				lastRunAt: updated.lastRunAt?.toISOString() || null,
 				nextRunAt: updated.nextRunAt?.toISOString() || null,
 				createdAt: updated.createdAt.toISOString(),
@@ -407,6 +434,82 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		} catch (error) {
 			request.log.error({ err: error }, "Failed to update backup settings");
 			return reply.status(500).send({ error: "Failed to update backup settings" });
+		}
+	});
+
+	/**
+	 * GET /backup/password/status
+	 * Get backup password configuration status
+	 */
+	app.get("/password/status", async (request, reply) => {
+		try {
+			const backupService = getBackupService();
+			const status = await backupService.getPasswordStatus();
+
+			return reply.send(status);
+		} catch (error) {
+			request.log.error({ err: error }, "Failed to get backup password status");
+			return reply.status(500).send({ error: "Failed to get backup password status" });
+		}
+	});
+
+	/**
+	 * PUT /backup/password
+	 * Set or update the backup password
+	 */
+	app.put<{
+		Body: { password: string };
+	}>("/password", async (request, reply) => {
+		try {
+			const { password } = request.body;
+
+			if (!password || typeof password !== "string") {
+				return reply.status(400).send({ error: "Password is required" });
+			}
+
+			if (password.length < 8) {
+				return reply.status(400).send({ error: "Password must be at least 8 characters" });
+			}
+
+			const backupService = getBackupService();
+			await backupService.setPassword(password);
+
+			request.log.info(
+				{ userId: request.currentUser?.id },
+				"Backup password updated",
+			);
+
+			return reply.send({ success: true, message: "Backup password updated successfully" });
+		} catch (error) {
+			request.log.error({ err: error }, "Failed to set backup password");
+
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			if (errorMessage.includes("Encryptor not available")) {
+				return reply.status(500).send({ error: "Encryption service not available" });
+			}
+
+			return reply.status(500).send({ error: "Failed to set backup password" });
+		}
+	});
+
+	/**
+	 * DELETE /backup/password
+	 * Remove the backup password from database (will fall back to env var if set)
+	 */
+	app.delete("/password", async (request, reply) => {
+		try {
+			const backupService = getBackupService();
+			await backupService.removePassword();
+
+			request.log.info(
+				{ userId: request.currentUser?.id },
+				"Backup password removed from database",
+			);
+
+			return reply.send({ success: true, message: "Backup password removed from database" });
+		} catch (error) {
+			request.log.error({ err: error }, "Failed to remove backup password");
+			return reply.status(500).send({ error: "Failed to remove backup password" });
 		}
 	});
 
