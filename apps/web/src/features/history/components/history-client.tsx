@@ -1,7 +1,9 @@
 ﻿"use client";
 
 import { useMemo } from "react";
+import type { ServiceInstanceSummary } from "@arr/shared";
 import { useMultiInstanceHistoryQuery } from "../../../hooks/api/useDashboard";
+import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Alert, AlertDescription, Pagination } from "../../../components/ui";
@@ -28,6 +30,17 @@ export const HistoryClient = () => {
 		startDate: startDate || undefined,
 		endDate: endDate || undefined,
 	});
+
+	const { data: services } = useServicesQuery();
+
+	// Build service lookup map for external links
+	const serviceMap = useMemo(() => {
+		const map = new Map<string, ServiceInstanceSummary>();
+		for (const instance of services ?? []) {
+			map.set(instance.id, instance);
+		}
+		return map;
+	}, [services]);
 
 	const historyData = useHistoryData(
 		data,
@@ -272,6 +285,7 @@ export const HistoryClient = () => {
 				loading={isLoading}
 				emptyMessage={emptyMessage}
 				groupingEnabled={groupByDownload}
+				serviceMap={serviceMap}
 			/>
 		</section>
 	);

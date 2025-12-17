@@ -1,4 +1,4 @@
-import type { HistoryItem } from "@arr/shared";
+import type { HistoryItem, ServiceInstanceSummary } from "@arr/shared";
 
 export const SERVICE_FILTERS = [
 	{ value: "all" as const, label: "All services" },
@@ -238,4 +238,55 @@ export const groupHistoryItems = (
 	});
 
 	return result;
+};
+
+/**
+ * Removes trailing slashes from URL
+ */
+const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/, "");
+
+/**
+ * Builds external link to Sonarr/Radarr/Prowlarr for a history item
+ * Links to the specific media item if available, otherwise to activity/history
+ */
+export const buildHistoryExternalLink = (
+	item: HistoryItem,
+	instance?: ServiceInstanceSummary,
+): string | null => {
+	if (!instance || !instance.baseUrl) {
+		return null;
+	}
+
+	const baseUrl = normalizeBaseUrl(instance.baseUrl);
+
+	// For Sonarr: link to series page if we have the slug/ID
+	if (item.service === "sonarr") {
+		if (item.seriesSlug) {
+			return `${baseUrl}/series/${item.seriesSlug}`;
+		}
+		if (item.seriesId) {
+			return `${baseUrl}/series/${item.seriesId}`;
+		}
+		// Fallback to history page
+		return `${baseUrl}/activity/history`;
+	}
+
+	// For Radarr: link to movie page if we have the slug/ID
+	if (item.service === "radarr") {
+		if (item.movieSlug) {
+			return `${baseUrl}/movie/${item.movieSlug}`;
+		}
+		if (item.movieId) {
+			return `${baseUrl}/movie/${item.movieId}`;
+		}
+		// Fallback to history page
+		return `${baseUrl}/activity/history`;
+	}
+
+	// For Prowlarr: link to main page (indexers)
+	if (item.service === "prowlarr") {
+		return baseUrl;
+	}
+
+	return null;
 };
