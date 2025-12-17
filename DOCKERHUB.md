@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.6.2** - Fix Docker health check, disk statistics accuracy, TRaSH Guides deployment history
+> **Version 2.6.3** - Backup encryption, TRaSH Guides standalone deployment, security & stability improvements
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 

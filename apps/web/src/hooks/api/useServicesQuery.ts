@@ -12,8 +12,8 @@ export const useServicesQuery = (options: ServicesQueryOptions = {}) =>
 	useQuery<ServiceInstanceSummary[]>({
 		queryKey: ["services"],
 		queryFn: fetchServices,
-		staleTime: 0,
+		staleTime: 30 * 1000, // 30 seconds - services don't change frequently
 		enabled: options.enabled ?? true,
 		initialData: options.enabled === false ? [] : undefined,
-		refetchOnMount: "always",
+		refetchOnMount: true, // Refetch if stale, but not always
 	});

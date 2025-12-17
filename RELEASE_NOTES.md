@@ -18,12 +18,28 @@
   - External links on instance names - click to navigate directly to the relevant page in Sonarr/Radarr/Prowlarr
   - Links to series/movie pages when viewing history for specific items
 
+### 🔒 Security & Stability
+
+- **Security**
+  - Replace `eval()` with `vm.runInNewContext()` in Next.js server wrapper for safer config parsing
+
+- **Error Handling**
+  - Add global error boundaries for better crash recovery
+  - Route-level error boundary with user-friendly error UI
+  - Root layout error boundary for critical failures
+
+- **Performance**
+  - Add database indexes for Session cleanup, TrashTemplate soft deletes, and HuntConfig scheduling
+  - Fix memory leak in TMDB carousel (memoized scroll callbacks)
+  - Fix excessive API refetching in services query (proper staleTime configuration)
+
 ### 🏗️ Infrastructure
 
 - **Database**
   - Removed Prisma migrations in favor of `db push` for better multi-provider support
   - Improved PostgreSQL compatibility and provider switching
   - Simpler database initialization for fresh installs
+  - Added performance indexes for frequently queried columns
 
 ### 📦 Upgrade Notes
 
