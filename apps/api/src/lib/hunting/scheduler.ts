@@ -319,8 +319,9 @@ class HuntingScheduler {
 				continue;
 			}
 
-			// Check queue threshold (simplified - actual implementation would check instance queue)
-			// TODO: Implement queue check against actual instance
+			// Note: Queue threshold check is intentionally done inside executeHunt() rather than here.
+			// This avoids making unnecessary API calls for instances that aren't due for a hunt,
+			// and ensures the queue is checked at execution time (not scheduling time).
 
 			// Check missing hunt schedule
 			if (config.huntMissingEnabled) {
