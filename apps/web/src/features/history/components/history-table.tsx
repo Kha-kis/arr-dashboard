@@ -1,6 +1,7 @@
 ﻿"use client";
 
-import type { HistoryItem } from "@arr/shared";
+import type { HistoryItem, ServiceInstanceSummary } from "@arr/shared";
+import { ExternalLink } from "lucide-react";
 import {
 	useIncognitoMode,
 	getLinuxIsoName,
@@ -8,6 +9,7 @@ import {
 	getLinuxDownloadClient,
 	getLinuxInstanceName,
 } from "../../../lib/incognito";
+import { buildHistoryExternalLink } from "../lib/history-utils";
 
 interface HistoryGroup {
 	downloadId?: string;
@@ -20,6 +22,7 @@ interface HistoryTableProps {
 	readonly loading?: boolean;
 	readonly emptyMessage?: string;
 	readonly groupingEnabled: boolean;
+	readonly serviceMap: Map<string, ServiceInstanceSummary>;
 }
 
 const formatBytes = (value?: number): string => {
@@ -172,6 +175,7 @@ export const HistoryTable = ({
 	loading,
 	emptyMessage,
 	groupingEnabled,
+	serviceMap,
 }: HistoryTableProps) => {
 	const [incognitoMode] = useIncognitoMode();
 
@@ -227,13 +231,29 @@ export const HistoryTable = ({
 											<span className="inline-flex w-fit rounded-full px-2 py-0.5 text-xs font-semibold bg-blue-500/20 text-blue-200">
 												indexerRss
 											</span>
-											<span className="text-xs text-fg-muted capitalize">
-												{firstItem?.instanceName
+											{(() => {
+												const instance = firstItem ? serviceMap.get(firstItem.instanceId) : undefined;
+												const externalLink = firstItem ? buildHistoryExternalLink(firstItem, instance) : null;
+												const displayName = firstItem?.instanceName
 													? incognitoMode
 														? getLinuxInstanceName(firstItem.instanceName)
 														: firstItem.instanceName
-													: "-"}
-											</span>
+													: "-";
+
+												return externalLink ? (
+													<a
+														href={externalLink}
+														target="_blank"
+														rel="noopener noreferrer"
+														className="inline-flex items-center gap-1 text-xs text-fg-muted hover:text-sky-400 transition-colors"
+													>
+														{displayName}
+														<ExternalLink className="h-3 w-3 opacity-50" />
+													</a>
+												) : (
+													<span className="text-xs text-fg-muted">{displayName}</span>
+												);
+											})()}
 										</div>
 									</td>
 									<td className="px-4 py-3 text-fg">
@@ -321,9 +341,27 @@ export const HistoryTable = ({
 											>
 												{eventType}
 											</span>
-											<span className="text-xs text-fg-muted">
-												{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}
-											</span>
+											{(() => {
+												const instance = serviceMap.get(item.instanceId);
+												const externalLink = buildHistoryExternalLink(item, instance);
+												const displayName = incognitoMode
+													? getLinuxInstanceName(item.instanceName)
+													: item.instanceName;
+
+												return externalLink ? (
+													<a
+														href={externalLink}
+														target="_blank"
+														rel="noopener noreferrer"
+														className="inline-flex items-center gap-1 text-xs text-fg-muted hover:text-sky-400 transition-colors"
+													>
+														{displayName}
+														<ExternalLink className="h-3 w-3 opacity-50" />
+													</a>
+												) : (
+													<span className="text-xs text-fg-muted">{displayName}</span>
+												);
+											})()}
 										</div>
 									</td>
 									<td className="max-w-xs px-4 py-3 text-fg" title={anonymizedTitle}>
