@@ -13,8 +13,10 @@
 		"typecheck": "tsc --noEmit",
 		"test": "vitest",
 		"db:generate": "prisma generate --schema prisma/schema.prisma",
-		"db:migrate": "prisma migrate deploy --schema prisma/schema.prisma",
+		"db:migrate": "prisma migrate dev --schema prisma/schema.prisma",
+		"db:migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
 		"db:push": "prisma db push --schema prisma/schema.prisma",
+		"db:sync": "prisma db push --schema prisma/schema.prisma --skip-generate",
 		"reset-admin-password": "tsx scripts/reset-admin-password.ts"
 	},
 	"dependencies": {

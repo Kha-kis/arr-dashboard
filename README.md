@@ -197,6 +197,37 @@ Use Docker Compose method with appropriate volume paths.
 
 Helm charts coming soon. For now, use standard Kubernetes manifests with the Docker image.
 
+### PostgreSQL Database
+
+By default, Arr Dashboard uses SQLite stored at `/config/prod.db`. For larger deployments or those preferring PostgreSQL:
+
+```bash
+docker run -d \
+  --name arr-dashboard \
+  -p 3000:3000 \
+  -v /path/to/config:/config \
+  -e DATABASE_URL="postgresql://user:password@hostname:5432/arr_dashboard" \
+  khak1s/arr-dashboard:latest
+```
+
+**Notes:**
+- The database schema is automatically synchronized on startup
+- You can switch between SQLite and PostgreSQL at any time
+- When switching providers, create a backup first (Settings → Backup)
+- PostgreSQL is recommended for multi-user or high-traffic scenarios
+
+**Connection String Examples:**
+```bash
+# SQLite (default)
+DATABASE_URL="file:/config/prod.db"
+
+# PostgreSQL
+DATABASE_URL="postgresql://user:password@localhost:5432/arr_dashboard"
+
+# PostgreSQL with SSL
+DATABASE_URL="postgresql://user:password@hostname:5432/arr_dashboard?sslmode=require"
+```
+
 ## Architecture
 
 ```
