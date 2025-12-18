@@ -126,8 +126,8 @@ echo ""
 echo "Synchronizing database schema..."
 # Use 'db push' instead of 'migrate deploy' to support multi-provider (SQLite/PostgreSQL)
 # Prisma migrations are provider-specific SQL, but db push generates correct SQL for any provider
-# This is the recommended approach for apps supporting multiple database backends
-su-exec abc npx prisma db push --schema prisma/schema.prisma --skip-generate
+# --accept-data-loss allows dropping unused columns during schema updates (e.g., removed urlBase)
+su-exec abc npx prisma db push --schema prisma/schema.prisma --skip-generate --accept-data-loss
 
 # ============================================
 # Read system settings from database
