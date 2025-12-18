@@ -1,5 +1,28 @@
 # Release Notes
 
+## Version 2.6.6
+
+### ✨ New Features
+
+- **TRaSH Guides**
+  - **Sync Strategy-Specific Score Handling** - Different sync strategies now handle score updates appropriately:
+    - **Auto sync**: Automatically applies recommended scores from TRaSH `trash_scores`, but preserves user score overrides and creates notifications about conflicts
+    - **Notify sync**: Shows suggested score changes in diff for user review without auto-applying
+    - **Manual sync**: Displays score differences in diff, user chooses what to apply
+  - Score conflict notifications when auto-sync detects user overrides that differ from TRaSH recommendations
+  - New scheduler stats tracking templates with score conflicts
+
+### 📦 Upgrade Notes
+
+This is a non-breaking release. Simply pull the latest image:
+
+```bash
+docker-compose pull
+docker-compose up -d
+```
+
+---
+
 ## Version 2.6.5
 
 ### 🐛 Bug Fixes
