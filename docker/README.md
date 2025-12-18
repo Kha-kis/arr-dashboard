@@ -48,16 +48,39 @@ docker-compose up -d
 
 ## Environment Variables
 
+### Core Settings
+
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DATABASE_URL` | `file:/config/prod.db` | Database connection string |
 | `PUID` | `911` | User ID for file permissions |
 | `PGID` | `911` | Group ID for file permissions |
-| `API_PORT` | `3001` | API server port |
+| `DATABASE_URL` | `file:/config/prod.db` | Database connection string (SQLite or PostgreSQL) |
+| `API_PORT` | `3001` | API server port (internal) |
 | `PORT` | `3000` | Web server port |
-| `SESSION_TTL_HOURS` | `24` | Session expiration time |
+
+### Session & Security
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SESSION_TTL_HOURS` | `24` | Session expiration time in hours |
+| `SESSION_COOKIE_NAME` | `arr_session` | Name of the session cookie |
 | `API_RATE_LIMIT_MAX` | `200` | Max requests per minute |
-| `BACKUP_PASSWORD` | - | Required for encrypted backup feature |
+| `BACKUP_PASSWORD` | Auto-generated | Password for encrypted backups |
+
+### WebAuthn/Passkeys (Optional)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WEBAUTHN_RP_NAME` | `Arr Dashboard` | Display name shown to users |
+| `WEBAUTHN_RP_ID` | `localhost` | Your domain (no protocol) |
+| `WEBAUTHN_ORIGIN` | `http://localhost:3000` | Full URL with protocol |
+
+### Advanced
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LOG_LEVEL` | `info` | Logging level (debug, info, warn, error) |
+| `GITHUB_TOKEN` | - | Optional GitHub token for TRaSH Guides (higher rate limits) |
 
 ## Ports
 
@@ -107,19 +130,9 @@ docker exec -it arr-dashboard sh
 
 ## Unraid Deployment
 
-See `/unraid/arr-dashboard.xml` for the Unraid Community Applications template.
+Arr Dashboard is available in Unraid Community Applications. Search for "Arr Dashboard" in the Apps tab.
 
-To install manually in Unraid:
-1. Go to Docker tab
-2. Click "Add Container"
-3. Fill in:
-   - Name: `arr-dashboard`
-   - Repository: `khak1s/arr-dashboard:latest`
-   - Port: `3000` → `3000` (TCP)
-   - Path: `/config` → `/mnt/user/appdata/arr-dashboard`
-   - Variable: `PUID` → `99`
-   - Variable: `PGID` → `100`
-4. Click Apply
+For manual installation or detailed instructions, see [UNRAID_DEPLOYMENT.md](../UNRAID_DEPLOYMENT.md).
 
 ## Building for Multiple Platforms
 

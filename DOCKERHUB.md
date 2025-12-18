@@ -49,14 +49,30 @@ services:
 
 ## Environment Variables
 
+### Core Settings
+
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PUID` | `911` | User ID for file permissions |
 | `PGID` | `911` | Group ID for file permissions |
-| `DATABASE_URL` | `file:/config/prod.db` | Database connection string |
-| `SESSION_TTL_HOURS` | `24` | Session expiration time |
+| `DATABASE_URL` | `file:/config/prod.db` | Database connection string (SQLite or PostgreSQL) |
+
+### Session & Security
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SESSION_TTL_HOURS` | `24` | Session expiration time in hours |
+| `SESSION_COOKIE_NAME` | `arr_session` | Name of the session cookie |
 | `API_RATE_LIMIT_MAX` | `200` | Max requests per minute |
-| `BACKUP_PASSWORD` | - | Optional password for encrypted backups |
+| `BACKUP_PASSWORD` | Auto-generated | Password for encrypted backups |
+
+### WebAuthn/Passkeys (Optional)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `WEBAUTHN_RP_NAME` | `Arr Dashboard` | Display name shown to users |
+| `WEBAUTHN_RP_ID` | `localhost` | Your domain (no protocol) |
+| `WEBAUTHN_ORIGIN` | `http://localhost:3000` | Full URL with protocol |
 
 > **Note:** Set `PUID` and `PGID` to match the owner of your config directory. Run `id -u` and `id -g` on your host to find your user/group IDs. This follows the [LinuxServer.io](https://docs.linuxserver.io/general/understanding-puid-and-pgid) convention.
 
