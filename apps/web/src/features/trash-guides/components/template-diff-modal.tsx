@@ -20,6 +20,8 @@ import {
 	GitCompare,
 	ChevronDown,
 	ChevronRight,
+	Lightbulb,
+	TrendingUp,
 } from "lucide-react";
 import { useTemplateDiff, useSyncTemplate } from "../../../hooks/api/useTemplateUpdates";
 import { cn } from "../../../lib/utils";
@@ -202,6 +204,30 @@ export const TemplateDiffModal = ({
 								</div>
 							</div>
 
+							{/* Suggestions Row */}
+							{(data.data.suggestedAdditions?.length || data.data.suggestedScoreChanges?.length) && (
+								<div className="mt-3 pt-3 border-t border-border">
+									<div className="grid grid-cols-2 gap-4">
+										{data.data.suggestedAdditions?.length ? (
+											<div className="flex items-center gap-2 text-sm">
+												<Lightbulb className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+												<span className="text-fg-muted">
+													{data.data.suggestedAdditions.length} suggested addition{data.data.suggestedAdditions.length !== 1 ? 's' : ''}
+												</span>
+											</div>
+										) : null}
+										{data.data.suggestedScoreChanges?.length ? (
+											<div className="flex items-center gap-2 text-sm">
+												<TrendingUp className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+												<span className="text-fg-muted">
+													{data.data.suggestedScoreChanges.length} score update{data.data.suggestedScoreChanges.length !== 1 ? 's' : ''}
+												</span>
+											</div>
+										) : null}
+									</div>
+								</div>
+							)}
+
 							{data.data.hasUserModifications && (
 								<div className="mt-3 pt-3 border-t border-border">
 									<div className="flex items-center gap-2 text-sm">
@@ -378,13 +404,99 @@ export const TemplateDiffModal = ({
 						)}
 
 						{/* No Changes Message */}
-						{data.data.summary.totalChanges === 0 && (
+						{data.data.summary.totalChanges === 0 && !data.data.suggestedAdditions?.length && !data.data.suggestedScoreChanges?.length && (
 							<div className="rounded-lg border border-border bg-bg-subtle p-8 text-center">
 								<Check className="h-12 w-12 text-green-600 dark:text-green-400 mx-auto mb-3" />
 								<p className="text-sm font-medium text-fg">Template is up to date</p>
 								<p className="text-xs text-fg-muted mt-1">
 									No changes between your template and latest TRaSH Guides
 								</p>
+							</div>
+						)}
+
+						{/* Suggested Additions Section */}
+						{data.data.suggestedAdditions && data.data.suggestedAdditions.length > 0 && (
+							<div className="space-y-3">
+								<div className="flex items-center gap-2">
+									<Lightbulb className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+									<h3 className="text-sm font-medium text-fg">
+										Suggested Additions ({data.data.suggestedAdditions.length})
+									</h3>
+								</div>
+								<p className="text-xs text-fg-muted">
+									These Custom Formats are available in your CF Groups or Quality Profile but not yet in your template.
+									Edit the template to add them if desired.
+								</p>
+								<div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+									{data.data.suggestedAdditions.map((suggestion) => (
+										<div
+											key={suggestion.trashId}
+											className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-3"
+										>
+											<div className="flex items-center justify-between gap-3">
+												<div className="flex items-center gap-2 flex-1 min-w-0">
+													<Plus className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
+													<span className="text-sm font-medium text-blue-700 dark:text-blue-300 truncate">
+														{suggestion.name}
+													</span>
+													<span className="text-xs text-blue-600/70 dark:text-blue-400/70 shrink-0">
+														Score: {suggestion.recommendedScore}
+													</span>
+												</div>
+												<span className="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-700 dark:text-blue-300 shrink-0">
+													{suggestion.source === "cf_group"
+														? `From: ${suggestion.sourceGroupName}`
+														: `From: ${suggestion.sourceProfileName}`}
+												</span>
+											</div>
+										</div>
+									))}
+								</div>
+							</div>
+						)}
+
+						{/* Suggested Score Changes Section */}
+						{data.data.suggestedScoreChanges && data.data.suggestedScoreChanges.length > 0 && (
+							<div className="space-y-3">
+								<div className="flex items-center gap-2">
+									<TrendingUp className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+									<h3 className="text-sm font-medium text-fg">
+										Suggested Score Updates ({data.data.suggestedScoreChanges.length})
+									</h3>
+								</div>
+								<p className="text-xs text-fg-muted">
+									TRaSH Guides recommends different scores for these Custom Formats.
+									Edit the template to update scores if desired.
+								</p>
+								<div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+									{data.data.suggestedScoreChanges.map((change) => (
+										<div
+											key={change.trashId}
+											className="rounded-lg border border-purple-500/30 bg-purple-500/10 p-3"
+										>
+											<div className="flex items-center justify-between gap-3">
+												<div className="flex items-center gap-2 flex-1 min-w-0">
+													<Edit className="h-4 w-4 text-purple-600 dark:text-purple-400 shrink-0" />
+													<span className="text-sm font-medium text-purple-700 dark:text-purple-300 truncate">
+														{change.name}
+													</span>
+												</div>
+												<div className="flex items-center gap-2 shrink-0">
+													<span className="text-xs text-purple-600/70 dark:text-purple-400/70">
+														{change.currentScore}
+													</span>
+													<span className="text-xs text-purple-600 dark:text-purple-400">→</span>
+													<span className="text-xs font-medium text-purple-700 dark:text-purple-300">
+														{change.recommendedScore}
+													</span>
+													<span className="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-700 dark:text-purple-300">
+														{change.scoreSet}
+													</span>
+												</div>
+											</div>
+										</div>
+									))}
+								</div>
 							</div>
 						)}
 					</>

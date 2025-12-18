@@ -638,6 +638,8 @@ export interface SchedulerStats {
 		templatesOutdated: number;
 		templatesAutoSynced: number;
 		templatesNeedingAttention: number;
+		templatesNeedingApproval: number; // Templates with CF Group additions needing user approval
+		templatesWithScoreConflicts: number; // Templates where score updates were skipped due to user overrides
 		templatesWithAutoStrategy: number;
 		templatesWithNotifyStrategy: number;
 		cachesRefreshed: number;
@@ -677,6 +679,30 @@ export interface CustomFormatGroupDiff {
 }
 
 /**
+ * Suggested CF addition from CF Group or Quality Profile
+ */
+export interface SuggestedCFAddition {
+	trashId: string;
+	name: string;
+	recommendedScore: number;
+	source: "cf_group" | "quality_profile";
+	sourceGroupName?: string; // Name of CF Group if source is cf_group
+	sourceProfileName?: string; // Name of Quality Profile if source is quality_profile
+	specifications: CustomFormatSpecification[];
+}
+
+/**
+ * Suggested score change from Quality Profile
+ */
+export interface SuggestedScoreChange {
+	trashId: string;
+	name: string;
+	currentScore: number;
+	recommendedScore: number;
+	scoreSet: string; // e.g., "default", "sqp-1-1080p"
+}
+
+/**
  * Template diff comparison result
  */
 export interface TemplateDiffResult {
@@ -694,6 +720,9 @@ export interface TemplateDiffResult {
 	customFormatDiffs: CustomFormatDiff[];
 	customFormatGroupDiffs: CustomFormatGroupDiff[];
 	hasUserModifications: boolean;
+	// Suggested additions (Option 2) - shown separately from main diff
+	suggestedAdditions?: SuggestedCFAddition[];
+	suggestedScoreChanges?: SuggestedScoreChange[];
 }
 
 /**

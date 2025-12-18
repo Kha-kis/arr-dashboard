@@ -6,7 +6,7 @@
  */
 
 import type { PrismaClient } from "@prisma/client";
-import type { TemplateUpdater, SyncResult, TemplateUpdateInfo } from "./template-updater.js";
+import type { TemplateUpdater, SyncResult, TemplateUpdateInfo, ScoreConflict } from "./template-updater.js";
 import type { VersionTracker } from "./version-tracker.js";
 
 // ============================================================================
@@ -30,6 +30,8 @@ export interface SchedulerStats {
 		templatesWithAutoStrategy: number; // Total templates configured with "auto" sync strategy
 		templatesWithNotifyStrategy: number; // Total templates configured with "notify" sync strategy
 		templatesNeedingAttention: number;
+		templatesNeedingApproval: number; // Templates with CF Group additions needing user approval
+		templatesWithScoreConflicts: number; // Templates where score updates were skipped due to user overrides
 		cachesRefreshed: number;
 		cachesFailed: number;
 		errors: string[];
@@ -159,6 +161,8 @@ export class UpdateScheduler {
 		const errors: string[] = [];
 		let templatesAutoSynced = 0;
 		let templatesNeedingAttention = 0;
+		let templatesNeedingApproval = 0;
+		let templatesWithScoreConflicts = 0;
 
 		// Count templates by sync strategy (unique templates with at least one mapping of each type)
 		const [templatesWithAutoStrategy, templatesWithNotifyStrategy] = await Promise.all([
@@ -242,6 +246,8 @@ export class UpdateScheduler {
 					// Process auto-sync templates for this user
 					const autoSyncResult = await this.templateUpdater.processAutoUpdates(user.id);
 					templatesAutoSynced += autoSyncResult.successful;
+					templatesNeedingApproval += autoSyncResult.skippedForApproval;
+					templatesWithScoreConflicts += autoSyncResult.templatesWithScoreConflicts;
 
 					if (autoSyncResult.failed > 0) {
 						const failedResults = autoSyncResult.results.filter((r: SyncResult) => !r.success);
@@ -250,12 +256,28 @@ export class UpdateScheduler {
 						);
 					}
 
+					// Create notifications for templates with score conflicts
+					// (scores that couldn't be auto-updated due to user overrides)
+					for (const result of autoSyncResult.results) {
+						if (result.success && result.scoreConflicts && result.scoreConflicts.length > 0) {
+							await this.createScoreConflictNotification(
+								result.templateId,
+								result.newCommit,
+								result.scoreConflicts
+							);
+						}
+					}
+
 					// Get templates needing user attention for this user
 					const attentionTemplates = await this.templateUpdater.getTemplatesNeedingAttention(user.id);
 					templatesNeedingAttention += attentionTemplates.length;
 
 					if (attentionTemplates.length > 0) {
-						await this.createUpdateNotifications(attentionTemplates);
+						// Pass full TemplateUpdateInfo for enhanced notifications
+						const templatesForNotification = updateCheck.templatesWithUpdates.filter(
+							(t) => attentionTemplates.some((a) => a.templateId === t.templateId)
+						);
+						await this.createUpdateNotifications(templatesForNotification);
 					}
 				}
 			}
@@ -273,6 +295,8 @@ export class UpdateScheduler {
 					templatesWithAutoStrategy,
 					templatesWithNotifyStrategy,
 					templatesNeedingAttention: 0,
+					templatesNeedingApproval: 0,
+					templatesWithScoreConflicts: 0,
 					cachesRefreshed: totalCachesRefreshed,
 					cachesFailed: totalCacheFailed,
 					errors: [],
@@ -303,6 +327,8 @@ export class UpdateScheduler {
 				templatesWithAutoStrategy,
 				templatesWithNotifyStrategy,
 				templatesNeedingAttention,
+				templatesNeedingApproval,
+				templatesWithScoreConflicts,
 				cachesRefreshed: totalCachesRefreshed,
 				cachesFailed: totalCacheFailed,
 				errors,
@@ -327,6 +353,8 @@ export class UpdateScheduler {
 				templatesWithAutoStrategy,
 				templatesWithNotifyStrategy,
 				templatesNeedingAttention: 0,
+				templatesNeedingApproval: 0,
+				templatesWithScoreConflicts: 0,
 				cachesRefreshed: 0,
 				cachesFailed: 0,
 				errors,
@@ -346,13 +374,7 @@ export class UpdateScheduler {
 	 * Create update notifications for templates needing attention
 	 */
 	private async createUpdateNotifications(
-		templates: Array<{
-			templateId: string;
-			templateName: string;
-			currentCommit: string | null;
-			latestCommit: string;
-			hasUserModifications: boolean;
-		}>,
+		templates: TemplateUpdateInfo[],
 	): Promise<void> {
 		for (const template of templates) {
 			try {
@@ -384,14 +406,24 @@ export class UpdateScheduler {
 				);
 
 				if (!notificationExists) {
+					// Determine the reason for needing attention
+					let reason: string;
+					if (template.needsApproval && template.pendingCFGroupAdditions?.length) {
+						reason = "cf_group_additions_need_approval";
+					} else if (template.hasUserModifications) {
+						reason = "has_user_modifications";
+					} else {
+						reason = "notify_strategy";
+					}
+
 					changeLog.push({
 						type: "update_available",
 						timestamp: new Date().toISOString(),
 						currentCommit: template.currentCommit,
 						latestCommit: template.latestCommit,
-						reason: template.hasUserModifications
-							? "has_user_modifications"
-							: "notify_strategy",
+						reason,
+						// Include pending CF Group additions for the UI to display
+						pendingCFGroupAdditions: template.pendingCFGroupAdditions,
 						dismissed: false,
 					});
 
@@ -400,7 +432,7 @@ export class UpdateScheduler {
 						data: { changeLog: JSON.stringify(changeLog) },
 					});
 
-					this.logger.debug(`Created update notification for ${template.templateName}`);
+					this.logger.debug(`Created update notification for ${template.templateName} (reason: ${reason})`);
 				}
 			} catch (error) {
 				this.logger.error(
@@ -408,6 +440,70 @@ export class UpdateScheduler {
 					error,
 				);
 			}
+		}
+	}
+
+	/**
+	 * Create notification for score conflicts (scores that couldn't be auto-updated due to user overrides)
+	 */
+	private async createScoreConflictNotification(
+		templateId: string,
+		commitHash: string,
+		scoreConflicts: ScoreConflict[],
+	): Promise<void> {
+		try {
+			const existingTemplate = await this.prisma.trashTemplate.findUnique({
+				where: { id: templateId },
+				select: { changeLog: true, name: true },
+			});
+
+			if (!existingTemplate) return;
+
+			let changeLog: Array<Record<string, unknown>> = [];
+			if (existingTemplate.changeLog) {
+				try {
+					const parsed = JSON.parse(existingTemplate.changeLog);
+					changeLog = Array.isArray(parsed) ? parsed : [];
+				} catch {
+					// If parsing fails, start fresh
+				}
+			}
+
+			// Check if score conflict notification already exists for this commit
+			const notificationExists = changeLog.some(
+				(entry) =>
+					entry.type === "score_conflicts" &&
+					entry.commitHash === commitHash,
+			);
+
+			if (!notificationExists) {
+				changeLog.push({
+					type: "score_conflicts",
+					timestamp: new Date().toISOString(),
+					commitHash,
+					scoreConflicts: scoreConflicts.map((sc) => ({
+						trashId: sc.trashId,
+						name: sc.name,
+						currentScore: sc.currentScore,
+						recommendedScore: sc.recommendedScore,
+					})),
+					dismissed: false,
+				});
+
+				await this.prisma.trashTemplate.update({
+					where: { id: templateId },
+					data: { changeLog: JSON.stringify(changeLog) },
+				});
+
+				this.logger.debug(
+					`Created score conflict notification for ${existingTemplate.name} (${scoreConflicts.length} conflicts)`
+				);
+			}
+		} catch (error) {
+			this.logger.error(
+				`Failed to create score conflict notification for template ${templateId}:`,
+				error,
+			);
 		}
 	}
 }
