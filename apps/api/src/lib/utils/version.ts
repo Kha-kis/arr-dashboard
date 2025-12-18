@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 let cachedVersion: string | null = null;
 
 /**
- * Get the application version from the root package.json
+ * Get the application version from version.json (Docker) or root package.json (dev)
  * Caches the version after first read for performance
  * Falls back to APP_VERSION environment variable or "unknown"
  */
@@ -15,13 +15,28 @@ export function getAppVersion(): string {
 	}
 
 	try {
-		// Start from current file's directory and walk to filesystem root
-		// Track the outermost package.json found (repository root)
+		// Priority 1: Check for version.json (created at Docker build time)
+		// This contains the monorepo root version extracted during docker build
+		const versionJsonPaths = [
+			"/app/api/version.json",
+			path.join(process.cwd(), "version.json"),
+		];
+
+		for (const versionPath of versionJsonPaths) {
+			if (fs.existsSync(versionPath)) {
+				const versionJson = JSON.parse(fs.readFileSync(versionPath, "utf-8"));
+				if (versionJson.version) {
+					cachedVersion = versionJson.version;
+					return cachedVersion;
+				}
+			}
+		}
+
+		// Priority 2: Walk up from current file to find monorepo root package.json (dev mode)
 		let currentDir = path.dirname(fileURLToPath(import.meta.url));
 		const rootDir = path.parse(currentDir).root;
 		let lastFoundPackageJsonPath: string | null = null;
 
-		// Walk upward to filesystem root, tracking all package.json files found
 		while (currentDir !== rootDir) {
 			const packageJsonPath = path.join(currentDir, "package.json");
 			if (fs.existsSync(packageJsonPath)) {
@@ -36,19 +51,17 @@ export function getAppVersion(): string {
 			lastFoundPackageJsonPath = rootPackageJsonPath;
 		}
 
-		if (!lastFoundPackageJsonPath) {
-			throw new Error("Could not locate root package.json");
-		}
+		if (lastFoundPackageJsonPath) {
+			const packageJson = JSON.parse(fs.readFileSync(lastFoundPackageJsonPath, "utf-8"));
+			const version = packageJson.version as string;
 
-		const packageJson = JSON.parse(fs.readFileSync(lastFoundPackageJsonPath, "utf-8"));
-		const version = packageJson.version as string;
-
-		if (version) {
-			cachedVersion = version;
-			return version;
+			if (version) {
+				cachedVersion = version;
+				return version;
+			}
 		}
 	} catch (error) {
-		console.warn("Failed to read version from package.json:", error);
+		console.warn("Failed to read version:", error);
 	}
 
 	// Fallback to environment variable or unknown
