@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.6.3** - Backup encryption, TRaSH Guides standalone deployment, security & stability improvements
+> **Version 2.6.4** - Hotfix for upgrade crash loop, backup encryption, TRaSH Guides standalone deployment
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -65,6 +65,7 @@ services:
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.6.4` | Hotfix for upgrade crash loop affecting v2.6.3 |
 | `2.6.3` | Backup encryption, TRaSH standalone CF deployment, security & performance improvements |
 | `2.6.x` | PostgreSQL support, automated hunting, improved error handling |
 | `2.5.0` | **Breaking:** Volume path changed to `/config` (LinuxServer.io convention) |
