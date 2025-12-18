@@ -165,12 +165,18 @@ The application auto-generates all necessary security keys on first run. No envi
 |----------|---------|-------------|
 | `PUID` | `911` | User ID for file permissions (LinuxServer.io style) |
 | `PGID` | `911` | Group ID for file permissions (LinuxServer.io style) |
-| `DATABASE_URL` | `file:/config/prod.db` | Database connection string |
-| `SESSION_TTL_HOURS` | `24` | Session expiration time |
+| `DATABASE_URL` | `file:/config/prod.db` | Database connection string (SQLite or PostgreSQL) |
+| `SESSION_TTL_HOURS` | `24` | Session expiration time in hours |
+| `SESSION_COOKIE_NAME` | `arr_session` | Name of the session cookie |
 | `API_RATE_LIMIT_MAX` | `200` | Max requests per minute |
-| `BACKUP_PASSWORD` | - | **Required** for backup encryption in production |
-| `WEBAUTHN_RP_ID` | `localhost` | Passkey relying party ID (your domain) |
-| `WEBAUTHN_ORIGIN` | `http://localhost:3000` | Passkey origin URL |
+| `API_RATE_LIMIT_WINDOW` | `1 minute` | Rate limit time window |
+| `API_CORS_ORIGIN` | `localhost:3000,3001` | Allowed CORS origins (comma-separated) |
+| `BACKUP_PASSWORD` | - | Password for encrypted backups (optional, auto-generated in dev) |
+| `WEBAUTHN_RP_NAME` | `Arr Dashboard` | Passkey display name shown to users |
+| `WEBAUTHN_RP_ID` | `localhost` | Passkey relying party ID (your domain, no protocol) |
+| `WEBAUTHN_ORIGIN` | `http://localhost:3000` | Passkey origin URL (full URL with protocol) |
+| `LOG_LEVEL` | `info` (prod) / `debug` (dev) | Logging level |
+| `GITHUB_TOKEN` | - | Optional GitHub token for TRaSH Guides (higher rate limits) |
 
 > **Note:** Set `PUID` and `PGID` to match the owner of your config directory. Run `id -u` and `id -g` on your host to find your user/group IDs. This follows the [LinuxServer.io](https://docs.linuxserver.io/general/understanding-puid-and-pgid) convention for consistent file permissions.
 
@@ -188,7 +194,7 @@ Configure these in Settings after login:
 
 ### Unraid
 
-Community Applications template available. See [UNRAID_DEPLOYMENT.md](UNRAID_DEPLOYMENT.md) for detailed instructions.
+Community Applications template available. See [Unraid Deployment](https://github.com/Kha-kis/arr-dashboard/wiki/Unraid-Deployment) for detailed instructions.
 
 ### Synology/QNAP
 
@@ -390,10 +396,20 @@ cd ../.. && pnpm run build
 
 ## Documentation
 
-- [Authentication Guide](AUTHENTICATION.md) - OIDC, Passkeys, and password setup
-- [Backup & Restore](BACKUP_RESTORE.md) - Encrypted backup system
-- [Unraid Deployment](UNRAID_DEPLOYMENT.md) - Unraid-specific instructions
-- [Development Guide](CLAUDE.md) - Technical architecture for contributors
+📚 **[Full Documentation Wiki](https://github.com/Kha-kis/arr-dashboard/wiki)**
+
+| Guide | Description |
+|-------|-------------|
+| [Quick Start](https://github.com/Kha-kis/arr-dashboard/wiki/Quick-Start) | 5-minute installation guide |
+| [Authentication](https://github.com/Kha-kis/arr-dashboard/wiki/Authentication-Guide) | Password, OIDC, and Passkey setup |
+| [Environment Variables](https://github.com/Kha-kis/arr-dashboard/wiki/Environment-Variables) | Complete configuration reference |
+| [TRaSH Guides](https://github.com/Kha-kis/arr-dashboard/wiki/TRaSH-Guides-Integration) | Quality profiles and custom formats |
+| [Hunting](https://github.com/Kha-kis/arr-dashboard/wiki/Hunting-Auto-Search) | Automated content search |
+| [Backup & Restore](https://github.com/Kha-kis/arr-dashboard/wiki/Backup-and-Restore) | Encrypted backup system |
+| [Unraid Deployment](https://github.com/Kha-kis/arr-dashboard/wiki/Unraid-Deployment) | Unraid-specific instructions |
+| [Troubleshooting](https://github.com/Kha-kis/arr-dashboard/wiki/Troubleshooting) | Common issues and solutions |
+
+**For Contributors:** See [CLAUDE.md](CLAUDE.md) for technical architecture and development guide.
 
 ## Contributing
 
