@@ -1,5 +1,37 @@
 # Release Notes
 
+## Version 2.6.5
+
+### 🐛 Bug Fixes
+
+- **Docker**
+  - Fix EACCES permission denied error when using PostgreSQL on Unraid ([#21](https://github.com/Kha-kis/arr-dashboard/issues/21))
+  - Resolve Prisma client regeneration failure when switching database providers with non-default PUID/PGID
+
+### ✨ New Features
+
+- **Settings > System**
+  - Added System Information section displaying application version, database backend, Node.js version, and uptime
+  - Version detection via `version.json` created at Docker build time
+
+### 🔒 Security & Stability
+
+- **Session Management**
+  - Middleware now validates session tokens against the API
+  - Invalid/stale session cookies are automatically cleared and user redirected to login
+  - Prevents issues when database is reset or container recreated with new volume
+
+### 📦 Upgrade Notes
+
+This is a non-breaking release. Simply pull the latest image:
+
+```bash
+docker-compose pull
+docker-compose up -d
+```
+
+---
+
 ## Version 2.6.4
 
 ### 🐛 Bug Fixes

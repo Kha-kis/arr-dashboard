@@ -332,8 +332,16 @@ All routes in `apps/api/src/routes/`. Protected routes use preHandler authentica
 | `/api/discover` | TMDB discovery |
 | `/api/hunting` | Auto-search configuration |
 | `/api/backup` | Backup management |
-| `/api/system` | System settings |
+| `/api/system` | System settings and info |
 | `/api/oidc-providers` | OIDC admin config |
+
+#### System Routes (`/api/system`)
+| Method | Route | Purpose |
+|--------|-------|---------|
+| GET | `/system/settings` | Get system settings (ports, listen address) |
+| PUT | `/system/settings` | Update system settings |
+| GET | `/system/info` | Get system info (version, database backend, runtime) |
+| POST | `/system/restart` | Trigger application restart |
 
 ### Key Patterns
 
@@ -469,11 +477,14 @@ rewrites() {
 
 **File**: `apps/web/middleware.ts`
 
-**Purpose**: Route protection only (NOT API proxying)
+**Purpose**: Route protection with session validation (NOT API proxying)
 
-- Checks for `arr_session` cookie presence
+- Validates session tokens by calling `/auth/me` on the API
+- Automatically clears invalid/stale cookies and redirects to `/login`
 - Redirects unauthenticated users to `/login`
 - Skips `/api/*`, `/auth/*`, static files
+
+**Session Validation**: The middleware calls the API to verify sessions are valid, preventing issues when the database is reset or container recreated with a new volume.
 
 ---
 
@@ -737,6 +748,6 @@ app.config            // Environment config
 ---
 
 **Last Updated:** 2025-12-17
-**Version:** 2.6.4
+**Version:** 2.6.5
 **Node:** 20+
 **pnpm:** 9.12.0+
