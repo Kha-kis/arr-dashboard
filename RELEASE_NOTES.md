@@ -1,5 +1,26 @@
 # Release Notes
 
+## Version 2.6.4
+
+### 🐛 Bug Fixes
+
+- **Docker**
+  - Fix container crash loop when upgrading from older versions ([#13](https://github.com/Kha-kis/arr-dashboard/issues/13))
+  - Add `--accept-data-loss` flag to `db push` to handle removed columns (e.g., `urlBase` from `system_settings`)
+
+### 📦 Upgrade Notes
+
+This is a hotfix release. Simply pull the latest image:
+
+```bash
+docker-compose pull
+docker-compose up -d
+```
+
+If you were stuck on v2.6.3 with a crash loop, this release fixes the issue.
+
+---
+
 ## Version 2.6.3
 
 ### ✨ New Features
