@@ -49,6 +49,13 @@ esac
 # This ensures correct permissions even when mounting pre-existing directories
 chown -R "${PUID}:${PGID}" /config
 
+# CRITICAL: Also set ownership of /app/api to handle Prisma client regeneration
+# When switching from SQLite to PostgreSQL (or vice versa), Prisma needs to regenerate
+# the client inside node_modules/.pnpm/@prisma+client@*/.
+# Without this, PUID/PGID mismatch causes EACCES errors:
+# "EACCES: permission denied, unlink '/app/api/node_modules/.pnpm/@prisma+client@.../index.js'"
+chown -R "${PUID}:${PGID}" /app/api
+
 # ============================================
 # Signal handling
 # ============================================
@@ -102,20 +109,40 @@ fi
 # Look for provider inside datasource block specifically
 CURRENT_PROVIDER=$(grep -A2 'datasource db' prisma/schema.prisma | grep 'provider' | sed 's/.*provider = "\([^"]*\)".*/\1/')
 
+echo "  - Current schema provider: $CURRENT_PROVIDER"
+echo "  - Required provider: $DB_PROVIDER"
+
 # If provider needs to change, update schema and regenerate client
 if [ "$CURRENT_PROVIDER" != "$DB_PROVIDER" ]; then
     echo "  - Switching Prisma datasource provider from $CURRENT_PROVIDER to $DB_PROVIDER..."
 
     # Update only the datasource provider in schema.prisma (not the generator)
-    sed -i '/datasource db/,/^}/ s/provider = "[^"]*"/provider = "'"$DB_PROVIDER"'"/' prisma/schema.prisma
+    # Use a more robust sed pattern that handles different formatting
+    if ! sed -i '/datasource db/,/^}/ s/provider = "[^"]*"/provider = "'"$DB_PROVIDER"'"/' prisma/schema.prisma; then
+        echo "ERROR: Failed to update schema.prisma provider" >&2
+        exit 1
+    fi
+
+    # Verify the change was applied
+    NEW_PROVIDER=$(grep -A2 'datasource db' prisma/schema.prisma | grep 'provider' | sed 's/.*provider = "\([^"]*\)".*/\1/')
+    if [ "$NEW_PROVIDER" != "$DB_PROVIDER" ]; then
+        echo "ERROR: Schema provider update failed. Expected '$DB_PROVIDER' but got '$NEW_PROVIDER'" >&2
+        echo "  This may happen if the schema.prisma format is non-standard." >&2
+        exit 1
+    fi
+    echo "  - Schema updated successfully"
 
     # Regenerate Prisma client for new provider
-    echo "  - Regenerating Prisma client..."
-    su-exec abc npx prisma generate --schema prisma/schema.prisma
+    echo "  - Regenerating Prisma client (this may take a moment)..."
+    if ! su-exec abc npx prisma generate --schema prisma/schema.prisma; then
+        echo "ERROR: Failed to regenerate Prisma client" >&2
+        echo "  Check that /app/api has correct permissions for PUID:$PUID PGID:$PGID" >&2
+        exit 1
+    fi
 
     echo "  - Provider switched successfully"
 else
-    echo "  - Prisma provider already set to $DB_PROVIDER"
+    echo "  - Prisma provider already set to $DB_PROVIDER (no change needed)"
 fi
 
 # ============================================
@@ -127,7 +154,14 @@ echo "Synchronizing database schema..."
 # Use 'db push' instead of 'migrate deploy' to support multi-provider (SQLite/PostgreSQL)
 # Prisma migrations are provider-specific SQL, but db push generates correct SQL for any provider
 # --accept-data-loss allows dropping unused columns during schema updates (e.g., removed urlBase)
-su-exec abc npx prisma db push --schema prisma/schema.prisma --skip-generate --accept-data-loss
+if ! su-exec abc npx prisma db push --schema prisma/schema.prisma --skip-generate --accept-data-loss; then
+    echo "ERROR: Database schema synchronization failed" >&2
+    echo "  - Ensure DATABASE_URL is correct and the database is accessible" >&2
+    echo "  - For PostgreSQL: Check that the database exists and user has permissions" >&2
+    echo "  - Current DATABASE_URL: ${DATABASE_URL%%@*}@[REDACTED]" >&2
+    exit 1
+fi
+echo "  - Database schema synchronized successfully"
 
 # ============================================
 # Read system settings from database

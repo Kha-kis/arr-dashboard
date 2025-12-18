@@ -37,12 +37,14 @@ RUN --mount=type=cache,id=turbo,target=/app/.turbo \
     pnpm turbo run build --filter=@arr/shared --filter=@arr/api --filter=@arr/web
 
 # Deploy API for production and generate Prisma client
+# Also create version.json from root package.json for runtime version detection
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm --filter @arr/api --prod deploy /app/deploy-api && \
     cd /app/deploy-api && \
     cp -r /app/apps/api/dist ./dist && \
     cp -r /app/apps/api/prisma ./prisma && \
-    npx prisma generate --schema prisma/schema.prisma
+    npx prisma generate --schema prisma/schema.prisma && \
+    node -e "const p=require('/app/package.json'); console.log(JSON.stringify({version:p.version,name:p.name}))" > ./version.json
 
 # Prepare web output (consolidate standalone + static + custom server)
 RUN cp /app/apps/web/server.js /app/apps/web/.next/standalone/server.js && \

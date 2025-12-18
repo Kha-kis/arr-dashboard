@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Settings, RefreshCw, AlertTriangle, Info } from "lucide-react";
+import { Settings, RefreshCw, AlertTriangle, Info, Database, Server, Clock } from "lucide-react";
 import { apiRequest } from "../../../lib/api-client/base";
 
 interface SystemSettings {
@@ -24,8 +24,44 @@ interface SystemSettingsResponse {
 	message?: string;
 }
 
+interface SystemInfo {
+	version: string;
+	database: {
+		type: string;
+		host: string | null;
+	};
+	runtime: {
+		nodeVersion: string;
+		platform: string;
+		uptime: number;
+	};
+}
+
+interface SystemInfoResponse {
+	success: boolean;
+	data: SystemInfo;
+}
+
 async function getSystemSettings(): Promise<SystemSettingsResponse> {
 	return apiRequest<SystemSettingsResponse>("/api/system/settings");
+}
+
+async function getSystemInfo(): Promise<SystemInfoResponse> {
+	return apiRequest<SystemInfoResponse>("/api/system/info");
+}
+
+function formatUptime(seconds: number): string {
+	const days = Math.floor(seconds / 86400);
+	const hours = Math.floor((seconds % 86400) / 3600);
+	const minutes = Math.floor((seconds % 3600) / 60);
+
+	const parts = [];
+	if (days > 0) parts.push(`${days}d`);
+	if (hours > 0) parts.push(`${hours}h`);
+	if (minutes > 0) parts.push(`${minutes}m`);
+	if (parts.length === 0) parts.push(`${seconds}s`);
+
+	return parts.join(" ");
 }
 
 async function updateSystemSettings(data: {
@@ -56,6 +92,12 @@ export function SystemTab() {
 	const { data: settings, isLoading } = useQuery({
 		queryKey: ["system-settings"],
 		queryFn: getSystemSettings,
+	});
+
+	const { data: systemInfo } = useQuery({
+		queryKey: ["system-info"],
+		queryFn: getSystemInfo,
+		refetchInterval: 60000, // Refresh every minute to update uptime
 	});
 
 	const updateMutation = useMutation({
@@ -165,6 +207,69 @@ export function SystemTab() {
 					</p>
 				</div>
 			</div>
+
+			{/* System Information Section */}
+			{systemInfo?.data && (
+				<div className="rounded-lg border border-border bg-bg-card p-6 space-y-4">
+					<div>
+						<h3 className="text-lg font-medium text-fg">System Information</h3>
+						<p className="text-sm text-fg-muted mt-1">
+							Application version and runtime details
+						</p>
+					</div>
+
+					<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+						{/* Version */}
+						<div className="flex items-start gap-3 p-3 rounded-lg bg-bg-subtle">
+							<Server className="h-5 w-5 text-primary mt-0.5" />
+							<div>
+								<p className="text-xs font-medium text-fg-muted uppercase tracking-wide">Version</p>
+								<p className="text-sm font-semibold text-fg mt-0.5">
+									v{systemInfo.data.version}
+								</p>
+							</div>
+						</div>
+
+						{/* Database Backend */}
+						<div className="flex items-start gap-3 p-3 rounded-lg bg-bg-subtle">
+							<Database className="h-5 w-5 text-green-500 mt-0.5" />
+							<div>
+								<p className="text-xs font-medium text-fg-muted uppercase tracking-wide">Database</p>
+								<p className="text-sm font-semibold text-fg mt-0.5">
+									{systemInfo.data.database.type}
+								</p>
+								{systemInfo.data.database.host && (
+									<p className="text-xs text-fg-muted mt-0.5 font-mono">
+										{systemInfo.data.database.host}
+									</p>
+								)}
+							</div>
+						</div>
+
+						{/* Node Version */}
+						<div className="flex items-start gap-3 p-3 rounded-lg bg-bg-subtle">
+							<Info className="h-5 w-5 text-blue-500 mt-0.5" />
+							<div>
+								<p className="text-xs font-medium text-fg-muted uppercase tracking-wide">Node.js</p>
+								<p className="text-sm font-semibold text-fg mt-0.5">
+									{systemInfo.data.runtime.nodeVersion}
+								</p>
+							</div>
+						</div>
+
+						{/* Uptime */}
+						<div className="flex items-start gap-3 p-3 rounded-lg bg-bg-subtle">
+							<Clock className="h-5 w-5 text-amber-500 mt-0.5" />
+							<div>
+								<p className="text-xs font-medium text-fg-muted uppercase tracking-wide">Uptime</p>
+								<p className="text-sm font-semibold text-fg mt-0.5">
+									{formatUptime(systemInfo.data.runtime.uptime)}
+								</p>
+							</div>
+						</div>
+					</div>
+				</div>
+			)}
 
 			{/* Restart Warning Banner */}
 			{requiresRestart && (

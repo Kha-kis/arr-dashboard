@@ -1,6 +1,34 @@
 import type { FastifyPluginCallback } from "fastify";
+import { getAppVersion } from "../lib/utils/version.js";
 
 const RESTART_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };
+
+// Detect database backend from DATABASE_URL
+function getDatabaseBackend(): { type: string; host: string | null } {
+	const dbUrl = process.env.DATABASE_URL || "";
+
+	if (dbUrl.startsWith("postgresql://") || dbUrl.startsWith("postgres://")) {
+		// Extract host from PostgreSQL URL (redact credentials)
+		const match = dbUrl.match(/@([^:/]+)/);
+		return { type: "PostgreSQL", host: match?.[1] || null };
+	}
+
+	if (dbUrl.startsWith("mysql://")) {
+		const match = dbUrl.match(/@([^:/]+)/);
+		return { type: "MySQL", host: match?.[1] || null };
+	}
+
+	if (dbUrl.startsWith("file:")) {
+		// Extract filename from SQLite path
+		const filename = dbUrl.replace("file:", "").split("/").pop() || "database";
+		return { type: "SQLite", host: filename };
+	}
+
+	return { type: "SQLite", host: "local" };
+}
+
+const APP_VERSION = getAppVersion();
+console.log(`[system] App version detected: ${APP_VERSION}`);
 
 const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	// Add authentication preHandler for all routes in this plugin
@@ -171,6 +199,34 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			message: requiresRestart
 				? "Settings saved. Container restart required for port changes to take effect."
 				: "Settings saved successfully.",
+		});
+	});
+
+	/**
+	 * GET /system/info
+	 * Get system information (version, database backend, runtime info)
+	 * This is read-only information about the running system
+	 */
+	app.get("/info", async (_request, reply) => {
+		const database = getDatabaseBackend();
+		const nodeVersion = process.version;
+		const platform = process.platform;
+		const uptime = process.uptime();
+
+		return reply.send({
+			success: true,
+			data: {
+				version: APP_VERSION,
+				database: {
+					type: database.type,
+					host: database.host,
+				},
+				runtime: {
+					nodeVersion,
+					platform,
+					uptime: Math.floor(uptime),
+				},
+			},
 		});
 	});
 
