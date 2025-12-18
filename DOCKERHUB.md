@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.6.4** - Hotfix for upgrade crash loop, backup encryption, TRaSH Guides standalone deployment
+> **Version 2.6.5** - Fix permission errors on Unraid/PostgreSQL, add System Information display, improve session handling
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -65,6 +65,7 @@ services:
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.6.5` | Fix permission errors on Unraid/PostgreSQL, System Information display |
 | `2.6.4` | Hotfix for upgrade crash loop affecting v2.6.3 |
 | `2.6.3` | Backup encryption, TRaSH standalone CF deployment, security & performance improvements |
 | `2.6.x` | PostgreSQL support, automated hunting, improved error handling |
