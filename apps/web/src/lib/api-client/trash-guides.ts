@@ -580,6 +580,8 @@ export type SchedulerStats = {
 		templatesOutdated: number;
 		templatesAutoSynced: number;
 		templatesNeedingAttention: number;
+		templatesNeedingApproval: number; // Templates with CF Group additions needing user approval
+		templatesWithScoreConflicts: number; // Templates where score updates were skipped due to user overrides
 		templatesWithAutoStrategy: number;
 		templatesWithNotifyStrategy: number;
 		cachesRefreshed: number;
@@ -602,6 +604,8 @@ export type TriggerCheckResponse = {
 		templatesOutdated: number;
 		templatesAutoSynced: number;
 		templatesNeedingAttention: number;
+		templatesNeedingApproval: number; // Templates with CF Group additions needing user approval
+		templatesWithScoreConflicts: number; // Templates where score updates were skipped due to user overrides
 		templatesWithAutoStrategy: number;
 		templatesWithNotifyStrategy: number;
 		cachesRefreshed: number;
@@ -712,6 +716,24 @@ export type CustomFormatGroupDiffItem = {
 	customFormatDiffs: unknown[];
 };
 
+export type SuggestedCFAddition = {
+	trashId: string;
+	name: string;
+	recommendedScore: number;
+	source: "cf_group" | "quality_profile";
+	sourceGroupName?: string;
+	sourceProfileName?: string;
+	specifications: unknown[];
+};
+
+export type SuggestedScoreChange = {
+	trashId: string;
+	name: string;
+	currentScore: number;
+	recommendedScore: number;
+	scoreSet: string;
+};
+
 export type TemplateDiffResult = {
 	templateId: string;
 	templateName: string;
@@ -721,6 +743,8 @@ export type TemplateDiffResult = {
 	customFormatDiffs: CustomFormatDiffItem[];
 	customFormatGroupDiffs: CustomFormatGroupDiffItem[];
 	hasUserModifications: boolean;
+	suggestedAdditions?: SuggestedCFAddition[];
+	suggestedScoreChanges?: SuggestedScoreChange[];
 };
 
 export type TemplateDiffResponse = {
