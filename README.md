@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.6.3** - Backup encryption, TRaSH Guides standalone deployment, security & stability improvements
+> **Version 2.6.5** - Fix permission errors on Unraid/PostgreSQL, System Information display, improved session handling
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -141,10 +141,10 @@ docker-compose up -d
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.6.5` | Fix permission errors on Unraid/PostgreSQL, System Information display |
+| `2.6.4` | Hotfix for upgrade crash loop affecting v2.6.3 |
 | `2.6.3` | Backup encryption, TRaSH standalone deployment, security fixes |
 | `2.6.2` | Fix Docker health check endpoint |
-| `2.6.1` | Fix disk statistics accuracy, TRaSH Guides deployment history, database migrations |
-| `2.6.0` | Security improvements, TRaSH Guides sync for cloned profiles, better error handling |
 | `2.5.0` | ⚠️ **Breaking:** Volume path changed to `/config` (LinuxServer.io convention) |
 | `2.4.3` | Favicon, README screenshots |
 | `2.4.x` | TRaSH Guides integration, PUID/PGID support |
