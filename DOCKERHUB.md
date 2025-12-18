@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.6.5** - Fix permission errors on Unraid/PostgreSQL, add System Information display, improve session handling
+> **Version 2.6.6** - Sync strategy-specific score handling for TRaSH Guides templates
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -81,6 +81,7 @@ services:
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.6.6` | Sync strategy-specific score handling for TRaSH Guides |
 | `2.6.5` | Fix permission errors on Unraid/PostgreSQL, System Information display |
 | `2.6.4` | Hotfix for upgrade crash loop affecting v2.6.3 |
 | `2.6.3` | Backup encryption, TRaSH standalone CF deployment, security & performance improvements |
