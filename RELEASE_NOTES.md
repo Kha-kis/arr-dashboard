@@ -21,6 +21,11 @@
   - Invalid/stale session cookies are automatically cleared and user redirected to login
   - Prevents issues when database is reset or container recreated with new volume
 
+### 📚 Documentation
+
+- Documentation has moved to the [GitHub Wiki](https://github.com/Kha-kis/arr-dashboard/wiki)
+- Comprehensive guides for Authentication, TRaSH Guides, Hunting, Backup/Restore, and more
+
 ### 📦 Upgrade Notes
 
 This is a non-breaking release. Simply pull the latest image:
@@ -29,6 +34,8 @@ This is a non-breaking release. Simply pull the latest image:
 docker-compose pull
 docker-compose up -d
 ```
+
+**Note:** You may be logged out after upgrading due to improved session validation. Simply log in again.
 
 ---
 
