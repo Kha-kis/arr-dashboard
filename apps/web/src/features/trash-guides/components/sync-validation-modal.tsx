@@ -6,18 +6,47 @@ import {
 	CheckCircle2,
 	ChevronDown,
 	ChevronUp,
+	ExternalLink,
+	Eye,
 	HelpCircle,
 	Info,
+	Plug,
 	RefreshCw,
+	Upload,
 	XCircle,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui";
-import { useValidateSync } from "../../../hooks/api/useSync";
+import { useValidateSync, MAX_RETRY_ATTEMPTS } from "../../../hooks/api/useSync";
 import type { ValidationResult } from "../../../lib/api-client/sync";
 
 // Check if we're in development mode
 const isDevelopment = process.env.NODE_ENV === "development";
+
+// Error type detection patterns
+const ERROR_PATTERNS = {
+	MISSING_MAPPING: /no quality profile mappings found|deploy this template/i,
+	UNREACHABLE_INSTANCE: /unable to connect|unreachable|connection refused|timeout/i,
+	USER_MODIFICATIONS: /auto-sync is blocked|local modifications|user modifications/i,
+	DELETED_PROFILES: /quality profiles no longer exist|mapped.*deleted/i,
+	CORRUPTED_TEMPLATE: /corrupted|cannot be parsed|missing custom formats/i,
+	CACHE_ISSUE: /cache is empty|cache.*corrupted|cache needs refreshing/i,
+} as const;
+
+type ErrorType = keyof typeof ERROR_PATTERNS;
+
+/** Detect error types from error messages */
+function detectErrorTypes(errors: string[]): Set<ErrorType> {
+	const detected = new Set<ErrorType>();
+	for (const error of errors) {
+		for (const [type, pattern] of Object.entries(ERROR_PATTERNS)) {
+			if (pattern.test(error)) {
+				detected.add(type as ErrorType);
+			}
+		}
+	}
+	return detected;
+}
 
 interface SyncValidationModalProps {
 	templateId: string;
@@ -26,12 +55,27 @@ interface SyncValidationModalProps {
 	instanceName: string;
 	onConfirm: (resolutions: Record<string, "REPLACE" | "SKIP">) => void;
 	onCancel: () => void;
+	/** Optional callback to navigate to deployment workflow */
+	onNavigateToDeploy?: () => void;
+	/** Optional callback to test instance connection */
+	onTestConnection?: () => void;
+	/** Optional callback to view template changes (for manual sync) */
+	onViewChanges?: () => void;
+	/** Optional callback to switch to manual sync mode */
+	onSwitchToManualSync?: () => void;
 }
 
 interface ValidationTiming {
 	startTime: number;
 	endTime: number | null;
 	duration: number | null;
+}
+
+interface RetryProgress {
+	attempt: number;
+	maxAttempts: number;
+	delayMs: number;
+	isWaiting: boolean;
 }
 
 export const SyncValidationModal = ({
@@ -41,6 +85,10 @@ export const SyncValidationModal = ({
 	instanceName,
 	onConfirm,
 	onCancel,
+	onNavigateToDeploy,
+	onTestConnection,
+	onViewChanges,
+	onSwitchToManualSync,
 }: SyncValidationModalProps) => {
 	const [resolutions, setResolutions] = useState<Record<string, "REPLACE" | "SKIP">>({});
 	const [validation, setValidation] = useState<ValidationResult | null>(null);
@@ -52,13 +100,15 @@ export const SyncValidationModal = ({
 		endTime: null,
 		duration: null,
 	});
+	const [retryProgress, setRetryProgress] = useState<RetryProgress | null>(null);
 	const dialogRef = useRef<HTMLDivElement>(null);
 	const previousActiveElement = useRef<Element | null>(null);
 
-	// Use the validation hook with error callback
+	// Use the validation hook with error and retry callbacks
 	const validateMutation = useValidateSync({
 		onError: (error) => {
 			setLocalError(error);
+			setRetryProgress(null);
 			const endTime = Date.now();
 			setTiming((prev) => ({
 				...prev,
@@ -79,6 +129,7 @@ export const SyncValidationModal = ({
 			});
 		},
 		onSuccess: (data) => {
+			setRetryProgress(null);
 			const endTime = Date.now();
 			setTiming((prev) => ({
 				...prev,
@@ -99,9 +150,18 @@ export const SyncValidationModal = ({
 				});
 			}
 		},
+		onRetryProgress: (attempt, maxAttempts, delayMs) => {
+			setRetryProgress({ attempt, maxAttempts, delayMs, isWaiting: true });
+			// Clear waiting state after delay
+			setTimeout(() => {
+				setRetryProgress((prev) =>
+					prev && prev.attempt === attempt ? { ...prev, isWaiting: false } : prev,
+				);
+			}, delayMs);
+		},
 	});
 
-	// Maximum retry attempts
+	// Maximum manual retry attempts (in addition to automatic retries)
 	const MAX_RETRIES = 3;
 
 	// Focus trap and keyboard handling
@@ -234,6 +294,9 @@ export const SyncValidationModal = ({
 	// Detect silent failure: validation returned invalid=false but no errors
 	const hasSilentFailure = validation && !validation.valid && !hasErrors;
 
+	// Detect error types for contextual actions
+	const errorTypes = hasErrors ? detectErrorTypes(validation.errors) : new Set<ErrorType>();
+
 	// Separate informational warnings (like "Instance is reachable") from actual warnings
 	const informationalWarnings = (validation?.warnings || []).filter(
 		(w) => w.includes("is reachable") || w.includes("Validation passed"),
@@ -242,6 +305,9 @@ export const SyncValidationModal = ({
 		(w) => !w.includes("is reachable") && !w.includes("Validation passed"),
 	);
 	const hasActualWarnings = actualWarnings.length > 0;
+
+	// Check if we're showing automatic retry progress
+	const isAutoRetrying = retryProgress !== null && retryProgress.isWaiting;
 
 	return (
 		<div
@@ -269,10 +335,32 @@ export const SyncValidationModal = ({
 
 				{/* Content */}
 				<div className="max-h-[60vh] overflow-y-auto p-6">
+					{/* Validating state with optional retry progress */}
 					{isValidating && (
-						<div className="flex items-center justify-center py-12">
-							<div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-							<span className="ml-3 text-fg/60">Validating...</span>
+						<div className="flex flex-col items-center justify-center py-12">
+							<div className="flex items-center">
+								<div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+								<span className="ml-3 text-fg/60">
+									{retryProgress
+										? `Retrying... (attempt ${retryProgress.attempt + 1}/${retryProgress.maxAttempts + 1})`
+										: "Validating..."}
+								</span>
+							</div>
+							{retryProgress && retryProgress.isWaiting && (
+								<div className="mt-4 text-center">
+									<p className="text-sm text-fg/50">
+										Waiting {retryProgress.delayMs / 1000}s before retry due to network error...
+									</p>
+									<Button
+										variant="secondary"
+										size="sm"
+										className="mt-2"
+										onClick={onCancel}
+									>
+										Cancel
+									</Button>
+								</div>
+							)}
 						</div>
 					)}
 
@@ -312,7 +400,7 @@ export const SyncValidationModal = ({
 								</div>
 							)}
 
-							{/* Validation Errors */}
+							{/* Validation Errors with Contextual Actions */}
 							{hasErrors && (
 								<div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4">
 									<div className="flex items-start gap-3">
@@ -324,8 +412,66 @@ export const SyncValidationModal = ({
 													<li key={index}>• {error}</li>
 												))}
 											</ul>
-											{/* Retry button for errors too */}
-											<div className="mt-3">
+
+											{/* Contextual action buttons based on error types */}
+											<div className="mt-4 flex flex-wrap gap-2">
+												{/* Missing quality profile mappings → Deploy Template */}
+												{errorTypes.has("MISSING_MAPPING") && onNavigateToDeploy && (
+													<Button
+														variant="primary"
+														size="sm"
+														onClick={() => {
+															onCancel();
+															onNavigateToDeploy();
+														}}
+													>
+														<Upload className="mr-2 h-3 w-3" />
+														Deploy Template
+													</Button>
+												)}
+
+												{/* Unreachable instance → Test Connection */}
+												{errorTypes.has("UNREACHABLE_INSTANCE") && onTestConnection && (
+													<Button
+														variant="secondary"
+														size="sm"
+														onClick={onTestConnection}
+													>
+														<Plug className="mr-2 h-3 w-3" />
+														Test Connection
+													</Button>
+												)}
+
+												{/* User modifications blocking auto-sync → Manual sync options */}
+												{errorTypes.has("USER_MODIFICATIONS") && (
+													<>
+														{onSwitchToManualSync && (
+															<Button
+																variant="primary"
+																size="sm"
+																onClick={() => {
+																	onCancel();
+																	onSwitchToManualSync();
+																}}
+															>
+																<RefreshCw className="mr-2 h-3 w-3" />
+																Switch to Manual Sync
+															</Button>
+														)}
+														{onViewChanges && (
+															<Button
+																variant="secondary"
+																size="sm"
+																onClick={onViewChanges}
+															>
+																<Eye className="mr-2 h-3 w-3" />
+																View Changes
+															</Button>
+														)}
+													</>
+												)}
+
+												{/* Generic retry button */}
 												<Button
 													variant="secondary"
 													size="sm"
@@ -335,9 +481,28 @@ export const SyncValidationModal = ({
 													<RefreshCw
 														className={`mr-2 h-3 w-3 ${isValidating ? "animate-spin" : ""}`}
 													/>
-													Retry Validation
+													{retryCount > 0
+														? `Retry (${retryCount}/${MAX_RETRIES})`
+														: "Retry Validation"}
 												</Button>
 											</div>
+
+											{/* Helpful hints based on error types */}
+											{errorTypes.has("MISSING_MAPPING") && (
+												<p className="mt-3 text-xs text-red-300/70">
+													This template needs to be deployed to the instance before syncing.
+												</p>
+											)}
+											{errorTypes.has("USER_MODIFICATIONS") && (
+												<p className="mt-3 text-xs text-red-300/70">
+													Auto-sync is disabled for templates with local modifications to protect your changes.
+												</p>
+											)}
+											{errorTypes.has("UNREACHABLE_INSTANCE") && (
+												<p className="mt-3 text-xs text-red-300/70">
+													Check that the instance is running and the URL/API key are correct.
+												</p>
+											)}
 										</div>
 									</div>
 								</div>
@@ -529,9 +694,22 @@ export const SyncValidationModal = ({
 											</span>
 										</div>
 										<div className="grid grid-cols-2 gap-2">
-											<span className="text-purple-400">Retry Count:</span>
+											<span className="text-purple-400">Manual Retry Count:</span>
 											<span className="text-purple-200">{retryCount} / {MAX_RETRIES}</span>
 										</div>
+										<div className="grid grid-cols-2 gap-2">
+											<span className="text-purple-400">Auto Retry Max:</span>
+											<span className="text-purple-200">{MAX_RETRY_ATTEMPTS}</span>
+										</div>
+										{retryProgress && (
+											<div className="grid grid-cols-2 gap-2">
+												<span className="text-purple-400">Auto Retry Progress:</span>
+												<span className="text-purple-200">
+													Attempt {retryProgress.attempt}/{retryProgress.maxAttempts}
+													{retryProgress.isWaiting ? ` (waiting ${retryProgress.delayMs}ms)` : ""}
+												</span>
+											</div>
+										)}
 										{timing.startTime > 0 && (
 											<>
 												<div className="grid grid-cols-2 gap-2">

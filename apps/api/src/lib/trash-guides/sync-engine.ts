@@ -378,8 +378,27 @@ export class SyncEngine {
 			);
 		}
 
+		// Determine if validation passed
+		const isValid = errors.length === 0;
+
+		// SAFETY CHECK: Detect and handle silent failures
+		// If we're about to return valid=false but have no errors, something went wrong
+		// Add a generic fallback error to ensure the user gets feedback
+		if (!isValid && errors.length === 0) {
+			console.warn(
+				`[SyncEngine] SILENT FAILURE DETECTED - validation failed with no errors. ` +
+					`templateId: ${options.templateId}, instanceId: ${options.instanceId}, userId: ${options.userId}`,
+			);
+
+			// Add a generic fallback error so the UI can display something meaningful
+			errors.push(
+				"Validation failed due to an unexpected error. Please try again. " +
+					"If the problem persists, check your instance connectivity and template configuration.",
+			);
+		}
+
 		return {
-			valid: errors.length === 0,
+			valid: isValid,
 			conflicts,
 			errors,
 			warnings,
