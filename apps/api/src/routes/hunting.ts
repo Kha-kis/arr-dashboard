@@ -85,7 +85,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
+		if (!request.currentUser?.id) {
 			return reply.status(401).send({
 				success: false,
 				error: "Authentication required",
@@ -361,11 +361,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 	// Current architecture: Single-admin (authenticated user IS the admin).
 	// Future multi-user: Add role check here (e.g., request.currentUser.role === 'admin').
 	app.post("/hunting/scheduler/toggle", async (request, reply) => {
-		// Explicit auth check for clarity (also enforced by plugin preHandler)
-		if (!request.currentUser!.id) {
-			return reply.status(401).send({ error: "Authentication required" });
-		}
-
+		// Note: Authentication is enforced by the plugin preHandler.
 		// In single-admin architecture, any authenticated user can control the scheduler.
 		// For multi-user support, add role-based check here:
 		// if (request.currentUser.role !== 'admin') {

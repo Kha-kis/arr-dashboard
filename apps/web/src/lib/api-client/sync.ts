@@ -126,13 +126,17 @@ export interface RollbackResult {
 
 /**
  * Validate sync before execution
+ * @param request - The sync validation request
+ * @param options - Optional fetch options (e.g., AbortSignal for timeout)
  */
 export async function validateSync(
 	request: SyncValidationRequest,
+	options?: { signal?: AbortSignal },
 ): Promise<ValidationResult> {
 	return await apiRequest<ValidationResult>("/api/trash-guides/sync/validate", {
 		method: "POST",
 		json: request,
+		signal: options?.signal,
 	});
 }
 
