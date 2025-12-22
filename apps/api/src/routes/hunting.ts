@@ -85,7 +85,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
+		if (!request.currentUser!.id) {
 			return reply.status(401).send({
 				success: false,
 				error: "Authentication required",
@@ -95,7 +95,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	// Get hunting status overview
 	app.get("/hunting/status", async (request, reply) => {
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 
 		// Get all instances with their hunt configs
 		const instances = await app.prisma.serviceInstance.findMany({
@@ -165,7 +165,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	// Get hunting configs for all instances
 	app.get("/hunting/configs", async (request, reply) => {
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 
 		const instances = await app.prisma.serviceInstance.findMany({
 			where: {
@@ -212,7 +212,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
 		}
 
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 		const { instanceId } = parsed.data;
 
 		// Verify instance ownership
@@ -258,7 +258,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
 		}
 
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 
 		// Verify instance ownership
 		const instance = await app.prisma.serviceInstance.findFirst({
@@ -290,7 +290,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	// Get hunt logs
 	app.get("/hunting/logs", async (request, reply) => {
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 		const query = request.query as {
 			type?: string;
 			status?: string;
@@ -362,7 +362,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 	// Future multi-user: Add role check here (e.g., request.currentUser.role === 'admin').
 	app.post("/hunting/scheduler/toggle", async (request, reply) => {
 		// Explicit auth check for clarity (also enforced by plugin preHandler)
-		if (!request.currentUser?.id) {
+		if (!request.currentUser!.id) {
 			return reply.status(401).send({ error: "Authentication required" });
 		}
 
@@ -390,7 +390,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 	app.post("/hunting/trigger/:instanceId", async (request, reply) => {
 		const { instanceId } = request.params as { instanceId: string };
 		const body = request.body as { type?: string };
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 
 		// Verify instance ownership
 		const instance = await app.prisma.serviceInstance.findFirst({
@@ -425,7 +425,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 	// Get filter options (tags, quality profiles) from an instance
 	app.get("/hunting/filter-options/:instanceId", async (request, reply) => {
 		const { instanceId } = request.params as { instanceId: string };
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 
 		// Verify instance ownership
 		const instance = await app.prisma.serviceInstance.findFirst({
@@ -506,7 +506,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 	app.get<{
 		Params: { instanceId: string };
 	}>("/hunting/history/:instanceId", async (request, reply) => {
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 		const { instanceId } = request.params;
 
 		// Verify instance belongs to user
@@ -576,7 +576,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 		Params: { instanceId: string };
 		Querystring: { huntType?: "missing" | "upgrade" };
 	}>("/hunting/history/:instanceId", async (request, reply) => {
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 		const { instanceId } = request.params;
 		const { huntType } = request.query;
 
@@ -610,7 +610,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 	// Cleanup old search history (scoped to current user's configs)
 	app.post("/hunting/history/cleanup", async (request, reply) => {
 		// Clean up entries older than 90 days for this user's configs only
-		const deleted = await cleanupOldSearchHistory(app.prisma, request.currentUser?.id, 90);
+		const deleted = await cleanupOldSearchHistory(app.prisma, request.currentUser!.id, 90);
 
 		return reply.send({
 			message: `Cleaned up ${deleted} old search history entries`,

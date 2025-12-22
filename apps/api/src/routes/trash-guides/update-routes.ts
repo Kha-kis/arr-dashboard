@@ -28,7 +28,7 @@ const syncTemplateSchema = z.object({
 export async function registerUpdateRoutes(app: FastifyInstance, opts: FastifyPluginOptions) {
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
+		if (!request.currentUser!.id) {
 			return reply.status(401).send({
 				success: false,
 				error: "Authentication required",
@@ -55,7 +55,7 @@ export async function registerUpdateRoutes(app: FastifyInstance, opts: FastifyPl
 	 */
 	app.get("/", async (request, reply) => {
 		try {
-			const updateCheck = await templateUpdater.checkForUpdates(request.currentUser?.id);
+			const updateCheck = await templateUpdater.checkForUpdates(request.currentUser!.id);
 
 			return reply.send({
 				success: true,
@@ -85,7 +85,7 @@ export async function registerUpdateRoutes(app: FastifyInstance, opts: FastifyPl
 	 */
 	app.get("/attention", async (request, reply) => {
 		try {
-			const templates = await templateUpdater.getTemplatesNeedingAttention(request.currentUser?.id);
+			const templates = await templateUpdater.getTemplatesNeedingAttention(request.currentUser!.id);
 
 			return reply.send({
 				success: true,
@@ -178,7 +178,7 @@ export async function registerUpdateRoutes(app: FastifyInstance, opts: FastifyPl
 	 */
 	app.post("/process-auto", async (request, reply) => {
 		try {
-			const result = await templateUpdater.processAutoUpdates(request.currentUser?.id);
+			const result = await templateUpdater.processAutoUpdates(request.currentUser!.id);
 
 			return reply.send({
 				success: true,

@@ -53,7 +53,7 @@ const updateSettingsSchema = z.object({
 export async function registerSettingsRoutes(app: FastifyInstance, opts: FastifyPluginOptions) {
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
+		if (!request.currentUser!.id) {
 			return reply.status(401).send({
 				success: false,
 				error: "Authentication required",
@@ -68,7 +68,7 @@ export async function registerSettingsRoutes(app: FastifyInstance, opts: Fastify
 	 * Creates default settings if they don't exist.
 	 */
 	app.get("/", async (request: FastifyRequest, reply: FastifyReply) => {
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 
 		// Get or create settings
 		let settings = await app.prisma.trashSettings.findUnique({
@@ -110,7 +110,7 @@ export async function registerSettingsRoutes(app: FastifyInstance, opts: Fastify
 	 * Update the current user's TRaSH Guides settings.
 	 */
 	app.patch("/", async (request: FastifyRequest, reply: FastifyReply) => {
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 
 		// Validate request body
 		const parseResult = updateSettingsSchema.safeParse(request.body);
@@ -146,7 +146,7 @@ export async function registerSettingsRoutes(app: FastifyInstance, opts: Fastify
 	 * Useful for monitoring backup retention and cleanup effectiveness.
 	 */
 	app.get("/backup-stats", async (request: FastifyRequest, reply: FastifyReply) => {
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 
 		// Get user's settings
 		const settings = await app.prisma.trashSettings.findUnique({
