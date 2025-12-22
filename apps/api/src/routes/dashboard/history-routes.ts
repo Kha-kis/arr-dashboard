@@ -67,7 +67,7 @@ export const historyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					endDate,
 				);
 				const enriched = items.map((item: unknown) => ({
-					...item as Record<string, unknown>,
+					...(item as Record<string, unknown>),
 					instanceId: instance.id,
 					instanceName: instance.label,
 				}));

@@ -6,12 +6,15 @@
 
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
-import { createUpdateScheduler, type UpdateScheduler } from "../lib/trash-guides/update-scheduler.js";
-import { createVersionTracker } from "../lib/trash-guides/version-tracker.js";
 import { createCacheManager } from "../lib/trash-guides/cache-manager.js";
-import { createTemplateUpdater } from "../lib/trash-guides/template-updater.js";
-import { createTrashFetcher } from "../lib/trash-guides/github-fetcher.js";
 import { createDeploymentExecutorService } from "../lib/trash-guides/deployment-executor.js";
+import { createTrashFetcher } from "../lib/trash-guides/github-fetcher.js";
+import { createTemplateUpdater } from "../lib/trash-guides/template-updater.js";
+import {
+	type UpdateScheduler,
+	createUpdateScheduler,
+} from "../lib/trash-guides/update-scheduler.js";
+import { createVersionTracker } from "../lib/trash-guides/version-tracker.js";
 
 declare module "fastify" {
 	interface FastifyInstance {

@@ -110,11 +110,7 @@ export class ArrApiClient {
 	/**
 	 * Make API request to Radarr/Sonarr
 	 */
-	private async request<T>(
-		method: string,
-		endpoint: string,
-		body?: unknown,
-	): Promise<T> {
+	private async request<T>(method: string, endpoint: string, body?: unknown): Promise<T> {
 		const url = `${this.baseUrl}/api/v3/${endpoint}`;
 
 		const headers: Record<string, string> = {
@@ -223,15 +219,8 @@ export class ArrApiClient {
 	/**
 	 * Update existing Custom Format
 	 */
-	async updateCustomFormat(
-		id: number,
-		format: CustomFormat,
-	): Promise<CustomFormat> {
-		return await this.request<CustomFormat>(
-			"PUT",
-			`customformat/${id}`,
-			format,
-		);
+	async updateCustomFormat(id: number, format: CustomFormat): Promise<CustomFormat> {
+		return await this.request<CustomFormat>("PUT", `customformat/${id}`, format);
 	}
 
 	/**
@@ -271,14 +260,15 @@ export class ArrApiClient {
 	/**
 	 * Create Quality Profile
 	 */
-	async createQualityProfile(
-		profile: Omit<QualityProfile, "id">,
-	): Promise<QualityProfile> {
+	async createQualityProfile(profile: Omit<QualityProfile, "id">): Promise<QualityProfile> {
 		try {
 			const result = await this.request<QualityProfile>("POST", "qualityprofile", profile);
 			return result;
 		} catch (error) {
-			console.error("[ARR-API] Quality profile creation failed:", error instanceof Error ? error.message : "Unknown error");
+			console.error(
+				"[ARR-API] Quality profile creation failed:",
+				error instanceof Error ? error.message : "Unknown error",
+			);
 			throw error;
 		}
 	}
@@ -286,15 +276,8 @@ export class ArrApiClient {
 	/**
 	 * Update Quality Profile
 	 */
-	async updateQualityProfile(
-		id: number,
-		profile: QualityProfile,
-	): Promise<QualityProfile> {
-		return await this.request<QualityProfile>(
-			"PUT",
-			`qualityprofile/${id}`,
-			profile,
-		);
+	async updateQualityProfile(id: number, profile: QualityProfile): Promise<QualityProfile> {
+		return await this.request<QualityProfile>("PUT", `qualityprofile/${id}`, profile);
 	}
 
 	/**

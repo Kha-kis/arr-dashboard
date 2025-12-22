@@ -1,10 +1,5 @@
-import type { FastifyInstance } from "fastify";
 import { webcrypto } from "node:crypto";
 import {
-	generateAuthenticationOptions,
-	generateRegistrationOptions,
-	verifyAuthenticationResponse,
-	verifyRegistrationResponse,
 	type AuthenticationResponseJSON,
 	type AuthenticatorTransportFuture,
 	type PublicKeyCredentialCreationOptionsJSON,
@@ -12,8 +7,13 @@ import {
 	type RegistrationResponseJSON,
 	type VerifiedAuthenticationResponse,
 	type VerifiedRegistrationResponse,
+	generateAuthenticationOptions,
+	generateRegistrationOptions,
+	verifyAuthenticationResponse,
+	verifyRegistrationResponse,
 } from "@simplewebauthn/server";
 import { isoBase64URL } from "@simplewebauthn/server/helpers";
+import type { FastifyInstance } from "fastify";
 
 /**
  * Verify that a crypto implementation has the required Web Crypto API methods.
@@ -50,7 +50,7 @@ function hasRequiredCryptoMethods(cryptoImpl: unknown): cryptoImpl is Crypto {
 
 /**
  * Polyfill WebCrypto for Node.js < 19
- * 
+ *
  * Safely checks for existing crypto implementation and verifies compatibility
  * before using webcrypto as a fallback. This prevents runtime errors from
  * incomplete or incompatible crypto implementations.
@@ -64,7 +64,7 @@ if (!hasRequiredCryptoMethods(globalThis.crypto)) {
 		// But we provide a clear error message if it does
 		throw new Error(
 			"Web Crypto API is not available. This application requires Node.js 15+ with Web Crypto API support. " +
-			"Please upgrade to Node.js 19+ for native support, or ensure webcrypto is available in your Node.js version.",
+				"Please upgrade to Node.js 19+ for native support, or ensure webcrypto is available in your Node.js version.",
 		);
 	}
 }

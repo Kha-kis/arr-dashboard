@@ -37,7 +37,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			const history = await app.prisma.templateDeploymentHistory.findMany({
 				where: {
 					template: {
-						userId: request.currentUser?.id,
+						userId: request.currentUser!.id, // preHandler guarantees authentication
 					},
 				},
 				include: {
@@ -67,7 +67,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			const total = await app.prisma.templateDeploymentHistory.count({
 				where: {
 					template: {
-						userId: request.currentUser?.id,
+						userId: request.currentUser!.id, // preHandler guarantees authentication
 					},
 				},
 			});
@@ -111,7 +111,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			const template = await app.prisma.trashTemplate.findFirst({
 				where: {
 					id: templateId,
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id, // preHandler guarantees authentication
 				},
 			});
 
@@ -188,7 +188,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			const instance = await app.prisma.serviceInstance.findFirst({
 				where: {
 					id: instanceId,
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id, // preHandler guarantees authentication
 				},
 			});
 
@@ -263,9 +263,9 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			// Including userId ensures non-owned histories return null,
 			// preventing enumeration attacks (all non-owned histories return 404).
 			const history = await app.prisma.templateDeploymentHistory.findFirst({
-				where: { 
+				where: {
 					id: historyId,
-					userId 
+					userId,
 				},
 				include: {
 					instance: {
@@ -344,32 +344,32 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 		try {
 			const { historyId } = request.params;
 
-		const userId = request.currentUser!.id; // preHandler guarantees authentication
-		
-		// Get deployment history - verify ownership by including userId in where clause.
-		// Including userId ensures non-owned histories return null,
-		// preventing enumeration attacks (all non-owned histories return 404).
-		const history = await app.prisma.templateDeploymentHistory.findFirst({
-			where: { 
-				id: historyId,
-				userId 
-			},
-			include: {
-				template: {
-					select: {
-						userId: true,
+			const userId = request.currentUser!.id; // preHandler guarantees authentication
+
+			// Get deployment history - verify ownership by including userId in where clause.
+			// Including userId ensures non-owned histories return null,
+			// preventing enumeration attacks (all non-owned histories return 404).
+			const history = await app.prisma.templateDeploymentHistory.findFirst({
+				where: {
+					id: historyId,
+					userId,
+				},
+				include: {
+					template: {
+						select: {
+							userId: true,
+						},
 					},
 				},
-			},
-		});
-
-		if (!history) {
-			return reply.status(404).send({
-				statusCode: 404,
-				error: "NotFound",
-				message: "Deployment history not found",
 			});
-		}
+
+			if (!history) {
+				return reply.status(404).send({
+					statusCode: 404,
+					error: "NotFound",
+					message: "Deployment history not found",
+				});
+			}
 
 			// Delete the deployment history entry
 			// Note: Associated backup will be cascade deleted if configured, otherwise it remains
@@ -407,9 +407,9 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			// Including userId ensures non-owned histories return null,
 			// preventing enumeration attacks (all non-owned histories return 404).
 			const history = await app.prisma.templateDeploymentHistory.findFirst({
-				where: { 
+				where: {
 					id: historyId,
-					userId 
+					userId,
 				},
 				include: {
 					instance: true,
@@ -575,7 +575,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 						data: {
 							rolledBack: true,
 							rolledBackAt: now,
-							rolledBackBy: request.currentUser?.id,
+							rolledBackBy: request.currentUser!.id,
 							errors: JSON.stringify({
 								undeploySucceeded: true,
 								deletedCFs,
@@ -636,7 +636,8 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 				return reply.status(207).send({
 					success: false,
 					message: `Deleted ${deletedCFs.length} Custom Format(s) but failed to update database. Manual cleanup may be required.`,
-					warning: "Database state may not reflect actual changes. Please verify and retry if needed.",
+					warning:
+						"Database state may not reflect actual changes. Please verify and retry if needed.",
 					data: responseData,
 				});
 			}

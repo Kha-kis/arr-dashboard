@@ -1,5 +1,5 @@
-import type { FastifyPluginCallback } from "fastify";
 import { randomBytes } from "node:crypto";
+import type { FastifyPluginCallback } from "fastify";
 import * as oauth from "oauth4webapi";
 import { z } from "zod";
 import { OIDCProvider } from "../lib/auth/oidc-provider.js";
@@ -16,14 +16,17 @@ interface OIDCStateData {
 const oidcStateStore = new Map<string, OIDCStateData>();
 
 // Clean up expired states every 5 minutes
-setInterval(() => {
-	const now = Date.now();
-	for (const [state, data] of oidcStateStore.entries()) {
-		if (data.expiresAt < now) {
-			oidcStateStore.delete(state);
+setInterval(
+	() => {
+		const now = Date.now();
+		for (const [state, data] of oidcStateStore.entries()) {
+			if (data.expiresAt < now) {
+				oidcStateStore.delete(state);
+			}
 		}
-	}
-}, 5 * 60 * 1000);
+	},
+	5 * 60 * 1000,
+);
 
 const oidcCallbackSchema = z.object({
 	code: z.string(),
@@ -54,7 +57,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		});
 
 		return reply.send({
-			provider: dbProvider ? { displayName: dbProvider.displayName, enabled: true } : null
+			provider: dbProvider ? { displayName: dbProvider.displayName, enabled: true } : null,
 		});
 	});
 
@@ -65,7 +68,9 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	app.post("/oidc/setup", async (request, reply) => {
 		const parsed = oidcSetupSchema.safeParse(request.body);
 		if (!parsed.success) {
-			return reply.status(400).send({ error: "Invalid OIDC configuration", details: parsed.error.flatten() });
+			return reply
+				.status(400)
+				.send({ error: "Invalid OIDC configuration", details: parsed.error.flatten() });
 		}
 
 		const { displayName, clientId, clientSecret, issuer, scopes } = parsed.data;
@@ -74,8 +79,8 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		// Use the request origin to detect the correct URL (works in Docker/proxy environments)
 		let redirectUri = parsed.data.redirectUri;
 		if (!redirectUri) {
-			const protocol = request.headers['x-forwarded-proto'] || request.protocol;
-			const host = request.headers['x-forwarded-host'] || request.headers.host || 'localhost:3000';
+			const protocol = request.headers["x-forwarded-proto"] || request.protocol;
+			const host = request.headers["x-forwarded-host"] || request.headers.host || "localhost:3000";
 			redirectUri = `${protocol}://${host}/auth/oidc/callback`;
 			request.log.info({ redirectUri, protocol, host }, "Auto-generated redirect URI from request");
 		}
@@ -98,7 +103,8 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				}
 
 				// Encrypt client secret
-				const { value: encryptedClientSecret, iv: clientSecretIv } = app.encryptor.encrypt(clientSecret);
+				const { value: encryptedClientSecret, iv: clientSecretIv } =
+					app.encryptor.encrypt(clientSecret);
 
 				// Create OIDC provider atomically
 				return await tx.oIDCProvider.create({
@@ -124,7 +130,8 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			const errorMessage = error instanceof Error ? error.message : String(error);
 			if (errorMessage === "SETUP_CLOSED") {
 				return reply.status(403).send({
-					error: "OIDC setup is only allowed during initial setup. Use the admin panel to configure OIDC providers.",
+					error:
+						"OIDC setup is only allowed during initial setup. Use the admin panel to configure OIDC providers.",
 				});
 			}
 			if (errorMessage === "PROVIDER_EXISTS") {
@@ -179,7 +186,10 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		try {
 			const authorizationUrl = await oidcProvider.getAuthorizationUrl(state, nonce, codeChallenge);
-			request.log.info({ authorizationUrl, redirectUri: dbProvider.redirectUri }, "Generated OIDC authorization URL");
+			request.log.info(
+				{ authorizationUrl, redirectUri: dbProvider.redirectUri },
+				"Generated OIDC authorization URL",
+			);
 			return reply.send({ authorizationUrl });
 		} catch (error) {
 			request.log.error({ err: error }, "Failed to generate OIDC authorization URL");
@@ -193,22 +203,33 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.get("/oidc/callback", async (request, reply) => {
 		const queryParams = request.query as Record<string, unknown>;
-		request.log.info({ hasCode: "code" in queryParams, url: request.url }, "OIDC callback received");
+		request.log.info(
+			{ hasCode: "code" in queryParams, url: request.url },
+			"OIDC callback received",
+		);
 
 		// Check if OIDC provider returned an error
 		if (queryParams.error) {
-			const errorDescription = queryParams.error_description || 'Unknown error';
-			request.log.error({ error: queryParams.error, description: errorDescription }, "OIDC provider returned error");
+			const errorDescription = queryParams.error_description || "Unknown error";
+			request.log.error(
+				{ error: queryParams.error, description: errorDescription },
+				"OIDC provider returned error",
+			);
 			return reply.status(400).send({
 				error: `Authentication failed: ${queryParams.error}`,
-				details: errorDescription
+				details: errorDescription,
 			});
 		}
 
 		const parsed = oidcCallbackSchema.safeParse(request.query);
 		if (!parsed.success) {
-			request.log.error({ errors: parsed.error.flatten(), query: request.query }, "Invalid callback parameters");
-			return reply.status(400).send({ error: "Invalid callback parameters", details: parsed.error.flatten() });
+			request.log.error(
+				{ errors: parsed.error.flatten(), query: request.query },
+				"Invalid callback parameters",
+			);
+			return reply
+				.status(400)
+				.send({ error: "Invalid callback parameters", details: parsed.error.flatten() });
 		}
 
 		const { code, state } = parsed.data;
@@ -220,8 +241,13 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			if (storedState) {
 				oidcStateStore.delete(state);
 			}
-			request.log.error({ state, expired: storedState ? storedState.expiresAt < Date.now() : false }, "Invalid or expired OIDC state");
-			return reply.status(400).send({ error: "Invalid or expired state. Please try logging in again." });
+			request.log.error(
+				{ state, expired: storedState ? storedState.expiresAt < Date.now() : false },
+				"Invalid or expired OIDC state",
+			);
+			return reply
+				.status(400)
+				.send({ error: "Invalid or expired state. Please try logging in again." });
 		}
 
 		// Remove state to prevent replay attacks
@@ -269,7 +295,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				dbProvider.redirectUri,
 				state,
 				storedState.nonce,
-				storedState.codeVerifier
+				storedState.codeVerifier,
 			);
 
 			if (!tokenResponse.access_token) {
@@ -357,7 +383,8 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 						if (error instanceof Error && error.message === "SETUP_COMPLETE") {
 							// Setup already completed by concurrent request
 							return reply.status(401).send({
-								error: "Cannot link OIDC account without authentication. Please log in first and add OIDC from settings.",
+								error:
+									"Cannot link OIDC account without authentication. Please log in first and add OIDC from settings.",
 							});
 						}
 						throw error;
@@ -370,12 +397,18 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			app.sessionService.attachCookie(reply, session.token, true);
 
 			// Redirect to root - Next.js middleware will redirect to dashboard if authenticated
-			request.log.info({ userId: user.id, username: user.username }, "OIDC authentication successful, redirecting to root");
+			request.log.info(
+				{ userId: user.id, username: user.username },
+				"OIDC authentication successful, redirecting to root",
+			);
 			return reply.redirect("/", 302);
 		} catch (error: unknown) {
 			const errMsg = error instanceof Error ? error.message : String(error);
 			const errStack = error instanceof Error ? error.stack : undefined;
-			request.log.error({ err: error, errorMessage: errMsg, errorStack: errStack }, "OIDC callback failed");
+			request.log.error(
+				{ err: error, errorMessage: errMsg, errorStack: errStack },
+				"OIDC callback failed",
+			);
 
 			// Return more specific error messages
 			let errorMessage = "OIDC authentication failed";
@@ -391,7 +424,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			return reply.status(500).send({
 				error: errorMessage,
-				details: errMsg
+				details: errMsg,
 			});
 		}
 	});

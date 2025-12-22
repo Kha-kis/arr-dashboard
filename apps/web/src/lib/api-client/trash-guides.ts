@@ -494,6 +494,10 @@ export type TemplateUpdateInfo = {
 	autoSyncInstanceCount: number;
 	canAutoSync: boolean;
 	serviceType: "RADARR" | "SONARR";
+	/** True if this template was recently auto-synced (is current, not pending) */
+	isRecentlyAutoSynced?: boolean;
+	/** Timestamp of the last auto-sync, if isRecentlyAutoSynced is true */
+	lastAutoSyncTimestamp?: string;
 };
 
 export type CommitInfo = {
@@ -745,6 +749,14 @@ export type TemplateDiffResult = {
 	hasUserModifications: boolean;
 	suggestedAdditions?: SuggestedCFAddition[];
 	suggestedScoreChanges?: SuggestedScoreChange[];
+	/**
+	 * True when the template is already at the target version and
+	 * the diff was reconstructed from historical changelog data.
+	 * Frontend can use this to show "Recently Applied Changes" instead of "Pending Changes".
+	 */
+	isHistorical?: boolean;
+	/** Timestamp of the historical sync, if isHistorical is true */
+	historicalSyncTimestamp?: string;
 };
 
 export type TemplateDiffResponse = {

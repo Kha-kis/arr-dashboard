@@ -5,10 +5,10 @@
  * These tests require database access and are skipped unless TEST_DB=true.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { PrismaClient } from "@prisma/client";
-import { TrashCacheManager } from "../cache-manager.js";
 import type { TrashConfigType } from "@arr/shared";
+import { PrismaClient } from "@prisma/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { TrashCacheManager } from "../cache-manager.js";
 
 // Check if we should run integration tests (requires writable test database)
 const RUN_DB_TESTS = process.env.TEST_DB === "true";
@@ -57,7 +57,10 @@ const RUN_DB_TESTS = process.env.TEST_DB === "true";
 
 		it("should update existing cache entry", async () => {
 			const initialData = [{ id: "1", name: "Initial" }];
-			const updatedData = [{ id: "1", name: "Updated" }, { id: "2", name: "New" }];
+			const updatedData = [
+				{ id: "1", name: "Updated" },
+				{ id: "2", name: "New" },
+			];
 
 			await cacheManager.set("RADARR", "CUSTOM_FORMATS", initialData);
 			await cacheManager.set("RADARR", "CUSTOM_FORMATS", updatedData);

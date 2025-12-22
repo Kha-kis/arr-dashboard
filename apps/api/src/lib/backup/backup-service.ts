@@ -1,8 +1,26 @@
+/**
+ * Backup Service
+ *
+ * Manages encrypted database backups with password-based encryption.
+ * Uses PBKDF2 for key derivation and AES-256-GCM for encryption.
+ *
+ * Features:
+ * - Manual, scheduled, and auto-update backups
+ * - Password-based encryption with configurable password
+ * - Restore with validation and rollback capability
+ * - Size limits to prevent memory exhaustion
+ */
+
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import type {
+	BackupData,
+	BackupFileInfo,
+	BackupFileInfoInternal,
+	BackupMetadata,
+} from "@arr/shared";
 import type { Prisma, PrismaClient } from "@prisma/client";
-import type { BackupData, BackupFileInfo, BackupFileInfoInternal, BackupMetadata } from "@arr/shared";
 import type { Encryptor } from "../auth/encryption.js";
 
 const BACKUP_VERSION = "1.0";
@@ -32,12 +50,22 @@ interface EncryptedBackupEnvelope {
 	cipherText: string; // Base64-encoded encrypted backup data
 }
 
+/**
+ * Service for creating and restoring encrypted database backups.
+ * Supports manual, scheduled, and auto-update backup types.
+ */
 export class BackupService {
 	private backupsDir: string;
 	// In-memory cache to reduce file system contention for dev password
 	private devPasswordCache: string | null = null;
 	private devPasswordPromise: Promise<string> | null = null;
 
+	/**
+	 * Create a new BackupService instance
+	 * @param prisma - Prisma client for database operations
+	 * @param secretsPath - Path to the secrets file (backups stored alongside)
+	 * @param encryptor - Optional encryptor for decrypting API keys
+	 */
 	constructor(
 		private prisma: PrismaClient,
 		private secretsPath: string,
@@ -71,7 +99,10 @@ export class BackupService {
 					});
 				} catch (error) {
 					// Log error but continue to fallback - decryption failure shouldn't block backups
-					console.error("Failed to decrypt backup password from database, falling back to env var:", error);
+					console.error(
+						"Failed to decrypt backup password from database, falling back to env var:",
+						error,
+					);
 				}
 			}
 		}
@@ -86,7 +117,7 @@ export class BackupService {
 		const isProduction = process.env.NODE_ENV === "production";
 		if (isProduction) {
 			throw new Error(
-				"Backup password not configured. Set a backup password in Settings > Backup or set the BACKUP_PASSWORD environment variable."
+				"Backup password not configured. Set a backup password in Settings > Backup or set the BACKUP_PASSWORD environment variable.",
 			);
 		}
 
@@ -160,7 +191,9 @@ export class BackupService {
 						console.warn("Found existing backupPassword in invalid JSON, preserving it");
 						return backupPasswordMatch[1];
 					}
-					console.warn("Could not salvage backupPassword; existing backups may become inaccessible");
+					console.warn(
+						"Could not salvage backupPassword; existing backups may become inaccessible",
+					);
 					// Proceed with write
 				} else {
 					// Unexpected error (e.g., EACCES permission denied), re-throw
@@ -174,7 +207,7 @@ export class BackupService {
 			const tempPath = `${this.secretsPath}.tmp`;
 			await fs.writeFile(tempPath, JSON.stringify(updatedSecrets, null, 2), {
 				encoding: "utf-8",
-				mode: 0o600
+				mode: 0o600,
 			});
 			await fs.rename(tempPath, this.secretsPath);
 			await fs.chmod(this.secretsPath, 0o600);
@@ -195,24 +228,37 @@ export class BackupService {
 					await fs.writeFile(this.secretsPath, JSON.stringify(secrets, null, 2), {
 						encoding: "utf-8",
 						mode: 0o600,
-						flag: "wx"
+						flag: "wx",
 					});
 					await fs.chmod(this.secretsPath, 0o600);
 
 					return newPassword;
 				} catch (writeError) {
 					// If write failed because file now exists (race condition), read and return existing password
-					if (writeError && typeof writeError === "object" && "code" in writeError && writeError.code === "EEXIST") {
+					if (
+						writeError &&
+						typeof writeError === "object" &&
+						"code" in writeError &&
+						writeError.code === "EEXIST"
+					) {
 						try {
 							const existingContent = await fs.readFile(this.secretsPath, "utf-8");
 							const existingSecrets = JSON.parse(existingContent);
-							if (existingSecrets.backupPassword && typeof existingSecrets.backupPassword === "string") {
+							if (
+								existingSecrets.backupPassword &&
+								typeof existingSecrets.backupPassword === "string"
+							) {
 								return existingSecrets.backupPassword;
 							}
 						} catch (readError) {
 							// Only fall through to original error if read failed due to expected reasons
 							// Re-throw if it's an unexpected error (e.g., permission denied)
-							if (readError && typeof readError === "object" && "code" in readError && readError.code === "ENOENT") {
+							if (
+								readError &&
+								typeof readError === "object" &&
+								"code" in readError &&
+								readError.code === "ENOENT"
+							) {
 								// File was deleted between EEXIST and read, fall through to original error
 							} else if (readError instanceof SyntaxError) {
 								// File exists but has invalid JSON, fall through to original error
@@ -406,9 +452,10 @@ export class BackupService {
 			const message = `Backup size estimate (${estimatedSizeMB.toFixed(2)} MB) exceeds recommended limit (${RECOMMENDED_MAX_BACKUP_SIZE_MB} MB). This may cause memory issues or timeouts. Consider implementing backup streaming or pruning old data.`;
 			console.error(message);
 			throw new Error(message);
-		} else if (estimatedSizeMB > WARNING_BACKUP_SIZE_MB) {
+		}
+		if (estimatedSizeMB > WARNING_BACKUP_SIZE_MB) {
 			console.warn(
-				`Backup size estimate (${estimatedSizeMB.toFixed(2)} MB) is large. Consider monitoring memory usage and implementing streaming for larger datasets.`
+				`Backup size estimate (${estimatedSizeMB.toFixed(2)} MB) is large. Consider monitoring memory usage and implementing streaming for larger datasets.`,
 			);
 		}
 
@@ -440,7 +487,13 @@ export class BackupService {
 				break; // Success
 			} catch (error) {
 				// If file exists and we have retries left, add random suffix and retry
-				if (error && typeof error === "object" && "code" in error && error.code === "EEXIST" && attempt < 4) {
+				if (
+					error &&
+					typeof error === "object" &&
+					"code" in error &&
+					error.code === "EEXIST" &&
+					attempt < 4
+				) {
 					const suffix = crypto.randomBytes(4).toString("hex");
 					finalPath = backupPath.replace(".json", `-${suffix}.json`);
 					attempt++;
@@ -560,7 +613,10 @@ export class BackupService {
 	 * Check if a backup password is configured (either in database or env var)
 	 * Returns the source of the password configuration for UI display
 	 */
-	async getPasswordStatus(): Promise<{ configured: boolean; source: "database" | "environment" | "none" }> {
+	async getPasswordStatus(): Promise<{
+		configured: boolean;
+		source: "database" | "environment" | "none";
+	}> {
 		// Check database first
 		if (this.encryptor) {
 			const settings = await this.prisma.backupSettings.findUnique({
@@ -642,7 +698,7 @@ export class BackupService {
 		const sizeMB = backup.size / (1024 * 1024);
 		if (sizeMB > MAX_RESTORE_SIZE_MB) {
 			throw new Error(
-				`Backup file too large (${sizeMB.toFixed(1)} MB). Maximum allowed: ${MAX_RESTORE_SIZE_MB} MB`
+				`Backup file too large (${sizeMB.toFixed(1)} MB). Maximum allowed: ${MAX_RESTORE_SIZE_MB} MB`,
 			);
 		}
 
@@ -788,7 +844,10 @@ export class BackupService {
 					});
 				} catch (rollbackError) {
 					// Log rollback failure but throw original error
-					console.error("CRITICAL: Failed to rollback secrets after restore failure:", rollbackError);
+					console.error(
+						"CRITICAL: Failed to rollback secrets after restore failure:",
+						rollbackError,
+					);
 				}
 			}
 
@@ -887,10 +946,7 @@ export class BackupService {
 					// Only include backups from the last 7 days
 					createdAt: { gte: sevenDaysAgo },
 					// Only include non-expired backups (expiresAt is null OR in the future)
-					OR: [
-						{ expiresAt: null },
-						{ expiresAt: { gt: new Date() } },
-					],
+					OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
 				},
 			});
 		}
@@ -1028,7 +1084,11 @@ export class BackupService {
 
 			// WebAuthn credentials (depend on users)
 			if (data.webAuthnCredentials.length > 0) {
-				this.validateRecords(data.webAuthnCredentials, "webAuthnCredential", ["id", "userId", "publicKey"]);
+				this.validateRecords(data.webAuthnCredentials, "webAuthnCredential", [
+					"id",
+					"userId",
+					"publicKey",
+				]);
 				await tx.webAuthnCredential.createMany({
 					data: data.webAuthnCredentials as Prisma.WebAuthnCredentialCreateManyInput[],
 				});
@@ -1038,7 +1098,11 @@ export class BackupService {
 
 			// Service instances (depend on users)
 			if (data.serviceInstances.length > 0) {
-				this.validateRecords(data.serviceInstances, "serviceInstance", ["id", "service", "baseUrl"]);
+				this.validateRecords(data.serviceInstances, "serviceInstance", [
+					"id",
+					"service",
+					"baseUrl",
+				]);
 				await tx.serviceInstance.createMany({
 					data: data.serviceInstances as Prisma.ServiceInstanceCreateManyInput[],
 				});
@@ -1054,7 +1118,10 @@ export class BackupService {
 
 			// Service instance tags (depend on instances and tags)
 			if (data.serviceInstanceTags.length > 0) {
-				this.validateRecords(data.serviceInstanceTags, "serviceInstanceTag", ["instanceId", "tagId"]);
+				this.validateRecords(data.serviceInstanceTags, "serviceInstanceTag", [
+					"instanceId",
+					"tagId",
+				]);
 				await tx.serviceInstanceTag.createMany({
 					data: data.serviceInstanceTags as Prisma.ServiceInstanceTagCreateManyInput[],
 				});
@@ -1106,7 +1173,11 @@ export class BackupService {
 
 			// Template quality profile mappings (depend on templates, instances)
 			if (data.templateQualityProfileMappings && data.templateQualityProfileMappings.length > 0) {
-				this.validateRecords(data.templateQualityProfileMappings, "templateQualityProfileMapping", ["id", "templateId", "instanceId"]);
+				this.validateRecords(data.templateQualityProfileMappings, "templateQualityProfileMapping", [
+					"id",
+					"templateId",
+					"instanceId",
+				]);
 				await tx.templateQualityProfileMapping.createMany({
 					data: data.templateQualityProfileMappings as Prisma.TemplateQualityProfileMappingCreateManyInput[],
 				});
@@ -1114,7 +1185,11 @@ export class BackupService {
 
 			// Instance quality profile overrides (depend on instances)
 			if (data.instanceQualityProfileOverrides && data.instanceQualityProfileOverrides.length > 0) {
-				this.validateRecords(data.instanceQualityProfileOverrides, "instanceQualityProfileOverride", ["id", "instanceId"]);
+				this.validateRecords(
+					data.instanceQualityProfileOverrides,
+					"instanceQualityProfileOverride",
+					["id", "instanceId"],
+				);
 				await tx.instanceQualityProfileOverride.createMany({
 					data: data.instanceQualityProfileOverrides as Prisma.InstanceQualityProfileOverrideCreateManyInput[],
 				});
@@ -1122,7 +1197,11 @@ export class BackupService {
 
 			// Standalone CF deployments (depend on instances)
 			if (data.standaloneCFDeployments && data.standaloneCFDeployments.length > 0) {
-				this.validateRecords(data.standaloneCFDeployments, "standaloneCFDeployment", ["id", "instanceId", "cfTrashId"]);
+				this.validateRecords(data.standaloneCFDeployments, "standaloneCFDeployment", [
+					"id",
+					"instanceId",
+					"cfTrashId",
+				]);
 				await tx.standaloneCFDeployment.createMany({
 					data: data.standaloneCFDeployments as Prisma.StandaloneCFDeploymentCreateManyInput[],
 				});
@@ -1132,7 +1211,11 @@ export class BackupService {
 
 			// TRaSH sync history (depend on instances, templates, backups - optional FKs)
 			if (data.trashSyncHistory && data.trashSyncHistory.length > 0) {
-				this.validateRecords(data.trashSyncHistory, "trashSyncHistory", ["id", "instanceId", "userId"]);
+				this.validateRecords(data.trashSyncHistory, "trashSyncHistory", [
+					"id",
+					"instanceId",
+					"userId",
+				]);
 				await tx.trashSyncHistory.createMany({
 					data: data.trashSyncHistory as Prisma.TrashSyncHistoryCreateManyInput[],
 				});
@@ -1140,7 +1223,11 @@ export class BackupService {
 
 			// Template deployment history (depend on templates, instances, backups - optional FKs)
 			if (data.templateDeploymentHistory && data.templateDeploymentHistory.length > 0) {
-				this.validateRecords(data.templateDeploymentHistory, "templateDeploymentHistory", ["id", "templateId", "instanceId"]);
+				this.validateRecords(data.templateDeploymentHistory, "templateDeploymentHistory", [
+					"id",
+					"templateId",
+					"instanceId",
+				]);
 				await tx.templateDeploymentHistory.createMany({
 					data: data.templateDeploymentHistory as Prisma.TemplateDeploymentHistoryCreateManyInput[],
 				});
@@ -1189,7 +1276,9 @@ export class BackupService {
 			const recordObj = record as Record<string, unknown>;
 			for (const field of requiredFields) {
 				if (!(field in recordObj) || recordObj[field] === undefined) {
-					throw new Error(`Invalid ${entityType} record at index ${i}: missing required field '${field}'`);
+					throw new Error(
+						`Invalid ${entityType} record at index ${i}: missing required field '${field}'`,
+					);
 				}
 
 				// Basic type check: ensure field is a primitive (string, number, boolean) or Date
@@ -1197,7 +1286,7 @@ export class BackupService {
 				const value = recordObj[field];
 				if (value !== null && typeof value === "object" && !(value instanceof Date)) {
 					throw new Error(
-						`Invalid ${entityType} record at index ${i}: field '${field}' has unexpected type (expected primitive, got object)`
+						`Invalid ${entityType} record at index ${i}: field '${field}' has unexpected type (expected primitive, got object)`,
 					);
 				}
 			}
@@ -1304,8 +1393,7 @@ export class BackupService {
 		}
 
 		// Convert time portion: 13-27-36-897Z -> 13:27:36.897Z
-		const timeConverted = timePart
-			.replace(/-(\d{2})-(\d{2})-(\d{3}Z)/, ":$1:$2.$3"); // HH-MM-SS-MMMZ -> HH:MM:SS.MMMZ
+		const timeConverted = timePart.replace(/-(\d{2})-(\d{2})-(\d{3}Z)/, ":$1:$2.$3"); // HH-MM-SS-MMMZ -> HH:MM:SS.MMMZ
 
 		const isoTimestamp = `${datePart}T${timeConverted}`;
 
@@ -1401,5 +1489,4 @@ export class BackupService {
 			throw new Error("Invalid backup format: missing or invalid secrets");
 		}
 	}
-
 }

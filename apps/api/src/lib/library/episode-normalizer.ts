@@ -7,7 +7,10 @@ import { toBoolean, toNumber, toStringValue } from "./type-converters.js";
  * @param seriesId - The series ID this episode belongs to
  * @returns A normalized library episode
  */
-export const normalizeEpisode = (raw: Record<string, unknown>, seriesId: number): LibraryEpisode => {
+export const normalizeEpisode = (
+	raw: Record<string, unknown>,
+	seriesId: number,
+): LibraryEpisode => {
 	return {
 		id: toNumber(raw?.id) ?? 0,
 		seriesId,

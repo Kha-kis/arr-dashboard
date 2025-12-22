@@ -1,8 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 import type { FastifyBaseLogger } from "fastify";
-import path from "node:path";
-import { BackupService } from "./backup-service.js";
 import { getAppVersion } from "../utils/version.js";
+import { BackupService } from "./backup-service.js";
 
 const CHECK_INTERVAL_MS = 60 * 1000; // Check every minute
 
@@ -177,7 +176,10 @@ export class BackupScheduler {
 				for (const backup of backupsToDelete) {
 					try {
 						await this.backupService.deleteBackup(backup.id);
-						this.logger.debug({ backupId: backup.id, filename: backup.filename }, "Deleted old backup");
+						this.logger.debug(
+							{ backupId: backup.id, filename: backup.filename },
+							"Deleted old backup",
+						);
 					} catch (error) {
 						this.logger.error(
 							{ err: error, backupId: backup.id, filename: backup.filename },

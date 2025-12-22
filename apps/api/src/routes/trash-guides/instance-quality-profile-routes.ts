@@ -368,16 +368,15 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 			}
 
 			// Ensure this profile is actually mapped to the requested template
-			const templateMapping =
-				await request.server.prisma.templateQualityProfileMapping.findUnique({
-					where: {
-						instanceId_qualityProfileId: {
-							instanceId,
-							qualityProfileId: profileIdNum,
-						},
+			const templateMapping = await request.server.prisma.templateQualityProfileMapping.findUnique({
+				where: {
+					instanceId_qualityProfileId: {
+						instanceId,
+						qualityProfileId: profileIdNum,
 					},
-					include: { template: true },
-				});
+				},
+				include: { template: true },
+			});
 
 			if (!templateMapping || templateMapping.templateId !== templateId) {
 				return reply.status(400).send({
@@ -649,7 +648,9 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 				// Parse template config to get the template score for this custom format
 				let templateConfigReset: ParsedTemplateConfig;
 				try {
-					templateConfigReset = JSON.parse(templateMapping.template.configData) as ParsedTemplateConfig;
+					templateConfigReset = JSON.parse(
+						templateMapping.template.configData,
+					) as ParsedTemplateConfig;
 				} catch (parseError) {
 					return reply.status(500).send({
 						statusCode: 500,
@@ -658,7 +659,8 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 					});
 				}
 				const templateCf = templateConfigReset.customFormats?.find(
-					(cf: ParsedTemplateCustomFormat) => cf.originalConfig?._instanceCFId === customFormatIdNum,
+					(cf: ParsedTemplateCustomFormat) =>
+						cf.originalConfig?._instanceCFId === customFormatIdNum,
 				);
 
 				// Calculate the template score (if CF not in template, default to 0)

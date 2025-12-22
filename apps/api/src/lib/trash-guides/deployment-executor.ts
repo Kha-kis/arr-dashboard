@@ -8,6 +8,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { type ArrApiClient, createArrApiClient } from "./arr-api-client.js";
 import type { CustomFormat } from "./arr-api-client.js";
+import { transformFieldsToArray } from "./utils.js";
 
 // ============================================================================
 // Types
@@ -200,9 +201,9 @@ export class DeploymentExecutorService {
 
 		// Get instance with ownership verification
 		const instance = await this.prisma.serviceInstance.findFirst({
-			where: { 
-				id: instanceId, 
-				userId 
+			where: {
+				id: instanceId,
+				userId,
 			},
 		});
 
@@ -388,7 +389,7 @@ export class DeploymentExecutorService {
 					// Transform specifications: convert fields from object to array format
 					const specifications = (templateCF.originalConfig?.specifications || []).map(
 						(spec: any) => {
-							const transformedFields = this.transformFieldsToArray(spec.fields);
+							const transformedFields = transformFieldsToArray(spec.fields);
 							return {
 								...spec,
 								fields: transformedFields,
@@ -410,7 +411,7 @@ export class DeploymentExecutorService {
 					// Transform specifications: convert fields from object to array format
 					const specifications = (templateCF.originalConfig?.specifications || []).map(
 						(spec: any) => {
-							const transformedFields = this.transformFieldsToArray(spec.fields);
+							const transformedFields = transformFieldsToArray(spec.fields);
 							return {
 								...spec,
 								fields: transformedFields,
@@ -623,7 +624,11 @@ export class DeploymentExecutorService {
 					const sourceIdToNewId = new Map<number, number>(); // Maps source item IDs to new IDs
 
 					for (const sourceItem of clonedProfile.items || []) {
-						if (sourceItem.items && Array.isArray(sourceItem.items) && sourceItem.items.length > 0) {
+						if (
+							sourceItem.items &&
+							Array.isArray(sourceItem.items) &&
+							sourceItem.items.length > 0
+						) {
 							const groupQualities: any[] = [];
 							for (const subItem of sourceItem.items) {
 								let targetQuality = allAvailableQualities.get(subItem.id);
@@ -688,7 +693,8 @@ export class DeploymentExecutorService {
 						items: qualityItems,
 						minFormatScore: clonedProfile.minFormatScore ?? updatedProfile.minFormatScore,
 						cutoffFormatScore: clonedProfile.cutoffFormatScore ?? updatedProfile.cutoffFormatScore,
-						minUpgradeFormatScore: clonedProfile.minUpgradeFormatScore ?? updatedProfile.minUpgradeFormatScore,
+						minUpgradeFormatScore:
+							clonedProfile.minUpgradeFormatScore ?? updatedProfile.minUpgradeFormatScore,
 						...(clonedProfile.language && { language: clonedProfile.language }),
 					};
 				}
@@ -922,7 +928,9 @@ export class DeploymentExecutorService {
 			};
 
 			// Remove the id field if it exists (schema might include it)
-			const { id: _unusedId, ...profileWithoutId } = profileToCreate as { id?: number } & typeof profileToCreate;
+			const { id: _unusedId, ...profileWithoutId } = profileToCreate as {
+				id?: number;
+			} & typeof profileToCreate;
 
 			return await apiClient.createQualityProfile(profileWithoutId);
 		} catch (createError) {
@@ -1056,7 +1064,9 @@ export class DeploymentExecutorService {
 			if (qualityItems.length > 0) {
 				const lastItem = qualityItems[qualityItems.length - 1];
 				remappedCutoff = lastItem.id ?? lastItem.quality?.id ?? 1;
-				console.warn(`[DEPLOYMENT] Cutoff ID ${clonedProfile.cutoff} not found in remapped items, defaulting to: ${remappedCutoff}`);
+				console.warn(
+					`[DEPLOYMENT] Cutoff ID ${clonedProfile.cutoff} not found in remapped items, defaulting to: ${remappedCutoff}`,
+				);
 			}
 		}
 
@@ -1097,7 +1107,9 @@ export class DeploymentExecutorService {
 		};
 
 		// Remove the id field
-		const { id: _unusedId, ...profileWithoutId } = profileToCreate as { id?: number } & typeof profileToCreate;
+		const { id: _unusedId, ...profileWithoutId } = profileToCreate as {
+			id?: number;
+		} & typeof profileToCreate;
 
 		return await apiClient.createQualityProfile(profileWithoutId);
 	}
@@ -1449,34 +1461,6 @@ export class DeploymentExecutorService {
 		};
 	}
 
-	/**
-	 * Transform fields from TRaSH Guides object format to Radarr API array format
-	 * TRaSH format: { value: 5 }
-	 * Radarr format: [{ name: "value", value: 5 }]
-	 */
-	private transformFieldsToArray(fields: any): Array<{ name: string; value: unknown }> {
-		// If fields is already an array, return it as-is
-		if (Array.isArray(fields)) {
-			return fields;
-		}
-
-		// If fields is undefined or null, return empty array
-		if (!fields) {
-			return [];
-		}
-
-		// Convert object format to array format
-		const result = Object.entries(fields).map(([name, value]) => ({
-			name,
-			value,
-		}));
-		return result;
-	}
-
-	/**
-	 * Extract trash_id from Custom Format
-	 * Checks specifications for a field named "trash_id"
-	 */
 	/**
 	 * Extract trash_id from Custom Format specifications.
 	 * Returns null if no trash_id is found, allowing callers to distinguish

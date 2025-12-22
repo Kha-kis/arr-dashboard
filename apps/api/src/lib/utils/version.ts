@@ -17,10 +17,7 @@ export function getAppVersion(): string {
 	try {
 		// Priority 1: Check for version.json (created at Docker build time)
 		// This contains the monorepo root version extracted during docker build
-		const versionJsonPaths = [
-			"/app/api/version.json",
-			path.join(process.cwd(), "version.json"),
-		];
+		const versionJsonPaths = ["/app/api/version.json", path.join(process.cwd(), "version.json")];
 
 		for (const versionPath of versionJsonPaths) {
 			if (fs.existsSync(versionPath)) {

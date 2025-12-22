@@ -6,7 +6,12 @@
  */
 
 import type { PrismaClient } from "@prisma/client";
-import type { TemplateUpdater, SyncResult, TemplateUpdateInfo, ScoreConflict } from "./template-updater.js";
+import type {
+	ScoreConflict,
+	SyncResult,
+	TemplateUpdateInfo,
+	TemplateUpdater,
+} from "./template-updater.js";
 import type { VersionTracker } from "./version-tracker.js";
 
 // ============================================================================
@@ -132,7 +137,7 @@ export class UpdateScheduler {
 	 */
 	getStats(): SchedulerStats {
 		return {
-			...this.stats
+			...this.stats,
 		};
 	}
 
@@ -251,9 +256,7 @@ export class UpdateScheduler {
 
 					if (autoSyncResult.failed > 0) {
 						const failedResults = autoSyncResult.results.filter((r: SyncResult) => !r.success);
-						errors.push(
-							...failedResults.flatMap((r: SyncResult) => r.errors || []),
-						);
+						errors.push(...failedResults.flatMap((r: SyncResult) => r.errors || []));
 					}
 
 					// Create notifications for templates with score conflicts
@@ -263,28 +266,28 @@ export class UpdateScheduler {
 							await this.createScoreConflictNotification(
 								result.templateId,
 								result.newCommit,
-								result.scoreConflicts
+								result.scoreConflicts,
 							);
 						}
 					}
 
 					// Get templates needing user attention for this user
-					const attentionTemplates = await this.templateUpdater.getTemplatesNeedingAttention(user.id);
+					const attentionTemplates = await this.templateUpdater.getTemplatesNeedingAttention(
+						user.id,
+					);
 					templatesNeedingAttention += attentionTemplates.length;
 
 					if (attentionTemplates.length > 0) {
 						// Pass full TemplateUpdateInfo for enhanced notifications
-						const templatesForNotification = updateCheck.templatesWithUpdates.filter(
-							(t) => attentionTemplates.some((a) => a.templateId === t.templateId)
+						const templatesForNotification = updateCheck.templatesWithUpdates.filter((t) =>
+							attentionTemplates.some((a) => a.templateId === t.templateId),
 						);
 						await this.createUpdateNotifications(templatesForNotification);
 					}
 				}
 			}
 
-			this.logger.info(
-				`Found ${totalOutdated} outdated templates out of ${totalTemplatesChecked}`,
-			);
+			this.logger.info(`Found ${totalOutdated} outdated templates out of ${totalTemplatesChecked}`);
 
 			if (totalOutdated === 0) {
 				this.stats.lastCheckAt = new Date();
@@ -307,14 +310,10 @@ export class UpdateScheduler {
 				return;
 			}
 
-			this.logger.info(
-				`Auto-synced ${templatesAutoSynced} templates`,
-			);
+			this.logger.info(`Auto-synced ${templatesAutoSynced} templates`);
 
 			if (templatesNeedingAttention > 0) {
-				this.logger.info(
-					`${templatesNeedingAttention} templates need user attention`,
-				);
+				this.logger.info(`${templatesNeedingAttention} templates need user attention`);
 			}
 
 			// Update statistics
@@ -373,9 +372,7 @@ export class UpdateScheduler {
 	/**
 	 * Create update notifications for templates needing attention
 	 */
-	private async createUpdateNotifications(
-		templates: TemplateUpdateInfo[],
-	): Promise<void> {
+	private async createUpdateNotifications(templates: TemplateUpdateInfo[]): Promise<void> {
 		for (const template of templates) {
 			try {
 				// Store notification in template's changeLog
@@ -393,7 +390,7 @@ export class UpdateScheduler {
 						this.logger.warn(
 							`Failed to parse changeLog for template ${template.templateId}: ${
 								parseError instanceof Error ? parseError.message : String(parseError)
-							}. Raw value: ${String(existingTemplate.changeLog).slice(0, 100)}`
+							}. Raw value: ${String(existingTemplate.changeLog).slice(0, 100)}`,
 						);
 					}
 				}
@@ -401,8 +398,7 @@ export class UpdateScheduler {
 				// Check if notification already exists for this commit
 				const notificationExists = changeLog.some(
 					(entry) =>
-						entry.type === "update_available" &&
-						entry.latestCommit === template.latestCommit,
+						entry.type === "update_available" && entry.latestCommit === template.latestCommit,
 				);
 
 				if (!notificationExists) {
@@ -432,7 +428,9 @@ export class UpdateScheduler {
 						data: { changeLog: JSON.stringify(changeLog) },
 					});
 
-					this.logger.debug(`Created update notification for ${template.templateName} (reason: ${reason})`);
+					this.logger.debug(
+						`Created update notification for ${template.templateName} (reason: ${reason})`,
+					);
 				}
 			} catch (error) {
 				this.logger.error(
@@ -471,9 +469,7 @@ export class UpdateScheduler {
 
 			// Check if score conflict notification already exists for this commit
 			const notificationExists = changeLog.some(
-				(entry) =>
-					entry.type === "score_conflicts" &&
-					entry.commitHash === commitHash,
+				(entry) => entry.type === "score_conflicts" && entry.commitHash === commitHash,
 			);
 
 			if (!notificationExists) {
@@ -496,7 +492,7 @@ export class UpdateScheduler {
 				});
 
 				this.logger.debug(
-					`Created score conflict notification for ${existingTemplate.name} (${scoreConflicts.length} conflicts)`
+					`Created score conflict notification for ${existingTemplate.name} (${scoreConflicts.length} conflicts)`,
 				);
 			}
 		} catch (error) {
@@ -519,11 +515,5 @@ export function createUpdateScheduler(
 	prisma: PrismaClient,
 	logger: Logger,
 ): UpdateScheduler {
-	return new UpdateScheduler(
-		config,
-		templateUpdater,
-		versionTracker,
-		prisma,
-		logger,
-	);
+	return new UpdateScheduler(config, templateUpdater, versionTracker, prisma, logger);
 }

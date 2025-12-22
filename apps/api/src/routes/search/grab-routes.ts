@@ -1,5 +1,5 @@
-import type { FastifyPluginCallback } from "fastify";
 import { searchGrabRequestSchema } from "@arr/shared";
+import type { FastifyPluginCallback } from "fastify";
 import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
 import { grabProwlarrRelease } from "../../lib/search/prowlarr-api.js";
 
@@ -31,7 +31,8 @@ export const registerGrabRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			where: {
 				enabled: true,
 				service: "PROWLARR",
-				id: payload.instanceId, userId: request.currentUser?.id,
+				id: payload.instanceId,
+				userId: request.currentUser?.id,
 			},
 		});
 

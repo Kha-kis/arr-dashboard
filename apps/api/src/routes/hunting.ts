@@ -1,19 +1,19 @@
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { getHuntingScheduler } from "../lib/hunting/scheduler.js";
 import { createInstanceFetcher } from "../lib/arr/arr-fetcher.js";
 import {
-	MIN_MISSING_INTERVAL_MINS,
-	MIN_UPGRADE_INTERVAL_MINS,
-	MAX_INTERVAL_MINS,
-	MIN_BATCH_SIZE,
 	MAX_BATCH_SIZE,
-	MIN_HOURLY_API_CAP,
 	MAX_HOURLY_API_CAP,
+	MAX_INTERVAL_MINS,
 	MAX_QUEUE_THRESHOLD,
-	MIN_RESEARCH_AFTER_DAYS,
 	MAX_RESEARCH_AFTER_DAYS,
+	MIN_BATCH_SIZE,
+	MIN_HOURLY_API_CAP,
+	MIN_MISSING_INTERVAL_MINS,
+	MIN_RESEARCH_AFTER_DAYS,
+	MIN_UPGRADE_INTERVAL_MINS,
 } from "../lib/hunting/constants.js";
+import { getHuntingScheduler } from "../lib/hunting/scheduler.js";
 import { cleanupOldSearchHistory } from "../lib/hunting/search-history.js";
 
 /**
@@ -25,7 +25,10 @@ import { cleanupOldSearchHistory } from "../lib/hunting/search-history.js";
  * @param context - Context used in the warning log: `recordId` identifies the record and `field` identifies the JSON field
  * @returns The parsed array when successful, or `null` if `json` is `null` or invalid
  */
-function parseJsonSafe(json: string | null, context: { recordId: string; field: string }): unknown[] | null {
+function parseJsonSafe(
+	json: string | null,
+	context: { recordId: string; field: string },
+): unknown[] | null {
 	if (!json) return null;
 	try {
 		return JSON.parse(json) as unknown[];
@@ -41,9 +44,19 @@ const huntConfigUpdateSchema = z.object({
 	huntUpgradesEnabled: z.boolean().optional(),
 	// Batch settings (using constants for validation)
 	missingBatchSize: z.number().int().min(MIN_BATCH_SIZE).max(MAX_BATCH_SIZE).optional(),
-	missingIntervalMins: z.number().int().min(MIN_MISSING_INTERVAL_MINS).max(MAX_INTERVAL_MINS).optional(),
+	missingIntervalMins: z
+		.number()
+		.int()
+		.min(MIN_MISSING_INTERVAL_MINS)
+		.max(MAX_INTERVAL_MINS)
+		.optional(),
 	upgradeBatchSize: z.number().int().min(MIN_BATCH_SIZE).max(MAX_BATCH_SIZE).optional(),
-	upgradeIntervalMins: z.number().int().min(MIN_UPGRADE_INTERVAL_MINS).max(MAX_INTERVAL_MINS).optional(),
+	upgradeIntervalMins: z
+		.number()
+		.int()
+		.min(MIN_UPGRADE_INTERVAL_MINS)
+		.max(MAX_INTERVAL_MINS)
+		.optional(),
 	// Rate limiting
 	hourlyApiCap: z.number().int().min(MIN_HOURLY_API_CAP).max(MAX_HOURLY_API_CAP).optional(),
 	queueThreshold: z.number().int().min(0).max(MAX_QUEUE_THRESHOLD).optional(),
@@ -348,11 +361,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 	// Current architecture: Single-admin (authenticated user IS the admin).
 	// Future multi-user: Add role check here (e.g., request.currentUser.role === 'admin').
 	app.post("/hunting/scheduler/toggle", async (request, reply) => {
-		// Explicit auth check for clarity (also enforced by plugin preHandler)
-		if (!request.currentUser?.id) {
-			return reply.status(401).send({ error: "Authentication required" });
-		}
-
+		// Note: Authentication is enforced by the plugin preHandler.
 		// In single-admin architecture, any authenticated user can control the scheduler.
 		// For multi-user support, add role-based check here:
 		// if (request.currentUser.role !== 'admin') {

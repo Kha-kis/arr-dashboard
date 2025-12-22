@@ -18,9 +18,11 @@ import { useMultiInstanceQueueQuery } from "../../../hooks/api/useDashboard";
 export const useDashboardData = () => {
 	const { data: currentUser, isLoading: userLoading, error: userError } = useCurrentUser();
 
-	const servicesQuery = useServicesQuery({ enabled: Boolean(currentUser) });
+	// useServicesQuery now automatically waits for auth - no need to pass enabled
+	const servicesQuery = useServicesQuery();
 	const services = useMemo(() => servicesQuery.data ?? [], [servicesQuery.data]);
-	const servicesLoading = servicesQuery.isLoading;
+	// Services are loading if query hasn't fetched yet (pending when disabled, loading when fetching)
+	const servicesLoading = servicesQuery.isLoading || servicesQuery.isPending;
 
 	const queueQuery = useMultiInstanceQueueQuery();
 	const queueAggregated = useMemo(
@@ -34,7 +36,9 @@ export const useDashboardData = () => {
 
 	const totalQueueItems = queueQuery.data?.totalCount ?? queueAggregated.length;
 
-	const isLoading = userLoading || (servicesLoading && Boolean(currentUser));
+	// Show loading state while user is loading OR while services haven't loaded yet
+	// This prevents showing "0 instances" during the auth check
+	const isLoading = userLoading || servicesLoading;
 
 	// Group services by type for summary cards
 	const groupedByService = useMemo(() => {

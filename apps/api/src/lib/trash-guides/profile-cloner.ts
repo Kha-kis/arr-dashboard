@@ -5,16 +5,24 @@
  * and creates templates with full profile settings
  */
 
+import type { CompleteQualityProfile } from "@arr/shared";
 import type { PrismaClient } from "@prisma/client";
 import type { Encryptor } from "../auth/encryption.js";
-import type { CompleteQualityProfile } from "@arr/shared";
-import { ArrApiClient, type ApiError, type QualityProfile, type QualityProfileItem } from "./arr-api-client.js";
+import {
+	type ApiError,
+	ArrApiClient,
+	type QualityProfile,
+	type QualityProfileItem,
+} from "./arr-api-client.js";
 
 /**
  * Recursively find quality by ID in quality profile items
  * Quality profiles have nested structure where groups contain items
  */
-function findQualityById(items: QualityProfileItem[], targetId: number): { id: number; name: string } | undefined {
+function findQualityById(
+	items: QualityProfileItem[],
+	targetId: number,
+): { id: number; name: string } | undefined {
 	for (const item of items) {
 		// Check if this item's quality matches
 		if (item.quality?.id === targetId) {
@@ -289,9 +297,7 @@ export class ProfileCloner {
 			);
 
 			const unmatched = customFormats
-				.filter(
-					(cf) => !instanceCFs.some((icf) => matchesCF(icf, cf.trash_id)),
-				)
+				.filter((cf) => !instanceCFs.some((icf) => matchesCF(icf, cf.trash_id)))
 				.map((cf) => cf.trash_id);
 
 			// Calculate quality stats
@@ -303,10 +309,7 @@ export class ProfileCloner {
 
 			// Calculate score stats
 			const scores = customFormats.map((cf) => cf.score);
-			const avgScore =
-				scores.length > 0
-					? scores.reduce((a, b) => a + b, 0) / scores.length
-					: 0;
+			const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
 
 			return {
 				success: true,
@@ -340,9 +343,6 @@ export class ProfileCloner {
 	}
 }
 
-export function createProfileCloner(
-	prisma: PrismaClient,
-	encryptor: Encryptor,
-): ProfileCloner {
+export function createProfileCloner(prisma: PrismaClient, encryptor: Encryptor): ProfileCloner {
 	return new ProfileCloner(prisma, encryptor);
 }
