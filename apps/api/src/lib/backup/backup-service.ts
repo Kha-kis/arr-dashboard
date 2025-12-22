@@ -1,3 +1,16 @@
+/**
+ * Backup Service
+ *
+ * Manages encrypted database backups with password-based encryption.
+ * Uses PBKDF2 for key derivation and AES-256-GCM for encryption.
+ *
+ * Features:
+ * - Manual, scheduled, and auto-update backups
+ * - Password-based encryption with configurable password
+ * - Restore with validation and rollback capability
+ * - Size limits to prevent memory exhaustion
+ */
+
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -37,12 +50,22 @@ interface EncryptedBackupEnvelope {
 	cipherText: string; // Base64-encoded encrypted backup data
 }
 
+/**
+ * Service for creating and restoring encrypted database backups.
+ * Supports manual, scheduled, and auto-update backup types.
+ */
 export class BackupService {
 	private backupsDir: string;
 	// In-memory cache to reduce file system contention for dev password
 	private devPasswordCache: string | null = null;
 	private devPasswordPromise: Promise<string> | null = null;
 
+	/**
+	 * Create a new BackupService instance
+	 * @param prisma - Prisma client for database operations
+	 * @param secretsPath - Path to the secrets file (backups stored alongside)
+	 * @param encryptor - Optional encryptor for decrypting API keys
+	 */
 	constructor(
 		private prisma: PrismaClient,
 		private secretsPath: string,

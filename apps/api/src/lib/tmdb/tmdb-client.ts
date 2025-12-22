@@ -1,5 +1,17 @@
+/**
+ * TMDB API Client
+ *
+ * Provides methods for interacting with The Movie Database (TMDB) API.
+ * Includes in-memory caching for frequently accessed data.
+ */
+
+/**
+ * Configuration for the TMDB client
+ */
 export interface TMDBClientConfig {
+	/** Base URL for TMDB API requests */
 	baseUrl: string;
+	/** Base URL for TMDB image assets */
 	imageBaseUrl: string;
 }
 
@@ -21,10 +33,21 @@ const LIST_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 const externalIdsCache = new Map<string, CacheEntry<TMDBExternalIds>>();
 const EXTERNAL_IDS_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+/**
+ * Generate a cache key from type and arguments
+ * @param type - Cache type identifier (e.g., 'trending', 'popular')
+ * @param args - Additional key components
+ */
 function getCacheKey(type: string, ...args: (string | number)[]): string {
 	return `${type}:${args.join(":")}`;
 }
 
+/**
+ * Retrieve data from cache if not expired
+ * @param cache - The cache map to read from
+ * @param key - Cache key to look up
+ * @returns Cached data or null if not found/expired
+ */
 function getFromCache<T>(cache: Map<string, CacheEntry<T>>, key: string): T | null {
 	const entry = cache.get(key);
 	if (!entry) return null;
@@ -38,6 +61,13 @@ function getFromCache<T>(cache: Map<string, CacheEntry<T>>, key: string): T | nu
 	return entry.data;
 }
 
+/**
+ * Store data in cache with TTL
+ * @param cache - The cache map to write to
+ * @param key - Cache key for storage
+ * @param data - Data to cache
+ * @param ttl - Time-to-live in milliseconds
+ */
 function setInCache<T>(cache: Map<string, CacheEntry<T>>, key: string, data: T, ttl: number): void {
 	cache.set(key, { data, timestamp: Date.now(), ttl });
 }
@@ -45,6 +75,10 @@ function setInCache<T>(cache: Map<string, CacheEntry<T>>, key: string, data: T, 
 // Periodic cache cleanup to prevent memory leaks (runs every 5 minutes)
 let cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
+/**
+ * Remove expired entries from a cache map
+ * @param cache - The cache map to clean up
+ */
 function cleanupCache<T>(cache: Map<string, CacheEntry<T>>): void {
 	const now = Date.now();
 	const keysToDelete: string[] = [];
@@ -60,6 +94,10 @@ function cleanupCache<T>(cache: Map<string, CacheEntry<T>>): void {
 	}
 }
 
+/**
+ * Initialize periodic cache cleanup to prevent memory leaks
+ * Runs every 5 minutes to remove expired entries
+ */
 function startCacheCleanup(): void {
 	if (cleanupInterval) return;
 
