@@ -8,6 +8,7 @@
 import type { PrismaClient } from "@prisma/client";
 import { type ArrApiClient, createArrApiClient } from "./arr-api-client.js";
 import type { CustomFormat } from "./arr-api-client.js";
+import { transformFieldsToArray } from "./utils.js";
 
 // ============================================================================
 // Types
@@ -388,7 +389,7 @@ export class DeploymentExecutorService {
 					// Transform specifications: convert fields from object to array format
 					const specifications = (templateCF.originalConfig?.specifications || []).map(
 						(spec: any) => {
-							const transformedFields = this.transformFieldsToArray(spec.fields);
+							const transformedFields = transformFieldsToArray(spec.fields);
 							return {
 								...spec,
 								fields: transformedFields,
@@ -410,7 +411,7 @@ export class DeploymentExecutorService {
 					// Transform specifications: convert fields from object to array format
 					const specifications = (templateCF.originalConfig?.specifications || []).map(
 						(spec: any) => {
-							const transformedFields = this.transformFieldsToArray(spec.fields);
+							const transformedFields = transformFieldsToArray(spec.fields);
 							return {
 								...spec,
 								fields: transformedFields,
@@ -1460,34 +1461,6 @@ export class DeploymentExecutorService {
 		};
 	}
 
-	/**
-	 * Transform fields from TRaSH Guides object format to Radarr API array format
-	 * TRaSH format: { value: 5 }
-	 * Radarr format: [{ name: "value", value: 5 }]
-	 */
-	private transformFieldsToArray(fields: any): Array<{ name: string; value: unknown }> {
-		// If fields is already an array, return it as-is
-		if (Array.isArray(fields)) {
-			return fields;
-		}
-
-		// If fields is undefined or null, return empty array
-		if (!fields) {
-			return [];
-		}
-
-		// Convert object format to array format
-		const result = Object.entries(fields).map(([name, value]) => ({
-			name,
-			value,
-		}));
-		return result;
-	}
-
-	/**
-	 * Extract trash_id from Custom Format
-	 * Checks specifications for a field named "trash_id"
-	 */
 	/**
 	 * Extract trash_id from Custom Format specifications.
 	 * Returns null if no trash_id is found, allowing callers to distinguish

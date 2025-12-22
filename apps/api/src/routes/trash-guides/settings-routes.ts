@@ -26,20 +26,6 @@
 import type { FastifyInstance, FastifyPluginOptions, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
 
-// Schema for settings response
-const trashSettingsSchema = z.object({
-	id: z.string(),
-	userId: z.string(),
-	checkFrequency: z.number(),
-	autoRefreshCache: z.boolean(),
-	notifyOnUpdates: z.boolean(),
-	notifyOnSyncFail: z.boolean(),
-	backupRetention: z.number(),
-	backupRetentionDays: z.number(),
-	createdAt: z.date(),
-	updatedAt: z.date(),
-});
-
 // Schema for update request
 const updateSettingsSchema = z.object({
 	checkFrequency: z.number().min(1).max(168).optional(), // 1 hour to 1 week
@@ -148,47 +134,47 @@ export async function registerSettingsRoutes(app: FastifyInstance, opts: Fastify
 	app.get("/backup-stats", async (request: FastifyRequest, reply: FastifyReply) => {
 		const userId = request.currentUser!.id;
 
-		// Get user's settings
-		const settings = await app.prisma.trashSettings.findUnique({
-			where: { userId },
-			select: { backupRetention: true, backupRetentionDays: true },
-		});
-
-		// Count backups
-		const totalBackups = await app.prisma.trashBackup.count({
-			where: { userId },
-		});
-
-		// Count expired backups
-		const expiredBackups = await app.prisma.trashBackup.count({
-			where: {
-				userId,
-				expiresAt: {
-					not: null,
-					lte: new Date(),
-				},
-			},
-		});
-
-		// Count backups per instance
-		const backupsPerInstance = await app.prisma.trashBackup.groupBy({
-			by: ["instanceId"],
-			where: { userId },
-			_count: { id: true },
-		});
-
-		// Get oldest and newest backup dates
-		const oldestBackup = await app.prisma.trashBackup.findFirst({
-			where: { userId },
-			orderBy: { createdAt: "asc" },
-			select: { createdAt: true },
-		});
-
-		const newestBackup = await app.prisma.trashBackup.findFirst({
-			where: { userId },
-			orderBy: { createdAt: "desc" },
-			select: { createdAt: true },
-		});
+		// Run all independent queries in parallel for better performance
+		const [settings, totalBackups, expiredBackups, backupsPerInstance, oldestBackup, newestBackup] =
+			await Promise.all([
+				// Get user's settings
+				app.prisma.trashSettings.findUnique({
+					where: { userId },
+					select: { backupRetention: true, backupRetentionDays: true },
+				}),
+				// Count backups
+				app.prisma.trashBackup.count({
+					where: { userId },
+				}),
+				// Count expired backups
+				app.prisma.trashBackup.count({
+					where: {
+						userId,
+						expiresAt: {
+							not: null,
+							lte: new Date(),
+						},
+					},
+				}),
+				// Count backups per instance
+				app.prisma.trashBackup.groupBy({
+					by: ["instanceId"],
+					where: { userId },
+					_count: { id: true },
+				}),
+				// Get oldest backup date
+				app.prisma.trashBackup.findFirst({
+					where: { userId },
+					orderBy: { createdAt: "asc" },
+					select: { createdAt: true },
+				}),
+				// Get newest backup date
+				app.prisma.trashBackup.findFirst({
+					where: { userId },
+					orderBy: { createdAt: "desc" },
+					select: { createdAt: true },
+				}),
+			]);
 
 		return reply.send({
 			stats: {
