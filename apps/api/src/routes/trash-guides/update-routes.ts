@@ -6,11 +6,11 @@
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
-import { createTemplateUpdater } from "../../lib/trash-guides/template-updater.js";
-import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { createDeploymentExecutorService } from "../../lib/trash-guides/deployment-executor.js";
+import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
+import { createTemplateUpdater } from "../../lib/trash-guides/template-updater.js";
+import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js";
 
 // ============================================================================
 // Validation Schemas
@@ -25,10 +25,7 @@ const syncTemplateSchema = z.object({
 // Route Registration
 // ============================================================================
 
-export async function registerUpdateRoutes(
-	app: FastifyInstance,
-	opts: FastifyPluginOptions,
-) {
+export async function registerUpdateRoutes(app: FastifyInstance, opts: FastifyPluginOptions) {
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
 		if (!request.currentUser?.id) {
@@ -122,7 +119,7 @@ export async function registerUpdateRoutes(
 			const result = await templateUpdater.syncTemplate(
 				id,
 				body.targetCommitHash,
-				request.currentUser!.id,
+				request.currentUser?.id,
 			);
 
 			if (result.success) {
@@ -216,7 +213,11 @@ export async function registerUpdateRoutes(
 			const { id } = request.params;
 			const { targetCommit } = request.query;
 
-			const diffResult = await templateUpdater.getTemplateDiff(id, targetCommit, request.currentUser!.id);
+			const diffResult = await templateUpdater.getTemplateDiff(
+				id,
+				targetCommit,
+				request.currentUser?.id,
+			);
 
 			return reply.send({
 				success: true,

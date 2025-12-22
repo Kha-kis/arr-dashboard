@@ -4,9 +4,9 @@
  * Enhanced template export/import with validation and metadata
  */
 
+import type { TemplateExportOptions, TemplateImportOptions } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { createEnhancedTemplateService } from "../../lib/trash-guides/enhanced-template-service.js";
-import type { TemplateExportOptions, TemplateImportOptions } from "@arr/shared";
 
 // ============================================================================
 // Routes
@@ -29,21 +29,14 @@ const templateSharingRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 */
 	app.post("/export", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const {
-			templateId,
-			options,
-		} = request.body as {
+		const { templateId, options } = request.body as {
 			templateId: string;
 			options?: TemplateExportOptions;
 		};
 
 		try {
 			const service = createEnhancedTemplateService(app.prisma);
-			const jsonData = await service.exportTemplateEnhanced(
-				templateId,
-				userId,
-				options || {},
-			);
+			const jsonData = await service.exportTemplateEnhanced(templateId, userId, options || {});
 
 			// Parse to get template name for filename
 			let data: { template: { name?: string } };
@@ -106,21 +99,14 @@ const templateSharingRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 */
 	app.post("/import", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const {
-			jsonData,
-			options,
-		} = request.body as {
+		const { jsonData, options } = request.body as {
 			jsonData: string;
 			options?: TemplateImportOptions;
 		};
 
 		try {
 			const service = createEnhancedTemplateService(app.prisma);
-			const result = await service.importTemplateEnhanced(
-				userId,
-				jsonData,
-				options || {},
-			);
+			const result = await service.importTemplateEnhanced(userId, jsonData, options || {});
 
 			if (!result.success) {
 				return reply.status(400).send({

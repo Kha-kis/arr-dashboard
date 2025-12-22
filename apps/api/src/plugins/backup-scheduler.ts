@@ -39,7 +39,7 @@ const backupSchedulerPlugin = fastifyPlugin(
 	{
 		name: "backup-scheduler",
 		dependencies: ["prisma"],
-	}
+	},
 );
 
 export default backupSchedulerPlugin;

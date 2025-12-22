@@ -1,9 +1,6 @@
-import type { FastifyPluginCallback } from "fastify";
-import type {
-	AuthenticationResponseJSON,
-	RegistrationResponseJSON,
-} from "@simplewebauthn/server";
 import { randomBytes } from "node:crypto";
+import type { AuthenticationResponseJSON, RegistrationResponseJSON } from "@simplewebauthn/server";
+import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { createPasskeyService } from "../lib/auth/passkey-service.js";
 
@@ -14,14 +11,17 @@ import { createPasskeyService } from "../lib/auth/passkey-service.js";
 const challengeStore = new Map<string, { challenge: string; expiresAt: number }>();
 
 // Clean up expired challenges every 5 minutes
-setInterval(() => {
-	const now = Date.now();
-	for (const [key, data] of challengeStore.entries()) {
-		if (data.expiresAt < now) {
-			challengeStore.delete(key);
+setInterval(
+	() => {
+		const now = Date.now();
+		for (const [key, data] of challengeStore.entries()) {
+			if (data.expiresAt < now) {
+				challengeStore.delete(key);
+			}
 		}
-	}
-}, 5 * 60 * 1000);
+	},
+	5 * 60 * 1000,
+);
 
 const passkeyRegisterOptionsSchema = z.object({
 	friendlyName: z.string().max(50).optional(),
@@ -319,7 +319,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			if (request.sessionToken) {
 				await app.sessionService.invalidateAllUserSessions(
 					request.currentUser.id,
-					request.sessionToken
+					request.sessionToken,
 				);
 			} else {
 				// Fallback: invalidate all sessions if sessionToken is somehow unavailable

@@ -10,14 +10,13 @@
  * Integration tests with database are skipped unless TEST_DB=true.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { PrismaClient } from "@prisma/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Check if we should run integration tests (requires writable test database)
 const RUN_DB_TESTS = process.env.TEST_DB === "true";
 
 describe("Sync Rollback Logic Tests", () => {
-
 	describe("Backup Data Format Parsing", () => {
 		it("should handle raw array backup format (deployment-executor style)", () => {
 			// deployment-executor stores backupData as a raw array of CFs
@@ -96,10 +95,7 @@ describe("Sync Rollback Logic Tests", () => {
 
 		it("should handle legacy format without action field", () => {
 			// Legacy format: just { name } without action field
-			const appliedConfigs = JSON.stringify([
-				{ name: "Legacy CF 1" },
-				{ name: "Legacy CF 2" },
-			]);
+			const appliedConfigs = JSON.stringify([{ name: "Legacy CF 1" }, { name: "Legacy CF 2" }]);
 
 			const parsed = JSON.parse(appliedConfigs);
 			const createdBySyncNames = new Set<string>();
@@ -119,10 +115,7 @@ describe("Sync Rollback Logic Tests", () => {
 	describe("Rollback CF Identification", () => {
 		it("should not delete CFs that existed in backup", () => {
 			// CFs in backup
-			const backupCFs = [
-				{ name: "Existing CF 1" },
-				{ name: "Existing CF 2" },
-			];
+			const backupCFs = [{ name: "Existing CF 1" }, { name: "Existing CF 2" }];
 
 			// CFs marked as created by sync
 			const createdBySyncNames = new Set(["Existing CF 1", "New CF 1"]);
@@ -143,7 +136,7 @@ describe("Sync Rollback Logic Tests", () => {
 		it("should preserve user-created CFs during rollback", () => {
 			// Current CFs in instance
 			const currentCFs = [
-				{ id: 1, name: "Backup CF 1" },     // Was in backup - should be restored
+				{ id: 1, name: "Backup CF 1" }, // Was in backup - should be restored
 				{ id: 2, name: "Sync Created CF" }, // Created by sync - should be deleted
 				{ id: 3, name: "User Created CF" }, // Created by user - should NOT be deleted
 			];

@@ -22,6 +22,8 @@ import {
 	ChevronRight,
 	Lightbulb,
 	TrendingUp,
+	History,
+	Clock,
 } from "lucide-react";
 import { useTemplateDiff, useSyncTemplate } from "../../../hooks/api/useTemplateUpdates";
 import { cn } from "../../../lib/utils";
@@ -135,18 +137,54 @@ export const TemplateDiffModal = ({
 		}
 	};
 
+	const isHistorical = data?.data?.isHistorical ?? false;
+
+	// Format relative time for historical sync timestamp
+	const formatRelativeTime = (timestamp: string | undefined): string => {
+		if (!timestamp) return "";
+		const date = new Date(timestamp);
+		const now = new Date();
+		const diffMs = now.getTime() - date.getTime();
+		const diffMins = Math.floor(diffMs / 60000);
+		const diffHours = Math.floor(diffMs / 3600000);
+		const diffDays = Math.floor(diffMs / 86400000);
+
+		if (diffMins < 1) return "just now";
+		if (diffMins < 60) return `${diffMins} minute${diffMins !== 1 ? "s" : ""} ago`;
+		if (diffHours < 24) return `${diffHours} hour${diffHours !== 1 ? "s" : ""} ago`;
+		return `${diffDays} day${diffDays !== 1 ? "s" : ""} ago`;
+	};
+
 	return (
 		<Dialog open={open} onOpenChange={onClose} size="xl">
 			<DialogHeader>
 				<DialogTitle>
 					<div className="flex items-center gap-2">
-						<GitCompare className="h-5 w-5" />
-						Template Update Changes
+						{isHistorical ? (
+							<History className="h-5 w-5 text-green-600 dark:text-green-400" />
+						) : (
+							<GitCompare className="h-5 w-5" />
+						)}
+						{isHistorical ? "Recently Applied Changes" : "Pending Changes"}
 					</div>
 				</DialogTitle>
 				<DialogDescription>
-					Review changes between your template and the latest TRaSH Guides
-					{templateName && ` for "${templateName}"`}
+					{isHistorical ? (
+						<span className="flex items-center gap-2">
+							<span>Changes that were auto-synced{templateName && ` for "${templateName}"`}</span>
+							{data?.data?.historicalSyncTimestamp && (
+								<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-green-500/20 text-green-600 dark:text-green-400">
+									<Clock className="h-3 w-3" />
+									{formatRelativeTime(data.data.historicalSyncTimestamp)}
+								</span>
+							)}
+						</span>
+					) : (
+						<>
+							Review changes between your template and the latest TRaSH Guides
+							{templateName && ` for "${templateName}"`}
+						</>
+					)}
 				</DialogDescription>
 			</DialogHeader>
 
@@ -174,6 +212,21 @@ export const TemplateDiffModal = ({
 
 				{data?.data && (
 					<>
+						{/* Historical Badge */}
+						{isHistorical && (
+							<div className="rounded-lg border border-green-500/30 bg-green-500/10 p-3">
+								<div className="flex items-center gap-2">
+									<History className="h-4 w-4 text-green-600 dark:text-green-400 shrink-0" />
+									<span className="text-sm font-medium text-green-700 dark:text-green-300">
+										These changes were already applied via auto-sync
+									</span>
+								</div>
+								<p className="text-xs text-green-600/80 dark:text-green-400/80 mt-1 ml-6">
+									This is a historical view of changes that were synced automatically. No further action is needed.
+								</p>
+							</div>
+						)}
+
 						{/* Summary Statistics */}
 						<div className="rounded-lg border border-border bg-bg-subtle p-4">
 							<h3 className="text-sm font-medium text-fg mb-3">Change Summary</h3>
@@ -240,47 +293,49 @@ export const TemplateDiffModal = ({
 							)}
 						</div>
 
-						{/* Merge Strategy Selection */}
-						<div className="space-y-3">
-							<h3 className="text-sm font-medium text-fg">Merge Strategy</h3>
-							<div className="grid gap-3">
-								{(["keep_custom", "sync_new", "smart_merge"] as MergeStrategy[]).map(
-									(strategy) => (
-										<button
-											key={strategy}
-											type="button"
-											onClick={() => setSelectedStrategy(strategy)}
-											className={cn(
-												"text-left rounded-lg border p-4 transition-all",
-												selectedStrategy === strategy
-													? "border-primary bg-primary/10 ring-2 ring-primary/20"
-													: "border-border hover:border-border-hover",
-											)}
-										>
-											<div className="flex items-start gap-3">
-												<div className="mt-0.5">
-													{selectedStrategy === strategy ? (
-														<div className="h-5 w-5 rounded-full bg-primary flex items-center justify-center">
-															<Check className="h-3 w-3 text-primary-fg" />
-														</div>
-													) : (
-														<div className="h-5 w-5 rounded-full border-2 border-border" />
-													)}
+						{/* Merge Strategy Selection - hidden for historical views */}
+						{!isHistorical && (
+							<div className="space-y-3">
+								<h3 className="text-sm font-medium text-fg">Merge Strategy</h3>
+								<div className="grid gap-3">
+									{(["keep_custom", "sync_new", "smart_merge"] as MergeStrategy[]).map(
+										(strategy) => (
+											<button
+												key={strategy}
+												type="button"
+												onClick={() => setSelectedStrategy(strategy)}
+												className={cn(
+													"text-left rounded-lg border p-4 transition-all",
+													selectedStrategy === strategy
+														? "border-primary bg-primary/10 ring-2 ring-primary/20"
+														: "border-border hover:border-border-hover",
+												)}
+											>
+												<div className="flex items-start gap-3">
+													<div className="mt-0.5">
+														{selectedStrategy === strategy ? (
+															<div className="h-5 w-5 rounded-full bg-primary flex items-center justify-center">
+																<Check className="h-3 w-3 text-primary-fg" />
+															</div>
+														) : (
+															<div className="h-5 w-5 rounded-full border-2 border-border" />
+														)}
+													</div>
+													<div className="flex-1 min-w-0">
+														<p className="text-sm font-medium text-fg capitalize">
+															{strategy.replace(/_/g, " ")}
+														</p>
+														<p className="text-xs text-fg-muted mt-1">
+															{getStrategyDescription(strategy)}
+														</p>
+													</div>
 												</div>
-												<div className="flex-1 min-w-0">
-													<p className="text-sm font-medium text-fg capitalize">
-														{strategy.replace(/_/g, " ")}
-													</p>
-													<p className="text-xs text-fg-muted mt-1">
-														{getStrategyDescription(strategy)}
-													</p>
-												</div>
-											</div>
-										</button>
-									),
-								)}
+											</button>
+										),
+									)}
+								</div>
 							</div>
-						</div>
+						)}
 
 						{/* Custom Format Changes */}
 						{data.data.customFormatDiffs.length > 0 && (
@@ -407,9 +462,13 @@ export const TemplateDiffModal = ({
 						{data.data.summary.totalChanges === 0 && !data.data.suggestedAdditions?.length && !data.data.suggestedScoreChanges?.length && (
 							<div className="rounded-lg border border-border bg-bg-subtle p-8 text-center">
 								<Check className="h-12 w-12 text-green-600 dark:text-green-400 mx-auto mb-3" />
-								<p className="text-sm font-medium text-fg">Template is up to date</p>
+								<p className="text-sm font-medium text-fg">
+									{isHistorical ? "No changes recorded" : "Template is up to date"}
+								</p>
 								<p className="text-xs text-fg-muted mt-1">
-									No changes between your template and latest TRaSH Guides
+									{isHistorical
+										? "No detailed change information is available for this sync operation"
+										: "No changes between your template and latest TRaSH Guides"}
 								</p>
 							</div>
 						)}
@@ -505,21 +564,23 @@ export const TemplateDiffModal = ({
 
 			<DialogFooter>
 				<Button variant="ghost" onClick={onClose}>
-					Cancel
+					{isHistorical ? "Close" : "Cancel"}
 				</Button>
-				<Button
-					variant="primary"
-					onClick={handleSync}
-					disabled={
-						syncTemplate.isPending ||
-						!data?.data ||
-						data.data.summary.totalChanges === 0
-					}
-				>
-					{syncTemplate.isPending
-						? "Syncing..."
-						: `Sync with ${selectedStrategy.replace(/_/g, " ")}`}
-				</Button>
+				{!isHistorical && (
+					<Button
+						variant="primary"
+						onClick={handleSync}
+						disabled={
+							syncTemplate.isPending ||
+							!data?.data ||
+							data.data.summary.totalChanges === 0
+						}
+					>
+						{syncTemplate.isPending
+							? "Syncing..."
+							: `Sync with ${selectedStrategy.replace(/_/g, " ")}`}
+					</Button>
+				)}
 			</DialogFooter>
 		</Dialog>
 	);

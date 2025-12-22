@@ -30,10 +30,7 @@ export interface QualityProfileItem {
  * @param cutoffId - The cutoff quality ID to find
  * @returns The quality name if found, "Unknown" otherwise
  */
-export function findCutoffQualityName(
-	items: QualityProfileItem[],
-	cutoffId: number
-): string {
+export function findCutoffQualityName(items: QualityProfileItem[], cutoffId: number): string {
 	for (const item of items) {
 		// Check if this is a single quality item matching the cutoff
 		if (item.quality?.id === cutoffId) {

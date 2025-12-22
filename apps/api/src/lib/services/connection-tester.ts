@@ -90,7 +90,8 @@ function handleHttpError(response: Response, baseUrl: string): ConnectionTestRes
 		return {
 			success: false,
 			error: `Server error (${status})`,
-			details: "The service encountered an internal error. Check the service logs for more details.",
+			details:
+				"The service encountered an internal error. Check the service logs for more details.",
 		};
 	}
 

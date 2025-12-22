@@ -5,19 +5,19 @@
  * actual Custom Formats in Radarr/Sonarr instance, detecting conflicts.
  */
 
-import type { PrismaClient } from "@prisma/client";
 import type {
-	DeploymentPreview,
-	CustomFormatDeploymentItem,
 	CustomFormatConflict,
-	DeploymentAction,
-	UnmatchedCustomFormat,
+	CustomFormatDeploymentItem,
 	CustomFormatSpecification,
+	DeploymentAction,
+	DeploymentPreview,
 	TemplateCustomFormat,
+	UnmatchedCustomFormat,
 } from "@arr/shared";
+import type { PrismaClient } from "@prisma/client";
+import { dequal as deepEqual } from "dequal";
 import { createArrApiClient } from "./arr-api-client.js";
 import type { CustomFormat } from "./arr-api-client.js";
-import { dequal as deepEqual } from "dequal";
 
 // ============================================================================
 // Types for Template Config and Instance Overrides
@@ -121,7 +121,7 @@ function normalizeFields(fields: unknown): Record<string, unknown> {
 	}
 
 	// If already an object (TRaSH format), return as-is
-	if (!Array.isArray(fields) && typeof fields === 'object') {
+	if (!Array.isArray(fields) && typeof fields === "object") {
 		return fields as Record<string, unknown>;
 	}
 
@@ -129,7 +129,7 @@ function normalizeFields(fields: unknown): Record<string, unknown> {
 	if (Array.isArray(fields)) {
 		const result: Record<string, unknown> = {};
 		for (const field of fields) {
-			if (field && typeof field === 'object' && 'name' in field && 'value' in field) {
+			if (field && typeof field === "object" && "name" in field && "value" in field) {
 				result[field.name as string] = field.value;
 			}
 		}
@@ -144,8 +144,8 @@ function normalizeFields(fields: unknown): Record<string, unknown> {
  */
 function normalizeSpec(spec: RawSpecification): NormalizedSpec {
 	return {
-		name: spec.name || '',
-		implementation: spec.implementation || '',
+		name: spec.name || "",
+		implementation: spec.implementation || "",
 		negate: Boolean(spec.negate),
 		required: Boolean(spec.required),
 		fields: normalizeFields(spec.fields),
@@ -186,7 +186,10 @@ function specsAreEqual(spec1: NormalizedSpec, spec2: NormalizedSpec): boolean {
 /**
  * Compare two specification arrays for equality (order-independent)
  */
-function specArraysAreEqual(templateSpecs: RawSpecification[], instanceSpecs: CustomFormatSpecification[]): boolean {
+function specArraysAreEqual(
+	templateSpecs: RawSpecification[],
+	instanceSpecs: CustomFormatSpecification[],
+): boolean {
 	if (templateSpecs.length !== instanceSpecs.length) {
 		return false;
 	}
@@ -248,9 +251,9 @@ export class DeploymentPreviewService {
 
 		// Get instance with ownership verification
 		const instance = await this.prisma.serviceInstance.findFirst({
-			where: { 
-				id: instanceId, 
-				userId 
+			where: {
+				id: instanceId,
+				userId,
 			},
 		});
 
@@ -294,7 +297,7 @@ export class DeploymentPreviewService {
 			templateConfig = JSON.parse(template.configData) as ParsedTemplateConfig;
 		} catch (parseError) {
 			throw new Error(
-				`Template ${template.id} has corrupted configData: ${parseError instanceof Error ? parseError.message : String(parseError)}`
+				`Template ${template.id} has corrupted configData: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
 			);
 		}
 		const scoreSet = templateConfig.qualityProfile?.trash_score_set;
@@ -382,7 +385,7 @@ export class DeploymentPreviewService {
 		// This allows us to detect score conflicts (when instance score differs from template)
 		// Prefer matching by quality profile ID from mapping, fall back to name-based matching
 		const instanceCFScoreMap = new Map<number, number>(); // CF ID -> score
-		let targetProfile: typeof instanceQualityProfiles[0] | undefined;
+		let targetProfile: (typeof instanceQualityProfiles)[0] | undefined;
 
 		// Strategy 1: Try to find quality profile by ID from TemplateQualityProfileMapping
 		// This is the most reliable method as it uses the actual instance profile ID
@@ -467,7 +470,9 @@ export class DeploymentPreviewService {
 				// Compare specifications using normalized comparison
 				// This handles the format difference between TRaSH (object) and Radarr (array)
 				const rawTemplateSpecs = templateCF.originalConfig?.specifications;
-				const templateSpecs: RawSpecification[] = Array.isArray(rawTemplateSpecs) ? (rawTemplateSpecs as RawSpecification[]) : [];
+				const templateSpecs: RawSpecification[] = Array.isArray(rawTemplateSpecs)
+					? (rawTemplateSpecs as RawSpecification[])
+					: [];
 				const instanceSpecs = instanceCF.specifications || [];
 
 				if (!specArraysAreEqual(templateSpecs, instanceSpecs)) {
@@ -553,12 +558,12 @@ export class DeploymentPreviewService {
 		// (warnings array was initialized earlier during profile matching)
 		if (totalConflicts > 0) {
 			warnings.push(
-				`${totalConflicts} Custom Format${totalConflicts === 1 ? "" : "s"} differ${totalConflicts === 1 ? "s" : ""} between the template and instance. By default, deploying will update these to match the template. You can review and skip specific CFs if needed.`
+				`${totalConflicts} Custom Format${totalConflicts === 1 ? "" : "s"} differ${totalConflicts === 1 ? "s" : ""} between the template and instance. By default, deploying will update these to match the template. You can review and skip specific CFs if needed.`,
 			);
 		}
 		if (unmatchedCFs.length > 0) {
 			warnings.push(
-				`${unmatchedCFs.length} Custom Format${unmatchedCFs.length === 1 ? "" : "s"} in the instance ${unmatchedCFs.length === 1 ? "is" : "are"} not part of this template. These will not be modified by this deployment.`
+				`${unmatchedCFs.length} Custom Format${unmatchedCFs.length === 1 ? "" : "s"} in the instance ${unmatchedCFs.length === 1 ? "is" : "are"} not part of this template. These will not be modified by this deployment.`,
 			);
 		}
 
@@ -603,11 +608,13 @@ export class DeploymentPreviewService {
 			if (spec.fields) {
 				// Handle both array format (Radarr API) and object format
 				if (Array.isArray(spec.fields)) {
-					const trashIdField = spec.fields.find((f: { name: string; value: unknown }) => f.name === 'trash_id');
+					const trashIdField = spec.fields.find(
+						(f: { name: string; value: unknown }) => f.name === "trash_id",
+					);
 					if (trashIdField) {
 						return String(trashIdField.value);
 					}
-				} else if (typeof spec.fields === 'object') {
+				} else if (typeof spec.fields === "object") {
 					// Check common field patterns for trash_id
 					const fields = spec.fields as Record<string, unknown>;
 					const trashIdValue = fields.trash_id || fields.trashId;

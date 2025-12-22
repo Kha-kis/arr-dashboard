@@ -67,9 +67,9 @@ export class BackupManager {
 	): Promise<string> {
 		// Get instance details - verify ownership by including userId in where clause
 		const instance = await this.prisma.serviceInstance.findFirst({
-			where: { 
-				id: instanceId, 
-				userId 
+			where: {
+				id: instanceId,
+				userId,
 			},
 			select: {
 				id: true,
@@ -162,9 +162,9 @@ export class BackupManager {
 	): Promise<BackupInfo[]> {
 		// Verify user owns the instance - include userId in where clause
 		const instance = await this.prisma.serviceInstance.findFirst({
-			where: { 
-				id: instanceId, 
-				userId 
+			where: {
+				id: instanceId,
+				userId,
 			},
 			select: { userId: true },
 		});
@@ -323,9 +323,9 @@ export class BackupManager {
 	async getBackupCount(instanceId: string, userId: string): Promise<number> {
 		// Verify user owns the instance - include userId in where clause
 		const instance = await this.prisma.serviceInstance.findFirst({
-			where: { 
-				id: instanceId, 
-				userId 
+			where: {
+				id: instanceId,
+				userId,
 			},
 			select: { userId: true },
 		});
@@ -349,9 +349,9 @@ export class BackupManager {
 	): Promise<number> {
 		// Verify user owns the instance - include userId in where clause
 		const instance = await this.prisma.serviceInstance.findFirst({
-			where: { 
-				id: instanceId, 
-				userId 
+			where: {
+				id: instanceId,
+				userId,
 			},
 			select: { userId: true },
 		});
