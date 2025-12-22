@@ -18,7 +18,8 @@ import { useMultiInstanceQueueQuery } from "../../../hooks/api/useDashboard";
 export const useDashboardData = () => {
 	const { data: currentUser, isLoading: userLoading, error: userError } = useCurrentUser();
 
-	const servicesQuery = useServicesQuery({ enabled: Boolean(currentUser) });
+	// useServicesQuery now automatically waits for auth - no need to pass enabled
+	const servicesQuery = useServicesQuery();
 	const services = useMemo(() => servicesQuery.data ?? [], [servicesQuery.data]);
 	// Services are loading if query hasn't fetched yet (pending when disabled, loading when fetching)
 	const servicesLoading = servicesQuery.isLoading || servicesQuery.isPending;
