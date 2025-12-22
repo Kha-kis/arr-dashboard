@@ -103,6 +103,15 @@ export const SyncValidationModal = ({
 	const [retryProgress, setRetryProgress] = useState<RetryProgress | null>(null);
 	const dialogRef = useRef<HTMLDivElement>(null);
 	const previousActiveElement = useRef<Element | null>(null);
+	// Track mounted state to prevent state updates after unmount
+	const isMountedRef = useRef(true);
+
+	// Cleanup mounted ref on unmount
+	useEffect(() => {
+		return () => {
+			isMountedRef.current = false;
+		};
+	}, []);
 
 	// Use the validation hook with error and retry callbacks
 	const validateMutation = useValidateSync({
@@ -151,8 +160,9 @@ export const SyncValidationModal = ({
 		},
 		onRetryProgress: (attempt, maxAttempts, delayMs) => {
 			setRetryProgress({ attempt, maxAttempts, delayMs, isWaiting: true });
-			// Clear waiting state after delay
+			// Clear waiting state after delay (only if still mounted)
 			setTimeout(() => {
+				if (!isMountedRef.current) return;
 				setRetryProgress((prev) =>
 					prev && prev.attempt === attempt ? { ...prev, isWaiting: false } : prev,
 				);
@@ -251,10 +261,10 @@ export const SyncValidationModal = ({
 		);
 	};
 
-	// Auto-validate on mount
+	// Auto-validate on mount and when template/instance IDs change
 	useEffect(() => {
 		runValidation();
-		// eslint-disable-next-line react-hooks/exhaustive-deps -- Only run on mount with templateId/instanceId
+		// eslint-disable-next-line react-hooks/exhaustive-deps -- runValidation is stable, only re-run when IDs change
 	}, [templateId, instanceId]);
 
 	// Handle retry with exponential backoff

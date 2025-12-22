@@ -12,11 +12,19 @@ import { test, expect, type Page } from "@playwright/test";
  */
 
 // Test configuration
-const BASE_URL = "http://localhost:3000";
+const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:3000";
 const TEST_CREDENTIALS = {
-	username: "khak1s",
-	password: process.env.TEST_PASSWORD || "testpassword",
+	username: process.env.TEST_USERNAME || "",
+	password: process.env.TEST_PASSWORD || "",
 };
+
+// Fail fast if credentials not configured
+if (!TEST_CREDENTIALS.username || !TEST_CREDENTIALS.password) {
+	throw new Error(
+		"TEST_USERNAME and TEST_PASSWORD environment variables are required for E2E tests. " +
+			"Set them in your environment or in a .env file.",
+	);
+}
 
 // Helper to login if needed
 async function ensureLoggedIn(page: Page) {
