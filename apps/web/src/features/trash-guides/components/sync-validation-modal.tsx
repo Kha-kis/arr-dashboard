@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { AlertCircle, CheckCircle2, XCircle, Info } from "lucide-react";
+import { AlertCircle, CheckCircle2, HelpCircle, Info, RefreshCw, XCircle } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Button } from "../../../components/ui";
 import { useValidateSync } from "../../../hooks/api/useSync";
 import type { ConflictInfo, ValidationResult } from "../../../lib/api-client/sync";
-import { Button } from "../../../components/ui";
 
 interface SyncValidationModalProps {
 	templateId: string;
@@ -26,8 +26,12 @@ export const SyncValidationModal = ({
 	const validateMutation = useValidateSync();
 	const [resolutions, setResolutions] = useState<Record<string, "REPLACE" | "SKIP">>({});
 	const [validation, setValidation] = useState<ValidationResult | null>(null);
+	const [retryCount, setRetryCount] = useState(0);
 	const dialogRef = useRef<HTMLDivElement>(null);
 	const previousActiveElement = useRef<Element | null>(null);
+
+	// Maximum retry attempts
+	const MAX_RETRIES = 2;
 
 	// Focus trap and keyboard handling
 	useEffect(() => {
@@ -40,13 +44,13 @@ export const SyncValidationModal = ({
 		const getFocusableElements = (): HTMLElement[] => {
 			if (!dialogRef.current) return [];
 			const focusableSelectors = [
-				'button:not([disabled])',
-				'[href]',
-				'input:not([disabled])',
-				'select:not([disabled])',
-				'textarea:not([disabled])',
+				"button:not([disabled])",
+				"[href]",
+				"input:not([disabled])",
+				"select:not([disabled])",
+				"textarea:not([disabled])",
 				'[tabindex]:not([tabindex="-1"])',
-			].join(', ');
+			].join(", ");
 			return Array.from(dialogRef.current.querySelectorAll<HTMLElement>(focusableSelectors));
 		};
 
@@ -90,8 +94,8 @@ export const SyncValidationModal = ({
 		};
 	}, [onCancel]);
 
-	// Auto-validate on mount
-	useEffect(() => {
+	// Validation function that can be called for initial load and retries
+	const runValidation = () => {
 		validateMutation.mutate(
 			{ templateId, instanceId },
 			{
@@ -108,10 +112,34 @@ export const SyncValidationModal = ({
 						setResolutions({});
 					}
 				},
+				onError: (error) => {
+					console.error("[SyncValidation] Validation error:", error);
+				},
 			},
 		);
+	};
+
+	// Auto-validate on mount
+	useEffect(() => {
+		runValidation();
 		// eslint-disable-next-line react-hooks/exhaustive-deps -- Only run on mount with templateId/instanceId
 	}, [templateId, instanceId]);
+
+	// Handle retry with exponential backoff
+	const handleRetry = () => {
+		if (retryCount < MAX_RETRIES) {
+			setRetryCount((prev) => prev + 1);
+			setValidation(null);
+			// Exponential backoff: 1s, 2s
+			const delay = Math.pow(2, retryCount) * 1000;
+			setTimeout(runValidation, delay);
+		} else {
+			// Max retries exceeded, just run immediately
+			setValidation(null);
+			setRetryCount(0);
+			runValidation();
+		}
+	};
 
 	const handleResolutionChange = (configName: string, action: "REPLACE" | "SKIP") => {
 		setResolutions((prev) => ({
@@ -130,6 +158,18 @@ export const SyncValidationModal = ({
 	const hasConflicts = Array.isArray(validation?.conflicts) && validation.conflicts.length > 0;
 	const canProceed = validation && validation.valid && !hasErrors;
 
+	// Detect silent failure: validation returned invalid=false but no errors
+	const hasSilentFailure = validation && !validation.valid && !hasErrors;
+
+	// Separate informational warnings (like "Instance is reachable") from actual warnings
+	const informationalWarnings = (validation?.warnings || []).filter(
+		(w) => w.includes("is reachable") || w.includes("Validation passed"),
+	);
+	const actualWarnings = (validation?.warnings || []).filter(
+		(w) => !w.includes("is reachable") && !w.includes("Validation passed"),
+	);
+	const hasActualWarnings = actualWarnings.length > 0;
+
 	return (
 		<div
 			className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
@@ -145,10 +185,12 @@ export const SyncValidationModal = ({
 			>
 				{/* Header */}
 				<div className="border-b border-border p-6">
-					<h2 id="sync-validation-title" className="text-xl font-semibold text-fg">Validate Sync</h2>
+					<h2 id="sync-validation-title" className="text-xl font-semibold text-fg">
+						Validate Sync
+					</h2>
 					<p className="mt-1 text-sm text-fg/60">
-						Template: <span className="font-medium text-fg">{templateName}</span> →
-						Instance: <span className="font-medium text-fg">{instanceName}</span>
+						Template: <span className="font-medium text-fg">{templateName}</span> → Instance:{" "}
+						<span className="font-medium text-fg">{instanceName}</span>
 					</p>
 				</div>
 
@@ -163,6 +205,40 @@ export const SyncValidationModal = ({
 
 					{!isValidating && validation && (
 						<div className="space-y-4">
+							{/* Silent Failure Fallback - validation failed but no errors reported */}
+							{hasSilentFailure && (
+								<div className="rounded-lg border border-orange-500/20 bg-orange-500/10 p-4">
+									<div className="flex items-start gap-3">
+										<HelpCircle className="h-5 w-5 flex-shrink-0 text-orange-400" />
+										<div className="flex-1">
+											<h3 className="font-medium text-orange-200">Validation Failed</h3>
+											<p className="mt-1 text-sm text-orange-300">
+												Validation could not be completed, but no specific errors were reported.
+												This may be a temporary issue.
+											</p>
+											<div className="mt-3 flex items-center gap-3">
+												<Button
+													variant="secondary"
+													size="sm"
+													onClick={handleRetry}
+													disabled={isValidating}
+												>
+													<RefreshCw
+														className={`mr-2 h-3 w-3 ${isValidating ? "animate-spin" : ""}`}
+													/>
+													{retryCount > 0
+														? `Retry (${retryCount}/${MAX_RETRIES})`
+														: "Retry Validation"}
+												</Button>
+												<span className="text-xs text-orange-300/70">
+													Try again or check your instance connectivity
+												</span>
+											</div>
+										</div>
+									</div>
+								</div>
+							)}
+
 							{/* Validation Errors */}
 							{hasErrors && (
 								<div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4">
@@ -175,21 +251,51 @@ export const SyncValidationModal = ({
 													<li key={index}>• {error}</li>
 												))}
 											</ul>
+											{/* Retry button for errors too */}
+											<div className="mt-3">
+												<Button
+													variant="secondary"
+													size="sm"
+													onClick={handleRetry}
+													disabled={isValidating}
+												>
+													<RefreshCw
+														className={`mr-2 h-3 w-3 ${isValidating ? "animate-spin" : ""}`}
+													/>
+													Retry Validation
+												</Button>
+											</div>
 										</div>
 									</div>
 								</div>
 							)}
 
-							{/* Warnings */}
-							{hasWarnings && (
+							{/* Actual Warnings (not informational) */}
+							{hasActualWarnings && (
 								<div className="rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-4">
 									<div className="flex items-start gap-3">
 										<AlertCircle className="h-5 w-5 flex-shrink-0 text-yellow-400" />
 										<div className="flex-1">
 											<h3 className="font-medium text-yellow-200">Warnings</h3>
 											<ul className="mt-2 space-y-1 text-sm text-yellow-300">
-												{validation.warnings.map((warning, index) => (
+												{actualWarnings.map((warning, index) => (
 													<li key={index}>• {warning}</li>
+												))}
+											</ul>
+										</div>
+									</div>
+								</div>
+							)}
+
+							{/* Informational messages (like connectivity status) */}
+							{informationalWarnings.length > 0 && canProceed && (
+								<div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-4">
+									<div className="flex items-start gap-3">
+										<Info className="h-5 w-5 flex-shrink-0 text-blue-400" />
+										<div className="flex-1">
+											<ul className="space-y-1 text-sm text-blue-300">
+												{informationalWarnings.map((info, index) => (
+													<li key={index}>• {info}</li>
 												))}
 											</ul>
 										</div>
@@ -204,7 +310,8 @@ export const SyncValidationModal = ({
 										<Info className="h-5 w-5 flex-shrink-0 text-blue-400" />
 										<div className="flex-1">
 											<h3 className="font-medium text-fg">
-												{validation.conflicts.length} Conflict{validation.conflicts.length !== 1 ? "s" : ""} Detected
+												{validation.conflicts.length} Conflict
+												{validation.conflicts.length !== 1 ? "s" : ""} Detected
 											</h3>
 											<p className="mt-1 text-sm text-fg/60">
 												Choose how to handle existing Custom Formats with the same name
@@ -224,16 +331,28 @@ export const SyncValidationModal = ({
 
 															<div className="flex gap-2">
 																<Button
-																	variant={resolutions[conflict.configName] === "REPLACE" ? "primary" : "secondary"}
+																	variant={
+																		resolutions[conflict.configName] === "REPLACE"
+																			? "primary"
+																			: "secondary"
+																	}
 																	size="sm"
-																	onClick={() => handleResolutionChange(conflict.configName, "REPLACE")}
+																	onClick={() =>
+																		handleResolutionChange(conflict.configName, "REPLACE")
+																	}
 																>
 																	Replace
 																</Button>
 																<Button
-																	variant={resolutions[conflict.configName] === "SKIP" ? "primary" : "secondary"}
+																	variant={
+																		resolutions[conflict.configName] === "SKIP"
+																			? "primary"
+																			: "secondary"
+																	}
 																	size="sm"
-																	onClick={() => handleResolutionChange(conflict.configName, "SKIP")}
+																	onClick={() =>
+																		handleResolutionChange(conflict.configName, "SKIP")
+																	}
 																>
 																	Skip
 																</Button>
@@ -266,13 +385,24 @@ export const SyncValidationModal = ({
 						<div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4">
 							<div className="flex items-start gap-3">
 								<XCircle className="h-5 w-5 flex-shrink-0 text-red-400" />
-								<div>
+								<div className="flex-1">
 									<h3 className="font-medium text-red-200">Validation Error</h3>
 									<p className="mt-1 text-sm text-red-300">
 										{validateMutation.error instanceof Error
 											? validateMutation.error.message
-											: "An unknown error occurred"}
+											: "An unknown error occurred while validating the sync request."}
 									</p>
+									<div className="mt-3">
+										<Button
+											variant="secondary"
+											size="sm"
+											onClick={handleRetry}
+											disabled={isValidating}
+										>
+											<RefreshCw className={`mr-2 h-3 w-3 ${isValidating ? "animate-spin" : ""}`} />
+											Retry Validation
+										</Button>
+									</div>
 								</div>
 							</div>
 						</div>
@@ -284,11 +414,7 @@ export const SyncValidationModal = ({
 					<Button variant="secondary" onClick={onCancel}>
 						Cancel
 					</Button>
-					<Button
-						variant="primary"
-						onClick={handleConfirm}
-						disabled={!canProceed || isValidating}
-					>
+					<Button variant="primary" onClick={handleConfirm} disabled={!canProceed || isValidating}>
 						{hasConflicts ? "Proceed with Resolutions" : "Start Sync"}
 					</Button>
 				</div>
