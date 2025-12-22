@@ -45,14 +45,14 @@ setup("authenticate", async ({ page }) => {
 	await page.getByLabel(/username/i).fill(TEST_CREDENTIALS.username);
 	await page.getByLabel(/password/i).fill(TEST_CREDENTIALS.password);
 
-	// Click sign in
-	await page.getByRole("button", { name: /sign in/i }).click();
+	// Click sign in with password button (be specific to avoid matching passkey button)
+	await page.getByRole("button", { name: /sign in with password/i }).click();
 
 	// Wait for successful login (redirect to dashboard)
 	await expect(page).toHaveURL(/\/dashboard/, { timeout: 15000 });
 
-	// Verify we're logged in
-	await expect(page.getByText(TEST_CREDENTIALS.username)).toBeVisible({ timeout: 5000 });
+	// Verify we're logged in by checking for the greeting heading
+	await expect(page.getByRole("heading", { name: new RegExp(`Hi ${TEST_CREDENTIALS.username}`, "i") })).toBeVisible({ timeout: 5000 });
 
 	// Save authentication state
 	await page.context().storageState({ path: authFile });
