@@ -9,8 +9,8 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
-import { createArrApiClient } from "../../lib/trash-guides/arr-api-client.js";
 import type { TrashCustomFormat, CustomFormatSpecification } from "@arr/shared";
+import type { SonarrClient, RadarrClient } from "arr-sdk";
 
 // ============================================================================
 // Validation Schemas
@@ -139,14 +139,16 @@ export async function registerCustomFormatRoutes(
 				});
 			}
 
-			// Create Arr API client (matches deployment-executor pattern)
-			const arrClient = createArrApiClient(instance, app.encryptor);
+			// Create SDK client using factory
+			const client = app.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
 
 			// Get existing Custom Formats from instance
-			const existingFormats = await arrClient.getCustomFormats();
+			const existingFormats = await client.customFormat.getAll();
 			const existingByName = new Map<string, (typeof existingFormats)[number]>();
 			for (const cf of existingFormats) {
-				existingByName.set(cf.name, cf);
+				if (cf.name) {
+					existingByName.set(cf.name, cf);
+				}
 			}
 
 			// Get the commit hash from cache for tracking
@@ -185,26 +187,26 @@ export async function registerCustomFormatRoutes(
 
 					if (existing?.id) {
 						// Update existing custom format
-						// Note: The ARR API expects fields as array, but CustomFormat type uses Record
-						// Using type assertion to bridge the gap
+						// Note: The ARR API expects fields as array, but TRaSH format uses object
+						// Using double type assertion to bridge the gap between TRaSH format and SDK types
 						const updatedCF = {
 							...existing,
 							name: customFormat.name,
-							specifications: specifications as unknown as CustomFormatSpecification[],
+							specifications,
 						};
-						await arrClient.updateCustomFormat(existing.id, updatedCF);
+						await client.customFormat.update(existing.id, updatedCF as unknown as Parameters<typeof client.customFormat.update>[1]);
 						results.updated.push(customFormat.name);
 						successfulDeployments.push({ trashId: customFormat.trash_id, name: customFormat.name });
 					} else {
 						// Create new custom format
-						// Note: The ARR API expects fields as array, but CustomFormat type uses Record
-						// Using type assertion to bridge the gap
+						// Note: The ARR API expects fields as array, but TRaSH format uses object
+						// Using double type assertion to bridge the gap between TRaSH format and SDK types
 						const newCF = {
 							name: customFormat.name,
 							includeCustomFormatWhenRenaming: customFormat.includeCustomFormatWhenRenaming ?? false,
-							specifications: specifications as unknown as CustomFormatSpecification[],
+							specifications,
 						};
-						await arrClient.createCustomFormat(newCF);
+						await client.customFormat.create(newCF as unknown as Parameters<typeof client.customFormat.create>[0]);
 						results.created.push(customFormat.name);
 						successfulDeployments.push({ trashId: customFormat.trash_id, name: customFormat.name });
 					}

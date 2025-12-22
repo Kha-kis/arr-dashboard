@@ -15,9 +15,12 @@ import type {
 	CustomFormatSpecification,
 	TemplateCustomFormat,
 } from "@arr/shared";
-import { createArrApiClient } from "./arr-api-client.js";
-import type { CustomFormat } from "./arr-api-client.js";
+import type { SonarrClient, RadarrClient } from "arr-sdk";
+import type { ArrClientFactory } from "../arr/client-factory.js";
 import { dequal as deepEqual } from "dequal";
+
+// SDK type aliases
+type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]>>[number];
 
 // ============================================================================
 // Types for Template Config and Instance Overrides
@@ -216,14 +219,14 @@ function specArraysAreEqual(templateSpecs: RawSpecification[], instanceSpecs: Cu
 
 export class DeploymentPreviewService {
 	private prisma: PrismaClient;
-	private encryptor: { decrypt: (payload: { value: string; iv: string }) => string };
+	private clientFactory: ArrClientFactory;
 
 	constructor(
 		prisma: PrismaClient,
-		encryptor: { decrypt: (payload: { value: string; iv: string }) => string },
+		clientFactory: ArrClientFactory,
 	) {
 		this.prisma = prisma;
-		this.encryptor = encryptor;
+		this.clientFactory = clientFactory;
 	}
 
 	/**
@@ -266,23 +269,20 @@ export class DeploymentPreviewService {
 			);
 		}
 
-		// Create API client and test connection
-		const apiClient = createArrApiClient(instance, this.encryptor);
+		// Create SDK client and test connection
+		const client = this.clientFactory.create(instance) as SonarrClient | RadarrClient;
 		let instanceReachable = false;
 		let instanceVersion: string | undefined;
-		let instanceCustomFormats: CustomFormat[] = [];
-		let instanceQualityProfiles: Array<{
-			id: number;
-			name: string;
-			formatItems: Array<{ format: number; score: number }>;
-		}> = [];
+		let instanceCustomFormats: SdkCustomFormat[] = [];
+		// Use any[] for quality profiles due to Sonarr/Radarr union type differences
+		let instanceQualityProfiles: any[] = [];
 
 		try {
-			const status = await apiClient.getSystemStatus();
+			const status = await client.system.get();
 			instanceReachable = true;
-			instanceVersion = status.version;
-			instanceCustomFormats = await apiClient.getCustomFormats();
-			instanceQualityProfiles = await apiClient.getQualityProfiles();
+			instanceVersion = status.version ?? undefined;
+			instanceCustomFormats = await client.customFormat.getAll();
+			instanceQualityProfiles = await client.qualityProfile.getAll();
 		} catch (error) {
 			// Instance unreachable - will return preview with warning
 			console.error("Failed to reach instance:", error);
@@ -362,8 +362,8 @@ export class DeploymentPreviewService {
 		// Build instance CF maps for matching
 		// We need both trashId-based matching (ideal) and name-based matching (fallback)
 		// since Radarr doesn't natively store trash_id
-		const instanceCFByTrashId = new Map<string, CustomFormat>();
-		const instanceCFByName = new Map<string, CustomFormat>();
+		const instanceCFByTrashId = new Map<string, SdkCustomFormat>();
+		const instanceCFByName = new Map<string, SdkCustomFormat>();
 
 		for (const instanceCF of instanceCustomFormats) {
 			// Try to extract trash_id from specifications (rare - Radarr doesn't store this)
@@ -372,7 +372,9 @@ export class DeploymentPreviewService {
 				instanceCFByTrashId.set(trashId, instanceCF);
 			}
 			// Always map by name for fallback matching
-			instanceCFByName.set(instanceCF.name, instanceCF);
+			if (instanceCF.name) {
+				instanceCFByName.set(instanceCF.name, instanceCF);
+			}
 		}
 
 		// Initialize warnings array early so we can add warnings during profile matching
@@ -468,7 +470,8 @@ export class DeploymentPreviewService {
 				// This handles the format difference between TRaSH (object) and Radarr (array)
 				const rawTemplateSpecs = templateCF.originalConfig?.specifications;
 				const templateSpecs: RawSpecification[] = Array.isArray(rawTemplateSpecs) ? (rawTemplateSpecs as RawSpecification[]) : [];
-				const instanceSpecs = instanceCF.specifications || [];
+				// Cast SDK specs to CustomFormatSpecification - SDK types have nullable fields but are compatible at runtime
+				const instanceSpecs = (instanceCF.specifications || []) as unknown as CustomFormatSpecification[];
 
 				if (!specArraysAreEqual(templateSpecs, instanceSpecs)) {
 					conflicts.push({
@@ -537,7 +540,7 @@ export class DeploymentPreviewService {
 			if (instanceCF.id !== undefined && !matchedInstanceCFIds.has(instanceCF.id)) {
 				unmatchedCFs.push({
 					instanceId: instanceCF.id,
-					name: instanceCF.name,
+					name: instanceCF.name || "Unknown",
 					reason: "Not part of current template - may be from other templates or manually created",
 				});
 			}
@@ -596,14 +599,14 @@ export class DeploymentPreviewService {
 	 * Returns null if no trash_id found (Radarr doesn't natively store trash_id)
 	 * Name-based matching is handled separately in generatePreview
 	 */
-	private extractTrashIdFromSpecs(cf: CustomFormat): string | null {
+	private extractTrashIdFromSpecs(cf: SdkCustomFormat): string | null {
 		// Strategy 1: Check specifications for trash_id in fields
 		// TRaSH Guides may store metadata in specification fields (rare)
 		for (const spec of cf.specifications || []) {
 			if (spec.fields) {
 				// Handle both array format (Radarr API) and object format
 				if (Array.isArray(spec.fields)) {
-					const trashIdField = spec.fields.find((f: { name: string; value: unknown }) => f.name === 'trash_id');
+					const trashIdField = spec.fields.find((f) => f.name === 'trash_id');
 					if (trashIdField) {
 						return String(trashIdField.value);
 					}
@@ -620,9 +623,11 @@ export class DeploymentPreviewService {
 
 		// Strategy 2: Check for TRaSH ID pattern in CF name
 		// TRaSH Guides CFs may have format: "CF Name [trash_id]" or similar
-		const trashIdMatch = cf.name.match(/\[([a-f0-9-]{36})\]$/i);
-		if (trashIdMatch?.[1]) {
-			return trashIdMatch[1];
+		if (cf.name) {
+			const trashIdMatch = cf.name.match(/\[([a-f0-9-]{36})\]$/i);
+			if (trashIdMatch?.[1]) {
+				return trashIdMatch[1];
+			}
 		}
 
 		// No trash_id found - name-based matching is handled separately
@@ -636,7 +641,7 @@ export class DeploymentPreviewService {
 
 export function createDeploymentPreviewService(
 	prisma: PrismaClient,
-	encryptor: { decrypt: (payload: { value: string; iv: string }) => string },
+	clientFactory: ArrClientFactory,
 ): DeploymentPreviewService {
-	return new DeploymentPreviewService(prisma, encryptor);
+	return new DeploymentPreviewService(prisma, clientFactory);
 }

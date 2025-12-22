@@ -3,6 +3,7 @@ import fastifyHelmet from "@fastify/helmet";
 import fastifyRateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance } from "fastify";
 import { type ApiEnv, envSchema } from "./config/env.js";
+import { arrClientPlugin } from "./plugins/arr-client.js";
 import backupSchedulerPlugin from "./plugins/backup-scheduler.js";
 import trashBackupCleanupPlugin from "./plugins/trash-backup-cleanup.js";
 import trashUpdateSchedulerPlugin from "./plugins/trash-update-scheduler.js";
@@ -59,9 +60,10 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		timeWindow: env.API_RATE_LIMIT_WINDOW,
 	});
 
-	// Register Prisma, Security, Lifecycle, and Scheduler plugins
+	// Register Prisma, Security, ARR Client, Lifecycle, and Scheduler plugins
 	app.register(prismaPlugin);
 	app.register(securityPlugin);
+	app.register(arrClientPlugin);
 	app.register(lifecyclePlugin);
 	app.register(backupSchedulerPlugin);
 	app.register(trashBackupCleanupPlugin);
