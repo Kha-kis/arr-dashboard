@@ -61,7 +61,7 @@ export async function registerCustomFormatRoutes(
 ) {
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
+		if (!request.currentUser!.id) {
 			return reply.status(401).send({
 				error: "UNAUTHORIZED",
 				message: "Authentication required",
@@ -97,7 +97,7 @@ export async function registerCustomFormatRoutes(
 			const instance = await app.prisma.serviceInstance.findFirst({
 				where: {
 					id: instanceId,
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id,
 				},
 			});
 
@@ -221,7 +221,7 @@ export async function registerCustomFormatRoutes(
 
 			// Record successful deployments for update tracking
 			if (successfulDeployments.length > 0) {
-				const userId = request.currentUser?.id;
+				const userId = request.currentUser!.id;
 				await Promise.all(
 					successfulDeployments.map((deployment) =>
 						app.prisma.standaloneCFDeployment.upsert({
@@ -288,7 +288,7 @@ export async function registerCustomFormatRoutes(
 			serviceType?: "RADARR" | "SONARR";
 		};
 	}>("/standalone-updates", async (request, reply) => {
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 		const { instanceId, serviceType } = request.query;
 
 		try {
@@ -400,7 +400,7 @@ export async function registerCustomFormatRoutes(
 			serviceType?: "RADARR" | "SONARR";
 		};
 	}>("/standalone-deployments", async (request, reply) => {
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 		const { instanceId, serviceType } = request.query;
 
 		try {
@@ -463,7 +463,7 @@ export async function registerCustomFormatRoutes(
 	app.delete<{
 		Params: { id: string };
 	}>("/standalone-deployments/:id", async (request, reply) => {
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 		const { id } = request.params;
 
 		try {

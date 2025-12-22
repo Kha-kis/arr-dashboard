@@ -13,7 +13,7 @@ import { createDeploymentPreviewService } from "../../lib/trash-guides/deploymen
 export async function deploymentRoutes(app: FastifyInstance) {
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
+		if (!request.currentUser!.id) {
 			return reply.status(401).send({
 				success: false,
 				error: "Authentication required",
@@ -37,7 +37,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 	}>("/preview", async (request, reply) => {
 		try {
 			const { templateId, instanceId } = request.body;
-			const userId = request.currentUser?.id;
+			const userId = request.currentUser!.id;
 
 			if (!templateId || !instanceId) {
 				return reply.status(400).send({
@@ -104,7 +104,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 	}>("/execute", async (request, reply) => {
 		try {
 			const { templateId, instanceId, syncStrategy, conflictResolutions } = request.body;
-			const userId = request.currentUser?.id;
+			const userId = request.currentUser!.id;
 
 			if (!templateId || !instanceId) {
 				return reply.status(400).send({
@@ -165,7 +165,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		};
 	}>("/sync-strategy", async (request, reply) => {
 		try {
-			const userId = request.currentUser?.id;
+			const userId = request.currentUser!.id;
 			const { templateId, instanceId, syncStrategy } = request.body;
 
 			if (!templateId || !instanceId || !syncStrategy) {
@@ -252,7 +252,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		};
 	}>("/sync-strategy-bulk", async (request, reply) => {
 		try {
-			const userId = request.currentUser?.id;
+			const userId = request.currentUser!.id;
 			const { templateId, syncStrategy } = request.body;
 
 			if (!templateId || !syncStrategy) {
@@ -335,7 +335,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 	}>("/unlink", async (request, reply) => {
 		try {
 			const { templateId, instanceId } = request.body;
-			const userId = request.currentUser?.id;
+			const userId = request.currentUser!.id;
 
 			if (!templateId || !instanceId) {
 				return reply.status(400).send({
@@ -433,7 +433,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 	}>("/execute-bulk", async (request, reply) => {
 		try {
 			const { templateId, instanceIds, syncStrategy, instanceSyncStrategies } = request.body;
-			const userId = request.currentUser?.id;
+			const userId = request.currentUser!.id;
 
 			if (!templateId || !instanceIds || instanceIds.length === 0) {
 				return reply.status(400).send({

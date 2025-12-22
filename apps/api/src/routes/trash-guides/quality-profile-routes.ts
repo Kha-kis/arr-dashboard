@@ -67,7 +67,7 @@ export async function registerQualityProfileRoutes(
 ) {
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
+		if (!request.currentUser!.id) {
 			return reply.status(401).send({
 				success: false,
 				error: "Authentication required",
@@ -461,7 +461,7 @@ export async function registerQualityProfileRoutes(
 			}
 
 			// Create template
-			const template = await templateService.createTemplate(request.currentUser?.id, {
+			const template = await templateService.createTemplate(request.currentUser!.id, {
 				name: templateName,
 				description:
 					templateDescription ||
@@ -520,7 +520,7 @@ export async function registerQualityProfileRoutes(
 			// Get existing template to preserve quality profile settings
 			const existingTemplate = await templateService.getTemplate(
 				templateId,
-				request.currentUser?.id,
+				request.currentUser!.id,
 			);
 
 			if (!existingTemplate) {
@@ -587,7 +587,7 @@ export async function registerQualityProfileRoutes(
 			}
 
 			// Update template
-			const template = await templateService.updateTemplate(templateId, request.currentUser?.id, {
+			const template = await templateService.updateTemplate(templateId, request.currentUser!.id, {
 				name: templateName,
 				description: templateDescription,
 				config: templateConfig,

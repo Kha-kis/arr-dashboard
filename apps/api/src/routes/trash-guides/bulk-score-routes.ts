@@ -67,7 +67,7 @@ const bulkScoreCopySchema = z.object({
 const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
+		if (!request.currentUser!.id) {
 			return reply.status(401).send({
 				success: false,
 				error: "Authentication required",
@@ -80,7 +80,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Get all custom format scores with filtering
 	 */
 	app.get("/", async (request, reply) => {
-		const userId = request.currentUser?.id; // preHandler guarantees authentication
+		const userId = request.currentUser!.id; // preHandler guarantees authentication
 		const query = request.query as Record<string, string | undefined>;
 
 		// Build filters from query parameters
@@ -117,7 +117,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Update scores for multiple CFs across templates
 	 */
 	app.post("/update", async (request, reply) => {
-		const userId = request.currentUser?.id; // preHandler guarantees authentication
+		const userId = request.currentUser!.id; // preHandler guarantees authentication
 
 		// Validate request body
 		const parseResult = bulkScoreUpdateSchema.safeParse(request.body);
@@ -157,7 +157,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Copy scores from one template to others
 	 */
 	app.post("/copy", async (request, reply) => {
-		const userId = request.currentUser?.id; // preHandler guarantees authentication
+		const userId = request.currentUser!.id; // preHandler guarantees authentication
 
 		// Validate request body
 		const parseResult = bulkScoreCopySchema.safeParse(request.body);
@@ -197,7 +197,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Reset scores to TRaSH Guides defaults
 	 */
 	app.post("/reset", async (request, reply) => {
-		const userId = request.currentUser?.id; // preHandler guarantees authentication
+		const userId = request.currentUser!.id; // preHandler guarantees authentication
 
 		// Validate request body
 		const parseResult = bulkScoreResetSchema.safeParse(request.body);
@@ -237,7 +237,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Export scores to JSON
 	 */
 	app.post("/export", async (request, reply) => {
-		const userId = request.currentUser?.id; // preHandler guarantees authentication
+		const userId = request.currentUser!.id; // preHandler guarantees authentication
 		const { templateIds, serviceType } = request.body as {
 			templateIds: string[];
 			serviceType?: "RADARR" | "SONARR";
@@ -265,7 +265,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Import scores from JSON
 	 */
 	app.post("/import", async (request, reply) => {
-		const userId = request.currentUser?.id; // preHandler guarantees authentication
+		const userId = request.currentUser!.id; // preHandler guarantees authentication
 
 		// Validate request body
 		const parseResult = bulkScoreImportSchema.safeParse(request.body);

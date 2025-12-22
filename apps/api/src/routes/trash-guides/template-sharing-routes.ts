@@ -15,7 +15,7 @@ import { createEnhancedTemplateService } from "../../lib/trash-guides/enhanced-t
 const templateSharingRoutes: FastifyPluginCallback = (app, opts, done) => {
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
+		if (!request.currentUser!.id) {
 			return reply.status(401).send({
 				success: false,
 				error: "Authentication required",
@@ -28,7 +28,7 @@ const templateSharingRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Export template with enhanced options
 	 */
 	app.post("/export", async (request, reply) => {
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 		const { templateId, options } = request.body as {
 			templateId: string;
 			options?: TemplateExportOptions;
@@ -73,7 +73,7 @@ const templateSharingRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Validate template before import
 	 */
 	app.post("/validate", async (request, reply) => {
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 		const { jsonData } = request.body as { jsonData: string };
 
 		try {
@@ -98,7 +98,7 @@ const templateSharingRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Import template with validation and conflict resolution
 	 */
 	app.post("/import", async (request, reply) => {
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 		const { jsonData, options } = request.body as {
 			jsonData: string;
 			options?: TemplateImportOptions;
@@ -137,7 +137,7 @@ const templateSharingRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Preview template import without saving
 	 */
 	app.post("/preview", async (request, reply) => {
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 		const { jsonData } = request.body as { jsonData: string };
 
 		try {
