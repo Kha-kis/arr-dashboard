@@ -1,7 +1,7 @@
 "use client";
 
 import { formatDistanceToNow } from "date-fns";
-import { AlertCircle, CheckCircle2, Clock, Play, RefreshCw } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, Hand, Play, RefreshCw } from "lucide-react";
 import { Alert, AlertDescription, Skeleton } from "../../../components/ui";
 import { useSchedulerStatus, useTriggerUpdateCheck } from "../../../hooks/api/useTemplateUpdates";
 
@@ -77,7 +77,8 @@ export const SchedulerStatusDashboard = () => {
 						<h3 className="text-lg font-semibold text-fg">TRaSH Guides Update Scheduler</h3>
 						<p className="text-sm text-fg-muted mt-1">
 							Checks for TRaSH Guides updates every 12 hours. Templates set to &quot;Auto&quot; sync
-							strategy will be automatically updated and deployed to your instances.
+							strategy will be automatically updated. &quot;Manual&quot; templates are excluded from
+							automatic checks.
 						</p>
 					</div>
 					<div className="flex items-center gap-2">
@@ -159,7 +160,7 @@ export const SchedulerStatusDashboard = () => {
 									&quot;Auto&quot; strategy are updated and deployed automatically.
 								</p>
 							</div>
-							<div className="grid gap-3 grid-cols-2 md:grid-cols-4">
+							<div className="grid gap-3 grid-cols-2 md:grid-cols-5">
 								<div>
 									<span className="text-xs text-fg-muted">Auto-Sync</span>
 									<p className="text-sm font-medium text-green-400 mt-1">
@@ -177,6 +178,13 @@ export const SchedulerStatusDashboard = () => {
 										{schedulerData.lastCheckResult.templatesWithNotifyStrategy ?? 0}
 									</p>
 									<p className="text-xs text-fg-muted mt-0.5">Will alert on updates</p>
+								</div>
+								<div>
+									<span className="text-xs text-fg-muted">Manual</span>
+									<p className="text-sm font-medium text-amber-400 mt-1">
+										{schedulerData.lastCheckResult.templatesWithManualStrategy ?? 0}
+									</p>
+									<p className="text-xs text-fg-muted mt-0.5">Excluded from checks</p>
 								</div>
 								<div>
 									<span className="text-xs text-fg-muted">Needing Attention</span>
