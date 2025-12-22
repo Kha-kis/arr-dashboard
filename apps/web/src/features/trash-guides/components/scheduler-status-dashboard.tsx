@@ -182,7 +182,12 @@ export const SchedulerStatusDashboard = () => {
 								<div>
 									<span className="text-xs text-fg-muted">Manual</span>
 									<p className="text-sm font-medium text-amber-400 mt-1">
-										{schedulerData.lastCheckResult.templatesWithManualStrategy ?? 0}
+										{Math.max(
+											0,
+											schedulerData.lastCheckResult.templatesChecked -
+												(schedulerData.lastCheckResult.templatesWithAutoStrategy ?? 0) -
+												(schedulerData.lastCheckResult.templatesWithNotifyStrategy ?? 0)
+										)}
 									</p>
 									<p className="text-xs text-fg-muted mt-0.5">Excluded from checks</p>
 								</div>
