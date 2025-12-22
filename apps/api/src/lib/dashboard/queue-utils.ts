@@ -137,8 +137,7 @@ export const deriveQueueActions = (item: unknown): QueueActionCapabilities => {
 
 	// Check if there's a warning that typically indicates manual import is needed
 	const hasImportWarning =
-		trackedStatus.includes("warning") &&
-		(isPendingState || appearsCompleted || isImportState);
+		trackedStatus.includes("warning") && (isPendingState || appearsCompleted || isImportState);
 
 	const canManualImport = Boolean(
 		hasDownloadId &&

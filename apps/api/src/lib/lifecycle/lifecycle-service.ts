@@ -34,7 +34,7 @@ export class LifecycleService {
 				pid: process.pid,
 				uptime: process.uptime(),
 			},
-			"Initiating application restart"
+			"Initiating application restart",
 		);
 
 		// Schedule the actual restart after allowing time for response to be sent
@@ -68,12 +68,14 @@ export class LifecycleService {
 				const exitCode = !spawnSuccess ? 1 : isLauncherManaged ? 42 : 0;
 				this.app.log.info(
 					{ exitCode, launcherManaged: isLauncherManaged, production: isProduction, spawnSuccess },
-					"Exiting current process"
+					"Exiting current process",
 				);
 				process.exit(exitCode);
 			} else {
 				// Development without launcher - skip exit, let hot reload handle restart
-				this.app.log.info("Development mode without launcher - skipping exit, server will continue running");
+				this.app.log.info(
+					"Development mode without launcher - skipping exit, server will continue running",
+				);
 				this.isShuttingDown = false;
 				return;
 			}
@@ -104,9 +106,7 @@ export class LifecycleService {
 
 		// If launcher-managed, let the launcher handle spawning
 		if (isLauncherManaged) {
-			this.app.log.info(
-				"Launcher-managed mode - launcher will handle restart"
-			);
+			this.app.log.info("Launcher-managed mode - launcher will handle restart");
 			return false;
 		}
 
@@ -114,9 +114,7 @@ export class LifecycleService {
 		const isDevelopment = !isProduction;
 
 		if (isDevelopment) {
-			this.app.log.info(
-				"Development mode without launcher - manual restart required"
-			);
+			this.app.log.info("Development mode without launcher - manual restart required");
 			return false;
 		}
 
@@ -142,7 +140,7 @@ export class LifecycleService {
 					command: nodeExecutable,
 					args: process.argv.slice(1),
 				},
-				"Spawning new process"
+				"Spawning new process",
 			);
 
 			const child = spawn(nodeExecutable, process.argv.slice(1), {

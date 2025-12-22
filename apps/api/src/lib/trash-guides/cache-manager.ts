@@ -5,10 +5,10 @@
  * Handles cache versioning, staleness detection, and automatic cleanup.
  */
 
-import type { PrismaClient } from "@prisma/client";
-import { gzip, gunzip } from "node:zlib";
 import { promisify } from "node:util";
-import type { TrashConfigType, TrashCacheEntry, TrashCacheStatus } from "@arr/shared";
+import { gunzip, gzip } from "node:zlib";
+import type { TrashCacheEntry, TrashCacheStatus, TrashConfigType } from "@arr/shared";
+import type { PrismaClient } from "@prisma/client";
 
 // ============================================================================
 // Compression Utilities
@@ -261,13 +261,10 @@ export class TrashCacheManager {
 			}
 		} catch (error) {
 			// Handle decompression errors
-			console.error(
-				`[TrashCacheManager] Failed to get status for ${serviceType}/${configType}`,
-				{
-					dataSize: cacheEntry.data.length,
-					error: error instanceof Error ? error.message : String(error),
-				},
-			);
+			console.error(`[TrashCacheManager] Failed to get status for ${serviceType}/${configType}`, {
+				dataSize: cacheEntry.data.length,
+				error: error instanceof Error ? error.message : String(error),
+			});
 			await this.delete(serviceType, configType);
 			return null;
 		}
@@ -451,7 +448,7 @@ export class TrashCacheManager {
 	 */
 	async cleanupStale(): Promise<number> {
 		const staleThreshold = new Date();
-		staleThreshold.setHours(staleThreshold.getHours() - (this.options.staleAfterHours * 2));
+		staleThreshold.setHours(staleThreshold.getHours() - this.options.staleAfterHours * 2);
 
 		const result = await this.prisma.trashCache.deleteMany({
 			where: {

@@ -7,8 +7,8 @@
  */
 
 import type { FastifyInstance } from "fastify";
-import { createDeploymentPreviewService } from "../../lib/trash-guides/deployment-preview.js";
 import { createDeploymentExecutorService } from "../../lib/trash-guides/deployment-executor.js";
+import { createDeploymentPreviewService } from "../../lib/trash-guides/deployment-preview.js";
 
 export async function deploymentRoutes(app: FastifyInstance) {
 	// Add authentication preHandler for all routes in this plugin
@@ -37,7 +37,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 	}>("/preview", async (request, reply) => {
 		try {
 			const { templateId, instanceId } = request.body;
-			const userId = request.currentUser!.id;
+			const userId = request.currentUser?.id;
 
 			if (!templateId || !instanceId) {
 				return reply.status(400).send({
@@ -46,11 +46,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				});
 			}
 
-			const preview = await deploymentPreview.generatePreview(
-				templateId,
-				instanceId,
-				userId,
-			);
+			const preview = await deploymentPreview.generatePreview(templateId, instanceId, userId);
 
 			// Check for existing deployment to get current sync strategy
 			// Find the mapping by templateId and instanceId
@@ -67,14 +63,17 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				data: {
 					...preview,
 					// Include existing sync strategy if this instance was previously deployed
-					existingSyncStrategy: existingMapping?.syncStrategy as "auto" | "manual" | "notify" | undefined,
+					existingSyncStrategy: existingMapping?.syncStrategy as
+						| "auto"
+						| "manual"
+						| "notify"
+						| undefined,
 				},
 			});
 		} catch (error) {
 			if (
 				error instanceof Error &&
-				(error.message.includes("not found") ||
-					error.message.includes("mismatch"))
+				(error.message.includes("not found") || error.message.includes("mismatch"))
 			) {
 				return reply.status(400).send({
 					success: false,
@@ -105,7 +104,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 	}>("/execute", async (request, reply) => {
 		try {
 			const { templateId, instanceId, syncStrategy, conflictResolutions } = request.body;
-			const userId = request.currentUser!.id;
+			const userId = request.currentUser?.id;
 
 			if (!templateId || !instanceId) {
 				return reply.status(400).send({
@@ -129,16 +128,15 @@ export async function deploymentRoutes(app: FastifyInstance) {
 					result: result,
 				});
 			}
-				return reply.status(400).send({
-					success: false,
-					error: "Deployment failed",
-					result: result,
-				});
+			return reply.status(400).send({
+				success: false,
+				error: "Deployment failed",
+				result: result,
+			});
 		} catch (error) {
 			if (
 				error instanceof Error &&
-				(error.message.includes("not found") ||
-					error.message.includes("mismatch"))
+				(error.message.includes("not found") || error.message.includes("mismatch"))
 			) {
 				return reply.status(400).send({
 					success: false,
@@ -167,7 +165,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		};
 	}>("/sync-strategy", async (request, reply) => {
 		try {
-			const userId = request.currentUser!.id;
+			const userId = request.currentUser?.id;
 			const { templateId, instanceId, syncStrategy } = request.body;
 
 			if (!templateId || !instanceId || !syncStrategy) {
@@ -202,7 +200,8 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				return reply.status(404).send({
 					success: false,
 					error: "No active deployment found",
-					details: "This instance was synced in the past but is no longer linked to this template. Re-deploy the template to this instance to change sync strategy.",
+					details:
+						"This instance was synced in the past but is no longer linked to this template. Re-deploy the template to this instance to change sync strategy.",
 				});
 			}
 
@@ -253,7 +252,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 		};
 	}>("/sync-strategy-bulk", async (request, reply) => {
 		try {
-			const userId = request.currentUser!.id;
+			const userId = request.currentUser?.id;
 			const { templateId, syncStrategy } = request.body;
 
 			if (!templateId || !syncStrategy) {
@@ -336,7 +335,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 	}>("/unlink", async (request, reply) => {
 		try {
 			const { templateId, instanceId } = request.body;
-			const userId = request.currentUser!.id;
+			const userId = request.currentUser?.id;
 
 			if (!templateId || !instanceId) {
 				return reply.status(400).send({
@@ -396,7 +395,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 
 			request.log.info(
 				{ templateId, instanceId, mappingId: mapping.id },
-				"Template unlinked from instance"
+				"Template unlinked from instance",
 			);
 
 			return reply.send({
@@ -434,7 +433,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 	}>("/execute-bulk", async (request, reply) => {
 		try {
 			const { templateId, instanceIds, syncStrategy, instanceSyncStrategies } = request.body;
-			const userId = request.currentUser!.id;
+			const userId = request.currentUser?.id;
 
 			if (!templateId || !instanceIds || instanceIds.length === 0) {
 				return reply.status(400).send({
@@ -456,8 +455,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 			// success: true only when all deployments succeeded
 			// Check both failedInstances count and individual result.success flags
 			const hasFailures =
-				result.failedInstances > 0 ||
-				result.results.some((deployment) => !deployment.success);
+				result.failedInstances > 0 || result.results.some((deployment) => !deployment.success);
 
 			return reply.send({
 				success: !hasFailures,

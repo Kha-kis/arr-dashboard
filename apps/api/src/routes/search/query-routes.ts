@@ -1,6 +1,6 @@
-import type { FastifyPluginCallback } from "fastify";
 import type { SearchRequest, SearchResult } from "@arr/shared";
 import { multiInstanceSearchResponseSchema, searchRequestSchema } from "@arr/shared";
+import type { FastifyPluginCallback } from "fastify";
 import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
 import { performProwlarrSearch } from "../../lib/search/prowlarr-api.js";
 

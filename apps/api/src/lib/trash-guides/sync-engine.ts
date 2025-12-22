@@ -163,8 +163,7 @@ export class SyncEngine {
 		// Template stores uppercase "RADARR"/"SONARR", instance may store different case
 		if (template.serviceType.toUpperCase() !== instance.service.toUpperCase()) {
 			errors.push(
-				`Template service type (${template.serviceType}) doesn't match instance type (${instance.service}). ` +
-					`Please select an instance that matches the template's service type.`,
+				`Template service type (${template.serviceType}) doesn't match instance type (${instance.service}). Please select an instance that matches the template's service type.`,
 			);
 			return { valid: false, conflicts, errors, warnings };
 		}
@@ -256,8 +255,7 @@ export class SyncEngine {
 
 			if (deletedProfiles.length > 0) {
 				warnings.push(
-					`The following mapped quality profiles no longer exist in the instance: ${deletedProfiles.join(", ")}. ` +
-						"These mappings will be skipped. Consider re-deploying the template to update the mappings.",
+					`The following mapped quality profiles no longer exist in the instance: ${deletedProfiles.join(", ")}. These mappings will be skipped. Consider re-deploying the template to update the mappings.`,
 				);
 			}
 		}
@@ -269,8 +267,7 @@ export class SyncEngine {
 			// Earlier versions may have limited or no custom format support
 			if (majorVersion < 4) {
 				warnings.push(
-					`Instance is running an older version (v${instanceVersion}). ` +
-						"Some custom format features may not be fully supported. Consider upgrading to v4+.",
+					`Instance is running an older version (v${instanceVersion}). Some custom format features may not be fully supported. Consider upgrading to v4+.`,
 				);
 			}
 		}
@@ -330,16 +327,18 @@ export class SyncEngine {
 					if (cacheAge > sevenDaysMs) {
 						const daysOld = Math.floor(cacheAge / (24 * 60 * 60 * 1000));
 						warnings.push(
-							`TRaSH Guides cache is ${daysOld} days old. ` +
-								"Consider refreshing the cache to get the latest custom format definitions.",
+							`TRaSH Guides cache is ${daysOld} days old. Consider refreshing the cache to get the latest custom format definitions.`,
 						);
 					}
 
 					// Validate that custom formats in template exist in cache
 					try {
-						const cachedFormats = JSON.parse(cache.data) as Array<{ trash_id?: string; name?: string }>;
+						const cachedFormats = JSON.parse(cache.data) as Array<{
+							trash_id?: string;
+							name?: string;
+						}>;
 						const cachedTrashIds = new Set(
-							cachedFormats.map((cf) => cf.trash_id).filter((id): id is string => !!id)
+							cachedFormats.map((cf) => cf.trash_id).filter((id): id is string => !!id),
 						);
 
 						const missingFormats: string[] = [];
@@ -351,9 +350,7 @@ export class SyncEngine {
 
 						if (missingFormats.length > 0) {
 							warnings.push(
-								`${missingFormats.length} custom format(s) in the template are not found in the TRaSH Guides cache: ` +
-									`${missingFormats.slice(0, 3).join(", ")}${missingFormats.length > 3 ? ` and ${missingFormats.length - 3} more` : ""}. ` +
-									"These may have been removed from TRaSH Guides or the cache needs refreshing.",
+								`${missingFormats.length} custom format(s) in the template are not found in the TRaSH Guides cache: ${missingFormats.slice(0, 3).join(", ")}${missingFormats.length > 3 ? ` and ${missingFormats.length - 3} more` : ""}. These may have been removed from TRaSH Guides or the cache needs refreshing.`,
 							);
 						}
 					} catch {
@@ -386,8 +383,7 @@ export class SyncEngine {
 		// Add a generic fallback error to ensure the user gets feedback
 		if (!isValid && errors.length === 0) {
 			console.warn(
-				`[SyncEngine] SILENT FAILURE DETECTED - validation failed with no errors. ` +
-					`templateId: ${options.templateId}, instanceId: ${options.instanceId}, userId: ${options.userId}`,
+				`[SyncEngine] SILENT FAILURE DETECTED - validation failed with no errors. templateId: ${options.templateId}, instanceId: ${options.instanceId}, userId: ${options.userId}`,
 			);
 
 			// Add a generic fallback error so the UI can display something meaningful

@@ -1,4 +1,3 @@
-import type { FastifyPluginCallback } from "fastify";
 import type {
 	ProwlarrIndexer,
 	SearchIndexerTestRequest,
@@ -12,6 +11,7 @@ import {
 	searchIndexerUpdateRequestSchema,
 	searchIndexersResponseSchema,
 } from "@arr/shared";
+import type { FastifyPluginCallback } from "fastify";
 import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
 import {
 	buildIndexerDetailsFallback,
@@ -45,7 +45,6 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 	 * Retrieves all indexers from all enabled Prowlarr instances for the current user.
 	 */
 	app.get("/search/indexers", async (request, reply) => {
-
 		const instances = await app.prisma.serviceInstance.findMany({
 			where: { enabled: true, service: "PROWLARR", userId: request.currentUser?.id },
 		});
@@ -130,7 +129,8 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 			where: {
 				enabled: true,
 				service: "PROWLARR",
-				id: instanceId, userId: request.currentUser?.id,
+				id: instanceId,
+				userId: request.currentUser?.id,
 			},
 		});
 
@@ -199,7 +199,12 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 		const instanceId = payload.instanceId ?? paramInstanceId;
 
 		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { enabled: true, service: "PROWLARR", id: instanceId, userId: request.currentUser?.id },
+			where: {
+				enabled: true,
+				service: "PROWLARR",
+				id: instanceId,
+				userId: request.currentUser?.id,
+			},
 		});
 
 		if (!instance) {
@@ -267,7 +272,8 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 			where: {
 				enabled: true,
 				service: "PROWLARR",
-				id: payload.instanceId, userId: request.currentUser?.id,
+				id: payload.instanceId,
+				userId: request.currentUser?.id,
 			},
 		});
 

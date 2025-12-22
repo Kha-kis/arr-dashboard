@@ -1,3 +1,5 @@
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 /**
  * Port Configuration Reader
  *
@@ -8,8 +10,6 @@
  * settings are read via Prisma in docker/read-base-path.cjs at container startup.
  */
 import Database from "better-sqlite3";
-import { existsSync } from "node:fs";
-import { resolve } from "node:path";
 
 interface PortConfig {
 	apiPort: number;
@@ -63,8 +63,7 @@ function getSqliteDatabasePath(): string | null {
 	}
 
 	// Default paths for SQLite
-	const isDocker =
-		process.env.NODE_ENV === "production" || process.cwd().startsWith("/app");
+	const isDocker = process.env.NODE_ENV === "production" || process.cwd().startsWith("/app");
 	return isDocker ? "/app/data/prod.db" : resolve(process.cwd(), "dev.db");
 }
 
@@ -89,9 +88,7 @@ function readPortsFromDatabase(): DbSettings | null {
 
 		// Check if SystemSettings table exists
 		const tableExists = db
-			.prepare(
-				"SELECT name FROM sqlite_master WHERE type='table' AND name='SystemSettings'"
-			)
+			.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='SystemSettings'")
 			.get();
 
 		if (!tableExists) {
@@ -100,9 +97,9 @@ function readPortsFromDatabase(): DbSettings | null {
 		}
 
 		// Read the singleton settings row
-		const row = db
-			.prepare("SELECT apiPort, webPort FROM SystemSettings WHERE id = 1")
-			.get() as DbSettings | undefined;
+		const row = db.prepare("SELECT apiPort, webPort FROM SystemSettings WHERE id = 1").get() as
+			| DbSettings
+			| undefined;
 
 		db.close();
 
@@ -126,12 +123,8 @@ function readPortsFromDatabase(): DbSettings | null {
  * Priority: Environment variable > Database setting > Default
  */
 export function getPortConfig(): PortConfig {
-	const envApiPort = process.env.API_PORT
-		? Number.parseInt(process.env.API_PORT, 10)
-		: null;
-	const envWebPort = process.env.PORT
-		? Number.parseInt(process.env.PORT, 10)
-		: null;
+	const envApiPort = process.env.API_PORT ? Number.parseInt(process.env.API_PORT, 10) : null;
+	const envWebPort = process.env.PORT ? Number.parseInt(process.env.PORT, 10) : null;
 
 	// If both env vars are set, use them directly
 	if (envApiPort !== null && envWebPort !== null) {
@@ -188,10 +181,6 @@ export function getPortConfig(): PortConfig {
  * Log the port configuration for debugging
  */
 export function logPortConfig(config: PortConfig): void {
-	console.log(
-		`[port-config] API Port: ${config.apiPort} (source: ${config.source.apiPort})`
-	);
-	console.log(
-		`[port-config] Web Port: ${config.webPort} (source: ${config.source.webPort})`
-	);
+	console.log(`[port-config] API Port: ${config.apiPort} (source: ${config.source.apiPort})`);
+	console.log(`[port-config] Web Port: ${config.webPort} (source: ${config.source.webPort})`);
 }

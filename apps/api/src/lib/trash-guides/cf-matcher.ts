@@ -5,8 +5,8 @@
  * to enable linking, updates, and score recommendations.
  */
 
+import type { TrashConfigType, TrashCustomFormat } from "@arr/shared";
 import type { PrismaClient } from "@prisma/client";
-import type { TrashCustomFormat, TrashConfigType } from "@arr/shared";
 import { dequal as deepEqual } from "dequal";
 import { createCacheManager } from "./cache-manager.js";
 
@@ -113,7 +113,9 @@ function normalizeFields(fields: unknown): Record<string, unknown> {
 /**
  * Normalize a specification to a consistent format for comparison
  */
-function normalizeSpec(spec: InstanceCFSpecification | TrashCustomFormat["specifications"][0]): NormalizedSpec {
+function normalizeSpec(
+	spec: InstanceCFSpecification | TrashCustomFormat["specifications"][0],
+): NormalizedSpec {
 	return {
 		name: spec.name || "",
 		implementation: spec.implementation || "",
@@ -147,7 +149,9 @@ function compareSpecArrays(
 	const differences: string[] = [];
 
 	if (instanceSpecs.length !== trashSpecs.length) {
-		differences.push(`Spec count differs: instance has ${instanceSpecs.length}, TRaSH has ${trashSpecs.length}`);
+		differences.push(
+			`Spec count differs: instance has ${instanceSpecs.length}, TRaSH has ${trashSpecs.length}`,
+		);
 	}
 
 	const normalizedInstance = instanceSpecs.map(normalizeSpec);
@@ -175,7 +179,9 @@ function compareSpecArrays(
 	// Find specs in TRaSH not in instance
 	for (const [key, trashSpec] of trashMap) {
 		if (!instanceMap.has(key)) {
-			differences.push(`TRaSH spec "${trashSpec.name}" (${trashSpec.implementation}) not in instance`);
+			differences.push(
+				`TRaSH spec "${trashSpec.name}" (${trashSpec.implementation}) not in instance`,
+			);
 		}
 	}
 
@@ -253,7 +259,8 @@ export class CFMatcher {
 				// Check specs
 				const specComparison = compareSpecArrays(instanceCF.specifications, trashCF.specifications);
 				matchDetails.specsMatch = specComparison.match;
-				matchDetails.specsDiffer = specComparison.differences.length > 0 ? specComparison.differences : undefined;
+				matchDetails.specsDiffer =
+					specComparison.differences.length > 0 ? specComparison.differences : undefined;
 
 				confidence = "exact";
 			}
@@ -269,7 +276,8 @@ export class CFMatcher {
 				// Check specs
 				const specComparison = compareSpecArrays(instanceCF.specifications, trashCF.specifications);
 				matchDetails.specsMatch = specComparison.match;
-				matchDetails.specsDiffer = specComparison.differences.length > 0 ? specComparison.differences : undefined;
+				matchDetails.specsDiffer =
+					specComparison.differences.length > 0 ? specComparison.differences : undefined;
 
 				confidence = specComparison.match ? "name_only" : "specs_similar";
 			}
@@ -294,7 +302,9 @@ export class CFMatcher {
 		let usedScoreSet: string | undefined;
 		if (matchedTrashCF) {
 			// Priority: specified score set > default
-			const trashScores = (matchedTrashCF as TrashCustomFormat & { trash_scores?: Record<string, number> }).trash_scores;
+			const trashScores = (
+				matchedTrashCF as TrashCustomFormat & { trash_scores?: Record<string, number> }
+			).trash_scores;
 			if (trashScores) {
 				if (scoreSet && trashScores[scoreSet] !== undefined) {
 					recommendedScore = trashScores[scoreSet];
@@ -391,7 +401,8 @@ export class CFMatcher {
 				// Check specs
 				const specComparison = compareSpecArrays(instanceCF.specifications, trashCF.specifications);
 				matchDetails.specsMatch = specComparison.match;
-				matchDetails.specsDiffer = specComparison.differences.length > 0 ? specComparison.differences : undefined;
+				matchDetails.specsDiffer =
+					specComparison.differences.length > 0 ? specComparison.differences : undefined;
 
 				confidence = "exact";
 			}
@@ -407,7 +418,8 @@ export class CFMatcher {
 				// Check specs
 				const specComparison = compareSpecArrays(instanceCF.specifications, trashCF.specifications);
 				matchDetails.specsMatch = specComparison.match;
-				matchDetails.specsDiffer = specComparison.differences.length > 0 ? specComparison.differences : undefined;
+				matchDetails.specsDiffer =
+					specComparison.differences.length > 0 ? specComparison.differences : undefined;
 
 				confidence = specComparison.match ? "name_only" : "specs_similar";
 			}
@@ -422,7 +434,9 @@ export class CFMatcher {
 		let usedScoreSet: string | undefined;
 		if (matchedTrashCF) {
 			// Priority: specified score set > default
-			const trashScores = (matchedTrashCF as TrashCustomFormat & { trash_scores?: Record<string, number> }).trash_scores;
+			const trashScores = (
+				matchedTrashCF as TrashCustomFormat & { trash_scores?: Record<string, number> }
+			).trash_scores;
 			if (trashScores) {
 				if (scoreSet && trashScores[scoreSet] !== undefined) {
 					recommendedScore = trashScores[scoreSet];

@@ -52,13 +52,25 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							instance.label,
 							instance.baseUrl,
 						);
-						return { service: "sonarr" as const, instanceId: instance.id, instanceName: instance.label, storageGroupId: instance.storageGroupId, data };
+						return {
+							service: "sonarr" as const,
+							instanceId: instance.id,
+							instanceName: instance.label,
+							storageGroupId: instance.storageGroupId,
+							data,
+						};
 					} catch (error) {
 						request.log.error(
 							{ err: error, instance: instance.id },
 							"sonarr statistics fetch failed",
 						);
-						return { service: "sonarr" as const, instanceId: instance.id, instanceName: instance.label, storageGroupId: instance.storageGroupId, data: emptySonarrStatistics };
+						return {
+							service: "sonarr" as const,
+							instanceId: instance.id,
+							instanceName: instance.label,
+							storageGroupId: instance.storageGroupId,
+							data: emptySonarrStatistics,
+						};
 					}
 				}
 
@@ -70,13 +82,25 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							instance.label,
 							instance.baseUrl,
 						);
-						return { service: "radarr" as const, instanceId: instance.id, instanceName: instance.label, storageGroupId: instance.storageGroupId, data };
+						return {
+							service: "radarr" as const,
+							instanceId: instance.id,
+							instanceName: instance.label,
+							storageGroupId: instance.storageGroupId,
+							data,
+						};
 					} catch (error) {
 						request.log.error(
 							{ err: error, instance: instance.id },
 							"radarr statistics fetch failed",
 						);
-						return { service: "radarr" as const, instanceId: instance.id, instanceName: instance.label, storageGroupId: instance.storageGroupId, data: emptyRadarrStatistics };
+						return {
+							service: "radarr" as const,
+							instanceId: instance.id,
+							instanceName: instance.label,
+							storageGroupId: instance.storageGroupId,
+							data: emptyRadarrStatistics,
+						};
 					}
 				}
 
@@ -88,13 +112,23 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							instance.label,
 							instance.baseUrl,
 						);
-						return { service: "prowlarr" as const, instanceId: instance.id, instanceName: instance.label, data };
+						return {
+							service: "prowlarr" as const,
+							instanceId: instance.id,
+							instanceName: instance.label,
+							data,
+						};
 					} catch (error) {
 						request.log.error(
 							{ err: error, instance: instance.id },
 							"prowlarr statistics fetch failed",
 						);
-						return { service: "prowlarr" as const, instanceId: instance.id, instanceName: instance.label, data: emptyProwlarrStatistics };
+						return {
+							service: "prowlarr" as const,
+							instanceId: instance.id,
+							instanceName: instance.label,
+							data: emptyProwlarrStatistics,
+						};
 					}
 				}
 
@@ -194,9 +228,10 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		// Calculate combined disk usage percentage
-		const combinedDiskUsagePercent = combinedDiskTotal > 0
-			? Math.min(100, Math.max(0, (combinedDiskUsed / combinedDiskTotal) * 100))
-			: 0;
+		const combinedDiskUsagePercent =
+			combinedDiskTotal > 0
+				? Math.min(100, Math.max(0, (combinedDiskUsed / combinedDiskTotal) * 100))
+				: 0;
 
 		const payload: DashboardStatisticsResponse = {
 			sonarr: {
@@ -212,12 +247,15 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				aggregate: aggregateProwlarrStatistics(prowlarrInstances),
 			},
 			// Combined disk stats with proper cross-service storage group deduplication
-			combinedDisk: combinedDiskTotal > 0 ? {
-				diskTotal: combinedDiskTotal,
-				diskFree: combinedDiskFree,
-				diskUsed: combinedDiskUsed,
-				diskUsagePercent: combinedDiskUsagePercent,
-			} : undefined,
+			combinedDisk:
+				combinedDiskTotal > 0
+					? {
+							diskTotal: combinedDiskTotal,
+							diskFree: combinedDiskFree,
+							diskUsed: combinedDiskUsed,
+							diskUsagePercent: combinedDiskUsagePercent,
+						}
+					: undefined,
 		};
 
 		return reply.send(dashboardStatisticsResponseSchema.parse(payload));

@@ -92,9 +92,13 @@ export const buildSeriesItem = (
 		monitored: toBoolean(raw?.monitored),
 		hasFile: episodeFileCount > 0,
 		qualityProfileId: toNumber(raw?.qualityProfileId),
-		qualityProfileName: toStringValue((raw?.qualityProfile as Record<string, unknown> | undefined)?.name),
+		qualityProfileName: toStringValue(
+			(raw?.qualityProfile as Record<string, unknown> | undefined)?.name,
+		),
 		languageProfileId: toNumber(raw?.languageProfileId),
-		languageProfileName: toStringValue((raw?.languageProfile as Record<string, unknown> | undefined)?.name),
+		languageProfileName: toStringValue(
+			(raw?.languageProfile as Record<string, unknown> | undefined)?.name,
+		),
 		rootFolderPath: toStringValue(raw?.path ?? raw?.rootFolderPath),
 		sizeOnDisk: toNumber(stats?.sizeOnDisk),
 		path: toStringValue(raw?.path),
@@ -111,7 +115,9 @@ export const buildSeriesItem = (
 			episodeFileCount,
 			totalEpisodeCount: toNumber(stats?.totalEpisodeCount),
 			monitoredSeasons: Array.isArray(raw?.seasons)
-				? raw.seasons.filter((season: unknown) => toBoolean((season as Record<string, unknown>)?.monitored)).length
+				? raw.seasons.filter((season: unknown) =>
+						toBoolean((season as Record<string, unknown>)?.monitored),
+					).length
 				: undefined,
 			runtime: toNumber(raw?.runtime),
 		},

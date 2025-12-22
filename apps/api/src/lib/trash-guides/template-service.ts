@@ -4,13 +4,13 @@
  * Manages template CRUD operations, validation, and metadata tracking
  */
 
-import type { PrismaClient, Prisma, TrashTemplate as PrismaTrashTemplate } from "@prisma/client";
 import type {
-	TrashTemplate,
 	CreateTemplateRequest,
-	UpdateTemplateRequest,
 	TemplateConfig,
+	TrashTemplate,
+	UpdateTemplateRequest,
 } from "@arr/shared";
+import type { Prisma, PrismaClient, TrashTemplate as PrismaTrashTemplate } from "@prisma/client";
 
 /**
  * Expected structure for template import JSON
@@ -38,7 +38,7 @@ interface TemplateImportData {
  */
 function safeJsonParse<T>(
 	value: string | null | undefined,
-	context: { templateId: string; fieldName: string }
+	context: { templateId: string; fieldName: string },
 ): T | undefined {
 	if (value === null || value === undefined) {
 		return undefined;
@@ -47,7 +47,7 @@ function safeJsonParse<T>(
 		return JSON.parse(value) as T;
 	} catch {
 		console.warn(
-			`[TemplateService] Failed to parse JSON for template ${context.templateId}, field: ${context.fieldName}`
+			`[TemplateService] Failed to parse JSON for template ${context.templateId}, field: ${context.fieldName}`,
 		);
 		return undefined;
 	}
@@ -105,10 +105,7 @@ export class TemplateService {
 	/**
 	 * Create a new template
 	 */
-	async createTemplate(
-		userId: string,
-		request: CreateTemplateRequest,
-	): Promise<TrashTemplate> {
+	async createTemplate(userId: string, request: CreateTemplateRequest): Promise<TrashTemplate> {
 		// Validate name uniqueness for user and service type
 		const existing = await this.prisma.trashTemplate.findFirst({
 			where: {
@@ -120,7 +117,9 @@ export class TemplateService {
 		});
 
 		if (existing) {
-			throw new Error(`Template with name "${request.name}" already exists for ${request.serviceType}`);
+			throw new Error(
+				`Template with name "${request.name}" already exists for ${request.serviceType}`,
+			);
 		}
 
 		// Create template with Phase 3 metadata
@@ -246,7 +245,8 @@ export class TemplateService {
 		let filteredTemplates = templates;
 		if (options.active !== undefined) {
 			filteredTemplates = templates.filter((t) => {
-				const hasActiveSchedule = "schedules" in t && Array.isArray(t.schedules) && t.schedules.length > 0;
+				const hasActiveSchedule =
+					"schedules" in t && Array.isArray(t.schedules) && t.schedules.length > 0;
 				return options.active ? hasActiveSchedule : !hasActiveSchedule;
 			});
 		}
@@ -303,7 +303,9 @@ export class TemplateService {
 			});
 
 			if (nameConflict) {
-				throw new Error(`Template with name "${request.name}" already exists for ${existing.serviceType}`);
+				throw new Error(
+					`Template with name "${request.name}" already exists for ${existing.serviceType}`,
+				);
 			}
 		}
 
@@ -327,7 +329,7 @@ export class TemplateService {
 					existingChangeLog = Array.isArray(parsed) ? parsed : [];
 				} catch (parseError) {
 					console.warn(
-						`Failed to parse changeLog for template ${templateId}: ${parseError instanceof Error ? parseError.message : String(parseError)}. Resetting to empty array.`
+						`Failed to parse changeLog for template ${templateId}: ${parseError instanceof Error ? parseError.message : String(parseError)}. Resetting to empty array.`,
 					);
 					existingChangeLog = [];
 				}
@@ -436,11 +438,18 @@ export class TemplateService {
 		try {
 			data = JSON.parse(jsonData) as TemplateImportData;
 		} catch (parseError) {
-			throw new Error(`Invalid JSON format: ${parseError instanceof Error ? parseError.message : String(parseError)}`);
+			throw new Error(
+				`Invalid JSON format: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+			);
 		}
 
 		// Validate import structure
-		if (!data.template || !data.template.name || !data.template.serviceType || !data.template.config) {
+		if (
+			!data.template ||
+			!data.template.name ||
+			!data.template.serviceType ||
+			!data.template.config
+		) {
 			throw new Error("Invalid template import format");
 		}
 
@@ -459,7 +468,9 @@ export class TemplateService {
 			})
 		) {
 			if (counter > MAX_RENAME_ATTEMPTS) {
-				throw new Error(`Failed to find unique name for template after ${MAX_RENAME_ATTEMPTS} attempts`);
+				throw new Error(
+					`Failed to find unique name for template after ${MAX_RENAME_ATTEMPTS} attempts`,
+				);
 			}
 			name = `${data.template.name} (${counter})`;
 			counter++;
@@ -578,7 +589,7 @@ export class TemplateService {
 
 		const instances = Array.from(instanceMap.values());
 		// Active instance count = instances with auto-sync enabled in their deployment mapping
-		const activeInstanceCount = instances.filter(i => i.hasActiveSchedule).length;
+		const activeInstanceCount = instances.filter((i) => i.hasActiveSchedule).length;
 		// Template is "Active" when it has at least one instance with auto-sync enabled
 		const isActive = activeInstanceCount > 0;
 		const lastUsed = template.syncHistory[0]?.completedAt || undefined;
@@ -676,7 +687,8 @@ export class TemplateService {
 			// Phase 3: Versioning & Metadata
 			trashGuidesCommitHash: prismaTemplate.trashGuidesCommitHash || undefined,
 			trashGuidesVersion: prismaTemplate.trashGuidesVersion || undefined,
-			importedAt: prismaTemplate.importedAt?.toISOString() || prismaTemplate.createdAt.toISOString(),
+			importedAt:
+				prismaTemplate.importedAt?.toISOString() || prismaTemplate.createdAt.toISOString(),
 			lastSyncedAt: prismaTemplate.lastSyncedAt?.toISOString(),
 			// Phase 3: Customization Tracking
 			hasUserModifications: prismaTemplate.hasUserModifications ?? false,

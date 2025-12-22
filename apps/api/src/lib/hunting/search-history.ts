@@ -152,10 +152,7 @@ export async function createSearchHistoryManager(
 						}
 					} catch (error) {
 						// Handle race condition: if create fails with unique constraint (P2002), retry as update
-						if (
-							error instanceof Prisma.PrismaClientKnownRequestError &&
-							error.code === "P2002"
-						) {
+						if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
 							const existing = await prisma.huntSearchHistory.findFirst({
 								where: whereClause,
 							});

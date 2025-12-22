@@ -127,7 +127,7 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 	 */
 	app.post("/validate", async (request: FastifyRequest, reply) => {
 		const body = validateSyncSchema.parse(request.body);
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 
 		const validation = await syncEngine.validate({
 			templateId: body.templateId,
@@ -145,7 +145,7 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 	 */
 	app.post("/execute", async (request: FastifyRequest, reply) => {
 		const body = executeSyncSchema.parse(request.body);
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 
 		// Convert conflictResolutions object to Map
 		const resolutionsMap = body.conflictResolutions
@@ -279,7 +279,7 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 	}>("/history/:instanceId", async (request, reply) => {
 		const { instanceId } = request.params;
 		const query = syncHistoryQuerySchema.parse(request.query);
-		const userId = request.currentUser!.id; // preHandler guarantees authentication
+		const userId = request.currentUser?.id; // preHandler guarantees authentication
 
 		// Verify instance exists and is owned by the current user.
 		// Including userId in the where clause ensures non-owned instances return null,

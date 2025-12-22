@@ -1,19 +1,19 @@
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { getHuntingScheduler } from "../lib/hunting/scheduler.js";
 import { createInstanceFetcher } from "../lib/arr/arr-fetcher.js";
 import {
-	MIN_MISSING_INTERVAL_MINS,
-	MIN_UPGRADE_INTERVAL_MINS,
-	MAX_INTERVAL_MINS,
-	MIN_BATCH_SIZE,
 	MAX_BATCH_SIZE,
-	MIN_HOURLY_API_CAP,
 	MAX_HOURLY_API_CAP,
+	MAX_INTERVAL_MINS,
 	MAX_QUEUE_THRESHOLD,
-	MIN_RESEARCH_AFTER_DAYS,
 	MAX_RESEARCH_AFTER_DAYS,
+	MIN_BATCH_SIZE,
+	MIN_HOURLY_API_CAP,
+	MIN_MISSING_INTERVAL_MINS,
+	MIN_RESEARCH_AFTER_DAYS,
+	MIN_UPGRADE_INTERVAL_MINS,
 } from "../lib/hunting/constants.js";
+import { getHuntingScheduler } from "../lib/hunting/scheduler.js";
 import { cleanupOldSearchHistory } from "../lib/hunting/search-history.js";
 
 /**
@@ -25,7 +25,10 @@ import { cleanupOldSearchHistory } from "../lib/hunting/search-history.js";
  * @param context - Context used in the warning log: `recordId` identifies the record and `field` identifies the JSON field
  * @returns The parsed array when successful, or `null` if `json` is `null` or invalid
  */
-function parseJsonSafe(json: string | null, context: { recordId: string; field: string }): unknown[] | null {
+function parseJsonSafe(
+	json: string | null,
+	context: { recordId: string; field: string },
+): unknown[] | null {
 	if (!json) return null;
 	try {
 		return JSON.parse(json) as unknown[];
@@ -41,9 +44,19 @@ const huntConfigUpdateSchema = z.object({
 	huntUpgradesEnabled: z.boolean().optional(),
 	// Batch settings (using constants for validation)
 	missingBatchSize: z.number().int().min(MIN_BATCH_SIZE).max(MAX_BATCH_SIZE).optional(),
-	missingIntervalMins: z.number().int().min(MIN_MISSING_INTERVAL_MINS).max(MAX_INTERVAL_MINS).optional(),
+	missingIntervalMins: z
+		.number()
+		.int()
+		.min(MIN_MISSING_INTERVAL_MINS)
+		.max(MAX_INTERVAL_MINS)
+		.optional(),
 	upgradeBatchSize: z.number().int().min(MIN_BATCH_SIZE).max(MAX_BATCH_SIZE).optional(),
-	upgradeIntervalMins: z.number().int().min(MIN_UPGRADE_INTERVAL_MINS).max(MAX_INTERVAL_MINS).optional(),
+	upgradeIntervalMins: z
+		.number()
+		.int()
+		.min(MIN_UPGRADE_INTERVAL_MINS)
+		.max(MAX_INTERVAL_MINS)
+		.optional(),
 	// Rate limiting
 	hourlyApiCap: z.number().int().min(MIN_HOURLY_API_CAP).max(MAX_HOURLY_API_CAP).optional(),
 	queueThreshold: z.number().int().min(0).max(MAX_QUEUE_THRESHOLD).optional(),
@@ -82,7 +95,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	// Get hunting status overview
 	app.get("/hunting/status", async (request, reply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 
 		// Get all instances with their hunt configs
 		const instances = await app.prisma.serviceInstance.findMany({
@@ -152,7 +165,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	// Get hunting configs for all instances
 	app.get("/hunting/configs", async (request, reply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 
 		const instances = await app.prisma.serviceInstance.findMany({
 			where: {
@@ -199,7 +212,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
 		}
 
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 		const { instanceId } = parsed.data;
 
 		// Verify instance ownership
@@ -245,7 +258,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
 		}
 
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 
 		// Verify instance ownership
 		const instance = await app.prisma.serviceInstance.findFirst({
@@ -277,7 +290,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	// Get hunt logs
 	app.get("/hunting/logs", async (request, reply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 		const query = request.query as {
 			type?: string;
 			status?: string;
@@ -377,7 +390,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 	app.post("/hunting/trigger/:instanceId", async (request, reply) => {
 		const { instanceId } = request.params as { instanceId: string };
 		const body = request.body as { type?: string };
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 
 		// Verify instance ownership
 		const instance = await app.prisma.serviceInstance.findFirst({
@@ -412,7 +425,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 	// Get filter options (tags, quality profiles) from an instance
 	app.get("/hunting/filter-options/:instanceId", async (request, reply) => {
 		const { instanceId } = request.params as { instanceId: string };
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 
 		// Verify instance ownership
 		const instance = await app.prisma.serviceInstance.findFirst({
@@ -493,7 +506,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 	app.get<{
 		Params: { instanceId: string };
 	}>("/hunting/history/:instanceId", async (request, reply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 		const { instanceId } = request.params;
 
 		// Verify instance belongs to user
@@ -563,7 +576,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 		Params: { instanceId: string };
 		Querystring: { huntType?: "missing" | "upgrade" };
 	}>("/hunting/history/:instanceId", async (request, reply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 		const { instanceId } = request.params;
 		const { huntType } = request.query;
 
@@ -597,7 +610,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 	// Cleanup old search history (scoped to current user's configs)
 	app.post("/hunting/history/cleanup", async (request, reply) => {
 		// Clean up entries older than 90 days for this user's configs only
-		const deleted = await cleanupOldSearchHistory(app.prisma, request.currentUser!.id, 90);
+		const deleted = await cleanupOldSearchHistory(app.prisma, request.currentUser?.id, 90);
 
 		return reply.send({
 			message: `Cleaned up ${deleted} old search history entries`,

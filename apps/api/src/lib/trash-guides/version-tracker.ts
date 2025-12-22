@@ -61,7 +61,11 @@ function delay(ms: number): Promise<void> {
 /**
  * Fetch with timeout support
  */
-async function fetchWithTimeout(url: string, timeout: number, headers?: Record<string, string>): Promise<Response> {
+async function fetchWithTimeout(
+	url: string,
+	timeout: number,
+	headers?: Record<string, string>,
+): Promise<Response> {
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), timeout);
 
@@ -89,7 +93,11 @@ async function fetchWithTimeout(url: string, timeout: number, headers?: Record<s
 /**
  * Fetch with retry logic
  */
-async function fetchWithRetry(url: string, options: FetchOptions = {}, headers?: Record<string, string>): Promise<Response> {
+async function fetchWithRetry(
+	url: string,
+	options: FetchOptions = {},
+	headers?: Record<string, string>,
+): Promise<Response> {
 	const {
 		timeout = FETCH_TIMEOUT_MS,
 		retries = MAX_RETRIES,
@@ -108,10 +116,9 @@ async function fetchWithRetry(url: string, options: FetchOptions = {}, headers?:
 				if (rateLimitRemaining === "0") {
 					const resetTime = response.headers.get("X-RateLimit-Reset");
 					const resetTimestamp = resetTime ? Number.parseInt(resetTime, 10) : Number.NaN;
-					const resetDateStr =
-						Number.isFinite(resetTimestamp)
-							? new Date(resetTimestamp * 1000).toISOString()
-							: "unknown";
+					const resetDateStr = Number.isFinite(resetTimestamp)
+						? new Date(resetTimestamp * 1000).toISOString()
+						: "unknown";
 					throw new Error(`GitHub API rate limit exceeded. Resets at ${resetDateStr}`);
 				}
 			}
@@ -145,7 +152,10 @@ async function fetchWithRetry(url: string, options: FetchOptions = {}, headers?:
 export interface VersionTracker {
 	getLatestCommit(): Promise<VersionInfo>;
 	getCommitInfo(commitHash: string): Promise<VersionInfo>;
-	compareCommits(oldHash: string, newHash: string): Promise<{
+	compareCommits(
+		oldHash: string,
+		newHash: string,
+	): Promise<{
 		isDifferent: boolean;
 		oldCommit: VersionInfo;
 		newCommit: VersionInfo;
@@ -156,9 +166,7 @@ export function createVersionTracker(): VersionTracker {
 	// Optional GitHub token for higher rate limits (5000/hour vs 60/hour)
 	const githubToken = process.env.GITHUB_TOKEN;
 
-	const headers = githubToken
-		? { Authorization: `Bearer ${githubToken}` }
-		: undefined;
+	const headers = githubToken ? { Authorization: `Bearer ${githubToken}` } : undefined;
 
 	/**
 	 * Get the latest commit on the master branch

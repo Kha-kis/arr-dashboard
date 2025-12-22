@@ -5,12 +5,12 @@
  * Integration tests (database-dependent) are skipped unless TEST_DB=true.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { PrismaClient } from "@prisma/client";
-import { BackupService } from "../backup-service.js";
 import fs from "node:fs/promises";
-import path from "node:path";
 import os from "node:os";
+import path from "node:path";
+import { PrismaClient } from "@prisma/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { BackupService } from "../backup-service.js";
 
 // Check if we should run integration tests (requires writable test database)
 const RUN_DB_TESTS = process.env.TEST_DB === "true";
@@ -22,159 +22,159 @@ const mockEncryptor = {
 		iv: "mock-iv-123",
 	})),
 	decrypt: vi.fn((data: { value: string; iv: string }) =>
-		Buffer.from(data.value, "base64").toString("utf-8")
+		Buffer.from(data.value, "base64").toString("utf-8"),
 	),
 };
 
 // Integration tests - only run with TEST_DB=true
-(RUN_DB_TESTS ? describe : describe.skip)("BackupService - Password Management (Integration)", () => {
-	let prisma: PrismaClient;
-	let backupService: BackupService;
-	let testBackupsDir: string;
-	let testSecretsPath: string;
+(RUN_DB_TESTS ? describe : describe.skip)(
+	"BackupService - Password Management (Integration)",
+	() => {
+		let prisma: PrismaClient;
+		let backupService: BackupService;
+		let testBackupsDir: string;
+		let testSecretsPath: string;
 
-	beforeEach(async () => {
-		// Create a new Prisma client for each test
-		prisma = new PrismaClient();
+		beforeEach(async () => {
+			// Create a new Prisma client for each test
+			prisma = new PrismaClient();
 
-		// Create temp directories for backups and secrets
-		testBackupsDir = path.join(os.tmpdir(), `backup-test-${Date.now()}`);
-		testSecretsPath = path.join(testBackupsDir, "secrets.json");
-		await fs.mkdir(testBackupsDir, { recursive: true });
+			// Create temp directories for backups and secrets
+			testBackupsDir = path.join(os.tmpdir(), `backup-test-${Date.now()}`);
+			testSecretsPath = path.join(testBackupsDir, "secrets.json");
+			await fs.mkdir(testBackupsDir, { recursive: true });
 
-		// Write mock secrets file
-		await fs.writeFile(
-			testSecretsPath,
-			JSON.stringify({
-				ENCRYPTION_KEY: "test-encryption-key-32-bytes-hex",
-				SESSION_COOKIE_SECRET: "test-session-secret",
-			})
-		);
+			// Write mock secrets file
+			await fs.writeFile(
+				testSecretsPath,
+				JSON.stringify({
+					ENCRYPTION_KEY: "test-encryption-key-32-bytes-hex",
+					SESSION_COOKIE_SECRET: "test-session-secret",
+				}),
+			);
 
-		// Create backup service with mock encryptor
-		backupService = new BackupService(
-			prisma,
-			testSecretsPath,
-			mockEncryptor as any
-		);
+			// Create backup service with mock encryptor
+			backupService = new BackupService(prisma, testSecretsPath, mockEncryptor as any);
 
-		// Override backups directory
-		(backupService as any).backupsDir = testBackupsDir;
-	});
-
-	afterEach(async () => {
-		// Clean up test data
-		await prisma.trashBackup.deleteMany({}).catch(() => {});
-		await prisma.backupSettings.deleteMany({}).catch(() => {});
-		await prisma.$disconnect();
-
-		// Clean up temp directory
-		await fs.rm(testBackupsDir, { recursive: true, force: true }).catch(() => {});
-	});
-
-	it("should return correct status when no password is configured", async () => {
-		const status = await backupService.getPasswordStatus();
-
-		expect(status).toHaveProperty("configured");
-		expect(status).toHaveProperty("source");
-	});
-
-	it("should set password in database", async () => {
-		await backupService.setPassword("TestPassword123!");
-
-		const status = await backupService.getPasswordStatus();
-		expect(status.configured).toBe(true);
-		expect(status.source).toBe("database");
-	});
-
-	it("should remove password from database", async () => {
-		// First set a password
-		await backupService.setPassword("TestPassword123!");
-
-		// Then remove it
-		await backupService.removePassword();
-
-		const status = await backupService.getPasswordStatus();
-		// May fall back to env var or dev password
-		expect(status.source).not.toBe("database");
-	});
-
-	it("should require minimum password length", async () => {
-		// Password validation happens at the route level
-		// This tests that the service accepts valid passwords
-		await expect(
-			backupService.setPassword("ValidPassword123!")
-		).resolves.not.toThrow();
-	});
-});
-
-// Integration tests - only run with TEST_DB=true
-(RUN_DB_TESTS ? describe : describe.skip)("BackupService - Backup Creation with includeTrashBackups (Integration)", () => {
-	let prisma: PrismaClient;
-	let backupService: BackupService;
-	let testBackupsDir: string;
-	let testSecretsPath: string;
-
-	beforeEach(async () => {
-		prisma = new PrismaClient();
-		testBackupsDir = path.join(os.tmpdir(), `backup-test-${Date.now()}`);
-		testSecretsPath = path.join(testBackupsDir, "secrets.json");
-		await fs.mkdir(testBackupsDir, { recursive: true });
-		await fs.writeFile(
-			testSecretsPath,
-			JSON.stringify({
-				ENCRYPTION_KEY: "test-encryption-key-32-bytes-hex",
-				SESSION_COOKIE_SECRET: "test-session-secret",
-			})
-		);
-		backupService = new BackupService(prisma, testSecretsPath, mockEncryptor as any);
-		(backupService as any).backupsDir = testBackupsDir;
-	});
-
-	afterEach(async () => {
-		await prisma.trashBackup.deleteMany({}).catch(() => {});
-		await prisma.backupSettings.deleteMany({}).catch(() => {});
-		await prisma.$disconnect();
-		await fs.rm(testBackupsDir, { recursive: true, force: true }).catch(() => {});
-	});
-
-	it("should create backup without TRaSH backups by default", async () => {
-		// Set a test password first
-		await backupService.setPassword("TestPassword123!");
-
-		const backupInfo = await backupService.createBackup("2.6.2", "manual");
-
-		expect(backupInfo).toHaveProperty("id");
-		expect(backupInfo).toHaveProperty("filename");
-		expect(backupInfo).toHaveProperty("timestamp");
-		expect(backupInfo).toHaveProperty("size");
-		expect(backupInfo.type).toBe("manual");
-	});
-
-	it("should create backup with TRaSH backups when option enabled", async () => {
-		// Set a test password first
-		await backupService.setPassword("TestPassword123!");
-
-		const backupInfo = await backupService.createBackup("2.6.2", "manual", {
-			includeTrashBackups: true,
+			// Override backups directory
+			(backupService as any).backupsDir = testBackupsDir;
 		});
 
-		expect(backupInfo).toHaveProperty("id");
-		expect(backupInfo.type).toBe("manual");
-		expect(backupInfo.size).toBeGreaterThan(0);
-	});
+		afterEach(async () => {
+			// Clean up test data
+			await prisma.trashBackup.deleteMany({}).catch(() => {});
+			await prisma.backupSettings.deleteMany({}).catch(() => {});
+			await prisma.$disconnect();
 
-	it("should organize backups by type in subdirectories", async () => {
-		await backupService.setPassword("TestPassword123!");
+			// Clean up temp directory
+			await fs.rm(testBackupsDir, { recursive: true, force: true }).catch(() => {});
+		});
 
-		const manualBackup = await backupService.createBackup("2.6.2", "manual");
-		const scheduledBackup = await backupService.createBackup("2.6.2", "scheduled");
+		it("should return correct status when no password is configured", async () => {
+			const status = await backupService.getPasswordStatus();
 
-		// Check that backups are in different directories
-		expect(manualBackup.type).toBe("manual");
-		expect(scheduledBackup.type).toBe("scheduled");
-	});
-});
+			expect(status).toHaveProperty("configured");
+			expect(status).toHaveProperty("source");
+		});
+
+		it("should set password in database", async () => {
+			await backupService.setPassword("TestPassword123!");
+
+			const status = await backupService.getPasswordStatus();
+			expect(status.configured).toBe(true);
+			expect(status.source).toBe("database");
+		});
+
+		it("should remove password from database", async () => {
+			// First set a password
+			await backupService.setPassword("TestPassword123!");
+
+			// Then remove it
+			await backupService.removePassword();
+
+			const status = await backupService.getPasswordStatus();
+			// May fall back to env var or dev password
+			expect(status.source).not.toBe("database");
+		});
+
+		it("should require minimum password length", async () => {
+			// Password validation happens at the route level
+			// This tests that the service accepts valid passwords
+			await expect(backupService.setPassword("ValidPassword123!")).resolves.not.toThrow();
+		});
+	},
+);
+
+// Integration tests - only run with TEST_DB=true
+(RUN_DB_TESTS ? describe : describe.skip)(
+	"BackupService - Backup Creation with includeTrashBackups (Integration)",
+	() => {
+		let prisma: PrismaClient;
+		let backupService: BackupService;
+		let testBackupsDir: string;
+		let testSecretsPath: string;
+
+		beforeEach(async () => {
+			prisma = new PrismaClient();
+			testBackupsDir = path.join(os.tmpdir(), `backup-test-${Date.now()}`);
+			testSecretsPath = path.join(testBackupsDir, "secrets.json");
+			await fs.mkdir(testBackupsDir, { recursive: true });
+			await fs.writeFile(
+				testSecretsPath,
+				JSON.stringify({
+					ENCRYPTION_KEY: "test-encryption-key-32-bytes-hex",
+					SESSION_COOKIE_SECRET: "test-session-secret",
+				}),
+			);
+			backupService = new BackupService(prisma, testSecretsPath, mockEncryptor as any);
+			(backupService as any).backupsDir = testBackupsDir;
+		});
+
+		afterEach(async () => {
+			await prisma.trashBackup.deleteMany({}).catch(() => {});
+			await prisma.backupSettings.deleteMany({}).catch(() => {});
+			await prisma.$disconnect();
+			await fs.rm(testBackupsDir, { recursive: true, force: true }).catch(() => {});
+		});
+
+		it("should create backup without TRaSH backups by default", async () => {
+			// Set a test password first
+			await backupService.setPassword("TestPassword123!");
+
+			const backupInfo = await backupService.createBackup("2.6.2", "manual");
+
+			expect(backupInfo).toHaveProperty("id");
+			expect(backupInfo).toHaveProperty("filename");
+			expect(backupInfo).toHaveProperty("timestamp");
+			expect(backupInfo).toHaveProperty("size");
+			expect(backupInfo.type).toBe("manual");
+		});
+
+		it("should create backup with TRaSH backups when option enabled", async () => {
+			// Set a test password first
+			await backupService.setPassword("TestPassword123!");
+
+			const backupInfo = await backupService.createBackup("2.6.2", "manual", {
+				includeTrashBackups: true,
+			});
+
+			expect(backupInfo).toHaveProperty("id");
+			expect(backupInfo.type).toBe("manual");
+			expect(backupInfo.size).toBeGreaterThan(0);
+		});
+
+		it("should organize backups by type in subdirectories", async () => {
+			await backupService.setPassword("TestPassword123!");
+
+			const manualBackup = await backupService.createBackup("2.6.2", "manual");
+			const scheduledBackup = await backupService.createBackup("2.6.2", "scheduled");
+
+			// Check that backups are in different directories
+			expect(manualBackup.type).toBe("manual");
+			expect(scheduledBackup.type).toBe("scheduled");
+		});
+	},
+);
 
 // Integration tests - only run with TEST_DB=true
 (RUN_DB_TESTS ? describe : describe.skip)("BackupService - Backup Listing (Integration)", () => {
@@ -193,7 +193,7 @@ const mockEncryptor = {
 			JSON.stringify({
 				ENCRYPTION_KEY: "test-encryption-key-32-bytes-hex",
 				SESSION_COOKIE_SECRET: "test-session-secret",
-			})
+			}),
 		);
 		backupService = new BackupService(prisma, testSecretsPath, mockEncryptor as any);
 		(backupService as any).backupsDir = testBackupsDir;
@@ -241,14 +241,10 @@ describe("BackupService - Backup Validation (Unit)", () => {
 			JSON.stringify({
 				ENCRYPTION_KEY: "test-encryption-key-32-bytes-hex",
 				SESSION_COOKIE_SECRET: "test-session-secret",
-			})
+			}),
 		);
 		// Create service with null prisma - we won't use DB methods
-		backupService = new BackupService(
-			null as any,
-			testSecretsPath,
-			mockEncryptor as any
-		);
+		backupService = new BackupService(null as any, testSecretsPath, mockEncryptor as any);
 	});
 
 	afterEach(async () => {
@@ -290,7 +286,7 @@ describe("BackupService - Backup Validation (Unit)", () => {
 		};
 
 		expect(() => (backupService as any).validateBackup(invalidBackup)).toThrow(
-			"Unsupported backup version: 999.0"
+			"Unsupported backup version: 999.0",
 		);
 	});
 
@@ -316,7 +312,7 @@ describe("BackupService - Backup Validation (Unit)", () => {
 		};
 
 		expect(() => (backupService as any).validateBackup(invalidBackup)).toThrow(
-			"Invalid backup format: missing or invalid version"
+			"Invalid backup format: missing or invalid version",
 		);
 	});
 });
@@ -335,13 +331,9 @@ describe("BackupService - Backup ID Generation (Unit)", () => {
 			JSON.stringify({
 				ENCRYPTION_KEY: "test-encryption-key-32-bytes-hex",
 				SESSION_COOKIE_SECRET: "test-session-secret",
-			})
+			}),
 		);
-		backupService = new BackupService(
-			null as any,
-			testSecretsPath,
-			mockEncryptor as any
-		);
+		backupService = new BackupService(null as any, testSecretsPath, mockEncryptor as any);
 	});
 
 	afterEach(async () => {
@@ -385,13 +377,9 @@ describe("BackupService - Encryption Detection (Unit)", () => {
 			JSON.stringify({
 				ENCRYPTION_KEY: "test-encryption-key-32-bytes-hex",
 				SESSION_COOKIE_SECRET: "test-session-secret",
-			})
+			}),
 		);
-		backupService = new BackupService(
-			null as any,
-			testSecretsPath,
-			mockEncryptor as any
-		);
+		backupService = new BackupService(null as any, testSecretsPath, mockEncryptor as any);
 	});
 
 	afterEach(async () => {

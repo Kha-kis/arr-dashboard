@@ -1,13 +1,13 @@
-import type { Prisma, OIDCProvider as PrismaOIDCProvider } from "@prisma/client";
-import type { FastifyInstance } from "fastify";
 import {
-	createOidcProviderSchema,
-	updateOidcProviderSchema,
-	deleteOidcProviderSchema,
 	type ErrorResponse,
 	type OIDCProvider,
 	type OIDCProviderResponse,
+	createOidcProviderSchema,
+	deleteOidcProviderSchema,
+	updateOidcProviderSchema,
 } from "@arr/shared";
+import type { Prisma, OIDCProvider as PrismaOIDCProvider } from "@prisma/client";
+import type { FastifyInstance } from "fastify";
 import { hashPassword } from "../lib/auth/password.js";
 
 /**
@@ -33,81 +33,94 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	 * GET /api/oidc-providers
 	 * Get the configured OIDC provider (admin only)
 	 */
-	app.get<{ Reply: OIDCProviderResponse | ErrorResponse }>("/api/oidc-providers", async (request, reply) => {
-		// Require authentication (single-admin architecture)
-		if (!request.currentUser) {
-			return reply.status(403).send({ error: "Authentication required" });
-		}
+	app.get<{ Reply: OIDCProviderResponse | ErrorResponse }>(
+		"/api/oidc-providers",
+		async (request, reply) => {
+			// Require authentication (single-admin architecture)
+			if (!request.currentUser) {
+				return reply.status(403).send({ error: "Authentication required" });
+			}
 
-		const provider = await app.prisma.oIDCProvider.findFirst();
+			const provider = await app.prisma.oIDCProvider.findFirst();
 
-		if (!provider) {
-			return reply.send({ provider: null });
-		}
+			if (!provider) {
+				return reply.send({ provider: null });
+			}
 
-		// Return provider without exposing client secret
-		return reply.send({
-			provider: toPublicProvider(provider),
-		});
-	});
+			// Return provider without exposing client secret
+			return reply.send({
+				provider: toPublicProvider(provider),
+			});
+		},
+	);
 
 	/**
 	 * POST /api/oidc-providers
 	 * Create the OIDC provider (admin only - only one allowed)
 	 */
-	app.post<{ Body: unknown; Reply: OIDCProvider | ErrorResponse }>("/api/oidc-providers", async (request, reply) => {
-		// Require authentication (single-admin architecture)
-		if (!request.currentUser) {
-			return reply.status(403).send({ error: "Authentication required" });
-		}
+	app.post<{ Body: unknown; Reply: OIDCProvider | ErrorResponse }>(
+		"/api/oidc-providers",
+		async (request, reply) => {
+			// Require authentication (single-admin architecture)
+			if (!request.currentUser) {
+				return reply.status(403).send({ error: "Authentication required" });
+			}
 
-		const validation = createOidcProviderSchema.safeParse(request.body);
-		if (!validation.success) {
-			return reply.status(400).send({ error: "Validation failed", details: validation.error.errors });
-		}
+			const validation = createOidcProviderSchema.safeParse(request.body);
+			if (!validation.success) {
+				return reply
+					.status(400)
+					.send({ error: "Validation failed", details: validation.error.errors });
+			}
 
-		const data = validation.data;
+			const data = validation.data;
 
-		// Auto-generate redirect URI if not provided
-		// Use the request origin to detect the correct URL (works in Docker/proxy environments)
-		let redirectUri = data.redirectUri;
-		if (!redirectUri) {
-			const protocol = request.headers['x-forwarded-proto'] || request.protocol;
-			const host = request.headers['x-forwarded-host'] || request.headers.host || 'localhost:3000';
-			redirectUri = `${protocol}://${host}/auth/oidc/callback`;
-			request.log.info({ redirectUri, protocol, host }, "Auto-generated redirect URI from request");
-		}
+			// Auto-generate redirect URI if not provided
+			// Use the request origin to detect the correct URL (works in Docker/proxy environments)
+			let redirectUri = data.redirectUri;
+			if (!redirectUri) {
+				const protocol = request.headers["x-forwarded-proto"] || request.protocol;
+				const host =
+					request.headers["x-forwarded-host"] || request.headers.host || "localhost:3000";
+				redirectUri = `${protocol}://${host}/auth/oidc/callback`;
+				request.log.info(
+					{ redirectUri, protocol, host },
+					"Auto-generated redirect URI from request",
+				);
+			}
 
-		// Check if provider already exists (only one allowed)
-		const existing = await app.prisma.oIDCProvider.findFirst();
+			// Check if provider already exists (only one allowed)
+			const existing = await app.prisma.oIDCProvider.findFirst();
 
-		if (existing) {
-			return reply.status(409).send({
-				error: "An OIDC provider already exists. Please update or delete the existing provider first.",
+			if (existing) {
+				return reply.status(409).send({
+					error:
+						"An OIDC provider already exists. Please update or delete the existing provider first.",
+				});
+			}
+
+			// Encrypt client secret
+			const { value: encryptedClientSecret, iv: clientSecretIv } = app.encryptor.encrypt(
+				data.clientSecret,
+			);
+
+			// Create provider
+			const provider = await app.prisma.oIDCProvider.create({
+				data: {
+					displayName: data.displayName,
+					clientId: data.clientId,
+					encryptedClientSecret,
+					clientSecretIv,
+					issuer: data.issuer,
+					redirectUri,
+					scopes: data.scopes,
+					enabled: data.enabled,
+				},
 			});
-		}
 
-		// Encrypt client secret
-		const { value: encryptedClientSecret, iv: clientSecretIv} = app.encryptor.encrypt(
-			data.clientSecret,
-		);
-
-		// Create provider
-		const provider = await app.prisma.oIDCProvider.create({
-			data: {
-				displayName: data.displayName,
-				clientId: data.clientId,
-				encryptedClientSecret,
-				clientSecretIv,
-				issuer: data.issuer,
-				redirectUri,
-				scopes: data.scopes,
-				enabled: data.enabled,
-			},
-		});
-
-		return reply.status(201).send(toPublicProvider(provider));
-	});
+			return reply.status(201).send(toPublicProvider(provider));
+		},
+	);
 
 	/**
 	 * PUT /api/oidc-providers
@@ -123,7 +136,9 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 
 			const validation = updateOidcProviderSchema.safeParse(request.body);
 			if (!validation.success) {
-				return reply.status(400).send({ error: "Validation failed", details: validation.error.errors });
+				return reply
+					.status(400)
+					.send({ error: "Validation failed", details: validation.error.errors });
 			}
 
 			const data = validation.data;
@@ -152,7 +167,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 				});
 
 				const lockedOutUsers = usersWithOidcOnly.filter(
-					user => user.webauthnCredentials.length === 0
+					(user) => user.webauthnCredentials.length === 0,
 				);
 
 				if (lockedOutUsers.length > 0) {
@@ -193,12 +208,12 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 				if (request.sessionToken) {
 					// Preserve current session while invalidating all others
 					await app.sessionService.invalidateAllUserSessions(
-						request.currentUser!.id,
-						request.sessionToken
+						request.currentUser?.id,
+						request.sessionToken,
 					);
 					// Also invalidate sessions for other users (single-admin architecture)
 					await app.prisma.session.deleteMany({
-						where: { userId: { not: request.currentUser!.id } },
+						where: { userId: { not: request.currentUser?.id } },
 					});
 				} else {
 					await app.prisma.session.deleteMany({});
@@ -215,95 +230,99 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	 * Delete the OIDC provider (admin only, singleton)
 	 * Requires replacement password to prevent lockout
 	 */
-	app.delete<{ Body: unknown; Reply: ErrorResponse | undefined }>("/api/oidc-providers", async (request, reply) => {
-		// Require authentication (single-admin architecture)
-		if (!request.currentUser) {
-			return reply.status(403).send({ error: "Authentication required" });
-		}
+	app.delete<{ Body: unknown; Reply: ErrorResponse | undefined }>(
+		"/api/oidc-providers",
+		async (request, reply) => {
+			// Require authentication (single-admin architecture)
+			if (!request.currentUser) {
+				return reply.status(403).send({ error: "Authentication required" });
+			}
 
-		// Validate request body - must include replacement password
-		const validation = deleteOidcProviderSchema.safeParse(request.body);
-		if (!validation.success) {
-			return reply.status(400).send({
-				error: "Replacement password required. You must provide a password to switch to password-based authentication.",
-				details: validation.error.errors,
+			// Validate request body - must include replacement password
+			const validation = deleteOidcProviderSchema.safeParse(request.body);
+			if (!validation.success) {
+				return reply.status(400).send({
+					error:
+						"Replacement password required. You must provide a password to switch to password-based authentication.",
+					details: validation.error.errors,
+				});
+			}
+
+			const { replacementPassword } = validation.data;
+
+			// Check if provider exists (singleton with id=1)
+			const existing = await app.prisma.oIDCProvider.findUnique({
+				where: { id: 1 },
 			});
-		}
 
-		const { replacementPassword } = validation.data;
+			if (!existing) {
+				return reply.status(404).send({ error: "OIDC provider not found" });
+			}
 
-		// Check if provider exists (singleton with id=1)
-		const existing = await app.prisma.oIDCProvider.findUnique({
-			where: { id: 1 },
-		});
-
-		if (!existing) {
-			return reply.status(404).send({ error: "OIDC provider not found" });
-		}
-
-		// Check if any users would be locked out (users with OIDC-only and no password/passkeys)
-		const usersWithOidcOnly = await app.prisma.user.findMany({
-			where: {
-				hashedPassword: null, // No password
-				oidcAccounts: {
-					some: {}, // Has OIDC linked
+			// Check if any users would be locked out (users with OIDC-only and no password/passkeys)
+			const usersWithOidcOnly = await app.prisma.user.findMany({
+				where: {
+					hashedPassword: null, // No password
+					oidcAccounts: {
+						some: {}, // Has OIDC linked
+					},
 				},
-			},
-			include: {
-				webauthnCredentials: true,
-			},
-		});
-
-		const lockedOutUsers = usersWithOidcOnly.filter(
-			user => user.webauthnCredentials.length === 0
-		);
-
-		if (lockedOutUsers.length > 0) {
-			// Hash the replacement password
-			const hashedPassword = await hashPassword(replacementPassword);
-
-			// Set password for all OIDC-only users to prevent lockout
-			await app.prisma.$transaction(
-				lockedOutUsers.map(user =>
-					app.prisma.user.update({
-						where: { id: user.id },
-						data: {
-							hashedPassword,
-							mustChangePassword: user.id !== request.currentUser!.id, // Force password change for other users
-						},
-					})
-				)
-			);
-
-			request.log.info(
-				{ userCount: lockedOutUsers.length },
-				"Set replacement password for OIDC-only users"
-			);
-		}
-
-		// Delete all OIDC account links (cascade will handle this, but explicit for clarity)
-		await app.prisma.oIDCAccount.deleteMany({});
-
-		// Delete provider (singleton with id=1)
-		await app.prisma.oIDCProvider.delete({
-			where: { id: 1 },
-		});
-
-		// Invalidate all sessions to force re-authentication with new method
-		if (request.sessionToken) {
-			// Preserve current session while invalidating all others
-			await app.sessionService.invalidateAllUserSessions(
-				request.currentUser!.id,
-				request.sessionToken
-			);
-			// Also invalidate sessions for other users (single-admin architecture)
-			await app.prisma.session.deleteMany({
-				where: { userId: { not: request.currentUser!.id } },
+				include: {
+					webauthnCredentials: true,
+				},
 			});
-		} else {
-			await app.prisma.session.deleteMany({});
-		}
 
-		return reply.status(204).send();
-	});
+			const lockedOutUsers = usersWithOidcOnly.filter(
+				(user) => user.webauthnCredentials.length === 0,
+			);
+
+			if (lockedOutUsers.length > 0) {
+				// Hash the replacement password
+				const hashedPassword = await hashPassword(replacementPassword);
+
+				// Set password for all OIDC-only users to prevent lockout
+				await app.prisma.$transaction(
+					lockedOutUsers.map((user) =>
+						app.prisma.user.update({
+							where: { id: user.id },
+							data: {
+								hashedPassword,
+								mustChangePassword: user.id !== request.currentUser?.id, // Force password change for other users
+							},
+						}),
+					),
+				);
+
+				request.log.info(
+					{ userCount: lockedOutUsers.length },
+					"Set replacement password for OIDC-only users",
+				);
+			}
+
+			// Delete all OIDC account links (cascade will handle this, but explicit for clarity)
+			await app.prisma.oIDCAccount.deleteMany({});
+
+			// Delete provider (singleton with id=1)
+			await app.prisma.oIDCProvider.delete({
+				where: { id: 1 },
+			});
+
+			// Invalidate all sessions to force re-authentication with new method
+			if (request.sessionToken) {
+				// Preserve current session while invalidating all others
+				await app.sessionService.invalidateAllUserSessions(
+					request.currentUser?.id,
+					request.sessionToken,
+				);
+				// Also invalidate sessions for other users (single-admin architecture)
+				await app.prisma.session.deleteMany({
+					where: { userId: { not: request.currentUser?.id } },
+				});
+			} else {
+				await app.prisma.session.deleteMany({});
+			}
+
+			return reply.status(204).send();
+		},
+	);
 }
