@@ -6,6 +6,7 @@
 
 import type { TemplateConfig } from "@arr/shared";
 import type { PrismaClient } from "@prisma/client";
+import { createArrApiClient } from "./arr-api-client.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
 import type { TemplateUpdater } from "./template-updater.js";
 
@@ -72,16 +73,19 @@ export class SyncEngine {
 	private progressCallbacks: Map<string, (progress: SyncProgress) => void>;
 	private templateUpdater?: TemplateUpdater;
 	private deploymentExecutor?: DeploymentExecutorService;
+	private encryptor?: { decrypt: (payload: { value: string; iv: string }) => string };
 
 	constructor(
 		prisma: PrismaClient,
 		templateUpdater?: TemplateUpdater,
 		deploymentExecutor?: DeploymentExecutorService,
+		encryptor?: { decrypt: (payload: { value: string; iv: string }) => string },
 	) {
 		this.prisma = prisma;
 		this.progressCallbacks = new Map();
 		this.templateUpdater = templateUpdater;
 		this.deploymentExecutor = deploymentExecutor;
+		this.encryptor = encryptor;
 	}
 
 	/**
@@ -110,6 +114,12 @@ export class SyncEngine {
 
 	/**
 	 * Validate sync before execution
+	 * Performs comprehensive validation including:
+	 * - Template existence and ownership
+	 * - Instance existence, ownership, and reachability
+	 * - Service type compatibility
+	 * - Quality profile mapping existence
+	 * - User modification warnings for auto-sync
 	 */
 	async validate(options: SyncOptions): Promise<ValidationResult> {
 		const errors: string[] = [];
@@ -126,7 +136,9 @@ export class SyncEngine {
 		});
 
 		if (!template) {
-			errors.push("Template not found");
+			errors.push(
+				"Template not found or access denied. Please verify the template exists and you have permission to access it.",
+			);
 			return { valid: false, conflicts, errors, warnings };
 		}
 
@@ -139,7 +151,9 @@ export class SyncEngine {
 		});
 
 		if (!instance) {
-			errors.push("Instance not found or access denied");
+			errors.push(
+				"Instance not found or access denied. Please verify the instance exists and you have permission to access it.",
+			);
 			return { valid: false, conflicts, errors, warnings };
 		}
 
@@ -147,12 +161,99 @@ export class SyncEngine {
 		// Template stores uppercase "RADARR"/"SONARR", instance may store different case
 		if (template.serviceType.toUpperCase() !== instance.service.toUpperCase()) {
 			errors.push(
-				`Template service type (${template.serviceType}) doesn't match instance (${instance.service})`,
+				`Template service type (${template.serviceType}) doesn't match instance type (${instance.service}). ` +
+					`Please select an instance that matches the template's service type.`,
 			);
 			return { valid: false, conflicts, errors, warnings };
 		}
 
-		// Basic validation complete - deployment executor will do detailed validation during execution
+		// Check for quality profile mappings
+		const qualityProfileMappings = await this.prisma.templateQualityProfileMapping.findMany({
+			where: {
+				templateId: options.templateId,
+				instanceId: options.instanceId,
+			},
+		});
+
+		if (qualityProfileMappings.length === 0) {
+			errors.push(
+				"No quality profile mappings found for this template and instance. " +
+					"Please deploy this template first to create the necessary mappings, or map a quality profile in the template settings.",
+			);
+			return { valid: false, conflicts, errors, warnings };
+		}
+
+		// Check if template has user modifications (warning for auto-sync scenarios)
+		if (template.hasUserModifications) {
+			warnings.push(
+				"This template has local modifications that differ from TRaSH Guides. " +
+					"Syncing will preserve your modifications. If you want to reset to TRaSH defaults, " +
+					"consider creating a fresh template.",
+			);
+		}
+
+		// Check instance reachability
+		if (this.encryptor && instance.encryptedApiKey && instance.encryptionIv) {
+			try {
+				const apiClient = createArrApiClient(instance, this.encryptor);
+				const status = await apiClient.getSystemStatus();
+
+				// Add version info as a positive indicator
+				if (status.version) {
+					warnings.push(`Instance is reachable (${instance.service} v${status.version})`);
+				}
+			} catch (connectError) {
+				const errorMessage =
+					connectError instanceof Error ? connectError.message : String(connectError);
+				errors.push(
+					`Unable to connect to instance "${instance.label}". ` +
+						`Please verify the instance is running and accessible. Error: ${errorMessage}`,
+				);
+				return { valid: false, conflicts, errors, warnings };
+			}
+		} else if (!this.encryptor) {
+			// Encryptor not available - can't test connection but continue with warning
+			warnings.push(
+				"Instance connectivity check skipped. Connection will be verified during sync.",
+			);
+		}
+
+		// Check if template config data is valid JSON
+		try {
+			const configData = JSON.parse(template.configData);
+			if (!configData.customFormats || !Array.isArray(configData.customFormats)) {
+				errors.push(
+					"Template configuration is missing custom formats. " +
+						"The template may be corrupted or incomplete. Please recreate the template.",
+				);
+				return { valid: false, conflicts, errors, warnings };
+			}
+
+			if (configData.customFormats.length === 0) {
+				warnings.push(
+					"Template has no custom formats configured. " +
+						"The sync will only update quality profile settings.",
+				);
+			}
+		} catch (parseError) {
+			errors.push(
+				"Template configuration data is corrupted and cannot be parsed. " +
+					"Please recreate the template from TRaSH Guides.",
+			);
+			return { valid: false, conflicts, errors, warnings };
+		}
+
+		// Log validation result for debugging
+		if (errors.length === 0) {
+			console.log(
+				`[SyncEngine] Validation passed for template ${options.templateId} → instance ${options.instanceId}`,
+			);
+		} else {
+			console.warn(
+				`[SyncEngine] Validation failed for template ${options.templateId} → instance ${options.instanceId}:`,
+				errors,
+			);
+		}
 
 		return {
 			valid: errors.length === 0,
@@ -233,15 +334,16 @@ export class SyncEngine {
 
 			// Convert conflict resolutions from Map format to Record format expected by deployment executor
 			// Map "REPLACE" → "use_template" and "SKIP" → "keep_existing"
-			const deploymentConflictResolutions: Record<string, "use_template" | "keep_existing"> | undefined =
-				conflictResolutions
-					? Object.fromEntries(
-							Array.from(conflictResolutions.entries()).map(([key, value]) => [
-								key,
-								value === "REPLACE" ? "use_template" : "keep_existing",
-							]),
-						)
-					: undefined;
+			const deploymentConflictResolutions:
+				| Record<string, "use_template" | "keep_existing">
+				| undefined = conflictResolutions
+				? Object.fromEntries(
+						Array.from(conflictResolutions.entries()).map(([key, value]) => [
+							key,
+							value === "REPLACE" ? "use_template" : "keep_existing",
+						]),
+					)
+				: undefined;
 
 			const deployResult = await this.deploymentExecutor.deploySingleInstance(
 				options.templateId,
@@ -376,6 +478,7 @@ export function createSyncEngine(
 	prisma: PrismaClient,
 	templateUpdater?: TemplateUpdater,
 	deploymentExecutor?: DeploymentExecutorService,
+	encryptor?: { decrypt: (payload: { value: string; iv: string }) => string },
 ): SyncEngine {
-	return new SyncEngine(prisma, templateUpdater, deploymentExecutor);
+	return new SyncEngine(prisma, templateUpdater, deploymentExecutor, encryptor);
 }

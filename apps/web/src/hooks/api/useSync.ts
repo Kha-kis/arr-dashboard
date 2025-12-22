@@ -7,30 +7,49 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
-	validateSync,
-	executeSync,
-	getSyncProgress,
-	getSyncHistory,
-	getSyncDetail,
-	rollbackSync,
-	createSyncProgressStream,
-	type SyncValidationRequest,
-	type SyncExecuteRequest,
-	type ValidationResult,
-	type SyncResult,
-	type SyncProgress,
-	type SyncHistoryResponse,
-	type SyncDetail,
 	type RollbackResult,
+	type SyncDetail,
+	type SyncExecuteRequest,
+	type SyncHistoryResponse,
+	type SyncProgress,
+	type SyncResult,
+	type SyncValidationRequest,
+	type ValidationResult,
+	createSyncProgressStream,
+	executeSync,
+	getSyncDetail,
+	getSyncHistory,
+	getSyncProgress,
+	rollbackSync,
+	validateSync,
 } from "../../lib/api-client/sync";
 
 // ============================================================================
 // Validation Hook
 // ============================================================================
 
-export function useValidateSync() {
+export interface UseValidateSyncOptions {
+	onError?: (error: Error) => void;
+	onSuccess?: (data: ValidationResult) => void;
+}
+
+export function useValidateSync(options?: UseValidateSyncOptions) {
 	return useMutation<ValidationResult, Error, SyncValidationRequest>({
 		mutationFn: validateSync,
+		onError: (error) => {
+			// Log validation errors for debugging
+			console.error("[useValidateSync] Validation failed:", error.message);
+			options?.onError?.(error);
+		},
+		onSuccess: (data) => {
+			// Log validation results for debugging
+			if (!data.valid && data.errors.length === 0) {
+				console.warn(
+					"[useValidateSync] Validation returned invalid with no errors - silent failure detected",
+				);
+			}
+			options?.onSuccess?.(data);
+		},
 	});
 }
 
@@ -132,10 +151,7 @@ export function useSyncProgress(syncId: string | null, enabled = true) {
 // Sync History Hook
 // ============================================================================
 
-export function useSyncHistory(
-	instanceId: string,
-	params?: { limit?: number; offset?: number },
-) {
+export function useSyncHistory(instanceId: string, params?: { limit?: number; offset?: number }) {
 	return useQuery<SyncHistoryResponse, Error>({
 		queryKey: ["sync-history", instanceId, params],
 		queryFn: () => getSyncHistory(instanceId, params),
