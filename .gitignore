@@ -86,6 +86,14 @@ lerna-debug.log*
 *.seed
 *.pid.lock
 
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+.playwright-auth/
+.playwright-mcp/
+
 # Sensitive data - must never be committed
 secrets.json
 apps/api/secrets.json
