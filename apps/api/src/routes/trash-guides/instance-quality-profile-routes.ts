@@ -6,7 +6,7 @@
 
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { createArrApiClient } from "../../lib/trash-guides/arr-api-client.js";
+import type { SonarrClient, RadarrClient } from "arr-sdk";
 
 // ============================================================================
 // Type Definitions
@@ -111,23 +111,15 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 				});
 			}
 
-			// Create API client using the helper function
-			const apiClient = createArrApiClient(
-				{
-					id: instance.id,
-					baseUrl: instance.baseUrl,
-					encryptedApiKey: instance.encryptedApiKey,
-					encryptionIv: instance.encryptionIv,
-					service: instance.service,
-				},
-				request.server.encryptor,
-			);
+			// Create SDK client using factory
+			const client = request.server.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
 
 			// Fetch current quality profile
-			const profile = await apiClient.getQualityProfile(profileIdNum);
+			const profile = await client.qualityProfile.getById(profileIdNum);
 
 			// Update the formatItems with new scores
-			const updatedFormatItems = profile.formatItems.map((item) => {
+			const formatItems = profile.formatItems ?? [];
+			const updatedFormatItems = formatItems.map((item) => {
 				const update = scoreUpdates.find((u) => u.customFormatId === item.format);
 				if (update) {
 					return {
@@ -140,7 +132,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 
 			// Add new format items for custom formats that don't exist yet
 			for (const update of scoreUpdates) {
-				const exists = profile.formatItems.some((item) => item.format === update.customFormatId);
+				const exists = formatItems.some((item) => item.format === update.customFormatId);
 				if (!exists) {
 					updatedFormatItems.push({
 						format: update.customFormatId,
@@ -150,12 +142,13 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 			}
 
 			// Update the quality profile
-			const updatedProfile = {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Radarr/Sonarr have different quality source enums
+			const updatedProfile: any = {
 				...profile,
 				formatItems: updatedFormatItems,
 			};
 
-			await apiClient.updateQualityProfile(profileIdNum, updatedProfile);
+			await client.qualityProfile.update(profileIdNum, updatedProfile);
 
 			// Check if this quality profile is managed by a template
 			const templateMapping = await request.server.prisma.templateQualityProfileMapping.findUnique({
@@ -711,23 +704,15 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 					});
 				}
 
-				// Create API client
-				const apiClient = createArrApiClient(
-					{
-						id: instance.id,
-						baseUrl: instance.baseUrl,
-						encryptedApiKey: instance.encryptedApiKey,
-						encryptionIv: instance.encryptionIv,
-						service: instance.service,
-					},
-					request.server.encryptor,
-				);
+				// Create SDK client using factory
+				const client = request.server.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
 
 				// Fetch current quality profile
-				const profile = await apiClient.getQualityProfile(profileIdNum);
+				const profile = await client.qualityProfile.getById(profileIdNum);
 
 				// Update the formatItems with the template score
-				const updatedFormatItems = profile.formatItems.map((item) => {
+				const profileFormatItems = profile.formatItems ?? [];
+				const updatedFormatItems = profileFormatItems.map((item) => {
 					if (item.format === customFormatIdNum) {
 						return {
 							...item,
@@ -738,12 +723,13 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 				});
 
 				// Update the quality profile in Radarr/Sonarr
-				const updatedProfile = {
+				// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Radarr/Sonarr have different quality source enums
+				const updatedProfile: any = {
 					...profile,
 					formatItems: updatedFormatItems,
 				};
 
-				await apiClient.updateQualityProfile(profileIdNum, updatedProfile);
+				await client.qualityProfile.update(profileIdNum, updatedProfile);
 
 				// Delete the override from database
 				await request.server.prisma.instanceQualityProfileOverride.delete({
@@ -881,20 +867,11 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 				});
 			}
 
-			// Create API client
-			const apiClient = createArrApiClient(
-				{
-					id: instance.id,
-					baseUrl: instance.baseUrl,
-					encryptedApiKey: instance.encryptedApiKey,
-					encryptionIv: instance.encryptionIv,
-					service: instance.service,
-				},
-				request.server.encryptor,
-			);
+			// Create SDK client using factory
+			const client = request.server.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
 
 			// Fetch current quality profile
-			const profile = await apiClient.getQualityProfile(profileIdNum);
+			const profile = await client.qualityProfile.getById(profileIdNum);
 
 			// Build a map of customFormatId -> template score
 			const templateScores = new Map<number, number>();
@@ -930,8 +907,9 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 			}
 
 			// Update the formatItems with template scores for the specified CFs
-			const updatedFormatItems = profile.formatItems.map((item) => {
-				const templateScore = templateScores.get(item.format);
+			const profileFormatItems = profile.formatItems ?? [];
+			const updatedFormatItems = profileFormatItems.map((item) => {
+				const templateScore = item.format !== undefined ? templateScores.get(item.format) : undefined;
 				if (templateScore !== undefined) {
 					return {
 						...item,
@@ -942,12 +920,13 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 			});
 
 			// Update the quality profile in Radarr/Sonarr
-			const updatedProfile = {
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Radarr/Sonarr have different quality source enums
+			const updatedProfile: any = {
 				...profile,
 				formatItems: updatedFormatItems,
 			};
 
-			await apiClient.updateQualityProfile(profileIdNum, updatedProfile);
+			await client.qualityProfile.update(profileIdNum, updatedProfile);
 
 			// Delete all specified overrides from database
 			const result = await request.server.prisma.instanceQualityProfileOverride.deleteMany({

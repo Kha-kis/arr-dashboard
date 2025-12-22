@@ -6,7 +6,7 @@
 
 import type { FastifyInstance, FastifyPluginOptions, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { createArrApiClient } from "../../lib/trash-guides/arr-api-client.js";
+import type { SonarrClient, RadarrClient } from "arr-sdk";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createDeploymentExecutorService } from "../../lib/trash-guides/deployment-executor.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
@@ -435,8 +435,8 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 		}
 
 		try {
-			// Create API client for the instance
-			const apiClient = createArrApiClient(sync.instance, app.encryptor);
+			// Create SDK client using factory
+			const client = app.arrClientFactory.create(sync.instance) as SonarrClient | RadarrClient;
 
 			// Parse backup data (contains the pre-sync state)
 			// Note: deployment-executor stores backupData as a raw array of CFs, not an object
@@ -493,7 +493,7 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 			}
 
 			// Get current Custom Formats from instance
-			const currentFormats = await apiClient.getCustomFormats();
+			const currentFormats = await client.customFormat.getAll();
 
 			// Build lookup maps by name
 			const backupByName = new Map<string, BackupCustomFormat>();
@@ -503,7 +503,9 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 
 			const currentByName = new Map<string, typeof currentFormats[0]>();
 			for (const cf of currentFormats) {
-				currentByName.set(cf.name, cf);
+				if (cf.name) {
+					currentByName.set(cf.name, cf);
+				}
 			}
 
 			let restoredCount = 0;
@@ -522,16 +524,16 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 						// CF exists in instance - update it to match backup
 						// Use current instance ID, not backup ID
 						const { id: _backupId, ...formatData } = formatWithoutTrashId;
-						await apiClient.updateCustomFormat(currentFormat.id, {
+						await client.customFormat.update(currentFormat.id, {
 							...formatData,
 							id: currentFormat.id,
-						} as Parameters<typeof apiClient.updateCustomFormat>[1]);
+						} as Parameters<typeof client.customFormat.update>[1]);
 						restoredCount++;
 					} else {
 						// CF was deleted during sync - recreate it
 						// Remove id for creation (ARR assigns new ID)
 						const { id: _id, ...formatData } = formatWithoutTrashId;
-						await apiClient.createCustomFormat(formatData as Parameters<typeof apiClient.createCustomFormat>[0]);
+						await client.customFormat.create(formatData as Parameters<typeof client.customFormat.create>[0]);
 						restoredCount++;
 					}
 				} catch (error) {
@@ -545,7 +547,7 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 				// Only delete if: not in backup AND was created by sync AND has valid ID
 				if (!backupByName.has(name) && createdBySyncNames.has(name) && currentFormat.id) {
 					try {
-						await apiClient.deleteCustomFormat(currentFormat.id);
+						await client.customFormat.delete(currentFormat.id);
 						deletedCount++;
 					} catch (error) {
 						errors.push(`Failed to delete "${name}": ${error instanceof Error ? error.message : "Unknown error"}`);

@@ -26,6 +26,7 @@
 		"@prisma/client": "^6.16.2",
 		"@simplewebauthn/server": "^13.2.2",
 		"arctic": "^3.7.0",
+		"arr-sdk": "^0.3.0",
 		"better-sqlite3": "^12.5.0",
 		"dequal": "^2.0.3",
 		"dotenv": "^16.4.5",

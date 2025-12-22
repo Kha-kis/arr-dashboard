@@ -6,53 +6,65 @@
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import type { PrismaClient } from "@prisma/client";
+import type { SonarrClient } from "arr-sdk";
 import { DeploymentExecutorService } from "../deployment-executor.js";
-import type { CustomFormatSpecification } from "@arr/shared";
-import type { CustomFormat } from "../arr-api-client.js";
+import type { ArrClientFactory } from "../../arr/client-factory.js";
 
-// Type for array-format fields (some arr instances return this format)
-interface ArrayFieldFormat {
-	name: string;
-	value: unknown;
-}
+// SDK CustomFormat type alias
+type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]>>[number];
 
-// Helper to create a specification with array-format fields
+// SDK Specification type - extract from SdkCustomFormat
+type SdkSpecification = NonNullable<SdkCustomFormat["specifications"]>[number];
+
+// Helper to create a specification with array-format fields (SDK format)
 const createSpecWithArrayFields = (
 	name: string,
-	fields: ArrayFieldFormat[]
-): CustomFormatSpecification => ({
+	fields: Array<{ name: string; value: unknown }>
+): SdkSpecification => ({
 	name,
 	implementation: "test",
 	negate: false,
 	required: false,
-	// Cast to the expected type since API can return array or object format
-	fields: fields as unknown as Record<string, unknown>,
+	fields: fields as SdkSpecification["fields"],
+});
+
+// Helper to create a specification with object-format fields (TRaSH format, cast for testing)
+const createSpecWithObjectFields = (
+	name: string,
+	fields: Record<string, unknown>
+): SdkSpecification => ({
+	name,
+	implementation: "test",
+	negate: false,
+	required: false,
+	// Cast object format to array format type - runtime code handles both
+	fields: fields as unknown as SdkSpecification["fields"],
 });
 
 // Helper to access private extractTrashId method in tests
 // Uses index signature to bypass TypeScript's private member checking
 const getExtractTrashId = (
 	service: DeploymentExecutorService
-): ((cf: CustomFormat) => string | null) => {
+): ((cf: SdkCustomFormat) => string | null) => {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	return (service as unknown as { extractTrashId: (cf: CustomFormat) => string | null }).extractTrashId.bind(service);
+	return (service as unknown as { extractTrashId: (cf: SdkCustomFormat) => string | null }).extractTrashId.bind(service);
 };
 
 describe("DeploymentExecutorService - extractTrashId", () => {
 	let service: DeploymentExecutorService;
 	let mockPrisma: PrismaClient;
-	let mockEncryptor: { decrypt: (payload: { value: string; iv: string }) => string };
+	let mockClientFactory: ArrClientFactory;
 
 	beforeEach(() => {
 		mockPrisma = {} as PrismaClient;
-		mockEncryptor = {
-			decrypt: vi.fn((payload) => payload.value),
-		};
-		service = new DeploymentExecutorService(mockPrisma, mockEncryptor);
+		mockClientFactory = {
+			create: vi.fn(),
+		} as unknown as ArrClientFactory;
+		service = new DeploymentExecutorService(mockPrisma, mockClientFactory);
 	});
 
 	it("should extract trash_id from array format fields", () => {
-		const cf: CustomFormat = {
+		const cf: SdkCustomFormat = {
 			id: 1,
 			name: "Test CF",
 			specifications: [
@@ -70,20 +82,14 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 	});
 
 	it("should extract trash_id from object format fields", () => {
-		const cf: CustomFormat = {
+		const cf: SdkCustomFormat = {
 			id: 1,
 			name: "Test CF",
 			specifications: [
-				{
-					name: "test",
-					implementation: "test",
-					negate: false,
-					required: false,
-					fields: {
-						trash_id: "test-uuid-456",
-						other_field: "other_value",
-					},
-				},
+				createSpecWithObjectFields("test", {
+					trash_id: "test-uuid-456",
+					other_field: "other_value",
+				}),
 			],
 		};
 
@@ -93,7 +99,7 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 	});
 
 	it("should return null when no trash_id is found", () => {
-		const cf: CustomFormat = {
+		const cf: SdkCustomFormat = {
 			id: 1,
 			name: "Test CF Without Trash ID",
 			specifications: [
@@ -109,7 +115,7 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 	});
 
 	it("should return null when specifications are empty", () => {
-		const cf: CustomFormat = {
+		const cf: SdkCustomFormat = {
 			id: 1,
 			name: "Test CF",
 			specifications: [],
@@ -126,7 +132,7 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			id: 1,
 			name: "Test CF",
 			specifications: undefined,
-		} as unknown as CustomFormat;
+		} as unknown as SdkCustomFormat;
 
 		const extractTrashId = getExtractTrashId(service);
 		const trashId = extractTrashId(cf);
@@ -134,7 +140,7 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 	});
 
 	it("should return null when no specifications have fields", () => {
-		const cf: CustomFormat = {
+		const cf: SdkCustomFormat = {
 			id: 1,
 			name: "Test CF",
 			specifications: [
@@ -143,15 +149,15 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 					implementation: "test",
 					negate: false,
 					required: false,
-					fields: undefined as unknown as Record<string, unknown>,
-				},
+					fields: undefined,
+				} as SdkSpecification,
 				{
 					name: "test2",
 					implementation: "test",
 					negate: false,
 					required: false,
-					fields: null as unknown as Record<string, unknown>,
-				},
+					fields: null as unknown as SdkSpecification["fields"],
+				} as SdkSpecification,
 			],
 		};
 
@@ -161,7 +167,7 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 	});
 
 	it("should handle multiple specifications and return first found trash_id", () => {
-		const cf: CustomFormat = {
+		const cf: SdkCustomFormat = {
 			id: 1,
 			name: "Test CF",
 			specifications: [
@@ -183,7 +189,7 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 	});
 
 	it("should convert trash_id value to string", () => {
-		const cf: CustomFormat = {
+		const cf: SdkCustomFormat = {
 			id: 1,
 			name: "Test CF",
 			specifications: [
@@ -201,7 +207,7 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 
 	it("should distinguish between ID-based and name-based matching by returning null", () => {
 		// CF without trash_id should return null, allowing explicit name-based matching
-		const cfWithoutId: CustomFormat = {
+		const cfWithoutId: SdkCustomFormat = {
 			id: 1,
 			name: "My Custom Format",
 			specifications: [
@@ -230,11 +236,11 @@ describe("DeploymentExecutorService - ID-based vs name-based matching", () => {
 		// 2. Still add the CF to existingCFByName (name-based map)
 		// 3. Use name-based lookup when ID lookup fails
 
-		const existingCFMap = new Map<string, CustomFormat>();
-		const existingCFByName = new Map<string, CustomFormat>();
+		const existingCFMap = new Map<string, SdkCustomFormat>();
+		const existingCFByName = new Map<string, SdkCustomFormat>();
 
 		// CF with trash_id - should be in both maps
-		const cfWithId: CustomFormat = {
+		const cfWithId: SdkCustomFormat = {
 			id: 1,
 			name: "CF With ID",
 			specifications: [
@@ -245,7 +251,7 @@ describe("DeploymentExecutorService - ID-based vs name-based matching", () => {
 		};
 
 		// CF without trash_id - should only be in name map
-		const cfWithoutId: CustomFormat = {
+		const cfWithoutId: SdkCustomFormat = {
 			id: 2,
 			name: "CF Without ID",
 			specifications: [
@@ -256,10 +262,10 @@ describe("DeploymentExecutorService - ID-based vs name-based matching", () => {
 		};
 
 		// Simulate the mapping logic from deploySingleInstance
-		const mockExtractTrashId = (cf: CustomFormat): string | null => {
+		const mockExtractTrashId = (cf: SdkCustomFormat): string | null => {
 			for (const spec of cf.specifications || []) {
 				if (spec.fields && Array.isArray(spec.fields)) {
-					const trashIdField = (spec.fields as ArrayFieldFormat[]).find(
+					const trashIdField = spec.fields.find(
 						(f) => f.name === "trash_id"
 					);
 					if (trashIdField) {
@@ -275,14 +281,14 @@ describe("DeploymentExecutorService - ID-based vs name-based matching", () => {
 		if (trashId1) {
 			existingCFMap.set(trashId1, cfWithId);
 		}
-		existingCFByName.set(cfWithId.name, cfWithId);
+		existingCFByName.set(cfWithId.name!, cfWithId);
 
 		// Process CF without ID
 		const trashId2 = mockExtractTrashId(cfWithoutId);
 		if (trashId2) {
 			existingCFMap.set(trashId2, cfWithoutId);
 		}
-		existingCFByName.set(cfWithoutId.name, cfWithoutId);
+		existingCFByName.set(cfWithoutId.name!, cfWithoutId);
 
 		// Verify ID-based matching works for CF with ID
 		expect(existingCFMap.get("uuid-123")).toBe(cfWithId);
@@ -311,4 +317,3 @@ describe("DeploymentExecutorService - ID-based vs name-based matching", () => {
 		expect(existingCF).toBe(cfWithoutId);
 	});
 });
-

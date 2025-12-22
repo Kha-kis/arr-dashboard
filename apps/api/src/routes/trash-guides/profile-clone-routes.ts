@@ -92,7 +92,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 		};
 
 		try {
-			const profileCloner = createProfileCloner(app.prisma, app.encryptor);
+			const profileCloner = createProfileCloner(app.prisma, app.arrClientFactory);
 			const result = await profileCloner.importQualityProfile({
 				instanceId,
 				profileId,
@@ -138,7 +138,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 		};
 
 		try {
-			const profileCloner = createProfileCloner(app.prisma, app.encryptor);
+			const profileCloner = createProfileCloner(app.prisma, app.arrClientFactory);
 			const result = await profileCloner.previewProfileDeployment(
 				instanceId,
 				userId,
@@ -187,7 +187,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 		};
 
 		try {
-			const profileCloner = createProfileCloner(app.prisma, app.encryptor);
+			const profileCloner = createProfileCloner(app.prisma, app.arrClientFactory);
 			const result = await profileCloner.deployCompleteProfile(
 				instanceId,
 				userId,

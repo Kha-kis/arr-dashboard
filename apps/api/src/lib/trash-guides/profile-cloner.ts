@@ -6,18 +6,23 @@
  */
 
 import type { PrismaClient } from "@prisma/client";
-import type { Encryptor } from "../auth/encryption.js";
 import type { CompleteQualityProfile } from "@arr/shared";
-import { ArrApiClient, type ApiError, type QualityProfile, type QualityProfileItem } from "./arr-api-client.js";
+import type { SonarrClient, RadarrClient } from "arr-sdk";
+import type { ArrClientFactory } from "../arr/client-factory.js";
+
+// SDK type aliases
+type SdkQualityProfile = Awaited<ReturnType<SonarrClient["qualityProfile"]["getById"]>>;
+type SdkQualityProfileItem = NonNullable<SdkQualityProfile["items"]>[number];
+type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]>>[number];
 
 /**
  * Recursively find quality by ID in quality profile items
  * Quality profiles have nested structure where groups contain items
  */
-function findQualityById(items: QualityProfileItem[], targetId: number): { id: number; name: string } | undefined {
+function findQualityById(items: SdkQualityProfileItem[], targetId: number): { id: number; name: string } | undefined {
 	for (const item of items) {
 		// Check if this item's quality matches
-		if (item.quality?.id === targetId) {
+		if (item.quality?.id === targetId && item.quality.name) {
 			return { id: item.quality.id, name: item.quality.name };
 		}
 		// Check if this item has an id that matches (for groups)
@@ -26,8 +31,7 @@ function findQualityById(items: QualityProfileItem[], targetId: number): { id: n
 		}
 		// Recursively check nested items (quality groups)
 		if (item.items && Array.isArray(item.items)) {
-			// Cast to QualityProfileItem[] for recursive call
-			const found = findQualityById(item.items as unknown as QualityProfileItem[], targetId);
+			const found = findQualityById(item.items as SdkQualityProfileItem[], targetId);
 			if (found) return found;
 		}
 	}
@@ -49,17 +53,17 @@ interface QualityProfileImportResult {
 export class ProfileCloner {
 	constructor(
 		private prisma: PrismaClient,
-		private encryptor: Encryptor,
+		private clientFactory: ArrClientFactory,
 	) {}
 
 	/**
-	 * Helper to create an ArrApiClient for an instance
+	 * Helper to get an SDK client for an instance
 	 * Validates that the instance belongs to the specified user
 	 */
 	private async getClientForInstance(
 		instanceId: string,
 		userId: string,
-	): Promise<{ client: ArrApiClient; instanceLabel: string } | { error: string }> {
+	): Promise<{ client: SonarrClient | RadarrClient; instanceLabel: string } | { error: string }> {
 		if (!userId) {
 			return { error: "User ID is required" };
 		}
@@ -72,22 +76,11 @@ export class ProfileCloner {
 			return { error: "Instance not found" };
 		}
 
-		const apiKey = this.encryptor.decrypt({
-			value: instance.encryptedApiKey,
-			iv: instance.encryptionIv,
-		});
-		const baseUrl = instance.baseUrl?.replace(/\/$/, "") || "";
-
-		if (!baseUrl || !apiKey) {
+		if (!instance.baseUrl || !instance.encryptedApiKey) {
 			return { error: "Instance credentials incomplete" };
 		}
 
-		const client = new ArrApiClient({
-			id: instance.id,
-			baseUrl,
-			apiKey,
-			service: instance.service as "RADARR" | "SONARR",
-		});
+		const client = this.clientFactory.create(instance) as SonarrClient | RadarrClient;
 
 		return { client, instanceLabel: instance.label };
 	}
@@ -101,41 +94,44 @@ export class ProfileCloner {
 		try {
 			const { instanceId, profileId, userId } = options;
 
-			// Get ArrApiClient for instance (validates user ownership)
+			// Get SDK client for instance (validates user ownership)
 			const clientResult = await this.getClientForInstance(instanceId, userId);
 			if ("error" in clientResult) {
 				return { success: false, error: clientResult.error };
 			}
 
-			// Fetch quality profile using ArrApiClient
-			const profileData = await clientResult.client.getQualityProfile(profileId);
+			// Fetch quality profile using SDK
+			const profileData = await clientResult.client.qualityProfile.getById(profileId);
 
 			// Resolve cutoff quality name from items if not directly available
-			let cutoffQuality = profileData.cutoffQuality;
-			if (!cutoffQuality && profileData.cutoff && profileData.items) {
-				cutoffQuality = findQualityById(profileData.items, profileData.cutoff);
+			let cutoffQuality: { id: number; name: string } | undefined;
+			if (profileData.cutoff && profileData.items) {
+				cutoffQuality = findQualityById(profileData.items as SdkQualityProfileItem[], profileData.cutoff);
 			}
 
 			// Transform to CompleteQualityProfile format
+			// Cast to any for property access since Sonarr/Radarr have slightly different schemas
+			const profileDataAny = profileData as any;
 			const completeProfile: CompleteQualityProfile = {
 				sourceInstanceId: instanceId,
 				sourceInstanceLabel: clientResult.instanceLabel,
-				sourceProfileId: profileData.id,
-				sourceProfileName: profileData.name,
+				sourceProfileId: profileData.id ?? 0,
+				sourceProfileName: profileData.name || "Unknown",
 				importedAt: new Date().toISOString(),
 
 				upgradeAllowed: profileData.upgradeAllowed ?? true,
-				cutoff: profileData.cutoff,
+				cutoff: profileData.cutoff ?? 0,
 				cutoffQuality,
 
-				items: profileData.items || [],
+				items: (profileData.items || []) as any[],
 
 				minFormatScore: profileData.minFormatScore ?? 0,
 				cutoffFormatScore: profileData.cutoffFormatScore ?? 0,
 				minUpgradeFormatScore: profileData.minUpgradeFormatScore,
 
-				language: profileData.language,
-				languages: profileData.languages,
+				// Sonarr has language/languages, Radarr doesn't - access via any
+				language: profileDataAny.language,
+				languages: profileDataAny.languages,
 			};
 
 			return {
@@ -144,10 +140,9 @@ export class ProfileCloner {
 			};
 		} catch (error) {
 			console.error("Failed to import quality profile:", error);
-			const apiError = error as ApiError;
 			return {
 				success: false,
-				error: apiError.message || (error instanceof Error ? error.message : "Unknown error"),
+				error: error instanceof Error ? error.message : "Unknown error",
 			};
 		}
 	}
@@ -171,7 +166,7 @@ export class ProfileCloner {
 		error?: string;
 	}> {
 		try {
-			// Get ArrApiClient for instance (validates user ownership)
+			// Get SDK client for instance (validates user ownership)
 			const clientResult = await this.getClientForInstance(instanceId, userId);
 			if ("error" in clientResult) {
 				return { success: false, error: clientResult.error };
@@ -179,14 +174,15 @@ export class ProfileCloner {
 			const client = clientResult.client;
 
 			// Fetch custom formats from instance to map trash_ids to instance IDs
-			const instanceCFs = await client.getCustomFormats();
+			const instanceCFs = await client.customFormat.getAll();
 
 			// Map trash_ids to instance custom format IDs
 			// Match by trash_id only (cf only contains trash_id and score)
+			// Note: SDK CFs don't have trash_id property, check specifications
 			const formatItems = customFormats
 				.map((cf) => {
-					const instanceCF = instanceCFs.find((icf) => icf.trash_id === cf.trash_id);
-					if (!instanceCF) return null;
+					const instanceCF = instanceCFs.find((icf) => this.extractTrashId(icf) === cf.trash_id);
+					if (!instanceCF || instanceCF.id === undefined) return null;
 
 					return {
 						format: instanceCF.id,
@@ -209,16 +205,15 @@ export class ProfileCloner {
 			};
 
 			// Create or update profile
-			let deployedProfile: QualityProfile;
+			// Use any for return type since Sonarr/Radarr have different quality profile schemas
+			let deployedProfile: { id?: number };
 			if (options.existingProfileId) {
-				deployedProfile = await client.updateQualityProfile(
+				deployedProfile = await client.qualityProfile.update(
 					options.existingProfileId,
-					// biome-ignore lint/suspicious/noExplicitAny: ARR API accepts partial payload with id
 					{ id: options.existingProfileId, ...profilePayload } as any,
-				);
+				) as any;
 			} else {
-				// biome-ignore lint/suspicious/noExplicitAny: ARR API accepts partial payload for creation
-				deployedProfile = await client.createQualityProfile(profilePayload as any);
+				deployedProfile = await client.qualityProfile.create(profilePayload as any) as any;
 			}
 
 			return {
@@ -227,12 +222,26 @@ export class ProfileCloner {
 			};
 		} catch (error) {
 			console.error("Failed to deploy complete profile:", error);
-			const apiError = error as ApiError;
 			return {
 				success: false,
-				error: apiError.message || (error instanceof Error ? error.message : "Unknown error"),
+				error: error instanceof Error ? error.message : "Unknown error",
 			};
 		}
+	}
+
+	/**
+	 * Extract trash_id from a custom format's specifications
+	 */
+	private extractTrashId(cf: SdkCustomFormat): string | null {
+		for (const spec of cf.specifications || []) {
+			if (spec.fields && Array.isArray(spec.fields)) {
+				const trashIdField = spec.fields.find((f) => f.name === 'trash_id');
+				if (trashIdField) {
+					return String(trashIdField.value);
+				}
+			}
+		}
+		return null;
 	}
 
 	/**
@@ -267,19 +276,20 @@ export class ProfileCloner {
 		error?: string;
 	}> {
 		try {
-			// Get ArrApiClient for instance (validates user ownership)
+			// Get SDK client for instance (validates user ownership)
 			const clientResult = await this.getClientForInstance(instanceId, userId);
 			if ("error" in clientResult) {
 				return { success: false, error: clientResult.error };
 			}
 
-			// Fetch custom formats using ArrApiClient
-			const instanceCFs = await clientResult.client.getCustomFormats();
+			// Fetch custom formats using SDK
+			const instanceCFs = await clientResult.client.customFormat.getAll();
 
-			// Match custom formats - prefer trash_id match, fall back to name match
-			const matchesCF = (icf: { trash_id?: string; name: string }, trashId: string) => {
-				if (icf.trash_id) {
-					return icf.trash_id === trashId;
+			// Match custom formats - prefer trash_id match (from specs), fall back to name match
+			const matchesCF = (icf: SdkCustomFormat, trashId: string) => {
+				const icfTrashId = this.extractTrashId(icf);
+				if (icfTrashId) {
+					return icfTrashId === trashId;
 				}
 				return icf.name === trashId;
 			};
@@ -331,10 +341,9 @@ export class ProfileCloner {
 				},
 			};
 		} catch (error) {
-			const apiError = error as ApiError;
 			return {
 				success: false,
-				error: apiError.message || (error instanceof Error ? error.message : "Unknown error"),
+				error: error instanceof Error ? error.message : "Unknown error",
 			};
 		}
 	}
@@ -342,7 +351,7 @@ export class ProfileCloner {
 
 export function createProfileCloner(
 	prisma: PrismaClient,
-	encryptor: Encryptor,
+	clientFactory: ArrClientFactory,
 ): ProfileCloner {
-	return new ProfileCloner(prisma, encryptor);
+	return new ProfileCloner(prisma, clientFactory);
 }
