@@ -4,11 +4,11 @@
  * Tests extractTrashId function and ID-based vs name-based matching behavior
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { PrismaClient } from "@prisma/client";
-import { DeploymentExecutorService } from "../deployment-executor.js";
 import type { CustomFormatSpecification } from "@arr/shared";
+import type { PrismaClient } from "@prisma/client";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CustomFormat } from "../arr-api-client.js";
+import { DeploymentExecutorService } from "../deployment-executor.js";
 
 // Type for array-format fields (some arr instances return this format)
 interface ArrayFieldFormat {
@@ -19,7 +19,7 @@ interface ArrayFieldFormat {
 // Helper to create a specification with array-format fields
 const createSpecWithArrayFields = (
 	name: string,
-	fields: ArrayFieldFormat[]
+	fields: ArrayFieldFormat[],
 ): CustomFormatSpecification => ({
 	name,
 	implementation: "test",
@@ -32,10 +32,12 @@ const createSpecWithArrayFields = (
 // Helper to access private extractTrashId method in tests
 // Uses index signature to bypass TypeScript's private member checking
 const getExtractTrashId = (
-	service: DeploymentExecutorService
+	service: DeploymentExecutorService,
 ): ((cf: CustomFormat) => string | null) => {
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	return (service as unknown as { extractTrashId: (cf: CustomFormat) => string | null }).extractTrashId.bind(service);
+	return (
+		service as unknown as { extractTrashId: (cf: CustomFormat) => string | null }
+	).extractTrashId.bind(service);
 };
 
 describe("DeploymentExecutorService - extractTrashId", () => {
@@ -97,9 +99,7 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			id: 1,
 			name: "Test CF Without Trash ID",
 			specifications: [
-				createSpecWithArrayFields("test", [
-					{ name: "other_field", value: "other_value" },
-				]),
+				createSpecWithArrayFields("test", [{ name: "other_field", value: "other_value" }]),
 			],
 		};
 
@@ -165,15 +165,9 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			id: 1,
 			name: "Test CF",
 			specifications: [
-				createSpecWithArrayFields("test1", [
-					{ name: "other_field", value: "value" },
-				]),
-				createSpecWithArrayFields("test2", [
-					{ name: "trash_id", value: "first-uuid" },
-				]),
-				createSpecWithArrayFields("test3", [
-					{ name: "trash_id", value: "second-uuid" },
-				]),
+				createSpecWithArrayFields("test1", [{ name: "other_field", value: "value" }]),
+				createSpecWithArrayFields("test2", [{ name: "trash_id", value: "first-uuid" }]),
+				createSpecWithArrayFields("test3", [{ name: "trash_id", value: "second-uuid" }]),
 			],
 		};
 
@@ -186,11 +180,7 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 		const cf: CustomFormat = {
 			id: 1,
 			name: "Test CF",
-			specifications: [
-				createSpecWithArrayFields("test", [
-					{ name: "trash_id", value: 12345 },
-				]),
-			],
+			specifications: [createSpecWithArrayFields("test", [{ name: "trash_id", value: 12345 }])],
 		};
 
 		const extractTrashId = getExtractTrashId(service);
@@ -204,11 +194,7 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 		const cfWithoutId: CustomFormat = {
 			id: 1,
 			name: "My Custom Format",
-			specifications: [
-				createSpecWithArrayFields("test", [
-					{ name: "some_field", value: "value" },
-				]),
-			],
+			specifications: [createSpecWithArrayFields("test", [{ name: "some_field", value: "value" }])],
 		};
 
 		const extractTrashId = getExtractTrashId(service);
@@ -238,9 +224,7 @@ describe("DeploymentExecutorService - ID-based vs name-based matching", () => {
 			id: 1,
 			name: "CF With ID",
 			specifications: [
-				createSpecWithArrayFields("test", [
-					{ name: "trash_id", value: "uuid-123" },
-				]),
+				createSpecWithArrayFields("test", [{ name: "trash_id", value: "uuid-123" }]),
 			],
 		};
 
@@ -249,9 +233,7 @@ describe("DeploymentExecutorService - ID-based vs name-based matching", () => {
 			id: 2,
 			name: "CF Without ID",
 			specifications: [
-				createSpecWithArrayFields("test", [
-					{ name: "other_field", value: "value" },
-				]),
+				createSpecWithArrayFields("test", [{ name: "other_field", value: "value" }]),
 			],
 		};
 
@@ -260,7 +242,7 @@ describe("DeploymentExecutorService - ID-based vs name-based matching", () => {
 			for (const spec of cf.specifications || []) {
 				if (spec.fields && Array.isArray(spec.fields)) {
 					const trashIdField = (spec.fields as ArrayFieldFormat[]).find(
-						(f) => f.name === "trash_id"
+						(f) => f.name === "trash_id",
 					);
 					if (trashIdField) {
 						return String(trashIdField.value);
@@ -311,4 +293,3 @@ describe("DeploymentExecutorService - ID-based vs name-based matching", () => {
 		expect(existingCF).toBe(cfWithoutId);
 	});
 });
-

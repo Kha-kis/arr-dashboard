@@ -5,12 +5,12 @@
  * Deploys custom formats directly without affecting quality profiles
  */
 
+import type { CustomFormatSpecification, TrashCustomFormat } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
+import { createArrApiClient } from "../../lib/trash-guides/arr-api-client.js";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
-import { createArrApiClient } from "../../lib/trash-guides/arr-api-client.js";
-import type { TrashCustomFormat, CustomFormatSpecification } from "@arr/shared";
 
 // ============================================================================
 // Validation Schemas
@@ -30,7 +30,9 @@ const deployMultipleSchema = z.object({
  * Transform specification fields from object format to array format
  * This matches the format expected by Radarr/Sonarr API
  */
-function transformFieldsToArray(fields: Record<string, unknown> | Array<{ name: string; value: unknown }> | null | undefined): Array<{ name: string; value: unknown }> {
+function transformFieldsToArray(
+	fields: Record<string, unknown> | Array<{ name: string; value: unknown }> | null | undefined,
+): Array<{ name: string; value: unknown }> {
 	// If fields is already an array, return it as-is
 	if (Array.isArray(fields)) {
 		return fields;
@@ -93,9 +95,9 @@ export async function registerCustomFormatRoutes(
 		try {
 			// Get instance - verify ownership by including userId in where clause
 			const instance = await app.prisma.serviceInstance.findFirst({
-				where: { 
-					id: instanceId, 
-					userId: request.currentUser!.id 
+				where: {
+					id: instanceId,
+					userId: request.currentUser?.id,
 				},
 			});
 
@@ -128,9 +130,7 @@ export async function registerCustomFormatRoutes(
 			}
 
 			// Filter to only requested custom formats
-			const customFormats = allCustomFormats.filter((cf) =>
-				trashIds.includes(cf.trash_id)
-			);
+			const customFormats = allCustomFormats.filter((cf) => trashIds.includes(cf.trash_id));
 
 			if (customFormats.length === 0) {
 				return reply.status(404).send({
@@ -175,13 +175,15 @@ export async function registerCustomFormatRoutes(
 					const existing = existingByName.get(customFormat.name);
 
 					// Transform specifications: convert fields from object to array format
-					const specifications = (customFormat.specifications || []).map((spec: CustomFormatSpecification) => {
-						const transformedFields = transformFieldsToArray(spec.fields);
-						return {
-							...spec,
-							fields: transformedFields,
-						};
-					});
+					const specifications = (customFormat.specifications || []).map(
+						(spec: CustomFormatSpecification) => {
+							const transformedFields = transformFieldsToArray(spec.fields);
+							return {
+								...spec,
+								fields: transformedFields,
+							};
+						},
+					);
 
 					if (existing?.id) {
 						// Update existing custom format
@@ -201,7 +203,8 @@ export async function registerCustomFormatRoutes(
 						// Using type assertion to bridge the gap
 						const newCF = {
 							name: customFormat.name,
-							includeCustomFormatWhenRenaming: customFormat.includeCustomFormatWhenRenaming ?? false,
+							includeCustomFormatWhenRenaming:
+								customFormat.includeCustomFormatWhenRenaming ?? false,
 							specifications: specifications as unknown as CustomFormatSpecification[],
 						};
 						await arrClient.createCustomFormat(newCF);
@@ -218,7 +221,7 @@ export async function registerCustomFormatRoutes(
 
 			// Record successful deployments for update tracking
 			if (successfulDeployments.length > 0) {
-				const userId = request.currentUser!.id;
+				const userId = request.currentUser?.id;
 				await Promise.all(
 					successfulDeployments.map((deployment) =>
 						app.prisma.standaloneCFDeployment.upsert({
@@ -241,8 +244,8 @@ export async function registerCustomFormatRoutes(
 								serviceType,
 								commitHash,
 							},
-						})
-					)
+						}),
+					),
 				);
 			}
 
@@ -256,14 +259,17 @@ export async function registerCustomFormatRoutes(
 					failed: results.failed,
 				});
 			}
-				return reply.status(400).send({
-					success: false,
-					created: results.created,
-					updated: results.updated,
-					failed: results.failed,
-				});
+			return reply.status(400).send({
+				success: false,
+				created: results.created,
+				updated: results.updated,
+				failed: results.failed,
+			});
 		} catch (error) {
-			app.log.error({ err: error, trashIds, instanceId, serviceType }, "Failed to deploy custom formats");
+			app.log.error(
+				{ err: error, trashIds, instanceId, serviceType },
+				"Failed to deploy custom formats",
+			);
 			return reply.status(500).send({
 				error: "DEPLOYMENT_FAILED",
 				message: error instanceof Error ? error.message : "Failed to deploy custom formats",
@@ -282,7 +288,7 @@ export async function registerCustomFormatRoutes(
 			serviceType?: "RADARR" | "SONARR";
 		};
 	}>("/standalone-updates", async (request, reply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 		const { instanceId, serviceType } = request.query;
 
 		try {
@@ -373,7 +379,10 @@ export async function registerCustomFormatRoutes(
 				outdatedCount: updates.length,
 			});
 		} catch (error) {
-			app.log.error({ err: error, instanceId, serviceType }, "Failed to check standalone CF updates");
+			app.log.error(
+				{ err: error, instanceId, serviceType },
+				"Failed to check standalone CF updates",
+			);
 			return reply.status(500).send({
 				error: "CHECK_FAILED",
 				message: error instanceof Error ? error.message : "Failed to check for updates",
@@ -391,7 +400,7 @@ export async function registerCustomFormatRoutes(
 			serviceType?: "RADARR" | "SONARR";
 		};
 	}>("/standalone-deployments", async (request, reply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 		const { instanceId, serviceType } = request.query;
 
 		try {
@@ -418,10 +427,7 @@ export async function registerCustomFormatRoutes(
 						},
 					},
 				},
-				orderBy: [
-					{ instanceId: "asc" },
-					{ cfName: "asc" },
-				],
+				orderBy: [{ instanceId: "asc" }, { cfName: "asc" }],
 			});
 
 			return reply.send({
@@ -439,7 +445,10 @@ export async function registerCustomFormatRoutes(
 				count: deployments.length,
 			});
 		} catch (error) {
-			app.log.error({ err: error, instanceId, serviceType }, "Failed to list standalone CF deployments");
+			app.log.error(
+				{ err: error, instanceId, serviceType },
+				"Failed to list standalone CF deployments",
+			);
 			return reply.status(500).send({
 				error: "LIST_FAILED",
 				message: error instanceof Error ? error.message : "Failed to list deployments",
@@ -454,7 +463,7 @@ export async function registerCustomFormatRoutes(
 	app.delete<{
 		Params: { id: string };
 	}>("/standalone-deployments/:id", async (request, reply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 		const { id } = request.params;
 
 		try {

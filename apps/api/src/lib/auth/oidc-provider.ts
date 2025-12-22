@@ -45,49 +45,49 @@ export class OIDCProvider {
 		const hostname = issuerUrl.hostname.toLowerCase();
 
 		// IPv4 localhost
-		if (hostname === 'localhost' || hostname === '127.0.0.1') {
+		if (hostname === "localhost" || hostname === "127.0.0.1") {
 			return true;
 		}
 
 		// IPv6 localhost (::1)
-		if (hostname === '::1' || hostname === '[::1]') {
+		if (hostname === "::1" || hostname === "[::1]") {
 			return true;
 		}
 
 		// IPv4 private networks
 		// 192.168.0.0/16
-		if (hostname.startsWith('192.168.')) {
+		if (hostname.startsWith("192.168.")) {
 			return true;
 		}
 		// 10.0.0.0/8
-		if (hostname.startsWith('10.')) {
+		if (hostname.startsWith("10.")) {
 			return true;
 		}
 		// 172.16.0.0/12 (172.16.0.0 - 172.31.255.255)
-		if (hostname.startsWith('172.16.') || hostname.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./)) {
+		if (hostname.startsWith("172.16.") || hostname.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./)) {
 			return true;
 		}
 
 		// IPv6 private/local networks
 		// fe80::/10 (link-local)
-		if (hostname.startsWith('fe80:') || hostname.startsWith('[fe80:')) {
+		if (hostname.startsWith("fe80:") || hostname.startsWith("[fe80:")) {
 			return true;
 		}
 
 		// fc00::/7 (unique local addresses - ULA)
 		// This includes both fc00::/8 and fd00::/8 ranges
 		// Strip brackets if present for parsing
-		const ipv6Host = hostname.replace(/^\[|\]$/g, '');
-		if (ipv6Host.includes(':')) {
+		const ipv6Host = hostname.replace(/^\[|\]$/g, "");
+		if (ipv6Host.includes(":")) {
 			// Extract first hextet (first 16 bits)
-			const firstHextet = ipv6Host.split(':')[0];
+			const firstHextet = ipv6Host.split(":")[0];
 			if (firstHextet) {
 				// Parse as hex and check if it's in fc00-fdff range (fc00::/7)
 				const firstBits = Number.parseInt(firstHextet, 16);
 				// fc00::/7 means first 7 bits are 1111110x
 				// fc00 = 0xFC00 (11111100), fdff = 0xFDFF (11111101)
 				// So we check if (firstBits & 0xFE00) === 0xFC00
-				if (!Number.isNaN(firstBits) && (firstBits & 0xFE00) === 0xFC00) {
+				if (!Number.isNaN(firstBits) && (firstBits & 0xfe00) === 0xfc00) {
 					return true;
 				}
 			}
@@ -133,8 +133,11 @@ export class OIDCProvider {
 		let scopes: string[];
 		if (Array.isArray(this.config.scopes)) {
 			scopes = this.config.scopes;
-		} else if (typeof this.config.scopes === 'string') {
-			scopes = this.config.scopes.split(',').map(s => s.trim()).filter(Boolean);
+		} else if (typeof this.config.scopes === "string") {
+			scopes = this.config.scopes
+				.split(",")
+				.map((s) => s.trim())
+				.filter(Boolean);
 		} else {
 			scopes = ["openid", "email", "profile"];
 		}
@@ -176,16 +179,12 @@ export class OIDCProvider {
 
 		// Validate the authorization response FIRST
 		// This validates state and extracts parameters properly
-		const params = oauth.validateAuthResponse(
-			authServer,
-			this.client,
-			callbackUrl,
-			expectedState
-		);
+		const params = oauth.validateAuthResponse(authServer, this.client, callbackUrl, expectedState);
 
 		// Check for OAuth errors - check if params has 'error' property
-		if ('error' in params) {
-			const errorDesc = 'error_description' in params ? String(params.error_description) : 'Unknown error';
+		if ("error" in params) {
+			const errorDesc =
+				"error_description" in params ? String(params.error_description) : "Unknown error";
 			throw new Error(`OAuth error: ${params.error} - ${errorDesc}`);
 		}
 
@@ -199,23 +198,19 @@ export class OIDCProvider {
 			codeVerifier, // PKCE code verifier for authorization code protection
 			{
 				[oauth.allowInsecureRequests]: this.shouldAllowInsecureRequests(),
-			}
-		);
-
-		// Validate ID token with nonce to prevent replay attacks
-		const result = await oauth.processAuthorizationCodeResponse(
-			authServer,
-			this.client,
-			response,
-			{
-				expectedNonce: expectedNonce,
-				requireIdToken: true, // OIDC requires ID token
 			},
 		);
 
+		// Validate ID token with nonce to prevent replay attacks
+		const result = await oauth.processAuthorizationCodeResponse(authServer, this.client, response, {
+			expectedNonce: expectedNonce,
+			requireIdToken: true, // OIDC requires ID token
+		});
+
 		// Check for OAuth error response
-		if ('error' in result) {
-			const errorDesc = 'error_description' in result ? String(result.error_description) : 'Unknown error';
+		if ("error" in result) {
+			const errorDesc =
+				"error_description" in result ? String(result.error_description) : "Unknown error";
 			throw new Error(`OIDC token exchange failed: ${result.error} - ${errorDesc}`);
 		}
 
@@ -237,7 +232,12 @@ export class OIDCProvider {
 		const response = await oauth.userInfoRequest(authServer, this.client, accessToken, {
 			[oauth.allowInsecureRequests]: this.shouldAllowInsecureRequests(),
 		});
-		const userInfo = await oauth.processUserInfoResponse(authServer, this.client, expectedSubject, response);
+		const userInfo = await oauth.processUserInfoResponse(
+			authServer,
+			this.client,
+			expectedSubject,
+			response,
+		);
 
 		if (!userInfo.sub) {
 			throw new Error("OIDC user info missing 'sub' claim");
@@ -263,7 +263,7 @@ export class OIDCProvider {
 
 		const payload = parts[1];
 		// Convert base64url to base64 (replace - with + and _ with /)
-		const base64 = payload.replace(/-/g, '+').replace(/_/g, '/');
+		const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
 		const decoded = Buffer.from(base64, "base64").toString("utf-8");
 		try {
 			return JSON.parse(decoded);
@@ -272,4 +272,3 @@ export class OIDCProvider {
 		}
 	}
 }
-

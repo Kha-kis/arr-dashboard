@@ -20,10 +20,7 @@ const start = async () => {
 			port: portConfig.apiPort,
 			host: env.API_HOST,
 		});
-		app.log.info(
-			{ port: portConfig.apiPort, host: env.API_HOST },
-			"API server started"
-		);
+		app.log.info({ port: portConfig.apiPort, host: env.API_HOST }, "API server started");
 	} catch (error) {
 		app.log.error({ err: error }, "Failed to start API server");
 		process.exit(1);

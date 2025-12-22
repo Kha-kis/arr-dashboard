@@ -6,13 +6,13 @@
  */
 
 import type {
+	TrashCFDescription,
 	TrashConfigType,
 	TrashCustomFormat,
 	TrashCustomFormatGroup,
-	TrashQualitySize,
 	TrashNamingScheme,
 	TrashQualityProfile,
-	TrashCFDescription,
+	TrashQualitySize,
 } from "@arr/shared";
 import DOMPurify from "isomorphic-dompurify";
 import { marked } from "marked";
@@ -28,13 +28,35 @@ import { marked } from "marked";
  */
 const DOMPURIFY_CONFIG = {
 	ALLOWED_TAGS: [
-		"p", "br", "b", "i", "strong", "em", "a", "ul", "ol", "li",
-		"code", "pre", "blockquote", "h1", "h2", "h3", "h4", "h5", "h6",
-		"span", "div", "table", "thead", "tbody", "tr", "th", "td",
+		"p",
+		"br",
+		"b",
+		"i",
+		"strong",
+		"em",
+		"a",
+		"ul",
+		"ol",
+		"li",
+		"code",
+		"pre",
+		"blockquote",
+		"h1",
+		"h2",
+		"h3",
+		"h4",
+		"h5",
+		"h6",
+		"span",
+		"div",
+		"table",
+		"thead",
+		"tbody",
+		"tr",
+		"th",
+		"td",
 	],
-	ALLOWED_ATTR: [
-		"href", "target", "rel", "class", "id", "title",
-	],
+	ALLOWED_ATTR: ["href", "target", "rel", "class", "id", "title"],
 };
 
 /**
@@ -47,7 +69,7 @@ function sanitizeHtml(html: string): string {
 	// DOMPurify handles most security concerns; add rel attributes for external links
 	return sanitized.replace(
 		/<a([^>]*?)target="_blank"([^>]*?)>/gi,
-		'<a$1target="_blank" rel="noopener noreferrer"$2>'
+		'<a$1target="_blank" rel="noopener noreferrer"$2>',
 	);
 }
 
@@ -55,7 +77,8 @@ function sanitizeHtml(html: string): string {
 // Constants
 // ============================================================================
 
-const TRASH_GITHUB_BASE_URL = "https://raw.githubusercontent.com/TRaSH-Guides/Guides/master/docs/json";
+const TRASH_GITHUB_BASE_URL =
+	"https://raw.githubusercontent.com/TRaSH-Guides/Guides/master/docs/json";
 const TRASH_METADATA_URL =
 	"https://raw.githubusercontent.com/TRaSH-Guides/Guides/master/metadata.json";
 const TRASH_CF_DESCRIPTIONS_BASE_URL =
@@ -121,7 +144,7 @@ function buildHeaders(githubToken?: string, isGitHubApi = false): Record<string,
 async function fetchWithTimeout(
 	url: string,
 	timeout: number,
-	headers?: Record<string, string>
+	headers?: Record<string, string>,
 ): Promise<Response> {
 	const controller = new AbortController();
 	const timeoutId = setTimeout(() => controller.abort(), timeout);
@@ -175,13 +198,13 @@ async function fetchWithRetry(url: string, options: FetchOptions = {}): Promise<
 
 				if (!githubToken) {
 					console.warn(
-						`GitHub rate limit hit (unauthenticated: 60 req/hour). Consider setting GITHUB_TOKEN for 5,000 req/hour. Retrying after ${waitTime}ms`
+						`GitHub rate limit hit (unauthenticated: 60 req/hour). Consider setting GITHUB_TOKEN for 5,000 req/hour. Retrying after ${waitTime}ms`,
 					);
 				} else {
 					console.warn(
 						`GitHub rate limit hit. Remaining: ${rateLimitRemaining}, ` +
-						`Reset: ${rateLimitReset ? new Date(Number.parseInt(rateLimitReset, 10) * 1000).toISOString() : 'unknown'}. ` +
-						`Retrying after ${waitTime}ms`
+							`Reset: ${rateLimitReset ? new Date(Number.parseInt(rateLimitReset, 10) * 1000).toISOString() : "unknown"}. ` +
+							`Retrying after ${waitTime}ms`,
 					);
 				}
 				await delay(waitTime);
@@ -305,7 +328,9 @@ export class TrashGitHubFetcher {
 	/**
 	 * Fetch Custom Format Groups for a service
 	 */
-	async fetchCustomFormatGroups(serviceType: "RADARR" | "SONARR"): Promise<TrashCustomFormatGroup[]> {
+	async fetchCustomFormatGroups(
+		serviceType: "RADARR" | "SONARR",
+	): Promise<TrashCustomFormatGroup[]> {
 		const baseUrl = buildGitHubUrl(serviceType, "CF_GROUPS");
 
 		const groups: TrashCustomFormatGroup[] = [];
@@ -476,7 +501,8 @@ export class TrashGitHubFetcher {
 	 */
 	async fetchAllCFDescriptions(): Promise<TrashCFDescription[]> {
 		// First, discover all markdown files in cf-descriptions directory
-		const apiUrl = "https://api.github.com/repos/TRaSH-Guides/Guides/contents/includes/cf-descriptions";
+		const apiUrl =
+			"https://api.github.com/repos/TRaSH-Guides/Guides/contents/includes/cf-descriptions";
 
 		try {
 			const response = await fetchWithRetry(apiUrl, {
@@ -499,16 +525,13 @@ export class TrashGitHubFetcher {
 				.filter((file) => file.type === "file" && file.name.endsWith(".md"))
 				.map((file) => file.name.replace(/\.md$/, ""));
 
-
 			// Fetch all descriptions in parallel (with concurrency limit)
 			const BATCH_SIZE = 10; // Process 10 at a time
 			const descriptions: TrashCFDescription[] = [];
 
 			for (let i = 0; i < mdFiles.length; i += BATCH_SIZE) {
 				const batch = mdFiles.slice(i, i + BATCH_SIZE);
-				const results = await Promise.all(
-					batch.map((cfName) => this.fetchCFDescription(cfName))
-				);
+				const results = await Promise.all(batch.map((cfName) => this.fetchCFDescription(cfName)));
 
 				// Filter out nulls and add to descriptions
 				descriptions.push(...results.filter((desc): desc is TrashCFDescription => desc !== null));

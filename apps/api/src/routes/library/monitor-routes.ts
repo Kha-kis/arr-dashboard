@@ -165,7 +165,9 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 
 			// Update the monitored status for the specified episodes
 			const updates = allEpisodes
-				.filter((ep: unknown) => payload.episodeIds.includes(toNumber((ep as Record<string, unknown>)?.id) ?? -1))
+				.filter((ep: unknown) =>
+					payload.episodeIds.includes(toNumber((ep as Record<string, unknown>)?.id) ?? -1),
+				)
 				.map((ep: unknown) => {
 					const epObj = ep as Record<string, unknown>;
 					return {

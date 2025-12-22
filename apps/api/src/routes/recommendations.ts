@@ -68,7 +68,9 @@ const recommendationsRoute: FastifyPluginCallback = (app, _opts, done) => {
 		};
 
 		try {
-			let tmdbData: { results: unknown[]; total_results?: number; page?: number; total_pages?: number } | undefined;
+			let tmdbData:
+				| { results: unknown[]; total_results?: number; page?: number; total_pages?: number }
+				| undefined;
 
 			if (parsed.mediaType === "movie") {
 				switch (parsed.type) {

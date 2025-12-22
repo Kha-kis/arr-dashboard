@@ -432,7 +432,9 @@ export const fetchRadarrStatistics = async (
 		safeRequestJson<unknown[]>(fetcher, "/api/v3/movie").then((r) => r ?? []),
 		safeRequestJson<unknown[]>(fetcher, "/api/v3/diskspace").then((r) => r ?? []),
 		safeRequestJson<unknown[]>(fetcher, "/api/v3/health").then((r) => r ?? []),
-		safeRequestJson<CutoffUnmetResponse>(fetcher, "/api/v3/wanted/cutoff?page=1&pageSize=1").then((r) => r ?? {}),
+		safeRequestJson<CutoffUnmetResponse>(fetcher, "/api/v3/wanted/cutoff?page=1&pageSize=1").then(
+			(r) => r ?? {},
+		),
 		safeRequestJson<unknown[]>(fetcher, "/api/v3/qualityprofile").then((r) => r ?? []),
 		safeRequestJson<unknown[]>(fetcher, "/api/v3/tag").then((r) => r ?? []),
 	]);
@@ -753,7 +755,11 @@ export const fetchProwlarrStatistics = async (
 };
 
 export const aggregateSonarrStatistics = (
-	instances: Array<{ storageGroupId?: string | null; shouldCountDisk?: boolean; data: SonarrStatistics }>,
+	instances: Array<{
+		storageGroupId?: string | null;
+		shouldCountDisk?: boolean;
+		data: SonarrStatistics;
+	}>,
 ): SonarrStatistics | undefined => {
 	if (instances.length === 0) {
 		return undefined;
@@ -863,7 +869,11 @@ export const aggregateSonarrStatistics = (
 };
 
 export const aggregateRadarrStatistics = (
-	instances: Array<{ storageGroupId?: string | null; shouldCountDisk?: boolean; data: RadarrStatistics }>,
+	instances: Array<{
+		storageGroupId?: string | null;
+		shouldCountDisk?: boolean;
+		data: RadarrStatistics;
+	}>,
 ): RadarrStatistics | undefined => {
 	if (instances.length === 0) {
 		return undefined;

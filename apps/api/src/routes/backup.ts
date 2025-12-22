@@ -1,19 +1,19 @@
-import type { FastifyPluginCallback } from "fastify";
 import fs from "node:fs/promises";
 import {
+	type BackupFileInfo,
+	type BackupSettings,
+	type ListBackupsResponse,
+	type RestoreBackupResponse,
 	createBackupRequestSchema,
 	deleteBackupRequestSchema,
 	restoreBackupFromFileRequestSchema,
 	restoreBackupRequestSchema,
 	updateBackupSettingsRequestSchema,
-	type BackupFileInfo,
-	type BackupSettings,
-	type ListBackupsResponse,
-	type RestoreBackupResponse,
 } from "@arr/shared";
+import type { FastifyPluginCallback } from "fastify";
 import { BackupService } from "../lib/backup/backup-service.js";
-import { getAppVersion } from "../lib/utils/version.js";
 import { resolveSecretsPath } from "../lib/utils/secrets-path.js";
+import { getAppVersion } from "../lib/utils/version.js";
 
 const BACKUP_RATE_LIMIT = { max: 3, timeWindow: "5 minutes" };
 const RESTORE_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };
@@ -59,128 +59,122 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * POST /backup/create
 	 * Create a backup and save it to filesystem
 	 */
-	app.post(
-		"/create",
-		{ config: { rateLimit: BACKUP_RATE_LIMIT } },
-		async (request, reply) => {
-			const parsed = createBackupRequestSchema.safeParse(request.body);
-			if (!parsed.success) {
-				return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
+	app.post("/create", { config: { rateLimit: BACKUP_RATE_LIMIT } }, async (request, reply) => {
+		const parsed = createBackupRequestSchema.safeParse(request.body);
+		if (!parsed.success) {
+			return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
+		}
+
+		try {
+			const backupService = getBackupService();
+
+			// Get app version from root package.json
+			const appVersion = getAppVersion();
+
+			// Get backup settings to check if TRaSH backups should be included
+			const settings = await app.prisma.backupSettings.findFirst({
+				where: { id: 1 },
+			});
+
+			// Create backup and save to filesystem
+			const backupInfo = await backupService.createBackup(appVersion, "manual", {
+				includeTrashBackups: settings?.includeTrashBackups ?? false,
+			});
+
+			request.log.info(
+				{
+					userId: request.currentUser?.id,
+					backupId: backupInfo.id,
+					backupSize: backupInfo.size,
+					timestamp: backupInfo.timestamp,
+				},
+				"Backup created successfully",
+			);
+
+			const response: BackupFileInfo = backupInfo;
+
+			return reply.send(response);
+		} catch (error) {
+			request.log.error({ err: error }, "Failed to create backup");
+
+			const errorMessage = error instanceof Error ? error.message : String(error);
+
+			// Check for specific configuration errors that the user can fix
+			if (errorMessage.includes("BACKUP_PASSWORD")) {
+				return reply.status(400).send({
+					error: "Backup password not configured",
+					details:
+						"Set the BACKUP_PASSWORD environment variable to enable encrypted backups in production.",
+				});
 			}
 
-			try {
-				const backupService = getBackupService();
-
-				// Get app version from root package.json
-				const appVersion = getAppVersion();
-
-				// Get backup settings to check if TRaSH backups should be included
-				const settings = await app.prisma.backupSettings.findFirst({
-					where: { id: 1 },
+			if (errorMessage.includes("Failed to read secrets file")) {
+				return reply.status(500).send({
+					error: "Secrets file not found",
+					details:
+						"The application secrets file is missing. This may indicate a configuration issue.",
 				});
-
-				// Create backup and save to filesystem
-				const backupInfo = await backupService.createBackup(appVersion, "manual", {
-					includeTrashBackups: settings?.includeTrashBackups ?? false,
-				});
-
-				request.log.info(
-					{
-						userId: request.currentUser?.id,
-						backupId: backupInfo.id,
-						backupSize: backupInfo.size,
-						timestamp: backupInfo.timestamp,
-					},
-					"Backup created successfully",
-				);
-
-				const response: BackupFileInfo = backupInfo;
-
-				return reply.send(response);
-			} catch (error) {
-				request.log.error({ err: error }, "Failed to create backup");
-
-				const errorMessage = error instanceof Error ? error.message : String(error);
-
-				// Check for specific configuration errors that the user can fix
-				if (errorMessage.includes("BACKUP_PASSWORD")) {
-					return reply.status(400).send({
-						error: "Backup password not configured",
-						details: "Set the BACKUP_PASSWORD environment variable to enable encrypted backups in production.",
-					});
-				}
-
-				if (errorMessage.includes("Failed to read secrets file")) {
-					return reply.status(500).send({
-						error: "Secrets file not found",
-						details: "The application secrets file is missing. This may indicate a configuration issue.",
-					});
-				}
-
-				return reply.status(500).send({ error: "Failed to create backup" });
 			}
-		},
-	);
+
+			return reply.status(500).send({ error: "Failed to create backup" });
+		}
+	});
 
 	/**
 	 * POST /backup/restore
 	 * Restore from a backup (uploaded file)
 	 */
-	app.post(
-		"/restore",
-		{ config: { rateLimit: RESTORE_RATE_LIMIT } },
-		async (request, reply) => {
-			const parsed = restoreBackupRequestSchema.safeParse(request.body);
-			if (!parsed.success) {
-				return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
+	app.post("/restore", { config: { rateLimit: RESTORE_RATE_LIMIT } }, async (request, reply) => {
+		const parsed = restoreBackupRequestSchema.safeParse(request.body);
+		if (!parsed.success) {
+			return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
+		}
+
+		try {
+			const backupService = getBackupService();
+
+			// Decode base64-encoded backup data from client
+			const backupJson = Buffer.from(parsed.data.backupData, "base64").toString("utf-8");
+
+			const metadata = await backupService.restoreBackup(backupJson);
+
+			request.log.info(
+				{
+					userId: request.currentUser?.id,
+					backupTimestamp: metadata.timestamp,
+					backupVersion: metadata.version,
+					backupAppVersion: metadata.appVersion,
+				},
+				"Backup restored successfully (from upload)",
+			);
+
+			const response: RestoreBackupResponse = {
+				success: true,
+				message: `Backup restored successfully. ${app.lifecycle?.getRestartMessage?.() || "Please restart the application manually for changes to take effect."}`,
+				restoredAt: new Date().toISOString(),
+				metadata,
+			};
+
+			// Send response
+			await reply.send(response);
+
+			// Initiate restart if lifecycle service is available and configured
+			if (app.lifecycle?.isRestartRequired?.()) {
+				await app.lifecycle.restart("backup-restore");
+			}
+		} catch (error) {
+			request.log.error({ err: error }, "Failed to restore backup");
+
+			const errorMessage = error instanceof Error ? error.message : String(error);
+
+			// Check for specific error types
+			if (errorMessage.includes("Invalid backup format") || errorMessage.includes("version")) {
+				return reply.status(400).send({ error: "Invalid backup format or version mismatch" });
 			}
 
-			try {
-				const backupService = getBackupService();
-
-				// Decode base64-encoded backup data from client
-				const backupJson = Buffer.from(parsed.data.backupData, "base64").toString("utf-8");
-
-				const metadata = await backupService.restoreBackup(backupJson);
-
-				request.log.info(
-					{
-						userId: request.currentUser?.id,
-						backupTimestamp: metadata.timestamp,
-						backupVersion: metadata.version,
-						backupAppVersion: metadata.appVersion,
-					},
-					"Backup restored successfully (from upload)",
-				);
-
-				const response: RestoreBackupResponse = {
-					success: true,
-					message: `Backup restored successfully. ${app.lifecycle?.getRestartMessage?.() || "Please restart the application manually for changes to take effect."}`,
-					restoredAt: new Date().toISOString(),
-					metadata,
-				};
-
-				// Send response
-				await reply.send(response);
-
-				// Initiate restart if lifecycle service is available and configured
-				if (app.lifecycle?.isRestartRequired?.()) {
-					await app.lifecycle.restart("backup-restore");
-				}
-			} catch (error) {
-				request.log.error({ err: error }, "Failed to restore backup");
-
-				const errorMessage = error instanceof Error ? error.message : String(error);
-
-				// Check for specific error types
-				if (errorMessage.includes("Invalid backup format") || errorMessage.includes("version")) {
-					return reply.status(400).send({ error: "Invalid backup format or version mismatch" });
-				}
-
-				return reply.status(500).send({ error: "Failed to restore backup" });
-			}
-		},
-	);
+			return reply.status(500).send({ error: "Failed to restore backup" });
+		}
+	});
 
 	/**
 	 * POST /backup/restore-from-file
@@ -192,7 +186,9 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		async (request, reply) => {
 			const parsed = restoreBackupFromFileRequestSchema.safeParse(request.body);
 			if (!parsed.success) {
-				return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
+				return reply
+					.status(400)
+					.send({ error: "Invalid request", details: parsed.error.flatten() });
 			}
 
 			try {
@@ -285,44 +281,40 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * DELETE /backup/:id
 	 * Delete a backup by ID
 	 */
-	app.delete(
-		"/:id",
-		{ config: { rateLimit: DELETE_RATE_LIMIT } },
-		async (request, reply) => {
-			const params = request.params as { id: string };
-			const parsed = deleteBackupRequestSchema.safeParse({ id: params.id });
-			if (!parsed.success) {
-				return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
+	app.delete("/:id", { config: { rateLimit: DELETE_RATE_LIMIT } }, async (request, reply) => {
+		const params = request.params as { id: string };
+		const parsed = deleteBackupRequestSchema.safeParse({ id: params.id });
+		if (!parsed.success) {
+			return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
+		}
+
+		try {
+			const backupService = getBackupService();
+
+			// Delete backup
+			await backupService.deleteBackup(parsed.data.id);
+
+			request.log.info(
+				{
+					userId: request.currentUser?.id,
+					backupId: parsed.data.id,
+				},
+				"Backup deleted successfully",
+			);
+
+			return reply.send({ success: true, message: "Backup deleted successfully" });
+		} catch (error) {
+			request.log.error({ err: error }, "Failed to delete backup");
+
+			const errorMessage = error instanceof Error ? error.message : String(error);
+
+			if (errorMessage.includes("not found")) {
+				return reply.status(404).send({ error: "Backup not found" });
 			}
 
-			try {
-				const backupService = getBackupService();
-
-				// Delete backup
-				await backupService.deleteBackup(parsed.data.id);
-
-				request.log.info(
-					{
-						userId: request.currentUser?.id,
-						backupId: parsed.data.id,
-					},
-					"Backup deleted successfully",
-				);
-
-				return reply.send({ success: true, message: "Backup deleted successfully" });
-			} catch (error) {
-				request.log.error({ err: error }, "Failed to delete backup");
-
-				const errorMessage = error instanceof Error ? error.message : String(error);
-
-				if (errorMessage.includes("not found")) {
-					return reply.status(404).send({ error: "Backup not found" });
-				}
-
-				return reply.status(500).send({ error: "Failed to delete backup" });
-			}
-		},
-	);
+			return reply.status(500).send({ error: "Failed to delete backup" });
+		}
+	});
 
 	/**
 	 * GET /backup/settings
@@ -474,10 +466,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			const backupService = getBackupService();
 			await backupService.setPassword(password);
 
-			request.log.info(
-				{ userId: request.currentUser?.id },
-				"Backup password updated",
-			);
+			request.log.info({ userId: request.currentUser?.id }, "Backup password updated");
 
 			return reply.send({ success: true, message: "Backup password updated successfully" });
 		} catch (error) {

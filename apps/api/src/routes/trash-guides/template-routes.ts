@@ -4,11 +4,11 @@
  * Endpoints for template CRUD operations, import/export, and statistics
  */
 
+import type { TemplateConfig } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { createTemplateService } from "../../lib/trash-guides/template-service.js";
 import { createDeploymentExecutorService } from "../../lib/trash-guides/deployment-executor.js";
-import type { TemplateConfig } from "@arr/shared";
+import { createTemplateService } from "../../lib/trash-guides/template-service.js";
 
 // ============================================================================
 // Request Schemas
@@ -100,69 +100,134 @@ const getTemplateParamsSchema = z.object({
 // Route Handlers
 // ============================================================================
 
-export async function registerTemplateRoutes(
-	app: FastifyInstance,
-	_opts: FastifyPluginOptions,
-) {
-		// Add authentication preHandler for all routes in this plugin
-		app.addHook("preHandler", async (request, reply) => {
-			if (!request.currentUser?.id) {
-				return reply.status(401).send({
-					success: false,
-					error: "Authentication required",
+export async function registerTemplateRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
+	// Add authentication preHandler for all routes in this plugin
+	app.addHook("preHandler", async (request, reply) => {
+		if (!request.currentUser?.id) {
+			return reply.status(401).send({
+				success: false,
+				error: "Authentication required",
+			});
+		}
+	});
+
+	const templateService = createTemplateService(app.prisma);
+
+	/**
+	 * GET /api/trash-guides/templates
+	 * List all templates for current user
+	 */
+	app.get<{
+		Querystring: z.infer<typeof listTemplatesQuerySchema>;
+	}>("/", async (request, reply) => {
+		try {
+			const query = listTemplatesQuerySchema.parse(request.query);
+
+			const templates = await templateService.listTemplates({
+				userId: request.currentUser?.id,
+				serviceType: query.serviceType,
+				includeDeleted: query.includeDeleted,
+				active: query.active,
+				search: query.search,
+				sortBy: query.sortBy,
+				sortOrder: query.sortOrder,
+				limit: query.limit,
+				offset: query.offset,
+			});
+
+			return reply.send({
+				templates,
+				count: templates.length,
+			});
+		} catch (error) {
+			app.log.error({ err: error }, "Failed to list templates");
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to list templates",
+			});
+		}
+	});
+
+	/**
+	 * POST /api/trash-guides/templates
+	 * Create a new template
+	 */
+	app.post<{
+		Body: z.infer<typeof createTemplateSchema>;
+	}>("/", async (request, reply) => {
+		try {
+			const body = createTemplateSchema.parse(request.body);
+
+			// Validate template configuration
+			const validation = templateService.validateTemplateConfig(body.config);
+			if (!validation.valid) {
+				return reply.status(400).send({
+					statusCode: 400,
+					error: "ValidationError",
+					message: "Invalid template configuration",
+					errors: validation.errors,
 				});
 			}
-		});
 
-		const templateService = createTemplateService(app.prisma);
+			const template = await templateService.createTemplate(request.currentUser?.id, body);
 
-		/**
-		 * GET /api/trash-guides/templates
-		 * List all templates for current user
-		 */
-		app.get<{
-			Querystring: z.infer<typeof listTemplatesQuerySchema>;
-		}>("/", async (request, reply) => {
-			try {
-				const query = listTemplatesQuerySchema.parse(request.query);
+			return reply.status(201).send({ template });
+		} catch (error) {
+			app.log.error({ err: error }, "Failed to create template");
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to create template",
+			});
+		}
+	});
 
-				const templates = await templateService.listTemplates({
-					userId: request.currentUser!.id,
-					serviceType: query.serviceType,
-					includeDeleted: query.includeDeleted,
-					active: query.active,
-					search: query.search,
-					sortBy: query.sortBy,
-					sortOrder: query.sortOrder,
-					limit: query.limit,
-					offset: query.offset,
-				});
+	/**
+	 * GET /api/trash-guides/templates/:templateId
+	 * Get template by ID
+	 */
+	app.get<{
+		Params: z.infer<typeof getTemplateParamsSchema>;
+	}>("/:templateId", async (request, reply) => {
+		try {
+			const { templateId } = getTemplateParamsSchema.parse(request.params);
 
-				return reply.send({
-					templates,
-					count: templates.length,
-				});
-			} catch (error) {
-				app.log.error({ err: error }, "Failed to list templates");
-				return reply.status(500).send({
-					statusCode: 500,
-					error: "InternalServerError",
-					message: error instanceof Error ? error.message : "Failed to list templates",
+			const template = await templateService.getTemplate(templateId, request.currentUser?.id);
+
+			if (!template) {
+				return reply.status(404).send({
+					statusCode: 404,
+					error: "NotFound",
+					message: "Template not found",
 				});
 			}
-		});
 
-		/**
-		 * POST /api/trash-guides/templates
-		 * Create a new template
-		 */
-		app.post<{
-			Body: z.infer<typeof createTemplateSchema>;
-		}>("/", async (request, reply) => {
-			try {
-				const body = createTemplateSchema.parse(request.body);
+			return reply.send({ template });
+		} catch (error) {
+			app.log.error({ err: error }, "Failed to get template");
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to get template",
+			});
+		}
+	});
 
-				// Validate template configuration
+	/**
+	 * PUT /api/trash-guides/templates/:templateId
+	 * Update template
+	 */
+	app.put<{
+		Params: z.infer<typeof getTemplateParamsSchema>;
+		Body: z.infer<typeof updateTemplateSchema>;
+	}>("/:templateId", async (request, reply) => {
+		try {
+			const { templateId } = getTemplateParamsSchema.parse(request.params);
+			const body = updateTemplateSchema.parse(request.body);
+
+			// Validate template configuration if provided
+			if (body.config) {
 				const validation = templateService.validateTemplateConfig(body.config);
 				if (!validation.valid) {
 					return reply.status(400).send({
@@ -172,293 +237,225 @@ export async function registerTemplateRoutes(
 						errors: validation.errors,
 					});
 				}
+			}
 
-				const template = await templateService.createTemplate(request.currentUser!.id, body);
+			const template = await templateService.updateTemplate(
+				templateId,
+				request.currentUser?.id,
+				body,
+			);
 
-				return reply.status(201).send({ template });
-			} catch (error) {
-				app.log.error({ err: error }, "Failed to create template");
-				return reply.status(500).send({
-					statusCode: 500,
-					error: "InternalServerError",
-					message: error instanceof Error ? error.message : "Failed to create template",
+			return reply.send({ template });
+		} catch (error) {
+			app.log.error({ err: error }, "Failed to update template");
+
+			if (error instanceof Error && error.message.includes("not found")) {
+				return reply.status(404).send({
+					statusCode: 404,
+					error: "NotFound",
+					message: error.message,
 				});
 			}
-		});
 
-		/**
-		 * GET /api/trash-guides/templates/:templateId
-		 * Get template by ID
-		 */
-		app.get<{
-			Params: z.infer<typeof getTemplateParamsSchema>;
-		}>("/:templateId", async (request, reply) => {
-			try {
-				const { templateId } = getTemplateParamsSchema.parse(request.params);
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to update template",
+			});
+		}
+	});
 
-				const template = await templateService.getTemplate(templateId, request.currentUser!.id);
+	/**
+	 * DELETE /api/trash-guides/templates/:templateId
+	 * Delete template (soft delete)
+	 */
+	app.delete<{
+		Params: z.infer<typeof getTemplateParamsSchema>;
+	}>("/:templateId", async (request, reply) => {
+		try {
+			const { templateId } = getTemplateParamsSchema.parse(request.params);
 
-				if (!template) {
-					return reply.status(404).send({
-						statusCode: 404,
-						error: "NotFound",
-						message: "Template not found",
-					});
-				}
+			await templateService.deleteTemplate(templateId, request.currentUser?.id);
 
-				return reply.send({ template });
-			} catch (error) {
-				app.log.error({ err: error }, "Failed to get template");
-				return reply.status(500).send({
-					statusCode: 500,
-					error: "InternalServerError",
-					message: error instanceof Error ? error.message : "Failed to get template",
+			return reply.send({
+				message: "Template deleted successfully",
+			});
+		} catch (error) {
+			app.log.error({ err: error }, "Failed to delete template");
+
+			if (error instanceof Error && error.message.includes("not found")) {
+				return reply.status(404).send({
+					statusCode: 404,
+					error: "NotFound",
+					message: error.message,
 				});
 			}
-		});
 
-		/**
-		 * PUT /api/trash-guides/templates/:templateId
-		 * Update template
-		 */
-		app.put<{
-			Params: z.infer<typeof getTemplateParamsSchema>;
-			Body: z.infer<typeof updateTemplateSchema>;
-		}>("/:templateId", async (request, reply) => {
-			try {
-				const { templateId } = getTemplateParamsSchema.parse(request.params);
-				const body = updateTemplateSchema.parse(request.body);
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to delete template",
+			});
+		}
+	});
 
-				// Validate template configuration if provided
-				if (body.config) {
-					const validation = templateService.validateTemplateConfig(body.config);
-					if (!validation.valid) {
-						return reply.status(400).send({
-							statusCode: 400,
-							error: "ValidationError",
-							message: "Invalid template configuration",
-							errors: validation.errors,
-						});
-					}
-				}
+	/**
+	 * POST /api/trash-guides/templates/:templateId/duplicate
+	 * Duplicate template
+	 */
+	app.post<{
+		Params: z.infer<typeof getTemplateParamsSchema>;
+		Body: z.infer<typeof duplicateTemplateSchema>;
+	}>("/:templateId/duplicate", async (request, reply) => {
+		try {
+			const { templateId } = getTemplateParamsSchema.parse(request.params);
+			const { newName } = duplicateTemplateSchema.parse(request.body);
 
-				const template = await templateService.updateTemplate(
-					templateId,
-					request.currentUser!.id,
-					body,
-				);
+			const template = await templateService.duplicateTemplate(
+				templateId,
+				request.currentUser?.id,
+				newName,
+			);
 
-				return reply.send({ template });
-			} catch (error) {
-				app.log.error({ err: error }, "Failed to update template");
+			return reply.status(201).send({
+				template,
+				message: "Template duplicated successfully",
+			});
+		} catch (error) {
+			app.log.error({ err: error }, "Failed to duplicate template");
 
-				if (error instanceof Error && error.message.includes("not found")) {
-					return reply.status(404).send({
-						statusCode: 404,
-						error: "NotFound",
-						message: error.message,
-					});
-				}
-
-				return reply.status(500).send({
-					statusCode: 500,
-					error: "InternalServerError",
-					message: error instanceof Error ? error.message : "Failed to update template",
+			if (error instanceof Error && error.message.includes("not found")) {
+				return reply.status(404).send({
+					statusCode: 404,
+					error: "NotFound",
+					message: error.message,
 				});
 			}
-		});
 
-		/**
-		 * DELETE /api/trash-guides/templates/:templateId
-		 * Delete template (soft delete)
-		 */
-		app.delete<{
-			Params: z.infer<typeof getTemplateParamsSchema>;
-		}>("/:templateId", async (request, reply) => {
-			try {
-				const { templateId } = getTemplateParamsSchema.parse(request.params);
-
-				await templateService.deleteTemplate(templateId, request.currentUser!.id);
-
-				return reply.send({
-					message: "Template deleted successfully",
-				});
-			} catch (error) {
-				app.log.error({ err: error }, "Failed to delete template");
-
-				if (error instanceof Error && error.message.includes("not found")) {
-					return reply.status(404).send({
-						statusCode: 404,
-						error: "NotFound",
-						message: error.message,
-					});
-				}
-
-				return reply.status(500).send({
-					statusCode: 500,
-					error: "InternalServerError",
-					message: error instanceof Error ? error.message : "Failed to delete template",
+			if (error instanceof Error && error.message.includes("already exists")) {
+				return reply.status(409).send({
+					statusCode: 409,
+					error: "Conflict",
+					message: error.message,
 				});
 			}
-		});
 
-		/**
-		 * POST /api/trash-guides/templates/:templateId/duplicate
-		 * Duplicate template
-		 */
-		app.post<{
-			Params: z.infer<typeof getTemplateParamsSchema>;
-			Body: z.infer<typeof duplicateTemplateSchema>;
-		}>("/:templateId/duplicate", async (request, reply) => {
-			try {
-				const { templateId } = getTemplateParamsSchema.parse(request.params);
-				const { newName } = duplicateTemplateSchema.parse(request.body);
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to duplicate template",
+			});
+		}
+	});
 
-				const template = await templateService.duplicateTemplate(
-					templateId,
-					request.currentUser!.id,
-					newName,
-				);
+	/**
+	 * GET /api/trash-guides/templates/:templateId/export
+	 * Export template as JSON
+	 */
+	app.get<{
+		Params: z.infer<typeof getTemplateParamsSchema>;
+	}>("/:templateId/export", async (request, reply) => {
+		try {
+			const { templateId } = getTemplateParamsSchema.parse(request.params);
 
-				return reply.status(201).send({
-					template,
-					message: "Template duplicated successfully",
-				});
-			} catch (error) {
-				app.log.error({ err: error }, "Failed to duplicate template");
+			const jsonData = await templateService.exportTemplate(templateId, request.currentUser?.id);
 
-				if (error instanceof Error && error.message.includes("not found")) {
-					return reply.status(404).send({
-						statusCode: 404,
-						error: "NotFound",
-						message: error.message,
-					});
-				}
+			reply.header("Content-Type", "application/json");
+			reply.header("Content-Disposition", `attachment; filename="template-${templateId}.json"`);
 
-				if (error instanceof Error && error.message.includes("already exists")) {
-					return reply.status(409).send({
-						statusCode: 409,
-						error: "Conflict",
-						message: error.message,
-					});
-				}
+			return reply.send(jsonData);
+		} catch (error) {
+			app.log.error({ err: error }, "Failed to export template");
 
-				return reply.status(500).send({
-					statusCode: 500,
-					error: "InternalServerError",
-					message: error instanceof Error ? error.message : "Failed to duplicate template",
+			if (error instanceof Error && error.message.includes("not found")) {
+				return reply.status(404).send({
+					statusCode: 404,
+					error: "NotFound",
+					message: error.message,
 				});
 			}
-		});
 
-		/**
-		 * GET /api/trash-guides/templates/:templateId/export
-		 * Export template as JSON
-		 */
-		app.get<{
-			Params: z.infer<typeof getTemplateParamsSchema>;
-		}>("/:templateId/export", async (request, reply) => {
-			try {
-				const { templateId } = getTemplateParamsSchema.parse(request.params);
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to export template",
+			});
+		}
+	});
 
-				const jsonData = await templateService.exportTemplate(templateId, request.currentUser!.id);
+	/**
+	 * POST /api/trash-guides/templates/import
+	 * Import template from JSON
+	 */
+	app.post<{
+		Body: z.infer<typeof importTemplateSchema>;
+	}>("/import", async (request, reply) => {
+		try {
+			const { jsonData } = importTemplateSchema.parse(request.body);
 
-				reply.header("Content-Type", "application/json");
-				reply.header("Content-Disposition", `attachment; filename="template-${templateId}.json"`);
+			const template = await templateService.importTemplate(request.currentUser?.id, jsonData);
 
-				return reply.send(jsonData);
-			} catch (error) {
-				app.log.error({ err: error }, "Failed to export template");
+			return reply.status(201).send({
+				template,
+				message: "Template imported successfully",
+			});
+		} catch (error) {
+			app.log.error({ err: error }, "Failed to import template");
 
-				if (error instanceof Error && error.message.includes("not found")) {
-					return reply.status(404).send({
-						statusCode: 404,
-						error: "NotFound",
-						message: error.message,
-					});
-				}
-
-				return reply.status(500).send({
-					statusCode: 500,
-					error: "InternalServerError",
-					message: error instanceof Error ? error.message : "Failed to export template",
+			if (error instanceof SyntaxError) {
+				return reply.status(400).send({
+					statusCode: 400,
+					error: "ValidationError",
+					message: "Invalid JSON format",
 				});
 			}
-		});
 
-		/**
-		 * POST /api/trash-guides/templates/import
-		 * Import template from JSON
-		 */
-		app.post<{
-			Body: z.infer<typeof importTemplateSchema>;
-		}>("/import", async (request, reply) => {
-			try {
-				const { jsonData } = importTemplateSchema.parse(request.body);
-
-				const template = await templateService.importTemplate(request.currentUser!.id, jsonData);
-
-				return reply.status(201).send({
-					template,
-					message: "Template imported successfully",
-				});
-			} catch (error) {
-				app.log.error({ err: error }, "Failed to import template");
-
-				if (error instanceof SyntaxError) {
-					return reply.status(400).send({
-						statusCode: 400,
-						error: "ValidationError",
-						message: "Invalid JSON format",
-					});
-				}
-
-				if (error instanceof Error && error.message.includes("Invalid template")) {
-					return reply.status(400).send({
-						statusCode: 400,
-						error: "ValidationError",
-						message: error.message,
-					});
-				}
-
-				return reply.status(500).send({
-					statusCode: 500,
-					error: "InternalServerError",
-					message: error instanceof Error ? error.message : "Failed to import template",
+			if (error instanceof Error && error.message.includes("Invalid template")) {
+				return reply.status(400).send({
+					statusCode: 400,
+					error: "ValidationError",
+					message: error.message,
 				});
 			}
-		});
 
-		/**
-		 * GET /api/trash-guides/templates/:templateId/stats
-		 * Get template usage statistics
-		 */
-		app.get<{
-			Params: z.infer<typeof getTemplateParamsSchema>;
-		}>("/:templateId/stats", async (request, reply) => {
-			try {
-				const { templateId } = getTemplateParamsSchema.parse(request.params);
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to import template",
+			});
+		}
+	});
 
-				const stats = await templateService.getTemplateStats(templateId, request.currentUser!.id);
+	/**
+	 * GET /api/trash-guides/templates/:templateId/stats
+	 * Get template usage statistics
+	 */
+	app.get<{
+		Params: z.infer<typeof getTemplateParamsSchema>;
+	}>("/:templateId/stats", async (request, reply) => {
+		try {
+			const { templateId } = getTemplateParamsSchema.parse(request.params);
 
-				if (!stats) {
-					return reply.status(404).send({
-						statusCode: 404,
-						error: "NotFound",
-						message: "Template not found",
-					});
-				}
+			const stats = await templateService.getTemplateStats(templateId, request.currentUser?.id);
 
-				return reply.send({ stats });
-			} catch (error) {
-				app.log.error({ err: error }, "Failed to get template stats");
-				return reply.status(500).send({
-					statusCode: 500,
-					error: "InternalServerError",
-					message: error instanceof Error ? error.message : "Failed to get template stats",
+			if (!stats) {
+				return reply.status(404).send({
+					statusCode: 404,
+					error: "NotFound",
+					message: "Template not found",
 				});
 			}
-		});
+
+			return reply.send({ stats });
+		} catch (error) {
+			app.log.error({ err: error }, "Failed to get template stats");
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to get template stats",
+			});
+		}
+	});
 
 	// ============================================================================
 	// Instance Override Management (Phase 4.2)
@@ -477,7 +474,7 @@ export async function registerTemplateRoutes(
 			const template = await app.prisma.trashTemplate.findFirst({
 				where: {
 					id: templateId,
-					userId: request.currentUser!.id,
+					userId: request.currentUser?.id,
 				},
 			});
 
@@ -533,7 +530,7 @@ export async function registerTemplateRoutes(
 			const template = await app.prisma.trashTemplate.findFirst({
 				where: {
 					id: templateId,
-					userId: request.currentUser!.id,
+					userId: request.currentUser?.id,
 				},
 			});
 
@@ -599,7 +596,7 @@ export async function registerTemplateRoutes(
 			const template = await app.prisma.trashTemplate.findFirst({
 				where: {
 					id: templateId,
-					userId: request.currentUser!.id,
+					userId: request.currentUser?.id,
 				},
 			});
 
@@ -632,7 +629,10 @@ export async function registerTemplateRoutes(
 							message: "Corrupted instance overrides cleared successfully",
 						});
 					} catch (dbError) {
-						app.log.error({ err: dbError, templateId }, "Failed to clear corrupted instanceOverrides");
+						app.log.error(
+							{ err: dbError, templateId },
+							"Failed to clear corrupted instanceOverrides",
+						);
 						return reply.status(500).send({
 							statusCode: 500,
 							error: "InternalServerError",
@@ -693,7 +693,7 @@ export async function registerTemplateRoutes(
 			const template = await app.prisma.trashTemplate.findFirst({
 				where: {
 					id: templateId,
-					userId: request.currentUser!.id,
+					userId: request.currentUser?.id,
 				},
 			});
 
@@ -709,7 +709,7 @@ export async function registerTemplateRoutes(
 			const instance = await app.prisma.serviceInstance.findFirst({
 				where: {
 					id: instanceId,
-					userId: request.currentUser!.id,
+					userId: request.currentUser?.id,
 				},
 			});
 
@@ -726,7 +726,7 @@ export async function registerTemplateRoutes(
 			const result = await deploymentExecutor.deploySingleInstance(
 				templateId,
 				instanceId,
-				request.currentUser!.id,
+				request.currentUser?.id,
 			);
 
 			return reply.send({
@@ -776,7 +776,7 @@ export async function registerTemplateRoutes(
 			const template = await app.prisma.trashTemplate.findFirst({
 				where: {
 					id: templateId,
-					userId: request.currentUser!.id,
+					userId: request.currentUser?.id,
 				},
 			});
 
@@ -792,7 +792,7 @@ export async function registerTemplateRoutes(
 			const instances = await app.prisma.serviceInstance.findMany({
 				where: {
 					id: { in: instanceIds },
-					userId: request.currentUser!.id,
+					userId: request.currentUser?.id,
 				},
 			});
 
@@ -809,7 +809,7 @@ export async function registerTemplateRoutes(
 			const result = await deploymentExecutor.deployBulkInstances(
 				templateId,
 				instanceIds,
-				request.currentUser!.id,
+				request.currentUser?.id,
 			);
 
 			return reply.send({

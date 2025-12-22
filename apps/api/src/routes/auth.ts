@@ -1,6 +1,6 @@
+import { passwordSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { passwordSchema } from "@arr/shared";
 import { hashPassword, verifyPassword } from "../lib/auth/password.js";
 
 const registerSchema = z.object({
@@ -95,7 +95,8 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			if (error instanceof Error) {
 				if (error.message === "REGISTRATION_CLOSED") {
 					return reply.status(403).send({
-						error: "Registration is only allowed during initial setup. Please use login, OIDC, or passkey authentication.",
+						error:
+							"Registration is only allowed during initial setup. Please use login, OIDC, or passkey authentication.",
 					});
 				}
 				if (error.message === "USERNAME_EXISTS") {
@@ -150,7 +151,8 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		// Check if user has a password set
 		if (!user.hashedPassword) {
 			return reply.status(401).send({
-				error: "This account uses passwordless authentication. Please sign in with OIDC or passkey.",
+				error:
+					"This account uses passwordless authentication. Please sign in with OIDC or passkey.",
 			});
 		}
 
@@ -273,7 +275,8 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			if (oidcProvider) {
 				return reply.status(403).send({
-					error: "Password authentication is disabled. Cannot add or change password while OIDC is enabled.",
+					error:
+						"Password authentication is disabled. Cannot add or change password while OIDC is enabled.",
 				});
 			}
 		}
@@ -296,7 +299,9 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			// If user has existing password, require currentPassword to change it
 			if (user.hashedPassword) {
 				if (!currentPassword) {
-					return reply.status(400).send({ error: "Current password is required to change password" });
+					return reply
+						.status(400)
+						.send({ error: "Current password is required to change password" });
 				}
 				const valid = await verifyPassword(currentPassword, user.hashedPassword);
 				if (!valid) {
@@ -310,10 +315,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		if (username) {
 			const conflicts = await app.prisma.user.findFirst({
 				where: {
-					AND: [
-						{ id: { not: request.currentUser.id } },
-						{ username: username.trim() },
-					],
+					AND: [{ id: { not: request.currentUser.id } }, { username: username.trim() }],
 				},
 			});
 
@@ -368,7 +370,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			if (request.sessionToken) {
 				await app.sessionService.invalidateAllUserSessions(
 					request.currentUser.id,
-					request.sessionToken
+					request.sessionToken,
 				);
 			} else {
 				// Fallback: invalidate all sessions if sessionToken is somehow unavailable
@@ -456,7 +458,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		if (request.sessionToken) {
 			await app.sessionService.invalidateAllUserSessions(
 				request.currentUser.id,
-				request.sessionToken
+				request.sessionToken,
 			);
 		} else {
 			// Fallback: invalidate all sessions if sessionToken is somehow unavailable

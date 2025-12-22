@@ -52,7 +52,7 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
 				const items = await fetchQueueItems(fetcher, service);
 				const enriched = items.map((item: unknown) => ({
-					...item as Record<string, unknown>,
+					...(item as Record<string, unknown>),
 					instanceId: instance.id,
 					instanceName: instance.label,
 				}));

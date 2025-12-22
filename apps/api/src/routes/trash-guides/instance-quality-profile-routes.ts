@@ -69,7 +69,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		Body: z.infer<typeof updateScoresSchema>;
 	}>("/:instanceId/quality-profiles/:profileId/scores", async (request, reply) => {
 		// userId is guaranteed by preHandler authentication check
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 		const { instanceId, profileId } = request.params;
 		const profileIdNum = Number.parseInt(profileId);
 
@@ -253,7 +253,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		Params: { instanceId: string; profileId: string };
 	}>("/:instanceId/quality-profiles/:profileId/overrides", async (request, reply) => {
 		// userId is guaranteed by preHandler authentication check
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 		const { instanceId, profileId } = request.params;
 		const profileIdNum = Number.parseInt(profileId);
 
@@ -317,7 +317,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		Body: { customFormatId: number; templateId: string };
 	}>("/:instanceId/quality-profiles/:profileId/promote-override", async (request, reply) => {
 		// userId is guaranteed by preHandler authentication check
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 		const { instanceId, profileId } = request.params;
 		const profileIdNum = Number.parseInt(profileId);
 		const { customFormatId, templateId } = request.body;
@@ -368,16 +368,15 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 			}
 
 			// Ensure this profile is actually mapped to the requested template
-			const templateMapping =
-				await request.server.prisma.templateQualityProfileMapping.findUnique({
-					where: {
-						instanceId_qualityProfileId: {
-							instanceId,
-							qualityProfileId: profileIdNum,
-						},
+			const templateMapping = await request.server.prisma.templateQualityProfileMapping.findUnique({
+				where: {
+					instanceId_qualityProfileId: {
+						instanceId,
+						qualityProfileId: profileIdNum,
 					},
-					include: { template: true },
-				});
+				},
+				include: { template: true },
+			});
 
 			if (!templateMapping || templateMapping.templateId !== templateId) {
 				return reply.status(400).send({
@@ -488,7 +487,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		Body: { profileIds: number[] };
 	}>("/:instanceId/quality-profiles/bulk-overrides", async (request, reply) => {
 		// userId is guaranteed by preHandler authentication check
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 		const { instanceId } = request.params;
 		const { profileIds } = request.body;
 
@@ -591,7 +590,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		"/:instanceId/quality-profiles/:profileId/overrides/:customFormatId",
 		async (request, reply) => {
 			// userId is guaranteed by preHandler authentication check
-			const userId = request.currentUser!.id;
+			const userId = request.currentUser?.id;
 			const { instanceId, profileId, customFormatId } = request.params;
 			const profileIdNum = Number.parseInt(profileId);
 			const customFormatIdNum = Number.parseInt(customFormatId);
@@ -649,7 +648,9 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 				// Parse template config to get the template score for this custom format
 				let templateConfigReset: ParsedTemplateConfig;
 				try {
-					templateConfigReset = JSON.parse(templateMapping.template.configData) as ParsedTemplateConfig;
+					templateConfigReset = JSON.parse(
+						templateMapping.template.configData,
+					) as ParsedTemplateConfig;
 				} catch (parseError) {
 					return reply.status(500).send({
 						statusCode: 500,
@@ -658,7 +659,8 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 					});
 				}
 				const templateCf = templateConfigReset.customFormats?.find(
-					(cf: ParsedTemplateCustomFormat) => cf.originalConfig?._instanceCFId === customFormatIdNum,
+					(cf: ParsedTemplateCustomFormat) =>
+						cf.originalConfig?._instanceCFId === customFormatIdNum,
 				);
 
 				// Calculate the template score (if CF not in template, default to 0)
@@ -800,7 +802,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		Body: { customFormatIds: number[] };
 	}>("/:instanceId/quality-profiles/:profileId/overrides/bulk-delete", async (request, reply) => {
 		// userId is guaranteed by preHandler authentication check
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 		const { instanceId, profileId } = request.params;
 		const profileIdNum = Number.parseInt(profileId);
 		const { customFormatIds } = request.body;

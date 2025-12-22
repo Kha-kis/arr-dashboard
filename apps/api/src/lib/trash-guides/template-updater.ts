@@ -5,28 +5,28 @@
  * Detects when new versions are available and handles update logic based on user preferences.
  */
 
-import type { PrismaClient } from "@prisma/client";
 import type {
-	TrashConfigType,
+	AutoSyncChangeLogEntry,
+	CustomFormatDiff,
+	CustomFormatGroupDiff,
+	GroupCustomFormat,
+	SuggestedCFAddition,
+	SuggestedScoreChange,
 	TemplateConfig,
 	TemplateCustomFormat,
 	TemplateCustomFormatGroup,
+	TemplateDiffResult,
+	TrashConfigType,
 	TrashCustomFormat,
 	TrashCustomFormatGroup,
 	TrashQualityProfile,
-	GroupCustomFormat,
-	CustomFormatDiff,
-	CustomFormatGroupDiff,
-	TemplateDiffResult,
-	SuggestedCFAddition,
-	SuggestedScoreChange,
-	AutoSyncChangeLogEntry,
 } from "@arr/shared";
-import type { VersionTracker, VersionInfo } from "./version-tracker.js";
-import type { TrashCacheManager } from "./cache-manager.js";
-import type { TrashGitHubFetcher } from "./github-fetcher.js";
-import type { DeploymentExecutorService } from "./deployment-executor.js";
+import type { PrismaClient } from "@prisma/client";
 import { dequal as deepEqual } from "dequal";
+import type { TrashCacheManager } from "./cache-manager.js";
+import type { DeploymentExecutorService } from "./deployment-executor.js";
+import type { TrashGitHubFetcher } from "./github-fetcher.js";
+import type { VersionInfo, VersionTracker } from "./version-tracker.js";
 
 // ============================================================================
 // Types
@@ -157,7 +157,7 @@ export class TemplateUpdater {
 			latestCommit = await this.versionTracker.getLatestCommit();
 		} catch (error) {
 			console.error(
-				`[TemplateUpdater] Failed to get latest commit from GitHub: ${error instanceof Error ? error.message : String(error)}`
+				`[TemplateUpdater] Failed to get latest commit from GitHub: ${error instanceof Error ? error.message : String(error)}`,
 			);
 			// Return empty result when version tracker fails
 			return {
@@ -193,10 +193,13 @@ export class TemplateUpdater {
 		});
 
 		// Pre-fetch cache data for both service types to check CF Group additions
-		const cacheByServiceType = new Map<string, {
-			cfGroups: TrashCustomFormatGroup[];
-			customFormats: TrashCustomFormat[];
-		}>();
+		const cacheByServiceType = new Map<
+			string,
+			{
+				cfGroups: TrashCustomFormatGroup[];
+				customFormats: TrashCustomFormat[];
+			}
+		>();
 
 		// Identify templates with available updates
 		const templatesWithUpdates: TemplateUpdateInfo[] = [];
@@ -211,7 +214,7 @@ export class TemplateUpdater {
 			if (template.trashGuidesCommitHash !== latestCommit.commitHash) {
 				// Count instances with auto-sync enabled for this template
 				const autoSyncInstanceCount = template.qualityProfileMappings.filter(
-					(m) => m.syncStrategy === "auto"
+					(m) => m.syncStrategy === "auto",
 				).length;
 
 				// Can auto-sync if has auto-sync instances and no user modifications
@@ -258,13 +261,15 @@ export class TemplateUpdater {
 					canAutoSync: canAutoSync && !needsApproval, // Can't auto-sync if needs approval
 					serviceType,
 					needsApproval,
-					pendingCFGroupAdditions: pendingCFGroupAdditions?.length ? pendingCFGroupAdditions : undefined,
+					pendingCFGroupAdditions: pendingCFGroupAdditions?.length
+						? pendingCFGroupAdditions
+						: undefined,
 				});
 			} else {
 				// Template is up-to-date - check if it was recently auto-synced
 				// Include templates that have auto-sync instances and were synced in the last 24 hours
 				const autoSyncInstanceCount = template.qualityProfileMappings.filter(
-					(m) => m.syncStrategy === "auto"
+					(m) => m.syncStrategy === "auto",
 				).length;
 
 				if (autoSyncInstanceCount > 0 && template.lastSyncedAt) {
@@ -278,11 +283,22 @@ export class TemplateUpdater {
 
 						if (template.changeLog) {
 							try {
-								const changelog = JSON.parse(template.changeLog) as Array<{ changeType?: string; timestamp?: string; toCommitHash?: string }>;
+								const changelog = JSON.parse(template.changeLog) as Array<{
+									changeType?: string;
+									timestamp?: string;
+									toCommitHash?: string;
+								}>;
 								// Find most recent auto_sync entry that matches current commit
 								const autoSyncEntry = changelog
-									.filter(entry => entry.changeType === "auto_sync" && entry.toCommitHash === template.trashGuidesCommitHash)
-									.sort((a, b) => new Date(b.timestamp ?? 0).getTime() - new Date(a.timestamp ?? 0).getTime())[0];
+									.filter(
+										(entry) =>
+											entry.changeType === "auto_sync" &&
+											entry.toCommitHash === template.trashGuidesCommitHash,
+									)
+									.sort(
+										(a, b) =>
+											new Date(b.timestamp ?? 0).getTime() - new Date(a.timestamp ?? 0).getTime(),
+									)[0];
 
 								if (autoSyncEntry?.timestamp) {
 									hasRecentAutoSync = true;
@@ -320,7 +336,7 @@ export class TemplateUpdater {
 		}
 
 		// Count outdated templates (those that are not recently auto-synced)
-		const outdatedCount = templatesWithUpdates.filter(t => !t.isRecentlyAutoSynced).length;
+		const outdatedCount = templatesWithUpdates.filter((t) => !t.isRecentlyAutoSynced).length;
 
 		return {
 			templatesWithUpdates,
@@ -351,30 +367,24 @@ export class TemplateUpdater {
 		}
 
 		// Build lookup for CFs already in template
-		const templateCFIds = new Set(
-			(config.customFormats || []).map((cf) => cf.trashId)
-		);
+		const templateCFIds = new Set((config.customFormats || []).map((cf) => cf.trashId));
 
 		// Build lookup for CF Groups in template
-		const templateGroupIds = new Set(
-			(config.customFormatGroups || []).map((g) => g.trashId)
-		);
+		const templateGroupIds = new Set((config.customFormatGroups || []).map((g) => g.trashId));
 
 		// Build lookup for latest CFs
-		const latestCFMap = new Map(
-			latestCustomFormats.map((cf) => [cf.trash_id, cf])
-		);
+		const latestCFMap = new Map(latestCustomFormats.map((cf) => [cf.trash_id, cf]));
 
 		// Build lookup for latest CF Groups
-		const latestGroupMap = new Map(
-			latestCFGroups.map((g) => [g.trash_id, g])
-		);
+		const latestGroupMap = new Map(latestCFGroups.map((g) => [g.trash_id, g]));
 
 		// Extended CF type with trash_scores
 		type TrashCFWithScores = TrashCustomFormat & { trash_scores?: Record<string, number> };
 
 		// Get score set from template config
-		const scoreSet = (config.qualityProfile as { trash_score_set?: string } | undefined)?.trash_score_set || "default";
+		const scoreSet =
+			(config.qualityProfile as { trash_score_set?: string } | undefined)?.trash_score_set ||
+			"default";
 
 		// Helper to get recommended score
 		const getRecommendedScore = (cf: TrashCFWithScores): number => {
@@ -495,7 +505,9 @@ export class TemplateUpdater {
 				templateId,
 				previousCommit: template.trashGuidesCommitHash,
 				newCommit: targetCommitHash || "",
-				errors: [`Failed to get commit info from GitHub: ${error instanceof Error ? error.message : String(error)}`],
+				errors: [
+					`Failed to get commit info from GitHub: ${error instanceof Error ? error.message : String(error)}`,
+				],
 				errorType: "sync_failed",
 			};
 		}
@@ -513,7 +525,7 @@ export class TemplateUpdater {
 				currentConfig = JSON.parse(template.configData) as TemplateConfig;
 			} catch (parseError) {
 				console.warn(
-					`[TemplateUpdater] Failed to parse configData for template ${templateId}: ${parseError instanceof Error ? parseError.message : String(parseError)}`
+					`[TemplateUpdater] Failed to parse configData for template ${templateId}: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
 				);
 			}
 
@@ -556,7 +568,7 @@ export class TemplateUpdater {
 				const qualityProfilesCache = await this.cacheManager.get(serviceType, "QUALITY_PROFILES");
 				const qualityProfilesData = (qualityProfilesCache as TrashQualityProfile[] | null) ?? [];
 				const linkedProfile = qualityProfilesData.find(
-					(p) => p.trash_id === template.sourceQualityProfileTrashId
+					(p) => p.trash_id === template.sourceQualityProfileTrashId,
 				);
 
 				if (linkedProfile?.formatItems) {
@@ -593,7 +605,9 @@ export class TemplateUpdater {
 			});
 
 			// Get score set from template's quality profile config
-			const templateQualityProfile = currentConfig.qualityProfile as { trash_score_set?: string } | undefined;
+			const templateQualityProfile = currentConfig.qualityProfile as
+				| { trash_score_set?: string }
+				| undefined;
 			const scoreSet = templateQualityProfile?.trash_score_set || "default";
 
 			// Perform merge: preserve user customizations, update specifications
@@ -662,7 +676,7 @@ export class TemplateUpdater {
 					existingChangeLog = Array.isArray(parsed) ? parsed : [];
 				} catch (parseError) {
 					console.warn(
-						`[TemplateUpdater] Failed to parse changeLog for template ${templateId}: ${parseError instanceof Error ? parseError.message : String(parseError)}. Resetting to empty array.`
+						`[TemplateUpdater] Failed to parse changeLog for template ${templateId}: ${parseError instanceof Error ? parseError.message : String(parseError)}. Resetting to empty array.`,
 					);
 					existingChangeLog = [];
 				}
@@ -690,7 +704,8 @@ export class TemplateUpdater {
 				previousCommit,
 				newCommit: targetCommit.commitHash,
 				mergeStats: mergeResult.stats,
-				scoreConflicts: mergeResult.scoreConflicts.length > 0 ? mergeResult.scoreConflicts : undefined,
+				scoreConflicts:
+					mergeResult.scoreConflicts.length > 0 ? mergeResult.scoreConflicts : undefined,
 			};
 		} catch (error) {
 			return {
@@ -707,9 +722,7 @@ export class TemplateUpdater {
 	 * Fetch latest TRaSH Guides custom formats and groups from cache
 	 * @private
 	 */
-	private async fetchLatestTrashData(
-		serviceType: "RADARR" | "SONARR",
-	): Promise<{
+	private async fetchLatestTrashData(serviceType: "RADARR" | "SONARR"): Promise<{
 		success: boolean;
 		customFormats: TrashCustomFormat[];
 		customFormatGroups: TrashCustomFormatGroup[];
@@ -888,18 +901,18 @@ export class TemplateUpdater {
 
 		// Build lookup maps for current config
 		const currentCFMap = new Map<string, TemplateCustomFormat>(
-			(currentConfig.customFormats || []).map((cf) => [cf.trashId, cf])
+			(currentConfig.customFormats || []).map((cf) => [cf.trashId, cf]),
 		);
 		const currentGroupMap = new Map<string, TemplateCustomFormatGroup>(
-			(currentConfig.customFormatGroups || []).map((g) => [g.trashId, g])
+			(currentConfig.customFormatGroups || []).map((g) => [g.trashId, g]),
 		);
 
 		// Build lookup for latest TRaSH data
 		const latestCFMap = new Map<string, TrashCustomFormat>(
-			latestCustomFormats.map((cf) => [cf.trash_id, cf])
+			latestCustomFormats.map((cf) => [cf.trash_id, cf]),
 		);
 		const latestGroupMap = new Map<string, TrashCustomFormatGroup>(
-			latestCustomFormatGroups.map((g) => [g.trash_id, g])
+			latestCustomFormatGroups.map((g) => [g.trash_id, g]),
 		);
 
 		// Merge Custom Formats
@@ -914,8 +927,9 @@ export class TemplateUpdater {
 				// Existing CF - preserve user customizations, update specifications
 				const hasScoreOverride = currentCF.scoreOverride !== undefined;
 				const currentScore = currentCF.scoreOverride ?? currentCF.score ?? 0;
-				const hasCustomConditions = Object.values(currentCF.conditionsEnabled || {})
-					.some((enabled) => !enabled);
+				const hasCustomConditions = Object.values(currentCF.conditionsEnabled || {}).some(
+					(enabled) => !enabled,
+				);
 
 				// Determine final score based on applyScoreUpdates option
 				let finalScore: number;
@@ -965,7 +979,7 @@ export class TemplateUpdater {
 				// Check if specifications changed
 				const specsChanged = !deepEqual(
 					currentCF.originalConfig?.specifications ?? null,
-					latestCF.specifications ?? null
+					latestCF.specifications ?? null,
 				);
 
 				if (specsChanged) {
@@ -1035,7 +1049,9 @@ export class TemplateUpdater {
 					trashId,
 					name: currentCF.name,
 				});
-				warnings.push(`Custom format "${currentCF.name}" (${trashId}) removed - no longer in TRaSH Guides`);
+				warnings.push(
+					`Custom format "${currentCF.name}" (${trashId}) removed - no longer in TRaSH Guides`,
+				);
 			}
 		}
 
@@ -1047,10 +1063,7 @@ export class TemplateUpdater {
 
 			if (currentGroup) {
 				// Existing group - preserve enabled state, update originalConfig
-				const specsChanged = !deepEqual(
-					currentGroup.originalConfig ?? null,
-					latestGroup ?? null
-				);
+				const specsChanged = !deepEqual(currentGroup.originalConfig ?? null, latestGroup ?? null);
 
 				if (specsChanged) {
 					stats.customFormatGroupsUpdated++;
@@ -1084,7 +1097,9 @@ export class TemplateUpdater {
 		for (const [trashId, currentGroup] of currentGroupMap) {
 			if (!latestGroupMap.has(trashId)) {
 				stats.customFormatGroupsRemoved++;
-				warnings.push(`Custom format group "${currentGroup.name}" (${trashId}) removed - no longer in TRaSH Guides`);
+				warnings.push(
+					`Custom format group "${currentGroup.name}" (${trashId}) removed - no longer in TRaSH Guides`,
+				);
 			}
 		}
 
@@ -1176,13 +1191,11 @@ export class TemplateUpdater {
 
 		// Filter templates eligible for auto-sync
 		// Note: canAutoSync is false when needsApproval is true (CF Group additions need approval)
-		const autoSyncTemplates = updateCheck.templatesWithUpdates.filter(
-			(t) => t.canAutoSync,
-		);
+		const autoSyncTemplates = updateCheck.templatesWithUpdates.filter((t) => t.canAutoSync);
 
 		// Count templates that were skipped because they need approval
 		const skippedForApproval = updateCheck.templatesWithUpdates.filter(
-			(t) => t.needsApproval && t.autoSyncInstanceCount > 0
+			(t) => t.needsApproval && t.autoSyncInstanceCount > 0,
 		).length;
 
 		const results: SyncResult[] = [];
@@ -1226,7 +1239,7 @@ export class TemplateUpdater {
 						result.errors = [];
 					}
 					result.errors.push(
-						`Auto-deploy failed: ${error instanceof Error ? error.message : String(error)}`
+						`Auto-deploy failed: ${error instanceof Error ? error.message : String(error)}`,
 					);
 				}
 			} else {
@@ -1261,9 +1274,7 @@ export class TemplateUpdater {
 		});
 
 		if (!template) {
-			console.error(
-				`[TemplateUpdater] Cannot auto-deploy: template ${templateId} not found`
-			);
+			console.error(`[TemplateUpdater] Cannot auto-deploy: template ${templateId} not found`);
 			return;
 		}
 
@@ -1295,13 +1306,13 @@ export class TemplateUpdater {
 				if (!result.success) {
 					console.error(
 						`[TemplateUpdater] Failed to auto-deploy template "${template.name}" (${templateId}) to instance ${mapping.instance.label}:`,
-						result.errors
+						result.errors,
 					);
 				}
 			} catch (error) {
 				console.error(
 					`[TemplateUpdater] Error auto-deploying template "${template.name}" (${templateId}) to instance ${mapping.instanceId}:`,
-					error instanceof Error ? error.message : error
+					error instanceof Error ? error.message : error,
 				);
 				// Re-throw to make failures visible to callers
 				throw error;
@@ -1316,9 +1327,7 @@ export class TemplateUpdater {
 		const updateCheck = await this.checkForUpdates(userId);
 
 		// Templates that can't auto-sync need user attention
-		return updateCheck.templatesWithUpdates.filter(
-			(t) => !t.canAutoSync || t.hasUserModifications,
-		);
+		return updateCheck.templatesWithUpdates.filter((t) => !t.canAutoSync || t.hasUserModifications);
 	}
 
 	/**
@@ -1360,16 +1369,10 @@ export class TemplateUpdater {
 				? await this.versionTracker.getCommitInfo(targetCommitHash)
 				: await this.versionTracker.getLatestCommit();
 		} catch (error) {
-			const context = targetCommitHash
-				? `commit ${targetCommitHash}`
-				: "latest commit";
+			const context = targetCommitHash ? `commit ${targetCommitHash}` : "latest commit";
 			const errorMsg = error instanceof Error ? error.message : String(error);
-			console.error(
-				`[TemplateUpdater] Failed to fetch ${context} for template diff: ${errorMsg}`,
-			);
-			throw new Error(
-				`Failed to fetch version info for ${context}: ${errorMsg}`,
-			);
+			console.error(`[TemplateUpdater] Failed to fetch ${context} for template diff: ${errorMsg}`);
+			throw new Error(`Failed to fetch version info for ${context}: ${errorMsg}`);
 		}
 
 		const serviceType = template.serviceType as "RADARR" | "SONARR";
@@ -1380,7 +1383,7 @@ export class TemplateUpdater {
 			// Template is up-to-date, look for historical sync data
 			const recentAutoSync = this.getRecentAutoSyncEntry(
 				template.changeLog,
-				targetCommit.commitHash
+				targetCommit.commitHash,
 			);
 
 			if (recentAutoSync) {
@@ -1388,7 +1391,7 @@ export class TemplateUpdater {
 				return this.transformAutoSyncToHistoricalDiff(
 					template,
 					targetCommit.commitHash,
-					recentAutoSync
+					recentAutoSync,
 				);
 			}
 
@@ -1413,10 +1416,7 @@ export class TemplateUpdater {
 		}
 
 		// Validate cache commit matches target to ensure accurate diff
-		const cacheCommitHash = await this.cacheManager.getCommitHash(
-			serviceType,
-			"CUSTOM_FORMATS",
-		);
+		const cacheCommitHash = await this.cacheManager.getCommitHash(serviceType, "CUSTOM_FORMATS");
 		if (cacheCommitHash && cacheCommitHash !== targetCommit.commitHash) {
 			throw new Error(
 				`Cache is stale (${cacheCommitHash}), refresh before viewing diff for ${targetCommit.commitHash}`,
@@ -1424,15 +1424,9 @@ export class TemplateUpdater {
 		}
 
 		// Get latest cache data for comparison
-		const customFormatsCache = await this.cacheManager.get(
-			serviceType,
-			"CUSTOM_FORMATS",
-		);
+		const customFormatsCache = await this.cacheManager.get(serviceType, "CUSTOM_FORMATS");
 		const cfGroupsCache = await this.cacheManager.get(serviceType, "CF_GROUPS");
-		const qualityProfilesCache = await this.cacheManager.get(
-			serviceType,
-			"QUALITY_PROFILES",
-		);
+		const qualityProfilesCache = await this.cacheManager.get(serviceType, "QUALITY_PROFILES");
 
 		// Parse template config with error handling for corrupted data
 		let templateConfig: {
@@ -1592,7 +1586,9 @@ export class TemplateUpdater {
 		type TrashCFWithScores = TrashCustomFormat & { trash_scores?: Record<string, number> };
 
 		// Get the score set from template's linked quality profile
-		const templateQualityProfile = templateConfig.qualityProfile as { trash_score_set?: string } | undefined;
+		const templateQualityProfile = templateConfig.qualityProfile as
+			| { trash_score_set?: string }
+			| undefined;
 		const scoreSet = templateQualityProfile?.trash_score_set || "default";
 
 		// Helper to get recommended score for a CF
@@ -1621,7 +1617,7 @@ export class TemplateUpdater {
 				if (currentCFs.has(cfTrashId)) continue;
 
 				// Skip if already added to suggestions (avoid duplicates)
-				if (suggestedAdditions.some(s => s.trashId === cfTrashId)) continue;
+				if (suggestedAdditions.some((s) => s.trashId === cfTrashId)) continue;
 
 				// Get the full CF data from cache
 				const fullCF = latestCFs.get(cfTrashId) as TrashCFWithScores | undefined;
@@ -1643,7 +1639,7 @@ export class TemplateUpdater {
 		if (template.sourceQualityProfileTrashId) {
 			const qualityProfilesData = (qualityProfilesCache as TrashQualityProfile[] | null) ?? [];
 			const linkedProfile = qualityProfilesData.find(
-				(p) => p.trash_id === template.sourceQualityProfileTrashId
+				(p) => p.trash_id === template.sourceQualityProfileTrashId,
 			);
 
 			if (linkedProfile?.formatItems) {
@@ -1653,7 +1649,7 @@ export class TemplateUpdater {
 					if (currentCFs.has(cfTrashId)) continue;
 
 					// Skip if already added from CF Groups
-					if (suggestedAdditions.some(s => s.trashId === cfTrashId)) continue;
+					if (suggestedAdditions.some((s) => s.trashId === cfTrashId)) continue;
 
 					// Get the full CF data from cache
 					const fullCF = latestCFs.get(cfTrashId) as TrashCFWithScores | undefined;
@@ -1719,7 +1715,12 @@ export class TemplateUpdater {
 	 * @private
 	 */
 	private transformAutoSyncToHistoricalDiff(
-		template: { id: string; name: string; hasUserModifications: boolean; trashGuidesCommitHash: string | null },
+		template: {
+			id: string;
+			name: string;
+			hasUserModifications: boolean;
+			trashGuidesCommitHash: string | null;
+		},
 		targetCommitHash: string,
 		entry: AutoSyncChangeLogEntry,
 	): TemplateDiffResult {
@@ -1749,11 +1750,7 @@ export class TemplateUpdater {
 		}));
 
 		// Combine all diffs
-		const customFormatDiffs: CustomFormatDiff[] = [
-			...addedDiffs,
-			...removedDiffs,
-			...updatedDiffs,
-		];
+		const customFormatDiffs: CustomFormatDiff[] = [...addedDiffs, ...removedDiffs, ...updatedDiffs];
 
 		// Transform score changes to suggestedScoreChanges format for display
 		// (These were already applied, but showing them helps the user understand what changed)
@@ -1771,7 +1768,8 @@ export class TemplateUpdater {
 			currentCommit: entry.fromCommitHash,
 			latestCommit: targetCommitHash,
 			summary: {
-				totalChanges: entry.summaryStats.customFormatsAdded +
+				totalChanges:
+					entry.summaryStats.customFormatsAdded +
 					entry.summaryStats.customFormatsRemoved +
 					entry.summaryStats.customFormatsUpdated,
 				addedCFs: entry.summaryStats.customFormatsAdded,
@@ -1812,15 +1810,14 @@ export class TemplateUpdater {
 			changeLog = Array.isArray(parsed) ? parsed : [];
 		} catch (parseError) {
 			console.warn(
-				`[TemplateUpdater] Failed to parse changeLog in getRecentAutoSyncEntry: ${parseError instanceof Error ? parseError.message : String(parseError)}`
+				`[TemplateUpdater] Failed to parse changeLog in getRecentAutoSyncEntry: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
 			);
 			return null;
 		}
 
 		// Filter to auto_sync entries
-		const autoSyncEntries = changeLog.filter(
-			(entry): entry is AutoSyncChangeLogEntry =>
-				this.isAutoSyncChangeLogEntry(entry)
+		const autoSyncEntries = changeLog.filter((entry): entry is AutoSyncChangeLogEntry =>
+			this.isAutoSyncChangeLogEntry(entry),
 		);
 
 		if (autoSyncEntries.length === 0) {
@@ -1830,9 +1827,7 @@ export class TemplateUpdater {
 		// Optionally filter by target commit hash
 		let candidates = autoSyncEntries;
 		if (targetCommitHash) {
-			candidates = autoSyncEntries.filter(
-				(entry) => entry.toCommitHash === targetCommitHash
-			);
+			candidates = autoSyncEntries.filter((entry) => entry.toCommitHash === targetCommitHash);
 		}
 
 		if (candidates.length === 0) {
@@ -1840,9 +1835,7 @@ export class TemplateUpdater {
 		}
 
 		// Sort by timestamp descending and return most recent
-		candidates.sort((a, b) =>
-			new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-		);
+		candidates.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
 		return candidates[0] ?? null;
 	}
@@ -1908,10 +1901,7 @@ export class TemplateUpdater {
 			const latestCommit = await this.versionTracker.getLatestCommit();
 
 			// Get current cache commit hash
-			const currentCommitHash = await this.cacheManager.getCommitHash(
-				serviceType,
-				configType,
-			);
+			const currentCommitHash = await this.cacheManager.getCommitHash(serviceType, configType);
 
 			// Needs update if commits differ
 			const needsUpdate = currentCommitHash !== latestCommit.commitHash;
@@ -1959,10 +1949,7 @@ export class TemplateUpdater {
 		for (const configType of configTypes) {
 			try {
 				// Get current cache commit hash
-				const currentCommitHash = await this.cacheManager.getCommitHash(
-					serviceType,
-					configType,
-				);
+				const currentCommitHash = await this.cacheManager.getCommitHash(serviceType, configType);
 
 				// Skip data fetch if already up-to-date, but still touch the cache
 				// to update lastCheckedAt so it doesn't show as "stale" in the UI
@@ -1975,19 +1962,12 @@ export class TemplateUpdater {
 				const data = await this.githubFetcher.fetchConfigs(serviceType, configType);
 
 				// Update cache with new data and commit hash
-				await this.cacheManager.set(
-					serviceType,
-					configType,
-					data,
-					latestCommit.commitHash,
-				);
+				await this.cacheManager.set(serviceType, configType, data, latestCommit.commitHash);
 
 				refreshed++;
 			} catch (error) {
 				failed++;
-				errors.push(
-					`${configType}: ${error instanceof Error ? error.message : String(error)}`,
-				);
+				errors.push(`${configType}: ${error instanceof Error ? error.message : String(error)}`);
 			}
 		}
 
@@ -2006,5 +1986,11 @@ export function createTemplateUpdater(
 	githubFetcher: TrashGitHubFetcher,
 	deploymentExecutor?: DeploymentExecutorService,
 ): TemplateUpdater {
-	return new TemplateUpdater(prisma, versionTracker, cacheManager, githubFetcher, deploymentExecutor);
+	return new TemplateUpdater(
+		prisma,
+		versionTracker,
+		cacheManager,
+		githubFetcher,
+		deploymentExecutor,
+	);
 }

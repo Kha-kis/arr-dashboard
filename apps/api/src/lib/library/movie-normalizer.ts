@@ -51,8 +51,7 @@ export const buildMovieFile = (raw: Record<string, unknown>) => {
 	const quality = toStringValue(qualityQuality?.name) ?? toStringValue(qualityObj?.name);
 	const size = toNumber(raw?.size) ?? toNumber(raw?.sizeOnDisk);
 	const mediaInfo = raw?.mediaInfo as Record<string, unknown> | undefined;
-	let resolution =
-		toStringValue(mediaInfo?.resolution) ?? toStringValue(mediaInfo?.screenSize);
+	let resolution = toStringValue(mediaInfo?.resolution) ?? toStringValue(mediaInfo?.screenSize);
 	const width = toNumber(mediaInfo?.width);
 	const height = toNumber(mediaInfo?.height);
 	if (!resolution && width !== undefined && height !== undefined) {
@@ -109,7 +108,9 @@ export const buildMovieItem = (
 		monitored: toBoolean(raw?.monitored),
 		hasFile: Boolean(raw?.hasFile || raw?.movieFileId),
 		qualityProfileId: toNumber(raw?.qualityProfileId),
-		qualityProfileName: toStringValue((raw?.qualityProfile as Record<string, unknown> | undefined)?.name),
+		qualityProfileName: toStringValue(
+			(raw?.qualityProfile as Record<string, unknown> | undefined)?.name,
+		),
 		rootFolderPath: toStringValue(raw?.path ?? raw?.rootFolderPath),
 		sizeOnDisk: toNumber(raw?.sizeOnDisk),
 		path: toStringValue(raw?.path),

@@ -5,14 +5,14 @@
  */
 
 import type {
+	CompatibilityIssue,
+	TemplateCompatibility,
+	TemplateConflict,
+	TemplateCustomFormat,
 	TemplateExportFormat,
 	TemplateImportValidation,
 	ValidationError,
 	ValidationWarning,
-	TemplateConflict,
-	TemplateCompatibility,
-	CompatibilityIssue,
-	TemplateCustomFormat,
 } from "@arr/shared";
 import type { PrismaClient } from "@prisma/client";
 
@@ -120,10 +120,7 @@ export class TemplateValidator {
 	/**
 	 * Validate template structure
 	 */
-	private validateStructure(
-		importData: TemplateExportFormat,
-		errors: ValidationError[],
-	): void {
+	private validateStructure(importData: TemplateExportFormat, errors: ValidationError[]): void {
 		// Check required fields
 		if (!importData.version) {
 			errors.push({
@@ -188,10 +185,7 @@ export class TemplateValidator {
 	/**
 	 * Validate version compatibility
 	 */
-	private validateVersion(
-		importData: TemplateExportFormat,
-		warnings: ValidationWarning[],
-	): void {
+	private validateVersion(importData: TemplateExportFormat, warnings: ValidationWarning[]): void {
 		const version = importData.version;
 		const currentVersion = "2.0";
 

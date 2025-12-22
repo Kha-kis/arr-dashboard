@@ -63,10 +63,13 @@ function cleanupCache<T>(cache: Map<string, CacheEntry<T>>): void {
 function startCacheCleanup(): void {
 	if (cleanupInterval) return;
 
-	cleanupInterval = setInterval(() => {
-		cleanupCache(listCache as Map<string, CacheEntry<unknown>>);
-		cleanupCache(externalIdsCache);
-	}, 5 * 60 * 1000); // Every 5 minutes
+	cleanupInterval = setInterval(
+		() => {
+			cleanupCache(listCache as Map<string, CacheEntry<unknown>>);
+			cleanupCache(externalIdsCache);
+		},
+		5 * 60 * 1000,
+	); // Every 5 minutes
 }
 
 // Start cleanup on module load
@@ -140,7 +143,10 @@ export async function getTrendingMovies(
 ): Promise<TMDBResponse<TMDBMovie>> {
 	// Check cache first
 	const cacheKey = getCacheKey("trending_movies", timeWindow, page);
-	const cached = getFromCache<TMDBResponse<TMDBMovie>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey);
+	const cached = getFromCache<TMDBResponse<TMDBMovie>>(
+		listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>,
+		cacheKey,
+	);
 	if (cached) return cached;
 
 	// Fetch 2 pages at once (reduced from 3 to minimize API calls)
@@ -170,7 +176,12 @@ export async function getTrendingMovies(
 	};
 
 	// Cache the result
-	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey, result, LIST_CACHE_TTL_MS);
+	setInCache(
+		listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>,
+		cacheKey,
+		result,
+		LIST_CACHE_TTL_MS,
+	);
 	return result;
 }
 
@@ -182,7 +193,10 @@ export async function getTrendingTV(
 ): Promise<TMDBResponse<TMDBTVShow>> {
 	// Check cache first
 	const cacheKey = getCacheKey("trending_tv", timeWindow, page);
-	const cached = getFromCache<TMDBResponse<TMDBTVShow>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey);
+	const cached = getFromCache<TMDBResponse<TMDBTVShow>>(
+		listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>,
+		cacheKey,
+	);
 	if (cached) return cached;
 
 	// Fetch 2 pages at once (reduced from 3 to minimize API calls)
@@ -212,7 +226,12 @@ export async function getTrendingTV(
 	};
 
 	// Cache the result
-	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey, result, LIST_CACHE_TTL_MS);
+	setInCache(
+		listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>,
+		cacheKey,
+		result,
+		LIST_CACHE_TTL_MS,
+	);
 	return result;
 }
 
@@ -223,7 +242,10 @@ export async function getPopularMovies(
 ): Promise<TMDBResponse<TMDBMovie>> {
 	// Check cache first
 	const cacheKey = getCacheKey("popular_movies", page);
-	const cached = getFromCache<TMDBResponse<TMDBMovie>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey);
+	const cached = getFromCache<TMDBResponse<TMDBMovie>>(
+		listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>,
+		cacheKey,
+	);
 	if (cached) return cached;
 
 	// Fetch 2 pages at once (reduced from 3 to minimize API calls)
@@ -248,7 +270,12 @@ export async function getPopularMovies(
 	};
 
 	// Cache the result
-	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey, result, LIST_CACHE_TTL_MS);
+	setInCache(
+		listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>,
+		cacheKey,
+		result,
+		LIST_CACHE_TTL_MS,
+	);
 	return result;
 }
 
@@ -259,7 +286,10 @@ export async function getPopularTV(
 ): Promise<TMDBResponse<TMDBTVShow>> {
 	// Check cache first
 	const cacheKey = getCacheKey("popular_tv", page);
-	const cached = getFromCache<TMDBResponse<TMDBTVShow>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey);
+	const cached = getFromCache<TMDBResponse<TMDBTVShow>>(
+		listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>,
+		cacheKey,
+	);
 	if (cached) return cached;
 
 	// Fetch 2 pages at once (reduced from 3 to minimize API calls)
@@ -284,7 +314,12 @@ export async function getPopularTV(
 	};
 
 	// Cache the result
-	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey, result, LIST_CACHE_TTL_MS);
+	setInCache(
+		listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>,
+		cacheKey,
+		result,
+		LIST_CACHE_TTL_MS,
+	);
 	return result;
 }
 
@@ -295,7 +330,10 @@ export async function getTopRatedMovies(
 ): Promise<TMDBResponse<TMDBMovie>> {
 	// Check cache first
 	const cacheKey = getCacheKey("top_rated_movies", page);
-	const cached = getFromCache<TMDBResponse<TMDBMovie>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey);
+	const cached = getFromCache<TMDBResponse<TMDBMovie>>(
+		listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>,
+		cacheKey,
+	);
 	if (cached) return cached;
 
 	// Fetch 2 pages at once (reduced from 3 to minimize API calls)
@@ -320,7 +358,12 @@ export async function getTopRatedMovies(
 	};
 
 	// Cache the result
-	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey, result, LIST_CACHE_TTL_MS);
+	setInCache(
+		listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>,
+		cacheKey,
+		result,
+		LIST_CACHE_TTL_MS,
+	);
 	return result;
 }
 
@@ -331,7 +374,10 @@ export async function getTopRatedTV(
 ): Promise<TMDBResponse<TMDBTVShow>> {
 	// Check cache first
 	const cacheKey = getCacheKey("top_rated_tv", page);
-	const cached = getFromCache<TMDBResponse<TMDBTVShow>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey);
+	const cached = getFromCache<TMDBResponse<TMDBTVShow>>(
+		listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>,
+		cacheKey,
+	);
 	if (cached) return cached;
 
 	// Fetch 2 pages at once (reduced from 3 to minimize API calls)
@@ -356,7 +402,12 @@ export async function getTopRatedTV(
 	};
 
 	// Cache the result
-	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey, result, LIST_CACHE_TTL_MS);
+	setInCache(
+		listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>,
+		cacheKey,
+		result,
+		LIST_CACHE_TTL_MS,
+	);
 	return result;
 }
 
@@ -367,7 +418,10 @@ export async function getUpcomingMovies(
 ): Promise<TMDBResponse<TMDBMovie>> {
 	// Check cache first
 	const cacheKey = getCacheKey("upcoming_movies", page);
-	const cached = getFromCache<TMDBResponse<TMDBMovie>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey);
+	const cached = getFromCache<TMDBResponse<TMDBMovie>>(
+		listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>,
+		cacheKey,
+	);
 	if (cached) return cached;
 
 	// Fetch 3 pages at once (reduced from 5, but needs more for date filtering)
@@ -401,7 +455,12 @@ export async function getUpcomingMovies(
 	};
 
 	// Cache the result
-	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey, result, LIST_CACHE_TTL_MS);
+	setInCache(
+		listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>,
+		cacheKey,
+		result,
+		LIST_CACHE_TTL_MS,
+	);
 	return result;
 }
 
@@ -412,7 +471,10 @@ export async function getAiringTodayTV(
 ): Promise<TMDBResponse<TMDBTVShow>> {
 	// Check cache first
 	const cacheKey = getCacheKey("airing_today_tv", page);
-	const cached = getFromCache<TMDBResponse<TMDBTVShow>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey);
+	const cached = getFromCache<TMDBResponse<TMDBTVShow>>(
+		listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>,
+		cacheKey,
+	);
 	if (cached) return cached;
 
 	// Fetch 2 pages at once (reduced from 3 to minimize API calls)
@@ -437,7 +499,12 @@ export async function getAiringTodayTV(
 	};
 
 	// Cache the result
-	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey, result, LIST_CACHE_TTL_MS);
+	setInCache(
+		listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>,
+		cacheKey,
+		result,
+		LIST_CACHE_TTL_MS,
+	);
 	return result;
 }
 

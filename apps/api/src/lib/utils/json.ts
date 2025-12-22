@@ -22,7 +22,7 @@
  */
 export function safeJsonParse<T = unknown>(
 	value: string | null | undefined,
-	fallback: T | null = null
+	fallback: T | null = null,
 ): T | null {
 	if (!value) return fallback;
 	try {

@@ -83,7 +83,7 @@ export const calendarRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				});
 				const validated = items
 					.map((item: unknown) => ({
-						...item as Record<string, unknown>,
+						...(item as Record<string, unknown>),
 						instanceId: instance.id,
 						instanceName: instance.label,
 					}))

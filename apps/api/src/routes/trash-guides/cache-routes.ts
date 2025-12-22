@@ -4,12 +4,12 @@
  * Endpoints for fetching, refreshing, and managing TRaSH Guides cache.
  */
 
+import { TRASH_CONFIG_TYPES } from "@arr/shared";
+import type { TrashConfigType } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
-import { TRASH_CONFIG_TYPES } from "@arr/shared";
-import type { TrashConfigType } from "@arr/shared";
 
 // ============================================================================
 // Request Schemas
@@ -17,12 +17,28 @@ import type { TrashConfigType } from "@arr/shared";
 
 const getCacheParamsSchema = z.object({
 	serviceType: z.enum(["RADARR", "SONARR"]),
-	configType: z.enum(["CUSTOM_FORMATS", "CF_GROUPS", "QUALITY_SIZE", "NAMING", "QUALITY_PROFILES", "CF_DESCRIPTIONS"]),
+	configType: z.enum([
+		"CUSTOM_FORMATS",
+		"CF_GROUPS",
+		"QUALITY_SIZE",
+		"NAMING",
+		"QUALITY_PROFILES",
+		"CF_DESCRIPTIONS",
+	]),
 });
 
 const refreshCacheBodySchema = z.object({
 	serviceType: z.enum(["RADARR", "SONARR"]),
-	configType: z.enum(["CUSTOM_FORMATS", "CF_GROUPS", "QUALITY_SIZE", "NAMING", "QUALITY_PROFILES", "CF_DESCRIPTIONS"]).optional(),
+	configType: z
+		.enum([
+			"CUSTOM_FORMATS",
+			"CF_GROUPS",
+			"QUALITY_SIZE",
+			"NAMING",
+			"QUALITY_PROFILES",
+			"CF_DESCRIPTIONS",
+		])
+		.optional(),
 	force: z.boolean().optional().default(false),
 });
 
@@ -38,10 +54,7 @@ const getEntriesQuerySchema = z.object({
 // Route Handlers
 // ============================================================================
 
-export async function registerTrashCacheRoutes(
-	app: FastifyInstance,
-	_opts: FastifyPluginOptions,
-) {
+export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
 		if (!request.currentUser?.id) {
@@ -55,312 +68,315 @@ export async function registerTrashCacheRoutes(
 	const cacheManager = createCacheManager(app.prisma);
 	const fetcher = createTrashFetcher();
 
-		/**
-		 * GET /api/trash-guides/cache/:serviceType/:configType
-		 * Get cached TRaSH Guides data for a specific config type
-		 */
-		app.get<{
-			Params: z.infer<typeof getCacheParamsSchema>;
-		}>("/:serviceType/:configType", async (request, reply) => {
-			const { serviceType, configType } = getCacheParamsSchema.parse(request.params);
+	/**
+	 * GET /api/trash-guides/cache/:serviceType/:configType
+	 * Get cached TRaSH Guides data for a specific config type
+	 */
+	app.get<{
+		Params: z.infer<typeof getCacheParamsSchema>;
+	}>("/:serviceType/:configType", async (request, reply) => {
+		const { serviceType, configType } = getCacheParamsSchema.parse(request.params);
 
-			try {
-				// Check if cache exists and is fresh
-				const isFresh = await cacheManager.isFresh(serviceType, configType);
+		try {
+			// Check if cache exists and is fresh
+			const isFresh = await cacheManager.isFresh(serviceType, configType);
 
-				if (!isFresh) {
-					// Cache is stale or doesn't exist, fetch fresh data
-					app.log.info({ serviceType, configType }, "Cache miss or stale, fetching fresh data");
+			if (!isFresh) {
+				// Cache is stale or doesn't exist, fetch fresh data
+				app.log.info({ serviceType, configType }, "Cache miss or stale, fetching fresh data");
 
-					const data = await fetcher.fetchConfigs(serviceType, configType);
-					await cacheManager.set(serviceType, configType, data);
-
-					return reply.send({
-						data,
-						cached: false,
-						status: await cacheManager.getStatus(serviceType, configType),
-					});
-				}
-
-				// Get cached data
-				const data = await cacheManager.get(serviceType, configType);
-
-				if (!data) {
-					return reply.status(404).send({
-						statusCode: 404,
-						error: "NotFound",
-						message: `No cache found for ${serviceType} ${configType}`,
-					});
-				}
+				const data = await fetcher.fetchConfigs(serviceType, configType);
+				await cacheManager.set(serviceType, configType, data);
 
 				return reply.send({
 					data,
-					cached: true,
+					cached: false,
 					status: await cacheManager.getStatus(serviceType, configType),
 				});
-			} catch (error) {
-				app.log.error({ err: error, serviceType, configType }, "Failed to get cache");
-				return reply.status(500).send({
-					statusCode: 500,
-					error: "InternalServerError",
-					message: error instanceof Error ? error.message : "Failed to fetch TRaSH Guides data",
+			}
+
+			// Get cached data
+			const data = await cacheManager.get(serviceType, configType);
+
+			if (!data) {
+				return reply.status(404).send({
+					statusCode: 404,
+					error: "NotFound",
+					message: `No cache found for ${serviceType} ${configType}`,
 				});
 			}
-		});
 
-		/**
-		 * POST /api/trash-guides/cache/refresh
-		 * Manually refresh cache from GitHub
-		 */
-		app.post<{
-			Body: z.infer<typeof refreshCacheBodySchema>;
-		}>("/refresh", async (request, reply) => {
-			const { serviceType, configType, force } = refreshCacheBodySchema.parse(request.body);
+			return reply.send({
+				data,
+				cached: true,
+				status: await cacheManager.getStatus(serviceType, configType),
+			});
+		} catch (error) {
+			app.log.error({ err: error, serviceType, configType }, "Failed to get cache");
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to fetch TRaSH Guides data",
+			});
+		}
+	});
 
-			try {
-				const results: Record<string, unknown> = {};
+	/**
+	 * POST /api/trash-guides/cache/refresh
+	 * Manually refresh cache from GitHub
+	 */
+	app.post<{
+		Body: z.infer<typeof refreshCacheBodySchema>;
+	}>("/refresh", async (request, reply) => {
+		const { serviceType, configType, force } = refreshCacheBodySchema.parse(request.body);
 
-				// If specific config type provided, refresh only that
-				if (configType) {
+		try {
+			const results: Record<string, unknown> = {};
+
+			// If specific config type provided, refresh only that
+			if (configType) {
+				// Check if refresh is needed
+				if (!force) {
+					const isFresh = await cacheManager.isFresh(serviceType, configType);
+					if (isFresh) {
+						return reply.send({
+							message: "Cache is already fresh",
+							refreshed: false,
+							status: await cacheManager.getStatus(serviceType, configType),
+						});
+					}
+				}
+
+				app.log.info({ serviceType, configType, force }, "Refreshing cache");
+
+				const data = await fetcher.fetchConfigs(serviceType, configType);
+				await cacheManager.set(serviceType, configType, data);
+
+				results[configType] = {
+					success: true,
+					itemCount: Array.isArray(data) ? data.length : 0,
+				};
+
+				return reply.send({
+					message: "Cache refreshed successfully",
+					refreshed: true,
+					results,
+					status: await cacheManager.getStatus(serviceType, configType),
+				});
+			}
+
+			// Refresh all config types for the service
+			app.log.info({ serviceType, force }, "Refreshing all caches");
+
+			const configTypes = Object.values(TRASH_CONFIG_TYPES) as TrashConfigType[];
+
+			for (const type of configTypes) {
+				try {
 					// Check if refresh is needed
 					if (!force) {
-						const isFresh = await cacheManager.isFresh(serviceType, configType);
+						const isFresh = await cacheManager.isFresh(serviceType, type);
 						if (isFresh) {
-							return reply.send({
-								message: "Cache is already fresh",
-								refreshed: false,
-								status: await cacheManager.getStatus(serviceType, configType),
-							});
+							results[type] = {
+								success: true,
+								skipped: true,
+								reason: "Cache is fresh",
+							};
+							continue;
 						}
 					}
 
-					app.log.info({ serviceType, configType, force }, "Refreshing cache");
+					const data = await fetcher.fetchConfigs(serviceType, type);
+					await cacheManager.set(serviceType, type, data);
 
-					const data = await fetcher.fetchConfigs(serviceType, configType);
-					await cacheManager.set(serviceType, configType, data);
-
-					results[configType] = {
+					results[type] = {
 						success: true,
 						itemCount: Array.isArray(data) ? data.length : 0,
 					};
-
-					return reply.send({
-						message: "Cache refreshed successfully",
-						refreshed: true,
-						results,
-						status: await cacheManager.getStatus(serviceType, configType),
-					});
+				} catch (error) {
+					app.log.error({ err: error, configType: type }, "Failed to refresh config type");
+					results[type] = {
+						success: false,
+						error: error instanceof Error ? error.message : "Unknown error",
+					};
 				}
+			}
 
-				// Refresh all config types for the service
-				app.log.info({ serviceType, force }, "Refreshing all caches");
+			return reply.send({
+				message: "Cache refresh completed",
+				refreshed: true,
+				results,
+			});
+		} catch (error) {
+			app.log.error({ err: error, serviceType, configType }, "Failed to refresh cache");
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to refresh cache",
+			});
+		}
+	});
 
-				const configTypes = Object.values(TRASH_CONFIG_TYPES) as TrashConfigType[];
+	/**
+	 * GET /api/trash-guides/cache/status
+	 * Get cache status for all or specific service
+	 */
+	app.get<{
+		Querystring: z.infer<typeof getStatusParamsSchema>;
+	}>("/status", async (request, reply) => {
+		const { serviceType } = getStatusParamsSchema.parse(request.query);
 
-				for (const type of configTypes) {
-					try {
-						// Check if refresh is needed
-						if (!force) {
-							const isFresh = await cacheManager.isFresh(serviceType, type);
-							if (isFresh) {
-								results[type] = {
-									success: true,
-									skipped: true,
-									reason: "Cache is fresh",
-								};
-								continue;
-							}
-						}
-
-						const data = await fetcher.fetchConfigs(serviceType, type);
-						await cacheManager.set(serviceType, type, data);
-
-						results[type] = {
-							success: true,
-							itemCount: Array.isArray(data) ? data.length : 0,
-						};
-					} catch (error) {
-						app.log.error({ err: error, configType: type }, "Failed to refresh config type");
-						results[type] = {
-							success: false,
-							error: error instanceof Error ? error.message : "Unknown error",
-						};
-					}
-				}
+		try {
+			if (serviceType) {
+				// Get status for specific service
+				const statuses = await cacheManager.getAllStatuses(serviceType);
 
 				return reply.send({
-					message: "Cache refresh completed",
-					refreshed: true,
-					results,
-				});
-			} catch (error) {
-				app.log.error({ err: error, serviceType, configType }, "Failed to refresh cache");
-				return reply.status(500).send({
-					statusCode: 500,
-					error: "InternalServerError",
-					message: error instanceof Error ? error.message : "Failed to refresh cache",
-				});
-			}
-		});
-
-		/**
-		 * GET /api/trash-guides/cache/status
-		 * Get cache status for all or specific service
-		 */
-		app.get<{
-			Querystring: z.infer<typeof getStatusParamsSchema>;
-		}>("/status", async (request, reply) => {
-			const { serviceType } = getStatusParamsSchema.parse(request.query);
-
-			try {
-				if (serviceType) {
-					// Get status for specific service
-					const statuses = await cacheManager.getAllStatuses(serviceType);
-
-					return reply.send({
-						serviceType,
-						statuses,
-					});
-				}
-
-				// Get status for all services
-				const radarrStatuses = await cacheManager.getAllStatuses("RADARR");
-				const sonarrStatuses = await cacheManager.getAllStatuses("SONARR");
-
-				return reply.send({
-					radarr: radarrStatuses,
-					sonarr: sonarrStatuses,
-					stats: await cacheManager.getStats(),
-				});
-			} catch (error) {
-				app.log.error({ err: error }, "Failed to get cache status");
-				return reply.status(500).send({
-					statusCode: 500,
-					error: "InternalServerError",
-					message: error instanceof Error ? error.message : "Failed to get cache status",
-				});
-			}
-		});
-
-		/**
-		 * GET /api/trash-guides/cache/entries
-		 * Get cache entries with data for a specific service type
-		 */
-		app.get<{
-			Querystring: z.infer<typeof getEntriesQuerySchema>;
-		}>("/entries", async (request, reply) => {
-			const { serviceType } = getEntriesQuerySchema.parse(request.query);
-
-			try {
-				const configTypes = Object.values(TRASH_CONFIG_TYPES) as TrashConfigType[];
-				const entries = [];
-
-				for (const configType of configTypes) {
-					const data = await cacheManager.get(serviceType, configType);
-					if (data) {
-						const status = await cacheManager.getStatus(serviceType, configType);
-						if (status) {
-							entries.push({
-								id: `${serviceType}-${configType}`,
-								serviceType,
-								configType,
-								data,
-								version: status.version,
-								fetchedAt: status.lastFetched,
-								lastCheckedAt: status.lastChecked,
-								updatedAt: status.lastFetched,
-							});
-						}
-					}
-				}
-
-				return reply.send(entries);
-			} catch (error) {
-				app.log.error({ err: error, serviceType }, "Failed to get cache entries");
-				return reply.status(500).send({
-					statusCode: 500,
-					error: "InternalServerError",
-					message: error instanceof Error ? error.message : "Failed to get cache entries",
-				});
-			}
-		});
-
-		/**
-		 * DELETE /api/trash-guides/cache/:serviceType/:configType
-		 * Delete specific cache entry
-		 */
-		app.delete<{
-			Params: z.infer<typeof getCacheParamsSchema>;
-		}>("/:serviceType/:configType", async (request, reply) => {
-			const { serviceType, configType } = getCacheParamsSchema.parse(request.params);
-
-			try {
-				const deleted = await cacheManager.delete(serviceType, configType);
-
-				if (!deleted) {
-					return reply.status(404).send({
-						statusCode: 404,
-						error: "NotFound",
-						message: `No cache found for ${serviceType} ${configType}`,
-					});
-				}
-
-				return reply.send({
-					message: "Cache deleted successfully",
 					serviceType,
-					configType,
-				});
-			} catch (error) {
-				app.log.error({ err: error, serviceType, configType }, "Failed to delete cache");
-				return reply.status(500).send({
-					statusCode: 500,
-					error: "InternalServerError",
-					message: error instanceof Error ? error.message : "Failed to delete cache",
+					statuses,
 				});
 			}
-		});
 
-		/**
-		 * GET /api/trash-guides/cache/custom-formats/list
-		 * Get all available custom formats from cache for browsing
-		 */
-		app.get<{
-			Querystring: { serviceType?: "RADARR" | "SONARR" };
-		}>("/custom-formats/list", async (request, reply) => {
-			const { serviceType } = request.query;
+			// Get status for all services
+			const radarrStatuses = await cacheManager.getAllStatuses("RADARR");
+			const sonarrStatuses = await cacheManager.getAllStatuses("SONARR");
 
-			try {
-				const results: Record<string, unknown> = {};
+			return reply.send({
+				radarr: radarrStatuses,
+				sonarr: sonarrStatuses,
+				stats: await cacheManager.getStats(),
+			});
+		} catch (error) {
+			app.log.error({ err: error }, "Failed to get cache status");
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to get cache status",
+			});
+		}
+	});
 
-				// Fetch custom formats for requested service types
-				const serviceTypes = serviceType ? [serviceType] : ["RADARR", "SONARR"];
+	/**
+	 * GET /api/trash-guides/cache/entries
+	 * Get cache entries with data for a specific service type
+	 */
+	app.get<{
+		Querystring: z.infer<typeof getEntriesQuerySchema>;
+	}>("/entries", async (request, reply) => {
+		const { serviceType } = getEntriesQuerySchema.parse(request.query);
 
-				for (const service of serviceTypes) {
-					// Check cache freshness
-					const isFresh = await cacheManager.isFresh(service as "RADARR" | "SONARR", "CUSTOM_FORMATS");
+		try {
+			const configTypes = Object.values(TRASH_CONFIG_TYPES) as TrashConfigType[];
+			const entries = [];
 
-					if (!isFresh) {
-						// Fetch fresh data if cache is stale
-						const data = await fetcher.fetchConfigs(service as "RADARR" | "SONARR", "CUSTOM_FORMATS");
-						await cacheManager.set(service as "RADARR" | "SONARR", "CUSTOM_FORMATS", data);
-						results[service.toLowerCase()] = data;
-					} else {
-						// Get from cache
-						const data = await cacheManager.get(service as "RADARR" | "SONARR", "CUSTOM_FORMATS");
-						results[service.toLowerCase()] = data || [];
+			for (const configType of configTypes) {
+				const data = await cacheManager.get(serviceType, configType);
+				if (data) {
+					const status = await cacheManager.getStatus(serviceType, configType);
+					if (status) {
+						entries.push({
+							id: `${serviceType}-${configType}`,
+							serviceType,
+							configType,
+							data,
+							version: status.version,
+							fetchedAt: status.lastFetched,
+							lastCheckedAt: status.lastChecked,
+							updatedAt: status.lastFetched,
+						});
 					}
 				}
+			}
 
-				return reply.send(results);
-			} catch (error) {
-				app.log.error({ err: error, serviceType }, "Failed to fetch custom formats list");
-				return reply.status(500).send({
-					statusCode: 500,
-					error: "InternalServerError",
-					message: error instanceof Error ? error.message : "Failed to fetch custom formats",
+			return reply.send(entries);
+		} catch (error) {
+			app.log.error({ err: error, serviceType }, "Failed to get cache entries");
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to get cache entries",
+			});
+		}
+	});
+
+	/**
+	 * DELETE /api/trash-guides/cache/:serviceType/:configType
+	 * Delete specific cache entry
+	 */
+	app.delete<{
+		Params: z.infer<typeof getCacheParamsSchema>;
+	}>("/:serviceType/:configType", async (request, reply) => {
+		const { serviceType, configType } = getCacheParamsSchema.parse(request.params);
+
+		try {
+			const deleted = await cacheManager.delete(serviceType, configType);
+
+			if (!deleted) {
+				return reply.status(404).send({
+					statusCode: 404,
+					error: "NotFound",
+					message: `No cache found for ${serviceType} ${configType}`,
 				});
 			}
-		});
+
+			return reply.send({
+				message: "Cache deleted successfully",
+				serviceType,
+				configType,
+			});
+		} catch (error) {
+			app.log.error({ err: error, serviceType, configType }, "Failed to delete cache");
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to delete cache",
+			});
+		}
+	});
+
+	/**
+	 * GET /api/trash-guides/cache/custom-formats/list
+	 * Get all available custom formats from cache for browsing
+	 */
+	app.get<{
+		Querystring: { serviceType?: "RADARR" | "SONARR" };
+	}>("/custom-formats/list", async (request, reply) => {
+		const { serviceType } = request.query;
+
+		try {
+			const results: Record<string, unknown> = {};
+
+			// Fetch custom formats for requested service types
+			const serviceTypes = serviceType ? [serviceType] : ["RADARR", "SONARR"];
+
+			for (const service of serviceTypes) {
+				// Check cache freshness
+				const isFresh = await cacheManager.isFresh(
+					service as "RADARR" | "SONARR",
+					"CUSTOM_FORMATS",
+				);
+
+				if (!isFresh) {
+					// Fetch fresh data if cache is stale
+					const data = await fetcher.fetchConfigs(service as "RADARR" | "SONARR", "CUSTOM_FORMATS");
+					await cacheManager.set(service as "RADARR" | "SONARR", "CUSTOM_FORMATS", data);
+					results[service.toLowerCase()] = data;
+				} else {
+					// Get from cache
+					const data = await cacheManager.get(service as "RADARR" | "SONARR", "CUSTOM_FORMATS");
+					results[service.toLowerCase()] = data || [];
+				}
+			}
+
+			return reply.send(results);
+		} catch (error) {
+			app.log.error({ err: error, serviceType }, "Failed to fetch custom formats list");
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to fetch custom formats",
+			});
+		}
+	});
 
 	/**
 	 * GET /api/trash-guides/cache/cf-descriptions/list
@@ -376,10 +392,16 @@ export async function registerTrashCacheRoutes(
 			const serviceTypes = serviceType ? [serviceType] : ["RADARR", "SONARR"];
 
 			for (const service of serviceTypes) {
-				const isFresh = await cacheManager.isFresh(service as "RADARR" | "SONARR", "CF_DESCRIPTIONS");
+				const isFresh = await cacheManager.isFresh(
+					service as "RADARR" | "SONARR",
+					"CF_DESCRIPTIONS",
+				);
 
 				if (!isFresh) {
-					const data = await fetcher.fetchConfigs(service as "RADARR" | "SONARR", "CF_DESCRIPTIONS");
+					const data = await fetcher.fetchConfigs(
+						service as "RADARR" | "SONARR",
+						"CF_DESCRIPTIONS",
+					);
 					await cacheManager.set(service as "RADARR" | "SONARR", "CF_DESCRIPTIONS", data);
 					results[service.toLowerCase()] = data;
 				} else {

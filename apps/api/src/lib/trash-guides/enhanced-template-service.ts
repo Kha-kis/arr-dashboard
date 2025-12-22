@@ -4,7 +4,6 @@
  * Extended template export/import with metadata and validation
  */
 
-import type { PrismaClient, ServiceType, TrashTemplate } from "@prisma/client";
 import type {
 	TemplateCompatibility,
 	TemplateConfig,
@@ -15,6 +14,7 @@ import type {
 	TemplateImportValidation,
 	TemplateMetadata,
 } from "@arr/shared";
+import type { PrismaClient, ServiceType, TrashTemplate } from "@prisma/client";
 import { createTemplateValidator } from "./template-validator.js";
 
 export class EnhancedTemplateService {
@@ -56,7 +56,9 @@ export class EnhancedTemplateService {
 		try {
 			config = JSON.parse(template.configData) as TemplateConfig;
 		} catch (parseError) {
-			throw new Error(`Invalid template config data: ${parseError instanceof Error ? parseError.message : "Parse error"}`);
+			throw new Error(
+				`Invalid template config data: ${parseError instanceof Error ? parseError.message : "Parse error"}`,
+			);
 		}
 		if (!options.includeQualitySettings) {
 			const { qualityProfile, completeQualityProfile, qualitySize, ...rest } = config;
@@ -160,7 +162,9 @@ export class EnhancedTemplateService {
 						})
 					) {
 						if (counter > MAX_RENAME_ATTEMPTS) {
-							throw new Error(`Failed to find unique name for template after ${MAX_RENAME_ATTEMPTS} attempts`);
+							throw new Error(
+								`Failed to find unique name for template after ${MAX_RENAME_ATTEMPTS} attempts`,
+							);
 						}
 						name = `${baseName} (${counter})`;
 						counter++;
@@ -332,8 +336,6 @@ export class EnhancedTemplateService {
 	}
 }
 
-export function createEnhancedTemplateService(
-	prisma: PrismaClient,
-): EnhancedTemplateService {
+export function createEnhancedTemplateService(prisma: PrismaClient): EnhancedTemplateService {
 	return new EnhancedTemplateService(prisma);
 }

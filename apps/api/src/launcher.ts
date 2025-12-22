@@ -104,13 +104,13 @@ function shouldAllowRestart(): boolean {
 	const now = Date.now();
 
 	// Clean up old timestamps outside the window
-	restartTimestamps = restartTimestamps.filter(
-		(timestamp) => now - timestamp < RESTART_WINDOW_MS
-	);
+	restartTimestamps = restartTimestamps.filter((timestamp) => now - timestamp < RESTART_WINDOW_MS);
 
 	// Check if we've exceeded max restarts in the window
 	if (restartTimestamps.length >= MAX_RESTARTS) {
-		log(`ERROR: Too many restarts (${MAX_RESTARTS} in ${RESTART_WINDOW_MS}ms). Stopping to prevent restart loop.`);
+		log(
+			`ERROR: Too many restarts (${MAX_RESTARTS} in ${RESTART_WINDOW_MS}ms). Stopping to prevent restart loop.`,
+		);
 		return false;
 	}
 
