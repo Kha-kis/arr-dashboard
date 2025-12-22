@@ -5,6 +5,15 @@
  */
 
 /**
+ * Field entry type for specification fields.
+ * Represents a single field with name and value.
+ */
+export interface FieldEntry {
+	name: string;
+	value: unknown;
+}
+
+/**
  * Transform specification fields from object format to array format.
  * This matches the format expected by Radarr/Sonarr API.
  *
@@ -15,8 +24,8 @@
  * @returns Fields in array format
  */
 export function transformFieldsToArray(
-	fields: Record<string, unknown> | Array<{ name: string; value: unknown }> | null | undefined,
-): Array<{ name: string; value: unknown }> {
+	fields: Record<string, unknown> | FieldEntry[] | null | undefined,
+): FieldEntry[] {
 	// If fields is already an array, return it as-is
 	if (Array.isArray(fields)) {
 		return fields;

@@ -37,7 +37,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			const history = await app.prisma.templateDeploymentHistory.findMany({
 				where: {
 					template: {
-						userId: request.currentUser?.id,
+						userId: request.currentUser!.id, // preHandler guarantees authentication
 					},
 				},
 				include: {
@@ -67,7 +67,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			const total = await app.prisma.templateDeploymentHistory.count({
 				where: {
 					template: {
-						userId: request.currentUser?.id,
+						userId: request.currentUser!.id, // preHandler guarantees authentication
 					},
 				},
 			});
@@ -111,7 +111,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			const template = await app.prisma.trashTemplate.findFirst({
 				where: {
 					id: templateId,
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id, // preHandler guarantees authentication
 				},
 			});
 
@@ -188,7 +188,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			const instance = await app.prisma.serviceInstance.findFirst({
 				where: {
 					id: instanceId,
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id, // preHandler guarantees authentication
 				},
 			});
 

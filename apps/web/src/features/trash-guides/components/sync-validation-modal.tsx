@@ -105,11 +105,20 @@ export const SyncValidationModal = ({
 	const previousActiveElement = useRef<Element | null>(null);
 	// Track mounted state to prevent state updates after unmount
 	const isMountedRef = useRef(true);
+	// Track timeout IDs for cleanup on unmount
+	const retryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const handleRetryTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-	// Cleanup mounted ref on unmount
+	// Cleanup mounted ref and pending timeouts on unmount
 	useEffect(() => {
 		return () => {
 			isMountedRef.current = false;
+			if (retryTimeoutRef.current) {
+				clearTimeout(retryTimeoutRef.current);
+			}
+			if (handleRetryTimeoutRef.current) {
+				clearTimeout(handleRetryTimeoutRef.current);
+			}
 		};
 	}, []);
 
@@ -139,29 +148,30 @@ export const SyncValidationModal = ({
 		onSuccess: (data) => {
 			setRetryProgress(null);
 			const endTime = Date.now();
-			setTiming((prev) => ({
-				...prev,
-				endTime,
-				duration: endTime - prev.startTime,
-			}));
-			// Log full validation object for debugging silent failures
-			if (!data.valid && (!data.errors || data.errors.length === 0)) {
-				console.warn("[SyncValidationModal] Silent failure - full validation response:", {
-					validation: data,
-					templateId,
-					instanceId,
-					timing: {
-						startTime: new Date(timing.startTime).toISOString(),
-						endTime: new Date(endTime).toISOString(),
-						durationMs: endTime - timing.startTime,
-					},
-				});
-			}
+			setTiming((prev) => {
+				const duration = endTime - prev.startTime;
+				// Log full validation object for debugging silent failures
+				// Use prev.startTime to avoid stale closure
+				if (!data.valid && (!data.errors || data.errors.length === 0)) {
+					console.warn("[SyncValidationModal] Silent failure - full validation response:", {
+						validation: data,
+						templateId,
+						instanceId,
+						timing: {
+							startTime: prev.startTime > 0 ? new Date(prev.startTime).toISOString() : null,
+							endTime: new Date(endTime).toISOString(),
+							durationMs: duration,
+						},
+					});
+				}
+				return { ...prev, endTime, duration };
+			});
 		},
 		onRetryProgress: (attempt, maxAttempts, delayMs) => {
 			setRetryProgress({ attempt, maxAttempts, delayMs, isWaiting: true });
 			// Clear waiting state after delay (only if still mounted)
-			setTimeout(() => {
+			// Store timeout ID in ref for cleanup on unmount
+			retryTimeoutRef.current = setTimeout(() => {
 				if (!isMountedRef.current) return;
 				setRetryProgress((prev) =>
 					prev && prev.attempt === attempt ? { ...prev, isWaiting: false } : prev,
@@ -274,7 +284,8 @@ export const SyncValidationModal = ({
 			setValidation(null);
 			// Exponential backoff: 1s, 2s
 			const delay = Math.pow(2, retryCount) * 1000;
-			setTimeout(runValidation, delay);
+			// Store timeout ID in ref for cleanup on unmount
+			handleRetryTimeoutRef.current = setTimeout(runValidation, delay);
 		} else {
 			// Max retries exceeded, just run immediately
 			setValidation(null);
@@ -636,9 +647,8 @@ export const SyncValidationModal = ({
 								<div className="flex-1">
 									<h3 className="font-medium text-red-200">Validation Error</h3>
 									<p className="mt-1 text-sm text-red-300">
-										{(localError || validateMutation.error) instanceof Error
-											? (localError || validateMutation.error)?.message
-											: "An unknown error occurred while validating the sync request."}
+										{(localError ?? validateMutation.error)?.message ??
+											"An unknown error occurred while validating the sync request."}
 									</p>
 									<div className="mt-3 flex items-center gap-3">
 										<Button

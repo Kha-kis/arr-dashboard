@@ -31,13 +31,13 @@ async function ensureLoggedIn(page: Page) {
 	await page.goto(BASE_URL);
 
 	// If we're on the login page, the storageState from setup didn't work
-	// Wait briefly and check - auth state should automatically redirect to dashboard
-	await page.waitForTimeout(500);
+	// Wait for either dashboard content or login page to load
+	await page.waitForLoadState("networkidle");
 
 	if (page.url().includes("/login")) {
 		// Try going directly to dashboard - storageState should authenticate us
 		await page.goto(`${BASE_URL}/dashboard`);
-		await page.waitForTimeout(500);
+		await page.waitForLoadState("networkidle");
 
 		// If still on login, the auth state wasn't loaded properly - this shouldn't happen
 		if (page.url().includes("/login")) {
@@ -81,17 +81,12 @@ test.describe("TRaSH Guides - Template Management", () => {
 		const statsButton = page.locator("article").first().getByRole("button", { name: /Template Stats/i });
 		await statsButton.click();
 
-		// Wait for dropdown content to appear - look for instance info or stats
-		// The dropdown should show deployment info
-		await page.waitForTimeout(500);
-
-		// Stats dropdown should show some content
-		const hasDropdownContent =
-			(await page.getByText(/instance/i).isVisible().catch(() => false)) ||
-			(await page.getByText(/deployed/i).isVisible().catch(() => false)) ||
-			(await page.getByText(/no.*deployed/i).isVisible().catch(() => false));
-
-		expect(hasDropdownContent).toBe(true);
+		// Wait for dropdown content to appear - look for specific content that appears in the dropdown
+		// The dropdown shows either instance deployment info or "not deployed" message
+		// Wait for any dropdown-related content to become visible
+		await expect(
+			page.getByText(/instance|deployed|no.*deployed/i).first()
+		).toBeVisible({ timeout: 5000 });
 	});
 
 	test("should have Deploy to Instance button on templates", async ({ page }) => {
@@ -269,18 +264,20 @@ test.describe("TRaSH Guides - Error Handling", () => {
 		const schedulerTab = page.locator("nav").getByRole("button", { name: "Update Scheduler" });
 		await schedulerTab.click();
 
-		// Wait briefly for the tab content to load
-		await page.waitForTimeout(1000);
+		// Wait for tab content to load - expect either scheduler content or error state
+		// Use explicit waits for specific elements rather than timeout
+		await page.waitForLoadState("networkidle");
 
-		// The page should not crash and should show either data or an error message
-		const hasContent =
-			(await page.getByText("Last Check").first().isVisible().catch(() => false)) ||
-			(await page.getByText("TRaSH Guides Update Scheduler").isVisible().catch(() => false)) ||
-			(await page.getByText(/error|failed/i).first().isVisible().catch(() => false)) ||
-			(await page.getByText(/Scheduler status not available/i).isVisible().catch(() => false)) ||
-			(await page.getByText(/Rate limit/i).isVisible().catch(() => false));
+		// The page should show either the scheduler heading or an error/loading state
+		// This is a valid test because we're verifying the UI doesn't crash
+		const schedulerHeading = page.getByText("TRaSH Guides Update Scheduler");
+		const lastCheckText = page.getByText("Last Check").first();
+		const errorText = page.getByText(/error|failed|unavailable|rate limit/i).first();
 
-		expect(hasContent).toBe(true);
+		// Wait for one of these to be visible (the page loaded something)
+		await expect(
+			schedulerHeading.or(lastCheckText).or(errorText)
+		).toBeVisible({ timeout: 10000 });
 
 		// Go back to templates and check deployment modal
 		const templatesTab = page.locator("nav").getByRole("button", { name: "Templates" });
