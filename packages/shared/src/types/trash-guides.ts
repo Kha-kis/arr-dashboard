@@ -318,6 +318,61 @@ export interface TemplateChangeLogEntry {
 }
 
 /**
+ * Auto-sync change log entry - records changes made during automatic template synchronization.
+ * Captures detailed change data from MergeStats for frontend display and audit trail.
+ */
+export interface AutoSyncChangeLogEntry {
+	/** Entry type discriminator for changelog polymorphism */
+	changeType: "auto_sync";
+	/** ISO 8601 timestamp of when the sync occurred */
+	timestamp: string;
+	/** TRaSH Guides commit hash before sync */
+	fromCommitHash: string | null;
+	/** TRaSH Guides commit hash after sync */
+	toCommitHash: string;
+
+	/** Custom formats that were added during sync */
+	customFormatsAdded: Array<{
+		trashId: string;
+		name: string;
+		score: number;
+	}>;
+	/** Custom formats that were removed during sync (no longer in TRaSH Guides) */
+	customFormatsRemoved: Array<{
+		trashId: string;
+		name: string;
+	}>;
+	/** Custom formats whose specifications were updated */
+	customFormatsUpdated: Array<{
+		trashId: string;
+		name: string;
+	}>;
+
+	/** Score changes applied during sync */
+	scoreChanges: Array<{
+		trashId: string;
+		name: string;
+		oldScore: number;
+		newScore: number;
+	}>;
+
+	/** Summary statistics mirroring MergeStats for quick overview */
+	summaryStats: {
+		customFormatsAdded: number;
+		customFormatsRemoved: number;
+		customFormatsUpdated: number;
+		customFormatsPreserved: number;
+		customFormatGroupsAdded: number;
+		customFormatGroupsRemoved: number;
+		customFormatGroupsUpdated: number;
+		customFormatGroupsPreserved: number;
+		scoresUpdated: number;
+		scoresSkippedDueToOverride: number;
+		userCustomizationsPreserved: string[];
+	};
+}
+
+/**
  * Phase 3: Instance-specific overrides for a template
  */
 export interface TemplateInstanceOverride {
@@ -723,6 +778,14 @@ export interface TemplateDiffResult {
 	// Suggested additions (Option 2) - shown separately from main diff
 	suggestedAdditions?: SuggestedCFAddition[];
 	suggestedScoreChanges?: SuggestedScoreChange[];
+	/**
+	 * True when the template is already at the target version and
+	 * the diff was reconstructed from historical changelog data.
+	 * Frontend can use this to show "Last sync changes" instead of "Pending changes".
+	 */
+	isHistorical?: boolean;
+	/** Timestamp of the historical sync, if isHistorical is true */
+	historicalSyncTimestamp?: string;
 }
 
 /**
