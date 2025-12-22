@@ -11,6 +11,7 @@ import { z } from "zod";
 import { createArrApiClient } from "../../lib/trash-guides/arr-api-client.js";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
+import { transformFieldsToArray } from "../../lib/trash-guides/utils.js";
 
 // ============================================================================
 // Validation Schemas
@@ -21,35 +22,6 @@ const deployMultipleSchema = z.object({
 	instanceId: z.string().min(1, "instanceId is required"),
 	serviceType: z.enum(["RADARR", "SONARR"]),
 });
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Transform specification fields from object format to array format
- * This matches the format expected by Radarr/Sonarr API
- */
-function transformFieldsToArray(
-	fields: Record<string, unknown> | Array<{ name: string; value: unknown }> | null | undefined,
-): Array<{ name: string; value: unknown }> {
-	// If fields is already an array, return it as-is
-	if (Array.isArray(fields)) {
-		return fields;
-	}
-
-	// If fields is undefined or null, return empty array
-	if (!fields) {
-		return [];
-	}
-
-	// Convert object format to array format
-	const result = Object.entries(fields).map(([name, value]) => ({
-		name,
-		value,
-	}));
-	return result;
-}
 
 // ============================================================================
 // Route Handlers

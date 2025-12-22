@@ -10,7 +10,7 @@
       "recommended": true,
       "style": {
         "noNonNullAssertion": "warn",
-        "noUselessElse": "off"
+        "noUselessElse": "warn"
       },
       "suspicious": {
         "noExplicitAny": "warn"

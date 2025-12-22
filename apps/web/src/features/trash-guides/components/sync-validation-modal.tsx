@@ -170,8 +170,8 @@ export const SyncValidationModal = ({
 		},
 	});
 
-	// Maximum manual retry attempts (in addition to automatic retries)
-	const MAX_RETRIES = 3;
+	// Maximum manual retry attempts (user clicking "Retry" button, separate from automatic retries in useValidateSync)
+	const MAX_MANUAL_RETRIES = 3;
 
 	// Focus trap and keyboard handling
 	useEffect(() => {
@@ -269,7 +269,7 @@ export const SyncValidationModal = ({
 
 	// Handle retry with exponential backoff
 	const handleRetry = () => {
-		if (retryCount < MAX_RETRIES) {
+		if (retryCount < MAX_MANUAL_RETRIES) {
 			setRetryCount((prev) => prev + 1);
 			setValidation(null);
 			// Exponential backoff: 1s, 2s
@@ -397,7 +397,7 @@ export const SyncValidationModal = ({
 														className={`mr-2 h-3 w-3 ${isValidating ? "animate-spin" : ""}`}
 													/>
 													{retryCount > 0
-														? `Retry (${retryCount}/${MAX_RETRIES})`
+														? `Retry (${retryCount}/${MAX_MANUAL_RETRIES})`
 														: "Retry Validation"}
 												</Button>
 												<span className="text-xs text-orange-300/70">
@@ -491,7 +491,7 @@ export const SyncValidationModal = ({
 														className={`mr-2 h-3 w-3 ${isValidating ? "animate-spin" : ""}`}
 													/>
 													{retryCount > 0
-														? `Retry (${retryCount}/${MAX_RETRIES})`
+														? `Retry (${retryCount}/${MAX_MANUAL_RETRIES})`
 														: "Retry Validation"}
 												</Button>
 											</div>
@@ -648,9 +648,9 @@ export const SyncValidationModal = ({
 											disabled={isValidating}
 										>
 											<RefreshCw className={`mr-2 h-3 w-3 ${isValidating ? "animate-spin" : ""}`} />
-											{retryCount > 0 ? `Retry (${retryCount}/${MAX_RETRIES})` : "Retry Validation"}
+											{retryCount > 0 ? `Retry (${retryCount}/${MAX_MANUAL_RETRIES})` : "Retry Validation"}
 										</Button>
-										{retryCount >= MAX_RETRIES && (
+										{retryCount >= MAX_MANUAL_RETRIES && (
 											<span className="text-xs text-red-300/70">
 												Max retries reached. Check instance connectivity.
 											</span>
@@ -704,7 +704,7 @@ export const SyncValidationModal = ({
 										</div>
 										<div className="grid grid-cols-2 gap-2">
 											<span className="text-purple-400">Manual Retry Count:</span>
-											<span className="text-purple-200">{retryCount} / {MAX_RETRIES}</span>
+											<span className="text-purple-200">{retryCount} / {MAX_MANUAL_RETRIES}</span>
 										</div>
 										<div className="grid grid-cols-2 gap-2">
 											<span className="text-purple-400">Auto Retry Max:</span>

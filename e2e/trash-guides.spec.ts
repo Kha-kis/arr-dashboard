@@ -84,8 +84,8 @@ test.describe("TRaSH Guides - Sync Strategy Management", () => {
 		// Click on first template's stats button
 		await page.getByRole("button", { name: /Template Stats/i }).first().click();
 
-		// Wait for content to load
-		await page.waitForTimeout(500);
+		// Wait for content to load by checking for expected elements
+		await expect(page.getByText(/instance/i)).toBeVisible({ timeout: 5000 });
 
 		// Find and click the sync strategy dropdown/button
 		const changeStrategyButton = page.getByRole("button", { name: /change sync strategy/i });
@@ -167,8 +167,8 @@ test.describe("TRaSH Guides - Update Scheduler Dashboard", () => {
 	test("should display strategy breakdown in Last Check Results", async ({ page }) => {
 		await page.getByRole("button", { name: "Update Scheduler" }).click();
 
-		// Wait for data to load
-		await page.waitForTimeout(1000);
+		// Wait for scheduler heading to confirm navigation
+		await expect(page.getByRole("heading", { name: /Update Scheduler/i })).toBeVisible({ timeout: 5000 });
 
 		// Check for Last Check Results section
 		const resultsSection = page.getByText("Last Check Results");
@@ -188,8 +188,8 @@ test.describe("TRaSH Guides - Update Scheduler Dashboard", () => {
 	test("should show correct Manual template count (not zero)", async ({ page }) => {
 		await page.getByRole("button", { name: "Update Scheduler" }).click();
 
-		// Wait for data to load
-		await page.waitForTimeout(1000);
+		// Wait for scheduler heading to confirm navigation
+		await expect(page.getByRole("heading", { name: /Update Scheduler/i })).toBeVisible({ timeout: 5000 });
 
 		// Find the Manual section and verify it has a count
 		const manualSection = page.locator("div").filter({ hasText: /^Manual/ });
@@ -333,10 +333,8 @@ test.describe("TRaSH Guides - Navigation", () => {
 			const tab = page.getByRole("button", { name: tabName });
 			if (await tab.isVisible()) {
 				await tab.click();
-				// Verify tab is now active
-				await expect(tab).toHaveAttribute("data-state", "active", { timeout: 2000 }).catch(() => {
-					// Some tabs might use different active state indicators
-				});
+				// Verify tab is now active using soft assertion (some tabs might use different active state indicators)
+				await expect.soft(tab).toHaveAttribute("data-state", "active", { timeout: 2000 });
 			}
 		}
 	});

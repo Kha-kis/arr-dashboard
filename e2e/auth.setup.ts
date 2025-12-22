@@ -3,6 +3,21 @@ import path from "node:path";
 
 const authFile = path.join(__dirname, "../.playwright-auth/user.json");
 
+// Configuration from environment variables
+const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:3000";
+const TEST_CREDENTIALS = {
+	username: process.env.TEST_USERNAME || "",
+	password: process.env.TEST_PASSWORD || "",
+};
+
+// Fail fast if credentials not configured
+if (!TEST_CREDENTIALS.username || !TEST_CREDENTIALS.password) {
+	throw new Error(
+		"TEST_USERNAME and TEST_PASSWORD environment variables are required for E2E tests. " +
+			"Set them in your environment or in a .env file.",
+	);
+}
+
 /**
  * Authentication setup for Playwright tests.
  * This runs before all tests to create an authenticated session.
@@ -14,7 +29,7 @@ const authFile = path.join(__dirname, "../.playwright-auth/user.json");
  */
 setup("authenticate", async ({ page }) => {
 	// Go to login page
-	await page.goto("http://localhost:3000/login");
+	await page.goto(`${BASE_URL}/login`);
 
 	// Check if already logged in (redirected to dashboard)
 	if (page.url().includes("/dashboard")) {
@@ -26,32 +41,9 @@ setup("authenticate", async ({ page }) => {
 	// Wait for login form
 	await expect(page.getByRole("heading", { name: /sign in|login/i })).toBeVisible({ timeout: 10000 });
 
-	// Fill in credentials
-	// Note: These should match your test environment
-	const username = process.env.TEST_USERNAME || "khak1s";
-	const password = process.env.TEST_PASSWORD;
-
-	if (!password) {
-		// If no password is set, try to check if we're already logged in via cookies
-		console.log("No TEST_PASSWORD set. Attempting to use existing session...");
-
-		// Try navigating to a protected page
-		await page.goto("http://localhost:3000/dashboard");
-
-		if (page.url().includes("/login")) {
-			throw new Error(
-				"Authentication required. Set TEST_PASSWORD environment variable or login manually first."
-			);
-		}
-
-		// We're logged in, save state
-		await page.context().storageState({ path: authFile });
-		return;
-	}
-
 	// Fill login form
-	await page.getByLabel(/username/i).fill(username);
-	await page.getByLabel(/password/i).fill(password);
+	await page.getByLabel(/username/i).fill(TEST_CREDENTIALS.username);
+	await page.getByLabel(/password/i).fill(TEST_CREDENTIALS.password);
 
 	// Click sign in
 	await page.getByRole("button", { name: /sign in/i }).click();
@@ -60,7 +52,7 @@ setup("authenticate", async ({ page }) => {
 	await expect(page).toHaveURL(/\/dashboard/, { timeout: 15000 });
 
 	// Verify we're logged in
-	await expect(page.getByText(username)).toBeVisible({ timeout: 5000 });
+	await expect(page.getByText(TEST_CREDENTIALS.username)).toBeVisible({ timeout: 5000 });
 
 	// Save authentication state
 	await page.context().storageState({ path: authFile });
