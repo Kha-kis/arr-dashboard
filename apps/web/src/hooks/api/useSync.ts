@@ -28,25 +28,66 @@ import {
 // Validation Hook
 // ============================================================================
 
+/** Default timeout for validation requests (30 seconds) */
+export const VALIDATION_TIMEOUT_MS = 30000;
+
 export interface UseValidateSyncOptions {
 	onError?: (error: Error) => void;
 	onSuccess?: (data: ValidationResult) => void;
+	/** Custom timeout in milliseconds (default: 30000) */
+	timeoutMs?: number;
 }
 
 export function useValidateSync(options?: UseValidateSyncOptions) {
+	const timeoutMs = options?.timeoutMs ?? VALIDATION_TIMEOUT_MS;
+
 	return useMutation<ValidationResult, Error, SyncValidationRequest>({
-		mutationFn: validateSync,
+		mutationFn: async (request) => {
+			// Create an AbortController for timeout handling
+			const controller = new AbortController();
+			const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+			try {
+				const result = await validateSync(request);
+				clearTimeout(timeoutId);
+				return result;
+			} catch (error) {
+				clearTimeout(timeoutId);
+				if (error instanceof Error && error.name === "AbortError") {
+					throw new Error(`Validation timed out after ${timeoutMs / 1000} seconds`);
+				}
+				throw error;
+			}
+		},
 		onError: (error) => {
-			// Log validation errors for debugging
-			console.error("[useValidateSync] Validation failed:", error.message);
+			// Enhanced error logging with timestamp
+			console.error("[useValidateSync] Validation failed:", {
+				message: error.message,
+				name: error.name,
+				timestamp: new Date().toISOString(),
+			});
 			options?.onError?.(error);
 		},
-		onSuccess: (data) => {
-			// Log validation results for debugging
+		onSuccess: (data, variables) => {
+			// Enhanced logging with full context for debugging
+			const logContext = {
+				valid: data.valid,
+				errorsCount: data.errors?.length ?? 0,
+				warningsCount: data.warnings?.length ?? 0,
+				conflictsCount: data.conflicts?.length ?? 0,
+				templateId: variables.templateId,
+				instanceId: variables.instanceId,
+				timestamp: new Date().toISOString(),
+			};
+
 			if (!data.valid && data.errors.length === 0) {
 				console.warn(
-					"[useValidateSync] Validation returned invalid with no errors - silent failure detected",
+					"[useValidateSync] Silent failure detected - validation invalid with no errors:",
+					logContext,
 				);
+				console.warn("[useValidateSync] Full validation response:", data);
+			} else if (process.env.NODE_ENV === "development") {
+				console.log("[useValidateSync] Validation completed:", logContext);
 			}
 			options?.onSuccess?.(data);
 		},
