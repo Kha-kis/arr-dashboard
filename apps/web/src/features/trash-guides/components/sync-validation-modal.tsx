@@ -110,22 +110,21 @@ export const SyncValidationModal = ({
 			setLocalError(error);
 			setRetryProgress(null);
 			const endTime = Date.now();
-			setTiming((prev) => ({
-				...prev,
-				endTime,
-				duration: endTime - prev.startTime,
-			}));
-			// Enhanced console logging for debugging
-			console.error("[SyncValidationModal] Validation error:", {
-				error: error.message,
-				templateId,
-				instanceId,
-				retryCount,
-				timing: {
-					startTime: new Date(timing.startTime).toISOString(),
-					endTime: new Date(endTime).toISOString(),
-					durationMs: endTime - timing.startTime,
-				},
+			setTiming((prev) => {
+				const duration = prev.startTime > 0 ? endTime - prev.startTime : null;
+				// Log timing using prev.startTime to avoid stale closure
+				console.error("[SyncValidationModal] Validation error:", {
+					error: error.message,
+					templateId,
+					instanceId,
+					retryCount,
+					timing: {
+						startTime: prev.startTime > 0 ? new Date(prev.startTime).toISOString() : null,
+						endTime: new Date(endTime).toISOString(),
+						durationMs: duration,
+					},
+				});
+				return { ...prev, endTime, duration };
 			});
 		},
 		onSuccess: (data) => {

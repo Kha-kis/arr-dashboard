@@ -82,53 +82,55 @@ test.describe("TRaSH Guides - Sync Strategy Management", () => {
 		// Find and click the sync strategy dropdown/button
 		const changeStrategyButton = page.getByRole("button", { name: /change sync strategy/i });
 
-		if (await changeStrategyButton.isVisible()) {
-			await changeStrategyButton.click();
+		// Skip test if feature not available (no templates with strategy controls)
+		test.skip(!(await changeStrategyButton.isVisible()), "No sync strategy dropdown available");
 
-			// Look for strategy options
-			const manualOption = page.getByRole("menuitem", { name: /manual/i });
-			const notifyOption = page.getByRole("menuitem", { name: /notify/i });
-			const autoOption = page.getByRole("menuitem", { name: /auto/i });
+		await changeStrategyButton.click();
 
-			// At least one option should be visible
-			const anyOptionVisible =
-				(await manualOption.isVisible()) ||
-				(await notifyOption.isVisible()) ||
-				(await autoOption.isVisible());
+		// Look for strategy options
+		const manualOption = page.getByRole("menuitem", { name: /manual/i });
+		const notifyOption = page.getByRole("menuitem", { name: /notify/i });
+		const autoOption = page.getByRole("menuitem", { name: /auto/i });
 
-			expect(anyOptionVisible).toBe(true);
-		}
+		// At least one option should be visible
+		const anyOptionVisible =
+			(await manualOption.isVisible()) ||
+			(await notifyOption.isVisible()) ||
+			(await autoOption.isVisible());
+
+		expect(anyOptionVisible).toBe(true);
 	});
 
 	test("should show 'Manual sync only' badge for manual strategy templates", async ({ page }) => {
 		// Look for manual sync indicator on template cards
 		const manualBadge = page.getByText("Manual sync only");
 
-		// If a template is set to manual, it should show this badge
-		if (await manualBadge.isVisible()) {
-			await expect(manualBadge).toBeVisible();
+		// Skip if no manual templates exist
+		test.skip(!(await manualBadge.isVisible()), "No manual sync templates exist");
 
-			// Should also have "Check for Updates" button nearby
-			const checkButton = page.getByRole("button", { name: /Check for Updates/i });
-			await expect(checkButton.first()).toBeVisible();
-		}
+		await expect(manualBadge).toBeVisible();
+
+		// Should also have "Check for Updates" button nearby
+		const checkButton = page.getByRole("button", { name: /Check for Updates/i });
+		await expect(checkButton.first()).toBeVisible();
 	});
 
 	test("should trigger manual update check for manual strategy templates", async ({ page }) => {
 		// Look for "Check for Updates" button (only visible for manual templates)
 		const checkButton = page.getByRole("button", { name: /Check for Updates/i }).first();
 
-		if (await checkButton.isVisible()) {
-			await checkButton.click();
+		// Skip if no manual templates with update check button exist
+		test.skip(!(await checkButton.isVisible()), "No manual templates with update check button");
 
-			// Should show a toast notification with the result
-			const toast = page.locator('[data-sonner-toast]');
-			await expect(toast).toBeVisible({ timeout: 10000 });
+		await checkButton.click();
 
-			// Toast should indicate success or up-to-date status
-			const toastText = await toast.textContent();
-			expect(toastText).toMatch(/up to date|update available|checking/i);
-		}
+		// Should show a toast notification with the result
+		const toast = page.locator('[data-sonner-toast]');
+		await expect(toast).toBeVisible({ timeout: 10000 });
+
+		// Toast should indicate success or up-to-date status
+		const toastText = await toast.textContent();
+		expect(toastText).toMatch(/up to date|update available|checking/i);
 	});
 });
 
@@ -162,15 +164,17 @@ test.describe("TRaSH Guides - Update Scheduler Dashboard", () => {
 
 		// Check for Last Check Results section
 		const resultsSection = page.getByText("Last Check Results");
-		if (await resultsSection.isVisible()) {
-			// Check for strategy columns
-			await expect(page.getByText("Auto-Sync")).toBeVisible();
-			await expect(page.getByText("Notify")).toBeVisible();
-			await expect(page.getByText("Manual")).toBeVisible();
 
-			// Check for "Excluded from checks" text under Manual
-			await expect(page.getByText("Excluded from checks")).toBeVisible();
-		}
+		// Skip if no check results available yet
+		test.skip(!(await resultsSection.isVisible()), "No last check results available");
+
+		// Check for strategy columns
+		await expect(page.getByText("Auto-Sync")).toBeVisible();
+		await expect(page.getByText("Notify")).toBeVisible();
+		await expect(page.getByText("Manual")).toBeVisible();
+
+		// Check for "Excluded from checks" text under Manual
+		await expect(page.getByText("Excluded from checks")).toBeVisible();
 	});
 
 	test("should show correct Manual template count (not zero)", async ({ page }) => {
@@ -182,13 +186,14 @@ test.describe("TRaSH Guides - Update Scheduler Dashboard", () => {
 		// Find the Manual section and verify it has a count
 		const manualSection = page.locator("div").filter({ hasText: /^Manual/ });
 
-		if (await manualSection.isVisible()) {
-			// The count should be visible and potentially non-zero if manual templates exist
-			const countText = await manualSection.locator("p").first().textContent();
-			expect(countText).toBeDefined();
-			// Count should be a valid number
-			expect(Number.parseInt(countText || "0", 10)).toBeGreaterThanOrEqual(0);
-		}
+		// Skip if Manual section not visible (no check results yet)
+		test.skip(!(await manualSection.isVisible()), "Manual section not available");
+
+		// The count should be visible and potentially non-zero if manual templates exist
+		const countText = await manualSection.locator("p").first().textContent();
+		expect(countText).toBeDefined();
+		// Count should be a valid number
+		expect(Number.parseInt(countText || "0", 10)).toBeGreaterThanOrEqual(0);
 	});
 
 	test("should have Trigger Check Now button", async ({ page }) => {
@@ -220,13 +225,14 @@ test.describe("TRaSH Guides - Sync Validation", () => {
 		// Look for "Review Changes" or similar button
 		const reviewButton = page.getByRole("button", { name: /review changes|view diff|see changes/i });
 
-		if (await reviewButton.first().isVisible()) {
-			await reviewButton.first().click();
+		// Skip if no templates have pending changes
+		test.skip(!(await reviewButton.first().isVisible()), "No templates with pending changes");
 
-			// Should open a modal
-			const modal = page.getByRole("dialog");
-			await expect(modal).toBeVisible({ timeout: 5000 });
-		}
+		await reviewButton.first().click();
+
+		// Should open a modal
+		const modal = page.getByRole("dialog");
+		await expect(modal).toBeVisible({ timeout: 5000 });
 	});
 });
 
@@ -258,9 +264,11 @@ test.describe("TRaSH Guides - Deployment Flow", () => {
 
 		// Look for sync strategy section in the modal
 		const strategySection = page.getByText(/sync strategy/i);
-		if (await strategySection.isVisible()) {
-			await expect(strategySection).toBeVisible();
-		}
+
+		// Skip if deployment modal doesn't include sync strategy control (feature may vary)
+		test.skip(!(await strategySection.isVisible()), "Sync strategy control not in deployment modal");
+
+		await expect(strategySection).toBeVisible();
 	});
 });
 

@@ -5,7 +5,7 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
 	type RollbackResult,
 	type SyncDetail,
@@ -133,12 +133,21 @@ async function withRetry<T>(
 
 export function useValidateSync(options?: UseValidateSyncOptions) {
 	const timeoutMs = options?.timeoutMs ?? VALIDATION_TIMEOUT_MS;
-	const [cancelRetry, setCancelRetry] = useState(false);
+	// Use ref instead of state to avoid stale closure issues in shouldCancel callback
+	const cancelRetryRef = useRef(false);
 
 	// Reset cancel flag when mutation starts
-	const resetCancel = () => setCancelRetry(false);
+	const resetCancel = () => {
+		cancelRetryRef.current = false;
+	};
 
-	return useMutation<ValidationResult, Error, SyncValidationRequest>({
+	// Expose cancel function for external use
+	const cancelRetry = () => {
+		cancelRetryRef.current = true;
+		options?.onRetryCancelled?.();
+	};
+
+	const mutation = useMutation<ValidationResult, Error, SyncValidationRequest>({
 		mutationFn: async (request) => {
 			resetCancel();
 
@@ -149,7 +158,8 @@ export function useValidateSync(options?: UseValidateSyncOptions) {
 					const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
 					try {
-						const result = await validateSync(request);
+						// Pass the abort signal to validateSync for proper timeout handling
+						const result = await validateSync(request, { signal: controller.signal });
 						clearTimeout(timeoutId);
 						return result;
 					} catch (error) {
@@ -164,7 +174,8 @@ export function useValidateSync(options?: UseValidateSyncOptions) {
 					maxAttempts: MAX_RETRY_ATTEMPTS,
 					baseDelayMs: RETRY_BASE_DELAY_MS,
 					onProgress: options?.onRetryProgress,
-					shouldCancel: () => cancelRetry,
+					// Access ref.current to always get the latest value
+					shouldCancel: () => cancelRetryRef.current,
 				},
 			);
 		},
@@ -189,7 +200,7 @@ export function useValidateSync(options?: UseValidateSyncOptions) {
 				timestamp: new Date().toISOString(),
 			};
 
-			if (!data.valid && data.errors.length === 0) {
+			if (!data.valid && (data.errors?.length ?? 0) === 0) {
 				console.warn(
 					"[useValidateSync] Silent failure detected - validation invalid with no errors:",
 					logContext,
@@ -201,6 +212,12 @@ export function useValidateSync(options?: UseValidateSyncOptions) {
 			options?.onSuccess?.(data);
 		},
 	});
+
+	// Return mutation with cancelRetry function for external control
+	return {
+		...mutation,
+		cancelRetry,
+	};
 }
 
 // ============================================================================

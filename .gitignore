@@ -90,9 +90,9 @@ lerna-debug.log*
 /test-results/
 /playwright-report/
 /blob-report/
-/playwright/.cache/
-.playwright-auth/
-.playwright-mcp/
+/.playwright/
+/.playwright-auth/
+/.playwright-mcp/
 
 # Sensitive data - must never be committed
 secrets.json

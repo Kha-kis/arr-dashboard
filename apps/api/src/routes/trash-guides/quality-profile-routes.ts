@@ -67,7 +67,7 @@ export async function registerQualityProfileRoutes(
 ) {
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
+		if (!request.currentUser?.id) {
 			return reply.status(401).send({
 				success: false,
 				error: "Authentication required",

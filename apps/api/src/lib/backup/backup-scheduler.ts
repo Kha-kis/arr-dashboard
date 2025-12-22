@@ -1,4 +1,3 @@
-import path from "node:path";
 import type { PrismaClient } from "@prisma/client";
 import type { FastifyBaseLogger } from "fastify";
 import { getAppVersion } from "../utils/version.js";

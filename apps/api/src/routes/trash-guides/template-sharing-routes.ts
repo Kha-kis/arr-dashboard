@@ -15,7 +15,7 @@ import { createEnhancedTemplateService } from "../../lib/trash-guides/enhanced-t
 const templateSharingRoutes: FastifyPluginCallback = (app, opts, done) => {
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
+		if (!request.currentUser?.id) {
 			return reply.status(401).send({
 				success: false,
 				error: "Authentication required",
