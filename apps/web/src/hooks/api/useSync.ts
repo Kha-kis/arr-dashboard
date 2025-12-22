@@ -31,33 +31,142 @@ import {
 /** Default timeout for validation requests (30 seconds) */
 export const VALIDATION_TIMEOUT_MS = 30000;
 
+/** Maximum retry attempts for network/server errors */
+export const MAX_RETRY_ATTEMPTS = 2;
+
+/** Base delay for exponential backoff (1 second) */
+export const RETRY_BASE_DELAY_MS = 1000;
+
 export interface UseValidateSyncOptions {
 	onError?: (error: Error) => void;
 	onSuccess?: (data: ValidationResult) => void;
 	/** Custom timeout in milliseconds (default: 30000) */
 	timeoutMs?: number;
+	/** Callback for retry progress updates */
+	onRetryProgress?: (attempt: number, maxAttempts: number, delayMs: number) => void;
+	/** Callback when retry is cancelled */
+	onRetryCancelled?: () => void;
+}
+
+/**
+ * Check if an error is retryable (network errors or 5xx server errors)
+ * Validation failures (4xx) should not be retried
+ */
+function isRetryableError(error: Error): boolean {
+	const message = error.message.toLowerCase();
+
+	// Network errors
+	if (
+		message.includes("network") ||
+		message.includes("fetch") ||
+		message.includes("connection") ||
+		message.includes("timeout") ||
+		message.includes("econnrefused") ||
+		message.includes("enotfound") ||
+		error.name === "TypeError" // Often indicates network failure
+	) {
+		return true;
+	}
+
+	// 5xx server errors (extract status code from error message)
+	const statusMatch = message.match(/\b5\d{2}\b/);
+	if (statusMatch) {
+		return true;
+	}
+
+	// Check for specific server error phrases
+	if (
+		message.includes("internal server error") ||
+		message.includes("service unavailable") ||
+		message.includes("gateway") ||
+		message.includes("bad gateway")
+	) {
+		return true;
+	}
+
+	return false;
+}
+
+/**
+ * Retry wrapper with exponential backoff for network/server errors
+ */
+async function withRetry<T>(
+	fn: () => Promise<T>,
+	options: {
+		maxAttempts: number;
+		baseDelayMs: number;
+		onProgress?: (attempt: number, maxAttempts: number, delayMs: number) => void;
+		shouldCancel?: () => boolean;
+	},
+): Promise<T> {
+	let lastError: Error | null = null;
+
+	for (let attempt = 1; attempt <= options.maxAttempts + 1; attempt++) {
+		try {
+			return await fn();
+		} catch (error) {
+			lastError = error instanceof Error ? error : new Error(String(error));
+
+			// Check if we should cancel
+			if (options.shouldCancel?.()) {
+				throw new Error("Validation cancelled by user");
+			}
+
+			// Don't retry if it's the last attempt or not a retryable error
+			if (attempt > options.maxAttempts || !isRetryableError(lastError)) {
+				throw lastError;
+			}
+
+			// Calculate delay with exponential backoff
+			const delayMs = options.baseDelayMs * Math.pow(2, attempt - 1);
+
+			// Notify about retry progress
+			options.onProgress?.(attempt, options.maxAttempts, delayMs);
+
+			// Wait before retrying
+			await new Promise((resolve) => setTimeout(resolve, delayMs));
+		}
+	}
+
+	throw lastError ?? new Error("Unexpected retry failure");
 }
 
 export function useValidateSync(options?: UseValidateSyncOptions) {
 	const timeoutMs = options?.timeoutMs ?? VALIDATION_TIMEOUT_MS;
+	const [cancelRetry, setCancelRetry] = useState(false);
+
+	// Reset cancel flag when mutation starts
+	const resetCancel = () => setCancelRetry(false);
 
 	return useMutation<ValidationResult, Error, SyncValidationRequest>({
 		mutationFn: async (request) => {
-			// Create an AbortController for timeout handling
-			const controller = new AbortController();
-			const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+			resetCancel();
 
-			try {
-				const result = await validateSync(request);
-				clearTimeout(timeoutId);
-				return result;
-			} catch (error) {
-				clearTimeout(timeoutId);
-				if (error instanceof Error && error.name === "AbortError") {
-					throw new Error(`Validation timed out after ${timeoutMs / 1000} seconds`);
-				}
-				throw error;
-			}
+			return withRetry(
+				async () => {
+					// Create an AbortController for timeout handling
+					const controller = new AbortController();
+					const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+					try {
+						const result = await validateSync(request);
+						clearTimeout(timeoutId);
+						return result;
+					} catch (error) {
+						clearTimeout(timeoutId);
+						if (error instanceof Error && error.name === "AbortError") {
+							throw new Error(`Validation timed out after ${timeoutMs / 1000} seconds`);
+						}
+						throw error;
+					}
+				},
+				{
+					maxAttempts: MAX_RETRY_ATTEMPTS,
+					baseDelayMs: RETRY_BASE_DELAY_MS,
+					onProgress: options?.onRetryProgress,
+					shouldCancel: () => cancelRetry,
+				},
+			);
 		},
 		onError: (error) => {
 			// Enhanced error logging with timestamp
