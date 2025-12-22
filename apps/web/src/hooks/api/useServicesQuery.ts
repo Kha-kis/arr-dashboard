@@ -14,6 +14,7 @@ export const useServicesQuery = (options: ServicesQueryOptions = {}) =>
 		queryFn: fetchServices,
 		staleTime: 30 * 1000, // 30 seconds - services don't change frequently
 		enabled: options.enabled ?? true,
-		initialData: options.enabled === false ? [] : undefined,
+		// Don't set initialData - let the query be in pending state until it runs
+		// This prevents showing "0 instances" during the auth check
 		refetchOnMount: true, // Refetch if stale, but not always
 	});
