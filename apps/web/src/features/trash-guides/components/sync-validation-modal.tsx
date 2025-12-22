@@ -1,10 +1,23 @@
 "use client";
 
-import { AlertCircle, CheckCircle2, HelpCircle, Info, RefreshCw, XCircle } from "lucide-react";
+import {
+	AlertCircle,
+	Bug,
+	CheckCircle2,
+	ChevronDown,
+	ChevronUp,
+	HelpCircle,
+	Info,
+	RefreshCw,
+	XCircle,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui";
 import { useValidateSync } from "../../../hooks/api/useSync";
-import type { ConflictInfo, ValidationResult } from "../../../lib/api-client/sync";
+import type { ValidationResult } from "../../../lib/api-client/sync";
+
+// Check if we're in development mode
+const isDevelopment = process.env.NODE_ENV === "development";
 
 interface SyncValidationModalProps {
 	templateId: string;
@@ -15,6 +28,12 @@ interface SyncValidationModalProps {
 	onCancel: () => void;
 }
 
+interface ValidationTiming {
+	startTime: number;
+	endTime: number | null;
+	duration: number | null;
+}
+
 export const SyncValidationModal = ({
 	templateId,
 	templateName,
@@ -23,15 +42,67 @@ export const SyncValidationModal = ({
 	onConfirm,
 	onCancel,
 }: SyncValidationModalProps) => {
-	const validateMutation = useValidateSync();
 	const [resolutions, setResolutions] = useState<Record<string, "REPLACE" | "SKIP">>({});
 	const [validation, setValidation] = useState<ValidationResult | null>(null);
 	const [retryCount, setRetryCount] = useState(0);
+	const [localError, setLocalError] = useState<Error | null>(null);
+	const [showDebugPanel, setShowDebugPanel] = useState(false);
+	const [timing, setTiming] = useState<ValidationTiming>({
+		startTime: 0,
+		endTime: null,
+		duration: null,
+	});
 	const dialogRef = useRef<HTMLDivElement>(null);
 	const previousActiveElement = useRef<Element | null>(null);
 
+	// Use the validation hook with error callback
+	const validateMutation = useValidateSync({
+		onError: (error) => {
+			setLocalError(error);
+			const endTime = Date.now();
+			setTiming((prev) => ({
+				...prev,
+				endTime,
+				duration: endTime - prev.startTime,
+			}));
+			// Enhanced console logging for debugging
+			console.error("[SyncValidationModal] Validation error:", {
+				error: error.message,
+				templateId,
+				instanceId,
+				retryCount,
+				timing: {
+					startTime: new Date(timing.startTime).toISOString(),
+					endTime: new Date(endTime).toISOString(),
+					durationMs: endTime - timing.startTime,
+				},
+			});
+		},
+		onSuccess: (data) => {
+			const endTime = Date.now();
+			setTiming((prev) => ({
+				...prev,
+				endTime,
+				duration: endTime - prev.startTime,
+			}));
+			// Log full validation object for debugging silent failures
+			if (!data.valid && (!data.errors || data.errors.length === 0)) {
+				console.warn("[SyncValidationModal] Silent failure - full validation response:", {
+					validation: data,
+					templateId,
+					instanceId,
+					timing: {
+						startTime: new Date(timing.startTime).toISOString(),
+						endTime: new Date(endTime).toISOString(),
+						durationMs: endTime - timing.startTime,
+					},
+				});
+			}
+		},
+	});
+
 	// Maximum retry attempts
-	const MAX_RETRIES = 2;
+	const MAX_RETRIES = 3;
 
 	// Focus trap and keyboard handling
 	useEffect(() => {
@@ -96,6 +167,11 @@ export const SyncValidationModal = ({
 
 	// Validation function that can be called for initial load and retries
 	const runValidation = () => {
+		// Reset local error state and start timing
+		setLocalError(null);
+		const startTime = Date.now();
+		setTiming({ startTime, endTime: null, duration: null });
+
 		validateMutation.mutate(
 			{ templateId, instanceId },
 			{
@@ -111,9 +187,6 @@ export const SyncValidationModal = ({
 					} else {
 						setResolutions({});
 					}
-				},
-				onError: (error) => {
-					console.error("[SyncValidation] Validation error:", error);
 				},
 			},
 		);
@@ -381,18 +454,19 @@ export const SyncValidationModal = ({
 						</div>
 					)}
 
-					{validateMutation.error && (
+					{/* Mutation Error or Local Error */}
+					{(validateMutation.error || localError) && (
 						<div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4">
 							<div className="flex items-start gap-3">
 								<XCircle className="h-5 w-5 flex-shrink-0 text-red-400" />
 								<div className="flex-1">
 									<h3 className="font-medium text-red-200">Validation Error</h3>
 									<p className="mt-1 text-sm text-red-300">
-										{validateMutation.error instanceof Error
-											? validateMutation.error.message
+										{(localError || validateMutation.error) instanceof Error
+											? (localError || validateMutation.error)?.message
 											: "An unknown error occurred while validating the sync request."}
 									</p>
-									<div className="mt-3">
+									<div className="mt-3 flex items-center gap-3">
 										<Button
 											variant="secondary"
 											size="sm"
@@ -400,11 +474,121 @@ export const SyncValidationModal = ({
 											disabled={isValidating}
 										>
 											<RefreshCw className={`mr-2 h-3 w-3 ${isValidating ? "animate-spin" : ""}`} />
-											Retry Validation
+											{retryCount > 0 ? `Retry (${retryCount}/${MAX_RETRIES})` : "Retry Validation"}
 										</Button>
+										{retryCount >= MAX_RETRIES && (
+											<span className="text-xs text-red-300/70">
+												Max retries reached. Check instance connectivity.
+											</span>
+										)}
 									</div>
 								</div>
 							</div>
+						</div>
+					)}
+
+					{/* Development Debug Panel */}
+					{isDevelopment && (
+						<div className="mt-4 rounded-lg border border-purple-500/20 bg-purple-500/5">
+							<button
+								type="button"
+								onClick={() => setShowDebugPanel(!showDebugPanel)}
+								className="flex w-full items-center justify-between p-3 text-left text-sm font-medium text-purple-300 hover:bg-purple-500/10"
+							>
+								<span className="flex items-center gap-2">
+									<Bug className="h-4 w-4" />
+									Debug Panel (Development Only)
+								</span>
+								{showDebugPanel ? (
+									<ChevronUp className="h-4 w-4" />
+								) : (
+									<ChevronDown className="h-4 w-4" />
+								)}
+							</button>
+							{showDebugPanel && (
+								<div className="border-t border-purple-500/20 p-3">
+									<div className="space-y-2 font-mono text-xs">
+										<div className="grid grid-cols-2 gap-2">
+											<span className="text-purple-400">Template ID:</span>
+											<span className="text-purple-200 break-all">{templateId}</span>
+										</div>
+										<div className="grid grid-cols-2 gap-2">
+											<span className="text-purple-400">Instance ID:</span>
+											<span className="text-purple-200 break-all">{instanceId}</span>
+										</div>
+										<div className="grid grid-cols-2 gap-2">
+											<span className="text-purple-400">Mutation Status:</span>
+											<span className="text-purple-200">
+												{validateMutation.isPending
+													? "pending"
+													: validateMutation.isError
+														? "error"
+														: validateMutation.isSuccess
+															? "success"
+															: "idle"}
+											</span>
+										</div>
+										<div className="grid grid-cols-2 gap-2">
+											<span className="text-purple-400">Retry Count:</span>
+											<span className="text-purple-200">{retryCount} / {MAX_RETRIES}</span>
+										</div>
+										{timing.startTime > 0 && (
+											<>
+												<div className="grid grid-cols-2 gap-2">
+													<span className="text-purple-400">Start Time:</span>
+													<span className="text-purple-200">
+														{new Date(timing.startTime).toISOString()}
+													</span>
+												</div>
+												{timing.duration !== null && (
+													<div className="grid grid-cols-2 gap-2">
+														<span className="text-purple-400">Duration:</span>
+														<span className="text-purple-200">{timing.duration}ms</span>
+													</div>
+												)}
+											</>
+										)}
+										{validation && (
+											<>
+												<div className="mt-2 border-t border-purple-500/20 pt-2">
+													<span className="text-purple-400">Validation Response:</span>
+												</div>
+												<div className="grid grid-cols-2 gap-2">
+													<span className="text-purple-400">Valid:</span>
+													<span className={validation.valid ? "text-green-400" : "text-red-400"}>
+														{String(validation.valid)}
+													</span>
+												</div>
+												<div className="grid grid-cols-2 gap-2">
+													<span className="text-purple-400">Errors:</span>
+													<span className="text-purple-200">{validation.errors?.length ?? 0}</span>
+												</div>
+												<div className="grid grid-cols-2 gap-2">
+													<span className="text-purple-400">Warnings:</span>
+													<span className="text-purple-200">{validation.warnings?.length ?? 0}</span>
+												</div>
+												<div className="grid grid-cols-2 gap-2">
+													<span className="text-purple-400">Conflicts:</span>
+													<span className="text-purple-200">{validation.conflicts?.length ?? 0}</span>
+												</div>
+												{hasSilentFailure && (
+													<div className="mt-2 rounded bg-orange-500/20 p-2 text-orange-300">
+														Silent Failure Detected: valid=false with 0 errors
+													</div>
+												)}
+											</>
+										)}
+										{(localError || validateMutation.error) && (
+											<div className="mt-2 border-t border-purple-500/20 pt-2">
+												<span className="text-purple-400">Error Details:</span>
+												<pre className="mt-1 overflow-auto rounded bg-black/30 p-2 text-red-300">
+													{(localError || validateMutation.error)?.message}
+												</pre>
+											</div>
+										)}
+									</div>
+								</div>
+							)}
 						</div>
 					)}
 				</div>
