@@ -20,6 +20,7 @@ import type {
 	TemplateDiffResult,
 	SuggestedCFAddition,
 	SuggestedScoreChange,
+	AutoSyncChangeLogEntry,
 } from "@arr/shared";
 import type { VersionTracker, VersionInfo } from "./version-tracker.js";
 import type { TrashCacheManager } from "./cache-manager.js";
@@ -55,6 +56,10 @@ export interface TemplateUpdateInfo {
 	// CF Group additions that need user approval (for auto-sync strategy)
 	needsApproval?: boolean;
 	pendingCFGroupAdditions?: PendingCFGroupAddition[];
+	// True if this template was recently auto-synced (is current, not pending)
+	isRecentlyAutoSynced?: boolean;
+	// Timestamp of the last auto-sync, if isRecentlyAutoSynced is true
+	lastAutoSyncTimestamp?: string;
 }
 
 export interface UpdateCheckResult {
@@ -100,6 +105,11 @@ export interface MergeStats {
 	// Score update tracking
 	scoresUpdated: number;
 	scoresSkippedDueToOverride: number;
+	// Detailed change tracking for changelog
+	addedCFDetails: Array<{ trashId: string; name: string; score: number }>;
+	removedCFDetails: Array<{ trashId: string; name: string }>;
+	updatedCFDetails: Array<{ trashId: string; name: string }>;
+	scoreChangeDetails: Array<{ trashId: string; name: string; oldScore: number; newScore: number }>;
 }
 
 export interface MergeResult {
@@ -171,6 +181,8 @@ export class TemplateUpdater {
 				trashGuidesCommitHash: true,
 				hasUserModifications: true,
 				configData: true, // Need config to check for CF Group additions
+				changeLog: true, // Need changelog to detect recent auto-syncs
+				lastSyncedAt: true, // Track when template was last synced
 				// Include deployment mappings to check for auto-sync instances
 				qualityProfileMappings: {
 					select: {
@@ -248,14 +260,73 @@ export class TemplateUpdater {
 					needsApproval,
 					pendingCFGroupAdditions: pendingCFGroupAdditions?.length ? pendingCFGroupAdditions : undefined,
 				});
+			} else {
+				// Template is up-to-date - check if it was recently auto-synced
+				// Include templates that have auto-sync instances and were synced in the last 24 hours
+				const autoSyncInstanceCount = template.qualityProfileMappings.filter(
+					(m) => m.syncStrategy === "auto"
+				).length;
+
+				if (autoSyncInstanceCount > 0 && template.lastSyncedAt) {
+					const lastSyncedAt = template.lastSyncedAt;
+					const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+					if (lastSyncedAt > twentyFourHoursAgo) {
+						// Check changelog for recent auto_sync entry
+						let hasRecentAutoSync = false;
+						let lastAutoSyncTimestamp: string | undefined;
+
+						if (template.changeLog) {
+							try {
+								const changelog = JSON.parse(template.changeLog) as Array<{ changeType?: string; timestamp?: string; toCommitHash?: string }>;
+								// Find most recent auto_sync entry that matches current commit
+								const autoSyncEntry = changelog
+									.filter(entry => entry.changeType === "auto_sync" && entry.toCommitHash === template.trashGuidesCommitHash)
+									.sort((a, b) => new Date(b.timestamp ?? 0).getTime() - new Date(a.timestamp ?? 0).getTime())[0];
+
+								if (autoSyncEntry?.timestamp) {
+									hasRecentAutoSync = true;
+									lastAutoSyncTimestamp = autoSyncEntry.timestamp;
+								}
+							} catch {
+								// If changelog parsing fails, fall back to lastSyncedAt
+								hasRecentAutoSync = true;
+								lastAutoSyncTimestamp = lastSyncedAt.toISOString();
+							}
+						} else {
+							// No changelog but was recently synced
+							hasRecentAutoSync = true;
+							lastAutoSyncTimestamp = lastSyncedAt.toISOString();
+						}
+
+						if (hasRecentAutoSync) {
+							const serviceType = template.serviceType as "RADARR" | "SONARR";
+							templatesWithUpdates.push({
+								templateId: template.id,
+								templateName: template.name,
+								currentCommit: template.trashGuidesCommitHash,
+								latestCommit: latestCommit.commitHash,
+								hasUserModifications: template.hasUserModifications,
+								autoSyncInstanceCount,
+								canAutoSync: false, // Already synced
+								serviceType,
+								isRecentlyAutoSynced: true,
+								lastAutoSyncTimestamp,
+							});
+						}
+					}
+				}
 			}
 		}
+
+		// Count outdated templates (those that are not recently auto-synced)
+		const outdatedCount = templatesWithUpdates.filter(t => !t.isRecentlyAutoSynced).length;
 
 		return {
 			templatesWithUpdates,
 			latestCommit,
 			totalTemplates: templates.length,
-			outdatedTemplates: templatesWithUpdates.length,
+			outdatedTemplates: outdatedCount,
 		};
 	}
 
@@ -558,10 +629,54 @@ export class TemplateUpdater {
 				};
 			}
 
-			// Update template with merged config
+			// Construct auto-sync changelog entry with detailed change data from MergeStats
+			const autoSyncChangeLogEntry: AutoSyncChangeLogEntry = {
+				changeType: "auto_sync",
+				timestamp: new Date().toISOString(),
+				fromCommitHash: previousCommit,
+				toCommitHash: targetCommit.commitHash,
+				customFormatsAdded: mergeResult.stats.addedCFDetails,
+				customFormatsRemoved: mergeResult.stats.removedCFDetails,
+				customFormatsUpdated: mergeResult.stats.updatedCFDetails,
+				scoreChanges: mergeResult.stats.scoreChangeDetails,
+				summaryStats: {
+					customFormatsAdded: mergeResult.stats.customFormatsAdded,
+					customFormatsRemoved: mergeResult.stats.customFormatsRemoved,
+					customFormatsUpdated: mergeResult.stats.customFormatsUpdated,
+					customFormatsPreserved: mergeResult.stats.customFormatsPreserved,
+					customFormatGroupsAdded: mergeResult.stats.customFormatGroupsAdded,
+					customFormatGroupsRemoved: mergeResult.stats.customFormatGroupsRemoved,
+					customFormatGroupsUpdated: mergeResult.stats.customFormatGroupsUpdated,
+					customFormatGroupsPreserved: mergeResult.stats.customFormatGroupsPreserved,
+					scoresUpdated: mergeResult.stats.scoresUpdated,
+					scoresSkippedDueToOverride: mergeResult.stats.scoresSkippedDueToOverride,
+					userCustomizationsPreserved: mergeResult.stats.userCustomizationsPreserved,
+				},
+			};
+
+			// Parse existing changelog with error handling
+			let existingChangeLog: unknown[] = [];
+			if (template.changeLog) {
+				try {
+					const parsed = JSON.parse(template.changeLog);
+					existingChangeLog = Array.isArray(parsed) ? parsed : [];
+				} catch (parseError) {
+					console.warn(
+						`[TemplateUpdater] Failed to parse changeLog for template ${templateId}: ${parseError instanceof Error ? parseError.message : String(parseError)}. Resetting to empty array.`
+					);
+					existingChangeLog = [];
+				}
+			}
+
+			// Append new changelog entry
+			const updatedChangeLog = [...existingChangeLog, autoSyncChangeLogEntry];
+
+			// Update template with merged config and changelog
+			// Note: Changelog entry is added BEFORE updating trashGuidesCommitHash in the same transaction
 			await this.prisma.trashTemplate.update({
 				where: { id: templateId },
 				data: {
+					changeLog: JSON.stringify(updatedChangeLog),
 					configData: JSON.stringify(mergeResult.mergedConfig),
 					trashGuidesCommitHash: targetCommit.commitHash,
 					lastSyncedAt: new Date(),
@@ -745,6 +860,11 @@ export class TemplateUpdater {
 			userCustomizationsPreserved: [],
 			scoresUpdated: 0,
 			scoresSkippedDueToOverride: 0,
+			// Detailed change tracking for changelog
+			addedCFDetails: [],
+			removedCFDetails: [],
+			updatedCFDetails: [],
+			scoreChangeDetails: [],
 		};
 		const warnings: string[] = [];
 		const scoreConflicts: ScoreConflict[] = [];
@@ -821,6 +941,12 @@ export class TemplateUpdater {
 						// No user override - apply recommended score
 						if (currentScore !== recommendedScore) {
 							stats.scoresUpdated++;
+							stats.scoreChangeDetails.push({
+								trashId,
+								name: latestCF.name,
+								oldScore: currentScore,
+								newScore: recommendedScore,
+							});
 						}
 						finalScore = recommendedScore;
 					}
@@ -844,6 +970,10 @@ export class TemplateUpdater {
 
 				if (specsChanged) {
 					stats.customFormatsUpdated++;
+					stats.updatedCFDetails.push({
+						trashId,
+						name: latestCF.name,
+					});
 				} else {
 					stats.customFormatsPreserved++;
 				}
@@ -879,6 +1009,13 @@ export class TemplateUpdater {
 					? recommendedScore
 					: (latestCF.score ?? 0);
 
+				// Track added CF details for changelog
+				stats.addedCFDetails.push({
+					trashId: latestCF.trash_id,
+					name: latestCF.name,
+					score: newCFScore,
+				});
+
 				mergedCustomFormats.push({
 					trashId: latestCF.trash_id,
 					name: latestCF.name,
@@ -894,6 +1031,10 @@ export class TemplateUpdater {
 		for (const [trashId, currentCF] of currentCFMap) {
 			if (!latestCFMap.has(trashId)) {
 				stats.customFormatsRemoved++;
+				stats.removedCFDetails.push({
+					trashId,
+					name: currentCF.name,
+				});
 				warnings.push(`Custom format "${currentCF.name}" (${trashId}) removed - no longer in TRaSH Guides`);
 			}
 		}
@@ -1233,6 +1374,44 @@ export class TemplateUpdater {
 
 		const serviceType = template.serviceType as "RADARR" | "SONARR";
 
+		// Check if template is already at the target version
+		// If so, return historical changes from changelog instead of computing a diff
+		if (template.trashGuidesCommitHash === targetCommit.commitHash) {
+			// Template is up-to-date, look for historical sync data
+			const recentAutoSync = this.getRecentAutoSyncEntry(
+				template.changeLog,
+				targetCommit.commitHash
+			);
+
+			if (recentAutoSync) {
+				// Transform changelog entry into TemplateDiffResult format
+				return this.transformAutoSyncToHistoricalDiff(
+					template,
+					targetCommit.commitHash,
+					recentAutoSync
+				);
+			}
+
+			// No changelog entry found - return empty diff with metadata
+			return {
+				templateId,
+				templateName: template.name,
+				currentCommit: template.trashGuidesCommitHash,
+				latestCommit: targetCommit.commitHash,
+				summary: {
+					totalChanges: 0,
+					addedCFs: 0,
+					removedCFs: 0,
+					modifiedCFs: 0,
+					unchangedCFs: 0,
+				},
+				customFormatDiffs: [],
+				customFormatGroupDiffs: [],
+				hasUserModifications: template.hasUserModifications,
+				isHistorical: true,
+			};
+		}
+
 		// Validate cache commit matches target to ensure accurate diff
 		const cacheCommitHash = await this.cacheManager.getCommitHash(
 			serviceType,
@@ -1532,6 +1711,188 @@ export class TemplateUpdater {
 			suggestedAdditions: suggestedAdditions.length > 0 ? suggestedAdditions : undefined,
 			suggestedScoreChanges: suggestedScoreChanges.length > 0 ? suggestedScoreChanges : undefined,
 		};
+	}
+
+	/**
+	 * Transform an AutoSyncChangeLogEntry into a TemplateDiffResult for historical display.
+	 * Used when template is already at the target version to show what changed in the last sync.
+	 * @private
+	 */
+	private transformAutoSyncToHistoricalDiff(
+		template: { id: string; name: string; hasUserModifications: boolean; trashGuidesCommitHash: string | null },
+		targetCommitHash: string,
+		entry: AutoSyncChangeLogEntry,
+	): TemplateDiffResult {
+		// Transform added CFs to CustomFormatDiff
+		const addedDiffs: CustomFormatDiff[] = entry.customFormatsAdded.map((cf) => ({
+			trashId: cf.trashId,
+			name: cf.name,
+			changeType: "added" as const,
+			newScore: cf.score,
+			hasSpecificationChanges: true, // New CFs always have "new" specs
+		}));
+
+		// Transform removed CFs to CustomFormatDiff
+		const removedDiffs: CustomFormatDiff[] = entry.customFormatsRemoved.map((cf) => ({
+			trashId: cf.trashId,
+			name: cf.name,
+			changeType: "removed" as const,
+			hasSpecificationChanges: false,
+		}));
+
+		// Transform updated CFs to CustomFormatDiff
+		const updatedDiffs: CustomFormatDiff[] = entry.customFormatsUpdated.map((cf) => ({
+			trashId: cf.trashId,
+			name: cf.name,
+			changeType: "modified" as const,
+			hasSpecificationChanges: true,
+		}));
+
+		// Combine all diffs
+		const customFormatDiffs: CustomFormatDiff[] = [
+			...addedDiffs,
+			...removedDiffs,
+			...updatedDiffs,
+		];
+
+		// Transform score changes to suggestedScoreChanges format for display
+		// (These were already applied, but showing them helps the user understand what changed)
+		const historicalScoreChanges: SuggestedScoreChange[] = entry.scoreChanges.map((sc) => ({
+			trashId: sc.trashId,
+			name: sc.name,
+			currentScore: sc.newScore, // After sync, newScore is now current
+			recommendedScore: sc.newScore, // Show what was applied
+			scoreSet: "applied", // Indicate these were applied changes
+		}));
+
+		return {
+			templateId: template.id,
+			templateName: template.name,
+			currentCommit: entry.fromCommitHash,
+			latestCommit: targetCommitHash,
+			summary: {
+				totalChanges: entry.summaryStats.customFormatsAdded +
+					entry.summaryStats.customFormatsRemoved +
+					entry.summaryStats.customFormatsUpdated,
+				addedCFs: entry.summaryStats.customFormatsAdded,
+				removedCFs: entry.summaryStats.customFormatsRemoved,
+				modifiedCFs: entry.summaryStats.customFormatsUpdated,
+				unchangedCFs: entry.summaryStats.customFormatsPreserved,
+			},
+			customFormatDiffs,
+			customFormatGroupDiffs: [], // CF Group changes not tracked in detail currently
+			hasUserModifications: template.hasUserModifications,
+			suggestedScoreChanges: historicalScoreChanges.length > 0 ? historicalScoreChanges : undefined,
+			isHistorical: true,
+			historicalSyncTimestamp: entry.timestamp,
+		};
+	}
+
+	/**
+	 * Get the most recent auto-sync changelog entry for a template.
+	 * Optionally filter by a specific target commit hash.
+	 *
+	 * @param changeLogJson - The raw changeLog JSON string from the template
+	 * @param targetCommitHash - Optional commit hash to match against toCommitHash
+	 * @returns The most recent matching AutoSyncChangeLogEntry, or null if none found
+	 * @private
+	 */
+	private getRecentAutoSyncEntry(
+		changeLogJson: string | null,
+		targetCommitHash?: string,
+	): AutoSyncChangeLogEntry | null {
+		if (!changeLogJson) {
+			return null;
+		}
+
+		// Parse changelog with error handling
+		let changeLog: unknown[];
+		try {
+			const parsed = JSON.parse(changeLogJson);
+			changeLog = Array.isArray(parsed) ? parsed : [];
+		} catch (parseError) {
+			console.warn(
+				`[TemplateUpdater] Failed to parse changeLog in getRecentAutoSyncEntry: ${parseError instanceof Error ? parseError.message : String(parseError)}`
+			);
+			return null;
+		}
+
+		// Filter to auto_sync entries
+		const autoSyncEntries = changeLog.filter(
+			(entry): entry is AutoSyncChangeLogEntry =>
+				this.isAutoSyncChangeLogEntry(entry)
+		);
+
+		if (autoSyncEntries.length === 0) {
+			return null;
+		}
+
+		// Optionally filter by target commit hash
+		let candidates = autoSyncEntries;
+		if (targetCommitHash) {
+			candidates = autoSyncEntries.filter(
+				(entry) => entry.toCommitHash === targetCommitHash
+			);
+		}
+
+		if (candidates.length === 0) {
+			return null;
+		}
+
+		// Sort by timestamp descending and return most recent
+		candidates.sort((a, b) =>
+			new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+		);
+
+		return candidates[0] ?? null;
+	}
+
+	/**
+	 * Type guard to validate an entry matches AutoSyncChangeLogEntry interface structure.
+	 * @private
+	 */
+	private isAutoSyncChangeLogEntry(entry: unknown): entry is AutoSyncChangeLogEntry {
+		if (typeof entry !== "object" || entry === null) {
+			return false;
+		}
+
+		const e = entry as Record<string, unknown>;
+
+		// Check required fields
+		if (e.changeType !== "auto_sync") {
+			return false;
+		}
+		if (typeof e.timestamp !== "string") {
+			return false;
+		}
+		if (typeof e.toCommitHash !== "string") {
+			return false;
+		}
+		// fromCommitHash can be string or null
+		if (e.fromCommitHash !== null && typeof e.fromCommitHash !== "string") {
+			return false;
+		}
+
+		// Check arrays exist (don't need deep validation for display purposes)
+		if (!Array.isArray(e.customFormatsAdded)) {
+			return false;
+		}
+		if (!Array.isArray(e.customFormatsRemoved)) {
+			return false;
+		}
+		if (!Array.isArray(e.customFormatsUpdated)) {
+			return false;
+		}
+		if (!Array.isArray(e.scoreChanges)) {
+			return false;
+		}
+
+		// Check summaryStats exists as object
+		if (typeof e.summaryStats !== "object" || e.summaryStats === null) {
+			return false;
+		}
+
+		return true;
 	}
 
 	/**
