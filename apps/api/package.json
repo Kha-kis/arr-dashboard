@@ -23,9 +23,11 @@
 		"@fastify/cors": "8.5.0",
 		"@fastify/helmet": "^11.1.1",
 		"@fastify/rate-limit": "^8.1.1",
+		"@fastify/websocket": "10",
 		"@prisma/client": "^6.16.2",
 		"@simplewebauthn/server": "^13.2.2",
 		"arctic": "^3.7.0",
+		"arr-sdk": "^0.3.0",
 		"better-sqlite3": "^12.5.0",
 		"dequal": "^2.0.3",
 		"dotenv": "^16.4.5",
@@ -38,6 +40,7 @@
 		"oslo": "^1.2.1",
 		"pino": "^9.3.2",
 		"prisma": "^6.16.2",
+		"tmdb-ts": "^2.0.3",
 		"zod": "^3.23.8"
 	},
 	"devDependencies": {

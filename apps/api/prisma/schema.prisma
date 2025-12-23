@@ -13,6 +13,12 @@ enum ServiceType {
   PROWLARR
 }
 
+// Library item type enum - uses lowercase to match Zod schema in shared package
+enum LibraryItemType {
+  movie
+  series
+}
+
 model User {
   id                  String                @id @default(cuid())
   username            String                @unique
@@ -81,6 +87,8 @@ model ServiceInstance {
   standaloneCFDeployments     StandaloneCFDeployment[]
   huntConfig                  HuntConfig?
   huntLogs                    HuntLog[]
+  libraryCache                LibraryCache[]
+  librarySyncStatus           LibrarySyncStatus?
 
   @@index([service])
   @@index([userId])
@@ -633,4 +641,80 @@ model HuntSearchHistory {
   @@index([configId, huntType, searchedAt])
   @@index([searchedAt])
   @@map("hunt_search_history")
+}
+
+// ============================================================================
+// Library Cache Models
+// Hybrid caching system for library items with webhook + polling sync
+// ============================================================================
+
+/// Cached library items from Sonarr/Radarr instances
+/// Enables server-side pagination, search, and filtering without hitting ARR APIs
+model LibraryCache {
+  id              String   @id @default(cuid())
+  instanceId      String
+  arrItemId       Int      // The movie/series ID in Sonarr/Radarr
+  itemType        LibraryItemType
+
+  // Core fields for search/filter (indexed for efficient queries)
+  title           String
+  titleSlug       String?
+  sortTitle       String?
+  year            Int?
+  monitored       Boolean  @default(true)
+  hasFile         Boolean  @default(false)
+  status          String?
+  qualityProfileId Int?
+  qualityProfileName String?
+  sizeOnDisk      BigInt   @default(0)
+
+  // Full normalized data as JSON (for API response)
+  data            String   // JSON blob of full LibraryItem
+
+  // Timestamps
+  arrAddedAt      DateTime? // When item was added in ARR
+  arrUpdatedAt    DateTime? // Last modified in ARR
+  cachedAt        DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  instance        ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, arrItemId, itemType])
+  @@index([instanceId])
+  @@index([title])
+  @@index([sortTitle])
+  @@index([year])
+  @@index([monitored])
+  @@index([hasFile])
+  @@index([status])
+  @@index([qualityProfileId])
+  @@index([sizeOnDisk])
+  @@map("library_cache")
+}
+
+/// Tracks sync status per instance for the library cache
+model LibrarySyncStatus {
+  id              String   @id @default(cuid())
+  instanceId      String   @unique
+
+  // Sync state
+  lastFullSync    DateTime?
+  lastIncrementalSync DateTime?
+  syncInProgress  Boolean  @default(false)
+  lastSyncDurationMs Int?
+  lastError       String?
+  itemCount       Int      @default(0)
+
+  // Polling settings
+  pollingEnabled  Boolean  @default(true)
+  pollingIntervalMins Int  @default(15)
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  instance        ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([lastFullSync])
+  @@index([pollingEnabled])
+  @@map("library_sync_status")
 }

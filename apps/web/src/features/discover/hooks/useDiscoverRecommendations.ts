@@ -71,28 +71,28 @@ export function useDiscoverRecommendations(
 		if (!libraryReady) return []; // Wait for library data
 		const allItems = trendingQuery.data?.pages.flatMap((p) => p.items) || [];
 		const uniqueItems = deduplicateItems(allItems);
-		return filterExistingItems(uniqueItems, libraryData?.aggregated, mediaType);
+		return filterExistingItems(uniqueItems, libraryData?.items, mediaType);
 	}, [trendingQuery.data, libraryData, mediaType, libraryReady]);
 
 	const popularItems = useMemo(() => {
 		if (!libraryReady) return []; // Wait for library data
 		const allItems = popularQuery.data?.pages.flatMap((p) => p.items) || [];
 		const uniqueItems = deduplicateItems(allItems);
-		return filterExistingItems(uniqueItems, libraryData?.aggregated, mediaType);
+		return filterExistingItems(uniqueItems, libraryData?.items, mediaType);
 	}, [popularQuery.data, libraryData, mediaType, libraryReady]);
 
 	const topRatedItems = useMemo(() => {
 		if (!libraryReady) return []; // Wait for library data
 		const allItems = topRatedQuery.data?.pages.flatMap((p) => p.items) || [];
 		const uniqueItems = deduplicateItems(allItems);
-		return filterExistingItems(uniqueItems, libraryData?.aggregated, mediaType);
+		return filterExistingItems(uniqueItems, libraryData?.items, mediaType);
 	}, [topRatedQuery.data, libraryData, mediaType, libraryReady]);
 
 	const upcomingItems = useMemo(() => {
 		if (!libraryReady) return []; // Wait for library data
 		const allItems = upcomingQuery.data?.pages.flatMap((p) => p.items) || [];
 		const uniqueItems = deduplicateItems(allItems);
-		return filterExistingItems(uniqueItems, libraryData?.aggregated, mediaType);
+		return filterExistingItems(uniqueItems, libraryData?.items, mediaType);
 	}, [upcomingQuery.data, libraryData, mediaType, libraryReady]);
 
 	// Auto-load more pages for trending if filtered results are too few
@@ -199,6 +199,26 @@ export function useDiscoverRecommendations(
 		fetchNextUpcoming,
 	]);
 
+	// Aggregate error state - if any query has an error, expose it
+	const hasError =
+		trendingQuery.isError ||
+		popularQuery.isError ||
+		topRatedQuery.isError ||
+		upcomingQuery.isError;
+
+	// Get the first error message for display
+	const errorMessage = (() => {
+		const firstError =
+			trendingQuery.error || popularQuery.error || topRatedQuery.error || upcomingQuery.error;
+		if (!firstError) return null;
+		// Extract message from error object
+		if (firstError instanceof Error) return firstError.message;
+		if (typeof firstError === "object" && firstError !== null && "message" in firstError) {
+			return String((firstError as { message: unknown }).message);
+		}
+		return "Failed to load recommendations";
+	})();
+
 	return {
 		trending: {
 			query: trendingQuery,
@@ -219,5 +239,8 @@ export function useDiscoverRecommendations(
 		// Library loading state - carousels should show loading until library is ready
 		libraryReady,
 		libraryIsLoading,
+		// Error state - surface API errors to the UI
+		hasError,
+		errorMessage,
 	};
 }

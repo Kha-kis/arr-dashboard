@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { LibraryItem } from "@arr/shared";
 import { useLibraryMonitorMutation } from "../../../hooks/api/useLibrary";
 import { useLibraryFilters, useLibraryData, useLibraryActions } from "../hooks";
@@ -16,24 +16,19 @@ import { buildLibraryExternalLink } from "../lib/library-utils";
  *
  * This component orchestrates the library view by:
  * - Managing filter state via useLibraryFilters
- * - Fetching and processing data via useLibraryData
+ * - Fetching paginated data via useLibraryData (server-side pagination)
  * - Handling actions via useLibraryActions
  * - Managing modal state for item details and season breakdowns
  * - Coordinating between LibraryHeader and LibraryContent
  *
- * The component maintains minimal local state (modals and item monitoring)
- * while delegating most logic to custom hooks and child components.
+ * The component delegates most logic to custom hooks and child components.
  */
 export const LibraryClient: React.FC = () => {
 	// Modal state
 	const [itemDetail, setItemDetail] = useState<LibraryItem | null>(null);
 	const [seasonDetail, setSeasonDetail] = useState<LibraryItem | null>(null);
 
-	// Pagination state
-	const [page, setPage] = useState(1);
-	const [pageSize, setPageSize] = useState(25);
-
-	// Custom hooks
+	// Custom hooks - filters now include pagination and sorting
 	const filters = useLibraryFilters();
 	const data = useLibraryData({
 		serviceFilter: filters.serviceFilter,
@@ -41,21 +36,12 @@ export const LibraryClient: React.FC = () => {
 		searchTerm: filters.searchTerm,
 		statusFilter: filters.statusFilter,
 		fileFilter: filters.fileFilter,
+		sortBy: filters.sortBy,
+		sortOrder: filters.sortOrder,
+		page: filters.page,
+		pageSize: filters.pageSize,
 	});
 	const actions = useLibraryActions();
-
-	// Paginate all filtered items together
-	const paginatedItems = useMemo(() => {
-		const allItems = [...data.grouped.movies, ...data.grouped.series];
-		const start = (page - 1) * pageSize;
-		return allItems.slice(start, start + pageSize);
-	}, [data.grouped.movies, data.grouped.series, page, pageSize]);
-
-	// Group paginated items by type
-	const paginatedGrouped = useMemo(() => ({
-		movies: paginatedItems.filter(item => item.type === "movie"),
-		series: paginatedItems.filter(item => item.type === "series"),
-	}), [paginatedItems]);
 
 	// Monitor mutation for toggling item monitoring
 	const monitorMutation = useLibraryMonitorMutation();
@@ -123,22 +109,25 @@ export const LibraryClient: React.FC = () => {
 					onFileFilterChange={filters.setFileFilter}
 					searchTerm={filters.searchTerm}
 					onSearchTermChange={filters.setSearchTerm}
+					sortBy={filters.sortBy}
+					onSortByChange={filters.setSortBy}
+					sortOrder={filters.sortOrder}
+					onSortOrderChange={filters.setSortOrder}
 					instanceOptions={data.instanceOptions}
+					syncStatus={data.syncStatus}
+					isSyncing={data.isSyncing}
 				/>
 
 				<LibraryContent
 					isLoading={data.isLoading}
 					isError={data.isError}
 					error={data.error}
-					grouped={paginatedGrouped}
-					totalItems={data.grouped.movies.length + data.grouped.series.length}
-					page={page}
-					pageSize={pageSize}
-					onPageChange={setPage}
-					onPageSizeChange={(size) => {
-						setPageSize(size);
-						setPage(1);
-					}}
+					grouped={data.grouped}
+					totalItems={data.pagination.totalItems}
+					page={filters.page}
+					pageSize={filters.pageSize}
+					onPageChange={filters.setPage}
+					onPageSizeChange={filters.setPageSize}
 					onToggleMonitor={handleToggleMonitor}
 					pendingKey={pendingKey}
 					isMonitorPending={monitorMutation.isPending}
@@ -151,6 +140,7 @@ export const LibraryClient: React.FC = () => {
 					onExpandDetails={handleExpandDetails}
 					buildLibraryExternalLink={buildLibraryExternalLink}
 					LibraryCard={LibraryCard}
+					isSyncing={data.isSyncing}
 				/>
 			</div>
 

@@ -39,6 +39,8 @@ interface QueueGroupCardProps {
 	onToggleSelect: () => void;
 	onAction: (action: QueueAction, options?: QueueActionOptions) => void;
 	onItemAction: (item: QueueItem, action: QueueAction, options?: QueueActionOptions) => void;
+	/** Prefetch manual import data on hover to reduce latency */
+	onPrefetchManualImport?: (item: QueueItem) => void;
 	isItemSelected: (item: QueueItem) => boolean;
 	onToggleItemSelect: (item: QueueItem) => void;
 }
@@ -68,6 +70,7 @@ export const QueueGroupCard = ({
 	onToggleSelect,
 	onAction,
 	onItemAction,
+	onPrefetchManualImport,
 	isItemSelected,
 	onToggleItemSelect,
 }: QueueGroupCardProps) => {
@@ -147,6 +150,7 @@ export const QueueGroupCard = ({
 								showChangeCategory={showChangeCategory}
 								onToggleSelect={() => onToggleItemSelect(item)}
 								onAction={(action, actionOptions) => void onItemAction(item, action, actionOptions)}
+								onPrefetchManualImport={onPrefetchManualImport}
 							/>
 						);
 					})}

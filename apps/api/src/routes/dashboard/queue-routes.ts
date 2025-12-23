@@ -4,12 +4,17 @@ import {
 	queueItemSchema,
 } from "@arr/shared";
 import type { QueueItem } from "@arr/shared";
-import type { ServiceInstance } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
-import { fetchQueueItems } from "../../lib/dashboard/fetch-utils.js";
-import { parseQueueId, queueApiPath, triggerQueueSearch } from "../../lib/dashboard/queue-utils.js";
-import { ManualImportError, autoImportByDownloadId } from "../manual-import-utils.js";
+import { SonarrClient, RadarrClient } from "arr-sdk";
+import {
+	executeOnInstances,
+	getClientForInstance,
+	isSonarrClient,
+	isRadarrClient,
+} from "../../lib/arr/client-helpers.js";
+import { ArrError, arrErrorToHttpStatus } from "../../lib/arr/client-factory.js";
+import { normalizeQueueItem, parseQueueId, triggerQueueSearchWithSdk } from "../../lib/dashboard/queue-utils.js";
+import { ManualImportError, autoImportByDownloadIdWithSdk } from "../manual-import-utils.js";
 
 /**
  * Queue-related routes for the dashboard
@@ -30,54 +35,54 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Fetches the download queue from all enabled Sonarr and Radarr instances
 	 */
 	app.get("/dashboard/queue", async (request, reply) => {
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: { enabled: true, userId: request.currentUser?.id },
-		});
+		const response = await executeOnInstances(
+			app,
+			request.currentUser!.id,
+			{ serviceTypes: ["SONARR", "RADARR"] },
+			async (client, instance) => {
+				const service = instance.service.toLowerCase() as "sonarr" | "radarr";
 
-		const results: Array<{
-			instanceId: string;
-			instanceName: string;
-			service: "sonarr" | "radarr";
-			data: QueueItem[];
-		}> = [];
-		const aggregated: QueueItem[] = [];
+				// Use SDK to fetch queue items
+				let rawItems: unknown[];
+				if (isSonarrClient(client)) {
+					const result = await client.queue.get({
+						pageSize: 1000,
+						includeUnknownSeriesItems: true,
+					});
+					rawItems = result.records ?? [];
+				} else if (isRadarrClient(client)) {
+					const result = await client.queue.get({
+						pageSize: 1000,
+					});
+					rawItems = result.records ?? [];
+				} else {
+					return [];
+				}
 
-		for (const instance of instances) {
-			const service = instance.service.toLowerCase();
-			if (service !== "sonarr" && service !== "radarr") {
-				continue;
-			}
-
-			try {
-				const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
-				const items = await fetchQueueItems(fetcher, service);
-				const enriched = items.map((item: unknown) => ({
-					...(item as Record<string, unknown>),
-					instanceId: instance.id,
-					instanceName: instance.label,
-				}));
-				results.push({
-					instanceId: instance.id,
-					instanceName: instance.label,
-					service,
-					data: enriched.map((item: unknown) => queueItemSchema.parse(item)),
+				// Normalize and enrich items
+				return rawItems.map((raw) => {
+					const normalized = normalizeQueueItem(raw, service);
+					return queueItemSchema.parse({
+						...normalized,
+						instanceId: instance.id,
+						instanceName: instance.label,
+					});
 				});
-				aggregated.push(...enriched.map((item: unknown) => queueItemSchema.parse(item)));
-			} catch (error: unknown) {
-				request.log.error({ err: error, instance: instance.id }, "queue fetch failed");
-				results.push({
-					instanceId: instance.id,
-					instanceName: instance.label,
-					service,
-					data: [],
-				});
-			}
-		}
+			},
+		);
+
+		// Transform results to match expected format
+		const results = response.instances.map((result) => ({
+			instanceId: result.instanceId,
+			instanceName: result.instanceName,
+			service: result.service as "sonarr" | "radarr",
+			data: result.success ? result.data : [],
+		}));
 
 		return reply.send({
 			instances: results,
-			aggregated,
-			totalCount: aggregated.length,
+			aggregated: response.aggregated,
+			totalCount: response.totalCount,
 		});
 	});
 
@@ -87,92 +92,115 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.post("/dashboard/queue/action", async (request, reply) => {
 		const body = queueActionRequestSchema.parse(request.body);
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { id: body.instanceId, userId: request.currentUser?.id },
-		});
 
-		if (!instance || instance.service.toLowerCase() !== body.service) {
-			reply.status(404);
-			return { success: false, message: "Instance not found" };
+		const clientResult = await getClientForInstance(app, request, body.instanceId);
+		if (!clientResult.success) {
+			return reply.status(clientResult.statusCode).send({
+				success: false,
+				message: clientResult.error,
+			});
 		}
 
-		const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
+		const { client, instance } = clientResult;
+		const service = instance.service.toLowerCase() as "sonarr" | "radarr";
+
+		if (service !== body.service) {
+			return reply.status(400).send({
+				success: false,
+				message: "Service type mismatch",
+			});
+		}
 
 		const queueId = parseQueueId(body.itemId);
-
 		if (queueId === null) {
-			reply.status(400);
-			return { success: false, message: "Invalid queue identifier" };
+			return reply.status(400).send({
+				success: false,
+				message: "Invalid queue identifier",
+			});
 		}
 
-		if (body.action === "manualImport") {
-			const downloadId = typeof body.downloadId === "string" ? body.downloadId.trim() : "";
+		try {
+			if (body.action === "manualImport") {
+				const downloadId = typeof body.downloadId === "string" ? body.downloadId.trim() : "";
 
-			if (!downloadId) {
-				reply.status(400);
-				return {
-					success: false,
-					message: "Manual import requires a download identifier.",
-				};
-			}
+				if (!downloadId) {
+					return reply.status(400).send({
+						success: false,
+						message: "Manual import requires a download identifier.",
+					});
+				}
 
-			try {
-				await autoImportByDownloadId(fetcher, body.service, downloadId);
-			} catch (error) {
-				// Type guard for errors with HTTP status codes
-				const hasStatusCode = (err: unknown): err is Error & { statusCode: number } => {
-					return (
-						err instanceof Error &&
-						"statusCode" in err &&
-						typeof (err as Record<string, unknown>).statusCode === "number"
-					);
-				};
+				await autoImportByDownloadIdWithSdk(
+					client as SonarrClient | RadarrClient,
+					service,
+					downloadId,
+				);
+			} else if (body.action === "retry") {
+				// Retry by removing from queue without blocklisting
+				if (isSonarrClient(client)) {
+					await client.queue.delete(queueId, {
+						removeFromClient: body.removeFromClient ?? true,
+						blocklist: false,
+						changeCategory: false,
+					});
+				} else if (isRadarrClient(client)) {
+					await client.queue.delete(queueId, {
+						removeFromClient: body.removeFromClient ?? true,
+						blocklist: false,
+						changeCategory: false,
+					});
+				}
+			} else {
+				// Remove action
+				if (isSonarrClient(client)) {
+					await client.queue.delete(queueId, {
+						removeFromClient: body.removeFromClient,
+						blocklist: body.blocklist,
+						changeCategory: body.changeCategory,
+					});
+				} else if (isRadarrClient(client)) {
+					await client.queue.delete(queueId, {
+						removeFromClient: body.removeFromClient,
+						blocklist: body.blocklist,
+						changeCategory: body.changeCategory,
+					});
+				}
 
-				const status =
-					error instanceof ManualImportError
-						? error.statusCode
-						: hasStatusCode(error)
-							? error.statusCode
-							: 502;
-
-				const message =
-					error instanceof Error && error.message ? error.message : "ARR manual import failed.";
-
-				reply.status(status);
-				return { success: false, message };
-			}
-		} else if (body.action === "retry") {
-			// Retry by removing from queue without blocklisting, allowing ARR to retry automatically
-			const search = new URLSearchParams({
-				removeFromClient: String(body.removeFromClient ?? true),
-				blocklist: "false",
-				changeCategory: "false",
-			});
-			await fetcher(`${queueApiPath(body.service)}/${queueId}?${search.toString()}`, {
-				method: "DELETE",
-			});
-		} else {
-			const search = new URLSearchParams({
-				removeFromClient: String(body.removeFromClient),
-				blocklist: String(body.blocklist),
-				changeCategory: String(body.changeCategory),
-			});
-			await fetcher(`${queueApiPath(body.service)}/${queueId}?${search.toString()}`, {
-				method: "DELETE",
-			});
-			if (body.search) {
-				try {
-					await triggerQueueSearch(fetcher, body.service, body.searchPayload);
-				} catch (error) {
-					request.log.error(
-						{ err: error, queueId, service: body.service },
-						"queue search trigger failed",
-					);
+				// Trigger search if requested
+				if (body.search) {
+					try {
+						await triggerQueueSearchWithSdk(
+							client as SonarrClient | RadarrClient,
+							service,
+							body.searchPayload,
+						);
+					} catch (error) {
+						request.log.error(
+							{ err: error, queueId, service },
+							"queue search trigger failed",
+						);
+					}
 				}
 			}
-		}
 
-		return reply.status(204).send();
+			return reply.status(204).send();
+		} catch (error) {
+			if (error instanceof ManualImportError) {
+				return reply.status(error.statusCode).send({
+					success: false,
+					message: error.message,
+				});
+			}
+
+			if (error instanceof ArrError) {
+				return reply.status(arrErrorToHttpStatus(error)).send({
+					success: false,
+					message: error.message,
+				});
+			}
+
+			throw error;
+		}
 	});
 
 	/**
@@ -181,65 +209,74 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.post("/dashboard/queue/bulk", async (request, reply) => {
 		const body = queueBulkActionRequestSchema.parse(request.body);
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { id: body.instanceId, userId: request.currentUser?.id },
-		});
 
-		if (!instance || instance.service.toLowerCase() !== body.service) {
-			reply.status(404);
-			return { success: false, message: "Instance not found" };
+		const clientResult = await getClientForInstance(app, request, body.instanceId);
+		if (!clientResult.success) {
+			return reply.status(clientResult.statusCode).send({
+				success: false,
+				message: clientResult.error,
+			});
 		}
 
-		const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
+		const { client, instance } = clientResult;
+		const service = instance.service.toLowerCase() as "sonarr" | "radarr";
+
+		if (service !== body.service) {
+			return reply.status(400).send({
+				success: false,
+				message: "Service type mismatch",
+			});
+		}
 
 		const queueIds: number[] = [];
 		for (const id of body.ids) {
 			const parsed = parseQueueId(id);
 			if (parsed === null) {
-				reply.status(400);
-				return { success: false, message: "Invalid queue identifier" };
+				return reply.status(400).send({
+					success: false,
+					message: "Invalid queue identifier",
+				});
 			}
 			queueIds.push(parsed);
 		}
 
 		if (body.action === "manualImport") {
-			reply.status(400);
-			return {
+			return reply.status(400).send({
 				success: false,
 				message: "Manual import cannot be processed as a bulk action.",
-			};
-		}
-
-		if (body.action === "retry") {
-			// Retry by removing from queue without blocklisting, allowing ARR to retry automatically
-			await fetcher(`${queueApiPath(body.service)}/bulk`, {
-				method: "DELETE",
-				headers: {
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify({
-					ids: queueIds,
-					removeFromClient: body.removeFromClient ?? true,
-					blocklist: false,
-					changeCategory: false,
-				}),
-			});
-		} else {
-			await fetcher(`${queueApiPath(body.service)}/bulk`, {
-				method: "DELETE",
-				headers: {
-					"Content-Type": "application/json",
-				},
-				body: JSON.stringify({
-					ids: queueIds,
-					removeFromClient: body.removeFromClient,
-					blocklist: body.blocklist,
-					changeCategory: body.changeCategory,
-				}),
 			});
 		}
 
-		return reply.status(204).send();
+		try {
+			const deleteOptions = body.action === "retry"
+				? {
+						removeFromClient: body.removeFromClient ?? true,
+						blocklist: false,
+						changeCategory: false,
+					}
+				: {
+						removeFromClient: body.removeFromClient,
+						blocklist: body.blocklist,
+						changeCategory: body.changeCategory,
+					};
+
+			if (isSonarrClient(client)) {
+				await client.queue.bulkDelete(queueIds, deleteOptions);
+			} else if (isRadarrClient(client)) {
+				await client.queue.bulkDelete(queueIds, deleteOptions);
+			}
+
+			return reply.status(204).send();
+		} catch (error) {
+			if (error instanceof ArrError) {
+				return reply.status(arrErrorToHttpStatus(error)).send({
+					success: false,
+					message: error.message,
+				});
+			}
+
+			throw error;
+		}
 	});
 
 	done();

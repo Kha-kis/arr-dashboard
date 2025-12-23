@@ -4,7 +4,16 @@ import type {
 	DiscoverSearchType,
 } from "@arr/shared";
 import type { ServiceInstance } from "@prisma/client";
+import type { SonarrClient } from "arr-sdk/sonarr";
+import type { RadarrClient } from "arr-sdk/radarr";
+import type { FastifyBaseLogger } from "fastify";
 import { toBoolean, toNumber, toStringArray, toStringValue } from "../data/values.js";
+
+/**
+ * Optional logger for discover operations
+ * When provided, lookup failures are logged at debug level for troubleshooting
+ */
+type DiscoverLogger = FastifyBaseLogger | undefined;
 
 interface RemoteImages {
 	coverType?: string;
@@ -301,4 +310,181 @@ export const loadSonarrRemote = async (
 		}
 	}
 	return null;
+};
+
+// ============================================================================
+// SDK-based functions (arr-sdk 0.3.0)
+// ============================================================================
+
+/**
+ * Fetches lookup results from Sonarr or Radarr using the SDK
+ */
+export const fetchLookupResultsWithSdk = async (
+	client: SonarrClient | RadarrClient,
+	service: "sonarr" | "radarr",
+	query: string,
+): Promise<Record<string, unknown>[]> => {
+	if (service === "radarr" && "movie" in client) {
+		const results = await (client as RadarrClient).movie.lookup(query);
+		return results as unknown as Record<string, unknown>[];
+	}
+
+	if (service === "sonarr" && "series" in client) {
+		const results = await (client as SonarrClient).series.lookup(query);
+		return results as unknown as Record<string, unknown>[];
+	}
+
+	return [];
+};
+
+/**
+ * Loads movie details from Radarr using the SDK
+ * @param logger - Optional logger for debug-level lookup failure messages
+ */
+export const loadRadarrRemoteWithSdk = async (
+	client: RadarrClient,
+	payload: { tmdbId?: number; imdbId?: string; queryFallback: string },
+	logger?: DiscoverLogger,
+): Promise<Record<string, unknown> | null> => {
+	// Try TMDB ID first
+	if (payload.tmdbId) {
+		try {
+			const results = await client.movie.lookupByTmdbId(payload.tmdbId);
+			if (results.length > 0) {
+				return results[0] as unknown as Record<string, unknown>;
+			}
+		} catch (error) {
+			logger?.debug({ err: error, tmdbId: payload.tmdbId }, "TMDB lookup failed, trying next method");
+		}
+	}
+
+	// Try IMDB ID
+	if (payload.imdbId) {
+		try {
+			const results = await client.movie.lookupByImdbId(payload.imdbId);
+			if (results.length > 0) {
+				return results[0] as unknown as Record<string, unknown>;
+			}
+		} catch (error) {
+			logger?.debug({ err: error, imdbId: payload.imdbId }, "IMDB lookup failed, trying next method");
+		}
+	}
+
+	// Fall back to text search
+	try {
+		const results = await client.movie.lookup(payload.queryFallback);
+		if (results.length > 0) {
+			return results[0] as unknown as Record<string, unknown>;
+		}
+	} catch (error) {
+		logger?.debug({ err: error, query: payload.queryFallback }, "Text search lookup failed");
+	}
+
+	return null;
+};
+
+/**
+ * Loads series details from Sonarr using the SDK
+ * @param logger - Optional logger for debug-level lookup failure messages
+ */
+export const loadSonarrRemoteWithSdk = async (
+	client: SonarrClient,
+	payload: { tvdbId?: number; tmdbId?: number; queryFallback: string },
+	logger?: DiscoverLogger,
+): Promise<Record<string, unknown> | null> => {
+	const terms: string[] = [];
+	if (payload.tvdbId) {
+		terms.push(`tvdb:${payload.tvdbId}`);
+	}
+	if (payload.tmdbId) {
+		terms.push(`tmdb:${payload.tmdbId}`);
+	}
+	terms.push(payload.queryFallback);
+
+	for (const term of terms) {
+		try {
+			const results = await client.series.lookup(term);
+			if (results.length > 0) {
+				return results[0] as unknown as Record<string, unknown>;
+			}
+		} catch (error) {
+			logger?.debug({ err: error, term }, "Series lookup failed, trying next term");
+		}
+	}
+	return null;
+};
+
+/**
+ * Creates a movie in Radarr using the SDK
+ */
+export const createMovieWithSdk = async (
+	client: RadarrClient,
+	// biome-ignore lint/suspicious/noExplicitAny: SDK type compatibility
+	movieData: any,
+): Promise<Record<string, unknown>> => {
+	const created = await client.movie.create(movieData);
+	return created as unknown as Record<string, unknown>;
+};
+
+/**
+ * Creates a series in Sonarr using the SDK
+ */
+export const createSeriesWithSdk = async (
+	client: SonarrClient,
+	// biome-ignore lint/suspicious/noExplicitAny: SDK type compatibility
+	seriesData: any,
+): Promise<Record<string, unknown>> => {
+	const created = await client.series.create(seriesData);
+	return created as unknown as Record<string, unknown>;
+};
+
+/**
+ * Gets instance options (quality profiles, root folders, language profiles) using the SDK
+ * @param logger - Optional logger for debug-level messages when language profiles unavailable
+ */
+export const getInstanceOptionsWithSdk = async (
+	client: SonarrClient | RadarrClient,
+	service: "sonarr" | "radarr",
+	logger?: DiscoverLogger,
+): Promise<{
+	qualityProfiles: Array<{ id: number; name: string }>;
+	rootFolders: Array<{ id?: number | string; path: string; accessible?: boolean; freeSpace?: number }>;
+	languageProfiles?: Array<{ id: number; name: string }>;
+}> => {
+	const [qualityProfiles, rootFolders] = await Promise.all([
+		client.qualityProfile.getAll(),
+		client.rootFolder.getAll(),
+	]);
+
+	const normalizedQualityProfiles = qualityProfiles.map((p) => ({
+		id: p.id ?? 0,
+		name: p.name ?? "",
+	})).filter((p) => p.id > 0 && p.name.length > 0);
+
+	const normalizedRootFolders = rootFolders.map((f) => ({
+		id: f.id,
+		path: f.path ?? "",
+		accessible: f.accessible,
+		freeSpace: f.freeSpace ?? undefined,
+	})).filter((f) => f.path.length > 0);
+
+	let languageProfiles: Array<{ id: number; name: string }> | undefined;
+	if (service === "sonarr" && "languageProfile" in client) {
+		try {
+			const langs = await (client as SonarrClient).languageProfile.getAll();
+			languageProfiles = langs.map((l) => ({
+				id: l.id ?? 0,
+				name: l.name ?? "",
+			})).filter((l) => l.id > 0 && l.name.length > 0);
+		} catch (error) {
+			// Language profiles deprecated in Sonarr v4+, this is expected
+			logger?.debug({ err: error }, "Language profiles not available (expected for Sonarr v4+)");
+		}
+	}
+
+	return {
+		qualityProfiles: normalizedQualityProfiles,
+		rootFolders: normalizedRootFolders,
+		languageProfiles,
+	};
 };

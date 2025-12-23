@@ -6,4 +6,4 @@
  */
 
 export { getHuntingScheduler } from "./scheduler.js";
-export { executeHunt, type HuntResult } from "./hunt-executor.js";
+export { executeHuntWithSdk, type HuntResult } from "./hunt-executor.js";

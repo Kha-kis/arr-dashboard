@@ -63,12 +63,15 @@ export const useManualImportQuery = (params: {
 	};
 };
 
+const QUEUE_QUERY_KEY = ["dashboard", "queue"] as const;
+
 export const useManualImportMutation = () => {
 	const queryClient = useQueryClient();
 
 	const mutation = useMutation<void, Error, ManualImportSubmission>({
 		mutationFn: (payload) => submitManualImport(payload),
 		onSuccess: (_data, variables) => {
+			// Invalidate the manual import candidates query
 			queryClient.invalidateQueries({
 				queryKey: manualImportKey({
 					instanceId: variables.instanceId,
@@ -76,6 +79,8 @@ export const useManualImportMutation = () => {
 					downloadId: variables.files[0]?.downloadId,
 				}),
 			});
+			// Also invalidate the queue since manual import affects queue items
+			queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
 		},
 	});
 

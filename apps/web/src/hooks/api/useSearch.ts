@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
 	MultiInstanceSearchResponse,
 	ProwlarrIndexerDetails,
@@ -31,10 +31,18 @@ export const useManualSearchMutation = () =>
 		mutationFn: performManualSearch,
 	});
 
-export const useGrabSearchResultMutation = () =>
-	useMutation<void, unknown, SearchGrabRequest>({
+const QUEUE_QUERY_KEY = ["dashboard", "queue"] as const;
+
+export const useGrabSearchResultMutation = () => {
+	const queryClient = useQueryClient();
+	return useMutation<void, unknown, SearchGrabRequest>({
 		mutationFn: grabManualSearchResult,
+		onSuccess: () => {
+			// Grabbing a release adds it to the queue
+			void queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
+		},
 	});
+};
 
 export const useTestIndexerMutation = () =>
 	useMutation<SearchIndexerTestResponse, unknown, SearchIndexerTestRequest>({

@@ -7,6 +7,7 @@ import type {
 } from "@arr/shared";
 import { prowlarrIndexerDetailsSchema } from "@arr/shared";
 import type { ServiceInstance } from "@prisma/client";
+import type { ProwlarrClient } from "arr-sdk/prowlarr";
 import { normalizeIndexer, normalizeIndexerDetails, normalizeSearchResult } from "./normalizers.js";
 
 /**
@@ -45,25 +46,6 @@ const toNumber = (value: unknown): number | undefined => {
 };
 
 /**
- * Fetches detailed indexer information from Prowlarr including stats.
- */
-export const fetchProwlarrIndexerDetails = async (
-	fetcher: (path: string, init?: RequestInit) => Promise<Response>,
-	instance: ServiceInstance,
-	indexerId: number,
-): Promise<ProwlarrIndexerDetails | null> => {
-	const [detailResponse, statsResponse] = await Promise.all([
-		fetcher(`/api/v1/indexer/${indexerId}`),
-		fetcher(`/api/v1/indexer/${indexerId}/stats`).catch(() => null),
-	]);
-
-	const detailPayload = await detailResponse.json().catch(() => null);
-	const statsPayload = statsResponse ? await statsResponse.json().catch(() => null) : null;
-
-	return normalizeIndexerDetails(detailPayload, statsPayload, instance, indexerId);
-};
-
-/**
  * Builds a fallback indexer details object when the real data cannot be fetched.
  */
 export const buildIndexerDetailsFallback = (
@@ -91,37 +73,6 @@ export const buildIndexerDetailsFallback = (
 };
 
 /**
- * Fetches all indexers from a Prowlarr instance.
- */
-export const fetchProwlarrIndexers = async (
-	fetcher: (path: string, init?: RequestInit) => Promise<Response>,
-
-	instance: ServiceInstance,
-): Promise<ProwlarrIndexer[]> => {
-	const response = await fetcher("/api/v1/indexer");
-
-	const payload = await response.json().catch(() => []);
-
-	const records = Array.isArray(payload)
-		? payload
-		: Array.isArray(payload?.indexers)
-			? payload.indexers
-			: [];
-
-	const items: ProwlarrIndexer[] = [];
-
-	for (const record of records) {
-		const normalized = normalizeIndexer(record, instance.id, instance.label, instance.baseUrl);
-
-		if (normalized) {
-			items.push(normalized);
-		}
-	}
-
-	return items;
-};
-
-/**
  * Options for performing a manual search in Prowlarr.
  */
 export type ManualSearchOptions = {
@@ -136,61 +87,123 @@ export type ManualSearchOptions = {
 	categories?: number[];
 };
 
+// ============================================================================
+// SDK-based functions (arr-sdk 0.3.0)
+// ============================================================================
+
 /**
- * Performs a manual search query in Prowlarr and returns normalized results.
+ * Fetches all indexers from a Prowlarr instance using the SDK.
  */
-export const performProwlarrSearch = async (
-	fetcher: (path: string, init?: RequestInit) => Promise<Response>,
-
+export const fetchProwlarrIndexersWithSdk = async (
+	client: ProwlarrClient,
 	instance: ServiceInstance,
+): Promise<ProwlarrIndexer[]> => {
+	const rawIndexers = await client.indexer.getAll();
 
+	const items: ProwlarrIndexer[] = [];
+
+	for (const record of rawIndexers) {
+		const normalized = normalizeIndexer(
+			record as Record<string, unknown>,
+			instance.id,
+			instance.label,
+			instance.baseUrl,
+		);
+
+		if (normalized) {
+			items.push(normalized);
+		}
+	}
+
+	return items;
+};
+
+/**
+ * Fetches detailed indexer information from Prowlarr using the SDK.
+ * Note: Per-indexer stats are not directly available in SDK, so we fetch global stats.
+ */
+export const fetchProwlarrIndexerDetailsWithSdk = async (
+	client: ProwlarrClient,
+	instance: ServiceInstance,
+	indexerId: number,
+): Promise<ProwlarrIndexerDetails | null> => {
+	try {
+		const [indexer, stats] = await Promise.all([
+			client.indexer.getById(indexerId),
+			client.indexerStats.get({ indexers: [indexerId] }).catch(() => null),
+		]);
+
+		// Find stats for this specific indexer if available
+		const indexerStats = stats?.indexers?.find(
+			(s: Record<string, unknown>) => s.indexerId === indexerId,
+		);
+
+		return normalizeIndexerDetails(
+			indexer as Record<string, unknown>,
+			indexerStats ?? null,
+			instance,
+			indexerId,
+		);
+	} catch {
+		return null;
+	}
+};
+
+/**
+ * Updates an indexer configuration in Prowlarr using the SDK.
+ */
+export const updateProwlarrIndexerWithSdk = async (
+	client: ProwlarrClient,
+	indexerId: number,
+	// biome-ignore lint/suspicious/noExplicitAny: SDK type compatibility
+	indexerData: any,
+): Promise<unknown> => {
+	return client.indexer.update(indexerId, { ...indexerData, id: indexerId });
+};
+
+/**
+ * Tests a Prowlarr indexer configuration using the SDK.
+ */
+export const testProwlarrIndexerWithSdk = async (
+	client: ProwlarrClient,
+	indexerId: number,
+): Promise<void> => {
+	// First fetch the indexer definition
+	const indexer = await client.indexer.getById(indexerId);
+	// Then test with the full definition
+	await client.indexer.test({ ...indexer, id: indexerId });
+};
+
+/**
+ * Performs a manual search query in Prowlarr using the SDK.
+ */
+export const performProwlarrSearchWithSdk = async (
+	client: ProwlarrClient,
+	instance: ServiceInstance,
 	options: ManualSearchOptions,
 ): Promise<SearchResult[]> => {
-	const params = new URLSearchParams();
-
-	const trimmedQuery = options.query.trim();
-
-	if (trimmedQuery.length > 0) {
-		params.set("query", trimmedQuery);
-	}
-
-	if (options.type && options.type !== "all") {
-		params.set("type", options.type);
-	}
-
 	const limit = Number.isFinite(options.limit) ? Math.max(1, Math.min(options.limit, 200)) : 100;
 
-	params.set("limit", String(limit));
+	// Map search type to SDK format (SDK uses "tvsearch" instead of "tv")
+	const mapSearchType = (
+		type: ManualSearchOptions["type"],
+	): "search" | "tvsearch" | "movie" | "music" | "book" | undefined => {
+		if (!type || type === "all") return undefined;
+		if (type === "tv") return "tvsearch";
+		return type as "movie" | "music" | "book";
+	};
 
-	if (Array.isArray(options.indexerIds) && options.indexerIds.length > 0) {
-		for (const id of options.indexerIds) {
-			if (typeof id === "number" && Number.isFinite(id) && id > 0) {
-				params.append("indexerIds", String(id));
-			}
-		}
-	}
-
-	if (Array.isArray(options.categories) && options.categories.length > 0) {
-		for (const category of options.categories) {
-			if (typeof category === "number" && Number.isFinite(category) && category > 0) {
-				params.append("categories", String(category));
-			}
-		}
-	}
-
-	const response = await fetcher(`/api/v1/search?${params.toString()}`);
-
-	const payload = await response.json().catch(() => []);
-
-	const records = Array.isArray(payload)
-		? payload
-		: Array.isArray(payload?.results)
-			? payload.results
-			: [];
+	const rawReleases = await client.search.query({
+		query: options.query.trim() || undefined,
+		type: mapSearchType(options.type),
+		limit,
+		indexerIds: options.indexerIds,
+		categories: options.categories,
+	});
 
 	const results: SearchResult[] = [];
 
-	for (const record of records) {
+	for (const record of rawReleases) {
 		const normalized = normalizeSearchResult(record as Record<string, unknown>, instance);
 
 		if (normalized) {
@@ -202,60 +215,19 @@ export const performProwlarrSearch = async (
 };
 
 /**
- * Tests a Prowlarr indexer configuration.
+ * Grabs a release from Prowlarr using the SDK.
  */
-export const testProwlarrIndexer = async (
-	fetcher: (path: string, init?: RequestInit) => Promise<Response>,
-	indexerId: number,
-): Promise<void> => {
-	const definitionResponse = await fetcher(`/api/v1/indexer/${indexerId}`);
-	const definition = await definitionResponse.json();
-
-	await fetcher("/api/v1/indexer/test", {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ ...definition, id: indexerId }),
-	});
-};
-
-/**
- * Grabs a release from Prowlarr and sends it to the appropriate download client.
- */
-export const grabProwlarrRelease = async (
-	fetcher: (path: string, init?: RequestInit) => Promise<Response>,
-
+export const grabProwlarrReleaseWithSdk = async (
+	client: ProwlarrClient,
 	release: SearchGrabRequest["result"],
 ): Promise<void> => {
 	const releaseRecord = release as Record<string, unknown>;
 	const guid = toStringValue(releaseRecord.guid) ?? toStringValue(releaseRecord.id);
-
 	const indexerId = toNumber(releaseRecord.indexerId);
 
 	if (typeof indexerId !== "number" || !guid) {
 		throw new Error("Release is missing required identifier information");
 	}
 
-	const normalizedPayload: Record<string, unknown> = {
-		...(release as Record<string, unknown>),
-
-		guid,
-
-		indexerId,
-	};
-
-	if (typeof normalizedPayload.id === "string") {
-		normalizedPayload.id = undefined;
-	}
-
-	if (normalizedPayload.downloadClientId === null) {
-		normalizedPayload.downloadClientId = undefined;
-	}
-
-	await fetcher("/api/v1/search", {
-		method: "POST",
-
-		headers: { "Content-Type": "application/json" },
-
-		body: JSON.stringify(normalizedPayload),
-	});
+	await client.search.grab({ guid, indexerId });
 };

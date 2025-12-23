@@ -3,16 +3,15 @@ import {
 	manualImportFetchQuerySchema,
 	manualImportSubmissionSchema,
 } from "@arr/shared";
-import type { ManualImportCandidate, ManualImportSubmission } from "@arr/shared";
-import type { ServiceInstance } from "@prisma/client";
+import type { ManualImportSubmission } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { createInstanceFetcher } from "../lib/arr/arr-fetcher.js";
+import { SonarrClient, RadarrClient } from "arr-sdk";
 import {
 	ManualImportError,
 	type ManualImportFetchOptions,
-	fetchManualImportCandidates,
-	submitManualImportCommand,
+	fetchManualImportCandidatesWithSdk,
+	submitManualImportCommandWithSdk,
 } from "./manual-import-utils.js";
 
 const manualImportQuerySchema = manualImportFetchQuerySchema.extend({
@@ -53,7 +52,17 @@ const manualImportRoute: FastifyPluginCallback = (app, _opts, done) => {
 			return { message: "Instance not found" };
 		}
 
-		const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
+		const client = app.arrClientFactory.create(instance);
+
+		// Validate client type matches service
+		if (query.service === "sonarr" && !(client instanceof SonarrClient)) {
+			reply.status(400);
+			return { message: "Invalid client type for Sonarr instance" };
+		}
+		if (query.service === "radarr" && !(client instanceof RadarrClient)) {
+			reply.status(400);
+			return { message: "Invalid client type for Radarr instance" };
+		}
 
 		const options: ManualImportFetchOptions = {
 			downloadId: query.downloadId,
@@ -64,7 +73,7 @@ const manualImportRoute: FastifyPluginCallback = (app, _opts, done) => {
 		};
 
 		try {
-			const candidates = await fetchManualImportCandidates(fetcher, query.service, options);
+			const candidates = await fetchManualImportCandidatesWithSdk(client, query.service, options);
 			const parsed = manualImportCandidateListSchema.parse(candidates);
 			return reply.send({
 				candidates: parsed,
@@ -94,10 +103,20 @@ const manualImportRoute: FastifyPluginCallback = (app, _opts, done) => {
 			return { success: false, message: "Instance not found" };
 		}
 
-		const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
+		const client = app.arrClientFactory.create(instance);
+
+		// Validate client type matches service
+		if (body.service === "sonarr" && !(client instanceof SonarrClient)) {
+			reply.status(400);
+			return { success: false, message: "Invalid client type for Sonarr instance" };
+		}
+		if (body.service === "radarr" && !(client instanceof RadarrClient)) {
+			reply.status(400);
+			return { success: false, message: "Invalid client type for Radarr instance" };
+		}
 
 		try {
-			await submitManualImportCommand(fetcher, body.service, body.files, body.importMode ?? "auto");
+			await submitManualImportCommandWithSdk(client, body.service, body.files, body.importMode ?? "auto");
 		} catch (error) {
 			const status = error instanceof ManualImportError ? error.statusCode : 502;
 			const message = error instanceof Error ? error.message : "Manual import failed.";

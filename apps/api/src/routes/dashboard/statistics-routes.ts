@@ -1,8 +1,7 @@
 import { dashboardStatisticsResponseSchema } from "@arr/shared";
 import type { DashboardStatisticsResponse } from "@arr/shared";
-import type { ServiceInstance } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
+import { SonarrClient, RadarrClient, ProwlarrClient } from "arr-sdk";
 import {
 	aggregateProwlarrStatistics,
 	aggregateRadarrStatistics,
@@ -10,9 +9,9 @@ import {
 	emptyProwlarrStatistics,
 	emptyRadarrStatistics,
 	emptySonarrStatistics,
-	fetchProwlarrStatistics,
-	fetchRadarrStatistics,
-	fetchSonarrStatistics,
+	fetchSonarrStatisticsWithSdk,
+	fetchRadarrStatisticsWithSdk,
+	fetchProwlarrStatisticsWithSdk,
 } from "../../lib/statistics/dashboard-statistics.js";
 
 /**
@@ -42,93 +41,59 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const fetchResults = await Promise.all(
 			instances.map(async (instance) => {
 				const service = instance.service.toLowerCase();
-				const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
+				const client = app.arrClientFactory.create(instance);
 
-				if (service === "sonarr") {
+				if (service === "sonarr" && client instanceof SonarrClient) {
 					try {
-						const data = await fetchSonarrStatistics(
-							fetcher,
+						const data = await fetchSonarrStatisticsWithSdk(
+							client,
 							instance.id,
 							instance.label,
 							instance.baseUrl,
 						);
-						return {
-							service: "sonarr" as const,
-							instanceId: instance.id,
-							instanceName: instance.label,
-							storageGroupId: instance.storageGroupId,
-							data,
-						};
+						return { service: "sonarr" as const, instanceId: instance.id, instanceName: instance.label, storageGroupId: instance.storageGroupId, data, error: false };
 					} catch (error) {
 						request.log.error(
 							{ err: error, instance: instance.id },
 							"sonarr statistics fetch failed",
 						);
-						return {
-							service: "sonarr" as const,
-							instanceId: instance.id,
-							instanceName: instance.label,
-							storageGroupId: instance.storageGroupId,
-							data: emptySonarrStatistics,
-						};
+						return { service: "sonarr" as const, instanceId: instance.id, instanceName: instance.label, storageGroupId: instance.storageGroupId, data: emptySonarrStatistics, error: true };
 					}
 				}
 
-				if (service === "radarr") {
+				if (service === "radarr" && client instanceof RadarrClient) {
 					try {
-						const data = await fetchRadarrStatistics(
-							fetcher,
+						const data = await fetchRadarrStatisticsWithSdk(
+							client,
 							instance.id,
 							instance.label,
 							instance.baseUrl,
 						);
-						return {
-							service: "radarr" as const,
-							instanceId: instance.id,
-							instanceName: instance.label,
-							storageGroupId: instance.storageGroupId,
-							data,
-						};
+						return { service: "radarr" as const, instanceId: instance.id, instanceName: instance.label, storageGroupId: instance.storageGroupId, data, error: false };
 					} catch (error) {
 						request.log.error(
 							{ err: error, instance: instance.id },
 							"radarr statistics fetch failed",
 						);
-						return {
-							service: "radarr" as const,
-							instanceId: instance.id,
-							instanceName: instance.label,
-							storageGroupId: instance.storageGroupId,
-							data: emptyRadarrStatistics,
-						};
+						return { service: "radarr" as const, instanceId: instance.id, instanceName: instance.label, storageGroupId: instance.storageGroupId, data: emptyRadarrStatistics, error: true };
 					}
 				}
 
-				if (service === "prowlarr") {
+				if (service === "prowlarr" && client instanceof ProwlarrClient) {
 					try {
-						const data = await fetchProwlarrStatistics(
-							fetcher,
+						const data = await fetchProwlarrStatisticsWithSdk(
+							client,
 							instance.id,
 							instance.label,
 							instance.baseUrl,
 						);
-						return {
-							service: "prowlarr" as const,
-							instanceId: instance.id,
-							instanceName: instance.label,
-							data,
-						};
+						return { service: "prowlarr" as const, instanceId: instance.id, instanceName: instance.label, data, error: false };
 					} catch (error) {
 						request.log.error(
 							{ err: error, instance: instance.id },
 							"prowlarr statistics fetch failed",
 						);
-						return {
-							service: "prowlarr" as const,
-							instanceId: instance.id,
-							instanceName: instance.label,
-							data: emptyProwlarrStatistics,
-						};
+						return { service: "prowlarr" as const, instanceId: instance.id, instanceName: instance.label, data: emptyProwlarrStatistics, error: true };
 					}
 				}
 
@@ -152,6 +117,7 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			storageGroupId: string | null;
 			shouldCountDisk: boolean;
 			data: DashboardStatisticsResponse["sonarr"]["instances"][number]["data"];
+			error?: boolean;
 		}> = [];
 		const radarrInstances: Array<{
 			instanceId: string;
@@ -159,11 +125,13 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			storageGroupId: string | null;
 			shouldCountDisk: boolean;
 			data: DashboardStatisticsResponse["radarr"]["instances"][number]["data"];
+			error?: boolean;
 		}> = [];
 		const prowlarrInstances: Array<{
 			instanceId: string;
 			instanceName: string;
 			data: DashboardStatisticsResponse["prowlarr"]["instances"][number]["data"];
+			error?: boolean;
 		}> = [];
 
 		// Track combined disk stats (properly deduplicated across all services)
@@ -195,6 +163,7 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					storageGroupId: result.storageGroupId,
 					shouldCountDisk,
 					data: result.data,
+					error: result.error,
 				});
 			} else if (result.service === "radarr") {
 				// Determine if this instance should count disk stats
@@ -217,21 +186,22 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					storageGroupId: result.storageGroupId,
 					shouldCountDisk,
 					data: result.data,
+					error: result.error,
 				});
 			} else if (result.service === "prowlarr") {
 				prowlarrInstances.push({
 					instanceId: result.instanceId,
 					instanceName: result.instanceName,
 					data: result.data,
+					error: result.error,
 				});
 			}
 		}
 
 		// Calculate combined disk usage percentage
-		const combinedDiskUsagePercent =
-			combinedDiskTotal > 0
-				? Math.min(100, Math.max(0, (combinedDiskUsed / combinedDiskTotal) * 100))
-				: 0;
+		const combinedDiskUsagePercent = combinedDiskTotal > 0
+			? Math.min(100, Math.max(0, (combinedDiskUsed / combinedDiskTotal) * 100))
+			: 0;
 
 		const payload: DashboardStatisticsResponse = {
 			sonarr: {
@@ -247,15 +217,12 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				aggregate: aggregateProwlarrStatistics(prowlarrInstances),
 			},
 			// Combined disk stats with proper cross-service storage group deduplication
-			combinedDisk:
-				combinedDiskTotal > 0
-					? {
-							diskTotal: combinedDiskTotal,
-							diskFree: combinedDiskFree,
-							diskUsed: combinedDiskUsed,
-							diskUsagePercent: combinedDiskUsagePercent,
-						}
-					: undefined,
+			combinedDisk: combinedDiskTotal > 0 ? {
+				diskTotal: combinedDiskTotal,
+				diskFree: combinedDiskFree,
+				diskUsed: combinedDiskUsed,
+				diskUsagePercent: combinedDiskUsagePercent,
+			} : undefined,
 		};
 
 		return reply.send(dashboardStatisticsResponseSchema.parse(payload));

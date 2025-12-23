@@ -26,6 +26,8 @@ export interface QueueItemCardProps {
 	showChangeCategory: boolean;
 	onToggleSelect: () => void;
 	onAction: (action: QueueAction, options?: QueueActionOptions) => void;
+	/** Prefetch manual import data on hover to reduce latency */
+	onPrefetchManualImport?: (item: QueueItem) => void;
 	primaryAction?: Extract<QueueAction, "retry" | "manualImport">;
 }
 
@@ -41,6 +43,7 @@ export const QueueItemCard = ({
 	showChangeCategory,
 	onToggleSelect,
 	onAction,
+	onPrefetchManualImport,
 	primaryAction,
 }: QueueItemCardProps) => {
 	const [incognitoMode] = useIncognitoMode();
@@ -59,12 +62,20 @@ export const QueueItemCard = ({
 		(effectivePrimaryAction === "manualImport" && !canManualImport) ||
 		(effectivePrimaryAction === "retry" && !canRetry);
 
+	// Prefetch manual import data when hovering over item with manual import available
+	const handleMouseEnter = () => {
+		if (canManualImport && onPrefetchManualImport) {
+			onPrefetchManualImport(item);
+		}
+	};
+
 	return (
 		<div
 			className={cn(
 				"rounded-xl border border-white/10 bg-white/5 p-4",
 				selected && "border-white/40",
 			)}
+			onMouseEnter={handleMouseEnter}
 		>
 			<div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start lg:gap-6">
 				{/* Left column: checkbox, title, metadata, status messages */}

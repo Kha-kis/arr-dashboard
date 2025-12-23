@@ -1,11 +1,17 @@
 import { calendarItemSchema } from "@arr/shared";
 import type { CalendarItem } from "@arr/shared";
-import type { ServiceInstance } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
-import { formatDateOnly } from "../../lib/dashboard/calendar-utils.js";
-import { fetchCalendarItems } from "../../lib/dashboard/fetch-utils.js";
+import {
+	executeOnInstances,
+	isSonarrClient,
+	isRadarrClient,
+} from "../../lib/arr/client-helpers.js";
+import {
+	formatDateOnly,
+	normalizeCalendarItem,
+	compareCalendarItems,
+} from "../../lib/dashboard/calendar-utils.js";
 
 const calendarQuerySchema = z.object({
 	start: z.string().optional(),
@@ -55,61 +61,62 @@ export const calendarRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		const startIso = formatDateOnly(startDate);
 		const endIso = formatDateOnly(endDate);
+		const includeUnmonitored = unmonitored === true;
 
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: { enabled: true, userId: request.currentUser?.id },
-		});
+		const response = await executeOnInstances(
+			app,
+			request.currentUser!.id,
+			{ serviceTypes: ["SONARR", "RADARR"] },
+			async (client, instance) => {
+				const service = instance.service.toLowerCase() as "sonarr" | "radarr";
 
-		const results: Array<{
-			instanceId: string;
-			instanceName: string;
-			service: "sonarr" | "radarr";
-			data: CalendarItem[];
-		}> = [];
-		const aggregated: CalendarItem[] = [];
+				let rawItems: unknown[] = [];
 
-		for (const instance of instances) {
-			const service = instance.service.toLowerCase();
-			if (service !== "sonarr" && service !== "radarr") {
-				continue;
-			}
+				if (isSonarrClient(client)) {
+					rawItems = await client.calendar.get({
+						start: startIso,
+						end: endIso,
+						unmonitored: includeUnmonitored,
+						includeSeries: true,
+						includeEpisodeFile: true,
+					});
+				} else if (isRadarrClient(client)) {
+					rawItems = await client.calendar.get({
+						start: startIso,
+						end: endIso,
+						unmonitored: includeUnmonitored,
+					});
+				}
 
-			try {
-				const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
-				const items = await fetchCalendarItems(fetcher, service, {
-					start: startIso,
-					end: endIso,
-					unmonitored,
-				});
-				const validated = items
-					.map((item: unknown) => ({
-						...(item as Record<string, unknown>),
+				// Normalize and enrich items
+				const items = rawItems.map((raw) => {
+					const normalized = normalizeCalendarItem(raw, service);
+					return calendarItemSchema.parse({
+						...normalized,
 						instanceId: instance.id,
 						instanceName: instance.label,
-					}))
-					.map((item: unknown) => calendarItemSchema.parse(item));
-				results.push({
-					instanceId: instance.id,
-					instanceName: instance.label,
-					service,
-					data: validated,
+					});
 				});
-				aggregated.push(...validated);
-			} catch (error) {
-				request.log.error({ err: error, instance: instance.id }, "calendar fetch failed");
-				results.push({
-					instanceId: instance.id,
-					instanceName: instance.label,
-					service,
-					data: [],
-				});
-			}
-		}
+
+				// Sort by date
+				items.sort(compareCalendarItems);
+
+				return items;
+			},
+		);
+
+		// Transform results to match expected format
+		const results = response.instances.map((result) => ({
+			instanceId: result.instanceId,
+			instanceName: result.instanceName,
+			service: result.service as "sonarr" | "radarr",
+			data: result.success ? result.data : [],
+		}));
 
 		return reply.send({
 			instances: results,
-			aggregated,
-			totalCount: aggregated.length,
+			aggregated: response.aggregated,
+			totalCount: response.totalCount,
 		});
 	});
 

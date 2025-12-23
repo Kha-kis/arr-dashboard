@@ -1,6 +1,8 @@
 import type { LibraryItem } from "@arr/shared";
+import { ExternalLink } from "lucide-react";
 import { Button } from "../../../components/ui";
 import { formatBytes, formatRuntime } from "../lib/library-utils";
+import { safeOpenUrl } from "../../../lib/utils/url-validation";
 
 export interface ItemDetailsModalProps {
 	item: LibraryItem;
@@ -127,6 +129,50 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 									{genre}
 								</span>
 							))}
+						</div>
+					</div>
+				)}
+
+				{(item.remoteIds?.tmdbId || item.remoteIds?.imdbId || item.remoteIds?.tvdbId) && (
+					<div className="mb-6">
+						<h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-2">External Links</h3>
+						<div className="flex flex-wrap gap-2">
+							{item.remoteIds?.tmdbId && (
+								<Button
+									type="button"
+									variant="secondary"
+									size="sm"
+									className="flex items-center gap-1.5"
+									onClick={() => safeOpenUrl(`https://www.themoviedb.org/${item.type === "movie" ? "movie" : "tv"}/${item.remoteIds?.tmdbId}`)}
+								>
+									<ExternalLink className="h-3.5 w-3.5" />
+									<span>TMDB</span>
+								</Button>
+							)}
+							{item.remoteIds?.imdbId && (
+								<Button
+									type="button"
+									variant="secondary"
+									size="sm"
+									className="flex items-center gap-1.5"
+									onClick={() => safeOpenUrl(`https://www.imdb.com/title/${item.remoteIds?.imdbId}`)}
+								>
+									<ExternalLink className="h-3.5 w-3.5" />
+									<span>IMDB</span>
+								</Button>
+							)}
+							{item.remoteIds?.tvdbId && (
+								<Button
+									type="button"
+									variant="secondary"
+									size="sm"
+									className="flex items-center gap-1.5"
+									onClick={() => safeOpenUrl(`https://www.thetvdb.com/dereferrer/series/${item.remoteIds?.tvdbId}`)}
+								>
+									<ExternalLink className="h-3.5 w-3.5" />
+									<span>TVDB</span>
+								</Button>
+							)}
 						</div>
 					</div>
 				)}

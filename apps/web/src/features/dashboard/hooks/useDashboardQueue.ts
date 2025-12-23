@@ -5,10 +5,12 @@
  * Handles retry, remove, and category change actions.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { QueueItem } from "@arr/shared";
 import { useQueueActions } from "../../../hooks/api/useQueueActions";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
+import { fetchManualImportCandidates } from "../../../lib/api-client/dashboard";
 
 interface ManualImportContext {
 	instanceId: string;
@@ -25,6 +27,7 @@ interface ManualImportContext {
  * @returns Queue action handlers and manual import modal state
  */
 export const useDashboardQueue = (queueRefetch?: () => void) => {
+	const queryClient = useQueryClient();
 	const queueActions = useQueueActions();
 
 	const [queueMessage, setQueueMessage] = useState<{
@@ -39,6 +42,39 @@ export const useDashboardQueue = (queueRefetch?: () => void) => {
 		downloadId: undefined,
 		open: false,
 	});
+
+	// Prefetch manual import candidates on hover to reduce perceived latency
+	const prefetchManualImport = useCallback(
+		(item: QueueItem) => {
+			if (!item.instanceId || !item.downloadId) {
+				return;
+			}
+			const queryKey = [
+				"manualImport",
+				item.service,
+				item.instanceId,
+				item.downloadId,
+				null, // folder
+				null, // seriesId
+				null, // seasonNumber
+				true, // filterExistingFiles
+			];
+			// Only prefetch if not already in cache
+			if (!queryClient.getQueryData(queryKey)) {
+				void queryClient.prefetchQuery({
+					queryKey,
+					queryFn: () =>
+						fetchManualImportCandidates({
+							instanceId: item.instanceId,
+							service: item.service,
+							downloadId: item.downloadId,
+						}),
+					staleTime: 30 * 1000, // Keep prefetched data fresh for 30s
+				});
+			}
+		},
+		[queryClient],
+	);
 
 	// Auto-dismiss success messages after 6 seconds
 	useEffect(() => {
@@ -103,6 +139,7 @@ export const useDashboardQueue = (queueRefetch?: () => void) => {
 
 		// Manual import
 		openManualImport,
+		prefetchManualImport,
 		manualImportContext,
 		handleManualImportOpenChange,
 		handleManualImportCompleted,
