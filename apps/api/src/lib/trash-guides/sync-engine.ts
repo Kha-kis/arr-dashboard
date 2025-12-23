@@ -6,7 +6,8 @@
 
 import type { TemplateConfig } from "@arr/shared";
 import type { PrismaClient } from "@prisma/client";
-import { createArrApiClient } from "./arr-api-client.js";
+import type { ArrClientFactory } from "../arr/client-factory.js";
+import { SonarrClient, RadarrClient } from "arr-sdk";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
 import type { TemplateUpdater } from "./template-updater.js";
 
@@ -73,19 +74,19 @@ export class SyncEngine {
 	private progressCallbacks: Map<string, (progress: SyncProgress) => void>;
 	private templateUpdater?: TemplateUpdater;
 	private deploymentExecutor?: DeploymentExecutorService;
-	private encryptor?: { decrypt: (payload: { value: string; iv: string }) => string };
+	private arrClientFactory?: ArrClientFactory;
 
 	constructor(
 		prisma: PrismaClient,
 		templateUpdater?: TemplateUpdater,
 		deploymentExecutor?: DeploymentExecutorService,
-		encryptor?: { decrypt: (payload: { value: string; iv: string }) => string },
+		arrClientFactory?: ArrClientFactory,
 	) {
 		this.prisma = prisma;
 		this.progressCallbacks = new Map();
 		this.templateUpdater = templateUpdater;
 		this.deploymentExecutor = deploymentExecutor;
-		this.encryptor = encryptor;
+		this.arrClientFactory = arrClientFactory;
 	}
 
 	/**
@@ -206,10 +207,10 @@ export class SyncEngine {
 		let instanceVersion: string | undefined;
 		let instanceQualityProfiles: Array<{ id: number; name: string }> = [];
 
-		if (this.encryptor && instance.encryptedApiKey && instance.encryptionIv) {
+		if (this.arrClientFactory) {
 			try {
-				const apiClient = createArrApiClient(instance, this.encryptor);
-				const status = await apiClient.getSystemStatus();
+				const client = this.arrClientFactory.create(instance);
+				const status = await client.system.getStatus();
 				instanceVersion = status.version;
 
 				// Add version info as a positive indicator
@@ -219,7 +220,8 @@ export class SyncEngine {
 
 				// Fetch quality profiles to validate mappings
 				try {
-					instanceQualityProfiles = await apiClient.getQualityProfiles();
+					const profiles = await client.qualityProfile.getAll();
+					instanceQualityProfiles = profiles.map((p) => ({ id: p.id ?? 0, name: p.name ?? "" }));
 				} catch (profileError) {
 					warnings.push(
 						"Could not fetch quality profiles from instance. Profile validation will be skipped.",
@@ -234,8 +236,8 @@ export class SyncEngine {
 				);
 				return { valid: false, conflicts, errors, warnings };
 			}
-		} else if (!this.encryptor) {
-			// Encryptor not available - can't test connection but continue with warning
+		} else {
+			// Client factory not available - can't test connection but continue with warning
 			warnings.push(
 				"Instance connectivity check skipped. Connection will be verified during sync.",
 			);
@@ -598,7 +600,7 @@ export function createSyncEngine(
 	prisma: PrismaClient,
 	templateUpdater?: TemplateUpdater,
 	deploymentExecutor?: DeploymentExecutorService,
-	encryptor?: { decrypt: (payload: { value: string; iv: string }) => string },
+	arrClientFactory?: ArrClientFactory,
 ): SyncEngine {
-	return new SyncEngine(prisma, templateUpdater, deploymentExecutor, encryptor);
+	return new SyncEngine(prisma, templateUpdater, deploymentExecutor, arrClientFactory);
 }

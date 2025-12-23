@@ -113,8 +113,8 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 		deploymentExecutor,
 	);
 
-	// Create sync engine with template updater and deployment executor
-	const syncEngine = createSyncEngine(app.prisma, templateUpdater, deploymentExecutor);
+	// Create sync engine with template updater, deployment executor, and ARR client factory
+	const syncEngine = createSyncEngine(app.prisma, templateUpdater, deploymentExecutor, app.arrClientFactory);
 
 	/**
 	 * Validate sync before execution
