@@ -1,4 +1,5 @@
 import type { QueueActionCapabilities, QueueItem } from "@arr/shared";
+import type { SonarrClient, RadarrClient } from "arr-sdk";
 import { toNumber, toStringValue } from "../data/values.js";
 
 /**
@@ -335,4 +336,43 @@ export const triggerQueueSearch = async (
 		const message = await response.text().catch(() => response.statusText);
 		throw new Error(`Radarr search command failed: ${message}`);
 	}
+};
+
+/**
+ * Triggers a search command using the arr-sdk client
+ */
+export const triggerQueueSearchWithSdk = async (
+	client: SonarrClient | RadarrClient,
+	service: "sonarr" | "radarr",
+	payload?: { seriesId?: number; episodeIds?: number[]; movieId?: number },
+) => {
+	if (!payload) {
+		return;
+	}
+
+	if (service === "sonarr") {
+		const sonarrClient = client as SonarrClient;
+		if (Array.isArray(payload.episodeIds) && payload.episodeIds.length > 0) {
+			await sonarrClient.command.execute({
+				name: "EpisodeSearch",
+				episodeIds: Array.from(new Set(payload.episodeIds)),
+			});
+		} else if (typeof payload.seriesId === "number") {
+			await sonarrClient.command.execute({
+				name: "SeriesSearch",
+				seriesId: payload.seriesId,
+			});
+		}
+		return;
+	}
+
+	if (typeof payload.movieId !== "number") {
+		return;
+	}
+
+	const radarrClient = client as RadarrClient;
+	await radarrClient.command.execute({
+		name: "MoviesSearch",
+		movieIds: [payload.movieId],
+	});
 };

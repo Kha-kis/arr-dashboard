@@ -1,10 +1,68 @@
-export interface TMDBClientConfig {
-	baseUrl: string;
-	imageBaseUrl: string;
+/**
+ * Cached TMDB Client
+ *
+ * Wraps tmdb-ts with an in-memory caching layer to reduce API calls.
+ * Provides a clean, organized interface for accessing TMDB data.
+ */
+
+import {
+	TMDB,
+	type Movie,
+	type ExternalIds,
+	type Credits,
+	type Videos,
+	type WatchProviders,
+	type AggregateCredits,
+} from "tmdb-ts";
+
+// ============================================================================
+// Normalized Types (consistent across all endpoints)
+// ============================================================================
+
+/**
+ * Normalized TV show type that works across all endpoints
+ */
+export interface TMDBTVShow {
+	id: number;
+	name: string;
+	original_name: string;
+	overview: string;
+	poster_path: string | null;
+	backdrop_path: string | null;
+	first_air_date: string;
+	genre_ids: number[];
+	origin_country: string[];
+	original_language: string;
+	vote_average: number;
+	vote_count: number;
+	popularity: number;
+}
+
+/**
+ * Normalized movie type (re-export from tmdb-ts for convenience)
+ */
+export type TMDBMovie = Movie;
+
+/**
+ * Genre type
+ */
+export interface TMDBGenre {
+	id: number;
+	name: string;
+}
+
+/**
+ * Paginated response wrapper
+ */
+export interface PaginatedResponse<T> {
+	page: number;
+	results: T[];
+	total_pages: number;
+	total_results: number;
 }
 
 // ============================================================================
-// In-Memory Cache Implementation
+// Cache Implementation
 // ============================================================================
 
 interface CacheEntry<T> {
@@ -13,19 +71,34 @@ interface CacheEntry<T> {
 	ttl: number;
 }
 
-// Cache for list responses (trending, popular, etc.) - 10 minute TTL
-const listCache = new Map<string, CacheEntry<unknown>>();
-const LIST_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+// Cache TTLs
+const LIST_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes for discovery lists
+const EXTERNAL_IDS_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours for external IDs
+const GENRE_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours for genre lists
+const SEARCH_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes for search results
+const SIMILAR_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour for similar content
+const CREDITS_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours for credits (rarely change)
+const VIDEOS_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours for videos
+const WATCH_PROVIDERS_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour for watch providers (can change)
 
-// Cache for external IDs - 24 hour TTL (these rarely change)
-const externalIdsCache = new Map<string, CacheEntry<TMDBExternalIds>>();
-const EXTERNAL_IDS_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+// Shared caches (global to reduce memory when multiple clients exist)
+const listCache = new Map<string, CacheEntry<unknown>>();
+const externalIdsCache = new Map<string, CacheEntry<ExternalIds>>();
+const genreCache = new Map<string, CacheEntry<{ genres: TMDBGenre[] }>>();
+const searchCache = new Map<string, CacheEntry<unknown>>();
+const similarCache = new Map<string, CacheEntry<unknown>>();
+const creditsCache = new Map<string, CacheEntry<Credits | AggregateCredits>>();
+const videosCache = new Map<string, CacheEntry<Videos>>();
+const watchProvidersCache = new Map<string, CacheEntry<WatchProviders>>();
 
 function getCacheKey(type: string, ...args: (string | number)[]): string {
 	return `${type}:${args.join(":")}`;
 }
 
-function getFromCache<T>(cache: Map<string, CacheEntry<T>>, key: string): T | null {
+function getFromCache<T>(
+	cache: Map<string, CacheEntry<T>>,
+	key: string,
+): T | null {
 	const entry = cache.get(key);
 	if (!entry) return null;
 
@@ -38,7 +111,12 @@ function getFromCache<T>(cache: Map<string, CacheEntry<T>>, key: string): T | nu
 	return entry.data;
 }
 
-function setInCache<T>(cache: Map<string, CacheEntry<T>>, key: string, data: T, ttl: number): void {
+function setInCache<T>(
+	cache: Map<string, CacheEntry<T>>,
+	key: string,
+	data: T,
+	ttl: number,
+): void {
 	cache.set(key, { data, timestamp: Date.now(), ttl });
 }
 
@@ -63,30 +141,29 @@ function cleanupCache<T>(cache: Map<string, CacheEntry<T>>): void {
 function startCacheCleanup(): void {
 	if (cleanupInterval) return;
 
-	cleanupInterval = setInterval(() => {
-		cleanupCache(listCache as Map<string, CacheEntry<unknown>>);
-		cleanupCache(externalIdsCache);
-	}, 5 * 60 * 1000); // Every 5 minutes
+	cleanupInterval = setInterval(
+		() => {
+			cleanupCache(listCache as Map<string, CacheEntry<unknown>>);
+			cleanupCache(externalIdsCache);
+			cleanupCache(genreCache);
+			cleanupCache(searchCache as Map<string, CacheEntry<unknown>>);
+			cleanupCache(similarCache as Map<string, CacheEntry<unknown>>);
+			cleanupCache(creditsCache);
+			cleanupCache(videosCache);
+			cleanupCache(watchProvidersCache);
+		},
+		5 * 60 * 1000,
+	);
 }
 
 // Start cleanup on module load
 startCacheCleanup();
 
-export interface TMDBMovie {
-	id: number;
-	title: string;
-	original_title: string;
-	overview: string;
-	poster_path: string | null;
-	backdrop_path: string | null;
-	release_date: string;
-	genre_ids: number[];
-	vote_average: number;
-	vote_count: number;
-	popularity: number;
-}
+// ============================================================================
+// Helper to normalize TV show responses
+// ============================================================================
 
-export interface TMDBTVShow {
+interface RawTVShowResult {
 	id: number;
 	name: string;
 	original_name: string;
@@ -95,419 +172,683 @@ export interface TMDBTVShow {
 	backdrop_path: string | null;
 	first_air_date: string;
 	genre_ids: number[];
+	origin_country: string[];
+	original_language: string;
 	vote_average: number;
 	vote_count: number;
 	popularity: number;
 }
 
-export interface TMDBResponse<T> {
-	page: number;
-	results: T[];
-	total_pages: number;
-	total_results: number;
+function normalizeTVShow(raw: RawTVShowResult): TMDBTVShow {
+	return {
+		id: raw.id,
+		name: raw.name,
+		original_name: raw.original_name,
+		overview: raw.overview,
+		poster_path: raw.poster_path,
+		backdrop_path: raw.backdrop_path,
+		first_air_date: raw.first_air_date,
+		genre_ids: raw.genre_ids,
+		origin_country: raw.origin_country,
+		original_language: raw.original_language,
+		vote_average: raw.vote_average,
+		vote_count: raw.vote_count,
+		popularity: raw.popularity,
+	};
 }
 
-async function tmdbFetch<T>(
-	endpoint: string,
-	apiKey: string,
-	config: TMDBClientConfig,
-	page = 1,
-): Promise<T> {
-	const url = `${config.baseUrl}${endpoint}${endpoint.includes("?") ? "&" : "?"}api_key=${apiKey}&page=${page}`;
-	const response = await fetch(url);
+// ============================================================================
+// Client Options
+// ============================================================================
 
-	if (!response.ok) {
-		throw new Error(`TMDB API error: ${response.statusText}`);
+export interface TMDBClientOptions {
+	/** Base URL for TMDB images (e.g., "https://image.tmdb.org/t/p") */
+	imageBaseUrl: string;
+}
+
+// ============================================================================
+// TMDB Client
+// ============================================================================
+
+export class TMDBClient {
+	private readonly client: TMDB;
+	private readonly imageBaseUrl: string;
+
+	constructor(apiKey: string, options: TMDBClientOptions) {
+		this.client = new TMDB(apiKey);
+		this.imageBaseUrl = options.imageBaseUrl;
 	}
 
-	return response.json();
-}
+	// ==========================================================================
+	// Image URL Helper
+	// ==========================================================================
 
-async function fetchSinglePage<T>(
-	endpoint: string,
-	apiKey: string,
-	config: TMDBClientConfig,
-	page: number,
-): Promise<T> {
-	return tmdbFetch<T>(endpoint, apiKey, config, page);
-}
-
-export async function getTrendingMovies(
-	apiKey: string,
-	config: TMDBClientConfig,
-	timeWindow: "day" | "week" = "week",
-	page = 1,
-): Promise<TMDBResponse<TMDBMovie>> {
-	// Check cache first
-	const cacheKey = getCacheKey("trending_movies", timeWindow, page);
-	const cached = getFromCache<TMDBResponse<TMDBMovie>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey);
-	if (cached) return cached;
-
-	// Fetch 2 pages at once (reduced from 3 to minimize API calls)
-	const pagesToFetch = 2;
-	const startPage = (page - 1) * pagesToFetch + 1;
-
-	const responses = await Promise.all(
-		Array.from({ length: pagesToFetch }, (_, i) =>
-			fetchSinglePage<TMDBResponse<TMDBMovie>>(
-				`/trending/movie/${timeWindow}`,
-				apiKey,
-				config,
-				startPage + i,
-			),
-		),
-	);
-
-	const allMovies = responses.flatMap((r) => r.results);
-
-	const data = responses[0];
-	const result: TMDBResponse<TMDBMovie> = {
-		...data,
-		page,
-		results: allMovies,
-		total_results: data?.total_results ?? 0,
-		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
-	};
-
-	// Cache the result
-	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey, result, LIST_CACHE_TTL_MS);
-	return result;
-}
-
-export async function getTrendingTV(
-	apiKey: string,
-	config: TMDBClientConfig,
-	timeWindow: "day" | "week" = "week",
-	page = 1,
-): Promise<TMDBResponse<TMDBTVShow>> {
-	// Check cache first
-	const cacheKey = getCacheKey("trending_tv", timeWindow, page);
-	const cached = getFromCache<TMDBResponse<TMDBTVShow>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey);
-	if (cached) return cached;
-
-	// Fetch 2 pages at once (reduced from 3 to minimize API calls)
-	const pagesToFetch = 2;
-	const startPage = (page - 1) * pagesToFetch + 1;
-
-	const responses = await Promise.all(
-		Array.from({ length: pagesToFetch }, (_, i) =>
-			fetchSinglePage<TMDBResponse<TMDBTVShow>>(
-				`/trending/tv/${timeWindow}`,
-				apiKey,
-				config,
-				startPage + i,
-			),
-		),
-	);
-
-	const allShows = responses.flatMap((r) => r.results);
-
-	const data = responses[0];
-	const result: TMDBResponse<TMDBTVShow> = {
-		...data,
-		page,
-		results: allShows,
-		total_results: data?.total_results ?? 0,
-		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
-	};
-
-	// Cache the result
-	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey, result, LIST_CACHE_TTL_MS);
-	return result;
-}
-
-export async function getPopularMovies(
-	apiKey: string,
-	config: TMDBClientConfig,
-	page = 1,
-): Promise<TMDBResponse<TMDBMovie>> {
-	// Check cache first
-	const cacheKey = getCacheKey("popular_movies", page);
-	const cached = getFromCache<TMDBResponse<TMDBMovie>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey);
-	if (cached) return cached;
-
-	// Fetch 2 pages at once (reduced from 3 to minimize API calls)
-	const pagesToFetch = 2;
-	const startPage = (page - 1) * pagesToFetch + 1;
-
-	const responses = await Promise.all(
-		Array.from({ length: pagesToFetch }, (_, i) =>
-			fetchSinglePage<TMDBResponse<TMDBMovie>>("/movie/popular", apiKey, config, startPage + i),
-		),
-	);
-
-	const allMovies = responses.flatMap((r) => r.results);
-
-	const data = responses[0];
-	const result: TMDBResponse<TMDBMovie> = {
-		...data,
-		page,
-		results: allMovies,
-		total_results: data?.total_results ?? 0,
-		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
-	};
-
-	// Cache the result
-	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey, result, LIST_CACHE_TTL_MS);
-	return result;
-}
-
-export async function getPopularTV(
-	apiKey: string,
-	config: TMDBClientConfig,
-	page = 1,
-): Promise<TMDBResponse<TMDBTVShow>> {
-	// Check cache first
-	const cacheKey = getCacheKey("popular_tv", page);
-	const cached = getFromCache<TMDBResponse<TMDBTVShow>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey);
-	if (cached) return cached;
-
-	// Fetch 2 pages at once (reduced from 3 to minimize API calls)
-	const pagesToFetch = 2;
-	const startPage = (page - 1) * pagesToFetch + 1;
-
-	const responses = await Promise.all(
-		Array.from({ length: pagesToFetch }, (_, i) =>
-			fetchSinglePage<TMDBResponse<TMDBTVShow>>("/tv/popular", apiKey, config, startPage + i),
-		),
-	);
-
-	const allShows = responses.flatMap((r) => r.results);
-
-	const data = responses[0];
-	const result: TMDBResponse<TMDBTVShow> = {
-		...data,
-		page,
-		results: allShows,
-		total_results: data?.total_results ?? 0,
-		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
-	};
-
-	// Cache the result
-	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey, result, LIST_CACHE_TTL_MS);
-	return result;
-}
-
-export async function getTopRatedMovies(
-	apiKey: string,
-	config: TMDBClientConfig,
-	page = 1,
-): Promise<TMDBResponse<TMDBMovie>> {
-	// Check cache first
-	const cacheKey = getCacheKey("top_rated_movies", page);
-	const cached = getFromCache<TMDBResponse<TMDBMovie>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey);
-	if (cached) return cached;
-
-	// Fetch 2 pages at once (reduced from 3 to minimize API calls)
-	const pagesToFetch = 2;
-	const startPage = (page - 1) * pagesToFetch + 1;
-
-	const responses = await Promise.all(
-		Array.from({ length: pagesToFetch }, (_, i) =>
-			fetchSinglePage<TMDBResponse<TMDBMovie>>("/movie/top_rated", apiKey, config, startPage + i),
-		),
-	);
-
-	const allMovies = responses.flatMap((r) => r.results);
-
-	const data = responses[0];
-	const result: TMDBResponse<TMDBMovie> = {
-		...data,
-		page,
-		results: allMovies,
-		total_results: data?.total_results ?? 0,
-		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
-	};
-
-	// Cache the result
-	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey, result, LIST_CACHE_TTL_MS);
-	return result;
-}
-
-export async function getTopRatedTV(
-	apiKey: string,
-	config: TMDBClientConfig,
-	page = 1,
-): Promise<TMDBResponse<TMDBTVShow>> {
-	// Check cache first
-	const cacheKey = getCacheKey("top_rated_tv", page);
-	const cached = getFromCache<TMDBResponse<TMDBTVShow>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey);
-	if (cached) return cached;
-
-	// Fetch 2 pages at once (reduced from 3 to minimize API calls)
-	const pagesToFetch = 2;
-	const startPage = (page - 1) * pagesToFetch + 1;
-
-	const responses = await Promise.all(
-		Array.from({ length: pagesToFetch }, (_, i) =>
-			fetchSinglePage<TMDBResponse<TMDBTVShow>>("/tv/top_rated", apiKey, config, startPage + i),
-		),
-	);
-
-	const allShows = responses.flatMap((r) => r.results);
-
-	const data = responses[0];
-	const result: TMDBResponse<TMDBTVShow> = {
-		...data,
-		page,
-		results: allShows,
-		total_results: data?.total_results ?? 0,
-		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
-	};
-
-	// Cache the result
-	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey, result, LIST_CACHE_TTL_MS);
-	return result;
-}
-
-export async function getUpcomingMovies(
-	apiKey: string,
-	config: TMDBClientConfig,
-	page = 1,
-): Promise<TMDBResponse<TMDBMovie>> {
-	// Check cache first
-	const cacheKey = getCacheKey("upcoming_movies", page);
-	const cached = getFromCache<TMDBResponse<TMDBMovie>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey);
-	if (cached) return cached;
-
-	// Fetch 3 pages at once (reduced from 5, but needs more for date filtering)
-	const pagesToFetch = 3;
-	const startPage = (page - 1) * pagesToFetch + 1;
-
-	const responses = await Promise.all(
-		Array.from({ length: pagesToFetch }, (_, i) =>
-			fetchSinglePage<TMDBResponse<TMDBMovie>>("/movie/upcoming", apiKey, config, startPage + i),
-		),
-	);
-
-	// Filter to only include movies with future release dates
-	const today = new Date();
-	today.setHours(0, 0, 0, 0); // Start of today
-
-	const allMovies = responses.flatMap((r) => r.results);
-	const futureMovies = allMovies.filter((movie) => {
-		if (!movie.release_date) return false;
-		const releaseDate = new Date(movie.release_date);
-		return releaseDate >= today;
-	});
-
-	const data = responses[0];
-	const result: TMDBResponse<TMDBMovie> = {
-		...data,
-		page,
-		results: futureMovies,
-		total_results: data?.total_results ?? 0,
-		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
-	};
-
-	// Cache the result
-	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBMovie>>>, cacheKey, result, LIST_CACHE_TTL_MS);
-	return result;
-}
-
-export async function getAiringTodayTV(
-	apiKey: string,
-	config: TMDBClientConfig,
-	page = 1,
-): Promise<TMDBResponse<TMDBTVShow>> {
-	// Check cache first
-	const cacheKey = getCacheKey("airing_today_tv", page);
-	const cached = getFromCache<TMDBResponse<TMDBTVShow>>(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey);
-	if (cached) return cached;
-
-	// Fetch 2 pages at once (reduced from 3 to minimize API calls)
-	const pagesToFetch = 2;
-	const startPage = (page - 1) * pagesToFetch + 1;
-
-	const responses = await Promise.all(
-		Array.from({ length: pagesToFetch }, (_, i) =>
-			fetchSinglePage<TMDBResponse<TMDBTVShow>>("/tv/airing_today", apiKey, config, startPage + i),
-		),
-	);
-
-	const allShows = responses.flatMap((r) => r.results);
-
-	const data = responses[0];
-	const result: TMDBResponse<TMDBTVShow> = {
-		...data,
-		page,
-		results: allShows,
-		total_results: data?.total_results ?? 0,
-		total_pages: Math.ceil((data?.total_pages ?? 0) / pagesToFetch),
-	};
-
-	// Cache the result
-	setInCache(listCache as Map<string, CacheEntry<TMDBResponse<TMDBTVShow>>>, cacheKey, result, LIST_CACHE_TTL_MS);
-	return result;
-}
-
-export function getTMDBImageUrl(
-	path: string | null,
-	config: TMDBClientConfig,
-	size: "w500" | "original" = "w500",
-): string | null {
-	if (!path) return null;
-	return `${config.imageBaseUrl}/${size}${path}`;
-}
-
-export interface TMDBExternalIds {
-	imdb_id?: string | null;
-	tvdb_id?: number | null;
-	facebook_id?: string | null;
-	instagram_id?: string | null;
-	twitter_id?: string | null;
-}
-
-/**
- * Fetches external IDs (IMDB, TVDB, etc.) for a movie or TV show
- * Results are cached for 24 hours since external IDs rarely change
- */
-export async function getExternalIds(
-	apiKey: string,
-	config: TMDBClientConfig,
-	tmdbId: number,
-	mediaType: "movie" | "tv",
-): Promise<TMDBExternalIds> {
-	// Check cache first - external IDs rarely change so use long TTL
-	const cacheKey = getCacheKey("external_ids", mediaType, tmdbId);
-	const cached = getFromCache(externalIdsCache, cacheKey);
-	if (cached) return cached;
-
-	const url = `${config.baseUrl}/${mediaType}/${tmdbId}/external_ids?api_key=${apiKey}`;
-	const response = await fetch(url);
-
-	if (!response.ok) {
-		return {};
+	/**
+	 * Get full image URL from a TMDB path
+	 */
+	getImageUrl(
+		path: string | null | undefined,
+		size: "w185" | "w342" | "w500" | "w780" | "original" = "w500",
+	): string | null {
+		if (!path) return null;
+		return `${this.imageBaseUrl}/${size}${path}`;
 	}
 
-	const result = await response.json();
+	// ==========================================================================
+	// Trending Endpoints
+	// ==========================================================================
 
-	// Cache the result with 24 hour TTL
-	setInCache(externalIdsCache, cacheKey, result, EXTERNAL_IDS_CACHE_TTL_MS);
-	return result;
-}
+	readonly trending = {
+		/**
+		 * Get trending movies
+		 */
+		movies: async (
+			timeWindow: "day" | "week" = "week",
+			page = 1,
+		): Promise<PaginatedResponse<TMDBMovie>> => {
+			const cacheKey = getCacheKey("trending_movies", timeWindow, page);
+			const cached = getFromCache<PaginatedResponse<TMDBMovie>>(
+				listCache as Map<string, CacheEntry<PaginatedResponse<TMDBMovie>>>,
+				cacheKey,
+			);
+			if (cached) return cached;
 
-/**
- * Fetches external IDs for multiple items in parallel with error handling
- */
-export async function getExternalIdsForItems(
-	apiKey: string,
-	config: TMDBClientConfig,
-	items: Array<{ id: number }>,
-	mediaType: "movie" | "tv",
-): Promise<Map<number, TMDBExternalIds>> {
-	const results = new Map<number, TMDBExternalIds>();
+			const response = await this.client.trending.trending("movie", timeWindow, { page });
 
-	const promises = items.map(async (item) => {
-		try {
-			const externalIds = await getExternalIds(apiKey, config, item.id, mediaType);
-			results.set(item.id, externalIds);
-		} catch {
-			// If fetching external IDs fails for an item, continue without them
-			results.set(item.id, {});
-		}
-	});
+			const result: PaginatedResponse<TMDBMovie> = {
+				page: response.page,
+				results: response.results as TMDBMovie[],
+				total_results: response.total_results,
+				total_pages: response.total_pages,
+			};
 
-	await Promise.all(promises);
-	return results;
+			setInCache(
+				listCache as Map<string, CacheEntry<PaginatedResponse<TMDBMovie>>>,
+				cacheKey,
+				result,
+				LIST_CACHE_TTL_MS,
+			);
+			return result;
+		},
+
+		/**
+		 * Get trending TV shows
+		 */
+		tv: async (
+			timeWindow: "day" | "week" = "week",
+			page = 1,
+		): Promise<PaginatedResponse<TMDBTVShow>> => {
+			const cacheKey = getCacheKey("trending_tv", timeWindow, page);
+			const cached = getFromCache<PaginatedResponse<TMDBTVShow>>(
+				listCache as Map<string, CacheEntry<PaginatedResponse<TMDBTVShow>>>,
+				cacheKey,
+			);
+			if (cached) return cached;
+
+			const response = await this.client.trending.trending("tv", timeWindow, { page });
+
+			const result: PaginatedResponse<TMDBTVShow> = {
+				page: response.page,
+				results: (response.results as RawTVShowResult[]).map(normalizeTVShow),
+				total_results: response.total_results,
+				total_pages: response.total_pages,
+			};
+
+			setInCache(
+				listCache as Map<string, CacheEntry<PaginatedResponse<TMDBTVShow>>>,
+				cacheKey,
+				result,
+				LIST_CACHE_TTL_MS,
+			);
+			return result;
+		},
+	};
+
+	// ==========================================================================
+	// Movies Endpoints
+	// ==========================================================================
+
+	readonly movies = {
+		/**
+		 * Get popular movies
+		 */
+		popular: async (page = 1): Promise<PaginatedResponse<TMDBMovie>> => {
+			const cacheKey = getCacheKey("popular_movies", page);
+			const cached = getFromCache<PaginatedResponse<TMDBMovie>>(
+				listCache as Map<string, CacheEntry<PaginatedResponse<TMDBMovie>>>,
+				cacheKey,
+			);
+			if (cached) return cached;
+
+			const response = await this.client.movies.popular({ page });
+
+			const result: PaginatedResponse<TMDBMovie> = {
+				page: response.page,
+				results: response.results,
+				total_results: response.total_results,
+				total_pages: response.total_pages,
+			};
+
+			setInCache(
+				listCache as Map<string, CacheEntry<PaginatedResponse<TMDBMovie>>>,
+				cacheKey,
+				result,
+				LIST_CACHE_TTL_MS,
+			);
+			return result;
+		},
+
+		/**
+		 * Get top rated movies
+		 */
+		topRated: async (page = 1): Promise<PaginatedResponse<TMDBMovie>> => {
+			const cacheKey = getCacheKey("top_rated_movies", page);
+			const cached = getFromCache<PaginatedResponse<TMDBMovie>>(
+				listCache as Map<string, CacheEntry<PaginatedResponse<TMDBMovie>>>,
+				cacheKey,
+			);
+			if (cached) return cached;
+
+			const response = await this.client.movies.topRated({ page });
+
+			const result: PaginatedResponse<TMDBMovie> = {
+				page: response.page,
+				results: response.results,
+				total_results: response.total_results,
+				total_pages: response.total_pages,
+			};
+
+			setInCache(
+				listCache as Map<string, CacheEntry<PaginatedResponse<TMDBMovie>>>,
+				cacheKey,
+				result,
+				LIST_CACHE_TTL_MS,
+			);
+			return result;
+		},
+
+		/**
+		 * Get upcoming movies
+		 */
+		upcoming: async (page = 1): Promise<PaginatedResponse<TMDBMovie>> => {
+			const cacheKey = getCacheKey("upcoming_movies", page);
+			const cached = getFromCache<PaginatedResponse<TMDBMovie>>(
+				listCache as Map<string, CacheEntry<PaginatedResponse<TMDBMovie>>>,
+				cacheKey,
+			);
+			if (cached) return cached;
+
+			const response = await this.client.movies.upcoming({ page });
+
+			// Filter to only include movies with future release dates
+			const today = new Date();
+			today.setHours(0, 0, 0, 0);
+
+			const futureMovies = response.results.filter((movie) => {
+				if (!movie.release_date) return false;
+				const releaseDate = new Date(movie.release_date);
+				return releaseDate >= today;
+			});
+
+			const result: PaginatedResponse<TMDBMovie> = {
+				page: response.page,
+				results: futureMovies,
+				total_results: response.total_results,
+				total_pages: response.total_pages,
+			};
+
+			setInCache(
+				listCache as Map<string, CacheEntry<PaginatedResponse<TMDBMovie>>>,
+				cacheKey,
+				result,
+				LIST_CACHE_TTL_MS,
+			);
+			return result;
+		},
+
+		/**
+		 * Get similar movies
+		 */
+		similar: async (
+			movieId: number,
+			page = 1,
+		): Promise<PaginatedResponse<TMDBMovie>> => {
+			const cacheKey = getCacheKey("similar_movies", movieId, page);
+			const cached = getFromCache<PaginatedResponse<TMDBMovie>>(
+				similarCache as Map<string, CacheEntry<PaginatedResponse<TMDBMovie>>>,
+				cacheKey,
+			);
+			if (cached) return cached;
+
+			const response = await this.client.movies.similar(movieId, { page });
+
+			const result: PaginatedResponse<TMDBMovie> = {
+				page: response.page,
+				results: response.results,
+				total_pages: response.total_pages,
+				total_results: response.total_results,
+			};
+
+			setInCache(
+				similarCache as Map<string, CacheEntry<PaginatedResponse<TMDBMovie>>>,
+				cacheKey,
+				result,
+				SIMILAR_CACHE_TTL_MS,
+			);
+			return result;
+		},
+
+		/**
+		 * Get external IDs for a movie (IMDB, etc.)
+		 */
+		externalIds: async (movieId: number): Promise<ExternalIds> => {
+			const cacheKey = getCacheKey("movie_external_ids", movieId);
+			const cached = getFromCache(externalIdsCache, cacheKey);
+			if (cached) return cached;
+
+			const result = await this.client.movies.externalIds(movieId);
+
+			setInCache(externalIdsCache, cacheKey, result, EXTERNAL_IDS_CACHE_TTL_MS);
+			return result;
+		},
+
+		/**
+		 * Get credits (cast and crew) for a movie
+		 */
+		credits: async (movieId: number): Promise<Credits> => {
+			const cacheKey = getCacheKey("movie_credits", movieId);
+			const cached = getFromCache(creditsCache, cacheKey);
+			if (cached) return cached as Credits;
+
+			const result = await this.client.movies.credits(movieId);
+
+			setInCache(creditsCache, cacheKey, result, CREDITS_CACHE_TTL_MS);
+			return result;
+		},
+
+		/**
+		 * Get videos (trailers, clips, etc.) for a movie
+		 */
+		videos: async (movieId: number): Promise<Videos> => {
+			const cacheKey = getCacheKey("movie_videos", movieId);
+			const cached = getFromCache(videosCache, cacheKey);
+			if (cached) return cached;
+
+			const result = await this.client.movies.videos(movieId);
+
+			setInCache(videosCache, cacheKey, result, VIDEOS_CACHE_TTL_MS);
+			return result;
+		},
+
+		/**
+		 * Get watch providers (streaming services) for a movie
+		 * Powered by JustWatch
+		 */
+		watchProviders: async (movieId: number): Promise<WatchProviders> => {
+			const cacheKey = getCacheKey("movie_watch_providers", movieId);
+			const cached = getFromCache(watchProvidersCache, cacheKey);
+			if (cached) return cached;
+
+			const result = await this.client.movies.watchProviders(movieId);
+
+			setInCache(watchProvidersCache, cacheKey, result, WATCH_PROVIDERS_CACHE_TTL_MS);
+			return result;
+		},
+	};
+
+	// ==========================================================================
+	// TV Shows Endpoints
+	// ==========================================================================
+
+	readonly tv = {
+		/**
+		 * Get popular TV shows
+		 */
+		popular: async (page = 1): Promise<PaginatedResponse<TMDBTVShow>> => {
+			const cacheKey = getCacheKey("popular_tv", page);
+			const cached = getFromCache<PaginatedResponse<TMDBTVShow>>(
+				listCache as Map<string, CacheEntry<PaginatedResponse<TMDBTVShow>>>,
+				cacheKey,
+			);
+			if (cached) return cached;
+
+			const response = await this.client.tvShows.popular({ page });
+
+			const result: PaginatedResponse<TMDBTVShow> = {
+				page: response.page,
+				results: (response.results as unknown as RawTVShowResult[]).map(normalizeTVShow),
+				total_results: response.total_results,
+				total_pages: response.total_pages,
+			};
+
+			setInCache(
+				listCache as Map<string, CacheEntry<PaginatedResponse<TMDBTVShow>>>,
+				cacheKey,
+				result,
+				LIST_CACHE_TTL_MS,
+			);
+			return result;
+		},
+
+		/**
+		 * Get top rated TV shows
+		 */
+		topRated: async (page = 1): Promise<PaginatedResponse<TMDBTVShow>> => {
+			const cacheKey = getCacheKey("top_rated_tv", page);
+			const cached = getFromCache<PaginatedResponse<TMDBTVShow>>(
+				listCache as Map<string, CacheEntry<PaginatedResponse<TMDBTVShow>>>,
+				cacheKey,
+			);
+			if (cached) return cached;
+
+			const response = await this.client.tvShows.topRated({ page });
+
+			const result: PaginatedResponse<TMDBTVShow> = {
+				page: response.page,
+				results: (response.results as unknown as RawTVShowResult[]).map(normalizeTVShow),
+				total_results: response.total_results,
+				total_pages: response.total_pages,
+			};
+
+			setInCache(
+				listCache as Map<string, CacheEntry<PaginatedResponse<TMDBTVShow>>>,
+				cacheKey,
+				result,
+				LIST_CACHE_TTL_MS,
+			);
+			return result;
+		},
+
+		/**
+		 * Get TV shows airing today
+		 */
+		airingToday: async (page = 1): Promise<PaginatedResponse<TMDBTVShow>> => {
+			const cacheKey = getCacheKey("airing_today_tv", page);
+			const cached = getFromCache<PaginatedResponse<TMDBTVShow>>(
+				listCache as Map<string, CacheEntry<PaginatedResponse<TMDBTVShow>>>,
+				cacheKey,
+			);
+			if (cached) return cached;
+
+			const response = await this.client.tvShows.airingToday({ page });
+
+			const result: PaginatedResponse<TMDBTVShow> = {
+				page: response.page,
+				results: (response.results as unknown as RawTVShowResult[]).map(normalizeTVShow),
+				total_results: response.total_results,
+				total_pages: response.total_pages,
+			};
+
+			setInCache(
+				listCache as Map<string, CacheEntry<PaginatedResponse<TMDBTVShow>>>,
+				cacheKey,
+				result,
+				LIST_CACHE_TTL_MS,
+			);
+			return result;
+		},
+
+		/**
+		 * Get similar TV shows
+		 */
+		similar: async (
+			tvId: number,
+			page = 1,
+		): Promise<PaginatedResponse<TMDBTVShow>> => {
+			const cacheKey = getCacheKey("similar_tv", tvId, page);
+			const cached = getFromCache<PaginatedResponse<TMDBTVShow>>(
+				similarCache as Map<string, CacheEntry<PaginatedResponse<TMDBTVShow>>>,
+				cacheKey,
+			);
+			if (cached) return cached;
+
+			const response = await this.client.tvShows.similar(tvId, { page });
+
+			const result: PaginatedResponse<TMDBTVShow> = {
+				page: response.page,
+				results: (response.results as unknown as RawTVShowResult[]).map(
+					normalizeTVShow,
+				),
+				total_pages: response.total_pages,
+				total_results: response.total_results,
+			};
+
+			setInCache(
+				similarCache as Map<string, CacheEntry<PaginatedResponse<TMDBTVShow>>>,
+				cacheKey,
+				result,
+				SIMILAR_CACHE_TTL_MS,
+			);
+			return result;
+		},
+
+		/**
+		 * Get external IDs for a TV show (IMDB, TVDB, etc.)
+		 */
+		externalIds: async (tvId: number): Promise<ExternalIds> => {
+			const cacheKey = getCacheKey("tv_external_ids", tvId);
+			const cached = getFromCache(externalIdsCache, cacheKey);
+			if (cached) return cached;
+
+			const result = await this.client.tvShows.externalIds(tvId);
+
+			setInCache(externalIdsCache, cacheKey, result, EXTERNAL_IDS_CACHE_TTL_MS);
+			return result;
+		},
+
+		/**
+		 * Get credits (cast and crew) for a TV show
+		 * Returns simple credits - use aggregateCredits for role-aggregated data
+		 */
+		credits: async (tvId: number): Promise<Credits> => {
+			const cacheKey = getCacheKey("tv_credits", tvId);
+			const cached = getFromCache(creditsCache, cacheKey);
+			if (cached) return cached as Credits;
+
+			const result = await this.client.tvShows.credits(tvId);
+
+			setInCache(creditsCache, cacheKey, result, CREDITS_CACHE_TTL_MS);
+			return result;
+		},
+
+		/**
+		 * Get aggregate credits for a TV show (roles/jobs grouped by person)
+		 * Better for showing "Character (X episodes)" style credits
+		 */
+		aggregateCredits: async (tvId: number): Promise<AggregateCredits> => {
+			const cacheKey = getCacheKey("tv_aggregate_credits", tvId);
+			const cached = getFromCache(creditsCache, cacheKey);
+			if (cached) return cached as AggregateCredits;
+
+			const result = await this.client.tvShows.aggregateCredits(tvId);
+
+			setInCache(creditsCache, cacheKey, result, CREDITS_CACHE_TTL_MS);
+			return result;
+		},
+
+		/**
+		 * Get videos (trailers, clips, etc.) for a TV show
+		 */
+		videos: async (tvId: number): Promise<Videos> => {
+			const cacheKey = getCacheKey("tv_videos", tvId);
+			const cached = getFromCache(videosCache, cacheKey);
+			if (cached) return cached;
+
+			const result = await this.client.tvShows.videos(tvId);
+
+			setInCache(videosCache, cacheKey, result, VIDEOS_CACHE_TTL_MS);
+			return result;
+		},
+
+		/**
+		 * Get watch providers (streaming services) for a TV show
+		 * Powered by JustWatch
+		 */
+		watchProviders: async (tvId: number): Promise<WatchProviders> => {
+			const cacheKey = getCacheKey("tv_watch_providers", tvId);
+			const cached = getFromCache(watchProvidersCache, cacheKey);
+			if (cached) return cached;
+
+			const result = await this.client.tvShows.watchProviders(tvId);
+
+			setInCache(watchProvidersCache, cacheKey, result, WATCH_PROVIDERS_CACHE_TTL_MS);
+			return result;
+		},
+	};
+
+	// ==========================================================================
+	// Search Endpoints
+	// ==========================================================================
+
+	readonly search = {
+		/**
+		 * Search for movies
+		 */
+		movies: async (options: {
+			query: string;
+			page?: number;
+			year?: number;
+		}): Promise<PaginatedResponse<TMDBMovie>> => {
+			const cacheKey = getCacheKey(
+				"search_movies",
+				options.query,
+				options.page ?? 1,
+				options.year ?? 0,
+			);
+			const cached = getFromCache<PaginatedResponse<TMDBMovie>>(
+				searchCache as Map<string, CacheEntry<PaginatedResponse<TMDBMovie>>>,
+				cacheKey,
+			);
+			if (cached) return cached;
+
+			const response = await this.client.search.movies({
+				query: options.query,
+				page: options.page,
+				year: options.year,
+			});
+
+			const result: PaginatedResponse<TMDBMovie> = {
+				page: response.page,
+				results: response.results,
+				total_pages: response.total_pages,
+				total_results: response.total_results,
+			};
+
+			setInCache(
+				searchCache as Map<string, CacheEntry<PaginatedResponse<TMDBMovie>>>,
+				cacheKey,
+				result,
+				SEARCH_CACHE_TTL_MS,
+			);
+			return result;
+		},
+
+		/**
+		 * Search for TV shows
+		 */
+		tv: async (options: {
+			query: string;
+			page?: number;
+			year?: number;
+		}): Promise<PaginatedResponse<TMDBTVShow>> => {
+			const cacheKey = getCacheKey(
+				"search_tv",
+				options.query,
+				options.page ?? 1,
+				options.year ?? 0,
+			);
+			const cached = getFromCache<PaginatedResponse<TMDBTVShow>>(
+				searchCache as Map<string, CacheEntry<PaginatedResponse<TMDBTVShow>>>,
+				cacheKey,
+			);
+			if (cached) return cached;
+
+			const response = await this.client.search.tvShows({
+				query: options.query,
+				page: options.page,
+				first_air_date_year: options.year,
+			});
+
+			const result: PaginatedResponse<TMDBTVShow> = {
+				page: response.page,
+				results: (response.results as unknown as RawTVShowResult[]).map(
+					normalizeTVShow,
+				),
+				total_pages: response.total_pages,
+				total_results: response.total_results,
+			};
+
+			setInCache(
+				searchCache as Map<string, CacheEntry<PaginatedResponse<TMDBTVShow>>>,
+				cacheKey,
+				result,
+				SEARCH_CACHE_TTL_MS,
+			);
+			return result;
+		},
+	};
+
+	// ==========================================================================
+	// Genre Endpoints
+	// ==========================================================================
+
+	readonly genres = {
+		/**
+		 * Get all movie genres
+		 */
+		movies: async (): Promise<{ genres: TMDBGenre[] }> => {
+			const cacheKey = getCacheKey("genres_movies");
+			const cached = getFromCache(genreCache, cacheKey);
+			if (cached) return cached;
+
+			const result = await this.client.genres.movies();
+
+			setInCache(genreCache, cacheKey, result, GENRE_CACHE_TTL_MS);
+			return result;
+		},
+
+		/**
+		 * Get all TV show genres
+		 */
+		tv: async (): Promise<{ genres: TMDBGenre[] }> => {
+			const cacheKey = getCacheKey("genres_tv");
+			const cached = getFromCache(genreCache, cacheKey);
+			if (cached) return cached;
+
+			const result = await this.client.genres.tvShows();
+
+			setInCache(genreCache, cacheKey, result, GENRE_CACHE_TTL_MS);
+			return result;
+		},
+	};
+
+	// ==========================================================================
+	// Batch External ID Fetching
+	// ==========================================================================
+
+	/**
+	 * Fetch external IDs for multiple items in parallel
+	 * Useful for enriching discovery results with IMDB/TVDB IDs
+	 */
+	async getExternalIdsForItems(
+		items: Array<{ id: number }>,
+		mediaType: "movie" | "tv",
+	): Promise<Map<number, ExternalIds>> {
+		const results = new Map<number, ExternalIds>();
+		const fetcher =
+			mediaType === "movie" ? this.movies.externalIds : this.tv.externalIds;
+
+		const promises = items.map(async (item) => {
+			try {
+				const externalIds = await fetcher(item.id);
+				results.set(item.id, externalIds);
+			} catch {
+				// If fetching external IDs fails for an item, continue without them
+				results.set(item.id, {} as ExternalIds);
+			}
+		});
+
+		await Promise.all(promises);
+		return results;
+	}
 }

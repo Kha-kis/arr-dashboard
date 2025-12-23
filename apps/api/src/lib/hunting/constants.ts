@@ -69,20 +69,6 @@ export const MAX_HOURLY_API_CAP = 500;
  */
 export const DEFAULT_HOURLY_API_CAP = 100;
 
-// === API MANAGEMENT ===
-
-/**
- * API request timeout in milliseconds (120 seconds)
- * Consistent timeout across all ARR API calls to prevent hanging requests.
- */
-export const API_TIMEOUT_MS = 120_000;
-
-/**
- * User-Agent header sent with all ARR API requests
- * Identifies our application to Sonarr/Radarr for debugging and rate limiting purposes.
- */
-export const API_USER_AGENT = "arr-dashboard/2.0";
-
 /**
  * Delay between individual search commands within a hunt (30 seconds)
  * Prevents overwhelming indexers with simultaneous requests.

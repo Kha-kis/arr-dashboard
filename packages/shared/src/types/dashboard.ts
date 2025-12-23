@@ -331,6 +331,8 @@ export const dashboardStatisticsResponseSchema = z.object({
         instanceId: z.string(),
         instanceName: z.string(),
         data: sonarrStatisticsSchema,
+        /** When true, the fetch failed and data contains empty/fallback values */
+        error: z.boolean().optional(),
       }),
     ),
     aggregate: sonarrStatisticsSchema.optional(),
@@ -341,6 +343,8 @@ export const dashboardStatisticsResponseSchema = z.object({
         instanceId: z.string(),
         instanceName: z.string(),
         data: radarrStatisticsSchema,
+        /** When true, the fetch failed and data contains empty/fallback values */
+        error: z.boolean().optional(),
       }),
     ),
     aggregate: radarrStatisticsSchema.optional(),
@@ -351,6 +355,8 @@ export const dashboardStatisticsResponseSchema = z.object({
         instanceId: z.string(),
         instanceName: z.string(),
         data: prowlarrStatisticsSchema,
+        /** When true, the fetch failed and data contains empty/fallback values */
+        error: z.boolean().optional(),
       }),
     ),
     aggregate: prowlarrStatisticsSchema.optional(),

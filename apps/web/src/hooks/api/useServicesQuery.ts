@@ -14,6 +14,6 @@ export const useServicesQuery = (options: ServicesQueryOptions = {}) =>
 		queryFn: fetchServices,
 		staleTime: 30 * 1000, // 30 seconds - services don't change frequently
 		enabled: options.enabled ?? true,
-		initialData: options.enabled === false ? [] : undefined,
-		refetchOnMount: true, // Refetch if stale, but not always
+		refetchOnMount: "always", // Always refetch when component mounts
+		retry: 3, // Retry failed requests
 	});

@@ -1,14 +1,21 @@
 import { historyItemSchema } from "@arr/shared";
 import type { HistoryItem } from "@arr/shared";
-import type { ServiceInstance } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
-import { fetchHistoryItems } from "../../lib/dashboard/fetch-utils.js";
+import {
+	executeOnInstances,
+	isSonarrClient,
+	isRadarrClient,
+	isProwlarrClient,
+} from "../../lib/arr/client-helpers.js";
+import { normalizeHistoryItem } from "../../lib/dashboard/history-utils.js";
 
+/**
+ * Query schema for history endpoint.
+ * Note: Pagination is handled client-side after filtering/sorting aggregated results
+ * from multiple instances. Backend fetches up to 2500 records per instance.
+ */
 const historyQuerySchema = z.object({
-	page: z.coerce.number().min(1).optional().default(1),
-	pageSize: z.coerce.number().min(1).max(500).optional().default(100),
 	startDate: z.string().optional(),
 	endDate: z.string().optional(),
 });
@@ -32,63 +39,84 @@ export const historyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Fetches download history from all enabled Sonarr, Radarr, and Prowlarr instances
 	 */
 	app.get("/dashboard/history", async (request, reply) => {
-		const { page, pageSize, startDate, endDate } = historyQuerySchema.parse(request.query ?? {});
+		const { startDate, endDate } = historyQuerySchema.parse(request.query ?? {});
 
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: { enabled: true, userId: request.currentUser?.id },
-		});
-
-		const results: Array<{
-			instanceId: string;
-			instanceName: string;
-			service: "sonarr" | "radarr" | "prowlarr";
-			data: HistoryItem[];
-			totalRecords: number;
-		}> = [];
-		const allItems: HistoryItem[] = [];
-
-		// Fetch all available records from each instance
-		for (const instance of instances) {
-			const service = instance.service.toLowerCase();
-			if (service !== "sonarr" && service !== "radarr" && service !== "prowlarr") {
-				continue;
-			}
-
-			try {
-				const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
-				// Fetch 2500 records from each service
+		const response = await executeOnInstances(
+			app,
+			request.currentUser!.id,
+			{ serviceTypes: ["SONARR", "RADARR", "PROWLARR"] },
+			async (client, instance) => {
+				const service = instance.service.toLowerCase() as "sonarr" | "radarr" | "prowlarr";
 				const recordLimit = 2500;
-				const { items, totalRecords } = await fetchHistoryItems(
-					fetcher,
-					service,
-					1,
-					recordLimit,
-					startDate,
-					endDate,
-				);
-				const enriched = items.map((item: unknown) => ({
-					...item as Record<string, unknown>,
-					instanceId: instance.id,
-					instanceName: instance.label,
-				}));
-				const validated = enriched.map((entry: unknown) => historyItemSchema.parse(entry));
-				results.push({
-					instanceId: instance.id,
-					instanceName: instance.label,
-					service,
-					data: validated,
+
+				// Fetch history using SDK with pagination params
+				let rawRecords: unknown[] = [];
+				let totalRecords = 0;
+
+				if (isSonarrClient(client)) {
+					const result = await client.history.get({
+						page: 1,
+						pageSize: recordLimit,
+						sortKey: "date",
+						sortDirection: "descending",
+						...(startDate && { since: startDate }),
+						...(endDate && { until: endDate }),
+					});
+					rawRecords = result.records ?? [];
+					totalRecords = result.totalRecords ?? rawRecords.length;
+				} else if (isRadarrClient(client)) {
+					const result = await client.history.get({
+						page: 1,
+						pageSize: recordLimit,
+						sortKey: "date",
+						sortDirection: "descending",
+						...(startDate && { since: startDate }),
+						...(endDate && { until: endDate }),
+					});
+					rawRecords = result.records ?? [];
+					totalRecords = result.totalRecords ?? rawRecords.length;
+				} else if (isProwlarrClient(client)) {
+					const result = await client.history.get({
+						page: 1,
+						pageSize: recordLimit,
+						sortKey: "date",
+						sortDirection: "descending",
+					});
+					rawRecords = result.records ?? [];
+					totalRecords = result.totalRecords ?? rawRecords.length;
+				}
+
+				// Normalize and enrich items
+				const items = rawRecords.map((raw) => {
+					const normalized = normalizeHistoryItem(raw, service);
+					return historyItemSchema.parse({
+						...normalized,
+						instanceId: instance.id,
+						instanceName: instance.label,
+					});
+				});
+
+				return {
+					items,
 					totalRecords,
-				});
-				allItems.push(...validated);
-			} catch (error) {
-				request.log.error({ err: error, instance: instance.id }, "history fetch failed");
-				results.push({
-					instanceId: instance.id,
-					instanceName: instance.label,
-					service,
-					data: [],
-					totalRecords: 0,
-				});
+				};
+			},
+		);
+
+		// Transform results to match expected format
+		const results = response.instances.map((result) => ({
+			instanceId: result.instanceId,
+			instanceName: result.instanceName,
+			service: result.service as "sonarr" | "radarr" | "prowlarr",
+			data: result.success ? result.data.items : [],
+			totalRecords: result.success ? result.data.totalRecords : 0,
+		}));
+
+		// Collect all items for aggregation
+		const allItems: HistoryItem[] = [];
+		for (const result of response.instances) {
+			if (result.success) {
+				allItems.push(...result.data.items);
 			}
 		}
 

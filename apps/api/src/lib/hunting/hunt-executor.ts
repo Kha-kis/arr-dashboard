@@ -1,8 +1,15 @@
 import type { HuntConfig, ServiceInstance } from "@prisma/client";
-import type { FastifyInstance } from "fastify";
-import { createInstanceFetcher, type InstanceFetcher } from "../arr/arr-fetcher.js";
+import type { FastifyInstance, FastifyBaseLogger } from "fastify";
+import type { SonarrClient } from "arr-sdk/sonarr";
+import type { RadarrClient } from "arr-sdk/radarr";
 import { SEASON_SEARCH_THRESHOLD, SEARCH_DELAY_MS, GRAB_CHECK_DELAY_MS } from "./constants.js";
 import { createSearchHistoryManager, type SearchHistoryManager, type SearchedItem } from "./search-history.js";
+
+/**
+ * Logger type for hunt executor functions
+ * Uses Fastify's base logger for structured logging
+ */
+type HuntLogger = FastifyBaseLogger;
 
 /**
  * Delay helper - waits for the specified milliseconds
@@ -14,19 +21,6 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
  */
 interface ApiCallCounter {
 	count: number;
-}
-
-/**
- * Creates a fetcher wrapper that tracks API call count
- */
-function createTrackingFetcher(
-	fetcher: InstanceFetcher,
-	counter: ApiCallCounter,
-): InstanceFetcher {
-	return ((path: string, init?: RequestInit) => {
-		counter.count++;
-		return fetcher(path, init);
-	}) as InstanceFetcher;
 }
 
 /**
@@ -254,27 +248,32 @@ function expandStatusFilters(statuses: string[], service: "sonarr" | "radarr"): 
  *
  * @param config - Hunt configuration containing raw filter values (JSON arrays encoded as strings and scalar filter settings)
  * @param service - Target service ("sonarr" or "radarr") used to expand provided statuses into the service-specific status hierarchy
+ * @param logger - Fastify logger for structured logging
  * @returns A ParsedFilters object with parsed include/exclude tag and quality profile arrays, includeStatuses, expandedStatuses, year range, ageThresholdDays, filterLogic, and monitoredOnly flag
  */
-function parseFilters(config: HuntConfig, service: "sonarr" | "radarr"): ParsedFilters {
-	const parseJsonArray = (value: string | null | undefined): number[] | string[] => {
+function parseFilters(config: HuntConfig, service: "sonarr" | "radarr", logger: HuntLogger): ParsedFilters {
+	const parseJsonArray = (value: string | null | undefined, fieldName: string): number[] | string[] => {
 		if (!value) return [];
 		try {
 			return JSON.parse(value);
-		} catch {
+		} catch (error) {
+			logger.warn(
+				{ err: error, field: fieldName, value, configId: config.id },
+				"Failed to parse hunt filter JSON - filter will be ignored"
+			);
 			return [];
 		}
 	};
 
-	const includeStatuses = parseJsonArray(config.includeStatuses) as string[];
+	const includeStatuses = parseJsonArray(config.includeStatuses, "includeStatuses") as string[];
 
 	return {
 		filterLogic: (config.filterLogic as "AND" | "OR") || "AND",
 		monitoredOnly: config.monitoredOnly ?? true,
-		includeTags: parseJsonArray(config.includeTags) as number[],
-		excludeTags: parseJsonArray(config.excludeTags) as number[],
-		includeQualityProfiles: parseJsonArray(config.includeQualityProfiles) as number[],
-		excludeQualityProfiles: parseJsonArray(config.excludeQualityProfiles) as number[],
+		includeTags: parseJsonArray(config.includeTags, "includeTags") as number[],
+		excludeTags: parseJsonArray(config.excludeTags, "excludeTags") as number[],
+		includeQualityProfiles: parseJsonArray(config.includeQualityProfiles, "includeQualityProfiles") as number[],
+		excludeQualityProfiles: parseJsonArray(config.excludeQualityProfiles, "excludeQualityProfiles") as number[],
 		includeStatuses,
 		expandedStatuses: expandStatusFilters(includeStatuses, service),
 		yearMin: config.yearMin,
@@ -430,30 +429,28 @@ function passesFilters(
 	return includeResults.every((r) => r);
 }
 
+// ============================================================================
+// SDK-based implementations (arr-sdk 0.3.0)
+// ============================================================================
+
 /**
- * Orchestrates a hunt run against a Sonarr or Radarr instance to search for missing content or quality upgrades.
- *
- * Performs queue threshold validation, parses and applies configured filters, avoids recently searched items,
- * executes service-specific search flows (season/episode searches for Sonarr, movie searches for Radarr),
- * records searches in history, and detects grabbed items after searches.
- *
- * @returns A HuntResult summarizing the hunt, including counts of searched and grabbed items, arrays of searched and grabbed item details, a human-readable message, and a status of `completed`, `partial`, `skipped`, or `error`.
+ * Orchestrates a hunt run against a Sonarr or Radarr instance using the SDK.
  */
-export async function executeHunt(
+export async function executeHuntWithSdk(
 	app: FastifyInstance,
 	instance: ServiceInstance,
 	config: HuntConfig,
 	type: "missing" | "upgrade",
 ): Promise<HuntResult> {
-	const baseFetcher = createInstanceFetcher(app, instance);
+	const logger = app.log.child({ huntConfigId: config.id, instanceId: instance.id, huntType: type });
+	const client = app.arrClientFactory.create(instance);
 	const apiCallCounter: ApiCallCounter = { count: 0 };
-	const fetcher = createTrackingFetcher(baseFetcher, apiCallCounter);
 
 	const service = instance.service.toLowerCase() as "sonarr" | "radarr";
-	const filters = parseFilters(config, service);
+	const filters = parseFilters(config, service, logger);
 
 	// Check queue threshold first
-	const queueCheck = await checkQueueThreshold(fetcher, config.queueThreshold);
+	const queueCheck = await checkQueueThresholdWithSdk(client, config.queueThreshold, apiCallCounter, logger);
 	if (!queueCheck.ok) {
 		return {
 			itemsSearched: 0,
@@ -477,11 +474,27 @@ export async function executeHunt(
 	const batchSize = type === "missing" ? config.missingBatchSize : config.upgradeBatchSize;
 
 	if (service === "sonarr") {
-		const result = await executeSonarrHunt(fetcher, type, batchSize, filters, historyManager);
+		const result = await executeSonarrHuntWithSdk(
+			client as SonarrClient,
+			type,
+			batchSize,
+			filters,
+			historyManager,
+			apiCallCounter,
+			logger,
+		);
 		return { ...result, apiCallsMade: apiCallCounter.count };
 	}
 	if (service === "radarr") {
-		const result = await executeRadarrHunt(fetcher, type, batchSize, filters, historyManager);
+		const result = await executeRadarrHuntWithSdk(
+			client as RadarrClient,
+			type,
+			batchSize,
+			filters,
+			historyManager,
+			apiCallCounter,
+			logger,
+		);
 		return { ...result, apiCallsMade: apiCallCounter.count };
 	}
 
@@ -497,25 +510,23 @@ export async function executeHunt(
 }
 
 /**
- * Determine whether the service instance's queue is below a configured threshold.
- *
- * If `threshold` is less than or equal to zero the check is treated as disabled and considered passing.
- *
- * @param threshold - The maximum allowed number of items in the instance queue; when the queue count is greater than or equal to this value the check fails
- * @returns An object with `ok` set to `true` when the queue is considered below the threshold (or the check is disabled or failed to be performed), `false` when the queue meets or exceeds the threshold, and a `message` describing the observed state
+ * Check queue threshold using SDK
+ * Returns ok: false if check fails to prevent overloading queue on connectivity issues
  */
-async function checkQueueThreshold(
-	fetcher: InstanceFetcher,
+async function checkQueueThresholdWithSdk(
+	client: SonarrClient | RadarrClient,
 	threshold: number,
+	counter: ApiCallCounter,
+	logger: HuntLogger,
 ): Promise<{ ok: boolean; message: string }> {
 	if (threshold <= 0) {
 		return { ok: true, message: "Queue threshold check disabled" };
 	}
 
 	try {
-		const response = await fetcher("/api/v3/queue?pageSize=1");
-		const data = (await response.json()) as QueueResponse;
-		const queueCount = data.totalRecords ?? 0;
+		counter.count++;
+		const queue = await client.queue.get({ pageSize: 1 });
+		const queueCount = queue.totalRecords ?? 0;
 
 		if (queueCount >= threshold) {
 			return {
@@ -526,64 +537,57 @@ async function checkQueueThreshold(
 
 		return { ok: true, message: `Queue (${queueCount}) below threshold (${threshold})` };
 	} catch (error) {
-		// If we can't check the queue, proceed anyway
-		console.warn("[HuntExecutor] Failed to check queue:", error);
-		return { ok: true, message: "Queue check failed, proceeding anyway" };
+		// Fail safely - if we can't check the queue, don't proceed to avoid overloading
+		logger.warn(
+			{ err: error, threshold },
+			"Queue threshold check failed - skipping hunt to prevent potential queue overload"
+		);
+		return {
+			ok: false,
+			message: `Queue check failed: ${error instanceof Error ? error.message : "Unknown error"}. Please verify instance connectivity.`,
+		};
 	}
 }
 
 /**
- * Detects which of the recently searched items were grabbed by inspecting the service history.
- *
- * Queries the service history for "grabbed" events occurring after searchStartTime and returns matching grabbed items for any searched movie, series, or episode IDs; if history lookup fails, falls back to queue-based detection.
- *
- * @param fetcher - Function to call the instance API endpoints
- * @param searchStartTime - The earliest event time to consider when matching grabbed records
- * @param searchedMovieIds - Movie IDs that were searched during this run
- * @param searchedSeriesIds - Series IDs that were searched during this run
- * @param searchedEpisodeIds - Episode IDs that were searched during this run
- * @returns An array of GrabbedItem objects describing matched grabs (title, optional quality, indexer, and size)
+ * Detect grabbed items from history using SDK
  */
-async function detectGrabbedItemsFromHistory(
-	fetcher: InstanceFetcher,
+async function detectGrabbedItemsFromHistoryWithSdk(
+	client: SonarrClient | RadarrClient,
 	searchStartTime: Date,
 	searchedMovieIds: number[],
 	searchedSeriesIds: number[],
 	searchedEpisodeIds: number[],
+	counter: ApiCallCounter,
+	logger: HuntLogger,
 ): Promise<GrabbedItem[]> {
 	try {
-		// Wait for grabs to appear in history
-		// Even with history-based detection, we need a small delay for indexer responses
-		// and Sonarr/Radarr to process and record the grab event
 		await delay(GRAB_CHECK_DELAY_MS);
 
-		// Query history for grabbed events
-		// Sonarr/Radarr use numeric event types: 1 = Grabbed
-		// We filter by date in-memory since API date filtering varies by version
-		const response = await fetcher(
-			"/api/v3/history?pageSize=100&sortKey=date&sortDirection=descending&eventType=1"
-		);
-		const data = (await response.json()) as HistoryResponse;
+		counter.count++;
+		const history = await client.history.get({
+			pageSize: 100,
+			sortKey: "date",
+			sortDirection: "descending",
+			eventType: "grabbed",
+		});
+
 		const grabbedItems: GrabbedItem[] = [];
 
-		for (const record of data.records ?? []) {
-			// Skip events that happened before our searches started
-			const eventDate = new Date(record.date);
+		for (const record of history.records ?? []) {
+			const eventDate = new Date(record.date ?? "");
 			if (eventDate < searchStartTime) continue;
 
-			// Check if this grab matches something we searched for
-			const isMatchingMovie = record.movieId && searchedMovieIds.includes(record.movieId);
-			const isMatchingSeries = record.seriesId && searchedSeriesIds.includes(record.seriesId);
-			const isMatchingEpisode = record.episodeId && searchedEpisodeIds.includes(record.episodeId);
+			const recordAny = record as Record<string, unknown>;
+			const isMatchingMovie = recordAny.movieId && searchedMovieIds.includes(recordAny.movieId as number);
+			const isMatchingSeries = recordAny.seriesId && searchedSeriesIds.includes(recordAny.seriesId as number);
+			const isMatchingEpisode = recordAny.episodeId && searchedEpisodeIds.includes(recordAny.episodeId as number);
 
 			if (isMatchingMovie || isMatchingSeries || isMatchingEpisode) {
-				// Cast to unknown first, then to Record to access potential alternate field locations
-				const anyRecord = record as unknown as Record<string, unknown>;
-				const dataObj = (anyRecord.data ?? {}) as Record<string, unknown>;
+				const dataObj = (recordAny.data ?? {}) as Record<string, unknown>;
 
-				// Parse size - could be in data.size (string) or root size (number)
 				let size: number | undefined;
-				const sizeValue = dataObj.size ?? anyRecord.size;
+				const sizeValue = dataObj.size ?? recordAny.size;
 				if (typeof sizeValue === "number") {
 					size = sizeValue;
 				} else if (typeof sizeValue === "string") {
@@ -593,19 +597,12 @@ async function detectGrabbedItemsFromHistory(
 					}
 				}
 
-				// Extract quality - could be nested or flat
-				let qualityName: string | undefined;
-				if (record.quality?.quality?.name) {
-					qualityName = record.quality.quality.name;
-				} else if (typeof (anyRecord.quality as Record<string, unknown>)?.name === "string") {
-					qualityName = (anyRecord.quality as Record<string, unknown>).name as string;
-				}
+				const qualityObj = recordAny.quality as Record<string, unknown> | undefined;
+				const qualityName = (qualityObj?.quality as Record<string, unknown>)?.name as string | undefined ??
+					qualityObj?.name as string | undefined;
 
-				// Extract indexer - could be in data or root
-				const indexer = (dataObj.indexer ?? anyRecord.indexer) as string | undefined;
-
-				// Extract title - could be sourceTitle or in data
-				const title = (record.sourceTitle ?? dataObj.releaseTitle ?? dataObj.title ?? "Unknown") as string;
+				const indexer = (dataObj.indexer ?? recordAny.indexer) as string | undefined;
+				const title = (recordAny.sourceTitle ?? dataObj.releaseTitle ?? dataObj.title ?? "Unknown") as string;
 
 				grabbedItems.push({
 					title,
@@ -618,90 +615,96 @@ async function detectGrabbedItemsFromHistory(
 
 		return grabbedItems;
 	} catch (error) {
-		console.warn("[HuntExecutor] Failed to detect grabbed items from history:", error);
-		// Fallback to queue-based detection if history fails
-		return detectGrabbedItemsFromQueue(
-			fetcher,
+		logger.warn(
+			{ err: error },
+			"History-based grab detection failed, falling back to queue detection"
+		);
+		return detectGrabbedItemsFromQueueWithSdk(
+			client,
 			searchedMovieIds,
 			searchedSeriesIds,
 			searchedEpisodeIds,
+			counter,
+			logger,
 		);
 	}
 }
 
 /**
- * Detect grabbed items by scanning the service queue for entries that match previously searched IDs.
- *
- * @param fetcher - Function used to call the instance API
- * @param searchedMovieIds - Movie IDs that were searched
- * @param searchedSeriesIds - Series IDs that were searched
- * @param searchedEpisodeIds - Episode IDs that were searched
- * @returns An array of `GrabbedItem` objects for queue entries that match the provided searched IDs
+ * Detect grabbed items from queue using SDK (fallback)
+ * Note: Returns empty array on failure since the hunt searches were still triggered,
+ * we just couldn't verify what was grabbed. The hunt result will still be accurate
+ * for itemsSearched, just not for itemsGrabbed.
  */
-async function detectGrabbedItemsFromQueue(
-	fetcher: InstanceFetcher,
+async function detectGrabbedItemsFromQueueWithSdk(
+	client: SonarrClient | RadarrClient,
 	searchedMovieIds: number[],
 	searchedSeriesIds: number[],
 	searchedEpisodeIds: number[],
+	counter: ApiCallCounter,
+	logger: HuntLogger,
 ): Promise<GrabbedItem[]> {
 	try {
-		const response = await fetcher("/api/v3/queue?pageSize=1000");
-		const data = (await response.json()) as FullQueueResponse;
+		counter.count++;
+		const queue = await client.queue.get({ pageSize: 1000 });
 		const grabbedItems: GrabbedItem[] = [];
 
-		for (const item of data.records ?? []) {
-			// Check if this item matches something we searched for
-			const isMatchingMovie = item.movieId && searchedMovieIds.includes(item.movieId);
-			const isMatchingSeries = item.seriesId && searchedSeriesIds.includes(item.seriesId);
-			const isMatchingEpisode = item.episodeId && searchedEpisodeIds.includes(item.episodeId);
+		for (const item of queue.records ?? []) {
+			const itemAny = item as Record<string, unknown>;
+			const isMatchingMovie = itemAny.movieId && searchedMovieIds.includes(itemAny.movieId as number);
+			const isMatchingSeries = itemAny.seriesId && searchedSeriesIds.includes(itemAny.seriesId as number);
+			const isMatchingEpisode = itemAny.episodeId && searchedEpisodeIds.includes(itemAny.episodeId as number);
 
 			if (isMatchingMovie || isMatchingSeries || isMatchingEpisode) {
+				const qualityObj = itemAny.quality as Record<string, unknown> | undefined;
 				grabbedItems.push({
-					title: item.title,
-					quality: item.quality?.quality?.name,
-					indexer: item.indexer,
-					size: item.size,
+					title: itemAny.title as string,
+					quality: (qualityObj?.quality as Record<string, unknown>)?.name as string | undefined,
+					indexer: itemAny.indexer as string | undefined,
+					size: itemAny.size as number | undefined,
 				});
 			}
 		}
 
 		return grabbedItems;
 	} catch (error) {
-		console.warn("[HuntExecutor] Queue fallback also failed:", error);
+		// Both history and queue detection failed - log as error since this is unexpected
+		logger.error(
+			{ err: error },
+			"Grab detection failed completely (both history and queue methods) - grabbed items count will be inaccurate"
+		);
 		return [];
 	}
 }
 
 /**
- * Orchestrates a Sonarr hunt: selects episodes to search based on filters and history, triggers season/episode searches, records the searches, and detects any resulting grabs.
- *
- * @param fetcher - Function to perform authenticated HTTP requests against the Sonarr instance.
- * @param type - Hunt type: `"missing"` searches wanted/missing episodes, `"upgrade"` searches wanted/cutoff episodes.
- * @param batchSize - Maximum number of episodes to search (season searches count as their episode totals toward this limit).
- * @param filters - Parsed filter criteria that determine which series/episodes are eligible for searching.
- * @param historyManager - Manager used to avoid recently searched items and to record new searches.
- * @returns A HuntResult summarizing the run, including counts of items searched and grabbed, lists of searched and grabbed items, a human-readable message, and a final status (`"completed" | "partial" | "skipped" | "error"`).
+ * Execute Sonarr hunt using SDK
  */
-async function executeSonarrHunt(
-	fetcher: InstanceFetcher,
+async function executeSonarrHuntWithSdk(
+	client: SonarrClient,
 	type: "missing" | "upgrade",
 	batchSize: number,
 	filters: ParsedFilters,
 	historyManager: SearchHistoryManager,
+	counter: ApiCallCounter,
+	logger: HuntLogger,
 ): Promise<HuntResultWithoutApiCount> {
 	try {
 		// First, get all series to have filter data available
-		const seriesResponse = await fetcher("/api/v3/series");
-		const allSeries = (await seriesResponse.json()) as SonarrSeries[];
-		const seriesMap = new Map(allSeries.map((s) => [s.id, s]));
+		counter.count++;
+		const allSeries = await client.series.getAll();
+		const seriesMap = new Map(allSeries.map((s) => [s.id ?? 0, s]));
 
-		// Get wanted episodes (fetch more than needed to account for filtering)
+		// Get wanted episodes
 		const fetchSize = Math.max(batchSize * 5, 50);
-		const endpoint = type === "missing" ? "/api/v3/wanted/missing" : "/api/v3/wanted/cutoff";
-		const response = await fetcher(`${endpoint}?pageSize=${fetchSize}&sortKey=airDateUtc&sortDirection=descending`);
-		const data = (await response.json()) as WantedResponse<SonarrEpisode>;
+		counter.count++;
+		const wantedData = type === "missing"
+			? await client.wanted.missing({ pageSize: fetchSize, sortKey: "airDateUtc", sortDirection: "descending" })
+			: await client.wanted.cutoff({ pageSize: fetchSize, sortKey: "airDateUtc", sortDirection: "descending" });
 
-		if (!data.records || data.records.length === 0) {
+		const records = wantedData.records ?? [];
+
+		if (records.length === 0) {
 			return {
 				itemsSearched: 0,
 				itemsGrabbed: 0,
@@ -713,29 +716,25 @@ async function executeSonarrHunt(
 		}
 
 		// Apply all filters
-		const filteredEpisodes = data.records.filter((ep) => {
-			// Always skip future/unaired episodes first (cannot download what hasn't aired)
+		const filteredEpisodes = records.filter((ep) => {
 			if (!isContentReleased(ep.airDateUtc)) return false;
 
-			// Get series data for filtering
-			const series = seriesMap.get(ep.seriesId);
+			const series = seriesMap.get(ep.seriesId ?? 0);
 			if (!series) return false;
 
-			// Apply filters based on series properties
 			return passesFilters(
 				{
-					tags: series.tags,
-					qualityProfileId: series.qualityProfileId,
-					status: series.status,
-					year: series.year,
-					monitored: ep.monitored && series.monitored,
-					releaseDate: ep.airDateUtc,
+					tags: series.tags ?? [],
+					qualityProfileId: series.qualityProfileId ?? 0,
+					status: series.status ?? "",
+					year: series.year ?? 0,
+					monitored: (ep.monitored ?? false) && (series.monitored ?? false),
+					releaseDate: ep.airDateUtc ?? undefined,
 				},
 				filters,
 			);
 		});
 
-		// Randomize order to avoid always searching the same items
 		const eligibleEpisodes = shuffleArray(filteredEpisodes);
 
 		if (eligibleEpisodes.length === 0) {
@@ -749,8 +748,8 @@ async function executeSonarrHunt(
 			};
 		}
 
-		// Group episodes by series + season to determine search strategy
-		const seasonGroups = new Map<string, SonarrEpisode[]>();
+		// Group episodes by series + season
+		const seasonGroups = new Map<string, typeof eligibleEpisodes>();
 		for (const ep of eligibleEpisodes) {
 			const key = `${ep.seriesId}-${ep.seasonNumber}`;
 			const group = seasonGroups.get(key) ?? [];
@@ -758,42 +757,39 @@ async function executeSonarrHunt(
 			seasonGroups.set(key, group);
 		}
 
-		// Separate into season searches (3+ episodes) and individual episode searches
-		// Also filter out recently searched items
+		// Separate into season searches and individual episode searches
 		const seasonSearches: { seriesId: number; seasonNumber: number; episodeCount: number; title: string }[] = [];
-		const individualEpisodes: SonarrEpisode[] = [];
+		const individualEpisodes: typeof eligibleEpisodes = [];
 
 		for (const [, episodes] of seasonGroups) {
 			if (episodes.length >= SEASON_SEARCH_THRESHOLD) {
-				// Use season search for this group - check if season was recently searched
 				const firstEp = episodes[0];
-				if (!firstEp) continue; // Should never happen since we checked length
-				const series = seriesMap.get(firstEp.seriesId);
+				if (!firstEp) continue;
+				const series = seriesMap.get(firstEp.seriesId ?? 0);
 				const title = series?.title ?? "Unknown";
 
 				const wasSearched = historyManager.wasRecentlySearched({
 					mediaType: "season",
-					mediaId: firstEp.seriesId,
-					seasonNumber: firstEp.seasonNumber,
-					title: `${title} S${String(firstEp.seasonNumber).padStart(2, "0")}`,
+					mediaId: firstEp.seriesId ?? 0,
+					seasonNumber: firstEp.seasonNumber ?? 0,
+					title: `${title} S${String(firstEp.seasonNumber ?? 0).padStart(2, "0")}`,
 				});
 
 				if (!wasSearched) {
 					seasonSearches.push({
-						seriesId: firstEp.seriesId,
-						seasonNumber: firstEp.seasonNumber,
+						seriesId: firstEp.seriesId ?? 0,
+						seasonNumber: firstEp.seasonNumber ?? 0,
 						episodeCount: episodes.length,
 						title,
 					});
 				}
 			} else {
-				// Add to individual episode search - filter out recently searched episodes
 				for (const ep of episodes) {
-					const series = seriesMap.get(ep.seriesId);
+					const series = seriesMap.get(ep.seriesId ?? 0);
 					const wasSearched = historyManager.wasRecentlySearched({
 						mediaType: "episode",
-						mediaId: ep.id,
-						title: `${series?.title ?? "Unknown"} S${String(ep.seasonNumber).padStart(2, "0")}E${String(ep.episodeNumber).padStart(2, "0")}`,
+						mediaId: ep.id ?? 0,
+						title: `${series?.title ?? "Unknown"} S${String(ep.seasonNumber ?? 0).padStart(2, "0")}E${String(ep.episodeNumber ?? 0).padStart(2, "0")}`,
 					});
 					if (!wasSearched) {
 						individualEpisodes.push(ep);
@@ -802,7 +798,6 @@ async function executeSonarrHunt(
 			}
 		}
 
-		// Check if everything was filtered due to recent searches
 		if (seasonSearches.length === 0 && individualEpisodes.length === 0) {
 			const skippedCount = historyManager.getFilteredCount();
 			return {
@@ -817,29 +812,23 @@ async function executeSonarrHunt(
 			};
 		}
 
-		// Record search start time for history-based grab detection
 		const searchStartTime = new Date();
 
-		// Apply batch size limit across both search types
-		// Count each season search as equivalent to its episode count for fair batching
+		// Apply batch size limit
 		let remainingBudget = batchSize;
 		const seasonSearchesToExecute: typeof seasonSearches = [];
-		const episodesToSearch: SonarrEpisode[] = [];
+		const episodesToSearch: typeof individualEpisodes = [];
 		const searchedItemNames: string[] = [];
 		const searchedHistoryItems: SearchedItem[] = [];
-		// Track IDs for grab detection
 		const searchedSeriesIds: number[] = [];
 		const searchedEpisodeIds: number[] = [];
 
-		// Prioritize season searches (more efficient for finding season packs)
 		for (const seasonSearch of seasonSearches) {
 			if (remainingBudget <= 0) break;
 			seasonSearchesToExecute.push(seasonSearch);
 			remainingBudget -= seasonSearch.episodeCount;
 			searchedItemNames.push(`${seasonSearch.title} Season ${seasonSearch.seasonNumber} (${seasonSearch.episodeCount} episodes)`);
-			// Track for grab detection
 			searchedSeriesIds.push(seasonSearch.seriesId);
-			// Track for history
 			searchedHistoryItems.push({
 				mediaType: "season",
 				mediaId: seasonSearch.seriesId,
@@ -848,96 +837,83 @@ async function executeSonarrHunt(
 			});
 		}
 
-		// Then add individual episodes
 		for (const ep of individualEpisodes) {
 			if (remainingBudget <= 0) break;
 			episodesToSearch.push(ep);
 			remainingBudget--;
-			const series = seriesMap.get(ep.seriesId);
+			const series = seriesMap.get(ep.seriesId ?? 0);
 			const title = series?.title ?? "Unknown";
-			searchedItemNames.push(`${title} S${String(ep.seasonNumber).padStart(2, "0")}E${String(ep.episodeNumber).padStart(2, "0")}`);
-			// Track for grab detection
-			searchedSeriesIds.push(ep.seriesId);
-			searchedEpisodeIds.push(ep.id);
-			// Track for history
+			searchedItemNames.push(`${title} S${String(ep.seasonNumber ?? 0).padStart(2, "0")}E${String(ep.episodeNumber ?? 0).padStart(2, "0")}`);
+			searchedSeriesIds.push(ep.seriesId ?? 0);
+			searchedEpisodeIds.push(ep.id ?? 0);
 			searchedHistoryItems.push({
 				mediaType: "episode",
-				mediaId: ep.id,
-				title: `${title} S${String(ep.seasonNumber).padStart(2, "0")}E${String(ep.episodeNumber).padStart(2, "0")}`,
+				mediaId: ep.id ?? 0,
+				title: `${title} S${String(ep.seasonNumber ?? 0).padStart(2, "0")}E${String(ep.episodeNumber ?? 0).padStart(2, "0")}`,
 			});
 		}
 
-		// Execute season searches with delay between each
+		// Execute searches
 		let searchErrors = 0;
-		const totalSearches = seasonSearchesToExecute.length + episodesToSearch.length;
-		let searchIndex = 0;
 
 		for (let i = 0; i < seasonSearchesToExecute.length; i++) {
 			const seasonSearch = seasonSearchesToExecute[i];
 			if (!seasonSearch) continue;
-			const { seriesId, seasonNumber, title } = seasonSearch;
-			searchIndex++;
 
-			// Add delay before search (except for the first one)
 			if (i > 0) {
 				await delay(SEARCH_DELAY_MS);
 			}
 
 			try {
-				await fetcher("/api/v3/command", {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({
-						name: "SeasonSearch",
-						seriesId,
-						seasonNumber,
-					}),
+				counter.count++;
+				await client.command.execute({
+					name: "SeasonSearch",
+					seriesId: seasonSearch.seriesId,
+					seasonNumber: seasonSearch.seasonNumber,
 				});
 			} catch (error) {
 				searchErrors++;
-				console.error(`[HuntExecutor] Failed to search for "${title} S${seasonNumber}":`, error instanceof Error ? error.message : error);
+				logger.error(
+					{ err: error, title: seasonSearch.title, season: seasonSearch.seasonNumber },
+					"Failed to execute season search"
+				);
 			}
 		}
 
-		// Execute episode searches individually with delay between each
-		// This prevents overwhelming indexers with simultaneous requests
 		for (let i = 0; i < episodesToSearch.length; i++) {
 			const ep = episodesToSearch[i];
 			if (!ep) continue;
-			const series = seriesMap.get(ep.seriesId);
-			const epTitle = `${series?.title ?? "Unknown"} S${String(ep.seasonNumber).padStart(2, "0")}E${String(ep.episodeNumber).padStart(2, "0")}`;
-			searchIndex++;
 
-			// Add delay before search (and after any season searches)
 			if (i > 0 || seasonSearchesToExecute.length > 0) {
 				await delay(SEARCH_DELAY_MS);
 			}
 
 			try {
-				await fetcher("/api/v3/command", {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({
-						name: "EpisodeSearch",
-						episodeIds: [ep.id],
-					}),
+				counter.count++;
+				await client.command.execute({
+					name: "EpisodeSearch",
+					episodeIds: [ep.id ?? 0],
 				});
 			} catch (error) {
 				searchErrors++;
-				console.error(`[HuntExecutor] Failed to search for "${epTitle}":`, error instanceof Error ? error.message : error);
+				const series = seriesMap.get(ep.seriesId ?? 0);
+				logger.error(
+					{ err: error, title: series?.title, season: ep.seasonNumber, episode: ep.episodeNumber },
+					"Failed to execute episode search"
+				);
 			}
 		}
 
-		// Record the searches in history
 		await historyManager.recordSearches(searchedHistoryItems);
 
-		// Detect what was actually grabbed using history API (more reliable)
-		const grabbedItems = await detectGrabbedItemsFromHistory(
-			fetcher,
+		const grabbedItems = await detectGrabbedItemsFromHistoryWithSdk(
+			client,
 			searchStartTime,
-			[], // No movie IDs for Sonarr
-			[...new Set(searchedSeriesIds)], // Dedupe series IDs
+			[],
+			[...new Set(searchedSeriesIds)],
 			searchedEpisodeIds,
+			counter,
+			logger,
 		);
 
 		const totalSearched = seasonSearchesToExecute.reduce((sum, s) => sum + s.episodeCount, 0) + episodesToSearch.length;
@@ -949,12 +925,8 @@ async function executeSonarrHunt(
 			searchSummary.push(`${episodesToSearch.length} episode(s)`);
 		}
 
-		const grabSummary = grabbedItems.length > 0
-			? ` - ${grabbedItems.length} grabbed`
-			: "";
-		const errorSummary = searchErrors > 0
-			? ` (${searchErrors} search errors)`
-			: "";
+		const grabSummary = grabbedItems.length > 0 ? ` - ${grabbedItems.length} grabbed` : "";
+		const errorSummary = searchErrors > 0 ? ` (${searchErrors} search errors)` : "";
 
 		return {
 			itemsSearched: totalSearched - searchErrors,
@@ -978,44 +950,26 @@ async function executeSonarrHunt(
 }
 
 /**
- * Run a hunt on a Radarr instance to trigger searches for missing or upgradeable movies.
- *
- * Applies configured filters, skips recently searched movies, triggers up to `batchSize`
- * MoviesSearch commands (throttled with delays), records the searches in history, and
- * detects what was actually grabbed via Radarr history.
- *
- * @param fetcher - Function used to call the Radarr HTTP API for this instance
- * @param type - Hunt type: `"missing"` to search for missing movies, `"upgrade"` to search for movies below quality cutoff
- * @param batchSize - Maximum number of movies to trigger searches for in this run
- * @param filters - Parsed filter set to apply to candidate movies
- * @param historyManager - Manager used to filter recently searched items and record new searches
- * @returns A HuntResult summarizing items searched and grabbed, the searched titles and grabbed item details, a human-readable message, and a status (`"completed"`, `"partial"`, or `"error"`)
+ * Execute Radarr hunt using SDK
  */
-async function executeRadarrHunt(
-	fetcher: InstanceFetcher,
+async function executeRadarrHuntWithSdk(
+	client: RadarrClient,
 	type: "missing" | "upgrade",
 	batchSize: number,
 	filters: ParsedFilters,
 	historyManager: SearchHistoryManager,
+	counter: ApiCallCounter,
+	logger: HuntLogger,
 ): Promise<HuntResultWithoutApiCount> {
 	try {
-		let movies: RadarrMovie[] = [];
-
-		// Fetch more than needed to account for filtering
 		const fetchSize = Math.max(batchSize * 5, 50);
+		counter.count++;
 
-		if (type === "missing") {
-			// Use wanted/missing endpoint - returns monitored movies without files
-			// Same data as shown on /wanted/missing page in Radarr UI
-			const response = await fetcher(`/api/v3/wanted/missing?pageSize=${fetchSize}&sortKey=digitalRelease&sortDirection=descending`);
-			const data = (await response.json()) as WantedResponse<RadarrMovie>;
-			movies = data.records ?? [];
-		} else {
-			// For upgrades, use wanted/cutoff endpoint - returns movies that don't meet quality cutoff
-			const response = await fetcher(`/api/v3/wanted/cutoff?pageSize=${fetchSize}&sortKey=digitalRelease&sortDirection=descending`);
-			const data = (await response.json()) as WantedResponse<RadarrMovie>;
-			movies = data.records ?? [];
-		}
+		const wantedData = type === "missing"
+			? await client.wanted.missing({ pageSize: fetchSize, sortKey: "digitalRelease", sortDirection: "descending" })
+			: await client.wanted.cutoff({ pageSize: fetchSize, sortKey: "digitalRelease", sortDirection: "descending" });
+
+		const movies = wantedData.records ?? [];
 
 		if (movies.length === 0) {
 			return {
@@ -1028,30 +982,30 @@ async function executeRadarrHunt(
 			};
 		}
 
-		// Apply all filters
 		const filteredMovies = movies.filter((movie) => {
-			// Determine release date - prefer digital > physical > theatrical
 			const releaseDate = movie.digitalRelease || movie.physicalRelease || movie.inCinemas;
-
-			// Always skip unreleased movies first (cannot download what hasn't released)
 			if (!isContentReleased(releaseDate)) return false;
 
-			// Apply filters
 			return passesFilters(
 				{
-					tags: movie.tags,
-					qualityProfileId: movie.qualityProfileId,
-					status: movie.status,
-					year: movie.year,
-					monitored: movie.monitored,
-					releaseDate,
+					tags: movie.tags ?? [],
+					qualityProfileId: movie.qualityProfileId ?? 0,
+					status: movie.status ?? "",
+					year: movie.year ?? 0,
+					monitored: movie.monitored ?? false,
+					releaseDate: releaseDate ?? undefined,
 				},
 				filters,
 			);
 		});
 
-		// Randomize order to avoid always searching the same items
-		const eligibleMovies = shuffleArray(filteredMovies);
+		// Filter to only movies with valid id and title (required for search and history tracking)
+		const validMovies = filteredMovies.filter(
+			(movie): movie is typeof movie & { id: number; title: string } =>
+				movie.id !== undefined && movie.title !== undefined && movie.title !== null
+		);
+
+		const eligibleMovies = shuffleArray(validMovies);
 
 		if (eligibleMovies.length === 0) {
 			return {
@@ -1064,7 +1018,6 @@ async function executeRadarrHunt(
 			};
 		}
 
-		// Filter out recently searched movies
 		const notRecentlySearched = historyManager.filterRecentlySearched(
 			eligibleMovies,
 			(movie) => ({
@@ -1088,11 +1041,8 @@ async function executeRadarrHunt(
 			};
 		}
 
-		// Record search start time for history-based grab detection
 		const searchStartTime = new Date();
 
-		// Trigger search for eligible movies with delay between each
-		// This prevents overwhelming indexers with simultaneous requests
 		const moviesToSearch = notRecentlySearched.slice(0, batchSize);
 		const searchedItemNames = moviesToSearch.map((m) => `${m.title} (${m.year ?? "?"})`);
 		const searchedMovieIds = moviesToSearch.map((m) => m.id);
@@ -1102,28 +1052,25 @@ async function executeRadarrHunt(
 			const movie = moviesToSearch[i];
 			if (!movie) continue;
 
-			// Add delay before search (except for the first one)
 			if (i > 0) {
 				await delay(SEARCH_DELAY_MS);
 			}
 
 			try {
-				await fetcher("/api/v3/command", {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({
-						name: "MoviesSearch",
-						movieIds: [movie.id],
-					}),
+				counter.count++;
+				await client.command.execute({
+					name: "MoviesSearch",
+					movieIds: [movie.id],
 				});
 			} catch (error) {
-				// Log error but continue with remaining searches
 				searchErrors++;
-				console.error(`[HuntExecutor] Failed to search for "${movie.title}":`, error instanceof Error ? error.message : error);
+				logger.error(
+					{ err: error, title: movie.title, year: movie.year },
+					"Failed to execute movie search"
+				);
 			}
 		}
 
-		// Record the searches in history
 		await historyManager.recordSearches(
 			moviesToSearch.map((m) => ({
 				mediaType: "movie" as const,
@@ -1132,21 +1079,18 @@ async function executeRadarrHunt(
 			})),
 		);
 
-		// Detect what was actually grabbed using history API (more reliable)
-		const grabbedItems = await detectGrabbedItemsFromHistory(
-			fetcher,
+		const grabbedItems = await detectGrabbedItemsFromHistoryWithSdk(
+			client,
 			searchStartTime,
 			searchedMovieIds,
-			[], // No series IDs for Radarr
-			[], // No episode IDs for Radarr
+			[],
+			[],
+			counter,
+			logger,
 		);
 
-		const grabSummary = grabbedItems.length > 0
-			? ` - ${grabbedItems.length} grabbed`
-			: "";
-		const errorSummary = searchErrors > 0
-			? ` (${searchErrors} search errors)`
-			: "";
+		const grabSummary = grabbedItems.length > 0 ? ` - ${grabbedItems.length} grabbed` : "";
+		const errorSummary = searchErrors > 0 ? ` (${searchErrors} search errors)` : "";
 
 		return {
 			itemsSearched: moviesToSearch.length - searchErrors,
