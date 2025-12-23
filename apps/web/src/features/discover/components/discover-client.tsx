@@ -112,27 +112,41 @@ export const DiscoverClient = () => {
 
 			{!hasQuery && !hasTmdbApiKey && (
 				<Alert variant="info">
-					<AlertTitle>TMDB API Key Required</AlertTitle>
+					<AlertTitle>TMDB API Read Access Token Required</AlertTitle>
 					<AlertDescription>
-						To browse trending, popular, and upcoming content, please add your TMDB API key in{" "}
+						To browse trending, popular, and upcoming content, please add your TMDB API Read Access Token in{" "}
 						<a href="/settings" className="underline hover:text-fg">
 							Settings → Account
 						</a>
-						. You can get a free API key from{" "}
+						. Get the <strong>API Read Access Token</strong> (not API Key) from{" "}
 						<a
 							href="https://www.themoviedb.org/settings/api"
 							target="_blank"
 							rel="noopener noreferrer"
 							className="underline hover:text-fg"
 						>
-							themoviedb.org
+							themoviedb.org/settings/api
 						</a>
-						.
+						. The token starts with &quot;eyJ...&quot;.
 					</AlertDescription>
 				</Alert>
 			)}
 
-			{!hasQuery && hasTmdbApiKey && (
+			{!hasQuery && hasTmdbApiKey && recommendations.hasError && (
+				<Alert variant="danger">
+					<AlertTitle>Failed to load recommendations</AlertTitle>
+					<AlertDescription>
+						{recommendations.errorMessage ?? "Unable to fetch content from TMDB."}
+						{" "}Make sure you&apos;re using the <strong>API Read Access Token</strong> (starts with &quot;eyJ...&quot;), not the shorter API Key.
+						You can update it in{" "}
+						<a href="/settings" className="underline hover:text-fg">
+							Settings → Account
+						</a>.
+					</AlertDescription>
+				</Alert>
+			)}
+
+			{!hasQuery && hasTmdbApiKey && !recommendations.hasError && (
 				<TMDBCarousel
 					title="Trending Now"
 					description={`Popular ${searchType === "movie" ? "movies" : "series"} trending this week`}
@@ -146,7 +160,7 @@ export const DiscoverClient = () => {
 				/>
 			)}
 
-			{!hasQuery && hasTmdbApiKey && (
+			{!hasQuery && hasTmdbApiKey && !recommendations.hasError && (
 				<TMDBCarousel
 					title="Popular Releases"
 					description={`Most popular ${searchType === "movie" ? "movies" : "series"} right now`}
@@ -160,7 +174,7 @@ export const DiscoverClient = () => {
 				/>
 			)}
 
-			{!hasQuery && hasTmdbApiKey && (
+			{!hasQuery && hasTmdbApiKey && !recommendations.hasError && (
 				<TMDBCarousel
 					title="Top Rated"
 					description={`Highest rated ${searchType === "movie" ? "movies" : "series"} of all time`}
@@ -174,7 +188,7 @@ export const DiscoverClient = () => {
 				/>
 			)}
 
-			{!hasQuery && hasTmdbApiKey && (
+			{!hasQuery && hasTmdbApiKey && !recommendations.hasError && (
 				<TMDBCarousel
 					title={searchType === "movie" ? "Coming Soon" : "Airing Today"}
 					description={

@@ -36,4 +36,7 @@ export const securityPlugin = fp(async (app) => {
 
 	app.decorate("encryptor", encryptor);
 	app.decorate("sessionService", sessionService);
+}, {
+	name: "security",
+	dependencies: ["prisma"],
 });

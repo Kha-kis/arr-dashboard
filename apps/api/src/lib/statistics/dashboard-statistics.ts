@@ -8,6 +8,9 @@ import {
 	radarrStatisticsSchema,
 	sonarrStatisticsSchema,
 } from "@arr/shared";
+import type { SonarrClient } from "arr-sdk/sonarr";
+import type { RadarrClient } from "arr-sdk/radarr";
+import type { ProwlarrClient } from "arr-sdk/prowlarr";
 
 /**
  * Interface for API response from cutoff/wanted endpoints
@@ -731,6 +734,503 @@ export const fetchProwlarrStatistics = async (
 					};
 				})
 		: [];
+	const healthIssues = healthIssuesList.length;
+
+	// Sort by queries descending and take top 10
+	const topIndexers = normalizedStats.sort((a, b) => b.queries - a.queries).slice(0, 10);
+
+	return prowlarrStatisticsSchema.parse({
+		totalIndexers,
+		activeIndexers,
+		pausedIndexers,
+		totalQueries,
+		totalGrabs,
+		successfulQueries,
+		failedQueries,
+		successfulGrabs,
+		failedGrabs,
+		grabRate,
+		averageResponseTime,
+		healthIssues,
+		healthIssuesList,
+		indexers: topIndexers,
+	});
+};
+
+// ============================================================================
+// SDK-based functions (arr-sdk 0.3.0)
+// ============================================================================
+
+/**
+ * Safely execute an SDK call and return undefined on error
+ */
+const safeRequest = async <T>(operation: () => Promise<T>): Promise<T | undefined> => {
+	try {
+		return await operation();
+	} catch {
+		return undefined;
+	}
+};
+
+/**
+ * Fetches Sonarr statistics using the SDK
+ */
+export const fetchSonarrStatisticsWithSdk = async (
+	client: SonarrClient,
+	instanceId: string,
+	instanceName: string,
+	instanceBaseUrl: string,
+): Promise<SonarrStatistics> => {
+	// Fetch all API endpoints in parallel for better performance
+	const [series, diskspace, health, cutoffUnmet, qualityProfiles, tags] = await Promise.all([
+		safeRequest(() => client.series.getAll()).then((r) => r ?? []),
+		safeRequest(() => client.diskSpace.getAll()).then((r) => r ?? []),
+		safeRequest(() => client.health.getAll()).then((r) => r ?? []),
+		safeRequest(() => client.wanted.cutoff({ page: 1, pageSize: 1 })).then((r) => r ?? { totalRecords: 0 }),
+		safeRequest(() => client.qualityProfile.getAll()).then((r) => r ?? []),
+		safeRequest(() => client.tag.getAll()).then((r) => r ?? []),
+	]);
+
+	// Build a map of profile ID to profile name
+	const profileIdToName = new Map<number, string>();
+	for (const profile of qualityProfiles) {
+		if (profile?.id !== undefined && profile?.name) {
+			profileIdToName.set(profile.id, profile.name);
+		}
+	}
+
+	// Build a map of tag ID to tag label
+	const tagIdToLabel = new Map<number, string>();
+	for (const tag of tags) {
+		if (tag?.id !== undefined && tag?.label) {
+			tagIdToLabel.set(tag.id, tag.label);
+		}
+	}
+
+	// Calculate time thresholds for recently added
+	const now = Date.now();
+	const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+	const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
+
+	let totalSeries = 0;
+	let monitoredSeries = 0;
+	let continuingSeries = 0;
+	let endedSeries = 0;
+	let totalEpisodes = 0;
+	let episodeFileCount = 0;
+	let downloadedEpisodes = 0;
+	let missingEpisodes = 0;
+	let totalFileSize = 0;
+	let recentlyAdded7Days = 0;
+	let recentlyAdded30Days = 0;
+
+	// Track quality distribution based on quality profiles
+	const qualityBreakdown: Record<string, number> = {};
+	// Track tag distribution
+	const tagBreakdown: Record<string, number> = {};
+
+	for (const entry of series) {
+		if (!entry) continue;
+		totalSeries += 1;
+		if (entry.monitored !== false) {
+			monitoredSeries += 1;
+		}
+
+		const status = entry.status;
+		if (status === "continuing") {
+			continuingSeries += 1;
+		} else if (status === "ended") {
+			endedSeries += 1;
+		}
+
+		// Check added date for recently added
+		const addedStr = entry.added;
+		if (addedStr) {
+			const addedTime = new Date(addedStr).getTime();
+			if (!Number.isNaN(addedTime)) {
+				if (addedTime >= sevenDaysAgo) {
+					recentlyAdded7Days += 1;
+				}
+				if (addedTime >= thirtyDaysAgo) {
+					recentlyAdded30Days += 1;
+				}
+			}
+		}
+
+		// Process tags
+		const entryTags = entry.tags;
+		if (Array.isArray(entryTags)) {
+			for (const tagId of entryTags) {
+				if (typeof tagId === "number" && tagIdToLabel.has(tagId)) {
+					const tagLabel = tagIdToLabel.get(tagId);
+					if (tagLabel !== undefined) {
+						tagBreakdown[tagLabel] = (tagBreakdown[tagLabel] ?? 0) + 1;
+					}
+				}
+			}
+		}
+
+		const stats = entry.statistics;
+		const episodesTotal = stats?.totalEpisodeCount ?? stats?.episodeCount ?? 0;
+		const episodesWithFile = stats?.episodeFileCount ?? 0;
+		const sizeOnDisk = stats?.sizeOnDisk ?? 0;
+
+		totalEpisodes += episodesTotal;
+		episodeFileCount += episodesWithFile;
+		downloadedEpisodes += episodesWithFile;
+		missingEpisodes += Math.max(0, episodesTotal - episodesWithFile);
+		totalFileSize += sizeOnDisk;
+
+		// Count episodes by quality profile (for series with files)
+		if (episodesWithFile > 0) {
+			const qualityProfileId = entry.qualityProfileId;
+
+			// Look up the profile name
+			if (qualityProfileId !== undefined && profileIdToName.has(qualityProfileId)) {
+				const profileName = profileIdToName.get(qualityProfileId);
+				if (profileName !== undefined) {
+					qualityBreakdown[profileName] = (qualityBreakdown[profileName] ?? 0) + episodesWithFile;
+				}
+			} else {
+				qualityBreakdown.Unknown = (qualityBreakdown.Unknown ?? 0) + episodesWithFile;
+			}
+		}
+	}
+
+	const cutoffUnmetCount = cutoffUnmet?.totalRecords ?? 0;
+	const averageEpisodeSize =
+		downloadedEpisodes > 0 ? totalFileSize / downloadedEpisodes : undefined;
+
+	const diskTotals = diskspace.reduce(
+		(acc: { total: number; free: number }, entry) => {
+			acc.total += entry?.totalSpace ?? 0;
+			acc.free += entry?.freeSpace ?? 0;
+			return acc;
+		},
+		{ total: 0, free: 0 },
+	);
+
+	const diskUsed = Math.max(0, diskTotals.total - diskTotals.free);
+	const diskUsagePercent =
+		diskTotals.total > 0 ? clampPercentage((diskUsed / diskTotals.total) * 100) : 0;
+
+	const healthIssuesList = health
+		.filter((item) => {
+			const type = item?.type;
+			return type === "error" || type === "warning";
+		})
+		.map((item) => ({
+			type: item.type as "error" | "warning",
+			message: item.message ?? "Unknown health issue",
+			source: item.source,
+			wikiUrl: item.wikiUrl,
+			instanceId,
+			instanceName,
+			instanceBaseUrl,
+			service: "sonarr" as const,
+		}));
+	const healthIssues = healthIssuesList.length;
+
+	return sonarrStatisticsSchema.parse({
+		totalSeries,
+		monitoredSeries,
+		continuingSeries,
+		endedSeries,
+		totalEpisodes,
+		episodeFileCount,
+		downloadedEpisodes,
+		missingEpisodes,
+		downloadedPercentage:
+			totalEpisodes > 0 ? clampPercentage((downloadedEpisodes / totalEpisodes) * 100) : 0,
+		cutoffUnmetCount,
+		qualityBreakdown,
+		tagBreakdown,
+		recentlyAdded7Days,
+		recentlyAdded30Days,
+		averageEpisodeSize,
+		diskTotal: diskTotals.total || undefined,
+		diskFree: diskTotals.free || undefined,
+		diskUsed: diskUsed || undefined,
+		diskUsagePercent,
+		healthIssues,
+		healthIssuesList,
+	});
+};
+
+/**
+ * Fetches Radarr statistics using the SDK
+ */
+export const fetchRadarrStatisticsWithSdk = async (
+	client: RadarrClient,
+	instanceId: string,
+	instanceName: string,
+	instanceBaseUrl: string,
+): Promise<RadarrStatistics> => {
+	// Fetch all API endpoints in parallel for better performance
+	const [movies, diskspace, health, cutoffUnmet, qualityProfiles, tags] = await Promise.all([
+		safeRequest(() => client.movie.getAll()).then((r) => r ?? []),
+		safeRequest(() => client.diskSpace.getAll()).then((r) => r ?? []),
+		safeRequest(() => client.health.getAll()).then((r) => r ?? []),
+		safeRequest(() => client.wanted.cutoff({ page: 1, pageSize: 1 })).then((r) => r ?? { totalRecords: 0 }),
+		safeRequest(() => client.qualityProfile.getAll()).then((r) => r ?? []),
+		safeRequest(() => client.tag.getAll()).then((r) => r ?? []),
+	]);
+
+	// Build a map of profile ID to profile name
+	const profileIdToName = new Map<number, string>();
+	for (const profile of qualityProfiles) {
+		if (profile?.id !== undefined && profile?.name) {
+			profileIdToName.set(profile.id, profile.name);
+		}
+	}
+
+	// Build tag ID to label map
+	const tagIdToLabel = new Map<number, string>();
+	for (const tag of tags) {
+		if (tag?.id !== undefined && tag?.label) {
+			tagIdToLabel.set(tag.id, tag.label);
+		}
+	}
+
+	// Calculate time thresholds for recently added
+	const now = Date.now();
+	const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+	const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
+
+	let monitoredMovies = 0;
+	let downloadedMovies = 0;
+	let totalFileSize = 0;
+	let recentlyAdded7Days = 0;
+	let recentlyAdded30Days = 0;
+	let totalRuntime = 0;
+
+	const qualityBreakdown: Record<string, number> = {};
+	const tagBreakdown: Record<string, number> = {};
+
+	for (const movie of movies) {
+		if (!movie) continue;
+
+		// Check added date for recently added counts
+		const addedStr = movie.added;
+		if (addedStr) {
+			const addedTime = new Date(addedStr).getTime();
+			if (!Number.isNaN(addedTime)) {
+				if (addedTime >= sevenDaysAgo) {
+					recentlyAdded7Days += 1;
+				}
+				if (addedTime >= thirtyDaysAgo) {
+					recentlyAdded30Days += 1;
+				}
+			}
+		}
+
+		// Process tags for tag breakdown
+		const movieTags = movie.tags;
+		if (Array.isArray(movieTags)) {
+			for (const tagId of movieTags) {
+				if (typeof tagId === "number" && tagIdToLabel.has(tagId)) {
+					const tagLabel = tagIdToLabel.get(tagId);
+					if (tagLabel) {
+						tagBreakdown[tagLabel] = (tagBreakdown[tagLabel] ?? 0) + 1;
+					}
+				}
+			}
+		}
+
+		// Accumulate total runtime (in minutes)
+		const runtime = movie.runtime;
+		if (typeof runtime === "number" && runtime > 0) {
+			totalRuntime += runtime;
+		}
+
+		if (movie.monitored !== false) {
+			monitoredMovies += 1;
+		}
+		if (movie.hasFile) {
+			downloadedMovies += 1;
+
+			const sizeOnDisk = movie.sizeOnDisk ?? 0;
+			totalFileSize += sizeOnDisk;
+
+			// Use quality profile to categorize
+			const qualityProfileId = movie.qualityProfileId;
+
+			// Look up the profile name
+			if (qualityProfileId !== undefined && profileIdToName.has(qualityProfileId)) {
+				const profileName = profileIdToName.get(qualityProfileId);
+				if (profileName !== undefined) {
+					qualityBreakdown[profileName] = (qualityBreakdown[profileName] ?? 0) + 1;
+				}
+			} else {
+				qualityBreakdown.Unknown = (qualityBreakdown.Unknown ?? 0) + 1;
+			}
+		}
+	}
+
+	const totalMovies = movies.length;
+	const missingMovies = Math.max(0, monitoredMovies - downloadedMovies);
+	const cutoffUnmetCount = cutoffUnmet?.totalRecords ?? 0;
+	const averageMovieSize = downloadedMovies > 0 ? totalFileSize / downloadedMovies : undefined;
+
+	const diskTotals = diskspace.reduce(
+		(acc: { total: number; free: number }, entry) => {
+			acc.total += entry?.totalSpace ?? 0;
+			acc.free += entry?.freeSpace ?? 0;
+			return acc;
+		},
+		{ total: 0, free: 0 },
+	);
+
+	const diskUsed = Math.max(0, diskTotals.total - diskTotals.free);
+	const diskUsagePercent =
+		diskTotals.total > 0 ? clampPercentage((diskUsed / diskTotals.total) * 100) : 0;
+
+	const healthIssuesList = health
+		.filter((item) => {
+			const type = item?.type;
+			return type === "error" || type === "warning";
+		})
+		.map((item) => ({
+			type: item.type as "error" | "warning",
+			message: item.message ?? "Unknown health issue",
+			source: item.source,
+			wikiUrl: item.wikiUrl,
+			instanceId,
+			instanceName,
+			instanceBaseUrl,
+			service: "radarr" as const,
+		}));
+	const healthIssues = healthIssuesList.length;
+
+	return radarrStatisticsSchema.parse({
+		totalMovies,
+		monitoredMovies,
+		downloadedMovies,
+		missingMovies,
+		downloadedPercentage:
+			monitoredMovies > 0 ? clampPercentage((downloadedMovies / monitoredMovies) * 100) : 0,
+		cutoffUnmetCount,
+		qualityBreakdown,
+		tagBreakdown,
+		recentlyAdded7Days,
+		recentlyAdded30Days,
+		totalRuntime: totalRuntime > 0 ? totalRuntime : undefined,
+		averageMovieSize,
+		diskTotal: diskTotals.total || undefined,
+		diskFree: diskTotals.free || undefined,
+		diskUsed: diskUsed || undefined,
+		diskUsagePercent,
+		healthIssues,
+		healthIssuesList,
+	});
+};
+
+/**
+ * Fetches Prowlarr statistics using the SDK
+ */
+export const fetchProwlarrStatisticsWithSdk = async (
+	client: ProwlarrClient,
+	instanceId: string,
+	instanceName: string,
+	instanceBaseUrl: string,
+): Promise<ProwlarrStatistics> => {
+	const [indexers, health, indexerStats] = await Promise.all([
+		safeRequest(() => client.indexer.getAll()).then((r) => r ?? []),
+		safeRequest(() => client.health.getAll()).then((r) => r ?? []),
+		safeRequest(() => client.indexerStats.get({})).then((r) => r ?? { indexers: [] }),
+	]);
+
+	const totalIndexers = indexers.length;
+	const activeIndexers = indexers.filter((entry) => entry?.enable !== false).length;
+	const pausedIndexers = totalIndexers - activeIndexers;
+
+	// Process indexer statistics from the dedicated endpoint
+	const statsEntries = Array.isArray(indexerStats.indexers) ? indexerStats.indexers : [];
+
+	// Aggregate totals from all indexers
+	let totalQueries = 0;
+	let totalGrabs = 0;
+	let successfulQueries = 0;
+	let failedQueries = 0;
+	let successfulGrabs = 0;
+	let failedGrabs = 0;
+	let totalResponseTime = 0;
+	let responseTimeCount = 0;
+
+	const normalizedStats: ProwlarrIndexerStat[] = [];
+
+	for (const entry of statsEntries) {
+		if (!entry) continue;
+
+		const name = entry.indexerName ?? "Unknown";
+
+		// Get query counts
+		const queries = entry.numberOfQueries ?? 0;
+		const grabs = entry.numberOfGrabs ?? 0;
+		const failed = entry.numberOfFailedQueries ?? 0;
+		const failedGrabCount = entry.numberOfFailedGrabs ?? 0;
+		const avgResponseTime = entry.averageResponseTime;
+
+		// Aggregate totals
+		totalQueries += queries;
+		totalGrabs += grabs;
+		failedQueries += failed;
+		failedGrabs += failedGrabCount;
+
+		// Successful = total - failed
+		const successfulQueryCount = Math.max(0, queries - failed);
+		const successfulGrabCount = Math.max(0, grabs - failedGrabCount);
+		successfulQueries += successfulQueryCount;
+		successfulGrabs += successfulGrabCount;
+
+		// Track response times for average calculation
+		if (typeof avgResponseTime === "number" && avgResponseTime > 0) {
+			totalResponseTime += avgResponseTime;
+			responseTimeCount += 1;
+		}
+
+		// Calculate success rate based on queries
+		const totalAttempts = queries + grabs;
+		const totalSuccessful = successfulQueryCount + successfulGrabCount;
+		const successRate =
+			totalAttempts > 0 ? clampPercentage((totalSuccessful / totalAttempts) * 100) : 100;
+
+		// Only include indexers with activity
+		if (queries > 0 || grabs > 0) {
+			normalizedStats.push(
+				prowlarrIndexerStatSchema.parse({
+					name,
+					queries,
+					grabs,
+					successRate,
+				}),
+			);
+		}
+	}
+
+	// Calculate grab rate (grabs / queries)
+	const grabRate = totalQueries > 0 ? clampPercentage((totalGrabs / totalQueries) * 100) : 0;
+
+	// Calculate average response time across all indexers
+	const averageResponseTime =
+		responseTimeCount > 0 ? Math.round(totalResponseTime / responseTimeCount) : undefined;
+
+	// Process health issues
+	const healthIssuesList = health
+		.filter((item) => {
+			const type = item?.type;
+			return type === "error" || type === "warning";
+		})
+		.map((item) => ({
+			type: item.type as "error" | "warning",
+			message: item.message ?? "Unknown health issue",
+			source: item.source,
+			wikiUrl: item.wikiUrl,
+			instanceId,
+			instanceName,
+			instanceBaseUrl,
+			service: "prowlarr" as const,
+		}));
 	const healthIssues = healthIssuesList.length;
 
 	// Sort by queries descending and take top 10

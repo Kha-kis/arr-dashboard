@@ -5,7 +5,7 @@
  */
 
 import type { FastifyPluginAsync } from "fastify";
-import { type CustomFormat, createArrApiClient } from "../../lib/trash-guides/arr-api-client.js";
+import type { SonarrClient, RadarrClient } from "arr-sdk";
 
 // ============================================================================
 // Route Handlers
@@ -510,12 +510,12 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 				}
 			}
 
-			// Create API client for the instance
-			const apiClient = createArrApiClient(history.instance, app.encryptor);
+			// Create SDK client using factory
+			const client = app.arrClientFactory.create(history.instance) as SonarrClient | RadarrClient;
 
 			// Test connection
 			try {
-				await apiClient.getSystemStatus();
+				await client.system.get();
 			} catch (error) {
 				return reply.status(503).send({
 					statusCode: 503,
@@ -525,7 +525,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			}
 
 			// Get current Custom Formats from instance
-			const currentCFs = await apiClient.getCustomFormats();
+			const currentCFs = await client.customFormat.getAll();
 			const currentCFMap = new Map(currentCFs.map((cf) => [cf.name, cf]));
 
 			// Delete only CFs that:
@@ -550,7 +550,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 				}
 
 				try {
-					await apiClient.deleteCustomFormat(currentCF.id);
+					await client.customFormat.delete(currentCF.id);
 					deletedCFs.push(cfName);
 				} catch (error) {
 					deletionErrors.push(

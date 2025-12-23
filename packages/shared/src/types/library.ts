@@ -98,6 +98,51 @@ export type MultiInstanceLibraryResponse = z.infer<
   typeof multiInstanceLibraryResponseSchema
 >;
 
+// ============================================================================
+// Paginated Library Response (for cached library with server-side pagination)
+// ============================================================================
+
+export const paginationSchema = z.object({
+  page: z.number().int().min(1),
+  limit: z.number().int().min(1).max(100),
+  totalItems: z.number().int().min(0),
+  totalPages: z.number().int().min(0),
+});
+
+export type Pagination = z.infer<typeof paginationSchema>;
+
+export const libraryFiltersSchema = z.object({
+  search: z.string().optional(),
+  service: libraryServiceSchema.optional(),
+  instanceId: z.string().optional(),
+  monitored: z.enum(["true", "false", "all"]).optional(),
+  hasFile: z.enum(["true", "false", "all"]).optional(),
+  status: z.string().optional(),
+  qualityProfileId: z.number().optional(),
+  yearMin: z.number().optional(),
+  yearMax: z.number().optional(),
+  sortBy: z.enum(["title", "sortTitle", "year", "sizeOnDisk", "added"]).optional(),
+  sortOrder: z.enum(["asc", "desc"]).optional(),
+});
+
+export type LibraryFilters = z.infer<typeof libraryFiltersSchema>;
+
+export const paginatedLibraryResponseSchema = z.object({
+  items: z.array(libraryItemSchema),
+  pagination: paginationSchema,
+  appliedFilters: libraryFiltersSchema,
+  syncStatus: z.object({
+    isCached: z.boolean(),
+    lastSync: z.string().nullable(),
+    syncInProgress: z.boolean(),
+    totalCachedItems: z.number(),
+  }).optional(),
+});
+
+export type PaginatedLibraryResponse = z.infer<
+  typeof paginatedLibraryResponseSchema
+>;
+
 export const libraryToggleMonitorRequestSchema = z.object({
   instanceId: z.string(),
   service: libraryServiceSchema,

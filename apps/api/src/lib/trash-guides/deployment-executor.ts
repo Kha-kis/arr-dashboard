@@ -5,10 +5,13 @@
  * Handles both single and bulk deployments.
  */
 
-import type { PrismaClient } from "@prisma/client";
-import { type ArrApiClient, createArrApiClient } from "./arr-api-client.js";
-import type { CustomFormat } from "./arr-api-client.js";
-import { transformFieldsToArray } from "./utils.js";
+import type { PrismaClient, ServiceType } from "@prisma/client";
+import type { SonarrClient, RadarrClient } from "arr-sdk";
+import type { ArrClientFactory } from "../arr/client-factory.js";
+
+// SDK CustomFormat type for internal use
+type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]>>[number];
+type SdkQualityProfile = Awaited<ReturnType<SonarrClient["qualityProfile"]["getAll"]>>[number];
 
 // ============================================================================
 // Types
@@ -68,7 +71,7 @@ interface ValidatedDeploymentData {
 	instance: {
 		id: string;
 		label: string;
-		service: string;
+		service: ServiceType;
 		baseUrl: string;
 		encryptedApiKey: string;
 		encryptionIv: string;
@@ -167,14 +170,14 @@ function calculateScoreAndSource(
 
 export class DeploymentExecutorService {
 	private prisma: PrismaClient;
-	private encryptor: { decrypt: (payload: { value: string; iv: string }) => string };
+	private clientFactory: ArrClientFactory;
 
 	constructor(
 		prisma: PrismaClient,
-		encryptor: { decrypt: (payload: { value: string; iv: string }) => string },
+		clientFactory: ArrClientFactory,
 	) {
 		this.prisma = prisma;
-		this.encryptor = encryptor;
+		this.clientFactory = clientFactory;
 	}
 
 	// ============================================================================
@@ -201,9 +204,9 @@ export class DeploymentExecutorService {
 
 		// Get instance with ownership verification
 		const instance = await this.prisma.serviceInstance.findFirst({
-			where: {
-				id: instanceId,
-				userId,
+			where: { 
+				id: instanceId, 
+				userId 
 			},
 		});
 
@@ -299,7 +302,7 @@ export class DeploymentExecutorService {
 	private async createBackupAndHistory(
 		instance: { id: string },
 		userId: string,
-		preDeploymentCFs: CustomFormat[],
+		preDeploymentCFs: SdkCustomFormat[],
 		templateId: string,
 	): Promise<BackupAndHistoryResult> {
 		// Get user's backup retention settings
@@ -353,10 +356,10 @@ export class DeploymentExecutorService {
 	 * Deploys Custom Formats to the instance (create/update loop).
 	 */
 	private async deployCustomFormats(
-		apiClient: ArrApiClient,
+		client: SonarrClient | RadarrClient,
 		templateCFs: TemplateCF[],
-		existingCFMap: Map<string, CustomFormat>,
-		existingCFByName: Map<string, CustomFormat>,
+		existingCFMap: Map<string, SdkCustomFormat>,
+		existingCFByName: Map<string, SdkCustomFormat>,
 		conflictResolutions: Record<string, "use_template" | "keep_existing"> | undefined,
 	): Promise<DeployCustomFormatsResult> {
 		const errors: string[] = [];
@@ -389,7 +392,7 @@ export class DeploymentExecutorService {
 					// Transform specifications: convert fields from object to array format
 					const specifications = (templateCF.originalConfig?.specifications || []).map(
 						(spec: any) => {
-							const transformedFields = transformFieldsToArray(spec.fields);
+							const transformedFields = this.transformFieldsToArray(spec.fields);
 							return {
 								...spec,
 								fields: transformedFields,
@@ -403,7 +406,7 @@ export class DeploymentExecutorService {
 						specifications,
 					};
 
-					await apiClient.updateCustomFormat(existingCF.id, updatedCF);
+					await client.customFormat.update(existingCF.id, updatedCF as unknown as Parameters<typeof client.customFormat.update>[1]);
 					updated++;
 					details.updated.push(templateCF.name);
 				} else {
@@ -411,7 +414,7 @@ export class DeploymentExecutorService {
 					// Transform specifications: convert fields from object to array format
 					const specifications = (templateCF.originalConfig?.specifications || []).map(
 						(spec: any) => {
-							const transformedFields = transformFieldsToArray(spec.fields);
+							const transformedFields = this.transformFieldsToArray(spec.fields);
 							return {
 								...spec,
 								fields: transformedFields,
@@ -425,7 +428,7 @@ export class DeploymentExecutorService {
 						specifications,
 					};
 
-					await apiClient.createCustomFormat(newCF);
+					await client.customFormat.create(newCF as unknown as Parameters<typeof client.customFormat.create>[0]);
 					created++;
 					details.created.push(templateCF.name);
 				}
@@ -453,7 +456,7 @@ export class DeploymentExecutorService {
 	 * Also handles orphaned CFs by setting their scores to 0.
 	 */
 	private async syncQualityProfile(
-		apiClient: ArrApiClient,
+		client: SonarrClient | RadarrClient,
 		templateConfig: Record<string, any>,
 		templateCFs: TemplateCF[],
 		templateId: string,
@@ -468,7 +471,7 @@ export class DeploymentExecutorService {
 		const orphanedCFs: string[] = [];
 
 		try {
-			const qualityProfiles = await apiClient.getQualityProfiles();
+			const qualityProfiles = await client.qualityProfile.getAll();
 
 			// Find existing profile by name
 			let targetProfile = qualityProfiles.find((p) => p.name === profileName);
@@ -476,7 +479,7 @@ export class DeploymentExecutorService {
 			// Create quality profile if it doesn't exist
 			if (!targetProfile) {
 				targetProfile = await this.createQualityProfileFromSchema(
-					apiClient,
+					client,
 					templateConfig,
 					templateCFs,
 					profileName,
@@ -485,7 +488,7 @@ export class DeploymentExecutorService {
 
 			if (targetProfile) {
 				// Get fresh CFs list with IDs
-				const allCFs = await apiClient.getCustomFormats();
+				const allCFs = await client.customFormat.getAll();
 				const cfMap = new Map(allCFs.map((cf) => [cf.name, cf]));
 
 				// Fetch instance-level quality profile score overrides
@@ -506,7 +509,9 @@ export class DeploymentExecutorService {
 				// Build map of existing scores in the profile for "keep_existing" resolution
 				const existingScoreMap = new Map<number, number>();
 				for (const item of targetProfile.formatItems || []) {
-					existingScoreMap.set(item.format, item.score);
+					if (item.format !== undefined && item.score !== undefined) {
+						existingScoreMap.set(item.format, item.score);
+					}
 				}
 
 				for (const templateCF of templateCFs) {
@@ -579,7 +584,7 @@ export class DeploymentExecutorService {
 				// If this is a cloned profile template, also update quality items structure
 				if (templateConfig.completeQualityProfile) {
 					const clonedProfile = templateConfig.completeQualityProfile;
-					const schema = await apiClient.getQualityProfileSchema();
+					const schema = await client.qualityProfile.getSchema();
 
 					// Build quality items from cloned profile
 					const normalizeQualityName = (name: string) => name.replace(/[\s-]/g, "").toLowerCase();
@@ -617,18 +622,14 @@ export class DeploymentExecutorService {
 							}
 						}
 					};
-					extractQualities(schema.items);
+					extractQualities(schema.items || []);
 
 					let customGroupId = 1000;
 					const qualityItems: any[] = [];
 					const sourceIdToNewId = new Map<number, number>(); // Maps source item IDs to new IDs
 
 					for (const sourceItem of clonedProfile.items || []) {
-						if (
-							sourceItem.items &&
-							Array.isArray(sourceItem.items) &&
-							sourceItem.items.length > 0
-						) {
+						if (sourceItem.items && Array.isArray(sourceItem.items) && sourceItem.items.length > 0) {
 							const groupQualities: any[] = [];
 							for (const subItem of sourceItem.items) {
 								let targetQuality = allAvailableQualities.get(subItem.id);
@@ -693,13 +694,17 @@ export class DeploymentExecutorService {
 						items: qualityItems,
 						minFormatScore: clonedProfile.minFormatScore ?? updatedProfile.minFormatScore,
 						cutoffFormatScore: clonedProfile.cutoffFormatScore ?? updatedProfile.cutoffFormatScore,
-						minUpgradeFormatScore:
-							clonedProfile.minUpgradeFormatScore ?? updatedProfile.minUpgradeFormatScore,
+						minUpgradeFormatScore: clonedProfile.minUpgradeFormatScore ?? updatedProfile.minUpgradeFormatScore,
 						...(clonedProfile.language && { language: clonedProfile.language }),
 					};
 				}
 
-				await apiClient.updateQualityProfile(targetProfile.id, updatedProfile);
+				// Ensure profile ID exists before updating
+				if (targetProfile.id === undefined) {
+					throw new Error("Quality profile ID is missing");
+				}
+				// Use any cast - Sonarr/Radarr quality profile types differ in source values but are runtime-compatible
+				await client.qualityProfile.update(targetProfile.id, updatedProfile as any);
 
 				// Create/update mapping to track that this profile is managed by this template
 				await this.prisma.templateQualityProfileMapping.upsert({
@@ -713,13 +718,13 @@ export class DeploymentExecutorService {
 						templateId,
 						instanceId,
 						qualityProfileId: targetProfile.id,
-						qualityProfileName: targetProfile.name,
+						qualityProfileName: targetProfile.name ?? profileName,
 						syncStrategy: syncStrategy || "notify",
 						lastSyncedAt: new Date(),
 					},
 					update: {
 						templateId,
-						qualityProfileName: targetProfile.name,
+						qualityProfileName: targetProfile.name ?? profileName,
 						...(syncStrategy && { syncStrategy }),
 						lastSyncedAt: new Date(),
 						updatedAt: new Date(),
@@ -741,19 +746,19 @@ export class DeploymentExecutorService {
 	 * Supports both TRaSH Guides profiles (qualityProfile) and cloned instance profiles (completeQualityProfile)
 	 */
 	private async createQualityProfileFromSchema(
-		apiClient: ArrApiClient,
+		client: SonarrClient | RadarrClient,
 		templateConfig: Record<string, any>,
 		templateCFs: TemplateCF[],
 		profileName: string,
 	): Promise<any> {
 		try {
 			// Get the quality profile schema to get proper structure
-			const schema = await apiClient.getQualityProfileSchema();
+			const schema = await client.qualityProfile.getSchema();
 
 			// Check if this is a cloned profile with complete quality profile data
 			if (templateConfig.completeQualityProfile) {
 				return await this.createQualityProfileFromClonedProfile(
-					apiClient,
+					client,
 					schema,
 					templateConfig,
 					templateCFs,
@@ -778,7 +783,7 @@ export class DeploymentExecutorService {
 					}
 				}
 			};
-			extractQualities(schema.items);
+			extractQualities(schema.items || []);
 
 			// Build quality items according to TRaSH Guides structure
 			const qualityItems: any[] = [];
@@ -826,11 +831,11 @@ export class DeploymentExecutorService {
 			}
 
 			// Get fresh CFs list with IDs for score application
-			const allCFs = await apiClient.getCustomFormats();
+			const allCFs = await client.customFormat.getAll();
 
 			// Apply CF scores from template to the schema's formatItems
 			const scoreSet = templateConfig.qualityProfile?.trash_score_set;
-			const formatItemsWithScores = schema.formatItems.map((item: any) => {
+			const formatItemsWithScores = (schema.formatItems || []).map((item: any) => {
 				// Find corresponding template CF by matching format ID with CF name
 				const cf = allCFs.find((cf) => cf.id === item.format);
 				if (cf) {
@@ -928,11 +933,10 @@ export class DeploymentExecutorService {
 			};
 
 			// Remove the id field if it exists (schema might include it)
-			const { id: _unusedId, ...profileWithoutId } = profileToCreate as {
-				id?: number;
-			} & typeof profileToCreate;
+			const { id: _unusedId, ...profileWithoutId } = profileToCreate as { id?: number } & typeof profileToCreate;
 
-			return await apiClient.createQualityProfile(profileWithoutId);
+			// Use any cast - Sonarr/Radarr quality profile types differ in source values but are runtime-compatible
+			return await client.qualityProfile.create(profileWithoutId as any);
 		} catch (createError) {
 			console.error("[DEPLOYMENT] Failed to create quality profile:", createError);
 			console.error("[DEPLOYMENT] Error details:", JSON.stringify(createError, null, 2));
@@ -947,7 +951,7 @@ export class DeploymentExecutorService {
 	 * This preserves the exact quality item structure from the source instance.
 	 */
 	private async createQualityProfileFromClonedProfile(
-		apiClient: ArrApiClient,
+		client: SonarrClient | RadarrClient,
 		schema: any,
 		templateConfig: Record<string, any>,
 		templateCFs: TemplateCF[],
@@ -1064,14 +1068,12 @@ export class DeploymentExecutorService {
 			if (qualityItems.length > 0) {
 				const lastItem = qualityItems[qualityItems.length - 1];
 				remappedCutoff = lastItem.id ?? lastItem.quality?.id ?? 1;
-				console.warn(
-					`[DEPLOYMENT] Cutoff ID ${clonedProfile.cutoff} not found in remapped items, defaulting to: ${remappedCutoff}`,
-				);
+				console.warn(`[DEPLOYMENT] Cutoff ID ${clonedProfile.cutoff} not found in remapped items, defaulting to: ${remappedCutoff}`);
 			}
 		}
 
 		// Get fresh CFs list with IDs for score application
-		const allCFs = await apiClient.getCustomFormats();
+		const allCFs = await client.customFormat.getAll();
 
 		// Extract score set from template config (same as non-cloned profile method)
 		const scoreSet = templateConfig.qualityProfile?.trash_score_set;
@@ -1107,11 +1109,10 @@ export class DeploymentExecutorService {
 		};
 
 		// Remove the id field
-		const { id: _unusedId, ...profileWithoutId } = profileToCreate as {
-			id?: number;
-		} & typeof profileToCreate;
+		const { id: _unusedId, ...profileWithoutId } = profileToCreate as { id?: number } & typeof profileToCreate;
 
-		return await apiClient.createQualityProfile(profileWithoutId);
+		// Use any cast - Sonarr/Radarr quality profile types differ in source values but are runtime-compatible
+		return await client.qualityProfile.create(profileWithoutId as any);
 	}
 
 	/**
@@ -1248,10 +1249,10 @@ export class DeploymentExecutorService {
 			);
 			historyId = syncHistoryId;
 
-			// Step 4: Create API client and test connection
-			const apiClient = createArrApiClient(instance, this.encryptor);
+			// Step 4: Create SDK client and test connection
+			const client = this.clientFactory.create(instance) as SonarrClient | RadarrClient;
 			try {
-				await apiClient.getSystemStatus();
+				await client.system.get();
 			} catch (error) {
 				throw new Error(
 					`Instance unreachable: ${error instanceof Error ? error.message : "Unknown error"}`,
@@ -1259,15 +1260,17 @@ export class DeploymentExecutorService {
 			}
 
 			// Step 5: Build maps for existing CFs
-			const existingCFs = await apiClient.getCustomFormats();
-			const existingCFMap = new Map<string, CustomFormat>();
-			const existingCFByName = new Map<string, CustomFormat>();
+			const existingCFs = await client.customFormat.getAll();
+			const existingCFMap = new Map<string, SdkCustomFormat>();
+			const existingCFByName = new Map<string, SdkCustomFormat>();
 			for (const cf of existingCFs) {
 				const trashId = this.extractTrashId(cf);
 				if (trashId) {
 					existingCFMap.set(trashId, cf);
 				}
-				existingCFByName.set(cf.name, cf);
+				if (cf.name) {
+					existingCFByName.set(cf.name, cf);
+				}
 			}
 
 			// Step 6: Fetch previous deployment to identify orphaned CFs
@@ -1322,7 +1325,7 @@ export class DeploymentExecutorService {
 
 			// Step 8: Deploy Custom Formats
 			const cfResult = await this.deployCustomFormats(
-				apiClient,
+				client,
 				templateCFs,
 				existingCFMap,
 				existingCFByName,
@@ -1332,7 +1335,7 @@ export class DeploymentExecutorService {
 			// Step 9: Sync Quality Profile (handles orphaned CFs by setting scores to 0)
 			const profileName = template.name || "TRaSH Guides HD/UHD";
 			const profileResult = await this.syncQualityProfile(
-				apiClient,
+				client,
 				templateConfig,
 				templateCFs,
 				templateId,
@@ -1462,11 +1465,39 @@ export class DeploymentExecutorService {
 	}
 
 	/**
+	 * Transform fields from TRaSH Guides object format to Radarr API array format
+	 * TRaSH format: { value: 5 }
+	 * Radarr format: [{ name: "value", value: 5 }]
+	 */
+	private transformFieldsToArray(fields: any): Array<{ name: string; value: unknown }> {
+		// If fields is already an array, return it as-is
+		if (Array.isArray(fields)) {
+			return fields;
+		}
+
+		// If fields is undefined or null, return empty array
+		if (!fields) {
+			return [];
+		}
+
+		// Convert object format to array format
+		const result = Object.entries(fields).map(([name, value]) => ({
+			name,
+			value,
+		}));
+		return result;
+	}
+
+	/**
+	 * Extract trash_id from Custom Format
+	 * Checks specifications for a field named "trash_id"
+	 */
+	/**
 	 * Extract trash_id from Custom Format specifications.
 	 * Returns null if no trash_id is found, allowing callers to distinguish
 	 * between ID-based matching and name-based matching.
 	 */
-	private extractTrashId(cf: CustomFormat): string | null {
+	private extractTrashId(cf: SdkCustomFormat): string | null {
 		// Try to find trash_id in specifications
 		for (const spec of cf.specifications || []) {
 			if (spec.fields) {
@@ -1491,9 +1522,9 @@ export class DeploymentExecutorService {
 	/**
 	 * Get existing custom formats from instance
 	 */
-	private async getExistingCustomFormats(instance: any): Promise<CustomFormat[]> {
-		const apiClient = createArrApiClient(instance, this.encryptor);
-		return await apiClient.getCustomFormats();
+	private async getExistingCustomFormats(instance: any): Promise<SdkCustomFormat[]> {
+		const client = this.clientFactory.create(instance) as SonarrClient | RadarrClient;
+		return await client.customFormat.getAll();
 	}
 }
 
@@ -1503,7 +1534,7 @@ export class DeploymentExecutorService {
 
 export function createDeploymentExecutorService(
 	prisma: PrismaClient,
-	encryptor: { decrypt: (payload: { value: string; iv: string }) => string },
+	clientFactory: ArrClientFactory,
 ): DeploymentExecutorService {
-	return new DeploymentExecutorService(prisma, encryptor);
+	return new DeploymentExecutorService(prisma, clientFactory);
 }

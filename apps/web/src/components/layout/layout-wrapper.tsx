@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { Sidebar } from "./sidebar";
 import { TopBar } from "./topbar";
+import { SSEProvider } from "../../providers/sse-provider";
 
 const ROUTES_WITHOUT_LAYOUT = new Set(["/login", "/setup"]);
 
@@ -19,18 +20,20 @@ export const LayoutWrapper = ({ children }: LayoutWrapperProps) => {
 	}
 
 	return (
-		<div className="flex min-h-screen bg-bg relative">
-			{/* Premium gradient mesh background */}
-			<div
-				className="fixed inset-0 pointer-events-none opacity-40"
-				style={{ background: "var(--gradient-mesh)" }}
-			/>
+		<SSEProvider>
+			<div className="flex min-h-screen bg-bg relative">
+				{/* Premium gradient mesh background */}
+				<div
+					className="fixed inset-0 pointer-events-none opacity-40"
+					style={{ background: "var(--gradient-mesh)" }}
+				/>
 
-			<Sidebar />
-			<div className="flex flex-1 flex-col relative z-10">
-				<TopBar />
-				<div className="flex-1 p-6">{children}</div>
+				<Sidebar />
+				<div className="flex flex-1 flex-col relative z-10">
+					<TopBar />
+					<div className="flex-1 p-6">{children}</div>
+				</div>
 			</div>
-		</div>
+		</SSEProvider>
 	);
 };

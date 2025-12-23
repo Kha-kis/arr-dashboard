@@ -4,28 +4,26 @@
  * Provides bulk operations for managing custom format scores across multiple templates
  */
 
+import type { Prisma, PrismaClient } from "@prisma/client";
 import type {
-	BulkScoreCopy,
-	BulkScoreExport,
+	CustomFormatScoreEntry,
 	BulkScoreFilters,
+	BulkScoreUpdate,
+	BulkScoreCopy,
+	BulkScoreReset,
+	BulkScoreExport,
 	BulkScoreImport,
 	BulkScoreManagementResponse,
-	BulkScoreReset,
-	BulkScoreUpdate,
-	CustomFormatScoreEntry,
 	TemplateConfig,
 	TemplateCustomFormat,
 	TemplateScore,
 } from "@arr/shared";
-import type { Prisma, PrismaClient } from "@prisma/client";
-import type { Encryptor } from "../auth/encryption.js";
+import type { SonarrClient, RadarrClient } from "arr-sdk";
+import type { ArrClientFactory } from "../arr/client-factory.js";
 import { safeJsonParse } from "../utils/json.js";
-import {
-	type ArrApiClient,
-	type CustomFormat,
-	type QualityProfile,
-	createArrApiClient,
-} from "./arr-api-client.js";
+
+// SDK type aliases
+type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]>>[number];
 
 // ============================================================================
 // Bulk Score Manager Class
@@ -33,11 +31,11 @@ import {
 
 export class BulkScoreManager {
 	private prisma: PrismaClient;
-	private encryptor: Encryptor;
+	private clientFactory: ArrClientFactory;
 
-	constructor(prisma: PrismaClient, encryptor: Encryptor) {
+	constructor(prisma: PrismaClient, clientFactory: ArrClientFactory) {
 		this.prisma = prisma;
-		this.encryptor = encryptor;
+		this.clientFactory = clientFactory;
 	}
 
 	/**
@@ -85,17 +83,18 @@ export class BulkScoreManager {
 			profileName: string;
 		}
 		const allQualityProfiles: QualityProfileRef[] = [];
-		const instanceClients = new Map<string, ArrApiClient>(); // Store clients for reuse
+		const instanceClients = new Map<string, SonarrClient | RadarrClient>(); // Store clients for reuse
 
 		for (const instance of instances) {
-			// Create API client (handles decryption internally)
-			const client = createArrApiClient(instance, this.encryptor);
+			// Create SDK client
+			const client = this.clientFactory.create(instance) as SonarrClient | RadarrClient;
 			instanceClients.set(instance.id, client);
 
 			// Fetch quality profiles from this instance
-			let qualityProfiles: QualityProfile[];
+			// Use any[] due to Sonarr/Radarr type union - we only read data, not write
+			let qualityProfiles: any[];
 			try {
-				qualityProfiles = await client.getQualityProfiles();
+				qualityProfiles = await client.qualityProfile.getAll();
 			} catch (error) {
 				console.error(`Failed to fetch quality profiles from ${instance.label}:`, error);
 				continue; // Skip this instance if it fails
@@ -103,12 +102,14 @@ export class BulkScoreManager {
 
 			// Add all profiles to our collection
 			for (const profile of qualityProfiles) {
-				allQualityProfiles.push({
-					instanceId: instance.id,
-					instanceLabel: instance.label,
-					profileId: profile.id,
-					profileName: profile.name,
-				});
+				if (profile.id !== undefined && profile.name) {
+					allQualityProfiles.push({
+						instanceId: instance.id,
+						instanceLabel: instance.label,
+						profileId: profile.id,
+						profileName: profile.name,
+					});
+				}
 			}
 		}
 
@@ -123,23 +124,20 @@ export class BulkScoreManager {
 			},
 		});
 		const templateMappingMap = new Map(
-			templateMappings.map((mapping) => [mapping.qualityProfileId, mapping.templateId]),
+			templateMappings.map(mapping => [mapping.qualityProfileId, mapping.templateId])
 		);
 
 		// Fetch templates to get TRaSH default scores
-		const templateIds = [...new Set(templateMappings.map((m) => m.templateId))];
-		const templates =
-			templateIds.length > 0
-				? await this.prisma.trashTemplate.findMany({
-						where: {
-							id: { in: templateIds },
-						},
-						select: {
-							id: true,
-							configData: true,
-						},
-					})
-				: [];
+		const templateIds = [...new Set(templateMappings.map(m => m.templateId))];
+		const templates = templateIds.length > 0 ? await this.prisma.trashTemplate.findMany({
+			where: {
+				id: { in: templateIds },
+			},
+			select: {
+				id: true,
+				configData: true,
+			},
+		}) : [];
 
 		// Build a map of CF name → all available score set scores
 		// Key: CF name, Value: { trashId, scoreSetScores (all available scores by score set) }
@@ -156,7 +154,7 @@ export class BulkScoreManager {
 		for (const template of templates) {
 			try {
 				const config = JSON.parse(template.configData) as TemplateConfig;
-				const scoreSet = config.qualityProfile?.trash_score_set || "default";
+				const scoreSet = config.qualityProfile?.trash_score_set || 'default';
 				templateScoreSetMap.set(template.id, scoreSet);
 
 				for (const cf of config.customFormats || []) {
@@ -175,7 +173,7 @@ export class BulkScoreManager {
 						if (originalConfig?.trash_scores) {
 							// Store all available score sets
 							for (const [key, value] of Object.entries(originalConfig.trash_scores)) {
-								if (typeof value === "number") {
+								if (typeof value === 'number') {
 									scoreSetScores[key] = value;
 								}
 							}
@@ -221,18 +219,19 @@ export class BulkScoreManager {
 			if (!client) continue;
 
 			// Fetch custom formats to get all possible CFs
-			let customFormats: CustomFormat[];
+			let customFormats: SdkCustomFormat[];
 			try {
-				customFormats = await client.getCustomFormats();
+				customFormats = await client.customFormat.getAll();
 			} catch (error) {
 				console.error(`Failed to fetch custom formats from ${instance.label}:`, error);
 				continue;
 			}
 
 			// Fetch quality profiles to get actual scores
-			let qualityProfiles: QualityProfile[];
+			// Use any[] due to Sonarr/Radarr type union - we only read data, not write
+			let qualityProfiles: any[];
 			try {
-				qualityProfiles = await client.getQualityProfiles();
+				qualityProfiles = await client.qualityProfile.getAll();
 			} catch (error) {
 				console.error(`Failed to fetch quality profiles from ${instance.label}:`, error);
 				continue;
@@ -241,7 +240,7 @@ export class BulkScoreManager {
 			// Build CF ID to name map
 			const cfNameMap = new Map<number, string>();
 			for (const cf of customFormats) {
-				if (cf.id) {
+				if (cf.id !== undefined && cf.name) {
 					cfNameMap.set(cf.id, cf.name);
 				}
 			}
@@ -249,16 +248,19 @@ export class BulkScoreManager {
 			// Build profile ID to formatItems map for quick lookup
 			const profileFormatMap = new Map<number, Map<number, number>>(); // profileId -> (cfId -> score)
 			for (const profile of qualityProfiles) {
+				if (profile.id === undefined) continue;
 				const formatScoreMap = new Map<number, number>();
 				for (const formatItem of profile.formatItems || []) {
-					formatScoreMap.set(formatItem.format, formatItem.score);
+					if (formatItem.format !== undefined && formatItem.score !== undefined) {
+						formatScoreMap.set(formatItem.format, formatItem.score);
+					}
 				}
 				profileFormatMap.set(profile.id, formatScoreMap);
 			}
 
 			// Process each custom format
 			for (const cf of customFormats) {
-				if (!cf.id) continue;
+				if (cf.id === undefined || !cf.name) continue;
 
 				const cfName = cf.name;
 				const cfKey = cfName;
@@ -281,9 +283,7 @@ export class BulkScoreManager {
 
 						// Get the correct default score based on the template's score set for this profile
 						const templateId = templateMappingMap.get(profileRef.profileId);
-						const profileScoreSet = templateId
-							? templateScoreSetMap.get(templateId) || "default"
-							: "default";
+						const profileScoreSet = templateId ? (templateScoreSetMap.get(templateId) || 'default') : 'default';
 						const trashDefaultScore = getDefaultScoreForScoreSet(cfName, profileScoreSet);
 
 						const templateScore: TemplateScore = {
@@ -311,7 +311,7 @@ export class BulkScoreManager {
 
 					// Find and update the existing template score entry
 					const existingEntry = cfEntry.templateScores.find(
-						(ts) => ts.templateId === `${profileRef.instanceId}-${profileRef.profileId}`,
+						ts => ts.templateId === `${profileRef.instanceId}-${profileRef.profileId}`
 					);
 					if (existingEntry) {
 						existingEntry.currentScore = score;
@@ -334,7 +334,9 @@ export class BulkScoreManager {
 		// Apply search filter
 		if (filters.search) {
 			const searchLower = filters.search.toLowerCase();
-			allScores = allScores.filter((cf) => cf.name.toLowerCase().includes(searchLower));
+			allScores = allScores.filter((cf) =>
+				cf.name.toLowerCase().includes(searchLower),
+			);
 		}
 
 		// Apply modifiedOnly filter
@@ -356,10 +358,7 @@ export class BulkScoreManager {
 		update: BulkScoreUpdate,
 	): Promise<BulkScoreManagementResponse> {
 		// Validate newScore is a finite number
-		if (
-			!update.resetToDefault &&
-			(typeof update.newScore !== "number" || !Number.isFinite(update.newScore))
-		) {
+		if (!update.resetToDefault && (typeof update.newScore !== "number" || !Number.isFinite(update.newScore))) {
 			return {
 				success: false,
 				message: "Invalid score value: must be a finite number",
@@ -443,7 +442,10 @@ export class BulkScoreManager {
 	/**
 	 * Copy scores from one template to others
 	 */
-	async copyScores(userId: string, copy: BulkScoreCopy): Promise<BulkScoreManagementResponse> {
+	async copyScores(
+		userId: string,
+		copy: BulkScoreCopy,
+	): Promise<BulkScoreManagementResponse> {
 		// Get source template
 		const sourceTemplate = await this.prisma.trashTemplate.findFirst({
 			where: {
@@ -549,7 +551,10 @@ export class BulkScoreManager {
 	/**
 	 * Reset scores to TRaSH Guides defaults
 	 */
-	async resetScores(userId: string, reset: BulkScoreReset): Promise<BulkScoreManagementResponse> {
+	async resetScores(
+		userId: string,
+		reset: BulkScoreReset,
+	): Promise<BulkScoreManagementResponse> {
 		const affectedTemplateIds = new Set<string>();
 		const affectedCfTrashIds = new Set<string>();
 		const errors: string[] = [];
@@ -787,14 +792,11 @@ export class BulkScoreManager {
 					break;
 				case "score":
 					// Use first template's score for comparison, or 0 if no templates
-					comparison =
-						(a.templateScores[0]?.currentScore ?? 0) - (b.templateScores[0]?.currentScore ?? 0);
+					comparison = (a.templateScores[0]?.currentScore ?? 0) - (b.templateScores[0]?.currentScore ?? 0);
 					break;
 				case "templateName":
 					// Use first template's name for comparison, or empty string if no templates
-					comparison = (a.templateScores[0]?.templateName ?? "").localeCompare(
-						b.templateScores[0]?.templateName ?? "",
-					);
+					comparison = (a.templateScores[0]?.templateName ?? "").localeCompare(b.templateScores[0]?.templateName ?? "");
 					break;
 				case "groupName":
 					comparison = (a.groupName || "").localeCompare(b.groupName || "");
@@ -810,9 +812,6 @@ export class BulkScoreManager {
 // Export Factory Function
 // ============================================================================
 
-export function createBulkScoreManager(
-	prisma: PrismaClient,
-	encryptor: Encryptor,
-): BulkScoreManager {
-	return new BulkScoreManager(prisma, encryptor);
+export function createBulkScoreManager(prisma: PrismaClient, clientFactory: ArrClientFactory): BulkScoreManager {
+	return new BulkScoreManager(prisma, clientFactory);
 }

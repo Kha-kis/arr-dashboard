@@ -3,6 +3,124 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import type { RecommendationItem } from "@arr/shared";
 import { Loader2, Star, ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
+import { fetchTMDBExternalIds } from "../../../lib/api-client/tmdb";
+
+// ============================================================================
+// Recommendation Card (handles on-demand external ID fetching)
+// ============================================================================
+
+interface RecommendationCardProps {
+	item: RecommendationItem;
+	mediaType: "movie" | "series";
+	onSelect: (item: RecommendationItem) => void;
+}
+
+/**
+ * Individual recommendation card with on-demand external ID fetching.
+ * External IDs (IMDB, TVDB) are fetched when the user hovers over the card.
+ */
+const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, mediaType, onSelect }) => {
+	const [externalIds, setExternalIds] = useState<{ imdbId: string | null; tvdbId: number | null } | null>(null);
+	const [isHovered, setIsHovered] = useState(false);
+	const fetchedRef = useRef(false);
+
+	// Fetch external IDs on first hover
+	useEffect(() => {
+		if (isHovered && !fetchedRef.current && !externalIds) {
+			fetchedRef.current = true;
+			const tmdbMediaType = mediaType === "movie" ? "movie" : "tv";
+			fetchTMDBExternalIds(tmdbMediaType, item.tmdbId)
+				.then((data) => {
+					setExternalIds({ imdbId: data.imdbId, tvdbId: data.tvdbId });
+				})
+				.catch(() => {
+					// Silently fail - TMDB link is always available
+				});
+		}
+	}, [isHovered, externalIds, item.tmdbId, mediaType]);
+
+	// Use item's existing IDs if available (from cache), otherwise use fetched ones
+	const imdbId = item.imdbId ?? externalIds?.imdbId;
+	const tvdbId = item.tvdbId ?? externalIds?.tvdbId;
+
+	return (
+		<div
+			className="group relative w-[160px] flex-shrink-0 cursor-pointer overflow-hidden rounded-lg border border-border/50 bg-bg-subtle transition-all hover:scale-105 hover:border-border"
+			onClick={() => onSelect(item)}
+			onMouseEnter={() => setIsHovered(true)}
+		>
+			<div className="relative aspect-[2/3] w-full overflow-hidden bg-gradient-to-br from-slate-700 to-slate-900">
+				{item.posterUrl ? (
+					/* eslint-disable-next-line @next/next/no-img-element -- External TMDB image with dynamic URL */
+					<img
+						src={item.posterUrl}
+						alt={item.title}
+						className="h-full w-full object-cover"
+					/>
+				) : (
+					<div className="flex h-full items-center justify-center text-xs text-white/40">
+						No poster
+					</div>
+				)}
+				{typeof item.rating === "number" && item.rating > 0 && (
+					<div className="absolute right-2 top-2 flex items-center gap-1 rounded-full border border-yellow-500/40 bg-yellow-500/10 px-2 py-0.5 text-xs text-yellow-200 backdrop-blur-sm">
+						<Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
+						{item.rating.toFixed(1)}
+					</div>
+				)}
+				<div
+					className="absolute bottom-2 left-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
+					onClick={(e) => e.stopPropagation()}
+				>
+					<a
+						href={`https://www.themoviedb.org/${mediaType === "movie" ? "movie" : "tv"}/${item.tmdbId}`}
+						target="_blank"
+						rel="noopener noreferrer"
+						className="flex items-center gap-1 rounded-full border border-white/20 bg-black/60 px-2 py-1 text-xs text-white/70 backdrop-blur-sm transition-colors hover:bg-black/80 hover:text-white"
+						title="View on TMDB"
+					>
+						TMDB
+						<ExternalLink className="h-3 w-3" />
+					</a>
+					{imdbId && (
+						<a
+							href={`https://www.imdb.com/title/${imdbId}`}
+							target="_blank"
+							rel="noopener noreferrer"
+							className="flex items-center gap-1 rounded-full border border-white/20 bg-black/60 px-2 py-1 text-xs text-white/70 backdrop-blur-sm transition-colors hover:bg-black/80 hover:text-white"
+							title="View on IMDB"
+						>
+							IMDB
+						</a>
+					)}
+					{tvdbId && (
+						<a
+							href={`https://www.thetvdb.com/dereferrer/series/${tvdbId}`}
+							target="_blank"
+							rel="noopener noreferrer"
+							className="flex items-center gap-1 rounded-full border border-white/20 bg-black/60 px-2 py-1 text-xs text-white/70 backdrop-blur-sm transition-colors hover:bg-black/80 hover:text-white"
+							title="View on TVDB"
+						>
+							TVDB
+						</a>
+					)}
+				</div>
+			</div>
+			<div className="p-2">
+				<p className="truncate text-sm font-medium text-fg">{item.title}</p>
+				{item.releaseDate && (
+					<p className="text-xs text-fg-muted">
+						{new Date(item.releaseDate).getFullYear()}
+					</p>
+				)}
+			</div>
+		</div>
+	);
+};
+
+// ============================================================================
+// TMDBCarousel Component
+// ============================================================================
 
 /**
  * Props for the TMDBCarousel component
@@ -151,77 +269,12 @@ export const TMDBCarousel: React.FC<TMDBCarouselProps> = ({
 				)}
 				<div ref={scrollContainerRef} className="flex gap-4 overflow-x-auto pb-4 scrollbar-none">
 					{items.map((item) => (
-						<div
+						<RecommendationCard
 							key={item.id}
-							className="group relative w-[160px] flex-shrink-0 cursor-pointer overflow-hidden rounded-lg border border-border/50 bg-bg-subtle transition-all hover:scale-105 hover:border-border"
-							onClick={() => onSelectItem(item)}
-						>
-							<div className="relative aspect-[2/3] w-full overflow-hidden bg-gradient-to-br from-slate-700 to-slate-900">
-								{item.posterUrl ? (
-									/* eslint-disable-next-line @next/next/no-img-element -- External TMDB image with dynamic URL */
-									<img
-										src={item.posterUrl}
-										alt={item.title}
-										className="h-full w-full object-cover"
-									/>
-								) : (
-									<div className="flex h-full items-center justify-center text-xs text-white/40">
-										No poster
-									</div>
-								)}
-								{typeof item.rating === "number" && item.rating > 0 && (
-									<div className="absolute right-2 top-2 flex items-center gap-1 rounded-full border border-yellow-500/40 bg-yellow-500/10 px-2 py-0.5 text-xs text-yellow-200 backdrop-blur-sm">
-										<Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-										{item.rating.toFixed(1)}
-									</div>
-								)}
-								<div
-								className="absolute bottom-2 left-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
-								onClick={(e) => e.stopPropagation()}
-							>
-								<a
-									href={`https://www.themoviedb.org/${mediaType === "movie" ? "movie" : "tv"}/${item.tmdbId}`}
-									target="_blank"
-									rel="noopener noreferrer"
-									className="flex items-center gap-1 rounded-full border border-white/20 bg-black/60 px-2 py-1 text-xs text-white/70 backdrop-blur-sm transition-colors hover:bg-black/80 hover:text-white"
-									title="View on TMDB"
-								>
-									TMDB
-									<ExternalLink className="h-3 w-3" />
-								</a>
-								{item.imdbId && (
-									<a
-										href={`https://www.imdb.com/title/${item.imdbId}`}
-										target="_blank"
-										rel="noopener noreferrer"
-										className="flex items-center gap-1 rounded-full border border-white/20 bg-black/60 px-2 py-1 text-xs text-white/70 backdrop-blur-sm transition-colors hover:bg-black/80 hover:text-white"
-										title="View on IMDB"
-									>
-										IMDB
-									</a>
-								)}
-								{item.tvdbId && (
-									<a
-										href={`https://www.thetvdb.com/dereferrer/series/${item.tvdbId}`}
-										target="_blank"
-										rel="noopener noreferrer"
-										className="flex items-center gap-1 rounded-full border border-white/20 bg-black/60 px-2 py-1 text-xs text-white/70 backdrop-blur-sm transition-colors hover:bg-black/80 hover:text-white"
-										title="View on TVDB"
-									>
-										TVDB
-									</a>
-								)}
-							</div>
-							</div>
-							<div className="p-2">
-								<p className="truncate text-sm font-medium text-fg">{item.title}</p>
-								{item.releaseDate && (
-									<p className="text-xs text-fg-muted">
-										{new Date(item.releaseDate).getFullYear()}
-									</p>
-								)}
-							</div>
-						</div>
+							item={item}
+							mediaType={mediaType}
+							onSelect={onSelectItem}
+						/>
 					))}
 					{isFetchingNextPage && (
 						<div className="flex w-[160px] flex-shrink-0 items-center justify-center">

@@ -73,9 +73,9 @@ export async function fetchRecommendations(
 	try {
 		return await apiRequest<RecommendationsResponse>(`/api/recommendations?${search.toString()}`);
 	} catch (error) {
-		// Return empty results for auth errors or missing TMDB API key (400)
+		// Return empty results for auth errors (user not logged in)
 		// Setting totalPages to 0 prevents infinite pagination attempts
-		if (error instanceof UnauthorizedError || error instanceof BadRequestError) {
+		if (error instanceof UnauthorizedError) {
 			return {
 				type: params.type,
 				mediaType: params.mediaType,
@@ -85,6 +85,8 @@ export async function fetchRecommendations(
 				totalPages: 0,
 			};
 		}
+		// Re-throw BadRequestError and other errors so UI can display them
+		// This includes: missing TMDB API key (400), TMDB API failures (502)
 		throw error;
 	}
 }

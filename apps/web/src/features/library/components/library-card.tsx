@@ -368,6 +368,42 @@ export const LibraryCard = ({
 							</Button>
 						) : null}
 
+						{item.remoteIds?.tmdbId ? (
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								className="flex items-center gap-1.5 text-fg-muted hover:text-fg"
+								onClick={() => safeOpenUrl(`https://www.themoviedb.org/${item.type === "movie" ? "movie" : "tv"}/${item.remoteIds?.tmdbId}`)}
+							>
+								<span>TMDB</span>
+							</Button>
+						) : null}
+
+						{item.remoteIds?.imdbId ? (
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								className="flex items-center gap-1.5 text-fg-muted hover:text-fg"
+								onClick={() => safeOpenUrl(`https://www.imdb.com/title/${item.remoteIds?.imdbId}`)}
+							>
+								<span>IMDB</span>
+							</Button>
+						) : null}
+
+						{item.remoteIds?.tvdbId ? (
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								className="flex items-center gap-1.5 text-fg-muted hover:text-fg"
+								onClick={() => safeOpenUrl(`https://www.thetvdb.com/dereferrer/series/${item.remoteIds?.tvdbId}`)}
+							>
+								<span>TVDB</span>
+							</Button>
+						) : null}
+
 						{onExpandDetails ? (
 							<Button
 								type="button"

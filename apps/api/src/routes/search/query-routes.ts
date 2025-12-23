@@ -1,8 +1,11 @@
+import type { FastifyPluginCallback } from "fastify";
 import type { SearchRequest, SearchResult } from "@arr/shared";
 import { multiInstanceSearchResponseSchema, searchRequestSchema } from "@arr/shared";
-import type { FastifyPluginCallback } from "fastify";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
-import { performProwlarrSearch } from "../../lib/search/prowlarr-api.js";
+import {
+	executeOnInstances,
+	isProwlarrClient,
+} from "../../lib/arr/client-helpers.js";
+import { performProwlarrSearchWithSdk } from "../../lib/search/prowlarr-api.js";
 
 /**
  * Registers search query routes for Prowlarr.
@@ -29,89 +32,58 @@ export const registerQueryRoutes: FastifyPluginCallback = (app, _opts, done) => 
 	app.post("/search/query", async (request, reply) => {
 		const payload = searchRequestSchema.parse(request.body ?? {});
 
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: { enabled: true, service: "PROWLARR", userId: request.currentUser?.id },
-		});
-
-		if (instances.length === 0) {
-			return multiInstanceSearchResponseSchema.parse({
-				instances: [],
-
-				aggregated: [],
-
-				totalCount: 0,
-			});
-		}
-
-		const instanceMap = new Map(instances.map((instance) => [instance.id, instance] as const));
-
-		const filters: Array<{
-			instanceId: string;
-			indexerIds?: number[];
-			categories?: number[];
-		}> =
-			payload.filters && payload.filters.length > 0
-				? payload.filters
-				: instances.map((instance) => ({ instanceId: instance.id }));
-
-		const results: Array<{
-			instanceId: string;
-			instanceName: string;
-			data: SearchResult[];
-		}> = [];
-
-		const aggregated: SearchResult[] = [];
-
-		for (const filter of filters) {
-			const instance = instanceMap.get(filter.instanceId);
-
-			if (!instance) {
-				continue;
-			}
-
-			const fetcherInstance = createInstanceFetcher(app, instance);
-
-			try {
-				const data = await performProwlarrSearch(fetcherInstance, instance, {
-					query: payload.query,
-
-					type: payload.type,
-
-					limit: payload.limit ?? 100,
-
+		// Build a map of instance-specific filters
+		const filterMap = new Map<string, { indexerIds?: number[]; categories?: number[] }>();
+		if (payload.filters && payload.filters.length > 0) {
+			for (const filter of payload.filters) {
+				filterMap.set(filter.instanceId, {
 					indexerIds: filter.indexerIds,
-
 					categories: filter.categories,
 				});
-
-				results.push({
-					instanceId: instance.id,
-
-					instanceName: instance.label,
-
-					data,
-				});
-
-				aggregated.push(...data);
-			} catch (error) {
-				request.log.error({ err: error, instance: instance.id }, "prowlarr search failed");
-
-				results.push({
-					instanceId: instance.id,
-
-					instanceName: instance.label,
-
-					data: [],
-				});
 			}
 		}
+
+		// Determine which instances to query
+		const instanceIds = filterMap.size > 0
+			? Array.from(filterMap.keys())
+			: undefined;
+
+		const response = await executeOnInstances(
+			app,
+			request.currentUser!.id,
+			{
+				serviceTypes: ["PROWLARR"],
+				instanceIds,
+			},
+			async (client, instance) => {
+				if (!isProwlarrClient(client)) {
+					return [];
+				}
+
+				// Get filter options for this instance
+				const filter = filterMap.get(instance.id);
+
+				return performProwlarrSearchWithSdk(client, instance, {
+					query: payload.query,
+					type: payload.type,
+					limit: payload.limit ?? 100,
+					indexerIds: filter?.indexerIds,
+					categories: filter?.categories,
+				});
+			},
+		);
+
+		// Transform results to match expected format
+		const results = response.instances.map((result) => ({
+			instanceId: result.instanceId,
+			instanceName: result.instanceName,
+			data: result.success ? result.data : [],
+		}));
 
 		return multiInstanceSearchResponseSchema.parse({
 			instances: results,
-
-			aggregated,
-
-			totalCount: aggregated.length,
+			aggregated: response.aggregated,
+			totalCount: response.totalCount,
 		});
 	});
 

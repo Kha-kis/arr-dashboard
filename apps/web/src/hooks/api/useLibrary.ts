@@ -10,38 +10,96 @@ import type {
 	LibrarySeasonSearchRequest,
 	LibraryMovieSearchRequest,
 	LibrarySeriesSearchRequest,
-	MultiInstanceLibraryResponse,
+	PaginatedLibraryResponse,
 } from "@arr/shared";
 
 import {
 	fetchEpisodes,
 	fetchLibrary,
+	fetchLibrarySyncStatus,
+	triggerLibrarySync,
+	updateLibrarySyncSettings,
 	searchLibraryEpisode,
 	searchLibraryMovie,
 	searchLibrarySeason,
 	searchLibrarySeries,
 	toggleEpisodeMonitoring,
 	toggleLibraryMonitoring,
+	type LibraryQueryParams,
+	type LibrarySyncStatusResponse,
+	type LibrarySyncSettings,
 } from "../../lib/api-client/library";
 
-interface LibraryQueryOptions {
-	service?: LibraryService;
-	instanceId?: string;
+const QUEUE_QUERY_KEY = ["dashboard", "queue"] as const;
+
+// ============================================================================
+// Library Query Hook (with pagination, search, filters)
+// ============================================================================
+
+export interface UseLibraryQueryOptions extends LibraryQueryParams {
 	enabled?: boolean;
 }
 
-export const useLibraryQuery = (options: LibraryQueryOptions = {}) =>
-	useQuery<MultiInstanceLibraryResponse>({
-		queryKey: ["library", { service: options.service, instanceId: options.instanceId }],
-		queryFn: () =>
-			fetchLibrary({
-				service: options.service,
-				instanceId: options.instanceId,
-			}),
-		enabled: options.enabled ?? true,
+export const useLibraryQuery = (options: UseLibraryQueryOptions = {}) => {
+	const { enabled, ...queryParams } = options;
+
+	return useQuery<PaginatedLibraryResponse>({
+		queryKey: ["library", queryParams],
+		queryFn: () => fetchLibrary(queryParams),
+		enabled: enabled ?? true,
 		staleTime: 60 * 1000,
 		refetchInterval: 5 * 60 * 1000,
 	});
+};
+
+// ============================================================================
+// Library Sync Hooks
+// ============================================================================
+
+export const useLibrarySyncStatus = (options: { enabled?: boolean } = {}) =>
+	useQuery<LibrarySyncStatusResponse>({
+		queryKey: ["library", "sync", "status"],
+		queryFn: fetchLibrarySyncStatus,
+		enabled: options.enabled ?? true,
+		staleTime: 30 * 1000,
+		refetchInterval: 60 * 1000,
+	});
+
+export const useTriggerLibrarySyncMutation = () => {
+	const queryClient = useQueryClient();
+	return useMutation<
+		{ success: boolean; message: string; instanceId: string },
+		unknown,
+		string
+	>({
+		mutationFn: triggerLibrarySync,
+		onSuccess: () => {
+			void queryClient.invalidateQueries({ queryKey: ["library", "sync", "status"] });
+			// Invalidate library queries after a short delay to allow sync to start
+			setTimeout(() => {
+				void queryClient.invalidateQueries({ queryKey: ["library"] });
+			}, 2000);
+		},
+	});
+};
+
+export const useUpdateLibrarySyncSettingsMutation = () => {
+	const queryClient = useQueryClient();
+	return useMutation<
+		{ success: boolean; settings: LibrarySyncSettings },
+		unknown,
+		{ instanceId: string; settings: LibrarySyncSettings }
+	>({
+		mutationFn: ({ instanceId, settings }) => updateLibrarySyncSettings(instanceId, settings),
+		onSuccess: () => {
+			void queryClient.invalidateQueries({ queryKey: ["library", "sync", "status"] });
+		},
+	});
+};
+
+// ============================================================================
+// Library Monitoring Mutations
+// ============================================================================
 
 export const useLibraryMonitorMutation = () => {
 	const queryClient = useQueryClient();
@@ -60,6 +118,7 @@ export const useLibrarySeasonSearchMutation = () => {
 		mutationFn: searchLibrarySeason,
 		onSuccess: () => {
 			void queryClient.invalidateQueries({ queryKey: ["library"] });
+			void queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
 		},
 	});
 };
@@ -70,6 +129,7 @@ export const useLibraryMovieSearchMutation = () => {
 		mutationFn: searchLibraryMovie,
 		onSuccess: () => {
 			void queryClient.invalidateQueries({ queryKey: ["library"] });
+			void queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
 		},
 	});
 };
@@ -80,9 +140,14 @@ export const useLibrarySeriesSearchMutation = () => {
 		mutationFn: searchLibrarySeries,
 		onSuccess: () => {
 			void queryClient.invalidateQueries({ queryKey: ["library"] });
+			void queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
 		},
 	});
 };
+
+// ============================================================================
+// Episode Hooks
+// ============================================================================
 
 interface EpisodesQueryOptions {
 	instanceId: string;
@@ -119,6 +184,7 @@ export const useLibraryEpisodeSearchMutation = () => {
 		onSuccess: () => {
 			void queryClient.invalidateQueries({ queryKey: ["library"] });
 			void queryClient.invalidateQueries({ queryKey: ["library", "episodes"] });
+			void queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
 		},
 	});
 };

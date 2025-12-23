@@ -4,21 +4,15 @@
  * Routes for importing complete quality profiles from *arr instances
  */
 
-import type {
-	CompleteQualityProfile,
-	CustomFormatSpecification,
-	TemplateConfig,
-	TrashCustomFormat,
-	TrashCustomFormatGroup,
-	TrashQualityProfile,
-} from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
-import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
-import { type InstanceCustomFormat, createCFMatcher } from "../../lib/trash-guides/cf-matcher.js";
 import { createProfileCloner } from "../../lib/trash-guides/profile-cloner.js";
+import { SonarrClient, RadarrClient, ArrError } from "arr-sdk";
+import { arrErrorToHttpStatus } from "../../lib/arr/client-factory.js";
+import { createCFMatcher, type InstanceCustomFormat } from "../../lib/trash-guides/cf-matcher.js";
+import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
 import { findCutoffQualityName } from "../../lib/utils/quality-utils.js";
+import type { CompleteQualityProfile, TrashQualityProfile, TrashCustomFormatGroup, TrashCustomFormat, TemplateConfig, CustomFormatSpecification } from "@arr/shared";
 
 // ============================================================================
 // ARR API Response Types
@@ -90,13 +84,16 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 */
 	app.post("/import", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const { instanceId, profileId } = request.body as {
+		const {
+			instanceId,
+			profileId,
+		} = request.body as {
 			instanceId: string;
 			profileId: number;
 		};
 
 		try {
-			const profileCloner = createProfileCloner(app.prisma, app.encryptor);
+			const profileCloner = createProfileCloner(app.prisma, app.arrClientFactory);
 			const result = await profileCloner.importQualityProfile({
 				instanceId,
 				profileId,
@@ -131,14 +128,18 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 */
 	app.post("/preview", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const { instanceId, profile, customFormats } = request.body as {
+		const {
+			instanceId,
+			profile,
+			customFormats,
+		} = request.body as {
 			instanceId: string;
 			profile: CompleteQualityProfile;
 			customFormats: Array<{ trash_id: string; score: number }>;
 		};
 
 		try {
-			const profileCloner = createProfileCloner(app.prisma, app.encryptor);
+			const profileCloner = createProfileCloner(app.prisma, app.arrClientFactory);
 			const result = await profileCloner.previewProfileDeployment(
 				instanceId,
 				userId,
@@ -172,7 +173,13 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 */
 	app.post("/deploy", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const { instanceId, profile, customFormats, profileName, existingProfileId } = request.body as {
+		const {
+			instanceId,
+			profile,
+			customFormats,
+			profileName,
+			existingProfileId,
+		} = request.body as {
 			instanceId: string;
 			profile: CompleteQualityProfile;
 			customFormats: Array<{ trash_id: string; score: number }>;
@@ -181,7 +188,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 		};
 
 		try {
-			const profileCloner = createProfileCloner(app.prisma, app.encryptor);
+			const profileCloner = createProfileCloner(app.prisma, app.arrClientFactory);
 			const result = await profileCloner.deployCompleteProfile(
 				instanceId,
 				userId,
@@ -228,9 +235,9 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 			// Including userId ensures non-owned instances return null,
 			// preventing instance enumeration attacks (all non-owned instances return 404).
 			const instance = await app.prisma.serviceInstance.findFirst({
-				where: {
-					id: instanceId,
-					userId,
+				where: { 
+					id: instanceId, 
+					userId 
 				},
 			});
 
@@ -241,11 +248,18 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				});
 			}
 
-			// Create instance fetcher and fetch quality profiles
-			const fetcher = createInstanceFetcher(app, instance);
-			const response = await fetcher("/api/v3/qualityprofile");
+			// Create SDK client and fetch quality profiles
+			const client = app.arrClientFactory.create(instance);
 
-			const profiles = (await response.json()) as ArrQualityProfileResponse[];
+			// Both SonarrClient and RadarrClient have the qualityProfile API
+			if (!(client instanceof SonarrClient) && !(client instanceof RadarrClient)) {
+				return reply.status(400).send({
+					success: false,
+					error: "Invalid client type for quality profiles",
+				});
+			}
+
+			const profiles = await client.qualityProfile.getAll() as ArrQualityProfileResponse[];
 
 			return reply.status(200).send({
 				success: true,
@@ -258,10 +272,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 							name: p.name,
 							upgradeAllowed: p.upgradeAllowed,
 							cutoff: p.cutoff,
-							cutoffQuality:
-								cutoffName && cutoffName !== "Unknown"
-									? { id: p.cutoff, name: cutoffName }
-									: undefined,
+							cutoffQuality: cutoffName && cutoffName !== "Unknown" ? { id: p.cutoff, name: cutoffName } : undefined,
 							minFormatScore: p.minFormatScore,
 							formatItemsCount: p.formatItems?.length || 0,
 						};
@@ -269,8 +280,9 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				},
 			});
 		} catch (error) {
-			app.log.error(`Failed to fetch quality profiles: ${error}`);
-			return reply.status(500).send({
+			app.log.error({ err: error, instanceId }, "Failed to fetch quality profiles");
+			const statusCode = error instanceof ArrError ? arrErrorToHttpStatus(error) : 500;
+			return reply.status(statusCode).send({
 				success: false,
 				error: error instanceof Error ? error.message : "Failed to fetch profiles",
 			});
@@ -290,9 +302,9 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 		try {
 			// Get instance - verify ownership by including userId in where clause
 			const instance = await app.prisma.serviceInstance.findFirst({
-				where: {
-					id: instanceId,
-					userId: request.currentUser!.id,
+				where: { 
+					id: instanceId, 
+					userId: request.currentUser!.id 
 				},
 			});
 
@@ -303,45 +315,50 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				});
 			}
 
-			// Create instance fetcher
-			const fetcher = createInstanceFetcher(app, instance);
+			// Create SDK client
+			const client = app.arrClientFactory.create(instance);
 
-			// Fetch the quality profile
-			const profileResponse = await fetcher(`/api/v3/qualityprofile/${profileId}`);
-			const profile = await profileResponse.json();
+			// Validate client type
+			if (!(client instanceof SonarrClient) && !(client instanceof RadarrClient)) {
+				return reply.status(400).send({
+					success: false,
+					error: "Invalid client type for profile details",
+				});
+			}
 
-			// Fetch all custom formats from the instance
-			const cfResponse = await fetcher("/api/v3/customformat");
-			const allCustomFormats = await cfResponse.json();
+			// Fetch the quality profile and all custom formats in parallel
+			const [profile, allCustomFormats] = await Promise.all([
+				client.qualityProfile.getById(Number(profileId)),
+				client.customFormat.getAll(),
+			]);
 
 			// Get the CFs used in this profile (from formatItems)
 			const profileCFIds = new Set(
-				(profile.formatItems || []).map((item: { format: number }) => item.format),
+				((profile as ArrQualityProfileResponse).formatItems || []).map((item: { format: number }) => item.format)
 			);
 
 			// Filter to only CFs used in the profile and include score
-			const profileCustomFormats = allCustomFormats
-				.filter((cf: { id: number }) => profileCFIds.has(cf.id))
-				.map(
-					(cf: {
-						id: number;
-						name: string;
-						specifications?: unknown[];
-						includeCustomFormatWhenRenaming?: boolean;
-					}) => {
-						const formatItem = profile.formatItems?.find(
-							(item: { format: number; score: number }) => item.format === cf.id,
-						);
-						return {
-							id: cf.id,
-							name: cf.name,
-							trash_id: `instance-cf-${cf.id}`, // Placeholder trash_id for instance CFs
-							score: formatItem?.score ?? 0,
-							specifications: cf.specifications,
-							includeCustomFormatWhenRenaming: cf.includeCustomFormatWhenRenaming,
-						};
-					},
-				);
+			// Use type guard to filter out CFs with undefined id or name
+			const validCustomFormats = allCustomFormats.filter(
+				(cf): cf is typeof cf & { id: number; name: string } =>
+					cf.id !== undefined && cf.name !== undefined && cf.name !== null
+			);
+
+			const profileCustomFormats = validCustomFormats
+				.filter((cf) => profileCFIds.has(cf.id))
+				.map((cf) => {
+					const formatItem = (profile as ArrQualityProfileResponse).formatItems?.find(
+						(item) => item.format === cf.id
+					);
+					return {
+						id: cf.id,
+						name: cf.name,
+						trash_id: `instance-cf-${cf.id}`, // Placeholder trash_id for instance CFs
+						score: formatItem?.score ?? 0,
+						specifications: cf.specifications,
+						includeCustomFormatWhenRenaming: cf.includeCustomFormatWhenRenaming,
+					};
+				});
 
 			return reply.status(200).send({
 				success: true,
@@ -357,25 +374,19 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 					},
 					customFormats: profileCustomFormats,
 					// Include all CFs for browse section (adds trash_id placeholder for template creation)
-					allCustomFormats: allCustomFormats.map(
-						(cf: {
-							id: number;
-							name: string;
-							specifications?: unknown[];
-							includeCustomFormatWhenRenaming?: boolean;
-						}) => ({
-							id: cf.id,
-							name: cf.name,
-							trash_id: `instance-cf-${cf.id}`, // Placeholder trash_id for instance CFs
-							specifications: cf.specifications,
-							includeCustomFormatWhenRenaming: cf.includeCustomFormatWhenRenaming,
-						}),
-					),
+					allCustomFormats: validCustomFormats.map((cf) => ({
+						id: cf.id,
+						name: cf.name,
+						trash_id: `instance-cf-${cf.id}`, // Placeholder trash_id for instance CFs
+						specifications: cf.specifications,
+						includeCustomFormatWhenRenaming: cf.includeCustomFormatWhenRenaming,
+					})),
 				},
 			});
 		} catch (error) {
-			app.log.error(`Failed to fetch profile details: ${error}`);
-			return reply.status(500).send({
+			app.log.error({ err: error, instanceId, profileId }, "Failed to fetch profile details");
+			const statusCode = error instanceof ArrError ? arrErrorToHttpStatus(error) : 500;
+			return reply.status(statusCode).send({
 				success: false,
 				error: error instanceof Error ? error.message : "Failed to fetch profile details",
 			});
@@ -404,9 +415,9 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 		try {
 			// Get instance - verify ownership by including userId in where clause
 			const instance = await app.prisma.serviceInstance.findFirst({
-				where: {
-					id: instanceId,
-					userId: request.currentUser!.id,
+				where: { 
+					id: instanceId, 
+					userId: request.currentUser!.id 
 				},
 			});
 
@@ -417,52 +428,56 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				});
 			}
 
-			// Create instance fetcher
-			const fetcher = createInstanceFetcher(app, instance);
+			// Create SDK client
+			const client = app.arrClientFactory.create(instance);
 
-			// Fetch the quality profile
-			const profileResponse = await fetcher(`/api/v3/qualityprofile/${profileId}`);
-			const profile = await profileResponse.json();
+			// Validate client type
+			if (!(client instanceof SonarrClient) && !(client instanceof RadarrClient)) {
+				return reply.status(400).send({
+					success: false,
+					error: "Invalid client type for CF validation",
+				});
+			}
 
-			// Fetch all custom formats from the instance
-			const cfResponse = await fetcher("/api/v3/customformat");
-			const allCustomFormats = await cfResponse.json();
+			// Fetch the quality profile and all custom formats in parallel
+			const [profile, allCustomFormats] = await Promise.all([
+				client.qualityProfile.getById(profileId),
+				client.customFormat.getAll(),
+			]);
 
 			// Get the CFs used in this profile (from formatItems)
 			// Include all CFs in the profile, even those with score 0
 			// (score 0 is meaningful - it means "track but don't affect ranking")
 			const profileCFIds = new Set(
-				(profile.formatItems || []).map((item: { format: number; score: number }) => item.format),
+				((profile as ArrQualityProfileResponse).formatItems || [])
+					.map((item: { format: number; score: number }) => item.format)
+			);
+
+			// Filter out CFs with undefined id or name
+			const validCustomFormats = allCustomFormats.filter(
+				(cf): cf is typeof cf & { id: number; name: string } =>
+					cf.id !== undefined && cf.name !== undefined && cf.name !== null
 			);
 
 			// Filter to only CFs used in the profile
-			const profileCFs: InstanceCustomFormat[] = allCustomFormats
-				.filter((cf: { id: number }) => profileCFIds.has(cf.id))
-				.map(
-					(cf: {
-						id: number;
-						name: string;
-						specifications?: unknown[];
-						includeCustomFormatWhenRenaming?: boolean;
-					}) => {
-						// Find the score for this CF in the profile
-						const formatItem = profile.formatItems?.find(
-							(item: { format: number; score: number }) => item.format === cf.id,
-						);
-						return {
-							id: cf.id,
-							name: cf.name,
-							specifications: cf.specifications || [],
-							includeCustomFormatWhenRenaming: cf.includeCustomFormatWhenRenaming,
-							score: formatItem?.score,
-						} as InstanceCustomFormat;
-					},
-				);
+			const profileCFs: InstanceCustomFormat[] = validCustomFormats
+				.filter((cf) => profileCFIds.has(cf.id))
+				.map((cf) => {
+					// Find the score for this CF in the profile
+					const formatItem = (profile as ArrQualityProfileResponse).formatItems?.find(
+						(item) => item.format === cf.id
+					);
+					return {
+						id: cf.id,
+						name: cf.name,
+						specifications: cf.specifications || [],
+						includeCustomFormatWhenRenaming: cf.includeCustomFormatWhenRenaming,
+						score: formatItem?.score,
+					} as InstanceCustomFormat;
+				});
 
 			// Debug: Log instance CF names
-			app.log.info(
-				`[validate-cfs] Instance CFs (${profileCFs.length}): ${profileCFs.map((cf) => `"${cf.name}"`).join(", ")}`,
-			);
+			app.log.info(`[validate-cfs] Instance CFs (${profileCFs.length}): ${profileCFs.map(cf => `"${cf.name}"`).join(', ')}`);
 
 			// Create matcher and match CFs
 			const cfMatcher = createCFMatcher(app.prisma);
@@ -510,8 +525,9 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				results,
 			});
 		} catch (error) {
-			app.log.error(`Failed to validate Custom Formats: ${error}`);
-			return reply.status(500).send({
+			app.log.error({ err: error, instanceId, profileId, serviceType }, "Failed to validate Custom Formats");
+			const statusCode = error instanceof ArrError ? arrErrorToHttpStatus(error) : 500;
+			return reply.status(statusCode).send({
 				success: false,
 				error: error instanceof Error ? error.message : "Failed to validate Custom Formats",
 			});
@@ -540,9 +556,10 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 			const cacheManager = createCacheManager(app.prisma);
 
 			// Get quality profiles from cache
-			const qualityProfiles = (await cacheManager.get(serviceType, "QUALITY_PROFILES")) as
-				| TrashQualityProfile[]
-				| null;
+			const qualityProfiles = (await cacheManager.get(
+				serviceType,
+				"QUALITY_PROFILES",
+			)) as TrashQualityProfile[] | null;
 
 			if (!qualityProfiles || qualityProfiles.length === 0) {
 				return reply.status(200).send({
@@ -553,40 +570,38 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 			}
 
 			// Get CF groups from cache
-			const cfGroups = (await cacheManager.get(serviceType, "CF_GROUPS")) as
-				| TrashCustomFormatGroup[]
-				| null;
+			const cfGroups = (await cacheManager.get(
+				serviceType,
+				"CF_GROUPS",
+			)) as TrashCustomFormatGroup[] | null;
 
 			// Get all custom formats from cache
-			const customFormats = (await cacheManager.get(serviceType, "CUSTOM_FORMATS")) as
-				| TrashCustomFormat[]
-				| null;
+			const customFormats = (await cacheManager.get(
+				serviceType,
+				"CUSTOM_FORMATS",
+			)) as TrashCustomFormat[] | null;
 
 			// Normalize profile name for matching
 			const normalizedInput = normalizeProfileName(profileName);
-			app.log.info(
-				`[match-profile] Searching for profile "${profileName}" (normalized: "${normalizedInput}")`,
-			);
+			app.log.info(`[match-profile] Searching for profile "${profileName}" (normalized: "${normalizedInput}")`);
 
 			// Try to find a matching TRaSH quality profile
 			let matchedProfile: TrashQualityProfile | null = null;
 			let matchType: "exact" | "fuzzy" | "partial" = "exact";
 
 			// 1. First try exact match (case-insensitive)
-			matchedProfile =
-				qualityProfiles.find((p) => normalizeProfileName(p.name) === normalizedInput) || null;
+			matchedProfile = qualityProfiles.find(
+				(p) => normalizeProfileName(p.name) === normalizedInput
+			) || null;
 
 			// 2. Try fuzzy matching (remove common prefixes/suffixes)
 			if (!matchedProfile) {
 				matchType = "fuzzy";
-				matchedProfile =
-					qualityProfiles.find((p) => {
-						const normalizedTrash = normalizeProfileName(p.name);
-						// Check if either contains the other (handles prefixes like "TRaSH - " or suffixes like " v4")
-						return (
-							normalizedTrash.includes(normalizedInput) || normalizedInput.includes(normalizedTrash)
-						);
-					}) || null;
+				matchedProfile = qualityProfiles.find((p) => {
+					const normalizedTrash = normalizeProfileName(p.name);
+					// Check if either contains the other (handles prefixes like "TRaSH - " or suffixes like " v4")
+					return normalizedTrash.includes(normalizedInput) || normalizedInput.includes(normalizedTrash);
+				}) || null;
 			}
 
 			// 3. Try partial word matching (at least 2 significant words match)
@@ -617,9 +632,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				});
 			}
 
-			app.log.info(
-				`[match-profile] Matched "${profileName}" to "${matchedProfile.name}" (trash_id: ${matchedProfile.trash_id}) (${matchType})`,
-			);
+			app.log.info(`[match-profile] Matched "${profileName}" to "${matchedProfile.name}" (trash_id: ${matchedProfile.trash_id}) (${matchType})`);
 			app.log.info(`[match-profile] customFormats count: ${customFormats?.length ?? 0}`);
 			app.log.info(`[match-profile] cfGroups count: ${cfGroups?.length ?? 0}`);
 
@@ -646,7 +659,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 			const getScoreForCF = (cf: TrashCustomFormat): number => {
 				const cfWithScores = cf as TrashCustomFormat & { trash_scores?: Record<string, number> };
 				if (!cfWithScores.trash_scores) return cf.score ?? 0;
-				const scoreSet = matchedProfile?.trash_score_set;
+				const scoreSet = matchedProfile!.trash_score_set;
 				if (scoreSet && cfWithScores.trash_scores[scoreSet] !== undefined) {
 					return cfWithScores.trash_scores[scoreSet];
 				}
@@ -688,10 +701,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 						for (const groupCF of group.custom_formats) {
 							const cfTrashId = typeof groupCF === "string" ? groupCF : groupCF.trash_id;
 							const cfRequired = typeof groupCF === "object" ? groupCF.required === true : false;
-							const cfDefault =
-								typeof groupCF === "object"
-									? groupCF.default === true || groupCF.default === "true"
-									: false;
+							const cfDefault = typeof groupCF === "object" ? (groupCF.default === true || groupCF.default === "true") : false;
 
 							// Skip if already added from profile
 							if (recommendedCFs.some((r) => r.trash_id === cfTrashId)) continue;
@@ -767,14 +777,11 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 			trashId: string;
 			templateName: string;
 			templateDescription?: string;
-			customFormatSelections: Record<
-				string,
-				{
-					selected: boolean;
-					scoreOverride?: number;
-					conditionsEnabled: Record<string, boolean>;
-				}
-			>;
+			customFormatSelections: Record<string, {
+				selected: boolean;
+				scoreOverride?: number;
+				conditionsEnabled: Record<string, boolean>;
+			}>;
 			sourceInstanceId: string;
 			sourceProfileId: number;
 			sourceProfileName: string;
@@ -792,17 +799,16 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 		if (!serviceType || !templateName || !sourceInstanceId || !sourceProfileId) {
 			return reply.status(400).send({
 				success: false,
-				error:
-					"Missing required fields: serviceType, templateName, sourceInstanceId, sourceProfileId",
+				error: "Missing required fields: serviceType, templateName, sourceInstanceId, sourceProfileId",
 			});
 		}
 
 		try {
 			// Get instance to fetch the actual CFs - verify ownership by including userId in where clause
 			const instance = await app.prisma.serviceInstance.findFirst({
-				where: {
-					id: sourceInstanceId,
-					userId: request.currentUser!.id,
+				where: { 
+					id: sourceInstanceId, 
+					userId: request.currentUser!.id 
 				},
 			});
 
@@ -813,27 +819,34 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				});
 			}
 
-			// Create instance fetcher and get the profile and CFs
-			const fetcher = createInstanceFetcher(app, instance);
+			// Create SDK client
+			const client = app.arrClientFactory.create(instance);
 
-			// Fetch the full quality profile to get quality items
-			const profileResponse = await fetcher(`/api/v3/qualityprofile/${sourceProfileId}`);
-			const fullProfile = (await profileResponse.json()) as ArrQualityProfileResponse;
+			// Validate client type
+			if (!(client instanceof SonarrClient) && !(client instanceof RadarrClient)) {
+				return reply.status(400).send({
+					success: false,
+					error: "Invalid client type for template creation",
+				});
+			}
 
-			const cfResponse = await fetcher("/api/v3/customformat");
-			const allCustomFormats = await cfResponse.json();
+			// Fetch the full quality profile and all custom formats in parallel
+			const [fullProfile, allCustomFormats] = await Promise.all([
+				client.qualityProfile.getById(sourceProfileId) as Promise<ArrQualityProfileResponse>,
+				client.customFormat.getAll(),
+			]);
 
-			// Build a lookup map for instance CFs
+			// Build a lookup map for instance CFs (filter out CFs with undefined id or name)
 			const cfLookup = new Map<number, { id: number; name: string; specifications?: unknown[] }>();
 			for (const cf of allCustomFormats) {
-				cfLookup.set(cf.id, cf);
+				if (cf.id !== undefined && cf.name !== undefined && cf.name !== null) {
+					cfLookup.set(cf.id, { id: cf.id, name: cf.name, specifications: cf.specifications ?? undefined });
+				}
 			}
 
 			// Get TRaSH cache for matching
 			const cacheManager = createCacheManager(app.prisma);
-			const trashCFs = (await cacheManager.get(serviceType, "CUSTOM_FORMATS")) as
-				| TrashCustomFormat[]
-				| null;
+			const trashCFs = (await cacheManager.get(serviceType, "CUSTOM_FORMATS")) as TrashCustomFormat[] | null;
 
 			// Get current commit hash to enable TRaSH Guides sync for cloned templates
 			const currentCommitHash = await cacheManager.getCommitHash(serviceType, "CUSTOM_FORMATS");
@@ -891,9 +904,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 
 			// Build the CompleteQualityProfile from the fetched profile
 			const cutoffId = fullProfile.cutoff ?? profileConfig?.cutoff ?? 0;
-			const cutoffQualityName = cutoffId
-				? findCutoffQualityName(fullProfile.items || [], cutoffId)
-				: undefined;
+			const cutoffQualityName = cutoffId ? findCutoffQualityName(fullProfile.items || [], cutoffId) : undefined;
 
 			const completeQualityProfile: CompleteQualityProfile = {
 				// Source information
@@ -906,23 +917,19 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				// Quality settings from the instance profile
 				upgradeAllowed: fullProfile.upgradeAllowed ?? profileConfig?.upgradeAllowed ?? true,
 				cutoff: cutoffId,
-				cutoffQuality: cutoffId
-					? {
-							id: cutoffId,
-							name: cutoffQualityName || "Unknown",
-						}
-					: undefined,
+				cutoffQuality: cutoffId ? {
+					id: cutoffId,
+					name: cutoffQualityName || "Unknown",
+				} : undefined,
 
 				// Quality items with full structure
 				items: (fullProfile.items || []).map((item) => ({
-					quality: item.quality
-						? {
-								id: item.quality.id,
-								name: item.quality.name,
-								source: item.quality.source,
-								resolution: item.quality.resolution,
-							}
-						: undefined,
+					quality: item.quality ? {
+						id: item.quality.id,
+						name: item.quality.name,
+						source: item.quality.source,
+						resolution: item.quality.resolution,
+					} : undefined,
 					items: item.items?.map((subItem) => ({
 						// Required fields must have defaults
 						id: subItem.id ?? subItem.quality?.id ?? 0,
@@ -942,22 +949,16 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				minUpgradeFormatScore: fullProfile.minUpgradeFormatScore,
 
 				// Language settings
-				language: fullProfile.language
-					? {
-							id: fullProfile.language.id,
-							name: fullProfile.language.name,
-						}
-					: undefined,
+				language: fullProfile.language ? {
+					id: fullProfile.language.id,
+					name: fullProfile.language.name,
+				} : undefined,
 			};
 
 			// Debug: Log the built completeQualityProfile items
-			app.log.info(
-				`[create-template] Built completeQualityProfile items count: ${completeQualityProfile.items?.length || 0}`,
-			);
+			app.log.info(`[create-template] Built completeQualityProfile items count: ${completeQualityProfile.items?.length || 0}`);
 			const allowedItems = completeQualityProfile.items?.filter((item) => item.allowed);
-			app.log.info(
-				`[create-template] Allowed quality items: ${allowedItems?.map((item) => item.quality?.name || item.name || "group").join(", ")}`,
-			);
+			app.log.info(`[create-template] Allowed quality items: ${allowedItems?.map((item) => item.quality?.name || item.name || 'group').join(', ')}`);
 
 			// Build qualityProfile metadata for template card badges
 			// This provides display info (language, cutoff) for the template list
@@ -982,8 +983,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 			const templateService = createTemplateService(app.prisma);
 			const template = await templateService.createTemplate(userId, {
 				name: templateName,
-				description:
-					templateDescription || `Cloned from ${sourceInstanceLabel}: ${sourceProfileName}`,
+				description: templateDescription || `Cloned from ${sourceInstanceLabel}: ${sourceProfileName}`,
 				serviceType,
 				config: templateConfig,
 				// Store source information for reference
@@ -993,9 +993,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				trashGuidesCommitHash: currentCommitHash || undefined,
 			});
 
-			app.log.info(
-				`Created template "${templateName}" from cloned profile ${sourceProfileName} (${customFormatsConfig.length} CFs)`,
-			);
+			app.log.info(`Created template "${templateName}" from cloned profile ${sourceProfileName} (${customFormatsConfig.length} CFs)`);
 
 			return reply.status(201).send({
 				success: true,
@@ -1003,17 +1001,13 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 					template,
 					stats: {
 						customFormatsCount: customFormatsConfig.length,
-						trashLinkedCount: customFormatsConfig.filter(
-							(cf) => !cf.trashId.startsWith("instance-"),
-						).length,
-						instanceOnlyCount: customFormatsConfig.filter((cf) =>
-							cf.trashId.startsWith("instance-"),
-						).length,
+						trashLinkedCount: customFormatsConfig.filter(cf => !cf.trashId.startsWith("instance-")).length,
+						instanceOnlyCount: customFormatsConfig.filter(cf => cf.trashId.startsWith("instance-")).length,
 					},
 				},
 			});
 		} catch (error) {
-			app.log.error(`Failed to create template from cloned profile: ${error}`);
+			app.log.error({ err: error, sourceInstanceId, sourceProfileId, templateName }, "Failed to create template from cloned profile");
 
 			// Handle duplicate name error
 			if (error instanceof Error && error.message.includes("already exists")) {
@@ -1023,7 +1017,9 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				});
 			}
 
-			return reply.status(500).send({
+			// Map SDK errors to appropriate HTTP status codes
+			const statusCode = error instanceof ArrError ? arrErrorToHttpStatus(error) : 500;
+			return reply.status(statusCode).send({
 				success: false,
 				error: error instanceof Error ? error.message : "Failed to create template",
 			});
@@ -1054,7 +1050,9 @@ function normalizeProfileName(name: string): string {
  */
 function extractSignificantWords(normalized: string): string[] {
 	const stopWords = new Set(["the", "and", "or", "for", "with", "hd", "uhd", "web", "dl"]);
-	return normalized.split(/\s+/).filter((w) => w.length >= 2 && !stopWords.has(w));
+	return normalized
+		.split(/\s+/)
+		.filter((w) => w.length >= 2 && !stopWords.has(w));
 }
 
 export default profileCloneRoutes;

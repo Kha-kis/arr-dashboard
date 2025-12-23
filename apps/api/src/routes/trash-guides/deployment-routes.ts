@@ -22,8 +22,8 @@ export async function deploymentRoutes(app: FastifyInstance) {
 	});
 
 	const { prisma } = app;
-	const deploymentPreview = createDeploymentPreviewService(prisma, app.encryptor);
-	const deploymentExecutor = createDeploymentExecutorService(prisma, app.encryptor);
+	const deploymentPreview = createDeploymentPreviewService(prisma, app.arrClientFactory);
+	const deploymentExecutor = createDeploymentExecutorService(prisma, app.arrClientFactory);
 
 	/**
 	 * POST /api/trash-guides/deployment/preview

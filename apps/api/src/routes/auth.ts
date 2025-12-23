@@ -2,6 +2,7 @@ import { passwordSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { hashPassword, verifyPassword } from "../lib/auth/password.js";
+import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
 
 const registerSchema = z.object({
 	username: z.string().min(3).max(50),
@@ -82,6 +83,9 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			const session = await app.sessionService.createSession(user.id, parsed.data.rememberMe);
 			app.sessionService.attachCookie(reply, session.token, parsed.data.rememberMe);
+
+			// Pre-warm connections to ARR instances in background (don't await)
+			warmConnectionsForUser(app, user.id).catch(() => {});
 
 			return reply.status(201).send({
 				user: {
@@ -198,6 +202,9 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		const session = await app.sessionService.createSession(user.id, parsed.data.rememberMe);
 		app.sessionService.attachCookie(reply, session.token, parsed.data.rememberMe);
+
+		// Pre-warm connections to ARR instances in background (don't await)
+		warmConnectionsForUser(app, user.id).catch(() => {});
 
 		return reply.send({
 			user: {

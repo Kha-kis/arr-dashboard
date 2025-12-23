@@ -4,16 +4,16 @@
  * Routes for managing custom format scores across multiple templates
  */
 
-import type {
-	BulkScoreCopy,
-	BulkScoreFilters,
-	BulkScoreImport,
-	BulkScoreReset,
-	BulkScoreUpdate,
-} from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { createBulkScoreManager } from "../../lib/trash-guides/bulk-score-manager.js";
+import type {
+	BulkScoreFilters,
+	BulkScoreUpdate,
+	BulkScoreCopy,
+	BulkScoreReset,
+	BulkScoreImport,
+} from "@arr/shared";
 
 // ============================================================================
 // Validation Schemas
@@ -31,13 +31,11 @@ const bulkScoreExportSchema = z.object({
 	version: z.string(),
 	exportedAt: z.string(),
 	serviceType: z.enum(["RADARR", "SONARR"]),
-	templates: z.array(
-		z.object({
-			templateId: z.string(),
-			templateName: z.string(),
-			scores: z.record(z.string(), z.number()),
-		}),
-	),
+	templates: z.array(z.object({
+		templateId: z.string(),
+		templateName: z.string(),
+		scores: z.record(z.string(), z.number()),
+	})),
 });
 
 const bulkScoreImportSchema = z.object({
@@ -93,7 +91,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 		};
 
 		try {
-			const bulkScoreManager = createBulkScoreManager(app.prisma, app.encryptor);
+			const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
 			const scores = await bulkScoreManager.getAllScores(userId, filters);
 
 			return reply.status(200).send({
@@ -137,7 +135,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 		const update: BulkScoreUpdate = parseResult.data;
 
 		try {
-			const bulkScoreManager = createBulkScoreManager(app.prisma, app.encryptor);
+			const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
 			const result = await bulkScoreManager.updateScores(userId, update);
 
 			return reply.status(200).send(result);
@@ -177,7 +175,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 		const copy: BulkScoreCopy = parseResult.data;
 
 		try {
-			const bulkScoreManager = createBulkScoreManager(app.prisma, app.encryptor);
+			const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
 			const result = await bulkScoreManager.copyScores(userId, copy);
 
 			return reply.status(200).send(result);
@@ -217,7 +215,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 		const reset: BulkScoreReset = parseResult.data;
 
 		try {
-			const bulkScoreManager = createBulkScoreManager(app.prisma, app.encryptor);
+			const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
 			const result = await bulkScoreManager.resetScores(userId, reset);
 
 			return reply.status(200).send(result);
@@ -244,8 +242,12 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 		};
 
 		try {
-			const bulkScoreManager = createBulkScoreManager(app.prisma, app.encryptor);
-			const exportData = await bulkScoreManager.exportScores(userId, templateIds, serviceType);
+			const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
+			const exportData = await bulkScoreManager.exportScores(
+				userId,
+				templateIds,
+				serviceType,
+			);
 
 			return reply.status(200).send({
 				success: true,
@@ -285,7 +287,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 		const importData: BulkScoreImport = parseResult.data;
 
 		try {
-			const bulkScoreManager = createBulkScoreManager(app.prisma, app.encryptor);
+			const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
 			const result = await bulkScoreManager.importScores(userId, importData);
 
 			return reply.status(200).send(result);
