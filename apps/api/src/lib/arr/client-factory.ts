@@ -209,7 +209,7 @@ export class ArrClientFactory {
 		if (options?.onError) {
 			config.onError = (error: Error) => {
 				if (error instanceof ArrError) {
-					options.onError!(error, instance as ServiceInstance);
+					options.onError?.(error, instance as ServiceInstance);
 				}
 			};
 		}

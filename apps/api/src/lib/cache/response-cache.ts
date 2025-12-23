@@ -17,7 +17,7 @@ export class ResponseCache<T> {
 	private cache = new Map<string, CacheEntry<T>>();
 	private cleanupInterval: NodeJS.Timeout | null = null;
 
-	constructor(private defaultTtlMs: number = 30_000) {
+	constructor(private defaultTtlMs = 30_000) {
 		// Run cleanup every minute
 		this.cleanupInterval = setInterval(() => this.cleanup(), 60_000);
 	}
