@@ -18,8 +18,8 @@ export const useMultiInstanceQueueQuery = () =>
 	useQuery<MultiInstanceQueueResponse>({
 		queryKey: ["dashboard", "queue"],
 		queryFn: fetchMultiInstanceQueue,
-		staleTime: 30 * 1000,
-		refetchInterval: 30 * 1000,
+		staleTime: 10 * 1000,
+		refetchInterval: 10 * 1000,
 	});
 
 export const useMultiInstanceHistoryQuery = (params?: {

@@ -5,6 +5,7 @@ import type {
 	ManualImportSubmissionFile,
 } from "@arr/shared";
 import { manualImportCandidateListSchema, manualImportCandidateSchema } from "@arr/shared";
+import type { SonarrClient, RadarrClient } from "arr-sdk";
 import { toNumber, toStringValue } from "../lib/data/values.js";
 
 export class ManualImportError extends Error {
@@ -433,4 +434,113 @@ export const autoImportByDownloadId = async (
 	}
 
 	await submitManualImportCommand(fetcher, service, files, "auto");
+};
+
+// ============================================================================
+// SDK-based implementations
+// ============================================================================
+
+/**
+ * Fetches manual import candidates using the arr-sdk client
+ */
+export const fetchManualImportCandidatesWithSdk = async (
+	client: SonarrClient | RadarrClient,
+	service: ManualImportService,
+	options: ManualImportFetchOptions,
+): Promise<ManualImportCandidate[]> => {
+	try {
+		const rawItems = await client.manualImport.get({
+			downloadId: options.downloadId,
+			folder: options.folder,
+			seriesId: options.seriesId,
+			seasonNumber: options.seasonNumber,
+			filterExistingFiles: options.filterExistingFiles ?? true,
+		});
+
+		if (!Array.isArray(rawItems) || rawItems.length === 0) {
+			return [];
+		}
+
+		const candidates = rawItems
+			.map((item) => mapCandidate(service, item))
+			.filter((candidate): candidate is ManualImportCandidate => candidate !== null);
+
+		return manualImportCandidateListSchema.parse(candidates);
+	} catch (error) {
+		if (error instanceof ManualImportError) {
+			throw error;
+		}
+		const message = error instanceof Error ? error.message : "Unknown error";
+		throw new ManualImportError(`Failed to fetch manual import items: ${message}`, 502);
+	}
+};
+
+/**
+ * Submits a manual import command using the arr-sdk client
+ *
+ * Note: Uses SDK's command.execute with properly formatted ManualImport command.
+ * The SDK expects "Move" | "Copy" for importMode (capitalized).
+ * "auto" mode is translated to "Move" as the default import behavior.
+ */
+export const submitManualImportCommandWithSdk = async (
+	client: SonarrClient | RadarrClient,
+	service: ManualImportService,
+	files: ManualImportSubmissionFile[],
+	importMode: "auto" | "move" | "copy",
+) => {
+	if (files.length === 0) {
+		throw new ManualImportError("No files were provided for manual import.");
+	}
+
+	const commandFiles = buildCommandFiles(service, files);
+
+	// Convert import mode to SDK expected format (capitalized)
+	// "auto" defaults to "Move" which is the standard ARR behavior
+	const sdkImportMode: "Move" | "Copy" =
+		importMode === "copy" ? "Copy" : "Move";
+
+	try {
+		// Use the command resource's execute method
+		// Cast files to any to bypass strict type checking - the SDK accepts the format we build
+		// biome-ignore lint/suspicious/noExplicitAny: SDK type is too strict for dynamic command files
+		await (client as SonarrClient).command.execute({
+			name: "ManualImport",
+			importMode: sdkImportMode,
+			files: commandFiles,
+		} as any);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		throw new ManualImportError(`ARR manual import command failed: ${message}`, 502);
+	}
+};
+
+/**
+ * Auto-imports files by download ID using the arr-sdk client
+ */
+export const autoImportByDownloadIdWithSdk = async (
+	client: SonarrClient | RadarrClient,
+	service: ManualImportService,
+	downloadId: string,
+) => {
+	const candidates = await fetchManualImportCandidatesWithSdk(client, service, {
+		downloadId,
+		filterExistingFiles: true,
+	});
+
+	if (candidates.length === 0) {
+		throw new ManualImportError("ARR did not provide any importable files for this download.");
+	}
+
+	const { files, skipped } = collectAutoManualImportFiles(service, candidates, downloadId);
+
+	if (files.length === 0) {
+		const detail = skipped.length > 0 ? skipped.slice(0, 3).join("; ") : undefined;
+		throw new ManualImportError(
+			detail
+				? `No importable files were found: ${detail}`
+				: "ARR did not provide importable files for manual import.",
+		);
+	}
+
+	await submitManualImportCommandWithSdk(client, service, files, "auto");
 };

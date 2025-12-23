@@ -4,21 +4,7 @@ import {
 	recommendationsResponseSchema,
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
-import {
-	type TMDBClientConfig,
-	type TMDBMovie,
-	type TMDBTVShow,
-	getAiringTodayTV,
-	getExternalIdsForItems,
-	getPopularMovies,
-	getPopularTV,
-	getTMDBImageUrl,
-	getTopRatedMovies,
-	getTopRatedTV,
-	getTrendingMovies,
-	getTrendingTV,
-	getUpcomingMovies,
-} from "../lib/tmdb/tmdb-client.js";
+import { TMDBClient, type TMDBMovie, type TMDBTVShow } from "../lib/tmdb/index.js";
 
 const recommendationsRoute: FastifyPluginCallback = (app, _opts, done) => {
 	// Add authentication preHandler for all routes in this plugin
@@ -62,56 +48,46 @@ const recommendationsRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		const parsed = recommendationsRequestSchema.parse(request.query ?? {});
 
-		const tmdbConfig: TMDBClientConfig = {
-			baseUrl: app.config.TMDB_BASE_URL,
+		// Create TMDB client instance
+		const tmdb = new TMDBClient(tmdbApiKey, {
 			imageBaseUrl: app.config.TMDB_IMAGE_BASE_URL,
-		};
+		});
 
 		try {
-			let tmdbData: { results: unknown[]; total_results?: number; page?: number; total_pages?: number } | undefined;
-
 			if (parsed.mediaType === "movie") {
+				// Fetch movies based on type
+				let tmdbData: { results: TMDBMovie[]; total_results: number; page: number; total_pages: number };
+
 				switch (parsed.type) {
 					case "trending":
-						tmdbData = await getTrendingMovies(tmdbApiKey, tmdbConfig, "week", parsed.page);
+						tmdbData = await tmdb.trending.movies("week", parsed.page);
 						break;
 					case "popular":
-						tmdbData = await getPopularMovies(tmdbApiKey, tmdbConfig, parsed.page);
+						tmdbData = await tmdb.movies.popular(parsed.page);
 						break;
 					case "top_rated":
-						tmdbData = await getTopRatedMovies(tmdbApiKey, tmdbConfig, parsed.page);
+						tmdbData = await tmdb.movies.topRated(parsed.page);
 						break;
 					case "upcoming":
-						tmdbData = await getUpcomingMovies(tmdbApiKey, tmdbConfig, parsed.page);
+						tmdbData = await tmdb.movies.upcoming(parsed.page);
 						break;
 					default:
-						tmdbData = await getTrendingMovies(tmdbApiKey, tmdbConfig, "week", parsed.page);
+						tmdbData = await tmdb.trending.movies("week", parsed.page);
 				}
 
-				// Fetch external IDs for all movies in parallel
-				const externalIdsMap = await getExternalIdsForItems(
-					tmdbApiKey,
-					tmdbConfig,
-					tmdbData.results as TMDBMovie[],
-					"movie",
-				);
-
-				const items: RecommendationItem[] = (tmdbData.results as TMDBMovie[]).map((movie) => {
-					const externalIds = externalIdsMap.get(movie.id);
-					return {
-						id: movie.id,
-						tmdbId: movie.id,
-						imdbId: externalIds?.imdb_id ?? undefined,
-						title: movie.title,
-						overview: movie.overview,
-						posterUrl: getTMDBImageUrl(movie.poster_path, tmdbConfig) || undefined,
-						backdropUrl: getTMDBImageUrl(movie.backdrop_path, tmdbConfig, "original") || undefined,
-						releaseDate: movie.release_date,
-						rating: movie.vote_average,
-						voteCount: movie.vote_count,
-						popularity: movie.popularity,
-					};
-				});
+					// Map results directly - external IDs fetched on-demand when adding to library
+				const items: RecommendationItem[] = tmdbData.results.map((movie) => ({
+					id: movie.id,
+					tmdbId: movie.id,
+					title: movie.title,
+					overview: movie.overview,
+					posterUrl: tmdb.getImageUrl(movie.poster_path) ?? undefined,
+					backdropUrl: tmdb.getImageUrl(movie.backdrop_path, "original") ?? undefined,
+					releaseDate: movie.release_date,
+					rating: movie.vote_average,
+					voteCount: movie.vote_count,
+					popularity: movie.popularity,
+				}));
 
 				return recommendationsResponseSchema.parse({
 					type: parsed.type,
@@ -122,49 +98,40 @@ const recommendationsRoute: FastifyPluginCallback = (app, _opts, done) => {
 					totalPages: tmdbData.total_pages,
 				});
 			}
+
 			// TV Shows
+			let tmdbData: { results: TMDBTVShow[]; total_results: number; page: number; total_pages: number };
+
 			switch (parsed.type) {
 				case "trending":
-					tmdbData = await getTrendingTV(tmdbApiKey, tmdbConfig, "week", parsed.page);
+					tmdbData = await tmdb.trending.tv("week", parsed.page);
 					break;
 				case "popular":
-					tmdbData = await getPopularTV(tmdbApiKey, tmdbConfig, parsed.page);
+					tmdbData = await tmdb.tv.popular(parsed.page);
 					break;
 				case "top_rated":
-					tmdbData = await getTopRatedTV(tmdbApiKey, tmdbConfig, parsed.page);
+					tmdbData = await tmdb.tv.topRated(parsed.page);
 					break;
 				case "airing_today":
-					tmdbData = await getAiringTodayTV(tmdbApiKey, tmdbConfig, parsed.page);
+					tmdbData = await tmdb.tv.airingToday(parsed.page);
 					break;
 				default:
-					tmdbData = await getTrendingTV(tmdbApiKey, tmdbConfig, "week", parsed.page);
+					tmdbData = await tmdb.trending.tv("week", parsed.page);
 			}
 
-			// Fetch external IDs for all TV shows in parallel
-			const externalIdsMap = await getExternalIdsForItems(
-				tmdbApiKey,
-				tmdbConfig,
-				tmdbData.results as TMDBTVShow[],
-				"tv",
-			);
-
-			const items: RecommendationItem[] = (tmdbData.results as TMDBTVShow[]).map((show) => {
-				const externalIds = externalIdsMap.get(show.id);
-				return {
-					id: show.id,
-					tmdbId: show.id,
-					imdbId: externalIds?.imdb_id ?? undefined,
-					tvdbId: externalIds?.tvdb_id ?? undefined,
-					title: show.name,
-					overview: show.overview,
-					posterUrl: getTMDBImageUrl(show.poster_path, tmdbConfig) || undefined,
-					backdropUrl: getTMDBImageUrl(show.backdrop_path, tmdbConfig, "original") || undefined,
-					releaseDate: show.first_air_date,
-					rating: show.vote_average,
-					voteCount: show.vote_count,
-					popularity: show.popularity,
-				};
-			});
+			// Map results directly - external IDs fetched on-demand when adding to library
+			const items: RecommendationItem[] = tmdbData.results.map((show) => ({
+				id: show.id,
+				tmdbId: show.id,
+				title: show.name,
+				overview: show.overview,
+				posterUrl: tmdb.getImageUrl(show.poster_path) ?? undefined,
+				backdropUrl: tmdb.getImageUrl(show.backdrop_path, "original") ?? undefined,
+				releaseDate: show.first_air_date,
+				rating: show.vote_average,
+				voteCount: show.vote_count,
+				popularity: show.popularity,
+			}));
 
 			return recommendationsResponseSchema.parse({
 				type: parsed.type,
@@ -176,9 +143,18 @@ const recommendationsRoute: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		} catch (error) {
 			request.log.error({ err: error }, "recommendations fetch failed");
+
+			// Extract TMDB error message if available
+			let tmdbError = "";
+			if (error && typeof error === "object" && "status_message" in error) {
+				tmdbError = String((error as { status_message: unknown }).status_message);
+			}
+
 			reply.status(502);
 			return reply.send({
-				message: "Failed to fetch recommendations from TMDB",
+				message: tmdbError
+					? `TMDB API error: ${tmdbError}`
+					: "Failed to fetch recommendations from TMDB. Please check your API key.",
 			});
 		}
 	});

@@ -1,7 +1,7 @@
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
+import { SonarrClient, RadarrClient } from "arr-sdk";
 import { getHuntingScheduler } from "../lib/hunting/scheduler.js";
-import { createInstanceFetcher } from "../lib/arr/arr-fetcher.js";
 import {
 	MIN_MISSING_INTERVAL_MINS,
 	MIN_UPGRADE_INTERVAL_MINS,
@@ -426,36 +426,35 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const service = instance.service.toLowerCase();
 
 		try {
-			const fetcher = createInstanceFetcher(app, instance);
+			const client = app.arrClientFactory.create(instance);
 
-			interface ArrTag {
-				id: number;
-				label: string;
+			// Validate client type matches service
+			if (service === "sonarr" && !(client instanceof SonarrClient)) {
+				return reply.status(400).send({ error: "Invalid client type for Sonarr instance" });
 			}
-
-			interface ArrQualityProfile {
-				id: number;
-				name: string;
+			if (service === "radarr" && !(client instanceof RadarrClient)) {
+				return reply.status(400).send({ error: "Invalid client type for Radarr instance" });
 			}
 
 			// Fetch tags and quality profiles in parallel
-			const [tagsRes, profilesRes] = await Promise.all([
-				fetcher("/api/v3/tag"),
-				fetcher("/api/v3/qualityprofile"),
+			const [tagsData, profilesData] = await Promise.all([
+				client.tag.getAll(),
+				client.qualityProfile.getAll(),
 			]);
 
-			const tagsData = (await tagsRes.json()) as ArrTag[];
-			const profilesData = (await profilesRes.json()) as ArrQualityProfile[];
+			const tags = (tagsData as Array<{ id?: number; label?: string | null }>)
+				.filter((tag): tag is { id: number; label: string } =>
+					tag.id !== undefined && tag.id > 0 &&
+					tag.label !== undefined && tag.label !== null && tag.label.length > 0
+				)
+				.map((tag) => ({ id: tag.id, label: tag.label }));
 
-			const tags = tagsData.map((tag) => ({
-				id: tag.id,
-				label: tag.label,
-			}));
-
-			const qualityProfiles = profilesData.map((profile) => ({
-				id: profile.id,
-				name: profile.name,
-			}));
+			const qualityProfiles = (profilesData as Array<{ id?: number; name?: string | null }>)
+				.filter((profile): profile is { id: number; name: string } =>
+					profile.id !== undefined && profile.id > 0 &&
+					profile.name !== undefined && profile.name !== null && profile.name.length > 0
+				)
+				.map((profile) => ({ id: profile.id, name: profile.name }));
 
 			// Define available statuses based on service type
 			const statuses =

@@ -20,6 +20,8 @@ import {
 	fetchTestOptions,
 } from "../../lib/api-client/discover";
 
+const QUEUE_QUERY_KEY = ["dashboard", "queue"] as const;
+
 interface DiscoverSearchQueryOptions {
 	query: string;
 	type: DiscoverSearchType;
@@ -68,6 +70,8 @@ export const useDiscoverAddMutation = () => {
 		onSuccess: () => {
 			void queryClient.invalidateQueries({ queryKey: ["discover", "search"] });
 			void queryClient.invalidateQueries({ queryKey: ["library"] });
+			// Adding content with search enabled will add items to the queue
+			void queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
 		},
 	});
 };

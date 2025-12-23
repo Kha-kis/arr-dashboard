@@ -39,7 +39,8 @@ export interface InstanceError {
 	service: Lowercase<ServiceType>;
 	success: false;
 	error: string;
-	statusCode?: number;
+	/** HTTP status code for the error (always provided, defaults to 500 for unknown errors) */
+	statusCode: number;
 }
 
 /**
@@ -274,13 +275,14 @@ export async function getClientForInstance(
 		where: {
 			id: instanceId,
 			userId: request.currentUser.id,
+			enabled: true,
 		},
 	});
 
 	if (!instance) {
 		return {
 			success: false,
-			error: "Instance not found or access denied",
+			error: "Instance not found, disabled, or access denied",
 			statusCode: 404,
 		};
 	}

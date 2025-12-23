@@ -32,7 +32,8 @@ const nextConfig = {
 							"style-src 'self' 'unsafe-inline'",
 							"img-src 'self' data: https:",
 							"font-src 'self' data:",
-							"connect-src 'self'",
+							// Allow WebSocket and HTTP connections to API in development
+							"connect-src 'self' http://localhost:3001 ws://localhost:3001 wss://localhost:3001 http://127.0.0.1:3001 ws://127.0.0.1:3001",
 							"frame-ancestors 'none'",
 						].join("; "),
 					},

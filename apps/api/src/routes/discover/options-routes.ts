@@ -4,10 +4,16 @@ import {
 	discoverTestOptionsRequestSchema,
 	discoverTestOptionsResponseSchema,
 } from "@arr/shared";
-import type { ServiceInstance } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
-import { createInstanceFetcher, createTestFetcher } from "../../lib/arr/arr-fetcher.js";
+import {
+	getClientForInstance,
+	isSonarrClient,
+	isRadarrClient,
+} from "../../lib/arr/client-helpers.js";
+import { ArrError, arrErrorToHttpStatus } from "../../lib/arr/client-factory.js";
+import { SonarrClient, RadarrClient } from "arr-sdk";
 import { toBoolean, toNumber, toStringValue } from "../../lib/data/values.js";
+import { getInstanceOptionsWithSdk } from "../../lib/discover/discover-normalizer.js";
 
 /**
  * Type alias for dynamic API responses. Uses `any` to allow flexible property access
@@ -105,21 +111,17 @@ export const registerOptionsRoutes: FastifyPluginCallback = (app, _opts, done) =
 	 */
 	app.get("/discover/options", async (request, reply) => {
 		const parsed = discoverInstanceOptionsRequestSchema.parse(request.query ?? {});
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: {
-				id: parsed.instanceId,
-				enabled: true,
-				userId: request.currentUser?.id,
-			},
-		});
 
-		if (!instance) {
-			reply.status(404);
-			return reply.send({ message: "Instance not found" });
+		const clientResult = await getClientForInstance(app, request, parsed.instanceId);
+		if (!clientResult.success) {
+			reply.status(clientResult.statusCode);
+			return reply.send({ message: clientResult.error });
 		}
 
+		const { client, instance } = clientResult;
 		const service = instance.service.toLowerCase() as "sonarr" | "radarr";
 		const expected = parsed.type === "movie" ? "radarr" : "sonarr";
+
 		if (service !== expected) {
 			reply.status(400);
 			return reply.send({
@@ -127,41 +129,35 @@ export const registerOptionsRoutes: FastifyPluginCallback = (app, _opts, done) =
 			});
 		}
 
+		// Validate client type matches expected service
+		if (service === "radarr" && !isRadarrClient(client)) {
+			reply.status(400);
+			return reply.send({ message: "Instance is not a Radarr instance" });
+		}
+		if (service === "sonarr" && !isSonarrClient(client)) {
+			reply.status(400);
+			return reply.send({ message: "Instance is not a Sonarr instance" });
+		}
+
 		try {
-			const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
-			const qualityProfilesResponse = await fetcher("/api/v3/qualityprofile");
-			const rootFolderResponse = await fetcher("/api/v3/rootfolder");
-
-			const qualityProfilesRaw = await qualityProfilesResponse.json();
-			const rootFoldersRaw = await rootFolderResponse.json();
-
-			const qualityProfiles = transformQualityProfiles(qualityProfilesRaw);
-			const rootFolders = transformRootFolders(rootFoldersRaw);
-
-			let languageProfiles: Array<{ id: number; name: string }> | undefined;
-			if (service === "sonarr") {
-				try {
-					const languageResponse = await fetcher("/api/v3/languageprofile");
-					const languageRaw = await languageResponse.json();
-					languageProfiles = transformLanguageProfiles(languageRaw);
-				} catch (error) {
-					request.log.warn(
-						{ err: error, instance: instance.id },
-						"failed to load language profiles",
-					);
-				}
-			}
+			// biome-ignore lint/suspicious/noExplicitAny: Type already validated by isSonarrClient/isRadarrClient guards above
+			const options = await getInstanceOptionsWithSdk(client as any, service);
 
 			return discoverInstanceOptionsResponseSchema.parse({
 				instanceId: instance.id,
 				service,
-				qualityProfiles,
-				rootFolders,
-				languageProfiles,
+				qualityProfiles: options.qualityProfiles,
+				rootFolders: options.rootFolders,
+				languageProfiles: options.languageProfiles,
 			});
 		} catch (error) {
 			request.log.error({ err: error, instance: instance.id }, "failed to load discover options");
-			reply.status(502);
+
+			if (error instanceof ArrError) {
+				reply.status(arrErrorToHttpStatus(error));
+			} else {
+				reply.status(502);
+			}
 			return reply.send({ message: "Failed to load instance options" });
 		}
 	});
@@ -176,32 +172,53 @@ export const registerOptionsRoutes: FastifyPluginCallback = (app, _opts, done) =
 		const service = parsed.service.toLowerCase() as "sonarr" | "radarr";
 
 		try {
-			const fetcher = createTestFetcher(parsed.baseUrl, parsed.apiKey);
-			const qualityProfilesResponse = await fetcher("/api/v3/qualityprofile");
-			const rootFolderResponse = await fetcher("/api/v3/rootfolder");
+			// Create SDK client directly with provided credentials (not from database)
+			const clientConfig = {
+				baseUrl: parsed.baseUrl.replace(/\/$/, ""),
+				apiKey: parsed.apiKey,
+				timeout: 30_000,
+			};
 
-			const qualityProfilesRaw = await qualityProfilesResponse.json();
-			const rootFoldersRaw = await rootFolderResponse.json();
-
-			const qualityProfiles = transformQualityProfiles(qualityProfilesRaw);
-			const rootFolders = transformRootFolders(rootFoldersRaw);
-
-			let languageProfiles: Array<{ id: number; name: string }> | undefined;
 			if (service === "sonarr") {
+				const client = new SonarrClient(clientConfig);
+				const [qualityProfilesRaw, rootFoldersRaw] = await Promise.all([
+					client.qualityProfile.getAll(),
+					client.rootFolder.getAll(),
+				]);
+
+				const qualityProfiles = transformQualityProfiles(qualityProfilesRaw);
+				const rootFolders = transformRootFolders(rootFoldersRaw);
+
+				let languageProfiles: Array<{ id: number; name: string }> | undefined;
 				try {
-					const languageResponse = await fetcher("/api/v3/languageprofile");
-					const languageRaw = await languageResponse.json();
+					const languageRaw = await client.languageProfile.getAll();
 					languageProfiles = transformLanguageProfiles(languageRaw);
 				} catch (error) {
 					request.log.warn({ err: error }, "failed to load language profiles");
 				}
+
+				return discoverTestOptionsResponseSchema.parse({
+					service,
+					qualityProfiles,
+					rootFolders,
+					languageProfiles,
+				});
 			}
+
+			// Radarr
+			const client = new RadarrClient(clientConfig);
+			const [qualityProfilesRaw, rootFoldersRaw] = await Promise.all([
+				client.qualityProfile.getAll(),
+				client.rootFolder.getAll(),
+			]);
+
+			const qualityProfiles = transformQualityProfiles(qualityProfilesRaw);
+			const rootFolders = transformRootFolders(rootFoldersRaw);
 
 			return discoverTestOptionsResponseSchema.parse({
 				service,
 				qualityProfiles,
 				rootFolders,
-				languageProfiles,
 			});
 		} catch (error) {
 			request.log.error({ err: error, baseUrl: parsed.baseUrl }, "failed to load test options");

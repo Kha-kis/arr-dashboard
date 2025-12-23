@@ -69,6 +69,8 @@ interface LibraryContentProps {
 	buildLibraryExternalLink: (item: LibraryItem, instance?: ServiceInstanceSummary) => string | null;
 	/** LibraryCard component to render */
 	LibraryCard: React.ComponentType<LibraryCardProps>;
+	/** Whether the library cache is currently syncing */
+	isSyncing?: boolean;
 }
 
 /**
@@ -103,6 +105,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 	onExpandDetails,
 	buildLibraryExternalLink,
 	LibraryCard,
+	isSyncing,
 }) => {
 
 	const allItems = [...grouped.movies, ...grouped.series];
@@ -119,8 +122,12 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 			{!isLoading && totalItems === 0 ? (
 				<EmptyState
 					icon={LibraryIcon}
-					title="No items found"
-					description="Adjust your filters or add content from the Discover tab to populate your library."
+					title={isSyncing ? "Building your library cache..." : "No items found"}
+					description={
+						isSyncing
+							? "Your library is being synchronized from your *arr instances. This may take a moment for large libraries."
+							: "Adjust your filters or add content from the Discover tab to populate your library."
+					}
 				/>
 			) : null}
 

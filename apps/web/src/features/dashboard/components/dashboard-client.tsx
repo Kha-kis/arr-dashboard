@@ -15,7 +15,7 @@ import {
 	StatCard,
 } from "../../../components/ui";
 import { Section } from "../../../components/layout";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, RefreshCw } from "lucide-react";
 import { QueueTable } from "./queue-table";
 import { DashboardTabs, type DashboardTab } from "./dashboard-tabs";
 import ManualImportModal from "../../manual-import/components/manual-import-modal";
@@ -106,6 +106,7 @@ export const DashboardClient = () => {
 		queueActionsPending,
 		queueActionsError,
 		openManualImport,
+		prefetchManualImport,
 		manualImportContext,
 		handleManualImportOpenChange,
 		handleManualImportCompleted,
@@ -159,9 +160,13 @@ export const DashboardClient = () => {
 				<div className="flex gap-2">
 					<Button
 						variant="secondary"
-						onClick={() => void servicesRefetch()}
+						onClick={() => {
+							void servicesRefetch();
+							void queueRefetch();
+						}}
 					>
-						Refresh data
+						<RefreshCw className={`h-4 w-4 mr-2 ${queueLoading ? "animate-spin" : ""}`} />
+						Refresh
 					</Button>
 				</div>
 			</header>
@@ -271,6 +276,7 @@ export const DashboardClient = () => {
 						}}
 						onRemove={handleQueueRemove}
 						onChangeCategory={handleQueueChangeCategory}
+						onPrefetchManualImport={prefetchManualImport}
 						emptyMessage={emptyMessage}
 					/>
 					{allSummaryRows.length > 0 && (

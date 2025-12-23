@@ -33,6 +33,8 @@ interface QueueTableProps {
 	onManualImport?: QueueActionHandler;
 	onRemove?: QueueActionHandler;
 	onChangeCategory?: QueueActionHandler;
+	/** Prefetch manual import data on hover to reduce latency */
+	onPrefetchManualImport?: (item: QueueItem) => void;
 	emptyMessage?: string;
 }
 
@@ -63,6 +65,7 @@ export const QueueTable = ({
 	onManualImport,
 	onRemove,
 	onChangeCategory,
+	onPrefetchManualImport,
 	emptyMessage,
 }: QueueTableProps) => {
 	// Custom hooks for state management
@@ -188,6 +191,7 @@ export const QueueTable = ({
 								onItemAction={(item, action, actionOptions) =>
 									void handleItemAction(item, action, actionOptions)
 								}
+								onPrefetchManualImport={onPrefetchManualImport}
 								isItemSelected={selection.isItemSelected}
 								onToggleItemSelect={selection.toggleSingleSelection}
 							/>
@@ -209,6 +213,7 @@ export const QueueTable = ({
 							onAction={(action, actionOptions) =>
 								void handleItemAction(item, action, actionOptions)
 							}
+							onPrefetchManualImport={onPrefetchManualImport}
 							primaryAction={row.primaryAction}
 						/>
 					);

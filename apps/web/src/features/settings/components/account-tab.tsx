@@ -83,7 +83,7 @@ export const AccountTab = ({
 						<div className="border-t border-border pt-4 mt-6">
 							<h3 className="text-sm font-semibold text-fg mb-4">TMDB API Integration</h3>
 							<div className="space-y-2">
-								<label className="text-xs uppercase text-fg-muted">TMDB API Key</label>
+								<label className="text-xs uppercase text-fg-muted">TMDB API Read Access Token</label>
 								<Input
 									type="password"
 									value={accountForm.tmdbApiKey}
@@ -94,15 +94,15 @@ export const AccountTab = ({
 										}))
 									}
 									placeholder={
-										currentUser?.hasTmdbApiKey ? "••••••••••••••••" : "Enter your TMDB API key"
+										currentUser?.hasTmdbApiKey ? "••••••••••••••••" : "Enter your TMDB API Read Access Token"
 									}
 								/>
 								<p className="text-xs text-fg-muted">
 									{currentUser?.hasTmdbApiKey ? (
-										<>TMDB API key is configured. Enter a new key to update it.</>
+										<>TMDB token is configured. Enter a new token to update it.</>
 									) : (
 										<>
-											Get your free API key from{" "}
+											Use the <strong>API Read Access Token</strong> (not API Key) from{" "}
 											<a
 												href="https://www.themoviedb.org/settings/api"
 												target="_blank"
@@ -111,6 +111,7 @@ export const AccountTab = ({
 											>
 												themoviedb.org/settings/api
 											</a>
+											. It starts with &quot;eyJ...&quot;
 										</>
 									)}
 								</p>

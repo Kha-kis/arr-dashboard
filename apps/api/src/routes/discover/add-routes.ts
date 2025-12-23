@@ -1,11 +1,17 @@
 import { discoverAddRequestSchema, discoverAddResponseSchema } from "@arr/shared";
-import type { ServiceInstance } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
+import {
+	getClientForInstance,
+	isSonarrClient,
+	isRadarrClient,
+} from "../../lib/arr/client-helpers.js";
+import { ArrError, arrErrorToHttpStatus } from "../../lib/arr/client-factory.js";
 import { toNumber, toStringValue } from "../../lib/data/values.js";
 import {
-	loadRadarrRemote,
-	loadSonarrRemote,
+	loadRadarrRemoteWithSdk,
+	loadSonarrRemoteWithSdk,
+	createMovieWithSdk,
+	createSeriesWithSdk,
 	slugify,
 } from "../../lib/discover/discover-normalizer.js";
 
@@ -30,30 +36,24 @@ export const registerAddRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.post("/discover/add", async (request, reply) => {
 		const payload = discoverAddRequestSchema.parse(request.body ?? {});
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: {
-				id: payload.instanceId,
-				enabled: true,
-				userId: request.currentUser?.id,
-			},
-		});
 
-		if (!instance) {
-			reply.status(404);
-			return reply.send({ message: "Instance not found" });
+		const clientResult = await getClientForInstance(app, request, payload.instanceId);
+		if (!clientResult.success) {
+			reply.status(clientResult.statusCode);
+			return reply.send({ message: clientResult.error });
 		}
 
+		const { client, instance } = clientResult;
 		const service = instance.service.toLowerCase() as "sonarr" | "radarr";
 		const expected = payload.payload.type === "movie" ? "radarr" : "sonarr";
+
 		if (service !== expected) {
 			reply.status(400);
 			return reply.send({ message: "Instance service does not match payload" });
 		}
 
-		const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
-
 		try {
-			if (service === "radarr") {
+			if (service === "radarr" && isRadarrClient(client)) {
 				if (payload.payload.type !== "movie") {
 					reply.status(400);
 					return reply.send({
@@ -62,7 +62,7 @@ export const registerAddRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				}
 
 				const moviePayload = payload.payload;
-				const remote = await loadRadarrRemote(fetcher, {
+				const remote = await loadRadarrRemoteWithSdk(client, {
 					tmdbId: moviePayload.tmdbId,
 					imdbId: moviePayload.imdbId,
 					queryFallback: moviePayload.title,
@@ -93,12 +93,7 @@ export const registerAddRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					tags: moviePayload.tags ?? [],
 				};
 
-				const response = await fetcher("/api/v3/movie", {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify(body),
-				});
-				const created = await response.json();
+				const created = await createMovieWithSdk(client, body);
 				return discoverAddResponseSchema.parse({
 					success: true,
 					instanceId: instance.id,
@@ -106,73 +101,78 @@ export const registerAddRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				});
 			}
 
-			if (payload.payload.type !== "series") {
-				reply.status(400);
-				return reply.send({
-					message: "Instance service does not match payload",
+			if (service === "sonarr" && isSonarrClient(client)) {
+				if (payload.payload.type !== "series") {
+					reply.status(400);
+					return reply.send({
+						message: "Instance service does not match payload",
+					});
+				}
+
+				const seriesPayload = payload.payload;
+				const remote = await loadSonarrRemoteWithSdk(client, {
+					tvdbId: seriesPayload.tvdbId,
+					tmdbId: seriesPayload.tmdbId,
+					queryFallback: seriesPayload.title,
+				});
+
+				if (!remote) {
+					reply.status(404);
+					return reply.send({ message: "Unable to locate series details" });
+				}
+
+				const seasons = Array.isArray(remote?.seasons)
+					? remote.seasons.map((season: unknown) => ({
+							seasonNumber: toNumber((season as { seasonNumber?: unknown })?.seasonNumber) ?? 0,
+							monitored:
+								seriesPayload.seasonFolder === false ? false : (seriesPayload.monitored ?? true),
+						}))
+					: [];
+
+				const languageProfileId =
+					seriesPayload.languageProfileId ?? toNumber(remote?.languageProfileId);
+				if (languageProfileId === undefined) {
+					reply.status(400);
+					return reply.send({ message: "languageProfileId is required" });
+				}
+
+				const body = {
+					...remote,
+					title: seriesPayload.title ?? remote.title,
+					titleSlug:
+						toStringValue(remote?.titleSlug) ??
+						slugify(seriesPayload.title ?? remote.title ?? "series"),
+					qualityProfileId: seriesPayload.qualityProfileId,
+					languageProfileId,
+					rootFolderPath: seriesPayload.rootFolderPath,
+					seasonFolder: seriesPayload.seasonFolder ?? true,
+					monitored: seriesPayload.monitored ?? true,
+					seasons,
+					addOptions: {
+						searchForMissingEpisodes: seriesPayload.searchOnAdd ?? true,
+						searchForCutoffUnmetEpisodes: seriesPayload.searchOnAdd ?? true,
+					},
+					tags: seriesPayload.tags ?? [],
+				};
+
+				const created = await createSeriesWithSdk(client, body);
+				return discoverAddResponseSchema.parse({
+					success: true,
+					instanceId: instance.id,
+					itemId: created?.id,
 				});
 			}
 
-			const seriesPayload = payload.payload;
-			const remote = await loadSonarrRemote(fetcher, {
-				tvdbId: seriesPayload.tvdbId,
-				tmdbId: seriesPayload.tmdbId,
-				queryFallback: seriesPayload.title,
-			});
-
-			if (!remote) {
-				reply.status(404);
-				return reply.send({ message: "Unable to locate series details" });
-			}
-
-			const seasons = Array.isArray(remote?.seasons)
-				? remote.seasons.map((season: unknown) => ({
-						seasonNumber: toNumber((season as { seasonNumber?: unknown })?.seasonNumber) ?? 0,
-						monitored:
-							seriesPayload.seasonFolder === false ? false : (seriesPayload.monitored ?? true),
-					}))
-				: [];
-
-			const languageProfileId =
-				seriesPayload.languageProfileId ?? toNumber(remote?.languageProfileId);
-			if (languageProfileId === undefined) {
-				reply.status(400);
-				return reply.send({ message: "languageProfileId is required" });
-			}
-
-			const body = {
-				...remote,
-				title: seriesPayload.title ?? remote.title,
-				titleSlug:
-					toStringValue(remote?.titleSlug) ??
-					slugify(seriesPayload.title ?? remote.title ?? "series"),
-				qualityProfileId: seriesPayload.qualityProfileId,
-				languageProfileId,
-				rootFolderPath: seriesPayload.rootFolderPath,
-				seasonFolder: seriesPayload.seasonFolder ?? true,
-				monitored: seriesPayload.monitored ?? true,
-				seasons,
-				addOptions: {
-					searchForMissingEpisodes: seriesPayload.searchOnAdd ?? true,
-					searchForCutoffUnmetEpisodes: seriesPayload.searchOnAdd ?? true,
-				},
-				tags: seriesPayload.tags ?? [],
-			};
-
-			const response = await fetcher("/api/v3/series", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(body),
-			});
-			const created = await response.json();
-			return discoverAddResponseSchema.parse({
-				success: true,
-				instanceId: instance.id,
-				itemId: created?.id,
-			});
+			reply.status(400);
+			return reply.send({ message: "Unsupported service type" });
 		} catch (error) {
 			request.log.error({ err: error, instance: instance.id }, "discover add failed");
-			reply.status(502);
+
+			if (error instanceof ArrError) {
+				reply.status(arrErrorToHttpStatus(error));
+			} else {
+				reply.status(502);
+			}
 			return reply.send({ message: "Failed to add title" });
 		}
 	});

@@ -6,6 +6,7 @@ import type {
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { createPasskeyService } from "../lib/auth/passkey-service.js";
+import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
 
 /**
  * In-memory storage for passkey challenges (production: use Redis)
@@ -231,6 +232,9 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			// Create session
 			const session = await app.sessionService.createSession(user.id, true);
 			app.sessionService.attachCookie(reply, session.token, true);
+
+			// Pre-warm connections to ARR instances in background (don't await)
+			warmConnectionsForUser(app, user.id).catch(() => {});
 
 			return reply.send({
 				user: {

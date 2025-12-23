@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import * as oauth from "oauth4webapi";
 import { z } from "zod";
 import { OIDCProvider } from "../lib/auth/oidc-provider.js";
+import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
 
 /**
  * In-memory storage for OIDC states and nonces (production: use Redis)
@@ -368,6 +369,9 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			// Create session
 			const session = await app.sessionService.createSession(user.id, true);
 			app.sessionService.attachCookie(reply, session.token, true);
+
+			// Pre-warm connections to ARR instances in background (don't await)
+			warmConnectionsForUser(app, user.id).catch(() => {});
 
 			// Redirect to root - Next.js middleware will redirect to dashboard if authenticated
 			request.log.info({ userId: user.id, username: user.username }, "OIDC authentication successful, redirecting to root");

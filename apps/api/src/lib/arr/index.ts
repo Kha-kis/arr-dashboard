@@ -66,11 +66,3 @@ export {
 
 // Re-export SDK client types for convenience
 export { SonarrClient, RadarrClient, ProwlarrClient } from "arr-sdk";
-
-// Legacy fetcher (for gradual migration)
-export {
-	createInstanceFetcher,
-	createTestFetcher,
-	type InstanceFetcher,
-	type TestFetcher,
-} from "./arr-fetcher.js";

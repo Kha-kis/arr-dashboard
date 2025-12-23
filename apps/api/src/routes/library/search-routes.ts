@@ -5,9 +5,13 @@ import {
 	librarySeasonSearchRequestSchema,
 	librarySeriesSearchRequestSchema,
 } from "@arr/shared";
-import type { ServiceInstance } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
+import {
+	getClientForInstance,
+	isSonarrClient,
+	isRadarrClient,
+} from "../../lib/arr/client-helpers.js";
+import { ArrError, arrErrorToHttpStatus } from "../../lib/arr/client-factory.js";
 
 /**
  * Register search operation routes for library
@@ -34,61 +38,61 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 	app.post("/library/season/search", async (request, reply) => {
 		const payload = librarySeasonSearchRequestSchema.parse(request.body ?? {});
 
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: {
-				id: payload.instanceId,
-				enabled: true,
-				userId: request.currentUser?.id,
-			},
-		});
-
-		if (!instance) {
-			reply.status(404);
-			return reply.send({ message: "Instance not found" });
+		const clientResult = await getClientForInstance(app, request, payload.instanceId);
+		if (!clientResult.success) {
+			return reply.status(clientResult.statusCode).send({
+				message: clientResult.error,
+			});
 		}
 
+		const { client, instance } = clientResult;
 		const service = instance.service.toLowerCase() as LibraryService;
-		if (service !== "sonarr") {
-			reply.status(400);
-			return reply.send({
+
+		if (service !== "sonarr" || !isSonarrClient(client)) {
+			return reply.status(400).send({
 				message: "Season search is only supported for Sonarr instances",
 			});
 		}
 
 		const seriesId = Number(payload.seriesId);
 		if (!Number.isFinite(seriesId)) {
-			reply.status(400);
-			return reply.send({ message: "Invalid series identifier" });
+			return reply.status(400).send({
+				message: "Invalid series identifier",
+			});
 		}
 
 		const seasonNumber = Number(payload.seasonNumber);
 		if (!Number.isFinite(seasonNumber)) {
-			reply.status(400);
-			return reply.send({ message: "Invalid season number" });
+			return reply.status(400).send({
+				message: "Invalid season number",
+			});
 		}
 
-		const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
-
 		try {
-			await fetcher("/api/v3/command", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					name: "SeasonSearch",
-					seriesId,
-					seasonNumber,
-				}),
+			await client.command.execute({
+				name: "SeasonSearch",
+				seriesId,
+				seasonNumber,
 			});
 
-			reply.status(202);
-			return reply.send({ message: "Season search queued" });
+			return reply.status(202).send({
+				message: "Season search queued",
+			});
 		} catch (error) {
 			request.log.error(
 				{ err: error, instance: instance.id, seriesId, seasonNumber },
 				"failed to queue season search",
 			);
-			reply.status(502);
-			return reply.send({ message: "Failed to queue season search" });
+
+			if (error instanceof ArrError) {
+				return reply.status(arrErrorToHttpStatus(error)).send({
+					message: error.message,
+				});
+			}
+
+			return reply.status(502).send({
+				message: "Failed to queue season search",
+			});
 		}
 	});
 
@@ -99,54 +103,53 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 	app.post("/library/series/search", async (request, reply) => {
 		const payload = librarySeriesSearchRequestSchema.parse(request.body ?? {});
 
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: {
-				id: payload.instanceId,
-				enabled: true,
-				userId: request.currentUser?.id,
-			},
-		});
-
-		if (!instance) {
-			reply.status(404);
-			return reply.send({ message: "Instance not found" });
+		const clientResult = await getClientForInstance(app, request, payload.instanceId);
+		if (!clientResult.success) {
+			return reply.status(clientResult.statusCode).send({
+				message: clientResult.error,
+			});
 		}
 
+		const { client, instance } = clientResult;
 		const service = instance.service.toLowerCase() as LibraryService;
-		if (service !== "sonarr") {
-			reply.status(400);
-			return reply.send({
+
+		if (service !== "sonarr" || !isSonarrClient(client)) {
+			return reply.status(400).send({
 				message: "Series search is only supported for Sonarr instances",
 			});
 		}
 
 		const seriesId = Number(payload.seriesId);
 		if (!Number.isFinite(seriesId)) {
-			reply.status(400);
-			return reply.send({ message: "Invalid series identifier" });
+			return reply.status(400).send({
+				message: "Invalid series identifier",
+			});
 		}
 
-		const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
-
 		try {
-			await fetcher("/api/v3/command", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					name: "SeriesSearch",
-					seriesId,
-				}),
+			await client.command.execute({
+				name: "SeriesSearch",
+				seriesId,
 			});
 
-			reply.status(202);
-			return reply.send({ message: "Series search queued" });
+			return reply.status(202).send({
+				message: "Series search queued",
+			});
 		} catch (error) {
 			request.log.error(
 				{ err: error, instance: instance.id, seriesId },
 				"failed to queue series search",
 			);
-			reply.status(502);
-			return reply.send({ message: "Failed to queue series search" });
+
+			if (error instanceof ArrError) {
+				return reply.status(arrErrorToHttpStatus(error)).send({
+					message: error.message,
+				});
+			}
+
+			return reply.status(502).send({
+				message: "Failed to queue series search",
+			});
 		}
 	});
 
@@ -157,54 +160,53 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 	app.post("/library/movie/search", async (request, reply) => {
 		const payload = libraryMovieSearchRequestSchema.parse(request.body ?? {});
 
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: {
-				id: payload.instanceId,
-				enabled: true,
-				userId: request.currentUser?.id,
-			},
-		});
-
-		if (!instance) {
-			reply.status(404);
-			return reply.send({ message: "Instance not found" });
+		const clientResult = await getClientForInstance(app, request, payload.instanceId);
+		if (!clientResult.success) {
+			return reply.status(clientResult.statusCode).send({
+				message: clientResult.error,
+			});
 		}
 
+		const { client, instance } = clientResult;
 		const service = instance.service.toLowerCase() as LibraryService;
-		if (service !== "radarr") {
-			reply.status(400);
-			return reply.send({
+
+		if (service !== "radarr" || !isRadarrClient(client)) {
+			return reply.status(400).send({
 				message: "Movie search is only supported for Radarr instances",
 			});
 		}
 
 		const movieId = Number(payload.movieId);
 		if (!Number.isFinite(movieId)) {
-			reply.status(400);
-			return reply.send({ message: "Invalid movie identifier" });
+			return reply.status(400).send({
+				message: "Invalid movie identifier",
+			});
 		}
 
-		const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
-
 		try {
-			await fetcher("/api/v3/command", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					name: "MoviesSearch",
-					movieIds: [movieId],
-				}),
+			await client.command.execute({
+				name: "MoviesSearch",
+				movieIds: [movieId],
 			});
 
-			reply.status(202);
-			return reply.send({ message: "Movie search queued" });
+			return reply.status(202).send({
+				message: "Movie search queued",
+			});
 		} catch (error) {
 			request.log.error(
 				{ err: error, instance: instance.id, movieId },
 				"failed to queue movie search",
 			);
-			reply.status(502);
-			return reply.send({ message: "Failed to queue movie search" });
+
+			if (error instanceof ArrError) {
+				return reply.status(arrErrorToHttpStatus(error)).send({
+					message: error.message,
+				});
+			}
+
+			return reply.status(502).send({
+				message: "Failed to queue movie search",
+			});
 		}
 	});
 
@@ -215,53 +217,52 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 	app.post("/library/episode/search", async (request, reply) => {
 		const payload = libraryEpisodeSearchRequestSchema.parse(request.body ?? {});
 
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: {
-				id: payload.instanceId,
-				enabled: true,
-				userId: request.currentUser?.id,
-			},
-		});
-
-		if (!instance) {
-			reply.status(404);
-			return reply.send({ message: "Instance not found" });
+		const clientResult = await getClientForInstance(app, request, payload.instanceId);
+		if (!clientResult.success) {
+			return reply.status(clientResult.statusCode).send({
+				message: clientResult.error,
+			});
 		}
 
+		const { client, instance } = clientResult;
 		const service = instance.service.toLowerCase() as LibraryService;
-		if (service !== "sonarr") {
-			reply.status(400);
-			return reply.send({
+
+		if (service !== "sonarr" || !isSonarrClient(client)) {
+			return reply.status(400).send({
 				message: "Episode search is only supported for Sonarr instances",
 			});
 		}
 
 		if (!payload.episodeIds || payload.episodeIds.length === 0) {
-			reply.status(400);
-			return reply.send({ message: "No episode IDs provided" });
+			return reply.status(400).send({
+				message: "No episode IDs provided",
+			});
 		}
 
-		const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
-
 		try {
-			await fetcher("/api/v3/command", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({
-					name: "EpisodeSearch",
-					episodeIds: payload.episodeIds,
-				}),
+			await client.command.execute({
+				name: "EpisodeSearch",
+				episodeIds: payload.episodeIds,
 			});
 
-			reply.status(202);
-			return reply.send({ message: "Episode search queued" });
+			return reply.status(202).send({
+				message: "Episode search queued",
+			});
 		} catch (error) {
 			request.log.error(
 				{ err: error, instance: instance.id, episodeIds: payload.episodeIds },
 				"failed to queue episode search",
 			);
-			reply.status(502);
-			return reply.send({ message: "Failed to queue episode search" });
+
+			if (error instanceof ArrError) {
+				return reply.status(arrErrorToHttpStatus(error)).send({
+					message: error.message,
+				});
+			}
+
+			return reply.status(502).send({
+				message: "Failed to queue episode search",
+			});
 		}
 	});
 

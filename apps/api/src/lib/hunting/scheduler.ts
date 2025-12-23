@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import { executeHunt, type HuntResult } from "./hunt-executor.js";
+import { executeHuntWithSdk, type HuntResult } from "./hunt-executor.js";
 import {
 	MIN_MANUAL_HUNT_COOLDOWN_MINS,
 	MIN_INSTANCE_COOLDOWN_MINS,
@@ -322,7 +322,7 @@ class HuntingScheduler {
 				continue;
 			}
 
-			// Note: Queue threshold check is intentionally done inside executeHunt() rather than here.
+			// Note: Queue threshold check is intentionally done inside executeHuntWithSdk() rather than here.
 			// This avoids making unnecessary API calls for instances that aren't due for a hunt,
 			// and ensures the queue is checked at execution time (not scheduling time).
 
@@ -394,7 +394,7 @@ class HuntingScheduler {
 		try {
 			// Execute the actual hunt using hunt-executor with timeout protection
 			const result: HuntResult = await withTimeout(
-				executeHunt(
+				executeHuntWithSdk(
 					this.app,
 					config.instance,
 					config,

@@ -3,12 +3,15 @@ import {
 	discoverSearchRequestSchema,
 	discoverSearchResponseSchema,
 } from "@arr/shared";
-import type { ServiceInstance } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
+import {
+	executeOnInstances,
+	isSonarrClient,
+	isRadarrClient,
+} from "../../lib/arr/client-helpers.js";
 import {
 	ensureResult,
-	fetchLookupResults,
+	fetchLookupResultsWithSdk,
 	normalizeLookupResult,
 	sortSearchResults,
 } from "../../lib/discover/discover-normalizer.js";
@@ -37,32 +40,29 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 		const type = parsed.type;
 		const prismaService = type === "movie" ? "RADARR" : "SONARR";
 
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: {
-				enabled: true,
-				service: prismaService, userId: request.currentUser?.id,
-			},
-		});
-
-		if (instances.length === 0) {
-			return discoverSearchResponseSchema.parse({ results: [], totalCount: 0 });
-		}
-
 		const resultMap = new Map<string, DiscoverSearchResult>();
 
-		for (const instance of instances) {
-			const service = instance.service.toLowerCase() as "sonarr" | "radarr";
-			try {
-				const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
-				const lookupResults = await fetchLookupResults(fetcher, service, parsed.query);
+		await executeOnInstances(
+			app,
+			request.currentUser!.id,
+			{ serviceTypes: [prismaService] },
+			async (client, instance) => {
+				const service = instance.service.toLowerCase() as "sonarr" | "radarr";
+
+				// Validate client type matches expected service
+				if (service === "radarr" && !isRadarrClient(client)) return [];
+				if (service === "sonarr" && !isSonarrClient(client)) return [];
+
+				// biome-ignore lint/suspicious/noExplicitAny: Type already validated by isSonarrClient/isRadarrClient guards above
+				const lookupResults = await fetchLookupResultsWithSdk(client as any, service, parsed.query);
 				for (const raw of lookupResults) {
-					const normalized = normalizeLookupResult(raw, instance as ServiceInstance, service);
+					const normalized = normalizeLookupResult(raw, instance, service);
 					ensureResult(resultMap, normalized);
 				}
-			} catch (error) {
-				request.log.error({ err: error, instance: instance.id }, "discover search failed");
-			}
-		}
+
+				return [];
+			},
+		);
 
 		const results = sortSearchResults(Array.from(resultMap.values()), parsed.query);
 

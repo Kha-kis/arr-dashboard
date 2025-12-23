@@ -1,7 +1,11 @@
 import type { FastifyPluginCallback } from "fastify";
 import { searchGrabRequestSchema } from "@arr/shared";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
-import { grabProwlarrRelease } from "../../lib/search/prowlarr-api.js";
+import {
+	getClientForInstance,
+	isProwlarrClient,
+} from "../../lib/arr/client-helpers.js";
+import { ArrError, arrErrorToHttpStatus } from "../../lib/arr/client-factory.js";
+import { grabProwlarrReleaseWithSdk } from "../../lib/search/prowlarr-api.js";
 
 /**
  * Registers grab/download routes for Prowlarr.
@@ -27,32 +31,31 @@ export const registerGrabRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	app.post("/search/grab", async (request, reply) => {
 		const payload = searchGrabRequestSchema.parse(request.body ?? {});
 
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: {
-				enabled: true,
-				service: "PROWLARR",
-				id: payload.instanceId, userId: request.currentUser?.id,
-			},
-		});
-
-		if (!instance) {
-			reply.status(404);
-
-			return { success: false, message: "Prowlarr instance not found" };
+		const clientResult = await getClientForInstance(app, request, payload.instanceId);
+		if (!clientResult.success) {
+			reply.status(clientResult.statusCode);
+			return { success: false, message: clientResult.error };
 		}
 
-		const fetcherInstance = createInstanceFetcher(app, instance);
+		const { client, instance } = clientResult;
+
+		if (!isProwlarrClient(client)) {
+			reply.status(400);
+			return { success: false, message: "Instance is not a Prowlarr instance" };
+		}
 
 		try {
-			await grabProwlarrRelease(fetcherInstance, payload.result);
-
+			await grabProwlarrReleaseWithSdk(client, payload.result);
 			reply.status(204);
-
 			return null;
 		} catch (error) {
 			request.log.error({ err: error, instance: instance.id }, "prowlarr grab failed");
 
-			reply.status(502);
+			if (error instanceof ArrError) {
+				reply.status(arrErrorToHttpStatus(error));
+			} else {
+				reply.status(502);
+			}
 
 			return {
 				success: false,

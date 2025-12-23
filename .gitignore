@@ -91,3 +91,12 @@ secrets.json
 apps/api/secrets.json
 apps/api/backups/
 backups/
+
+# Testing artifacts
+playwright-report/
+test-results/
+.playwright-auth/
+.playwright-mcp/
+
+# AI/ML development tools
+.leann/

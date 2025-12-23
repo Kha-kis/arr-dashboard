@@ -6,7 +6,8 @@
 
 import type { FastifyPluginCallback } from "fastify";
 import { createProfileCloner } from "../../lib/trash-guides/profile-cloner.js";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
+import { SonarrClient, RadarrClient, ArrError } from "arr-sdk";
+import { arrErrorToHttpStatus } from "../../lib/arr/client-factory.js";
 import { createCFMatcher, type InstanceCustomFormat } from "../../lib/trash-guides/cf-matcher.js";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
@@ -247,11 +248,18 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				});
 			}
 
-			// Create instance fetcher and fetch quality profiles
-			const fetcher = createInstanceFetcher(app, instance);
-			const response = await fetcher("/api/v3/qualityprofile");
+			// Create SDK client and fetch quality profiles
+			const client = app.arrClientFactory.create(instance);
 
-			const profiles = await response.json() as ArrQualityProfileResponse[];
+			// Both SonarrClient and RadarrClient have the qualityProfile API
+			if (!(client instanceof SonarrClient) && !(client instanceof RadarrClient)) {
+				return reply.status(400).send({
+					success: false,
+					error: "Invalid client type for quality profiles",
+				});
+			}
+
+			const profiles = await client.qualityProfile.getAll() as ArrQualityProfileResponse[];
 
 			return reply.status(200).send({
 				success: true,
@@ -272,8 +280,9 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				},
 			});
 		} catch (error) {
-			app.log.error(`Failed to fetch quality profiles: ${error}`);
-			return reply.status(500).send({
+			app.log.error({ err: error, instanceId }, "Failed to fetch quality profiles");
+			const statusCode = error instanceof ArrError ? arrErrorToHttpStatus(error) : 500;
+			return reply.status(statusCode).send({
 				success: false,
 				error: error instanceof Error ? error.message : "Failed to fetch profiles",
 			});
@@ -306,28 +315,40 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				});
 			}
 
-			// Create instance fetcher
-			const fetcher = createInstanceFetcher(app, instance);
+			// Create SDK client
+			const client = app.arrClientFactory.create(instance);
 
-			// Fetch the quality profile
-			const profileResponse = await fetcher(`/api/v3/qualityprofile/${profileId}`);
-			const profile = await profileResponse.json();
+			// Validate client type
+			if (!(client instanceof SonarrClient) && !(client instanceof RadarrClient)) {
+				return reply.status(400).send({
+					success: false,
+					error: "Invalid client type for profile details",
+				});
+			}
 
-			// Fetch all custom formats from the instance
-			const cfResponse = await fetcher("/api/v3/customformat");
-			const allCustomFormats = await cfResponse.json();
+			// Fetch the quality profile and all custom formats in parallel
+			const [profile, allCustomFormats] = await Promise.all([
+				client.qualityProfile.getById(Number(profileId)),
+				client.customFormat.getAll(),
+			]);
 
 			// Get the CFs used in this profile (from formatItems)
 			const profileCFIds = new Set(
-				(profile.formatItems || []).map((item: { format: number }) => item.format)
+				((profile as ArrQualityProfileResponse).formatItems || []).map((item: { format: number }) => item.format)
 			);
 
 			// Filter to only CFs used in the profile and include score
-			const profileCustomFormats = allCustomFormats
-				.filter((cf: { id: number }) => profileCFIds.has(cf.id))
-				.map((cf: { id: number; name: string; specifications?: unknown[]; includeCustomFormatWhenRenaming?: boolean }) => {
-					const formatItem = profile.formatItems?.find(
-						(item: { format: number; score: number }) => item.format === cf.id
+			// Use type guard to filter out CFs with undefined id or name
+			const validCustomFormats = allCustomFormats.filter(
+				(cf): cf is typeof cf & { id: number; name: string } =>
+					cf.id !== undefined && cf.name !== undefined && cf.name !== null
+			);
+
+			const profileCustomFormats = validCustomFormats
+				.filter((cf) => profileCFIds.has(cf.id))
+				.map((cf) => {
+					const formatItem = (profile as ArrQualityProfileResponse).formatItems?.find(
+						(item) => item.format === cf.id
 					);
 					return {
 						id: cf.id,
@@ -353,7 +374,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 					},
 					customFormats: profileCustomFormats,
 					// Include all CFs for browse section (adds trash_id placeholder for template creation)
-					allCustomFormats: allCustomFormats.map((cf: { id: number; name: string; specifications?: unknown[]; includeCustomFormatWhenRenaming?: boolean }) => ({
+					allCustomFormats: validCustomFormats.map((cf) => ({
 						id: cf.id,
 						name: cf.name,
 						trash_id: `instance-cf-${cf.id}`, // Placeholder trash_id for instance CFs
@@ -363,8 +384,9 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				},
 			});
 		} catch (error) {
-			app.log.error(`Failed to fetch profile details: ${error}`);
-			return reply.status(500).send({
+			app.log.error({ err: error, instanceId, profileId }, "Failed to fetch profile details");
+			const statusCode = error instanceof ArrError ? arrErrorToHttpStatus(error) : 500;
+			return reply.status(statusCode).send({
 				success: false,
 				error: error instanceof Error ? error.message : "Failed to fetch profile details",
 			});
@@ -406,32 +428,44 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				});
 			}
 
-			// Create instance fetcher
-			const fetcher = createInstanceFetcher(app, instance);
+			// Create SDK client
+			const client = app.arrClientFactory.create(instance);
 
-			// Fetch the quality profile
-			const profileResponse = await fetcher(`/api/v3/qualityprofile/${profileId}`);
-			const profile = await profileResponse.json();
+			// Validate client type
+			if (!(client instanceof SonarrClient) && !(client instanceof RadarrClient)) {
+				return reply.status(400).send({
+					success: false,
+					error: "Invalid client type for CF validation",
+				});
+			}
 
-			// Fetch all custom formats from the instance
-			const cfResponse = await fetcher("/api/v3/customformat");
-			const allCustomFormats = await cfResponse.json();
+			// Fetch the quality profile and all custom formats in parallel
+			const [profile, allCustomFormats] = await Promise.all([
+				client.qualityProfile.getById(profileId),
+				client.customFormat.getAll(),
+			]);
 
 			// Get the CFs used in this profile (from formatItems)
 			// Include all CFs in the profile, even those with score 0
 			// (score 0 is meaningful - it means "track but don't affect ranking")
 			const profileCFIds = new Set(
-				(profile.formatItems || [])
+				((profile as ArrQualityProfileResponse).formatItems || [])
 					.map((item: { format: number; score: number }) => item.format)
 			);
 
+			// Filter out CFs with undefined id or name
+			const validCustomFormats = allCustomFormats.filter(
+				(cf): cf is typeof cf & { id: number; name: string } =>
+					cf.id !== undefined && cf.name !== undefined && cf.name !== null
+			);
+
 			// Filter to only CFs used in the profile
-			const profileCFs: InstanceCustomFormat[] = allCustomFormats
-				.filter((cf: { id: number }) => profileCFIds.has(cf.id))
-				.map((cf: { id: number; name: string; specifications?: unknown[]; includeCustomFormatWhenRenaming?: boolean }) => {
+			const profileCFs: InstanceCustomFormat[] = validCustomFormats
+				.filter((cf) => profileCFIds.has(cf.id))
+				.map((cf) => {
 					// Find the score for this CF in the profile
-					const formatItem = profile.formatItems?.find(
-						(item: { format: number; score: number }) => item.format === cf.id
+					const formatItem = (profile as ArrQualityProfileResponse).formatItems?.find(
+						(item) => item.format === cf.id
 					);
 					return {
 						id: cf.id,
@@ -491,8 +525,9 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				results,
 			});
 		} catch (error) {
-			app.log.error(`Failed to validate Custom Formats: ${error}`);
-			return reply.status(500).send({
+			app.log.error({ err: error, instanceId, profileId, serviceType }, "Failed to validate Custom Formats");
+			const statusCode = error instanceof ArrError ? arrErrorToHttpStatus(error) : 500;
+			return reply.status(statusCode).send({
 				success: false,
 				error: error instanceof Error ? error.message : "Failed to validate Custom Formats",
 			});
@@ -784,20 +819,29 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				});
 			}
 
-			// Create instance fetcher and get the profile and CFs
-			const fetcher = createInstanceFetcher(app, instance);
+			// Create SDK client
+			const client = app.arrClientFactory.create(instance);
 
-			// Fetch the full quality profile to get quality items
-			const profileResponse = await fetcher(`/api/v3/qualityprofile/${sourceProfileId}`);
-			const fullProfile = await profileResponse.json() as ArrQualityProfileResponse;
+			// Validate client type
+			if (!(client instanceof SonarrClient) && !(client instanceof RadarrClient)) {
+				return reply.status(400).send({
+					success: false,
+					error: "Invalid client type for template creation",
+				});
+			}
 
-			const cfResponse = await fetcher("/api/v3/customformat");
-			const allCustomFormats = await cfResponse.json();
+			// Fetch the full quality profile and all custom formats in parallel
+			const [fullProfile, allCustomFormats] = await Promise.all([
+				client.qualityProfile.getById(sourceProfileId) as Promise<ArrQualityProfileResponse>,
+				client.customFormat.getAll(),
+			]);
 
-			// Build a lookup map for instance CFs
+			// Build a lookup map for instance CFs (filter out CFs with undefined id or name)
 			const cfLookup = new Map<number, { id: number; name: string; specifications?: unknown[] }>();
 			for (const cf of allCustomFormats) {
-				cfLookup.set(cf.id, cf);
+				if (cf.id !== undefined && cf.name !== undefined && cf.name !== null) {
+					cfLookup.set(cf.id, { id: cf.id, name: cf.name, specifications: cf.specifications ?? undefined });
+				}
 			}
 
 			// Get TRaSH cache for matching
@@ -963,7 +1007,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				},
 			});
 		} catch (error) {
-			app.log.error(`Failed to create template from cloned profile: ${error}`);
+			app.log.error({ err: error, sourceInstanceId, sourceProfileId, templateName }, "Failed to create template from cloned profile");
 
 			// Handle duplicate name error
 			if (error instanceof Error && error.message.includes("already exists")) {
@@ -973,7 +1017,9 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 				});
 			}
 
-			return reply.status(500).send({
+			// Map SDK errors to appropriate HTTP status codes
+			const statusCode = error instanceof ArrError ? arrErrorToHttpStatus(error) : 500;
+			return reply.status(statusCode).send({
 				success: false,
 				error: error instanceof Error ? error.message : "Failed to create template",
 			});

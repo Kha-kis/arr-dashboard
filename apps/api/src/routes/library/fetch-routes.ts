@@ -2,21 +2,25 @@ import {
 	type LibraryEpisode,
 	type LibraryItem,
 	type LibraryService,
+	type PaginatedLibraryResponse,
 	libraryEpisodesRequestSchema,
 	libraryEpisodesResponseSchema,
-	multiInstanceLibraryResponseSchema,
+	paginatedLibraryResponseSchema,
 } from "@arr/shared";
-import type { ServiceInstance, ServiceType } from "@prisma/client";
+import type { Prisma, ServiceType } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
-import { createInstanceFetcher } from "../../lib/arr/arr-fetcher.js";
+import {
+	getClientForInstance,
+	isSonarrClient,
+} from "../../lib/arr/client-helpers.js";
+import { ArrError, arrErrorToHttpStatus } from "../../lib/arr/client-factory.js";
 import { normalizeEpisode } from "../../lib/library/episode-normalizer.js";
-import { buildLibraryItem } from "../../lib/library/library-item-builder.js";
-import { toNumber } from "../../lib/library/type-converters.js";
 import { libraryQuerySchema } from "../../lib/library/validation-schemas.js";
+import { getLibrarySyncScheduler } from "../../lib/library-sync/index.js";
 
 /**
  * Register data fetching routes for library
- * - GET /library - Fetch library items from all instances
+ * - GET /library - Fetch library items from cache with pagination
  * - GET /library/episodes - Fetch episodes for a series
  */
 export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => {
@@ -32,129 +36,299 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 
 	/**
 	 * GET /library
-	 * Fetches library items (movies/series) from enabled instances
+	 * Fetches library items from cache with server-side pagination, search, and filtering
 	 */
 	app.get("/library", async (request, reply) => {
 		const parsed = libraryQuerySchema.parse(request.query ?? {});
+		const userId = request.currentUser!.id;
 
-		const where: {
-			enabled: boolean;
-			service?: ServiceType | { in: ServiceType[] };
-			id?: string;
-			userId: string;
-		} = {
-			enabled: true,
-			userId: request.currentUser?.id ?? "",
-		};
-
-		if (parsed.instanceId) {
-			where.id = parsed.instanceId;
-		}
-
-		if (parsed.service) {
-			where.service = parsed.service.toUpperCase() as ServiceType;
-		} else {
-			where.service = { in: ["SONARR", "RADARR"] } as { in: ServiceType[] };
-		}
-
-		const instances = await app.prisma.serviceInstance.findMany({
-			where,
-			orderBy: { label: "asc" },
+		// Get user's instances to filter cache by
+		const userInstances = await app.prisma.serviceInstance.findMany({
+			where: {
+				userId,
+				enabled: true,
+				service: { in: ["SONARR", "RADARR"] },
+			},
+			select: { id: true },
 		});
 
-		const instanceResults: Array<{
-			instanceId: string;
-			instanceName: string;
-			service: LibraryService;
-			data: LibraryItem[];
-		}> = [];
-		const aggregated: LibraryItem[] = [];
+		const userInstanceIds = userInstances.map((i) => i.id);
 
-		for (const instance of instances) {
-			const service = instance.service.toLowerCase() as LibraryService;
-			try {
-				const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
-				const path = service === "radarr" ? "/api/v3/movie" : "/api/v3/series";
-				const response = await fetcher(path);
-				const payload = await response.json();
-				const items = Array.isArray(payload)
-					? payload.map((rawItem: Record<string, unknown>) =>
-							buildLibraryItem(instance as ServiceInstance, service, rawItem),
-						)
-					: [];
-				instanceResults.push({
-					instanceId: instance.id,
-					instanceName: instance.label,
-					service,
-					data: items,
+		if (userInstanceIds.length === 0) {
+			// No instances configured
+			return paginatedLibraryResponseSchema.parse({
+				items: [],
+				pagination: {
+					page: parsed.page,
+					limit: parsed.limit,
+					totalItems: 0,
+					totalPages: 0,
+				},
+				appliedFilters: {
+					search: parsed.search,
+					service: parsed.service,
+					instanceId: parsed.instanceId,
+					monitored: parsed.monitored,
+					hasFile: parsed.hasFile,
+					status: parsed.status,
+					qualityProfileId: parsed.qualityProfileId,
+					yearMin: parsed.yearMin,
+					yearMax: parsed.yearMax,
+					sortBy: parsed.sortBy,
+					sortOrder: parsed.sortOrder,
+				},
+			});
+		}
+
+		// Check if we have any cached items
+		const cachedCount = await app.prisma.libraryCache.count({
+			where: { instanceId: { in: userInstanceIds } },
+		});
+
+		// If no cached items, trigger background sync for all instances
+		if (cachedCount === 0) {
+			request.log.info("No cached library items found, triggering initial sync");
+			const scheduler = getLibrarySyncScheduler();
+			for (const instance of userInstances) {
+				scheduler.triggerSync(instance.id).catch((err) => {
+					request.log.error({ err, instanceId: instance.id }, "Failed to trigger sync");
 				});
-				aggregated.push(...items);
-			} catch (error) {
-				request.log.error({ err: error, instance: instance.id }, "library fetch failed");
-				instanceResults.push({
-					instanceId: instance.id,
-					instanceName: instance.label,
-					service,
-					data: [],
-				});
+			}
+
+			// Return empty response - frontend will show loading state
+			return paginatedLibraryResponseSchema.parse({
+				items: [],
+				pagination: {
+					page: parsed.page,
+					limit: parsed.limit,
+					totalItems: 0,
+					totalPages: 0,
+				},
+				appliedFilters: {
+					search: parsed.search,
+					service: parsed.service,
+					instanceId: parsed.instanceId,
+					monitored: parsed.monitored,
+					hasFile: parsed.hasFile,
+					status: parsed.status,
+					qualityProfileId: parsed.qualityProfileId,
+					yearMin: parsed.yearMin,
+					yearMax: parsed.yearMax,
+					sortBy: parsed.sortBy,
+					sortOrder: parsed.sortOrder,
+				},
+				syncStatus: {
+					isCached: false,
+					lastSync: null,
+					syncInProgress: true,
+					totalCachedItems: 0,
+				},
+			});
+		}
+
+		// Build Prisma where clause
+		const where: Prisma.LibraryCacheWhereInput = {
+			instanceId: { in: userInstanceIds },
+		};
+
+		// Instance filter
+		if (parsed.instanceId) {
+			// Verify user owns this instance
+			if (!userInstanceIds.includes(parsed.instanceId)) {
+				return reply.status(403).send({ error: "Instance not found" });
+			}
+			where.instanceId = parsed.instanceId;
+		}
+
+		// Service filter (sonarr = series, radarr = movie)
+		if (parsed.service) {
+			where.itemType = parsed.service === "sonarr" ? "series" : "movie";
+		}
+
+		// Search filter (case-insensitive title search)
+		if (parsed.search) {
+			where.title = { contains: parsed.search, mode: "insensitive" };
+		}
+
+		// Monitored filter
+		if (parsed.monitored !== "all") {
+			where.monitored = parsed.monitored === "true";
+		}
+
+		// Has file filter
+		if (parsed.hasFile !== "all") {
+			where.hasFile = parsed.hasFile === "true";
+		}
+
+		// Status filter
+		if (parsed.status) {
+			where.status = parsed.status;
+		}
+
+		// Quality profile filter
+		if (parsed.qualityProfileId) {
+			where.qualityProfileId = parsed.qualityProfileId;
+		}
+
+		// Year range filter
+		if (parsed.yearMin !== undefined || parsed.yearMax !== undefined) {
+			where.year = {};
+			if (parsed.yearMin !== undefined) {
+				where.year.gte = parsed.yearMin;
+			}
+			if (parsed.yearMax !== undefined) {
+				where.year.lte = parsed.yearMax;
 			}
 		}
 
-		return multiInstanceLibraryResponseSchema.parse({
-			instances: instanceResults,
-			aggregated,
-			totalCount: aggregated.length,
+		// Get total count for pagination
+		const totalItems = await app.prisma.libraryCache.count({ where });
+
+		// Build order by
+		const orderBy: Prisma.LibraryCacheOrderByWithRelationInput = {};
+		switch (parsed.sortBy) {
+			case "title":
+				orderBy.title = parsed.sortOrder;
+				break;
+			case "sortTitle":
+				orderBy.sortTitle = parsed.sortOrder;
+				break;
+			case "year":
+				orderBy.year = parsed.sortOrder;
+				break;
+			case "sizeOnDisk":
+				orderBy.sizeOnDisk = parsed.sortOrder;
+				break;
+			case "added":
+				orderBy.arrAddedAt = parsed.sortOrder;
+				break;
+			default:
+				orderBy.sortTitle = "asc";
+		}
+
+		// Fetch paginated items
+		const cachedItems = await app.prisma.libraryCache.findMany({
+			where,
+			orderBy,
+			skip: (parsed.page - 1) * parsed.limit,
+			take: parsed.limit,
 		});
+
+		// Parse JSON data back to LibraryItem
+		const items: LibraryItem[] = cachedItems.map((item) => {
+			try {
+				return JSON.parse(item.data) as LibraryItem;
+			} catch {
+				// Fallback if JSON parsing fails
+				return {
+					id: item.arrItemId,
+					instanceId: item.instanceId,
+					instanceName: "",
+					service: item.itemType === "movie" ? "radarr" : "sonarr",
+					type: item.itemType as "movie" | "series",
+					title: item.title,
+					titleSlug: item.titleSlug ?? undefined,
+					sortTitle: item.sortTitle ?? undefined,
+					year: item.year ?? undefined,
+					monitored: item.monitored,
+					hasFile: item.hasFile,
+					status: item.status ?? undefined,
+					qualityProfileId: item.qualityProfileId ?? undefined,
+					qualityProfileName: item.qualityProfileName ?? undefined,
+					sizeOnDisk: Number(item.sizeOnDisk),
+				} as LibraryItem;
+			}
+		});
+
+		// Get sync status
+		const syncStatuses = await app.prisma.librarySyncStatus.findMany({
+			where: { instanceId: { in: userInstanceIds } },
+			select: {
+				lastFullSync: true,
+				syncInProgress: true,
+				itemCount: true,
+			},
+		});
+
+		const mostRecentSync = syncStatuses
+			.map((s) => s.lastFullSync)
+			.filter((d): d is Date => d !== null)
+			.sort((a, b) => b.getTime() - a.getTime())[0];
+
+		const anySyncInProgress = syncStatuses.some((s) => s.syncInProgress);
+
+		const response: PaginatedLibraryResponse = {
+			items,
+			pagination: {
+				page: parsed.page,
+				limit: parsed.limit,
+				totalItems,
+				totalPages: Math.ceil(totalItems / parsed.limit),
+			},
+			appliedFilters: {
+				search: parsed.search,
+				service: parsed.service,
+				instanceId: parsed.instanceId,
+				monitored: parsed.monitored,
+				hasFile: parsed.hasFile,
+				status: parsed.status,
+				qualityProfileId: parsed.qualityProfileId,
+				yearMin: parsed.yearMin,
+				yearMax: parsed.yearMax,
+				sortBy: parsed.sortBy,
+				sortOrder: parsed.sortOrder,
+			},
+			syncStatus: {
+				isCached: true,
+				lastSync: mostRecentSync?.toISOString() ?? null,
+				syncInProgress: anySyncInProgress,
+				totalCachedItems: totalItems,
+			},
+		};
+
+		return paginatedLibraryResponseSchema.parse(response);
 	});
 
 	/**
 	 * GET /library/episodes
 	 * Fetches episodes for a specific series from a Sonarr instance
+	 * Note: Episodes are NOT cached - fetched directly from ARR
 	 */
 	app.get("/library/episodes", async (request, reply) => {
 		const parsed = libraryEpisodesRequestSchema.parse(request.query ?? {});
 
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: {
-				id: parsed.instanceId,
-				enabled: true,
-				userId: request.currentUser?.id,
-			},
-		});
-
-		if (!instance) {
-			reply.status(404);
-			return reply.send({ message: "Instance not found" });
+		const clientResult = await getClientForInstance(app, request, parsed.instanceId);
+		if (!clientResult.success) {
+			return reply.status(clientResult.statusCode).send({
+				message: clientResult.error,
+			});
 		}
 
+		const { client, instance } = clientResult;
 		const service = instance.service.toLowerCase() as LibraryService;
-		if (service !== "sonarr") {
-			reply.status(400);
-			return reply.send({
+
+		if (service !== "sonarr" || !isSonarrClient(client)) {
+			return reply.status(400).send({
 				message: "Episodes are only available for Sonarr instances",
 			});
 		}
 
 		const seriesId = Number(parsed.seriesId);
 		if (!Number.isFinite(seriesId)) {
-			reply.status(400);
-			return reply.send({ message: "Invalid series identifier" });
+			return reply.status(400).send({
+				message: "Invalid series identifier",
+			});
 		}
 
-		const fetcher = createInstanceFetcher(app, instance as ServiceInstance);
-
 		try {
-			const params = new URLSearchParams({ seriesId: seriesId.toString() });
-			if (parsed.seasonNumber !== undefined) {
-				params.append("seasonNumber", parsed.seasonNumber.toString());
-			}
+			const rawEpisodes = await client.episode.getAll({
+				seriesId,
+				seasonNumber: parsed.seasonNumber,
+			});
 
-			const response = await fetcher(`/api/v3/episode?${params.toString()}`);
-			const payload = await response.json();
-
-			const episodes: LibraryEpisode[] = Array.isArray(payload)
-				? payload.map((raw: Record<string, unknown>) => normalizeEpisode(raw, seriesId))
-				: [];
+			const episodes: LibraryEpisode[] = rawEpisodes.map((raw) =>
+				normalizeEpisode(raw as Record<string, unknown>, seriesId),
+			);
 
 			return libraryEpisodesResponseSchema.parse({ episodes });
 		} catch (error) {
@@ -162,8 +336,16 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 				{ err: error, instance: instance.id, seriesId },
 				"failed to fetch episodes",
 			);
-			reply.status(502);
-			return reply.send({ message: "Failed to fetch episodes" });
+
+			if (error instanceof ArrError) {
+				return reply.status(arrErrorToHttpStatus(error)).send({
+					message: error.message,
+				});
+			}
+
+			return reply.status(502).send({
+				message: "Failed to fetch episodes",
+			});
 		}
 	});
 
