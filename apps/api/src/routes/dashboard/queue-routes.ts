@@ -5,7 +5,7 @@ import {
 } from "@arr/shared";
 import type { QueueItem } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
-import { SonarrClient, RadarrClient } from "arr-sdk";
+import type { SonarrClient, RadarrClient } from "arr-sdk";
 import {
 	executeOnInstances,
 	getClientForInstance,
