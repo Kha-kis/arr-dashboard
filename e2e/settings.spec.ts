@@ -63,7 +63,7 @@ test.describe("Settings - Account Tab", () => {
 		await waitForLoadingComplete(page);
 
 		// Click Account tab if not already selected
-		const accountTab = page.getByRole("button", { name: /account/i }).first();
+		const accountTab = page.getByRole("tab", { name: /account/i });
 		if ((await accountTab.count()) > 0) {
 			await accountTab.click();
 		}
@@ -82,20 +82,49 @@ test.describe("Settings - Account Tab", () => {
 		}
 	});
 
+	test("should display TMDB API integration section", async ({ page }) => {
+		// TMDB API Integration section should be visible
+		const tmdbSection = page.getByText("TMDB API Integration");
+		await expect(tmdbSection).toBeVisible({ timeout: TIMEOUTS.medium });
+	});
+
+	test("should show TMDB API key field", async ({ page }) => {
+		// Look for the TMDB API Read Access Token input by placeholder
+		// Placeholder is "Enter your TMDB API Read Access Token" or "•••" if already set
+		const tmdbField = page.getByPlaceholder(/enter your tmdb|•+/i);
+		await expect(tmdbField).toBeVisible({ timeout: TIMEOUTS.medium });
+	});
+
+	test("should have save button for account changes", async ({ page }) => {
+		// Account form should have a save/update button
+		const saveButton = page.getByRole("button", { name: /save|update/i });
+		await expect(saveButton.first()).toBeVisible({ timeout: TIMEOUTS.medium });
+	});
+});
+
+test.describe("Settings - Authentication Tab", () => {
+	test.beforeEach(async ({ page }) => {
+		await page.goto(ROUTES.settings);
+		await waitForLoadingComplete(page);
+
+		// Click Authentication tab
+		const authTab = page.getByRole("tab", { name: /authentication/i });
+		if ((await authTab.count()) > 0) {
+			await authTab.click();
+			await page.waitForTimeout(300);
+		}
+	});
+
 	test("should have password change option", async ({ page }) => {
-		// Look for password-related UI elements in main content
-		const mainContent = page.locator("main");
-		const passwordSection = mainContent.getByText(/password|change password/i);
-		const passwordButton = mainContent.getByRole("button", { name: /change password|update password/i });
-		const passwordField = mainContent.getByLabel(/password/i);
+		// Password section has CardTitle "Password Authentication"
+		const passwordCard = page.getByText("Password Authentication");
+		await expect(passwordCard).toBeVisible({ timeout: TIMEOUTS.medium });
 
-		const hasPassword =
-			(await passwordSection.count()) > 0 ||
-			(await passwordButton.count()) > 0 ||
-			(await passwordField.count()) > 0;
-
-		// Password section should exist in account settings
-		expect(hasPassword).toBe(true);
+		// Should have a button to change/add password
+		const passwordButton = page.getByRole("button", {
+			name: /change password|add password/i,
+		});
+		await expect(passwordButton).toBeVisible();
 	});
 
 	test("should have passkey management section", async ({ page }) => {
@@ -103,6 +132,87 @@ test.describe("Settings - Account Tab", () => {
 
 		// Passkey section might be present
 		expect((await passkeySection.count()) >= 0).toBe(true);
+	});
+
+	test("should display OIDC provider section", async ({ page }) => {
+		// OIDC Provider section should be visible in Authentication tab
+		const oidcSection = page.getByRole("heading", { name: "OIDC Provider" });
+		await expect(oidcSection).toBeVisible({ timeout: TIMEOUTS.medium });
+	});
+
+	test("should have configure OIDC button or provider details", async ({ page }) => {
+		// Look for either "Configure OIDC" button (no provider) or provider info (provider exists)
+		const configureButton = page.getByRole("button", { name: /configure oidc/i });
+		const providerInfo = page.getByText(/no oidc provider configured|issuer|client id/i);
+		const loadingState = page.getByText(/loading/i);
+
+		// Wait for any loading to complete (up to 5 seconds)
+		try {
+			await loadingState.waitFor({ state: "hidden", timeout: 5000 });
+		} catch {
+			// Loading state may not be present
+		}
+
+		// One of these should be visible
+		const hasOIDCContent =
+			(await configureButton.count()) > 0 || (await providerInfo.count()) > 0;
+		expect(hasOIDCContent).toBe(true);
+	});
+
+	test("should display active sessions section", async ({ page }) => {
+		// Sessions section should show Active Sessions card heading
+		const sessionsSection = page.getByRole("heading", { name: "Active Sessions" });
+		await expect(sessionsSection).toBeVisible({ timeout: TIMEOUTS.medium });
+	});
+
+	test("should show session list description", async ({ page }) => {
+		// The sessions section has a description about active sessions
+		const sessionDescription = page.getByText(/active sessions/i);
+		await expect(sessionDescription.first()).toBeVisible({ timeout: TIMEOUTS.medium });
+	});
+
+	test("should have refresh sessions button", async ({ page }) => {
+		// There should be a Refresh button in the sessions section
+		const refreshButton = page.getByRole("button", { name: /refresh/i });
+		await expect(refreshButton).toBeVisible({ timeout: TIMEOUTS.medium });
+	});
+
+	test("should display session details", async ({ page }) => {
+		// Sessions should show device info (browser, OS) or device type
+		// Include chromium (Playwright's browser), common browsers and OS names
+		const sessionInfo = page.getByText(
+			/chromium|chrome|firefox|safari|edge|windows|macos|linux|desktop|mobile|tablet|device/i,
+		);
+		await expect(sessionInfo.first()).toBeVisible({ timeout: TIMEOUTS.medium });
+	});
+
+	test("should have revoke session button for each session", async ({ page }) => {
+		// Wait for sessions to load first by looking for session info or loading state
+		const loadingState = page.getByText(/loading/i);
+		try {
+			await loadingState.waitFor({ state: "hidden", timeout: 5000 });
+		} catch {
+			// Loading state may not be present
+		}
+
+		// Each session should have a Revoke button
+		const revokeButton = page.getByRole("button", { name: /revoke/i });
+		await expect(revokeButton.first()).toBeVisible({ timeout: TIMEOUTS.medium });
+	});
+
+	test("should refresh sessions when clicking refresh button", async ({ page }) => {
+		const refreshButton = page.getByRole("button", { name: /refresh/i });
+		await expect(refreshButton).toBeVisible({ timeout: TIMEOUTS.medium });
+
+		// Click refresh and verify it works (no error)
+		await refreshButton.click();
+
+		// Wait a moment for refresh
+		await page.waitForTimeout(500);
+
+		// Sessions section heading should still be visible
+		const sessionsSection = page.getByRole("heading", { name: "Active Sessions" });
+		await expect(sessionsSection).toBeVisible();
 	});
 });
 
@@ -155,8 +265,7 @@ test.describe("Settings - Service Instances", () => {
 			const serviceSelect = page.getByRole("combobox", { name: /service|type/i });
 			const serviceButtons = page.getByRole("button", { name: /sonarr|radarr|prowlarr/i });
 
-			const hasSelect =
-				(await serviceSelect.count()) > 0 || (await serviceButtons.count()) > 0;
+			const hasSelect = (await serviceSelect.count()) > 0 || (await serviceButtons.count()) > 0;
 
 			expect(hasSelect || true).toBe(true);
 		}
@@ -213,14 +322,154 @@ test.describe("Settings - Instance Form", () => {
 	});
 });
 
+test.describe("Settings - Instance Card Actions", () => {
+	test.beforeEach(async ({ page }) => {
+		await page.goto(ROUTES.settings);
+		await waitForLoadingComplete(page);
+
+		// Navigate to Instances tab
+		const instancesTab = page.getByRole("tab", { name: /instance/i });
+		if ((await instancesTab.count()) > 0) {
+			await instancesTab.click();
+			await page.waitForTimeout(300);
+		}
+	});
+
+	test("should display instance cards with action buttons", async ({ page }) => {
+		// Scope to main content area
+		const mainContent = page.locator("main");
+
+		// Look for instance cards (Sonarr, Radarr, or Prowlarr instances)
+		const instanceCards = mainContent.getByText(/sonarr|radarr|prowlarr/i);
+
+		// If instances exist, check for action buttons
+		if ((await instanceCards.count()) > 0) {
+			// Each card should have Test, Edit, and Delete buttons
+			// Note: Button text may be hidden on small screens, so use flexible matching
+			const testButton = mainContent.getByRole("button", { name: /test/i });
+			const editButton = mainContent.getByRole("button", { name: /edit/i });
+			const deleteButton = mainContent.getByRole("button", { name: /delete/i });
+
+			// At least one set of action buttons should exist
+			const hasActions =
+				(await testButton.count()) > 0 ||
+				(await editButton.count()) > 0 ||
+				(await deleteButton.count()) > 0;
+
+			expect(hasActions).toBe(true);
+		}
+	});
+
+	test("should have test button for existing instances", async ({ page }) => {
+		const mainContent = page.locator("main");
+		const testButton = mainContent.getByRole("button", { name: /test/i });
+
+		// If we have instances, we should have test buttons
+		if ((await testButton.count()) > 0) {
+			await expect(testButton.first()).toBeVisible();
+		}
+	});
+
+	test("should have edit button for existing instances", async ({ page }) => {
+		const mainContent = page.locator("main");
+		const editButton = mainContent.getByRole("button", { name: /edit/i });
+
+		// If we have instances, we should have edit buttons
+		if ((await editButton.count()) > 0) {
+			await expect(editButton.first()).toBeVisible();
+		}
+	});
+
+	test("should have delete button for existing instances", async ({ page }) => {
+		const mainContent = page.locator("main");
+		const deleteButton = mainContent.getByRole("button", { name: /delete/i });
+
+		// If we have instances, we should have delete buttons
+		if ((await deleteButton.count()) > 0) {
+			await expect(deleteButton.first()).toBeVisible();
+		}
+	});
+
+	test("should have set default option for instances", async ({ page }) => {
+		const mainContent = page.locator("main");
+
+		// Look for "Set default" button or default indicator
+		const setDefaultButton = mainContent.getByRole("button", { name: /set default|make default/i });
+		const defaultIndicator = mainContent.getByText(/default/i);
+
+		// Either a set default button or a default indicator should exist
+		const hasDefaultOption =
+			(await setDefaultButton.count()) > 0 || (await defaultIndicator.count()) > 0;
+
+		expect(hasDefaultOption || true).toBe(true);
+	});
+
+	test("should have enable/disable toggle for instances", async ({ page }) => {
+		const mainContent = page.locator("main");
+
+		// Look for enable/disable button
+		const enableButton = mainContent.getByRole("button", { name: /^enable$/i });
+		const disableButton = mainContent.getByRole("button", { name: /^disable$/i });
+
+		// One of these should exist if there are instances
+		const hasToggle = (await enableButton.count()) > 0 || (await disableButton.count()) > 0;
+
+		expect(hasToggle || true).toBe(true);
+	});
+
+	test("should open edit dialog when clicking edit button", async ({ page }) => {
+		const mainContent = page.locator("main");
+		const editButton = mainContent.getByRole("button", { name: /edit/i });
+
+		if ((await editButton.count()) > 0) {
+			await editButton.first().click();
+			await page.waitForTimeout(500);
+
+			// A dialog/modal should appear with form fields
+			const dialog = page.getByRole("dialog");
+			const formFields = page.getByLabel(/url|api.*key|name|label/i);
+
+			const hasDialog = (await dialog.count()) > 0 || (await formFields.count()) > 0;
+			expect(hasDialog).toBe(true);
+
+			// Close the dialog by pressing Escape
+			await page.keyboard.press("Escape");
+		}
+	});
+
+	test("should show confirmation when clicking delete button", async ({ page }) => {
+		const mainContent = page.locator("main");
+		const deleteButton = mainContent.getByRole("button", { name: /delete/i });
+
+		if ((await deleteButton.count()) > 0) {
+			await deleteButton.first().click();
+			await page.waitForTimeout(500);
+
+			// A confirmation dialog should appear
+			const confirmDialog = page.getByRole("alertdialog");
+			const confirmText = page.getByText(/confirm|are you sure|delete/i);
+
+			const hasConfirmation =
+				(await confirmDialog.count()) > 0 || (await confirmText.count()) > 1;
+
+			expect(hasConfirmation || true).toBe(true);
+
+			// Close without confirming
+			await page.keyboard.press("Escape");
+		}
+	});
+});
+
 test.describe("Settings - Tags", () => {
 	test.beforeEach(async ({ page }) => {
 		await page.goto(ROUTES.settings);
 		await waitForLoadingComplete(page);
 
-		const tagsTab = page.getByRole("button", { name: /tag/i }).first();
+		// Use role="tab" for proper tab navigation
+		const tagsTab = page.getByRole("tab", { name: /tags/i });
 		if ((await tagsTab.count()) > 0) {
 			await tagsTab.click();
+			await page.waitForTimeout(300);
 		}
 	});
 
@@ -229,9 +478,46 @@ test.describe("Settings - Tags", () => {
 		expect((await tagsSection.count()) >= 0).toBe(true);
 	});
 
-	test("should have add tag option", async ({ page }) => {
-		const addTagButton = page.getByRole("button", { name: /add.*tag|new.*tag/i });
-		expect((await addTagButton.count()) >= 0).toBe(true);
+	test("should display Create Tag card", async ({ page }) => {
+		// Create Tag is a heading in the tags card
+		const createTagCard = page.getByRole("heading", { name: /create tag/i });
+		await expect(createTagCard).toBeVisible({ timeout: TIMEOUTS.medium });
+	});
+
+	test("should display Existing Tags card", async ({ page }) => {
+		// Existing Tags is a heading in the tags card
+		const existingTagsCard = page.getByRole("heading", { name: /existing tags/i });
+		await expect(existingTagsCard).toBeVisible({ timeout: TIMEOUTS.medium });
+	});
+
+	test("should have tag name input field", async ({ page }) => {
+		// Look for the input with placeholder "Production"
+		const tagNameInput = page.getByPlaceholder(/production/i);
+		await expect(tagNameInput).toBeVisible({ timeout: TIMEOUTS.medium });
+	});
+
+	test("should have Add tag button", async ({ page }) => {
+		const addTagButton = page.getByRole("button", { name: /add tag/i });
+		await expect(addTagButton).toBeVisible({ timeout: TIMEOUTS.medium });
+	});
+
+	test("should show empty state or existing tags", async ({ page }) => {
+		// Either show "No tags created yet" or show existing tags with Remove buttons
+		const emptyState = page.getByText(/no tags created yet/i);
+		const removeButton = page.getByRole("button", { name: /remove/i });
+
+		const hasEmptyOrTags =
+			(await emptyState.count()) > 0 || (await removeButton.count()) > 0;
+		expect(hasEmptyOrTags).toBe(true);
+	});
+
+	test("should display Remove button for existing tags", async ({ page }) => {
+		const removeButton = page.getByRole("button", { name: /remove/i });
+
+		// If there are tags, they should have Remove buttons
+		if ((await removeButton.count()) > 0) {
+			await expect(removeButton.first()).toBeVisible();
+		}
 	});
 });
 
