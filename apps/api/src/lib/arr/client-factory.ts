@@ -24,14 +24,7 @@ import type { ServiceInstance, ServiceType } from "@prisma/client";
 import type { Encryptor } from "../auth/encryption.js";
 
 // Re-export error types for convenience
-export {
-	ArrError,
-	NotFoundError,
-	UnauthorizedError,
-	ValidationError,
-	TimeoutError,
-	NetworkError,
-};
+export { ArrError, NotFoundError, UnauthorizedError, ValidationError, TimeoutError, NetworkError };
 
 // ============================================================================
 // Types
@@ -134,14 +127,9 @@ export class ArrClientFactory {
 	/**
 	 * Create a Sonarr client (explicit typing)
 	 */
-	createSonarrClient(
-		instance: ClientInstanceData,
-		options?: ClientFactoryOptions,
-	): SonarrClient {
+	createSonarrClient(instance: ClientInstanceData, options?: ClientFactoryOptions): SonarrClient {
 		if (instance.service !== "SONARR") {
-			throw new Error(
-				`Expected SONARR instance, got ${instance.service}`,
-			);
+			throw new Error(`Expected SONARR instance, got ${instance.service}`);
 		}
 		return new SonarrClient(this.buildConfig(instance, options));
 	}
@@ -149,14 +137,9 @@ export class ArrClientFactory {
 	/**
 	 * Create a Radarr client (explicit typing)
 	 */
-	createRadarrClient(
-		instance: ClientInstanceData,
-		options?: ClientFactoryOptions,
-	): RadarrClient {
+	createRadarrClient(instance: ClientInstanceData, options?: ClientFactoryOptions): RadarrClient {
 		if (instance.service !== "RADARR") {
-			throw new Error(
-				`Expected RADARR instance, got ${instance.service}`,
-			);
+			throw new Error(`Expected RADARR instance, got ${instance.service}`);
 		}
 		return new RadarrClient(this.buildConfig(instance, options));
 	}
@@ -169,9 +152,7 @@ export class ArrClientFactory {
 		options?: ClientFactoryOptions,
 	): ProwlarrClient {
 		if (instance.service !== "PROWLARR") {
-			throw new Error(
-				`Expected PROWLARR instance, got ${instance.service}`,
-			);
+			throw new Error(`Expected PROWLARR instance, got ${instance.service}`);
 		}
 		return new ProwlarrClient(this.buildConfig(instance, options));
 	}
@@ -179,20 +160,14 @@ export class ArrClientFactory {
 	/**
 	 * Create any ARR client (when service type is dynamic)
 	 */
-	createAnyClient(
-		instance: ClientInstanceData,
-		options?: ClientFactoryOptions,
-	): ArrClient {
+	createAnyClient(instance: ClientInstanceData, options?: ClientFactoryOptions): ArrClient {
 		return this.create(instance, options);
 	}
 
 	/**
 	 * Build client configuration with decrypted API key
 	 */
-	private buildConfig(
-		instance: ClientInstanceData,
-		options?: ClientFactoryOptions,
-	): ClientConfig {
+	private buildConfig(instance: ClientInstanceData, options?: ClientFactoryOptions): ClientConfig {
 		// Decrypt API key on-demand (not cached)
 		const apiKey = this.encryptor.decrypt({
 			value: instance.encryptedApiKey,

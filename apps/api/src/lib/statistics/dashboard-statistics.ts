@@ -786,7 +786,9 @@ export const fetchSonarrStatisticsWithSdk = async (
 		safeRequest(() => client.series.getAll()).then((r) => r ?? []),
 		safeRequest(() => client.diskSpace.getAll()).then((r) => r ?? []),
 		safeRequest(() => client.health.getAll()).then((r) => r ?? []),
-		safeRequest(() => client.wanted.cutoff({ page: 1, pageSize: 1 })).then((r) => r ?? { totalRecords: 0 }),
+		safeRequest(() => client.wanted.cutoff({ page: 1, pageSize: 1 })).then(
+			(r) => r ?? { totalRecords: 0 },
+		),
 		safeRequest(() => client.qualityProfile.getAll()).then((r) => r ?? []),
 		safeRequest(() => client.tag.getAll()).then((r) => r ?? []),
 	]);
@@ -971,7 +973,9 @@ export const fetchRadarrStatisticsWithSdk = async (
 		safeRequest(() => client.movie.getAll()).then((r) => r ?? []),
 		safeRequest(() => client.diskSpace.getAll()).then((r) => r ?? []),
 		safeRequest(() => client.health.getAll()).then((r) => r ?? []),
-		safeRequest(() => client.wanted.cutoff({ page: 1, pageSize: 1 })).then((r) => r ?? { totalRecords: 0 }),
+		safeRequest(() => client.wanted.cutoff({ page: 1, pageSize: 1 })).then(
+			(r) => r ?? { totalRecords: 0 },
+		),
 		safeRequest(() => client.qualityProfile.getAll()).then((r) => r ?? []),
 		safeRequest(() => client.tag.getAll()).then((r) => r ?? []),
 	]);

@@ -129,9 +129,7 @@ test.describe("Navigation - Header", () => {
 	test("should have sign out button in header", async ({ page }) => {
 		await page.goto(ROUTES.dashboard);
 
-		await expect(
-			page.getByRole("button", { name: /sign out/i }),
-		).toBeVisible();
+		await expect(page.getByRole("button", { name: /sign out/i })).toBeVisible();
 	});
 
 	test("should have incognito toggle in header", async ({ page }) => {

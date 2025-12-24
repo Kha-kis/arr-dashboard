@@ -16,7 +16,9 @@ test.describe("Library - Page Load", () => {
 		await page.goto(ROUTES.library);
 
 		// The page has a descriptive heading "Everything your *arr instances manage"
-		await expect(page.getByRole("heading", { name: /everything your|library/i }).first()).toBeVisible({
+		await expect(
+			page.getByRole("heading", { name: /everything your|library/i }).first(),
+		).toBeVisible({
 			timeout: TIMEOUTS.medium,
 		});
 	});
@@ -27,9 +29,9 @@ test.describe("Library - Page Load", () => {
 		// Description is "Browse, filter, and adjust monitoring for movies and series..."
 		// Scope to main content to avoid matching sidebar text
 		const mainContent = page.locator("main");
-		await expect(
-			mainContent.getByText(/browse.*filter|adjust.*monitoring/i).first(),
-		).toBeVisible({ timeout: TIMEOUTS.medium });
+		await expect(mainContent.getByText(/browse.*filter|adjust.*monitoring/i).first()).toBeVisible({
+			timeout: TIMEOUTS.medium,
+		});
 	});
 
 	test("should show loading state initially", async ({ page }) => {
@@ -155,8 +157,7 @@ test.describe("Library - Pagination", () => {
 		const pageButtons = page.getByRole("button", { name: /next|previous|page/i });
 
 		// Pagination might not be visible if few items
-		const hasPagination =
-			(await pagination.count()) > 0 || (await pageButtons.count()) > 0;
+		const hasPagination = (await pagination.count()) > 0 || (await pageButtons.count()) > 0;
 
 		// Either has pagination or doesn't need it
 		expect(hasPagination || true).toBe(true);
@@ -252,8 +253,7 @@ test.describe("Library - Monitoring Toggle", () => {
 		const monitoredText = page.getByText(/monitored|unmonitored/i);
 
 		// Monitoring status might be shown
-		const hasIndicator =
-			(await monitoredIcon.count()) > 0 || (await monitoredText.count()) > 0;
+		const hasIndicator = (await monitoredIcon.count()) > 0 || (await monitoredText.count()) > 0;
 
 		// This is optional depending on content
 		expect(hasIndicator || true).toBe(true);
@@ -269,8 +269,7 @@ test.describe("Library - Search Functionality", () => {
 		const searchButton = page.getByRole("button", { name: /search|add/i });
 		const addLink = page.getByRole("link", { name: /search|add|find/i });
 
-		const hasSearch =
-			(await searchButton.count()) > 0 || (await addLink.count()) > 0;
+		const hasSearch = (await searchButton.count()) > 0 || (await addLink.count()) > 0;
 
 		// Search functionality might be elsewhere
 		expect(hasSearch || true).toBe(true);

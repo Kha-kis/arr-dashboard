@@ -496,8 +496,7 @@ export const submitManualImportCommandWithSdk = async (
 
 	// Convert import mode to SDK expected format (capitalized)
 	// "auto" defaults to "Move" which is the standard ARR behavior
-	const sdkImportMode: "Move" | "Copy" =
-		importMode === "copy" ? "Copy" : "Move";
+	const sdkImportMode: "Move" | "Copy" = importMode === "copy" ? "Copy" : "Move";
 
 	try {
 		// Use the command resource's execute method

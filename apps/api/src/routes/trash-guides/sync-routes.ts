@@ -114,7 +114,12 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 	);
 
 	// Create sync engine with template updater, deployment executor, and ARR client factory
-	const syncEngine = createSyncEngine(app.prisma, templateUpdater, deploymentExecutor, app.arrClientFactory);
+	const syncEngine = createSyncEngine(
+		app.prisma,
+		templateUpdater,
+		deploymentExecutor,
+		app.arrClientFactory,
+	);
 
 	/**
 	 * Validate sync before execution
@@ -281,9 +286,9 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 		// preventing instance enumeration attacks (all non-owned instances return 404).
 		// Sync history is filtered by userId (line 279) to ensure user-specific access.
 		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { 
-				id: instanceId, 
-				userId 
+			where: {
+				id: instanceId,
+				userId,
 			},
 		});
 
@@ -501,7 +506,7 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 				backupByName.set(cf.name, cf);
 			}
 
-			const currentByName = new Map<string, typeof currentFormats[0]>();
+			const currentByName = new Map<string, (typeof currentFormats)[0]>();
 			for (const cf of currentFormats) {
 				if (cf.name) {
 					currentByName.set(cf.name, cf);
@@ -533,11 +538,15 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 						// CF was deleted during sync - recreate it
 						// Remove id for creation (ARR assigns new ID)
 						const { id: _id, ...formatData } = formatWithoutTrashId;
-						await client.customFormat.create(formatData as Parameters<typeof client.customFormat.create>[0]);
+						await client.customFormat.create(
+							formatData as Parameters<typeof client.customFormat.create>[0],
+						);
 						restoredCount++;
 					}
 				} catch (error) {
-					errors.push(`Failed to restore "${name}": ${error instanceof Error ? error.message : "Unknown error"}`);
+					errors.push(
+						`Failed to restore "${name}": ${error instanceof Error ? error.message : "Unknown error"}`,
+					);
 					failedCount++;
 				}
 			}
@@ -550,7 +559,9 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 						await client.customFormat.delete(currentFormat.id);
 						deletedCount++;
 					} catch (error) {
-						errors.push(`Failed to delete "${name}": ${error instanceof Error ? error.message : "Unknown error"}`);
+						errors.push(
+							`Failed to delete "${name}": ${error instanceof Error ? error.message : "Unknown error"}`,
+						);
 						failedCount++;
 					}
 				}
@@ -582,9 +593,10 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 				deletedCount,
 				failedCount,
 				errors: errors.length > 0 ? errors : undefined,
-				message: failedCount === 0
-					? `Successfully rolled back: ${restoredCount} restored, ${deletedCount} deleted`
-					: `Rollback completed with errors: ${restoredCount} restored, ${deletedCount} deleted, ${failedCount} failed`,
+				message:
+					failedCount === 0
+						? `Successfully rolled back: ${restoredCount} restored, ${deletedCount} deleted`
+						: `Rollback completed with errors: ${restoredCount} restored, ${deletedCount} deleted, ${failedCount} failed`,
 			});
 		} catch (error) {
 			request.log.error({ error, syncId }, "Sync rollback failed");

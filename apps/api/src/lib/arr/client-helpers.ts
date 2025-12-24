@@ -102,12 +102,7 @@ export async function executeOnInstances<T>(
 	options: MultiInstanceOptions,
 	operation: (client: ArrClient, instance: ServiceInstance) => Promise<T>,
 ): Promise<MultiInstanceResponse<T>> {
-	const {
-		enabledOnly = true,
-		serviceTypes,
-		instanceIds,
-		continueOnError = true,
-	} = options;
+	const { enabledOnly = true, serviceTypes, instanceIds, continueOnError = true } = options;
 
 	// Build query
 	const where: {
@@ -184,12 +179,8 @@ export async function executeOnInstances<T>(
 	);
 
 	// Aggregate successful results
-	const successfulResults = results.filter(
-		(r): r is InstanceResult<T> => r.success,
-	);
-	const aggregated = successfulResults.flatMap((r) =>
-		Array.isArray(r.data) ? r.data : [r.data],
-	);
+	const successfulResults = results.filter((r): r is InstanceResult<T> => r.success);
+	const aggregated = successfulResults.flatMap((r) => (Array.isArray(r.data) ? r.data : [r.data]));
 	const errorCount = results.filter((r) => !r.success).length;
 
 	return {

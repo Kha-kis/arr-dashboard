@@ -56,7 +56,12 @@ const recommendationsRoute: FastifyPluginCallback = (app, _opts, done) => {
 		try {
 			if (parsed.mediaType === "movie") {
 				// Fetch movies based on type
-				let tmdbData: { results: TMDBMovie[]; total_results: number; page: number; total_pages: number };
+				let tmdbData: {
+					results: TMDBMovie[];
+					total_results: number;
+					page: number;
+					total_pages: number;
+				};
 
 				switch (parsed.type) {
 					case "trending":
@@ -75,7 +80,7 @@ const recommendationsRoute: FastifyPluginCallback = (app, _opts, done) => {
 						tmdbData = await tmdb.trending.movies("week", parsed.page);
 				}
 
-					// Map results directly - external IDs fetched on-demand when adding to library
+				// Map results directly - external IDs fetched on-demand when adding to library
 				const items: RecommendationItem[] = tmdbData.results.map((movie) => ({
 					id: movie.id,
 					tmdbId: movie.id,
@@ -100,7 +105,12 @@ const recommendationsRoute: FastifyPluginCallback = (app, _opts, done) => {
 			}
 
 			// TV Shows
-			let tmdbData: { results: TMDBTVShow[]; total_results: number; page: number; total_pages: number };
+			let tmdbData: {
+				results: TMDBTVShow[];
+				total_results: number;
+				page: number;
+				total_pages: number;
+			};
 
 			switch (parsed.type) {
 				case "trending":

@@ -95,10 +95,7 @@ function getCacheKey(type: string, ...args: (string | number)[]): string {
 	return `${type}:${args.join(":")}`;
 }
 
-function getFromCache<T>(
-	cache: Map<string, CacheEntry<T>>,
-	key: string,
-): T | null {
+function getFromCache<T>(cache: Map<string, CacheEntry<T>>, key: string): T | null {
 	const entry = cache.get(key);
 	if (!entry) return null;
 
@@ -111,12 +108,7 @@ function getFromCache<T>(
 	return entry.data;
 }
 
-function setInCache<T>(
-	cache: Map<string, CacheEntry<T>>,
-	key: string,
-	data: T,
-	ttl: number,
-): void {
+function setInCache<T>(cache: Map<string, CacheEntry<T>>, key: string, data: T, ttl: number): void {
 	cache.set(key, { data, timestamp: Date.now(), ttl });
 }
 
@@ -409,10 +401,7 @@ export class TMDBClient {
 		/**
 		 * Get similar movies
 		 */
-		similar: async (
-			movieId: number,
-			page = 1,
-		): Promise<PaginatedResponse<TMDBMovie>> => {
+		similar: async (movieId: number, page = 1): Promise<PaginatedResponse<TMDBMovie>> => {
 			const cacheKey = getCacheKey("similar_movies", movieId, page);
 			const cached = getFromCache<PaginatedResponse<TMDBMovie>>(
 				similarCache as Map<string, CacheEntry<PaginatedResponse<TMDBMovie>>>,
@@ -591,10 +580,7 @@ export class TMDBClient {
 		/**
 		 * Get similar TV shows
 		 */
-		similar: async (
-			tvId: number,
-			page = 1,
-		): Promise<PaginatedResponse<TMDBTVShow>> => {
+		similar: async (tvId: number, page = 1): Promise<PaginatedResponse<TMDBTVShow>> => {
 			const cacheKey = getCacheKey("similar_tv", tvId, page);
 			const cached = getFromCache<PaginatedResponse<TMDBTVShow>>(
 				similarCache as Map<string, CacheEntry<PaginatedResponse<TMDBTVShow>>>,
@@ -606,9 +592,7 @@ export class TMDBClient {
 
 			const result: PaginatedResponse<TMDBTVShow> = {
 				page: response.page,
-				results: (response.results as unknown as RawTVShowResult[]).map(
-					normalizeTVShow,
-				),
+				results: (response.results as unknown as RawTVShowResult[]).map(normalizeTVShow),
 				total_pages: response.total_pages,
 				total_results: response.total_results,
 			};
@@ -771,9 +755,7 @@ export class TMDBClient {
 
 			const result: PaginatedResponse<TMDBTVShow> = {
 				page: response.page,
-				results: (response.results as unknown as RawTVShowResult[]).map(
-					normalizeTVShow,
-				),
+				results: (response.results as unknown as RawTVShowResult[]).map(normalizeTVShow),
 				total_pages: response.total_pages,
 				total_results: response.total_results,
 			};
@@ -835,8 +817,7 @@ export class TMDBClient {
 		mediaType: "movie" | "tv",
 	): Promise<Map<number, ExternalIds>> {
 		const results = new Map<number, ExternalIds>();
-		const fetcher =
-			mediaType === "movie" ? this.movies.externalIds : this.tv.externalIds;
+		const fetcher = mediaType === "movie" ? this.movies.externalIds : this.tv.externalIds;
 
 		const promises = items.map(async (item) => {
 			try {

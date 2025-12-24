@@ -75,8 +75,7 @@ test.describe("Indexers - Prowlarr Integration", () => {
 		const connectionStatus = page.getByText(/connected|disconnected|prowlarr/i);
 		const statusIcon = page.locator('[class*="status"]');
 
-		const hasStatus =
-			(await connectionStatus.count()) > 0 || (await statusIcon.count()) > 0;
+		const hasStatus = (await connectionStatus.count()) > 0 || (await statusIcon.count()) > 0;
 
 		expect(hasStatus || true).toBe(true);
 	});
@@ -99,9 +98,7 @@ test.describe("Indexers - Indexer Types", () => {
 		const usenetIndicators = page.getByText(/usenet|nzb/i);
 
 		// Type indicators depend on configured indexers
-		expect(
-			(await torrentIndicators.count()) + (await usenetIndicators.count()) >= 0,
-		).toBe(true);
+		expect((await torrentIndicators.count()) + (await usenetIndicators.count()) >= 0).toBe(true);
 	});
 
 	test("should show indexer categories", async ({ page }) => {
@@ -161,8 +158,7 @@ test.describe("Indexers - Filtering", () => {
 		const typeFilter = page.getByRole("combobox", { name: /type/i });
 		const typeButtons = page.getByRole("button", { name: /all|torrent|usenet/i });
 
-		const hasFilter =
-			(await typeFilter.count()) > 0 || (await typeButtons.count()) > 0;
+		const hasFilter = (await typeFilter.count()) > 0 || (await typeButtons.count()) > 0;
 
 		expect(hasFilter || true).toBe(true);
 	});
@@ -171,8 +167,7 @@ test.describe("Indexers - Filtering", () => {
 		const statusFilter = page.getByRole("combobox", { name: /status/i });
 		const statusButtons = page.getByRole("button", { name: /enabled|disabled/i });
 
-		const hasFilter =
-			(await statusFilter.count()) > 0 || (await statusButtons.count()) > 0;
+		const hasFilter = (await statusFilter.count()) > 0 || (await statusButtons.count()) > 0;
 
 		expect(hasFilter || true).toBe(true);
 	});
@@ -238,7 +233,9 @@ test.describe("Indexers - Empty State", () => {
 		await page.goto(ROUTES.indexers);
 		await waitForLoadingComplete(page);
 
-		const noProwlarrMessage = page.getByText(/no prowlarr|configure.*prowlarr|add.*prowlarr|not connected/i);
+		const noProwlarrMessage = page.getByText(
+			/no prowlarr|configure.*prowlarr|add.*prowlarr|not connected/i,
+		);
 		const indexerList = page.locator("article, [class*='card'], tr, table");
 		const indexerContent = page.getByText(/indexer|connected|prowlarr/i);
 

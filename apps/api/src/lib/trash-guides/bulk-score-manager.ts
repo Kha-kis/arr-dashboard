@@ -124,20 +124,23 @@ export class BulkScoreManager {
 			},
 		});
 		const templateMappingMap = new Map(
-			templateMappings.map(mapping => [mapping.qualityProfileId, mapping.templateId])
+			templateMappings.map((mapping) => [mapping.qualityProfileId, mapping.templateId]),
 		);
 
 		// Fetch templates to get TRaSH default scores
-		const templateIds = [...new Set(templateMappings.map(m => m.templateId))];
-		const templates = templateIds.length > 0 ? await this.prisma.trashTemplate.findMany({
-			where: {
-				id: { in: templateIds },
-			},
-			select: {
-				id: true,
-				configData: true,
-			},
-		}) : [];
+		const templateIds = [...new Set(templateMappings.map((m) => m.templateId))];
+		const templates =
+			templateIds.length > 0
+				? await this.prisma.trashTemplate.findMany({
+						where: {
+							id: { in: templateIds },
+						},
+						select: {
+							id: true,
+							configData: true,
+						},
+					})
+				: [];
 
 		// Build a map of CF name → all available score set scores
 		// Key: CF name, Value: { trashId, scoreSetScores (all available scores by score set) }
@@ -154,7 +157,7 @@ export class BulkScoreManager {
 		for (const template of templates) {
 			try {
 				const config = JSON.parse(template.configData) as TemplateConfig;
-				const scoreSet = config.qualityProfile?.trash_score_set || 'default';
+				const scoreSet = config.qualityProfile?.trash_score_set || "default";
 				templateScoreSetMap.set(template.id, scoreSet);
 
 				for (const cf of config.customFormats || []) {
@@ -173,7 +176,7 @@ export class BulkScoreManager {
 						if (originalConfig?.trash_scores) {
 							// Store all available score sets
 							for (const [key, value] of Object.entries(originalConfig.trash_scores)) {
-								if (typeof value === 'number') {
+								if (typeof value === "number") {
 									scoreSetScores[key] = value;
 								}
 							}
@@ -283,7 +286,9 @@ export class BulkScoreManager {
 
 						// Get the correct default score based on the template's score set for this profile
 						const templateId = templateMappingMap.get(profileRef.profileId);
-						const profileScoreSet = templateId ? (templateScoreSetMap.get(templateId) || 'default') : 'default';
+						const profileScoreSet = templateId
+							? templateScoreSetMap.get(templateId) || "default"
+							: "default";
 						const trashDefaultScore = getDefaultScoreForScoreSet(cfName, profileScoreSet);
 
 						const templateScore: TemplateScore = {
@@ -311,7 +316,7 @@ export class BulkScoreManager {
 
 					// Find and update the existing template score entry
 					const existingEntry = cfEntry.templateScores.find(
-						ts => ts.templateId === `${profileRef.instanceId}-${profileRef.profileId}`
+						(ts) => ts.templateId === `${profileRef.instanceId}-${profileRef.profileId}`,
 					);
 					if (existingEntry) {
 						existingEntry.currentScore = score;
@@ -334,9 +339,7 @@ export class BulkScoreManager {
 		// Apply search filter
 		if (filters.search) {
 			const searchLower = filters.search.toLowerCase();
-			allScores = allScores.filter((cf) =>
-				cf.name.toLowerCase().includes(searchLower),
-			);
+			allScores = allScores.filter((cf) => cf.name.toLowerCase().includes(searchLower));
 		}
 
 		// Apply modifiedOnly filter
@@ -358,7 +361,10 @@ export class BulkScoreManager {
 		update: BulkScoreUpdate,
 	): Promise<BulkScoreManagementResponse> {
 		// Validate newScore is a finite number
-		if (!update.resetToDefault && (typeof update.newScore !== "number" || !Number.isFinite(update.newScore))) {
+		if (
+			!update.resetToDefault &&
+			(typeof update.newScore !== "number" || !Number.isFinite(update.newScore))
+		) {
 			return {
 				success: false,
 				message: "Invalid score value: must be a finite number",
@@ -442,10 +448,7 @@ export class BulkScoreManager {
 	/**
 	 * Copy scores from one template to others
 	 */
-	async copyScores(
-		userId: string,
-		copy: BulkScoreCopy,
-	): Promise<BulkScoreManagementResponse> {
+	async copyScores(userId: string, copy: BulkScoreCopy): Promise<BulkScoreManagementResponse> {
 		// Get source template
 		const sourceTemplate = await this.prisma.trashTemplate.findFirst({
 			where: {
@@ -551,10 +554,7 @@ export class BulkScoreManager {
 	/**
 	 * Reset scores to TRaSH Guides defaults
 	 */
-	async resetScores(
-		userId: string,
-		reset: BulkScoreReset,
-	): Promise<BulkScoreManagementResponse> {
+	async resetScores(userId: string, reset: BulkScoreReset): Promise<BulkScoreManagementResponse> {
 		const affectedTemplateIds = new Set<string>();
 		const affectedCfTrashIds = new Set<string>();
 		const errors: string[] = [];
@@ -792,11 +792,14 @@ export class BulkScoreManager {
 					break;
 				case "score":
 					// Use first template's score for comparison, or 0 if no templates
-					comparison = (a.templateScores[0]?.currentScore ?? 0) - (b.templateScores[0]?.currentScore ?? 0);
+					comparison =
+						(a.templateScores[0]?.currentScore ?? 0) - (b.templateScores[0]?.currentScore ?? 0);
 					break;
 				case "templateName":
 					// Use first template's name for comparison, or empty string if no templates
-					comparison = (a.templateScores[0]?.templateName ?? "").localeCompare(b.templateScores[0]?.templateName ?? "");
+					comparison = (a.templateScores[0]?.templateName ?? "").localeCompare(
+						b.templateScores[0]?.templateName ?? "",
+					);
 					break;
 				case "groupName":
 					comparison = (a.groupName || "").localeCompare(b.groupName || "");
@@ -812,6 +815,9 @@ export class BulkScoreManager {
 // Export Factory Function
 // ============================================================================
 
-export function createBulkScoreManager(prisma: PrismaClient, clientFactory: ArrClientFactory): BulkScoreManager {
+export function createBulkScoreManager(
+	prisma: PrismaClient,
+	clientFactory: ArrClientFactory,
+): BulkScoreManager {
 	return new BulkScoreManager(prisma, clientFactory);
 }

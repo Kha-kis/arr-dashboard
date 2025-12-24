@@ -27,9 +27,7 @@ test.describe("Authentication - Login Page", () => {
 		await expect(page.getByLabel(/password/i)).toBeVisible();
 
 		// Check for sign in button
-		await expect(
-			page.getByRole("button", { name: /sign in with password/i }),
-		).toBeVisible();
+		await expect(page.getByRole("button", { name: /sign in with password/i })).toBeVisible();
 
 		// Check for remember me checkbox
 		await expect(page.getByText(/remember me/i)).toBeVisible();
@@ -120,7 +118,9 @@ test.describe("Authentication - Session Management", () => {
 
 		// Should see username in the greeting heading (Hi <username>)
 		const username = process.env.TEST_USERNAME || "user";
-		await expect(page.getByRole("heading", { name: new RegExp(`Hi ${username}`, "i") })).toBeVisible({
+		await expect(
+			page.getByRole("heading", { name: new RegExp(`Hi ${username}`, "i") }),
+		).toBeVisible({
 			timeout: TIMEOUTS.medium,
 		});
 	});
@@ -129,9 +129,7 @@ test.describe("Authentication - Session Management", () => {
 		await page.goto(ROUTES.dashboard);
 
 		// Sign out button should be in header
-		await expect(
-			page.getByRole("button", { name: /sign out/i }),
-		).toBeVisible();
+		await expect(page.getByRole("button", { name: /sign out/i })).toBeVisible();
 	});
 
 	test("should maintain session across page navigation", async ({ page }) => {
@@ -144,9 +142,7 @@ test.describe("Authentication - Session Management", () => {
 		await expect(page).toHaveURL(/\/settings/);
 
 		// Should still be logged in (not redirected to login)
-		await expect(
-			page.getByRole("button", { name: /sign out/i }),
-		).toBeVisible();
+		await expect(page.getByRole("button", { name: /sign out/i })).toBeVisible();
 	});
 
 	test("should maintain session after page refresh", async ({ page }) => {
@@ -157,9 +153,7 @@ test.describe("Authentication - Session Management", () => {
 
 		// Should still be on dashboard (not redirected to login)
 		await expect(page).toHaveURL(/\/dashboard/);
-		await expect(
-			page.getByRole("button", { name: /sign out/i }),
-		).toBeVisible();
+		await expect(page.getByRole("button", { name: /sign out/i })).toBeVisible();
 	});
 });
 

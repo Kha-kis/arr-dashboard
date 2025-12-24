@@ -1,10 +1,7 @@
 import type { FastifyPluginCallback } from "fastify";
 import type { SearchRequest, SearchResult } from "@arr/shared";
 import { multiInstanceSearchResponseSchema, searchRequestSchema } from "@arr/shared";
-import {
-	executeOnInstances,
-	isProwlarrClient,
-} from "../../lib/arr/client-helpers.js";
+import { executeOnInstances, isProwlarrClient } from "../../lib/arr/client-helpers.js";
 import { performProwlarrSearchWithSdk } from "../../lib/search/prowlarr-api.js";
 
 /**
@@ -44,9 +41,7 @@ export const registerQueryRoutes: FastifyPluginCallback = (app, _opts, done) => 
 		}
 
 		// Determine which instances to query
-		const instanceIds = filterMap.size > 0
-			? Array.from(filterMap.keys())
-			: undefined;
+		const instanceIds = filterMap.size > 0 ? Array.from(filterMap.keys()) : undefined;
 
 		const response = await executeOnInstances(
 			app,

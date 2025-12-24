@@ -159,7 +159,10 @@ class HuntingScheduler {
 	 * Trigger a manual hunt (with cooldown check)
 	 * Starts the hunt immediately instead of waiting for scheduler tick
 	 */
-	triggerManualHunt(instanceId: string, type: "missing" | "upgrade"): { queued: boolean; message: string } {
+	triggerManualHunt(
+		instanceId: string,
+		type: "missing" | "upgrade",
+	): { queued: boolean; message: string } {
 		// Check cooldowns before running
 		const cooldownCheck = this.checkCooldown(instanceId, type, true);
 		if (!cooldownCheck.ok) {
@@ -184,7 +187,10 @@ class HuntingScheduler {
 	/**
 	 * @deprecated Use triggerManualHunt instead - kept for backwards compatibility
 	 */
-	queueManualHunt(instanceId: string, type: "missing" | "upgrade"): { queued: boolean; message: string } {
+	queueManualHunt(
+		instanceId: string,
+		type: "missing" | "upgrade",
+	): { queued: boolean; message: string } {
 		return this.triggerManualHunt(instanceId, type);
 	}
 
@@ -329,7 +335,9 @@ class HuntingScheduler {
 			// Check missing hunt schedule
 			if (config.huntMissingEnabled) {
 				const lastMissing = config.lastMissingHunt ?? new Date(0);
-				const nextMissing = new Date(lastMissing.getTime() + config.missingIntervalMins * 60 * 1000);
+				const nextMissing = new Date(
+					lastMissing.getTime() + config.missingIntervalMins * 60 * 1000,
+				);
 
 				if (now >= nextMissing) {
 					await this.runHunt(config.instanceId, "missing");
@@ -339,7 +347,9 @@ class HuntingScheduler {
 			// Check upgrade hunt schedule
 			if (config.huntUpgradesEnabled) {
 				const lastUpgrade = config.lastUpgradeHunt ?? new Date(0);
-				const nextUpgrade = new Date(lastUpgrade.getTime() + config.upgradeIntervalMins * 60 * 1000);
+				const nextUpgrade = new Date(
+					lastUpgrade.getTime() + config.upgradeIntervalMins * 60 * 1000,
+				);
 
 				if (now >= nextUpgrade) {
 					await this.runHunt(config.instanceId, "upgrade");
@@ -351,7 +361,11 @@ class HuntingScheduler {
 	/**
 	 * Execute a hunt for an instance
 	 */
-	private async runHunt(instanceId: string, type: "missing" | "upgrade", isManual = false): Promise<void> {
+	private async runHunt(
+		instanceId: string,
+		type: "missing" | "upgrade",
+		isManual = false,
+	): Promise<void> {
 		if (!this.app) return;
 
 		// For scheduled hunts, enforce cooldown check here
@@ -394,12 +408,7 @@ class HuntingScheduler {
 		try {
 			// Execute the actual hunt using hunt-executor with timeout protection
 			const result: HuntResult = await withTimeout(
-				executeHuntWithSdk(
-					this.app,
-					config.instance,
-					config,
-					type,
-				),
+				executeHuntWithSdk(this.app, config.instance, config, type),
 				MAX_HUNT_DURATION_MS,
 				`Hunt timed out after ${MAX_HUNT_DURATION_MS / 1000} seconds`,
 			);
@@ -412,7 +421,8 @@ class HuntingScheduler {
 					itemsSearched: result.itemsSearched,
 					itemsFound: result.itemsGrabbed,
 					// searchedItems = items we triggered searches for
-					searchedItems: result.searchedItems.length > 0 ? JSON.stringify(result.searchedItems) : null,
+					searchedItems:
+						result.searchedItems.length > 0 ? JSON.stringify(result.searchedItems) : null,
 					// foundItems = items that were actually grabbed (reusing existing field)
 					foundItems: result.grabbedItems.length > 0 ? JSON.stringify(result.grabbedItems) : null,
 					status: result.status,

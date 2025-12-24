@@ -53,7 +53,7 @@ test.describe("Calendar - Navigation", () => {
 		const prevButton = page.getByRole("button", { name: /prev/i }).first();
 
 		// Get current month text
-		const monthLabel = page.locator('span.text-center');
+		const monthLabel = page.locator("span.text-center");
 		const initialMonth = await monthLabel.textContent();
 
 		await prevButton.click();
@@ -68,7 +68,7 @@ test.describe("Calendar - Navigation", () => {
 		const nextButton = page.getByRole("button", { name: /next/i }).first();
 
 		// Get current month text
-		const monthLabel = page.locator('span.text-center');
+		const monthLabel = page.locator("span.text-center");
 		const initialMonth = await monthLabel.textContent();
 
 		await nextButton.click();
@@ -103,15 +103,15 @@ test.describe("Calendar - Content Display", () => {
 
 	test("should display calendar grid", async ({ page }) => {
 		// The calendar has a grid with day cells - use first() to handle multiple matches
-		const calendarGrid = page.locator('.rounded-2xl.border').first();
+		const calendarGrid = page.locator(".rounded-2xl.border").first();
 		await expect(calendarGrid).toBeVisible();
 	});
 
 	test("should show day cells", async ({ page }) => {
 		// Calendar should show numbered day cells
 		// Look for date numbers in the calendar grid (1-31)
-		const mainContent = page.locator('main');
-		const dayNumbers = mainContent.locator('button').filter({ hasText: /^\d{1,2}$/ });
+		const mainContent = page.locator("main");
+		const dayNumbers = mainContent.locator("button").filter({ hasText: /^\d{1,2}$/ });
 
 		// Should have multiple day cells
 		const dayCount = await dayNumbers.count();
@@ -229,7 +229,7 @@ test.describe("Calendar - Date Selection", () => {
 
 	test("should allow clicking on calendar dates", async ({ page }) => {
 		// Find date cells in the calendar grid
-		const dateButtons = page.locator('button').filter({ hasText: /^\d{1,2}$/ });
+		const dateButtons = page.locator("button").filter({ hasText: /^\d{1,2}$/ });
 
 		if ((await dateButtons.count()) > 0) {
 			// Click on a date
@@ -240,7 +240,7 @@ test.describe("Calendar - Date Selection", () => {
 
 	test("should show events for selected date", async ({ page }) => {
 		// The CalendarEventList component shows events for selected date
-		const eventSection = page.locator('section');
+		const eventSection = page.locator("section");
 
 		// There should be a section for displaying events
 		const hasSection = (await eventSection.count()) > 0;
