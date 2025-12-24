@@ -2,6 +2,7 @@
 
 const nextConfig = {
 	output: "standalone",
+	transpilePackages: ["@arr/shared"],
 	eslint: {
 		dirs: ["app", "src"],
 	},

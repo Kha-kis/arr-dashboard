@@ -218,7 +218,12 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 		const items: LibraryItem[] = cachedItems.map((item) => {
 			try {
 				return JSON.parse(item.data) as LibraryItem;
-			} catch {
+			} catch (parseError) {
+				// Log parsing failure for debugging
+				request.log.warn(
+					{ err: parseError, itemId: item.id, arrItemId: item.arrItemId },
+					"Failed to parse cached library item - returning minimal fallback",
+				);
 				// Fallback if JSON parsing fails
 				return {
 					id: item.arrItemId,

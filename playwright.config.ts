@@ -1,5 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
 import path from 'node:path';
+import { config } from 'dotenv';
+
+// Load test environment variables
+config({ path: '.env.test' });
 
 /**
  * Playwright configuration for arr-dashboard E2E tests.
@@ -10,21 +14,22 @@ const authFile = path.join(__dirname, '.playwright-auth/user.json');
 
 export default defineConfig({
   testDir: './e2e',
-  /* Run tests in files in parallel */
+  /* Run tests in files in parallel - limited workers to prevent session race conditions */
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
   /* Retry on CI only */
   retries: process.env.CI ? 2 : 1,
-  /* Opt out of parallel tests on CI. */
-  workers: process.env.CI ? 1 : undefined,
+  /* Force single worker to ensure auth state reliability
+   * Parallel execution causes race conditions with session-based auth */
+  workers: 1,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: [
     ['html'],
     ['list'],
   ],
-  /* Global timeout for each test */
-  timeout: 30000,
+  /* Global timeout for each test - increased for slower page loads */
+  timeout: 60000,
   /* Shared settings for all the projects below. */
   use: {
     /* Base URL to use in actions like `await page.goto('')`. */

@@ -22,6 +22,7 @@ import { AccountTab } from "./account-tab";
 import { OIDCProviderSection } from "./oidc-provider-section";
 import { PasskeySection } from "./passkey-section";
 import { PasswordSection } from "./password-section";
+import { SessionsSection } from "./sessions-section";
 import { BackupTab } from "./backup-tab";
 import { SystemTab } from "./system-tab";
 
@@ -311,6 +312,7 @@ export const SettingsClient = () => {
 					<PasswordSection currentUser={currentUser} />
 					<PasskeySection />
 					<OIDCProviderSection />
+					<SessionsSection />
 				</div>
 			)}
 

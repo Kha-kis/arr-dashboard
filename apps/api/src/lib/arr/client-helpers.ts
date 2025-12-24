@@ -159,6 +159,18 @@ export async function executeOnInstances<T>(
 				const statusCode = error instanceof ArrError ? arrErrorToHttpStatus(error) : 500;
 				const errorMessage = error instanceof Error ? error.message : "Unknown error";
 
+				// Log error for server-side debugging
+				app.log.error(
+					{
+						err: error,
+						instanceId: instance.id,
+						instanceName: instance.label,
+						service,
+						statusCode,
+					},
+					"Instance operation failed",
+				);
+
 				return {
 					instanceId: instance.id,
 					instanceName: instance.label,

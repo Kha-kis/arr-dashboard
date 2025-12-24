@@ -144,7 +144,11 @@ export const fetchProwlarrIndexerDetailsWithSdk = async (
 			instance,
 			indexerId,
 		);
-	} catch {
+	} catch (error) {
+		console.warn(
+			`[Prowlarr] Failed to fetch indexer details for ID ${indexerId} from ${instance.label}:`,
+			error,
+		);
 		return null;
 	}
 };

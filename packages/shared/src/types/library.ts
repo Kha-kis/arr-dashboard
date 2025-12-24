@@ -123,7 +123,15 @@ export const libraryFiltersSchema = z.object({
   yearMax: z.number().optional(),
   sortBy: z.enum(["title", "sortTitle", "year", "sizeOnDisk", "added"]).optional(),
   sortOrder: z.enum(["asc", "desc"]).optional(),
-});
+}).refine(
+  (data) => {
+    if (data.yearMin !== undefined && data.yearMax !== undefined) {
+      return data.yearMin <= data.yearMax;
+    }
+    return true;
+  },
+  { message: "yearMin must be less than or equal to yearMax", path: ["yearMax"] }
+);
 
 export type LibraryFilters = z.infer<typeof libraryFiltersSchema>;
 

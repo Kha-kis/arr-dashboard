@@ -9,11 +9,13 @@ import type { ServiceInstance, ServiceType } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import {
 	executeOnInstances,
+	getClientForInstance,
 	isSonarrClient,
 	isRadarrClient,
 	isProwlarrClient,
 	type MultiInstanceResponse,
 } from "../client-helpers.js";
+import type { FastifyRequest } from "fastify";
 import { SonarrClient, RadarrClient, ProwlarrClient } from "arr-sdk";
 
 // Mock the arr-sdk module
@@ -62,6 +64,16 @@ const createMockInstance = (
 	updatedAt: new Date(),
 });
 
+// Create mock logger
+const createMockLogger = () => ({
+	error: vi.fn(),
+	warn: vi.fn(),
+	info: vi.fn(),
+	debug: vi.fn(),
+	trace: vi.fn(),
+	fatal: vi.fn(),
+});
+
 // Create mock Fastify app
 const createMockApp = (
 	instances: ServiceInstance[],
@@ -75,6 +87,7 @@ const createMockApp = (
 				findMany: mockFindMany,
 			},
 		},
+		log: createMockLogger(),
 		arrClientFactory: clientFactory ?? {
 			create: vi.fn((instance: ServiceInstance) => {
 				switch (instance.service) {
@@ -203,6 +216,7 @@ describe("executeOnInstances - Error Handling", () => {
 					findMany: mockFindMany,
 				},
 			},
+			log: createMockLogger(),
 			arrClientFactory: {
 				create: vi.fn((instance: ServiceInstance) => {
 					return new SonarrClient("http://test", "key");
@@ -348,6 +362,139 @@ describe("executeOnInstances - User Isolation", () => {
 			expect.objectContaining({
 				where: expect.objectContaining({
 					userId: "user-456",
+				}),
+			}),
+		);
+	});
+});
+
+// ============================================================================
+// getClientForInstance - Authentication Tests
+// ============================================================================
+
+describe("getClientForInstance - Authentication", () => {
+	// Helper to create mock request
+	const createMockRequest = (
+		currentUser?: { id: string },
+	): FastifyRequest => ({
+		currentUser,
+	} as unknown as FastifyRequest);
+
+	// Helper to create mock app for getClientForInstance tests
+	const createMockAppWithFindFirst = (
+		instance: ServiceInstance | null,
+	): FastifyInstance => ({
+		prisma: {
+			serviceInstance: {
+				findMany: vi.fn(),
+				findFirst: vi.fn().mockResolvedValue(instance),
+			},
+		},
+		log: createMockLogger(),
+		arrClientFactory: {
+			create: vi.fn(() => new SonarrClient("http://test", "key")),
+		},
+	} as unknown as FastifyInstance);
+
+	it("should return 401 when request.currentUser is undefined", async () => {
+		const app = createMockAppWithFindFirst(null);
+		const request = createMockRequest(undefined);
+
+		const result = await getClientForInstance(app, request, "instance-123");
+
+		expect(result).toEqual({
+			success: false,
+			error: "Authentication required",
+			statusCode: 401,
+		});
+		// Should not query database if not authenticated
+		expect(app.prisma.serviceInstance.findFirst).not.toHaveBeenCalled();
+	});
+
+	it("should return 401 when request.currentUser.id is undefined", async () => {
+		const app = createMockAppWithFindFirst(null);
+		const request = createMockRequest(undefined);
+
+		const result = await getClientForInstance(app, request, "instance-123");
+
+		expect(result).toEqual({
+			success: false,
+			error: "Authentication required",
+			statusCode: 401,
+		});
+	});
+
+	it("should return 404 when instance is not found", async () => {
+		const app = createMockAppWithFindFirst(null);
+		const request = createMockRequest({ id: "user-123" });
+
+		const result = await getClientForInstance(app, request, "nonexistent-instance");
+
+		expect(result).toEqual({
+			success: false,
+			error: "Instance not found, disabled, or access denied",
+			statusCode: 404,
+		});
+	});
+
+	it("should query with correct userId and enabled filter", async () => {
+		const instance = createMockInstance("instance-123", "SONARR", "Test Sonarr");
+		const app = createMockAppWithFindFirst(instance);
+		const request = createMockRequest({ id: "user-123" });
+
+		await getClientForInstance(app, request, "instance-123");
+
+		expect(app.prisma.serviceInstance.findFirst).toHaveBeenCalledWith({
+			where: {
+				id: "instance-123",
+				userId: "user-123",
+				enabled: true,
+			},
+		});
+	});
+
+	it("should return success with client and instance when found", async () => {
+		const instance = createMockInstance("instance-123", "SONARR", "Test Sonarr");
+		const app = createMockAppWithFindFirst(instance);
+		const request = createMockRequest({ id: "user-123" });
+
+		const result = await getClientForInstance(app, request, "instance-123");
+
+		expect(result.success).toBe(true);
+		if (result.success) {
+			expect(result.instance).toEqual(instance);
+			expect(result.client).toBeInstanceOf(SonarrClient);
+		}
+	});
+
+	it("should call arrClientFactory.create with instance", async () => {
+		const instance = createMockInstance("instance-123", "SONARR", "Test Sonarr");
+		const app = createMockAppWithFindFirst(instance);
+		const request = createMockRequest({ id: "user-123" });
+
+		await getClientForInstance(app, request, "instance-123");
+
+		expect(app.arrClientFactory.create).toHaveBeenCalledWith(instance);
+	});
+
+	it("should enforce user isolation (return 404 for other user's instance)", async () => {
+		// Even if the database returns null for the query (because userId doesn't match),
+		// it should return 404, not a different error
+		const app = createMockAppWithFindFirst(null);
+		const request = createMockRequest({ id: "different-user" });
+
+		const result = await getClientForInstance(app, request, "instance-123");
+
+		expect(result).toEqual({
+			success: false,
+			error: "Instance not found, disabled, or access denied",
+			statusCode: 404,
+		});
+		// Verify the query includes the user's ID
+		expect(app.prisma.serviceInstance.findFirst).toHaveBeenCalledWith(
+			expect.objectContaining({
+				where: expect.objectContaining({
+					userId: "different-user",
 				}),
 			}),
 		);

@@ -223,6 +223,10 @@ export class SyncEngine {
 					const profiles = await client.qualityProfile.getAll();
 					instanceQualityProfiles = profiles.map((p) => ({ id: p.id ?? 0, name: p.name ?? "" }));
 				} catch (profileError) {
+					console.warn(
+						`[SyncEngine] Failed to fetch quality profiles from instance ${instance.label}:`,
+						profileError,
+					);
 					warnings.push(
 						"Could not fetch quality profiles from instance. Profile validation will be skipped.",
 					);

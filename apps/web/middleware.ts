@@ -26,7 +26,10 @@ const isPublicPath = (pathname: string) => {
 
 /**
  * Validate session by calling the auth/me endpoint
- * Returns true if session is valid, false otherwise
+ * Returns:
+ * - true: session is valid
+ * - false: session is definitely invalid (401 response)
+ * - true (fallback): on server errors or network issues to avoid false logouts
  */
 async function validateSession(request: NextRequest): Promise<boolean> {
 	const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME);
@@ -46,7 +49,16 @@ async function validateSession(request: NextRequest): Promise<boolean> {
 			signal: AbortSignal.timeout(3000),
 		});
 
-		return response.ok;
+		// Only treat 401 as invalid session
+		// Server errors (5xx) should NOT invalidate the session - the cookie might be valid
+		// but the server is temporarily unavailable
+		if (response.status === 401) {
+			return false;
+		}
+
+		// For any other response (including 5xx errors), assume session might be valid
+		// This prevents false logouts during API issues
+		return true;
 	} catch {
 		// On network error, assume session might be valid to avoid blocking users
 		// The actual API calls will fail and redirect them properly

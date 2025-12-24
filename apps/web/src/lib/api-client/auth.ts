@@ -1,5 +1,9 @@
-import type { CurrentUser, CurrentUserResponse, OIDCProvider as SharedOIDCProvider } from "@arr/shared";
-import { apiRequest, UnauthorizedError, NetworkError } from "./base";
+import type {
+	CurrentUser,
+	CurrentUserResponse,
+	OIDCProvider as SharedOIDCProvider,
+} from "@arr/shared";
+import { NetworkError, UnauthorizedError, apiRequest } from "./base";
 
 export async function fetchCurrentUser(): Promise<CurrentUser | null> {
 	try {
@@ -57,7 +61,9 @@ interface RemovePasswordResponse {
 	message: string;
 }
 
-export async function removePassword(payload: RemovePasswordPayload): Promise<RemovePasswordResponse> {
+export async function removePassword(
+	payload: RemovePasswordPayload,
+): Promise<RemovePasswordResponse> {
 	return await apiRequest<RemovePasswordResponse>("/auth/password", {
 		method: "DELETE",
 		json: payload,
@@ -156,10 +162,7 @@ export async function getPasskeyLoginOptions(): Promise<{ options: any; sessionI
 	});
 }
 
-export async function verifyPasskeyLogin(
-	response: any,
-	sessionId: string,
-): Promise<CurrentUser> {
+export async function verifyPasskeyLogin(response: any, sessionId: string): Promise<CurrentUser> {
 	const data = await apiRequest<CurrentUserResponse>("/auth/passkey/login/verify", {
 		method: "POST",
 		json: { response, sessionId },
@@ -181,5 +184,53 @@ export async function renamePasskeyCredential(
 	await apiRequest("/auth/passkey/credentials", {
 		method: "PATCH",
 		json: { credentialId, friendlyName },
+	});
+}
+
+// ==================== Session Management ====================
+
+export type DeviceType = "desktop" | "mobile" | "tablet" | "unknown";
+
+export interface SessionInfo {
+	id: string;
+	isCurrent: boolean;
+	createdAt: string;
+	expiresAt: string;
+	lastAccessedAt: string;
+	isExpired: boolean;
+	// Device identification
+	userAgent: string | null;
+	ipAddress: string | null;
+	// Parsed user agent info for display
+	browser: string;
+	os: string;
+	device: DeviceType;
+}
+
+export interface SessionsResponse {
+	totalSessions: number;
+	sessions: SessionInfo[];
+}
+
+/**
+ * Get all active sessions for the current user
+ * Includes device/browser info for each session
+ */
+export async function getSessions(): Promise<SessionsResponse> {
+	return apiRequest<SessionsResponse>("/auth/sessions");
+}
+
+interface RevokeSessionResponse {
+	success: boolean;
+	message: string;
+}
+
+/**
+ * Revoke a specific session (sign out that device)
+ * Cannot revoke the current session - use logout() for that
+ */
+export async function revokeSession(sessionId: string): Promise<RevokeSessionResponse> {
+	return apiRequest<RevokeSessionResponse>(`/auth/sessions/${sessionId}`, {
+		method: "DELETE",
 	});
 }
