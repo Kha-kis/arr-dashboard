@@ -21,14 +21,21 @@ test.describe("Dashboard - Page Load", () => {
 	test("should display dashboard with welcome message", async ({ page }) => {
 		await page.goto(ROUTES.dashboard);
 
+		// Wait for loading to complete first
+		await waitForLoadingComplete(page);
+
 		// Should see welcome message with username
 		await expect(page.getByText(/welcome back/i)).toBeVisible({
-			timeout: TIMEOUTS.medium,
+			timeout: TIMEOUTS.long,
 		});
 
-		// Should see greeting with username
+		// Should see greeting with username (the h1 heading)
 		const username = process.env.TEST_USERNAME || "user";
-		await expect(page.getByRole("heading", { name: new RegExp(`Hi ${username}`, "i") })).toBeVisible();
+		await expect(
+			page.getByRole("heading", { name: new RegExp(`Hi ${username}`, "i"), level: 1 }),
+		).toBeVisible({
+			timeout: TIMEOUTS.medium,
+		});
 	});
 
 	test("should display refresh button", async ({ page }) => {
@@ -89,18 +96,21 @@ test.describe("Dashboard - Overview Tab", () => {
 
 		await waitForLoadingComplete(page);
 
+		// Wait for the configured instances section to be visible
+		await expect(page.getByRole("heading", { name: /configured instances/i })).toBeVisible({
+			timeout: TIMEOUTS.medium,
+		});
+
 		// Check for the instances table - it should have specific column headers (th elements)
 		const table = page.locator("table").first();
-		const labelHeader = page.locator("th").filter({ hasText: /label/i });
-		const serviceHeader = page.locator("th").filter({ hasText: /service/i });
+		await expect(table).toBeVisible({ timeout: TIMEOUTS.short });
 
-		// Table should be visible with proper headers
-		const hasTable = (await table.count()) > 0;
-		const hasLabelHeader = (await labelHeader.count()) > 0;
-		const hasServiceHeader = (await serviceHeader.count()) > 0;
+		// Verify column headers exist
+		const labelHeader = page.locator("th").filter({ hasText: /^label$/i });
+		const serviceHeader = page.locator("th").filter({ hasText: /^service$/i });
 
-		// Instances table should exist with proper headers
-		expect(hasTable && hasLabelHeader && hasServiceHeader).toBe(true);
+		await expect(labelHeader).toBeVisible();
+		await expect(serviceHeader).toBeVisible();
 	});
 
 	test("should display service type in instances table", async ({ page }) => {
@@ -283,9 +293,9 @@ test.describe("Dashboard - Error Handling", () => {
 
 		// Page should load even if some APIs fail
 		// At minimum, the header should be visible
-		await expect(
-			page.getByRole("button", { name: /sign out/i }),
-		).toBeVisible({ timeout: TIMEOUTS.long });
+		await expect(page.getByRole("button", { name: /sign out/i })).toBeVisible({
+			timeout: TIMEOUTS.long,
+		});
 	});
 
 	test("should display user error alert when session fails", async ({ page }) => {

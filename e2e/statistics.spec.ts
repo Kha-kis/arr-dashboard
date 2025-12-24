@@ -31,17 +31,18 @@ test.describe("Statistics - Content Display", () => {
 	});
 
 	test("should display stat cards", async ({ page }) => {
-		// Statistics page shows tabs/buttons with counts like "Overview 5", "Sonarr 1"
-		// Or stat cards/sections with numeric values
+		// Wait for the Statistics heading to be visible (indicates page content loaded)
+		const statsHeading = page.getByRole("heading", { name: /statistics/i, level: 1 });
+		await expect(statsHeading).toBeVisible({ timeout: TIMEOUTS.long });
+
+		// Statistics page shows tabs/buttons with labels like "Overview", "Sonarr", "Radarr", "Prowlarr"
 		const mainContent = page.locator("main");
-		const statButtons = mainContent.getByRole("button", { name: /overview|sonarr|radarr|prowlarr/i });
-		const statCards = mainContent.locator('[class*="stat"], [class*="card"]');
 
-		const hasButtons = (await statButtons.count()) > 0;
-		const hasCards = (await statCards.count()) > 0;
+		// Look for tab buttons within the navigation section
+		const overviewTab = mainContent.getByRole("button", { name: /^overview/i });
 
-		// Statistics page should have overview buttons or cards
-		expect(hasButtons || hasCards).toBe(true);
+		// At least the Overview tab should be visible once content loads
+		await expect(overviewTab).toBeVisible({ timeout: TIMEOUTS.medium });
 	});
 
 	test("should show instance statistics", async ({ page }) => {
@@ -153,8 +154,7 @@ test.describe("Statistics - Instance Selection", () => {
 		const instanceFilter = page.getByRole("combobox", { name: /instance/i });
 		const instanceButtons = page.getByRole("button", { name: /all instances/i });
 
-		const hasFilter =
-			(await instanceFilter.count()) > 0 || (await instanceButtons.count()) > 0;
+		const hasFilter = (await instanceFilter.count()) > 0 || (await instanceButtons.count()) > 0;
 
 		expect(hasFilter || true).toBe(true);
 	});
