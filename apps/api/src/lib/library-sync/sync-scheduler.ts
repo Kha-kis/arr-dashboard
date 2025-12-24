@@ -222,9 +222,14 @@ class LibrarySyncScheduler {
 	/**
 	 * Run a sync for a specific instance
 	 */
-	private async runSync(
-		instance: { id: string; label: string; service: string; baseUrl: string; encryptedApiKey: string; encryptionIv: string },
-	): Promise<SyncResult> {
+	private async runSync(instance: {
+		id: string;
+		label: string;
+		service: string;
+		baseUrl: string;
+		encryptedApiKey: string;
+		encryptionIv: string;
+	}): Promise<SyncResult> {
 		if (!this.app) {
 			throw new Error("Scheduler not initialized");
 		}

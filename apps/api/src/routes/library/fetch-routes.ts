@@ -9,10 +9,7 @@ import {
 } from "@arr/shared";
 import type { Prisma, ServiceType } from "@prisma/client";
 import type { FastifyPluginCallback } from "fastify";
-import {
-	getClientForInstance,
-	isSonarrClient,
-} from "../../lib/arr/client-helpers.js";
+import { getClientForInstance, isSonarrClient } from "../../lib/arr/client-helpers.js";
 import { ArrError, arrErrorToHttpStatus } from "../../lib/arr/client-factory.js";
 import { normalizeEpisode } from "../../lib/library/episode-normalizer.js";
 import { libraryQuerySchema } from "../../lib/library/validation-schemas.js";

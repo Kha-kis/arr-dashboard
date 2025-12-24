@@ -65,9 +65,7 @@ export async function navigateTo(page: Page, route: keyof typeof ROUTES) {
 export async function ensureAuthenticated(page: Page) {
 	// Check if on login page
 	if (page.url().includes("/login")) {
-		throw new Error(
-			"User is not authenticated. Ensure auth.setup.ts ran successfully.",
-		);
+		throw new Error("User is not authenticated. Ensure auth.setup.ts ran successfully.");
 	}
 
 	// Verify we can see authenticated UI elements
@@ -79,10 +77,7 @@ export async function ensureAuthenticated(page: Page) {
  * Navigate using the sidebar navigation
  * Handles both desktop and mobile sidebar layouts
  */
-export async function clickSidebarLink(
-	page: Page,
-	linkName: string,
-): Promise<void> {
+export async function clickSidebarLink(page: Page, linkName: string): Promise<void> {
 	// Find the navigation link that is visible (handles responsive sidebars)
 	const link = page.getByRole("link", { name: new RegExp(`^${linkName}$`, "i") });
 
@@ -99,10 +94,7 @@ export async function clickSidebarLink(
 /**
  * Wait for page heading to be visible
  */
-export async function waitForPageHeading(
-	page: Page,
-	headingText: string | RegExp,
-) {
+export async function waitForPageHeading(page: Page, headingText: string | RegExp) {
 	const heading = page.getByRole("heading", { name: headingText, level: 1 });
 	await expect(heading).toBeVisible({ timeout: TIMEOUTS.medium });
 	return heading;
@@ -128,10 +120,7 @@ export async function waitForLoadingComplete(page: Page) {
 /**
  * Check if an element exists (returns boolean, doesn't throw)
  */
-export async function elementExists(
-	page: Page,
-	selector: string,
-): Promise<boolean> {
+export async function elementExists(page: Page, selector: string): Promise<boolean> {
 	return (await page.locator(selector).count()) > 0;
 }
 
@@ -142,11 +131,7 @@ export async function elementExists(
 /**
  * Fill a form field by label
  */
-export async function fillFieldByLabel(
-	page: Page,
-	label: string,
-	value: string,
-) {
+export async function fillFieldByLabel(page: Page, label: string, value: string) {
 	const field = page.getByLabel(new RegExp(label, "i"));
 	await field.fill(value);
 }
@@ -154,11 +139,7 @@ export async function fillFieldByLabel(
 /**
  * Select an option from a dropdown/combobox
  */
-export async function selectOption(
-	page: Page,
-	label: string,
-	optionText: string,
-) {
+export async function selectOption(page: Page, label: string, optionText: string) {
 	const select = page.getByLabel(new RegExp(label, "i"));
 	await select.click();
 	const option = page.getByRole("option", { name: new RegExp(optionText, "i") });
@@ -257,10 +238,7 @@ export type ServiceType = (typeof SERVICE_TYPES)[number];
 /**
  * Get count of configured instances from stat cards
  */
-export async function getServiceInstanceCount(
-	page: Page,
-	service: ServiceType,
-): Promise<number> {
+export async function getServiceInstanceCount(page: Page, service: ServiceType): Promise<number> {
 	const statCard = page.locator(`[class*="stat"], [data-testid="stat-card"]`).filter({
 		hasText: new RegExp(service, "i"),
 	});

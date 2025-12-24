@@ -31,11 +31,13 @@ const bulkScoreExportSchema = z.object({
 	version: z.string(),
 	exportedAt: z.string(),
 	serviceType: z.enum(["RADARR", "SONARR"]),
-	templates: z.array(z.object({
-		templateId: z.string(),
-		templateName: z.string(),
-		scores: z.record(z.string(), z.number()),
-	})),
+	templates: z.array(
+		z.object({
+			templateId: z.string(),
+			templateName: z.string(),
+			scores: z.record(z.string(), z.number()),
+		}),
+	),
 });
 
 const bulkScoreImportSchema = z.object({
@@ -243,11 +245,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 
 		try {
 			const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
-			const exportData = await bulkScoreManager.exportScores(
-				userId,
-				templateIds,
-				serviceType,
-			);
+			const exportData = await bulkScoreManager.exportScores(userId, templateIds, serviceType);
 
 			return reply.status(200).send({
 				success: true,

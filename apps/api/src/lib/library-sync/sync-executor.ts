@@ -74,10 +74,7 @@ function extractCacheFields(item: LibraryItem): {
 /**
  * Builds cache entry data from a LibraryItem
  */
-function buildCacheEntry(
-	instanceId: string,
-	item: LibraryItem,
-): Prisma.LibraryCacheCreateInput {
+function buildCacheEntry(instanceId: string, item: LibraryItem): Prisma.LibraryCacheCreateInput {
 	const arrItemId = typeof item.id === "string" ? Number.parseInt(item.id, 10) : item.id;
 	const fields = extractCacheFields(item);
 
@@ -174,8 +171,7 @@ export async function syncInstance(
 
 			await prisma.$transaction(async (tx) => {
 				for (const item of batch) {
-					const arrItemId =
-						typeof item.id === "string" ? Number.parseInt(item.id, 10) : item.id;
+					const arrItemId = typeof item.id === "string" ? Number.parseInt(item.id, 10) : item.id;
 					const key = `${arrItemId}-${item.type}`;
 					seenKeys.add(key);
 
@@ -305,15 +301,9 @@ export async function syncSingleItem(
 			},
 		});
 
-		log.debug(
-			{ instanceId, arrItemId, title: item.title },
-			"Single item synced to cache",
-		);
+		log.debug({ instanceId, arrItemId, title: item.title }, "Single item synced to cache");
 	} catch (error) {
-		log.error(
-			{ err: error, instanceId, arrItemId },
-			"Failed to sync single item to cache",
-		);
+		log.error({ err: error, instanceId, arrItemId }, "Failed to sync single item to cache");
 		throw error;
 	}
 }
@@ -340,17 +330,11 @@ export async function removeCachedItem(
 			},
 		});
 
-		log.debug(
-			{ instanceId, arrItemId, itemType },
-			"Item removed from cache",
-		);
+		log.debug({ instanceId, arrItemId, itemType }, "Item removed from cache");
 	} catch (error) {
 		// Item might not exist, which is fine
 		if ((error as { code?: string }).code !== "P2025") {
-			log.error(
-				{ err: error, instanceId, arrItemId },
-				"Failed to remove item from cache",
-			);
+			log.error({ err: error, instanceId, arrItemId }, "Failed to remove item from cache");
 			throw error;
 		}
 	}

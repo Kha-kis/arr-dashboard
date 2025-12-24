@@ -80,8 +80,7 @@ test.describe("History - Filtering", () => {
 		const serviceFilter = page.getByRole("combobox", { name: /service|type/i });
 		const filterButtons = page.getByRole("button", { name: /all|sonarr|radarr/i });
 
-		const hasFilter =
-			(await serviceFilter.count()) > 0 || (await filterButtons.count()) > 0;
+		const hasFilter = (await serviceFilter.count()) > 0 || (await filterButtons.count()) > 0;
 
 		expect(hasFilter || true).toBe(true);
 	});
@@ -90,8 +89,7 @@ test.describe("History - Filtering", () => {
 		const dateFilter = page.getByRole("combobox", { name: /date|range|period/i });
 		const dateInput = page.getByLabel(/date|from|to/i);
 
-		const hasDateFilter =
-			(await dateFilter.count()) > 0 || (await dateInput.count()) > 0;
+		const hasDateFilter = (await dateFilter.count()) > 0 || (await dateInput.count()) > 0;
 
 		expect(hasDateFilter || true).toBe(true);
 	});
@@ -113,8 +111,7 @@ test.describe("History - Pagination", () => {
 		const pagination = page.locator('[class*="pagination"]');
 		const pageButtons = page.getByRole("button", { name: /next|previous|page \d/i });
 
-		const hasPagination =
-			(await pagination.count()) > 0 || (await pageButtons.count()) > 0;
+		const hasPagination = (await pagination.count()) > 0 || (await pageButtons.count()) > 0;
 
 		expect(hasPagination || true).toBe(true);
 	});

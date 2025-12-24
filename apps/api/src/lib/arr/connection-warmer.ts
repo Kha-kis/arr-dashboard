@@ -15,10 +15,7 @@ import { isSonarrClient, isRadarrClient, isProwlarrClient } from "./client-helpe
  *
  * This runs in the background and doesn't block the authentication response.
  */
-export async function warmConnectionsForUser(
-	app: FastifyInstance,
-	userId: string,
-): Promise<void> {
+export async function warmConnectionsForUser(app: FastifyInstance, userId: string): Promise<void> {
 	try {
 		// Fetch all enabled instances for the user
 		const instances = await app.prisma.serviceInstance.findMany({
@@ -49,10 +46,7 @@ export async function warmConnectionsForUser(
 			new Promise((resolve) => setTimeout(resolve, 5000)), // 5s max
 		]);
 
-		app.log.info(
-			{ userId, instanceCount: instances.length },
-			"Connections pre-warmed for user",
-		);
+		app.log.info({ userId, instanceCount: instances.length }, "Connections pre-warmed for user");
 	} catch (error) {
 		// Never fail on warm-up errors
 		app.log.debug({ error }, "Connection warm-up error (non-critical)");

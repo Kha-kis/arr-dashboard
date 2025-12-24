@@ -72,7 +72,7 @@ export const registerSyncRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							itemCount: status.itemCount,
 							pollingEnabled: status.pollingEnabled,
 							pollingIntervalMins: status.pollingIntervalMins,
-					  }
+						}
 					: {
 							lastFullSync: null,
 							lastSyncDurationMs: null,
@@ -81,7 +81,7 @@ export const registerSyncRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							itemCount: 0,
 							pollingEnabled: true,
 							pollingIntervalMins: 15,
-					  },
+						},
 			};
 		});
 

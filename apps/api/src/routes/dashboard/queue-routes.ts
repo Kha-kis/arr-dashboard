@@ -13,7 +13,11 @@ import {
 	isRadarrClient,
 } from "../../lib/arr/client-helpers.js";
 import { ArrError, arrErrorToHttpStatus } from "../../lib/arr/client-factory.js";
-import { normalizeQueueItem, parseQueueId, triggerQueueSearchWithSdk } from "../../lib/dashboard/queue-utils.js";
+import {
+	normalizeQueueItem,
+	parseQueueId,
+	triggerQueueSearchWithSdk,
+} from "../../lib/dashboard/queue-utils.js";
 import { ManualImportError, autoImportByDownloadIdWithSdk } from "../manual-import-utils.js";
 
 /**
@@ -175,10 +179,7 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							body.searchPayload,
 						);
 					} catch (error) {
-						request.log.error(
-							{ err: error, queueId, service },
-							"queue search trigger failed",
-						);
+						request.log.error({ err: error, queueId, service }, "queue search trigger failed");
 					}
 				}
 			}
@@ -248,17 +249,18 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		try {
-			const deleteOptions = body.action === "retry"
-				? {
-						removeFromClient: body.removeFromClient ?? true,
-						blocklist: false,
-						changeCategory: false,
-					}
-				: {
-						removeFromClient: body.removeFromClient,
-						blocklist: body.blocklist,
-						changeCategory: body.changeCategory,
-					};
+			const deleteOptions =
+				body.action === "retry"
+					? {
+							removeFromClient: body.removeFromClient ?? true,
+							blocklist: false,
+							changeCategory: false,
+						}
+					: {
+							removeFromClient: body.removeFromClient,
+							blocklist: body.blocklist,
+							changeCategory: body.changeCategory,
+						};
 
 			if (isSonarrClient(client)) {
 				await client.queue.bulkDelete(queueIds, deleteOptions);

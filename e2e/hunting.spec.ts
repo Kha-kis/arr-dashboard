@@ -47,8 +47,7 @@ test.describe("Hunting - Configuration", () => {
 		const enableToggle = page.locator('[role="switch"]').first();
 		const enableCheckbox = page.getByLabel(/enable|active/i);
 
-		const hasToggle =
-			(await enableToggle.count()) > 0 || (await enableCheckbox.count()) > 0;
+		const hasToggle = (await enableToggle.count()) > 0 || (await enableCheckbox.count()) > 0;
 
 		expect(hasToggle || true).toBe(true);
 	});
@@ -89,8 +88,7 @@ test.describe("Hunting - Instance Selection", () => {
 		const instanceFilter = page.getByRole("combobox", { name: /instance/i });
 		const instanceTabs = page.getByRole("tab");
 
-		const hasFilter =
-			(await instanceFilter.count()) > 0 || (await instanceTabs.count()) > 0;
+		const hasFilter = (await instanceFilter.count()) > 0 || (await instanceTabs.count()) > 0;
 
 		expect(hasFilter || true).toBe(true);
 	});
@@ -134,8 +132,7 @@ test.describe("Hunting - Schedule Configuration", () => {
 		const batchInput = page.getByLabel(/batch|limit|max/i);
 		const batchText = page.getByText(/batch.*size|limit/i);
 
-		const hasBatch =
-			(await batchInput.count()) > 0 || (await batchText.count()) > 0;
+		const hasBatch = (await batchInput.count()) > 0 || (await batchText.count()) > 0;
 
 		expect(hasBatch || true).toBe(true);
 	});
@@ -151,8 +148,7 @@ test.describe("Hunting - Logs", () => {
 		const logsSection = page.getByText(/log|history|activity/i);
 		const logsTable = page.locator("table, [role='table']");
 
-		const hasLogs =
-			(await logsSection.count()) > 0 || (await logsTable.count()) > 0;
+		const hasLogs = (await logsSection.count()) > 0 || (await logsTable.count()) > 0;
 
 		expect(hasLogs || true).toBe(true);
 	});
@@ -174,8 +170,7 @@ test.describe("Hunting - Rate Limiting", () => {
 		const rateLimitSection = page.getByText(/rate.*limit|api.*limit|hourly/i);
 		const rateLimitInput = page.getByLabel(/rate|limit|cap/i);
 
-		const hasRateLimit =
-			(await rateLimitSection.count()) > 0 || (await rateLimitInput.count()) > 0;
+		const hasRateLimit = (await rateLimitSection.count()) > 0 || (await rateLimitInput.count()) > 0;
 
 		expect(hasRateLimit || true).toBe(true);
 	});
@@ -191,8 +186,7 @@ test.describe("Hunting - Filters", () => {
 		const monitoredFilter = page.getByText(/monitored.*only|skip.*unmonitored/i);
 		const monitoredToggle = page.getByLabel(/monitored/i);
 
-		const hasFilter =
-			(await monitoredFilter.count()) > 0 || (await monitoredToggle.count()) > 0;
+		const hasFilter = (await monitoredFilter.count()) > 0 || (await monitoredToggle.count()) > 0;
 
 		expect(hasFilter || true).toBe(true);
 	});

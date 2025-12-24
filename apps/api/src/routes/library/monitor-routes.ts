@@ -163,7 +163,10 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 					});
 				}
 
-				await client.series.update(itemId, updatedSeries as Parameters<typeof client.series.update>[1]);
+				await client.series.update(
+					itemId,
+					updatedSeries as Parameters<typeof client.series.update>[1],
+				);
 
 				// Optimistically update cache
 				await updateCacheMonitoredStatus(

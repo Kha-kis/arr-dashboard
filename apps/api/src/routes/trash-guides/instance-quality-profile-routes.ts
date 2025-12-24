@@ -112,7 +112,9 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 			}
 
 			// Create SDK client using factory
-			const client = request.server.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
+			const client = request.server.arrClientFactory.create(instance) as
+				| SonarrClient
+				| RadarrClient;
 
 			// Fetch current quality profile
 			const profile = await client.qualityProfile.getById(profileIdNum);
@@ -707,7 +709,9 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 				}
 
 				// Create SDK client using factory
-				const client = request.server.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
+				const client = request.server.arrClientFactory.create(instance) as
+					| SonarrClient
+					| RadarrClient;
 
 				// Fetch current quality profile
 				const profile = await client.qualityProfile.getById(profileIdNum);
@@ -870,7 +874,9 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 			}
 
 			// Create SDK client using factory
-			const client = request.server.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
+			const client = request.server.arrClientFactory.create(instance) as
+				| SonarrClient
+				| RadarrClient;
 
 			// Fetch current quality profile
 			const profile = await client.qualityProfile.getById(profileIdNum);
@@ -911,7 +917,8 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 			// Update the formatItems with template scores for the specified CFs
 			const profileFormatItems = profile.formatItems ?? [];
 			const updatedFormatItems = profileFormatItems.map((item) => {
-				const templateScore = item.format !== undefined ? templateScores.get(item.format) : undefined;
+				const templateScore =
+					item.format !== undefined ? templateScores.get(item.format) : undefined;
 				if (templateScore !== undefined) {
 					return {
 						...item,

@@ -97,8 +97,7 @@ test.describe("Search - Filters", () => {
 		const categoryFilter = page.getByRole("combobox", { name: /category|type/i });
 		const categoryButtons = page.getByRole("button", { name: /movie|series|tv|all/i });
 
-		const hasFilter =
-			(await categoryFilter.count()) > 0 || (await categoryButtons.count()) > 0;
+		const hasFilter = (await categoryFilter.count()) > 0 || (await categoryButtons.count()) > 0;
 
 		expect(hasFilter || true).toBe(true);
 	});

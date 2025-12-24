@@ -172,10 +172,7 @@ export class DeploymentExecutorService {
 	private prisma: PrismaClient;
 	private clientFactory: ArrClientFactory;
 
-	constructor(
-		prisma: PrismaClient,
-		clientFactory: ArrClientFactory,
-	) {
+	constructor(prisma: PrismaClient, clientFactory: ArrClientFactory) {
 		this.prisma = prisma;
 		this.clientFactory = clientFactory;
 	}
@@ -204,9 +201,9 @@ export class DeploymentExecutorService {
 
 		// Get instance with ownership verification
 		const instance = await this.prisma.serviceInstance.findFirst({
-			where: { 
-				id: instanceId, 
-				userId 
+			where: {
+				id: instanceId,
+				userId,
 			},
 		});
 
@@ -406,7 +403,10 @@ export class DeploymentExecutorService {
 						specifications,
 					};
 
-					await client.customFormat.update(existingCF.id, updatedCF as unknown as Parameters<typeof client.customFormat.update>[1]);
+					await client.customFormat.update(
+						existingCF.id,
+						updatedCF as unknown as Parameters<typeof client.customFormat.update>[1],
+					);
 					updated++;
 					details.updated.push(templateCF.name);
 				} else {
@@ -428,7 +428,9 @@ export class DeploymentExecutorService {
 						specifications,
 					};
 
-					await client.customFormat.create(newCF as unknown as Parameters<typeof client.customFormat.create>[0]);
+					await client.customFormat.create(
+						newCF as unknown as Parameters<typeof client.customFormat.create>[0],
+					);
 					created++;
 					details.created.push(templateCF.name);
 				}
@@ -629,7 +631,11 @@ export class DeploymentExecutorService {
 					const sourceIdToNewId = new Map<number, number>(); // Maps source item IDs to new IDs
 
 					for (const sourceItem of clonedProfile.items || []) {
-						if (sourceItem.items && Array.isArray(sourceItem.items) && sourceItem.items.length > 0) {
+						if (
+							sourceItem.items &&
+							Array.isArray(sourceItem.items) &&
+							sourceItem.items.length > 0
+						) {
 							const groupQualities: any[] = [];
 							for (const subItem of sourceItem.items) {
 								let targetQuality = allAvailableQualities.get(subItem.id);
@@ -694,7 +700,8 @@ export class DeploymentExecutorService {
 						items: qualityItems,
 						minFormatScore: clonedProfile.minFormatScore ?? updatedProfile.minFormatScore,
 						cutoffFormatScore: clonedProfile.cutoffFormatScore ?? updatedProfile.cutoffFormatScore,
-						minUpgradeFormatScore: clonedProfile.minUpgradeFormatScore ?? updatedProfile.minUpgradeFormatScore,
+						minUpgradeFormatScore:
+							clonedProfile.minUpgradeFormatScore ?? updatedProfile.minUpgradeFormatScore,
 						...(clonedProfile.language && { language: clonedProfile.language }),
 					};
 				}
@@ -933,7 +940,9 @@ export class DeploymentExecutorService {
 			};
 
 			// Remove the id field if it exists (schema might include it)
-			const { id: _unusedId, ...profileWithoutId } = profileToCreate as { id?: number } & typeof profileToCreate;
+			const { id: _unusedId, ...profileWithoutId } = profileToCreate as {
+				id?: number;
+			} & typeof profileToCreate;
 
 			// Use any cast - Sonarr/Radarr quality profile types differ in source values but are runtime-compatible
 			return await client.qualityProfile.create(profileWithoutId as any);
@@ -1068,7 +1077,9 @@ export class DeploymentExecutorService {
 			if (qualityItems.length > 0) {
 				const lastItem = qualityItems[qualityItems.length - 1];
 				remappedCutoff = lastItem.id ?? lastItem.quality?.id ?? 1;
-				console.warn(`[DEPLOYMENT] Cutoff ID ${clonedProfile.cutoff} not found in remapped items, defaulting to: ${remappedCutoff}`);
+				console.warn(
+					`[DEPLOYMENT] Cutoff ID ${clonedProfile.cutoff} not found in remapped items, defaulting to: ${remappedCutoff}`,
+				);
 			}
 		}
 
@@ -1109,7 +1120,9 @@ export class DeploymentExecutorService {
 		};
 
 		// Remove the id field
-		const { id: _unusedId, ...profileWithoutId } = profileToCreate as { id?: number } & typeof profileToCreate;
+		const { id: _unusedId, ...profileWithoutId } = profileToCreate as {
+			id?: number;
+		} & typeof profileToCreate;
 
 		// Use any cast - Sonarr/Radarr quality profile types differ in source values but are runtime-compatible
 		return await client.qualityProfile.create(profileWithoutId as any);

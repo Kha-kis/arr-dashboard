@@ -116,7 +116,12 @@ const manualImportRoute: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		try {
-			await submitManualImportCommandWithSdk(client, body.service, body.files, body.importMode ?? "auto");
+			await submitManualImportCommandWithSdk(
+				client,
+				body.service,
+				body.files,
+				body.importMode ?? "auto",
+			);
 		} catch (error) {
 			const status = error instanceof ManualImportError ? error.statusCode : 502;
 			const message = error instanceof Error ? error.message : "Manual import failed.";

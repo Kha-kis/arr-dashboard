@@ -19,7 +19,10 @@ type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]
  * Recursively find quality by ID in quality profile items
  * Quality profiles have nested structure where groups contain items
  */
-function findQualityById(items: SdkQualityProfileItem[], targetId: number): { id: number; name: string } | undefined {
+function findQualityById(
+	items: SdkQualityProfileItem[],
+	targetId: number,
+): { id: number; name: string } | undefined {
 	for (const item of items) {
 		// Check if this item's quality matches
 		if (item.quality?.id === targetId && item.quality.name) {
@@ -106,7 +109,10 @@ export class ProfileCloner {
 			// Resolve cutoff quality name from items if not directly available
 			let cutoffQuality: { id: number; name: string } | undefined;
 			if (profileData.cutoff && profileData.items) {
-				cutoffQuality = findQualityById(profileData.items as SdkQualityProfileItem[], profileData.cutoff);
+				cutoffQuality = findQualityById(
+					profileData.items as SdkQualityProfileItem[],
+					profileData.cutoff,
+				);
 			}
 
 			// Transform to CompleteQualityProfile format
@@ -208,12 +214,12 @@ export class ProfileCloner {
 			// Use any for return type since Sonarr/Radarr have different quality profile schemas
 			let deployedProfile: { id?: number };
 			if (options.existingProfileId) {
-				deployedProfile = await client.qualityProfile.update(
-					options.existingProfileId,
-					{ id: options.existingProfileId, ...profilePayload } as any,
-				) as any;
+				deployedProfile = (await client.qualityProfile.update(options.existingProfileId, {
+					id: options.existingProfileId,
+					...profilePayload,
+				} as any)) as any;
 			} else {
-				deployedProfile = await client.qualityProfile.create(profilePayload as any) as any;
+				deployedProfile = (await client.qualityProfile.create(profilePayload as any)) as any;
 			}
 
 			return {
@@ -235,7 +241,7 @@ export class ProfileCloner {
 	private extractTrashId(cf: SdkCustomFormat): string | null {
 		for (const spec of cf.specifications || []) {
 			if (spec.fields && Array.isArray(spec.fields)) {
-				const trashIdField = spec.fields.find((f) => f.name === 'trash_id');
+				const trashIdField = spec.fields.find((f) => f.name === "trash_id");
 				if (trashIdField) {
 					return String(trashIdField.value);
 				}
@@ -299,9 +305,7 @@ export class ProfileCloner {
 			);
 
 			const unmatched = customFormats
-				.filter(
-					(cf) => !instanceCFs.some((icf) => matchesCF(icf, cf.trash_id)),
-				)
+				.filter((cf) => !instanceCFs.some((icf) => matchesCF(icf, cf.trash_id)))
 				.map((cf) => cf.trash_id);
 
 			// Calculate quality stats
@@ -313,10 +317,7 @@ export class ProfileCloner {
 
 			// Calculate score stats
 			const scores = customFormats.map((cf) => cf.score);
-			const avgScore =
-				scores.length > 0
-					? scores.reduce((a, b) => a + b, 0) / scores.length
-					: 0;
+			const avgScore = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 0;
 
 			return {
 				success: true,

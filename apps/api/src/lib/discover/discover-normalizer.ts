@@ -354,7 +354,10 @@ export const loadRadarrRemoteWithSdk = async (
 				return results[0] as unknown as Record<string, unknown>;
 			}
 		} catch (error) {
-			logger?.debug({ err: error, tmdbId: payload.tmdbId }, "TMDB lookup failed, trying next method");
+			logger?.debug(
+				{ err: error, tmdbId: payload.tmdbId },
+				"TMDB lookup failed, trying next method",
+			);
 		}
 	}
 
@@ -366,7 +369,10 @@ export const loadRadarrRemoteWithSdk = async (
 				return results[0] as unknown as Record<string, unknown>;
 			}
 		} catch (error) {
-			logger?.debug({ err: error, imdbId: payload.imdbId }, "IMDB lookup failed, trying next method");
+			logger?.debug(
+				{ err: error, imdbId: payload.imdbId },
+				"IMDB lookup failed, trying next method",
+			);
 		}
 	}
 
@@ -448,7 +454,12 @@ export const getInstanceOptionsWithSdk = async (
 	logger?: DiscoverLogger,
 ): Promise<{
 	qualityProfiles: Array<{ id: number; name: string }>;
-	rootFolders: Array<{ id?: number | string; path: string; accessible?: boolean; freeSpace?: number }>;
+	rootFolders: Array<{
+		id?: number | string;
+		path: string;
+		accessible?: boolean;
+		freeSpace?: number;
+	}>;
 	languageProfiles?: Array<{ id: number; name: string }>;
 }> => {
 	const [qualityProfiles, rootFolders] = await Promise.all([
@@ -456,26 +467,32 @@ export const getInstanceOptionsWithSdk = async (
 		client.rootFolder.getAll(),
 	]);
 
-	const normalizedQualityProfiles = qualityProfiles.map((p) => ({
-		id: p.id ?? 0,
-		name: p.name ?? "",
-	})).filter((p) => p.id > 0 && p.name.length > 0);
+	const normalizedQualityProfiles = qualityProfiles
+		.map((p) => ({
+			id: p.id ?? 0,
+			name: p.name ?? "",
+		}))
+		.filter((p) => p.id > 0 && p.name.length > 0);
 
-	const normalizedRootFolders = rootFolders.map((f) => ({
-		id: f.id,
-		path: f.path ?? "",
-		accessible: f.accessible,
-		freeSpace: f.freeSpace ?? undefined,
-	})).filter((f) => f.path.length > 0);
+	const normalizedRootFolders = rootFolders
+		.map((f) => ({
+			id: f.id,
+			path: f.path ?? "",
+			accessible: f.accessible,
+			freeSpace: f.freeSpace ?? undefined,
+		}))
+		.filter((f) => f.path.length > 0);
 
 	let languageProfiles: Array<{ id: number; name: string }> | undefined;
 	if (service === "sonarr" && "languageProfile" in client) {
 		try {
 			const langs = await (client as SonarrClient).languageProfile.getAll();
-			languageProfiles = langs.map((l) => ({
-				id: l.id ?? 0,
-				name: l.name ?? "",
-			})).filter((l) => l.id > 0 && l.name.length > 0);
+			languageProfiles = langs
+				.map((l) => ({
+					id: l.id ?? 0,
+					name: l.name ?? "",
+				}))
+				.filter((l) => l.id > 0 && l.name.length > 0);
 		} catch (error) {
 			// Language profiles deprecated in Sonarr v4+, this is expected
 			logger?.debug({ err: error }, "Language profiles not available (expected for Sonarr v4+)");

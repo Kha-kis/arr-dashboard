@@ -39,7 +39,9 @@ setup("authenticate", async ({ page }) => {
 	}
 
 	// Wait for login form
-	await expect(page.getByRole("heading", { name: /sign in|login/i })).toBeVisible({ timeout: 10000 });
+	await expect(page.getByRole("heading", { name: /sign in|login/i })).toBeVisible({
+		timeout: 10000,
+	});
 
 	// Fill login form
 	await page.getByLabel(/username/i).fill(TEST_CREDENTIALS.username);
@@ -52,7 +54,9 @@ setup("authenticate", async ({ page }) => {
 	await expect(page).toHaveURL(/\/dashboard/, { timeout: 15000 });
 
 	// Verify we're logged in by checking for the greeting heading
-	await expect(page.getByRole("heading", { name: new RegExp(`Hi ${TEST_CREDENTIALS.username}`, "i") })).toBeVisible({ timeout: 5000 });
+	await expect(
+		page.getByRole("heading", { name: new RegExp(`Hi ${TEST_CREDENTIALS.username}`, "i") }),
+	).toBeVisible({ timeout: 5000 });
 
 	// Save authentication state
 	await page.context().storageState({ path: authFile });

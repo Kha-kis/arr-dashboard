@@ -3,7 +3,11 @@ import type { FastifyInstance, FastifyBaseLogger } from "fastify";
 import type { SonarrClient } from "arr-sdk/sonarr";
 import type { RadarrClient } from "arr-sdk/radarr";
 import { SEASON_SEARCH_THRESHOLD, SEARCH_DELAY_MS, GRAB_CHECK_DELAY_MS } from "./constants.js";
-import { createSearchHistoryManager, type SearchHistoryManager, type SearchedItem } from "./search-history.js";
+import {
+	createSearchHistoryManager,
+	type SearchHistoryManager,
+	type SearchedItem,
+} from "./search-history.js";
 
 /**
  * Logger type for hunt executor functions
@@ -41,11 +45,11 @@ export interface GrabbedItem {
 export interface HuntResult {
 	itemsSearched: number;
 	itemsGrabbed: number;
-	searchedItems: string[];  // Names of items we searched for
-	grabbedItems: GrabbedItem[];  // Items that were actually grabbed/downloaded
+	searchedItems: string[]; // Names of items we searched for
+	grabbedItems: GrabbedItem[]; // Items that were actually grabbed/downloaded
 	message: string;
 	status: "completed" | "partial" | "skipped" | "error";
-	apiCallsMade: number;  // Actual count of API calls made to the arr instance
+	apiCallsMade: number; // Actual count of API calls made to the arr instance
 }
 
 // Internal type for sub-functions (apiCallsMade added by executeHunt)
@@ -251,15 +255,22 @@ function expandStatusFilters(statuses: string[], service: "sonarr" | "radarr"): 
  * @param logger - Fastify logger for structured logging
  * @returns A ParsedFilters object with parsed include/exclude tag and quality profile arrays, includeStatuses, expandedStatuses, year range, ageThresholdDays, filterLogic, and monitoredOnly flag
  */
-function parseFilters(config: HuntConfig, service: "sonarr" | "radarr", logger: HuntLogger): ParsedFilters {
-	const parseJsonArray = (value: string | null | undefined, fieldName: string): number[] | string[] => {
+function parseFilters(
+	config: HuntConfig,
+	service: "sonarr" | "radarr",
+	logger: HuntLogger,
+): ParsedFilters {
+	const parseJsonArray = (
+		value: string | null | undefined,
+		fieldName: string,
+	): number[] | string[] => {
 		if (!value) return [];
 		try {
 			return JSON.parse(value);
 		} catch (error) {
 			logger.warn(
 				{ err: error, field: fieldName, value, configId: config.id },
-				"Failed to parse hunt filter JSON - filter will be ignored"
+				"Failed to parse hunt filter JSON - filter will be ignored",
 			);
 			return [];
 		}
@@ -272,8 +283,14 @@ function parseFilters(config: HuntConfig, service: "sonarr" | "radarr", logger: 
 		monitoredOnly: config.monitoredOnly ?? true,
 		includeTags: parseJsonArray(config.includeTags, "includeTags") as number[],
 		excludeTags: parseJsonArray(config.excludeTags, "excludeTags") as number[],
-		includeQualityProfiles: parseJsonArray(config.includeQualityProfiles, "includeQualityProfiles") as number[],
-		excludeQualityProfiles: parseJsonArray(config.excludeQualityProfiles, "excludeQualityProfiles") as number[],
+		includeQualityProfiles: parseJsonArray(
+			config.includeQualityProfiles,
+			"includeQualityProfiles",
+		) as number[],
+		excludeQualityProfiles: parseJsonArray(
+			config.excludeQualityProfiles,
+			"excludeQualityProfiles",
+		) as number[],
 		includeStatuses,
 		expandedStatuses: expandStatusFilters(includeStatuses, service),
 		yearMin: config.yearMin,
@@ -300,7 +317,14 @@ function parseFilters(config: HuntConfig, service: "sonarr" | "radarr", logger: 
  * @returns `true` if the item satisfies the specified condition, `false` otherwise.
  */
 function checkFilterCondition(
-	item: { tags: number[]; qualityProfileId: number; status: string; year: number; monitored: boolean; releaseDate?: string },
+	item: {
+		tags: number[];
+		qualityProfileId: number;
+		status: string;
+		year: number;
+		monitored: boolean;
+		releaseDate?: string;
+	},
 	filters: ParsedFilters,
 	conditionName: string,
 ): boolean {
@@ -358,7 +382,14 @@ function checkFilterCondition(
  * @returns `true` if the item passes the filters and is not excluded, `false` otherwise.
  */
 function passesFilters(
-	item: { tags: number[]; qualityProfileId: number; status: string; year: number; monitored: boolean; releaseDate?: string },
+	item: {
+		tags: number[];
+		qualityProfileId: number;
+		status: string;
+		year: number;
+		monitored: boolean;
+		releaseDate?: string;
+	},
 	filters: ParsedFilters,
 ): boolean {
 	const conditions = [
@@ -396,7 +427,9 @@ function passesFilters(
 		"ageThreshold",
 	];
 
-	const includeResults = includeConditions.map((condition) => checkFilterCondition(item, filters, condition));
+	const includeResults = includeConditions.map((condition) =>
+		checkFilterCondition(item, filters, condition),
+	);
 
 	if (filters.filterLogic === "OR") {
 		// At least one condition must pass (but skip conditions that have no filter set)
@@ -442,7 +475,11 @@ export async function executeHuntWithSdk(
 	config: HuntConfig,
 	type: "missing" | "upgrade",
 ): Promise<HuntResult> {
-	const logger = app.log.child({ huntConfigId: config.id, instanceId: instance.id, huntType: type });
+	const logger = app.log.child({
+		huntConfigId: config.id,
+		instanceId: instance.id,
+		huntType: type,
+	});
 	const client = app.arrClientFactory.create(instance);
 	const apiCallCounter: ApiCallCounter = { count: 0 };
 
@@ -450,7 +487,12 @@ export async function executeHuntWithSdk(
 	const filters = parseFilters(config, service, logger);
 
 	// Check queue threshold first
-	const queueCheck = await checkQueueThresholdWithSdk(client, config.queueThreshold, apiCallCounter, logger);
+	const queueCheck = await checkQueueThresholdWithSdk(
+		client,
+		config.queueThreshold,
+		apiCallCounter,
+		logger,
+	);
 	if (!queueCheck.ok) {
 		return {
 			itemsSearched: 0,
@@ -540,7 +582,7 @@ async function checkQueueThresholdWithSdk(
 		// Fail safely - if we can't check the queue, don't proceed to avoid overloading
 		logger.warn(
 			{ err: error, threshold },
-			"Queue threshold check failed - skipping hunt to prevent potential queue overload"
+			"Queue threshold check failed - skipping hunt to prevent potential queue overload",
 		);
 		return {
 			ok: false,
@@ -579,9 +621,12 @@ async function detectGrabbedItemsFromHistoryWithSdk(
 			if (eventDate < searchStartTime) continue;
 
 			const recordAny = record as Record<string, unknown>;
-			const isMatchingMovie = recordAny.movieId && searchedMovieIds.includes(recordAny.movieId as number);
-			const isMatchingSeries = recordAny.seriesId && searchedSeriesIds.includes(recordAny.seriesId as number);
-			const isMatchingEpisode = recordAny.episodeId && searchedEpisodeIds.includes(recordAny.episodeId as number);
+			const isMatchingMovie =
+				recordAny.movieId && searchedMovieIds.includes(recordAny.movieId as number);
+			const isMatchingSeries =
+				recordAny.seriesId && searchedSeriesIds.includes(recordAny.seriesId as number);
+			const isMatchingEpisode =
+				recordAny.episodeId && searchedEpisodeIds.includes(recordAny.episodeId as number);
 
 			if (isMatchingMovie || isMatchingSeries || isMatchingEpisode) {
 				const dataObj = (recordAny.data ?? {}) as Record<string, unknown>;
@@ -598,11 +643,15 @@ async function detectGrabbedItemsFromHistoryWithSdk(
 				}
 
 				const qualityObj = recordAny.quality as Record<string, unknown> | undefined;
-				const qualityName = (qualityObj?.quality as Record<string, unknown>)?.name as string | undefined ??
-					qualityObj?.name as string | undefined;
+				const qualityName =
+					((qualityObj?.quality as Record<string, unknown>)?.name as string | undefined) ??
+					(qualityObj?.name as string | undefined);
 
 				const indexer = (dataObj.indexer ?? recordAny.indexer) as string | undefined;
-				const title = (recordAny.sourceTitle ?? dataObj.releaseTitle ?? dataObj.title ?? "Unknown") as string;
+				const title = (recordAny.sourceTitle ??
+					dataObj.releaseTitle ??
+					dataObj.title ??
+					"Unknown") as string;
 
 				grabbedItems.push({
 					title,
@@ -617,7 +666,7 @@ async function detectGrabbedItemsFromHistoryWithSdk(
 	} catch (error) {
 		logger.warn(
 			{ err: error },
-			"History-based grab detection failed, falling back to queue detection"
+			"History-based grab detection failed, falling back to queue detection",
 		);
 		return detectGrabbedItemsFromQueueWithSdk(
 			client,
@@ -651,9 +700,12 @@ async function detectGrabbedItemsFromQueueWithSdk(
 
 		for (const item of queue.records ?? []) {
 			const itemAny = item as Record<string, unknown>;
-			const isMatchingMovie = itemAny.movieId && searchedMovieIds.includes(itemAny.movieId as number);
-			const isMatchingSeries = itemAny.seriesId && searchedSeriesIds.includes(itemAny.seriesId as number);
-			const isMatchingEpisode = itemAny.episodeId && searchedEpisodeIds.includes(itemAny.episodeId as number);
+			const isMatchingMovie =
+				itemAny.movieId && searchedMovieIds.includes(itemAny.movieId as number);
+			const isMatchingSeries =
+				itemAny.seriesId && searchedSeriesIds.includes(itemAny.seriesId as number);
+			const isMatchingEpisode =
+				itemAny.episodeId && searchedEpisodeIds.includes(itemAny.episodeId as number);
 
 			if (isMatchingMovie || isMatchingSeries || isMatchingEpisode) {
 				const qualityObj = itemAny.quality as Record<string, unknown> | undefined;
@@ -671,7 +723,7 @@ async function detectGrabbedItemsFromQueueWithSdk(
 		// Both history and queue detection failed - log as error since this is unexpected
 		logger.error(
 			{ err: error },
-			"Grab detection failed completely (both history and queue methods) - grabbed items count will be inaccurate"
+			"Grab detection failed completely (both history and queue methods) - grabbed items count will be inaccurate",
 		);
 		return [];
 	}
@@ -698,9 +750,18 @@ async function executeSonarrHuntWithSdk(
 		// Get wanted episodes
 		const fetchSize = Math.max(batchSize * 5, 50);
 		counter.count++;
-		const wantedData = type === "missing"
-			? await client.wanted.missing({ pageSize: fetchSize, sortKey: "airDateUtc", sortDirection: "descending" })
-			: await client.wanted.cutoff({ pageSize: fetchSize, sortKey: "airDateUtc", sortDirection: "descending" });
+		const wantedData =
+			type === "missing"
+				? await client.wanted.missing({
+						pageSize: fetchSize,
+						sortKey: "airDateUtc",
+						sortDirection: "descending",
+					})
+				: await client.wanted.cutoff({
+						pageSize: fetchSize,
+						sortKey: "airDateUtc",
+						sortDirection: "descending",
+					});
 
 		const records = wantedData.records ?? [];
 
@@ -758,7 +819,12 @@ async function executeSonarrHuntWithSdk(
 		}
 
 		// Separate into season searches and individual episode searches
-		const seasonSearches: { seriesId: number; seasonNumber: number; episodeCount: number; title: string }[] = [];
+		const seasonSearches: {
+			seriesId: number;
+			seasonNumber: number;
+			episodeCount: number;
+			title: string;
+		}[] = [];
 		const individualEpisodes: typeof eligibleEpisodes = [];
 
 		for (const [, episodes] of seasonGroups) {
@@ -805,9 +871,10 @@ async function executeSonarrHuntWithSdk(
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: skippedCount > 0
-					? `All ${skippedCount} eligible items were recently searched`
-					: "No episodes match the current filters",
+				message:
+					skippedCount > 0
+						? `All ${skippedCount} eligible items were recently searched`
+						: "No episodes match the current filters",
 				status: "completed",
 			};
 		}
@@ -827,7 +894,9 @@ async function executeSonarrHuntWithSdk(
 			if (remainingBudget <= 0) break;
 			seasonSearchesToExecute.push(seasonSearch);
 			remainingBudget -= seasonSearch.episodeCount;
-			searchedItemNames.push(`${seasonSearch.title} Season ${seasonSearch.seasonNumber} (${seasonSearch.episodeCount} episodes)`);
+			searchedItemNames.push(
+				`${seasonSearch.title} Season ${seasonSearch.seasonNumber} (${seasonSearch.episodeCount} episodes)`,
+			);
 			searchedSeriesIds.push(seasonSearch.seriesId);
 			searchedHistoryItems.push({
 				mediaType: "season",
@@ -843,7 +912,9 @@ async function executeSonarrHuntWithSdk(
 			remainingBudget--;
 			const series = seriesMap.get(ep.seriesId ?? 0);
 			const title = series?.title ?? "Unknown";
-			searchedItemNames.push(`${title} S${String(ep.seasonNumber ?? 0).padStart(2, "0")}E${String(ep.episodeNumber ?? 0).padStart(2, "0")}`);
+			searchedItemNames.push(
+				`${title} S${String(ep.seasonNumber ?? 0).padStart(2, "0")}E${String(ep.episodeNumber ?? 0).padStart(2, "0")}`,
+			);
 			searchedSeriesIds.push(ep.seriesId ?? 0);
 			searchedEpisodeIds.push(ep.id ?? 0);
 			searchedHistoryItems.push({
@@ -875,7 +946,7 @@ async function executeSonarrHuntWithSdk(
 				searchErrors++;
 				logger.error(
 					{ err: error, title: seasonSearch.title, season: seasonSearch.seasonNumber },
-					"Failed to execute season search"
+					"Failed to execute season search",
 				);
 			}
 		}
@@ -899,7 +970,7 @@ async function executeSonarrHuntWithSdk(
 				const series = seriesMap.get(ep.seriesId ?? 0);
 				logger.error(
 					{ err: error, title: series?.title, season: ep.seasonNumber, episode: ep.episodeNumber },
-					"Failed to execute episode search"
+					"Failed to execute episode search",
 				);
 			}
 		}
@@ -916,7 +987,8 @@ async function executeSonarrHuntWithSdk(
 			logger,
 		);
 
-		const totalSearched = seasonSearchesToExecute.reduce((sum, s) => sum + s.episodeCount, 0) + episodesToSearch.length;
+		const totalSearched =
+			seasonSearchesToExecute.reduce((sum, s) => sum + s.episodeCount, 0) + episodesToSearch.length;
 		const searchSummary = [];
 		if (seasonSearchesToExecute.length > 0) {
 			searchSummary.push(`${seasonSearchesToExecute.length} season(s)`);
@@ -965,9 +1037,18 @@ async function executeRadarrHuntWithSdk(
 		const fetchSize = Math.max(batchSize * 5, 50);
 		counter.count++;
 
-		const wantedData = type === "missing"
-			? await client.wanted.missing({ pageSize: fetchSize, sortKey: "digitalRelease", sortDirection: "descending" })
-			: await client.wanted.cutoff({ pageSize: fetchSize, sortKey: "digitalRelease", sortDirection: "descending" });
+		const wantedData =
+			type === "missing"
+				? await client.wanted.missing({
+						pageSize: fetchSize,
+						sortKey: "digitalRelease",
+						sortDirection: "descending",
+					})
+				: await client.wanted.cutoff({
+						pageSize: fetchSize,
+						sortKey: "digitalRelease",
+						sortDirection: "descending",
+					});
 
 		const movies = wantedData.records ?? [];
 
@@ -1002,7 +1083,7 @@ async function executeRadarrHuntWithSdk(
 		// Filter to only movies with valid id and title (required for search and history tracking)
 		const validMovies = filteredMovies.filter(
 			(movie): movie is typeof movie & { id: number; title: string } =>
-				movie.id !== undefined && movie.title !== undefined && movie.title !== null
+				movie.id !== undefined && movie.title !== undefined && movie.title !== null,
 		);
 
 		const eligibleMovies = shuffleArray(validMovies);
@@ -1018,14 +1099,11 @@ async function executeRadarrHuntWithSdk(
 			};
 		}
 
-		const notRecentlySearched = historyManager.filterRecentlySearched(
-			eligibleMovies,
-			(movie) => ({
-				mediaType: "movie",
-				mediaId: movie.id,
-				title: `${movie.title} (${movie.year ?? "?"})`,
-			}),
-		);
+		const notRecentlySearched = historyManager.filterRecentlySearched(eligibleMovies, (movie) => ({
+			mediaType: "movie",
+			mediaId: movie.id,
+			title: `${movie.title} (${movie.year ?? "?"})`,
+		}));
 
 		if (notRecentlySearched.length === 0) {
 			const skippedCount = historyManager.getFilteredCount();
@@ -1034,9 +1112,10 @@ async function executeRadarrHuntWithSdk(
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: skippedCount > 0
-					? `All ${skippedCount} eligible movies were recently searched`
-					: "No movies match the current filters",
+				message:
+					skippedCount > 0
+						? `All ${skippedCount} eligible movies were recently searched`
+						: "No movies match the current filters",
 				status: "completed",
 			};
 		}
@@ -1066,7 +1145,7 @@ async function executeRadarrHuntWithSdk(
 				searchErrors++;
 				logger.error(
 					{ err: error, title: movie.title, year: movie.year },
-					"Failed to execute movie search"
+					"Failed to execute movie search",
 				);
 			}
 		}

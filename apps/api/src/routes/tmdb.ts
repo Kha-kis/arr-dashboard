@@ -374,7 +374,9 @@ const tmdbRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					})),
 					crew: credits.crew
 						.filter((person) =>
-							person.jobs.some((j) => ["Director", "Writer", "Producer", "Creator"].includes(j.job)),
+							person.jobs.some((j) =>
+								["Director", "Writer", "Producer", "Creator"].includes(j.job),
+							),
 						)
 						.slice(0, 10)
 						.map((person) => ({
@@ -554,7 +556,11 @@ const tmdbRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				};
 			}
 
-			const mapProvider = (p: { provider_id: number; provider_name: string; logo_path: string }) => ({
+			const mapProvider = (p: {
+				provider_id: number;
+				provider_name: string;
+				logo_path: string;
+			}) => ({
 				id: p.provider_id,
 				name: p.provider_name,
 				logoUrl: tmdb.getImageUrl(p.logo_path, "w185") ?? undefined,
