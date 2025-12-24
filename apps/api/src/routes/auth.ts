@@ -1,8 +1,11 @@
+import { createHash } from "node:crypto";
 import { passwordSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { hashPassword, verifyPassword } from "../lib/auth/password.js";
 import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
+import { hashPassword, verifyPassword } from "../lib/auth/password.js";
+import { getSessionMetadata } from "../lib/auth/session-metadata.js";
+import { parseUserAgent } from "../lib/auth/user-agent-parser.js";
 
 const registerSchema = z.object({
 	username: z.string().min(3).max(50),
@@ -81,7 +84,11 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				});
 			});
 
-			const session = await app.sessionService.createSession(user.id, parsed.data.rememberMe);
+			const session = await app.sessionService.createSession(
+				user.id,
+				parsed.data.rememberMe,
+				getSessionMetadata(request),
+			);
 			app.sessionService.attachCookie(reply, session.token, parsed.data.rememberMe);
 
 			// Pre-warm connections to ARR instances in background (don't await)
@@ -200,7 +207,11 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
-		const session = await app.sessionService.createSession(user.id, parsed.data.rememberMe);
+		const session = await app.sessionService.createSession(
+			user.id,
+			parsed.data.rememberMe,
+			getSessionMetadata(request),
+		);
 		app.sessionService.attachCookie(reply, session.token, parsed.data.rememberMe);
 
 		// Pre-warm connections to ARR instances in background (don't await)
@@ -253,6 +264,99 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				hasPassword,
 			},
 		});
+	});
+
+	/**
+	 * GET /auth/sessions
+	 * List all active sessions for the current user (diagnostic endpoint)
+	 * Helps debug session management issues
+	 */
+	app.get("/sessions", async (request, reply) => {
+		if (!request.currentUser) {
+			return reply.status(401).send({ error: "Unauthorized" });
+		}
+
+		const sessions = await app.prisma.session.findMany({
+			where: { userId: request.currentUser.id },
+			select: {
+				id: true,
+				createdAt: true,
+				expiresAt: true,
+				lastAccessedAt: true,
+				userAgent: true,
+				ipAddress: true,
+			},
+			orderBy: { createdAt: "desc" },
+		});
+
+		// Mark which session is the current one (by comparing hashed tokens)
+		const currentSessionHash = request.sessionToken
+			? createHash("sha256").update(request.sessionToken).digest("hex")
+			: null;
+
+		const sessionData = sessions.map((s) => {
+			const parsed = parseUserAgent(s.userAgent);
+			return {
+				id: s.id, // Return full ID for revocation (already hashed, safe to expose)
+				isCurrent: s.id === currentSessionHash,
+				createdAt: s.createdAt.toISOString(),
+				expiresAt: s.expiresAt.toISOString(),
+				lastAccessedAt: s.lastAccessedAt.toISOString(),
+				isExpired: s.expiresAt.getTime() < Date.now(),
+				userAgent: s.userAgent,
+				ipAddress: s.ipAddress,
+				// Parsed user agent info for display
+				browser: parsed.browser,
+				os: parsed.os,
+				device: parsed.device,
+			};
+		});
+
+		request.log.info(
+			{ userId: request.currentUser.id, sessionCount: sessions.length },
+			"GET /auth/sessions - Active sessions listed",
+		);
+
+		return reply.send({
+			totalSessions: sessions.length,
+			sessions: sessionData,
+		});
+	});
+
+	/**
+	 * DELETE /auth/sessions/:sessionId
+	 * Revoke a specific session (sign out a device)
+	 */
+	app.delete<{ Params: { sessionId: string } }>("/sessions/:sessionId", async (request, reply) => {
+		if (!request.currentUser) {
+			return reply.status(401).send({ error: "Unauthorized" });
+		}
+
+		const { sessionId } = request.params;
+
+		// Check if trying to revoke current session
+		const currentSessionHash = request.sessionToken
+			? createHash("sha256").update(request.sessionToken).digest("hex")
+			: null;
+
+		if (sessionId === currentSessionHash) {
+			return reply.status(400).send({
+				error: "Cannot revoke current session. Use logout instead.",
+			});
+		}
+
+		const revoked = await app.sessionService.revokeSessionById(sessionId, request.currentUser.id);
+
+		if (!revoked) {
+			return reply.status(404).send({ error: "Session not found" });
+		}
+
+		request.log.info(
+			{ userId: request.currentUser.id, revokedSessionId: sessionId.substring(0, 8) },
+			"Session revoked successfully",
+		);
+
+		return reply.send({ success: true, message: "Session revoked successfully" });
 	});
 
 	const updateAccountSchema = z.object({

@@ -270,13 +270,13 @@ test.describe("TRaSH Guides - Error Handling", () => {
 
 		// The page should show either the scheduler heading or an error/loading state
 		// This is a valid test because we're verifying the UI doesn't crash
-		const schedulerHeading = page.getByText("TRaSH Guides Update Scheduler");
-		const lastCheckText = page.getByText("Last Check").first();
-		const errorText = page.getByText(/error|failed|unavailable|rate limit/i).first();
+		const mainContent = page.locator("main");
+		const schedulerHeading = mainContent.getByRole("heading", { name: /trash guides update scheduler/i });
+		const schedulerSection = mainContent.getByText(/last check|scheduler|next update/i).first();
 
-		// Wait for one of these to be visible (the page loaded something)
+		// Wait for scheduler content to be visible
 		await expect(
-			schedulerHeading.or(lastCheckText).or(errorText)
+			schedulerHeading.or(schedulerSection)
 		).toBeVisible({ timeout: 10000 });
 
 		// Go back to templates and check deployment modal

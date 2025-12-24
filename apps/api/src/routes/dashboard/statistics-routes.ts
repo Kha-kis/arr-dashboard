@@ -34,7 +34,7 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.get("/dashboard/statistics", async (request, reply) => {
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { enabled: true, userId: request.currentUser?.id },
+			where: { enabled: true, userId: request.currentUser!.id },
 		});
 
 		// Fetch all instances in parallel for better performance

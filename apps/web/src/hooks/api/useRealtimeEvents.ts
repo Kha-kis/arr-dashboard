@@ -181,7 +181,22 @@ export function useRealtimeEvents(options: UseRealtimeEventsOptions = {}) {
 					if (!mountedRef.current) return;
 
 					try {
-						const data = JSON.parse(event.data) as SSEEvent;
+						// Parse and validate message structure
+						const parsed = JSON.parse(event.data) as unknown;
+						if (!parsed || typeof parsed !== "object" || !("type" in parsed)) {
+							console.warn("[WebSocket] Invalid message received: missing type field", parsed);
+							return;
+						}
+
+						// Type guard: validate known event types
+						const eventType = (parsed as { type: unknown }).type;
+						const validTypes = ["connected", "dashboard-update", "heartbeat", "pong"];
+						if (typeof eventType !== "string" || !validTypes.includes(eventType)) {
+							console.warn("[WebSocket] Unknown event type received:", eventType);
+							return;
+						}
+
+						const data = parsed as SSEEvent;
 
 						// Update last event time
 						setState((prev) => ({
@@ -219,8 +234,9 @@ export function useRealtimeEvents(options: UseRealtimeEventsOptions = {}) {
 					}
 				};
 
-				ws.onerror = () => {
-					// Errors during unmount are expected - onclose handles reconnection
+				ws.onerror = (event) => {
+					// Log error for debugging - onclose handles reconnection
+					console.warn("[WebSocket] Connection error occurred:", event);
 				};
 
 				ws.onclose = (event) => {
@@ -260,11 +276,19 @@ export function useRealtimeEvents(options: UseRealtimeEventsOptions = {}) {
 				};
 
 				websocketRef.current = ws;
-			} catch {
-				// WebSocket creation can fail during HMR or unmount - retry silently
-				// Retry after delay
+			} catch (error) {
+				// Log WebSocket creation failure for debugging
+				console.warn("[WebSocket] Failed to create connection:", error);
+
+				// Retry after delay with exponential backoff
 				const attempts = reconnectAttemptsRef.current;
 				const delay = Math.min(1000 * 2 ** attempts, 30000);
+
+				// Limit retry attempts to prevent infinite loops
+				if (attempts >= 10) {
+					console.error("[WebSocket] Max reconnection attempts reached, giving up");
+					return;
+				}
 
 				reconnectTimeoutRef.current = setTimeout(() => {
 					if (!mountedRef.current) return;

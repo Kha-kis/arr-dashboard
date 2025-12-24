@@ -173,7 +173,10 @@ export const registerAddRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			} else {
 				reply.status(502);
 			}
-			return reply.send({ message: "Failed to add title" });
+			return reply.send({
+				message: "Failed to add title",
+				error: error instanceof Error ? error.message : undefined,
+			});
 		}
 	});
 

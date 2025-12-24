@@ -29,13 +29,24 @@ const generateSessionToken = () => randomBytes(32).toString("base64url");
 
 const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 
+/**
+ * Options for session creation including device/location metadata
+ */
+export interface SessionMetadata {
+	userAgent?: string;
+	ipAddress?: string;
+}
+
 export class SessionService {
 	constructor(
 		private readonly prisma: PrismaClient,
 		private readonly env: ApiEnv,
 	) {}
 
-	async createSession(userId: string, rememberMe = false) {
+	/**
+	 * Create a new session with optional metadata
+	 */
+	async createSession(userId: string, rememberMe = false, metadata?: SessionMetadata) {
 		const token = generateSessionToken();
 		const hashedToken = hashToken(token);
 
@@ -50,6 +61,8 @@ export class SessionService {
 				id: hashedToken,
 				userId,
 				expiresAt,
+				userAgent: metadata?.userAgent,
+				ipAddress: metadata?.ipAddress,
 			},
 		});
 
@@ -119,7 +132,33 @@ export class SessionService {
 			return null;
 		}
 
+		// Update lastAccessedAt in the background (non-blocking)
+		this.prisma.session
+			.update({
+				where: { id: hashedToken },
+				data: { lastAccessedAt: new Date() },
+			})
+			.catch(() => undefined);
+
 		return { session: record, token: unsigned.value };
+	}
+
+	/**
+	 * Revoke a specific session by its hashed ID
+	 * Used when user wants to sign out a specific device
+	 */
+	async revokeSessionById(sessionId: string, userId: string): Promise<boolean> {
+		// Verify the session belongs to the user before deleting
+		const session = await this.prisma.session.findFirst({
+			where: { id: sessionId, userId },
+		});
+
+		if (!session) {
+			return false;
+		}
+
+		await this.prisma.session.delete({ where: { id: sessionId } });
+		return true;
 	}
 
 	attachCookie(reply: FastifyReply, token: string, rememberMe = false) {
@@ -136,5 +175,38 @@ export class SessionService {
 
 	clearCookie(reply: FastifyReply) {
 		reply.clearCookie(this.env.SESSION_COOKIE_NAME, BASE_COOKIE_OPTIONS(this.env));
+	}
+
+	/**
+	 * Clean up all expired sessions from the database
+	 * Returns the number of sessions deleted
+	 */
+	async cleanupExpiredSessions(): Promise<number> {
+		const result = await this.prisma.session.deleteMany({
+			where: {
+				expiresAt: {
+					lt: new Date(),
+				},
+			},
+		});
+		return result.count;
+	}
+
+	/**
+	 * Get count of active and expired sessions (for diagnostics)
+	 */
+	async getSessionStats(): Promise<{ total: number; expired: number; active: number }> {
+		const now = new Date();
+		const [total, expired] = await Promise.all([
+			this.prisma.session.count(),
+			this.prisma.session.count({
+				where: { expiresAt: { lt: now } },
+			}),
+		]);
+		return {
+			total,
+			expired,
+			active: total - expired,
+		};
 	}
 }

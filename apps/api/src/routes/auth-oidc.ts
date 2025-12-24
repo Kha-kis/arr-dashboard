@@ -2,8 +2,9 @@ import { randomBytes } from "node:crypto";
 import type { FastifyPluginCallback } from "fastify";
 import * as oauth from "oauth4webapi";
 import { z } from "zod";
-import { OIDCProvider } from "../lib/auth/oidc-provider.js";
 import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
+import { OIDCProvider } from "../lib/auth/oidc-provider.js";
+import { getSessionMetadata } from "../lib/auth/session-metadata.js";
 
 /**
  * In-memory storage for OIDC states and nonces (production: use Redis)
@@ -393,8 +394,9 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				}
 			}
 
-			// Create session
-			const session = await app.sessionService.createSession(user.id, true);
+			// Create session with metadata
+			const metadata = getSessionMetadata(request);
+			const session = await app.sessionService.createSession(user.id, true, metadata);
 			app.sessionService.attachCookie(reply, session.token, true);
 
 			// Pre-warm connections to ARR instances in background (don't await)

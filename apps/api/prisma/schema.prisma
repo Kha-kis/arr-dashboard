@@ -38,11 +38,14 @@ model User {
 }
 
 model Session {
-  id        String   @id
-  userId    String
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String    @id
+  userId         String
+  expiresAt      DateTime
+  createdAt      DateTime  @default(now())
+  lastAccessedAt DateTime  @default(now())
+  userAgent      String?   // Browser/device user agent string
+  ipAddress      String?   // IP address at login time
+  user           User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([expiresAt]) // For cleanup queries

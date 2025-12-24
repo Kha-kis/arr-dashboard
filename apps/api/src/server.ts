@@ -7,29 +7,30 @@ import { type ApiEnv, envSchema } from "./config/env.js";
 import { arrClientPlugin } from "./plugins/arr-client.js";
 import backupSchedulerPlugin from "./plugins/backup-scheduler.js";
 import librarySyncSchedulerPlugin from "./plugins/library-sync-scheduler.js";
-import trashBackupCleanupPlugin from "./plugins/trash-backup-cleanup.js";
-import trashUpdateSchedulerPlugin from "./plugins/trash-update-scheduler.js";
 import lifecyclePlugin from "./plugins/lifecycle.js";
 import { prismaPlugin } from "./plugins/prisma.js";
 import { securityPlugin } from "./plugins/security.js";
-import { registerAuthRoutes } from "./routes/auth.js";
+import sessionCleanupPlugin from "./plugins/session-cleanup.js";
+import trashBackupCleanupPlugin from "./plugins/trash-backup-cleanup.js";
+import trashUpdateSchedulerPlugin from "./plugins/trash-update-scheduler.js";
 import { registerAuthOidcRoutes } from "./routes/auth-oidc.js";
 import { registerAuthPasskeyRoutes } from "./routes/auth-passkey.js";
+import { registerAuthRoutes } from "./routes/auth.js";
 import { registerBackupRoutes } from "./routes/backup.js";
 import { registerDashboardRoutes } from "./routes/dashboard.js";
 import { registerDiscoverRoutes } from "./routes/discover.js";
+import { registerEventsRoutes } from "./routes/events.js";
 import { registerHealthRoutes } from "./routes/health.js";
+import { registerHuntingRoutes } from "./routes/hunting.js";
 import { registerLibraryRoutes } from "./routes/library.js";
 import { registerManualImportRoutes } from "./routes/manual-import.js";
 import oidcProvidersRoutes from "./routes/oidc-providers.js";
 import { registerRecommendationsRoutes } from "./routes/recommendations.js";
 import { registerSearchRoutes } from "./routes/search.js";
-import { registerTMDBRoutes } from "./routes/tmdb.js";
 import { registerServiceRoutes } from "./routes/services.js";
 import { registerSystemRoutes } from "./routes/system.js";
+import { registerTMDBRoutes } from "./routes/tmdb.js";
 import { registerTrashGuidesRoutes } from "./routes/trash-guides/index.js";
-import { registerHuntingRoutes } from "./routes/hunting.js";
-import { registerEventsRoutes } from "./routes/events.js";
 
 export type ServerOptions = {
 	logger?: boolean;
@@ -80,6 +81,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(lifecyclePlugin);
 	app.register(backupSchedulerPlugin);
 	app.register(librarySyncSchedulerPlugin);
+	app.register(sessionCleanupPlugin);
 	app.register(trashBackupCleanupPlugin);
 	app.register(trashUpdateSchedulerPlugin);
 

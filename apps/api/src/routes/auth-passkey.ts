@@ -2,8 +2,9 @@ import { randomBytes } from "node:crypto";
 import type { AuthenticationResponseJSON, RegistrationResponseJSON } from "@simplewebauthn/server";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { createPasskeyService } from "../lib/auth/passkey-service.js";
 import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
+import { createPasskeyService } from "../lib/auth/passkey-service.js";
+import { getSessionMetadata } from "../lib/auth/session-metadata.js";
 
 /**
  * In-memory storage for passkey challenges (production: use Redis)
@@ -229,8 +230,9 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				return reply.status(404).send({ error: "User not found" });
 			}
 
-			// Create session
-			const session = await app.sessionService.createSession(user.id, true);
+			// Create session with metadata
+			const metadata = getSessionMetadata(request);
+			const session = await app.sessionService.createSession(user.id, true, metadata);
 			app.sessionService.attachCookie(reply, session.token, true);
 
 			// Pre-warm connections to ARR instances in background (don't await)

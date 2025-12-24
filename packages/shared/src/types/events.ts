@@ -13,6 +13,27 @@ export const dashboardFeatureSchema = z.enum(["library", "queue", "history", "ca
 export type DashboardFeature = z.infer<typeof dashboardFeatureSchema>;
 
 /**
+ * ARR webhook event types (from Sonarr/Radarr webhooks)
+ */
+export const arrEventTypeSchema = z.enum([
+	"Grab",
+	"Download",
+	"Rename",
+	"SeriesAdd",
+	"SeriesDelete",
+	"EpisodeFileDelete",
+	"MovieAdd",
+	"MovieDelete",
+	"MovieFileDelete",
+	"Health",
+	"HealthRestored",
+	"ApplicationUpdate",
+	"Test",
+	"Unknown", // Fallback for unrecognized events
+]);
+export type ArrEventType = z.infer<typeof arrEventTypeSchema>;
+
+/**
  * Dashboard update event sent via SSE
  */
 export const dashboardUpdateEventSchema = z.object({
@@ -21,7 +42,7 @@ export const dashboardUpdateEventSchema = z.object({
 	instanceId: z.string(),
 	instanceName: z.string(),
 	service: z.enum(["sonarr", "radarr"]),
-	eventType: z.string(),
+	eventType: arrEventTypeSchema,
 	timestamp: z.string(),
 });
 export type DashboardUpdateEvent = z.infer<typeof dashboardUpdateEventSchema>;
