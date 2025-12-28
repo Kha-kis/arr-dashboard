@@ -328,10 +328,25 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				include: { user: true },
 			});
 
+			let localAccount = await app.prisma.user.findUnique({
+				where: {
+					username: userInfo.preferred_username,
+				},
+			});
 			let user: { id: string; username: string };
 
 			if (oidcAccount) {
 				// Existing OIDC account - log them in
+				user = oidcAccount.user;
+			} else if (localAccount) {
+				// Username conflict with local account - link OIDC to local account
+				oidcAccount = await app.prisma.oIDCAccount.create({
+					data: {
+						providerUserId: userInfo.sub,
+						userId: localAccount.id,
+					},
+					include: { user: true },
+				});
 				user = oidcAccount.user;
 			} else {
 				// New OIDC account - check if user is authenticated or if this is setup
