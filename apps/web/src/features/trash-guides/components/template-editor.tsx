@@ -1,11 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import type { TrashTemplate, TemplateConfig, TrashCustomFormat, TrashCustomFormatGroup } from "@arr/shared";
+import type { TrashTemplate, TemplateConfig, TrashCustomFormat, TrashCustomFormatGroup, CustomQualityConfig } from "@arr/shared";
+import { QualityGroupEditor } from "./quality-group-editor";
 import { useCreateTemplate, useUpdateTemplate } from "../../../hooks/api/useTemplates";
 import { useTrashCacheEntries } from "../../../hooks/api/useTrashCache";
 import { Alert, AlertDescription, Input, Button } from "../../../components/ui";
-import { X, Save, Minus, Settings, AlertTriangle, Info, Trash2, Shield } from "lucide-react";
+import { X, Save, Minus, Settings, AlertTriangle, Trash2, Shield, Gauge } from "lucide-react";
 import { toast } from "sonner";
 import { ConditionEditor } from "./condition-editor";
 
@@ -33,6 +34,11 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 	} | null>(null);
 	// Sync settings
 	const [deleteRemovedCFs, setDeleteRemovedCFs] = useState(false);
+	// Quality configuration
+	const [customQualityConfig, setCustomQualityConfig] = useState<CustomQualityConfig>({
+		useCustomQualities: false,
+		items: [],
+	});
 
 	const createMutation = useCreateTemplate();
 	const updateMutation = useUpdateTemplate();
@@ -65,6 +71,12 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 
 			// Initialize sync settings
 			setDeleteRemovedCFs(template.config.syncSettings?.deleteRemovedCFs ?? false);
+
+			// Initialize quality configuration
+			setCustomQualityConfig(template.config.customQualityConfig ?? {
+				useCustomQualities: false,
+				items: [],
+			});
 		} else {
 			// Reset for new template
 			setName("");
@@ -73,6 +85,10 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 			setSelectedFormats(new Map());
 			setSelectedGroups(new Set());
 			setDeleteRemovedCFs(false);
+			setCustomQualityConfig({
+				useCustomQualities: false,
+				items: [],
+			});
 		}
 	}, [template]);
 
@@ -107,6 +123,10 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 			syncSettings: {
 				deleteRemovedCFs,
 			},
+			// Include custom quality config if user has enabled it
+			...(customQualityConfig.useCustomQualities && {
+				customQualityConfig,
+			}),
 		};
 
 		// Track items that couldn't be resolved (new items not in cache)
@@ -391,6 +411,22 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 								</div>
 							</div>
 						</div>
+					</div>
+
+					{/* Quality Configuration (Power User Feature) */}
+					<div className="space-y-3">
+						<div className="flex items-center gap-2">
+							<Gauge className="h-5 w-5 text-fg-muted" />
+							<h3 className="text-lg font-medium text-fg">Quality Configuration</h3>
+							<span className="rounded bg-amber-500/20 px-2 py-0.5 text-xs text-amber-400">
+								Advanced
+							</span>
+						</div>
+						<QualityGroupEditor
+							config={customQualityConfig}
+							onChange={setCustomQualityConfig}
+							showToggle={true}
+						/>
 					</div>
 
 					{/* Custom Formats */}
