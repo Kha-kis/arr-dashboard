@@ -3,6 +3,7 @@ import type { FastifyPluginCallback } from "fastify";
 import * as oauth from "oauth4webapi";
 import { z } from "zod";
 import { OIDCProvider } from "../lib/auth/oidc-provider.js";
+import { normalizeIssuerUrl } from "../lib/auth/oidc-utils.js";
 
 /**
  * In-memory storage for OIDC states and nonces (production: use Redis)
@@ -73,7 +74,24 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				.send({ error: "Invalid OIDC configuration", details: parsed.error.flatten() });
 		}
 
-		const { displayName, clientId, clientSecret, issuer, scopes } = parsed.data;
+		const { displayName, clientId, clientSecret, scopes } = parsed.data;
+
+		// Normalize issuer URL to prevent discovery failures
+		let normalizedIssuer: string;
+		try {
+			normalizedIssuer = normalizeIssuerUrl(parsed.data.issuer);
+			if (normalizedIssuer !== parsed.data.issuer) {
+				request.log.info(
+					{ original: parsed.data.issuer, normalized: normalizedIssuer },
+					"Normalized OIDC issuer URL",
+				);
+			}
+		} catch (error) {
+			return reply.status(400).send({
+				error: "Invalid issuer URL",
+				details: error instanceof Error ? error.message : "Could not parse issuer URL",
+			});
+		}
 
 		// Auto-generate redirect URI if not provided
 		// Use the request origin to detect the correct URL (works in Docker/proxy environments)
@@ -95,16 +113,34 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					throw new Error("SETUP_CLOSED");
 				}
 
-				// Check if provider already exists (only one allowed)
-				const existing = await tx.oIDCProvider.findFirst();
-
-				if (existing) {
-					throw new Error("PROVIDER_EXISTS");
-				}
-
 				// Encrypt client secret
 				const { value: encryptedClientSecret, iv: clientSecretIv } =
 					app.encryptor.encrypt(clientSecret);
+
+				// Check if provider already exists
+				const existing = await tx.oIDCProvider.findFirst();
+
+				if (existing) {
+					// Update existing provider instead of rejecting
+					// This allows fixing misconfigured OIDC during setup
+					request.log.info(
+						{ existingId: existing.id },
+						"Updating existing OIDC provider during setup",
+					);
+					return await tx.oIDCProvider.update({
+						where: { id: existing.id },
+						data: {
+							displayName,
+							clientId,
+							encryptedClientSecret,
+							clientSecretIv,
+							issuer: normalizedIssuer,
+							redirectUri,
+							scopes,
+							enabled: true,
+						},
+					});
+				}
 
 				// Create OIDC provider atomically
 				return await tx.oIDCProvider.create({
@@ -113,7 +149,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 						clientId,
 						encryptedClientSecret,
 						clientSecretIv,
-						issuer,
+						issuer: normalizedIssuer,
 						redirectUri,
 						scopes,
 						enabled: true,
@@ -133,9 +169,6 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					error:
 						"OIDC setup is only allowed during initial setup. Use the admin panel to configure OIDC providers.",
 				});
-			}
-			if (errorMessage === "PROVIDER_EXISTS") {
-				return reply.status(409).send({ error: "OIDC provider already configured" });
 			}
 			throw error;
 		}
@@ -192,8 +225,13 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			);
 			return reply.send({ authorizationUrl });
 		} catch (error) {
-			request.log.error({ err: error }, "Failed to generate OIDC authorization URL");
-			return reply.status(500).send({ error: "Failed to initiate OIDC login" });
+			const errMsg = error instanceof Error ? error.message : String(error);
+			request.log.error({ err: error, errorMessage: errMsg }, "Failed to generate OIDC authorization URL");
+			return reply.status(500).send({
+				error: "Failed to initiate OIDC login",
+				details: errMsg,
+				hint: "Check the OIDC provider configuration in Settings > Authentication. Common issues: incorrect issuer URL, provider not accessible from server.",
+			});
 		}
 	});
 
