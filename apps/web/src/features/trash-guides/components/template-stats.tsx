@@ -7,28 +7,30 @@ import { ChevronDown, ChevronUp, Calendar, Package, Activity, Rocket, Layers, Hi
 import { BulkDeploymentModal } from "./bulk-deployment-modal";
 import { DeploymentHistoryTable } from "./deployment-history-table";
 import { InstanceOverrideEditor } from "./instance-override-editor";
-import { DropdownMenu, DropdownMenuItem, Badge, Button } from "../../../components/ui";
+import { LegacyDropdownMenu, LegacyDropdownMenuItem, Badge, Button } from "../../../components/ui";
 import {
-	Dialog,
-	DialogHeader,
-	DialogTitle,
-	DialogDescription,
-	DialogContent,
-	DialogFooter,
-} from "../../../components/ui/dialog";
+	LegacyDialog,
+	LegacyDialogHeader,
+	LegacyDialogTitle,
+	LegacyDialogDescription,
+	LegacyDialogContent,
+	LegacyDialogFooter,
+} from "../../../components/ui";
 import { useUpdateSyncStrategy, useBulkUpdateSyncStrategy } from "../../../hooks/api/useDeploymentPreview";
 import { cn } from "../../../lib/utils";
+import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 import { toast } from "sonner";
 
-// Helper to get sync strategy display info
+// Helper to get sync strategy display info - color is handled dynamically for notify
 const getSyncStrategyInfo = (strategy: "auto" | "manual" | "notify") => {
 	switch (strategy) {
 		case "auto":
-			return { label: "Auto-sync", icon: RefreshCw, variant: "success" as const, color: "text-green-500" };
+			return { label: "Auto-sync", icon: RefreshCw, variant: "success" as const, colorClass: "text-green-500" };
 		case "notify":
-			return { label: "Notify", icon: Bell, variant: "info" as const, color: "text-blue-500" };
+			return { label: "Notify", icon: Bell, variant: "info" as const, colorClass: null }; // Theme color
 		case "manual":
-			return { label: "Manual", icon: Hand, variant: "warning" as const, color: "text-amber-500" };
+			return { label: "Manual", icon: Hand, variant: "warning" as const, colorClass: "text-amber-500" };
 	}
 };
 
@@ -40,6 +42,8 @@ interface TemplateStatsProps {
 }
 
 export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInstance }: TemplateStatsProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const [expanded, setExpanded] = useState(false);
 	const [showBulkDeployment, setShowBulkDeployment] = useState(false);
 	const [showHistory, setShowHistory] = useState(false);
@@ -193,7 +197,7 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 											Bulk Deploy
 										</button>
 										{/* Bulk Sync Strategy Dropdown */}
-										<DropdownMenu
+										<LegacyDropdownMenu
 											trigger={
 												<div
 													className={cn(
@@ -212,28 +216,28 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 											}
 											align="right"
 										>
-											<DropdownMenuItem
+											<LegacyDropdownMenuItem
 												icon={<RefreshCw className="h-4 w-4 text-green-500" />}
 												onClick={() => handleBulkSyncStrategyChange("auto")}
 												disabled={bulkUpdateSyncStrategyMutation.isPending}
 											>
 												All Auto-sync
-											</DropdownMenuItem>
-											<DropdownMenuItem
-												icon={<Bell className="h-4 w-4 text-blue-500" />}
+											</LegacyDropdownMenuItem>
+											<LegacyDropdownMenuItem
+												icon={<Bell className="h-4 w-4" style={{ color: themeGradient.from }} />}
 												onClick={() => handleBulkSyncStrategyChange("notify")}
 												disabled={bulkUpdateSyncStrategyMutation.isPending}
 											>
 												All Notify Only
-											</DropdownMenuItem>
-											<DropdownMenuItem
+											</LegacyDropdownMenuItem>
+											<LegacyDropdownMenuItem
 												icon={<Hand className="h-4 w-4 text-amber-500" />}
 												onClick={() => handleBulkSyncStrategyChange("manual")}
 												disabled={bulkUpdateSyncStrategyMutation.isPending}
 											>
 												All Manual
-											</DropdownMenuItem>
-										</DropdownMenu>
+											</LegacyDropdownMenuItem>
+										</LegacyDropdownMenu>
 									</div>
 								)}
 							</div>
@@ -274,36 +278,36 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 											)}
 											{/* Sync Strategy Dropdown - only enabled for mapped instances */}
 											{instance.hasMapping ? (
-												<DropdownMenu
+												<LegacyDropdownMenu
 													trigger={
 														<div className="flex items-center justify-center rounded border border-border bg-bg-subtle p-1.5 text-fg-muted transition hover:bg-bg-subtle/80 cursor-pointer" title="Change sync strategy">
-															<StrategyIcon className={cn("h-3.5 w-3.5", strategyInfo.color, isUpdating && "animate-spin")} />
+															<StrategyIcon className={cn("h-3.5 w-3.5", strategyInfo.colorClass, isUpdating && "animate-spin")} />
 														</div>
 													}
 													align="right"
 												>
-													<DropdownMenuItem
+													<LegacyDropdownMenuItem
 														icon={<RefreshCw className="h-4 w-4 text-green-500" />}
 														onClick={() => handleSyncStrategyChange(instance.instanceId, "auto")}
 														disabled={isUpdating || instance.syncStrategy === "auto"}
 													>
 														Auto-sync
-													</DropdownMenuItem>
-													<DropdownMenuItem
-														icon={<Bell className="h-4 w-4 text-blue-500" />}
+													</LegacyDropdownMenuItem>
+													<LegacyDropdownMenuItem
+														icon={<Bell className="h-4 w-4" style={{ color: themeGradient.from }} />}
 														onClick={() => handleSyncStrategyChange(instance.instanceId, "notify")}
 														disabled={isUpdating || instance.syncStrategy === "notify"}
 													>
 														Notify Only
-													</DropdownMenuItem>
-													<DropdownMenuItem
+													</LegacyDropdownMenuItem>
+													<LegacyDropdownMenuItem
 														icon={<Hand className="h-4 w-4 text-amber-500" />}
 														onClick={() => handleSyncStrategyChange(instance.instanceId, "manual")}
 														disabled={isUpdating || instance.syncStrategy === "manual"}
 													>
 														Manual
-													</DropdownMenuItem>
-												</DropdownMenu>
+													</LegacyDropdownMenuItem>
+												</LegacyDropdownMenu>
 											) : (
 												<div
 													className="flex items-center justify-center rounded border border-border bg-bg-subtle p-1.5 text-fg-muted/50 cursor-not-allowed"
@@ -374,29 +378,29 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 			)}
 
 			{/* Deployment History Modal */}
-			<Dialog open={showHistory} onOpenChange={setShowHistory} size="xl">
-				<DialogHeader>
-					<DialogTitle>
+			<LegacyDialog open={showHistory} onOpenChange={setShowHistory} size="xl">
+				<LegacyDialogHeader>
+					<LegacyDialogTitle>
 						<div className="flex items-center gap-2">
 							<History className="h-5 w-5" />
 							Deployment History
 						</div>
-					</DialogTitle>
-					<DialogDescription>
+					</LegacyDialogTitle>
+					<LegacyDialogDescription>
 						{templateName}
-					</DialogDescription>
-				</DialogHeader>
+					</LegacyDialogDescription>
+				</LegacyDialogHeader>
 
-				<DialogContent>
+				<LegacyDialogContent>
 					<DeploymentHistoryTable templateId={templateId} limit={10} />
-				</DialogContent>
+				</LegacyDialogContent>
 
-				<DialogFooter>
+				<LegacyDialogFooter>
 					<Button variant="ghost" onClick={() => setShowHistory(false)}>
 						Close
 					</Button>
-				</DialogFooter>
-			</Dialog>
+				</LegacyDialogFooter>
+			</LegacyDialog>
 
 			{/* Instance Override Editor Modal */}
 			{overrideModal && templateLoading && (

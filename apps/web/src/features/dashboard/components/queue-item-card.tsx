@@ -1,11 +1,14 @@
 "use client";
 
 /**
- * Component for rendering individual queue items as cards
+ * Component for rendering individual queue items as premium cards
+ * Features glassmorphism styling with theme-aware accents
  */
 
 import type { QueueItem } from "@arr/shared";
 import { cn } from "../../../lib/utils";
+import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
 import type { QueueAction } from "./queue-action-buttons";
 import { QueueActionButtons } from "./queue-action-buttons";
@@ -32,7 +35,8 @@ export interface QueueItemCardProps {
 }
 
 /**
- * Card component for displaying a single queue item with actions
+ * Premium card component for displaying a single queue item
+ * Features glassmorphism styling with theme-aware accent colors
  */
 export const QueueItemCard = ({
 	item,
@@ -47,6 +51,8 @@ export const QueueItemCard = ({
 	primaryAction,
 }: QueueItemCardProps) => {
 	const [incognitoMode] = useIncognitoMode();
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const issueSummary = summarizeIssueCounts(issueLines);
 	const progressValue = computeProgressValue([item]);
 
@@ -72,24 +78,59 @@ export const QueueItemCard = ({
 	return (
 		<div
 			className={cn(
-				"rounded-xl border border-white/10 bg-white/5 p-4",
-				selected && "border-white/40",
+				"group relative overflow-hidden rounded-xl border border-border/40 bg-card/50 backdrop-blur-sm p-4 transition-all duration-300",
+				selected && "ring-2 ring-primary/50 border-primary/50",
+				"hover:border-primary/30 hover:shadow-xl",
 			)}
+			style={{
+				boxShadow: selected
+					? `0 0 24px -4px ${themeGradient.glow}, inset 0 1px 0 0 rgba(255,255,255,0.05)`
+					: `inset 0 1px 0 0 rgba(255,255,255,0.03)`,
+			}}
 			onMouseEnter={handleMouseEnter}
 		>
-			<div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start lg:gap-6">
+			{/* Theme gradient accent line on the left */}
+			<div
+				className="absolute inset-y-0 left-0 w-0.5 transition-all duration-300 group-hover:w-1"
+				style={{
+					background: `linear-gradient(180deg, ${themeGradient.from}, ${themeGradient.to})`,
+				}}
+			/>
+
+			{/* Subtle gradient overlay on hover */}
+			<div
+				className="pointer-events-none absolute inset-0 opacity-0 transition-opacity duration-300 group-hover:opacity-100"
+				style={{
+					background: `linear-gradient(135deg, ${themeGradient.from}05, transparent 50%)`,
+				}}
+			/>
+
+			<div className="relative grid gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:items-start lg:gap-6">
 				{/* Left column: checkbox, title, metadata, status messages */}
 				<div className="flex min-w-0 items-start gap-3 lg:pr-4">
-					<input
-						type="checkbox"
-						className="mt-1 h-4 w-4"
-						checked={selected}
-						onChange={onToggleSelect}
-						disabled={pending}
-					/>
-					<div className="min-w-0 space-y-2">
+					<div className="relative mt-1">
+						<input
+							type="checkbox"
+							className={cn(
+								"h-4 w-4 rounded border-2 transition-all duration-200 cursor-pointer",
+								"border-border/50 bg-card/50",
+								"checked:border-primary checked:bg-primary",
+								"focus:ring-2 focus:ring-primary/20 focus:ring-offset-0",
+								"disabled:cursor-not-allowed disabled:opacity-50",
+							)}
+							checked={selected}
+							onChange={onToggleSelect}
+							disabled={pending}
+						/>
+					</div>
+					<div className="min-w-0 space-y-3">
 						<div>
-							<p className="font-medium text-white">
+							<p
+								className="font-medium leading-tight transition-colors duration-300 group-hover:text-primary"
+								style={{
+									// Theme-aware hover color via CSS variable
+								}}
+							>
 								{incognitoMode
 									? getLinuxIsoName(item.title ?? "Unnamed item")
 									: (item.title ?? "Unnamed item")}
@@ -101,8 +142,8 @@ export const QueueItemCard = ({
 				</div>
 
 				{/* Right column: issue badge, progress, actions */}
-				<div className="flex flex-col gap-3 lg:flex-shrink-0 lg:gap-4 lg:pl-4">
-					<div className="flex justify-end text-xs text-white/60">
+				<div className="flex flex-col gap-3 lg:flex-shrink-0 lg:gap-4 lg:pl-4 lg:border-l lg:border-border/30">
+					<div className="flex justify-end">
 						<QueueIssueBadge summary={issueSummary} size="sm" />
 					</div>
 					<QueueProgress value={progressValue} size="sm" />

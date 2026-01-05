@@ -4,6 +4,8 @@ import { useState } from "react";
 import { RefreshCw, Clock, AlertCircle, CheckCircle2, ChevronDown, ChevronUp, History } from "lucide-react";
 import type { TemplateUpdateInfo } from "../../../lib/api-client/trash-guides";
 import { cn } from "../../../lib/utils";
+import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 import { TemplateDiffModal } from "./template-diff-modal";
 
 interface TemplateUpdateBannerProps {
@@ -31,6 +33,8 @@ export const TemplateUpdateBanner = ({
 	update,
 	onSyncSuccess,
 }: TemplateUpdateBannerProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const [showDetails, setShowDetails] = useState(false);
 	const [showDiffModal, setShowDiffModal] = useState(false);
 
@@ -45,26 +49,45 @@ export const TemplateUpdateBanner = ({
 	};
 
 	// Different styling for recently synced vs pending updates
+	// Green for synced (semantic), theme color for pending
+	const getBannerStyle = (): React.CSSProperties | undefined => {
+		if (isRecentlyAutoSynced) return undefined;
+		return {
+			borderColor: themeGradient.fromMuted,
+			backgroundColor: themeGradient.fromLight,
+		};
+	};
+
 	const bannerColorClasses = isRecentlyAutoSynced
 		? "border-green-500/30 bg-green-500/10"
-		: "border-blue-500/30 bg-blue-500/10";
+		: "";
 
 	const iconColorClasses = isRecentlyAutoSynced
 		? "text-green-500"
-		: "text-blue-500";
+		: "";
+
+	const getIconStyle = (): React.CSSProperties | undefined => {
+		if (isRecentlyAutoSynced) return undefined;
+		return { color: themeGradient.from };
+	};
+
+	const getButtonStyle = (): React.CSSProperties | undefined => {
+		if (isRecentlyAutoSynced) return undefined;
+		return { backgroundColor: themeGradient.from };
+	};
 
 	const buttonColorClasses = isRecentlyAutoSynced
 		? "bg-green-600 hover:bg-green-700"
-		: "bg-blue-600 hover:bg-blue-700";
+		: "hover:opacity-90";
 
 	return (
-		<div className={cn("rounded-lg border p-3", bannerColorClasses)}>
+		<div className={cn("rounded-lg border p-3", bannerColorClasses)} style={getBannerStyle()}>
 			{/* Top row: icon, message, badges, more button */}
 			<div className="flex items-center gap-3">
 				{isRecentlyAutoSynced ? (
 					<History className={cn("h-4 w-4 shrink-0", iconColorClasses)} />
 				) : (
-					<RefreshCw className={cn("h-4 w-4 shrink-0", iconColorClasses)} />
+					<RefreshCw className="h-4 w-4 shrink-0" style={getIconStyle()} />
 				)}
 
 				{/* Message */}
@@ -124,6 +147,7 @@ export const TemplateUpdateBanner = ({
 						"px-4 py-1.5 text-xs font-medium text-primary-fg rounded transition-colors",
 						buttonColorClasses
 					)}
+					style={getButtonStyle()}
 				>
 					{isRecentlyAutoSynced ? "View Recent Changes" : "View Changes"}
 				</button>
@@ -131,10 +155,13 @@ export const TemplateUpdateBanner = ({
 
 			{/* Expandable details */}
 			{showDetails && (
-				<div className={cn(
-					"mt-3 pt-3 border-t",
-					isRecentlyAutoSynced ? "border-green-500/20" : "border-blue-500/20"
-				)}>
+				<div
+					className={cn(
+						"mt-3 pt-3 border-t",
+						isRecentlyAutoSynced && "border-green-500/20"
+					)}
+					style={!isRecentlyAutoSynced ? { borderColor: themeGradient.fromMuted } : undefined}
+				>
 					<div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-fg-muted">
 						<div className="flex items-center gap-1.5">
 							<Clock className="h-3 w-3" />

@@ -3,22 +3,38 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import {
-	Button,
-	Card,
-	CardHeader,
-	CardTitle,
-	CardDescription,
-	CardContent,
-	Input,
-	Switch,
-	Badge,
-	Alert,
-	AlertDescription,
-	EmptyState,
-} from "../../../components/ui";
-import { Section } from "../../../components/layout";
-import { Settings, Save, RotateCcw, Play, Pause, Power, Zap } from "lucide-react";
-import { useHuntingConfigs, useUpdateHuntConfig, useToggleScheduler } from "../hooks/useHuntingConfig";
+	Settings,
+	Save,
+	RotateCcw,
+	Play,
+	Pause,
+	Power,
+	Zap,
+	Search,
+	ArrowUpCircle,
+	Gauge,
+	Clock,
+	Filter,
+} from "lucide-react";
+import { Button, Input, Switch, Alert, AlertDescription } from "../../../components/ui";
+import {
+	PremiumSection,
+	PremiumEmptyState,
+	PremiumCard,
+	InstanceCard,
+	ServiceBadge,
+	StatusBadge,
+	GlassmorphicCard,
+	GradientButton,
+	PremiumSkeleton,
+} from "../../../components/layout";
+import { THEME_GRADIENTS, SERVICE_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
+import {
+	useHuntingConfigs,
+	useUpdateHuntConfig,
+	useToggleScheduler,
+} from "../hooks/useHuntingConfig";
 import { useHuntingStatus } from "../hooks/useHuntingStatus";
 import { useManualHunt } from "../hooks/useManualHunt";
 import { HuntingFilters } from "./hunting-filters";
@@ -36,7 +52,19 @@ import {
 	DEFAULT_RESEARCH_AFTER_DAYS,
 } from "../lib/constants";
 
+/**
+ * Premium Hunting Configuration
+ *
+ * Configuration panel with:
+ * - Global automation controls
+ * - Per-instance configuration cards
+ * - Rate limiting settings
+ * - Filter controls
+ */
 export const HuntingConfig = () => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
 	const { configs, instances, isLoading, error, refetch } = useHuntingConfigs();
 	const { status, refetch: refetchStatus } = useHuntingStatus();
 	const { toggleScheduler, isToggling } = useToggleScheduler();
@@ -44,7 +72,6 @@ export const HuntingConfig = () => {
 	const handleToggleScheduler = async () => {
 		try {
 			const result = await toggleScheduler();
-			// Refetch status to update UI immediately
 			await refetchStatus();
 			if (result.running) {
 				toast.success("Automation started", {
@@ -55,28 +82,39 @@ export const HuntingConfig = () => {
 					description: "Use 'Run Now' on each instance for manual hunts",
 				});
 			}
-		} catch (error) {
+		} catch (err) {
 			toast.error("Failed to toggle automation");
 		}
 	};
 
 	const schedulerRunning = status?.schedulerRunning ?? false;
 
+	// Loading state
 	if (isLoading) {
 		return (
-			<Section title="Hunting Configuration">
+			<PremiumSection
+				title="Hunting Configuration"
+				description="Configure automated hunting for each instance"
+				icon={Settings}
+			>
 				<div className="space-y-4">
 					{Array.from({ length: 3 }).map((_, i) => (
-						<div key={i} className="h-48 bg-bg-subtle animate-pulse rounded-xl" />
+						<PremiumSkeleton
+							key={i}
+							variant="card"
+							className="h-48"
+							style={{ animationDelay: `${i * 50}ms` } as React.CSSProperties}
+						/>
 					))}
 				</div>
-			</Section>
+			</PremiumSection>
 		);
 	}
 
+	// Error state
 	if (error) {
 		return (
-			<EmptyState
+			<PremiumEmptyState
 				icon={Settings}
 				title="Failed to load configuration"
 				description="Could not fetch hunting configuration. Please try again."
@@ -84,103 +122,157 @@ export const HuntingConfig = () => {
 		);
 	}
 
-	const configuredInstances = configs.filter(c => c !== null);
+	const configuredInstances = configs.filter((c) => c !== null);
 	const unconfiguredInstances = instances.filter(
-		inst => !configs.some(c => c?.instanceId === inst.id)
+		(inst) => !configs.some((c) => c?.instanceId === inst.id)
 	);
 
 	return (
-		<Section
-			title="Hunting Configuration"
-			description="Configure automated hunting for each Sonarr and Radarr instance"
-		>
-			{/* Global Controls */}
-			<div className={`mb-6 p-4 rounded-xl border ${schedulerRunning ? 'border-green-500/50 bg-green-500/5' : 'border-border bg-bg-subtle/50'}`}>
-				<div className="flex items-center justify-between">
-					<div className="flex items-center gap-3">
-						<div className={`p-2 rounded-lg ${schedulerRunning ? 'bg-green-500/20' : 'bg-bg-subtle'}`}>
-							<Power className={`h-5 w-5 ${schedulerRunning ? 'text-green-500' : 'text-fg-muted'}`} />
-						</div>
-						<div>
-							<div className="flex items-center gap-2">
-								<h3 className="font-medium text-fg">Automation</h3>
-								<Badge variant={schedulerRunning ? "success" : "default"}>
-									{schedulerRunning ? "Running" : "Stopped"}
-								</Badge>
+		<div className="flex flex-col gap-8">
+			{/* Global Automation Control */}
+			<GlassmorphicCard
+				padding="none"
+				className={schedulerRunning ? "border-green-500/30" : ""}
+			>
+				{/* Status accent line */}
+				<div
+					className="h-1 rounded-t-2xl"
+					style={{
+						background: schedulerRunning
+							? `linear-gradient(90deg, ${SEMANTIC_COLORS.success.from}, ${SEMANTIC_COLORS.success.to})`
+							: `linear-gradient(90deg, ${themeGradient.from}30, ${themeGradient.to}30)`,
+					}}
+				/>
+
+				<div className="p-6">
+					<div className="flex items-center justify-between">
+						<div className="flex items-center gap-4">
+							<div
+								className="flex h-12 w-12 items-center justify-center rounded-xl"
+								style={{
+									background: schedulerRunning
+										? `linear-gradient(135deg, ${SEMANTIC_COLORS.success.from}20, ${SEMANTIC_COLORS.success.to}20)`
+										: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+									border: schedulerRunning
+										? `1px solid ${SEMANTIC_COLORS.success.from}30`
+										: `1px solid ${themeGradient.from}30`,
+								}}
+							>
+								<Power
+									className="h-6 w-6"
+									style={{
+										color: schedulerRunning
+											? SEMANTIC_COLORS.success.from
+											: themeGradient.from,
+									}}
+								/>
 							</div>
-							<p className="text-sm text-fg-muted">
-								{schedulerRunning
-									? "Hunting runs automatically based on each instance's schedule"
-									: "Automatic hunting is paused - use 'Run Now' for manual hunts"}
-							</p>
+							<div>
+								<div className="flex items-center gap-2">
+									<h3 className="font-semibold text-lg">Automation</h3>
+									<StatusBadge status={schedulerRunning ? "success" : "default"}>
+										{schedulerRunning ? "Running" : "Stopped"}
+									</StatusBadge>
+								</div>
+								<p className="text-sm text-muted-foreground">
+									{schedulerRunning
+										? "Hunting runs automatically based on each instance's schedule"
+										: "Automatic hunting is paused - use 'Run Now' for manual hunts"}
+								</p>
+							</div>
 						</div>
+
+						<Button
+							variant={schedulerRunning ? "danger" : "primary"}
+							onClick={() => void handleToggleScheduler()}
+							disabled={isToggling}
+							className="gap-2"
+						>
+							{isToggling ? (
+								<RotateCcw className="h-4 w-4 animate-spin" />
+							) : schedulerRunning ? (
+								<Pause className="h-4 w-4" />
+							) : (
+								<Play className="h-4 w-4" />
+							)}
+							{schedulerRunning ? "Stop Automation" : "Start Automation"}
+						</Button>
 					</div>
-					<Button
-						variant={schedulerRunning ? "danger" : "primary"}
-						onClick={() => void handleToggleScheduler()}
-						disabled={isToggling}
-					>
-						{isToggling ? (
-							<RotateCcw className="h-4 w-4 mr-2 animate-spin" />
-						) : schedulerRunning ? (
-							<Pause className="h-4 w-4 mr-2" />
-						) : (
-							<Play className="h-4 w-4 mr-2" />
-						)}
-						{schedulerRunning ? "Stop Automation" : "Start Automation"}
-					</Button>
 				</div>
-			</div>
+			</GlassmorphicCard>
 
 			{/* Configured Instances */}
 			{configuredInstances.length > 0 && (
-				<div className="space-y-4 mb-8">
-					<h3 className="text-sm font-medium text-fg-muted uppercase tracking-wider">
-						Configured Instances
-					</h3>
-					{configuredInstances.map((config) => (
-						config && <InstanceConfigCard key={config.instanceId} config={config} onSaved={refetch} />
-					))}
-				</div>
+				<PremiumSection
+					title="Configured Instances"
+					icon={Settings}
+					animationDelay={100}
+				>
+					<div className="space-y-4">
+						{configuredInstances.map(
+							(config, index) =>
+								config && (
+									<InstanceConfigCard
+										key={config.instanceId}
+										config={config}
+										onSaved={refetch}
+										animationDelay={150 + index * 50}
+									/>
+								)
+						)}
+					</div>
+				</PremiumSection>
 			)}
 
 			{/* Unconfigured Instances */}
 			{unconfiguredInstances.length > 0 && (
-				<div className="space-y-4">
-					<h3 className="text-sm font-medium text-fg-muted uppercase tracking-wider">
-						Available Instances
-					</h3>
+				<PremiumSection
+					title="Available Instances"
+					description="Click to enable hunting on these instances"
+					animationDelay={200}
+				>
 					<div className="grid gap-4 md:grid-cols-2">
-						{unconfiguredInstances.map((instance) => (
+						{unconfiguredInstances.map((instance, index) => (
 							<UnconfiguredInstanceCard
 								key={instance.id}
 								instanceId={instance.id}
 								instanceName={instance.label}
 								service={instance.service}
 								onConfigure={refetch}
+								animationDelay={250 + index * 50}
 							/>
 						))}
 					</div>
-				</div>
+				</PremiumSection>
 			)}
 
+			{/* Empty State */}
 			{configuredInstances.length === 0 && unconfiguredInstances.length === 0 && (
-				<EmptyState
+				<PremiumEmptyState
 					icon={Settings}
 					title="No instances available"
 					description="Add Sonarr or Radarr instances in Settings first."
 				/>
 			)}
-		</Section>
+		</div>
 	);
 };
+
+/* =============================================================================
+   INSTANCE CONFIG CARD
+   Premium configuration card for each instance
+   ============================================================================= */
 
 interface InstanceConfigCardProps {
 	config: HuntConfigWithInstance;
 	onSaved: () => void;
+	animationDelay?: number;
 }
 
-const InstanceConfigCard = ({ config, onSaved }: InstanceConfigCardProps) => {
+const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceConfigCardProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
 	const [formState, setFormState] = useState<HuntConfigUpdate>({
 		huntMissingEnabled: config.huntMissingEnabled,
 		huntUpgradesEnabled: config.huntUpgradesEnabled,
@@ -191,7 +283,6 @@ const InstanceConfigCard = ({ config, onSaved }: InstanceConfigCardProps) => {
 		hourlyApiCap: config.hourlyApiCap,
 		queueThreshold: config.queueThreshold,
 		researchAfterDays: config.researchAfterDays,
-		// Filter fields
 		filterLogic: config.filterLogic,
 		monitoredOnly: config.monitoredOnly,
 		includeTags: config.includeTags,
@@ -222,7 +313,6 @@ const InstanceConfigCard = ({ config, onSaved }: InstanceConfigCardProps) => {
 			const result = await triggerHunt(config.instanceId, type);
 			toast.success(result.message);
 		} catch (err) {
-			// Check if it's a cooldown error (429)
 			if (isCooldownError(err)) {
 				toast.warning(err.message, {
 					description: "Please wait before running another hunt",
@@ -233,176 +323,189 @@ const InstanceConfigCard = ({ config, onSaved }: InstanceConfigCardProps) => {
 		}
 	};
 
-	const hasChanges = JSON.stringify(formState) !== JSON.stringify({
-		huntMissingEnabled: config.huntMissingEnabled,
-		huntUpgradesEnabled: config.huntUpgradesEnabled,
-		missingBatchSize: config.missingBatchSize,
-		missingIntervalMins: config.missingIntervalMins,
-		upgradeBatchSize: config.upgradeBatchSize,
-		upgradeIntervalMins: config.upgradeIntervalMins,
-		hourlyApiCap: config.hourlyApiCap,
-		queueThreshold: config.queueThreshold,
-		// Filter fields
-		filterLogic: config.filterLogic,
-		monitoredOnly: config.monitoredOnly,
-		includeTags: config.includeTags,
-		excludeTags: config.excludeTags,
-		includeQualityProfiles: config.includeQualityProfiles,
-		excludeQualityProfiles: config.excludeQualityProfiles,
-		includeStatuses: config.includeStatuses,
-		yearMin: config.yearMin,
-		yearMax: config.yearMax,
-		ageThresholdDays: config.ageThresholdDays,
-		researchAfterDays: config.researchAfterDays,
-	});
+	const hasChanges =
+		JSON.stringify(formState) !==
+		JSON.stringify({
+			huntMissingEnabled: config.huntMissingEnabled,
+			huntUpgradesEnabled: config.huntUpgradesEnabled,
+			missingBatchSize: config.missingBatchSize,
+			missingIntervalMins: config.missingIntervalMins,
+			upgradeBatchSize: config.upgradeBatchSize,
+			upgradeIntervalMins: config.upgradeIntervalMins,
+			hourlyApiCap: config.hourlyApiCap,
+			queueThreshold: config.queueThreshold,
+			filterLogic: config.filterLogic,
+			monitoredOnly: config.monitoredOnly,
+			includeTags: config.includeTags,
+			excludeTags: config.excludeTags,
+			includeQualityProfiles: config.includeQualityProfiles,
+			excludeQualityProfiles: config.excludeQualityProfiles,
+			includeStatuses: config.includeStatuses,
+			yearMin: config.yearMin,
+			yearMax: config.yearMax,
+			ageThresholdDays: config.ageThresholdDays,
+			researchAfterDays: config.researchAfterDays,
+		});
+
+	// Get service gradient
+	const serviceKey = config.service.toLowerCase() as keyof typeof SERVICE_GRADIENTS;
+	const serviceGradient = SERVICE_GRADIENTS[serviceKey] ?? SERVICE_GRADIENTS.prowlarr;
 
 	return (
-		<Card>
-			<CardHeader>
-				<div className="flex items-center justify-between">
-					<div className="flex items-center gap-2">
-						<CardTitle>{config.instanceName}</CardTitle>
-						<Badge variant={config.service === "sonarr" ? "info" : "warning"}>
-							{config.service}
-						</Badge>
+		<PremiumCard
+			title={config.instanceName}
+			description="Configure hunting settings for this instance"
+			animationDelay={animationDelay}
+			showHeader={false}
+		>
+			{/* Header */}
+			<div className="flex items-center justify-between mb-6 pb-4 border-b border-border/30">
+				<div className="flex items-center gap-3">
+					<div
+						className="flex h-10 w-10 items-center justify-center rounded-xl"
+						style={{
+							background: `linear-gradient(135deg, ${serviceGradient.from}, ${serviceGradient.to})`,
+							boxShadow: `0 4px 12px -4px ${serviceGradient.glow}`,
+						}}
+					>
+						<Settings className="h-5 w-5 text-white" />
+					</div>
+					<div>
+						<div className="flex items-center gap-2">
+							<h3 className="font-semibold">{config.instanceName}</h3>
+							<ServiceBadge service={config.service} />
+						</div>
+						<p className="text-sm text-muted-foreground">
+							Configure hunting settings for this instance
+						</p>
 					</div>
 				</div>
-				<CardDescription>
-					Configure hunting settings for this instance
-				</CardDescription>
-			</CardHeader>
-			<CardContent className="space-y-6">
-				{error && (
-					<Alert variant="danger">
-						<AlertDescription>{error.message}</AlertDescription>
-					</Alert>
-				)}
+			</div>
 
+			{/* Error Alert */}
+			{error && (
+				<Alert variant="danger" className="mb-6">
+					<AlertDescription>{error.message}</AlertDescription>
+				</Alert>
+			)}
+
+			<div className="space-y-6">
 				{/* Missing Content Settings */}
-				<div className="space-y-4">
-					<div className="flex items-center justify-between">
-						<div>
-							<h4 className="font-medium text-fg">Hunt Missing Content</h4>
-							<p className="text-sm text-fg-muted">Search for undownloaded episodes/movies</p>
-						</div>
-						<Switch
-							checked={formState.huntMissingEnabled ?? false}
-							onCheckedChange={(checked) => setFormState(prev => ({ ...prev, huntMissingEnabled: checked }))}
+				<ConfigSection
+					icon={Search}
+					title="Hunt Missing Content"
+					description="Search for undownloaded episodes/movies"
+					enabled={formState.huntMissingEnabled ?? false}
+					onToggle={(checked) =>
+						setFormState((prev) => ({ ...prev, huntMissingEnabled: checked }))
+					}
+				>
+					<div className="grid grid-cols-2 gap-4">
+						<ConfigInput
+							label="Items Per Hunt"
+							description="Max items to search each run"
+							type="number"
+							min={MIN_BATCH_SIZE}
+							max={MAX_BATCH_SIZE}
+							value={formState.missingBatchSize ?? 5}
+							onChange={(value) =>
+								setFormState((prev) => ({ ...prev, missingBatchSize: value }))
+							}
+						/>
+						<ConfigInput
+							label={`Hunt Every (min ${MIN_MISSING_INTERVAL_MINS})`}
+							description="Minutes between hunts"
+							type="number"
+							min={MIN_MISSING_INTERVAL_MINS}
+							max={MAX_INTERVAL_MINS}
+							value={formState.missingIntervalMins ?? 60}
+							onChange={(value) =>
+								setFormState((prev) => ({ ...prev, missingIntervalMins: value }))
+							}
+							suffix="minutes"
 						/>
 					</div>
-
-					{formState.huntMissingEnabled && (
-						<div className="grid grid-cols-2 gap-4 pl-4 border-l-2 border-border">
-							<div className="space-y-1">
-								<label className="text-xs text-fg-muted">Items Per Hunt</label>
-								<Input
-									type="number"
-									min={MIN_BATCH_SIZE}
-									max={MAX_BATCH_SIZE}
-									value={formState.missingBatchSize}
-									onChange={(e) => setFormState(prev => ({ ...prev, missingBatchSize: Number.parseInt(e.target.value) || 5 }))}
-								/>
-								<p className="text-xs text-fg-muted">Max items to search each run</p>
-							</div>
-							<div className="space-y-1">
-								<label className="text-xs text-fg-muted">Hunt Every (min {MIN_MISSING_INTERVAL_MINS})</label>
-								<div className="flex items-center gap-2">
-									<Input
-										type="number"
-										min={MIN_MISSING_INTERVAL_MINS}
-										max={MAX_INTERVAL_MINS}
-										value={formState.missingIntervalMins}
-										onChange={(e) => setFormState(prev => ({ ...prev, missingIntervalMins: Number.parseInt(e.target.value) || 60 }))}
-									/>
-									<span className="text-sm text-fg-muted whitespace-nowrap">minutes</span>
-								</div>
-							</div>
-						</div>
-					)}
-				</div>
+				</ConfigSection>
 
 				{/* Upgrade Settings */}
-				<div className="space-y-4">
-					<div className="flex items-center justify-between">
-						<div>
-							<h4 className="font-medium text-fg">Hunt Quality Upgrades</h4>
-							<p className="text-sm text-fg-muted">Search for better quality versions</p>
-						</div>
-						<Switch
-							checked={formState.huntUpgradesEnabled ?? false}
-							onCheckedChange={(checked) => setFormState(prev => ({ ...prev, huntUpgradesEnabled: checked }))}
+				<ConfigSection
+					icon={ArrowUpCircle}
+					title="Hunt Quality Upgrades"
+					description="Search for better quality versions"
+					enabled={formState.huntUpgradesEnabled ?? false}
+					onToggle={(checked) =>
+						setFormState((prev) => ({ ...prev, huntUpgradesEnabled: checked }))
+					}
+				>
+					<div className="grid grid-cols-2 gap-4">
+						<ConfigInput
+							label="Items Per Hunt"
+							description="Max items to search each run"
+							type="number"
+							min={MIN_BATCH_SIZE}
+							max={MAX_BATCH_SIZE}
+							value={formState.upgradeBatchSize ?? 3}
+							onChange={(value) =>
+								setFormState((prev) => ({ ...prev, upgradeBatchSize: value }))
+							}
+						/>
+						<ConfigInput
+							label={`Hunt Every (min ${MIN_UPGRADE_INTERVAL_MINS})`}
+							description="Minutes between hunts"
+							type="number"
+							min={MIN_UPGRADE_INTERVAL_MINS}
+							max={MAX_INTERVAL_MINS}
+							value={formState.upgradeIntervalMins ?? 120}
+							onChange={(value) =>
+								setFormState((prev) => ({ ...prev, upgradeIntervalMins: value }))
+							}
+							suffix="minutes"
 						/>
 					</div>
-
-					{formState.huntUpgradesEnabled && (
-						<div className="grid grid-cols-2 gap-4 pl-4 border-l-2 border-border">
-							<div className="space-y-1">
-								<label className="text-xs text-fg-muted">Items Per Hunt</label>
-								<Input
-									type="number"
-									min={MIN_BATCH_SIZE}
-									max={MAX_BATCH_SIZE}
-									value={formState.upgradeBatchSize}
-									onChange={(e) => setFormState(prev => ({ ...prev, upgradeBatchSize: Number.parseInt(e.target.value) || 3 }))}
-								/>
-								<p className="text-xs text-fg-muted">Max items to search each run</p>
-							</div>
-							<div className="space-y-1">
-								<label className="text-xs text-fg-muted">Hunt Every (min {MIN_UPGRADE_INTERVAL_MINS})</label>
-								<div className="flex items-center gap-2">
-									<Input
-										type="number"
-										min={MIN_UPGRADE_INTERVAL_MINS}
-										max={MAX_INTERVAL_MINS}
-										value={formState.upgradeIntervalMins}
-										onChange={(e) => setFormState(prev => ({ ...prev, upgradeIntervalMins: Number.parseInt(e.target.value) || 120 }))}
-									/>
-									<span className="text-sm text-fg-muted whitespace-nowrap">minutes</span>
-								</div>
-							</div>
-						</div>
-					)}
-				</div>
+				</ConfigSection>
 
 				{/* Rate Limiting */}
-				<div className="space-y-4 pt-4 border-t border-border">
-					<h4 className="font-medium text-fg">Rate Limiting</h4>
-					<div className="grid grid-cols-2 gap-4">
-						<div className="space-y-1">
-							<label className="text-xs text-fg-muted">Hourly API Cap</label>
-							<Input
-								type="number"
-								min={MIN_HOURLY_API_CAP}
-								max={MAX_HOURLY_API_CAP}
-								value={formState.hourlyApiCap}
-								onChange={(e) => setFormState(prev => ({ ...prev, hourlyApiCap: Number.parseInt(e.target.value) || 100 }))}
-							/>
-							<p className="text-xs text-fg-muted">Max API calls per hour</p>
-						</div>
-						<div className="space-y-1">
-							<label className="text-xs text-fg-muted">Queue Threshold</label>
-							<Input
-								type="number"
-								min={0}
-								max={MAX_QUEUE_THRESHOLD}
-								value={formState.queueThreshold}
-								onChange={(e) => setFormState(prev => ({ ...prev, queueThreshold: Number.parseInt(e.target.value) || 25 }))}
-							/>
-							<p className="text-xs text-fg-muted">Pause hunting when queue exceeds</p>
-						</div>
+				<div className="pt-4 border-t border-border/30">
+					<div className="flex items-center gap-2 mb-4">
+						<Gauge className="h-5 w-5" style={{ color: themeGradient.from }} />
+						<h4 className="font-semibold">Rate Limiting</h4>
 					</div>
 					<div className="grid grid-cols-2 gap-4">
-						<div className="space-y-1">
-							<label className="text-xs text-fg-muted">Re-search After (days)</label>
-							<Input
-								type="number"
-								min={0}
-								max={MAX_RESEARCH_AFTER_DAYS}
-								value={formState.researchAfterDays ?? DEFAULT_RESEARCH_AFTER_DAYS}
-								onChange={(e) => setFormState(prev => ({ ...prev, researchAfterDays: Number.parseInt(e.target.value) || DEFAULT_RESEARCH_AFTER_DAYS }))}
-							/>
-							<p className="text-xs text-fg-muted">Skip items searched within this period (0 = never re-search)</p>
-						</div>
+						<ConfigInput
+							label="Hourly API Cap"
+							description="Max API calls per hour"
+							type="number"
+							min={MIN_HOURLY_API_CAP}
+							max={MAX_HOURLY_API_CAP}
+							value={formState.hourlyApiCap ?? 100}
+							onChange={(value) =>
+								setFormState((prev) => ({ ...prev, hourlyApiCap: value }))
+							}
+						/>
+						<ConfigInput
+							label="Queue Threshold"
+							description="Pause hunting when queue exceeds"
+							type="number"
+							min={0}
+							max={MAX_QUEUE_THRESHOLD}
+							value={formState.queueThreshold ?? 25}
+							onChange={(value) =>
+								setFormState((prev) => ({ ...prev, queueThreshold: value }))
+							}
+						/>
+					</div>
+					<div className="grid grid-cols-2 gap-4 mt-4">
+						<ConfigInput
+							label="Re-search After (days)"
+							description="Skip items searched within this period (0 = never)"
+							type="number"
+							min={0}
+							max={MAX_RESEARCH_AFTER_DAYS}
+							value={formState.researchAfterDays ?? DEFAULT_RESEARCH_AFTER_DAYS}
+							onChange={(value) =>
+								setFormState((prev) => ({ ...prev, researchAfterDays: value }))
+							}
+						/>
 					</div>
 				</div>
 
@@ -410,11 +513,11 @@ const InstanceConfigCard = ({ config, onSaved }: InstanceConfigCardProps) => {
 				<HuntingFilters
 					config={config}
 					formState={formState}
-					onChange={(updates) => setFormState(prev => ({ ...prev, ...updates }))}
+					onChange={(updates) => setFormState((prev) => ({ ...prev, ...updates }))}
 				/>
 
 				{/* Actions */}
-				<div className="flex justify-between items-center gap-2 pt-4">
+				<div className="flex justify-between items-center gap-2 pt-4 border-t border-border/30">
 					<div className="flex gap-2">
 						{formState.huntMissingEnabled && (
 							<Button
@@ -422,11 +525,12 @@ const InstanceConfigCard = ({ config, onSaved }: InstanceConfigCardProps) => {
 								size="sm"
 								onClick={() => void handleRunNow("missing")}
 								disabled={isTriggering}
+								className="gap-2 border-border/50 bg-card/50 backdrop-blur-sm"
 							>
 								{isTriggering ? (
-									<RotateCcw className="h-4 w-4 mr-2 animate-spin" />
+									<RotateCcw className="h-4 w-4 animate-spin" />
 								) : (
-									<Zap className="h-4 w-4 mr-2" />
+									<Zap className="h-4 w-4" />
 								)}
 								Run Missing Hunt
 							</Button>
@@ -437,42 +541,164 @@ const InstanceConfigCard = ({ config, onSaved }: InstanceConfigCardProps) => {
 								size="sm"
 								onClick={() => void handleRunNow("upgrade")}
 								disabled={isTriggering}
+								className="gap-2 border-border/50 bg-card/50 backdrop-blur-sm"
 							>
 								{isTriggering ? (
-									<RotateCcw className="h-4 w-4 mr-2 animate-spin" />
+									<RotateCcw className="h-4 w-4 animate-spin" />
 								) : (
-									<Zap className="h-4 w-4 mr-2" />
+									<Zap className="h-4 w-4" />
 								)}
 								Run Upgrade Hunt
 							</Button>
 						)}
 					</div>
-					<Button
-						variant="primary"
+					<GradientButton
 						onClick={() => void handleSave()}
 						disabled={isUpdating || !hasChanges}
+						icon={isUpdating ? RotateCcw : Save}
 					>
-						{isUpdating ? (
-							<RotateCcw className="h-4 w-4 mr-2 animate-spin" />
-						) : (
-							<Save className="h-4 w-4 mr-2" />
-						)}
-						Save Changes
-					</Button>
+						{isUpdating ? "Saving..." : "Save Changes"}
+					</GradientButton>
 				</div>
-			</CardContent>
-		</Card>
+			</div>
+		</PremiumCard>
 	);
 };
+
+/* =============================================================================
+   CONFIG SECTION
+   Collapsible config section with toggle
+   ============================================================================= */
+
+interface ConfigSectionProps {
+	icon: React.ElementType;
+	title: string;
+	description: string;
+	enabled: boolean;
+	onToggle: (enabled: boolean) => void;
+	children: React.ReactNode;
+}
+
+const ConfigSection = ({
+	icon: Icon,
+	title,
+	description,
+	enabled,
+	onToggle,
+	children,
+}: ConfigSectionProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
+	return (
+		<div className="space-y-4">
+			<div className="flex items-center justify-between">
+				<div className="flex items-center gap-3">
+					<div
+						className="flex h-8 w-8 items-center justify-center rounded-lg"
+						style={{
+							background: enabled
+								? `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`
+								: "rgba(100, 116, 139, 0.1)",
+							border: enabled
+								? `1px solid ${themeGradient.from}30`
+								: "1px solid rgba(100, 116, 139, 0.2)",
+						}}
+					>
+						<Icon
+							className="h-4 w-4"
+							style={{ color: enabled ? themeGradient.from : "rgb(148, 163, 184)" }}
+						/>
+					</div>
+					<div>
+						<h4 className="font-medium">{title}</h4>
+						<p className="text-sm text-muted-foreground">{description}</p>
+					</div>
+				</div>
+				<Switch checked={enabled} onCheckedChange={onToggle} />
+			</div>
+
+			{enabled && (
+				<div
+					className="pl-4 border-l-2 transition-colors"
+					style={{ borderColor: `${themeGradient.from}50` }}
+				>
+					{children}
+				</div>
+			)}
+		</div>
+	);
+};
+
+/* =============================================================================
+   CONFIG INPUT
+   Styled input for config values
+   ============================================================================= */
+
+interface ConfigInputProps {
+	label: string;
+	description?: string;
+	type?: "text" | "number";
+	min?: number;
+	max?: number;
+	value: number | string;
+	onChange: (value: number) => void;
+	suffix?: string;
+}
+
+const ConfigInput = ({
+	label,
+	description,
+	type = "number",
+	min,
+	max,
+	value,
+	onChange,
+	suffix,
+}: ConfigInputProps) => {
+	return (
+		<div className="space-y-1">
+			<label className="text-xs font-medium text-muted-foreground">{label}</label>
+			<div className="flex items-center gap-2">
+				<Input
+					type={type}
+					min={min}
+					max={max}
+					value={value}
+					onChange={(e) => onChange(Number.parseInt(e.target.value) || 0)}
+					className="bg-background/50 border-border/50"
+				/>
+				{suffix && (
+					<span className="text-sm text-muted-foreground whitespace-nowrap">{suffix}</span>
+				)}
+			</div>
+			{description && <p className="text-xs text-muted-foreground">{description}</p>}
+		</div>
+	);
+};
+
+/* =============================================================================
+   UNCONFIGURED INSTANCE CARD
+   Card for instances that haven't been configured yet
+   ============================================================================= */
 
 interface UnconfiguredInstanceCardProps {
 	instanceId: string;
 	instanceName: string;
 	service: string;
 	onConfigure: () => void;
+	animationDelay?: number;
 }
 
-const UnconfiguredInstanceCard = ({ instanceId, instanceName, service, onConfigure }: UnconfiguredInstanceCardProps) => {
+const UnconfiguredInstanceCard = ({
+	instanceId,
+	instanceName,
+	service,
+	onConfigure,
+	animationDelay = 0,
+}: UnconfiguredInstanceCardProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const { createConfig, isCreating } = useUpdateHuntConfig();
 
 	const handleConfigure = async () => {
@@ -481,23 +707,44 @@ const UnconfiguredInstanceCard = ({ instanceId, instanceName, service, onConfigu
 	};
 
 	return (
-		<div className="rounded-xl border border-dashed border-border p-4 flex items-center justify-between">
-			<div className="flex items-center gap-2">
-				<span className="font-medium text-fg">{instanceName}</span>
-				<Badge variant={service === "sonarr" ? "info" : "warning"}>
-					{service}
-				</Badge>
+		<div
+			className="group rounded-2xl border-2 border-dashed border-border/50 bg-card/20 p-6
+				flex items-center justify-between hover:border-border hover:bg-card/30 transition-all
+				animate-in fade-in slide-in-from-bottom-4 duration-500"
+			style={{
+				animationDelay: `${animationDelay}ms`,
+				animationFillMode: "backwards",
+			}}
+		>
+			<div className="flex items-center gap-3">
+				<div
+					className="flex h-10 w-10 items-center justify-center rounded-xl"
+					style={{
+						background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+						border: `1px solid ${themeGradient.from}30`,
+					}}
+				>
+					<Settings className="h-5 w-5" style={{ color: themeGradient.from }} />
+				</div>
+				<div>
+					<div className="flex items-center gap-2">
+						<span className="font-semibold">{instanceName}</span>
+						<ServiceBadge service={service} />
+					</div>
+					<p className="text-sm text-muted-foreground">Click to enable hunting</p>
+				</div>
 			</div>
 			<Button
 				variant="secondary"
 				size="sm"
 				onClick={() => void handleConfigure()}
 				disabled={isCreating}
+				className="gap-2 border-border/50 bg-card/50 backdrop-blur-sm"
 			>
 				{isCreating ? (
-					<RotateCcw className="h-4 w-4 mr-2 animate-spin" />
+					<RotateCcw className="h-4 w-4 animate-spin" />
 				) : (
-					<Settings className="h-4 w-4 mr-2" />
+					<Settings className="h-4 w-4" />
 				)}
 				Configure
 			</Button>

@@ -2,7 +2,7 @@
 
 import { ChevronLeft, ChevronRight, ChevronsLeft, ChevronsRight } from "lucide-react";
 import { Button } from "./button";
-import { Select, SelectOption } from "./select";
+import { NativeSelect, SelectOption } from "./native-select";
 
 export interface PaginationProps {
 	/**
@@ -92,7 +92,7 @@ export const Pagination = ({
 					<label htmlFor="page-size" className="text-sm">
 						Per page:
 					</label>
-					<Select
+					<NativeSelect
 						id="page-size"
 						value={pageSize}
 						onChange={(e) => onPageSizeChange(Number(e.target.value))}
@@ -103,7 +103,7 @@ export const Pagination = ({
 								{size}
 							</SelectOption>
 						))}
-					</Select>
+					</NativeSelect>
 				</div>
 			</div>
 
@@ -154,7 +154,7 @@ export const Pagination = ({
 				{pageNumbers.map((pageNum) => (
 					<Button
 						key={pageNum}
-						variant={pageNum === currentPage ? "primary" : "ghost"}
+						variant={pageNum === currentPage ? "default" : "ghost"}
 						size="sm"
 						onClick={() => onPageChange(pageNum)}
 						className="h-8 min-w-[2rem] px-2"

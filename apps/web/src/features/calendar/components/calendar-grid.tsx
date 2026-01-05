@@ -1,6 +1,8 @@
 "use client";
 
+import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 import type { DeduplicatedCalendarItem } from "../hooks/use-calendar-data";
 
 interface CalendarGridProps {
@@ -42,8 +44,12 @@ export const CalendarGrid = ({
 	onSelectDate,
 	eventsByDate,
 	className,
-}: CalendarGridProps) => (
-	<div className={cn("grid grid-cols-7 gap-2", className)}>
+}: CalendarGridProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
+	return (
+		<div className={cn("grid grid-cols-7 gap-2", className)}>
 		{days.map((date) => {
 			const key = formatDateKey(date);
 			const events = eventsByDate.get(key) ?? [];
@@ -59,12 +65,33 @@ export const CalendarGrid = ({
 					className={cn(
 						"flex h-[140px] flex-col rounded-xl border px-3 py-2 text-left transition",
 						isSelected
-							? "border-sky-400 bg-sky-500/15 shadow-lg shadow-sky-500/20"
+							? ""
 							: hasEvents
-								? "border-border bg-bg-subtle hover:border-sky-400"
+								? "border-border bg-bg-subtle"
 								: "border-border bg-bg hover:border-border",
 						inCurrentMonth ? "text-fg" : "text-fg-muted",
 					)}
+					style={
+						isSelected
+							? {
+									borderColor: themeGradient.from,
+									backgroundColor: themeGradient.fromLight,
+									boxShadow: `0 10px 15px -3px ${themeGradient.glow}`,
+								}
+							: hasEvents
+								? { ["--hover-border-color" as string]: themeGradient.from }
+								: undefined
+					}
+					onMouseEnter={(e) => {
+						if (!isSelected && hasEvents) {
+							e.currentTarget.style.borderColor = themeGradient.from;
+						}
+					}}
+					onMouseLeave={(e) => {
+						if (!isSelected && hasEvents) {
+							e.currentTarget.style.borderColor = "";
+						}
+					}}
 				>
 					<div className="flex shrink-0 items-center justify-between text-xs font-semibold uppercase tracking-wide">
 						<span>{formatDayNumber(date)}</span>
@@ -94,5 +121,6 @@ export const CalendarGrid = ({
 				</button>
 			);
 		})}
-	</div>
-);
+		</div>
+	);
+};

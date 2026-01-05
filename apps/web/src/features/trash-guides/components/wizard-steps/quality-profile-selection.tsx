@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useQualityProfiles } from "../../../../hooks/api/useQualityProfiles";
 import { Alert, AlertDescription, EmptyState, Skeleton, Card, CardHeader, CardTitle, CardDescription, CardContent, Button } from "../../../../components/ui";
 import { FileText, Star, Languages, Gauge, Info, Download, Layers } from "lucide-react";
+import { THEME_GRADIENTS } from "../../../../lib/theme-gradients";
+import { useColorTheme } from "../../../../providers/color-theme-provider";
 import { createSanitizedHtml } from "../../../../lib/sanitize-html";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import type { CompleteQualityProfile } from "@arr/shared";
@@ -18,6 +20,8 @@ export const QualityProfileSelection = ({
 	serviceType,
 	onSelect,
 }: QualityProfileSelectionProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const [showCloneImporter, setShowCloneImporter] = useState(false);
 	const { data, isLoading, error } = useQualityProfiles(serviceType);
 
@@ -146,8 +150,11 @@ export const QualityProfileSelection = ({
 				>
 					<CardContent className="pt-6">
 						<div className="flex items-center gap-3">
-							<div className="flex h-10 w-10 items-center justify-center rounded-lg bg-blue-500/20">
-								<Download className="h-5 w-5 text-blue-400" />
+							<div
+								className="flex h-10 w-10 items-center justify-center rounded-lg"
+								style={{ backgroundColor: themeGradient.fromLight }}
+							>
+								<Download className="h-5 w-5" style={{ color: themeGradient.from }} />
 							</div>
 							<div className="flex-1">
 								<div className="font-medium text-fg">Clone from Instance</div>

@@ -1,28 +1,85 @@
+"use client";
+
 import type { LibraryItem } from "@arr/shared";
-import { ExternalLink } from "lucide-react";
-import { Button } from "../../../components/ui";
+import {
+	ExternalLink,
+	X,
+	Film,
+	Tv,
+	Calendar,
+	HardDrive,
+	Clock,
+	FolderOpen,
+	FileVideo,
+	Tag,
+	Layers,
+} from "lucide-react";
 import { formatBytes, formatRuntime } from "../lib/library-utils";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
+import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 
 export interface ItemDetailsModalProps {
 	item: LibraryItem;
 	onClose: () => void;
 }
 
+// Service-specific colors
+const SERVICE_COLORS = {
+	sonarr: "#06b6d4", // Cyan
+	radarr: "#f97316", // Orange
+};
+
 /**
- * Modal displaying full details for a library item (movie or series)
- * Shows metadata, genres, tags, and file information
+ * Premium Metadata Item Component
+ */
+const MetadataItem = ({
+	label,
+	value,
+	icon: Icon,
+}: {
+	label: string;
+	value: React.ReactNode;
+	icon?: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+}) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
+	return (
+		<div className="space-y-1">
+			<div className="flex items-center gap-1.5">
+				{Icon && <Icon className="h-3 w-3 text-muted-foreground" />}
+				<p className="text-xs uppercase tracking-wider text-muted-foreground">{label}</p>
+			</div>
+			<p className="text-sm font-medium text-foreground">{value}</p>
+		</div>
+	);
+};
+
+/**
+ * Premium Item Details Modal
+ *
+ * Modal displaying full details for a library item with:
+ * - Glassmorphic backdrop and container
+ * - Theme-aware styling
+ * - Poster display with gradient overlay
+ * - Structured metadata sections
+ * - External link buttons
  */
 export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
 	const sizeLabel = formatBytes(item.sizeOnDisk);
 	const runtimeLabel = formatRuntime(item.runtime);
 	const serviceLabel = item.service === "sonarr" ? "Sonarr" : "Radarr";
+	const serviceColor = SERVICE_COLORS[item.service];
 	const movieFileName =
 		item.type === "movie"
 			? (item.movieFile?.relativePath ?? item.path)?.split(/[\\/]/g).pop()
 			: undefined;
 
-	const metadata: Array<{ label: string; value: React.ReactNode }> = [
+	const metadata: Array<{ label: string; value: React.ReactNode; icon?: React.ComponentType<{ className?: string }> }> = [
 		{ label: "Instance", value: item.instanceName },
 		{ label: "Service", value: serviceLabel },
 	];
@@ -37,10 +94,10 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 			metadata.push({ label: "Current quality", value: movieQuality });
 		}
 		if (sizeLabel) {
-			metadata.push({ label: "On disk", value: sizeLabel });
+			metadata.push({ label: "On disk", value: sizeLabel, icon: HardDrive });
 		}
 		if (runtimeLabel) {
-			metadata.push({ label: "Runtime", value: runtimeLabel });
+			metadata.push({ label: "Runtime", value: runtimeLabel, icon: Clock });
 		}
 	} else {
 		const seasonCount =
@@ -48,7 +105,7 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 			item.statistics?.seasonCount ||
 			undefined;
 		if (seasonCount) {
-			metadata.push({ label: "Seasons", value: seasonCount });
+			metadata.push({ label: "Seasons", value: seasonCount, icon: Layers });
 		}
 		const episodeFileCount = item.statistics?.episodeFileCount ?? 0;
 		const totalEpisodes = item.statistics?.episodeCount ?? item.statistics?.totalEpisodeCount ?? 0;
@@ -59,22 +116,22 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 			});
 		}
 		if (runtimeLabel) {
-			metadata.push({ label: "Episode length", value: runtimeLabel });
+			metadata.push({ label: "Episode length", value: runtimeLabel, icon: Clock });
 		}
 		if (sizeLabel) {
-			metadata.push({ label: "On disk", value: sizeLabel });
+			metadata.push({ label: "On disk", value: sizeLabel, icon: HardDrive });
 		}
 	}
 
-	const locationEntries: Array<{ label: string; value: string }> = [];
+	const locationEntries: Array<{ label: string; value: string; icon: React.ComponentType<{ className?: string }> }> = [];
 	if (item.path) {
-		locationEntries.push({ label: "Location", value: item.path });
+		locationEntries.push({ label: "Location", value: item.path, icon: FolderOpen });
 	}
 	if (movieFileName) {
-		locationEntries.push({ label: "File", value: movieFileName });
+		locationEntries.push({ label: "File", value: movieFileName, icon: FileVideo });
 	}
 	if (item.rootFolderPath && item.rootFolderPath !== item.path) {
-		locationEntries.push({ label: "Root", value: item.rootFolderPath });
+		locationEntries.push({ label: "Root", value: item.rootFolderPath, icon: FolderOpen });
 	}
 
 	const tagEntries = (item.tags ?? []).filter(Boolean);
@@ -82,144 +139,230 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 
 	return (
 		<div
-			className="fixed inset-0 z-modal-backdrop flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+			className="fixed inset-0 z-modal-backdrop flex items-center justify-center p-4 animate-in fade-in duration-200"
 			onClick={onClose}
 		>
+			{/* Backdrop */}
+			<div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+
+			{/* Modal */}
 			<div
-				className="w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-border bg-bg-subtle/98 backdrop-blur-xl p-6 shadow-2xl"
+				className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
+				style={{
+					boxShadow: `0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px ${serviceColor}15`,
+				}}
 				onClick={(event) => event.stopPropagation()}
 			>
-				<div className="flex items-start justify-between gap-4 mb-6">
-					<div className="flex gap-4">
+				{/* Close Button */}
+				<button
+					type="button"
+					onClick={onClose}
+					className="absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-lg bg-black/50 text-white/70 transition-colors hover:bg-black/70 hover:text-white"
+				>
+					<X className="h-4 w-4" />
+				</button>
+
+				{/* Header with Poster */}
+				<div
+					className="p-6 border-b border-border/30"
+					style={{
+						background: `linear-gradient(135deg, ${serviceColor}08, transparent)`,
+					}}
+				>
+					<div className="flex gap-5">
 						{item.poster && (
-							<div className="h-48 w-32 overflow-hidden rounded-lg border border-border bg-bg-muted shadow-md flex-shrink-0">
+							<div className="h-48 w-32 overflow-hidden rounded-xl border border-border/50 shadow-lg flex-shrink-0">
 								{/* eslint-disable-next-line @next/next/no-img-element -- External poster from arr instance */}
 								<img src={item.poster} alt={item.title} className="h-full w-full object-cover" />
 							</div>
 						)}
-						<div>
-							<h2 className="text-2xl font-semibold text-fg mb-1">{item.title}</h2>
-							{item.year && item.type === "movie" && (
-								<p className="text-sm text-fg-muted mb-2">{item.year}</p>
-							)}
-							<p className="text-sm text-fg-muted">{item.instanceName}</p>
-						</div>
-					</div>
-					<Button type="button" variant="ghost" onClick={onClose}>
-						Close
-					</Button>
-				</div>
-
-				{item.overview && (
-					<div className="mb-6">
-						<h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-2">Overview</h3>
-						<p className="text-sm leading-relaxed text-fg-muted">{item.overview}</p>
-					</div>
-				)}
-
-				{genreEntries.length > 0 && (
-					<div className="mb-6">
-						<h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-2">Genres</h3>
-						<div className="flex flex-wrap gap-2">
-							{genreEntries.map((genre, index) => (
-								<span
-									key={`${index}-${genre}`}
-									className="rounded-full border border-border bg-bg-muted/50 px-3 py-1 text-sm text-fg-muted"
+						<div className="flex-1 min-w-0">
+							<div className="flex items-center gap-2 mb-2">
+								<div
+									className="flex h-8 w-8 items-center justify-center rounded-lg shrink-0"
+									style={{
+										background: `${serviceColor}20`,
+										border: `1px solid ${serviceColor}30`,
+									}}
 								>
-									{genre}
-								</span>
-							))}
-						</div>
-					</div>
-				)}
-
-				{(item.remoteIds?.tmdbId || item.remoteIds?.imdbId || item.remoteIds?.tvdbId) && (
-					<div className="mb-6">
-						<h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-2">External Links</h3>
-						<div className="flex flex-wrap gap-2">
-							{item.remoteIds?.tmdbId && (
-								<Button
-									type="button"
-									variant="secondary"
-									size="sm"
-									className="flex items-center gap-1.5"
-									onClick={() => safeOpenUrl(`https://www.themoviedb.org/${item.type === "movie" ? "movie" : "tv"}/${item.remoteIds?.tmdbId}`)}
-								>
-									<ExternalLink className="h-3.5 w-3.5" />
-									<span>TMDB</span>
-								</Button>
-							)}
-							{item.remoteIds?.imdbId && (
-								<Button
-									type="button"
-									variant="secondary"
-									size="sm"
-									className="flex items-center gap-1.5"
-									onClick={() => safeOpenUrl(`https://www.imdb.com/title/${item.remoteIds?.imdbId}`)}
-								>
-									<ExternalLink className="h-3.5 w-3.5" />
-									<span>IMDB</span>
-								</Button>
-							)}
-							{item.remoteIds?.tvdbId && (
-								<Button
-									type="button"
-									variant="secondary"
-									size="sm"
-									className="flex items-center gap-1.5"
-									onClick={() => safeOpenUrl(`https://www.thetvdb.com/dereferrer/series/${item.remoteIds?.tvdbId}`)}
-								>
-									<ExternalLink className="h-3.5 w-3.5" />
-									<span>TVDB</span>
-								</Button>
-							)}
-						</div>
-					</div>
-				)}
-
-				{tagEntries.length > 0 && (
-					<div className="mb-6">
-						<h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-2">Tags</h3>
-						<div className="flex flex-wrap gap-2">
-							{tagEntries.map((tag, index) => (
-								<span
-									key={`${index}-${tag}`}
-									className="rounded-full border border-accent/40 bg-accent/10 px-3 py-1 text-sm text-fg"
-								>
-									{tag}
-								</span>
-							))}
-						</div>
-					</div>
-				)}
-
-				<div className="mb-6">
-					<h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-3">Metadata</h3>
-					<div className="grid grid-cols-2 gap-4">
-						{metadata.map((entry) => (
-							<div key={entry.label} className="space-y-1">
-								<p className="text-xs uppercase tracking-wider text-fg-subtle">{entry.label}</p>
-								<p className="text-sm text-fg">{entry.value}</p>
-							</div>
-						))}
-					</div>
-				</div>
-
-				{locationEntries.length > 0 && (
-					<div>
-						<h3 className="text-sm font-medium text-fg uppercase tracking-wider mb-3">
-							File Information
-						</h3>
-						<div className="space-y-3 rounded-lg border border-border bg-bg-muted/30 p-4">
-							{locationEntries.map((entry) => (
-								<div key={entry.label} className="space-y-1">
-									<p className="text-xs uppercase tracking-wider text-fg-subtle">{entry.label}</p>
-									<p className="break-all font-mono text-xs text-fg-muted">{entry.value}</p>
+									{item.type === "movie" ? (
+										<Film className="h-4 w-4" style={{ color: serviceColor }} />
+									) : (
+										<Tv className="h-4 w-4" style={{ color: serviceColor }} />
+									)}
 								</div>
+								<span
+									className="text-xs uppercase tracking-wider font-medium"
+									style={{ color: serviceColor }}
+								>
+									{item.type}
+								</span>
+							</div>
+
+							<h2 className="text-2xl font-bold text-foreground mb-1">{item.title}</h2>
+
+							<div className="flex items-center gap-3 text-sm text-muted-foreground">
+								{item.year && item.type === "movie" && (
+									<span className="flex items-center gap-1">
+										<Calendar className="h-3.5 w-3.5" />
+										{item.year}
+									</span>
+								)}
+								<span>{item.instanceName}</span>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				{/* Content */}
+				<div className="p-6 space-y-6">
+					{/* Overview */}
+					{item.overview && (
+						<div>
+							<h3 className="text-xs uppercase tracking-wider font-medium text-muted-foreground mb-2">
+								Overview
+							</h3>
+							<p className="text-sm leading-relaxed text-muted-foreground">{item.overview}</p>
+						</div>
+					)}
+
+					{/* Genres */}
+					{genreEntries.length > 0 && (
+						<div>
+							<h3 className="text-xs uppercase tracking-wider font-medium text-muted-foreground mb-3">
+								Genres
+							</h3>
+							<div className="flex flex-wrap gap-2">
+								{genreEntries.map((genre, index) => (
+									<span
+										key={`${index}-${genre}`}
+										className="rounded-full px-3 py-1 text-sm font-medium"
+										style={{
+											backgroundColor: `${themeGradient.from}10`,
+											border: `1px solid ${themeGradient.from}25`,
+											color: themeGradient.from,
+										}}
+									>
+										{genre}
+									</span>
+								))}
+							</div>
+						</div>
+					)}
+
+					{/* External Links */}
+					{(item.remoteIds?.tmdbId || item.remoteIds?.imdbId || item.remoteIds?.tvdbId) && (
+						<div>
+							<h3 className="text-xs uppercase tracking-wider font-medium text-muted-foreground mb-3">
+								External Links
+							</h3>
+							<div className="flex flex-wrap gap-2">
+								{item.remoteIds?.tmdbId && (
+									<button
+										type="button"
+										className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:opacity-80"
+										style={{
+											backgroundColor: `${themeGradient.from}15`,
+											border: `1px solid ${themeGradient.from}30`,
+											color: themeGradient.from,
+										}}
+										onClick={() => safeOpenUrl(`https://www.themoviedb.org/${item.type === "movie" ? "movie" : "tv"}/${item.remoteIds?.tmdbId}`)}
+									>
+										<ExternalLink className="h-3.5 w-3.5" />
+										TMDB
+									</button>
+								)}
+								{item.remoteIds?.imdbId && (
+									<button
+										type="button"
+										className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:opacity-80"
+										style={{
+											backgroundColor: "#f5c518" + "20",
+											border: "1px solid " + "#f5c518" + "40",
+											color: "#f5c518",
+										}}
+										onClick={() => safeOpenUrl(`https://www.imdb.com/title/${item.remoteIds?.imdbId}`)}
+									>
+										<ExternalLink className="h-3.5 w-3.5" />
+										IMDB
+									</button>
+								)}
+								{item.remoteIds?.tvdbId && (
+									<button
+										type="button"
+										className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:opacity-80"
+										style={{
+											backgroundColor: "#5d8a3a" + "20",
+											border: "1px solid " + "#5d8a3a" + "40",
+											color: "#5d8a3a",
+										}}
+										onClick={() => safeOpenUrl(`https://www.thetvdb.com/dereferrer/series/${item.remoteIds?.tvdbId}`)}
+									>
+										<ExternalLink className="h-3.5 w-3.5" />
+										TVDB
+									</button>
+								)}
+							</div>
+						</div>
+					)}
+
+					{/* Tags */}
+					{tagEntries.length > 0 && (
+						<div>
+							<h3 className="flex items-center gap-1.5 text-xs uppercase tracking-wider font-medium text-muted-foreground mb-3">
+								<Tag className="h-3 w-3" />
+								Tags
+							</h3>
+							<div className="flex flex-wrap gap-2">
+								{tagEntries.map((tag, index) => (
+									<span
+										key={`${index}-${tag}`}
+										className="rounded-full border border-border/50 bg-card/50 px-3 py-1 text-sm text-foreground"
+									>
+										{tag}
+									</span>
+								))}
+							</div>
+						</div>
+					)}
+
+					{/* Metadata Grid */}
+					<div>
+						<h3 className="text-xs uppercase tracking-wider font-medium text-muted-foreground mb-3">
+							Metadata
+						</h3>
+						<div className="grid grid-cols-2 md:grid-cols-3 gap-4 rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+							{metadata.map((entry) => (
+								<MetadataItem
+									key={entry.label}
+									label={entry.label}
+									value={entry.value}
+									icon={entry.icon}
+								/>
 							))}
 						</div>
 					</div>
-				)}
+
+					{/* File Information */}
+					{locationEntries.length > 0 && (
+						<div>
+							<h3 className="text-xs uppercase tracking-wider font-medium text-muted-foreground mb-3">
+								File Information
+							</h3>
+							<div className="space-y-3 rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+								{locationEntries.map((entry) => (
+									<div key={entry.label} className="space-y-1">
+										<div className="flex items-center gap-1.5">
+											<entry.icon className="h-3 w-3 text-muted-foreground" />
+											<p className="text-xs uppercase tracking-wider text-muted-foreground">{entry.label}</p>
+										</div>
+										<p className="break-all font-mono text-xs text-foreground/80">{entry.value}</p>
+									</div>
+								))}
+							</div>
+						</div>
+					)}
+				</div>
 			</div>
 		</div>
 	);

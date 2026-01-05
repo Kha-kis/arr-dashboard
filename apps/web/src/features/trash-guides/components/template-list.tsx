@@ -8,8 +8,26 @@ import {
 	useDuplicateTemplate,
 	TEMPLATES_QUERY_KEY,
 } from "../../../hooks/api/useTemplates";
-import { Alert, AlertTitle, AlertDescription, EmptyState, Skeleton, Button } from "../../../components/ui";
-import { AlertCircle, Plus, Download, Copy, Trash2, Edit, FileText, RefreshCw, Star, Rocket, Layers, X } from "lucide-react";
+import { PremiumEmptyState } from "../../../components/layout";
+import {
+	AlertCircle,
+	Plus,
+	Download,
+	Copy,
+	Trash2,
+	Edit,
+	FileText,
+	RefreshCw,
+	Star,
+	Rocket,
+	Layers,
+	X,
+	Search,
+	ArrowUpDown,
+	Loader2,
+} from "lucide-react";
+import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 import { useUnlinkTemplateFromInstance } from "../../../hooks/api/useDeploymentPreview";
 import { TemplateStats } from "./template-stats";
 import { SyncValidationModal } from "./sync-validation-modal";
@@ -33,14 +51,26 @@ interface TemplateListProps {
 	onBrowseQualityProfiles: (serviceType: "RADARR" | "SONARR") => void;
 }
 
+/**
+ * Premium Template List Component
+ *
+ * Features:
+ * - Glassmorphic template cards
+ * - Theme-aware styling
+ * - Staggered animations
+ * - Premium action buttons
+ */
 export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBrowseQualityProfiles }: TemplateListProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
 	// Search, filter, and sort state
 	const [searchInput, setSearchInput] = useState("");
 	const [debouncedSearch, setDebouncedSearch] = useState("");
 	const [sortBy, setSortBy] = useState<"name" | "createdAt" | "updatedAt" | "usageCount">("updatedAt");
 	const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
-	// Debounce search input to avoid excessive API calls and prevent focus loss
+	// Debounce search input
 	useEffect(() => {
 		const timer = setTimeout(() => {
 			setDebouncedSearch(searchInput);
@@ -62,6 +92,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 	const unlinkMutation = useUnlinkTemplateFromInstance();
 	const queryClient = useQueryClient();
 
+	// Modal states
 	const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 	const [duplicateName, setDuplicateName] = useState<string>("");
 	const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
@@ -146,7 +177,6 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 				conflictResolutions: resolutions,
 			});
 
-			// Close validation modal and open progress modal
 			setValidationModal(null);
 			setProgressModal({
 				syncId: result.syncId,
@@ -162,7 +192,6 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 
 	const handleSyncComplete = () => {
 		setProgressModal(null);
-		// Optionally refetch templates or show success message
 	};
 
 	const handleUnlinkInstance = () => {
@@ -181,114 +210,143 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 		);
 	};
 
+	// Loading State
 	if (isLoading) {
 		return (
-			<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-				<Skeleton className="h-48" />
-				<Skeleton className="h-48" />
-				<Skeleton className="h-48" />
+			<div className="space-y-6 animate-in fade-in duration-500">
+				<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+					{Array.from({ length: 6 }).map((_, i) => (
+						<div
+							key={i}
+							className="rounded-2xl border border-border/30 bg-card/20 p-6 space-y-4 animate-pulse"
+							style={{ animationDelay: `${i * 100}ms` }}
+						>
+							<div className="h-6 w-24 rounded-lg bg-muted/20" />
+							<div className="h-5 w-3/4 rounded bg-muted/15" />
+							<div className="h-16 w-full rounded-xl bg-muted/10" />
+							<div className="flex gap-2">
+								<div className="h-10 flex-1 rounded-xl bg-muted/15" />
+							</div>
+						</div>
+					))}
+				</div>
 			</div>
 		);
 	}
 
+	// Error State
 	if (error) {
 		return (
-			<Alert variant="danger">
-				<AlertTitle>Failed to load templates</AlertTitle>
-				<AlertDescription>
-					{error instanceof Error ? error.message : "Please try again"}
-				</AlertDescription>
-			</Alert>
+			<div
+				className="rounded-2xl border p-6 backdrop-blur-sm"
+				style={{
+					backgroundColor: SEMANTIC_COLORS.error.bg,
+					borderColor: SEMANTIC_COLORS.error.border,
+				}}
+			>
+				<div className="flex items-start gap-4">
+					<div
+						className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+						style={{ backgroundColor: `${SEMANTIC_COLORS.error.from}20` }}
+					>
+						<AlertCircle className="h-5 w-5" style={{ color: SEMANTIC_COLORS.error.from }} />
+					</div>
+					<div>
+						<h3 className="font-semibold text-foreground mb-1">Failed to load templates</h3>
+						<p className="text-sm text-muted-foreground">
+							{error instanceof Error ? error.message : "Please try again"}
+						</p>
+					</div>
+				</div>
+			</div>
 		);
 	}
 
 	const templates = data?.templates || [];
 
 	return (
-		<div className="space-y-4">
-			{/* Header with Title and Actions */}
-			<div className="flex items-center justify-between">
-				<h2 className="text-xl font-semibold text-fg">
+		<div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+			{/* Header with Actions */}
+			<div className="flex flex-wrap items-center justify-between gap-4">
+				<h2 className="text-xl font-semibold text-foreground">
 					Templates {serviceType ? `(${serviceType})` : ""}
 				</h2>
-				<div className="flex gap-2">
+				<div className="flex flex-wrap gap-2">
 					{/* Primary Actions: TRaSH Guides Quality Profile Wizard */}
-					<Button
-						variant="primary"
+					<button
+						type="button"
 						onClick={() => onBrowseQualityProfiles("RADARR")}
-						title="Import quality profile from TRaSH Guides for Radarr using the wizard"
-						className="gap-2"
+						title="Import quality profile from TRaSH Guides for Radarr"
+						className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200"
+						style={{
+							background: `linear-gradient(135deg, #f97316, #ea580c)`,
+							boxShadow: "0 4px 12px -4px rgba(249, 115, 22, 0.5)",
+						}}
 					>
 						<Star className="h-4 w-4" />
 						Radarr Profiles
-					</Button>
-					<Button
-						variant="primary"
+					</button>
+					<button
+						type="button"
 						onClick={() => onBrowseQualityProfiles("SONARR")}
-						title="Import quality profile from TRaSH Guides for Sonarr using the wizard"
-						className="gap-2"
+						title="Import quality profile from TRaSH Guides for Sonarr"
+						className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200"
+						style={{
+							background: `linear-gradient(135deg, #06b6d4, #0891b2)`,
+							boxShadow: "0 4px 12px -4px rgba(6, 182, 212, 0.5)",
+						}}
 					>
 						<Star className="h-4 w-4" />
 						Sonarr Profiles
-					</Button>
+					</button>
 
-					{/* Secondary Actions: Manual/Import */}
-					<Button
-						variant="secondary"
+					{/* Secondary Actions */}
+					<button
+						type="button"
 						onClick={() => setImportModal(true)}
-						title="Import an existing template from JSON file with validation"
-						className="gap-2"
+						title="Import an existing template from JSON"
+						className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium border border-border/50 bg-card/30 hover:bg-card/50 transition-all duration-200"
 					>
 						<Download className="h-4 w-4" />
 						Import JSON
-					</Button>
-					<Button
-						variant="secondary"
+					</button>
+					<button
+						type="button"
 						onClick={onCreateNew}
-						title="Create a custom template manually (advanced)"
-						className="gap-2"
+						title="Create a custom template manually"
+						className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium border border-border/50 bg-card/30 hover:bg-card/50 transition-all duration-200"
 					>
 						<Plus className="h-4 w-4" />
 						Custom Template
-					</Button>
+					</button>
 				</div>
 			</div>
 
-			{/* Search, Filter, and Sort Controls */}
-			<div className="flex flex-col gap-3 rounded-lg border border-border bg-bg-subtle/50 p-4 sm:flex-row sm:items-center sm:justify-between">
+			{/* Search and Sort Controls */}
+			<div
+				className="flex flex-col gap-4 rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-4 sm:flex-row sm:items-center sm:justify-between"
+			>
 				{/* Search Input */}
 				<div className="flex-1 max-w-md">
 					<div className="relative">
+						<Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 						<input
 							type="text"
-							placeholder="Search templates by name or description..."
+							placeholder="Search templates..."
 							value={searchInput}
 							onChange={(e) => setSearchInput(e.target.value)}
-							className="w-full rounded-lg border border-border bg-bg-subtle px-4 py-2 pl-10 text-sm text-fg placeholder:text-fg-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+							className="w-full rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 pl-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-border focus:outline-none focus:ring-2 transition-all duration-200"
+							style={{ focusRing: `${themeGradient.from}40` } as React.CSSProperties}
 						/>
-						<svg
-							className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted"
-							fill="none"
-							stroke="currentColor"
-							viewBox="0 0 24 24"
-						>
-							<path
-								strokeLinecap="round"
-								strokeLinejoin="round"
-								strokeWidth={2}
-								d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-							/>
-						</svg>
 					</div>
 				</div>
 
-				{/* Sort and Filter Controls */}
+				{/* Sort Controls */}
 				<div className="flex items-center gap-2">
-					{/* Sort By Dropdown */}
 					<select
 						value={sortBy}
 						onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-						className="rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+						className="rounded-xl border border-border/50 bg-card/50 px-3 py-2.5 text-sm text-foreground focus:border-border focus:outline-none focus:ring-2 transition-all duration-200"
 					>
 						<option value="updatedAt">Last Updated</option>
 						<option value="createdAt">Date Created</option>
@@ -296,20 +354,20 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 						<option value="usageCount">Usage Count</option>
 					</select>
 
-					{/* Sort Order Toggle */}
-					<Button
-						variant="secondary"
-						size="sm"
+					<button
+						type="button"
 						onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
 						title={sortOrder === "asc" ? "Sort ascending" : "Sort descending"}
+						className="rounded-xl border border-border/50 bg-card/50 p-2.5 hover:bg-card/80 transition-all duration-200"
 					>
-						{sortOrder === "asc" ? "↑" : "↓"}
-					</Button>
+						<ArrowUpDown className="h-4 w-4" />
+					</button>
 				</div>
 			</div>
 
+			{/* Empty State */}
 			{templates.length === 0 ? (
-				<EmptyState
+				<PremiumEmptyState
 					icon={FileText}
 					title={debouncedSearch ? "No templates found" : "No templates yet"}
 					description={
@@ -321,221 +379,254 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 			) : (
 				<>
 					{/* Results Counter */}
-					<div className="flex items-center justify-between text-sm text-fg-muted">
-						<span>
-							Showing {templates.length} template{templates.length !== 1 ? "s" : ""}
+					<div className="flex items-center justify-between">
+						<p className="text-sm text-muted-foreground">
+							Showing <span className="font-medium text-foreground">{templates.length}</span> template{templates.length !== 1 ? "s" : ""}
 							{debouncedSearch && ` matching "${debouncedSearch}"`}
-						</span>
+						</p>
 					</div>
 
-					<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-					{templates.map((template) => (
-						<article
-							key={template.id}
-							className="group relative flex flex-col rounded-xl border border-border bg-bg-subtle/50 p-6 transition hover:border-border/80 hover:bg-bg-hover"
-						>
-							{/* Delete Confirmation Overlay */}
-							{deleteConfirm === template.id && (
-								<div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 rounded-xl bg-black/80 p-6">
-									<p className="text-center text-sm text-fg">
-										Delete &quot;{template.name}&quot;?
-									</p>
-									<div className="flex gap-2">
-										<Button
-											variant="danger"
-											size="sm"
-											onClick={() => handleDelete(template.id)}
-											disabled={deleteMutation.isPending}
-										>
-											{deleteMutation.isPending ? "Deleting..." : "Delete"}
-										</Button>
-										<Button
-											variant="secondary"
-											size="sm"
-											onClick={() => setDeleteConfirm(null)}
-										>
-											Cancel
-										</Button>
-									</div>
-								</div>
-							)}
-
-							{/* Duplicate Dialog Overlay */}
-							{duplicatingId === template.id && (
-								<div className="absolute inset-0 z-10 flex flex-col gap-3 rounded-xl bg-black/90 p-6">
-									<p className="text-sm text-fg">Duplicate as:</p>
-									<input
-										type="text"
-										value={duplicateName}
-										onChange={(e) => setDuplicateName(e.target.value)}
-										placeholder="New template name"
-										className="rounded border border-border bg-bg-subtle px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-										autoFocus
-									/>
-									<div className="flex gap-2">
-										<Button
-											variant="primary"
-											size="sm"
-											onClick={() => handleDuplicate(template.id)}
-											disabled={duplicateMutation.isPending || !duplicateName.trim()}
-										>
-											{duplicateMutation.isPending ? "Creating..." : "Create"}
-										</Button>
-										<Button
-											variant="secondary"
-											size="sm"
-											onClick={() => {
-												setDuplicatingId(null);
-												setDuplicateName("");
-											}}
-										>
-											Cancel
-										</Button>
-									</div>
-								</div>
-							)}
-
-							{/* Template Card Content */}
-							<div className="flex flex-1 flex-col">
-								{/* Variable height content section */}
-								<div className="space-y-3">
-									<div className="flex items-start justify-between">
-										<div>
-											<h3 className="font-medium text-fg">{template.name}</h3>
-											<p className="mt-1 text-xs text-fg-muted">{template.serviceType}</p>
+					{/* Template Grid */}
+					<div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+						{templates.map((template, index) => (
+							<article
+								key={template.id}
+								className="group relative flex flex-col rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-6 transition-all duration-300 hover:border-border hover:bg-card/50 hover:shadow-lg animate-in fade-in slide-in-from-bottom-2"
+								style={{
+									animationDelay: `${index * 50}ms`,
+									animationFillMode: "backwards",
+								}}
+							>
+								{/* Delete Confirmation Overlay */}
+								{deleteConfirm === template.id && (
+									<div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 rounded-2xl bg-black/90 backdrop-blur-sm p-6">
+										<p className="text-center text-sm text-foreground">
+											Delete &quot;{template.name}&quot;?
+										</p>
+										<div className="flex gap-2">
+											<button
+												type="button"
+												onClick={() => handleDelete(template.id)}
+												disabled={deleteMutation.isPending}
+												className="rounded-xl px-4 py-2 text-sm font-medium transition-all"
+												style={{
+													backgroundColor: SEMANTIC_COLORS.error.bg,
+													border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+													color: SEMANTIC_COLORS.error.text,
+												}}
+											>
+												{deleteMutation.isPending ? "Deleting..." : "Delete"}
+											</button>
+											<button
+												type="button"
+												onClick={() => setDeleteConfirm(null)}
+												className="rounded-xl px-4 py-2 text-sm font-medium border border-border/50 bg-card/50 hover:bg-card/80 transition-all"
+											>
+												Cancel
+											</button>
 										</div>
-										<span className="text-xs text-fg-muted">
-											v{template.updatedAt ? new Date(template.updatedAt).toLocaleDateString() : ""}
-										</span>
 									</div>
+								)}
 
-									{template.description && (
-										<p className="text-sm text-fg-muted line-clamp-2">{template.description}</p>
-									)}
-
-									<div className="space-y-2">
-										<div className="flex items-center gap-2 text-xs text-fg-muted">
-											<span>{template.config.customFormats.length} formats</span>
-											<span>•</span>
-											<span>{template.config.customFormatGroups.length} groups</span>
+								{/* Duplicate Dialog Overlay */}
+								{duplicatingId === template.id && (
+									<div className="absolute inset-0 z-10 flex flex-col gap-4 rounded-2xl bg-black/90 backdrop-blur-sm p-6">
+										<p className="text-sm text-foreground">Duplicate as:</p>
+										<input
+											type="text"
+											value={duplicateName}
+											onChange={(e) => setDuplicateName(e.target.value)}
+											placeholder="New template name"
+											className="rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-border focus:outline-none"
+											autoFocus
+										/>
+										<div className="flex gap-2">
+											<button
+												type="button"
+												onClick={() => handleDuplicate(template.id)}
+												disabled={duplicateMutation.isPending || !duplicateName.trim()}
+												className="rounded-xl px-4 py-2 text-sm font-medium transition-all disabled:opacity-50"
+												style={{
+													background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+												}}
+											>
+												{duplicateMutation.isPending ? "Creating..." : "Create"}
+											</button>
+											<button
+												type="button"
+												onClick={() => {
+													setDuplicatingId(null);
+													setDuplicateName("");
+												}}
+												className="rounded-xl px-4 py-2 text-sm font-medium border border-border/50 bg-card/50 hover:bg-card/80 transition-all"
+											>
+												Cancel
+											</button>
 										</div>
-										{template.config.qualityProfile && (
-											<div className="flex flex-wrap gap-1.5">
-												{template.config.qualityProfile.language && (
-													<span className="inline-flex items-center gap-1 rounded bg-blue-500/20 px-1.5 py-0.5 text-xs font-medium text-blue-300">
-														🌐 {template.config.qualityProfile.language}
-													</span>
-												)}
-												{template.config.qualityProfile.trash_score_set && (
-													<span className="inline-flex items-center gap-1 rounded bg-purple-500/20 px-1.5 py-0.5 text-xs font-medium text-purple-300">
-														📊 {template.config.qualityProfile.trash_score_set}
-													</span>
-												)}
-												{template.config.qualityProfile.cutoff && (
-													<span className="inline-flex items-center gap-1 rounded bg-green-500/20 px-1.5 py-0.5 text-xs font-medium text-green-300">
-														🎬 {template.config.qualityProfile.cutoff}
-													</span>
-												)}
+									</div>
+								)}
+
+								{/* Template Card Content */}
+								<div className="flex flex-1 flex-col">
+									{/* Header */}
+									<div className="space-y-3 mb-4">
+										<div className="flex items-start justify-between">
+											<div>
+												<h3 className="font-semibold text-foreground">{template.name}</h3>
+												<p
+													className="mt-1 text-xs font-medium"
+													style={{ color: template.serviceType === "RADARR" ? "#f97316" : "#06b6d4" }}
+												>
+													{template.serviceType}
+												</p>
 											</div>
+											<span className="text-xs text-muted-foreground">
+												{template.updatedAt ? new Date(template.updatedAt).toLocaleDateString() : ""}
+											</span>
+										</div>
+
+										{template.description && (
+											<p className="text-sm text-muted-foreground line-clamp-2">{template.description}</p>
 										)}
+
+										<div className="space-y-2">
+											<div className="flex items-center gap-2 text-xs text-muted-foreground">
+												<span>{template.config.customFormats.length} formats</span>
+												<span className="text-border">•</span>
+												<span>{template.config.customFormatGroups.length} groups</span>
+											</div>
+											{template.config.qualityProfile && (
+												<div className="flex flex-wrap gap-1.5">
+													{template.config.qualityProfile.language && (
+														<span
+															className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-medium"
+															style={{
+																backgroundColor: `${themeGradient.from}15`,
+																border: `1px solid ${themeGradient.from}25`,
+																color: themeGradient.from,
+															}}
+														>
+															🌐 {template.config.qualityProfile.language}
+														</span>
+													)}
+													{template.config.qualityProfile.trash_score_set && (
+														<span className="inline-flex items-center gap-1 rounded-lg bg-purple-500/15 border border-purple-500/25 px-2 py-0.5 text-xs font-medium text-purple-400">
+															📊 {template.config.qualityProfile.trash_score_set}
+														</span>
+													)}
+													{template.config.qualityProfile.cutoff && (
+														<span
+															className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-medium"
+															style={{
+																backgroundColor: SEMANTIC_COLORS.success.bg,
+																border: `1px solid ${SEMANTIC_COLORS.success.border}`,
+																color: SEMANTIC_COLORS.success.text,
+															}}
+														>
+															🎬 {template.config.qualityProfile.cutoff}
+														</span>
+													)}
+												</div>
+											)}
+										</div>
+
+										{/* Update Banner */}
+										{(() => {
+											const templateUpdate = updatesData?.data.templatesWithUpdates.find((u) => u.templateId === template.id);
+											return templateUpdate ? (
+												<TemplateUpdateBanner update={templateUpdate} />
+											) : null;
+										})()}
 									</div>
 
-									{/* Update Notification Banner */}
-									{(() => {
-										const templateUpdate = updatesData?.data.templatesWithUpdates.find((u) => u.templateId === template.id);
-										return templateUpdate ? (
-											<TemplateUpdateBanner
-												update={templateUpdate}
-											/>
-										) : null;
-									})()}
-								</div>
-
-								{/* Fixed bottom section - always aligned across cards */}
-								<div className="mt-auto space-y-3 pt-3">
-									{/* Template Stats */}
-									<TemplateStats
-										templateId={template.id}
-										templateName={template.name}
-										onDeploy={(instanceId, instanceLabel) => {
-											setDeploymentModal({
-												templateId: template.id,
-												templateName: template.name,
-												instanceId,
-												instanceLabel,
-											});
-										}}
-										onUnlinkInstance={(instanceId, instanceName) => {
-											setUnlinkConfirm({
-												templateId: template.id,
-												templateName: template.name,
-												instanceId,
-												instanceName,
-											});
-										}}
-									/>
-
-									{/* Primary Deploy Button */}
-									<Button
-										variant="primary"
-										onClick={() => setInstanceSelectorTemplate({
-											templateId: template.id,
-											templateName: template.name,
-											serviceType: template.serviceType
-										})}
-										className="w-full gap-2"
-										title="Deploy this template to an instance"
-									>
-										<Rocket className="h-4 w-4" />
-										Deploy to Instance
-									</Button>
-
-									{/* Action Buttons */}
-									<div className="flex gap-2">
-										<Button
-											variant="secondary"
-											size="sm"
-											onClick={() => onEdit(template)}
-											className="flex-1"
-											title="Edit template"
-										>
-											<Edit className="mx-auto h-4 w-4" />
-										</Button>
-										<Button
-											variant="secondary"
-											size="sm"
-											onClick={() => {
-												setDuplicatingId(template.id);
-												setDuplicateName(`${template.name} Copy`);
+									{/* Fixed Bottom Section */}
+									<div className="mt-auto space-y-3 pt-3 border-t border-border/30">
+										<TemplateStats
+											templateId={template.id}
+											templateName={template.name}
+											onDeploy={(instanceId, instanceLabel) => {
+												setDeploymentModal({
+													templateId: template.id,
+													templateName: template.name,
+													instanceId,
+													instanceLabel,
+												});
 											}}
-											className="flex-1"
-											title="Duplicate template"
+											onUnlinkInstance={(instanceId, instanceName) => {
+												setUnlinkConfirm({
+													templateId: template.id,
+													templateName: template.name,
+													instanceId,
+													instanceName,
+												});
+											}}
+										/>
+
+										{/* Deploy Button */}
+										<button
+											type="button"
+											onClick={() => setInstanceSelectorTemplate({
+												templateId: template.id,
+												templateName: template.name,
+												serviceType: template.serviceType
+											})}
+											className="w-full inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200"
+											style={{
+												background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+												boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
+											}}
 										>
-											<Copy className="mx-auto h-4 w-4" />
-										</Button>
-										<Button
-											variant="secondary"
-											size="sm"
-											onClick={() => setExportModal({ templateId: template.id, templateName: template.name })}
-											className="flex-1"
-											title="Export template with metadata"
-										>
-											<Download className="mx-auto h-4 w-4" />
-										</Button>
-										<Button
-											variant="danger"
-											size="sm"
-											onClick={() => setDeleteConfirm(template.id)}
-											className="flex-1"
-											title="Delete template"
-										>
-											<Trash2 className="mx-auto h-4 w-4" />
-										</Button>
+											<Rocket className="h-4 w-4" />
+											Deploy to Instance
+										</button>
+
+										{/* Action Buttons */}
+										<div className="flex gap-2">
+											<button
+												type="button"
+												onClick={() => onEdit(template)}
+												className="flex-1 rounded-xl p-2.5 border border-border/50 bg-card/30 hover:bg-card/50 transition-all"
+												title="Edit template"
+											>
+												<Edit className="mx-auto h-4 w-4" />
+											</button>
+											<button
+												type="button"
+												onClick={() => {
+													setDuplicatingId(template.id);
+													setDuplicateName(`${template.name} Copy`);
+												}}
+												className="flex-1 rounded-xl p-2.5 border border-border/50 bg-card/30 hover:bg-card/50 transition-all"
+												title="Duplicate template"
+											>
+												<Copy className="mx-auto h-4 w-4" />
+											</button>
+											<button
+												type="button"
+												onClick={() => setExportModal({ templateId: template.id, templateName: template.name })}
+												className="flex-1 rounded-xl p-2.5 border border-border/50 bg-card/30 hover:bg-card/50 transition-all"
+												title="Export template"
+											>
+												<Download className="mx-auto h-4 w-4" />
+											</button>
+											<button
+												type="button"
+												onClick={() => setDeleteConfirm(template.id)}
+												className="flex-1 rounded-xl p-2.5 transition-all"
+												style={{
+													backgroundColor: SEMANTIC_COLORS.error.bg,
+													border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+													color: SEMANTIC_COLORS.error.text,
+												}}
+												title="Delete template"
+											>
+												<Trash2 className="mx-auto h-4 w-4" />
+											</button>
+										</div>
 									</div>
 								</div>
-							</div>
-						</article>
-					))}
+							</article>
+						))}
 					</div>
 				</>
 			)}
@@ -575,32 +666,43 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 
 			{/* Instance Selector Modal */}
 			{instanceSelectorTemplate && (
-				<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-					<div className="bg-bg-subtle rounded-xl shadow-2xl border border-border max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col">
+				<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+					<div
+						className="rounded-2xl shadow-2xl border border-border/50 bg-card/95 backdrop-blur-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-300"
+					>
 						{/* Header */}
-						<div className="flex items-center justify-between p-6 border-b border-border bg-gradient-to-r from-primary/10 to-transparent">
-							<div>
-								<h2 className="text-xl font-semibold text-fg flex items-center gap-2">
-									<Rocket className="h-5 w-5 text-primary" />
-									Deploy Template
-								</h2>
-								<p className="text-sm text-fg-muted mt-1">
-									{instanceSelectorTemplate.templateName}
-								</p>
+						<div
+							className="flex items-center justify-between p-6 border-b border-border/50"
+							style={{
+								background: `linear-gradient(135deg, ${themeGradient.from}10, transparent)`,
+							}}
+						>
+							<div className="flex items-center gap-3">
+								<div
+									className="flex h-10 w-10 items-center justify-center rounded-xl"
+									style={{
+										background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+									}}
+								>
+									<Rocket className="h-5 w-5" style={{ color: themeGradient.from }} />
+								</div>
+								<div>
+									<h2 className="text-lg font-semibold text-foreground">Deploy Template</h2>
+									<p className="text-sm text-muted-foreground">{instanceSelectorTemplate.templateName}</p>
+								</div>
 							</div>
-							<Button
-								variant="ghost"
-								size="sm"
+							<button
+								type="button"
 								onClick={() => setInstanceSelectorTemplate(null)}
-								aria-label="Close"
+								className="rounded-lg p-2 hover:bg-card/80 transition-colors"
 							>
 								<X className="h-5 w-5" />
-							</Button>
+							</button>
 						</div>
 
 						{/* Instance List */}
-						<div className="flex-1 overflow-y-auto p-6 bg-bg-subtle/50">
-							{/* Deploy to Multiple Button */}
+						<div className="flex-1 overflow-y-auto p-6">
+							{/* Bulk Deploy Button */}
 							{(() => {
 								const matchingInstances = servicesData?.filter(instance =>
 									instance.service.toUpperCase() === instanceSelectorTemplate.serviceType
@@ -608,8 +710,8 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 
 								if (matchingInstances.length > 1) {
 									return (
-										<Button
-											variant="secondary"
+										<button
+											type="button"
 											onClick={() => {
 												setBulkDeployModal({
 													templateId: instanceSelectorTemplate.templateId,
@@ -622,23 +724,26 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 												});
 												setInstanceSelectorTemplate(null);
 											}}
-											className="w-full justify-center gap-2 mb-4 border-primary/30 bg-primary/10 hover:bg-primary/20 hover:border-primary/50 text-primary"
+											className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-3 mb-4 text-sm font-medium transition-all duration-200"
+											style={{
+												background: `linear-gradient(135deg, ${themeGradient.from}15, ${themeGradient.to}15)`,
+												border: `1px solid ${themeGradient.from}30`,
+												color: themeGradient.from,
+											}}
 										>
 											<Layers className="h-5 w-5" />
 											Deploy to Multiple Instances ({matchingInstances.length} available)
-										</Button>
+										</button>
 									);
 								}
 								return null;
 							})()}
 
-							<h3 className="text-sm font-medium text-fg mb-4">Select an instance to deploy to:</h3>
+							<h3 className="text-sm font-medium text-foreground mb-4">Select an instance:</h3>
 							<div className="space-y-3">
 								{servicesData && servicesData.length > 0 ? (
 									servicesData
 										.filter(instance =>
-											// Only show instances matching the template's service type
-											// Compare uppercase versions since API returns lowercase "radarr"/"sonarr"
 											instance.service.toUpperCase() === instanceSelectorTemplate.serviceType
 										)
 										.map((instance) => (
@@ -654,24 +759,27 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 													});
 													setInstanceSelectorTemplate(null);
 												}}
-												className="w-full flex items-center justify-between p-4 rounded-lg border border-border bg-bg-subtle/50 hover:bg-primary/20 hover:border-primary/50 transition-all text-left group shadow-lg hover:shadow-primary/20"
+												className="w-full flex items-center justify-between p-4 rounded-xl border border-border/50 bg-card/30 hover:bg-card/50 hover:border-border transition-all text-left group"
 											>
 												<div>
-													<div className="font-medium text-fg group-hover:text-primary transition-colors">
+													<div className="font-medium text-foreground group-hover:text-foreground transition-colors">
 														{instance.label}
 													</div>
-													<div className="text-sm text-fg-muted mt-1">
+													<div className="text-sm text-muted-foreground mt-1">
 														{instance.service}
 													</div>
 												</div>
-												<Rocket className="h-5 w-5 text-primary group-hover:scale-110 transition-transform" />
+												<Rocket
+													className="h-5 w-5 transition-transform group-hover:scale-110"
+													style={{ color: themeGradient.from }}
+												/>
 											</button>
 										))
 								) : (
-									<div className="text-center py-12 px-4 rounded-lg border border-dashed border-border bg-bg-subtle/50">
-										<AlertCircle className="h-12 w-12 text-fg-muted mx-auto mb-4" />
-										<p className="text-fg-muted font-medium">No instances available.</p>
-										<p className="text-sm text-fg-muted mt-2">
+									<div className="text-center py-12 px-4 rounded-xl border border-dashed border-border/50">
+										<AlertCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+										<p className="text-foreground font-medium">No instances available.</p>
+										<p className="text-sm text-muted-foreground mt-2">
 											Add a Radarr or Sonarr instance in Settings first.
 										</p>
 									</div>
@@ -680,19 +788,23 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 						</div>
 
 						{/* Footer */}
-						<div className="flex items-center justify-end gap-3 p-6 border-t border-border bg-bg-subtle/80">
-							<Button variant="secondary" onClick={() => setInstanceSelectorTemplate(null)}>
+						<div className="flex items-center justify-end p-6 border-t border-border/50">
+							<button
+								type="button"
+								onClick={() => setInstanceSelectorTemplate(null)}
+								className="rounded-xl px-4 py-2.5 text-sm font-medium border border-border/50 bg-card/30 hover:bg-card/50 transition-all"
+							>
 								Cancel
-							</Button>
+							</button>
 						</div>
 					</div>
 				</div>
 			)}
 
-			{/* Enhanced Export Modal */}
+			{/* Export Modal */}
 			{exportModal && (
-				<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-					<div className="bg-bg-subtle rounded-xl shadow-2xl border border-border max-w-2xl w-full max-h-[90vh] overflow-auto">
+				<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+					<div className="rounded-2xl shadow-2xl border border-border/50 bg-card/95 backdrop-blur-xl max-w-2xl w-full max-h-[90vh] overflow-auto animate-in zoom-in-95 duration-300">
 						<EnhancedTemplateExportModal
 							templateId={exportModal.templateId}
 							templateName={exportModal.templateName}
@@ -702,10 +814,10 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 				</div>
 			)}
 
-			{/* Enhanced Import Modal */}
+			{/* Import Modal */}
 			{importModal && (
-				<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-					<div className="bg-bg-subtle rounded-xl shadow-2xl border border-border max-w-2xl w-full max-h-[90vh] overflow-auto">
+				<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+					<div className="rounded-2xl shadow-2xl border border-border/50 bg-card/95 backdrop-blur-xl max-w-2xl w-full max-h-[90vh] overflow-auto animate-in zoom-in-95 duration-300">
 						<EnhancedTemplateImportModal
 							onImportComplete={() => {
 								queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
@@ -719,44 +831,56 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 
 			{/* Unlink Confirmation Modal */}
 			{unlinkConfirm && (
-				<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-					<div className="bg-bg-subtle rounded-xl shadow-2xl border border-border max-w-md w-full p-6">
+				<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+					<div className="rounded-2xl shadow-2xl border border-border/50 bg-card/95 backdrop-blur-xl max-w-md w-full p-6 animate-in zoom-in-95 duration-300">
 						<div className="text-center space-y-4">
-							<div className="flex items-center justify-center w-12 h-12 rounded-full bg-danger/20 mx-auto">
-								<AlertCircle className="h-6 w-6 text-danger" />
+							<div
+								className="flex items-center justify-center w-14 h-14 rounded-2xl mx-auto"
+								style={{
+									backgroundColor: SEMANTIC_COLORS.error.bg,
+									border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+								}}
+							>
+								<AlertCircle className="h-7 w-7" style={{ color: SEMANTIC_COLORS.error.from }} />
 							</div>
-							<h3 className="text-lg font-semibold text-fg">
+							<h3 className="text-lg font-semibold text-foreground">
 								Remove from Instance?
 							</h3>
-							<p className="text-sm text-fg-muted">
+							<p className="text-sm text-muted-foreground">
 								Are you sure you want to unlink template &quot;{unlinkConfirm.templateName}&quot; from instance &quot;{unlinkConfirm.instanceName}&quot;?
 							</p>
-							<p className="text-xs text-fg-muted">
+							<p className="text-xs text-muted-foreground">
 								This will remove the deployment mapping. Custom Formats already on the instance will not be deleted.
 							</p>
 							<div className="flex gap-3 justify-center pt-2">
-								<Button
-									variant="secondary"
+								<button
+									type="button"
 									onClick={() => setUnlinkConfirm(null)}
 									disabled={unlinkMutation.isPending}
+									className="rounded-xl px-4 py-2.5 text-sm font-medium border border-border/50 bg-card/30 hover:bg-card/50 transition-all disabled:opacity-50"
 								>
 									Cancel
-								</Button>
-								<Button
-									variant="danger"
+								</button>
+								<button
+									type="button"
 									onClick={handleUnlinkInstance}
 									disabled={unlinkMutation.isPending}
-									className="gap-2"
+									className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all disabled:opacity-50"
+									style={{
+										backgroundColor: SEMANTIC_COLORS.error.bg,
+										border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+										color: SEMANTIC_COLORS.error.text,
+									}}
 								>
 									{unlinkMutation.isPending ? (
 										<>
-											<RefreshCw className="h-4 w-4 animate-spin" />
+											<Loader2 className="h-4 w-4 animate-spin" />
 											Unlinking...
 										</>
 									) : (
 										"Unlink"
 									)}
-								</Button>
+								</button>
 							</div>
 						</div>
 					</div>

@@ -18,7 +18,7 @@ import {
 	AlertDescription,
 	Button,
 	Input,
-	Select,
+	NativeSelect,
 	SelectOption,
 } from "../../../components/ui";
 
@@ -415,7 +415,7 @@ export function VisualConditionBuilder({ onPatternChange, onClose }: VisualCondi
 							<div className="grid grid-cols-1 md:grid-cols-2 gap-3">
 								<div>
 									<label className="block text-xs font-medium text-fg-muted mb-1">Field</label>
-									<Select
+									<NativeSelect
 										value={condition.field}
 										onChange={(e) => updateCondition(condition.id, { field: e.target.value })}
 										className="w-full"
@@ -425,14 +425,14 @@ export function VisualConditionBuilder({ onPatternChange, onClose }: VisualCondi
 												{field.label}
 											</SelectOption>
 										))}
-									</Select>
+									</NativeSelect>
 									{field && <p className="text-xs text-fg-muted mt-1">{field.description}</p>}
 								</div>
 
 								{/* Operator Selection */}
 								<div>
 									<label className="block text-xs font-medium text-fg-muted mb-1">Operator</label>
-									<Select
+									<NativeSelect
 										value={condition.operator}
 										onChange={(e) => updateCondition(condition.id, { operator: e.target.value })}
 										className="w-full"
@@ -442,7 +442,7 @@ export function VisualConditionBuilder({ onPatternChange, onClose }: VisualCondi
 												{op.label}
 											</SelectOption>
 										))}
-									</Select>
+									</NativeSelect>
 								</div>
 							</div>
 

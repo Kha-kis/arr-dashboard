@@ -3,6 +3,8 @@
 import type { SearchIndexersResponse } from "@arr/shared";
 import { Button } from "../../../components/ui";
 import { useIncognitoMode, getLinuxIndexer, getLinuxInstanceName } from "../../../lib/incognito";
+import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 
 interface IndexerSelectorProps {
 	/**
@@ -36,6 +38,8 @@ export const IndexerSelector = ({
 	onToggleAll,
 }: IndexerSelectorProps) => {
 	const [incognitoMode] = useIncognitoMode();
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 
 	return (
 		<div className="space-y-4">
@@ -78,9 +82,17 @@ export const IndexerSelector = ({
 										onClick={() => onToggleIndexer(instance.instanceId, indexer.id)}
 										className={`rounded-full border px-3 py-1 text-xs transition ${
 											isSelected
-												? "border-sky-400 bg-sky-500/20 text-fg"
+												? "text-fg"
 												: "border-border bg-transparent text-fg-muted hover:border-primary/40"
 										}`}
+										style={
+											isSelected
+												? {
+														borderColor: themeGradient.from,
+														backgroundColor: themeGradient.fromLight,
+													}
+												: undefined
+										}
 									>
 										{incognitoMode ? getLinuxIndexer(indexer.name) : indexer.name}
 									</button>

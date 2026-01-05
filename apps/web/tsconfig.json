@@ -16,7 +16,15 @@
 		"plugins": [{ "name": "next" }],
 		"esModuleInterop": true,
 		"allowSyntheticDefaultImports": true,
-		"types": ["react", "react-dom", "node"]
+		"types": ["react", "react-dom", "node"],
+		"baseUrl": ".",
+		"paths": {
+			"@/*": ["./src/*"],
+			"@arr/web/*": ["./src/*"],
+			"@arr/shared": ["../../packages/shared/src/index.ts"],
+			"@arr/shared/*": ["../../packages/shared/src/*"],
+			"@arr/types": ["../../packages/shared/src/types/index.ts"]
+		}
 	},
 	"include": ["next-env.d.ts", "src/types/**/*.d.ts", "**/*.ts", "**/*.tsx", "**/*.cjs", ".next/types/**/*.ts"],
 	"exclude": ["node_modules"]

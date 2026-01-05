@@ -9,6 +9,8 @@ import {
 	getLinuxIndexer,
 	getLinuxInstanceName,
 } from "../../../lib/incognito";
+import { THEME_GRADIENTS, type ThemeGradient } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 
 const integer = new Intl.NumberFormat();
 
@@ -106,14 +108,26 @@ const getQualityLabel = (quality: SearchResult["quality"]): string | null => {
 	return typeof name === "string" ? name : null;
 };
 
-const protocolBadgeClass = (protocol: SearchResult["protocol"]): string => {
+const getProtocolBadgeStyle = (
+	protocol: SearchResult["protocol"],
+	themeGradient: ThemeGradient,
+): { className: string; style?: React.CSSProperties } => {
 	switch (protocol) {
 		case "torrent":
-			return "border-emerald-400/40 bg-emerald-500/10 text-emerald-200";
+			return {
+				className: "border-emerald-400/40 bg-emerald-500/10 text-emerald-200",
+			};
 		case "usenet":
-			return "border-sky-400/40 bg-sky-500/10 text-sky-200";
+			return {
+				className: "",
+				style: {
+					borderColor: `${themeGradient.from}66`,
+					backgroundColor: themeGradient.fromLight,
+					color: themeGradient.from,
+				},
+			};
 		default:
-			return "border-border bg-bg-subtle text-fg-muted";
+			return { className: "border-border bg-bg-subtle text-fg-muted" };
 	}
 };
 
@@ -143,6 +157,8 @@ export const SearchResultsTable = ({
 	onOpenInfo,
 }: SearchResultsTableProps) => {
 	const [incognitoMode] = useIncognitoMode();
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 
 	if (loading) {
 		return (
@@ -184,6 +200,8 @@ export const SearchResultsTable = ({
 								? result.rejectionReasons.join(", ")
 								: null;
 
+						const protocolStyle = getProtocolBadgeStyle(result.protocol, themeGradient);
+
 						return (
 							<tr key={key} className="align-top hover:bg-bg-subtle">
 								<td className="px-4 py-4 text-fg">
@@ -193,7 +211,8 @@ export const SearchResultsTable = ({
 												{incognitoMode ? getLinuxIsoName(result.title) : result.title}
 											</span>
 											<span
-												className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${protocolBadgeClass(result.protocol)}`}
+												className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${protocolStyle.className}`}
+												style={protocolStyle.style}
 											>
 												{result.protocol.toUpperCase()}
 											</span>

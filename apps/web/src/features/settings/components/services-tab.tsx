@@ -1,13 +1,12 @@
 "use client";
 
+import { Server } from "lucide-react";
 import type { ServiceInstanceSummary } from "@arr/shared";
 import {
-	Card,
-	CardContent,
-	CardHeader,
-	CardTitle,
-	CardDescription,
-} from "../../../components/ui/card";
+	PremiumSection,
+	PremiumEmptyState,
+	PremiumSkeleton,
+} from "../../../components/layout";
 import { ServiceInstanceCard } from "./service-instance-card";
 
 /**
@@ -41,7 +40,12 @@ interface ServicesTabProps {
 }
 
 /**
- * Displays list of configured service instances
+ * Premium Services Tab
+ *
+ * Displays list of configured service instances with:
+ * - Glassmorphic section wrapper
+ * - Staggered animation for cards
+ * - Premium empty state
  */
 export const ServicesTab = ({
 	services,
@@ -55,36 +59,68 @@ export const ServicesTab = ({
 	testResult,
 	mutationPending,
 }: ServicesTabProps) => {
+	// Loading state
+	if (isLoading) {
+		return (
+			<PremiumSection
+				title="Configured Instances"
+				description="Manage all Sonarr, Radarr, and Prowlarr connections"
+				icon={Server}
+			>
+				<div className="space-y-4">
+					{Array.from({ length: 3 }).map((_, i) => (
+						<PremiumSkeleton
+							key={i}
+							variant="card"
+							className="h-24"
+							style={{ animationDelay: `${i * 50}ms` }}
+						/>
+					))}
+				</div>
+			</PremiumSection>
+		);
+	}
+
+	// Empty state
+	if (services.length === 0) {
+		return (
+			<PremiumSection
+				title="Configured Instances"
+				description="Manage all Sonarr, Radarr, and Prowlarr connections"
+				icon={Server}
+			>
+				<PremiumEmptyState
+					icon={Server}
+					title="No services configured"
+					description="Add your first Sonarr, Radarr, or Prowlarr instance using the form on the right."
+				/>
+			</PremiumSection>
+		);
+	}
+
 	return (
-		<Card>
-			<CardHeader>
-				<CardTitle>Configured Instances</CardTitle>
-				<CardDescription>Manage all Sonarr, Radarr, and Prowlarr connections</CardDescription>
-			</CardHeader>
-			<CardContent className="space-y-4">
-				{isLoading ? (
-					<p className="text-sm text-fg-muted">Loading services...</p>
-				) : services.length === 0 ? (
-					<p className="text-sm text-fg-muted">No services configured yet.</p>
-				) : (
-					<div className="space-y-3">
-						{services.map((instance) => (
-							<ServiceInstanceCard
-								key={instance.id}
-								instance={instance}
-								onTestConnection={onTestConnection}
-								onEdit={onEdit}
-								onToggleDefault={onToggleDefault}
-								onToggleEnabled={onToggleEnabled}
-								onDelete={onDelete}
-								isTesting={testingConnection === instance.id}
-								mutationPending={mutationPending}
-								testResult={testResult}
-							/>
-						))}
-					</div>
-				)}
-			</CardContent>
-		</Card>
+		<PremiumSection
+			title="Configured Instances"
+			description="Manage all Sonarr, Radarr, and Prowlarr connections"
+			icon={Server}
+		>
+			<div className="space-y-4">
+				{services.map((instance, index) => (
+					<ServiceInstanceCard
+						key={instance.id}
+						instance={instance}
+						onTestConnection={onTestConnection}
+						onEdit={onEdit}
+						onToggleDefault={onToggleDefault}
+						onToggleEnabled={onToggleEnabled}
+						onDelete={onDelete}
+						isTesting={testingConnection === instance.id}
+						mutationPending={mutationPending}
+						testResult={testResult}
+						animationDelay={index * 50}
+					/>
+				))}
+			</div>
+		</PremiumSection>
 	);
 };

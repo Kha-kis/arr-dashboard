@@ -13,10 +13,12 @@ import {
 	CardDescription,
 	Alert,
 	AlertDescription,
-	FormField,
+	SimpleFormField,
 } from "../../../components/ui";
 import { cn } from "../../../lib/utils";
-import { SERVICE_TYPES, SELECT_CLASS, OPTION_STYLE } from "../lib/settings-constants";
+import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SERVICE_TYPES } from "../lib/settings-constants";
 import { getServicePlaceholders } from "../lib/settings-utils";
 
 /**
@@ -69,6 +71,8 @@ export const ServiceForm = ({
 	testResult,
 	defaultSectionContent,
 }: ServiceFormProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const placeholders = getServicePlaceholders(formState.service);
 
 	return (
@@ -102,18 +106,26 @@ export const ServiceForm = ({
 										}))
 									}
 									className={cn(
-										"flex-1 rounded-lg border px-3 py-2 text-sm capitalize transition",
-										formState.service === service
-											? "border-sky-400 bg-sky-500/20 text-fg"
-											: "border-border bg-bg-subtle text-fg-muted hover:text-fg",
+										"flex-1 rounded-lg border px-3 py-2 text-sm capitalize transition-all duration-200",
+										formState.service !== service &&
+											"border-border bg-bg-subtle text-fg-muted hover:text-fg",
 									)}
+									style={
+										formState.service === service
+											? {
+													borderColor: themeGradient.from,
+													backgroundColor: themeGradient.fromLight,
+													color: themeGradient.from,
+											  }
+											: undefined
+									}
 								>
 									{service}
 								</button>
 							))}
 						</div>
 					</div>
-					<FormField
+					<SimpleFormField
 						label="Label"
 						htmlFor="service-label"
 						hint={`Friendly name for this ${formState.service} instance`}
@@ -132,8 +144,8 @@ export const ServiceForm = ({
 							required
 							autoComplete="off"
 						/>
-					</FormField>
-					<FormField
+					</SimpleFormField>
+					<SimpleFormField
 						label="Base URL"
 						htmlFor="service-baseurl"
 						hint="Full URL including http:// or https://"
@@ -156,8 +168,8 @@ export const ServiceForm = ({
 							data-lpignore="true"
 							data-form-type="other"
 						/>
-					</FormField>
-					<FormField
+					</SimpleFormField>
+					<SimpleFormField
 						label="API Key"
 						htmlFor="service-apikey"
 						hint={selectedService ? "Leave empty to keep current key" : "Found in Settings > General"}
@@ -180,7 +192,7 @@ export const ServiceForm = ({
 							data-lpignore="true"
 							data-form-type="other"
 						/>
-					</FormField>
+					</SimpleFormField>
 					<div className="space-y-2">
 						<Button
 							type="button"
@@ -216,7 +228,7 @@ export const ServiceForm = ({
 						</datalist>
 					</div>
 					{formState.service !== "prowlarr" && (
-						<FormField
+						<SimpleFormField
 							label="Storage Group"
 							htmlFor="service-storage-group"
 							hint="Group instances sharing the same storage to avoid duplicate disk stats in statistics"
@@ -233,7 +245,7 @@ export const ServiceForm = ({
 								placeholder="e.g., main-nas, media-server"
 								autoComplete="off"
 							/>
-						</FormField>
+						</SimpleFormField>
 					)}
 					{formState.service !== "prowlarr" && (
 						<div className="space-y-3 rounded-xl border border-border bg-bg-subtle p-4">

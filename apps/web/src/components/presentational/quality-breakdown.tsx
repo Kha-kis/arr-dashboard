@@ -1,9 +1,14 @@
+"use client";
+
 /**
  * Quality Breakdown - Presentational Component
  *
  * Displays quality distribution as horizontal progress bars.
  * Pure UI component with no business logic.
  */
+
+import { THEME_GRADIENTS } from "../../lib/theme-gradients";
+import { useColorTheme } from "../../providers/color-theme-provider";
 
 const integer = new Intl.NumberFormat();
 const percentFormatter = new Intl.NumberFormat(undefined, {
@@ -33,6 +38,9 @@ interface QualityBreakdownProps {
 }
 
 export const QualityBreakdown = ({ breakdown }: QualityBreakdownProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
 	if (!breakdown) return null;
 
 	const total = Object.values(breakdown).reduce((sum, val) => sum + val, 0);
@@ -58,7 +66,7 @@ export const QualityBreakdown = ({ breakdown }: QualityBreakdownProps) => {
 								aria-labelledby={labelId}
 								className="h-2 overflow-hidden rounded-full bg-bg-subtle"
 							>
-								<div className="h-full bg-blue-500/80" style={{ width: `${percentage}%` }} />
+								<div className="h-full" style={{ width: `${percentage}%`, backgroundColor: themeGradient.fromMedium }} />
 							</div>
 						</div>
 						<div className="w-16 text-right text-xs text-fg-muted">

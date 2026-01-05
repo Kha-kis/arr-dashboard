@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertDescription, Skeleton } from "../../../../components/ui";
 import { ChevronRight, ChevronLeft, ChevronDown, Info, CheckCircle2, Star } from "lucide-react";
+import { THEME_GRADIENTS } from "../../../../lib/theme-gradients";
+import { useColorTheme } from "../../../../providers/color-theme-provider";
 import { createSanitizedHtml } from "../../../../lib/sanitize-html";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { apiRequest } from "../../../../lib/api-client/base";
@@ -25,6 +27,8 @@ export const CFGroupSelection = ({
 	onBack,
 	onSkip,
 }: CFGroupSelectionProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const [selectedGroups, setSelectedGroups] = useState<Set<string>>(initialSelection);
 	const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
@@ -124,7 +128,13 @@ export const CFGroupSelection = ({
 	return (
 		<div className="space-y-6">
 			{/* Introduction */}
-			<div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
+			<div
+				className="rounded-xl border p-4"
+				style={{
+					borderColor: themeGradient.fromMuted,
+					backgroundColor: themeGradient.fromLight,
+				}}
+			>
 				<h4 className="font-medium text-fg mb-2">🎯 TRaSH Guides Recommendations</h4>
 				<p className="text-sm text-fg/70 mb-3">
 					TRaSH Guides has pre-configured this quality profile with specific Custom Format Groups. <strong className="text-fg">Groups marked as &quot;Recommended&quot; are suggested by TRaSH for optimal results.</strong>
@@ -232,7 +242,13 @@ export const CFGroupSelection = ({
 													</span>
 												)}
 												{requiredCFsCount > 0 && requiredCFsCount === cfCount && (
-													<span className="inline-flex items-center gap-1 rounded bg-blue-500/20 px-2 py-0.5 text-xs font-medium text-blue-300">
+													<span
+														className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium"
+														style={{
+															backgroundColor: themeGradient.fromLight,
+															color: themeGradient.from,
+														}}
+													>
 														All CFs Required
 													</span>
 												)}

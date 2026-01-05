@@ -9,6 +9,8 @@ import {
 	getLinuxDownloadClient,
 	getLinuxInstanceName,
 } from "../../../lib/incognito";
+import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 import { buildHistoryExternalLink } from "../lib/history-utils";
 
 interface HistoryGroup {
@@ -178,6 +180,8 @@ export const HistoryTable = ({
 	serviceMap,
 }: HistoryTableProps) => {
 	const [incognitoMode] = useIncognitoMode();
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 
 	if (loading) {
 		return (
@@ -225,7 +229,10 @@ export const HistoryTable = ({
 								<tr key={key} className="hover:bg-bg-subtle/80">
 									<td className="px-4 py-3">
 										<div className="flex flex-col gap-1">
-											<div className="mb-1 text-xs text-sky-400 font-semibold">
+											<div
+												className="mb-1 text-xs font-semibold"
+												style={{ color: themeGradient.from }}
+											>
 												📡 RSS Sync - {eventCount} feeds
 											</div>
 											<span className="inline-flex w-fit rounded-full px-2 py-0.5 text-xs font-semibold bg-blue-500/20 text-blue-200">
@@ -245,7 +252,13 @@ export const HistoryTable = ({
 														href={externalLink}
 														target="_blank"
 														rel="noopener noreferrer"
-														className="inline-flex items-center gap-1 text-xs text-fg-muted hover:text-sky-400 transition-colors"
+														className="inline-flex items-center gap-1 text-xs text-fg-muted transition-colors"
+														onMouseEnter={(e) => {
+															e.currentTarget.style.color = themeGradient.from;
+														}}
+														onMouseLeave={(e) => {
+															e.currentTarget.style.color = "";
+														}}
 													>
 														{displayName}
 														<ExternalLink className="h-3 w-3 opacity-50" />
@@ -332,7 +345,10 @@ export const HistoryTable = ({
 									<td className={`px-4 py-3 ${isGrouped && !isFirstInGroup ? "pl-8" : ""}`}>
 										<div className="flex flex-col gap-1">
 											{isFirstInGroup && isGrouped && (
-												<div className="mb-1 text-xs text-sky-400 font-semibold">
+												<div
+													className="mb-1 text-xs font-semibold"
+													style={{ color: themeGradient.from }}
+												>
 													📦 {group.items.length} events
 												</div>
 											)}
@@ -353,7 +369,13 @@ export const HistoryTable = ({
 														href={externalLink}
 														target="_blank"
 														rel="noopener noreferrer"
-														className="inline-flex items-center gap-1 text-xs text-fg-muted hover:text-sky-400 transition-colors"
+														className="inline-flex items-center gap-1 text-xs text-fg-muted transition-colors"
+														onMouseEnter={(e) => {
+															e.currentTarget.style.color = themeGradient.from;
+														}}
+														onMouseLeave={(e) => {
+															e.currentTarget.style.color = "";
+														}}
 													>
 														{displayName}
 														<ExternalLink className="h-3 w-3 opacity-50" />

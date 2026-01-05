@@ -8,9 +8,12 @@ import type {
 	DiscoverResultInstanceState,
 } from "@arr/shared";
 import type { ServiceInstanceSummary } from "@arr/shared";
+import { X, Film, Tv, Loader2, Plus, CheckCircle2, AlertTriangle, FolderOpen, Settings2, Search } from "lucide-react";
 import { Button } from "../../../components/ui/button";
 import { cn } from "../../../lib/utils";
 import { useDiscoverOptionsQuery } from "../../../hooks/api/useDiscover";
+import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 
 interface AddToLibraryDialogProps {
 	open: boolean;
@@ -28,10 +31,15 @@ const getInstanceState = (
 ): DiscoverResultInstanceState | undefined =>
 	result?.instanceStates.find((state) => state.instanceId === instanceId);
 
-const SELECT_CLASS =
-	"w-full rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg hover:border-border-hover focus:border-border-focus focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-bg";
-const OPTION_STYLE = {} as const;
-
+/**
+ * Premium Add to Library Dialog
+ *
+ * Modal for adding content to library with:
+ * - Glassmorphic backdrop and container
+ * - Theme-aware form controls
+ * - Premium toggle switches
+ * - Animated entrance/exit
+ */
 export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 	open,
 	result,
@@ -41,6 +49,10 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 	onSubmit,
 	submitting = false,
 }) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const [focusedSelect, setFocusedSelect] = useState<string | null>(null);
+
 	const targetInstances = useMemo(
 		() =>
 			instances.filter((instance) =>
@@ -256,40 +268,114 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 		!rootFolderPath ||
 		(type === "series" && !languageProfileId);
 
+	const selectClassName = cn(
+		"w-full rounded-xl border bg-card/50 backdrop-blur-sm px-4 py-3 text-sm text-foreground",
+		"hover:border-border transition-all duration-200",
+		"focus:outline-none appearance-none cursor-pointer"
+	);
+
+	const getSelectStyle = (id: string): React.CSSProperties => {
+		const isFocused = focusedSelect === id;
+		return {
+			borderColor: isFocused ? themeGradient.from : "hsl(var(--border) / 0.5)",
+			boxShadow: isFocused ? `0 0 0 1px ${themeGradient.from}` : undefined,
+		};
+	};
+
 	return (
-		<div className="fixed inset-0 z-modal-backdrop flex items-center justify-center bg-black/60 backdrop-blur-sm px-4 py-8">
-			<div className="relative w-full max-w-2xl rounded-2xl bg-bg-subtle/98 backdrop-blur-xl p-8 shadow-2xl ring-1 ring-border">
+		<div className="fixed inset-0 z-modal-backdrop flex items-center justify-center px-4 py-8 animate-in fade-in duration-200">
+			{/* Backdrop */}
+			<div
+				className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+				onClick={onClose}
+			/>
+
+			{/* Dialog */}
+			<div
+				className="relative w-full max-w-2xl rounded-2xl border border-border/50 bg-card/95 backdrop-blur-xl p-8 shadow-2xl animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
+				style={{
+					boxShadow: `0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px ${themeGradient.from}10`,
+				}}
+			>
+				{/* Close Button */}
 				<button
 					type="button"
-					className="absolute right-4 top-4 text-sm text-fg-muted hover:text-fg"
+					className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
 					onClick={onClose}
 					disabled={submitting}
 				>
-					Close
+					<X className="h-4 w-4" />
 				</button>
-				<div className="mb-6 space-y-2">
-					<p className="text-xs uppercase tracking-[0.4em] text-fg-subtle">Add to Library</p>
-					<h2 className="text-2xl font-semibold text-fg">
-						{result.title}
-						{result.year ? <span className="ml-2 text-fg-muted">({result.year})</span> : null}
-					</h2>
-					{result.overview ? (
-						<p className="text-sm leading-relaxed text-fg-muted line-clamp-3">{result.overview}</p>
-					) : null}
+
+				{/* Header */}
+				<div className="mb-6 space-y-3">
+					<div className="flex items-center gap-3">
+						<div
+							className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+							style={{
+								background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+								border: `1px solid ${themeGradient.from}30`,
+							}}
+						>
+							{type === "movie" ? (
+								<Film className="h-5 w-5" style={{ color: themeGradient.from }} />
+							) : (
+								<Tv className="h-5 w-5" style={{ color: themeGradient.from }} />
+							)}
+						</div>
+						<div>
+							<p className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-medium">
+								Add to Library
+							</p>
+							<h2 className="text-xl font-semibold text-foreground">
+								{result.title}
+								{result.year && (
+									<span className="ml-2 text-muted-foreground font-normal">({result.year})</span>
+								)}
+							</h2>
+						</div>
+					</div>
+					{result.overview && (
+						<p className="text-sm leading-relaxed text-muted-foreground line-clamp-2">
+							{result.overview}
+						</p>
+					)}
 				</div>
 
 				<form onSubmit={handleSubmit} className="space-y-6">
-					{noInstances ? (
-						<div className="rounded-xl border border-yellow-500/40 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-200">
-							Configure a {type === "movie" ? "Radarr" : "Sonarr"} instance in Settings before
-							adding items.
+					{/* No Instances Warning */}
+					{noInstances && (
+						<div
+							className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm"
+							style={{
+								backgroundColor: SEMANTIC_COLORS.warning.bg,
+								border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+							}}
+						>
+							<AlertTriangle className="h-5 w-5 shrink-0" style={{ color: SEMANTIC_COLORS.warning.from }} />
+							<p className="text-muted-foreground">
+								Configure a{" "}
+								<span className="font-medium text-foreground">
+									{type === "movie" ? "Radarr" : "Sonarr"}
+								</span>{" "}
+								instance in Settings before adding items.
+							</p>
 						</div>
-					) : null}
+					)}
+
+					{/* Form Grid */}
 					<div className="grid gap-4 md:grid-cols-2">
+						{/* Instance Select */}
 						<div className="space-y-2">
-							<label className="text-xs uppercase tracking-widest text-fg-subtle">Instance</label>
+							<label className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground font-medium">
+								<Settings2 className="h-3 w-3" />
+								Instance
+							</label>
 							<select
-								className={SELECT_CLASS}
+								className={selectClassName}
+								style={getSelectStyle("instance")}
+								onFocus={() => setFocusedSelect("instance")}
+								onBlur={() => setFocusedSelect(null)}
 								value={instanceId ?? ""}
 								onChange={(event) => {
 									setInstanceId(event.target.value);
@@ -300,13 +386,13 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 								disabled={submitting || noInstances}
 								required
 							>
-								<option value="" disabled style={OPTION_STYLE}>
+								<option value="" disabled>
 									Select instance
 								</option>
 								{targetInstances.map((instance) => {
 									const state = getInstanceState(result, instance.id);
 									return (
-										<option key={instance.id} value={instance.id} style={OPTION_STYLE}>
+										<option key={instance.id} value={instance.id}>
 											{instance.label} {state?.exists ? "(Already in library)" : ""}
 										</option>
 									);
@@ -314,70 +400,83 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 							</select>
 						</div>
 
+						{/* Quality Profile Select */}
 						<div className="space-y-2">
-							<label className="text-xs uppercase tracking-widest text-fg-subtle">
+							<label className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground font-medium">
 								Quality Profile
 							</label>
 							<select
-								className={SELECT_CLASS}
+								className={selectClassName}
+								style={getSelectStyle("quality")}
+								onFocus={() => setFocusedSelect("quality")}
+								onBlur={() => setFocusedSelect(null)}
 								value={qualityProfileId ?? ""}
 								onChange={(event) => setQualityProfileId(Number(event.target.value))}
 								disabled={submitting || loadingOptions || !options}
 								required
 							>
-								<option value="" disabled style={OPTION_STYLE}>
+								<option value="" disabled>
 									{loadingOptions ? "Loading..." : "Select quality profile"}
 								</option>
 								{options?.qualityProfiles.map((profile) => (
-									<option key={profile.id} value={profile.id} style={OPTION_STYLE}>
+									<option key={profile.id} value={profile.id}>
 										{profile.name}
 									</option>
 								))}
 							</select>
 						</div>
 
-						{type === "series" ? (
+						{/* Language Profile (Series only) */}
+						{type === "series" && (
 							<div className="space-y-2">
-								<label className="text-xs uppercase tracking-widest text-fg-subtle">
+								<label className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground font-medium">
 									Language Profile
 								</label>
 								<select
-									className={SELECT_CLASS}
+									className={selectClassName}
+									style={getSelectStyle("language")}
+									onFocus={() => setFocusedSelect("language")}
+									onBlur={() => setFocusedSelect(null)}
 									value={languageProfileId ?? ""}
 									onChange={(event) => setLanguageProfileId(Number(event.target.value))}
 									disabled={submitting || loadingOptions || !options?.languageProfiles?.length}
 									required
 								>
-									<option value="" disabled style={OPTION_STYLE}>
+									<option value="" disabled>
 										{options?.languageProfiles?.length
 											? "Select language profile"
 											: "No language profiles"}
 									</option>
 									{options?.languageProfiles?.map((profile) => (
-										<option key={profile.id} value={profile.id} style={OPTION_STYLE}>
+										<option key={profile.id} value={profile.id}>
 											{profile.name}
 										</option>
 									))}
 								</select>
 							</div>
-						) : null}
+						)}
 
+						{/* Root Folder Select */}
 						<div className="space-y-2">
-							<label className="text-xs uppercase tracking-widest text-fg-subtle">
+							<label className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground font-medium">
+								<FolderOpen className="h-3 w-3" />
 								Root Folder
 							</label>
 							<select
-								className={SELECT_CLASS}
+								className={selectClassName}
+								style={getSelectStyle("rootFolder")}
+								onFocus={() => setFocusedSelect("rootFolder")}
+								onBlur={() => setFocusedSelect(null)}
 								value={rootFolderPath}
 								onChange={(event) => setRootFolderPath(event.target.value)}
 								disabled={submitting || loadingOptions || !options}
 								required
 							>
-								<option value="" disabled style={OPTION_STYLE}>
+								<option value="" disabled>
 									{loadingOptions ? "Loading..." : "Select root folder"}
 								</option>
 								{options?.rootFolders.map((folder) => (
-									<option key={folder.path} value={folder.path} style={OPTION_STYLE}>
+									<option key={folder.path} value={folder.path}>
 										{folder.path}
 									</option>
 								))}
@@ -385,59 +484,165 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 						</div>
 					</div>
 
+					{/* Toggle Options */}
 					<div className="grid gap-3 md:grid-cols-2">
-						<label className="flex items-center justify-between rounded-xl bg-bg-muted/30 px-4 py-3 text-sm text-fg">
-							<span className="font-medium">Monitor future releases</span>
+						{/* Monitor Toggle */}
+						<label
+							className="flex items-center justify-between rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm px-4 py-3 cursor-pointer transition-colors hover:border-border/80"
+						>
+							<span className="text-sm font-medium text-foreground">Monitor future releases</span>
+							<div
+								className={cn(
+									"relative h-6 w-11 rounded-full transition-colors duration-200",
+									monitored ? "" : "bg-muted/50"
+								)}
+								style={monitored ? { background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})` } : undefined}
+							>
+								<div
+									className={cn(
+										"absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200",
+										monitored ? "translate-x-6" : "translate-x-1"
+									)}
+								/>
+							</div>
 							<input
 								type="checkbox"
-								className="h-4 w-4 rounded border-border bg-bg-muted accent-accent"
+								className="sr-only"
 								checked={monitored}
 								onChange={(event) => setMonitored(event.target.checked)}
 								disabled={submitting || noInstances}
 							/>
 						</label>
 
-						<label className="flex items-center justify-between rounded-xl bg-bg-muted/30 px-4 py-3 text-sm text-fg">
-							<span className="font-medium">Search on add</span>
+						{/* Search on Add Toggle */}
+						<label
+							className="flex items-center justify-between rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm px-4 py-3 cursor-pointer transition-colors hover:border-border/80"
+						>
+							<span className="flex items-center gap-2 text-sm font-medium text-foreground">
+								<Search className="h-4 w-4 text-muted-foreground" />
+								Search on add
+							</span>
+							<div
+								className={cn(
+									"relative h-6 w-11 rounded-full transition-colors duration-200",
+									searchOnAdd ? "" : "bg-muted/50"
+								)}
+								style={searchOnAdd ? { background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})` } : undefined}
+							>
+								<div
+									className={cn(
+										"absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200",
+										searchOnAdd ? "translate-x-6" : "translate-x-1"
+									)}
+								/>
+							</div>
 							<input
 								type="checkbox"
-								className="h-4 w-4 rounded border-border bg-bg-muted accent-accent"
+								className="sr-only"
 								checked={searchOnAdd}
 								onChange={(event) => setSearchOnAdd(event.target.checked)}
 								disabled={submitting || noInstances}
 							/>
 						</label>
 
-						{type === "series" ? (
-							<label className="flex items-center justify-between rounded-xl bg-bg-muted/30 px-4 py-3 text-sm text-fg">
-								<span className="font-medium">Create season folders</span>
+						{/* Season Folder Toggle (Series only) */}
+						{type === "series" && (
+							<label
+								className="flex items-center justify-between rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm px-4 py-3 cursor-pointer transition-colors hover:border-border/80"
+							>
+								<span className="flex items-center gap-2 text-sm font-medium text-foreground">
+									<FolderOpen className="h-4 w-4 text-muted-foreground" />
+									Create season folders
+								</span>
+								<div
+									className={cn(
+										"relative h-6 w-11 rounded-full transition-colors duration-200",
+										seasonFolder ? "" : "bg-muted/50"
+									)}
+									style={seasonFolder ? { background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})` } : undefined}
+								>
+									<div
+										className={cn(
+											"absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200",
+											seasonFolder ? "translate-x-6" : "translate-x-1"
+										)}
+									/>
+								</div>
 								<input
 									type="checkbox"
-									className="h-4 w-4 rounded border-border bg-bg-muted accent-accent"
+									className="sr-only"
 									checked={seasonFolder}
 									onChange={(event) => setSeasonFolder(event.target.checked)}
 									disabled={submitting || noInstances}
 								/>
 							</label>
-						) : null}
+						)}
 
-						{alreadyAdded ? (
-							<div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-200">
-								Already added on this instance.
+						{/* Already Added Notice */}
+						{alreadyAdded && (
+							<div
+								className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm col-span-full md:col-span-1"
+								style={{
+									backgroundColor: SEMANTIC_COLORS.success.bg,
+									border: `1px solid ${SEMANTIC_COLORS.success.border}`,
+									color: SEMANTIC_COLORS.success.text,
+								}}
+							>
+								<CheckCircle2 className="h-4 w-4 shrink-0" />
+								Already added on this instance
 							</div>
-						) : null}
+						)}
 					</div>
 
-					<div className="flex items-center justify-end gap-3 pt-2">
-						<Button type="button" variant="ghost" onClick={onClose} disabled={submitting}>
+					{/* Actions */}
+					<div className="flex items-center justify-end gap-3 pt-4 border-t border-border/30">
+						<Button
+							type="button"
+							variant="ghost"
+							onClick={onClose}
+							disabled={submitting}
+							className="rounded-xl"
+						>
 							Cancel
 						</Button>
 						<Button
 							type="submit"
 							disabled={disableSubmit}
-							className={cn(disableSubmit && "cursor-not-allowed opacity-60")}
+							className={cn(
+								"gap-2 rounded-xl font-medium transition-all duration-200",
+								disableSubmit && "opacity-50 cursor-not-allowed"
+							)}
+							style={
+								!disableSubmit
+									? {
+											background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+											boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
+										}
+									: alreadyAdded
+										? {
+												backgroundColor: SEMANTIC_COLORS.success.bg,
+												border: `1px solid ${SEMANTIC_COLORS.success.border}`,
+												color: SEMANTIC_COLORS.success.text,
+											}
+										: undefined
+							}
 						>
-							{submitting ? "Adding..." : alreadyAdded ? "Already Added" : "Add to Library"}
+							{submitting ? (
+								<>
+									<Loader2 className="h-4 w-4 animate-spin" />
+									Adding...
+								</>
+							) : alreadyAdded ? (
+								<>
+									<CheckCircle2 className="h-4 w-4" />
+									Already Added
+								</>
+							) : (
+								<>
+									<Plus className="h-4 w-4" />
+									Add to Library
+								</>
+							)}
 						</Button>
 					</div>
 				</form>

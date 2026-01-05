@@ -3,19 +3,29 @@
 import { useEffect, useState } from "react";
 import type { ProwlarrIndexer, ProwlarrIndexerDetails } from "@arr/shared";
 import { useIndexerDetailsQuery } from "../../../hooks/api/useSearch";
-import { Button } from "../../../components/ui/button";
-import { Alert, AlertDescription, Skeleton } from "../../../components/ui";
 import { IndexerDetailsInfo } from "./indexer-details-info";
 import { IndexerEditForm } from "./indexer-edit-form";
 import { IndexerConfigurationFields } from "./indexer-configuration-fields";
+import {
+	RefreshCw,
+	Loader2,
+	AlertCircle,
+	Pencil,
+	X,
+	Save,
+	Info,
+} from "lucide-react";
+import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 
 /**
- * Panel displaying detailed information about an indexer with edit capabilities
- * @param instanceId - Prowlarr instance ID
- * @param indexer - Base indexer object
- * @param expanded - Whether the panel is expanded
- * @param onUpdate - Callback to update indexer details
- * @returns React component or null if not expanded
+ * Premium Indexer Details Panel
+ *
+ * Expandable panel showing detailed indexer information with:
+ * - Glassmorphic styling with theme border
+ * - Animated expand/collapse
+ * - Edit mode with save/cancel actions
+ * - Premium loading and error states
  */
 export const IndexerDetailsPanel = ({
 	instanceId,
@@ -32,6 +42,9 @@ export const IndexerDetailsPanel = ({
 		payload: ProwlarrIndexerDetails,
 	) => Promise<ProwlarrIndexerDetails>;
 }) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
 	const { data, isLoading, error, refetch, isFetching } = useIndexerDetailsQuery(
 		expanded ? instanceId : null,
 		expanded ? indexer.id : null,
@@ -125,70 +138,177 @@ export const IndexerDetailsPanel = ({
 	};
 
 	return (
-		<div className="space-y-6 rounded-lg border border-white/10 bg-slate-950/80 p-4">
+		<div
+			className="rounded-b-xl border border-t-0 p-5 space-y-5 animate-in slide-in-from-top-2 duration-200"
+			style={{
+				backgroundColor: "rgba(var(--card), 0.4)",
+				borderColor: `${themeGradient.from}40`,
+			}}
+		>
+			{/* Loading State */}
 			{isLoadingState ? (
-				<div className="flex items-center gap-2 text-sm text-white/60">
-					<Skeleton className="h-4 w-4 rounded-full" />
-					Loading indexer settings…
+				<div className="flex items-center justify-center py-8">
+					<div
+						className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
+						style={{ borderColor: `${themeGradient.from}40`, borderTopColor: "transparent" }}
+					/>
+					<span className="ml-3 text-sm text-muted-foreground">Loading indexer settings...</span>
 				</div>
 			) : detailError ? (
-				<Alert variant="danger">
-					<AlertDescription>
-						<div className="flex flex-col gap-3">
-							<span>{detailError}</span>
-							<div>
-								<Button variant="ghost" onClick={() => void refetch()} disabled={isFetching}>
-									{isFetching ? "Retrying…" : "Retry"}
-								</Button>
-							</div>
+				/* Error State */
+				<div
+					className="rounded-xl border p-4"
+					style={{
+						backgroundColor: SEMANTIC_COLORS.error.bg,
+						borderColor: SEMANTIC_COLORS.error.border,
+					}}
+				>
+					<div className="flex items-start gap-3">
+						<AlertCircle className="h-5 w-5 shrink-0 mt-0.5" style={{ color: SEMANTIC_COLORS.error.from }} />
+						<div className="flex-1">
+							<p className="font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
+								{detailError}
+							</p>
+							<button
+								type="button"
+								onClick={() => void refetch()}
+								disabled={isFetching}
+								className="mt-3 inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+								style={{
+									backgroundColor: `${SEMANTIC_COLORS.error.from}15`,
+									color: SEMANTIC_COLORS.error.text,
+								}}
+							>
+								<RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
+								{isFetching ? "Retrying..." : "Retry"}
+							</button>
 						</div>
-					</AlertDescription>
-				</Alert>
+					</div>
+				</div>
 			) : (
 				<>
+					{/* Header with Actions */}
 					<div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
 						<IndexerDetailsInfo detail={detail} indexer={indexer} />
-						<div className="flex w-full flex-col gap-2 sm:w-auto sm:items-end">
+
+						{/* Action Buttons */}
+						<div className="flex flex-col gap-2 sm:items-end shrink-0">
 							<div className="flex flex-wrap items-center gap-2">
-								<Button variant="ghost" onClick={() => void refetch()} disabled={isFetching}>
-									{isFetching ? "Refreshing…" : "Refresh details"}
-								</Button>
+								{/* Refresh Button */}
+								<button
+									type="button"
+									onClick={() => void refetch()}
+									disabled={isFetching}
+									className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-card/80"
+									style={{
+										border: "1px solid rgba(var(--border), 0.5)",
+									}}
+								>
+									<RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
+									{isFetching ? "Refreshing..." : "Refresh"}
+								</button>
+
 								{isEditing ? (
 									<>
-										<Button variant="ghost" onClick={handleCancelEditing} disabled={isSaving}>
+										{/* Cancel Button */}
+										<button
+											type="button"
+											onClick={handleCancelEditing}
+											disabled={isSaving}
+											className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-card/80"
+											style={{
+												border: "1px solid rgba(var(--border), 0.5)",
+											}}
+										>
+											<X className="h-4 w-4" />
 											Cancel
-										</Button>
-										<Button onClick={handleSaveChanges} disabled={isSaving}>
-											{isSaving ? "Saving…" : "Save changes"}
-										</Button>
+										</button>
+
+										{/* Save Button */}
+										<button
+											type="button"
+											onClick={handleSaveChanges}
+											disabled={isSaving}
+											className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+											style={{
+												background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+												boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
+											}}
+										>
+											{isSaving ? (
+												<>
+													<Loader2 className="h-4 w-4 animate-spin" />
+													Saving...
+												</>
+											) : (
+												<>
+													<Save className="h-4 w-4" />
+													Save changes
+												</>
+											)}
+										</button>
 									</>
 								) : (
-									<Button variant="secondary" onClick={handleStartEditing}>
+									/* Edit Button */
+									<button
+										type="button"
+										onClick={handleStartEditing}
+										className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200"
+										style={{
+											backgroundColor: `${themeGradient.from}15`,
+											border: `1px solid ${themeGradient.from}30`,
+											color: themeGradient.from,
+										}}
+									>
+										<Pencil className="h-4 w-4" />
 										Edit
-									</Button>
+									</button>
 								)}
 							</div>
-							{localError ? <p className="text-sm text-red-300">{localError}</p> : null}
+
+							{/* Local Error Display */}
+							{localError && (
+								<p
+									className="text-sm flex items-center gap-1.5"
+									style={{ color: SEMANTIC_COLORS.error.from }}
+								>
+									<AlertCircle className="h-3.5 w-3.5" />
+									{localError}
+								</p>
+							)}
 						</div>
 					</div>
 
+					{/* Edit Form or Read-Only Notice */}
 					{isEditing ? (
-						<IndexerEditForm
-							formEnable={formEnable}
-							formPriority={formPriority}
-							onEnableChange={setFormEnable}
-							onPriorityChange={setFormPriority}
-						/>
+						<div
+							className="rounded-xl border p-4"
+							style={{
+								backgroundColor: `${themeGradient.from}08`,
+								borderColor: `${themeGradient.from}30`,
+							}}
+						>
+							<IndexerEditForm
+								formEnable={formEnable}
+								formPriority={formPriority}
+								onEnableChange={setFormEnable}
+								onPriorityChange={setFormPriority}
+							/>
+						</div>
 					) : (
-						<p className="text-xs text-white/40">
-							Advanced configuration remains read-only here. Use the Prowlarr interface for
-							additional changes.
-						</p>
+						<div className="flex items-center gap-2 text-xs text-muted-foreground">
+							<Info className="h-3.5 w-3.5" />
+							<p>
+								Advanced configuration remains read-only here. Use the Prowlarr interface for
+								additional changes.
+							</p>
+						</div>
 					)}
 
-					{detail.fields && detail.fields.length > 0 ? (
+					{/* Configuration Fields */}
+					{detail.fields && detail.fields.length > 0 && (
 						<IndexerConfigurationFields fields={detail.fields} />
-					) : null}
+					)}
 				</>
 			)}
 		</div>

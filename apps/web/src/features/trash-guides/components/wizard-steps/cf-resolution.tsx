@@ -29,6 +29,8 @@ import type {
 	MatchConfidence,
 	ProfileMatchResult,
 } from "../../../../lib/api-client/trash-guides";
+import { THEME_GRADIENTS } from "../../../../lib/theme-gradients";
+import { useColorTheme } from "../../../../providers/color-theme-provider";
 
 /**
  * User's decision for a matched CF
@@ -152,6 +154,8 @@ export const CFResolution = ({
 	onBack,
 	initialResolutions,
 }: CFResolutionProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const [searchQuery, setSearchQuery] = useState("");
 	const [filterMode, setFilterMode] = useState<FilterMode>("all");
 
@@ -629,7 +633,13 @@ export const CFResolution = ({
 	return (
 		<div className="space-y-6">
 			{/* Header */}
-			<div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
+			<div
+				className="rounded-xl border p-4"
+				style={{
+					borderColor: themeGradient.fromMuted,
+					backgroundColor: themeGradient.fromLight,
+				}}
+			>
 				<h4 className="font-medium text-fg mb-2">🔗 Link Custom Formats to TRaSH Guides</h4>
 				<p className="text-sm text-fg/70">
 					We found <span className="font-medium text-fg">{matchStats?.matched || 0}</span> Custom Formats in &quot;{profileName}&quot; that match TRaSH Guides entries.
@@ -1049,6 +1059,8 @@ interface CFResolutionItemProps {
 }
 
 const CFResolutionItem = ({ result, decision, onDecisionChange, onExclude, isRecommended }: CFResolutionItemProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const [isExpanded, setIsExpanded] = useState(false);
 	const badge = getConfidenceBadge(result.confidence);
 	const BadgeIcon = badge.icon;
@@ -1123,9 +1135,18 @@ const CFResolutionItem = ({ result, decision, onDecisionChange, onExclude, isRec
 										Score: {result.instanceCF.score}
 									</span>
 								) : (
-									<span className={`inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs ${
-										scoreDiff > 0 ? "bg-blue-500/20 text-blue-300 border-blue-500/30" : "bg-orange-500/20 text-orange-300 border-orange-500/30"
-									}`}>
+									<span
+										className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-xs"
+										style={scoreDiff > 0 ? {
+											backgroundColor: themeGradient.fromLight,
+											color: themeGradient.from,
+											borderColor: themeGradient.fromMuted,
+										} : {
+											backgroundColor: "rgb(249 115 22 / 0.2)",
+											color: "rgb(253 186 116)",
+											borderColor: "rgb(249 115 22 / 0.3)",
+										}}
+									>
 										{result.instanceCF.score} → {result.recommendedScore} ({scoreDiff > 0 ? "+" : ""}{scoreDiff})
 									</span>
 								)
@@ -1160,11 +1181,14 @@ const CFResolutionItem = ({ result, decision, onDecisionChange, onExclude, isRec
 							<button
 								type="button"
 								onClick={() => setIsExpanded(!isExpanded)}
-								className={`rounded px-2 py-1 text-xs transition ${
-									isExpanded
-										? "bg-blue-500/30 text-blue-300"
-										: "bg-bg-subtle text-fg/60 hover:bg-bg-subtle"
-								}`}
+								className="rounded px-2 py-1 text-xs transition"
+								style={isExpanded ? {
+									backgroundColor: themeGradient.fromMedium,
+									color: themeGradient.from,
+								} : {
+									backgroundColor: "var(--color-bg-subtle)",
+									color: "var(--color-fg-60)",
+								}}
 								title={isExpanded ? "Hide comparison" : "View detailed comparison"}
 							>
 								{isExpanded ? <ChevronUp className="h-3 w-3" /> : <GitCompare className="h-3 w-3" />}
@@ -1364,6 +1388,8 @@ const ExcludedCFItem = ({
 	decision,
 	onDecisionChange,
 }: ExcludedCFItemProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const [isExpanded, setIsExpanded] = useState(false);
 	const badge = getConfidenceBadge(result.confidence);
 	const BadgeIcon = badge.icon;
@@ -1464,11 +1490,14 @@ const ExcludedCFItem = ({
 							<button
 								type="button"
 								onClick={() => setIsExpanded(!isExpanded)}
-								className={`rounded px-2 py-1 text-xs transition ${
-									isExpanded
-										? "bg-blue-500/30 text-blue-300"
-										: "bg-bg-subtle text-fg/60 hover:bg-bg-subtle"
-								}`}
+								className="rounded px-2 py-1 text-xs transition"
+								style={isExpanded ? {
+									backgroundColor: themeGradient.fromMedium,
+									color: themeGradient.from,
+								} : {
+									backgroundColor: "var(--color-bg-subtle)",
+									color: "var(--color-fg-60)",
+								}}
 								title={isExpanded ? "Hide comparison" : "View detailed comparison"}
 							>
 								{isExpanded ? <ChevronUp className="h-3 w-3" /> : <GitCompare className="h-3 w-3" />}

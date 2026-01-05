@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import type { DiscoverSearchType, RecommendationItem } from "@arr/shared";
 import { useInfiniteRecommendationsQuery } from "../../../hooks/api/useDiscover";
-import { useLibraryQuery } from "../../../hooks/api/useLibrary";
+import { useLibraryForFiltering } from "../../../hooks/api/useLibrary";
 import { deduplicateItems, filterExistingItems } from "../lib/discover-utils";
 
 /**
@@ -26,7 +26,9 @@ export function useDiscoverRecommendations(
 	searchType: DiscoverSearchType,
 	enabled: boolean,
 ) {
-	const { data: libraryData, isLoading: libraryIsLoading } = useLibraryQuery();
+	// Use the dedicated filtering hook that fetches ALL library items
+	// This ensures we filter out all existing items, not just the first page
+	const { data: libraryData, isLoading: libraryIsLoading } = useLibraryForFiltering();
 	const mediaType = searchType === "movie" ? "movie" : "series";
 
 	// Wait for library data before filtering to prevent items from appearing then disappearing

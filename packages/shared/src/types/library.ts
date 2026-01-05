@@ -104,7 +104,9 @@ export type MultiInstanceLibraryResponse = z.infer<
 
 export const paginationSchema = z.object({
   page: z.number().int().min(1),
-  limit: z.number().int().min(1).max(100),
+  // Note: limit=0 means "fetch all" for internal filtering use cases
+  // When fetching all, the response limit reflects the actual count returned
+  limit: z.number().int().min(0).max(10000),
   totalItems: z.number().int().min(0),
   totalPages: z.number().int().min(0),
 });

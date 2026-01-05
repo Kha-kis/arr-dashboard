@@ -19,6 +19,7 @@ export const useMultiInstanceQueueQuery = () =>
 		queryKey: ["dashboard", "queue"],
 		queryFn: fetchMultiInstanceQueue,
 		staleTime: 10 * 1000,
+		gcTime: 60 * 1000, // 1 minute - short gcTime for frequently polled data
 		refetchInterval: 10 * 1000,
 	});
 
@@ -32,6 +33,7 @@ export const useMultiInstanceHistoryQuery = (params?: {
 		queryKey: ["dashboard", "history", params],
 		queryFn: () => fetchMultiInstanceHistory(params),
 		staleTime: 60 * 1000,
+		gcTime: 2 * 60 * 1000, // 2 minutes - cleanup old param combinations
 		refetchInterval: 60 * 1000,
 	});
 
@@ -44,6 +46,7 @@ export const useMultiInstanceCalendarQuery = (params: {
 		queryKey: ["dashboard", "calendar", params],
 		queryFn: () => fetchMultiInstanceCalendar(params),
 		staleTime: 60 * 1000,
+		gcTime: 2 * 60 * 1000, // 2 minutes - cleanup old date ranges
 		refetchInterval: 60 * 1000,
 	});
 
@@ -52,5 +55,6 @@ export const useDashboardStatisticsQuery = () =>
 		queryKey: ["dashboard", "statistics"],
 		queryFn: fetchDashboardStatistics,
 		staleTime: 60 * 1000,
+		gcTime: 2 * 60 * 1000, // 2 minutes
 		refetchInterval: 120 * 1000,
 	});

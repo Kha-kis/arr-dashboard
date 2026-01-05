@@ -10,7 +10,7 @@
 "use client";
 
 import { useState } from "react";
-import { Button, Alert, AlertDescription, Select, SelectOption } from "../../../components/ui";
+import { Button, Alert, AlertDescription, NativeSelect, SelectOption } from "../../../components/ui";
 import { useInstanceProfiles, useImportProfile } from "../../../hooks/api/useProfileClone";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import type { CompleteQualityProfile } from "@arr/shared";
@@ -120,7 +120,7 @@ export function QualityProfileImporter({
 				<label className="block text-sm font-medium text-fg">
 					Step 1: Select Instance
 				</label>
-				<Select
+				<NativeSelect
 					value={selectedInstanceId || ""}
 					onChange={(e) => handleInstanceSelect(e.target.value)}
 					disabled={loadingInstances}
@@ -132,7 +132,7 @@ export function QualityProfileImporter({
 							{instance.label} ({instance.service})
 						</SelectOption>
 					))}
-				</Select>
+				</NativeSelect>
 			</div>
 
 			{/* Step 2: Select Profile */}

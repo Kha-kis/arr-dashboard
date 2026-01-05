@@ -1,6 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import { Button, Input } from "../../../components/ui";
+import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 import { PROTOCOL_FILTERS, type ProtocolFilter } from "../lib/search-utils";
 
 interface FilterControlsProps {
@@ -59,6 +62,17 @@ export const FilterControls = ({
 	onHideRejectedToggle,
 	onReset,
 }: FilterControlsProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const [isFocused, setIsFocused] = useState(false);
+	const [isHovered, setIsHovered] = useState(false);
+
+	const selectStyle = isFocused
+		? { borderColor: themeGradient.from, boxShadow: `0 0 0 1px ${themeGradient.from}` }
+		: isHovered
+			? { borderColor: `${themeGradient.from}cc` }
+			: undefined;
+
 	return (
 		<div className="space-y-4 rounded-xl border border-border bg-bg-subtle p-4">
 			<div className="flex flex-wrap items-center justify-between gap-2">
@@ -81,7 +95,12 @@ export const FilterControls = ({
 					<select
 						value={protocolFilter}
 						onChange={(event) => onProtocolFilterChange(event.target.value as ProtocolFilter)}
-						className="w-full rounded-md border border-border bg-bg-subtle px-3 py-2 text-sm text-fg hover:border-sky-400/80 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
+						onFocus={() => setIsFocused(true)}
+						onBlur={() => setIsFocused(false)}
+						onMouseEnter={() => setIsHovered(true)}
+						onMouseLeave={() => setIsHovered(false)}
+						className="w-full rounded-md border border-border bg-bg-subtle px-3 py-2 text-sm text-fg transition-all duration-200 focus:outline-none"
+						style={selectStyle}
 					>
 						{PROTOCOL_FILTERS.map((option) => (
 							<option key={option.value} value={option.value} className="bg-bg text-fg">

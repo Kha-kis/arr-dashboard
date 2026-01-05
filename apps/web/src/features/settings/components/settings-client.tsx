@@ -1,12 +1,30 @@
 "use client";
 
-import { useMemo, useState, useCallback, useRef } from "react";
+import { useMemo, useState } from "react";
+import {
+	Settings,
+	Server,
+	Tags,
+	User,
+	Shield,
+	Palette,
+	Archive,
+	Cpu,
+} from "lucide-react";
 import type { CurrentUser } from "@arr/shared";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useTagsQuery } from "../../../hooks/api/useTags";
 import { useDiscoverOptionsQuery, useDiscoverTestOptionsQuery } from "../../../hooks/api/useDiscover";
 import { useCurrentUser } from "../../../hooks/api/useAuth";
-import { cn } from "../../../lib/utils";
+import {
+	AmbientGlow,
+	PremiumPageHeader,
+	PremiumTabs,
+	PremiumPageLoading,
+	type PremiumTab,
+} from "../../../components/layout";
+import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 import { TABS, type TabType } from "../lib/settings-constants";
 import {
 	useServiceFormState,
@@ -23,22 +41,23 @@ import { OIDCProviderSection } from "./oidc-provider-section";
 import { PasskeySection } from "./passkey-section";
 import { PasswordSection } from "./password-section";
 import { SessionsSection } from "./sessions-section";
+import { AppearanceTab } from "./appearance-tab";
 import { BackupTab } from "./backup-tab";
 import { SystemTab } from "./system-tab";
 
 /**
- * Main settings client component
+ * Premium Settings Client
  *
- * This component orchestrates the settings view by:
- * - Managing tab state
- * - Fetching and providing data via custom hooks
- * - Delegating rendering to tab-specific components
- * - Coordinating between service form and service list
- *
- * The component maintains minimal local state (active tab)
- * while delegating most logic to custom hooks and child components.
+ * Main orchestrator for the settings feature with:
+ * - Ambient background glow
+ * - Premium gradient header
+ * - Theme-aware tab navigation
+ * - Staggered entrance animations
  */
 export const SettingsClient = () => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
 	// Data queries
 	const { data: services = [], isLoading: servicesLoading } = useServicesQuery();
 	const { data: tags = [] } = useTagsQuery();
@@ -46,40 +65,6 @@ export const SettingsClient = () => {
 
 	// Local state
 	const [activeTab, setActiveTab] = useState<TabType>("services");
-	const tabRefs = useRef<Record<TabType, HTMLButtonElement | null>>({
-		services: null,
-		tags: null,
-		account: null,
-		authentication: null,
-		backup: null,
-		system: null,
-	});
-
-	// Keyboard navigation handler for tabs
-	const handleTabKeyDown = useCallback(
-		(event: React.KeyboardEvent<HTMLButtonElement>, currentTab: TabType) => {
-			const currentIndex = TABS.indexOf(currentTab);
-			let newIndex: number | null = null;
-
-			if (event.key === "ArrowRight") {
-				newIndex = (currentIndex + 1) % TABS.length;
-			} else if (event.key === "ArrowLeft") {
-				newIndex = (currentIndex - 1 + TABS.length) % TABS.length;
-			} else if (event.key === "Home") {
-				newIndex = 0;
-			} else if (event.key === "End") {
-				newIndex = TABS.length - 1;
-			}
-
-			if (newIndex !== null && newIndex >= 0 && newIndex < TABS.length) {
-				event.preventDefault();
-				const newTab = TABS[newIndex] as TabType;
-				setActiveTab(newTab);
-				tabRefs.current[newTab]?.focus();
-			}
-		},
-		[],
-	);
 
 	// Custom hooks
 	const serviceFormState = useServiceFormState();
@@ -124,8 +109,6 @@ export const SettingsClient = () => {
 	);
 
 	// Fetch test options for default settings (creating new)
-	// Note: creatingSupportsDefaults already validates service is "radarr" | "sonarr"
-	// via the isDefaultsSupportedService type guard, making the assertion safe
 	const serviceForTestQuery = isDefaultsSupportedService(
 		serviceFormState.formState.service,
 	)
@@ -196,147 +179,183 @@ export const SettingsClient = () => {
 		);
 	};
 
+	// Tab configuration with icons
+	const tabConfig: PremiumTab[] = [
+		{ id: "services", label: "Services", icon: Server },
+		{ id: "tags", label: "Tags", icon: Tags },
+		{ id: "account", label: "Account", icon: User },
+		{ id: "authentication", label: "Auth", icon: Shield },
+		{ id: "appearance", label: "Appearance", icon: Palette },
+		{ id: "backup", label: "Backup", icon: Archive },
+		{ id: "system", label: "System", icon: Cpu },
+	];
+
+	// Loading state
+	if (servicesLoading && !services.length) {
+		return (
+			<section className="relative flex flex-col gap-8">
+				<AmbientGlow />
+				<PremiumPageLoading showHeader cardCount={4} />
+			</section>
+		);
+	}
+
 	return (
-		<section className="flex flex-col gap-8">
-			{/* Tab navigation */}
-			<nav className="flex items-center gap-4 border-b border-border pb-4" role="tablist">
-				{TABS.map((tab) => (
-					<button
-						key={tab}
-						ref={(el) => { tabRefs.current[tab] = el; }}
-						id={`settings-tab-${tab}`}
-						type="button"
-						role="tab"
-						aria-selected={activeTab === tab ? "true" : "false"}
-						aria-controls={`settings-panel-${tab}`}
-						tabIndex={activeTab === tab ? 0 : -1}
-						onClick={() => setActiveTab(tab)}
-						onKeyDown={(e) => handleTabKeyDown(e, tab)}
-						className={cn(
-							"px-3 py-2 text-sm font-medium uppercase tracking-wide transition",
-							activeTab === tab
-								? "border-b-2 border-primary text-fg"
-								: "text-fg-muted hover:text-fg",
-						)}
+		<section className="relative flex flex-col gap-8">
+			{/* Ambient background glow */}
+			<AmbientGlow />
+
+			{/* Premium Header */}
+			<PremiumPageHeader
+				label="Configuration"
+				labelIcon={Settings}
+				title="Settings"
+				gradientTitle
+				description="Manage your service instances, authentication, appearance and system preferences"
+			/>
+
+			{/* Premium Tab Navigation */}
+			<div
+				className="animate-in fade-in slide-in-from-bottom-4 duration-500"
+				style={{ animationDelay: "100ms", animationFillMode: "backwards" }}
+			>
+				<PremiumTabs
+					tabs={tabConfig}
+					activeTab={activeTab}
+					onTabChange={(tabId) => setActiveTab(tabId as TabType)}
+				/>
+			</div>
+
+			{/* Tab Content */}
+			<div
+				className="animate-in fade-in slide-in-from-bottom-4 duration-500"
+				style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
+			>
+				{/* Services tab */}
+				{activeTab === "services" && (
+					<div
+						role="tabpanel"
+						id="settings-panel-services"
+						aria-labelledby="settings-tab-services"
+						className="grid gap-6 xl:grid-cols-[2fr,1fr]"
 					>
-						{tab}
-					</button>
-				))}
-			</nav>
+						<ServicesTab
+							services={services}
+							isLoading={servicesLoading}
+							onTestConnection={servicesManagement.handleTestConnection}
+							onEdit={serviceFormState.handleEdit}
+							onToggleDefault={servicesManagement.toggleDefault}
+							onToggleEnabled={servicesManagement.toggleEnabled}
+							onDelete={handleDeleteService}
+							testingConnection={servicesManagement.testingConnection}
+							testResult={servicesManagement.testResult}
+							mutationPending={servicesManagement.updateServiceMutation.isPending}
+						/>
 
-			{/* Services tab */}
-			{activeTab === "services" && (
-				<div
-					role="tabpanel"
-					id="settings-panel-services"
-					aria-labelledby="settings-tab-services"
-					className="grid gap-6 xl:grid-cols-[2fr,1fr]"
-				>
-					<ServicesTab
-						services={services}
-						isLoading={servicesLoading}
-						onTestConnection={servicesManagement.handleTestConnection}
-						onEdit={serviceFormState.handleEdit}
-						onToggleDefault={servicesManagement.toggleDefault}
-						onToggleEnabled={servicesManagement.toggleEnabled}
-						onDelete={handleDeleteService}
-						testingConnection={servicesManagement.testingConnection}
-						testResult={servicesManagement.testResult}
-						mutationPending={servicesManagement.updateServiceMutation.isPending}
-					/>
+						<ServiceForm
+							formState={serviceFormState.formState}
+							onFormStateChange={serviceFormState.setFormState}
+							onSubmit={handleServiceFormSubmit}
+							onCancel={() => serviceFormState.resetForm(serviceFormState.formState.service)}
+							onTestConnection={() =>
+								servicesManagement.handleTestFormConnection(serviceFormState.formState)
+							}
+							selectedService={serviceFormState.selectedServiceForEdit}
+							availableTags={availableTags}
+							isCreating={servicesManagement.createServiceMutation.isPending}
+							isUpdating={servicesManagement.updateServiceMutation.isPending}
+							isTesting={servicesManagement.testingFormConnection}
+							testResult={servicesManagement.formTestResult}
+							defaultSectionContent={defaultSectionContent}
+						/>
+					</div>
+				)}
 
-					<ServiceForm
-						formState={serviceFormState.formState}
-						onFormStateChange={serviceFormState.setFormState}
-						onSubmit={handleServiceFormSubmit}
-						onCancel={() => serviceFormState.resetForm(serviceFormState.formState.service)}
-						onTestConnection={() =>
-							servicesManagement.handleTestFormConnection(serviceFormState.formState)
-						}
-						selectedService={serviceFormState.selectedServiceForEdit}
-						availableTags={availableTags}
-						isCreating={servicesManagement.createServiceMutation.isPending}
-						isUpdating={servicesManagement.updateServiceMutation.isPending}
-						isTesting={servicesManagement.testingFormConnection}
-						testResult={servicesManagement.formTestResult}
-						defaultSectionContent={defaultSectionContent}
-					/>
-				</div>
-			)}
+				{/* Tags tab */}
+				{activeTab === "tags" && (
+					<div
+						role="tabpanel"
+						id="settings-panel-tags"
+						aria-labelledby="settings-tab-tags"
+					>
+						<TagsTab
+							tags={tags}
+							newTagName={tagsManagement.newTagName}
+							onNewTagNameChange={tagsManagement.setNewTagName}
+							onCreateTag={tagsManagement.handleCreateTag}
+							onDeleteTag={(id) => tagsManagement.deleteTagMutation.mutate(id)}
+							isCreatingTag={tagsManagement.createTagMutation.isPending}
+							isDeletingTag={tagsManagement.deleteTagMutation.isPending}
+						/>
+					</div>
+				)}
 
-			{/* Tags tab */}
-			{activeTab === "tags" && (
-				<div
-					role="tabpanel"
-					id="settings-panel-tags"
-					aria-labelledby="settings-tab-tags"
-				>
-					<TagsTab
-						tags={tags}
-						newTagName={tagsManagement.newTagName}
-						onNewTagNameChange={tagsManagement.setNewTagName}
-						onCreateTag={tagsManagement.handleCreateTag}
-						onDeleteTag={(id) => tagsManagement.deleteTagMutation.mutate(id)}
-						isCreatingTag={tagsManagement.createTagMutation.isPending}
-						isDeletingTag={tagsManagement.deleteTagMutation.isPending}
-					/>
-				</div>
-			)}
+				{/* Account tab */}
+				{activeTab === "account" && (
+					<div
+						role="tabpanel"
+						id="settings-panel-account"
+						aria-labelledby="settings-tab-account"
+					>
+						<AccountTab
+							currentUser={currentUser}
+							accountForm={accountManagement.accountForm}
+							onAccountFormChange={accountManagement.setAccountForm}
+							onAccountUpdate={accountManagement.handleAccountUpdate}
+							isUpdating={accountManagement.updateAccountMutation.isPending}
+							updateResult={accountManagement.accountUpdateResult}
+						/>
+					</div>
+				)}
 
-			{/* Account tab */}
-			{activeTab === "account" && (
-				<div
-					role="tabpanel"
-					id="settings-panel-account"
-					aria-labelledby="settings-tab-account"
-				>
-					<AccountTab
-						currentUser={currentUser}
-						accountForm={accountManagement.accountForm}
-						onAccountFormChange={accountManagement.setAccountForm}
-						onAccountUpdate={accountManagement.handleAccountUpdate}
-						isUpdating={accountManagement.updateAccountMutation.isPending}
-						updateResult={accountManagement.accountUpdateResult}
-					/>
-				</div>
-			)}
+				{/* Authentication tab */}
+				{activeTab === "authentication" && (
+					<div
+						role="tabpanel"
+						id="settings-panel-authentication"
+						aria-labelledby="settings-tab-authentication"
+						className="space-y-6"
+					>
+						<PasswordSection currentUser={currentUser} />
+						<PasskeySection />
+						<OIDCProviderSection />
+						<SessionsSection />
+					</div>
+				)}
 
-			{/* Authentication tab */}
-			{activeTab === "authentication" && (
-				<div
-					role="tabpanel"
-					id="settings-panel-authentication"
-					aria-labelledby="settings-tab-authentication"
-					className="space-y-6"
-				>
-					<PasswordSection currentUser={currentUser} />
-					<PasskeySection />
-					<OIDCProviderSection />
-					<SessionsSection />
-				</div>
-			)}
+				{/* Appearance tab */}
+				{activeTab === "appearance" && (
+					<div
+						role="tabpanel"
+						id="settings-panel-appearance"
+						aria-labelledby="settings-tab-appearance"
+					>
+						<AppearanceTab />
+					</div>
+				)}
 
-			{/* Backup tab */}
-			{activeTab === "backup" && (
-				<div
-					role="tabpanel"
-					id="settings-panel-backup"
-					aria-labelledby="settings-tab-backup"
-				>
-					<BackupTab />
-				</div>
-			)}
+				{/* Backup tab */}
+				{activeTab === "backup" && (
+					<div
+						role="tabpanel"
+						id="settings-panel-backup"
+						aria-labelledby="settings-tab-backup"
+					>
+						<BackupTab />
+					</div>
+				)}
 
-			{/* System tab */}
-			{activeTab === "system" && (
-				<div
-					role="tabpanel"
-					id="settings-panel-system"
-					aria-labelledby="settings-tab-system"
-				>
-					<SystemTab />
-				</div>
-			)}
+				{/* System tab */}
+				{activeTab === "system" && (
+					<div
+						role="tabpanel"
+						id="settings-panel-system"
+						aria-labelledby="settings-tab-system"
+					>
+						<SystemTab />
+					</div>
+				)}
+			</div>
 		</section>
 	);
 };

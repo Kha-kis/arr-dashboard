@@ -1,9 +1,33 @@
 "use client";
 
 import { useState } from "react";
-import { StatCard, EmptyState, Badge, toast, Button } from "../../../components/ui";
-import { Section } from "../../../components/layout";
-import { Play, Search, ArrowUpCircle, Clock, CheckCircle2, AlertCircle, Gauge, Loader2, ChevronDown } from "lucide-react";
+import {
+	Play,
+	Search,
+	ArrowUpCircle,
+	Clock,
+	CheckCircle2,
+	AlertCircle,
+	Gauge,
+	Loader2,
+	ChevronDown,
+	Target,
+	Download,
+	Zap,
+} from "lucide-react";
+import { Button, toast } from "../../../components/ui";
+import {
+	StatCard,
+	PremiumEmptyState,
+	PremiumSection,
+	InstanceCard,
+	ServiceBadge,
+	StatusBadge,
+	PremiumProgress,
+	GlassmorphicCard,
+} from "../../../components/layout";
+import { THEME_GRADIENTS, SERVICE_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 import type { HuntingStatus, InstanceHuntStatus } from "../lib/hunting-types";
 import { API_USAGE_WARNING_THRESHOLD, API_USAGE_DANGER_THRESHOLD } from "../lib/constants";
 import { useManualHunt } from "../hooks/useManualHunt";
@@ -13,10 +37,21 @@ interface HuntingOverviewProps {
 	onRefresh: () => void;
 }
 
+/**
+ * Premium Hunting Overview
+ *
+ * Displays global hunting stats and per-instance status cards with:
+ * - Premium stat cards with gradient styling
+ * - Glassmorphic instance cards with service accent
+ * - Theme-aware progress bars for API usage
+ */
 export const HuntingOverview = ({ status, onRefresh }: HuntingOverviewProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
 	if (!status || status.instances.length === 0) {
 		return (
-			<EmptyState
+			<PremiumEmptyState
 				icon={Search}
 				title="No instances configured for hunting"
 				description="Configure hunting for your Sonarr and Radarr instances in the Configuration tab."
@@ -24,47 +59,73 @@ export const HuntingOverview = ({ status, onRefresh }: HuntingOverviewProps) => 
 		);
 	}
 
-	const activeInstances = status.instances.filter(i => i.huntMissingEnabled || i.huntUpgradesEnabled);
+	const activeInstances = status.instances.filter(
+		(i) => i.huntMissingEnabled || i.huntUpgradesEnabled
+	);
 	const totalSearchesToday = status.instances.reduce((sum, i) => sum + i.searchesToday, 0);
 	const totalItemsFound = status.instances.reduce((sum, i) => sum + i.itemsFoundToday, 0);
 
 	return (
 		<div className="flex flex-col gap-10">
-			{/* Global Stats */}
+			{/* Global Stats Grid */}
 			<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
 				<StatCard
-					label="Active Instances"
+					icon={Target}
 					value={activeInstances.length}
+					label="Active Instances"
 					description={`of ${status.instances.length} configured`}
+					animationDelay={0}
 				/>
 				<StatCard
-					label="Searches Today"
+					icon={Search}
 					value={totalSearchesToday}
+					label="Searches Today"
 					description="Across all instances"
+					animationDelay={50}
 				/>
 				<StatCard
-					label="Items Found"
+					icon={Download}
 					value={totalItemsFound}
+					label="Items Found"
 					description="Content grabbed today"
+					animationDelay={100}
 				/>
 				<StatCard
-					label="Scheduler Status"
+					icon={Zap}
 					value={status.schedulerRunning ? "Running" : "Stopped"}
+					label="Scheduler Status"
 					description={status.schedulerRunning ? "Auto-hunting active" : "Hunting paused"}
+					gradient={status.schedulerRunning ? SEMANTIC_COLORS.success : undefined}
+					animationDelay={150}
 				/>
 			</div>
 
 			{/* Instance Status Cards */}
-			<Section title="Instance Status" description="Current hunting status for each configured instance">
+			<PremiumSection
+				title="Instance Status"
+				description="Current hunting status for each configured instance"
+				icon={Target}
+				animationDelay={200}
+			>
 				<div className="grid gap-4 md:grid-cols-2">
-					{status.instances.map((instance) => (
-						<InstanceStatusCard key={instance.instanceId} instance={instance} onRefresh={onRefresh} />
+					{status.instances.map((instance, index) => (
+						<InstanceStatusCard
+							key={instance.instanceId}
+							instance={instance}
+							onRefresh={onRefresh}
+							animationDelay={250 + index * 50}
+						/>
 					))}
 				</div>
-			</Section>
+			</PremiumSection>
 		</div>
 	);
 };
+
+/* =============================================================================
+   HUNT DROPDOWN
+   Dropdown menu for manual hunt triggers
+   ============================================================================= */
 
 interface HuntDropdownProps {
 	instance: InstanceHuntStatus;
@@ -73,6 +134,8 @@ interface HuntDropdownProps {
 }
 
 const HuntDropdown = ({ instance, isTriggering, onTrigger }: HuntDropdownProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const [isOpen, setIsOpen] = useState(false);
 
 	const handleSelect = (type: "missing" | "upgrade") => {
@@ -87,6 +150,7 @@ const HuntDropdown = ({ instance, isTriggering, onTrigger }: HuntDropdownProps) 
 				size="sm"
 				onClick={() => setIsOpen(!isOpen)}
 				disabled={isTriggering}
+				className="gap-2 border-border/50 bg-card/50 backdrop-blur-sm hover:bg-card/80"
 			>
 				{isTriggering ? (
 					<Loader2 className="h-4 w-4 animate-spin" />
@@ -94,35 +158,58 @@ const HuntDropdown = ({ instance, isTriggering, onTrigger }: HuntDropdownProps) 
 					<>
 						<Play className="h-4 w-4" />
 						Hunt
-						<ChevronDown className="h-3 w-3 ml-1" />
+						<ChevronDown className="h-3 w-3" />
 					</>
 				)}
 			</Button>
+
 			{isOpen && (
 				<>
-					<div
-						className="fixed inset-0 z-40"
-						onClick={() => setIsOpen(false)}
-					/>
-					<div className="absolute right-0 mt-1 min-w-[160px] py-1 rounded-lg border border-border bg-bg shadow-lg z-50">
+					{/* Backdrop */}
+					<div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
+
+					{/* Dropdown menu */}
+					<div className="absolute right-0 mt-2 min-w-[180px] rounded-xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl z-50 overflow-hidden">
 						{instance.huntMissingEnabled && (
 							<button
 								type="button"
-								className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-fg-muted hover:text-fg hover:bg-bg-muted/50 transition-colors"
+								className="w-full flex items-center gap-3 px-4 py-3 text-sm text-left text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
 								onClick={() => handleSelect("missing")}
 							>
-								<Search className="h-4 w-4" />
-								Hunt Missing
+								<div
+									className="flex h-8 w-8 items-center justify-center rounded-lg"
+									style={{
+										background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+										border: `1px solid ${themeGradient.from}30`,
+									}}
+								>
+									<Search className="h-4 w-4" style={{ color: themeGradient.from }} />
+								</div>
+								<div>
+									<div className="font-medium text-foreground">Hunt Missing</div>
+									<div className="text-xs text-muted-foreground">Search for undownloaded content</div>
+								</div>
 							</button>
 						)}
 						{instance.huntUpgradesEnabled && (
 							<button
 								type="button"
-								className="w-full flex items-center gap-2 px-3 py-2 text-sm text-left text-fg-muted hover:text-fg hover:bg-bg-muted/50 transition-colors"
+								className="w-full flex items-center gap-3 px-4 py-3 text-sm text-left text-muted-foreground hover:text-foreground hover:bg-muted/30 transition-colors"
 								onClick={() => handleSelect("upgrade")}
 							>
-								<ArrowUpCircle className="h-4 w-4" />
-								Hunt Upgrades
+								<div
+									className="flex h-8 w-8 items-center justify-center rounded-lg"
+									style={{
+										background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+										border: `1px solid ${themeGradient.from}30`,
+									}}
+								>
+									<ArrowUpCircle className="h-4 w-4" style={{ color: themeGradient.from }} />
+								</div>
+								<div>
+									<div className="font-medium text-foreground">Hunt Upgrades</div>
+									<div className="text-xs text-muted-foreground">Search for better quality</div>
+								</div>
 							</button>
 						)}
 					</div>
@@ -132,12 +219,21 @@ const HuntDropdown = ({ instance, isTriggering, onTrigger }: HuntDropdownProps) 
 	);
 };
 
+/* =============================================================================
+   INSTANCE STATUS CARD
+   Premium instance card with service gradient and hover effects
+   ============================================================================= */
+
 interface InstanceStatusCardProps {
 	instance: InstanceHuntStatus;
 	onRefresh: () => void;
+	animationDelay?: number;
 }
 
-const InstanceStatusCard = ({ instance, onRefresh }: InstanceStatusCardProps) => {
+const InstanceStatusCard = ({ instance, onRefresh, animationDelay = 0 }: InstanceStatusCardProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
 	const isActive = instance.huntMissingEnabled || instance.huntUpgradesEnabled;
 	const { triggerHunt, isTriggering, isCooldownError } = useManualHunt();
 	const [triggeringType, setTriggeringType] = useState<"missing" | "upgrade" | null>(null);
@@ -162,80 +258,79 @@ const InstanceStatusCard = ({ instance, onRefresh }: InstanceStatusCardProps) =>
 	const isCurrentlyTriggering = isTriggering && triggeringType !== null;
 
 	return (
-		<div className="rounded-xl border border-border bg-bg-subtle/50 p-4">
-			<div className="flex items-start justify-between mb-4">
-				<div>
-					<div className="flex items-center gap-2 mb-1">
-						<h3 className="font-medium text-fg">{instance.instanceName}</h3>
-						<Badge variant={instance.service === "sonarr" ? "info" : "warning"}>
-							{instance.service}
-						</Badge>
-					</div>
-					<div className="flex items-center gap-2 text-sm text-fg-muted">
-						{isActive ? (
-							<>
-								<CheckCircle2 className="h-4 w-4 text-green-500" />
-								<span>Active</span>
-							</>
-						) : (
-							<>
-								<AlertCircle className="h-4 w-4 text-fg-muted" />
-								<span>Disabled</span>
-							</>
-						)}
-					</div>
+		<InstanceCard
+			instanceName={instance.instanceName}
+			service={instance.service}
+			animationDelay={animationDelay}
+			status={
+				<div className="flex items-center gap-2 text-sm">
+					{isActive ? (
+						<StatusBadge status="success" icon={CheckCircle2}>
+							Active
+						</StatusBadge>
+					) : (
+						<StatusBadge status="default" icon={AlertCircle}>
+							Disabled
+						</StatusBadge>
+					)}
 				</div>
-
-				{/* Manual Hunt Dropdown */}
-				{isActive && (
+			}
+			actions={
+				isActive && (
 					<HuntDropdown
 						instance={instance}
 						isTriggering={isCurrentlyTriggering}
 						onTrigger={handleTriggerHunt}
 					/>
-				)}
-			</div>
-
-			<div className="grid grid-cols-2 gap-4 text-sm">
-				<div className="space-y-2">
-					<div className="flex items-center gap-2">
-						<Search className="h-4 w-4 text-fg-muted" />
-						<span className="text-fg-muted">Missing:</span>
-						<Badge variant={instance.huntMissingEnabled ? "success" : "default"}>
-							{instance.huntMissingEnabled ? "On" : "Off"}
-						</Badge>
-					</div>
-					{instance.huntMissingEnabled && instance.lastMissingHunt && (
-						<div className="flex items-center gap-2 text-xs text-fg-muted pl-6">
-							<Clock className="h-3 w-3" />
-							Last: {formatRelativeTime(instance.lastMissingHunt)}
+				)
+			}
+			stats={
+				<div className="grid grid-cols-2 gap-4 text-sm">
+					{/* Missing Hunt Status */}
+					<div className="space-y-2">
+						<div className="flex items-center gap-2">
+							<Search className="h-4 w-4 text-muted-foreground" />
+							<span className="text-muted-foreground">Missing:</span>
+							<StatusBadge status={instance.huntMissingEnabled ? "success" : "default"}>
+								{instance.huntMissingEnabled ? "On" : "Off"}
+							</StatusBadge>
 						</div>
-					)}
-				</div>
-
-				<div className="space-y-2">
-					<div className="flex items-center gap-2">
-						<ArrowUpCircle className="h-4 w-4 text-fg-muted" />
-						<span className="text-fg-muted">Upgrades:</span>
-						<Badge variant={instance.huntUpgradesEnabled ? "success" : "default"}>
-							{instance.huntUpgradesEnabled ? "On" : "Off"}
-						</Badge>
+						{instance.huntMissingEnabled && instance.lastMissingHunt && (
+							<div className="flex items-center gap-2 text-xs text-muted-foreground pl-6">
+								<Clock className="h-3 w-3" />
+								Last: {formatRelativeTime(instance.lastMissingHunt)}
+							</div>
+						)}
 					</div>
-					{instance.huntUpgradesEnabled && instance.lastUpgradeHunt && (
-						<div className="flex items-center gap-2 text-xs text-fg-muted pl-6">
-							<Clock className="h-3 w-3" />
-							Last: {formatRelativeTime(instance.lastUpgradeHunt)}
-						</div>
-					)}
-				</div>
-			</div>
 
-			<div className="mt-4 pt-4 border-t border-border flex justify-between text-sm">
-				<div className="text-fg-muted">
-					<span className="font-medium text-fg">{instance.searchesToday}</span> searches today
+					{/* Upgrade Hunt Status */}
+					<div className="space-y-2">
+						<div className="flex items-center gap-2">
+							<ArrowUpCircle className="h-4 w-4 text-muted-foreground" />
+							<span className="text-muted-foreground">Upgrades:</span>
+							<StatusBadge status={instance.huntUpgradesEnabled ? "success" : "default"}>
+								{instance.huntUpgradesEnabled ? "On" : "Off"}
+							</StatusBadge>
+						</div>
+						{instance.huntUpgradesEnabled && instance.lastUpgradeHunt && (
+							<div className="flex items-center gap-2 text-xs text-muted-foreground pl-6">
+								<Clock className="h-3 w-3" />
+								Last: {formatRelativeTime(instance.lastUpgradeHunt)}
+							</div>
+						)}
+					</div>
 				</div>
-				<div className="text-fg-muted">
-					<span className="font-medium text-fg">{instance.itemsFoundToday}</span> items found
+			}
+		>
+			{/* Today's Stats */}
+			<div className="flex justify-between text-sm pt-3 border-t border-border/30">
+				<div className="text-muted-foreground">
+					<span className="font-semibold text-foreground">{instance.searchesToday}</span>{" "}
+					searches today
+				</div>
+				<div className="text-muted-foreground">
+					<span className="font-semibold text-foreground">{instance.itemsFoundToday}</span>{" "}
+					items found
 				</div>
 			</div>
 
@@ -244,9 +339,14 @@ const InstanceStatusCard = ({ instance, onRefresh }: InstanceStatusCardProps) =>
 				current={instance.apiCallsThisHour}
 				max={instance.hourlyApiCap}
 			/>
-		</div>
+		</InstanceCard>
 	);
 };
+
+/* =============================================================================
+   API USAGE INDICATOR
+   Theme-aware progress bar for API usage
+   ============================================================================= */
 
 interface ApiUsageIndicatorProps {
 	current: number;
@@ -256,11 +356,11 @@ interface ApiUsageIndicatorProps {
 const ApiUsageIndicator = ({ current, max }: ApiUsageIndicatorProps) => {
 	const percentage = max > 0 ? Math.min((current / max) * 100, 100) : 0;
 
-	// Determine color based on usage thresholds
-	const getColorClass = () => {
-		if (percentage >= API_USAGE_DANGER_THRESHOLD) return "bg-red-500";
-		if (percentage >= API_USAGE_WARNING_THRESHOLD) return "bg-yellow-500";
-		return "bg-green-500";
+	// Determine variant based on usage thresholds
+	const getVariant = (): "default" | "success" | "warning" | "danger" => {
+		if (percentage >= API_USAGE_DANGER_THRESHOLD) return "danger";
+		if (percentage >= API_USAGE_WARNING_THRESHOLD) return "warning";
+		return "success";
 	};
 
 	const getStatusText = () => {
@@ -269,46 +369,35 @@ const ApiUsageIndicator = ({ current, max }: ApiUsageIndicatorProps) => {
 		return "Healthy";
 	};
 
-	const getBadgeVariant = () => {
-		if (percentage >= API_USAGE_DANGER_THRESHOLD) return "danger" as const;
-		if (percentage >= API_USAGE_WARNING_THRESHOLD) return "warning" as const;
-		return "success" as const;
-	};
+	const variant = getVariant();
 
 	return (
-		<div className="mt-3 pt-3 border-t border-border">
-			<div className="flex items-center justify-between text-xs mb-1.5">
-				<div className="flex items-center gap-1.5 text-fg-muted">
+		<div className="mt-4 pt-4 border-t border-border/30">
+			<div className="flex items-center justify-between text-xs mb-2">
+				<div className="flex items-center gap-1.5 text-muted-foreground">
 					<Gauge className="h-3.5 w-3.5" />
 					<span>API Usage (hourly)</span>
 				</div>
 				<div className="flex items-center gap-2">
-					<span className="text-fg-muted">
-						<span className="font-medium text-fg">{current}</span>/{max}
+					<span className="text-muted-foreground">
+						<span className="font-medium text-foreground">{current}</span>/{max}
 					</span>
-					<Badge
-						variant={getBadgeVariant()}
-						className="text-[10px] px-1.5 py-0"
-					>
+					<StatusBadge status={variant === "danger" ? "error" : variant}>
 						{getStatusText()}
-					</Badge>
+					</StatusBadge>
 				</div>
 			</div>
-			<div className="h-1.5 bg-bg-subtle rounded-full overflow-hidden">
-				<div
-					className={`h-full transition-all duration-300 rounded-full ${getColorClass()}`}
-					style={{ width: `${percentage}%` }}
-				/>
-			</div>
+			<PremiumProgress value={current} max={max} variant={variant} size="sm" />
 		</div>
 	);
 };
 
+/* =============================================================================
+   UTILITY FUNCTIONS
+   ============================================================================= */
+
 /**
- * Formats an ISO- or parseable-date string into a compact, human-friendly relative time.
- *
- * @param dateString - A date string recognized by the JavaScript Date constructor.
- * @returns `"Just now"` if less than 1 minute; `"<m>m ago"` if less than 60 minutes; `"<h>h ago"` if less than 24 hours; otherwise `"<d>d ago"`
+ * Format a date string into a compact, human-friendly relative time
  */
 function formatRelativeTime(dateString: string): string {
 	const date = new Date(dateString);

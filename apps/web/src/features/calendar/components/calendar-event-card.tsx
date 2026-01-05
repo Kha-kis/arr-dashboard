@@ -1,5 +1,7 @@
 import type { CalendarItem, ServiceInstanceSummary } from "@arr/shared";
 import { Button } from "../../../components/ui/button";
+import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 import type { DeduplicatedCalendarItem } from "../hooks/use-calendar-data";
 import {
 	buildExternalLink,
@@ -19,6 +21,8 @@ export const CalendarEventCard = ({
 	serviceMap,
 	onOpenExternal,
 }: CalendarEventCardProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const instance = serviceMap.get(event.instanceId);
 	const externalLink = buildExternalLink(event, instance);
 	const details = extractEventDetails(event);
@@ -64,7 +68,8 @@ export const CalendarEventCard = ({
 					href={details.tmdbLink}
 					target="_blank"
 					rel="noopener noreferrer"
-					className="text-sky-300 hover:text-sky-200"
+					className="transition-opacity hover:opacity-80"
+					style={{ color: themeGradient.from }}
 				>
 					#{details.tmdbId}
 				</a>
@@ -79,7 +84,8 @@ export const CalendarEventCard = ({
 					href={details.imdbLink}
 					target="_blank"
 					rel="noopener noreferrer"
-					className="text-sky-300 hover:text-sky-200"
+					className="transition-opacity hover:opacity-80"
+					style={{ color: themeGradient.from }}
 				>
 					{details.imdbId}
 				</a>
@@ -105,7 +111,9 @@ export const CalendarEventCard = ({
 						<span className="text-fg-muted" title={hasMultipleInstances ? "Present in multiple instances" : undefined}>
 							{instancesDisplay}
 							{hasMultipleInstances && (
-								<span className="ml-1 text-sky-400">({event.allInstances.length})</span>
+								<span className="ml-1" style={{ color: themeGradient.from }}>
+									({event.allInstances.length})
+								</span>
 							)}
 						</span>
 					)}

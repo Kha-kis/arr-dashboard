@@ -2,27 +2,46 @@
 
 import { useState } from "react";
 import type { UpdateOIDCProvider } from "@arr/shared";
+import {
+	ShieldCheck,
+	Plus,
+	Settings,
+	Link,
+	Key,
+	Globe,
+	Pencil,
+	Trash2,
+	Check,
+	X,
+	Loader2,
+	AlertCircle,
+} from "lucide-react";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
-import {
-	Card,
-	CardContent,
-	CardHeader,
-	CardTitle,
-	CardDescription,
-} from "../../../components/ui/card";
-import { Alert, AlertDescription } from "../../../components/ui";
+import { PremiumSection, GlassmorphicCard, PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
+import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 import {
 	useOIDCProvider,
 	useCreateOIDCProvider,
 	useUpdateOIDCProvider,
 	useDeleteOIDCProvider,
 } from "../../../hooks/api/useOIDCProviders";
+import { cn } from "../../../lib/utils";
 
 /**
- * OIDC Provider management section for admin settings
+ * Premium OIDC Provider Section
+ *
+ * OIDC configuration with:
+ * - Glassmorphic form containers
+ * - Theme-aware styling
+ * - Premium status feedback
+ * - Staggered animations
  */
 export const OIDCProviderSection = () => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
 	const { data: providerData, isLoading } = useOIDCProvider();
 	const createMutation = useCreateOIDCProvider();
 	const updateMutation = useUpdateOIDCProvider();
@@ -62,7 +81,6 @@ export const OIDCProviderSection = () => {
 		setSuccess(null);
 
 		try {
-			// Only include redirectUri if non-empty
 			const { redirectUri, ...rest } = formData;
 			const payload = {
 				...rest,
@@ -72,7 +90,6 @@ export const OIDCProviderSection = () => {
 			await createMutation.mutateAsync(payload);
 			setSuccess("OIDC provider created successfully!");
 			setShowCreateForm(false);
-			// Reset form
 			setFormData({
 				displayName: "",
 				clientId: "",
@@ -94,7 +111,6 @@ export const OIDCProviderSection = () => {
 		setSuccess(null);
 
 		try {
-			// Only send fields that were provided - use shared UpdateOIDCProvider type for safety
 			const updatePayload: UpdateOIDCProvider = {};
 			if (editData.displayName) updatePayload.displayName = editData.displayName;
 			if (editData.clientId) updatePayload.clientId = editData.clientId;
@@ -137,7 +153,7 @@ export const OIDCProviderSection = () => {
 		setEditData({
 			displayName: provider.displayName,
 			clientId: provider.clientId,
-			clientSecret: "", // Don't pre-fill secret for security
+			clientSecret: "",
 			issuer: provider.issuer,
 			redirectUri: provider.redirectUri,
 			scopes: provider.scopes,
@@ -147,86 +163,133 @@ export const OIDCProviderSection = () => {
 
 	if (isLoading) {
 		return (
-			<Card>
-				<CardHeader>
-					<CardTitle>OIDC Provider</CardTitle>
-					<CardDescription>Loading OIDC provider...</CardDescription>
-				</CardHeader>
-			</Card>
+			<PremiumSection
+				title="OIDC Provider"
+				description="Loading OIDC configuration..."
+				icon={ShieldCheck}
+			>
+				<div className="space-y-4">
+					<PremiumSkeleton className="h-32" />
+				</div>
+			</PremiumSection>
 		);
 	}
 
 	return (
-		<Card>
-			<CardHeader>
-				<CardTitle>OIDC Provider</CardTitle>
-				<CardDescription>
-					Configure OpenID Connect authentication for single sign-on with any OIDC-compliant provider
-					(Authelia, Authentik, Keycloak, etc.).
-				</CardDescription>
-			</CardHeader>
-			<CardContent className="space-y-6">
+		<PremiumSection
+			title="OIDC Provider"
+			description="Configure OpenID Connect authentication for single sign-on with any OIDC-compliant provider (Authelia, Authentik, Keycloak, etc.)."
+			icon={ShieldCheck}
+		>
+			<div className="space-y-6">
 				{/* Status Messages */}
 				{error && (
-					<Alert variant="danger">
-						<AlertDescription>{error}</AlertDescription>
-					</Alert>
+					<div
+						className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm animate-in fade-in slide-in-from-bottom-2"
+						style={{
+							backgroundColor: SEMANTIC_COLORS.error.bg,
+							border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+							color: SEMANTIC_COLORS.error.text,
+						}}
+					>
+						<X className="h-4 w-4 shrink-0" />
+						<span>{error}</span>
+					</div>
 				)}
+
 				{success && (
-					<Alert variant="success">
-						<AlertDescription>{success}</AlertDescription>
-					</Alert>
+					<div
+						className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm animate-in fade-in slide-in-from-bottom-2"
+						style={{
+							backgroundColor: SEMANTIC_COLORS.success.bg,
+							border: `1px solid ${SEMANTIC_COLORS.success.border}`,
+							color: SEMANTIC_COLORS.success.text,
+						}}
+					>
+						<Check className="h-4 w-4 shrink-0" />
+						<span>{success}</span>
+					</div>
 				)}
 
 				{/* No Provider - Show Create Form or Empty State */}
 				{!provider && (
-					<>
+					<GlassmorphicCard padding="lg">
 						{showCreateForm ? (
-							<div className="space-y-4 rounded-lg border border-white/10 bg-white/5 p-4">
-								<h3 className="text-sm font-semibold text-white">Configure OIDC Provider</h3>
-
-								<div className="space-y-3">
+							<div className="space-y-6">
+								<div className="flex items-center gap-3">
+									<div
+										className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+										style={{
+											background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+											border: `1px solid ${themeGradient.from}30`,
+										}}
+									>
+										<Settings className="h-5 w-5" style={{ color: themeGradient.from }} />
+									</div>
 									<div>
-										<label className="text-xs text-white/60">Display Name</label>
+										<h3 className="font-semibold text-foreground">Configure OIDC Provider</h3>
+										<p className="text-xs text-muted-foreground">
+											Enter your OIDC provider details below
+										</p>
+									</div>
+								</div>
+
+								<div className="grid gap-4 sm:grid-cols-2">
+									<div className="space-y-2 sm:col-span-2">
+										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+											Display Name
+										</label>
 										<Input
 											value={formData.displayName}
 											onChange={(e) => setFormData({ ...formData, displayName: e.target.value })}
 											placeholder="e.g., Authentik SSO"
+											className="bg-card/30 border-border/50"
 										/>
-										<p className="mt-1 text-xs text-white/40">Friendly name shown on login page</p>
+										<p className="text-xs text-muted-foreground">Friendly name shown on login page</p>
 									</div>
 
-									<div>
-										<label className="text-xs text-white/60">Issuer URL</label>
+									<div className="space-y-2 sm:col-span-2">
+										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+											Issuer URL
+										</label>
 										<Input
 											value={formData.issuer}
 											onChange={(e) => setFormData({ ...formData, issuer: e.target.value })}
 											placeholder="https://auth.example.com"
+											className="bg-card/30 border-border/50"
 										/>
-										<p className="mt-1 text-xs text-white/40">Your OIDC provider&apos;s base URL</p>
+										<p className="text-xs text-muted-foreground">Your OIDC provider&apos;s base URL</p>
 									</div>
 
-									<div>
-										<label className="text-xs text-white/60">Client ID</label>
+									<div className="space-y-2">
+										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+											Client ID
+										</label>
 										<Input
 											value={formData.clientId}
 											onChange={(e) => setFormData({ ...formData, clientId: e.target.value })}
 											placeholder="OAuth client ID"
+											className="bg-card/30 border-border/50"
 										/>
 									</div>
 
-									<div>
-										<label className="text-xs text-white/60">Client Secret</label>
+									<div className="space-y-2">
+										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+											Client Secret
+										</label>
 										<Input
 											type="password"
 											value={formData.clientSecret}
 											onChange={(e) => setFormData({ ...formData, clientSecret: e.target.value })}
 											placeholder="OAuth client secret"
+											className="bg-card/30 border-border/50"
 										/>
 									</div>
 
-									<div>
-										<label className="text-xs text-white/60">Redirect URI</label>
+									<div className="space-y-2 sm:col-span-2">
+										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+											Redirect URI
+										</label>
 										<Input
 											value={formData.redirectUri}
 											onChange={(e) => setFormData({ ...formData, redirectUri: e.target.value })}
@@ -235,198 +298,324 @@ export const OIDCProviderSection = () => {
 													? `${window.location.origin}/auth/oidc/callback`
 													: "/auth/oidc/callback"
 											}
+											className="bg-card/30 border-border/50"
 										/>
-										<p className="mt-1 text-xs text-white/40">Leave empty to auto-detect</p>
+										<p className="text-xs text-muted-foreground">Leave empty to auto-detect</p>
 									</div>
 
-									<div>
-										<label className="text-xs text-white/60">Scopes (comma-separated)</label>
+									<div className="space-y-2 sm:col-span-2">
+										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+											Scopes (comma-separated)
+										</label>
 										<Input
 											value={formData.scopes}
 											onChange={(e) => setFormData({ ...formData, scopes: e.target.value })}
 											placeholder="openid,email,profile"
+											className="bg-card/30 border-border/50"
 										/>
 									</div>
 
-									<div className="flex items-center gap-2">
-										<input
-											type="checkbox"
-											checked={formData.enabled}
-											onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
-											className="h-4 w-4 rounded border-white/20 bg-white/5"
-										/>
-										<label className="text-sm text-white/70">Enable provider</label>
+									<div className="sm:col-span-2">
+										<label className="flex items-center gap-2 cursor-pointer">
+											<input
+												type="checkbox"
+												checked={formData.enabled}
+												onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
+												className="h-4 w-4 rounded border-border bg-card/30"
+											/>
+											<span className="text-sm text-foreground">Enable provider</span>
+										</label>
 									</div>
 								</div>
 
-								<div className="flex gap-2">
-									<Button onClick={handleCreate} disabled={createMutation.isPending}>
-										{createMutation.isPending ? "Creating..." : "Create Provider"}
+								<div className="flex gap-3">
+									<Button
+										onClick={handleCreate}
+										disabled={createMutation.isPending}
+										className="gap-2"
+										style={{
+											background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+											boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
+										}}
+									>
+										{createMutation.isPending ? (
+											<>
+												<Loader2 className="h-4 w-4 animate-spin" />
+												Creating...
+											</>
+										) : (
+											<>
+												<Plus className="h-4 w-4" />
+												Create Provider
+											</>
+										)}
 									</Button>
-									<Button variant="secondary" onClick={() => setShowCreateForm(false)}>
+									<Button
+										variant="outline"
+										onClick={() => setShowCreateForm(false)}
+									>
 										Cancel
 									</Button>
 								</div>
 							</div>
 						) : (
-							<div className="rounded-lg border border-white/10 bg-white/5 p-6 text-center">
-								<svg
-									className="mx-auto h-12 w-12 text-white/20"
-									fill="none"
-									stroke="currentColor"
-									viewBox="0 0 24 24"
-								>
-									<path
-										strokeLinecap="round"
-										strokeLinejoin="round"
-										strokeWidth={2}
-										d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
-									/>
-								</svg>
-								<p className="mt-4 text-sm text-white/60">No OIDC provider configured</p>
-								<p className="mt-1 text-xs text-white/40">
-									Configure OpenID Connect to enable single sign-on
-								</p>
-								<Button className="mt-4" onClick={() => setShowCreateForm(true)}>
-									Configure OIDC
-								</Button>
-							</div>
+							<PremiumEmptyState
+								icon={ShieldCheck}
+								title="No OIDC provider configured"
+								description="Configure OpenID Connect to enable single sign-on"
+								action={
+									<Button
+										onClick={() => setShowCreateForm(true)}
+										className="gap-2 mt-4"
+										style={{
+											background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+											boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
+										}}
+									>
+										<Settings className="h-4 w-4" />
+										Configure OIDC
+									</Button>
+								}
+							/>
 						)}
-					</>
+					</GlassmorphicCard>
 				)}
 
 				{/* Provider Exists - Show Details or Edit Form */}
 				{provider && (
-					<div className="rounded-lg border border-white/10 bg-white/5 p-4">
+					<GlassmorphicCard padding="lg">
 						{isEditing ? (
-							<div className="space-y-3">
-								<h3 className="text-sm font-semibold text-white">Edit OIDC Provider</h3>
-
-								<div>
-									<label className="text-xs text-white/60">Display Name</label>
-									<Input
-										value={editData.displayName}
-										onChange={(e) => setEditData({ ...editData, displayName: e.target.value })}
-									/>
+							<div className="space-y-6">
+								<div className="flex items-center gap-3">
+									<div
+										className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+										style={{
+											background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+											border: `1px solid ${themeGradient.from}30`,
+										}}
+									>
+										<Pencil className="h-5 w-5" style={{ color: themeGradient.from }} />
+									</div>
+									<div>
+										<h3 className="font-semibold text-foreground">Edit OIDC Provider</h3>
+										<p className="text-xs text-muted-foreground">Update your OIDC configuration</p>
+									</div>
 								</div>
 
-								<div>
-									<label className="text-xs text-white/60">Issuer URL</label>
-									<Input
-										value={editData.issuer}
-										onChange={(e) => setEditData({ ...editData, issuer: e.target.value })}
-									/>
+								<div className="grid gap-4 sm:grid-cols-2">
+									<div className="space-y-2 sm:col-span-2">
+										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+											Display Name
+										</label>
+										<Input
+											value={editData.displayName}
+											onChange={(e) => setEditData({ ...editData, displayName: e.target.value })}
+											className="bg-card/30 border-border/50"
+										/>
+									</div>
+
+									<div className="space-y-2 sm:col-span-2">
+										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+											Issuer URL
+										</label>
+										<Input
+											value={editData.issuer}
+											onChange={(e) => setEditData({ ...editData, issuer: e.target.value })}
+											className="bg-card/30 border-border/50"
+										/>
+									</div>
+
+									<div className="space-y-2">
+										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+											Client ID
+										</label>
+										<Input
+											value={editData.clientId}
+											onChange={(e) => setEditData({ ...editData, clientId: e.target.value })}
+											className="bg-card/30 border-border/50"
+										/>
+									</div>
+
+									<div className="space-y-2">
+										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+											Client Secret
+										</label>
+										<Input
+											type="password"
+											value={editData.clientSecret}
+											onChange={(e) => setEditData({ ...editData, clientSecret: e.target.value })}
+											placeholder="Enter new secret to update"
+											className="bg-card/30 border-border/50"
+										/>
+										<p className="text-xs text-muted-foreground">Leave empty to keep current</p>
+									</div>
+
+									<div className="space-y-2 sm:col-span-2">
+										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+											Redirect URI
+										</label>
+										<Input
+											value={editData.redirectUri}
+											onChange={(e) => setEditData({ ...editData, redirectUri: e.target.value })}
+											className="bg-card/30 border-border/50"
+										/>
+									</div>
+
+									<div className="space-y-2 sm:col-span-2">
+										<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+											Scopes
+										</label>
+										<Input
+											value={editData.scopes}
+											onChange={(e) => setEditData({ ...editData, scopes: e.target.value })}
+											className="bg-card/30 border-border/50"
+										/>
+									</div>
+
+									<div className="sm:col-span-2">
+										<label className="flex items-center gap-2 cursor-pointer">
+											<input
+												type="checkbox"
+												checked={editData.enabled}
+												onChange={(e) => setEditData({ ...editData, enabled: e.target.checked })}
+												className="h-4 w-4 rounded border-border bg-card/30"
+											/>
+											<span className="text-sm text-foreground">Enable provider</span>
+										</label>
+									</div>
 								</div>
 
-								<div>
-									<label className="text-xs text-white/60">Client ID</label>
-									<Input
-										value={editData.clientId}
-										onChange={(e) => setEditData({ ...editData, clientId: e.target.value })}
-									/>
-								</div>
-
-								<div>
-									<label className="text-xs text-white/60">
-										Client Secret (leave empty to keep current)
-									</label>
-									<Input
-										type="password"
-										value={editData.clientSecret}
-										onChange={(e) => setEditData({ ...editData, clientSecret: e.target.value })}
-										placeholder="Enter new secret to update"
-									/>
-								</div>
-
-								<div>
-									<label className="text-xs text-white/60">Redirect URI</label>
-									<Input
-										value={editData.redirectUri}
-										onChange={(e) => setEditData({ ...editData, redirectUri: e.target.value })}
-									/>
-								</div>
-
-								<div>
-									<label className="text-xs text-white/60">Scopes</label>
-									<Input
-										value={editData.scopes}
-										onChange={(e) => setEditData({ ...editData, scopes: e.target.value })}
-									/>
-								</div>
-
-								<div className="flex items-center gap-2">
-									<input
-										type="checkbox"
-										checked={editData.enabled}
-										onChange={(e) => setEditData({ ...editData, enabled: e.target.checked })}
-										className="h-4 w-4 rounded border-white/20 bg-white/5"
-									/>
-									<label className="text-sm text-white/70">Enable provider</label>
-								</div>
-
-								<div className="flex gap-2">
+								<div className="flex gap-3">
 									<Button
-										size="sm"
 										onClick={handleUpdate}
 										disabled={updateMutation.isPending}
+										className="gap-2"
+										style={{
+											background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+											boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
+										}}
 									>
-										{updateMutation.isPending ? "Saving..." : "Save Changes"}
+										{updateMutation.isPending ? (
+											<>
+												<Loader2 className="h-4 w-4 animate-spin" />
+												Saving...
+											</>
+										) : (
+											<>
+												<Check className="h-4 w-4" />
+												Save Changes
+											</>
+										)}
 									</Button>
-									<Button size="sm" variant="secondary" onClick={() => setIsEditing(false)}>
+									<Button
+										variant="outline"
+										onClick={() => setIsEditing(false)}
+									>
 										Cancel
 									</Button>
 								</div>
 							</div>
 						) : (
-							<>
+							<div className="space-y-4">
 								<div className="flex items-start justify-between">
-									<div className="flex-1">
-										<div className="flex items-center gap-2">
-											<p className="text-sm font-medium text-white">{provider.displayName}</p>
-											{!provider.enabled && (
-												<span className="rounded bg-red-500/20 px-2 py-0.5 text-xs text-red-300">
-													Disabled
-												</span>
-											)}
+									<div className="flex items-center gap-3">
+										<div
+											className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+											style={{
+												background: provider.enabled
+													? `linear-gradient(135deg, ${SEMANTIC_COLORS.success.from}20, ${SEMANTIC_COLORS.success.to}20)`
+													: `linear-gradient(135deg, ${SEMANTIC_COLORS.error.from}20, ${SEMANTIC_COLORS.error.to}20)`,
+												border: `1px solid ${provider.enabled ? SEMANTIC_COLORS.success.from : SEMANTIC_COLORS.error.from}30`,
+											}}
+										>
+											<ShieldCheck
+												className="h-5 w-5"
+												style={{ color: provider.enabled ? SEMANTIC_COLORS.success.from : SEMANTIC_COLORS.error.from }}
+											/>
 										</div>
-										<p className="mt-2 text-xs text-white/50">
-											<span className="font-medium">Issuer:</span> {provider.issuer}
-										</p>
-										<p className="mt-1 text-xs text-white/50">
-											<span className="font-medium">Client ID:</span> {provider.clientId}
-										</p>
-										<p className="mt-1 text-xs text-white/50">
-											<span className="font-medium">Redirect URI:</span> {provider.redirectUri}
-										</p>
-										<p className="mt-1 text-xs text-white/50">
-											<span className="font-medium">Scopes:</span> {provider.scopes}
-										</p>
+										<div>
+											<div className="flex items-center gap-2">
+												<h3 className="font-semibold text-foreground">{provider.displayName}</h3>
+												{!provider.enabled && (
+													<span
+														className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+														style={{
+															backgroundColor: SEMANTIC_COLORS.error.bg,
+															color: SEMANTIC_COLORS.error.text,
+															border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+														}}
+													>
+														<AlertCircle className="h-3 w-3" />
+														Disabled
+													</span>
+												)}
+											</div>
+											<p className="text-xs text-muted-foreground">OpenID Connect provider</p>
+										</div>
 									</div>
 									<div className="flex gap-2">
 										<Button
 											size="sm"
-											variant="secondary"
+											variant="ghost"
 											onClick={startEdit}
-											className="text-white/70 hover:text-white"
+											className="gap-1.5 text-muted-foreground hover:text-foreground"
 										>
+											<Pencil className="h-3.5 w-3.5" />
 											Edit
 										</Button>
 										<Button
 											size="sm"
-											variant="secondary"
+											variant="ghost"
 											onClick={handleDelete}
 											disabled={deleteMutation.isPending}
-											className="text-red-400 hover:text-red-300"
+											className="gap-1.5"
+											style={{ color: SEMANTIC_COLORS.error.text }}
 										>
-											{deleteMutation.isPending ? "Deleting..." : "Delete"}
+											{deleteMutation.isPending ? (
+												<Loader2 className="h-3.5 w-3.5 animate-spin" />
+											) : (
+												<Trash2 className="h-3.5 w-3.5" />
+											)}
+											Delete
 										</Button>
 									</div>
 								</div>
-							</>
+
+								<div className="grid gap-3 sm:grid-cols-2 text-sm">
+									<div className="flex items-center gap-2 rounded-lg border border-border/50 bg-card/30 p-3">
+										<Globe className="h-4 w-4 text-muted-foreground shrink-0" />
+										<div className="min-w-0">
+											<p className="text-xs text-muted-foreground">Issuer</p>
+											<p className="text-foreground truncate">{provider.issuer}</p>
+										</div>
+									</div>
+									<div className="flex items-center gap-2 rounded-lg border border-border/50 bg-card/30 p-3">
+										<Key className="h-4 w-4 text-muted-foreground shrink-0" />
+										<div className="min-w-0">
+											<p className="text-xs text-muted-foreground">Client ID</p>
+											<p className="text-foreground truncate">{provider.clientId}</p>
+										</div>
+									</div>
+									<div className="flex items-center gap-2 rounded-lg border border-border/50 bg-card/30 p-3 sm:col-span-2">
+										<Link className="h-4 w-4 text-muted-foreground shrink-0" />
+										<div className="min-w-0">
+											<p className="text-xs text-muted-foreground">Redirect URI</p>
+											<p className="text-foreground truncate">{provider.redirectUri}</p>
+										</div>
+									</div>
+									<div className="flex items-center gap-2 rounded-lg border border-border/50 bg-card/30 p-3 sm:col-span-2">
+										<Settings className="h-4 w-4 text-muted-foreground shrink-0" />
+										<div className="min-w-0">
+											<p className="text-xs text-muted-foreground">Scopes</p>
+											<p className="text-foreground">{provider.scopes}</p>
+										</div>
+									</div>
+								</div>
+							</div>
 						)}
-					</div>
+					</GlassmorphicCard>
 				)}
-			</CardContent>
-		</Card>
+			</div>
+		</PremiumSection>
 	);
 };

@@ -93,6 +93,8 @@ export const useInfiniteRecommendationsQuery = (
 		queryFn: ({ pageParam = 1 }) => fetchRecommendations({ ...params, page: pageParam as number }),
 		enabled,
 		staleTime: 5 * 60 * 1000, // 5 minutes
+		gcTime: 1000 * 60 * 2, // 2 minutes - shorter for infinite queries to prevent memory buildup
+		maxPages: 5, // Limit accumulated pages to prevent memory leaks
 		getNextPageParam: (lastPage) => {
 			if (lastPage.page < lastPage.totalPages) {
 				return lastPage.page + 1;

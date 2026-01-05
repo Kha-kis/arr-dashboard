@@ -1,15 +1,24 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Alert, AlertDescription } from "../../../components/ui";
-import { Button } from "../../../components/ui/button";
 import {
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
-} from "../../../components/ui/card";
+	Monitor,
+	Smartphone,
+	Tablet,
+	RefreshCw,
+	Clock,
+	Wifi,
+	AlertCircle,
+	Shield,
+	Check,
+	X,
+	Loader2,
+	Info,
+} from "lucide-react";
+import { Button } from "../../../components/ui/button";
+import { PremiumSection, GlassmorphicCard, PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
+import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 import {
 	type DeviceType,
 	type SessionInfo,
@@ -17,71 +26,35 @@ import {
 	getSessions,
 	revokeSession,
 } from "../../../lib/api-client/auth";
+import { cn } from "../../../lib/utils";
 
 /**
- * Device type icon component
+ * Device type icon component using lucide-react
  */
 const DeviceIcon = ({ device, className }: { device: DeviceType; className?: string }) => {
 	switch (device) {
 		case "mobile":
-			return (
-				<svg
-					className={className}
-					fill="none"
-					stroke="currentColor"
-					viewBox="0 0 24 24"
-					aria-hidden="true"
-				>
-					<path
-						strokeLinecap="round"
-						strokeLinejoin="round"
-						strokeWidth={2}
-						d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z"
-					/>
-				</svg>
-			);
+			return <Smartphone className={className} />;
 		case "tablet":
-			return (
-				<svg
-					className={className}
-					fill="none"
-					stroke="currentColor"
-					viewBox="0 0 24 24"
-					aria-hidden="true"
-				>
-					<path
-						strokeLinecap="round"
-						strokeLinejoin="round"
-						strokeWidth={2}
-						d="M12 18h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-					/>
-				</svg>
-			);
-		default: // desktop or unknown
-			return (
-				<svg
-					className={className}
-					fill="none"
-					stroke="currentColor"
-					viewBox="0 0 24 24"
-					aria-hidden="true"
-				>
-					<path
-						strokeLinecap="round"
-						strokeLinejoin="round"
-						strokeWidth={2}
-						d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-					/>
-				</svg>
-			);
+			return <Tablet className={className} />;
+		default:
+			return <Monitor className={className} />;
 	}
 };
 
 /**
- * Sessions management section for account settings
- * Displays all active sessions for the current user with device info and revoke functionality
+ * Premium Sessions Section
+ *
+ * Session management with:
+ * - Glassmorphic session cards
+ * - Device-specific icons
+ * - Theme-aware styling
+ * - Staggered animations
  */
 export const SessionsSection = () => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
 	const [sessions, setSessions] = useState<SessionInfo[]>([]);
 	const [totalSessions, setTotalSessions] = useState(0);
 	const [loading, setLoading] = useState(true);
@@ -111,7 +84,6 @@ export const SessionsSection = () => {
 		setError(null);
 		try {
 			await revokeSession(sessionId);
-			// Reload sessions after successful revocation
 			await loadSessions(true);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to revoke session");
@@ -169,11 +141,9 @@ export const SessionsSection = () => {
 	};
 
 	const getDeviceLabel = (session: SessionInfo) => {
-		// Use parsed browser/OS info if available
 		if (session.browser && session.os && session.browser !== "Unknown") {
 			return `${session.browser} on ${session.os}`;
 		}
-		// Fallback to generic device type label
 		switch (session.device) {
 			case "mobile":
 				return "Mobile Device";
@@ -188,215 +158,284 @@ export const SessionsSection = () => {
 
 	if (loading) {
 		return (
-			<Card>
-				<CardHeader>
-					<CardTitle>Active Sessions</CardTitle>
-					<CardDescription>Loading session information...</CardDescription>
-				</CardHeader>
-			</Card>
+			<PremiumSection
+				title="Active Sessions"
+				description="Loading session information..."
+				icon={Shield}
+			>
+				<div className="space-y-4">
+					<PremiumSkeleton className="h-24" />
+					<PremiumSkeleton className="h-32" />
+				</div>
+			</PremiumSection>
 		);
 	}
 
 	return (
-		<Card>
-			<CardHeader>
-				<div className="flex items-center justify-between">
-					<div>
-						<CardTitle>Active Sessions</CardTitle>
-						<CardDescription>
-							View and manage all devices where you&apos;re currently signed in. You can revoke
-							access for any session except your current one.
-						</CardDescription>
-					</div>
-					<Button
-						variant="secondary"
-						size="sm"
-						onClick={() => loadSessions(true)}
-						disabled={refreshing}
-					>
-						{refreshing ? "Refreshing..." : "Refresh"}
-					</Button>
-				</div>
-			</CardHeader>
-			<CardContent className="space-y-6">
+		<PremiumSection
+			title="Active Sessions"
+			description="View and manage all devices where you're currently signed in. You can revoke access for any session except your current one."
+			icon={Shield}
+			action={
+				<Button
+					variant="outline"
+					size="sm"
+					onClick={() => loadSessions(true)}
+					disabled={refreshing}
+					className="gap-1.5"
+				>
+					<RefreshCw className={cn("h-3.5 w-3.5", refreshing && "animate-spin")} />
+					{refreshing ? "Refreshing..." : "Refresh"}
+				</Button>
+			}
+		>
+			<div className="space-y-6">
 				{/* Error Message */}
 				{error && (
-					<Alert variant="danger">
-						<AlertDescription>{error}</AlertDescription>
-					</Alert>
+					<div
+						className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm animate-in fade-in slide-in-from-bottom-2"
+						style={{
+							backgroundColor: SEMANTIC_COLORS.error.bg,
+							border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+							color: SEMANTIC_COLORS.error.text,
+						}}
+					>
+						<X className="h-4 w-4 shrink-0" />
+						<span>{error}</span>
+					</div>
 				)}
 
 				{/* Session Count Summary */}
-				<div className="rounded-lg border border-border bg-bg-subtle p-4">
-					<div className="flex items-center gap-3">
-						<div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/20">
-							<svg
-								className="h-5 w-5 text-primary"
-								fill="none"
-								stroke="currentColor"
-								viewBox="0 0 24 24"
-								aria-hidden="true"
-							>
-								<path
-									strokeLinecap="round"
-									strokeLinejoin="round"
-									strokeWidth={2}
-									d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
-								/>
-							</svg>
+				<GlassmorphicCard padding="md">
+					<div className="flex items-center gap-4">
+						<div
+							className="flex h-14 w-14 items-center justify-center rounded-2xl shrink-0"
+							style={{
+								background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+								border: `1px solid ${themeGradient.from}30`,
+							}}
+						>
+							<Monitor className="h-7 w-7" style={{ color: themeGradient.from }} />
 						</div>
 						<div>
-							<p className="text-2xl font-bold text-fg">{totalSessions}</p>
-							<p className="text-sm text-fg-muted">
+							<p
+								className="text-3xl font-bold"
+								style={{
+									background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+									WebkitBackgroundClip: "text",
+									WebkitTextFillColor: "transparent",
+								}}
+							>
+								{totalSessions}
+							</p>
+							<p className="text-sm text-muted-foreground">
 								{totalSessions === 1 ? "Active session" : "Active sessions"}
 							</p>
 						</div>
 					</div>
-				</div>
+				</GlassmorphicCard>
 
 				{/* Session List */}
-				{sessions.length > 0 ? (
+				<GlassmorphicCard padding="lg">
 					<div className="space-y-4">
-						<h3 className="text-sm font-semibold text-fg">Session Details</h3>
-						<div className="space-y-3">
-							{sessions.map((session) => (
-								<div
-									key={session.id}
-									className={`rounded-lg border p-4 ${
-										session.isCurrent
-											? "border-primary bg-primary/10"
-											: session.isExpired
-												? "border-red-500/50 bg-red-500/10"
-												: "border-border bg-bg-subtle"
-									}`}
-								>
-									<div className="flex items-start justify-between gap-4">
-										{/* Left: Device info */}
-										<div className="flex items-start gap-3 min-w-0 flex-1">
-											<div
-												className={`flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full ${
-													session.isCurrent
-														? "bg-primary/30"
-														: session.isExpired
-															? "bg-red-500/30"
-															: "bg-bg"
-												}`}
-											>
-												<DeviceIcon
-													device={session.device}
-													className={`h-5 w-5 ${
-														session.isCurrent
-															? "text-primary"
-															: session.isExpired
-																? "text-red-400"
-																: "text-fg-muted"
-													}`}
-												/>
-											</div>
-											<div className="min-w-0 flex-1">
-												<div className="flex flex-wrap items-center gap-2">
-													<p className="text-sm font-medium text-fg truncate">
-														{getDeviceLabel(session)}
-													</p>
-													{session.isCurrent && (
-														<span className="rounded bg-primary/30 px-2 py-0.5 text-xs font-medium text-primary flex-shrink-0">
-															Current
-														</span>
-													)}
-													{session.isExpired && (
-														<span className="rounded bg-red-500/30 px-2 py-0.5 text-xs font-medium text-red-400 flex-shrink-0">
-															Expired
-														</span>
-													)}
-												</div>
-												{/* IP Address */}
-												{session.ipAddress && (
-													<p className="mt-1 text-xs text-fg-muted">IP: {session.ipAddress}</p>
-												)}
-												{/* Time info */}
-												<div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted">
-													<span>Created: {formatDate(session.createdAt)}</span>
-													<span>Last active: {getRelativeTime(session.lastAccessedAt)}</span>
-												</div>
-											</div>
-										</div>
-
-										{/* Right: Expiry and actions */}
-										<div className="flex flex-col items-end gap-2 flex-shrink-0">
-											<div className="text-right">
-												<p
-													className={`text-sm font-medium ${
-														session.isExpired ? "text-red-400" : "text-fg-muted"
-													}`}
-												>
-													{getTimeRemaining(session.expiresAt)}
-												</p>
-											</div>
-											{/* Revoke button - only show for non-current sessions */}
-											{!session.isCurrent && (
-												<Button
-													variant="danger"
-													size="sm"
-													onClick={() => handleRevoke(session.id)}
-													disabled={revokingId === session.id}
-												>
-													{revokingId === session.id ? "Revoking..." : "Revoke"}
-												</Button>
-											)}
-										</div>
-									</div>
-								</div>
-							))}
+						<div className="flex items-center gap-3">
+							<div
+								className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+								style={{
+									background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+									border: `1px solid ${themeGradient.from}30`,
+								}}
+							>
+								<Shield className="h-5 w-5" style={{ color: themeGradient.from }} />
+							</div>
+							<div>
+								<h3 className="font-semibold text-foreground">Session Details</h3>
+								<p className="text-xs text-muted-foreground">
+									All currently active sessions for your account
+								</p>
+							</div>
 						</div>
-					</div>
-				) : (
-					<div className="rounded-lg border border-border bg-bg-subtle p-6 text-center">
-						<svg
-							className="mx-auto h-12 w-12 text-fg-muted"
-							fill="none"
-							stroke="currentColor"
-							viewBox="0 0 24 24"
-							aria-hidden="true"
-						>
-							<path
-								strokeLinecap="round"
-								strokeLinejoin="round"
-								strokeWidth={2}
-								d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"
+
+						{sessions.length > 0 ? (
+							<div className="space-y-3">
+								{sessions.map((session, index) => {
+									const isCurrentSession = session.isCurrent;
+									const isExpired = session.isExpired;
+
+									return (
+										<div
+											key={session.id}
+											className={cn(
+												"rounded-xl border p-4 transition-all duration-300 animate-in fade-in slide-in-from-bottom-2",
+												isCurrentSession
+													? "border-transparent"
+													: isExpired
+														? "border-transparent"
+														: "border-border/50 bg-card/30 hover:border-border/80"
+											)}
+											style={{
+												animationDelay: `${index * 50}ms`,
+												animationFillMode: "backwards",
+												...(isCurrentSession && {
+													background: `linear-gradient(135deg, ${themeGradient.from}10, ${themeGradient.to}10)`,
+													border: `1px solid ${themeGradient.from}30`,
+												}),
+												...(isExpired && {
+													background: `linear-gradient(135deg, ${SEMANTIC_COLORS.error.from}10, ${SEMANTIC_COLORS.error.to}10)`,
+													border: `1px solid ${SEMANTIC_COLORS.error.from}30`,
+												}),
+											}}
+										>
+											<div className="flex items-start justify-between gap-4">
+												{/* Left: Device info */}
+												<div className="flex items-start gap-3 min-w-0 flex-1">
+													<div
+														className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+														style={{
+															background: isCurrentSession
+																? `linear-gradient(135deg, ${themeGradient.from}30, ${themeGradient.to}30)`
+																: isExpired
+																	? `linear-gradient(135deg, ${SEMANTIC_COLORS.error.from}20, ${SEMANTIC_COLORS.error.to}20)`
+																	: "rgba(var(--card), 0.5)",
+															border: isCurrentSession
+																? `1px solid ${themeGradient.from}40`
+																: isExpired
+																	? `1px solid ${SEMANTIC_COLORS.error.from}30`
+																	: "1px solid rgba(var(--border), 0.5)",
+														}}
+													>
+														<DeviceIcon
+															device={session.device}
+															className="h-5 w-5"
+															style={{
+																color: isCurrentSession
+																	? themeGradient.from
+																	: isExpired
+																		? SEMANTIC_COLORS.error.from
+																		: "var(--muted-foreground)",
+															} as React.CSSProperties}
+														/>
+													</div>
+													<div className="min-w-0 flex-1">
+														<div className="flex flex-wrap items-center gap-2">
+															<p className="text-sm font-medium text-foreground truncate">
+																{getDeviceLabel(session)}
+															</p>
+															{isCurrentSession && (
+																<span
+																	className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium shrink-0"
+																	style={{
+																		background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+																		color: "white",
+																	}}
+																>
+																	<Check className="h-3 w-3" />
+																	Current
+																</span>
+															)}
+															{isExpired && (
+																<span
+																	className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium shrink-0"
+																	style={{
+																		backgroundColor: SEMANTIC_COLORS.error.bg,
+																		color: SEMANTIC_COLORS.error.text,
+																		border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+																	}}
+																>
+																	<AlertCircle className="h-3 w-3" />
+																	Expired
+																</span>
+															)}
+														</div>
+														{/* IP Address */}
+														{session.ipAddress && (
+															<p className="mt-1 text-xs text-muted-foreground flex items-center gap-1.5">
+																<Wifi className="h-3 w-3" />
+																IP: {session.ipAddress}
+															</p>
+														)}
+														{/* Time info */}
+														<div className="mt-1.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+															<span className="flex items-center gap-1">
+																<Clock className="h-3 w-3" />
+																Created: {formatDate(session.createdAt)}
+															</span>
+															<span>Last active: {getRelativeTime(session.lastAccessedAt)}</span>
+														</div>
+													</div>
+												</div>
+
+												{/* Right: Expiry and actions */}
+												<div className="flex flex-col items-end gap-2 shrink-0">
+													<p
+														className={cn(
+															"text-sm font-medium",
+															isExpired ? "text-destructive" : "text-muted-foreground"
+														)}
+													>
+														{getTimeRemaining(session.expiresAt)}
+													</p>
+													{/* Revoke button - only show for non-current sessions */}
+													{!isCurrentSession && (
+														<Button
+															size="sm"
+															onClick={() => handleRevoke(session.id)}
+															disabled={revokingId === session.id}
+															className="gap-1.5"
+															style={{
+																background: `linear-gradient(135deg, ${SEMANTIC_COLORS.error.from}, ${SEMANTIC_COLORS.error.to})`,
+																boxShadow: `0 4px 12px -4px ${SEMANTIC_COLORS.error.glow}`,
+															}}
+														>
+															{revokingId === session.id ? (
+																<>
+																	<Loader2 className="h-3.5 w-3.5 animate-spin" />
+																	Revoking...
+																</>
+															) : (
+																"Revoke"
+															)}
+														</Button>
+													)}
+												</div>
+											</div>
+										</div>
+									);
+								})}
+							</div>
+						) : (
+							<PremiumEmptyState
+								icon={Monitor}
+								title="No active sessions found"
+								description="Unable to retrieve session information"
 							/>
-						</svg>
-						<p className="mt-4 text-sm text-fg-muted">No active sessions found</p>
+						)}
 					</div>
-				)}
+				</GlassmorphicCard>
 
 				{/* Info Box */}
-				<div className="rounded-lg border border-sky-500/30 bg-sky-500/10 p-4">
+				<GlassmorphicCard padding="md">
 					<div className="flex gap-3">
-						<svg
-							className="h-5 w-5 flex-shrink-0 text-sky-400"
-							fill="none"
-							stroke="currentColor"
-							viewBox="0 0 24 24"
-							aria-hidden="true"
+						<div
+							className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+							style={{
+								background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+								border: `1px solid ${themeGradient.from}30`,
+							}}
 						>
-							<path
-								strokeLinecap="round"
-								strokeLinejoin="round"
-								strokeWidth={2}
-								d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
-							/>
-						</svg>
-						<div className="text-sm text-sky-300">
-							<p className="font-medium">Session Security</p>
-							<p className="mt-1 text-sky-300/80">
+							<Info className="h-5 w-5" style={{ color: themeGradient.from }} />
+						</div>
+						<div className="text-sm">
+							<p className="font-semibold text-foreground">Session Security</p>
+							<p className="mt-1 text-muted-foreground">
 								If you see sessions you don&apos;t recognize, revoke them immediately and consider
 								changing your password. Each session shows the browser, operating system, and IP
 								address used at login time.
 							</p>
 						</div>
 					</div>
-				</div>
-			</CardContent>
-		</Card>
+				</GlassmorphicCard>
+			</div>
+		</PremiumSection>
 	);
 };

@@ -203,12 +203,15 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 				orderBy.sortTitle = "asc";
 		}
 
-		// Fetch paginated items
+		// Fetch items (limit=0 means fetch all for internal use like discover filtering)
+		const fetchAll = parsed.limit === 0;
 		const cachedItems = await app.prisma.libraryCache.findMany({
 			where,
 			orderBy,
-			skip: (parsed.page - 1) * parsed.limit,
-			take: parsed.limit,
+			...(fetchAll ? {} : {
+				skip: (parsed.page - 1) * parsed.limit,
+				take: parsed.limit,
+			}),
 		});
 
 		// Parse JSON data back to LibraryItem
@@ -262,10 +265,10 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 		const response: PaginatedLibraryResponse = {
 			items,
 			pagination: {
-				page: parsed.page,
-				limit: parsed.limit,
+				page: fetchAll ? 1 : parsed.page,
+				limit: fetchAll ? totalItems : parsed.limit,
 				totalItems,
-				totalPages: Math.ceil(totalItems / parsed.limit),
+				totalPages: fetchAll ? 1 : Math.ceil(totalItems / parsed.limit),
 			},
 			appliedFilters: {
 				search: parsed.search,

@@ -1,4 +1,8 @@
+"use client";
+
+import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 
 export interface LibraryBadgeProps {
 	children: React.ReactNode;
@@ -8,17 +12,33 @@ export interface LibraryBadgeProps {
 /**
  * Colored badge component for library items
  * Used to display status, monitoring state, and other attributes
+ * The "blue" tone uses the user's selected theme color
  */
-export const LibraryBadge = ({ children, tone }: LibraryBadgeProps) => (
-	<span
-		className={cn(
-			"inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs",
-			tone === "green" && "border-emerald-400/40 bg-emerald-500/10 text-emerald-200",
-			tone === "blue" && "border-sky-400/40 bg-sky-500/10 text-sky-200",
-			tone === "red" && "border-red-400/40 bg-red-500/10 text-red-200",
-			tone === "yellow" && "border-yellow-400/40 bg-yellow-500/10 text-yellow-200",
-		)}
-	>
-		{children}
-	</span>
-);
+export const LibraryBadge = ({ children, tone }: LibraryBadgeProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
+	// Theme-aware styling for "blue" (info) tone
+	const blueStyle =
+		tone === "blue"
+			? {
+					borderColor: `${themeGradient.from}66`,
+					backgroundColor: themeGradient.fromLight,
+					color: themeGradient.from,
+				}
+			: undefined;
+
+	return (
+		<span
+			className={cn(
+				"inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs",
+				tone === "green" && "border-emerald-400/40 bg-emerald-500/10 text-emerald-200",
+				tone === "red" && "border-red-400/40 bg-red-500/10 text-red-200",
+				tone === "yellow" && "border-yellow-400/40 bg-yellow-500/10 text-yellow-200",
+			)}
+			style={blueStyle}
+		>
+			{children}
+		</span>
+	);
+};

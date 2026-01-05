@@ -1,14 +1,24 @@
 "use client";
 
+/**
+ * Template Diff Modal
+ *
+ * Premium modal for reviewing changes between local template and TRaSH Guides with:
+ * - SEMANTIC_COLORS for change type indicators
+ * - Theme-aware styling using THEME_GRADIENTS
+ * - Glassmorphic content cards
+ */
+
 import { useState } from "react";
 import {
-	Dialog,
-	DialogHeader,
-	DialogTitle,
-	DialogDescription,
-	DialogContent,
-	DialogFooter,
-} from "../../../components/ui/dialog";
+	LegacyDialog,
+	LegacyDialogHeader,
+	LegacyDialogTitle,
+	LegacyDialogDescription,
+	LegacyDialogContent,
+	LegacyDialogFooter,
+	LegacyDialogClose,
+} from "../../../components/ui";
 import { Skeleton, Button } from "../../../components/ui";
 import {
 	AlertCircle,
@@ -16,7 +26,6 @@ import {
 	Minus,
 	Edit,
 	Check,
-	X,
 	GitCompare,
 	ChevronDown,
 	ChevronRight,
@@ -24,11 +33,14 @@ import {
 	TrendingUp,
 	History,
 	Clock,
+	Loader2,
 } from "lucide-react";
 import { useTemplateDiff, useSyncTemplate } from "../../../hooks/api/useTemplateUpdates";
 import { cn } from "../../../lib/utils";
 import { toast } from "sonner";
 import type { CustomFormatDiffItem } from "../../../lib/api-client/trash-guides";
+import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 
 /** Maps UI strategy names to API strategy names */
 function mapStrategyToApiStrategy(selectedStrategy: string): "keep_custom" | "replace" | "merge" {
@@ -59,6 +71,8 @@ export const TemplateDiffModal = ({
 	templateName,
 	onSyncSuccess,
 }: TemplateDiffModalProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const { data, isLoading, error } = useTemplateDiff(templateId);
 	const syncTemplate = useSyncTemplate();
 	const [selectedStrategy, setSelectedStrategy] = useState<MergeStrategy>("smart_merge");
@@ -99,30 +113,46 @@ export const TemplateDiffModal = ({
 	const getChangeTypeIcon = (changeType: string) => {
 		switch (changeType) {
 			case "added":
-				return <Plus className="h-4 w-4 text-green-600 dark:text-green-400" />;
+				return <Plus className="h-4 w-4" style={{ color: SEMANTIC_COLORS.success.from }} />;
 			case "removed":
-				return <Minus className="h-4 w-4 text-red-600 dark:text-red-400" />;
+				return <Minus className="h-4 w-4" style={{ color: SEMANTIC_COLORS.error.from }} />;
 			case "modified":
-				return <Edit className="h-4 w-4 text-amber-600 dark:text-amber-400" />;
+				return <Edit className="h-4 w-4" style={{ color: SEMANTIC_COLORS.warning.from }} />;
 			case "unchanged":
-				return <Check className="h-4 w-4 text-gray-600 dark:text-gray-400" />;
+				return <Check className="h-4 w-4 text-muted-foreground" />;
 			default:
 				return null;
 		}
 	};
 
-	const getChangeTypeColor = (changeType: string) => {
+	const getChangeTypeStyles = (changeType: string) => {
 		switch (changeType) {
 			case "added":
-				return "bg-green-500/10 border-green-500/30 text-green-700 dark:text-green-300";
+				return {
+					backgroundColor: SEMANTIC_COLORS.success.bg,
+					borderColor: SEMANTIC_COLORS.success.border,
+					color: SEMANTIC_COLORS.success.text,
+				};
 			case "removed":
-				return "bg-red-500/10 border-red-500/30 text-red-700 dark:text-red-300";
+				return {
+					backgroundColor: SEMANTIC_COLORS.error.bg,
+					borderColor: SEMANTIC_COLORS.error.border,
+					color: SEMANTIC_COLORS.error.text,
+				};
 			case "modified":
-				return "bg-amber-500/10 border-amber-500/30 text-amber-700 dark:text-amber-300";
+				return {
+					backgroundColor: SEMANTIC_COLORS.warning.bg,
+					borderColor: SEMANTIC_COLORS.warning.border,
+					color: SEMANTIC_COLORS.warning.text,
+				};
 			case "unchanged":
-				return "bg-gray-500/10 border-gray-500/30 text-gray-700 dark:text-gray-300";
+				return {
+					backgroundColor: "rgba(100, 116, 139, 0.1)",
+					borderColor: "rgba(100, 116, 139, 0.3)",
+					color: "#94a3b8",
+				};
 			default:
-				return "";
+				return {};
 		}
 	};
 
@@ -156,53 +186,75 @@ export const TemplateDiffModal = ({
 	};
 
 	return (
-		<Dialog open={open} onOpenChange={onClose} size="xl">
-			<DialogHeader>
-				<DialogTitle>
-					<div className="flex items-center gap-2">
-						{isHistorical ? (
-							<History className="h-5 w-5 text-green-600 dark:text-green-400" />
-						) : (
-							<GitCompare className="h-5 w-5" />
-						)}
-						{isHistorical ? "Recently Applied Changes" : "Pending Changes"}
-					</div>
-				</DialogTitle>
-				<DialogDescription>
-					{isHistorical ? (
-						<span className="flex items-center gap-2">
-							<span>Changes that were auto-synced{templateName && ` for "${templateName}"`}</span>
-							{data?.data?.historicalSyncTimestamp && (
-								<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-green-500/20 text-green-600 dark:text-green-400">
-									<Clock className="h-3 w-3" />
-									{formatRelativeTime(data.data.historicalSyncTimestamp)}
-								</span>
-							)}
-						</span>
+		<LegacyDialog open={open} onOpenChange={onClose} size="xl">
+			<LegacyDialogClose onClick={onClose} />
+			<LegacyDialogHeader
+				icon={
+					isHistorical ? (
+						<History className="h-6 w-6" style={{ color: SEMANTIC_COLORS.success.from }} />
 					) : (
-						<>
-							Review changes between your template and the latest TRaSH Guides
-							{templateName && ` for "${templateName}"`}
-						</>
-					)}
-				</DialogDescription>
-			</DialogHeader>
+						<GitCompare className="h-6 w-6" style={{ color: themeGradient.from }} />
+					)
+				}
+			>
+				<div>
+					<LegacyDialogTitle>
+						{isHistorical ? "Recently Applied Changes" : "Pending Changes"}
+					</LegacyDialogTitle>
+					<LegacyDialogDescription>
+						{isHistorical ? (
+							<span className="flex items-center gap-2 flex-wrap">
+								<span>Changes that were auto-synced{templateName && ` for "${templateName}"`}</span>
+								{data?.data?.historicalSyncTimestamp && (
+									<span
+										className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium"
+										style={{
+											backgroundColor: SEMANTIC_COLORS.success.bg,
+											border: `1px solid ${SEMANTIC_COLORS.success.border}`,
+											color: SEMANTIC_COLORS.success.text,
+										}}
+									>
+										<Clock className="h-3 w-3" />
+										{formatRelativeTime(data.data.historicalSyncTimestamp)}
+									</span>
+								)}
+							</span>
+						) : (
+							<>
+								Review changes between your template and the latest TRaSH Guides
+								{templateName && ` for "${templateName}"`}
+							</>
+						)}
+					</LegacyDialogDescription>
+				</div>
+			</LegacyDialogHeader>
 
-			<DialogContent className="space-y-4">
+			<LegacyDialogContent className="space-y-5">
 				{isLoading && (
 					<div className="space-y-4">
-						<Skeleton className="h-24 w-full" />
-						<Skeleton className="h-48 w-full" />
+						<Skeleton className="h-24 w-full rounded-xl" />
+						<Skeleton className="h-48 w-full rounded-xl" />
 					</div>
 				)}
 
 				{error && (
-					<div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4">
+					<div
+						className="rounded-xl p-4"
+						style={{
+							backgroundColor: SEMANTIC_COLORS.error.bg,
+							border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+						}}
+					>
 						<div className="flex items-start gap-3">
-							<AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
+							<AlertCircle
+								className="h-5 w-5 mt-0.5 shrink-0"
+								style={{ color: SEMANTIC_COLORS.error.from }}
+							/>
 							<div>
-								<p className="text-sm font-medium text-fg">Failed to load diff</p>
-								<p className="text-sm text-fg-muted mt-1">
+								<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
+									Failed to load diff
+								</p>
+								<p className="text-sm mt-1 opacity-80" style={{ color: SEMANTIC_COLORS.error.text }}>
 									{error instanceof Error ? error.message : "Please try again"}
 								</p>
 							</div>
@@ -214,44 +266,50 @@ export const TemplateDiffModal = ({
 					<>
 						{/* Historical Badge */}
 						{isHistorical && (
-							<div className="rounded-lg border border-green-500/30 bg-green-500/10 p-3">
+							<div
+								className="rounded-xl p-4"
+								style={{
+									backgroundColor: SEMANTIC_COLORS.success.bg,
+									border: `1px solid ${SEMANTIC_COLORS.success.border}`,
+								}}
+							>
 								<div className="flex items-center gap-2">
-									<History className="h-4 w-4 text-green-600 dark:text-green-400 shrink-0" />
-									<span className="text-sm font-medium text-green-700 dark:text-green-300">
+									<History className="h-4 w-4 shrink-0" style={{ color: SEMANTIC_COLORS.success.from }} />
+									<span className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.success.text }}>
 										These changes were already applied via auto-sync
 									</span>
 								</div>
-								<p className="text-xs text-green-600/80 dark:text-green-400/80 mt-1 ml-6">
+								<p className="text-xs mt-1 ml-6 opacity-80" style={{ color: SEMANTIC_COLORS.success.text }}>
 									This is a historical view of changes that were synced automatically. No further action is needed.
 								</p>
 							</div>
 						)}
 
 						{/* Summary Statistics */}
-						<div className="rounded-lg border border-border bg-bg-subtle p-4">
-							<h3 className="text-sm font-medium text-fg mb-3">Change Summary</h3>
+						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+							<h3 className="text-sm font-semibold text-foreground mb-3">Change Summary</h3>
 							<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
 								<div className="space-y-1">
-									<p className="text-xs text-fg-muted">Total Changes</p>
-									<p className="text-2xl font-semibold text-fg">
+									<p className="text-xs text-muted-foreground">Total Changes</p>
+									<p className="text-2xl font-semibold text-foreground">
 										{data.data.summary.totalChanges}
 									</p>
 								</div>
 								<div className="space-y-1">
-									<p className="text-xs text-green-700 dark:text-green-300">Added</p>
-									<p className="text-2xl font-semibold text-green-600 dark:text-green-400">
+									<p className="text-xs" style={{ color: SEMANTIC_COLORS.success.text }}>Added</p>
+									<p className="text-2xl font-semibold" style={{ color: SEMANTIC_COLORS.success.from }}>
 										{data.data.summary.addedCFs}
 									</p>
 								</div>
 								<div className="space-y-1">
-									<p className="text-xs text-amber-700 dark:text-amber-300">Modified</p>
-									<p className="text-2xl font-semibold text-amber-600 dark:text-amber-400">
+									<p className="text-xs" style={{ color: SEMANTIC_COLORS.warning.text }}>Modified</p>
+									<p className="text-2xl font-semibold" style={{ color: SEMANTIC_COLORS.warning.from }}>
 										{data.data.summary.modifiedCFs}
 									</p>
 								</div>
 								<div className="space-y-1">
-									<p className="text-xs text-red-700 dark:text-red-300">Removed</p>
-									<p className="text-2xl font-semibold text-red-600 dark:text-red-400">
+									<p className="text-xs" style={{ color: SEMANTIC_COLORS.error.text }}>Removed</p>
+									<p className="text-2xl font-semibold" style={{ color: SEMANTIC_COLORS.error.from }}>
 										{data.data.summary.removedCFs}
 									</p>
 								</div>
@@ -259,20 +317,20 @@ export const TemplateDiffModal = ({
 
 							{/* Suggestions Row */}
 							{(data.data.suggestedAdditions?.length || data.data.suggestedScoreChanges?.length) && (
-								<div className="mt-3 pt-3 border-t border-border">
+								<div className="mt-3 pt-3 border-t border-border/30">
 									<div className="grid grid-cols-2 gap-4">
 										{data.data.suggestedAdditions?.length ? (
 											<div className="flex items-center gap-2 text-sm">
-												<Lightbulb className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-												<span className="text-fg-muted">
+												<Lightbulb className="h-4 w-4" style={{ color: themeGradient.from }} />
+												<span className="text-muted-foreground">
 													{data.data.suggestedAdditions.length} suggested addition{data.data.suggestedAdditions.length !== 1 ? 's' : ''}
 												</span>
 											</div>
 										) : null}
 										{data.data.suggestedScoreChanges?.length ? (
 											<div className="flex items-center gap-2 text-sm">
-												<TrendingUp className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-												<span className="text-fg-muted">
+												<TrendingUp className="h-4 w-4" style={{ color: SEMANTIC_COLORS.info.from }} />
+												<span className="text-muted-foreground">
 													{data.data.suggestedScoreChanges.length} score update{data.data.suggestedScoreChanges.length !== 1 ? 's' : ''}
 												</span>
 											</div>
@@ -282,10 +340,10 @@ export const TemplateDiffModal = ({
 							)}
 
 							{data.data.hasUserModifications && (
-								<div className="mt-3 pt-3 border-t border-border">
+								<div className="mt-3 pt-3 border-t border-border/30">
 									<div className="flex items-center gap-2 text-sm">
-										<AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-										<span className="text-fg-muted">
+										<AlertCircle className="h-4 w-4" style={{ color: SEMANTIC_COLORS.warning.from }} />
+										<span className="text-muted-foreground">
 											This template has custom modifications
 										</span>
 									</div>
@@ -296,7 +354,7 @@ export const TemplateDiffModal = ({
 						{/* Merge Strategy Selection - hidden for historical views */}
 						{!isHistorical && (
 							<div className="space-y-3">
-								<h3 className="text-sm font-medium text-fg">Merge Strategy</h3>
+								<h3 className="text-sm font-semibold text-foreground">Merge Strategy</h3>
 								<div className="grid gap-3">
 									{(["keep_custom", "sync_new", "smart_merge"] as MergeStrategy[]).map(
 										(strategy) => (
@@ -304,28 +362,37 @@ export const TemplateDiffModal = ({
 												key={strategy}
 												type="button"
 												onClick={() => setSelectedStrategy(strategy)}
-												className={cn(
-													"text-left rounded-lg border p-4 transition-all",
-													selectedStrategy === strategy
-														? "border-primary bg-primary/10 ring-2 ring-primary/20"
-														: "border-border hover:border-border-hover",
-												)}
+												className="text-left rounded-xl border p-4 transition-all"
+												style={{
+													borderColor: selectedStrategy === strategy
+														? themeGradient.from
+														: "hsl(var(--border) / 0.5)",
+													backgroundColor: selectedStrategy === strategy
+														? `${themeGradient.from}10`
+														: "transparent",
+													boxShadow: selectedStrategy === strategy
+														? `0 0 0 1px ${themeGradient.from}`
+														: undefined,
+												}}
 											>
 												<div className="flex items-start gap-3">
 													<div className="mt-0.5">
 														{selectedStrategy === strategy ? (
-															<div className="h-5 w-5 rounded-full bg-primary flex items-center justify-center">
-																<Check className="h-3 w-3 text-primary-fg" />
+															<div
+																className="h-5 w-5 rounded-full flex items-center justify-center"
+																style={{ background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})` }}
+															>
+																<Check className="h-3 w-3 text-white" />
 															</div>
 														) : (
-															<div className="h-5 w-5 rounded-full border-2 border-border" />
+															<div className="h-5 w-5 rounded-full border-2 border-border/50" />
 														)}
 													</div>
 													<div className="flex-1 min-w-0">
-														<p className="text-sm font-medium text-fg capitalize">
+														<p className="text-sm font-medium text-foreground capitalize">
 															{strategy.replace(/_/g, " ")}
 														</p>
-														<p className="text-xs text-fg-muted mt-1">
+														<p className="text-xs text-muted-foreground mt-1">
 															{getStrategyDescription(strategy)}
 														</p>
 													</div>
@@ -340,7 +407,7 @@ export const TemplateDiffModal = ({
 						{/* Custom Format Changes */}
 						{data.data.customFormatDiffs.length > 0 && (
 							<div className="space-y-3">
-								<h3 className="text-sm font-medium text-fg">
+								<h3 className="text-sm font-semibold text-foreground">
 									Custom Format Changes ({data.data.customFormatDiffs.filter(d => d.changeType !== "unchanged").length})
 								</h3>
 								<div className="space-y-2 max-h-80 overflow-y-auto pr-1">
@@ -353,50 +420,52 @@ export const TemplateDiffModal = ({
 												diff.currentScore !== undefined ||
 												diff.newScore !== undefined;
 											const isExpanded = expandedItems.has(diff.trashId);
+											const styles = getChangeTypeStyles(diff.changeType);
 
 											return (
 												<div
 													key={diff.trashId}
-													className={cn(
-														"rounded-lg border",
-														getChangeTypeColor(diff.changeType),
-													)}
+													className="rounded-xl border overflow-hidden"
+													style={{
+														backgroundColor: styles.backgroundColor,
+														borderColor: styles.borderColor,
+													}}
 												>
 													<button
 														type="button"
 														onClick={() => hasDetails && toggleExpanded(diff.trashId)}
 														className={cn(
 															"w-full text-left p-3",
-															hasDetails && "cursor-pointer hover:bg-black/5 dark:hover:bg-white/5"
+															hasDetails && "cursor-pointer hover:opacity-80"
 														)}
 														disabled={!hasDetails}
 													>
 														<div className="flex items-center justify-between gap-3">
 															<div className="flex items-center gap-2 flex-1 min-w-0">
 																{getChangeTypeIcon(diff.changeType)}
-																<span className="text-sm font-medium truncate">
+																<span className="text-sm font-medium truncate" style={{ color: styles.color }}>
 																	{diff.name}
 																</span>
 																{diff.currentScore !== undefined &&
 																	diff.changeType !== "added" &&
 																	!(diff.changeType === "modified" && diff.currentScore !== diff.newScore) && (
-																	<span className="text-xs opacity-70 shrink-0">
+																	<span className="text-xs opacity-70 shrink-0" style={{ color: styles.color }}>
 																		Score: {diff.currentScore}
 																	</span>
 																)}
 																{diff.newScore !== undefined && diff.changeType === "added" && (
-																	<span className="text-xs opacity-70 shrink-0">
+																	<span className="text-xs opacity-70 shrink-0" style={{ color: styles.color }}>
 																		Score: {diff.newScore}
 																	</span>
 																)}
 																{diff.changeType === "modified" && diff.currentScore !== diff.newScore && (
-																	<span className="text-xs opacity-70 shrink-0">
+																	<span className="text-xs opacity-70 shrink-0" style={{ color: styles.color }}>
 																		{diff.currentScore} → {diff.newScore}
 																	</span>
 																)}
 															</div>
 															{hasDetails && (
-																<span className="shrink-0">
+																<span className="shrink-0" style={{ color: styles.color }}>
 																	{isExpanded ? (
 																		<ChevronDown className="h-4 w-4" />
 																	) : (
@@ -408,13 +477,16 @@ export const TemplateDiffModal = ({
 													</button>
 
 													{isExpanded && hasDetails && (
-														<div className="px-3 pb-3 space-y-2 text-xs border-t border-current/20">
+														<div
+															className="px-3 pb-3 space-y-2 text-xs border-t"
+															style={{ borderColor: styles.borderColor, color: styles.color }}
+														>
 															{diff.changeType === "removed" && diff.currentSpecifications && (
 																<div className="pt-2">
 																	<p className="font-medium opacity-80 mb-1">
 																		Specifications (will be removed):
 																	</p>
-																	<pre className="p-2 rounded bg-black/10 dark:bg-white/10 overflow-x-auto text-[10px] leading-relaxed">
+																	<pre className="p-2 rounded-lg bg-black/10 overflow-x-auto text-[10px] leading-relaxed">
 																		{JSON.stringify(diff.currentSpecifications, null, 2)}
 																	</pre>
 																</div>
@@ -424,7 +496,7 @@ export const TemplateDiffModal = ({
 																	<p className="font-medium opacity-80 mb-1">
 																		Specifications (will be added):
 																	</p>
-																	<pre className="p-2 rounded bg-black/10 dark:bg-white/10 overflow-x-auto text-[10px] leading-relaxed">
+																	<pre className="p-2 rounded-lg bg-black/10 overflow-x-auto text-[10px] leading-relaxed">
 																		{JSON.stringify(diff.newSpecifications, null, 2)}
 																	</pre>
 																</div>
@@ -434,7 +506,7 @@ export const TemplateDiffModal = ({
 																	{diff.currentSpecifications && (
 																		<div className="pt-2">
 																			<p className="font-medium opacity-80 mb-1">Current:</p>
-																			<pre className="p-2 rounded bg-black/10 dark:bg-white/10 overflow-x-auto text-[10px] leading-relaxed">
+																			<pre className="p-2 rounded-lg bg-black/10 overflow-x-auto text-[10px] leading-relaxed">
 																				{JSON.stringify(diff.currentSpecifications, null, 2)}
 																			</pre>
 																		</div>
@@ -442,7 +514,7 @@ export const TemplateDiffModal = ({
 																	{diff.newSpecifications && (
 																		<div>
 																			<p className="font-medium opacity-80 mb-1">New:</p>
-																			<pre className="p-2 rounded bg-black/10 dark:bg-white/10 overflow-x-auto text-[10px] leading-relaxed">
+																			<pre className="p-2 rounded-lg bg-black/10 overflow-x-auto text-[10px] leading-relaxed">
 																				{JSON.stringify(diff.newSpecifications, null, 2)}
 																			</pre>
 																		</div>
@@ -460,12 +532,12 @@ export const TemplateDiffModal = ({
 
 						{/* No Changes Message */}
 						{data.data.summary.totalChanges === 0 && !data.data.suggestedAdditions?.length && !data.data.suggestedScoreChanges?.length && (
-							<div className="rounded-lg border border-border bg-bg-subtle p-8 text-center">
-								<Check className="h-12 w-12 text-green-600 dark:text-green-400 mx-auto mb-3" />
-								<p className="text-sm font-medium text-fg">
+							<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-8 text-center">
+								<Check className="h-12 w-12 mx-auto mb-3" style={{ color: SEMANTIC_COLORS.success.from }} />
+								<p className="text-sm font-medium text-foreground">
 									{isHistorical ? "No changes recorded" : "Template is up to date"}
 								</p>
-								<p className="text-xs text-fg-muted mt-1">
+								<p className="text-xs text-muted-foreground mt-1">
 									{isHistorical
 										? "No detailed change information is available for this sync operation"
 										: "No changes between your template and latest TRaSH Guides"}
@@ -477,12 +549,12 @@ export const TemplateDiffModal = ({
 						{data.data.suggestedAdditions && data.data.suggestedAdditions.length > 0 && (
 							<div className="space-y-3">
 								<div className="flex items-center gap-2">
-									<Lightbulb className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-									<h3 className="text-sm font-medium text-fg">
+									<Lightbulb className="h-4 w-4" style={{ color: themeGradient.from }} />
+									<h3 className="text-sm font-semibold text-foreground">
 										Suggested Additions ({data.data.suggestedAdditions.length})
 									</h3>
 								</div>
-								<p className="text-xs text-fg-muted">
+								<p className="text-xs text-muted-foreground">
 									These Custom Formats are available in your CF Groups or Quality Profile but not yet in your template.
 									Edit the template to add them if desired.
 								</p>
@@ -490,19 +562,29 @@ export const TemplateDiffModal = ({
 									{data.data.suggestedAdditions.map((suggestion) => (
 										<div
 											key={suggestion.trashId}
-											className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-3"
+											className="rounded-xl border p-3"
+											style={{
+												borderColor: `${themeGradient.from}30`,
+												backgroundColor: `${themeGradient.from}08`,
+											}}
 										>
 											<div className="flex items-center justify-between gap-3">
 												<div className="flex items-center gap-2 flex-1 min-w-0">
-													<Plus className="h-4 w-4 text-blue-600 dark:text-blue-400 shrink-0" />
-													<span className="text-sm font-medium text-blue-700 dark:text-blue-300 truncate">
+													<Plus className="h-4 w-4 shrink-0" style={{ color: themeGradient.from }} />
+													<span className="text-sm font-medium truncate" style={{ color: themeGradient.from }}>
 														{suggestion.name}
 													</span>
-													<span className="text-xs text-blue-600/70 dark:text-blue-400/70 shrink-0">
+													<span className="text-xs shrink-0 opacity-70" style={{ color: themeGradient.from }}>
 														Score: {suggestion.recommendedScore}
 													</span>
 												</div>
-												<span className="text-xs px-2 py-0.5 rounded bg-blue-500/20 text-blue-700 dark:text-blue-300 shrink-0">
+												<span
+													className="text-xs px-2 py-0.5 rounded-full shrink-0"
+													style={{
+														backgroundColor: `${themeGradient.from}20`,
+														color: themeGradient.from,
+													}}
+												>
 													{suggestion.source === "cf_group"
 														? `From: ${suggestion.sourceGroupName}`
 														: `From: ${suggestion.sourceProfileName}`}
@@ -518,12 +600,12 @@ export const TemplateDiffModal = ({
 						{data.data.suggestedScoreChanges && data.data.suggestedScoreChanges.length > 0 && (
 							<div className="space-y-3">
 								<div className="flex items-center gap-2">
-									<TrendingUp className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-									<h3 className="text-sm font-medium text-fg">
+									<TrendingUp className="h-4 w-4" style={{ color: SEMANTIC_COLORS.info.from }} />
+									<h3 className="text-sm font-semibold text-foreground">
 										Suggested Score Updates ({data.data.suggestedScoreChanges.length})
 									</h3>
 								</div>
-								<p className="text-xs text-fg-muted">
+								<p className="text-xs text-muted-foreground">
 									TRaSH Guides recommends different scores for these Custom Formats.
 									Edit the template to update scores if desired.
 								</p>
@@ -531,24 +613,34 @@ export const TemplateDiffModal = ({
 									{data.data.suggestedScoreChanges.map((change) => (
 										<div
 											key={change.trashId}
-											className="rounded-lg border border-purple-500/30 bg-purple-500/10 p-3"
+											className="rounded-xl border p-3"
+											style={{
+												borderColor: SEMANTIC_COLORS.info.border,
+												backgroundColor: SEMANTIC_COLORS.info.bg,
+											}}
 										>
 											<div className="flex items-center justify-between gap-3">
 												<div className="flex items-center gap-2 flex-1 min-w-0">
-													<Edit className="h-4 w-4 text-purple-600 dark:text-purple-400 shrink-0" />
-													<span className="text-sm font-medium text-purple-700 dark:text-purple-300 truncate">
+													<Edit className="h-4 w-4 shrink-0" style={{ color: SEMANTIC_COLORS.info.from }} />
+													<span className="text-sm font-medium truncate" style={{ color: SEMANTIC_COLORS.info.text }}>
 														{change.name}
 													</span>
 												</div>
 												<div className="flex items-center gap-2 shrink-0">
-													<span className="text-xs text-purple-600/70 dark:text-purple-400/70">
+													<span className="text-xs opacity-70" style={{ color: SEMANTIC_COLORS.info.text }}>
 														{change.currentScore}
 													</span>
-													<span className="text-xs text-purple-600 dark:text-purple-400">→</span>
-													<span className="text-xs font-medium text-purple-700 dark:text-purple-300">
+													<span className="text-xs" style={{ color: SEMANTIC_COLORS.info.from }}>→</span>
+													<span className="text-xs font-medium" style={{ color: SEMANTIC_COLORS.info.text }}>
 														{change.recommendedScore}
 													</span>
-													<span className="text-xs px-2 py-0.5 rounded bg-purple-500/20 text-purple-700 dark:text-purple-300">
+													<span
+														className="text-xs px-2 py-0.5 rounded-full"
+														style={{
+															backgroundColor: `${SEMANTIC_COLORS.info.from}20`,
+															color: SEMANTIC_COLORS.info.text,
+														}}
+													>
 														{change.scoreSet}
 													</span>
 												</div>
@@ -560,28 +652,41 @@ export const TemplateDiffModal = ({
 						)}
 					</>
 				)}
-			</DialogContent>
+			</LegacyDialogContent>
 
-			<DialogFooter>
-				<Button variant="ghost" onClick={onClose}>
+			<LegacyDialogFooter>
+				<Button variant="outline" onClick={onClose} className="rounded-xl">
 					{isHistorical ? "Close" : "Cancel"}
 				</Button>
 				{!isHistorical && (
 					<Button
-						variant="primary"
 						onClick={handleSync}
 						disabled={
 							syncTemplate.isPending ||
 							!data?.data ||
 							data.data.summary.totalChanges === 0
 						}
+						className="gap-2 rounded-xl font-medium"
+						style={
+							data?.data && data.data.summary.totalChanges > 0
+								? {
+										background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+										boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
+									}
+								: undefined
+						}
 					>
-						{syncTemplate.isPending
-							? "Syncing..."
-							: `Sync with ${selectedStrategy.replace(/_/g, " ")}`}
+						{syncTemplate.isPending ? (
+							<>
+								<Loader2 className="h-4 w-4 animate-spin" />
+								Syncing...
+							</>
+						) : (
+							`Sync with ${selectedStrategy.replace(/_/g, " ")}`
+						)}
 					</Button>
 				)}
-			</DialogFooter>
-		</Dialog>
+			</LegacyDialogFooter>
+		</LegacyDialog>
 	);
 };

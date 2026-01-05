@@ -7,19 +7,35 @@ import {
 	useTestIndexerMutation,
 	useUpdateIndexerMutation,
 } from "../../../hooks/api/useSearch";
-import { Button } from "../../../components/ui/button";
-import { Alert, AlertDescription, Skeleton, Pagination } from "../../../components/ui";
+import { Pagination } from "../../../components/ui";
 import { computeStats } from "../lib/indexers-utils";
 import { IndexerStatsGrid } from "./indexer-stats-grid";
 import { EmptyIndexersCard } from "./empty-indexers-card";
 import { IndexerInstanceCard } from "./indexer-instance-card";
+import {
+	RefreshCw,
+	Loader2,
+	AlertCircle,
+	CheckCircle2,
+	XCircle,
+	Search,
+} from "lucide-react";
+import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 
 /**
- * Main client component for managing Prowlarr indexers
- * Displays indexer statistics, allows testing indexers, and editing their configuration
- * @returns React component displaying indexers management interface
+ * Premium Indexers Client
+ *
+ * Features:
+ * - Theme-aware gradient header
+ * - Glassmorphic feedback alerts
+ * - Animated loading states
+ * - Premium pagination styling
  */
 export const IndexersClient = () => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
 	const { data, isLoading, error, refetch, isFetching } = useSearchIndexersQuery();
 	const testMutation = useTestIndexerMutation();
 	const updateMutation = useUpdateIndexerMutation();
@@ -112,93 +128,210 @@ export const IndexersClient = () => {
 		setExpandedKey((previous) => (previous === key ? null : key));
 	};
 
+	// Loading State
 	if (isLoading) {
 		return (
-			<div className="flex h-64 items-center justify-center">
-				<Skeleton className="h-10 w-10 rounded-full" />
-			</div>
+			<section className="space-y-8 animate-in fade-in duration-300">
+				{/* Header Skeleton */}
+				<div className="space-y-4">
+					<div className="h-4 w-32 rounded-lg bg-muted/30 animate-pulse" />
+					<div className="h-10 w-48 rounded-lg bg-muted/30 animate-pulse" />
+					<div className="h-4 w-96 rounded-lg bg-muted/20 animate-pulse" />
+				</div>
+
+				{/* Stats Grid Skeleton */}
+				<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+					{Array.from({ length: 4 }).map((_, i) => (
+						<div
+							key={i}
+							className="h-24 rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm animate-pulse"
+							style={{ animationDelay: `${i * 100}ms` }}
+						/>
+					))}
+				</div>
+
+				{/* Loading Indicator */}
+				<div className="flex items-center justify-center py-12">
+					<div
+						className="h-10 w-10 animate-spin rounded-full border-2 border-t-transparent"
+						style={{ borderColor: `${themeGradient.from}40`, borderTopColor: "transparent" }}
+					/>
+				</div>
+			</section>
 		);
 	}
 
 	return (
-		<section className="flex flex-col gap-10">
-			<header className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-				<div>
-					<p className="text-sm font-medium uppercase text-white/60">Indexer management</p>
-					<h1 className="text-3xl font-semibold text-white">Indexers</h1>
-					<p className="mt-2 text-sm text-white/60">
-						Review indexers from your configured Prowlarr instances, inspect their settings, and run
-						connectivity tests.
-					</p>
+		<section className="space-y-8 animate-in fade-in duration-300">
+			{/* Premium Header */}
+			<header className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+				<div className="flex items-start gap-4">
+					<div
+						className="flex h-14 w-14 items-center justify-center rounded-2xl shrink-0"
+						style={{
+							background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+							border: `1px solid ${themeGradient.from}30`,
+						}}
+					>
+						<Search className="h-7 w-7" style={{ color: themeGradient.from }} />
+					</div>
+					<div>
+						<p
+							className="text-sm font-medium uppercase tracking-wider"
+							style={{ color: themeGradient.from }}
+						>
+							Indexer management
+						</p>
+						<h1
+							className="text-3xl font-bold mt-1"
+							style={{
+								background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+								WebkitBackgroundClip: "text",
+								WebkitTextFillColor: "transparent",
+							}}
+						>
+							Indexers
+						</h1>
+						<p className="mt-2 text-sm text-muted-foreground max-w-xl">
+							Review indexers from your configured Prowlarr instances, inspect their settings, and run
+							connectivity tests.
+						</p>
+					</div>
 				</div>
-				<Button variant="ghost" onClick={() => void refetch()} disabled={isFetching}>
-					{isFetching ? "Refreshing…" : "Refresh"}
-				</Button>
+
+				<button
+					type="button"
+					onClick={() => void refetch()}
+					disabled={isFetching}
+					className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+					style={{
+						background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+						boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
+					}}
+				>
+					<RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
+					{isFetching ? "Refreshing..." : "Refresh"}
+				</button>
 			</header>
 
+			{/* Error Alert */}
 			{error && (
-				<Alert variant="danger">
-					<AlertDescription>
-						Unable to load indexers. Double-check your Prowlarr settings and try again.
-					</AlertDescription>
-				</Alert>
+				<div
+					className="rounded-2xl border p-5 backdrop-blur-sm animate-in fade-in slide-in-from-top-2 duration-300"
+					style={{
+						backgroundColor: SEMANTIC_COLORS.error.bg,
+						borderColor: SEMANTIC_COLORS.error.border,
+					}}
+				>
+					<div className="flex items-start gap-4">
+						<div
+							className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+							style={{ backgroundColor: `${SEMANTIC_COLORS.error.from}20` }}
+						>
+							<AlertCircle className="h-5 w-5" style={{ color: SEMANTIC_COLORS.error.from }} />
+						</div>
+						<div>
+							<p className="font-semibold text-foreground">Unable to load indexers</p>
+							<p className="text-sm text-muted-foreground mt-1">
+								Double-check your Prowlarr settings and try again.
+							</p>
+						</div>
+					</div>
+				</div>
 			)}
 
+			{/* Feedback Alert */}
 			{feedback && (
-				<Alert variant={feedback.type === "success" ? "success" : "danger"}>
-					<AlertDescription>{feedback.message}</AlertDescription>
-				</Alert>
+				<div
+					className="rounded-2xl border p-5 backdrop-blur-sm animate-in fade-in slide-in-from-top-2 duration-300"
+					style={{
+						backgroundColor: feedback.type === "success" ? SEMANTIC_COLORS.success.bg : SEMANTIC_COLORS.error.bg,
+						borderColor: feedback.type === "success" ? SEMANTIC_COLORS.success.border : SEMANTIC_COLORS.error.border,
+					}}
+				>
+					<div className="flex items-center gap-3">
+						{feedback.type === "success" ? (
+							<CheckCircle2 className="h-5 w-5 shrink-0" style={{ color: SEMANTIC_COLORS.success.from }} />
+						) : (
+							<XCircle className="h-5 w-5 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
+						)}
+						<p
+							className="font-medium"
+							style={{
+								color: feedback.type === "success" ? SEMANTIC_COLORS.success.text : SEMANTIC_COLORS.error.text,
+							}}
+						>
+							{feedback.message}
+						</p>
+					</div>
+				</div>
 			)}
 
 			{noInstances ? (
 				<EmptyIndexersCard />
 			) : (
 				<>
+					{/* Stats Grid */}
 					<IndexerStatsGrid stats={stats} />
 
+					{/* Top Pagination */}
 					{aggregated.length > 0 && (
-						<Pagination
-							currentPage={page}
-							totalItems={aggregated.length}
-							pageSize={pageSize}
-							onPageChange={setPage}
-							onPageSizeChange={(size) => {
-								setPageSize(size);
-								setPage(1);
-							}}
-							pageSizeOptions={[25, 50, 100]}
-						/>
+						<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+							<Pagination
+								currentPage={page}
+								totalItems={aggregated.length}
+								pageSize={pageSize}
+								onPageChange={setPage}
+								onPageSizeChange={(size) => {
+									setPageSize(size);
+									setPage(1);
+								}}
+								pageSizeOptions={[25, 50, 100]}
+							/>
+						</div>
 					)}
 
-					<div className="space-y-8">
-						{paginatedInstances.map((instance) => (
-							<IndexerInstanceCard
+					{/* Instance Cards */}
+					<div className="space-y-6">
+						{paginatedInstances.map((instance, index) => (
+							<div
 								key={instance.instanceId}
-								instanceId={instance.instanceId}
-								instanceName={instance.instanceName}
-								indexers={instance.data}
-								onTest={handleTest}
-								onUpdate={handleUpdate}
-								testingKey={testingKey}
-								isPending={testMutation.isPending}
-								expandedKey={expandedKey}
-								onToggleDetails={handleToggleDetails}
-							/>
+								className="animate-in fade-in slide-in-from-bottom-4"
+								style={{
+									animationDelay: `${index * 100}ms`,
+									animationFillMode: "backwards",
+								}}
+							>
+								<IndexerInstanceCard
+									instanceId={instance.instanceId}
+									instanceName={instance.instanceName}
+									indexers={instance.data}
+									onTest={handleTest}
+									onUpdate={handleUpdate}
+									testingKey={testingKey}
+									isPending={testMutation.isPending}
+									expandedKey={expandedKey}
+									onToggleDetails={handleToggleDetails}
+								/>
+							</div>
 						))}
 					</div>
 
+					{/* Bottom Pagination */}
 					{aggregated.length > 0 && (
-						<Pagination
-							currentPage={page}
-							totalItems={aggregated.length}
-							pageSize={pageSize}
-							onPageChange={setPage}
-							onPageSizeChange={(size) => {
-								setPageSize(size);
-								setPage(1);
-							}}
-							pageSizeOptions={[25, 50, 100]}
-						/>
+						<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+							<Pagination
+								currentPage={page}
+								totalItems={aggregated.length}
+								pageSize={pageSize}
+								onPageChange={setPage}
+								onPageSizeChange={(size) => {
+									setPageSize(size);
+									setPage(1);
+								}}
+								pageSizeOptions={[25, 50, 100]}
+							/>
+						</div>
 					)}
 				</>
 			)}
