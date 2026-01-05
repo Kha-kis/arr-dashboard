@@ -5,7 +5,8 @@ import type { TrashTemplate, TemplateConfig, TrashCustomFormat, TrashCustomForma
 import { useCreateTemplate, useUpdateTemplate } from "../../../hooks/api/useTemplates";
 import { useTrashCacheEntries } from "../../../hooks/api/useTrashCache";
 import { Alert, AlertDescription, Input, Button } from "../../../components/ui";
-import { X, Save, Plus, Minus, Settings } from "lucide-react";
+import { X, Save, Minus, Settings } from "lucide-react";
+import { toast } from "sonner";
 import { ConditionEditor } from "./condition-editor";
 
 /** Specification type from TrashCustomFormat with enabled flag for UI */
@@ -78,41 +79,89 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 		const customFormatsCache = cacheEntries?.find(e => e.configType === "CUSTOM_FORMATS");
 		const groupsCache = cacheEntries?.find(e => e.configType === "CF_GROUPS");
 
-		// Build config
+		// Build lookup maps from existing template data
+		// These are used for EXISTING items - we preserve their stored data and only apply user's changes
+		const existingCfMap = new Map<string, TemplateConfig['customFormats'][number]>();
+		const existingGroupMap = new Map<string, TemplateConfig['customFormatGroups'][number]>();
+		if (template) {
+			for (const cf of template.config.customFormats) {
+				existingCfMap.set(cf.trashId, cf);
+			}
+			for (const group of template.config.customFormatGroups) {
+				existingGroupMap.set(group.trashId, group);
+			}
+		}
+
+		// Build config using patch-based approach:
+		// - Existing items: Use template's stored data, apply user's changed settings only
+		// - New items: Look up from cache (normal behavior)
 		const config: TemplateConfig = {
 			customFormats: [],
 			customFormatGroups: [],
 		};
 
-		// Add selected custom formats
-		if (customFormatsCache?.data) {
-			const formats = customFormatsCache.data as TrashCustomFormat[];
-			for (const [trashId, settings] of selectedFormats.entries()) {
-				const originalFormat = formats.find(f => f.trash_id === trashId);
-				if (originalFormat) {
+		// Track items that couldn't be resolved (new items not in cache)
+		const unresolvedNewCfs: string[] = [];
+		const unresolvedNewGroups: string[] = [];
+
+		// Process selected custom formats
+		const formats = (customFormatsCache?.data as TrashCustomFormat[] | undefined) ?? [];
+		for (const [trashId, settings] of selectedFormats.entries()) {
+			const existingCf = existingCfMap.get(trashId);
+
+			if (existingCf) {
+				// EXISTING CF: Use template's stored data, only apply user's changed settings
+				// This ensures editing a score/condition never causes data loss from cache issues
+				config.customFormats.push({
+					trashId,
+					name: existingCf.name,
+					scoreOverride: settings.scoreOverride,
+					conditionsEnabled: settings.conditionsEnabled,
+					originalConfig: existingCf.originalConfig,
+				});
+			} else {
+				// NEW CF: Look up from cache (this is what cache is for - discovering new items)
+				const cacheFormat = formats.find(f => f.trash_id === trashId);
+				if (cacheFormat) {
 					config.customFormats.push({
 						trashId,
-						name: originalFormat.name,
+						name: cacheFormat.name,
 						scoreOverride: settings.scoreOverride,
 						conditionsEnabled: settings.conditionsEnabled,
-						originalConfig: originalFormat,
+						originalConfig: cacheFormat,
 					});
+				} else {
+					// New CF not in cache - shouldn't happen normally but track it
+					unresolvedNewCfs.push(trashId);
 				}
 			}
 		}
 
-		// Add selected custom format groups
-		if (groupsCache?.data) {
-			const groups = groupsCache.data as TrashCustomFormatGroup[];
-			for (const trashId of selectedGroups) {
-				const originalGroup = groups.find(g => g.trash_id === trashId);
-				if (originalGroup) {
+		// Process selected custom format groups
+		const groups = (groupsCache?.data as TrashCustomFormatGroup[] | undefined) ?? [];
+		for (const trashId of selectedGroups) {
+			const existingGroup = existingGroupMap.get(trashId);
+
+			if (existingGroup) {
+				// EXISTING GROUP: Use template's stored data
+				config.customFormatGroups.push({
+					trashId,
+					name: existingGroup.name,
+					enabled: true,
+					originalConfig: existingGroup.originalConfig,
+				});
+			} else {
+				// NEW GROUP: Look up from cache
+				const cacheGroup = groups.find(g => g.trash_id === trashId);
+				if (cacheGroup) {
 					config.customFormatGroups.push({
 						trashId,
-						name: originalGroup.name,
+						name: cacheGroup.name,
 						enabled: true,
-						originalConfig: originalGroup,
+						originalConfig: cacheGroup,
 					});
+				} else {
+					unresolvedNewGroups.push(trashId);
 				}
 			}
 		}
@@ -125,6 +174,15 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 				});
 			} else {
 				await createMutation.mutateAsync({ name, description, serviceType, config });
+			}
+
+			// Show warning only if we couldn't resolve NEW items (shouldn't normally happen)
+			const totalUnresolved = unresolvedNewCfs.length + unresolvedNewGroups.length;
+			if (totalUnresolved > 0) {
+				toast.warning("Some new items could not be added", {
+					description: `${totalUnresolved} newly selected item(s) were not found in cache. Try refreshing the cache.`,
+					duration: 8000,
+				});
 			}
 			onClose();
 		} catch (error) {
