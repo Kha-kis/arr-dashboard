@@ -1,7 +1,6 @@
 import fastifyCors from "@fastify/cors";
 import fastifyHelmet from "@fastify/helmet";
 import fastifyRateLimit from "@fastify/rate-limit";
-import fastifyWebsocket from "@fastify/websocket";
 import Fastify, { type FastifyInstance } from "fastify";
 import { type ApiEnv, envSchema } from "./config/env.js";
 import { arrClientPlugin } from "./plugins/arr-client.js";
@@ -19,7 +18,6 @@ import { registerAuthRoutes } from "./routes/auth.js";
 import { registerBackupRoutes } from "./routes/backup.js";
 import { registerDashboardRoutes } from "./routes/dashboard.js";
 import { registerDiscoverRoutes } from "./routes/discover.js";
-import { registerEventsRoutes } from "./routes/events.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerHuntingRoutes } from "./routes/hunting.js";
 import { registerLibraryRoutes } from "./routes/library.js";
@@ -63,15 +61,6 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(fastifyRateLimit, {
 		max: env.API_RATE_LIMIT_MAX,
 		timeWindow: env.API_RATE_LIMIT_WINDOW,
-		// Exclude real-time event streams (long-lived WebSocket/SSE connections)
-		allowList: (request) => {
-			const url = request.url;
-			// Skip rate limiting for event streams
-			if (url.startsWith("/api/events/")) {
-				return true;
-			}
-			return false;
-		},
 	});
 
 	// Register Prisma, Security, ARR Client, Lifecycle, and Scheduler plugins
@@ -84,9 +73,6 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(sessionCleanupPlugin);
 	app.register(trashBackupCleanupPlugin);
 	app.register(trashUpdateSchedulerPlugin);
-
-	// Register WebSocket plugin for real-time events
-	app.register(fastifyWebsocket);
 
 	app.decorateRequest("currentUser", null);
 	app.decorateRequest("sessionToken", null);
@@ -131,7 +117,6 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(registerSystemRoutes, { prefix: "/api/system" });
 	app.register(registerTrashGuidesRoutes, { prefix: "/api/trash-guides" });
 	app.register(registerHuntingRoutes, { prefix: "/api" });
-	app.register(registerEventsRoutes, { prefix: "/api" });
 
 	return app;
 };

@@ -2,17 +2,63 @@
 
 import type { ProwlarrIndexerField } from "@arr/shared";
 import { formatFieldValue, isApiKeyRelatedField } from "../lib/indexers-utils";
+import { Settings } from "lucide-react";
+import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 
 /**
- * Displays configuration fields for an indexer (excluding API key fields)
- * @param fields - Array of indexer fields
- * @returns React component displaying configuration fields
+ * Premium Configuration Field Card
+ */
+const FieldCard = ({
+	field,
+	index,
+}: {
+	field: ProwlarrIndexerField;
+	index: number;
+}) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
+	return (
+		<div
+			className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4 transition-all duration-200 hover:bg-card/50 animate-in fade-in slide-in-from-bottom-1"
+			style={{
+				animationDelay: `${index * 30}ms`,
+				animationFillMode: "backwards",
+			}}
+		>
+			<p className="text-xs uppercase tracking-wider font-medium text-muted-foreground mb-2">
+				{field.label ?? field.name}
+			</p>
+			<p className="text-sm font-medium text-foreground">
+				{formatFieldValue(field.name, field.value)}
+			</p>
+			{field.helpText && (
+				<p className="mt-2 text-xs text-muted-foreground/80 leading-relaxed">
+					{field.helpText}
+				</p>
+			)}
+		</div>
+	);
+};
+
+/**
+ * Premium Indexer Configuration Fields
+ *
+ * Displays configuration fields for an indexer with:
+ * - Glassmorphic card styling
+ * - Staggered animation
+ * - API key field filtering
+ * - Help text support
  */
 export const IndexerConfigurationFields = ({
 	fields,
 }: {
 	fields: ProwlarrIndexerField[];
 }) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
 	const filteredFields = fields.filter((field) => !isApiKeyRelatedField(field));
 
 	if (filteredFields.length === 0) {
@@ -20,17 +66,32 @@ export const IndexerConfigurationFields = ({
 	}
 
 	return (
-		<div className="space-y-2">
-			<p className="text-xs uppercase tracking-widest text-white/40">Configuration</p>
+		<div className="space-y-4">
+			{/* Section Header */}
+			<div className="flex items-center gap-2">
+				<Settings className="h-4 w-4" style={{ color: themeGradient.from }} />
+				<p className="text-xs uppercase tracking-wider font-medium text-muted-foreground">
+					Configuration
+				</p>
+			</div>
+
+			{/* Fields Grid */}
 			<div className="grid gap-3 sm:grid-cols-2">
-				{filteredFields.slice(0, 10).map((field) => (
-					<div key={field.name} className="rounded-lg border border-white/10 bg-white/5 p-3">
-						<p className="text-xs uppercase text-white/40">{field.label ?? field.name}</p>
-						<p className="mt-1 text-sm text-white">{formatFieldValue(field.name, field.value)}</p>
-						{field.helpText ? <p className="mt-1 text-xs text-white/40">{field.helpText}</p> : null}
-					</div>
+				{filteredFields.slice(0, 10).map((field, index) => (
+					<FieldCard
+						key={field.name}
+						field={field}
+						index={index}
+					/>
 				))}
 			</div>
+
+			{/* More fields indicator */}
+			{filteredFields.length > 10 && (
+				<p className="text-xs text-muted-foreground text-center">
+					+{filteredFields.length - 10} more configuration fields
+				</p>
+			)}
 		</div>
 	);
 };

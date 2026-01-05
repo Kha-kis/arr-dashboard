@@ -2,13 +2,13 @@
 
 import { useState, useEffect } from "react";
 import {
-	Dialog,
-	DialogHeader,
-	DialogTitle,
-	DialogDescription,
-	DialogContent,
-	DialogFooter,
-} from "../../../components/ui/dialog";
+	LegacyDialog,
+	LegacyDialogHeader,
+	LegacyDialogTitle,
+	LegacyDialogDescription,
+	LegacyDialogContent,
+	LegacyDialogFooter,
+} from "../../../components/ui";
 import { Skeleton, Button } from "../../../components/ui";
 import {
 	AlertCircle,
@@ -215,22 +215,22 @@ export const InstanceOverrideEditor = ({
 	).length;
 
 	return (
-		<Dialog open={open} onOpenChange={onClose} size="xl">
-			<DialogHeader>
-				<DialogTitle>
+		<LegacyDialog open={open} onOpenChange={onClose} size="xl">
+			<LegacyDialogHeader>
+				<LegacyDialogTitle>
 					<div className="flex items-center gap-2">
 						<Settings className="h-5 w-5" />
 						Instance Overrides
 					</div>
-				</DialogTitle>
-				<DialogDescription>
+				</LegacyDialogTitle>
+				<LegacyDialogDescription>
 					Customize Custom Format scores and enable/disable CFs for this instance
 					{templateName && ` - Template: "${templateName}"`}
 					{instanceLabel && ` → Instance: "${instanceLabel}"`}
-				</DialogDescription>
-			</DialogHeader>
+				</LegacyDialogDescription>
+			</LegacyDialogHeader>
 
-			<DialogContent className="space-y-4">
+			<LegacyDialogContent className="space-y-4">
 				{isLoading && (
 					<div className="space-y-4">
 						<Skeleton className="h-12 w-full" />
@@ -365,9 +365,9 @@ export const InstanceOverrideEditor = ({
 						)}
 					</>
 				)}
-			</DialogContent>
+			</LegacyDialogContent>
 
-			<DialogFooter>
+			<LegacyDialogFooter>
 				<Button
 					variant="danger"
 					onClick={handleDeleteAll}
@@ -401,7 +401,7 @@ export const InstanceOverrideEditor = ({
 						</>
 					)}
 				</Button>
-			</DialogFooter>
-		</Dialog>
+			</LegacyDialogFooter>
+		</LegacyDialog>
 	);
 };

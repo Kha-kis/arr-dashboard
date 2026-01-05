@@ -2,42 +2,204 @@
 
 import { useState, useMemo } from "react";
 import {
-	Alert,
-	AlertTitle,
-	AlertDescription,
-	Button,
-	Card,
-	CardHeader,
-	CardTitle,
-	CardDescription,
-	CardContent,
-	Select,
-	SelectOption,
-	Input,
-	Badge,
-	Skeleton,
-	EmptyState,
-	Dialog,
-	DialogHeader,
-	DialogTitle,
-	DialogDescription,
-	DialogContent,
-	DialogFooter,
 	toast,
 } from "../../../components/ui";
-import { Search, Package, Download, CheckCircle2, XCircle, Loader2, Info } from "lucide-react";
+import {
+	Search,
+	Package,
+	Download,
+	CheckCircle2,
+	XCircle,
+	Loader2,
+	Info,
+	AlertCircle,
+	Palette,
+	Filter,
+	CheckSquare,
+	Square,
+	ChevronDown,
+	X,
+} from "lucide-react";
 import { createSanitizedHtml } from "../../../lib/sanitize-html";
 import { useCustomFormats, useCFDescriptions, useDeployMultipleCustomFormats } from "../hooks/use-custom-formats";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import type { CustomFormat } from "../../../lib/api-client/custom-formats";
 import { cleanDescription } from "../lib/description-utils";
+import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 
 /**
- * Custom Formats Browser Component
- * Allows users to browse all available TRaSH Guides custom formats
- * and deploy them individually to instances without creating templates
+ * Service-specific colors for Radarr/Sonarr identification
+ */
+const SERVICE_COLORS = {
+	RADARR: { from: "#f97316", to: "#ea580c", glow: "rgba(249, 115, 22, 0.5)" },
+	SONARR: { from: "#06b6d4", to: "#0891b2", glow: "rgba(6, 182, 212, 0.5)" },
+};
+
+/**
+ * Premium Service Badge
+ */
+const ServiceBadge = ({ service }: { service: "RADARR" | "SONARR" }) => {
+	const colors = SERVICE_COLORS[service];
+	return (
+		<span
+			className="inline-flex items-center rounded-lg px-2 py-0.5 text-xs font-medium"
+			style={{
+				backgroundColor: `${colors.from}20`,
+				border: `1px solid ${colors.from}40`,
+				color: colors.from,
+			}}
+		>
+			{service}
+		</span>
+	);
+};
+
+/**
+ * Premium Custom Format Card
+ */
+const CustomFormatCard = ({
+	format,
+	isSelected,
+	description,
+	onToggle,
+	onViewDetails,
+	index,
+}: {
+	format: CustomFormat & { service: "RADARR" | "SONARR" };
+	isSelected: boolean;
+	description?: string;
+	onToggle: () => void;
+	onViewDetails: () => void;
+	index: number;
+}) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const serviceColors = SERVICE_COLORS[format.service];
+
+	return (
+		<article
+			className="group relative rounded-2xl border transition-all duration-300 cursor-pointer overflow-hidden animate-in fade-in slide-in-from-bottom-2"
+			style={{
+				backgroundColor: isSelected ? `${themeGradient.from}10` : "rgba(var(--card), 0.3)",
+				borderColor: isSelected ? themeGradient.from : "rgba(var(--border), 0.5)",
+				boxShadow: isSelected ? `0 0 20px -5px ${themeGradient.glow}` : undefined,
+				animationDelay: `${index * 30}ms`,
+				animationFillMode: "backwards",
+			}}
+			onClick={onToggle}
+		>
+			{/* Selection indicator bar */}
+			{isSelected && (
+				<div
+					className="absolute top-0 left-0 right-0 h-1"
+					style={{
+						background: `linear-gradient(90deg, ${themeGradient.from}, ${themeGradient.to})`,
+					}}
+				/>
+			)}
+
+			<div className="p-5">
+				{/* Header */}
+				<div className="flex items-start justify-between gap-3 mb-3">
+					<div className="flex items-center gap-3 min-w-0 flex-1">
+						<div
+							className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0 transition-all duration-300"
+							style={{
+								background: isSelected
+									? `linear-gradient(135deg, ${themeGradient.from}30, ${themeGradient.to}30)`
+									: `${serviceColors.from}15`,
+								border: `1px solid ${isSelected ? themeGradient.from : serviceColors.from}30`,
+							}}
+						>
+							<Palette
+								className="h-5 w-5"
+								style={{ color: isSelected ? themeGradient.from : serviceColors.from }}
+							/>
+						</div>
+						<div className="min-w-0">
+							<h3 className="font-semibold text-foreground truncate">{format.name}</h3>
+							<ServiceBadge service={format.service} />
+						</div>
+					</div>
+
+					{/* Selection checkbox */}
+					<div
+						className="flex h-6 w-6 items-center justify-center rounded-lg transition-all duration-200 shrink-0"
+						style={{
+							backgroundColor: isSelected ? themeGradient.from : "rgba(var(--muted), 0.3)",
+							border: `1px solid ${isSelected ? themeGradient.from : "rgba(var(--border), 0.5)"}`,
+						}}
+					>
+						{isSelected ? (
+							<CheckCircle2 className="h-4 w-4 text-white" />
+						) : (
+							<div className="h-3 w-3 rounded-sm bg-muted-foreground/20" />
+						)}
+					</div>
+				</div>
+
+				{/* Description */}
+				{description && (
+					<p className="text-sm text-muted-foreground line-clamp-2 mb-3">
+						{description}
+					</p>
+				)}
+
+				{/* Metadata */}
+				<div className="flex items-center justify-between text-xs text-muted-foreground mb-4">
+					<span className="flex items-center gap-1.5">
+						<Filter className="h-3 w-3" />
+						{format.specifications.length} conditions
+					</span>
+				</div>
+
+				{/* View Details Button */}
+				<button
+					type="button"
+					onClick={(e) => {
+						e.stopPropagation();
+						onViewDetails();
+					}}
+					className="w-full inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200 border border-border/50 bg-card/50 hover:bg-card/80 text-foreground"
+				>
+					<Info className="h-4 w-4" />
+					View Details
+				</button>
+			</div>
+		</article>
+	);
+};
+
+/**
+ * Renders sanitized HTML description content.
+ * Uses createSanitizedHtml which sanitizes via DOMPurify to prevent XSS.
+ */
+const SanitizedDescription = ({ html }: { html: string }) => {
+	// Content is sanitized via createSanitizedHtml which uses DOMPurify
+	const sanitizedContent = createSanitizedHtml(html);
+	return (
+		<div
+			className="rounded-xl border border-border/50 bg-card/30 p-4 text-sm text-muted-foreground prose prose-invert prose-sm max-w-none"
+			dangerouslySetInnerHTML={sanitizedContent}
+		/>
+	);
+};
+
+/**
+ * Premium Custom Formats Browser Component
+ *
+ * Features:
+ * - Glassmorphic card design
+ * - Theme-aware selection states
+ * - Service-specific accent colors
+ * - Staggered card animations
+ * - Premium deploy modal
  */
 export const CustomFormatsBrowser = () => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
 	const [selectedService, setSelectedService] = useState<"RADARR" | "SONARR" | "ALL">("ALL");
 	const [searchQuery, setSearchQuery] = useState("");
 	const [selectedFormats, setSelectedFormats] = useState<Set<string>>(new Set());
@@ -93,8 +255,6 @@ export const CustomFormatsBrowser = () => {
 		const selectedFormatsArray = Array.from(selectedFormats);
 		if (selectedFormatsArray.length === 0) return [];
 
-		// Determine which service types are selected
-		// Selection keys are in format "SERVICE-trash_id"
 		const selectedServicesSet = new Set(
 			selectedFormatsArray.map(selectionKey => {
 				const [service] = selectionKey.split('-');
@@ -102,13 +262,11 @@ export const CustomFormatsBrowser = () => {
 			})
 		);
 
-		// If formats from both services are selected, show no instances
 		if (selectedServicesSet.size > 1) {
 			return [];
 		}
 
 		const service = Array.from(selectedServicesSet)[0];
-		// Case-insensitive comparison since API returns lowercase "radarr"/"sonarr"
 		return instances.filter(inst => inst.service.toUpperCase() === service);
 	}, [instances, selectedFormats]);
 
@@ -141,7 +299,11 @@ export const CustomFormatsBrowser = () => {
 		const service = format.service.toLowerCase() as "radarr" | "sonarr";
 		const descriptions = cfDescriptionsData?.[service] || [];
 		const slug = format.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-		return descriptions.find(d => d.cfName === slug);
+		const found = descriptions.find(d => d.cfName === slug);
+		if (found?.rawMarkdown) {
+			return cleanDescription(found.rawMarkdown, format.name);
+		}
+		return undefined;
 	};
 
 	// Handle view details
@@ -172,9 +334,7 @@ export const CustomFormatsBrowser = () => {
 		}
 
 		try {
-			// Extract trash_ids from combined selection keys (format: "SERVICE-trash_id")
 			const trashIds = Array.from(selectedFormats).map(selectionKey => {
-				// Split only on the first hyphen to handle trash_ids that may contain hyphens
 				const firstHyphenIndex = selectionKey.indexOf('-');
 				return selectionKey.slice(firstHyphenIndex + 1);
 			});
@@ -204,89 +364,166 @@ export const CustomFormatsBrowser = () => {
 		}
 	};
 
+	// Loading State
 	if (isLoading) {
 		return (
-			<div className="space-y-6">
-				<div className="flex gap-4">
-					<Skeleton className="h-10 w-48" />
-					<Skeleton className="h-10 flex-1" />
+			<div className="space-y-6 animate-in fade-in duration-300">
+				{/* Header Skeleton */}
+				<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-6">
+					<div className="space-y-4">
+						<div className="flex items-center gap-4">
+							<div className="h-12 w-12 rounded-xl bg-muted/30 animate-pulse" />
+							<div className="space-y-2 flex-1">
+								<div className="h-6 w-48 rounded-lg bg-muted/30 animate-pulse" />
+								<div className="h-4 w-96 rounded bg-muted/20 animate-pulse" />
+							</div>
+						</div>
+						<div className="flex gap-4">
+							<div className="h-10 w-40 rounded-xl bg-muted/20 animate-pulse" />
+							<div className="h-10 flex-1 rounded-xl bg-muted/20 animate-pulse" />
+							<div className="h-10 w-32 rounded-xl bg-muted/20 animate-pulse" />
+						</div>
+					</div>
 				</div>
+				{/* Cards Skeleton */}
 				<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-					{[...Array(6)].map((_, i) => (
-						<Skeleton key={i} className="h-48" />
+					{Array.from({ length: 6 }).map((_, i) => (
+						<div key={i} className="h-56 rounded-2xl bg-muted/20 animate-pulse" />
 					))}
 				</div>
 			</div>
 		);
 	}
 
+	// Error State
 	if (error) {
 		return (
-			<Alert variant="danger">
-				<AlertTitle>Failed to load custom formats</AlertTitle>
-				<AlertDescription>
-					{error instanceof Error ? error.message : "Please refresh the page and try again."}
-				</AlertDescription>
-			</Alert>
+			<div
+				className="rounded-2xl border p-6 backdrop-blur-sm"
+				style={{
+					backgroundColor: SEMANTIC_COLORS.error.bg,
+					borderColor: SEMANTIC_COLORS.error.border,
+				}}
+			>
+				<div className="flex items-start gap-4">
+					<div
+						className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+						style={{ backgroundColor: `${SEMANTIC_COLORS.error.from}20` }}
+					>
+						<XCircle className="h-5 w-5" style={{ color: SEMANTIC_COLORS.error.from }} />
+					</div>
+					<div>
+						<h3 className="font-semibold text-foreground mb-1">Failed to load custom formats</h3>
+						<p className="text-sm text-muted-foreground">
+							{error instanceof Error ? error.message : "Please refresh the page and try again."}
+						</p>
+					</div>
+				</div>
+			</div>
 		);
 	}
 
 	return (
-		<div className="space-y-6">
+		<div className="space-y-6 animate-in fade-in duration-300">
 			{/* Header and Controls */}
-			<div className="rounded-lg border border-border bg-bg-subtle p-6">
-				<div className="space-y-4">
-					<div>
-						<h3 className="text-lg font-semibold text-fg">Browse Custom Formats</h3>
-						<p className="text-fg-muted mt-1">
-							Browse and deploy individual TRaSH Guides custom formats directly to your instances
-							without creating templates.
-						</p>
-					</div>
-
-					<div className="flex flex-wrap gap-4">
-						{/* Service Type Filter */}
-						<Select
-							value={selectedService}
-							onChange={(e) => {
-								setSelectedService(e.target.value as "RADARR" | "SONARR" | "ALL");
-								setSelectedFormats(new Set());
+			<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-6">
+				<div className="space-y-5">
+					{/* Title */}
+					<div className="flex items-center gap-4">
+						<div
+							className="flex h-12 w-12 items-center justify-center rounded-xl shrink-0"
+							style={{
+								background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+								border: `1px solid ${themeGradient.from}30`,
 							}}
 						>
-							<SelectOption value="ALL">All Services</SelectOption>
-							<SelectOption value="RADARR">Radarr</SelectOption>
-							<SelectOption value="SONARR">Sonarr</SelectOption>
-						</Select>
+							<Palette className="h-6 w-6" style={{ color: themeGradient.from }} />
+						</div>
+						<div>
+							<h3
+								className="text-lg font-bold"
+								style={{
+									background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+									WebkitBackgroundClip: "text",
+									WebkitTextFillColor: "transparent",
+								}}
+							>
+								Browse Custom Formats
+							</h3>
+							<p className="text-sm text-muted-foreground">
+								Browse and deploy individual TRaSH Guides custom formats directly to your instances
+							</p>
+						</div>
+					</div>
+
+					{/* Controls */}
+					<div className="flex flex-wrap gap-3 items-center">
+						{/* Service Type Filter */}
+						<div className="relative">
+							<select
+								value={selectedService}
+								onChange={(e) => {
+									setSelectedService(e.target.value as "RADARR" | "SONARR" | "ALL");
+									setSelectedFormats(new Set());
+								}}
+								className="appearance-none rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 pr-10 text-sm font-medium text-foreground focus:outline-none focus:ring-2 transition-all"
+								style={{ ["--tw-ring-color" as string]: themeGradient.from }}
+							>
+								<option value="ALL">All Services</option>
+								<option value="RADARR">Radarr</option>
+								<option value="SONARR">Sonarr</option>
+							</select>
+							<ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+						</div>
 
 						{/* Search */}
 						<div className="relative flex-1 min-w-[200px]">
-							<Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
-							<Input
+							<Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+							<input
 								type="text"
 								placeholder="Search custom formats..."
 								value={searchQuery}
 								onChange={(e) => setSearchQuery(e.target.value)}
-								className="pl-10"
+								className="w-full rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 pl-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 transition-all"
+								style={{ ["--tw-ring-color" as string]: themeGradient.from }}
 							/>
 						</div>
 
 						{/* Selection Actions */}
 						<div className="flex gap-2">
-							<Button
-								variant="secondary"
-								size="sm"
+							<button
+								type="button"
 								onClick={handleSelectAll}
+								className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200 border border-border/50 bg-card/50 hover:bg-card/80 text-foreground"
 							>
-								{selectedFormats.size === customFormats.length ? "Deselect All" : "Select All"}
-							</Button>
-							<Button
+								{selectedFormats.size === customFormats.length ? (
+									<>
+										<CheckSquare className="h-4 w-4" style={{ color: themeGradient.from }} />
+										Deselect All
+									</>
+								) : (
+									<>
+										<Square className="h-4 w-4" />
+										Select All
+									</>
+								)}
+							</button>
+
+							<button
+								type="button"
 								onClick={handleDeploy}
 								disabled={selectedFormats.size === 0}
-								className="flex items-center gap-2"
+								className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-medium text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+								style={{
+									background: selectedFormats.size > 0
+										? `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`
+										: "rgba(var(--muted), 0.5)",
+									boxShadow: selectedFormats.size > 0 ? `0 4px 12px -4px ${themeGradient.glow}` : undefined,
+								}}
 							>
 								<Download className="h-4 w-4" />
 								Deploy Selected ({selectedFormats.size})
-							</Button>
+							</button>
 						</div>
 					</div>
 				</div>
@@ -294,255 +531,320 @@ export const CustomFormatsBrowser = () => {
 
 			{/* Custom Formats Grid */}
 			{customFormats.length === 0 ? (
-				<EmptyState
-					icon={Package}
-					title="No custom formats found"
-					description={
-						searchQuery
+				<div className="rounded-2xl border border-dashed border-border/50 bg-card/20 backdrop-blur-sm p-12 text-center">
+					<Package className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+					<p className="text-lg font-medium text-foreground mb-2">No custom formats found</p>
+					<p className="text-sm text-muted-foreground">
+						{searchQuery
 							? "Try adjusting your search query"
-							: "No custom formats available for the selected service"
-					}
-				/>
+							: "No custom formats available for the selected service"}
+					</p>
+				</div>
 			) : (
 				<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-					{customFormats.map((format) => {
+					{customFormats.map((format, index) => {
 						const selectionKey = getSelectionKey(format);
 						return (
-						<Card
-							key={selectionKey}
-							className={`flex flex-col cursor-pointer transition ${
-								selectedFormats.has(selectionKey)
-									? "ring-2 ring-primary bg-primary/10"
-									: "hover:border-border"
-							}`}
-							onClick={() => toggleFormat(selectionKey)}
-						>
-							<CardHeader>
-								<div className="flex items-start justify-between gap-2">
-									<div className="flex-1 min-w-0">
-										<CardTitle className="text-base truncate">
-											{format.name}
-										</CardTitle>
-										<CardDescription className="mt-1">
-											<Badge variant={format.service === "RADARR" ? "warning" : "info"}>
-												{format.service}
-											</Badge>
-										</CardDescription>
-									</div>
-									{selectedFormats.has(selectionKey) && (
-										<CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />
-									)}
-								</div>
-							</CardHeader>
-							<CardContent className="flex flex-1 flex-col">
-								{/* Variable height content */}
-								<div className="flex-1 space-y-3">
-									{/* Description */}
-									{(() => {
-										const description = getDescription(format);
-										if (description && description.rawMarkdown) {
-											const cleaned = cleanDescription(description.rawMarkdown, format.name);
-
-											if (cleaned) {
-												return (
-													<p className="text-sm text-fg-muted">
-														{cleaned}
-													</p>
-												);
-											}
-										}
-										return null;
-									})()}
-
-									{/* Metadata */}
-									<div className="flex items-center justify-between text-xs text-fg-muted">
-										<span>{format.specifications.length} conditions</span>
-									</div>
-								</div>
-
-								{/* Fixed bottom section */}
-								<div className="mt-auto pt-3">
-									{/* View Details Button */}
-									<Button
-										variant="secondary"
-										size="sm"
-										className="w-full"
-										onClick={(e) => {
-											e.stopPropagation();
-											handleViewDetails(format);
-										}}
-									>
-										<Info className="h-4 w-4 mr-2" />
-										View Details
-									</Button>
-								</div>
-							</CardContent>
-						</Card>
+							<CustomFormatCard
+								key={selectionKey}
+								format={format}
+								isSelected={selectedFormats.has(selectionKey)}
+								description={getDescription(format)}
+								onToggle={() => toggleFormat(selectionKey)}
+								onViewDetails={() => handleViewDetails(format)}
+								index={index}
+							/>
 						);
 					})}
 				</div>
 			)}
 
 			{/* Deploy Dialog */}
-			<Dialog open={deployDialogOpen} onOpenChange={(open) => !open && setDeployDialogOpen(false)}>
-				<DialogContent>
-					<DialogHeader>
-						<DialogTitle>Deploy Custom Formats</DialogTitle>
-						<DialogDescription>
-							Deploy {selectedFormats.size} selected custom format{selectedFormats.size !== 1 ? "s" : ""} to an instance
-						</DialogDescription>
-					</DialogHeader>
+			{deployDialogOpen && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center">
+					{/* Backdrop */}
+					<div
+						className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+						onClick={() => !deployMutation.isPending && setDeployDialogOpen(false)}
+					/>
 
-					<div className="space-y-4">
-						{!instances || instances.length === 0 ? (
-							<Alert variant="warning">
-								<AlertTitle>No instances configured</AlertTitle>
-								<AlertDescription>
-									You need to configure at least one Radarr or Sonarr instance in Settings before you can deploy custom formats.
-								</AlertDescription>
-							</Alert>
-						) : availableInstances.length === 0 ? (
-							<Alert variant="warning">
-								<AlertTitle>No compatible instances</AlertTitle>
-								<AlertDescription>
-									{selectedFormats.size > 0 && customFormats.length > 0
-										? "The selected custom formats are from different services. Please select formats from only one service type (either all Radarr or all Sonarr)."
-										: "No instances available for the selected custom formats."}
-								</AlertDescription>
-							</Alert>
-						) : (
-							<div className="space-y-2">
-								<label className="text-sm font-medium text-fg">Select Instance</label>
-								<Select
-									value={selectedInstance}
-									onChange={(e) => setSelectedInstance(e.target.value)}
+					{/* Modal */}
+					<div
+						className="relative z-10 w-full max-w-md mx-4 rounded-2xl border border-border/50 bg-card/95 backdrop-blur-xl p-6 shadow-2xl animate-in zoom-in-95 fade-in duration-200"
+						style={{ boxShadow: `0 25px 50px -12px ${themeGradient.glow}` }}
+					>
+						{/* Header */}
+						<div className="flex items-center justify-between mb-6">
+							<div className="flex items-center gap-3">
+								<div
+									className="flex h-10 w-10 items-center justify-center rounded-xl"
+									style={{
+										background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+										border: `1px solid ${themeGradient.from}30`,
+									}}
 								>
-									<SelectOption value="">Choose an instance...</SelectOption>
-									{availableInstances.map((instance) => (
-										<SelectOption key={instance.id} value={instance.id}>
-											{instance.label} ({instance.service})
-										</SelectOption>
-									))}
-								</Select>
+									<Download className="h-5 w-5" style={{ color: themeGradient.from }} />
+								</div>
+								<div>
+									<h3 className="text-lg font-bold text-foreground">Deploy Custom Formats</h3>
+									<p className="text-sm text-muted-foreground">
+										{selectedFormats.size} format{selectedFormats.size !== 1 ? "s" : ""} selected
+									</p>
+								</div>
 							</div>
-						)}
-					</div>
+							<button
+								type="button"
+								onClick={() => setDeployDialogOpen(false)}
+								disabled={deployMutation.isPending}
+								className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-card/80 transition-colors disabled:opacity-50"
+							>
+								<X className="h-5 w-5" />
+							</button>
+						</div>
 
-					<DialogFooter>
-						<Button
-							variant="secondary"
-							onClick={() => setDeployDialogOpen(false)}
-							disabled={deployMutation.isPending}
-						>
-							Cancel
-						</Button>
-						<Button
-							onClick={handleConfirmDeploy}
-							disabled={!selectedInstance || availableInstances.length === 0 || deployMutation.isPending}
-						>
-							{deployMutation.isPending ? (
-								<>
-									<Loader2 className="mr-2 h-4 w-4 animate-spin" />
-									Deploying...
-								</>
+						{/* Content */}
+						<div className="space-y-4 mb-6">
+							{!instances || instances.length === 0 ? (
+								<div
+									className="rounded-xl p-4"
+									style={{
+										backgroundColor: SEMANTIC_COLORS.warning.bg,
+										border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+									}}
+								>
+									<div className="flex items-start gap-3">
+										<AlertCircle className="h-5 w-5 mt-0.5" style={{ color: SEMANTIC_COLORS.warning.from }} />
+										<div>
+											<p className="font-medium text-foreground">No instances configured</p>
+											<p className="text-sm text-muted-foreground mt-1">
+												Configure at least one Radarr or Sonarr instance in Settings first.
+											</p>
+										</div>
+									</div>
+								</div>
+							) : availableInstances.length === 0 ? (
+								<div
+									className="rounded-xl p-4"
+									style={{
+										backgroundColor: SEMANTIC_COLORS.warning.bg,
+										border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+									}}
+								>
+									<div className="flex items-start gap-3">
+										<AlertCircle className="h-5 w-5 mt-0.5" style={{ color: SEMANTIC_COLORS.warning.from }} />
+										<div>
+											<p className="font-medium text-foreground">No compatible instances</p>
+											<p className="text-sm text-muted-foreground mt-1">
+												Selected formats are from different services. Please select formats from only one service type.
+											</p>
+										</div>
+									</div>
+								</div>
 							) : (
-								"Deploy"
+								<div className="space-y-2">
+									<label className="text-sm font-medium text-foreground">Select Instance</label>
+									<div className="relative">
+										<select
+											value={selectedInstance}
+											onChange={(e) => setSelectedInstance(e.target.value)}
+											className="w-full appearance-none rounded-xl border border-border/50 bg-card/50 px-4 py-3 pr-10 text-sm text-foreground focus:outline-none focus:ring-2 transition-all"
+											style={{ ["--tw-ring-color" as string]: themeGradient.from }}
+										>
+											<option value="">Choose an instance...</option>
+											{availableInstances.map((instance) => (
+												<option key={instance.id} value={instance.id}>
+													{instance.label} ({instance.service})
+												</option>
+											))}
+										</select>
+										<ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+									</div>
+								</div>
 							)}
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
+						</div>
+
+						{/* Footer */}
+						<div className="flex justify-end gap-3">
+							<button
+								type="button"
+								onClick={() => setDeployDialogOpen(false)}
+								disabled={deployMutation.isPending}
+								className="rounded-xl px-4 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-50"
+							>
+								Cancel
+							</button>
+							<button
+								type="button"
+								onClick={handleConfirmDeploy}
+								disabled={!selectedInstance || availableInstances.length === 0 || deployMutation.isPending}
+								className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-medium text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+								style={{
+									background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+									boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
+								}}
+							>
+								{deployMutation.isPending ? (
+									<>
+										<Loader2 className="h-4 w-4 animate-spin" />
+										Deploying...
+									</>
+								) : (
+									<>
+										<Download className="h-4 w-4" />
+										Deploy
+									</>
+								)}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
 
 			{/* Details Dialog */}
-			<Dialog open={detailsDialogOpen} onOpenChange={(open) => !open && setDetailsDialogOpen(false)}>
-				<DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
-					<DialogHeader>
-						<DialogTitle>{selectedFormatForDetails?.name}</DialogTitle>
-						<DialogDescription>
-							<Badge variant={selectedFormatForDetails?.service === "RADARR" ? "warning" : "info"}>
-								{selectedFormatForDetails?.service}
-							</Badge>
-						</DialogDescription>
-					</DialogHeader>
+			{detailsDialogOpen && selectedFormatForDetails && (
+				<div className="fixed inset-0 z-50 flex items-center justify-center">
+					{/* Backdrop */}
+					<div
+						className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+						onClick={() => setDetailsDialogOpen(false)}
+					/>
 
-					{selectedFormatForDetails && (() => {
-						// Find matching description using slug format (same as quality-profile-routes.ts)
-						const service = selectedFormatForDetails.service.toLowerCase() as "radarr" | "sonarr";
-						const descriptions = cfDescriptionsData?.[service] || [];
-						const slug = selectedFormatForDetails.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-						const description = descriptions.find(d => d.cfName === slug);
-
-						return (
-							<div className="space-y-6">
-								{/* Description */}
-								{description && (
-									<div className="space-y-2">
-										<h3 className="text-sm font-semibold text-fg">Description</h3>
-										<div
-											className="rounded-lg border border-border bg-bg-subtle p-4 text-sm text-fg-muted prose prose-invert prose-sm max-w-none"
-											dangerouslySetInnerHTML={createSanitizedHtml(description.description)}
-										/>
-									</div>
-								)}
-
-								{/* Metadata */}
-								<div className="space-y-2">
-									<h3 className="text-sm font-semibold text-fg">Information</h3>
-									<div className="rounded-lg border border-border bg-bg-subtle p-4 space-y-2 text-sm">
-										<div className="flex justify-between">
-											<span className="text-fg-muted">TRaSH ID:</span>
-											<span className="text-fg font-mono text-xs">{selectedFormatForDetails.trash_id}</span>
-										</div>
-										<div className="flex justify-between">
-											<span className="text-fg-muted">Conditions:</span>
-											<span className="text-fg">{selectedFormatForDetails.specifications.length}</span>
-										</div>
-									</div>
+					{/* Modal */}
+					<div
+						className="relative z-10 w-full max-w-3xl max-h-[80vh] mx-4 rounded-2xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl animate-in zoom-in-95 fade-in duration-200 overflow-hidden"
+						style={{ boxShadow: `0 25px 50px -12px ${themeGradient.glow}` }}
+					>
+						{/* Header */}
+						<div className="sticky top-0 z-10 flex items-center justify-between p-6 border-b border-border/50 bg-card/95 backdrop-blur-xl">
+							<div className="flex items-center gap-3">
+								<div
+									className="flex h-10 w-10 items-center justify-center rounded-xl"
+									style={{
+										background: `${SERVICE_COLORS[selectedFormatForDetails.service].from}20`,
+										border: `1px solid ${SERVICE_COLORS[selectedFormatForDetails.service].from}40`,
+									}}
+								>
+									<Palette className="h-5 w-5" style={{ color: SERVICE_COLORS[selectedFormatForDetails.service].from }} />
 								</div>
-
-							{/* Specifications/Conditions */}
-							<div className="space-y-2">
-								<h3 className="text-sm font-semibold text-fg">Conditions</h3>
-								<div className="space-y-2">
-									{selectedFormatForDetails.specifications.map((spec, index) => (
-										<div key={index} className="rounded-lg border border-border bg-bg-subtle p-4">
-											<div className="flex items-start justify-between mb-2">
-												<div className="flex-1">
-													<div className="font-medium text-fg">{spec.name}</div>
-													<div className="text-xs text-fg-muted mt-1">
-														{spec.implementation}
-														{spec.negate && <Badge variant="warning" className="ml-2">Negated</Badge>}
-														{spec.required && <Badge variant="default" className="ml-2">Required</Badge>}
-													</div>
-												</div>
-											</div>
-											{spec.fields && Object.keys(spec.fields).length > 0 && (
-												<div className="mt-3 space-y-1">
-													{Object.entries(spec.fields).map(([key, value]) => (
-														<div key={key} className="text-xs">
-															<span className="text-fg-muted">{key}:</span>{" "}
-															<span className="text-fg-muted font-mono">
-																{typeof value === 'object' ? JSON.stringify(value) : String(value)}
-															</span>
-														</div>
-													))}
-												</div>
-											)}
-										</div>
-									))}
+								<div>
+									<h3 className="text-lg font-bold text-foreground">{selectedFormatForDetails.name}</h3>
+									<ServiceBadge service={selectedFormatForDetails.service} />
 								</div>
 							</div>
+							<button
+								type="button"
+								onClick={() => setDetailsDialogOpen(false)}
+								className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-card/80 transition-colors"
+							>
+								<X className="h-5 w-5" />
+							</button>
 						</div>
-						);
-					})()}
 
-					<DialogFooter>
-						<Button variant="secondary" onClick={() => setDetailsDialogOpen(false)}>
-							Close
-						</Button>
-					</DialogFooter>
-				</DialogContent>
-			</Dialog>
+						{/* Content */}
+						<div className="p-6 overflow-y-auto max-h-[calc(80vh-80px)]">
+							{(() => {
+								const service = selectedFormatForDetails.service.toLowerCase() as "radarr" | "sonarr";
+								const descriptions = cfDescriptionsData?.[service] || [];
+								const slug = selectedFormatForDetails.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+								const description = descriptions.find(d => d.cfName === slug);
+
+								return (
+									<div className="space-y-6">
+										{/* Description */}
+										{description && (
+											<div className="space-y-3">
+												<h4 className="text-sm font-semibold text-foreground">Description</h4>
+												<SanitizedDescription html={description.description} />
+											</div>
+										)}
+
+										{/* Metadata */}
+										<div className="space-y-3">
+											<h4 className="text-sm font-semibold text-foreground">Information</h4>
+											<div className="rounded-xl border border-border/50 bg-card/30 p-4 space-y-3 text-sm">
+												<div className="flex justify-between items-center">
+													<span className="text-muted-foreground">TRaSH ID:</span>
+													<span className="font-mono text-xs text-foreground bg-muted/30 px-2 py-1 rounded">
+														{selectedFormatForDetails.trash_id}
+													</span>
+												</div>
+												<div className="flex justify-between items-center">
+													<span className="text-muted-foreground">Conditions:</span>
+													<span className="text-foreground font-medium">
+														{selectedFormatForDetails.specifications.length}
+													</span>
+												</div>
+											</div>
+										</div>
+
+										{/* Specifications/Conditions */}
+										<div className="space-y-3">
+											<h4 className="text-sm font-semibold text-foreground">Conditions</h4>
+											<div className="space-y-2">
+												{selectedFormatForDetails.specifications.map((spec, index) => (
+													<div
+														key={index}
+														className="rounded-xl border border-border/50 bg-card/30 p-4 animate-in fade-in"
+														style={{
+															animationDelay: `${index * 30}ms`,
+															animationFillMode: "backwards",
+														}}
+													>
+														<div className="flex items-start justify-between mb-2">
+															<div className="flex-1">
+																<div className="font-medium text-foreground">{spec.name}</div>
+																<div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
+																	<span>{spec.implementation}</span>
+																	{spec.negate && (
+																		<span
+																			className="px-2 py-0.5 rounded"
+																			style={{
+																				backgroundColor: SEMANTIC_COLORS.warning.bg,
+																				border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+																				color: SEMANTIC_COLORS.warning.text,
+																			}}
+																		>
+																			Negated
+																		</span>
+																	)}
+																	{spec.required && (
+																		<span
+																			className="px-2 py-0.5 rounded"
+																			style={{
+																				backgroundColor: `${themeGradient.from}20`,
+																				border: `1px solid ${themeGradient.from}40`,
+																				color: themeGradient.from,
+																			}}
+																		>
+																			Required
+																		</span>
+																	)}
+																</div>
+															</div>
+														</div>
+														{spec.fields && Object.keys(spec.fields).length > 0 && (
+															<div className="mt-3 space-y-1.5 pt-3 border-t border-border/30">
+																{Object.entries(spec.fields).map(([key, value]) => (
+																	<div key={key} className="text-xs flex items-start gap-2">
+																		<span className="text-muted-foreground shrink-0">{key}:</span>
+																		<span className="font-mono text-foreground/80 break-all">
+																			{typeof value === 'object' ? JSON.stringify(value) : String(value)}
+																		</span>
+																	</div>
+																))}
+															</div>
+														)}
+													</div>
+												))}
+											</div>
+										</div>
+									</div>
+								);
+							})()}
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 };

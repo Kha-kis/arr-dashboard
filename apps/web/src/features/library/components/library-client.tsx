@@ -10,6 +10,7 @@ import { LibraryCard } from "./library-card";
 import { ItemDetailsModal } from "./item-details-modal";
 import { SeasonBreakdownModal } from "./season-breakdown-modal";
 import { buildLibraryExternalLink } from "../lib/library-utils";
+import { AmbientGlow } from "../../../components/layout";
 
 /**
  * Main library client component
@@ -97,7 +98,10 @@ export const LibraryClient: React.FC = () => {
 
 	return (
 		<>
-			<div className="space-y-6">
+			<section className="relative flex flex-col gap-6">
+				{/* Ambient background glow */}
+				<AmbientGlow />
+
 				<LibraryHeader
 					serviceFilter={filters.serviceFilter}
 					onServiceFilterChange={filters.setServiceFilter}
@@ -118,31 +122,36 @@ export const LibraryClient: React.FC = () => {
 					isSyncing={data.isSyncing}
 				/>
 
-				<LibraryContent
-					isLoading={data.isLoading}
-					isError={data.isError}
-					error={data.error}
-					grouped={data.grouped}
-					totalItems={data.pagination.totalItems}
-					page={filters.page}
-					pageSize={filters.pageSize}
-					onPageChange={filters.setPage}
-					onPageSizeChange={filters.setPageSize}
-					onToggleMonitor={handleToggleMonitor}
-					pendingKey={pendingKey}
-					isMonitorPending={monitorMutation.isPending}
-					serviceLookup={data.serviceLookup}
-					onViewSeasons={handleViewSeasons}
-					onSearchMovie={actions.handleMovieSearch}
-					pendingMovieSearch={actions.pendingMovieSearch}
-					onSearchSeries={actions.handleSeriesSearch}
-					pendingSeriesSearch={actions.pendingSeriesSearch}
-					onExpandDetails={handleExpandDetails}
-					buildLibraryExternalLink={buildLibraryExternalLink}
-					LibraryCard={LibraryCard}
-					isSyncing={data.isSyncing}
-				/>
-			</div>
+				<div
+					className="animate-in fade-in slide-in-from-bottom-4 duration-500"
+					style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
+				>
+					<LibraryContent
+						isLoading={data.isLoading}
+						isError={data.isError}
+						error={data.error}
+						grouped={data.grouped}
+						totalItems={data.pagination.totalItems}
+						page={filters.page}
+						pageSize={filters.pageSize}
+						onPageChange={filters.setPage}
+						onPageSizeChange={filters.setPageSize}
+						onToggleMonitor={handleToggleMonitor}
+						pendingKey={pendingKey}
+						isMonitorPending={monitorMutation.isPending}
+						serviceLookup={data.serviceLookup}
+						onViewSeasons={handleViewSeasons}
+						onSearchMovie={actions.handleMovieSearch}
+						pendingMovieSearch={actions.pendingMovieSearch}
+						onSearchSeries={actions.handleSeriesSearch}
+						pendingSeriesSearch={actions.pendingSeriesSearch}
+						onExpandDetails={handleExpandDetails}
+						buildLibraryExternalLink={buildLibraryExternalLink}
+						LibraryCard={LibraryCard}
+						isSyncing={data.isSyncing}
+					/>
+				</div>
+			</section>
 
 			{itemDetail && <ItemDetailsModal item={itemDetail} onClose={handleCloseItemDetail} />}
 

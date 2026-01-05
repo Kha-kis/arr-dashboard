@@ -1,23 +1,36 @@
 "use client";
 
+/**
+ * Sync Validation Modal
+ *
+ * Premium modal for validating sync operations with:
+ * - Glassmorphic backdrop and container
+ * - Theme-aware styling using THEME_GRADIENTS
+ * - SEMANTIC_COLORS for success/error/warning states
+ * - Animated entrance and focus trap
+ */
+
 import {
 	AlertCircle,
 	Bug,
 	CheckCircle2,
 	ChevronDown,
 	ChevronUp,
-	ExternalLink,
 	Eye,
 	HelpCircle,
 	Info,
+	Loader2,
 	Plug,
 	RefreshCw,
 	Upload,
+	X,
 	XCircle,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui";
 import { useValidateSync, MAX_RETRY_ATTEMPTS } from "../../../hooks/api/useSync";
+import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 import type { ValidationResult } from "../../../lib/api-client/sync";
 
 // Check if we're in development mode
@@ -90,6 +103,8 @@ export const SyncValidationModal = ({
 	onViewChanges,
 	onSwitchToManualSync,
 }: SyncValidationModalProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const [resolutions, setResolutions] = useState<Record<string, "REPLACE" | "SKIP">>({});
 	const [validation, setValidation] = useState<ValidationResult | null>(null);
 	const [retryCount, setRetryCount] = useState(0);
@@ -130,7 +145,6 @@ export const SyncValidationModal = ({
 			const endTime = Date.now();
 			setTiming((prev) => {
 				const duration = prev.startTime > 0 ? endTime - prev.startTime : null;
-				// Log timing using prev.startTime to avoid stale closure
 				console.error("[SyncValidationModal] Validation error:", {
 					error: error.message,
 					templateId,
@@ -150,8 +164,6 @@ export const SyncValidationModal = ({
 			const endTime = Date.now();
 			setTiming((prev) => {
 				const duration = endTime - prev.startTime;
-				// Log full validation object for debugging silent failures
-				// Use prev.startTime to avoid stale closure
 				if (!data.valid && (!data.errors || data.errors.length === 0)) {
 					console.warn("[SyncValidationModal] Silent failure - full validation response:", {
 						validation: data,
@@ -169,8 +181,6 @@ export const SyncValidationModal = ({
 		},
 		onRetryProgress: (attempt, maxAttempts, delayMs) => {
 			setRetryProgress({ attempt, maxAttempts, delayMs, isWaiting: true });
-			// Clear waiting state after delay (only if still mounted)
-			// Store timeout ID in ref for cleanup on unmount
 			retryTimeoutRef.current = setTimeout(() => {
 				if (!isMountedRef.current) return;
 				setRetryProgress((prev) =>
@@ -180,15 +190,12 @@ export const SyncValidationModal = ({
 		},
 	});
 
-	// Maximum manual retry attempts (user clicking "Retry" button, separate from automatic retries in useValidateSync)
+	// Maximum manual retry attempts
 	const MAX_MANUAL_RETRIES = 3;
 
 	// Focus trap and keyboard handling
 	useEffect(() => {
-		// Save the element that had focus before opening
 		previousActiveElement.current = document.activeElement;
-
-		// Focus the dialog on mount
 		dialogRef.current?.focus();
 
 		const getFocusableElements = (): HTMLElement[] => {
@@ -218,13 +225,11 @@ export const SyncValidationModal = ({
 				const lastElement = focusableElements[focusableElements.length - 1];
 
 				if (e.shiftKey) {
-					// Shift+Tab: if on first element, wrap to last
 					if (document.activeElement === firstElement && lastElement) {
 						e.preventDefault();
 						lastElement.focus();
 					}
 				} else {
-					// Tab: if on last element, wrap to first
 					if (document.activeElement === lastElement && firstElement) {
 						e.preventDefault();
 						firstElement.focus();
@@ -237,16 +242,14 @@ export const SyncValidationModal = ({
 
 		return () => {
 			document.removeEventListener("keydown", handleKeyDown);
-			// Restore focus to the element that opened the modal
 			if (previousActiveElement.current instanceof HTMLElement) {
 				previousActiveElement.current.focus();
 			}
 		};
 	}, [onCancel]);
 
-	// Validation function that can be called for initial load and retries
+	// Validation function
 	const runValidation = () => {
-		// Reset local error state and start timing
 		setLocalError(null);
 		const startTime = Date.now();
 		setTiming({ startTime, endTime: null, duration: null });
@@ -256,7 +259,6 @@ export const SyncValidationModal = ({
 			{
 				onSuccess: (data) => {
 					setValidation(data);
-					// Set default resolutions to REPLACE only if conflicts is a valid array
 					if (data && Array.isArray(data.conflicts) && data.conflicts.length > 0) {
 						const defaultResolutions: Record<string, "REPLACE" | "SKIP"> = {};
 						data.conflicts.forEach((conflict) => {
@@ -271,10 +273,10 @@ export const SyncValidationModal = ({
 		);
 	};
 
-	// Auto-validate on mount and when template/instance IDs change
+	// Auto-validate on mount
 	useEffect(() => {
 		runValidation();
-		// eslint-disable-next-line react-hooks/exhaustive-deps -- runValidation is stable, only re-run when IDs change
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [templateId, instanceId]);
 
 	// Handle retry with exponential backoff
@@ -282,12 +284,9 @@ export const SyncValidationModal = ({
 		if (retryCount < MAX_MANUAL_RETRIES) {
 			setRetryCount((prev) => prev + 1);
 			setValidation(null);
-			// Exponential backoff: 1s, 2s
 			const delay = Math.pow(2, retryCount) * 1000;
-			// Store timeout ID in ref for cleanup on unmount
 			handleRetryTimeoutRef.current = setTimeout(runValidation, delay);
 		} else {
-			// Max retries exceeded, just run immediately
 			setValidation(null);
 			setRetryCount(0);
 			runValidation();
@@ -311,13 +310,10 @@ export const SyncValidationModal = ({
 	const hasConflicts = Array.isArray(validation?.conflicts) && validation.conflicts.length > 0;
 	const canProceed = validation && validation.valid && !hasErrors;
 
-	// Detect silent failure: validation returned invalid=false but no errors
 	const hasSilentFailure = validation && !validation.valid && !hasErrors;
 
-	// Detect error types for contextual actions
 	const errorTypes = hasErrors ? detectErrorTypes(validation.errors) : new Set<ErrorType>();
 
-	// Separate informational warnings (like "Instance is reachable") from actual warnings
 	const informationalWarnings = (validation?.warnings || []).filter(
 		(w) => w.includes("is reachable") || w.includes("Validation passed"),
 	);
@@ -326,41 +322,77 @@ export const SyncValidationModal = ({
 	);
 	const hasActualWarnings = actualWarnings.length > 0;
 
-	// Check if we're showing automatic retry progress
 	const isAutoRetrying = retryProgress !== null && retryProgress.isWaiting;
 
 	return (
 		<div
-			className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+			className="fixed inset-0 z-modal-backdrop flex items-center justify-center p-4 animate-in fade-in duration-200"
 			onClick={(e) => e.target === e.currentTarget && onCancel()}
 		>
+			{/* Backdrop */}
+			<div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+
+			{/* Modal */}
 			<div
 				ref={dialogRef}
 				tabIndex={-1}
-				className="w-full max-w-2xl rounded-xl border border-border bg-bg shadow-2xl focus:outline-none"
+				className="relative w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-2xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl focus:outline-none animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
+				style={{
+					boxShadow: `0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px ${themeGradient.from}15`,
+				}}
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="sync-validation-title"
 			>
+				{/* Close Button */}
+				<button
+					type="button"
+					onClick={onCancel}
+					className="absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-lg bg-black/50 text-white/70 transition-colors hover:bg-black/70 hover:text-white"
+				>
+					<X className="h-4 w-4" />
+				</button>
+
 				{/* Header */}
-				<div className="border-b border-border p-6">
-					<h2 id="sync-validation-title" className="text-xl font-semibold text-fg">
-						Validate Sync
-					</h2>
-					<p className="mt-1 text-sm text-fg/60">
-						Template: <span className="font-medium text-fg">{templateName}</span> → Instance:{" "}
-						<span className="font-medium text-fg">{instanceName}</span>
-					</p>
+				<div
+					className="border-b border-border/30 p-6"
+					style={{
+						background: `linear-gradient(135deg, ${themeGradient.from}08, transparent)`,
+					}}
+				>
+					<div className="flex items-center gap-4">
+						<div
+							className="flex h-12 w-12 items-center justify-center rounded-xl shrink-0"
+							style={{
+								background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+								border: `1px solid ${themeGradient.from}30`,
+							}}
+						>
+							<RefreshCw className="h-6 w-6" style={{ color: themeGradient.from }} />
+						</div>
+						<div>
+							<h2
+								id="sync-validation-title"
+								className="text-xl font-bold text-foreground"
+							>
+								Validate Sync
+							</h2>
+							<p className="mt-1 text-sm text-muted-foreground">
+								Template: <span className="font-medium text-foreground">{templateName}</span> → Instance:{" "}
+								<span className="font-medium text-foreground">{instanceName}</span>
+							</p>
+						</div>
+					</div>
 				</div>
 
 				{/* Content */}
 				<div className="max-h-[60vh] overflow-y-auto p-6">
-					{/* Validating state with optional retry progress */}
+					{/* Validating state */}
 					{isValidating && (
 						<div className="flex flex-col items-center justify-center py-12">
 							<div className="flex items-center">
-								<div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-								<span className="ml-3 text-fg/60">
+								<Loader2 className="h-8 w-8 animate-spin" style={{ color: themeGradient.from }} />
+								<span className="ml-3 text-muted-foreground">
 									{retryProgress
 										? `Retrying... (attempt ${retryProgress.attempt + 1}/${retryProgress.maxAttempts + 1})`
 										: "Validating..."}
@@ -368,13 +400,13 @@ export const SyncValidationModal = ({
 							</div>
 							{retryProgress && retryProgress.isWaiting && (
 								<div className="mt-4 text-center">
-									<p className="text-sm text-fg/50">
+									<p className="text-sm text-muted-foreground/70">
 										Waiting {retryProgress.delayMs / 1000}s before retry due to network error...
 									</p>
 									<Button
-										variant="secondary"
+										variant="outline"
 										size="sm"
-										className="mt-2"
+										className="mt-2 rounded-xl"
 										onClick={onCancel}
 									>
 										Cancel
@@ -386,32 +418,39 @@ export const SyncValidationModal = ({
 
 					{!isValidating && validation && (
 						<div className="space-y-4">
-							{/* Silent Failure Fallback - validation failed but no errors reported */}
+							{/* Silent Failure Fallback */}
 							{hasSilentFailure && (
-								<div className="rounded-lg border border-orange-500/20 bg-orange-500/10 p-4">
+								<div
+									className="rounded-xl p-4"
+									style={{
+										backgroundColor: SEMANTIC_COLORS.warning.bg,
+										border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+									}}
+								>
 									<div className="flex items-start gap-3">
-										<HelpCircle className="h-5 w-5 flex-shrink-0 text-orange-400" />
+										<HelpCircle className="h-5 w-5 flex-shrink-0" style={{ color: SEMANTIC_COLORS.warning.from }} />
 										<div className="flex-1">
-											<h3 className="font-medium text-orange-200">Validation Failed</h3>
-											<p className="mt-1 text-sm text-orange-300">
+											<h3 className="font-medium" style={{ color: SEMANTIC_COLORS.warning.text }}>
+												Validation Failed
+											</h3>
+											<p className="mt-1 text-sm" style={{ color: SEMANTIC_COLORS.warning.text }}>
 												Validation could not be completed, but no specific errors were reported.
 												This may be a temporary issue.
 											</p>
 											<div className="mt-3 flex items-center gap-3">
 												<Button
-													variant="secondary"
+													variant="outline"
 													size="sm"
 													onClick={handleRetry}
 													disabled={isValidating}
+													className="gap-2 rounded-xl"
 												>
-													<RefreshCw
-														className={`mr-2 h-3 w-3 ${isValidating ? "animate-spin" : ""}`}
-													/>
+													<RefreshCw className={`h-3 w-3 ${isValidating ? "animate-spin" : ""}`} />
 													{retryCount > 0
 														? `Retry (${retryCount}/${MAX_MANUAL_RETRIES})`
 														: "Retry Validation"}
 												</Button>
-												<span className="text-xs text-orange-300/70">
+												<span className="text-xs" style={{ color: SEMANTIC_COLORS.warning.text }}>
 													Try again or check your instance connectivity
 												</span>
 											</div>
@@ -420,106 +459,117 @@ export const SyncValidationModal = ({
 								</div>
 							)}
 
-							{/* Validation Errors with Contextual Actions */}
+							{/* Validation Errors */}
 							{hasErrors && (
-								<div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4">
+								<div
+									className="rounded-xl p-4"
+									style={{
+										backgroundColor: SEMANTIC_COLORS.error.bg,
+										border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+									}}
+								>
 									<div className="flex items-start gap-3">
-										<XCircle className="h-5 w-5 flex-shrink-0 text-red-400" />
+										<XCircle className="h-5 w-5 flex-shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
 										<div className="flex-1">
-											<h3 className="font-medium text-red-200">Validation Failed</h3>
-											<ul className="mt-2 space-y-1 text-sm text-red-300">
+											<h3 className="font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
+												Validation Failed
+											</h3>
+											<ul className="mt-2 space-y-1 text-sm" style={{ color: SEMANTIC_COLORS.error.text }}>
 												{validation.errors.map((error, index) => (
 													<li key={index}>• {error}</li>
 												))}
 											</ul>
 
-											{/* Contextual action buttons based on error types */}
+											{/* Contextual action buttons */}
 											<div className="mt-4 flex flex-wrap gap-2">
-												{/* Missing quality profile mappings → Deploy Template */}
 												{errorTypes.has("MISSING_MAPPING") && onNavigateToDeploy && (
 													<Button
-														variant="primary"
 														size="sm"
 														onClick={() => {
 															onCancel();
 															onNavigateToDeploy();
 														}}
+														className="gap-2 rounded-xl font-medium"
+														style={{
+															background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+														}}
 													>
-														<Upload className="mr-2 h-3 w-3" />
+														<Upload className="h-3 w-3" />
 														Deploy Template
 													</Button>
 												)}
 
-												{/* Unreachable instance → Test Connection */}
 												{errorTypes.has("UNREACHABLE_INSTANCE") && onTestConnection && (
 													<Button
-														variant="secondary"
+														variant="outline"
 														size="sm"
 														onClick={onTestConnection}
+														className="gap-2 rounded-xl"
 													>
-														<Plug className="mr-2 h-3 w-3" />
+														<Plug className="h-3 w-3" />
 														Test Connection
 													</Button>
 												)}
 
-												{/* User modifications blocking auto-sync → Manual sync options */}
 												{errorTypes.has("USER_MODIFICATIONS") && (
 													<>
 														{onSwitchToManualSync && (
 															<Button
-																variant="primary"
 																size="sm"
 																onClick={() => {
 																	onCancel();
 																	onSwitchToManualSync();
 																}}
+																className="gap-2 rounded-xl font-medium"
+																style={{
+																	background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+																}}
 															>
-																<RefreshCw className="mr-2 h-3 w-3" />
+																<RefreshCw className="h-3 w-3" />
 																Switch to Manual Sync
 															</Button>
 														)}
 														{onViewChanges && (
 															<Button
-																variant="secondary"
+																variant="outline"
 																size="sm"
 																onClick={onViewChanges}
+																className="gap-2 rounded-xl"
 															>
-																<Eye className="mr-2 h-3 w-3" />
+																<Eye className="h-3 w-3" />
 																View Changes
 															</Button>
 														)}
 													</>
 												)}
 
-												{/* Generic retry button */}
 												<Button
-													variant="secondary"
+													variant="outline"
 													size="sm"
 													onClick={handleRetry}
 													disabled={isValidating}
+													className="gap-2 rounded-xl"
 												>
-													<RefreshCw
-														className={`mr-2 h-3 w-3 ${isValidating ? "animate-spin" : ""}`}
-													/>
+													<RefreshCw className={`h-3 w-3 ${isValidating ? "animate-spin" : ""}`} />
 													{retryCount > 0
 														? `Retry (${retryCount}/${MAX_MANUAL_RETRIES})`
 														: "Retry Validation"}
 												</Button>
 											</div>
 
-											{/* Helpful hints based on error types */}
+											{/* Helpful hints */}
 											{errorTypes.has("MISSING_MAPPING") && (
-												<p className="mt-3 text-xs text-red-300/70">
+												<p className="mt-3 text-xs opacity-80" style={{ color: SEMANTIC_COLORS.error.text }}>
 													This template needs to be deployed to the instance before syncing.
 												</p>
 											)}
 											{errorTypes.has("USER_MODIFICATIONS") && (
-												<p className="mt-3 text-xs text-red-300/70">
+												<p className="mt-3 text-xs opacity-80" style={{ color: SEMANTIC_COLORS.error.text }}>
 													Auto-sync is disabled for templates with local modifications to protect your changes.
 												</p>
 											)}
 											{errorTypes.has("UNREACHABLE_INSTANCE") && (
-												<p className="mt-3 text-xs text-red-300/70">
+												<p className="mt-3 text-xs opacity-80" style={{ color: SEMANTIC_COLORS.error.text }}>
 													Check that the instance is running and the URL/API key are correct.
 												</p>
 											)}
@@ -528,14 +578,22 @@ export const SyncValidationModal = ({
 								</div>
 							)}
 
-							{/* Actual Warnings (not informational) */}
+							{/* Actual Warnings */}
 							{hasActualWarnings && (
-								<div className="rounded-lg border border-yellow-500/20 bg-yellow-500/10 p-4">
+								<div
+									className="rounded-xl p-4"
+									style={{
+										backgroundColor: SEMANTIC_COLORS.warning.bg,
+										border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+									}}
+								>
 									<div className="flex items-start gap-3">
-										<AlertCircle className="h-5 w-5 flex-shrink-0 text-yellow-400" />
+										<AlertCircle className="h-5 w-5 flex-shrink-0" style={{ color: SEMANTIC_COLORS.warning.from }} />
 										<div className="flex-1">
-											<h3 className="font-medium text-yellow-200">Warnings</h3>
-											<ul className="mt-2 space-y-1 text-sm text-yellow-300">
+											<h3 className="font-medium" style={{ color: SEMANTIC_COLORS.warning.text }}>
+												Warnings
+											</h3>
+											<ul className="mt-2 space-y-1 text-sm" style={{ color: SEMANTIC_COLORS.warning.text }}>
 												{actualWarnings.map((warning, index) => (
 													<li key={index}>• {warning}</li>
 												))}
@@ -545,13 +603,19 @@ export const SyncValidationModal = ({
 								</div>
 							)}
 
-							{/* Informational messages (like connectivity status) */}
+							{/* Informational messages */}
 							{informationalWarnings.length > 0 && canProceed && (
-								<div className="rounded-lg border border-blue-500/20 bg-blue-500/10 p-4">
+								<div
+									className="rounded-xl p-4"
+									style={{
+										background: `linear-gradient(135deg, ${themeGradient.from}08, ${themeGradient.to}08)`,
+										border: `1px solid ${themeGradient.from}20`,
+									}}
+								>
 									<div className="flex items-start gap-3">
-										<Info className="h-5 w-5 flex-shrink-0 text-blue-400" />
+										<Info className="h-5 w-5 flex-shrink-0" style={{ color: themeGradient.from }} />
 										<div className="flex-1">
-											<ul className="space-y-1 text-sm text-blue-300">
+											<ul className="space-y-1 text-sm text-muted-foreground">
 												{informationalWarnings.map((info, index) => (
 													<li key={index}>• {info}</li>
 												))}
@@ -563,15 +627,15 @@ export const SyncValidationModal = ({
 
 							{/* Conflicts */}
 							{hasConflicts && validation.conflicts && (
-								<div className="rounded-lg border border-border bg-bg-subtle p-4">
+								<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
 									<div className="flex items-start gap-3">
-										<Info className="h-5 w-5 flex-shrink-0 text-blue-400" />
+										<Info className="h-5 w-5 flex-shrink-0" style={{ color: themeGradient.from }} />
 										<div className="flex-1">
-											<h3 className="font-medium text-fg">
+											<h3 className="font-medium text-foreground">
 												{validation.conflicts.length} Conflict
 												{validation.conflicts.length !== 1 ? "s" : ""} Detected
 											</h3>
-											<p className="mt-1 text-sm text-fg/60">
+											<p className="mt-1 text-sm text-muted-foreground">
 												Choose how to handle existing Custom Formats with the same name
 											</p>
 
@@ -579,37 +643,41 @@ export const SyncValidationModal = ({
 												{validation.conflicts.map((conflict) => (
 													<div
 														key={conflict.configName}
-														className="rounded-lg border border-border bg-bg-subtle p-3"
+														className="rounded-xl border border-border/50 bg-card/30 p-3"
 													>
 														<div className="flex items-center justify-between">
 															<div className="flex-1">
-																<p className="font-medium text-fg">{conflict.configName}</p>
-																<p className="mt-0.5 text-xs text-fg/50">{conflict.reason}</p>
+																<p className="font-medium text-foreground">{conflict.configName}</p>
+																<p className="mt-0.5 text-xs text-muted-foreground">{conflict.reason}</p>
 															</div>
 
 															<div className="flex gap-2">
 																<Button
-																	variant={
-																		resolutions[conflict.configName] === "REPLACE"
-																			? "primary"
-																			: "secondary"
-																	}
 																	size="sm"
-																	onClick={() =>
-																		handleResolutionChange(conflict.configName, "REPLACE")
+																	variant={resolutions[conflict.configName] === "REPLACE" ? "default" : "outline"}
+																	onClick={() => handleResolutionChange(conflict.configName, "REPLACE")}
+																	className="rounded-xl"
+																	style={
+																		resolutions[conflict.configName] === "REPLACE"
+																			? {
+																					background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+																				}
+																			: undefined
 																	}
 																>
 																	Replace
 																</Button>
 																<Button
-																	variant={
-																		resolutions[conflict.configName] === "SKIP"
-																			? "primary"
-																			: "secondary"
-																	}
 																	size="sm"
-																	onClick={() =>
-																		handleResolutionChange(conflict.configName, "SKIP")
+																	variant={resolutions[conflict.configName] === "SKIP" ? "default" : "outline"}
+																	onClick={() => handleResolutionChange(conflict.configName, "SKIP")}
+																	className="rounded-xl"
+																	style={
+																		resolutions[conflict.configName] === "SKIP"
+																			? {
+																					background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+																				}
+																			: undefined
 																	}
 																>
 																	Skip
@@ -626,12 +694,22 @@ export const SyncValidationModal = ({
 
 							{/* Success */}
 							{canProceed && !hasConflicts && (
-								<div className="rounded-lg border border-green-500/20 bg-green-500/10 p-4">
+								<div
+									className="rounded-xl p-4"
+									style={{
+										backgroundColor: SEMANTIC_COLORS.success.bg,
+										border: `1px solid ${SEMANTIC_COLORS.success.border}`,
+									}}
+								>
 									<div className="flex items-center gap-3">
-										<CheckCircle2 className="h-5 w-5 text-green-400" />
+										<CheckCircle2 className="h-5 w-5" style={{ color: SEMANTIC_COLORS.success.from }} />
 										<div>
-											<h3 className="font-medium text-green-200">Validation Passed</h3>
-											<p className="mt-0.5 text-sm text-green-300">Ready to sync</p>
+											<h3 className="font-medium" style={{ color: SEMANTIC_COLORS.success.text }}>
+												Validation Passed
+											</h3>
+											<p className="mt-0.5 text-sm" style={{ color: SEMANTIC_COLORS.success.text }}>
+												Ready to sync
+											</p>
 										</div>
 									</div>
 								</div>
@@ -641,27 +719,36 @@ export const SyncValidationModal = ({
 
 					{/* Mutation Error or Local Error */}
 					{(validateMutation.error || localError) && (
-						<div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4">
+						<div
+							className="rounded-xl p-4"
+							style={{
+								backgroundColor: SEMANTIC_COLORS.error.bg,
+								border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+							}}
+						>
 							<div className="flex items-start gap-3">
-								<XCircle className="h-5 w-5 flex-shrink-0 text-red-400" />
+								<XCircle className="h-5 w-5 flex-shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
 								<div className="flex-1">
-									<h3 className="font-medium text-red-200">Validation Error</h3>
-									<p className="mt-1 text-sm text-red-300">
+									<h3 className="font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
+										Validation Error
+									</h3>
+									<p className="mt-1 text-sm" style={{ color: SEMANTIC_COLORS.error.text }}>
 										{(localError ?? validateMutation.error)?.message ??
 											"An unknown error occurred while validating the sync request."}
 									</p>
 									<div className="mt-3 flex items-center gap-3">
 										<Button
-											variant="secondary"
+											variant="outline"
 											size="sm"
 											onClick={handleRetry}
 											disabled={isValidating}
+											className="gap-2 rounded-xl"
 										>
-											<RefreshCw className={`mr-2 h-3 w-3 ${isValidating ? "animate-spin" : ""}`} />
+											<RefreshCw className={`h-3 w-3 ${isValidating ? "animate-spin" : ""}`} />
 											{retryCount > 0 ? `Retry (${retryCount}/${MAX_MANUAL_RETRIES})` : "Retry Validation"}
 										</Button>
 										{retryCount >= MAX_MANUAL_RETRIES && (
-											<span className="text-xs text-red-300/70">
+											<span className="text-xs" style={{ color: SEMANTIC_COLORS.error.text }}>
 												Max retries reached. Check instance connectivity.
 											</span>
 										)}
@@ -673,11 +760,11 @@ export const SyncValidationModal = ({
 
 					{/* Development Debug Panel */}
 					{isDevelopment && (
-						<div className="mt-4 rounded-lg border border-purple-500/20 bg-purple-500/5">
+						<div className="mt-4 rounded-xl border border-purple-500/30 bg-purple-500/10">
 							<button
 								type="button"
 								onClick={() => setShowDebugPanel(!showDebugPanel)}
-								className="flex w-full items-center justify-between p-3 text-left text-sm font-medium text-purple-300 hover:bg-purple-500/10"
+								className="flex w-full items-center justify-between p-3 text-left text-sm font-medium text-purple-300 hover:bg-purple-500/10 rounded-xl"
 							>
 								<span className="flex items-center gap-2">
 									<Bug className="h-4 w-4" />
@@ -769,7 +856,13 @@ export const SyncValidationModal = ({
 													<span className="text-purple-200">{validation.conflicts?.length ?? 0}</span>
 												</div>
 												{hasSilentFailure && (
-													<div className="mt-2 rounded bg-orange-500/20 p-2 text-orange-300">
+													<div
+														className="mt-2 rounded-lg p-2"
+														style={{
+															backgroundColor: SEMANTIC_COLORS.warning.bg,
+															color: SEMANTIC_COLORS.warning.text,
+														}}
+													>
 														Silent Failure Detected: valid=false with 0 errors
 													</div>
 												)}
@@ -778,7 +871,7 @@ export const SyncValidationModal = ({
 										{(localError || validateMutation.error) && (
 											<div className="mt-2 border-t border-purple-500/20 pt-2">
 												<span className="text-purple-400">Error Details:</span>
-												<pre className="mt-1 overflow-auto rounded bg-black/30 p-2 text-red-300">
+												<pre className="mt-1 overflow-auto rounded-lg bg-black/30 p-2 text-red-300">
 													{(localError || validateMutation.error)?.message}
 												</pre>
 											</div>
@@ -791,11 +884,23 @@ export const SyncValidationModal = ({
 				</div>
 
 				{/* Footer */}
-				<div className="flex items-center justify-end gap-3 border-t border-border p-6">
-					<Button variant="secondary" onClick={onCancel}>
+				<div className="flex items-center justify-end gap-3 border-t border-border/30 p-6">
+					<Button variant="outline" onClick={onCancel} className="rounded-xl">
 						Cancel
 					</Button>
-					<Button variant="primary" onClick={handleConfirm} disabled={!canProceed || isValidating}>
+					<Button
+						onClick={handleConfirm}
+						disabled={!canProceed || isValidating}
+						className="gap-2 rounded-xl font-medium"
+						style={
+							canProceed && !isValidating
+								? {
+										background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+										boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
+									}
+								: undefined
+						}
+					>
 						{hasConflicts ? "Proceed with Resolutions" : "Start Sync"}
 					</Button>
 				</div>

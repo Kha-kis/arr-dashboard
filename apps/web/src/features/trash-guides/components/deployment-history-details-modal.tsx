@@ -2,15 +2,17 @@
 
 import { useDeploymentHistoryDetail } from "../../../hooks/api/useDeploymentHistory";
 import { format } from "date-fns";
-import { History, AlertCircle } from "lucide-react";
+import { History, AlertCircle, CheckCircle2, XCircle } from "lucide-react";
+import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 import {
-	Dialog,
-	DialogHeader,
-	DialogTitle,
-	DialogDescription,
-	DialogContent,
-	DialogFooter,
-} from "../../../components/ui/dialog";
+	LegacyDialog,
+	LegacyDialogHeader,
+	LegacyDialogTitle,
+	LegacyDialogDescription,
+	LegacyDialogContent,
+	LegacyDialogFooter,
+} from "../../../components/ui";
 import { Button, Skeleton } from "../../../components/ui";
 
 interface DeploymentHistoryDetailsModalProps {
@@ -24,23 +26,24 @@ export function DeploymentHistoryDetailsModal({
 	onClose,
 	onUndeploy,
 }: DeploymentHistoryDetailsModalProps) {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const { data, isLoading, error } = useDeploymentHistoryDetail(historyId);
 
 	return (
-		<Dialog open={true} onOpenChange={onClose} size="lg">
-			<DialogHeader>
-				<DialogTitle>
-					<div className="flex items-center gap-2">
-						<History className="h-5 w-5" />
-						Deployment Details
-					</div>
-				</DialogTitle>
-				<DialogDescription>
-					View details of this deployment
-				</DialogDescription>
-			</DialogHeader>
+		<LegacyDialog open={true} onOpenChange={onClose} size="lg">
+			<LegacyDialogHeader
+				icon={<History className="h-6 w-6" style={{ color: themeGradient.from }} />}
+			>
+				<div>
+					<LegacyDialogTitle>Deployment Details</LegacyDialogTitle>
+					<LegacyDialogDescription>
+						View details of this deployment
+					</LegacyDialogDescription>
+				</div>
+			</LegacyDialogHeader>
 
-			<DialogContent className="space-y-6">
+			<LegacyDialogContent className="space-y-6">
 				{isLoading && (
 					<div className="space-y-4">
 						<Skeleton className="h-24 w-full" />
@@ -50,14 +53,23 @@ export function DeploymentHistoryDetailsModal({
 				)}
 
 				{error && (
-					<div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4">
+					<div
+						className="rounded-xl p-4"
+						style={{
+							backgroundColor: SEMANTIC_COLORS.error.bg,
+							border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+						}}
+					>
 						<div className="flex items-start gap-3">
-							<AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
+							<AlertCircle
+								className="h-5 w-5 mt-0.5 shrink-0"
+								style={{ color: SEMANTIC_COLORS.error.from }}
+							/>
 							<div>
-								<p className="text-sm font-medium text-fg">
+								<p className="text-sm font-medium text-foreground">
 									Failed to load deployment details
 								</p>
-								<p className="text-sm text-fg-muted mt-1">{error.message}</p>
+								<p className="text-sm text-muted-foreground mt-1">{error.message}</p>
 							</div>
 						</div>
 					</div>
@@ -66,8 +78,8 @@ export function DeploymentHistoryDetailsModal({
 				{data?.data && (
 					<>
 						{/* Overview Section */}
-						<div className="rounded-lg border border-border bg-bg-subtle p-4">
-							<h3 className="text-sm font-medium text-fg mb-3">Overview</h3>
+						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+							<h3 className="text-sm font-medium text-foreground mb-3">Overview</h3>
 							<div className="grid grid-cols-2 gap-4">
 								<InfoField
 									label="Deployed At"
@@ -101,8 +113,8 @@ export function DeploymentHistoryDetailsModal({
 						</div>
 
 						{/* Instance & Template Section */}
-						<div className="rounded-lg border border-border bg-bg-subtle p-4">
-							<h3 className="text-sm font-medium text-fg mb-3">
+						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+							<h3 className="text-sm font-medium text-foreground mb-3">
 								Instance & Template
 							</h3>
 							<div className="grid grid-cols-2 gap-4">
@@ -139,24 +151,24 @@ export function DeploymentHistoryDetailsModal({
 						</div>
 
 						{/* Results Section */}
-						<div className="rounded-lg border border-border bg-bg-subtle p-4">
-							<h3 className="text-sm font-medium text-fg mb-3">Results</h3>
+						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+							<h3 className="text-sm font-medium text-foreground mb-3">Results</h3>
 							<div className="grid grid-cols-3 gap-4">
 								<div className="space-y-1">
-									<p className="text-xs text-green-700 dark:text-green-300">Applied</p>
-									<p className="text-2xl font-semibold text-green-600 dark:text-green-400">
+									<p className="text-xs" style={{ color: SEMANTIC_COLORS.success.text }}>Applied</p>
+									<p className="text-2xl font-semibold" style={{ color: SEMANTIC_COLORS.success.from }}>
 										{data.data.appliedCFs}
 									</p>
 								</div>
 								<div className="space-y-1">
-									<p className="text-xs text-red-700 dark:text-red-300">Failed</p>
-									<p className="text-2xl font-semibold text-red-600 dark:text-red-400">
+									<p className="text-xs" style={{ color: SEMANTIC_COLORS.error.text }}>Failed</p>
+									<p className="text-2xl font-semibold" style={{ color: SEMANTIC_COLORS.error.from }}>
 										{data.data.failedCFs}
 									</p>
 								</div>
 								<div className="space-y-1">
-									<p className="text-xs text-blue-700 dark:text-blue-300">Total</p>
-									<p className="text-2xl font-semibold text-blue-600 dark:text-blue-400">
+									<p className="text-xs" style={{ color: themeGradient.from }}>Total</p>
+									<p className="text-2xl font-semibold" style={{ color: themeGradient.from }}>
 										{data.data.totalCFs}
 									</p>
 								</div>
@@ -166,14 +178,35 @@ export function DeploymentHistoryDetailsModal({
 						{/* Applied Configs Section */}
 						{data.data.appliedConfigs && data.data.appliedConfigs.length > 0 && (
 							<div className="space-y-3">
-								<h3 className="text-sm font-medium text-fg">
+								<h3 className="text-sm font-medium text-foreground">
 									Applied Custom Formats ({data.data.appliedConfigs.length})
 								</h3>
-								<div className="rounded-lg border border-border bg-bg-subtle divide-y divide-border max-h-48 overflow-y-auto">
+								<div
+									className="rounded-xl divide-y max-h-48 overflow-y-auto"
+									style={{
+										backgroundColor: SEMANTIC_COLORS.success.bg,
+										border: `1px solid ${SEMANTIC_COLORS.success.border}`,
+									}}
+								>
 									{data.data.appliedConfigs.map((config, index) => (
-										<div key={index} className="px-3 py-2 text-sm flex items-center justify-between text-fg">
-											<span>{config.name}</span>
-											<span className="px-2 py-0.5 rounded-full text-xs font-medium bg-green-500/10 text-green-700 dark:text-green-300 capitalize">
+										<div
+											key={index}
+											className="px-3 py-2 text-sm flex items-center justify-between"
+											style={{
+												borderColor: SEMANTIC_COLORS.success.border,
+											}}
+										>
+											<div className="flex items-center gap-2">
+												<CheckCircle2 className="h-3.5 w-3.5" style={{ color: SEMANTIC_COLORS.success.from }} />
+												<span className="text-foreground">{config.name}</span>
+											</div>
+											<span
+												className="px-2 py-0.5 rounded-full text-xs font-medium capitalize"
+												style={{
+													backgroundColor: `${SEMANTIC_COLORS.success.from}15`,
+													color: SEMANTIC_COLORS.success.text,
+												}}
+											>
 												{config.action}
 											</span>
 										</div>
@@ -185,15 +218,30 @@ export function DeploymentHistoryDetailsModal({
 						{/* Failed Configs Section */}
 						{data.data.failedConfigs && data.data.failedConfigs.length > 0 && (
 							<div className="space-y-3">
-								<h3 className="text-sm font-medium text-red-600 dark:text-red-400">
+								<h3 className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
 									Failed Custom Formats ({data.data.failedConfigs.length})
 								</h3>
-								<div className="rounded-lg border border-red-500/30 bg-red-500/10 divide-y divide-red-500/20 max-h-48 overflow-y-auto">
+								<div
+									className="rounded-xl divide-y max-h-48 overflow-y-auto"
+									style={{
+										backgroundColor: SEMANTIC_COLORS.error.bg,
+										border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+									}}
+								>
 									{data.data.failedConfigs.map((config, index) => (
-										<div key={index} className="px-3 py-2 text-sm">
-											<div className="font-medium text-red-700 dark:text-red-300">{config.name}</div>
+										<div
+											key={index}
+											className="px-3 py-2 text-sm"
+											style={{
+												borderColor: SEMANTIC_COLORS.error.border,
+											}}
+										>
+											<div className="flex items-center gap-2">
+												<XCircle className="h-3.5 w-3.5 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
+												<span className="font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>{config.name}</span>
+											</div>
 											{config.error && (
-												<div className="text-xs text-red-600 dark:text-red-400 mt-1">{config.error}</div>
+												<div className="text-xs mt-1 ml-5.5" style={{ color: SEMANTIC_COLORS.error.from }}>{config.error}</div>
 											)}
 										</div>
 									))}
@@ -203,12 +251,24 @@ export function DeploymentHistoryDetailsModal({
 
 						{/* Errors Section */}
 						{data.data.errors && (
-							<div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4">
+							<div
+								className="rounded-xl p-4"
+								style={{
+									backgroundColor: SEMANTIC_COLORS.error.bg,
+									border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+								}}
+							>
 								<div className="flex items-start gap-3">
-									<AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
+									<AlertCircle
+										className="h-5 w-5 mt-0.5 shrink-0"
+										style={{ color: SEMANTIC_COLORS.error.from }}
+									/>
 									<div>
-										<p className="text-sm font-medium text-fg">Errors</p>
-										<pre className="text-xs text-red-600 dark:text-red-400 whitespace-pre-wrap font-mono mt-2">
+										<p className="text-sm font-medium text-foreground">Errors</p>
+										<pre
+											className="text-xs whitespace-pre-wrap font-mono mt-2"
+											style={{ color: SEMANTIC_COLORS.error.from }}
+										>
 											{data.data.errors}
 										</pre>
 									</div>
@@ -218,12 +278,24 @@ export function DeploymentHistoryDetailsModal({
 
 						{/* Warnings Section */}
 						{data.data.warnings && (
-							<div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+							<div
+								className="rounded-xl p-4"
+								style={{
+									backgroundColor: SEMANTIC_COLORS.warning.bg,
+									border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+								}}
+							>
 								<div className="flex items-start gap-3">
-									<AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+									<AlertCircle
+										className="h-5 w-5 mt-0.5 shrink-0"
+										style={{ color: SEMANTIC_COLORS.warning.from }}
+									/>
 									<div>
-										<p className="text-sm font-medium text-fg">Warnings</p>
-										<pre className="text-xs text-amber-600 dark:text-amber-400 whitespace-pre-wrap font-mono mt-2">
+										<p className="text-sm font-medium text-foreground">Warnings</p>
+										<pre
+											className="text-xs whitespace-pre-wrap font-mono mt-2"
+											style={{ color: SEMANTIC_COLORS.warning.from }}
+										>
 											{data.data.warnings}
 										</pre>
 									</div>
@@ -233,8 +305,8 @@ export function DeploymentHistoryDetailsModal({
 
 						{/* Backup Info Section */}
 						{data.data.backup && (
-							<div className="rounded-lg border border-border bg-bg-subtle p-4">
-								<h3 className="text-sm font-medium text-fg mb-3">Backup</h3>
+							<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+								<h3 className="text-sm font-medium text-foreground mb-3">Backup</h3>
 								<InfoField
 									label="Backup Created"
 									value={format(
@@ -242,40 +314,44 @@ export function DeploymentHistoryDetailsModal({
 										"MMM d, yyyy 'at' h:mm a",
 									)}
 								/>
-								<p className="text-xs text-fg-muted mt-2">
+								<p className="text-xs text-muted-foreground mt-2">
 									A backup was created before this deployment.
 								</p>
 							</div>
 						)}
 					</>
 				)}
-			</DialogContent>
+			</LegacyDialogContent>
 
-			<DialogFooter>
-				<Button variant="ghost" onClick={onClose}>
+			<LegacyDialogFooter>
+				<Button variant="ghost" onClick={onClose} className="rounded-xl">
 					Close
 				</Button>
 				{data?.data &&
 					!data.data.rolledBack &&
 					onUndeploy && (
 						<Button
-							variant="danger"
+							className="gap-2 rounded-xl font-medium"
+							style={{
+								backgroundColor: SEMANTIC_COLORS.error.from,
+								color: "white",
+							}}
 							onClick={() => onUndeploy(historyId)}
 							title="Remove Custom Formats deployed by this template (shared CFs will be kept)"
 						>
 							Undeploy
 						</Button>
 					)}
-			</DialogFooter>
-		</Dialog>
+			</LegacyDialogFooter>
+		</LegacyDialog>
 	);
 }
 
 function InfoField({ label, value }: { label: string; value: string }) {
 	return (
 		<div>
-			<div className="text-xs text-fg-muted mb-1">{label}</div>
-			<div className="text-sm font-medium text-fg">{value}</div>
+			<div className="text-xs text-muted-foreground mb-1">{label}</div>
+			<div className="text-sm font-medium text-foreground">{value}</div>
 		</div>
 	);
 }

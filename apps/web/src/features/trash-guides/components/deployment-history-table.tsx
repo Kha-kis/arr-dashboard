@@ -9,8 +9,21 @@ import {
 import type { DeploymentHistoryEntry } from "../../../lib/api-client/trash-guides";
 import { format } from "date-fns";
 import { DeploymentHistoryDetailsModal } from "./deployment-history-details-modal";
-import { Button, Badge } from "../../../components/ui";
-import { Eye, Undo2, Trash2, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+	Eye,
+	Undo2,
+	Trash2,
+	ChevronLeft,
+	ChevronRight,
+	CheckCircle2,
+	AlertTriangle,
+	XCircle,
+	Clock,
+	Loader2,
+	History,
+} from "lucide-react";
+import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 
 interface DeploymentHistoryTableProps {
 	templateId?: string;
@@ -18,11 +31,80 @@ interface DeploymentHistoryTableProps {
 	limit?: number;
 }
 
+/**
+ * Premium Status Badge Component
+ */
+const StatusBadge = ({ status }: { status: string }) => {
+	const statusConfig: Record<
+		string,
+		{
+			label: string;
+			icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
+			color: { bg: string; border: string; text: string; from: string };
+		}
+	> = {
+		SUCCESS: {
+			label: "Success",
+			icon: CheckCircle2,
+			color: SEMANTIC_COLORS.success,
+		},
+		PARTIAL_SUCCESS: {
+			label: "Partial",
+			icon: AlertTriangle,
+			color: SEMANTIC_COLORS.warning,
+		},
+		FAILED: {
+			label: "Failed",
+			icon: XCircle,
+			color: SEMANTIC_COLORS.error,
+		},
+		IN_PROGRESS: {
+			label: "In Progress",
+			icon: Clock,
+			color: SEMANTIC_COLORS.info,
+		},
+	};
+
+	const config = statusConfig[status] || {
+		label: status,
+		icon: Clock,
+		color: { bg: "rgba(100, 116, 139, 0.1)", border: "rgba(100, 116, 139, 0.2)", text: "rgb(148, 163, 184)", from: "rgb(148, 163, 184)" },
+	};
+
+	const Icon = config.icon;
+
+	return (
+		<span
+			className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium"
+			style={{
+				backgroundColor: config.color.bg,
+				border: `1px solid ${config.color.border}`,
+				color: config.color.text,
+			}}
+		>
+			<Icon className="h-3 w-3" />
+			{config.label}
+		</span>
+	);
+};
+
+/**
+ * Premium Deployment History Table
+ *
+ * Features:
+ * - Glassmorphic table design
+ * - Theme-aware styling
+ * - Animated interactions
+ * - Premium pagination
+ */
 export function DeploymentHistoryTable({
 	templateId,
 	instanceId,
 	limit = 20,
 }: DeploymentHistoryTableProps) {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
 	const [offset, setOffset] = useState(0);
 	const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
 	const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
@@ -30,36 +112,50 @@ export function DeploymentHistoryTable({
 	const undeployMutation = useUndeployDeployment();
 	const deleteMutation = useDeleteDeploymentHistory();
 
-	// Use unified hook that handles all cases unconditionally
 	const { data, isLoading, error } = useDeploymentHistory(templateId, instanceId, { limit, offset });
 
+	// Loading State
 	if (isLoading) {
 		return (
-			<div className="flex items-center justify-center p-8 rounded-xl border border-border bg-bg-subtle">
-				<div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-				<span className="ml-3 text-sm text-fg/60">
-					Loading deployment history...
-				</span>
+			<div className="flex items-center justify-center p-12 rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm">
+				<div
+					className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
+					style={{ borderColor: `${themeGradient.from}40`, borderTopColor: "transparent" }}
+				/>
+				<span className="ml-4 text-muted-foreground">Loading deployment history...</span>
 			</div>
 		);
 	}
 
+	// Error State
 	if (error) {
 		return (
-			<div className="rounded-xl border border-red-500/30 bg-red-500/10 p-6">
-				<p className="text-sm font-medium text-red-400">
-					Failed to load deployment history
-				</p>
-				<p className="mt-1 text-xs text-red-400/70">{error.message}</p>
+			<div
+				className="rounded-2xl border p-6 backdrop-blur-sm"
+				style={{
+					backgroundColor: SEMANTIC_COLORS.error.bg,
+					borderColor: SEMANTIC_COLORS.error.border,
+				}}
+			>
+				<div className="flex items-center gap-3">
+					<XCircle className="h-5 w-5" style={{ color: SEMANTIC_COLORS.error.from }} />
+					<div>
+						<p className="font-medium text-foreground">Failed to load deployment history</p>
+						<p className="text-sm text-muted-foreground mt-1">{error.message}</p>
+					</div>
+				</div>
 			</div>
 		);
 	}
 
+	// Empty State
 	if (!data?.data?.history || data.data.history.length === 0) {
 		return (
-			<div className="rounded-xl border border-dashed border-border bg-bg-subtle p-8 text-center">
-				<p className="text-sm text-fg/60">
-					No deployment history found
+			<div className="rounded-2xl border border-dashed border-border/50 bg-card/20 backdrop-blur-sm p-12 text-center">
+				<History className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+				<p className="text-lg font-medium text-foreground mb-2">No deployment history</p>
+				<p className="text-sm text-muted-foreground">
+					Deployments will appear here once you deploy templates to instances
 				</p>
 			</div>
 		);
@@ -78,49 +174,54 @@ export function DeploymentHistoryTable({
 	};
 
 	return (
-		<div className="space-y-4">
-			<div className="overflow-hidden rounded-xl border border-border bg-bg-subtle">
+		<div className="space-y-4 animate-in fade-in duration-300">
+			{/* Table Container */}
+			<div className="overflow-hidden rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm">
 				<div className="overflow-x-auto">
 					<table className="w-full">
-						<thead className="border-b border-border bg-bg-subtle">
-							<tr>
-								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-fg/60">
+						<thead>
+							<tr className="border-b border-border/50">
+								<th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 									Timestamp
 								</th>
 								{!templateId && !instanceId && (
-									<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-fg/60">
+									<th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 										Template
 									</th>
 								)}
-								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-fg/60">
+								<th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 									{templateId ? "Instance" : instanceId ? "Template" : "Instance"}
 								</th>
-								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-fg/60">
+								<th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 									Status
 								</th>
-								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-fg/60">
+								<th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 									Duration
 								</th>
-								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-fg/60">
+								<th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 									Results
 								</th>
-								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-fg/60">
+								<th className="px-6 py-4 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 									Actions
 								</th>
 							</tr>
 						</thead>
-						<tbody className="divide-y divide-border">
-							{history.map((entry) => (
+						<tbody className="divide-y divide-border/30">
+							{history.map((entry, index) => (
 								<tr
 									key={entry.id}
-									className="transition hover:bg-bg-subtle"
+									className="transition-colors hover:bg-card/50 animate-in fade-in"
+									style={{
+										animationDelay: `${index * 30}ms`,
+										animationFillMode: "backwards",
+									}}
 								>
 									<td className="px-6 py-4 text-sm">
 										<div className="flex flex-col">
-											<span className="font-medium text-fg">
+											<span className="font-medium text-foreground">
 												{format(new Date(entry.deployedAt), "MMM d, yyyy")}
 											</span>
-											<span className="text-xs text-fg/60">
+											<span className="text-xs text-muted-foreground">
 												{format(new Date(entry.deployedAt), "h:mm a")}
 											</span>
 										</div>
@@ -128,10 +229,10 @@ export function DeploymentHistoryTable({
 									{!templateId && !instanceId && (
 										<td className="px-6 py-4 text-sm">
 											<div className="flex flex-col">
-												<span className="font-medium text-fg">
+												<span className="font-medium text-foreground">
 													{entry.template?.name || "Unknown"}
 												</span>
-												<span className="text-xs text-fg/60">
+												<span className="text-xs text-muted-foreground">
 													{entry.template?.serviceType}
 												</span>
 											</div>
@@ -140,19 +241,19 @@ export function DeploymentHistoryTable({
 									<td className="px-6 py-4 text-sm">
 										{templateId || !instanceId ? (
 											<div className="flex flex-col">
-												<span className="font-medium text-fg">
+												<span className="font-medium text-foreground">
 													{entry.instance?.label || "Unknown"}
 												</span>
-												<span className="text-xs text-fg/60">
+												<span className="text-xs text-muted-foreground">
 													{entry.instance?.service}
 												</span>
 											</div>
 										) : (
 											<div className="flex flex-col">
-												<span className="font-medium text-fg">
+												<span className="font-medium text-foreground">
 													{entry.template?.name || "Unknown"}
 												</span>
-												<span className="text-xs text-fg/60">
+												<span className="text-xs text-muted-foreground">
 													{entry.template?.serviceType}
 												</span>
 											</div>
@@ -161,102 +262,132 @@ export function DeploymentHistoryTable({
 									<td className="px-6 py-4">
 										<StatusBadge status={entry.status} />
 									</td>
-									<td className="px-6 py-4 text-sm text-fg/60">
+									<td className="px-6 py-4 text-sm text-muted-foreground">
 										{entry.duration ? `${entry.duration}s` : "-"}
 									</td>
 									<td className="px-6 py-4 text-sm">
-										<div className="flex items-center gap-3 text-xs">
-											<span className="text-green-400">✓ {entry.appliedCFs}</span>
+										<div className="flex items-center gap-3">
+											<span className="flex items-center gap-1" style={{ color: SEMANTIC_COLORS.success.from }}>
+												<CheckCircle2 className="h-3.5 w-3.5" />
+												{entry.appliedCFs}
+											</span>
 											{entry.failedCFs > 0 && (
-												<span className="text-red-400">✗ {entry.failedCFs}</span>
+												<span className="flex items-center gap-1" style={{ color: SEMANTIC_COLORS.error.from }}>
+													<XCircle className="h-3.5 w-3.5" />
+													{entry.failedCFs}
+												</span>
 											)}
 										</div>
 									</td>
 									<td className="px-6 py-4">
 										<div className="flex items-center gap-2">
-											<Button
-												variant="ghost"
-												size="sm"
+											{/* View Details Button */}
+											<button
+												type="button"
 												onClick={() => setSelectedHistoryId(entry.id)}
-												className="gap-1.5"
+												className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors hover:bg-card/80"
+												style={{ color: themeGradient.from }}
 											>
 												<Eye className="h-3.5 w-3.5" />
 												Details
-											</Button>
+											</button>
+
+											{/* Undeploy Button */}
 											{!entry.rolledBack && (
 												undeployConfirmId === entry.id ? (
 													<div className="flex items-center gap-1">
-														<Button
-															variant="danger"
-															size="sm"
+														<button
+															type="button"
 															onClick={() => {
 																undeployMutation.mutate(entry.id, {
 																	onSuccess: () => setUndeployConfirmId(null),
 																});
 															}}
 															disabled={undeployMutation.isPending}
+															className="rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors"
+															style={{
+																backgroundColor: SEMANTIC_COLORS.error.bg,
+																border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+																color: SEMANTIC_COLORS.error.text,
+															}}
 														>
-															{undeployMutation.isPending ? "Undeploying..." : "Confirm"}
-														</Button>
-														<Button
-															variant="ghost"
-															size="sm"
+															{undeployMutation.isPending ? (
+																<Loader2 className="h-3.5 w-3.5 animate-spin" />
+															) : (
+																"Confirm"
+															)}
+														</button>
+														<button
+															type="button"
 															onClick={() => setUndeployConfirmId(null)}
 															disabled={undeployMutation.isPending}
+															className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
 														>
 															Cancel
-														</Button>
+														</button>
 													</div>
 												) : (
-													<Button
-														variant="secondary"
-														size="sm"
+													<button
+														type="button"
 														onClick={() => setUndeployConfirmId(entry.id)}
-														title="Remove Custom Formats deployed by this template (shared CFs will be kept)"
-														className="gap-1.5 text-orange-400 hover:text-orange-300"
+														className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors hover:bg-card/80"
+														style={{ color: SEMANTIC_COLORS.warning.from }}
+														title="Remove Custom Formats deployed by this template"
 													>
 														<Undo2 className="h-3.5 w-3.5" />
 														Undeploy
-													</Button>
+													</button>
 												)
 											)}
+
+											{/* Undeployed Badge */}
 											{entry.rolledBack && (
-												<Badge variant="default" size="sm">
+												<span className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium bg-muted/20 text-muted-foreground">
 													Undeployed
-												</Badge>
+												</span>
 											)}
+
+											{/* Delete Button */}
 											{deleteConfirmId === entry.id ? (
 												<div className="flex items-center gap-1">
-													<Button
-														variant="danger"
-														size="sm"
+													<button
+														type="button"
 														onClick={() => {
 															deleteMutation.mutate(entry.id, {
 																onSuccess: () => setDeleteConfirmId(null),
 															});
 														}}
 														disabled={deleteMutation.isPending}
+														className="rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors"
+														style={{
+															backgroundColor: SEMANTIC_COLORS.error.bg,
+															border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+															color: SEMANTIC_COLORS.error.text,
+														}}
 													>
-														{deleteMutation.isPending ? "Deleting..." : "Confirm"}
-													</Button>
-													<Button
-														variant="ghost"
-														size="sm"
+														{deleteMutation.isPending ? (
+															<Loader2 className="h-3.5 w-3.5 animate-spin" />
+														) : (
+															"Confirm"
+														)}
+													</button>
+													<button
+														type="button"
 														onClick={() => setDeleteConfirmId(null)}
 														disabled={deleteMutation.isPending}
+														className="rounded-lg px-2.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors"
 													>
 														Cancel
-													</Button>
+													</button>
 												</div>
 											) : (
-												<Button
-													variant="ghost"
-													size="sm"
+												<button
+													type="button"
 													onClick={() => setDeleteConfirmId(entry.id)}
-													className="gap-1.5 text-fg/60 hover:text-red-400"
+													className="rounded-lg p-1.5 text-muted-foreground hover:text-foreground transition-colors hover:bg-card/80"
 												>
 													<Trash2 className="h-3.5 w-3.5" />
-												</Button>
+												</button>
 											)}
 										</div>
 									</td>
@@ -267,34 +398,33 @@ export function DeploymentHistoryTable({
 				</div>
 			</div>
 
-			{/* Pagination Controls */}
+			{/* Pagination */}
 			<div className="flex items-center justify-between">
-				<p className="text-sm text-fg/70">
-					Showing <span className="font-medium text-fg">{offset + 1}</span> to{" "}
-					<span className="font-medium text-fg">{offset + history.length}</span> of{" "}
-					<span className="font-medium text-fg">{pagination.total}</span> deployments
+				<p className="text-sm text-muted-foreground">
+					Showing{" "}
+					<span className="font-medium text-foreground">{offset + 1}</span> to{" "}
+					<span className="font-medium text-foreground">{offset + history.length}</span> of{" "}
+					<span className="font-medium text-foreground">{pagination.total}</span> deployments
 				</p>
 				<div className="flex gap-2">
-					<Button
-						variant="secondary"
-						size="sm"
+					<button
+						type="button"
 						onClick={handlePrevious}
 						disabled={offset === 0}
-						className="gap-1.5"
+						className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed border border-border/50 bg-card/30 hover:bg-card/50"
 					>
 						<ChevronLeft className="h-4 w-4" />
 						Previous
-					</Button>
-					<Button
-						variant="secondary"
-						size="sm"
+					</button>
+					<button
+						type="button"
 						onClick={handleNext}
 						disabled={!pagination.hasMore}
-						className="gap-1.5"
+						className="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed border border-border/50 bg-card/30 hover:bg-card/50"
 					>
 						Next
 						<ChevronRight className="h-4 w-4" />
-					</Button>
+					</button>
 				</div>
 			</div>
 
@@ -313,40 +443,5 @@ export function DeploymentHistoryTable({
 				/>
 			)}
 		</div>
-	);
-}
-
-function StatusBadge({ status }: { status: string }) {
-	const statusConfig: Record<
-		string,
-		{ label: string; variant: "success" | "warning" | "danger" | "info" | "default" }
-	> = {
-		SUCCESS: {
-			label: "Success",
-			variant: "success",
-		},
-		PARTIAL_SUCCESS: {
-			label: "Partial",
-			variant: "warning",
-		},
-		FAILED: {
-			label: "Failed",
-			variant: "danger",
-		},
-		IN_PROGRESS: {
-			label: "In Progress",
-			variant: "info",
-		},
-	};
-
-	const config = statusConfig[status] || {
-		label: status,
-		variant: "default" as const,
-	};
-
-	return (
-		<Badge variant={config.variant} size="sm">
-			{config.label}
-		</Badge>
 	);
 }

@@ -1,4 +1,6 @@
 import { Button } from "../../../components/ui/button";
+import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 import type { ManualImportCandidateUnion } from "../types";
 import {
 	candidateDisplayPath,
@@ -44,6 +46,8 @@ export const CandidateCard = ({
 	onClearEpisodes,
 	disabled = false,
 }: CandidateCardProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const key = candidateKey(candidate);
 	const rejection = describeRejections(candidate);
 	const downloadAvailable = Boolean(extractDownloadId(candidate) ?? downloadId);
@@ -133,7 +137,8 @@ export const CandidateCard = ({
 									<div className="flex gap-2">
 										<button
 											type="button"
-											className="text-sky-300 hover:underline disabled:opacity-50"
+											className="hover:underline disabled:opacity-50"
+											style={{ color: themeGradient.from }}
 											onClick={onSelectAllEpisodes}
 											disabled={disabled}
 										>
@@ -141,7 +146,8 @@ export const CandidateCard = ({
 										</button>
 										<button
 											type="button"
-											className="text-sky-300 hover:underline disabled:opacity-50"
+											className="hover:underline disabled:opacity-50"
+											style={{ color: themeGradient.from }}
 											onClick={onClearEpisodes}
 											disabled={disabled}
 										>

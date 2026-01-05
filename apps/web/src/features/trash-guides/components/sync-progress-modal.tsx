@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
-import { CheckCircle2, XCircle, Loader2, AlertCircle } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, AlertCircle, RefreshCw, Zap } from "lucide-react";
 import { useSyncProgress } from "../../../hooks/api/useSync";
 import type { SyncProgressStatus } from "../../../lib/api-client/sync";
 import { Button } from "../../../components/ui";
+import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 
 const FOCUSABLE_SELECTOR =
 	'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
@@ -39,6 +41,15 @@ const STAGE_LABELS: Record<SyncProgressStatus, string> = {
 	FAILED: "Failed",
 };
 
+/**
+ * Premium Sync Progress Modal
+ *
+ * Displays real-time sync progress with:
+ * - Glassmorphic modal styling
+ * - Theme-aware stepper and progress bar
+ * - Animated stage transitions
+ * - Semantic color feedback for success/error states
+ */
 export const SyncProgressModal = ({
 	syncId,
 	templateName,
@@ -46,6 +57,8 @@ export const SyncProgressModal = ({
 	onComplete,
 	onClose,
 }: SyncProgressModalProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const { progress, error, isLoading, isPolling } = useSyncProgress(syncId);
 
 	// Track whether completion callback has been scheduled to prevent duplicate calls
@@ -137,7 +150,18 @@ export const SyncProgressModal = ({
 	const isCompleted = currentStage === "COMPLETED";
 
 	return (
-		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+		<div
+			className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200"
+			onClick={(e) => {
+				if (isCompleted || isFailed) {
+					onClose();
+				}
+			}}
+		>
+			{/* Backdrop */}
+			<div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+
+			{/* Modal */}
 			<div
 				ref={dialogRef}
 				role="dialog"
@@ -145,20 +169,60 @@ export const SyncProgressModal = ({
 				aria-labelledby="sync-progress-title"
 				aria-describedby="sync-progress-description"
 				tabIndex={-1}
-				className="w-full max-w-3xl rounded-xl border border-border bg-bg shadow-2xl outline-none"
+				className="relative w-full max-w-3xl rounded-2xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl outline-none animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
+				style={{
+					boxShadow: `0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px ${themeGradient.from}15`,
+				}}
+				onClick={(e) => e.stopPropagation()}
 			>
 				{/* Header */}
-				<div className="border-b border-border p-6">
+				<div
+					className="border-b border-border/30 p-6"
+					style={{
+						background: `linear-gradient(135deg, ${themeGradient.from}08, transparent)`,
+					}}
+				>
 					<div className="flex items-center justify-between">
-						<div>
-							<h2 id="sync-progress-title" className="text-xl font-semibold text-fg">Sync Progress</h2>
-							<p id="sync-progress-description" className="mt-1 text-sm text-fg-muted">
-								Template: <span className="font-medium text-fg">{templateName}</span> →
-								Instance: <span className="font-medium text-fg">{instanceName}</span>
-							</p>
+						<div className="flex items-center gap-4">
+							<div
+								className="flex h-12 w-12 items-center justify-center rounded-xl shrink-0"
+								style={{
+									background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+									border: `1px solid ${themeGradient.from}30`,
+								}}
+							>
+								<RefreshCw
+									className={`h-6 w-6 ${!isCompleted && !isFailed ? "animate-spin" : ""}`}
+									style={{ color: themeGradient.from }}
+								/>
+							</div>
+							<div>
+								<h2
+									id="sync-progress-title"
+									className="text-xl font-bold"
+									style={{
+										background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+										WebkitBackgroundClip: "text",
+										WebkitTextFillColor: "transparent",
+									}}
+								>
+									Sync Progress
+								</h2>
+								<p id="sync-progress-description" className="mt-1 text-sm text-muted-foreground">
+									Template: <span className="font-medium text-foreground">{templateName}</span> →
+									Instance: <span className="font-medium text-foreground">{instanceName}</span>
+								</p>
+							</div>
 						</div>
 						{isPolling && (
-							<span className="rounded-full bg-yellow-500/10 px-3 py-1 text-xs font-medium text-yellow-400">
+							<span
+								className="rounded-full px-3 py-1 text-xs font-medium"
+								style={{
+									backgroundColor: SEMANTIC_COLORS.warning.bg,
+									color: SEMANTIC_COLORS.warning.text,
+									border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+								}}
+							>
 								Polling Mode
 							</span>
 						)}
@@ -169,8 +233,11 @@ export const SyncProgressModal = ({
 				<div className="p-6">
 					{isLoading && (
 						<div className="flex items-center justify-center py-12">
-							<div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-							<span className="ml-3 text-fg-muted">Connecting...</span>
+							<div
+								className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
+								style={{ borderColor: `${themeGradient.from} transparent ${themeGradient.from} ${themeGradient.from}` }}
+							/>
+							<span className="ml-3 text-muted-foreground">Connecting...</span>
 						</div>
 					)}
 
@@ -185,33 +252,48 @@ export const SyncProgressModal = ({
 										const isCurrentFailed = isFailed && currentStageIndex === index;
 
 										return (
-											<div key={stage} className="flex flex-1 items-center">
+											<div
+												key={stage}
+												className="flex flex-1 items-center animate-in fade-in"
+												style={{
+													animationDelay: `${index * 100}ms`,
+													animationFillMode: "backwards",
+												}}
+											>
 												{/* Stage Circle */}
 												<div className="relative flex flex-col items-center">
 													<div
-														className={`flex h-10 w-10 items-center justify-center rounded-full border-2 transition ${
-															isCurrentFailed
-																? "border-red-500 bg-red-500/10"
+														className="flex h-10 w-10 items-center justify-center rounded-full border-2 transition-all duration-300"
+														style={{
+															borderColor: isCurrentFailed
+																? SEMANTIC_COLORS.error.from
 																: isPast || isCompleted
-																	? "border-green-500 bg-green-500/10"
+																	? SEMANTIC_COLORS.success.from
 																	: isActive
-																		? "border-primary bg-primary/10"
-																		: "border-border bg-bg-subtle"
-														}`}
+																		? themeGradient.from
+																		: "rgba(var(--border))",
+															backgroundColor: isCurrentFailed
+																? SEMANTIC_COLORS.error.bg
+																: isPast || isCompleted
+																	? SEMANTIC_COLORS.success.bg
+																	: isActive
+																		? `${themeGradient.from}10`
+																		: "transparent",
+														}}
 													>
 														{isCurrentFailed ? (
-															<XCircle className="h-5 w-5 text-red-400" />
+															<XCircle className="h-5 w-5" style={{ color: SEMANTIC_COLORS.error.from }} />
 														) : isPast || isCompleted ? (
-															<CheckCircle2 className="h-5 w-5 text-green-400" />
+															<CheckCircle2 className="h-5 w-5" style={{ color: SEMANTIC_COLORS.success.from }} />
 														) : isActive ? (
-															<Loader2 className="h-5 w-5 animate-spin text-primary" />
+															<Loader2 className="h-5 w-5 animate-spin" style={{ color: themeGradient.from }} />
 														) : (
-															<span className="text-sm font-medium text-fg-muted">{index + 1}</span>
+															<span className="text-sm font-medium text-muted-foreground">{index + 1}</span>
 														)}
 													</div>
 													<span
 														className={`mt-2 text-xs font-medium ${
-															isActive ? "text-fg" : "text-fg-muted"
+															isActive ? "text-foreground" : "text-muted-foreground"
 														}`}
 													>
 														{STAGE_LABELS[stage]}
@@ -221,9 +303,12 @@ export const SyncProgressModal = ({
 												{/* Connector Line - render for all but last stage */}
 												{index < visibleStages.length - 1 && (
 													<div
-														className={`mx-2 h-0.5 flex-1 transition ${
-															isPast || isCompleted ? "bg-green-500" : "bg-border"
-														}`}
+														className="mx-2 h-0.5 flex-1 transition-all duration-500"
+														style={{
+															backgroundColor: isPast || isCompleted
+																? SEMANTIC_COLORS.success.from
+																: "rgba(var(--border))",
+														}}
 													/>
 												)}
 											</div>
@@ -233,55 +318,92 @@ export const SyncProgressModal = ({
 							</div>
 
 							{/* Progress Bar */}
-							<div>
+							<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
 								<div className="mb-2 flex items-center justify-between text-sm">
-									<span className="font-medium text-fg">{progress.currentStep}</span>
-									<span className="text-fg-muted">{Math.round(progress.progress)}%</span>
+									<span className="font-medium text-foreground">{progress.currentStep}</span>
+									<span className="text-muted-foreground">{Math.round(progress.progress)}%</span>
 								</div>
-								<div className="h-2 overflow-hidden rounded-full bg-bg-subtle">
+								<div className="h-3 overflow-hidden rounded-full bg-muted/30">
 									<div
-										className={`h-full transition-all duration-300 ${
-											isFailed ? "bg-red-500" : isCompleted ? "bg-green-500" : "bg-primary"
-										}`}
-										style={{ width: `${progress.progress}%` }}
+										className="h-full transition-all duration-500 rounded-full"
+										style={{
+											width: `${progress.progress}%`,
+											background: isFailed
+												? `linear-gradient(90deg, ${SEMANTIC_COLORS.error.from}, ${SEMANTIC_COLORS.error.to})`
+												: isCompleted
+													? `linear-gradient(90deg, ${SEMANTIC_COLORS.success.from}, ${SEMANTIC_COLORS.success.to})`
+													: `linear-gradient(90deg, ${themeGradient.from}, ${themeGradient.to})`,
+										}}
 									/>
 								</div>
 							</div>
 
 							{/* Statistics */}
 							<div className="grid grid-cols-3 gap-4">
-								<div className="rounded-lg border border-border bg-bg-subtle p-4">
-									<p className="text-sm text-fg-muted">Total Configs</p>
-									<p className="mt-1 text-2xl font-semibold text-fg">{progress.totalConfigs}</p>
+								<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+									<p className="text-sm text-muted-foreground">Total Configs</p>
+									<p
+										className="mt-1 text-2xl font-bold"
+										style={{
+											background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+											WebkitBackgroundClip: "text",
+											WebkitTextFillColor: "transparent",
+										}}
+									>
+										{progress.totalConfigs}
+									</p>
 								</div>
-								<div className="rounded-lg border border-green-500/20 bg-green-500/10 p-4">
-									<p className="text-sm text-green-400">Applied</p>
-									<p className="mt-1 text-2xl font-semibold text-green-300">
+								<div
+									className="rounded-xl p-4"
+									style={{
+										backgroundColor: SEMANTIC_COLORS.success.bg,
+										border: `1px solid ${SEMANTIC_COLORS.success.border}`,
+									}}
+								>
+									<p className="text-sm" style={{ color: SEMANTIC_COLORS.success.text }}>Applied</p>
+									<p className="mt-1 text-2xl font-bold" style={{ color: SEMANTIC_COLORS.success.from }}>
 										{progress.appliedConfigs}
 									</p>
 								</div>
-								<div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4">
-									<p className="text-sm text-red-400">Failed</p>
-									<p className="mt-1 text-2xl font-semibold text-red-300">{progress.failedConfigs}</p>
+								<div
+									className="rounded-xl p-4"
+									style={{
+										backgroundColor: SEMANTIC_COLORS.error.bg,
+										border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+									}}
+								>
+									<p className="text-sm" style={{ color: SEMANTIC_COLORS.error.text }}>Failed</p>
+									<p className="mt-1 text-2xl font-bold" style={{ color: SEMANTIC_COLORS.error.from }}>
+										{progress.failedConfigs}
+									</p>
 								</div>
 							</div>
 
 							{/* Errors */}
 							{progress.errors.length > 0 && (
-								<div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4">
+								<div
+									className="rounded-xl p-4"
+									style={{
+										backgroundColor: SEMANTIC_COLORS.error.bg,
+										border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+									}}
+								>
 									<div className="flex items-start gap-3">
-										<AlertCircle className="h-5 w-5 flex-shrink-0 text-red-400" />
+										<AlertCircle
+											className="h-5 w-5 flex-shrink-0 mt-0.5"
+											style={{ color: SEMANTIC_COLORS.error.from }}
+										/>
 										<div className="flex-1">
-											<h3 className="font-medium text-red-200">
+											<h3 className="font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
 												{progress.errors.length} Error{progress.errors.length !== 1 ? "s" : ""}{" "}
 												Occurred
 											</h3>
-											<ul className="mt-2 space-y-1 text-sm text-red-300">
+											<ul className="mt-2 space-y-1 text-sm" style={{ color: SEMANTIC_COLORS.error.text }}>
 												{progress.errors.map((errItem, index) => (
 													<li key={index}>
 														<span className="font-medium">{errItem.configName}:</span> {errItem.error}
 														{errItem.retryable && (
-															<span className="ml-2 text-xs text-red-400">(retryable)</span>
+															<span className="ml-2 text-xs opacity-70">(retryable)</span>
 														)}
 													</li>
 												))}
@@ -293,12 +415,27 @@ export const SyncProgressModal = ({
 
 							{/* Success Message */}
 							{isCompleted && progress.errors.length === 0 && (
-								<div className="rounded-lg border border-green-500/20 bg-green-500/10 p-4">
+								<div
+									className="rounded-xl p-4 animate-in fade-in slide-in-from-bottom-2"
+									style={{
+										backgroundColor: SEMANTIC_COLORS.success.bg,
+										border: `1px solid ${SEMANTIC_COLORS.success.border}`,
+									}}
+								>
 									<div className="flex items-center gap-3">
-										<CheckCircle2 className="h-5 w-5 text-green-400" />
+										<div
+											className="flex h-10 w-10 items-center justify-center rounded-full"
+											style={{
+												background: `linear-gradient(135deg, ${SEMANTIC_COLORS.success.from}30, ${SEMANTIC_COLORS.success.to}30)`,
+											}}
+										>
+											<CheckCircle2 className="h-5 w-5" style={{ color: SEMANTIC_COLORS.success.from }} />
+										</div>
 										<div>
-											<h3 className="font-medium text-green-200">Sync Completed Successfully</h3>
-											<p className="mt-0.5 text-sm text-green-300">
+											<h3 className="font-semibold" style={{ color: SEMANTIC_COLORS.success.text }}>
+												Sync Completed Successfully
+											</h3>
+											<p className="mt-0.5 text-sm opacity-80" style={{ color: SEMANTIC_COLORS.success.text }}>
 												All configurations have been applied to {instanceName}
 											</p>
 										</div>
@@ -309,12 +446,25 @@ export const SyncProgressModal = ({
 					)}
 
 					{error && (
-						<div className="rounded-lg border border-red-500/20 bg-red-500/10 p-4">
+						<div
+							className="rounded-xl p-4"
+							style={{
+								backgroundColor: SEMANTIC_COLORS.error.bg,
+								border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+							}}
+						>
 							<div className="flex items-start gap-3">
-								<XCircle className="h-5 w-5 flex-shrink-0 text-red-400" />
+								<XCircle
+									className="h-5 w-5 flex-shrink-0 mt-0.5"
+									style={{ color: SEMANTIC_COLORS.error.from }}
+								/>
 								<div>
-									<h3 className="font-medium text-red-200">Connection Error</h3>
-									<p className="mt-1 text-sm text-red-300">{error.message}</p>
+									<h3 className="font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
+										Connection Error
+									</h3>
+									<p className="mt-1 text-sm" style={{ color: SEMANTIC_COLORS.error.text }}>
+										{error.message}
+									</p>
 								</div>
 							</div>
 						</div>
@@ -322,15 +472,19 @@ export const SyncProgressModal = ({
 				</div>
 
 				{/* Footer */}
-				<div className="flex items-center justify-end gap-3 border-t border-border p-6">
+				<div className="flex items-center justify-end gap-3 border-t border-border/30 p-6">
 					{(isCompleted || isFailed) && (
-						<Button variant="secondary" onClick={onClose}>
+						<Button
+							variant="outline"
+							onClick={onClose}
+							className="gap-2"
+						>
 							Close
 						</Button>
 					)}
 					{!isCompleted && !isFailed && (
-						<div className="flex items-center gap-2 text-sm text-fg-muted">
-							<Loader2 className="h-4 w-4 animate-spin" />
+						<div className="flex items-center gap-2 text-sm text-muted-foreground">
+							<Loader2 className="h-4 w-4 animate-spin" style={{ color: themeGradient.from }} />
 							Sync in progress...
 						</div>
 					)}

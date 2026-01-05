@@ -4,9 +4,9 @@ import { useState } from "react";
 import type { TrashTemplate } from "@arr/shared";
 import {
 	Badge,
-	DropdownMenu,
-	DropdownMenuItem,
-	DropdownMenuDivider,
+	LegacyDropdownMenu,
+	LegacyDropdownMenuItem,
+	LegacyDropdownMenuDivider,
 	toast,
 } from "../../../components/ui";
 import {
@@ -31,6 +31,8 @@ import {
 	Unlink2,
 } from "lucide-react";
 import { cn } from "../../../lib/utils";
+import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 import { useTemplateStats } from "../../../hooks/api/useTemplates";
 import type { TemplateStatsResponse, TemplateInstanceInfo } from "../../../lib/api-client/templates";
 import { useUpdateSyncStrategy } from "../../../hooks/api/useDeploymentPreview";
@@ -50,15 +52,15 @@ interface TemplateCardProps {
 	onViewHistory?: () => void;
 }
 
-// Helper to get sync strategy display info
+// Helper to get sync strategy display info - color is now handled dynamically
 const getSyncStrategyInfo = (strategy: "auto" | "manual" | "notify") => {
 	switch (strategy) {
 		case "auto":
-			return { label: "Auto", icon: RefreshCw, variant: "success" as const, color: "text-green-500" };
+			return { label: "Auto", icon: RefreshCw, variant: "success" as const, colorClass: "text-green-500" };
 		case "notify":
-			return { label: "Notify", icon: Bell, variant: "info" as const, color: "text-blue-500" };
+			return { label: "Notify", icon: Bell, variant: "info" as const, colorClass: null }; // Theme color
 		case "manual":
-			return { label: "Manual", icon: Hand, variant: "warning" as const, color: "text-amber-500" };
+			return { label: "Manual", icon: Hand, variant: "warning" as const, colorClass: "text-amber-500" };
 	}
 };
 
@@ -76,6 +78,8 @@ export const TemplateCard = ({
 	onUnlinkInstance,
 	onViewHistory,
 }: TemplateCardProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const [expanded, setExpanded] = useState(false);
 	const [updatingStrategyInstanceId, setUpdatingStrategyInstanceId] = useState<string | null>(null);
 
@@ -120,33 +124,33 @@ export const TemplateCard = ({
 						)}
 					</div>
 
-					<DropdownMenu
+					<LegacyDropdownMenu
 						trigger={<MoreVertical className="h-4 w-4" />}
 						align="right"
 					>
-						<DropdownMenuItem icon={<Edit className="h-4 w-4" />} onClick={onEdit}>
+						<LegacyDropdownMenuItem icon={<Edit className="h-4 w-4" />} onClick={onEdit}>
 							Edit Template
-						</DropdownMenuItem>
-						<DropdownMenuItem icon={<Copy className="h-4 w-4" />} onClick={onDuplicate}>
+						</LegacyDropdownMenuItem>
+						<LegacyDropdownMenuItem icon={<Copy className="h-4 w-4" />} onClick={onDuplicate}>
 							Duplicate
-						</DropdownMenuItem>
-						<DropdownMenuItem icon={<Download className="h-4 w-4" />} onClick={onExport}>
+						</LegacyDropdownMenuItem>
+						<LegacyDropdownMenuItem icon={<Download className="h-4 w-4" />} onClick={onExport}>
 							Export JSON
-						</DropdownMenuItem>
+						</LegacyDropdownMenuItem>
 						{onViewHistory && (
-							<DropdownMenuItem icon={<History className="h-4 w-4" />} onClick={onViewHistory}>
+							<LegacyDropdownMenuItem icon={<History className="h-4 w-4" />} onClick={onViewHistory}>
 								View History
-							</DropdownMenuItem>
+							</LegacyDropdownMenuItem>
 						)}
-						<DropdownMenuDivider />
-						<DropdownMenuItem
+						<LegacyDropdownMenuDivider />
+						<LegacyDropdownMenuItem
 							icon={<Trash2 className="h-4 w-4" />}
 							variant="danger"
 							onClick={onDelete}
 						>
 							Delete
-						</DropdownMenuItem>
-					</DropdownMenu>
+						</LegacyDropdownMenuItem>
+					</LegacyDropdownMenu>
 				</div>
 
 				{/* Title + Description */}
@@ -260,7 +264,7 @@ export const TemplateCard = ({
 										</div>
 										<div className="flex items-center gap-2">
 											{/* Instance Settings Dropdown */}
-											<DropdownMenu
+											<LegacyDropdownMenu
 												trigger={
 													<Settings className={cn(
 														"h-4 w-4 text-fg-muted hover:text-fg transition-colors",
@@ -272,50 +276,50 @@ export const TemplateCard = ({
 												{/* Edit Overrides Option */}
 												{onManageInstance && (
 													<>
-														<DropdownMenuItem
+														<LegacyDropdownMenuItem
 															icon={<SlidersHorizontal className="h-4 w-4" />}
 															onClick={() => onManageInstance(instance.instanceId, instance.instanceName)}
 														>
 															Edit Overrides
-														</DropdownMenuItem>
-														<DropdownMenuDivider />
+														</LegacyDropdownMenuItem>
+														<LegacyDropdownMenuDivider />
 													</>
 												)}
 												{/* Sync Strategy Options - only enabled for mapped instances */}
-												<DropdownMenuItem
+												<LegacyDropdownMenuItem
 													icon={<RefreshCw className="h-4 w-4 text-green-500" />}
 													onClick={() => handleSyncStrategyChange(instance.instanceId, "auto")}
 													disabled={isUpdating || instance.syncStrategy === "auto" || !instance.hasMapping}
 												>
 													Auto-sync{!instance.hasMapping && " (re-deploy required)"}
-												</DropdownMenuItem>
-												<DropdownMenuItem
-													icon={<Bell className="h-4 w-4 text-blue-500" />}
+												</LegacyDropdownMenuItem>
+												<LegacyDropdownMenuItem
+													icon={<Bell className="h-4 w-4" style={{ color: themeGradient.from }} />}
 													onClick={() => handleSyncStrategyChange(instance.instanceId, "notify")}
 													disabled={isUpdating || instance.syncStrategy === "notify" || !instance.hasMapping}
 												>
 													Notify Only{!instance.hasMapping && " (re-deploy required)"}
-												</DropdownMenuItem>
-												<DropdownMenuItem
+												</LegacyDropdownMenuItem>
+												<LegacyDropdownMenuItem
 													icon={<Hand className="h-4 w-4 text-amber-500" />}
 													onClick={() => handleSyncStrategyChange(instance.instanceId, "manual")}
 													disabled={isUpdating || instance.syncStrategy === "manual" || !instance.hasMapping}
 												>
 													Manual{!instance.hasMapping && " (re-deploy required)"}
-												</DropdownMenuItem>
+												</LegacyDropdownMenuItem>
 												{onUnlinkInstance && (
 													<>
-														<DropdownMenuDivider />
-														<DropdownMenuItem
+														<LegacyDropdownMenuDivider />
+														<LegacyDropdownMenuItem
 															icon={<Unlink2 className="h-4 w-4" />}
 															variant="danger"
 															onClick={() => onUnlinkInstance(instance.instanceId, instance.instanceName)}
 														>
 															Remove from Instance
-														</DropdownMenuItem>
+														</LegacyDropdownMenuItem>
 													</>
 												)}
-											</DropdownMenu>
+											</LegacyDropdownMenu>
 											{/* Deploy Button */}
 											{onDeployToInstance && (
 												<button

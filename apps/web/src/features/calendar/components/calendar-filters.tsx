@@ -1,5 +1,10 @@
+"use client";
+
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
+import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
+import { Filter, RotateCcw } from "lucide-react";
 import type { ServiceFilterValue } from "../hooks/use-calendar-state";
 
 const SERVICE_FILTERS = [
@@ -33,6 +38,9 @@ export const CalendarFilters = ({
 	onIncludeUnmonitoredChange,
 	onResetFilters,
 }: CalendarFiltersProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
 	const isFilterActive =
 		serviceFilter !== "all" ||
 		instanceFilter !== "all" ||
@@ -40,69 +48,110 @@ export const CalendarFilters = ({
 		includeUnmonitored;
 
 	return (
-		<div className="flex flex-wrap items-end gap-3 rounded-lg border border-border bg-bg-subtle px-4 py-3">
-			<div className="flex min-w-[200px] flex-col gap-1 text-sm text-fg-muted">
-				<label className="text-xs uppercase text-fg-muted" htmlFor="calendar-search">
-					Search
-				</label>
-				<Input
-					id="calendar-search"
-					value={searchTerm}
-					onChange={(event) => onSearchChange(event.target.value)}
-					placeholder="Search titles or descriptions"
-					className="border-border bg-bg text-fg placeholder:text-fg-muted"
-				/>
-			</div>
-			<div className="flex min-w-[160px] flex-col gap-1 text-sm text-fg-muted">
-				<label className="text-xs uppercase text-fg-muted" htmlFor="calendar-service-filter">
-					Service
-				</label>
-				<select
-					id="calendar-service-filter"
-					value={serviceFilter}
-					onChange={(event) => onServiceFilterChange(event.target.value as ServiceFilterValue)}
-					className="rounded-md border border-border bg-bg px-3 py-2 text-sm text-fg focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
+		<div
+			className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500"
+			style={{ animationDelay: "100ms", animationFillMode: "backwards" }}
+		>
+			{/* Header */}
+			<div className="flex items-center gap-3 px-6 py-4 border-b border-border/50">
+				<div
+					className="flex h-10 w-10 items-center justify-center rounded-xl"
+					style={{
+						background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+						border: `1px solid ${themeGradient.from}30`,
+					}}
 				>
-					{SERVICE_FILTERS.map((option) => (
-						<option key={option.value} value={option.value} className="bg-bg text-fg">
-							{option.label}
-						</option>
-					))}
-				</select>
+					<Filter className="h-5 w-5" style={{ color: themeGradient.from }} />
+				</div>
+				<div>
+					<h2 className="text-lg font-semibold">Filters</h2>
+					<p className="text-sm text-muted-foreground">Narrow down your calendar view</p>
+				</div>
 			</div>
-			<div className="flex min-w-[200px] flex-col gap-1 text-sm text-fg-muted">
-				<label className="text-xs uppercase text-fg-muted" htmlFor="calendar-instance-filter">
-					Instance
-				</label>
-				<select
-					id="calendar-instance-filter"
-					value={instanceFilter}
-					onChange={(event) => onInstanceFilterChange(event.target.value)}
-					className="rounded-md border border-border bg-bg px-3 py-2 text-sm text-fg focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
-				>
-					<option value="all" className="bg-bg text-fg">
-						All instances
-					</option>
-					{instanceOptions.map((option) => (
-						<option key={option.value} value={option.value} className="bg-bg text-fg">
-							{option.label}
-						</option>
-					))}
-				</select>
-			</div>
-			<label className="flex items-center gap-2 text-sm text-fg-muted">
-				<input
-					type="checkbox"
-					checked={includeUnmonitored}
-					onChange={(event) => onIncludeUnmonitoredChange(event.target.checked)}
-					className="h-4 w-4"
-				/>
-				Include unmonitored items
-			</label>
-			<div className="ml-auto">
-				<Button variant="ghost" onClick={onResetFilters} disabled={!isFilterActive}>
-					Reset filters
-				</Button>
+
+			{/* Filter Controls */}
+			<div className="flex flex-wrap items-end gap-4 p-6">
+				<div className="flex min-w-[200px] flex-1 flex-col gap-1.5">
+					<label
+						className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+						htmlFor="calendar-search"
+					>
+						Search
+					</label>
+					<Input
+						id="calendar-search"
+						value={searchTerm}
+						onChange={(event) => onSearchChange(event.target.value)}
+						placeholder="Search titles or descriptions"
+						className="bg-background/50 border-border/50 focus:border-primary"
+					/>
+				</div>
+
+				<div className="flex min-w-[140px] flex-col gap-1.5">
+					<label
+						className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+						htmlFor="calendar-service-filter"
+					>
+						Service
+					</label>
+					<select
+						id="calendar-service-filter"
+						value={serviceFilter}
+						onChange={(event) => onServiceFilterChange(event.target.value as ServiceFilterValue)}
+						className="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 [&>option]:bg-background [&>option]:text-foreground"
+					>
+						{SERVICE_FILTERS.map((option) => (
+							<option key={option.value} value={option.value}>
+								{option.label}
+							</option>
+						))}
+					</select>
+				</div>
+
+				<div className="flex min-w-[180px] flex-col gap-1.5">
+					<label
+						className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+						htmlFor="calendar-instance-filter"
+					>
+						Instance
+					</label>
+					<select
+						id="calendar-instance-filter"
+						value={instanceFilter}
+						onChange={(event) => onInstanceFilterChange(event.target.value)}
+						className="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 [&>option]:bg-background [&>option]:text-foreground"
+					>
+						<option value="all">All instances</option>
+						{instanceOptions.map((option) => (
+							<option key={option.value} value={option.value}>
+								{option.label}
+							</option>
+						))}
+					</select>
+				</div>
+
+				<div className="ml-auto flex items-center gap-4">
+					<label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer hover:text-foreground transition-colors">
+						<input
+							type="checkbox"
+							checked={includeUnmonitored}
+							onChange={(event) => onIncludeUnmonitoredChange(event.target.checked)}
+							className="rounded border-border/50 bg-background/50 text-primary focus:ring-primary/20"
+						/>
+						Include unmonitored
+					</label>
+
+					<Button
+						variant="ghost"
+						size="sm"
+						onClick={onResetFilters}
+						disabled={!isFilterActive}
+						className="gap-2"
+					>
+						<RotateCcw className="h-4 w-4" />
+						Reset
+					</Button>
+				</div>
 			</div>
 		</div>
 	);

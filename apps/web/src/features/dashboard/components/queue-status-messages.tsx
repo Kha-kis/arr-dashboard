@@ -2,10 +2,11 @@
 
 /**
  * Component for rendering queue status messages in a compact format
+ * Features graduated severity styling with smooth transitions
  */
 
 import { useState, useMemo } from "react";
-import { ChevronDown, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronRight, AlertCircle, AlertTriangle, Info } from "lucide-react";
 import { cn } from "../../../lib/utils";
 import { useIncognitoMode, anonymizeStatusMessage } from "../../../lib/incognito";
 import type { StatusLine } from "../lib/queue-utils";
@@ -86,55 +87,83 @@ export const QueueStatusMessages = ({ lines }: QueueStatusMessagesProps) => {
 		});
 	};
 
-	const renderMessage = (entry: CompactLine) => (
-		<div
-			key={entry.key}
-			className={cn(
-				"flex items-start gap-2 rounded-md border px-3 py-2 text-xs",
-				entry.tone === "error" && "border-red-500/40 bg-red-500/10 text-red-100",
-				entry.tone === "warning" && "border-amber-500/40 bg-amber-500/10 text-amber-50",
-				entry.tone === "info" && "border-white/15 bg-white/5 text-white/70",
-			)}
-		>
-			<span className="mt-0.5 inline-block h-1.5 w-1.5 flex-shrink-0 rounded-full bg-white/40" />
-			<span className="break-words leading-relaxed">
-				{incognitoMode ? anonymizeStatusMessage(entry.text) : entry.text}
-			</span>
-		</div>
-	);
+	const toneStyles = {
+		error: {
+			container: "border-red-500/30 bg-red-500/10 text-red-300",
+			icon: AlertCircle,
+			iconClass: "text-red-400",
+		},
+		warning: {
+			container: "border-amber-500/30 bg-amber-500/10 text-amber-300",
+			icon: AlertTriangle,
+			iconClass: "text-amber-400",
+		},
+		info: {
+			container: "border-border/30 bg-muted/20 text-muted-foreground",
+			icon: Info,
+			iconClass: "text-muted-foreground",
+		},
+	};
+
+	const renderMessage = (entry: CompactLine, index?: number) => {
+		const style = toneStyles[entry.tone];
+		const Icon = style.icon;
+		return (
+			<div
+				key={entry.key}
+				className={cn(
+					"group flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-xs transition-all duration-300",
+					"hover:shadow-sm",
+					style.container,
+				)}
+				style={{
+					animationDelay: index !== undefined ? `${index * 50}ms` : undefined,
+					animationFillMode: "backwards",
+				}}
+			>
+				<Icon className={cn("mt-0.5 h-3.5 w-3.5 flex-shrink-0 transition-transform duration-300 group-hover:scale-110", style.iconClass)} />
+				<span className="break-words leading-relaxed">
+					{incognitoMode ? anonymizeStatusMessage(entry.text) : entry.text}
+				</span>
+			</div>
+		);
+	};
 
 	return (
 		<div className="space-y-2 break-words">
-			{/* Render standalone messages */}
-			{standalone.map(renderMessage)}
+			{/* Render standalone messages with staggered animation */}
+			{standalone.map((entry, index) => renderMessage(entry, index))}
 
 			{/* Render collapsible groups */}
 			{groups.map((group) => {
 				const isExpanded = expandedGroups.has(group.pattern);
+				const style = toneStyles[group.tone];
+				const Icon = style.icon;
 				return (
-					<div key={group.pattern}>
+					<div key={group.pattern} className="animate-in fade-in slide-in-from-top-1 duration-300">
 						<button
 							type="button"
 							onClick={() => toggleGroup(group.pattern)}
 							className={cn(
-								"flex w-full items-center gap-2 rounded-md border px-3 py-2 text-xs text-left",
-								group.tone === "error" && "border-red-500/40 bg-red-500/10 text-red-100",
-								group.tone === "warning" && "border-amber-500/40 bg-amber-500/10 text-amber-50",
-								group.tone === "info" && "border-white/15 bg-white/5 text-white/70",
+								"group flex w-full items-center gap-2.5 rounded-lg border px-3 py-2.5 text-xs text-left transition-all duration-300",
+								"hover:shadow-sm",
+								style.container,
 							)}
 						>
-							{isExpanded ? (
-								<ChevronDown className="h-3 w-3 flex-shrink-0" />
-							) : (
-								<ChevronRight className="h-3 w-3 flex-shrink-0" />
-							)}
-							<span className="leading-relaxed">
-								{group.pattern} ({group.items.length} episodes)
+							<Icon className={cn("h-3.5 w-3.5 flex-shrink-0", style.iconClass)} />
+							<span className="flex-1 leading-relaxed font-medium">
+								{group.pattern}
 							</span>
+							<span className="rounded-full bg-black/20 px-2 py-0.5 text-[10px] font-medium">
+								{group.items.length} episodes
+							</span>
+							<div className={cn("transition-transform duration-200", isExpanded && "rotate-180")}>
+								<ChevronDown className="h-3.5 w-3.5" />
+							</div>
 						</button>
 						{isExpanded && (
-							<div className="mt-1 space-y-1 pl-4">
-								{group.items.map(renderMessage)}
+							<div className="mt-2 space-y-1.5 pl-6 animate-in fade-in slide-in-from-top-2 duration-200">
+								{group.items.map((item, index) => renderMessage(item, index))}
 							</div>
 						)}
 					</div>

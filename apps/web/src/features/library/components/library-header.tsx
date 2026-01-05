@@ -5,11 +5,16 @@ import {
 	ArrowDownAZ,
 	ArrowUpAZ,
 	Film,
+	Filter,
 	Library as LibraryIcon,
 	RefreshCw,
 	Tv,
 } from "lucide-react";
+import { useState } from "react";
 import { Button, Input } from "../../../components/ui";
+import { THEME_GRADIENTS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
+import { cn } from "../../../lib/utils";
 import type { SortByValue, SortOrderValue } from "../hooks/use-library-filters";
 import type { SyncStatus } from "../hooks/use-library-data";
 
@@ -19,11 +24,12 @@ import type { SyncStatus } from "../hooks/use-library-data";
 const SERVICE_OPTIONS: Array<{
 	value: "all" | LibraryService;
 	label: string;
-	icon: JSX.Element;
+	icon: React.ComponentType<{ className?: string }>;
+	gradient?: { from: string; to: string; glow: string };
 }> = [
-	{ value: "all", label: "All", icon: <LibraryIcon className="h-4 w-4" /> },
-	{ value: "radarr", label: "Movies", icon: <Film className="h-4 w-4" /> },
-	{ value: "sonarr", label: "Series", icon: <Tv className="h-4 w-4" /> },
+	{ value: "all", label: "All", icon: LibraryIcon },
+	{ value: "radarr", label: "Movies", icon: Film, gradient: SERVICE_GRADIENTS.radarr },
+	{ value: "sonarr", label: "Series", icon: Tv, gradient: SERVICE_GRADIENTS.sonarr },
 ];
 
 /**
@@ -118,14 +124,6 @@ function formatSyncTime(dateString: string | null): string {
 
 /**
  * Header section for the library page with filters, sorting, and search
- *
- * Displays the page title, description, sync status, and all filter controls including:
- * - Service filter (All/Movies/Series)
- * - Instance filter dropdown
- * - Status filter (All/Monitored/Unmonitored)
- * - File filter (All/Has file/Missing)
- * - Sort controls (field and direction)
- * - Search input
  */
 export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 	serviceFilter,
@@ -146,163 +144,248 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 	syncStatus,
 	isSyncing,
 }) => {
-	return (
-		<header className="space-y-4">
-			<div className="flex items-start justify-between">
-				<div className="space-y-1.5">
-					<p className="text-xs uppercase tracking-[0.4em] text-fg-muted">Library</p>
-					<h1 className="text-2xl font-semibold text-fg">
-						Everything your *arr instances manage
-					</h1>
-					<p className="text-sm text-fg-muted">
-						Browse, filter, and adjust monitoring for movies and series across every
-						connected instance.
-					</p>
-				</div>
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 
-				{/* Sync Status Indicator */}
-				{syncStatus && (
-					<div className="flex items-center gap-2 rounded-lg border border-border bg-bg-subtle px-3 py-2 text-xs text-fg-muted">
-						{isSyncing ? (
-							<>
-								<RefreshCw className="h-3.5 w-3.5 animate-spin text-sky-400" />
-								<span>Syncing...</span>
-							</>
-						) : (
-							<>
-								<RefreshCw className="h-3.5 w-3.5" />
-								<span>
-									{syncStatus.totalCachedItems.toLocaleString()} items
-									{syncStatus.lastSync && ` • Updated ${formatSyncTime(syncStatus.lastSync)}`}
-								</span>
-							</>
-						)}
+	return (
+		<header className="space-y-6">
+			{/* Title Section */}
+			<div
+				className="relative animate-in fade-in slide-in-from-bottom-4 duration-500"
+				style={{ animationFillMode: "backwards" }}
+			>
+				<div className="flex items-start justify-between gap-4">
+					<div className="space-y-1">
+						{/* Label with icon */}
+						<div className="flex items-center gap-2 text-sm text-muted-foreground">
+							<LibraryIcon className="h-4 w-4" />
+							<span>Media Library</span>
+						</div>
+
+						{/* Gradient title */}
+						<h1 className="text-3xl font-bold tracking-tight">
+							<span
+								style={{
+									background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+									WebkitBackgroundClip: "text",
+									WebkitTextFillColor: "transparent",
+									backgroundClip: "text",
+								}}
+							>
+								Your Collection
+							</span>
+						</h1>
+
+						{/* Description */}
+						<p className="text-muted-foreground max-w-xl">
+							Browse, filter, and manage movies and series across all connected instances
+						</p>
 					</div>
-				)}
+
+					{/* Sync Status Indicator */}
+					{syncStatus && (
+						<div
+							className="flex items-center gap-2 rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm px-4 py-2 text-sm"
+						>
+							{isSyncing ? (
+								<>
+									<RefreshCw
+										className="h-4 w-4 animate-spin"
+										style={{ color: themeGradient.from }}
+									/>
+									<span className="text-muted-foreground">Syncing...</span>
+								</>
+							) : (
+								<>
+									<RefreshCw className="h-4 w-4 text-muted-foreground" />
+									<span className="text-muted-foreground">
+										<span style={{ color: themeGradient.from }} className="font-medium">
+											{syncStatus.totalCachedItems.toLocaleString()}
+										</span>
+										{" items"}
+										{syncStatus.lastSync && (
+											<span className="text-muted-foreground/70">
+												{" • "}Updated {formatSyncTime(syncStatus.lastSync)}
+											</span>
+										)}
+									</span>
+								</>
+							)}
+						</div>
+					)}
+				</div>
 			</div>
 
-			<div className="flex flex-col gap-4 rounded-2xl border border-border bg-bg-subtle p-4 backdrop-blur">
-				<div className="flex flex-wrap items-center gap-3">
-					<div className="inline-flex rounded-full bg-bg-hover p-1">
-						{SERVICE_OPTIONS.map((option) => (
-							<Button
-								key={option.value}
-								type="button"
-								variant={serviceFilter === option.value ? "primary" : "secondary"}
-								className="flex items-center gap-2 px-4 py-2 text-sm"
-								onClick={() => onServiceFilterChange(option.value)}
-							>
-								{option.icon}
-								<span>{option.label}</span>
-							</Button>
-						))}
+			{/* Filters Card */}
+			<div
+				className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500"
+				style={{ animationDelay: "100ms", animationFillMode: "backwards" }}
+			>
+				{/* Header */}
+				<div className="flex items-center gap-3 px-6 py-4 border-b border-border/50">
+					<div
+						className="flex h-10 w-10 items-center justify-center rounded-xl"
+						style={{
+							background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+							border: `1px solid ${themeGradient.from}30`,
+						}}
+					>
+						<Filter className="h-5 w-5" style={{ color: themeGradient.from }} />
+					</div>
+					<div>
+						<h2 className="text-lg font-semibold">Filters</h2>
+						<p className="text-sm text-muted-foreground">Filter and sort your library</p>
+					</div>
+				</div>
+
+				{/* Filter Controls */}
+				<div className="flex flex-col gap-4 p-6">
+					{/* Service Toggle + Search Row */}
+					<div className="flex flex-wrap items-center gap-4">
+						{/* Service Toggle Pills */}
+						<div className="inline-flex rounded-xl bg-background/50 border border-border/50 p-1">
+							{SERVICE_OPTIONS.map((option) => {
+								const Icon = option.icon;
+								const isActive = serviceFilter === option.value;
+								const gradient = option.gradient ?? themeGradient;
+
+								return (
+									<button
+										key={option.value}
+										type="button"
+										onClick={() => onServiceFilterChange(option.value)}
+										className={cn(
+											"relative flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all duration-300",
+											isActive ? "text-white" : "text-muted-foreground hover:text-foreground"
+										)}
+									>
+										{isActive && (
+											<div
+												className="absolute inset-0 rounded-lg"
+												style={{
+													background: `linear-gradient(135deg, ${gradient.from}, ${gradient.to})`,
+													boxShadow: `0 4px 12px -4px ${gradient.glow}`,
+												}}
+											/>
+										)}
+										<Icon className={cn("h-4 w-4 relative z-10", !isActive && "opacity-70")} />
+										<span className="relative z-10">{option.label}</span>
+									</button>
+								);
+							})}
+						</div>
+
+						{/* Search Input */}
+						<div className="relative flex-1 min-w-[200px] max-w-md ml-auto">
+							<Input
+								placeholder="Filter by title, overview, or tag"
+								value={searchTerm}
+								onChange={(event) => onSearchTermChange(event.target.value)}
+								className="bg-background/50 border-border/50 focus:border-primary"
+							/>
+						</div>
 					</div>
 
-					<div className="flex items-center gap-3">
-						<label className="text-xs uppercase tracking-[0.3em] text-fg-muted">
-							Instance
-						</label>
-						<select
-							value={instanceFilter}
-							onChange={(event) => onInstanceFilterChange(event.target.value)}
-							className="rounded-md border border-border bg-bg-subtle px-3 py-2 text-sm text-fg hover:border-sky-400/80 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
-							disabled={instanceOptions.length === 0}
-						>
-							<option value="all" className="bg-bg text-fg">
-								All instances
-							</option>
-							{instanceOptions
-								.filter(
-									(option) => serviceFilter === "all" || option.service === serviceFilter,
-								)
-								.map((option) => (
-									<option key={option.id} value={option.id} className="bg-bg text-fg">
+					{/* Filter Dropdowns Row */}
+					<div className="flex flex-wrap items-end gap-4">
+						<div className="flex min-w-[160px] flex-col gap-1.5">
+							<label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+								Instance
+							</label>
+							<select
+								value={instanceFilter}
+								onChange={(event) => onInstanceFilterChange(event.target.value)}
+								disabled={instanceOptions.length === 0}
+								className="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 [&>option]:bg-background [&>option]:text-foreground disabled:opacity-50"
+							>
+								<option value="all">All instances</option>
+								{instanceOptions
+									.filter(
+										(option) => serviceFilter === "all" || option.service === serviceFilter,
+									)
+									.map((option) => (
+										<option key={option.id} value={option.id}>
+											{option.label}
+										</option>
+									))}
+							</select>
+						</div>
+
+						<div className="flex min-w-[140px] flex-col gap-1.5">
+							<label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+								Status
+							</label>
+							<select
+								value={statusFilter}
+								onChange={(event) =>
+									onStatusFilterChange(
+										event.target.value as (typeof STATUS_FILTERS)[number]["value"],
+									)
+								}
+								className="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 [&>option]:bg-background [&>option]:text-foreground"
+							>
+								{STATUS_FILTERS.map((option) => (
+									<option key={option.value} value={option.value}>
 										{option.label}
 									</option>
 								))}
-						</select>
-					</div>
+							</select>
+						</div>
 
-					<div className="flex items-center gap-3">
-						<label className="text-xs uppercase tracking-[0.3em] text-fg-muted">
-							Status
-						</label>
-						<select
-							value={statusFilter}
-							onChange={(event) =>
-								onStatusFilterChange(
-									event.target.value as (typeof STATUS_FILTERS)[number]["value"],
-								)
-							}
-							className="rounded-md border border-border bg-bg-subtle px-3 py-2 text-sm text-fg hover:border-sky-400/80 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
-						>
-							{STATUS_FILTERS.map((option) => (
-								<option key={option.value} value={option.value} className="bg-bg text-fg">
-									{option.label}
-								</option>
-							))}
-						</select>
-					</div>
+						<div className="flex min-w-[130px] flex-col gap-1.5">
+							<label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+								Files
+							</label>
+							<select
+								value={fileFilter}
+								onChange={(event) =>
+									onFileFilterChange(
+										event.target.value as (typeof FILE_FILTERS)[number]["value"],
+									)
+								}
+								className="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 [&>option]:bg-background [&>option]:text-foreground"
+							>
+								{FILE_FILTERS.map((option) => (
+									<option key={option.value} value={option.value}>
+										{option.label}
+									</option>
+								))}
+							</select>
+						</div>
 
-					<div className="flex items-center gap-3">
-						<label className="text-xs uppercase tracking-[0.3em] text-fg-muted">
-							Files
-						</label>
-						<select
-							value={fileFilter}
-							onChange={(event) =>
-								onFileFilterChange(
-									event.target.value as (typeof FILE_FILTERS)[number]["value"],
-								)
-							}
-							className="rounded-md border border-border bg-bg-subtle px-3 py-2 text-sm text-fg hover:border-sky-400/80 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
-						>
-							{FILE_FILTERS.map((option) => (
-								<option key={option.value} value={option.value} className="bg-bg text-fg">
-									{option.label}
-								</option>
-							))}
-						</select>
-					</div>
-
-					{/* Sort Controls */}
-					<div className="flex items-center gap-2">
-						<label className="text-xs uppercase tracking-[0.3em] text-fg-muted">
-							Sort
-						</label>
-						<select
-							value={sortBy}
-							onChange={(event) => onSortByChange(event.target.value as SortByValue)}
-							className="rounded-md border border-border bg-bg-subtle px-3 py-2 text-sm text-fg hover:border-sky-400/80 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
-						>
-							{SORT_OPTIONS.map((option) => (
-								<option key={option.value} value={option.value} className="bg-bg text-fg">
-									{option.label}
-								</option>
-							))}
-						</select>
-						<Button
-							type="button"
-							variant="ghost"
-							size="sm"
-							onClick={() => onSortOrderChange(sortOrder === "asc" ? "desc" : "asc")}
-							className="p-2"
-							title={sortOrder === "asc" ? "Sort ascending" : "Sort descending"}
-						>
-							{sortOrder === "asc" ? (
-								<ArrowUpAZ className="h-4 w-4" />
-							) : (
-								<ArrowDownAZ className="h-4 w-4" />
-							)}
-						</Button>
-					</div>
-
-					<div className="relative ml-auto w-full max-w-sm">
-						<Input
-							placeholder="Filter by title, overview, or tag"
-							value={searchTerm}
-							onChange={(event) => onSearchTermChange(event.target.value)}
-						/>
+						{/* Sort Controls */}
+						<div className="flex items-end gap-2 ml-auto">
+							<div className="flex min-w-[120px] flex-col gap-1.5">
+								<label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+									Sort By
+								</label>
+								<select
+									value={sortBy}
+									onChange={(event) => onSortByChange(event.target.value as SortByValue)}
+									className="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 [&>option]:bg-background [&>option]:text-foreground"
+								>
+									{SORT_OPTIONS.map((option) => (
+										<option key={option.value} value={option.value}>
+											{option.label}
+										</option>
+									))}
+								</select>
+							</div>
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								onClick={() => onSortOrderChange(sortOrder === "asc" ? "desc" : "asc")}
+								className="h-[38px] px-3 border border-border/50 bg-background/50"
+								title={sortOrder === "asc" ? "Sort ascending" : "Sort descending"}
+							>
+								{sortOrder === "asc" ? (
+									<ArrowUpAZ className="h-4 w-4" />
+								) : (
+									<ArrowDownAZ className="h-4 w-4" />
+								)}
+							</Button>
+						</div>
 					</div>
 				</div>
 			</div>

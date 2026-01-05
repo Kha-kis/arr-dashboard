@@ -11,8 +11,9 @@ export const libraryQuerySchema = z.object({
 	instanceId: z.string().optional(),
 
 	// Pagination
+	// Note: limit=0 means "fetch all" for internal use cases like discover filtering
 	page: z.coerce.number().int().min(1).default(1),
-	limit: z.coerce.number().int().min(1).max(100).default(50),
+	limit: z.coerce.number().int().min(0).max(10000).default(50),
 
 	// Search
 	search: z.string().optional(),

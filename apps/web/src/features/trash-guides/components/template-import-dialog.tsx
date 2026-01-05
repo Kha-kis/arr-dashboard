@@ -1,9 +1,21 @@
 "use client";
 
+/**
+ * Template Import Dialog
+ *
+ * Premium import dialog with:
+ * - Glassmorphic container with backdrop blur
+ * - Theme-aware styling using THEME_GRADIENTS
+ * - Semantic color feedback for errors
+ * - Animated entrance effects
+ */
+
 import { useState, useEffect, useRef } from "react";
 import { useImportTemplate } from "../../../hooks/api/useTemplates";
-import { Alert, AlertDescription, Input, Button } from "../../../components/ui";
-import { Upload, X } from "lucide-react";
+import { Input, Button } from "../../../components/ui";
+import { Upload, X, FileJson, AlertCircle, Info, Loader2 } from "lucide-react";
+import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 
 interface TemplateImportDialogProps {
 	open: boolean;
@@ -11,8 +23,11 @@ interface TemplateImportDialogProps {
 }
 
 export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const [jsonData, setJsonData] = useState("");
 	const [parseError, setParseError] = useState<string | null>(null);
+	const [isFocused, setIsFocused] = useState(false);
 	const importMutation = useImportTemplate();
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -110,47 +125,110 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 
 	if (!open) return null;
 
+	const hasError = importMutation.isError || parseError;
+	const errorMessage = parseError ||
+		(importMutation.error instanceof Error
+			? importMutation.error.message
+			: "Failed to import template");
+	const canImport = jsonData.trim() && !importMutation.isPending;
+
 	return (
 		<div
-			className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+			className="fixed inset-0 z-modal-backdrop flex items-center justify-center p-4 animate-in fade-in duration-200"
 			onClick={(e) => e.target === e.currentTarget && onClose()}
 			role="presentation"
 		>
+			{/* Backdrop */}
+			<div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+
+			{/* Modal */}
 			<div
-				className="relative w-full max-w-2xl rounded-xl border border-border bg-bg p-6 shadow-xl"
+				className="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
+				style={{
+					boxShadow: `0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px ${themeGradient.from}15`,
+				}}
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="import-template-title"
+				onClick={(e) => e.stopPropagation()}
 			>
+				{/* Close Button */}
+				<button
+					type="button"
+					onClick={onClose}
+					aria-label="Close"
+					className="absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-lg bg-black/50 text-white/70 transition-colors hover:bg-black/70 hover:text-white"
+				>
+					<X className="h-4 w-4" />
+				</button>
+
 				{/* Header */}
-				<div className="mb-4 flex items-center justify-between">
-					<h2 id="import-template-title" className="text-xl font-semibold text-fg">Import Template</h2>
-					<button
-						type="button"
-						onClick={onClose}
-						aria-label="Close"
-						className="rounded p-1 text-fg-muted hover:bg-bg-subtle hover:text-fg"
-					>
-						<X className="h-5 w-5" />
-					</button>
+				<div
+					className="border-b border-border/30 p-6"
+					style={{
+						background: `linear-gradient(135deg, ${themeGradient.from}08, transparent)`,
+					}}
+				>
+					<div className="flex items-center gap-4">
+						<div
+							className="flex h-12 w-12 items-center justify-center rounded-xl shrink-0"
+							style={{
+								background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+								border: `1px solid ${themeGradient.from}30`,
+							}}
+						>
+							<Upload className="h-6 w-6" style={{ color: themeGradient.from }} />
+						</div>
+						<div>
+							<h2 id="import-template-title" className="text-xl font-bold text-foreground">
+								Import Template
+							</h2>
+							<p className="text-sm text-muted-foreground">
+								Upload a JSON file or paste template data
+							</p>
+						</div>
+					</div>
 				</div>
 
 				{/* Content */}
-				<div className="space-y-4">
-					{(importMutation.isError || parseError) && (
-						<Alert variant="danger">
-							<AlertDescription>
-								{parseError ||
-									(importMutation.error instanceof Error
-										? importMutation.error.message
-										: "Failed to import template")}
-							</AlertDescription>
-						</Alert>
+				<div className="p-6 space-y-5">
+					{/* Info Banner */}
+					<div
+						className="flex items-start gap-3 rounded-xl px-4 py-3"
+						style={{
+							background: `linear-gradient(135deg, ${themeGradient.from}08, ${themeGradient.to}08)`,
+							border: `1px solid ${themeGradient.from}20`,
+						}}
+					>
+						<Info className="h-4 w-4 mt-0.5 shrink-0" style={{ color: themeGradient.from }} />
+						<p className="text-sm text-muted-foreground">
+							Import a template from a JSON file exported from TRaSH Guides or another arr-dashboard instance.
+						</p>
+					</div>
+
+					{/* Error Display */}
+					{hasError && (
+						<div
+							className="flex items-start gap-3 rounded-xl px-4 py-3 animate-in fade-in slide-in-from-bottom-2"
+							style={{
+								backgroundColor: SEMANTIC_COLORS.error.bg,
+								border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+							}}
+						>
+							<AlertCircle
+								className="h-4 w-4 mt-0.5 shrink-0"
+								style={{ color: SEMANTIC_COLORS.error.from }}
+							/>
+							<p className="text-sm" style={{ color: SEMANTIC_COLORS.error.text }}>
+								{errorMessage}
+							</p>
+						</div>
 					)}
 
-					{/* File Upload */}
-					<div>
-						<label className="mb-2 block text-sm font-medium text-fg">
+					{/* File Upload Section */}
+					<div className="space-y-2">
+						<label className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground font-medium">
+							<FileJson className="h-3 w-3" />
 							Upload JSON File
 						</label>
 						<Input
@@ -158,19 +236,21 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 							type="file"
 							accept=".json,application/json"
 							onChange={handleFileUpload}
-							className="w-full"
+							className="w-full rounded-xl"
 						/>
 					</div>
 
+					{/* Divider */}
 					<div className="flex items-center gap-4">
-						<div className="h-px flex-1 bg-border" />
-						<span className="text-sm text-fg-muted">or</span>
-						<div className="h-px flex-1 bg-border" />
+						<div className="h-px flex-1 bg-border/50" />
+						<span className="text-xs text-muted-foreground uppercase tracking-wider">or</span>
+						<div className="h-px flex-1 bg-border/50" />
 					</div>
 
-					{/* Paste JSON */}
-					<div>
-						<label className="mb-2 block text-sm font-medium text-fg">
+					{/* Paste JSON Section */}
+					<div className="space-y-2">
+						<label className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground font-medium">
+							<FileJson className="h-3 w-3" />
 							Paste JSON Data
 						</label>
 						<textarea
@@ -179,27 +259,49 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 								setJsonData(e.target.value);
 								setParseError(null);
 							}}
+							onFocus={() => setIsFocused(true)}
+							onBlur={() => setIsFocused(false)}
 							placeholder='{"version": "1.0", "template": {...}}'
-							rows={12}
-							className="w-full rounded-xl border border-border bg-bg-subtle px-4 py-3 font-mono text-sm text-fg placeholder:text-fg-muted/60 transition-all duration-200 hover:border-border/80 hover:bg-bg-subtle/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-bg-subtle/80"
+							rows={10}
+							className="w-full rounded-xl border bg-card/50 backdrop-blur-sm px-4 py-3 font-mono text-sm text-foreground placeholder:text-muted-foreground/60 transition-all duration-200 focus:outline-none resize-none"
+							style={{
+								borderColor: isFocused ? themeGradient.from : "hsl(var(--border) / 0.5)",
+								boxShadow: isFocused ? `0 0 0 1px ${themeGradient.from}` : undefined,
+							}}
 						/>
 					</div>
+				</div>
 
-					{/* Actions */}
-					<div className="flex justify-end gap-2">
-						<Button variant="secondary" onClick={onClose}>
-							Cancel
-						</Button>
-						<Button
-							variant="primary"
-							onClick={handleImport}
-							disabled={!jsonData.trim() || importMutation.isPending}
-							className="gap-2"
-						>
-							<Upload className="h-4 w-4" />
-							{importMutation.isPending ? "Importing..." : "Import Template"}
-						</Button>
-					</div>
+				{/* Footer */}
+				<div className="flex justify-end gap-3 p-6 pt-0">
+					<Button variant="outline" onClick={onClose} className="rounded-xl">
+						Cancel
+					</Button>
+					<Button
+						onClick={handleImport}
+						disabled={!canImport}
+						className="gap-2 rounded-xl font-medium"
+						style={
+							canImport
+								? {
+										background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+										boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
+									}
+								: undefined
+						}
+					>
+						{importMutation.isPending ? (
+							<>
+								<Loader2 className="h-4 w-4 animate-spin" />
+								Importing...
+							</>
+						) : (
+							<>
+								<Upload className="h-4 w-4" />
+								Import Template
+							</>
+						)}
+					</Button>
 				</div>
 			</div>
 		</div>

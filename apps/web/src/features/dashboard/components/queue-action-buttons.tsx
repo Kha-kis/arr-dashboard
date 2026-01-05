@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { Download, RefreshCw, Tag, Trash2, ChevronDown } from "lucide-react";
 import { cn } from "../../../lib/utils";
 import { Button } from "../../../components/ui/button";
+import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
 
 export type QueueAction = "retry" | "manualImport" | "remove" | "category";
@@ -69,31 +71,21 @@ const RemoveActionMenu = ({
 	const containerRef = useRef<HTMLDivElement | null>(null);
 
 	useEffect(() => {
-		if (!open) {
-			return;
-		}
+		if (!open) return;
 		const handleClick = (event: MouseEvent) => {
 			const target = event.target as Node;
-			if (!containerRef.current) {
-				return;
+			if (!containerRef.current?.contains(target)) {
+				setOpen(false);
 			}
-			if (containerRef.current.contains(target)) {
-				return;
-			}
-			setOpen(false);
 		};
 		document.addEventListener("mousedown", handleClick);
 		return () => document.removeEventListener("mousedown", handleClick);
 	}, [open]);
 
 	useEffect(() => {
-		if (!open) {
-			return;
-		}
+		if (!open) return;
 		const handleKey = (event: KeyboardEvent) => {
-			if (event.key === "Escape") {
-				setOpen(false);
-			}
+			if (event.key === "Escape") setOpen(false);
 		};
 		document.addEventListener("keydown", handleKey);
 		return () => document.removeEventListener("keydown", handleKey);
@@ -105,17 +97,14 @@ const RemoveActionMenu = ({
 	};
 
 	const toggleMenu = () => {
-		if (disabled) {
-			return;
-		}
-		setOpen((prev) => !prev);
+		if (!disabled) setOpen((prev) => !prev);
 	};
 
 	const triggerContent = (
 		<>
 			<Trash2 className="h-4 w-4" />
 			<span>{label}</span>
-			<ChevronDown className="h-3.5 w-3.5" />
+			<ChevronDown className={cn("h-3.5 w-3.5 transition-transform duration-200", open && "rotate-180")} />
 		</>
 	);
 
@@ -127,42 +116,55 @@ const RemoveActionMenu = ({
 					onClick={toggleMenu}
 					disabled={disabled}
 					className={cn(
-						"inline-flex items-center gap-2 rounded-full border border-red-500/40 px-3 py-1 text-xs uppercase tracking-wide text-red-200 transition hover:border-red-500",
+						"group inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium uppercase tracking-wide transition-all duration-300",
+						"border-red-500/30 text-red-400 bg-red-500/5",
+						"hover:border-red-500/50 hover:bg-red-500/10 hover:shadow-sm hover:shadow-red-500/10",
 						disabled && "cursor-not-allowed opacity-50",
 						fullWidth && "w-full justify-between",
-						buttonClassName,
+						buttonClassName
 					)}
 				>
 					{triggerContent}
 				</button>
 			) : (
-				<Button
-					variant="ghost"
-					className={cn(
-						"inline-flex h-9 items-center justify-center gap-2 rounded-full border border-white/15 px-3 text-xs font-medium text-white/80 transition hover:border-white/40",
-						fullWidth && "w-full",
-					)}
+				<button
+					type="button"
 					onClick={toggleMenu}
 					disabled={disabled}
+					className={cn(
+						"group inline-flex h-9 items-center justify-center gap-2 rounded-full border px-4 text-xs font-medium transition-all duration-300",
+						"border-border/50 bg-card/50 text-muted-foreground backdrop-blur-sm",
+						"hover:border-red-500/30 hover:bg-red-500/5 hover:text-red-400",
+						disabled && "cursor-not-allowed opacity-50",
+						fullWidth && "w-full"
+					)}
 					aria-label="Remove"
 				>
 					{triggerContent}
-				</Button>
+				</button>
 			)}
+
+			{/* Dropdown menu */}
 			{open && (
-				<div className="absolute right-0 top-full z-30 mt-2 w-72 rounded-xl border border-white/10 bg-slate-950/95 p-2 shadow-2xl">
-					<div className="flex flex-col gap-1">
-						{REMOVE_OPTIONS.map((option) => (
-							<button
-								key={option.id}
-								type="button"
-								onClick={() => handleSelect(option)}
-								className="w-full rounded-lg px-3 py-2 text-left text-xs text-white/70 transition hover:bg-white/5"
-							>
-								<p className="text-sm font-semibold text-white">{option.label}</p>
-								<p className="mt-0.5 text-[11px] text-white/50">{option.description}</p>
-							</button>
-						))}
+				<div className="absolute right-0 top-full z-30 mt-2 w-80 animate-in fade-in slide-in-from-top-2 duration-200">
+					<div className="rounded-xl border border-border/50 bg-card/95 backdrop-blur-xl p-2 shadow-xl shadow-black/20">
+						<div className="flex flex-col gap-1">
+							{REMOVE_OPTIONS.map((option) => (
+								<button
+									key={option.id}
+									type="button"
+									onClick={() => handleSelect(option)}
+									className="group w-full rounded-lg px-3 py-2.5 text-left transition-all duration-200 hover:bg-red-500/10"
+								>
+									<p className="text-sm font-medium text-foreground group-hover:text-red-400 transition-colors">
+										{option.label}
+									</p>
+									<p className="mt-0.5 text-[11px] text-muted-foreground leading-relaxed">
+										{option.description}
+									</p>
+								</button>
+							))}
+						</div>
 					</div>
 				</div>
 			)}
@@ -179,9 +181,9 @@ interface QueueActionButtonsProps {
 	primaryDisabled?: boolean;
 }
 
-const baseButtonClass =
-	"inline-flex h-9 items-center justify-center gap-2 rounded-full border border-white/15 px-3 text-xs font-medium text-white/80 transition hover:border-white/40";
-
+/**
+ * Premium action buttons with theme-aware primary button styling
+ */
 export const QueueActionButtons = ({
 	onAction,
 	disabled,
@@ -189,43 +191,68 @@ export const QueueActionButtons = ({
 	fullWidth,
 	primaryAction,
 	primaryDisabled,
-}: QueueActionButtonsProps) => (
-	<div className={cn("flex flex-col gap-2 sm:flex-row sm:justify-end", fullWidth && "w-full")}>
-		{primaryAction && (
-			<Button
-				variant="ghost"
-				className={cn(baseButtonClass, fullWidth && "w-full")}
-				onClick={() => onAction(primaryAction)}
-				disabled={disabled || primaryDisabled}
-				aria-label={primaryAction === "manualImport" ? "Manual import" : "Retry"}
-			>
-				{primaryAction === "manualImport" ? (
-					<Download className="h-4 w-4" />
-				) : (
-					<RefreshCw className="h-4 w-4" />
-				)}
-				<span>{primaryAction === "manualImport" ? "Manual Import" : "Retry"}</span>
-			</Button>
-		)}
-		<RemoveActionMenu
-			label="Remove"
-			disabled={disabled}
-			fullWidth={fullWidth}
-			onSelect={(options) => onAction("remove", options)}
-		/>
-		{showChangeCategory && (
-			<Button
-				variant="ghost"
-				className={cn(baseButtonClass, fullWidth && "w-full")}
-				onClick={() => onAction("category")}
+}: QueueActionButtonsProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
+	const secondaryButtonClass = cn(
+		"inline-flex h-9 items-center justify-center gap-2 rounded-full border px-4 text-xs font-medium transition-all duration-300",
+		"border-border/50 bg-card/50 text-muted-foreground backdrop-blur-sm",
+		"hover:border-border hover:bg-card hover:text-foreground",
+		fullWidth && "w-full"
+	);
+
+	return (
+		<div className={cn("flex flex-col gap-2 sm:flex-row sm:justify-end", fullWidth && "w-full")}>
+			{/* Primary action button with theme gradient */}
+			{primaryAction && (
+				<button
+					type="button"
+					onClick={() => onAction(primaryAction)}
+					disabled={disabled || primaryDisabled}
+					className={cn(
+						"group inline-flex h-9 items-center justify-center gap-2 rounded-full px-4 text-xs font-medium text-white transition-all duration-300",
+						"disabled:cursor-not-allowed disabled:opacity-50",
+						fullWidth && "w-full"
+					)}
+					style={{
+						background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+						boxShadow: !(disabled || primaryDisabled) ? `0 4px 12px -2px ${themeGradient.glow}` : undefined,
+					}}
+					aria-label={primaryAction === "manualImport" ? "Manual import" : "Retry"}
+				>
+					{primaryAction === "manualImport" ? (
+						<Download className="h-4 w-4 transition-transform duration-300 group-hover:scale-110" />
+					) : (
+						<RefreshCw className="h-4 w-4 transition-transform duration-300 group-hover:rotate-180" />
+					)}
+					<span>{primaryAction === "manualImport" ? "Manual Import" : "Retry"}</span>
+				</button>
+			)}
+
+			{/* Remove action menu */}
+			<RemoveActionMenu
+				label="Remove"
 				disabled={disabled}
-				aria-label="Change category"
-			>
-				<Tag className="h-4 w-4" />
-				<span>Change Category</span>
-			</Button>
-		)}
-	</div>
-);
+				fullWidth={fullWidth}
+				onSelect={(options) => onAction("remove", options)}
+			/>
+
+			{/* Change category button */}
+			{showChangeCategory && (
+				<button
+					type="button"
+					onClick={() => onAction("category")}
+					disabled={disabled}
+					className={secondaryButtonClass}
+					aria-label="Change category"
+				>
+					<Tag className="h-4 w-4" />
+					<span>Change Category</span>
+				</button>
+			)}
+		</div>
+	);
+};
 
 export { RemoveActionMenu, REMOVE_OPTIONS as REMOVE_ACTION_OPTIONS };

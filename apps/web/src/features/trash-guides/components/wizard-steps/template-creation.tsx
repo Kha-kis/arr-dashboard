@@ -5,6 +5,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useImportQualityProfileWizard, useUpdateQualityProfileTemplate, useCreateClonedProfileTemplate } from "../../../../hooks/api/useQualityProfiles";
 import { Alert, AlertDescription, Skeleton } from "../../../../components/ui";
 import { ChevronLeft, Download, CheckCircle, Info, Save, Edit2, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { THEME_GRADIENTS } from "../../../../lib/theme-gradients";
+import { useColorTheme } from "../../../../providers/color-theme-provider";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { apiRequest } from "../../../../lib/api-client/base";
 
@@ -117,6 +119,8 @@ export const TemplateCreation = ({
 	onBack,
 	onEditStep,
 }: TemplateCreationProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const [templateName, setTemplateName] = useState(wizardState.templateName);
 	const [templateDescription, setTemplateDescription] = useState(wizardState.templateDescription);
 
@@ -310,7 +314,13 @@ export const TemplateCreation = ({
 	return (
 		<div className="space-y-6">
 			{/* Introduction */}
-			<div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
+			<div
+				className="rounded-xl border p-4"
+				style={{
+					borderColor: themeGradient.fromMuted,
+					backgroundColor: themeGradient.fromLight,
+				}}
+			>
 				<h4 className="font-medium text-fg mb-2">✅ {isEditMode ? 'Ready to Save!' : 'Almost Done!'}</h4>
 				<p className="text-sm text-fg/70 mb-3">
 					{isEditMode
@@ -364,7 +374,13 @@ export const TemplateCreation = ({
 						<p className="mt-2 text-sm text-fg/70">{wizardState.selectedProfile.name}</p>
 						<div className="mt-3 flex flex-wrap gap-2">
 							{wizardState.selectedProfile.language && (
-								<span className="inline-flex items-center gap-1 rounded bg-blue-500/20 px-2 py-1 text-xs font-medium text-blue-300">
+								<span
+									className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs font-medium"
+									style={{
+										backgroundColor: themeGradient.fromLight,
+										color: themeGradient.from,
+									}}
+								>
 									🌐 {wizardState.selectedProfile.language}
 								</span>
 							)}
@@ -438,8 +454,14 @@ export const TemplateCreation = ({
 								<div className="text-2xl font-bold text-fg mt-1">{fromGroupsCount}</div>
 								<div className="text-xs text-fg/60 mt-1">Auto-selected</div>
 							</div>
-							<div className="rounded bg-blue-500/10 border border-blue-500/20 p-3">
-								<div className="text-xs font-medium text-blue-300">✋ Manual</div>
+							<div
+								className="rounded border p-3"
+								style={{
+									backgroundColor: themeGradient.fromLight,
+									borderColor: themeGradient.fromMuted,
+								}}
+							>
+								<div className="text-xs font-medium" style={{ color: themeGradient.from }}>✋ Manual</div>
 								<div className="text-2xl font-bold text-fg mt-1">{manuallySelectedCount}</div>
 								<div className="text-xs text-fg/60 mt-1">User added</div>
 							</div>

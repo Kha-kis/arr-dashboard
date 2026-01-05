@@ -1,9 +1,24 @@
 "use client";
 
 import type { ServiceInstanceSummary } from "@arr/shared";
-import { Check, Pencil, Power, Star, Trash2, Zap } from "lucide-react";
+import {
+	Check,
+	Pencil,
+	Power,
+	Star,
+	Trash2,
+	Zap,
+	Loader2,
+	AlertCircle,
+	ExternalLink,
+} from "lucide-react";
 import { Button } from "../../../components/ui/button";
-import { Alert, AlertDescription } from "../../../components/ui";
+import {
+	ServiceBadge,
+	StatusBadge,
+} from "../../../components/layout";
+import { THEME_GRADIENTS, SERVICE_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 import { useIncognitoMode, getLinuxUrl } from "../../../lib/incognito";
 import { cn } from "../../../lib/utils";
 
@@ -33,10 +48,18 @@ interface ServiceInstanceCardProps {
 		success: boolean;
 		message: string;
 	} | null;
+	/** Animation delay in ms for staggered entrance */
+	animationDelay?: number;
 }
 
 /**
- * Displays a single service instance card with action buttons
+ * Premium Service Instance Card
+ *
+ * Displays a service instance with:
+ * - Service-specific gradient accents
+ * - Glassmorphic background
+ * - Theme-aware action buttons
+ * - Staggered entrance animation
  */
 export const ServiceInstanceCard = ({
 	instance,
@@ -48,128 +71,188 @@ export const ServiceInstanceCard = ({
 	isTesting,
 	mutationPending,
 	testResult,
+	animationDelay = 0,
 }: ServiceInstanceCardProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const [incognitoMode] = useIncognitoMode();
 	const displayUrl = incognitoMode ? getLinuxUrl(instance.baseUrl) : instance.baseUrl;
 
-	// Service type colors
-	const serviceColors: Record<string, string> = {
-		sonarr: "bg-sky-500/20 text-sky-300 border-sky-500/30",
-		radarr: "bg-amber-500/20 text-amber-300 border-amber-500/30",
-		prowlarr: "bg-purple-500/20 text-purple-300 border-purple-500/30",
-	};
-	const serviceColor = serviceColors[instance.service.toLowerCase()] ?? "bg-white/10 text-fg-muted border-white/20";
+	// Get service gradient for accent
+	const serviceKey = instance.service.toLowerCase() as keyof typeof SERVICE_GRADIENTS;
+	const serviceGradient = SERVICE_GRADIENTS[serviceKey] ?? SERVICE_GRADIENTS.prowlarr;
+
+	// Check if this card has test results
+	const hasTestResult = testResult && testResult.id === instance.id;
+	const testSuccess = hasTestResult && testResult.success;
+	const testFailed = hasTestResult && !testResult.success;
 
 	return (
 		<div
 			className={cn(
-				"rounded-xl border p-4 transition-all",
+				"group relative rounded-2xl border overflow-hidden transition-all duration-300",
+				"animate-in fade-in slide-in-from-bottom-2",
 				instance.enabled
-					? "border-border bg-bg-subtle"
-					: "border-border/50 bg-bg-subtle/50 opacity-60",
+					? "border-border/50 bg-card/30 backdrop-blur-sm hover:border-border/80"
+					: "border-border/30 bg-card/20 opacity-60"
 			)}
+			style={{
+				animationDelay: `${animationDelay}ms`,
+				animationFillMode: "backwards",
+			}}
 		>
-			{/* Header row */}
-			<div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-				{/* Left: Instance info */}
-				<div className="min-w-0 flex-1 space-y-2">
-					<div className="flex flex-wrap items-center gap-2">
-						<span className={cn("rounded-md border px-2 py-0.5 text-xs font-medium uppercase", serviceColor)}>
-							{instance.service}
-						</span>
-						<h3 className="text-base font-semibold text-fg">{instance.label}</h3>
-						{instance.isDefault && (
-							<span className="inline-flex items-center gap-1 rounded-full bg-primary/20 px-2 py-0.5 text-xs font-medium text-primary">
-								<Star className="h-3 w-3" />
-								Default
-							</span>
-						)}
-						{!instance.enabled && (
-							<span className="rounded-full bg-white/10 px-2 py-0.5 text-xs text-fg-muted">
-								Disabled
-							</span>
+			{/* Service gradient accent line at top */}
+			<div
+				className="absolute top-0 left-0 right-0 h-0.5"
+				style={{
+					background: `linear-gradient(90deg, ${serviceGradient.from}, ${serviceGradient.to})`,
+					opacity: instance.enabled ? 1 : 0.5,
+				}}
+			/>
+
+			<div className="p-4">
+				{/* Header row */}
+				<div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+					{/* Left: Instance info */}
+					<div className="min-w-0 flex-1 space-y-2">
+						<div className="flex flex-wrap items-center gap-2">
+							<ServiceBadge service={instance.service} />
+							<h3 className="text-base font-semibold text-foreground">{instance.label}</h3>
+							{instance.isDefault && (
+								<div
+									className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium"
+									style={{
+										backgroundColor: themeGradient.fromLight,
+										color: themeGradient.from,
+										border: `1px solid ${themeGradient.fromMuted}`,
+									}}
+								>
+									<Star className="h-3 w-3" />
+									Default
+								</div>
+							)}
+							{!instance.enabled && (
+								<StatusBadge status="default">Disabled</StatusBadge>
+							)}
+						</div>
+
+						{/* URL */}
+						<div className="flex items-center gap-2">
+							<p className="truncate text-sm text-muted-foreground">{displayUrl}</p>
+							<a
+								href={instance.baseUrl}
+								target="_blank"
+								rel="noopener noreferrer"
+								className="text-muted-foreground hover:text-foreground transition-colors"
+								title="Open in new tab"
+							>
+								<ExternalLink className="h-3.5 w-3.5" />
+							</a>
+						</div>
+
+						{/* Tags */}
+						{instance.tags.length > 0 && (
+							<div className="flex flex-wrap gap-1.5">
+								{instance.tags.map((tag) => (
+									<span
+										key={tag.id}
+										className="rounded-full bg-muted/50 px-2 py-0.5 text-xs text-muted-foreground"
+									>
+										{tag.name}
+									</span>
+								))}
+							</div>
 						)}
 					</div>
-					<p className="truncate text-sm text-fg-muted">{displayUrl}</p>
-					{instance.tags.length > 0 && (
-						<div className="flex flex-wrap gap-1.5">
-							{instance.tags.map((tag) => (
-								<span
-									key={tag.id}
-									className="rounded-full bg-white/10 px-2 py-0.5 text-xs text-fg-muted"
-								>
-									{tag.name}
-								</span>
-							))}
-						</div>
-					)}
-				</div>
 
-				{/* Right: Action buttons */}
-				<div className="flex shrink-0 flex-wrap items-center gap-1.5 sm:gap-2">
-					<Button
-						variant="secondary"
-						size="sm"
-						onClick={() => onTestConnection(instance)}
-						disabled={isTesting}
-						className="gap-1.5"
-					>
-						<Zap className="h-3.5 w-3.5" />
-						{isTesting ? "Testing..." : "Test"}
-					</Button>
-					<Button
-						variant="ghost"
-						size="sm"
-						onClick={() => onEdit(instance)}
-						className="gap-1.5"
-					>
-						<Pencil className="h-3.5 w-3.5" />
-						<span className="hidden sm:inline">Edit</span>
-					</Button>
-					{!instance.isDefault && (
+					{/* Right: Action buttons */}
+					<div className="flex shrink-0 flex-wrap items-center gap-1.5">
+						{/* Test button */}
+						<Button
+							variant="secondary"
+							size="sm"
+							onClick={() => onTestConnection(instance)}
+							disabled={isTesting}
+							className="gap-1.5 border-border/50 bg-card/50 backdrop-blur-sm hover:bg-card/80"
+						>
+							{isTesting ? (
+								<Loader2 className="h-3.5 w-3.5 animate-spin" />
+							) : (
+								<Zap className="h-3.5 w-3.5" style={{ color: themeGradient.from }} />
+							)}
+							{isTesting ? "Testing..." : "Test"}
+						</Button>
+
+						{/* Edit button */}
 						<Button
 							variant="ghost"
 							size="sm"
-							onClick={() => onToggleDefault(instance)}
+							onClick={() => onEdit(instance)}
+							className="gap-1.5"
+						>
+							<Pencil className="h-3.5 w-3.5" />
+							<span className="hidden sm:inline">Edit</span>
+						</Button>
+
+						{/* Set Default button */}
+						{!instance.isDefault && (
+							<Button
+								variant="ghost"
+								size="sm"
+								onClick={() => onToggleDefault(instance)}
+								disabled={mutationPending}
+								className="gap-1.5"
+							>
+								<Star className="h-3.5 w-3.5" />
+								<span className="hidden sm:inline">Set default</span>
+							</Button>
+						)}
+
+						{/* Enable/Disable button */}
+						<Button
+							variant="ghost"
+							size="sm"
+							onClick={() => onToggleEnabled(instance)}
 							disabled={mutationPending}
 							className="gap-1.5"
 						>
-							<Star className="h-3.5 w-3.5" />
-							<span className="hidden sm:inline">Set default</span>
+							<Power className="h-3.5 w-3.5" />
+							<span className="hidden sm:inline">{instance.enabled ? "Disable" : "Enable"}</span>
 						</Button>
-					)}
-					<Button
-						variant="ghost"
-						size="sm"
-						onClick={() => onToggleEnabled(instance)}
-						disabled={mutationPending}
-						className="gap-1.5"
-					>
-						<Power className="h-3.5 w-3.5" />
-						<span className="hidden sm:inline">{instance.enabled ? "Disable" : "Enable"}</span>
-					</Button>
-					<Button
-						variant="danger"
-						size="sm"
-						onClick={() => onDelete(instance)}
-						disabled={mutationPending}
-						className="gap-1.5"
-					>
-						<Trash2 className="h-3.5 w-3.5" />
-						<span className="hidden sm:inline">Delete</span>
-					</Button>
-				</div>
-			</div>
 
-			{/* Test result alert */}
-			{testResult && testResult.id === instance.id && (
-				<Alert variant={testResult.success ? "success" : "danger"} className="mt-3">
-					<AlertDescription className="flex items-center gap-2">
-						{testResult.success && <Check className="h-4 w-4" />}
-						{testResult.message}
-					</AlertDescription>
-				</Alert>
-			)}
+						{/* Delete button */}
+						<Button
+							variant="danger"
+							size="sm"
+							onClick={() => onDelete(instance)}
+							disabled={mutationPending}
+							className="gap-1.5"
+						>
+							<Trash2 className="h-3.5 w-3.5" />
+							<span className="hidden sm:inline">Delete</span>
+						</Button>
+					</div>
+				</div>
+
+				{/* Test result */}
+				{hasTestResult && (
+					<div
+						className="mt-4 flex items-center gap-2 rounded-lg px-3 py-2 text-sm"
+						style={{
+							backgroundColor: testSuccess ? SEMANTIC_COLORS.success.bg : SEMANTIC_COLORS.error.bg,
+							border: `1px solid ${testSuccess ? SEMANTIC_COLORS.success.border : SEMANTIC_COLORS.error.border}`,
+							color: testSuccess ? SEMANTIC_COLORS.success.text : SEMANTIC_COLORS.error.text,
+						}}
+					>
+						{testSuccess ? (
+							<Check className="h-4 w-4 shrink-0" />
+						) : (
+							<AlertCircle className="h-4 w-4 shrink-0" />
+						)}
+						<span>{testResult.message}</span>
+					</div>
+				)}
+			</div>
 		</div>
 	);
 };

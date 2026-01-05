@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertDescription, Skeleton } from "../../../../components/ui";
 import { ChevronRight, ChevronLeft, Info, Settings } from "lucide-react";
+import { THEME_GRADIENTS } from "../../../../lib/theme-gradients";
+import { useColorTheme } from "../../../../providers/color-theme-provider";
 import { createSanitizedHtml } from "../../../../lib/sanitize-html";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { apiRequest } from "../../../../lib/api-client/base";
@@ -29,6 +31,8 @@ export const CustomFormatCustomization = ({
 	onNext,
 	onBack,
 }: CustomFormatCustomizationProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const [selections, setSelections] = useState(initialSelections);
 	const [expandedCF, setExpandedCF] = useState<string | null>(null);
 	// Track initialization key to avoid re-running when data/selectedCFGroups haven't changed
@@ -209,7 +213,13 @@ export const CustomFormatCustomization = ({
 	return (
 		<div className="space-y-6">
 			{/* Introduction */}
-			<div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
+			<div
+				className="rounded-xl border p-4"
+				style={{
+					borderColor: themeGradient.fromMuted,
+					backgroundColor: themeGradient.fromLight,
+				}}
+			>
 				<h4 className="font-medium text-fg mb-2">⚙️ Review & Customize Formats</h4>
 				<p className="text-sm text-fg/70 mb-3">
 					TRaSH Guides recommends specific Custom Formats for this profile. <strong className="text-fg">Pre-selected formats are based on the quality profile&apos;s configuration</strong>. You can adjust as needed:

@@ -2,26 +2,61 @@
 
 import { useState, useEffect } from "react";
 import {
-	EmptyState,
-	Badge,
-	Select,
-	SelectOption,
-	Pagination,
-} from "../../../components/ui";
-import { Section } from "../../../components/layout";
-import { Activity, Search, ArrowUpCircle, CheckCircle2, AlertCircle, Clock, ListChecks, Loader2, Download, HardDrive } from "lucide-react";
+	Activity,
+	Search,
+	ArrowUpCircle,
+	CheckCircle2,
+	AlertCircle,
+	Clock,
+	ListChecks,
+	Loader2,
+	Download,
+	HardDrive,
+	ChevronDown,
+	ChevronUp,
+	type LucideIcon,
+} from "lucide-react";
+import { Pagination } from "../../../components/ui";
+import {
+	PremiumSection,
+	PremiumEmptyState,
+	GlassmorphicCard,
+	FilterSelect,
+	ServiceBadge,
+	StatusBadge,
+	PremiumSkeleton,
+} from "../../../components/layout";
+import { THEME_GRADIENTS, SERVICE_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 import { useHuntingLogs } from "../hooks/useHuntingLogs";
 import type { HuntLog } from "../lib/hunting-types";
 
+/**
+ * Premium Hunting Activity
+ *
+ * Activity log with:
+ * - Glassmorphic filter controls
+ * - Expandable activity entries
+ * - Service-aware styling
+ * - Theme-aware status badges
+ */
 export const HuntingActivity = () => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
 	const [typeFilter, setTypeFilter] = useState<string>("all");
 	const [statusFilter, setStatusFilter] = useState<string>("all");
 	const [page, setPage] = useState(1);
 	const [pageSize, setPageSize] = useState(20);
-
 	const [hasRunningHunts, setHasRunningHunts] = useState(false);
 
-	const { logs, totalCount, isLoading, error, hasRunningHunts: logsHaveRunning } = useHuntingLogs({
+	const {
+		logs,
+		totalCount,
+		isLoading,
+		error,
+		hasRunningHunts: logsHaveRunning,
+	} = useHuntingLogs({
 		type: typeFilter === "all" ? undefined : typeFilter,
 		status: statusFilter === "all" ? undefined : statusFilter,
 		page,
@@ -29,28 +64,39 @@ export const HuntingActivity = () => {
 		hasRunningHunts,
 	});
 
-	// Update running state to enable/disable fast polling
+	// Update running state for fast polling
 	useEffect(() => {
 		if (logsHaveRunning !== hasRunningHunts) {
 			setHasRunningHunts(logsHaveRunning);
 		}
 	}, [logsHaveRunning, hasRunningHunts]);
 
+	// Loading state
 	if (isLoading) {
 		return (
-			<Section title="Hunt Activity Log">
+			<PremiumSection
+				title="Hunt Activity Log"
+				description="Recent hunting activity across all instances"
+				icon={Activity}
+			>
 				<div className="space-y-4">
 					{Array.from({ length: 5 }).map((_, i) => (
-						<div key={i} className="h-16 bg-bg-subtle animate-pulse rounded-lg" />
+						<PremiumSkeleton
+							key={i}
+							variant="card"
+							className="h-20"
+							style={{ animationDelay: `${i * 50}ms` } as React.CSSProperties}
+						/>
 					))}
 				</div>
-			</Section>
+			</PremiumSection>
 		);
 	}
 
+	// Error state
 	if (error) {
 		return (
-			<EmptyState
+			<PremiumEmptyState
 				icon={AlertCircle}
 				title="Failed to load activity"
 				description="Could not fetch hunting activity logs. Please try again."
@@ -58,43 +104,55 @@ export const HuntingActivity = () => {
 		);
 	}
 
+	// Filter options
+	const typeOptions = [
+		{ value: "all", label: "All Types" },
+		{ value: "missing", label: "Missing Content" },
+		{ value: "upgrade", label: "Quality Upgrades" },
+	];
+
+	const statusOptions = [
+		{ value: "all", label: "All Status" },
+		{ value: "running", label: "Running" },
+		{ value: "completed", label: "Completed" },
+		{ value: "partial", label: "Partial" },
+		{ value: "skipped", label: "Skipped" },
+		{ value: "error", label: "Error" },
+	];
+
 	return (
-		<Section
+		<PremiumSection
 			title="Hunt Activity Log"
 			description="Recent hunting activity across all instances"
+			icon={Activity}
 		>
 			{/* Filters */}
-			<div className="flex flex-wrap gap-4 mb-6">
-				<Select
-					value={typeFilter}
-					onChange={(e) => {
-						setTypeFilter(e.target.value);
-						setPage(1);
-					}}
-				>
-					<SelectOption value="all">All Types</SelectOption>
-					<SelectOption value="missing">Missing Content</SelectOption>
-					<SelectOption value="upgrade">Quality Upgrades</SelectOption>
-				</Select>
+			<GlassmorphicCard padding="md" className="mb-6">
+				<div className="flex flex-wrap gap-4">
+					<FilterSelect
+						label="Type"
+						value={typeFilter}
+						onChange={(value) => {
+							setTypeFilter(value);
+							setPage(1);
+						}}
+						options={typeOptions}
+					/>
+					<FilterSelect
+						label="Status"
+						value={statusFilter}
+						onChange={(value) => {
+							setStatusFilter(value);
+							setPage(1);
+						}}
+						options={statusOptions}
+					/>
+				</div>
+			</GlassmorphicCard>
 
-				<Select
-					value={statusFilter}
-					onChange={(e) => {
-						setStatusFilter(e.target.value);
-						setPage(1);
-					}}
-				>
-					<SelectOption value="all">All Status</SelectOption>
-					<SelectOption value="running">Running</SelectOption>
-					<SelectOption value="completed">Completed</SelectOption>
-					<SelectOption value="partial">Partial</SelectOption>
-					<SelectOption value="skipped">Skipped</SelectOption>
-					<SelectOption value="error">Error</SelectOption>
-				</Select>
-			</div>
-
+			{/* Activity List */}
 			{logs.length === 0 ? (
-				<EmptyState
+				<PremiumEmptyState
 					icon={Activity}
 					title="No activity yet"
 					description="Hunt activity will appear here once hunting is configured and running."
@@ -102,11 +160,16 @@ export const HuntingActivity = () => {
 			) : (
 				<>
 					<div className="space-y-3">
-						{logs.map((log) => (
-							<ActivityLogEntry key={log.id} log={log} />
+						{logs.map((log, index) => (
+							<ActivityLogEntry
+								key={log.id}
+								log={log}
+								animationDelay={index * 30}
+							/>
 						))}
 					</div>
 
+					{/* Pagination */}
 					{totalCount > pageSize && (
 						<div className="mt-6">
 							<Pagination
@@ -120,102 +183,144 @@ export const HuntingActivity = () => {
 					)}
 				</>
 			)}
-		</Section>
+		</PremiumSection>
 	);
 };
 
+/* =============================================================================
+   ACTIVITY LOG ENTRY
+   Expandable activity entry with premium styling
+   ============================================================================= */
+
 interface ActivityLogEntryProps {
 	log: HuntLog;
+	animationDelay?: number;
 }
 
-const ActivityLogEntry = ({ log }: ActivityLogEntryProps) => {
+const ActivityLogEntry = ({ log, animationDelay = 0 }: ActivityLogEntryProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const [expanded, setExpanded] = useState(false);
+
 	const Icon = log.huntType === "missing" ? Search : ArrowUpCircle;
-
-	type BadgeVariant = "success" | "warning" | "danger" | "default" | "info";
-	const statusConfig: Record<string, { variant: BadgeVariant; icon: React.ElementType }> = {
-		running: { variant: "info", icon: Loader2 },
-		completed: { variant: "success", icon: CheckCircle2 },
-		partial: { variant: "warning", icon: AlertCircle },
-		skipped: { variant: "default", icon: Clock },
-		error: { variant: "danger", icon: AlertCircle },
-	};
-
 	const isRunning = log.status === "running";
+
+	// Status configuration
+	type BadgeStatus = "success" | "warning" | "error" | "info" | "default";
+	const statusConfig: Record<string, { status: BadgeStatus; icon: LucideIcon }> = {
+		running: { status: "info", icon: Loader2 },
+		completed: { status: "success", icon: CheckCircle2 },
+		partial: { status: "warning", icon: AlertCircle },
+		skipped: { status: "default", icon: Clock },
+		error: { status: "error", icon: AlertCircle },
+	};
 
 	const statusInfo = statusConfig[log.status] ?? statusConfig.error!;
 	const StatusIcon = statusInfo.icon;
 
+	// Get service gradient
+	const serviceKey = log.service.toLowerCase() as keyof typeof SERVICE_GRADIENTS;
+	const serviceGradient = SERVICE_GRADIENTS[serviceKey] ?? SERVICE_GRADIENTS.prowlarr;
+
 	return (
-		<div className="rounded-lg border border-border bg-bg-subtle/30 overflow-hidden">
+		<div
+			className="group rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm overflow-hidden
+				animate-in fade-in slide-in-from-bottom-2 duration-300 hover:border-border/80 transition-colors"
+			style={{
+				animationDelay: `${animationDelay}ms`,
+				animationFillMode: "backwards",
+			}}
+		>
+			{/* Header */}
 			<button
 				type="button"
 				onClick={() => setExpanded(!expanded)}
-				className="w-full px-4 py-3 flex items-center justify-between hover:bg-bg-subtle/50 transition"
+				className="w-full px-4 py-4 flex items-center justify-between hover:bg-muted/20 transition-colors"
 			>
-				<div className="flex items-center gap-3">
-					<Icon className="h-4 w-4 text-fg-muted" />
+				<div className="flex items-center gap-4">
+					{/* Icon with gradient */}
+					<div
+						className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+						style={{
+							background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+							border: `1px solid ${themeGradient.from}30`,
+						}}
+					>
+						<Icon className="h-5 w-5" style={{ color: themeGradient.from }} />
+					</div>
+
+					{/* Info */}
 					<div className="text-left">
-						<div className="flex items-center gap-2">
-							<span className="font-medium text-fg">{log.instanceName}</span>
-							<Badge variant={log.service === "sonarr" ? "info" : "warning"} className="text-xs">
-								{log.service}
-							</Badge>
-							<Badge variant={statusInfo.variant} className="text-xs">
-								<StatusIcon className={`h-3 w-3 mr-1 ${isRunning ? "animate-spin" : ""}`} />
+						<div className="flex items-center gap-2 flex-wrap">
+							<span className="font-semibold text-foreground">{log.instanceName}</span>
+							<ServiceBadge service={log.service} />
+							<StatusBadge status={statusInfo.status} icon={StatusIcon}>
 								{isRunning ? "In Progress" : log.status}
-							</Badge>
+							</StatusBadge>
 						</div>
-						<div className="text-xs text-fg-muted mt-0.5">
+						<div className="text-xs text-muted-foreground mt-0.5">
 							{log.huntType === "missing" ? "Missing content search" : "Quality upgrade search"}
 						</div>
 					</div>
 				</div>
 
-				<div className="flex items-center gap-4 text-sm text-fg-muted">
+				{/* Right side stats */}
+				<div className="flex items-center gap-4 text-sm text-muted-foreground">
 					<div className="flex items-center gap-3">
-						<div className="flex items-center gap-1" title="Items searched">
-							{isRunning ? (
-								<>
-									<Loader2 className="h-3 w-3 animate-spin" />
-									<span>Searching...</span>
-								</>
-							) : (
-								<>
-									<ListChecks className="h-3 w-3" />
-									<span>{log.itemsSearched} searched</span>
-								</>
-							)}
-						</div>
-						{!isRunning && (
-							<div
-								className={`flex items-center gap-1 ${log.itemsGrabbed > 0 ? "text-green-500" : "text-fg-muted"}`}
-								title={log.itemsGrabbed > 0 ? "Items grabbed" : "No releases grabbed"}
-							>
-								<Download className="h-3 w-3" />
-								<span>{log.itemsGrabbed} grabbed</span>
+						{isRunning ? (
+							<div className="flex items-center gap-1">
+								<Loader2 className="h-3 w-3 animate-spin" style={{ color: themeGradient.from }} />
+								<span>Searching...</span>
 							</div>
+						) : (
+							<>
+								<div className="flex items-center gap-1" title="Items searched">
+									<ListChecks className="h-3.5 w-3.5" />
+									<span>{log.itemsSearched} searched</span>
+								</div>
+								<div
+									className={`flex items-center gap-1 ${log.itemsGrabbed > 0 ? "text-green-500" : ""}`}
+									title={log.itemsGrabbed > 0 ? "Items grabbed" : "No releases grabbed"}
+								>
+									<Download className="h-3.5 w-3.5" />
+									<span>{log.itemsGrabbed} grabbed</span>
+								</div>
+							</>
 						)}
 					</div>
 					<div className="text-xs">
 						{isRunning ? (
-							<span className="text-blue-500">Started {formatTime(log.startedAt)}</span>
+							<span style={{ color: themeGradient.from }}>
+								Started {formatTime(log.startedAt)}
+							</span>
 						) : (
 							formatTime(log.startedAt)
 						)}
 					</div>
+					{/* Expand indicator */}
+					{expanded ? (
+						<ChevronUp className="h-4 w-4 text-muted-foreground" />
+					) : (
+						<ChevronDown className="h-4 w-4 text-muted-foreground" />
+					)}
 				</div>
 			</button>
 
+			{/* Expanded Details */}
 			{expanded && (
-				<div className="px-4 py-3 border-t border-border bg-bg-subtle/50 text-sm">
+				<div className="px-4 py-4 border-t border-border/30 bg-muted/10 text-sm space-y-4">
+					{/* Message */}
 					{log.message && (
-						<p className="text-fg-muted mb-2">{log.message}</p>
+						<p className="text-muted-foreground">{log.message}</p>
 					)}
 
-					<div className="flex flex-wrap gap-4 text-xs text-fg-muted">
+					{/* Metadata */}
+					<div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
 						{log.durationMs && (
-							<span>Duration: {(log.durationMs / 1000).toFixed(1)}s</span>
+							<span className="flex items-center gap-1">
+								<Clock className="h-3 w-3" />
+								Duration: {(log.durationMs / 1000).toFixed(1)}s
+							</span>
 						)}
 						<span>Started: {new Date(log.startedAt).toLocaleString()}</span>
 						{log.completedAt && (
@@ -223,26 +328,37 @@ const ActivityLogEntry = ({ log }: ActivityLogEntryProps) => {
 						)}
 					</div>
 
+					{/* Grabbed Items */}
 					{log.grabbedItems && log.grabbedItems.length > 0 && (
-						<div className="mt-3">
-							<h4 className="text-xs font-medium text-green-500 mb-2 flex items-center gap-1">
-								<Download className="h-3 w-3" />
+						<div>
+							<h4
+								className="text-xs font-semibold mb-2 flex items-center gap-1"
+								style={{ color: SEMANTIC_COLORS.success.text }}
+							>
+								<Download className="h-3.5 w-3.5" />
 								Grabbed Releases:
 							</h4>
-							<div className="space-y-1">
+							<div className="space-y-1.5">
 								{log.grabbedItems.slice(0, 10).map((item, i) => (
-									<div key={i} className="flex items-center gap-2 text-xs bg-green-500/10 rounded px-2 py-1">
-										<span className="font-medium text-fg">{item.title}</span>
+									<div
+										key={i}
+										className="flex items-center gap-2 text-xs rounded-lg px-3 py-2"
+										style={{
+											backgroundColor: SEMANTIC_COLORS.success.bg,
+											border: `1px solid ${SEMANTIC_COLORS.success.border}`,
+										}}
+									>
+										<span className="font-medium text-foreground flex-1">
+											{item.title}
+										</span>
 										{item.quality && (
-											<Badge variant="success" className="text-xs">
-												{item.quality}
-											</Badge>
+											<StatusBadge status="success">{item.quality}</StatusBadge>
 										)}
 										{item.indexer && (
-											<span className="text-fg-muted">{item.indexer}</span>
+											<span className="text-muted-foreground">{item.indexer}</span>
 										)}
 										{item.size && (
-											<span className="text-fg-muted flex items-center gap-0.5">
+											<span className="text-muted-foreground flex items-center gap-1">
 												<HardDrive className="h-3 w-3" />
 												{formatSize(item.size)}
 											</span>
@@ -250,7 +366,7 @@ const ActivityLogEntry = ({ log }: ActivityLogEntryProps) => {
 									</div>
 								))}
 								{log.grabbedItems.length > 10 && (
-									<div className="text-xs text-fg-muted">
+									<div className="text-xs text-muted-foreground pl-3">
 										+{log.grabbedItems.length - 10} more grabbed
 									</div>
 								)}
@@ -258,19 +374,25 @@ const ActivityLogEntry = ({ log }: ActivityLogEntryProps) => {
 						</div>
 					)}
 
+					{/* Searched Items */}
 					{log.searchedItems && log.searchedItems.length > 0 && (
-						<div className="mt-3">
-							<h4 className="text-xs font-medium text-fg-muted mb-2">Searched Items:</h4>
-							<div className="flex flex-wrap gap-1">
+						<div>
+							<h4 className="text-xs font-semibold text-muted-foreground mb-2">
+								Searched Items:
+							</h4>
+							<div className="flex flex-wrap gap-1.5">
 								{log.searchedItems.slice(0, 10).map((item, i) => (
-									<Badge key={i} variant="default" className="text-xs">
+									<span
+										key={i}
+										className="text-xs px-2 py-1 rounded-md bg-muted/50 text-muted-foreground"
+									>
 										{item}
-									</Badge>
+									</span>
 								))}
 								{log.searchedItems.length > 10 && (
-									<Badge variant="default" className="text-xs">
+									<span className="text-xs px-2 py-1 rounded-md bg-muted/50 text-muted-foreground">
 										+{log.searchedItems.length - 10} more
-									</Badge>
+									</span>
 								)}
 							</div>
 						</div>
@@ -281,11 +403,12 @@ const ActivityLogEntry = ({ log }: ActivityLogEntryProps) => {
 	);
 };
 
+/* =============================================================================
+   UTILITY FUNCTIONS
+   ============================================================================= */
+
 /**
- * Format a date string to the local time with two-digit hour and minute.
- *
- * @param dateString - A date/time string parseable by the JavaScript `Date` constructor (for example, an ISO 8601 timestamp).
- * @returns The localized time string formatted with 2-digit hour and 2-digit minute (e.g., "08:05").
+ * Format a date string to local time
  */
 function formatTime(dateString: string): string {
 	const date = new Date(dateString);
@@ -293,10 +416,7 @@ function formatTime(dateString: string): string {
 }
 
 /**
- * Format a byte count into a human-readable size string using 1024-based units.
- *
- * @param bytes - Number of bytes to format (expected >= 0)
- * @returns A string with one decimal precision and a unit suffix (`B`, `KB`, `MB`, `GB`, `TB`); `"0 B"` for an input of `0`
+ * Format bytes to human-readable size
  */
 function formatSize(bytes: number): string {
 	if (bytes === 0) return "0 B";

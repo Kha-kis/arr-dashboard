@@ -1,8 +1,10 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Button, Select, SelectOption, Alert } from "../../../components/ui";
-import { Clock, X, Calendar, AlertCircle } from "lucide-react";
+import { Button } from "../../../components/ui";
+import { Clock, X, Calendar, AlertCircle, Loader2, Check, Bell, Zap, Power } from "lucide-react";
+import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 
 interface TemplateScheduleModalProps {
 	open: boolean;
@@ -24,6 +26,21 @@ interface TemplateScheduleModalProps {
 	}) => Promise<void>;
 }
 
+const frequencyOptions = [
+	{ value: "DAILY", label: "Daily" },
+	{ value: "WEEKLY", label: "Weekly" },
+	{ value: "MONTHLY", label: "Monthly" },
+] as const;
+
+/**
+ * Premium Template Schedule Modal
+ *
+ * Modal for scheduling template syncs with:
+ * - Glassmorphic backdrop and container
+ * - Theme-aware form controls and toggles
+ * - Premium badge styling
+ * - Animated entrance/exit
+ */
 export const TemplateScheduleModal = ({
 	open,
 	onClose,
@@ -40,6 +57,9 @@ export const TemplateScheduleModal = ({
 	const [notifyUser, setNotifyUser] = useState(existingSchedule?.notifyUser ?? true);
 	const [isSaving, setIsSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 
 	const modalRef = useRef<HTMLDivElement>(null);
 	const previousActiveElement = useRef<HTMLElement | null>(null);
@@ -128,131 +148,297 @@ export const TemplateScheduleModal = ({
 	if (!open) return null;
 
 	return (
-		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+		// biome-ignore lint/a11y/useKeyWithClickEvents: Escape key handled in useEffect for consistent modal behavior
+		<div
+			className="fixed inset-0 z-modal-backdrop flex items-center justify-center p-4 animate-in fade-in duration-200"
+			onClick={onClose}
+		>
+			{/* Backdrop */}
+			<div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+
+			{/* Modal */}
+			{/* biome-ignore lint/a11y/useSemanticElements: Using custom modal with proper ARIA for consistent styling */}
 			<div
 				ref={modalRef}
 				role="dialog"
 				aria-modal="true"
 				aria-labelledby="schedule-modal-title"
 				tabIndex={-1}
-				className="relative w-full max-w-2xl overflow-hidden rounded-xl border border-border bg-bg shadow-xl"
+				className="relative w-full max-w-2xl overflow-hidden rounded-2xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
+				style={{
+					boxShadow: `0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px ${themeGradient.from}15`,
+				}}
+				onClick={(e) => e.stopPropagation()}
 			>
+				{/* Close Button */}
+				<button
+					type="button"
+					onClick={onClose}
+					aria-label="Close dialog"
+					className="absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-lg bg-black/50 text-white/70 transition-colors hover:bg-black/70 hover:text-white"
+				>
+					<X className="h-4 w-4" />
+				</button>
+
 				{/* Header */}
-				<div className="flex items-center justify-between border-b border-border bg-bg p-6">
-					<div>
-						<h2 id="schedule-modal-title" className="text-xl font-semibold text-fg flex items-center gap-2">
-							<Clock className="h-5 w-5 text-primary" />
-							{existingSchedule ? "Edit Sync Schedule" : "Create Sync Schedule"}
-						</h2>
-						<p className="mt-1 text-sm text-fg-muted">
-							Automatically sync &quot;{templateName}&quot; to {instanceName}
-						</p>
+				<div
+					className="p-6 border-b border-border/30"
+					style={{
+						background: `linear-gradient(135deg, ${themeGradient.from}08, transparent)`,
+					}}
+				>
+					<div className="flex items-center gap-4">
+						<div
+							className="flex h-12 w-12 items-center justify-center rounded-xl shrink-0"
+							style={{
+								background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+								border: `1px solid ${themeGradient.from}30`,
+							}}
+						>
+							<Clock className="h-6 w-6" style={{ color: themeGradient.from }} />
+						</div>
+						<div>
+							<h2
+								id="schedule-modal-title"
+								className="text-xl font-bold"
+								style={{
+									background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+									WebkitBackgroundClip: "text",
+									WebkitTextFillColor: "transparent",
+								}}
+							>
+								{existingSchedule ? "Edit Sync Schedule" : "Create Sync Schedule"}
+							</h2>
+							<p className="text-sm text-muted-foreground">
+								Automatically sync &quot;{templateName}&quot; to {instanceName}
+							</p>
+						</div>
 					</div>
-					<button
-						type="button"
-						onClick={onClose}
-						aria-label="Close dialog"
-						className="rounded p-1 text-fg-muted hover:bg-bg-subtle hover:text-fg"
-					>
-						<X className="h-5 w-5" />
-					</button>
 				</div>
 
 				{/* Content */}
-				<div className="p-6 space-y-6">
+				<div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
 					{/* Error Alert */}
 					{error && (
-						<Alert variant="danger" className="flex items-start gap-2">
-							<AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
-							<div>
+						<div
+							className="flex items-start gap-3 rounded-xl px-4 py-3 text-sm animate-in fade-in slide-in-from-bottom-2"
+							style={{
+								backgroundColor: SEMANTIC_COLORS.error.bg,
+								border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+							}}
+						>
+							<AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
+							<div style={{ color: SEMANTIC_COLORS.error.text }}>
 								<p className="font-medium">Error</p>
-								<p className="text-sm">{error}</p>
+								<p className="text-sm opacity-90">{error}</p>
 							</div>
-						</Alert>
+						</div>
 					)}
 
-					{/* Frequency */}
-					<div>
-						<label className="mb-2 block text-sm font-medium text-fg">
+					{/* Frequency Selection */}
+					<div className="space-y-3">
+						<label className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground font-medium">
+							<Calendar className="h-3 w-3" />
 							Sync Frequency
 						</label>
-						<Select
-							value={frequency}
-							onChange={(e) => setFrequency(e.target.value as "DAILY" | "WEEKLY" | "MONTHLY")}
-							className="w-full"
-						>
-							<SelectOption value="DAILY">Daily</SelectOption>
-							<SelectOption value="WEEKLY">Weekly</SelectOption>
-							<SelectOption value="MONTHLY">Monthly</SelectOption>
-						</Select>
-						<p className="mt-1 text-xs text-fg-muted">
+						<div className="grid grid-cols-3 gap-3">
+							{frequencyOptions.map((option) => (
+								<button
+									key={option.value}
+									type="button"
+									onClick={() => setFrequency(option.value)}
+									className="relative rounded-xl border p-4 text-center transition-all duration-200"
+									style={{
+										borderColor: frequency === option.value ? themeGradient.from : "hsl(var(--border) / 0.5)",
+										background: frequency === option.value
+											? `linear-gradient(135deg, ${themeGradient.from}10, ${themeGradient.to}10)`
+											: "hsl(var(--card) / 0.3)",
+										boxShadow: frequency === option.value ? `0 0 0 1px ${themeGradient.from}` : undefined,
+									}}
+								>
+									{frequency === option.value && (
+										<div
+											className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full"
+											style={{
+												background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+											}}
+										>
+											<Check className="h-3 w-3 text-white" />
+										</div>
+									)}
+									<span
+										className="text-sm font-medium"
+										style={{ color: frequency === option.value ? themeGradient.from : undefined }}
+									>
+										{option.label}
+									</span>
+								</button>
+							))}
+						</div>
+						<p className="text-xs text-muted-foreground">
 							How often the template should sync to this instance
 						</p>
 					</div>
 
 					{/* Options */}
-					<div className="space-y-4 rounded-lg border border-border bg-bg-subtle p-4">
-						<h3 className="text-sm font-medium text-fg">Sync Options</h3>
+					<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4 space-y-4">
+						<h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+							Sync Options
+						</h3>
 
-						{/* Enabled */}
-						<label className="flex items-start gap-3 cursor-pointer">
+						{/* Enabled Toggle */}
+						<label className="flex items-center justify-between cursor-pointer group">
+							<div className="flex items-start gap-3">
+								<div
+									className="flex h-8 w-8 items-center justify-center rounded-lg shrink-0"
+									style={{
+										background: enabled ? `${themeGradient.from}20` : "hsl(var(--muted) / 0.3)",
+									}}
+								>
+									<Power className="h-4 w-4" style={{ color: enabled ? themeGradient.from : "hsl(var(--muted-foreground))" }} />
+								</div>
+								<div>
+									<span className="text-sm font-medium text-foreground">Enable Schedule</span>
+									<p className="text-xs text-muted-foreground mt-0.5">
+										Turn this schedule on or off without deleting it
+									</p>
+								</div>
+							</div>
+							<div
+								className="relative h-6 w-11 rounded-full transition-colors duration-200"
+								style={{
+									background: enabled
+										? `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`
+										: "hsl(var(--muted) / 0.5)",
+								}}
+							>
+								<div
+									className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+										enabled ? "translate-x-6" : "translate-x-1"
+									}`}
+								/>
+							</div>
 							<input
 								type="checkbox"
+								className="sr-only"
 								checked={enabled}
 								onChange={(e) => setEnabled(e.target.checked)}
-								className="mt-1 h-4 w-4 rounded border-border bg-bg-subtle text-primary focus:ring-2 focus:ring-primary/20"
 							/>
-							<div className="flex-1">
-								<span className="text-sm font-medium text-fg">Enable Schedule</span>
-								<p className="text-xs text-fg-muted mt-0.5">
-									Turn this schedule on or off without deleting it
-								</p>
-							</div>
 						</label>
 
-						{/* Auto Apply */}
-						<label className="flex items-start gap-3 cursor-pointer">
+						{/* Auto Apply Toggle */}
+						<label className="flex items-center justify-between cursor-pointer group">
+							<div className="flex items-start gap-3">
+								<div
+									className="flex h-8 w-8 items-center justify-center rounded-lg shrink-0"
+									style={{
+										background: autoApply ? `${themeGradient.from}20` : "hsl(var(--muted) / 0.3)",
+									}}
+								>
+									<Zap className="h-4 w-4" style={{ color: autoApply ? themeGradient.from : "hsl(var(--muted-foreground))" }} />
+								</div>
+								<div>
+									<span className="text-sm font-medium text-foreground">Auto-Apply Changes</span>
+									<p className="text-xs text-muted-foreground mt-0.5">
+										Automatically deploy changes to {instanceName} without manual approval
+									</p>
+								</div>
+							</div>
+							<div
+								className="relative h-6 w-11 rounded-full transition-colors duration-200"
+								style={{
+									background: autoApply
+										? `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`
+										: "hsl(var(--muted) / 0.5)",
+								}}
+							>
+								<div
+									className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+										autoApply ? "translate-x-6" : "translate-x-1"
+									}`}
+								/>
+							</div>
 							<input
 								type="checkbox"
+								className="sr-only"
 								checked={autoApply}
 								onChange={(e) => setAutoApply(e.target.checked)}
-								className="mt-1 h-4 w-4 rounded border-border bg-bg-subtle text-primary focus:ring-2 focus:ring-primary/20"
 							/>
-							<div className="flex-1">
-								<span className="text-sm font-medium text-fg">Auto-Apply Changes</span>
-								<p className="text-xs text-fg-muted mt-0.5">
-									Automatically deploy changes to {instanceName} without manual approval
-								</p>
-							</div>
 						</label>
 
-						{/* Notify */}
-						<label className="flex items-start gap-3 cursor-pointer">
+						{/* Notify Toggle */}
+						<label className="flex items-center justify-between cursor-pointer group">
+							<div className="flex items-start gap-3">
+								<div
+									className="flex h-8 w-8 items-center justify-center rounded-lg shrink-0"
+									style={{
+										background: notifyUser ? `${themeGradient.from}20` : "hsl(var(--muted) / 0.3)",
+									}}
+								>
+									<Bell className="h-4 w-4" style={{ color: notifyUser ? themeGradient.from : "hsl(var(--muted-foreground))" }} />
+								</div>
+								<div>
+									<span className="text-sm font-medium text-foreground">Notify on Sync</span>
+									<p className="text-xs text-muted-foreground mt-0.5">
+										Get notified when scheduled syncs complete
+									</p>
+								</div>
+							</div>
+							<div
+								className="relative h-6 w-11 rounded-full transition-colors duration-200"
+								style={{
+									background: notifyUser
+										? `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`
+										: "hsl(var(--muted) / 0.5)",
+								}}
+							>
+								<div
+									className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+										notifyUser ? "translate-x-6" : "translate-x-1"
+									}`}
+								/>
+							</div>
 							<input
 								type="checkbox"
+								className="sr-only"
 								checked={notifyUser}
 								onChange={(e) => setNotifyUser(e.target.checked)}
-								className="mt-1 h-4 w-4 rounded border-border bg-bg-subtle text-primary focus:ring-2 focus:ring-primary/20"
 							/>
-							<div className="flex-1">
-								<span className="text-sm font-medium text-fg">Notify on Sync</span>
-								<p className="text-xs text-fg-muted mt-0.5">
-									Get notified when scheduled syncs complete
-								</p>
-							</div>
 						</label>
 					</div>
 
 					{/* Info Box */}
-					<div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
-						<div className="flex gap-2">
-							<Calendar className="h-4 w-4 text-blue-400 mt-0.5 flex-shrink-0" />
-							<div className="text-sm text-blue-200">
-								<p className="font-medium mb-1">How Sync Schedules Work</p>
-								<ul className="space-y-1 text-xs text-blue-200/80">
-									<li>• Schedule checks for template updates at the specified frequency</li>
-									<li>• If updates are found, they&apos;re either auto-applied or require approval</li>
-									<li>• You can manually sync anytime using the Sync button</li>
+					<div
+						className="rounded-xl border p-4"
+						style={{
+							borderColor: `${themeGradient.from}30`,
+							background: `linear-gradient(135deg, ${themeGradient.from}08, ${themeGradient.to}08)`,
+						}}
+					>
+						<div className="flex gap-3">
+							<div
+								className="flex h-8 w-8 items-center justify-center rounded-lg shrink-0"
+								style={{
+									background: `${themeGradient.from}20`,
+								}}
+							>
+								<Calendar className="h-4 w-4" style={{ color: themeGradient.from }} />
+							</div>
+							<div className="text-sm">
+								<p className="font-medium text-foreground mb-2">How Sync Schedules Work</p>
+								<ul className="space-y-1.5 text-xs text-muted-foreground">
+									<li className="flex items-start gap-2">
+										<span style={{ color: themeGradient.from }}>•</span>
+										Schedule checks for template updates at the specified frequency
+									</li>
+									<li className="flex items-start gap-2">
+										<span style={{ color: themeGradient.from }}>•</span>
+										If updates are found, they&apos;re either auto-applied or require approval
+									</li>
+									<li className="flex items-start gap-2">
+										<span style={{ color: themeGradient.from }}>•</span>
+										You can manually sync anytime using the Sync button
+									</li>
 								</ul>
 							</div>
 						</div>
@@ -260,18 +446,30 @@ export const TemplateScheduleModal = ({
 				</div>
 
 				{/* Footer */}
-				<div className="flex justify-end gap-2 border-t border-border bg-bg p-6">
-					<Button variant="secondary" onClick={onClose}>
+				<div className="flex justify-end gap-3 border-t border-border/30 p-6">
+					<Button variant="outline" onClick={onClose} className="rounded-xl">
 						Cancel
 					</Button>
 					<Button
-						variant="primary"
 						onClick={handleSave}
 						disabled={isSaving}
-						className="gap-2"
+						className="gap-2 rounded-xl font-medium"
+						style={{
+							background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+							boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
+						}}
 					>
-						<Clock className="h-4 w-4" />
-						{isSaving ? "Saving..." : existingSchedule ? "Update Schedule" : "Create Schedule"}
+						{isSaving ? (
+							<>
+								<Loader2 className="h-4 w-4 animate-spin" />
+								Saving...
+							</>
+						) : (
+							<>
+								<Clock className="h-4 w-4" />
+								{existingSchedule ? "Update Schedule" : "Create Schedule"}
+							</>
+						)}
 					</Button>
 				</div>
 			</div>

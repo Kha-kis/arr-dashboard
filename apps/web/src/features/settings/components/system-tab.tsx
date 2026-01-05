@@ -3,8 +3,31 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { Settings, RefreshCw, AlertTriangle, Info, Database, Server, Clock } from "lucide-react";
+import {
+	Settings,
+	RefreshCw,
+	AlertTriangle,
+	Info,
+	Database,
+	Server,
+	Clock,
+	Cpu,
+	Network,
+	Loader2,
+	Save,
+	ChevronDown,
+} from "lucide-react";
 import { apiRequest } from "../../../lib/api-client/base";
+import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
+import {
+	PremiumSection,
+	GlassmorphicCard,
+	PremiumSkeleton,
+} from "../../../components/layout";
+import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
+import { cn } from "../../../lib/utils";
 
 interface SystemSettings {
 	apiPort: number;
@@ -82,12 +105,67 @@ async function restartSystem(): Promise<{ success: boolean; message: string }> {
 	});
 }
 
+/**
+ * Premium System Info Card
+ *
+ * Displays a single system metric with:
+ * - Theme-aware icon styling
+ * - Glassmorphic background
+ * - Staggered entrance animation
+ */
+interface SystemInfoCardProps {
+	icon: React.ReactNode;
+	label: string;
+	value: string;
+	subtitle?: string;
+	animationDelay?: number;
+}
+
+function SystemInfoCard({ icon, label, value, subtitle, animationDelay = 0 }: SystemInfoCardProps) {
+	return (
+		<div
+			className="flex items-start gap-3 p-4 rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm transition-all duration-300 hover:border-border/80 animate-in fade-in slide-in-from-bottom-2"
+			style={{
+				animationDelay: `${animationDelay}ms`,
+				animationFillMode: "backwards",
+			}}
+		>
+			{icon}
+			<div className="min-w-0 flex-1">
+				<p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+					{label}
+				</p>
+				<p className="text-sm font-semibold text-foreground mt-0.5 truncate">
+					{value}
+				</p>
+				{subtitle && (
+					<p className="text-xs text-muted-foreground mt-0.5 font-mono truncate">
+						{subtitle}
+					</p>
+				)}
+			</div>
+		</div>
+	);
+}
+
+/**
+ * Premium System Tab
+ *
+ * System configuration with:
+ * - Glassmorphic info cards with theme gradients
+ * - Premium restart warning banner
+ * - Theme-aware port/address preset buttons
+ * - Staggered animations throughout
+ */
 export function SystemTab() {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const queryClient = useQueryClient();
 	const [apiPort, setApiPort] = useState(3001);
 	const [webPort, setWebPort] = useState(3000);
 	const [listenAddress, setListenAddress] = useState("0.0.0.0");
 	const [hasChanges, setHasChanges] = useState(false);
+	const [isDockerInfoOpen, setIsDockerInfoOpen] = useState(false);
 
 	const { data: settings, isLoading } = useQuery({
 		queryKey: ["system-settings"],
@@ -97,7 +175,7 @@ export function SystemTab() {
 	const { data: systemInfo } = useQuery({
 		queryKey: ["system-info"],
 		queryFn: getSystemInfo,
-		refetchInterval: 60000, // Refresh every minute to update uptime
+		refetchInterval: 60000,
 	});
 
 	const updateMutation = useMutation({
@@ -122,7 +200,6 @@ export function SystemTab() {
 		},
 	});
 
-	// Sync local state with fetched data
 	useEffect(() => {
 		if (settings?.data) {
 			setApiPort(settings.data.apiPort);
@@ -131,7 +208,6 @@ export function SystemTab() {
 		}
 	}, [settings?.data]);
 
-	// Check if any value has changed
 	const checkForChanges = (newApiPort: number, newWebPort: number, newListenAddress: string) => {
 		const originalApiPort = settings?.data?.apiPort ?? 3001;
 		const originalWebPort = settings?.data?.webPort ?? 3000;
@@ -162,7 +238,6 @@ export function SystemTab() {
 	};
 
 	const handleSave = () => {
-		// Validate ports before saving
 		if (apiPort < 1 || apiPort > 65535) {
 			toast.error("API Port must be between 1 and 65535");
 			return;
@@ -186,9 +261,15 @@ export function SystemTab() {
 
 	if (isLoading) {
 		return (
-			<div className="animate-pulse space-y-4">
-				<div className="h-8 bg-bg-subtle rounded w-1/3" />
-				<div className="h-32 bg-bg-subtle rounded" />
+			<div className="space-y-6">
+				<PremiumSkeleton className="h-10 w-48" />
+				<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+					{[...Array(4)].map((_, i) => (
+						<PremiumSkeleton key={i} className="h-24" />
+					))}
+				</div>
+				<PremiumSkeleton className="h-64" />
+				<PremiumSkeleton className="h-48" />
 			</div>
 		);
 	}
@@ -197,179 +278,240 @@ export function SystemTab() {
 
 	return (
 		<div className="space-y-6">
-			{/* Header */}
-			<div className="flex items-center gap-3">
-				<Settings className="h-6 w-6 text-fg-muted" />
-				<div>
-					<h2 className="text-xl font-semibold text-fg">System Settings</h2>
-					<p className="text-sm text-fg-muted">
-						Configure application-wide settings
-					</p>
-				</div>
-			</div>
-
 			{/* System Information Section */}
 			{systemInfo?.data && (
-				<div className="rounded-lg border border-border bg-bg-card p-6 space-y-4">
-					<div>
-						<h3 className="text-lg font-medium text-fg">System Information</h3>
-						<p className="text-sm text-fg-muted mt-1">
-							Application version and runtime details
-						</p>
-					</div>
-
+				<PremiumSection
+					title="System Information"
+					description="Application version and runtime details"
+					icon={Cpu}
+				>
 					<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-						{/* Version */}
-						<div className="flex items-start gap-3 p-3 rounded-lg bg-bg-subtle">
-							<Server className="h-5 w-5 text-primary mt-0.5" />
-							<div>
-								<p className="text-xs font-medium text-fg-muted uppercase tracking-wide">Version</p>
-								<p className="text-sm font-semibold text-fg mt-0.5">
-									v{systemInfo.data.version}
-								</p>
-							</div>
-						</div>
+						<SystemInfoCard
+							icon={
+								<div
+									className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+									style={{
+										background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+										border: `1px solid ${themeGradient.from}30`,
+									}}
+								>
+									<Server className="h-5 w-5" style={{ color: themeGradient.from }} />
+								</div>
+							}
+							label="Version"
+							value={`v${systemInfo.data.version}`}
+							animationDelay={0}
+						/>
 
-						{/* Database Backend */}
-						<div className="flex items-start gap-3 p-3 rounded-lg bg-bg-subtle">
-							<Database className="h-5 w-5 text-green-500 mt-0.5" />
-							<div>
-								<p className="text-xs font-medium text-fg-muted uppercase tracking-wide">Database</p>
-								<p className="text-sm font-semibold text-fg mt-0.5">
-									{systemInfo.data.database.type}
-								</p>
-								{systemInfo.data.database.host && (
-									<p className="text-xs text-fg-muted mt-0.5 font-mono">
-										{systemInfo.data.database.host}
-									</p>
-								)}
-							</div>
-						</div>
+						<SystemInfoCard
+							icon={
+								<div
+									className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+									style={{
+										background: `linear-gradient(135deg, ${SEMANTIC_COLORS.success.from}20, ${SEMANTIC_COLORS.success.to}20)`,
+										border: `1px solid ${SEMANTIC_COLORS.success.from}30`,
+									}}
+								>
+									<Database className="h-5 w-5" style={{ color: SEMANTIC_COLORS.success.from }} />
+								</div>
+							}
+							label="Database"
+							value={systemInfo.data.database.type}
+							subtitle={systemInfo.data.database.host || undefined}
+							animationDelay={50}
+						/>
 
-						{/* Node Version */}
-						<div className="flex items-start gap-3 p-3 rounded-lg bg-bg-subtle">
-							<Info className="h-5 w-5 text-blue-500 mt-0.5" />
-							<div>
-								<p className="text-xs font-medium text-fg-muted uppercase tracking-wide">Node.js</p>
-								<p className="text-sm font-semibold text-fg mt-0.5">
-									{systemInfo.data.runtime.nodeVersion}
-								</p>
-							</div>
-						</div>
+						<SystemInfoCard
+							icon={
+								<div
+									className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+									style={{
+										background: `linear-gradient(135deg, ${SEMANTIC_COLORS.info.from}20, ${SEMANTIC_COLORS.info.to}20)`,
+										border: `1px solid ${SEMANTIC_COLORS.info.from}30`,
+									}}
+								>
+									<Info className="h-5 w-5" style={{ color: SEMANTIC_COLORS.info.from }} />
+								</div>
+							}
+							label="Node.js"
+							value={systemInfo.data.runtime.nodeVersion}
+							animationDelay={100}
+						/>
 
-						{/* Uptime */}
-						<div className="flex items-start gap-3 p-3 rounded-lg bg-bg-subtle">
-							<Clock className="h-5 w-5 text-amber-500 mt-0.5" />
-							<div>
-								<p className="text-xs font-medium text-fg-muted uppercase tracking-wide">Uptime</p>
-								<p className="text-sm font-semibold text-fg mt-0.5">
-									{formatUptime(systemInfo.data.runtime.uptime)}
-								</p>
-							</div>
-						</div>
+						<SystemInfoCard
+							icon={
+								<div
+									className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+									style={{
+										background: `linear-gradient(135deg, ${SEMANTIC_COLORS.warning.from}20, ${SEMANTIC_COLORS.warning.to}20)`,
+										border: `1px solid ${SEMANTIC_COLORS.warning.from}30`,
+									}}
+								>
+									<Clock className="h-5 w-5" style={{ color: SEMANTIC_COLORS.warning.from }} />
+								</div>
+							}
+							label="Uptime"
+							value={formatUptime(systemInfo.data.runtime.uptime)}
+							animationDelay={150}
+						/>
 					</div>
-				</div>
+				</PremiumSection>
 			)}
 
 			{/* Restart Warning Banner */}
 			{requiresRestart && (
-				<div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
-					<AlertTriangle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
-					<div className="text-sm flex-1">
-						<p className="font-medium text-amber-700 dark:text-amber-400">
+				<div
+					className="flex items-start gap-3 rounded-xl p-4 animate-in fade-in slide-in-from-bottom-2"
+					style={{
+						backgroundColor: SEMANTIC_COLORS.warning.bg,
+						border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+					}}
+				>
+					<div
+						className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+						style={{
+							background: `linear-gradient(135deg, ${SEMANTIC_COLORS.warning.from}20, ${SEMANTIC_COLORS.warning.to}20)`,
+							border: `1px solid ${SEMANTIC_COLORS.warning.from}30`,
+						}}
+					>
+						<AlertTriangle className="h-5 w-5" style={{ color: SEMANTIC_COLORS.warning.from }} />
+					</div>
+					<div className="flex-1 min-w-0">
+						<p className="font-semibold text-foreground">
 							Restart Required
 						</p>
-						<p className="text-amber-600 dark:text-amber-500 mt-0.5">
+						<p className="text-sm text-muted-foreground mt-0.5">
 							Changes to port or listen address settings require a container restart to take effect.
 						</p>
 					</div>
 					{!hasChanges && (
-						<button
-							type="button"
+						<Button
 							onClick={handleRestart}
 							disabled={restartMutation.isPending}
-							className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-amber-700 dark:text-amber-400 bg-amber-500/20 border border-amber-500/30 rounded-lg hover:bg-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+							className="gap-2 shrink-0"
+							style={{
+								background: `linear-gradient(135deg, ${SEMANTIC_COLORS.warning.from}, ${SEMANTIC_COLORS.warning.to})`,
+								boxShadow: `0 4px 12px -4px ${SEMANTIC_COLORS.warning.glow}`,
+							}}
 						>
-							<RefreshCw className={`h-4 w-4 ${restartMutation.isPending ? "animate-spin" : ""}`} />
+							<RefreshCw className={cn("h-4 w-4", restartMutation.isPending && "animate-spin")} />
 							{restartMutation.isPending ? "Restarting..." : "Restart Now"}
-						</button>
+						</Button>
 					)}
 				</div>
 			)}
 
 			{/* Port Configuration Section */}
-			<div className="rounded-lg border border-border bg-bg-card p-6 space-y-4">
-				<div>
-					<h3 className="text-lg font-medium text-fg">Port Configuration</h3>
-					<p className="text-sm text-fg-muted mt-1">
-						Internal container ports for the web UI and API server
-					</p>
-				</div>
-
-				<div className="grid gap-4 sm:grid-cols-2 max-w-lg">
-					<div>
-						<label htmlFor="webPort" className="block text-sm font-medium text-fg mb-1">
-							Web UI Port
-						</label>
-						<input
-							id="webPort"
-							type="number"
-							min="1"
-							max="65535"
-							value={webPort}
-							onChange={(e) => handleWebPortChange(e.target.value)}
-							className="w-full rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-						/>
-						<div className="flex items-center gap-1 mt-1 text-xs text-fg-muted">
-							<Info className="h-3 w-3" />
-							<span>
-								Running on: <code className="px-1 py-0.5 bg-bg-subtle rounded font-mono">{settings?.data?.effectiveWebPort}</code>
-							</span>
-						</div>
-					</div>
-
-					<div>
-						<label htmlFor="apiPort" className="block text-sm font-medium text-fg mb-1">
-							API Port
-						</label>
-						<input
-							id="apiPort"
-							type="number"
-							min="1"
-							max="65535"
-							value={apiPort}
-							onChange={(e) => handleApiPortChange(e.target.value)}
-							className="w-full rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
-						/>
-						<div className="flex items-center gap-1 mt-1 text-xs text-fg-muted">
-							<Info className="h-3 w-3" />
-							<span>
-								Running on: <code className="px-1 py-0.5 bg-bg-subtle rounded font-mono">{settings?.data?.effectiveApiPort}</code>
-							</span>
-						</div>
-					</div>
-				</div>
-
-				{/* How ports work info box */}
-				<div className="rounded-lg bg-blue-500/10 border border-blue-500/20 p-4">
-					<div className="flex gap-3">
-						<Info className="h-5 w-5 text-blue-500 flex-shrink-0 mt-0.5" />
-						<div className="space-y-2 text-sm">
-							<p className="text-fg">
-								<strong>How port configuration works:</strong>
+			<PremiumSection
+				title="Port Configuration"
+				description="Internal container ports for the web UI and API server"
+				icon={Network}
+			>
+				<div className="space-y-6">
+					<div className="grid gap-6 sm:grid-cols-2 max-w-2xl">
+						{/* Web UI Port */}
+						<div className="space-y-2">
+							<label
+								htmlFor="webPort"
+								className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+							>
+								Web UI Port
+							</label>
+							<Input
+								id="webPort"
+								type="number"
+								min="1"
+								max="65535"
+								value={webPort}
+								onChange={(e) => handleWebPortChange(e.target.value)}
+								className="bg-card/30 border-border/50"
+							/>
+							<p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+								<Info className="h-3 w-3" />
+								Running on:{" "}
+								<code className="px-1.5 py-0.5 bg-card/50 rounded font-mono text-foreground">
+									{settings?.data?.effectiveWebPort}
+								</code>
 							</p>
-							<ul className="text-fg-muted space-y-1 list-disc list-inside">
-								<li>Change ports here and <strong>restart the container</strong> to apply</li>
-								<li>Environment variables (API_PORT, PORT) override these settings</li>
-								<li>Priority: Environment variable → Database → Default</li>
-							</ul>
-							<details className="mt-2">
-								<summary className="text-fg-muted cursor-pointer hover:text-fg font-medium">
+						</div>
+
+						{/* API Port */}
+						<div className="space-y-2">
+							<label
+								htmlFor="apiPort"
+								className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+							>
+								API Port
+							</label>
+							<Input
+								id="apiPort"
+								type="number"
+								min="1"
+								max="65535"
+								value={apiPort}
+								onChange={(e) => handleApiPortChange(e.target.value)}
+								className="bg-card/30 border-border/50"
+							/>
+							<p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+								<Info className="h-3 w-3" />
+								Running on:{" "}
+								<code className="px-1.5 py-0.5 bg-card/50 rounded font-mono text-foreground">
+									{settings?.data?.effectiveApiPort}
+								</code>
+							</p>
+						</div>
+					</div>
+
+					{/* Port Info Card */}
+					<GlassmorphicCard padding="md">
+						<div className="flex gap-3">
+							<div
+								className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+								style={{
+									background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+									border: `1px solid ${themeGradient.from}30`,
+								}}
+							>
+								<Info className="h-5 w-5" style={{ color: themeGradient.from }} />
+							</div>
+							<div className="space-y-3 text-sm flex-1">
+								<p className="font-semibold text-foreground">
+									How port configuration works
+								</p>
+								<ul className="text-muted-foreground space-y-1 list-disc list-inside">
+									<li>Change ports here and <strong className="text-foreground">restart the container</strong> to apply</li>
+									<li>Environment variables (API_PORT, PORT) override these settings</li>
+									<li>Priority: Environment variable → Database → Default</li>
+								</ul>
+
+								{/* Expandable Docker Info */}
+								<button
+									type="button"
+									onClick={() => setIsDockerInfoOpen(!isDockerInfoOpen)}
+									className="flex items-center gap-1.5 text-sm font-medium transition-colors hover:text-foreground"
+									style={{ color: themeGradient.from }}
+								>
+									<ChevronDown
+										className={cn(
+											"h-4 w-4 transition-transform",
+											isDockerInfoOpen && "rotate-180"
+										)}
+									/>
 									Docker port mapping info
-								</summary>
-								<div className="mt-2 text-fg-muted space-y-1">
-									<p>These are <em>internal</em> container ports (default: 3000). To access on a different host port:</p>
-									<pre className="text-xs bg-bg-subtle rounded p-2 overflow-x-auto mt-1">
+								</button>
+
+								{isDockerInfoOpen && (
+									<div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+										<p className="text-muted-foreground">
+											These are <em>internal</em> container ports (default: 3000). To access on a different host port:
+										</p>
+										<pre
+											className="text-xs rounded-lg p-3 overflow-x-auto font-mono"
+											style={{
+												backgroundColor: `${themeGradient.from}10`,
+												border: `1px solid ${themeGradient.from}20`,
+											}}
+										>
 {`# Default (access on port 3000)
 -p 3000:3000
 
@@ -380,26 +522,25 @@ export function SystemTab() {
 ports:
   - "3000:3000"  # default
   - "8080:3000"  # or custom host port`}
-									</pre>
-								</div>
-							</details>
+										</pre>
+									</div>
+								)}
+							</div>
 						</div>
-					</div>
+					</GlassmorphicCard>
 				</div>
-			</div>
+			</PremiumSection>
 
 			{/* Listen Address Section */}
-			<div className="rounded-lg border border-border bg-bg-card p-6 space-y-4">
-				<div>
-					<h3 className="text-lg font-medium text-fg">Listen Address</h3>
-					<p className="text-sm text-fg-muted mt-1">
-						Network interface binding address for the application
-					</p>
-				</div>
-
-				<div className="space-y-3">
-					<div>
-						<label className="block text-sm font-medium text-fg mb-2">
+			<PremiumSection
+				title="Listen Address"
+				description="Network interface binding address for the application"
+				icon={Network}
+			>
+				<div className="space-y-6">
+					{/* Quick Select Presets */}
+					<div className="space-y-3">
+						<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
 							Quick Select
 						</label>
 						<div className="flex flex-wrap gap-2">
@@ -407,76 +548,136 @@ ports:
 								{ value: "0.0.0.0", label: "0.0.0.0", desc: "All interfaces (Docker)" },
 								{ value: "127.0.0.1", label: "127.0.0.1", desc: "Localhost only" },
 								{ value: "::", label: "::", desc: "All IPv6" },
-							].map((preset) => (
-								<button
-									key={preset.value}
-									type="button"
-									onClick={() => handleListenAddressChange(preset.value)}
-									className={`px-3 py-1.5 text-sm rounded-lg border transition-colors ${
-										listenAddress === preset.value
-											? "border-primary bg-primary/10 text-primary"
-											: "border-border bg-bg-subtle text-fg-muted hover:border-fg-muted"
-									}`}
-								>
-									<code className="font-mono">{preset.label}</code>
-									<span className="ml-1.5 text-xs opacity-75">({preset.desc})</span>
-								</button>
-							))}
+							].map((preset) => {
+								const isSelected = listenAddress === preset.value;
+								return (
+									<button
+										key={preset.value}
+										type="button"
+										onClick={() => handleListenAddressChange(preset.value)}
+										className={cn(
+											"relative px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-300",
+											"border",
+											isSelected
+												? "text-foreground border-transparent"
+												: "text-muted-foreground border-border/50 bg-card/30 hover:border-border hover:text-foreground"
+										)}
+										style={
+											isSelected
+												? {
+														background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+														border: `1px solid ${themeGradient.from}40`,
+													}
+												: undefined
+										}
+									>
+										<code className="font-mono">{preset.label}</code>
+										<span className="ml-2 text-xs opacity-75">({preset.desc})</span>
+									</button>
+								);
+							})}
 						</div>
 					</div>
 
-					<div className="max-w-xs">
-						<label htmlFor="listenAddress" className="block text-sm font-medium text-fg mb-1">
+					{/* Custom IP Address Input */}
+					<div className="max-w-sm space-y-2">
+						<label
+							htmlFor="listenAddress"
+							className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+						>
 							Custom IP Address
 						</label>
-						<input
+						<Input
 							id="listenAddress"
 							type="text"
 							value={listenAddress}
 							onChange={(e) => handleListenAddressChange(e.target.value)}
 							placeholder="e.g., 192.168.1.100"
-							className="w-full rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg font-mono placeholder:text-fg-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+							className="bg-card/30 border-border/50 font-mono"
 						/>
-						<div className="flex items-center gap-1 mt-1 text-xs text-fg-muted">
+						<p className="flex items-center gap-1.5 text-xs text-muted-foreground">
 							<Info className="h-3 w-3" />
-							<span>
-								Running on: <code className="px-1 py-0.5 bg-bg-subtle rounded font-mono">{settings?.data?.effectiveListenAddress}</code>
-							</span>
+							Running on:{" "}
+							<code className="px-1.5 py-0.5 bg-card/50 rounded font-mono text-foreground">
+								{settings?.data?.effectiveListenAddress}
+							</code>
+						</p>
+					</div>
+
+					{/* Docker Warning */}
+					<div
+						className="rounded-xl p-4"
+						style={{
+							backgroundColor: SEMANTIC_COLORS.warning.bg,
+							border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+						}}
+					>
+						<div className="flex gap-3">
+							<div
+								className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+								style={{
+									background: `linear-gradient(135deg, ${SEMANTIC_COLORS.warning.from}20, ${SEMANTIC_COLORS.warning.to}20)`,
+									border: `1px solid ${SEMANTIC_COLORS.warning.from}30`,
+								}}
+							>
+								<AlertTriangle className="h-5 w-5" style={{ color: SEMANTIC_COLORS.warning.from }} />
+							</div>
+							<div className="space-y-2 text-sm">
+								<p className="font-semibold text-foreground">
+									Important for Docker users
+								</p>
+								<ul className="text-muted-foreground space-y-1 list-disc list-inside">
+									<li>
+										<code className="text-xs px-1.5 py-0.5 bg-card/50 rounded font-mono">0.0.0.0</code> is{" "}
+										<strong className="text-foreground">required</strong> for Docker containers
+									</li>
+									<li>
+										<code className="text-xs px-1.5 py-0.5 bg-card/50 rounded font-mono">127.0.0.1</code>{" "}
+										restricts access to localhost only
+									</li>
+									<li>
+										Changing this requires a <strong className="text-foreground">container restart</strong>
+									</li>
+								</ul>
+							</div>
 						</div>
 					</div>
 				</div>
+			</PremiumSection>
 
-				{/* Listen address info */}
-				<div className="rounded-lg bg-amber-500/10 border border-amber-500/20 p-4">
-					<div className="flex gap-3">
-						<AlertTriangle className="h-5 w-5 text-amber-500 flex-shrink-0 mt-0.5" />
-						<div className="space-y-2 text-sm">
-							<p className="text-fg">
-								<strong>Important for Docker users:</strong>
-							</p>
-							<ul className="text-fg-muted space-y-1 list-disc list-inside">
-								<li><code className="text-xs px-1 py-0.5 bg-bg-subtle rounded">0.0.0.0</code> is <strong>required</strong> for Docker containers - allows access from outside the container</li>
-								<li><code className="text-xs px-1 py-0.5 bg-bg-subtle rounded">127.0.0.1</code> restricts access to localhost only (local development or reverse proxy on same host)</li>
-								<li>Changing this requires a <strong>container restart</strong></li>
-							</ul>
-						</div>
-					</div>
-				</div>
-			</div>
-
-			{/* Actions */}
-			<div className="flex items-center gap-3">
-				<button
-					type="button"
+			{/* Save Button */}
+			<div
+				className="flex items-center gap-4 animate-in fade-in slide-in-from-bottom-2 duration-500"
+				style={{ animationDelay: "300ms", animationFillMode: "backwards" }}
+			>
+				<Button
 					onClick={handleSave}
 					disabled={!hasChanges || updateMutation.isPending}
-					className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+					className="gap-2"
+					style={{
+						background: hasChanges
+							? `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`
+							: undefined,
+						boxShadow: hasChanges
+							? `0 4px 12px -4px ${themeGradient.glow}`
+							: undefined,
+					}}
 				>
-					{updateMutation.isPending ? "Saving..." : "Save Changes"}
-				</button>
+					{updateMutation.isPending ? (
+						<>
+							<Loader2 className="h-4 w-4 animate-spin" />
+							Saving...
+						</>
+					) : (
+						<>
+							<Save className="h-4 w-4" />
+							Save Changes
+						</>
+					)}
+				</Button>
 
 				{requiresRestart && hasChanges && (
-					<p className="text-sm text-fg-muted">
+					<p className="text-sm text-muted-foreground animate-in fade-in duration-300">
 						Save changes first, then restart to apply.
 					</p>
 				)}

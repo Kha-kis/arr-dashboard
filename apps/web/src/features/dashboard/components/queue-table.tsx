@@ -2,6 +2,10 @@
 
 import { useMemo } from "react";
 import type { QueueItem } from "@arr/shared";
+import { Inbox, Loader2 } from "lucide-react";
+import { cn } from "../../../lib/utils";
+import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
 import type { InstanceUrlMap } from "./dashboard-client";
 import type { QueueAction } from "./queue-action-buttons";
@@ -68,6 +72,9 @@ export const QueueTable = ({
 	onPrefetchManualImport,
 	emptyMessage,
 }: QueueTableProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
 	// Custom hooks for state management
 	const selection = useQueueSelection(items);
 	const expansion = useQueueExpansion();
@@ -120,20 +127,72 @@ export const QueueTable = ({
 		await handleRowAction([item], action, actionOptions);
 	};
 
-	// Loading state
+	// Loading state with premium styling
 	if (loading) {
 		return (
-			<div className="rounded-xl border border-white/10 bg-white/5 p-6 text-sm text-white/70">
-				Fetching queue items...
+			<div
+				className="relative overflow-hidden rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-8 text-center"
+				style={{
+					boxShadow: `0 4px 20px -4px ${themeGradient.glow}`,
+				}}
+			>
+				{/* Gradient accent bar */}
+				<div
+					className="absolute inset-x-0 top-0 h-0.5"
+					style={{
+						background: `linear-gradient(90deg, ${themeGradient.from}, ${themeGradient.to})`,
+					}}
+				/>
+				<div className="flex flex-col items-center gap-3">
+					<div
+						className="flex h-12 w-12 items-center justify-center rounded-full"
+						style={{
+							background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+						}}
+					>
+						<Loader2
+							className="h-6 w-6 animate-spin"
+							style={{ color: themeGradient.from }}
+						/>
+					</div>
+					<p className="text-sm text-muted-foreground">Fetching queue items...</p>
+				</div>
 			</div>
 		);
 	}
 
-	// Empty state
+	// Empty state with premium styling
 	if (items.length === 0) {
 		return (
-			<div className="rounded-xl border border-white/10 bg-white/5 p-6 text-sm text-white/70">
-				{emptyMessage ?? "Queue is empty across all instances."}
+			<div
+				className="relative overflow-hidden rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-8 text-center"
+				style={{
+					boxShadow: `0 4px 20px -4px ${themeGradient.glow}`,
+				}}
+			>
+				{/* Gradient accent bar */}
+				<div
+					className="absolute inset-x-0 top-0 h-0.5"
+					style={{
+						background: `linear-gradient(90deg, ${themeGradient.from}, ${themeGradient.to})`,
+					}}
+				/>
+				<div className="flex flex-col items-center gap-3">
+					<div
+						className="flex h-12 w-12 items-center justify-center rounded-full"
+						style={{
+							background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+						}}
+					>
+						<Inbox
+							className="h-6 w-6"
+							style={{ color: themeGradient.from }}
+						/>
+					</div>
+					<p className="text-sm text-muted-foreground">
+						{emptyMessage ?? "Queue is empty across all instances."}
+					</p>
+				</div>
 			</div>
 		);
 	}
@@ -152,9 +211,9 @@ export const QueueTable = ({
 				onChangeCategory={onChangeCategory}
 			/>
 
-			{/* Queue items and groups */}
+			{/* Queue items and groups with staggered animations */}
 			<div className="space-y-4">
-				{summaryRows.map((row) => {
+				{summaryRows.map((row, index) => {
 					// Get instance URL from first item in the row
 					const firstItem = row.items[0];
 					const instanceUrl = firstItem && instanceUrlMap?.get(firstItem.instanceId);
@@ -165,57 +224,73 @@ export const QueueTable = ({
 							: [];
 
 						return (
-							<QueueGroupCard
+							<div
 								key={row.key}
-								groupKey={row.key}
-								title={row.title}
-								service={row.service}
-								instanceName={row.instanceName}
-								instanceUrl={instanceUrl}
-								instanceUrlMap={instanceUrlMap}
-								items={row.items}
-								groupCount={row.groupCount ?? 0}
-								progressValue={row.progressValue}
-								issueSummary={row.issueSummary}
-								primaryAction={row.primaryAction}
-								primaryDisabled={!row.primaryAction || primaryActionItems.length === 0}
-								expanded={expansion.isRowExpanded(row.key)}
-								everySelected={selection.areAllItemsSelected(row.items)}
-								pending={pending}
-								showChangeCategory={Boolean(onChangeCategory)}
-								onToggleExpand={() => expansion.toggleRowExpansion(row.key)}
-								onToggleSelect={() => selection.toggleSelectionForItems(row.items)}
-								onAction={(action, actionOptions) =>
-									void handleRowAction(row.items, action, actionOptions)
-								}
-								onItemAction={(item, action, actionOptions) =>
-									void handleItemAction(item, action, actionOptions)
-								}
-								onPrefetchManualImport={onPrefetchManualImport}
-								isItemSelected={selection.isItemSelected}
-								onToggleItemSelect={selection.toggleSingleSelection}
-							/>
+								className="animate-in fade-in slide-in-from-bottom-2 duration-300"
+								style={{
+									animationDelay: `${Math.min(index * 50, 300)}ms`,
+									animationFillMode: "backwards",
+								}}
+							>
+								<QueueGroupCard
+									groupKey={row.key}
+									title={row.title}
+									service={row.service}
+									instanceName={row.instanceName}
+									instanceUrl={instanceUrl}
+									instanceUrlMap={instanceUrlMap}
+									items={row.items}
+									groupCount={row.groupCount ?? 0}
+									progressValue={row.progressValue}
+									issueSummary={row.issueSummary}
+									primaryAction={row.primaryAction}
+									primaryDisabled={!row.primaryAction || primaryActionItems.length === 0}
+									expanded={expansion.isRowExpanded(row.key)}
+									everySelected={selection.areAllItemsSelected(row.items)}
+									pending={pending}
+									showChangeCategory={Boolean(onChangeCategory)}
+									onToggleExpand={() => expansion.toggleRowExpansion(row.key)}
+									onToggleSelect={() => selection.toggleSelectionForItems(row.items)}
+									onAction={(action, actionOptions) =>
+										void handleRowAction(row.items, action, actionOptions)
+									}
+									onItemAction={(item, action, actionOptions) =>
+										void handleItemAction(item, action, actionOptions)
+									}
+									onPrefetchManualImport={onPrefetchManualImport}
+									isItemSelected={selection.isItemSelected}
+									onToggleItemSelect={selection.toggleSingleSelection}
+								/>
+							</div>
 						);
 					}
 
 					// Single item row
 					const item = row.items[0]!;
 					return (
-						<QueueItemCard
+						<div
 							key={row.key}
-							item={item}
-							instanceUrl={instanceUrl}
-							issueLines={row.issueLines}
-							selected={selection.isItemSelected(item)}
-							pending={pending}
-							showChangeCategory={Boolean(onChangeCategory)}
-							onToggleSelect={() => selection.toggleSingleSelection(item)}
-							onAction={(action, actionOptions) =>
-								void handleItemAction(item, action, actionOptions)
-							}
-							onPrefetchManualImport={onPrefetchManualImport}
-							primaryAction={row.primaryAction}
-						/>
+							className="animate-in fade-in slide-in-from-bottom-2 duration-300"
+							style={{
+								animationDelay: `${Math.min(index * 50, 300)}ms`,
+								animationFillMode: "backwards",
+							}}
+						>
+							<QueueItemCard
+								item={item}
+								instanceUrl={instanceUrl}
+								issueLines={row.issueLines}
+								selected={selection.isItemSelected(item)}
+								pending={pending}
+								showChangeCategory={Boolean(onChangeCategory)}
+								onToggleSelect={() => selection.toggleSingleSelection(item)}
+								onAction={(action, actionOptions) =>
+									void handleItemAction(item, action, actionOptions)
+								}
+								onPrefetchManualImport={onPrefetchManualImport}
+								primaryAction={row.primaryAction}
+							/>
+						</div>
 					);
 				})}
 			</div>

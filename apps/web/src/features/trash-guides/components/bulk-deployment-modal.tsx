@@ -1,14 +1,25 @@
 "use client";
 
+/**
+ * Bulk Deployment Modal
+ *
+ * Premium modal for deploying templates to multiple instances with:
+ * - SEMANTIC_COLORS for status indicators
+ * - Theme-aware styling using THEME_GRADIENTS
+ * - Glassmorphic content cards
+ */
+
 import { useState, useEffect, useMemo } from "react";
 import {
-	Dialog,
-	DialogHeader,
-	DialogTitle,
-	DialogDescription,
-	DialogContent,
-	DialogFooter,
-} from "../../../components/ui/dialog";
+	LegacyDialog,
+	LegacyDialogHeader,
+	LegacyDialogTitle,
+	LegacyDialogDescription,
+	LegacyDialogContent,
+	LegacyDialogFooter,
+	LegacyDialogClose,
+} from "../../../components/ui";
+import { Button } from "../../../components/ui";
 import {
 	AlertCircle,
 	CheckCircle2,
@@ -20,9 +31,12 @@ import {
 	Bell,
 	Hand,
 	ChevronDown,
+	Loader2,
 } from "lucide-react";
 import { useBulkDeploymentPreviews, useExecuteBulkDeployment } from "../../../hooks/api/useDeploymentPreview";
 import { cn } from "../../../lib/utils";
+import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 
 type SyncStrategy = "auto" | "manual" | "notify";
 
@@ -56,10 +70,10 @@ interface BulkDeploymentModalProps {
 	onDeploySuccess?: () => void;
 }
 
-const syncStrategyOptions: Array<{ value: SyncStrategy; label: string; icon: typeof RefreshCw; color: string }> = [
-	{ value: "auto", label: "Auto-sync", icon: RefreshCw, color: "text-green-500" },
-	{ value: "notify", label: "Notify", icon: Bell, color: "text-blue-500" },
-	{ value: "manual", label: "Manual", icon: Hand, color: "text-amber-500" },
+const syncStrategyOptions: Array<{ value: SyncStrategy; label: string; icon: typeof RefreshCw; colorKey: keyof typeof SEMANTIC_COLORS }> = [
+	{ value: "auto", label: "Auto-sync", icon: RefreshCw, colorKey: "success" },
+	{ value: "notify", label: "Notify", icon: Bell, colorKey: "info" },
+	{ value: "manual", label: "Manual", icon: Hand, colorKey: "warning" },
 ];
 
 // Compact sync strategy selector for each instance row
@@ -72,9 +86,12 @@ const SyncStrategySelector = ({
 	onChange: (strategy: SyncStrategy) => void;
 	disabled?: boolean;
 }) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const [isOpen, setIsOpen] = useState(false);
 	const current = syncStrategyOptions.find((opt) => opt.value === value) ?? syncStrategyOptions[0]!;
 	const Icon = current.icon;
+	const color = SEMANTIC_COLORS[current.colorKey];
 
 	return (
 		<div className="relative">
@@ -83,14 +100,14 @@ const SyncStrategySelector = ({
 				onClick={() => !disabled && setIsOpen(!isOpen)}
 				disabled={disabled}
 				className={cn(
-					"flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium transition",
-					"border-border bg-bg hover:bg-bg-subtle",
+					"flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all duration-200",
+					"border-border/50 bg-card/50 backdrop-blur-sm hover:bg-card/80",
 					disabled && "opacity-50 cursor-not-allowed"
 				)}
 			>
-				<Icon className={cn("h-3 w-3", current.color)} />
-				<span className="text-fg">{current.label}</span>
-				<ChevronDown className="h-3 w-3 text-fg-muted" />
+				<Icon className="h-3 w-3" style={{ color: color.from }} />
+				<span className="text-foreground">{current.label}</span>
+				<ChevronDown className="h-3 w-3 text-muted-foreground" />
 			</button>
 
 			{isOpen && (
@@ -98,9 +115,15 @@ const SyncStrategySelector = ({
 					{/* Backdrop */}
 					<div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
 					{/* Dropdown */}
-					<div className="absolute right-0 top-full mt-1 z-50 rounded-md border border-border bg-bg shadow-lg min-w-[120px]">
+					<div
+						className="absolute right-0 top-full mt-1 z-50 rounded-xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-xl min-w-[130px] overflow-hidden"
+						style={{
+							boxShadow: `0 10px 40px -10px rgba(0, 0, 0, 0.3), 0 0 0 1px ${themeGradient.from}10`,
+						}}
+					>
 						{syncStrategyOptions.map((option) => {
 							const OptionIcon = option.icon;
+							const optColor = SEMANTIC_COLORS[option.colorKey];
 							return (
 								<button
 									key={option.value}
@@ -110,12 +133,14 @@ const SyncStrategySelector = ({
 										setIsOpen(false);
 									}}
 									className={cn(
-										"flex w-full items-center gap-2 px-3 py-2 text-xs hover:bg-bg-subtle transition",
-										option.value === value && "bg-bg-subtle"
+										"flex w-full items-center gap-2 px-3 py-2.5 text-xs transition-colors",
+										option.value === value
+											? "bg-card/80"
+											: "hover:bg-card/50"
 									)}
 								>
-									<OptionIcon className={cn("h-3.5 w-3.5", option.color)} />
-									<span className="text-fg">{option.label}</span>
+									<OptionIcon className="h-3.5 w-3.5" style={{ color: optColor.from }} />
+									<span className="text-foreground">{option.label}</span>
 								</button>
 							);
 						})}
@@ -134,6 +159,8 @@ export const BulkDeploymentModal = ({
 	instances,
 	onDeploySuccess,
 }: BulkDeploymentModalProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	// Track selection state and sync strategies per instance
 	const [selectedInstances, setSelectedInstances] = useState<Set<string>>(new Set());
 	const [syncStrategies, setSyncStrategies] = useState<Record<string, SyncStrategy>>({});
@@ -289,63 +316,62 @@ export const BulkDeploymentModal = ({
 	const canDeploy = deployableCount > 0 && !previewsLoading;
 
 	return (
-		<Dialog open={open} onOpenChange={onClose} size="xl">
-			<DialogHeader>
-				<DialogTitle>
-					<div className="flex items-center gap-2">
-						<Layers className="h-5 w-5" />
-						Bulk Deployment
-					</div>
-				</DialogTitle>
-				<DialogDescription>
-					Deploy template to multiple instances at once
-					{templateName && ` - Template: "${templateName}"`}
-				</DialogDescription>
-			</DialogHeader>
+		<LegacyDialog open={open} onOpenChange={onClose} size="xl">
+			<LegacyDialogClose onClick={onClose} />
+			<LegacyDialogHeader
+				icon={<Layers className="h-6 w-6" style={{ color: themeGradient.from }} />}
+			>
+				<div>
+					<LegacyDialogTitle>Bulk Deployment</LegacyDialogTitle>
+					<LegacyDialogDescription>
+						Deploy template to multiple instances at once
+						{templateName && ` - Template: "${templateName}"`}
+					</LegacyDialogDescription>
+				</div>
+			</LegacyDialogHeader>
 
-			<DialogContent className="space-y-4">
+			<LegacyDialogContent className="space-y-5">
 				{/* Instance Selection with Per-Instance Strategy */}
-				<div className="rounded-lg border border-border bg-bg-subtle p-4">
+				<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
 					<div className="flex items-center justify-between mb-3">
-						<h3 className="text-sm font-medium text-fg">
+						<h3 className="text-sm font-semibold text-foreground">
 							Select Instances ({selectedCount} / {instancePreviews.length})
 						</h3>
 						<div className="flex items-center gap-3">
 							{/* Bulk strategy setter */}
-							<div className="flex items-center gap-2 text-xs text-fg-muted">
+							<div className="flex items-center gap-2 text-xs text-muted-foreground">
 								<span>Set all:</span>
 								{syncStrategyOptions.map((opt) => {
 									const Icon = opt.icon;
+									const color = SEMANTIC_COLORS[opt.colorKey];
 									return (
 										<button
 											key={opt.value}
 											type="button"
 											onClick={() => setAllStrategies(opt.value)}
-											className={cn(
-												"p-1 rounded hover:bg-bg transition",
-												"hover:ring-1 hover:ring-border"
-											)}
+											className="p-1.5 rounded-lg hover:bg-card/50 transition-colors"
 											title={`Set all to ${opt.label}`}
 										>
-											<Icon className={cn("h-3.5 w-3.5", opt.color)} />
+											<Icon className="h-3.5 w-3.5" style={{ color: color.from }} />
 										</button>
 									);
 								})}
 							</div>
-							<span className="text-fg-muted">|</span>
+							<span className="text-muted-foreground/30">|</span>
 							<div className="flex gap-2">
 								<button
 									type="button"
 									onClick={selectAll}
-									className="text-xs text-primary hover:underline"
+									className="text-xs font-medium transition-colors hover:opacity-80"
+									style={{ color: themeGradient.from }}
 								>
 									Select All
 								</button>
-								<span className="text-xs text-fg-muted">|</span>
+								<span className="text-xs text-muted-foreground/30">|</span>
 								<button
 									type="button"
 									onClick={deselectAll}
-									className="text-xs text-fg-muted hover:underline"
+									className="text-xs text-muted-foreground hover:text-foreground transition-colors"
 								>
 									Deselect All
 								</button>
@@ -353,57 +379,56 @@ export const BulkDeploymentModal = ({
 						</div>
 					</div>
 
-					<div className="space-y-2 max-h-64 overflow-y-auto">
+					<div className="space-y-2 max-h-64 overflow-y-auto pr-1">
 						{instancePreviews.map((inst) => (
 							<div
 								key={inst.instanceId}
-								className={cn(
-									"flex items-center gap-3 p-3 rounded-lg border transition",
-									inst.selected
-										? "border-primary/30 bg-primary/5"
-										: "border-border bg-bg",
-								)}
+								className="flex items-center gap-3 p-3 rounded-xl border transition-all duration-200"
+								style={{
+									borderColor: inst.selected ? `${themeGradient.from}40` : "hsl(var(--border) / 0.5)",
+									backgroundColor: inst.selected ? `${themeGradient.from}08` : "transparent",
+								}}
 							>
 								{/* Checkbox */}
 								<input
 									type="checkbox"
 									checked={inst.selected}
 									onChange={() => toggleInstance(inst.instanceId)}
-									className="w-4 h-4 rounded border-border cursor-pointer"
+									className="w-4 h-4 rounded border-border/50 cursor-pointer"
 								/>
 
 								{/* Instance info */}
-								<Server className="h-4 w-4 text-fg-muted shrink-0" />
-								<span className="text-sm font-medium text-fg flex-1 min-w-0 truncate">
+								<Server className="h-4 w-4 text-muted-foreground shrink-0" />
+								<span className="text-sm font-medium text-foreground flex-1 min-w-0 truncate">
 									{inst.instanceLabel}
 								</span>
 
 								{/* Preview status */}
 								{inst.loading && (
-									<div className="h-4 w-4 animate-spin rounded-full border-2 border-primary border-t-transparent shrink-0" />
+									<Loader2 className="h-4 w-4 animate-spin shrink-0" style={{ color: themeGradient.from }} />
 								)}
 
 								{inst.preview && (
 									<div className="flex items-center gap-2 text-xs shrink-0">
 										{inst.preview.reachable ? (
 											<>
-												<span className="text-green-600 dark:text-green-400">
+												<span style={{ color: SEMANTIC_COLORS.success.text }}>
 													{inst.preview.totalItems} changes
 												</span>
 												{inst.preview.conflicts > 0 && (
-													<span className="text-amber-600 dark:text-amber-400">
+													<span style={{ color: SEMANTIC_COLORS.warning.text }}>
 														{inst.preview.conflicts} conflicts
 													</span>
 												)}
 											</>
 										) : (
-											<span className="text-red-600 dark:text-red-400">Unreachable</span>
+											<span style={{ color: SEMANTIC_COLORS.error.text }}>Unreachable</span>
 										)}
 									</div>
 								)}
 
 								{inst.error && (
-									<span className="text-xs text-red-600 dark:text-red-400 shrink-0">Error</span>
+									<span className="text-xs shrink-0" style={{ color: SEMANTIC_COLORS.error.text }}>Error</span>
 								)}
 
 								{/* Per-instance sync strategy selector */}
@@ -421,20 +446,20 @@ export const BulkDeploymentModal = ({
 
 				{/* Summary Statistics */}
 				{allPreviewsLoaded && (
-					<div className="rounded-lg border border-border bg-bg-subtle p-4">
-						<h3 className="text-sm font-medium text-fg mb-3">Deployment Summary</h3>
+					<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+						<h3 className="text-sm font-semibold text-foreground mb-3">Deployment Summary</h3>
 						<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
 							<div className="space-y-1">
-								<p className="text-xs text-fg-muted">Total Instances</p>
-								<p className="text-2xl font-semibold text-fg">{selectedCount}</p>
+								<p className="text-xs text-muted-foreground">Total Instances</p>
+								<p className="text-2xl font-semibold text-foreground">{selectedCount}</p>
 							</div>
 							<div className="space-y-1">
-								<p className="text-xs text-fg-muted">Total Changes</p>
-								<p className="text-2xl font-semibold text-fg">{totalChanges}</p>
+								<p className="text-xs text-muted-foreground">Total Changes</p>
+								<p className="text-2xl font-semibold text-foreground">{totalChanges}</p>
 							</div>
 							<div className="space-y-1">
-								<p className="text-xs text-green-700 dark:text-green-300">New CFs</p>
-								<p className="text-2xl font-semibold text-green-600 dark:text-green-400">
+								<p className="text-xs" style={{ color: SEMANTIC_COLORS.success.text }}>New CFs</p>
+								<p className="text-2xl font-semibold" style={{ color: SEMANTIC_COLORS.success.from }}>
 									{instancePreviews
 										.filter((inst) => inst.selected && inst.preview)
 										.reduce(
@@ -444,8 +469,8 @@ export const BulkDeploymentModal = ({
 								</p>
 							</div>
 							<div className="space-y-1">
-								<p className="text-xs text-blue-700 dark:text-blue-300">Updates</p>
-								<p className="text-2xl font-semibold text-blue-600 dark:text-blue-400">
+								<p className="text-xs" style={{ color: themeGradient.from }}>Updates</p>
+								<p className="text-2xl font-semibold" style={{ color: themeGradient.from }}>
 									{instancePreviews
 										.filter((inst) => inst.selected && inst.preview)
 										.reduce(
@@ -457,35 +482,48 @@ export const BulkDeploymentModal = ({
 						</div>
 
 						{!canDeploy && selectedCount > 0 && (
-							<div className="mt-3 pt-3 border-t border-border">
-								<div className="flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300">
-									<AlertTriangle className="h-4 w-4" />
-									<span>Some instances have conflicts or are unreachable</span>
-								</div>
+							<div
+								className="mt-3 pt-3 border-t border-border/30 flex items-center gap-2 text-sm"
+								style={{ color: SEMANTIC_COLORS.warning.text }}
+							>
+								<AlertTriangle className="h-4 w-4" style={{ color: SEMANTIC_COLORS.warning.from }} />
+								<span>Some instances have conflicts or are unreachable</span>
 							</div>
 						)}
 					</div>
 				)}
-			</DialogContent>
+			</LegacyDialogContent>
 
-			<DialogFooter>
+			<LegacyDialogFooter>
 				{bulkDeployMutation.isError && (
-					<div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 mr-auto">
-						<AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
+					<div
+						className="flex items-start gap-2 rounded-xl p-3 mr-auto"
+						style={{
+							backgroundColor: SEMANTIC_COLORS.error.bg,
+							border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+						}}
+					>
+						<AlertCircle className="h-5 w-5 mt-0.5 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
 						<div>
-							<p className="text-sm font-medium text-fg">Deployment Failed</p>
-							<p className="text-sm text-fg-muted mt-1">
+							<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>Deployment Failed</p>
+							<p className="text-sm mt-1 opacity-80" style={{ color: SEMANTIC_COLORS.error.text }}>
 								{bulkDeployMutation.error?.message ?? "Failed to execute bulk deployment"}
 							</p>
 						</div>
 					</div>
 				)}
 				{bulkDeployMutation.isSuccess && !bulkDeployMutation.data?.success && (
-					<div className="flex items-start gap-2 rounded-lg border border-red-500/30 bg-red-500/10 p-3 mr-auto">
-						<AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
+					<div
+						className="flex items-start gap-2 rounded-xl p-3 mr-auto"
+						style={{
+							backgroundColor: SEMANTIC_COLORS.error.bg,
+							border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+						}}
+					>
+						<AlertCircle className="h-5 w-5 mt-0.5 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
 						<div>
-							<p className="text-sm font-medium text-fg">Deployment Partially Failed</p>
-							<p className="text-sm text-fg-muted mt-1">
+							<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>Deployment Partially Failed</p>
+							<p className="text-sm mt-1 opacity-80" style={{ color: SEMANTIC_COLORS.error.text }}>
 								{bulkDeployMutation.data?.result.failedInstances} of{" "}
 								{bulkDeployMutation.data?.result.totalInstances} deployments failed
 							</p>
@@ -493,36 +531,49 @@ export const BulkDeploymentModal = ({
 					</div>
 				)}
 				{bulkDeployMutation.isSuccess && bulkDeployMutation.data?.success && (
-					<div className="flex items-start gap-2 rounded-lg border border-green-500/30 bg-green-500/10 p-3 mr-auto">
-						<CheckCircle2 className="h-5 w-5 text-green-600 dark:text-green-400 mt-0.5 shrink-0" />
+					<div
+						className="flex items-start gap-2 rounded-xl p-3 mr-auto"
+						style={{
+							backgroundColor: SEMANTIC_COLORS.success.bg,
+							border: `1px solid ${SEMANTIC_COLORS.success.border}`,
+						}}
+					>
+						<CheckCircle2 className="h-5 w-5 mt-0.5 shrink-0" style={{ color: SEMANTIC_COLORS.success.from }} />
 						<div>
-							<p className="text-sm font-medium text-fg">Deployment Successful</p>
-							<p className="text-sm text-fg-muted mt-1">Custom Formats deployed to all selected instances</p>
+							<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.success.text }}>Deployment Successful</p>
+							<p className="text-sm mt-1 opacity-80" style={{ color: SEMANTIC_COLORS.success.text }}>Custom Formats deployed to all selected instances</p>
 						</div>
 					</div>
 				)}
-				<button
-					type="button"
+				<Button
+					variant="outline"
 					onClick={onClose}
 					disabled={bulkDeployMutation.isPending}
-					className="px-4 py-2 text-sm font-medium text-fg-muted hover:text-fg transition-colors disabled:opacity-50"
+					className="rounded-xl"
 				>
 					Cancel
-				</button>
-				<button
-					type="button"
+				</Button>
+				<Button
 					onClick={handleDeploy}
 					disabled={!canDeploy || bulkDeployMutation.isPending || bulkDeployMutation.isSuccess}
-					className="px-4 py-2 text-sm font-medium bg-primary text-primary-fg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center gap-2"
+					className="gap-2 rounded-xl font-medium"
+					style={
+						canDeploy && !bulkDeployMutation.isPending && !bulkDeployMutation.isSuccess
+							? {
+									background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+									boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
+								}
+							: undefined
+					}
 				>
 					{previewsLoading ? (
 						<>
-							<div className="h-4 w-4 animate-spin rounded-full border-2 border-primary-fg border-t-transparent" />
+							<Loader2 className="h-4 w-4 animate-spin" />
 							Loading Previews...
 						</>
 					) : bulkDeployMutation.isPending ? (
 						<>
-							<div className="h-4 w-4 animate-spin rounded-full border-2 border-primary-fg border-t-transparent" />
+							<Loader2 className="h-4 w-4 animate-spin" />
 							Deploying to {deployableCount} Instance{deployableCount !== 1 ? "s" : ""}...
 						</>
 					) : (
@@ -531,8 +582,8 @@ export const BulkDeploymentModal = ({
 							Deploy to {deployableCount} Instance{deployableCount !== 1 ? "s" : ""}
 						</>
 					)}
-				</button>
-			</DialogFooter>
-		</Dialog>
+				</Button>
+			</LegacyDialogFooter>
+		</LegacyDialog>
 	);
 };

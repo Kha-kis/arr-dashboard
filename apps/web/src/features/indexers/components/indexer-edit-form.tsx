@@ -1,14 +1,17 @@
 "use client";
 
 import { Input } from "../../../components/ui/input";
+import { CheckCircle2, XCircle, Hash } from "lucide-react";
+import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 
 /**
- * Form for editing indexer enable status and priority
- * @param formEnable - Current enable status
- * @param formPriority - Current priority value
- * @param onEnableChange - Callback when enable status changes
- * @param onPriorityChange - Callback when priority changes
- * @returns React component displaying edit form
+ * Premium Indexer Edit Form
+ *
+ * Form for editing indexer enable status and priority with:
+ * - Theme-aware checkbox styling
+ * - Premium input styling
+ * - Inline layout for compact display
  */
 export const IndexerEditForm = ({
 	formEnable,
@@ -21,19 +24,39 @@ export const IndexerEditForm = ({
 	onEnableChange: (enabled: boolean) => void;
 	onPriorityChange: (priority: number | undefined) => void;
 }) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
 	return (
-		<div className="flex flex-wrap items-center gap-4 text-sm text-white">
-			<label className="flex items-center gap-2">
-				<input
-					type="checkbox"
-					className="h-4 w-4 rounded border-white/20 bg-slate-900"
-					checked={formEnable}
-					onChange={(event) => onEnableChange(event.target.checked)}
-				/>
-				<span>{formEnable ? "Enabled" : "Disabled"}</span>
+		<div className="flex flex-wrap items-center gap-6">
+			{/* Enable Toggle */}
+			<label className="flex items-center gap-3 cursor-pointer group">
+				<button
+					type="button"
+					onClick={() => onEnableChange(!formEnable)}
+					className="flex h-6 w-6 items-center justify-center rounded-lg transition-all duration-200"
+					style={{
+						backgroundColor: formEnable
+							? SEMANTIC_COLORS.success.from
+							: "rgba(var(--muted), 0.3)",
+						border: `1px solid ${formEnable ? SEMANTIC_COLORS.success.from : "rgba(var(--border), 0.5)"}`,
+					}}
+				>
+					{formEnable && <CheckCircle2 className="h-4 w-4 text-white" />}
+				</button>
+				<span className="text-sm font-medium text-foreground group-hover:text-foreground/80 transition-colors">
+					{formEnable ? "Enabled" : "Disabled"}
+				</span>
 			</label>
-			<div className="flex items-center gap-2">
-				<span className="text-xs uppercase tracking-widest text-white/40">Priority</span>
+
+			{/* Priority Input */}
+			<div className="flex items-center gap-3">
+				<div className="flex items-center gap-2">
+					<Hash className="h-4 w-4 text-muted-foreground" />
+					<span className="text-xs uppercase tracking-wider font-medium text-muted-foreground">
+						Priority
+					</span>
+				</div>
 				<Input
 					type="number"
 					value={formPriority === undefined ? "" : formPriority.toString()}
@@ -48,7 +71,10 @@ export const IndexerEditForm = ({
 							onPriorityChange(parsed);
 						}
 					}}
-					className="h-8 w-24 bg-slate-900 text-white"
+					className="h-9 w-24 rounded-lg border-border/50 bg-card/50 text-foreground focus:ring-1"
+					style={{
+						borderColor: "rgba(var(--border), 0.5)",
+					}}
 				/>
 			</div>
 		</div>

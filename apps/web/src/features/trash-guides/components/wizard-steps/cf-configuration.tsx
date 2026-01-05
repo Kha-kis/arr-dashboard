@@ -9,6 +9,8 @@ import { useState, useEffect, useRef } from "react";
 import { Alert, AlertDescription, Skeleton, Card, CardHeader, CardTitle, CardDescription, CardContent } from "../../../../components/ui";
 import { ChevronLeft, ChevronRight, Info, AlertCircle, Search, ChevronDown, Lock, Edit, RotateCcw, Settings } from "lucide-react";
 import { createSanitizedHtml } from "../../../../lib/sanitize-html";
+import { THEME_GRADIENTS } from "../../../../lib/theme-gradients";
+import { useColorTheme } from "../../../../providers/color-theme-provider";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { ConditionEditor } from "../condition-editor";
 import { useCFConfiguration } from "../../../../hooks/api/useCFConfiguration";
@@ -73,6 +75,8 @@ export const CFConfiguration = ({
 	editingTemplate,
 	cfResolutions,
 }: CFConfigurationProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const [selections, setSelections] = useState(initialSelections);
 	const [templateName, setTemplateName] = useState(initialTemplateName);
 	const [templateDescription, setTemplateDescription] = useState(initialTemplateDescription);
@@ -351,7 +355,13 @@ export const CFConfiguration = ({
 									</span>
 								)}
 								{scoreOverride !== undefined && (
-									<span className="inline-flex items-center gap-1 rounded bg-purple-500/20 px-2 py-0.5 text-xs font-medium text-purple-300">
+									<span
+										className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium"
+										style={{
+											backgroundColor: themeGradient.fromLight,
+											color: themeGradient.from,
+										}}
+									>
 										Custom Score
 									</span>
 								)}
@@ -631,7 +641,13 @@ export const CFConfiguration = ({
 									</span>
 								)}
 								{scoreOverride !== undefined && (
-									<span className="inline-flex items-center gap-1 rounded bg-blue-500/20 px-2 py-0.5 text-xs font-medium text-blue-300">
+									<span
+										className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium"
+										style={{
+											backgroundColor: themeGradient.fromLight,
+											color: themeGradient.from,
+										}}
+									>
 										Custom Score
 									</span>
 								)}
@@ -754,7 +770,13 @@ export const CFConfiguration = ({
 						</span>
 					</div>
 
-					<Card className="border-blue-500/30 bg-blue-500/5">
+					<Card
+						className="border"
+						style={{
+							borderColor: themeGradient.fromMuted,
+							backgroundColor: themeGradient.fromLight,
+						}}
+					>
 						<CardHeader>
 							<CardTitle className="text-base">Available Custom Formats</CardTitle>
 							<CardDescription>
@@ -1155,7 +1177,13 @@ export const CFConfiguration = ({
 													</span>
 												)}
 												{!isGroupDefault && !isGroupRequired && (
-													<span className="inline-flex items-center gap-1 rounded bg-blue-500/20 px-2 py-0.5 text-xs font-medium text-blue-300">
+													<span
+														className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium"
+														style={{
+															backgroundColor: themeGradient.fromLight,
+															color: themeGradient.from,
+														}}
+													>
 														⚙️ Optional
 													</span>
 												)}
@@ -1168,11 +1196,18 @@ export const CFConfiguration = ({
 
 
 									{group.trash_description && (
-										<div className="rounded-lg border border-blue-500/30 bg-blue-500/10 p-3 mt-2">
+										<div
+											className="rounded-lg border p-3 mt-2"
+											style={{
+												borderColor: themeGradient.fromMuted,
+												backgroundColor: themeGradient.fromLight,
+											}}
+										>
 											<div className="flex items-start gap-2">
-												<AlertCircle className="h-4 w-4 text-blue-400 mt-0.5 flex-shrink-0" />
+												<AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: themeGradient.from }} />
 												<div
-													className="text-sm text-blue-100"
+													className="text-sm"
+													style={{ color: themeGradient.from }}
 													dangerouslySetInnerHTML={createSanitizedHtml(group.trash_description)}
 												/>
 											</div>
@@ -1463,7 +1498,16 @@ export const CFConfiguration = ({
 						</span>
 					</div>
 
-					<Card className={isClonedProfile ? "border-blue-500/30 bg-blue-500/5" : "border-purple-500/30 bg-purple-500/5"}>
+					<Card
+						className="border"
+						style={isClonedProfile ? {
+							borderColor: "rgb(59 130 246 / 0.3)",
+							backgroundColor: "rgb(59 130 246 / 0.05)",
+						} : {
+							borderColor: themeGradient.fromMuted,
+							backgroundColor: themeGradient.fromLight,
+						}}
+					>
 						<CardHeader>
 							<CardTitle className="text-base">
 								{isClonedProfile ? "Instance Custom Formats Catalog" : "Additional Custom Formats Catalog"}

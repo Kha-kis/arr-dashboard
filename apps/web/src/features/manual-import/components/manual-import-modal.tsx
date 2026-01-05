@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { X, Loader2, FolderOpen, Download, CheckSquare, XSquare, Filter, AlertTriangle } from "lucide-react";
 import { Button } from "../../../components/ui/button";
+import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 import { useManualImportQuery } from "../../../hooks/api/useManualImport";
 import type { ManualImportModalProps, ManualImportCandidateUnion } from "../types";
 import { candidateKey, describeRejections } from "../helpers";
@@ -12,11 +15,6 @@ import { useAutoSelection } from "../hooks/use-auto-selection";
 import { useImportSubmission } from "../hooks/use-import-submission";
 import { CandidateCard } from "./candidate-card";
 
-const backdropClasses =
-	"fixed inset-0 z-modal-backdrop flex items-center justify-center bg-black/60 backdrop-blur-sm";
-const panelClasses =
-	"relative z-modal flex max-h-[90vh] w-full max-w-5xl flex-col gap-5 overflow-hidden rounded-2xl border border-border bg-bg-subtle/98 backdrop-blur-xl p-6 shadow-xl";
-
 const importModeOptions = [
 	{ value: "auto", label: "Auto (match ARR settings)" },
 	{ value: "move", label: "Move" },
@@ -25,6 +23,21 @@ const importModeOptions = [
 
 type ImportMode = (typeof importModeOptions)[number]["value"];
 
+// Service-specific colors
+const SERVICE_COLORS = {
+	sonarr: "#06b6d4", // Cyan
+	radarr: "#f97316", // Orange
+} as const;
+
+/**
+ * Premium Manual Import Modal
+ *
+ * Modal for importing files with:
+ * - Glassmorphic backdrop and container
+ * - Service-branded header (Sonarr cyan, Radarr orange)
+ * - Theme-aware form controls
+ * - Premium selection styling
+ */
 export const ManualImportModal = ({
 	instanceId,
 	instanceName,
@@ -35,9 +48,13 @@ export const ManualImportModal = ({
 	onOpenChange,
 	onCompleted,
 }: ManualImportModalProps) => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const serviceColor = SERVICE_COLORS[service] ?? themeGradient.from;
 	const { selections, toggleSelection, clear } = useManualImportStore();
 	const [showSelectedOnly, setShowSelectedOnly] = useState(false);
 	const [importMode, setImportMode] = useState<ImportMode>("auto");
+	const [isFocused, setIsFocused] = useState(false);
 
 	const query = useManualImportQuery({
 		instanceId,
@@ -167,109 +184,231 @@ export const ManualImportModal = ({
 	}
 
 	return (
-		<div className={backdropClasses}>
-			<div className={panelClasses}>
-				<div className="flex items-start justify-between gap-3">
-					<div>
-						<h2 className="text-lg font-semibold text-fg">Manual Import - {instanceName}</h2>
-						<p className="text-xs text-fg-muted">
-							{downloadId
-								? `Download: ${downloadId}`
-								: folder
-									? `Folder: ${folder}`
-									: "Interactive manual import"}
-						</p>
-					</div>
-					<Button variant="ghost" onClick={() => handleClose(false)} disabled={isPending}>
-						Close
-					</Button>
-				</div>
+		<div
+			className="fixed inset-0 z-modal-backdrop flex items-center justify-center p-4 animate-in fade-in duration-200"
+			onClick={() => handleClose(false)}
+		>
+			{/* Backdrop */}
+			<div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
 
-				{query.isError && (
-					<div className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
-						Failed to fetch manual import candidates.{" "}
-						{query.error instanceof Error ? query.error.message : ""}
-					</div>
-				)}
+			{/* Modal */}
+			<div
+				className="relative w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-2xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
+				style={{
+					boxShadow: `0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px ${serviceColor}15`,
+				}}
+				onClick={(event) => event.stopPropagation()}
+			>
+				{/* Close Button */}
+				<button
+					type="button"
+					onClick={() => handleClose(false)}
+					disabled={isPending}
+					className="absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-lg bg-black/50 text-white/70 transition-colors hover:bg-black/70 hover:text-white disabled:opacity-50"
+				>
+					<X className="h-4 w-4" />
+				</button>
 
-				{selectionError && (
-					<div className="rounded-md border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm text-red-200">
-						{selectionError}
-					</div>
-				)}
-
-				<div className="flex flex-col gap-3 rounded-lg border border-border bg-bg-subtle px-3 py-3 text-sm text-fg-muted">
-					<div className="flex flex-wrap items-center gap-3 text-xs text-fg-muted">
-						<span>Total files: {totalCandidates}</span>
-						<span>Visible: {visibleCount}</span>
-						<span>Selected: {selectedCount}</span>
-						{rejectionCount > 0 && <span>{rejectionCount} rejected</span>}
-					</div>
-					<div className="flex flex-wrap items-center gap-3">
-						<label className="flex flex-col gap-1 text-xs uppercase text-fg-muted">
-							Import mode
-							<select
-								value={importMode}
-								onChange={(event) => setImportMode(event.target.value as ImportMode)}
-								className="rounded-md border border-border bg-bg-subtle px-3 py-2 text-sm text-fg focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
-								disabled={isPending}
-							>
-								{importModeOptions.map((option) => (
-									<option
-										key={option.value}
-										value={option.value}
-										className="bg-bg text-fg"
-									>
-										{option.label}
-									</option>
-								))}
-							</select>
-						</label>
-						<label className="flex items-center gap-2 text-xs text-fg-muted">
-							<input
-								type="checkbox"
-								className="h-4 w-4"
-								checked={showSelectedOnly}
-								onChange={(event) => setShowSelectedOnly(event.target.checked)}
-								disabled={isPending}
-							/>
-							Show selected only
-						</label>
-						<div className="ml-auto flex gap-2">
-							<Button
-								variant="ghost"
-								className="px-3 py-1.5 text-xs"
-								onClick={handleSelectAll}
-								disabled={isPending || candidates.length === 0}
-							>
-								Select All
-							</Button>
-							<Button
-								variant="ghost"
-								className="px-3 py-1.5 text-xs"
-								onClick={handleClearAll}
-								disabled={isPending || selectedCount === 0}
-							>
-								Clear All
-							</Button>
+				{/* Header */}
+				<div
+					className="p-6 border-b border-border/30"
+					style={{
+						background: `linear-gradient(135deg, ${serviceColor}08, transparent)`,
+					}}
+				>
+					<div className="flex items-center gap-4">
+						<div
+							className="flex h-12 w-12 items-center justify-center rounded-xl shrink-0"
+							style={{
+								background: `${serviceColor}20`,
+								border: `1px solid ${serviceColor}30`,
+							}}
+						>
+							<FolderOpen className="h-6 w-6" style={{ color: serviceColor }} />
+						</div>
+						<div>
+							<h2 className="text-xl font-bold text-foreground">
+								Manual Import - {instanceName}
+							</h2>
+							<p className="text-sm text-muted-foreground">
+								{downloadId
+									? `Download: ${downloadId}`
+									: folder
+										? `Folder: ${folder}`
+										: "Interactive manual import"}
+							</p>
 						</div>
 					</div>
 				</div>
 
-				<div className="flex max-h-[420px] flex-col gap-2 overflow-y-auto pr-1">
+				{/* Error Messages */}
+				<div className="px-6 pt-4 space-y-3">
+					{query.isError && (
+						<div
+							className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm animate-in fade-in slide-in-from-bottom-2"
+							style={{
+								backgroundColor: SEMANTIC_COLORS.error.bg,
+								border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+								color: SEMANTIC_COLORS.error.text,
+							}}
+						>
+							<AlertTriangle className="h-4 w-4 shrink-0" />
+							<span>
+								Failed to fetch manual import candidates.{" "}
+								{query.error instanceof Error ? query.error.message : ""}
+							</span>
+						</div>
+					)}
+
+					{selectionError && (
+						<div
+							className="flex items-center gap-2 rounded-xl px-4 py-3 text-sm animate-in fade-in slide-in-from-bottom-2"
+							style={{
+								backgroundColor: SEMANTIC_COLORS.error.bg,
+								border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+								color: SEMANTIC_COLORS.error.text,
+							}}
+						>
+							<AlertTriangle className="h-4 w-4 shrink-0" />
+							<span>{selectionError}</span>
+						</div>
+					)}
+				</div>
+
+				{/* Controls */}
+				<div className="px-6 pt-4">
+					<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4 space-y-4">
+						{/* Stats Row */}
+						<div className="flex flex-wrap items-center gap-4 text-sm">
+							<div className="flex items-center gap-2">
+								<span className="text-muted-foreground">Total files:</span>
+								<span className="font-medium text-foreground">{totalCandidates}</span>
+							</div>
+							<div className="flex items-center gap-2">
+								<span className="text-muted-foreground">Visible:</span>
+								<span className="font-medium text-foreground">{visibleCount}</span>
+							</div>
+							<div className="flex items-center gap-2">
+								<span className="text-muted-foreground">Selected:</span>
+								<span
+									className="font-semibold"
+									style={{ color: selectedCount > 0 ? themeGradient.from : undefined }}
+								>
+									{selectedCount}
+								</span>
+							</div>
+							{rejectionCount > 0 && (
+								<div
+									className="flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium"
+									style={{
+										backgroundColor: SEMANTIC_COLORS.warning.bg,
+										border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+										color: SEMANTIC_COLORS.warning.text,
+									}}
+								>
+									<AlertTriangle className="h-3 w-3" />
+									{rejectionCount} rejected
+								</div>
+							)}
+						</div>
+
+						{/* Controls Row */}
+						<div className="flex flex-wrap items-center gap-4">
+							<label className="flex flex-col gap-1.5">
+								<span className="text-xs uppercase tracking-wider text-muted-foreground font-medium">
+									Import mode
+								</span>
+								<select
+									value={importMode}
+									onChange={(event) => setImportMode(event.target.value as ImportMode)}
+									onFocus={() => setIsFocused(true)}
+									onBlur={() => setIsFocused(false)}
+									className="rounded-lg border bg-card/50 backdrop-blur-sm px-3 py-2 text-sm text-foreground transition-all duration-200 focus:outline-none appearance-none cursor-pointer min-w-[200px]"
+									style={{
+										borderColor: isFocused ? themeGradient.from : "hsl(var(--border) / 0.5)",
+										boxShadow: isFocused ? `0 0 0 1px ${themeGradient.from}` : undefined,
+									}}
+									disabled={isPending}
+								>
+									{importModeOptions.map((option) => (
+										<option key={option.value} value={option.value}>
+											{option.label}
+										</option>
+									))}
+								</select>
+							</label>
+
+							<label className="flex items-center gap-2 cursor-pointer group">
+								<div
+									className="relative h-5 w-9 rounded-full transition-colors duration-200"
+									style={{
+										background: showSelectedOnly
+											? `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`
+											: "hsl(var(--muted) / 0.5)",
+									}}
+								>
+									<div
+										className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-transform duration-200 ${
+											showSelectedOnly ? "translate-x-4" : "translate-x-0.5"
+										}`}
+									/>
+								</div>
+								<input
+									type="checkbox"
+									className="sr-only"
+									checked={showSelectedOnly}
+									onChange={(event) => setShowSelectedOnly(event.target.checked)}
+									disabled={isPending}
+								/>
+								<span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors flex items-center gap-1.5">
+									<Filter className="h-3.5 w-3.5" />
+									Show selected only
+								</span>
+							</label>
+
+							<div className="ml-auto flex gap-2">
+								<Button
+									variant="outline"
+									size="sm"
+									className="gap-1.5"
+									onClick={handleSelectAll}
+									disabled={isPending || candidates.length === 0}
+								>
+									<CheckSquare className="h-3.5 w-3.5" />
+									Select All
+								</Button>
+								<Button
+									variant="outline"
+									size="sm"
+									className="gap-1.5"
+									onClick={handleClearAll}
+									disabled={isPending || selectedCount === 0}
+								>
+									<XSquare className="h-3.5 w-3.5" />
+									Clear All
+								</Button>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				{/* Candidate List */}
+				<div className="px-6 py-4 max-h-[420px] overflow-y-auto space-y-2">
 					{query.isLoading && (
-						<div className="rounded-md border border-border bg-bg-subtle px-3 py-6 text-center text-sm text-fg-muted">
-							Loading manual import candidates...
+						<div className="flex flex-col items-center justify-center py-12 text-center">
+							<Loader2 className="h-8 w-8 animate-spin mb-3" style={{ color: themeGradient.from }} />
+							<p className="text-sm text-muted-foreground">Loading manual import candidates...</p>
 						</div>
 					)}
 
 					{!query.isLoading && visibleCandidates.length === 0 && (
-						<div className="rounded-md border border-dashed border-border bg-bg-subtle px-3 py-6 text-center text-sm text-fg-muted">
-							No files match the current filters.
+						<div className="flex flex-col items-center justify-center py-12 text-center border border-dashed border-border/50 rounded-xl">
+							<FolderOpen className="h-10 w-10 text-muted-foreground/50 mb-3" />
+							<p className="text-sm text-muted-foreground">No files match the current filters.</p>
 						</div>
 					)}
 
-					{visibleCandidates.map((candidate) => {
+					{visibleCandidates.map((candidate, index) => {
 						const selection = getSelectionForCandidate(selections, candidate);
 						const selected = Boolean(selection);
 						const episodeIds =
@@ -278,36 +417,68 @@ export const ManualImportModal = ({
 								: [];
 
 						return (
-							<CandidateCard
+							<div
 								key={candidateKey(candidate)}
-								candidate={candidate}
-								selected={selected}
-								episodeIds={episodeIds}
-								downloadId={downloadId}
-								onToggle={() => handleToggleCandidate(candidate)}
-								onToggleEpisode={(episodeId) => toggleEpisode(candidate, episodeId)}
-								onSelectAllEpisodes={() => selectAllEpisodes(candidate)}
-								onClearEpisodes={() => clearEpisodes(candidate)}
-								disabled={isPending}
-							/>
+								className="animate-in fade-in slide-in-from-bottom-2"
+								style={{
+									animationDelay: `${index * 30}ms`,
+									animationFillMode: "backwards",
+								}}
+							>
+								<CandidateCard
+									candidate={candidate}
+									selected={selected}
+									episodeIds={episodeIds}
+									downloadId={downloadId}
+									onToggle={() => handleToggleCandidate(candidate)}
+									onToggleEpisode={(episodeId) => toggleEpisode(candidate, episodeId)}
+									onSelectAllEpisodes={() => selectAllEpisodes(candidate)}
+									onClearEpisodes={() => clearEpisodes(candidate)}
+									disabled={isPending}
+								/>
+							</div>
 						);
 					})}
 				</div>
 
-				<div className="flex items-center justify-between pt-2">
-					<div className="text-xs text-fg-muted">
-						{rejectionCount > 0 ? "Some files may require manual mapping." : ""}
-					</div>
-					<div className="flex items-center gap-2">
-						<Button variant="ghost" onClick={() => handleClose(false)} disabled={isPending}>
+				{/* Footer */}
+				<div className="p-6 border-t border-border/30 flex items-center justify-between">
+					<p className="text-xs text-muted-foreground">
+						{rejectionCount > 0 && "Some files may require manual mapping."}
+					</p>
+					<div className="flex items-center gap-3">
+						<Button
+							variant="outline"
+							onClick={() => handleClose(false)}
+							disabled={isPending}
+							className="rounded-xl"
+						>
 							Cancel
 						</Button>
 						<Button
-							variant="primary"
 							onClick={handleSubmit}
 							disabled={isPending || selectedCount === 0}
+							className="gap-2 rounded-xl font-medium"
+							style={
+								selectedCount > 0
+									? {
+											background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+											boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
+										}
+									: undefined
+							}
 						>
-							{isPending ? "Importing..." : "Import selected"}
+							{isPending ? (
+								<>
+									<Loader2 className="h-4 w-4 animate-spin" />
+									Importing...
+								</>
+							) : (
+								<>
+									<Download className="h-4 w-4" />
+									Import {selectedCount > 0 ? `${selectedCount} ` : ""}selected
+								</>
+							)}
 						</Button>
 					</div>
 				</div>

@@ -1,5 +1,5 @@
 /**
- * Bulk Score Manager Component
+ * Premium Bulk Score Manager Component
  *
  * Provides interface for managing custom format scores across multiple templates:
  * - View and filter scores from all templates
@@ -12,7 +12,20 @@
 "use client";
 
 import { useState, useMemo, useEffect, useCallback } from "react";
-import { Search, Save, X, RotateCcw } from "lucide-react";
+import {
+	Search,
+	Save,
+	X,
+	RotateCcw,
+	SlidersHorizontal,
+	ChevronDown,
+	CheckSquare,
+	Square,
+	AlertCircle,
+	Loader2,
+	Filter,
+	Sparkles,
+} from "lucide-react";
 import { toast } from "sonner";
 import type { CustomFormatScoreEntry } from "@arr/shared";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
@@ -20,7 +33,16 @@ import { useDeleteOverride, useBulkDeleteOverrides } from "../../../hooks/api/us
 import { useBulkUpdateScores, type BulkScoreUpdateEntry } from "../../../hooks/api/useQualityProfileScores";
 import { useBulkScores } from "../../../hooks/api/useBulkScores";
 import { useQueryClient } from "@tanstack/react-query";
-import { Select, SelectOption, Input } from "../../../components/ui";
+import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
+
+/**
+ * Service-specific colors for Radarr/Sonarr identification
+ */
+const SERVICE_COLORS = {
+	radarr: { from: "#f97316", to: "#ea580c" },
+	sonarr: { from: "#06b6d4", to: "#0891b2" },
+};
 
 interface BulkScoreManagerProps {
 	/** User ID for data fetching */
@@ -33,6 +55,8 @@ export function BulkScoreManager({
 	userId,
 	onOperationComplete,
 }: BulkScoreManagerProps) {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const queryClient = useQueryClient();
 
 	// Fetch available instances
@@ -42,6 +66,12 @@ export function BulkScoreManager({
 	const [instanceId, setInstanceId] = useState<string>("");
 	const [searchTerm, setSearchTerm] = useState("");
 	const [modifiedOnly, setModifiedOnly] = useState(false);
+
+	// Get selected instance for service color
+	const selectedInstance = instances.find(i => i.id === instanceId);
+	const serviceColor = selectedInstance?.service
+		? SERVICE_COLORS[selectedInstance.service as keyof typeof SERVICE_COLORS]
+		: null;
 
 	// Fetch bulk scores using TanStack Query
 	const { data: bulkScoresData, isLoading } = useBulkScores({
@@ -84,7 +114,6 @@ export function BulkScoreManager({
 		if (!instanceId || profileIds.length === 0) return;
 
 		try {
-			// Single bulk API call instead of per-profile requests
 			const response = await fetch(`/api/trash-guides/instances/${instanceId}/quality-profiles/bulk-overrides`, {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
@@ -98,7 +127,6 @@ export function BulkScoreManager({
 
 			const data = await response.json();
 
-			// Build override map: ${profileId}-${cfId} → override data
 			const newOverrides = new Map<string, { customFormatId: number; score: number }>();
 
 			if (data?.success && data.overridesByProfile) {
@@ -116,7 +144,6 @@ export function BulkScoreManager({
 
 			setAllOverrides(newOverrides);
 		} catch (error) {
-			// Don't show error toast for aborted requests
 			if (error instanceof Error && error.name === 'AbortError') {
 				return;
 			}
@@ -131,8 +158,6 @@ export function BulkScoreManager({
 			const queryScores = bulkScoresData.data.scores;
 			setScores(queryScores);
 
-			// Extract unique quality profile IDs for override fetching
-			// templateId format: instanceId-profileId
 			const profileIds = new Set<number>();
 			for (const score of queryScores) {
 				for (const templateScore of score.templateScores) {
@@ -146,13 +171,9 @@ export function BulkScoreManager({
 			const profileIdArray = Array.from(profileIds);
 			setQualityProfileIds(profileIdArray);
 
-			// Create AbortController for request cancellation
 			const controller = new AbortController();
-
-			// Fetch overrides for all quality profiles
 			void fetchOverridesForProfiles(profileIdArray, controller.signal);
 
-			// Cleanup: abort request if component unmounts or dependencies change
 			return () => {
 				controller.abort();
 			};
@@ -177,7 +198,6 @@ export function BulkScoreManager({
 			return newMap;
 		});
 
-		// Update the display immediately
 		setScores((prev) =>
 			prev.map((score) => {
 				if (score.trashId === cfTrashId) {
@@ -213,7 +233,6 @@ export function BulkScoreManager({
 			return;
 		}
 
-		// Group score changes by quality profile (templateId format: {instanceId}-{profileId})
 		const profileUpdates = new Map<string, Array<{ cfTrashId: string; score: number }>>();
 
 		for (const [cfTrashId, templateScores] of modifiedScores.entries()) {
@@ -225,10 +244,8 @@ export function BulkScoreManager({
 			}
 		}
 
-		// Build entries for the bulk update mutation
 		const entries: BulkScoreUpdateEntry[] = Array.from(profileUpdates.entries()).map(
 			([templateId, changes]) => {
-				// Parse templateId to get profileId (format: instanceId-profileId)
 				const profileId = parseInt(templateId.split("-").pop() || "0");
 				return {
 					profileId,
@@ -268,7 +285,6 @@ export function BulkScoreManager({
 			return;
 		}
 
-		// Extract profileId from templateId (format: instanceId-profileId)
 		const profileId = parseInt(templateId.split('-').pop() || '0');
 		if (profileId === 0) {
 			toast.error("Invalid quality profile ID");
@@ -285,7 +301,6 @@ export function BulkScoreManager({
 				qualityProfileId: profileId,
 				customFormatId,
 			});
-			// Success toast and cache invalidation handled by mutation hook
 		} catch (error) {
 			// Error toast handled by mutation hook
 		}
@@ -303,15 +318,12 @@ export function BulkScoreManager({
 			return;
 		}
 
-		// Group selected CFs by quality profile to handle multi-profile scenarios
-		// Map: profileId -> Set of customFormatIds
 		const profileToCFs = new Map<number, Set<number>>();
 
 		for (const trashId of selectedCFs) {
 			const cfId = parseInt(trashId.replace('cf-', ''));
 			if (isNaN(cfId)) continue;
 
-			// Find all profiles that have overrides for this CF
 			for (const profileId of qualityProfileIds) {
 				const overrideKey = `${profileId}-${cfId}`;
 				if (overrideMap.has(overrideKey)) {
@@ -328,7 +340,6 @@ export function BulkScoreManager({
 			return;
 		}
 
-		// Build confirmation message with profile breakdown
 		const profileCount = profileToCFs.size;
 		const totalOverrides = Array.from(profileToCFs.values()).reduce((sum, cfs) => sum + cfs.size, 0);
 		const confirmMessage = profileCount === 1
@@ -340,7 +351,6 @@ export function BulkScoreManager({
 		}
 
 		try {
-			// Reset overrides for each profile in parallel
 			const resetPromises = Array.from(profileToCFs.entries()).map(([profileId, cfIds]) =>
 				bulkDeleteOverrides.mutateAsync({
 					instanceId,
@@ -352,11 +362,7 @@ export function BulkScoreManager({
 			const results = await Promise.all(resetPromises);
 			const totalDeleted = results.reduce((sum, r) => sum + (r.deletedCount || 0), 0);
 
-			// Clear selection
 			setSelectedCFs(new Set());
-
-			// Cache invalidation handled by individual mutation hooks
-			// Show aggregated success toast
 			toast.success(`Successfully reset ${totalDeleted} override${totalDeleted === 1 ? "" : "s"} to template defaults`);
 		} catch (error) {
 			console.error("Failed to bulk reset:", error);
@@ -387,7 +393,7 @@ export function BulkScoreManager({
 		}
 	};
 
-	// Filtered scores (client-side filtering already done by search and modifiedOnly)
+	// Filtered scores
 	const filteredScores = useMemo(() => {
 		return scores.filter((score) => {
 			if (searchTerm && !score.name.toLowerCase().includes(searchTerm.toLowerCase())) {
@@ -401,94 +407,155 @@ export function BulkScoreManager({
 	}, [scores, searchTerm, modifiedOnly]);
 
 	return (
-		<div className="space-y-6">
+		<div className="space-y-6 animate-in fade-in duration-300">
 			{/* Header */}
-			<div className="flex items-center justify-between">
-				<div>
-					<h2 className="text-2xl font-semibold text-fg">Bulk Score Management</h2>
-					<p className="text-sm text-fg/70">
-						Manage custom format scores across multiple templates
-					</p>
+			<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-6">
+				<div className="flex items-center gap-4 mb-6">
+					<div
+						className="flex h-12 w-12 items-center justify-center rounded-xl shrink-0"
+						style={{
+							background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+							border: `1px solid ${themeGradient.from}30`,
+						}}
+					>
+						<SlidersHorizontal className="h-6 w-6" style={{ color: themeGradient.from }} />
+					</div>
+					<div>
+						<h2
+							className="text-xl font-bold"
+							style={{
+								background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+								WebkitBackgroundClip: "text",
+								WebkitTextFillColor: "transparent",
+							}}
+						>
+							Bulk Score Management
+						</h2>
+						<p className="text-sm text-muted-foreground">
+							Manage custom format scores across multiple quality profiles
+						</p>
+					</div>
 				</div>
-			</div>
 
-			{/* Filters */}
-			<div className="flex flex-col gap-3 rounded-lg border border-border bg-bg-subtle p-4 sm:flex-row sm:items-center sm:flex-wrap">
-				<Select
-					value={instanceId}
-					onChange={(e) => setInstanceId(e.target.value)}
-					className="min-w-[200px]"
-				>
-					<SelectOption value="">Select Instance</SelectOption>
-					{instances
-						.filter((instance) => instance.service === "radarr" || instance.service === "sonarr")
-						.map((instance) => (
-							<SelectOption key={instance.id} value={instance.id}>
-								{instance.label} ({instance.service.toUpperCase()})
-							</SelectOption>
-						))}
-				</Select>
+				{/* Filters */}
+				<div className="flex flex-wrap gap-3 items-center">
+					{/* Instance Selector */}
+					<div className="relative min-w-[200px]">
+						<select
+							value={instanceId}
+							onChange={(e) => setInstanceId(e.target.value)}
+							className="w-full appearance-none rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 pr-10 text-sm font-medium text-foreground focus:outline-none focus:ring-2 transition-all"
+							style={{ ["--tw-ring-color" as string]: themeGradient.from }}
+						>
+							<option value="">Select Instance</option>
+							{instances
+								.filter((instance) => instance.service === "radarr" || instance.service === "sonarr")
+								.map((instance) => (
+									<option key={instance.id} value={instance.id}>
+										{instance.label} ({instance.service.toUpperCase()})
+									</option>
+								))}
+						</select>
+						<ChevronDown className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
+					</div>
 
-				<div className="flex-1 min-w-[200px]">
-					<div className="relative">
-						<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-fg/40" />
-						<Input
+					{/* Search */}
+					<div className="relative flex-1 min-w-[200px]">
+						<Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+						<input
 							type="text"
 							placeholder="Search custom formats..."
 							value={searchTerm}
 							onChange={(e) => setSearchTerm(e.target.value)}
-							className="w-full pl-10"
+							className="w-full rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 pl-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 transition-all"
+							style={{ ["--tw-ring-color" as string]: themeGradient.from }}
 						/>
 					</div>
+
+					{/* Modified Only Toggle */}
+					<button
+						type="button"
+						onClick={() => setModifiedOnly(!modifiedOnly)}
+						className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200 border"
+						style={{
+							backgroundColor: modifiedOnly ? `${SEMANTIC_COLORS.warning.from}15` : "rgba(var(--card), 0.5)",
+							borderColor: modifiedOnly ? SEMANTIC_COLORS.warning.from : "rgba(var(--border), 0.5)",
+							color: modifiedOnly ? SEMANTIC_COLORS.warning.from : undefined,
+						}}
+					>
+						<Filter className="h-4 w-4" />
+						Modified Only
+					</button>
+
+					{/* Loading Indicator */}
+					{isLoading && (
+						<div className="flex items-center gap-2 text-sm text-muted-foreground">
+							<Loader2 className="h-4 w-4 animate-spin" style={{ color: themeGradient.from }} />
+							<span>Loading...</span>
+						</div>
+					)}
 				</div>
-
-				<label className="flex items-center gap-2 px-4 py-2 rounded-lg bg-bg-subtle cursor-pointer hover:bg-bg-hover text-sm text-fg whitespace-nowrap">
-					<input
-						type="checkbox"
-						checked={modifiedOnly}
-						onChange={(e) => setModifiedOnly(e.target.checked)}
-						className="rounded border-border"
-					/>
-					<span>Modified Only</span>
-				</label>
-
-				{isLoading && (
-					<div className="flex items-center gap-2 text-sm text-fg/60">
-						<div className="h-4 w-4 animate-spin rounded-full border-2 border-border border-t-primary" />
-						<span>Loading...</span>
-					</div>
-				)}
 			</div>
 
 			{/* Save/Discard Changes Bar */}
 			{modifiedScores.size > 0 && (
-				<div className="rounded-lg border border-primary/30 bg-primary/10 p-4">
+				<div
+					className="rounded-2xl border p-4 animate-in slide-in-from-top-2 duration-200"
+					style={{
+						backgroundColor: `${themeGradient.from}10`,
+						borderColor: `${themeGradient.from}30`,
+					}}
+				>
 					<div className="flex items-center justify-between">
 						<div className="flex items-center gap-3">
-							<div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/20">
-								<span className="text-sm font-semibold text-primary">{modifiedScores.size}</span>
+							<div
+								className="flex h-10 w-10 items-center justify-center rounded-xl"
+								style={{
+									background: `linear-gradient(135deg, ${themeGradient.from}30, ${themeGradient.to}30)`,
+								}}
+							>
+								<span className="text-sm font-bold" style={{ color: themeGradient.from }}>
+									{modifiedScores.size}
+								</span>
 							</div>
-							<p className="text-sm text-fg">
-								{modifiedScores.size} custom format{modifiedScores.size === 1 ? '' : 's'} modified
-							</p>
+							<div>
+								<p className="font-medium text-foreground">
+									{modifiedScores.size} custom format{modifiedScores.size === 1 ? '' : 's'} modified
+								</p>
+								<p className="text-xs text-muted-foreground">Changes are not saved yet</p>
+							</div>
 						</div>
 						<div className="flex gap-2">
 							<button
 								type="button"
 								onClick={handleDiscardChanges}
 								disabled={bulkUpdateScores.isPending}
-								className="inline-flex items-center gap-2 rounded-lg border border-border bg-bg-subtle px-4 py-2 text-sm font-medium text-fg transition hover:bg-bg-hover disabled:opacity-50"
+								className="inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition-colors border border-border/50 bg-card/50 hover:bg-card/80 text-foreground disabled:opacity-50"
 							>
-								Discard Changes
+								<X className="h-4 w-4" />
+								Discard
 							</button>
 							<button
 								type="button"
 								onClick={handleSaveChanges}
 								disabled={bulkUpdateScores.isPending}
-								className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-fg transition hover:bg-primary/90 disabled:opacity-50"
+								className="inline-flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-medium text-white transition-all duration-200 disabled:opacity-50"
+								style={{
+									background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+									boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
+								}}
 							>
-								<Save className="h-4 w-4" />
-								{bulkUpdateScores.isPending ? "Saving..." : "Save Changes"}
+								{bulkUpdateScores.isPending ? (
+									<>
+										<Loader2 className="h-4 w-4 animate-spin" />
+										Saving...
+									</>
+								) : (
+									<>
+										<Save className="h-4 w-4" />
+										Save Changes
+									</>
+								)}
 							</button>
 						</div>
 					</div>
@@ -497,20 +564,38 @@ export function BulkScoreManager({
 
 			{/* Bulk Reset Bar */}
 			{selectedCFs.size > 0 && (
-				<div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
+				<div
+					className="rounded-2xl border p-4 animate-in slide-in-from-top-2 duration-200"
+					style={{
+						backgroundColor: SEMANTIC_COLORS.warning.bg,
+						borderColor: SEMANTIC_COLORS.warning.border,
+					}}
+				>
 					<div className="flex items-center justify-between">
 						<div className="flex items-center gap-3">
-							<div className="flex h-8 w-8 items-center justify-center rounded-full bg-amber-500/20">
-								<span className="text-sm font-semibold text-amber-400">{selectedCFs.size}</span>
+							<div
+								className="flex h-10 w-10 items-center justify-center rounded-xl"
+								style={{ backgroundColor: `${SEMANTIC_COLORS.warning.from}30` }}
+							>
+								<span className="text-sm font-bold" style={{ color: SEMANTIC_COLORS.warning.from }}>
+									{selectedCFs.size}
+								</span>
 							</div>
-							<p className="text-sm text-fg">
-								{selectedCFs.size} custom format{selectedCFs.size === 1 ? '' : 's'} selected
-							</p>
+							<div>
+								<p className="font-medium text-foreground">
+									{selectedCFs.size} custom format{selectedCFs.size === 1 ? '' : 's'} selected
+								</p>
+								<p className="text-xs text-muted-foreground">Select formats to reset their overrides</p>
+							</div>
 						</div>
 						<button
 							type="button"
 							onClick={handleBulkResetToTemplate}
-							className="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-fg transition hover:bg-amber-700"
+							className="inline-flex items-center gap-2 rounded-xl px-5 py-2 text-sm font-medium text-white transition-all duration-200"
+							style={{
+								background: `linear-gradient(135deg, ${SEMANTIC_COLORS.warning.from}, #d97706)`,
+								boxShadow: `0 4px 12px -4px rgba(245, 158, 11, 0.5)`,
+							}}
 						>
 							<RotateCcw className="h-4 w-4" />
 							Reset to Template
@@ -520,138 +605,202 @@ export function BulkScoreManager({
 			)}
 
 			{/* Scores Table */}
-			<div className="overflow-x-auto rounded-lg border border-border">
-				<table className="w-full table-fixed">
-					<thead className="border-b border-border bg-bg-subtle">
-						<tr>
-							<th className="sticky left-0 z-20 w-12 bg-bg-subtle px-3 py-3 text-center">
-								<input
-									type="checkbox"
-									checked={filteredScores.length > 0 && selectedCFs.size === filteredScores.length}
-									onChange={toggleSelectAll}
-									className="rounded border-border"
-									title="Select/deselect all"
-								/>
-							</th>
-							<th className="sticky left-12 z-10 w-64 bg-bg-subtle px-4 py-3 text-left text-sm font-medium text-fg">
-								Custom Format
-							</th>
-							{/* Dynamic columns for each unique template */}
-							{filteredScores.length > 0 &&
-								filteredScores[0]?.templateScores.map((templateScore) => (
-									<th
-										key={templateScore.templateId}
-										className="w-24 px-3 py-3 text-center text-sm font-medium text-fg"
+			<div className="overflow-hidden rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm">
+				<div className="overflow-x-auto">
+					<table className="w-full table-fixed">
+						<thead>
+							<tr className="border-b border-border/50">
+								<th className="sticky left-0 z-20 w-12 bg-card/95 backdrop-blur-sm px-3 py-4 text-center">
+									<button
+										type="button"
+										onClick={toggleSelectAll}
+										className="flex h-6 w-6 mx-auto items-center justify-center rounded-lg transition-all duration-200"
+										style={{
+											backgroundColor: filteredScores.length > 0 && selectedCFs.size === filteredScores.length
+												? themeGradient.from
+												: "rgba(var(--muted), 0.3)",
+											border: `1px solid ${filteredScores.length > 0 && selectedCFs.size === filteredScores.length ? themeGradient.from : "rgba(var(--border), 0.5)"}`,
+										}}
 									>
-										<div className="flex flex-col gap-0.5">
-											<div className="text-xs text-fg/90">{templateScore.qualityProfileName}</div>
-											<div className="text-xs font-normal text-fg/50">
-												{templateScore.templateName}
+										{filteredScores.length > 0 && selectedCFs.size === filteredScores.length ? (
+											<CheckSquare className="h-4 w-4 text-white" />
+										) : (
+											<Square className="h-4 w-4 text-muted-foreground" />
+										)}
+									</button>
+								</th>
+								<th className="sticky left-12 z-10 w-64 bg-card/95 backdrop-blur-sm px-4 py-4 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+									Custom Format
+								</th>
+								{/* Dynamic columns for each unique template */}
+								{filteredScores.length > 0 &&
+									filteredScores[0]?.templateScores.map((templateScore) => (
+										<th
+											key={templateScore.templateId}
+											className="w-28 px-3 py-4 text-center text-xs font-semibold uppercase tracking-wider text-muted-foreground"
+										>
+											<div className="flex flex-col gap-0.5">
+												<div className="text-foreground/90">{templateScore.qualityProfileName}</div>
+												<div className="font-normal text-muted-foreground normal-case">
+													{templateScore.templateName}
+												</div>
 											</div>
-										</div>
-									</th>
-								))}
-						</tr>
-					</thead>
-					<tbody>
-						{filteredScores.length === 0 ? (
-							<tr>
-								<td colSpan={100} className="px-4 py-8 text-center text-fg/60">
-									{instanceId ? "No scores found for this instance." : "Select an instance to view scores."}
-								</td>
+										</th>
+									))}
 							</tr>
-						) : (
-							filteredScores.map((score) => (
-								<tr
-									key={score.trashId}
-									className="border-t border-border transition hover:bg-bg-subtle"
-								>
-									<td className="sticky left-0 z-20 bg-bg-subtle px-3 py-2 text-center hover:bg-bg-subtle">
-										<input
-											type="checkbox"
-											checked={selectedCFs.has(score.trashId)}
-											onChange={() => toggleCFSelection(score.trashId)}
-											className="rounded border-border"
-										/>
-									</td>
-									<td className="sticky left-12 z-10 bg-bg-subtle px-4 py-2 text-sm text-fg hover:bg-bg-subtle">
-										<div className="flex items-center gap-2">
-											<span>{score.name}</span>
-											{score.hasAnyModifications && (
-												<span className="text-xs text-yellow-400" title="Has modifications">
-													⚠️
-												</span>
+						</thead>
+						<tbody className="divide-y divide-border/30">
+							{filteredScores.length === 0 ? (
+								<tr>
+									<td colSpan={100} className="px-6 py-12 text-center">
+										<div className="flex flex-col items-center gap-3">
+											{instanceId ? (
+												<>
+													<AlertCircle className="h-10 w-10 text-muted-foreground" />
+													<p className="text-muted-foreground">No scores found for this instance.</p>
+												</>
+											) : (
+												<>
+													<SlidersHorizontal className="h-10 w-10 text-muted-foreground" />
+													<p className="text-muted-foreground">Select an instance to view scores.</p>
+												</>
 											)}
 										</div>
 									</td>
-									{/* Editable score cells for each template */}
-									{score.templateScores.map((templateScore) => {
-										// Extract CF ID from trashId (format: "cf-{id}")
-										const cfId = parseInt(score.trashId.replace('cf-', ''));
-										// Extract profile ID from templateId
-										const parts = templateScore.templateId.split('-');
-										const lastPart = parts[parts.length - 1];
-										const profileId = parseInt(lastPart || '0');
-
-										// Check if this CF has an instance-level override for this profile
-										const overrideKey = `${profileId}-${cfId}`;
-										const hasOverride = overrideMap.has(overrideKey);
-
-										// Only show override UI for template-managed profiles
-										const showOverrideUI = hasOverride && templateScore.isTemplateManaged;
-
-										return (
-											<td key={templateScore.templateId} className="px-2 py-1">
-												<div className="relative">
-													<input
-														type="number"
-														value={templateScore.currentScore}
-														onChange={(e) => {
-															const newScore = parseInt(e.target.value) || 0;
-															handleScoreChange(score.trashId, templateScore.templateId, newScore);
-														}}
-														className={`w-full rounded border px-2 py-1 text-center text-sm transition ${
-															showOverrideUI
-																? "border-blue-500/50 bg-blue-500/10 font-semibold text-blue-200 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-																: templateScore.isModified
-																? "border-yellow-500/50 bg-yellow-500/10 font-semibold text-yellow-200 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500"
-																: "border-border bg-bg-subtle text-fg/70 focus:border-primary focus:ring-1 focus:ring-primary"
-														}`}
-														title={
-															showOverrideUI
-																? "Template-managed profile with instance override (persists across syncs)"
-																: !templateScore.isTemplateManaged
-																? "User-created profile (not managed by template)"
-																: templateScore.isModified
-																? `Modified from default (${templateScore.defaultScore})`
-																: `Default: ${templateScore.defaultScore}`
-														}
-													/>
-													{showOverrideUI && (
-														<button
-															type="button"
-															onClick={() => handleDeleteOverride(templateScore.templateId, cfId, score.name)}
-															className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 border border-border text-fg hover:bg-blue-600 transition"
-															title="Remove override (revert to template score on next sync)"
-														>
-															<X className="h-3 w-3" />
-														</button>
-													)}
-												</div>
-											</td>
-										);
-									})}
 								</tr>
-							))
-						)}
-					</tbody>
-				</table>
+							) : (
+								filteredScores.map((score, rowIndex) => (
+									<tr
+										key={score.trashId}
+										className="transition-colors hover:bg-card/50 animate-in fade-in"
+										style={{
+											animationDelay: `${rowIndex * 20}ms`,
+											animationFillMode: "backwards",
+										}}
+									>
+										<td className="sticky left-0 z-20 bg-card/95 backdrop-blur-sm px-3 py-3 text-center">
+											<button
+												type="button"
+												onClick={() => toggleCFSelection(score.trashId)}
+												className="flex h-6 w-6 mx-auto items-center justify-center rounded-lg transition-all duration-200"
+												style={{
+													backgroundColor: selectedCFs.has(score.trashId)
+														? themeGradient.from
+														: "rgba(var(--muted), 0.3)",
+													border: `1px solid ${selectedCFs.has(score.trashId) ? themeGradient.from : "rgba(var(--border), 0.5)"}`,
+												}}
+											>
+												{selectedCFs.has(score.trashId) ? (
+													<CheckSquare className="h-4 w-4 text-white" />
+												) : (
+													<Square className="h-4 w-4 text-muted-foreground" />
+												)}
+											</button>
+										</td>
+										<td className="sticky left-12 z-10 bg-card/95 backdrop-blur-sm px-4 py-3 text-sm">
+											<div className="flex items-center gap-2">
+												<span className="font-medium text-foreground">{score.name}</span>
+												{score.hasAnyModifications && (
+													<span
+														className="flex h-5 w-5 items-center justify-center rounded-full"
+														style={{
+															backgroundColor: SEMANTIC_COLORS.warning.bg,
+															border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+														}}
+														title="Has modifications"
+													>
+														<Sparkles className="h-3 w-3" style={{ color: SEMANTIC_COLORS.warning.from }} />
+													</span>
+												)}
+											</div>
+										</td>
+										{/* Editable score cells for each template */}
+										{score.templateScores.map((templateScore) => {
+											const cfId = parseInt(score.trashId.replace('cf-', ''));
+											const parts = templateScore.templateId.split('-');
+											const lastPart = parts[parts.length - 1];
+											const profileId = parseInt(lastPart || '0');
+
+											const overrideKey = `${profileId}-${cfId}`;
+											const hasOverride = overrideMap.has(overrideKey);
+											const showOverrideUI = hasOverride && templateScore.isTemplateManaged;
+
+											return (
+												<td key={templateScore.templateId} className="px-2 py-2">
+													<div className="relative">
+														<input
+															type="number"
+															value={templateScore.currentScore}
+															onChange={(e) => {
+																const newScore = parseInt(e.target.value) || 0;
+																handleScoreChange(score.trashId, templateScore.templateId, newScore);
+															}}
+															className="w-full rounded-xl border px-3 py-2 text-center text-sm font-medium transition-all duration-200 focus:outline-none focus:ring-2"
+															style={{
+																borderColor: showOverrideUI
+																	? themeGradient.from
+																	: templateScore.isModified
+																	? SEMANTIC_COLORS.warning.border
+																	: "rgba(var(--border), 0.5)",
+																backgroundColor: showOverrideUI
+																	? `${themeGradient.from}15`
+																	: templateScore.isModified
+																	? SEMANTIC_COLORS.warning.bg
+																	: "rgba(var(--card), 0.5)",
+																color: showOverrideUI
+																	? themeGradient.from
+																	: templateScore.isModified
+																	? SEMANTIC_COLORS.warning.text
+																	: undefined,
+																["--tw-ring-color" as string]: themeGradient.from,
+															}}
+															title={
+																showOverrideUI
+																	? "Template-managed profile with instance override (persists across syncs)"
+																	: !templateScore.isTemplateManaged
+																	? "User-created profile (not managed by template)"
+																	: templateScore.isModified
+																	? `Modified from default (${templateScore.defaultScore})`
+																	: `Default: ${templateScore.defaultScore}`
+															}
+														/>
+														{showOverrideUI && (
+															<button
+																type="button"
+																onClick={() => handleDeleteOverride(templateScore.templateId, cfId, score.name)}
+																className="absolute -top-1.5 -right-1.5 flex h-5 w-5 items-center justify-center rounded-full text-white transition-all duration-200 hover:scale-110"
+																style={{
+																	background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+																	boxShadow: `0 2px 6px -2px ${themeGradient.glow}`,
+																}}
+																title="Remove override (revert to template score on next sync)"
+															>
+																<X className="h-3 w-3" />
+															</button>
+														)}
+													</div>
+												</td>
+											);
+										})}
+									</tr>
+								))
+							)}
+						</tbody>
+					</table>
+				</div>
 			</div>
 
-			{/* Summary */}
-			<div className="text-sm text-fg/60">
-				Showing {filteredScores.length} custom format{filteredScores.length === 1 ? '' : 's'}
-				{modifiedScores.size > 0 && ` • ${modifiedScores.size} unsaved change${modifiedScores.size === 1 ? '' : 's'}`}
+			{/* Summary Footer */}
+			<div className="flex items-center justify-between text-sm text-muted-foreground">
+				<span>
+					Showing <span className="font-medium text-foreground">{filteredScores.length}</span> custom format{filteredScores.length === 1 ? '' : 's'}
+				</span>
+				{modifiedScores.size > 0 && (
+					<span className="flex items-center gap-2">
+						<Sparkles className="h-4 w-4" style={{ color: SEMANTIC_COLORS.warning.from }} />
+						<span className="font-medium text-foreground">{modifiedScores.size}</span> unsaved change{modifiedScores.size === 1 ? '' : 's'}
+					</span>
+				)}
 			</div>
 		</div>
 	);

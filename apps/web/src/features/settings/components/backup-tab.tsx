@@ -1,18 +1,32 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Download, Upload, Trash2, FileText, Clock, Key, CheckCircle2, AlertTriangle, XCircle } from "lucide-react";
-import { Button } from "../../../components/ui/button";
-import { Input } from "../../../components/ui/input";
-import { Select, SelectOption } from "../../../components/ui/select";
 import {
-	Card,
-	CardContent,
-	CardHeader,
-	CardTitle,
-	CardDescription,
-} from "../../../components/ui/card";
-import { Alert, AlertDescription, toast } from "../../../components/ui";
+	Download,
+	Upload,
+	Trash2,
+	FileText,
+	Clock,
+	Key,
+	CheckCircle2,
+	AlertTriangle,
+	Archive,
+	Loader2,
+	Shield,
+	AlertCircle,
+} from "lucide-react";
+import { Button, Input, NativeSelect, SelectOption, toast } from "../../../components/ui";
+import {
+	PremiumSection,
+	PremiumEmptyState,
+	GlassmorphicCard,
+	PremiumTable,
+	PremiumTableHeader,
+	PremiumTableRow,
+	StatusBadge,
+} from "../../../components/layout";
+import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useColorTheme } from "../../../providers/color-theme-provider";
 import {
 	useCreateBackup,
 	useRestoreBackup,
@@ -29,7 +43,20 @@ import {
 } from "../../../hooks/api/useBackup";
 import type { BackupFileInfo, BackupIntervalType } from "@arr/shared";
 
+/**
+ * Premium Backup Tab
+ *
+ * Comprehensive backup management with:
+ * - Password encryption configuration
+ * - Scheduled backup settings
+ * - Manual backup creation
+ * - Backup restore from file or list
+ * - Premium glassmorphic styling
+ */
 export const BackupTab = () => {
+	const { colorTheme } = useColorTheme();
+	const themeGradient = THEME_GRADIENTS[colorTheme];
+
 	// Create backup state
 	const [createSuccess, setCreateSuccess] = useState(false);
 
@@ -83,83 +110,35 @@ export const BackupTab = () => {
 	// Handle create backup
 	const handleCreateBackup = async () => {
 		setCreateSuccess(false);
-
 		try {
 			await createBackupMutation.mutateAsync({});
-
 			setCreateSuccess(true);
-
-			// Reset success message after 5 seconds
-			setTimeout(() => {
-				setCreateSuccess(false);
-			}, 5000);
-		} catch (error: any) {
-			alert(`Failed to create backup: ${error.message || "Unknown error"}`);
+			setTimeout(() => setCreateSuccess(false), 5000);
+		} catch (error: unknown) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			toast.error(`Failed to create backup: ${message}`);
 		}
 	};
 
 	// Handle restore backup
 	const handleRestoreBackup = async (e: React.FormEvent) => {
 		e.preventDefault();
-
 		if (!restoreFile) {
 			toast.error("Please select a backup file");
 			return;
 		}
-
 		try {
-			// Read the backup file
 			const backupData = await readBackupFileMutation.mutateAsync(restoreFile);
-
-			// Restore the backup
-			const response = await restoreBackupMutation.mutateAsync({
-				backupData,
-			});
-
+			const response = await restoreBackupMutation.mutateAsync({ backupData });
 			setRestoreSuccess(true);
 			setRestoreFile(null);
 			setShowRestoreWarning(false);
 
-			// Check if auto-restart will occur
 			const willAutoRestart = response.message.includes("restart automatically");
-
 			if (willAutoRestart) {
-				// Show restarting modal and start polling immediately (non-blocking)
 				setIsRestarting(true);
-
-				// Poll for server to come back up
-				const pollServer = async () => {
-					const maxAttempts = 30;
-					let attempts = 0;
-
-					const checkServer = async (): Promise<void> => {
-						attempts++;
-						try {
-							const healthResponse = await fetch("/auth/setup-required");
-							if (healthResponse.ok) {
-								// Server is back, redirect to login
-								window.location.href = "/login";
-								return;
-							}
-						} catch {
-							// Server not ready yet
-						}
-
-						if (attempts < maxAttempts) {
-							setTimeout(checkServer, 1000);
-						} else {
-							// Timeout - just redirect anyway
-							window.location.href = "/login";
-						}
-					};
-
-					// Start polling after a short delay to let server begin restart
-					setTimeout(checkServer, 2000);
-				};
-
-				pollServer();
+				pollForServerRestart();
 			} else {
-				// No restart, show success toast
 				toast.success(`Backup restored from ${new Date(response.metadata.timestamp).toLocaleString()}`);
 			}
 		} catch (error: unknown) {
@@ -168,40 +147,58 @@ export const BackupTab = () => {
 		}
 	};
 
+	// Poll for server restart
+	const pollForServerRestart = () => {
+		const maxAttempts = 30;
+		let attempts = 0;
+
+		const checkServer = async (): Promise<void> => {
+			attempts++;
+			try {
+				const healthResponse = await fetch("/auth/setup-required");
+				if (healthResponse.ok) {
+					window.location.href = "/login";
+					return;
+				}
+			} catch {
+				// Server not ready yet
+			}
+			if (attempts < maxAttempts) {
+				setTimeout(checkServer, 1000);
+			} else {
+				window.location.href = "/login";
+			}
+		};
+
+		setTimeout(checkServer, 2000);
+	};
+
 	// Handle download backup from list
 	const handleDownloadBackup = async (backup: BackupFileInfo) => {
 		try {
 			await downloadBackupMutation.mutateAsync({ id: backup.id, filename: backup.filename });
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : "Unknown error";
-			console.error("Failed to download backup:", error);
-			toast.error("Failed to download backup", {
-				description: errorMessage,
-			});
+			toast.error("Failed to download backup", { description: errorMessage });
 		}
 	};
 
 	// Handle delete backup from list
 	const handleDeleteBackup = async (backup: BackupFileInfo) => {
-		if (
-			!confirm(
-				`Are you sure you want to delete this backup?\n\n${backup.filename}\n\nThis action cannot be undone.`,
-			)
-		) {
+		if (!confirm(`Are you sure you want to delete this backup?\n\n${backup.filename}\n\nThis action cannot be undone.`)) {
 			return;
 		}
-
 		try {
 			await deleteBackupMutation.mutateAsync(backup.id);
-		} catch (error: any) {
-			alert(`Failed to delete backup: ${error.message || "Unknown error"}`);
+		} catch (error: unknown) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			toast.error(`Failed to delete backup: ${message}`);
 		}
 	};
 
 	// Handle save settings
 	const handleSaveSettings = async () => {
 		setSettingsSuccess(false);
-
 		try {
 			await updateSettingsMutation.mutateAsync({
 				enabled: intervalType !== "DISABLED",
@@ -210,15 +207,11 @@ export const BackupTab = () => {
 				retentionCount,
 				includeTrashBackups,
 			});
-
 			setSettingsSuccess(true);
-
-			// Reset success message after 3 seconds
-			setTimeout(() => {
-				setSettingsSuccess(false);
-			}, 3000);
-		} catch (error: any) {
-			alert(`Failed to save settings: ${error.message || "Unknown error"}`);
+			setTimeout(() => setSettingsSuccess(false), 3000);
+		} catch (error: unknown) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			toast.error(`Failed to save settings: ${message}`);
 		}
 	};
 
@@ -231,56 +224,19 @@ export const BackupTab = () => {
 	// Handle restore submit from list
 	const handleRestoreBackupSubmit = async () => {
 		if (!selectedBackupForRestore) return;
-
 		try {
 			const response = await restoreBackupFromFileMutation.mutateAsync({
 				id: selectedBackupForRestore.id,
 			});
 
-			// Check if auto-restart will occur
 			const willAutoRestart = response.message.includes("restart automatically");
-
-			// Close modal
 			setShowBackupRestoreModal(false);
 			setSelectedBackupForRestore(null);
 
 			if (willAutoRestart) {
-				// Show restarting modal and start polling immediately (non-blocking)
 				setIsRestarting(true);
-
-				// Poll for server to come back up
-				const pollServer = async () => {
-					const maxAttempts = 30;
-					let attempts = 0;
-
-					const checkServer = async (): Promise<void> => {
-						attempts++;
-						try {
-							const healthResponse = await fetch("/auth/setup-required");
-							if (healthResponse.ok) {
-								// Server is back, redirect to login
-								window.location.href = "/login";
-								return;
-							}
-						} catch {
-							// Server not ready yet
-						}
-
-						if (attempts < maxAttempts) {
-							setTimeout(checkServer, 1000);
-						} else {
-							// Timeout - just redirect anyway
-							window.location.href = "/login";
-						}
-					};
-
-					// Start polling after a short delay to let server begin restart
-					setTimeout(checkServer, 2000);
-				};
-
-				pollServer();
+				pollForServerRestart();
 			} else {
-				// No restart, show success toast
 				toast.success(`Backup restored from ${new Date(response.metadata.timestamp).toLocaleString()}`);
 			}
 		} catch (error: unknown) {
@@ -292,17 +248,14 @@ export const BackupTab = () => {
 	// Handle set password
 	const handleSetPassword = async (e: React.FormEvent) => {
 		e.preventDefault();
-
 		if (newPassword.length < 8) {
 			toast.error("Password must be at least 8 characters");
 			return;
 		}
-
 		if (newPassword !== confirmPassword) {
 			toast.error("Passwords do not match");
 			return;
 		}
-
 		try {
 			await setPasswordMutation.mutateAsync({ password: newPassword });
 			setPasswordSuccess(true);
@@ -310,10 +263,7 @@ export const BackupTab = () => {
 			setConfirmPassword("");
 			setShowPasswordForm(false);
 			toast.success("Backup password updated successfully");
-
-			setTimeout(() => {
-				setPasswordSuccess(false);
-			}, 3000);
+			setTimeout(() => setPasswordSuccess(false), 3000);
 		} catch (error: unknown) {
 			const errorMessage = error instanceof Error ? error.message : "Unknown error";
 			toast.error(`Failed to set password: ${errorMessage}`);
@@ -325,7 +275,6 @@ export const BackupTab = () => {
 		if (!confirm("Are you sure you want to remove the backup password from the database?\n\nIf you have the BACKUP_PASSWORD environment variable set, backups will use that instead.")) {
 			return;
 		}
-
 		try {
 			await removePasswordMutation.mutateAsync();
 			toast.success("Backup password removed from database");
@@ -335,11 +284,11 @@ export const BackupTab = () => {
 		}
 	};
 
-	// Utility functions for backups list
+	// Utility functions
 	const formatBytes = (bytes: number) => {
-		if (bytes === 0) return "0 Bytes";
+		if (bytes === 0) return "0 B";
 		const k = 1024;
-		const sizes = ["Bytes", "KB", "MB", "GB"];
+		const sizes = ["B", "KB", "MB", "GB"];
 		const i = Math.floor(Math.log(bytes) / Math.log(k));
 		return `${Math.round((bytes / Math.pow(k, i)) * 100) / 100} ${sizes[i]}`;
 	};
@@ -348,91 +297,100 @@ export const BackupTab = () => {
 		return new Date(dateString).toLocaleString();
 	};
 
-	const getTypeColor = (type: string) => {
+	const getTypeStatus = (type: string): "success" | "info" | "warning" | "default" => {
 		switch (type) {
-			case "manual":
-				return "text-sky-400";
-			case "scheduled":
-				return "text-emerald-400";
-			case "update":
-				return "text-purple-400";
-			default:
-				return "text-fg-muted";
+			case "manual": return "info";
+			case "scheduled": return "success";
+			case "update": return "warning";
+			default: return "default";
 		}
-	};
-
-	const getTypeLabel = (type: string) => {
-		return type.charAt(0).toUpperCase() + type.slice(1);
 	};
 
 	const backups = backupsData?.backups || [];
 
 	return (
-		<div className="space-y-6">
+		<div className="space-y-8">
 			{/* Backup Encryption Password Section */}
-			<Card>
-				<CardHeader>
-					<div className="flex items-center gap-2">
-						<Key className="h-5 w-5 text-sky-400" />
-						<CardTitle>Backup Encryption</CardTitle>
-					</div>
-					<CardDescription>
-						Configure the password used to encrypt and decrypt backups. Without a password, backups cannot be created.
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					<div className="space-y-4">
-						{/* Password Status */}
-						{passwordStatusLoading ? (
-							<div className="flex items-center gap-2 text-fg-muted">
-								<span>Checking password configuration...</span>
+			<PremiumSection
+				title="Backup Encryption"
+				description="Configure the password used to encrypt and decrypt backups"
+				icon={Key}
+			>
+				<div className="space-y-4">
+					{/* Password Status */}
+					{passwordStatusLoading ? (
+						<div className="flex items-center gap-2 text-muted-foreground">
+							<Loader2 className="h-4 w-4 animate-spin" />
+							<span>Checking password configuration...</span>
+						</div>
+					) : passwordStatus?.configured ? (
+						<div
+							className="flex items-center gap-3 p-4 rounded-xl"
+							style={{
+								backgroundColor: SEMANTIC_COLORS.success.bg,
+								border: `1px solid ${SEMANTIC_COLORS.success.border}`,
+							}}
+						>
+							<CheckCircle2 className="h-5 w-5 shrink-0" style={{ color: SEMANTIC_COLORS.success.text }} />
+							<div className="flex-1">
+								<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.success.text }}>
+									Password Configured
+								</p>
+								<p className="text-xs text-muted-foreground">
+									{passwordStatus.source === "database"
+										? "Password is stored securely in the database."
+										: "Password is set via BACKUP_PASSWORD environment variable."}
+								</p>
 							</div>
-						) : passwordStatus?.configured ? (
-							<div className="flex items-center gap-3 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-								<CheckCircle2 className="h-5 w-5 text-emerald-500 shrink-0" />
-								<div className="flex-1">
-									<p className="text-sm font-medium text-emerald-400">Password Configured</p>
-									<p className="text-xs text-fg-muted">
-										{passwordStatus.source === "database"
-											? "Password is stored securely in the database."
-											: "Password is set via BACKUP_PASSWORD environment variable."}
-									</p>
-								</div>
-								{passwordStatus.source === "database" && (
-									<Button
-										variant="secondary"
-										size="sm"
-										onClick={handleRemovePassword}
-										disabled={removePasswordMutation.isPending}
-									>
-										{removePasswordMutation.isPending ? "Removing..." : "Remove"}
-									</Button>
-								)}
+							{passwordStatus.source === "database" && (
+								<Button
+									variant="secondary"
+									size="sm"
+									onClick={handleRemovePassword}
+									disabled={removePasswordMutation.isPending}
+									className="border-border/50 bg-card/50"
+								>
+									{removePasswordMutation.isPending ? "Removing..." : "Remove"}
+								</Button>
+							)}
+						</div>
+					) : (
+						<div
+							className="flex items-center gap-3 p-4 rounded-xl"
+							style={{
+								backgroundColor: SEMANTIC_COLORS.warning.bg,
+								border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+							}}
+						>
+							<AlertTriangle className="h-5 w-5 shrink-0" style={{ color: SEMANTIC_COLORS.warning.text }} />
+							<div className="flex-1">
+								<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.warning.text }}>
+									No Password Configured
+								</p>
+								<p className="text-xs text-muted-foreground">
+									Set a backup password to enable encrypted backups.
+								</p>
 							</div>
-						) : (
-							<div className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-								<AlertTriangle className="h-5 w-5 text-amber-500 shrink-0" />
-								<div className="flex-1">
-									<p className="text-sm font-medium text-amber-400">No Password Configured</p>
-									<p className="text-xs text-fg-muted">
-										Set a backup password to enable encrypted backups.
-									</p>
-								</div>
-							</div>
-						)}
+						</div>
+					)}
 
-						{/* Password Form */}
-						{!showPasswordForm ? (
-							<Button
-								variant="secondary"
-								onClick={() => setShowPasswordForm(true)}
-							>
-								{passwordStatus?.configured ? "Change Password" : "Set Password"}
-							</Button>
-						) : (
+					{/* Password Form */}
+					{!showPasswordForm ? (
+						<Button
+							variant="secondary"
+							onClick={() => setShowPasswordForm(true)}
+							className="gap-2 border-border/50 bg-card/50"
+						>
+							<Shield className="h-4 w-4" />
+							{passwordStatus?.configured ? "Change Password" : "Set Password"}
+						</Button>
+					) : (
+						<GlassmorphicCard padding="md">
 							<form onSubmit={handleSetPassword} className="space-y-4">
 								<div className="space-y-2">
-									<label className="text-xs uppercase text-fg-muted">New Password</label>
+									<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+										New Password
+									</label>
 									<Input
 										type="password"
 										value={newPassword}
@@ -440,17 +398,21 @@ export const BackupTab = () => {
 										placeholder="Enter new password (min 8 characters)"
 										disabled={setPasswordMutation.isPending}
 										minLength={8}
+										className="bg-card/30 border-border/50"
 									/>
 								</div>
 
 								<div className="space-y-2">
-									<label className="text-xs uppercase text-fg-muted">Confirm Password</label>
+									<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+										Confirm Password
+									</label>
 									<Input
 										type="password"
 										value={confirmPassword}
 										onChange={(e) => setConfirmPassword(e.target.value)}
 										placeholder="Confirm new password"
 										disabled={setPasswordMutation.isPending}
+										className="bg-card/30 border-border/50"
 									/>
 								</div>
 
@@ -458,8 +420,19 @@ export const BackupTab = () => {
 									<Button
 										type="submit"
 										disabled={setPasswordMutation.isPending || newPassword.length < 8 || newPassword !== confirmPassword}
+										className="gap-2"
+										style={{
+											background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+										}}
 									>
-										{setPasswordMutation.isPending ? "Saving..." : "Save Password"}
+										{setPasswordMutation.isPending ? (
+											<>
+												<Loader2 className="h-4 w-4 animate-spin" />
+												Saving...
+											</>
+										) : (
+											"Save Password"
+										)}
 									</Button>
 									<Button
 										type="button"
@@ -474,249 +447,292 @@ export const BackupTab = () => {
 										Cancel
 									</Button>
 								</div>
-
-								{setPasswordMutation.isError && (
-									<Alert variant="danger">
-										<AlertDescription>
-											{setPasswordMutation.error?.message || "Failed to set password"}
-										</AlertDescription>
-									</Alert>
-								)}
 							</form>
-						)}
+						</GlassmorphicCard>
+					)}
 
-						<Alert>
-							<AlertDescription>
-								<strong>Important:</strong> Remember this password! You will need it to restore backups. If you lose the password, your backups cannot be decrypted.
-							</AlertDescription>
-						</Alert>
+					{/* Important notice */}
+					<div
+						className="flex items-start gap-2 p-3 rounded-lg text-sm"
+						style={{
+							backgroundColor: SEMANTIC_COLORS.info.bg,
+							border: `1px solid ${SEMANTIC_COLORS.info.border}`,
+							color: SEMANTIC_COLORS.info.text,
+						}}
+					>
+						<AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+						<p>
+							<strong>Important:</strong> Remember this password! You will need it to restore backups.
+						</p>
 					</div>
-				</CardContent>
-			</Card>
+				</div>
+			</PremiumSection>
 
-			{/* Scheduled Backups Settings Section */}
-			<Card>
-				<CardHeader>
-					<div className="flex items-center gap-2">
-						<Clock className="h-5 w-5 text-sky-400" />
-						<CardTitle>Scheduled Backups</CardTitle>
+			{/* Scheduled Backups Settings */}
+			<PremiumSection
+				title="Scheduled Backups"
+				description="Configure automatic backups on a schedule"
+				icon={Clock}
+			>
+				<div className="space-y-4">
+					<div className="space-y-2">
+						<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+							Backup Interval
+						</label>
+						<NativeSelect
+							value={intervalType}
+							onChange={(e) => setIntervalType(e.target.value as BackupIntervalType)}
+							disabled={settingsLoading || updateSettingsMutation.isPending}
+							className="bg-card/30 border-border/50"
+						>
+							<SelectOption value="DISABLED">Disabled (Manual Only)</SelectOption>
+							<SelectOption value="HOURLY">Every X Hours</SelectOption>
+							<SelectOption value="DAILY">Every X Days</SelectOption>
+							<SelectOption value="WEEKLY">Weekly</SelectOption>
+						</NativeSelect>
 					</div>
-					<CardDescription>
-						Configure automatic backups on a schedule. Scheduled backups will be saved to the backups/scheduled folder.
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					<div className="space-y-4">
+
+					{intervalType === "HOURLY" && (
 						<div className="space-y-2">
-							<label className="text-xs uppercase text-fg-muted">Backup Interval</label>
-							<Select
-								value={intervalType}
-								onChange={(e) => setIntervalType(e.target.value as BackupIntervalType)}
+							<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+								Hours Between Backups
+							</label>
+							<Input
+								type="number"
+								min={1}
+								max={168}
+								value={intervalValue}
+								onChange={(e) => setIntervalValue(Number.parseInt(e.target.value))}
 								disabled={settingsLoading || updateSettingsMutation.isPending}
-							>
-								<SelectOption value="DISABLED">Disabled (Manual Only)</SelectOption>
-								<SelectOption value="HOURLY">Every X Hours</SelectOption>
-								<SelectOption value="DAILY">Every X Days</SelectOption>
-								<SelectOption value="WEEKLY">Weekly</SelectOption>
-							</Select>
-						</div>
-
-						{intervalType === "HOURLY" && (
-							<div className="space-y-2">
-								<label className="text-xs uppercase text-fg-muted">Hours Between Backups</label>
-								<Input
-									type="number"
-									min={1}
-									max={168}
-									value={intervalValue}
-									onChange={(e) => setIntervalValue(Number.parseInt(e.target.value))}
-									disabled={settingsLoading || updateSettingsMutation.isPending}
-								/>
-								<p className="text-xs text-fg-muted">Run a backup every {intervalValue} hour{intervalValue !== 1 ? "s" : ""}</p>
-							</div>
-						)}
-
-						{intervalType === "DAILY" && (
-							<div className="space-y-2">
-								<label className="text-xs uppercase text-fg-muted">Days Between Backups</label>
-								<Input
-									type="number"
-									min={1}
-									max={7}
-									value={intervalValue}
-									onChange={(e) => setIntervalValue(Number.parseInt(e.target.value))}
-									disabled={settingsLoading || updateSettingsMutation.isPending}
-								/>
-								<p className="text-xs text-fg-muted">Run a backup every {intervalValue} day{intervalValue !== 1 ? "s" : ""}</p>
-							</div>
-						)}
-
-						{intervalType !== "DISABLED" && (
-							<div className="space-y-2">
-								<label className="text-xs uppercase text-fg-muted">Retention Count</label>
-								<Input
-									type="number"
-									min={1}
-									max={100}
-									value={retentionCount}
-									onChange={(e) => setRetentionCount(Number.parseInt(e.target.value))}
-									disabled={settingsLoading || updateSettingsMutation.isPending}
-								/>
-								<p className="text-xs text-fg-muted">Keep the {retentionCount} most recent scheduled backup{retentionCount !== 1 ? "s" : ""}</p>
-							</div>
-						)}
-
-						{/* Include TRaSH Backups option */}
-						<div className="space-y-2">
-							<div className="flex items-center gap-3">
-								<input
-									type="checkbox"
-									id="includeTrashBackups"
-									checked={includeTrashBackups}
-									onChange={(e) => setIncludeTrashBackups(e.target.checked)}
-									disabled={settingsLoading || updateSettingsMutation.isPending}
-									className="h-4 w-4 rounded border-border bg-bg-subtle text-sky-500 focus:ring-sky-500 focus:ring-offset-bg"
-								/>
-								<label htmlFor="includeTrashBackups" className="text-sm text-fg cursor-pointer">
-									Include TRaSH Guides instance backups
-								</label>
-							</div>
-							<p className="text-xs text-fg-muted ml-7">
-								When enabled, backups will include ARR config snapshots from the last 7 days (non-expired only).
-								This enables rollback capability after restore but may significantly increase backup size.
+								className="bg-card/30 border-border/50"
+							/>
+							<p className="text-xs text-muted-foreground">
+								Run a backup every {intervalValue} hour{intervalValue !== 1 ? "s" : ""}
 							</p>
 						</div>
+					)}
 
-						<div className="flex gap-2">
-							<Button
-								onClick={handleSaveSettings}
+					{intervalType === "DAILY" && (
+						<div className="space-y-2">
+							<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+								Days Between Backups
+							</label>
+							<Input
+								type="number"
+								min={1}
+								max={7}
+								value={intervalValue}
+								onChange={(e) => setIntervalValue(Number.parseInt(e.target.value))}
 								disabled={settingsLoading || updateSettingsMutation.isPending}
+								className="bg-card/30 border-border/50"
+							/>
+							<p className="text-xs text-muted-foreground">
+								Run a backup every {intervalValue} day{intervalValue !== 1 ? "s" : ""}
+							</p>
+						</div>
+					)}
+
+					{intervalType !== "DISABLED" && (
+						<div className="space-y-2">
+							<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+								Retention Count
+							</label>
+							<Input
+								type="number"
+								min={1}
+								max={100}
+								value={retentionCount}
+								onChange={(e) => setRetentionCount(Number.parseInt(e.target.value))}
+								disabled={settingsLoading || updateSettingsMutation.isPending}
+								className="bg-card/30 border-border/50"
+							/>
+							<p className="text-xs text-muted-foreground">
+								Keep the {retentionCount} most recent scheduled backup{retentionCount !== 1 ? "s" : ""}
+							</p>
+						</div>
+					)}
+
+					{/* Include TRaSH Backups checkbox */}
+					<div className="flex items-start gap-3 p-4 rounded-xl border border-border/50 bg-card/20">
+						<input
+							type="checkbox"
+							id="includeTrashBackups"
+							checked={includeTrashBackups}
+							onChange={(e) => setIncludeTrashBackups(e.target.checked)}
+							disabled={settingsLoading || updateSettingsMutation.isPending}
+							className="h-4 w-4 rounded mt-0.5"
+							style={{ accentColor: themeGradient.from }}
+						/>
+						<div>
+							<label htmlFor="includeTrashBackups" className="text-sm font-medium text-foreground cursor-pointer">
+								Include TRaSH Guides instance backups
+							</label>
+							<p className="text-xs text-muted-foreground mt-1">
+								When enabled, backups will include ARR config snapshots from the last 7 days.
+							</p>
+						</div>
+					</div>
+
+					<div className="flex gap-2">
+						<Button
+							onClick={handleSaveSettings}
+							disabled={settingsLoading || updateSettingsMutation.isPending}
+							className="gap-2"
+							style={{
+								background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+							}}
+						>
+							{updateSettingsMutation.isPending ? (
+								<>
+									<Loader2 className="h-4 w-4 animate-spin" />
+									Saving...
+								</>
+							) : (
+								"Save Settings"
+							)}
+						</Button>
+					</div>
+
+					{settingsSuccess && (
+						<div
+							className="flex items-center gap-2 p-3 rounded-lg text-sm"
+							style={{
+								backgroundColor: SEMANTIC_COLORS.success.bg,
+								border: `1px solid ${SEMANTIC_COLORS.success.border}`,
+								color: SEMANTIC_COLORS.success.text,
+							}}
+						>
+							<CheckCircle2 className="h-4 w-4" />
+							Settings saved successfully!
+						</div>
+					)}
+
+					{settings?.nextRunAt && intervalType !== "DISABLED" && (
+						<div
+							className="flex items-center gap-2 p-3 rounded-lg text-sm"
+							style={{
+								backgroundColor: themeGradient.fromLight,
+								border: `1px solid ${themeGradient.fromMuted}`,
+								color: themeGradient.from,
+							}}
+						>
+							<Clock className="h-4 w-4" />
+							Next scheduled backup: {new Date(settings.nextRunAt).toLocaleString()}
+						</div>
+					)}
+				</div>
+			</PremiumSection>
+
+			{/* Create & Restore Backup Grid */}
+			<div className="grid gap-6 lg:grid-cols-2">
+				{/* Create Backup */}
+				<GlassmorphicCard padding="lg">
+					<div className="space-y-4">
+						<div className="flex items-center gap-2">
+							<div
+								className="flex h-10 w-10 items-center justify-center rounded-xl"
+								style={{
+									background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+									border: `1px solid ${themeGradient.from}30`,
+								}}
 							>
-								{updateSettingsMutation.isPending ? "Saving..." : "Save Settings"}
-							</Button>
+								<Download className="h-5 w-5" style={{ color: themeGradient.from }} />
+							</div>
+							<div>
+								<h3 className="font-semibold text-foreground">Create Backup</h3>
+								<p className="text-xs text-muted-foreground">Create a manual backup now</p>
+							</div>
 						</div>
 
-						{settingsSuccess && (
-							<Alert variant="success">
-								<AlertDescription>Settings saved successfully!</AlertDescription>
-							</Alert>
-						)}
-
-						{updateSettingsMutation.isError && (
-							<Alert variant="danger">
-								<AlertDescription>
-									{updateSettingsMutation.error?.message || "Failed to save settings"}
-								</AlertDescription>
-							</Alert>
-						)}
-
-						{settings?.nextRunAt && intervalType !== "DISABLED" && (
-							<Alert>
-								<AlertDescription>
-									Next scheduled backup: {new Date(settings.nextRunAt).toLocaleString()}
-								</AlertDescription>
-							</Alert>
-						)}
-					</div>
-				</CardContent>
-			</Card>
-
-			{/* Create Backup Section */}
-			<Card>
-				<CardHeader>
-					<div className="flex items-center gap-2">
-						<Download className="h-5 w-5 text-sky-400" />
-						<CardTitle>Create Backup</CardTitle>
-					</div>
-					<CardDescription>
-						Create a backup of your database and configuration. The backup will be saved to the backups folder and appear in the list below.
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					<div className="space-y-4">
 						<Button
 							onClick={handleCreateBackup}
 							disabled={createBackupMutation.isPending}
+							className="w-full gap-2"
+							style={{
+								background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+							}}
 						>
-							{createBackupMutation.isPending ? "Creating Backup..." : "Create Backup"}
+							{createBackupMutation.isPending ? (
+								<>
+									<Loader2 className="h-4 w-4 animate-spin" />
+									Creating...
+								</>
+							) : (
+								<>
+									<Download className="h-4 w-4" />
+									Create Backup
+								</>
+							)}
 						</Button>
 
 						{createSuccess && (
-							<Alert variant="success">
-								<AlertDescription>Backup created successfully! You can download it from the list below.</AlertDescription>
-							</Alert>
+							<div
+								className="flex items-center gap-2 p-3 rounded-lg text-sm"
+								style={{
+									backgroundColor: SEMANTIC_COLORS.success.bg,
+									border: `1px solid ${SEMANTIC_COLORS.success.border}`,
+									color: SEMANTIC_COLORS.success.text,
+								}}
+							>
+								<CheckCircle2 className="h-4 w-4" />
+								Backup created successfully!
+							</div>
 						)}
-
-						{createBackupMutation.isError && (
-							<Alert variant="danger">
-								<AlertDescription>
-									{createBackupMutation.error?.message || "Failed to create backup"}
-								</AlertDescription>
-							</Alert>
-						)}
-
-						<Alert variant="warning">
-							<AlertDescription>
-								<strong>Important:</strong> Store your backup file securely. The backup contains all your service API keys and configuration in unencrypted JSON format. Protect access to the backup file through filesystem permissions.
-							</AlertDescription>
-						</Alert>
 					</div>
-				</CardContent>
-			</Card>
+				</GlassmorphicCard>
 
-			{/* Restore Backup Section */}
-			<Card>
-				<CardHeader>
-					<div className="flex items-center gap-2">
-						<Upload className="h-5 w-5 text-sky-400" />
-						<CardTitle>Restore Backup</CardTitle>
-					</div>
-					<CardDescription>
-						Restore your database and configuration from a backup file. This will replace all current data.
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					{!showRestoreWarning ? (
-						<Button
-							variant="secondary"
-							onClick={() => setShowRestoreWarning(true)}
-						>
-							Restore from Backup
-						</Button>
-					) : (
-						<>
-							<Alert variant="danger" className="mb-4">
-								<AlertDescription>
-									<p className="font-medium mb-2">Warning: Destructive Operation</p>
-									<p className="mb-2">
-										Restoring a backup will <strong>replace</strong> all current data with the backup contents:
-									</p>
-									<ul className="list-inside list-disc space-y-1 text-xs mb-2">
-										<li>Service instances and their settings</li>
-										<li>Tags and organization</li>
-										<li>User accounts and authentication methods</li>
-										<li>Encrypted API keys and secrets</li>
-									</ul>
-									<p className="mb-2">
-										Any changes made <strong>after</strong> this backup was created will be lost.
-									</p>
-									<p>
-										Make sure you have a current backup of your existing data before proceeding.
-									</p>
-								</AlertDescription>
-							</Alert>
+				{/* Restore Backup */}
+				<GlassmorphicCard padding="lg">
+					<div className="space-y-4">
+						<div className="flex items-center gap-2">
+							<div
+								className="flex h-10 w-10 items-center justify-center rounded-xl"
+								style={{
+									background: `linear-gradient(135deg, ${SEMANTIC_COLORS.warning.from}20, ${SEMANTIC_COLORS.warning.to}20)`,
+									border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+								}}
+							>
+								<Upload className="h-5 w-5" style={{ color: SEMANTIC_COLORS.warning.text }} />
+							</div>
+							<div>
+								<h3 className="font-semibold text-foreground">Restore from File</h3>
+								<p className="text-xs text-muted-foreground">Upload a backup file to restore</p>
+							</div>
+						</div>
 
+						{!showRestoreWarning ? (
+							<Button
+								variant="secondary"
+								onClick={() => setShowRestoreWarning(true)}
+								className="w-full gap-2 border-border/50 bg-card/50"
+							>
+								<Upload className="h-4 w-4" />
+								Restore from Backup
+							</Button>
+						) : (
 							<form onSubmit={handleRestoreBackup} className="space-y-4">
+								<div
+									className="p-3 rounded-lg text-sm"
+									style={{
+										backgroundColor: SEMANTIC_COLORS.error.bg,
+										border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+										color: SEMANTIC_COLORS.error.text,
+									}}
+								>
+									<p className="font-medium mb-1">Warning: Destructive Operation</p>
+									<p className="text-xs">This will replace all current data with the backup contents.</p>
+								</div>
+
 								<div className="space-y-2">
-									<label className="text-xs uppercase text-fg-muted">Backup File</label>
 									<Input
 										type="file"
 										accept=".json"
 										onChange={(e) => setRestoreFile(e.target.files?.[0] || null)}
 										disabled={restoreBackupMutation.isPending}
+										className="bg-card/30 border-border/50"
 									/>
 									{restoreFile && (
-										<p className="text-xs text-fg-muted">Selected: {restoreFile.name}</p>
+										<p className="text-xs text-muted-foreground">Selected: {restoreFile.name}</p>
 									)}
 								</div>
 
@@ -725,10 +741,17 @@ export const BackupTab = () => {
 										type="submit"
 										variant="danger"
 										disabled={!restoreFile || restoreBackupMutation.isPending}
+										className="flex-1 gap-2"
 									>
-										{restoreBackupMutation.isPending ? "Restoring..." : "Restore Backup"}
+										{restoreBackupMutation.isPending ? (
+											<>
+												<Loader2 className="h-4 w-4 animate-spin" />
+												Restoring...
+											</>
+										) : (
+											"Restore"
+										)}
 									</Button>
-
 									<Button
 										type="button"
 										variant="secondary"
@@ -741,214 +764,185 @@ export const BackupTab = () => {
 										Cancel
 									</Button>
 								</div>
-
-								{restoreBackupMutation.isError && (
-									<Alert variant="danger">
-										<AlertDescription>
-											{restoreBackupMutation.error?.message || "Failed to restore backup"}
-										</AlertDescription>
-									</Alert>
-								)}
 							</form>
-						</>
-					)}
-				</CardContent>
-			</Card>
-
-			{/* Available Backups List Section */}
-			<Card>
-				<CardHeader>
-					<div className="flex items-center gap-2">
-						<FileText className="h-5 w-5 text-sky-400" />
-						<CardTitle>Available Backups</CardTitle>
+						)}
 					</div>
-					<CardDescription>
-						{backups.length} backup{backups.length !== 1 ? "s" : ""} stored on the system
-					</CardDescription>
-				</CardHeader>
-				<CardContent>
-					{backupsLoading ? (
-						<div className="flex items-center justify-center py-12">
-							<p className="text-fg-muted">Loading backups...</p>
-						</div>
-					) : backupsError ? (
-						<Alert variant="danger">
-							<AlertDescription>Failed to load backups: {backupsError.message}</AlertDescription>
-						</Alert>
-					) : backups.length === 0 ? (
-						<div className="flex flex-col items-center justify-center py-12 text-center">
-							<FileText className="h-16 w-16 text-fg-muted/40 mb-4" />
-							<p className="text-fg-muted mb-2">No backups found</p>
-							<p className="text-sm text-fg-muted">
-								Create a backup above to get started
-							</p>
-						</div>
-					) : (
-						<div className="overflow-x-auto">
-							<table className="w-full">
-								<thead>
-									<tr className="border-b border-border">
-										<th className="text-left py-3 px-4 text-xs font-medium uppercase text-fg-muted">
-											Type
-										</th>
-										<th className="text-left py-3 px-4 text-xs font-medium uppercase text-fg-muted">
-											Filename
-										</th>
-										<th className="text-left py-3 px-4 text-xs font-medium uppercase text-fg-muted">
-											Date
-										</th>
-										<th className="text-left py-3 px-4 text-xs font-medium uppercase text-fg-muted">
-											Size
-										</th>
-										<th className="text-right py-3 px-4 text-xs font-medium uppercase text-fg-muted">
-											Actions
-										</th>
-									</tr>
-								</thead>
-								<tbody>
-									{backups.map((backup) => (
-										<tr
-											key={backup.id}
-											className="border-b border-border/50 hover:bg-bg-subtle transition-colors"
-										>
-											<td className="py-3 px-4">
-												<span className={`text-sm font-medium ${getTypeColor(backup.type)}`}>
-													{getTypeLabel(backup.type)}
-												</span>
-											</td>
-											<td className="py-3 px-4">
-												<span className="text-sm text-fg-muted">{backup.filename}</span>
-											</td>
-											<td className="py-3 px-4">
-												<span className="text-sm text-fg-muted">
-													{formatDate(backup.timestamp)}
-												</span>
-											</td>
-											<td className="py-3 px-4">
-												<span className="text-sm text-fg-muted">{formatBytes(backup.size)}</span>
-											</td>
-											<td className="py-3 px-4">
-												<div className="flex items-center justify-end gap-2">
-													<Button
-														variant="secondary"
-														size="sm"
-														onClick={() => handleDownloadBackup(backup)}
-													>
-														<Download className="h-4 w-4 mr-1" />
-														Download
-													</Button>
-													<Button
-														variant="secondary"
-														size="sm"
-														onClick={() => handleRestoreBackupClick(backup)}
-													>
-														<Upload className="h-4 w-4 mr-1" />
-														Restore
-													</Button>
-													<Button
-														variant="secondary"
-														size="sm"
-														onClick={() => handleDeleteBackup(backup)}
-														disabled={deleteBackupMutation.isPending}
-													>
-														<Trash2 className="h-4 w-4 mr-1" />
-														Delete
-													</Button>
-												</div>
-											</td>
-										</tr>
-									))}
-								</tbody>
-							</table>
-						</div>
-					)}
-				</CardContent>
-			</Card>
+				</GlassmorphicCard>
+			</div>
 
-			{/* Restore Backup from List Modal */}
+			{/* Available Backups List */}
+			<PremiumSection
+				title="Available Backups"
+				description={`${backups.length} backup${backups.length !== 1 ? "s" : ""} stored on the system`}
+				icon={Archive}
+			>
+				{backupsLoading ? (
+					<div className="flex items-center justify-center py-12">
+						<Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+					</div>
+				) : backupsError ? (
+					<div
+						className="flex items-center gap-2 p-3 rounded-lg text-sm"
+						style={{
+							backgroundColor: SEMANTIC_COLORS.error.bg,
+							border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+							color: SEMANTIC_COLORS.error.text,
+						}}
+					>
+						<AlertCircle className="h-4 w-4" />
+						Failed to load backups: {backupsError.message}
+					</div>
+				) : backups.length === 0 ? (
+					<PremiumEmptyState
+						icon={FileText}
+						title="No backups found"
+						description="Create a backup above to get started"
+					/>
+				) : (
+					<PremiumTable>
+						<PremiumTableHeader
+							columns={["Type", "Filename", "Date", "Size", "Actions"]}
+						/>
+						<tbody>
+							{backups.map((backup, index) => (
+								<PremiumTableRow
+									key={backup.id}
+									animationDelay={index * 30}
+								>
+									<td className="py-3 px-4">
+										<StatusBadge status={getTypeStatus(backup.type)}>
+											{backup.type.charAt(0).toUpperCase() + backup.type.slice(1)}
+										</StatusBadge>
+									</td>
+									<td className="py-3 px-4">
+										<span className="text-sm text-muted-foreground">{backup.filename}</span>
+									</td>
+									<td className="py-3 px-4">
+										<span className="text-sm text-muted-foreground">{formatDate(backup.timestamp)}</span>
+									</td>
+									<td className="py-3 px-4">
+										<span className="text-sm text-muted-foreground">{formatBytes(backup.size)}</span>
+									</td>
+									<td className="py-3 px-4">
+										<div className="flex items-center justify-end gap-2">
+											<Button
+												variant="secondary"
+												size="sm"
+												onClick={() => handleDownloadBackup(backup)}
+												className="gap-1 border-border/50 bg-card/50"
+											>
+												<Download className="h-3.5 w-3.5" />
+												<span className="hidden sm:inline">Download</span>
+											</Button>
+											<Button
+												variant="secondary"
+												size="sm"
+												onClick={() => handleRestoreBackupClick(backup)}
+												className="gap-1 border-border/50 bg-card/50"
+											>
+												<Upload className="h-3.5 w-3.5" />
+												<span className="hidden sm:inline">Restore</span>
+											</Button>
+											<Button
+												variant="danger"
+												size="sm"
+												onClick={() => handleDeleteBackup(backup)}
+												disabled={deleteBackupMutation.isPending}
+												className="gap-1"
+											>
+												<Trash2 className="h-3.5 w-3.5" />
+												<span className="hidden sm:inline">Delete</span>
+											</Button>
+										</div>
+									</td>
+								</PremiumTableRow>
+							))}
+						</tbody>
+					</PremiumTable>
+				)}
+			</PremiumSection>
+
+			{/* Restore Backup Modal */}
 			{showBackupRestoreModal && selectedBackupForRestore && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
-					<Card className="w-full max-w-md">
-						<CardHeader>
-							<CardTitle>Restore Backup</CardTitle>
-							<CardDescription>Confirm restore operation</CardDescription>
-						</CardHeader>
-						<CardContent>
-							<Alert variant="danger" className="mb-4">
-								<AlertDescription>
-									<p className="font-medium mb-2">Warning: Destructive Operation</p>
-									<p className="text-sm mb-2">
-										Restoring this backup will <strong>replace</strong> all current data with the backup contents.
-									</p>
-									<p className="text-sm">
-										Any changes made <strong>after</strong> this backup was created will be lost.
-									</p>
-								</AlertDescription>
-							</Alert>
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+					<GlassmorphicCard padding="lg" className="w-full max-w-md m-4">
+						<div className="space-y-4">
+							<h3 className="text-lg font-semibold text-foreground">Restore Backup</h3>
 
-							<div className="space-y-4">
-								<div className="space-y-2">
-									<label className="text-sm font-medium text-fg-muted">Backup File</label>
-									<p className="text-sm text-fg-muted">{selectedBackupForRestore.filename}</p>
-									<p className="text-xs text-fg-muted">
-										Created: {formatDate(selectedBackupForRestore.timestamp)}
-									</p>
-								</div>
-
-								<div className="flex gap-2">
-									<Button
-										onClick={handleRestoreBackupSubmit}
-										variant="danger"
-										disabled={restoreBackupFromFileMutation.isPending}
-										className="flex-1"
-									>
-										{restoreBackupFromFileMutation.isPending ? "Restoring..." : "Restore Backup"}
-									</Button>
-									<Button
-										type="button"
-										variant="secondary"
-										onClick={() => {
-											setShowBackupRestoreModal(false);
-											setSelectedBackupForRestore(null);
-										}}
-										disabled={restoreBackupFromFileMutation.isPending}
-									>
-										Cancel
-									</Button>
-								</div>
-
-								{restoreBackupFromFileMutation.isError && (
-									<Alert variant="danger">
-										<AlertDescription>
-											{restoreBackupFromFileMutation.error?.message || "Failed to restore backup"}
-										</AlertDescription>
-									</Alert>
-								)}
+							<div
+								className="p-3 rounded-lg text-sm"
+								style={{
+									backgroundColor: SEMANTIC_COLORS.error.bg,
+									border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+									color: SEMANTIC_COLORS.error.text,
+								}}
+							>
+								<p className="font-medium mb-1">Warning: Destructive Operation</p>
+								<p className="text-xs">
+									Restoring this backup will replace all current data. Any changes made after this backup was created will be lost.
+								</p>
 							</div>
-						</CardContent>
-					</Card>
+
+							<div className="space-y-2">
+								<p className="text-sm text-muted-foreground">{selectedBackupForRestore.filename}</p>
+								<p className="text-xs text-muted-foreground">
+									Created: {formatDate(selectedBackupForRestore.timestamp)}
+								</p>
+							</div>
+
+							<div className="flex gap-2">
+								<Button
+									onClick={handleRestoreBackupSubmit}
+									variant="danger"
+									disabled={restoreBackupFromFileMutation.isPending}
+									className="flex-1 gap-2"
+								>
+									{restoreBackupFromFileMutation.isPending ? (
+										<>
+											<Loader2 className="h-4 w-4 animate-spin" />
+											Restoring...
+										</>
+									) : (
+										"Restore Backup"
+									)}
+								</Button>
+								<Button
+									type="button"
+									variant="secondary"
+									onClick={() => {
+										setShowBackupRestoreModal(false);
+										setSelectedBackupForRestore(null);
+									}}
+									disabled={restoreBackupFromFileMutation.isPending}
+								>
+									Cancel
+								</Button>
+							</div>
+						</div>
+					</GlassmorphicCard>
 				</div>
 			)}
 
 			{/* Server Restarting Modal */}
 			{isRestarting && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
-					<Card className="w-full max-w-md">
-						<CardContent className="pt-6">
-							<div className="flex flex-col items-center text-center space-y-4">
-								<div className="animate-spin rounded-full h-12 w-12 border-b-2 border-sky-400" />
-								<div>
-									<h3 className="text-lg font-semibold mb-2">Server Restarting</h3>
-									<p className="text-sm text-fg-muted">
-										Backup restored successfully. The server is restarting...
-									</p>
-									<p className="text-sm text-fg-muted mt-2">
-										You will be redirected to login automatically.
-									</p>
-								</div>
+				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+					<GlassmorphicCard padding="lg" className="w-full max-w-md m-4">
+						<div className="flex flex-col items-center text-center space-y-4 py-4">
+							<div
+								className="animate-spin rounded-full h-12 w-12 border-b-2"
+								style={{ borderColor: themeGradient.from }}
+							/>
+							<div>
+								<h3 className="text-lg font-semibold mb-2 text-foreground">Server Restarting</h3>
+								<p className="text-sm text-muted-foreground">
+									Backup restored successfully. The server is restarting...
+								</p>
+								<p className="text-sm text-muted-foreground mt-2">
+									You will be redirected to login automatically.
+								</p>
 							</div>
-						</CardContent>
-					</Card>
+						</div>
+					</GlassmorphicCard>
 				</div>
 			)}
 		</div>
