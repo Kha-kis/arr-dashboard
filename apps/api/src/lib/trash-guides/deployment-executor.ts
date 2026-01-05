@@ -6,6 +6,7 @@
  */
 
 import type { PrismaClient } from "@prisma/client";
+import type { CustomQualityConfig, TemplateQualityEntry } from "@arr/shared";
 import { type ArrApiClient, createArrApiClient } from "./arr-api-client.js";
 import type { CustomFormat } from "./arr-api-client.js";
 import { transformFieldsToArray } from "./utils.js";
@@ -761,6 +762,19 @@ export class DeploymentExecutorService {
 				);
 			}
 
+			// Check if custom quality config is enabled
+			const customQualityConfig = templateConfig.customQualityConfig as CustomQualityConfig | undefined;
+			if (customQualityConfig?.useCustomQualities && customQualityConfig.items.length > 0) {
+				return await this.createQualityProfileFromCustomConfig(
+					apiClient,
+					schema,
+					templateConfig,
+					templateCFs,
+					profileName,
+					customQualityConfig,
+				);
+			}
+
 			// Normalize quality names for consistent matching (remove spaces/hyphens)
 			const normalizeQualityName = (name: string) => name.replace(/[\s-]/g, "").toLowerCase();
 
@@ -1111,6 +1125,151 @@ export class DeploymentExecutorService {
 			id?: number;
 		} & typeof profileToCreate;
 
+		return await apiClient.createQualityProfile(profileWithoutId);
+	}
+
+	/**
+	 * Creates a quality profile from custom quality configuration.
+	 * This uses the user's customized quality items (order, groups, enabled state).
+	 */
+	private async createQualityProfileFromCustomConfig(
+		apiClient: ArrApiClient,
+		schema: any,
+		templateConfig: Record<string, any>,
+		templateCFs: TemplateCF[],
+		profileName: string,
+		customQualityConfig: CustomQualityConfig,
+	): Promise<any> {
+		// Build a map of all qualities available in the target instance schema
+		const normalizeQualityName = (name: string) => name.replace(/[\s-]/g, "").toLowerCase();
+		const qualitiesByName = new Map<string, any>();
+
+		// Extract all qualities from schema
+		const extractQualities = (items: any[]) => {
+			for (const item of items) {
+				if (item.quality) {
+					qualitiesByName.set(normalizeQualityName(item.quality.name), item);
+				} else if (item.id !== undefined && item.name && !item.items) {
+					const wrappedItem = {
+						quality: {
+							id: item.id,
+							name: item.name,
+							source: item.source,
+							resolution: item.resolution,
+						},
+						items: [],
+						allowed: item.allowed,
+					};
+					qualitiesByName.set(normalizeQualityName(item.name), wrappedItem);
+				}
+				if (item.items && Array.isArray(item.items)) {
+					extractQualities(item.items);
+				}
+			}
+		};
+		extractQualities(schema.items);
+
+		// Transform custom quality items to *arr format
+		let customGroupId = 1000;
+		const qualityItems: any[] = [];
+		const itemIdMap = new Map<string, number>(); // Maps custom item IDs to *arr IDs
+
+		for (const entry of customQualityConfig.items) {
+			if (entry.type === "group") {
+				// Quality group
+				const group = entry.group;
+				const groupQualities: any[] = [];
+
+				for (const quality of group.qualities) {
+					const targetQuality = qualitiesByName.get(normalizeQualityName(quality.name));
+					if (targetQuality) {
+						groupQualities.push({
+							quality: targetQuality.quality,
+							items: [],
+							allowed: false, // Individual items in groups have allowed=false
+						});
+					}
+				}
+
+				if (groupQualities.length > 0) {
+					const newGroupId = customGroupId++;
+					itemIdMap.set(group.id, newGroupId);
+					qualityItems.push({
+						name: group.name,
+						items: groupQualities,
+						allowed: group.allowed,
+						id: newGroupId,
+					});
+				}
+			} else {
+				// Individual quality
+				const item = entry.item;
+				const targetQuality = qualitiesByName.get(normalizeQualityName(item.name));
+				if (targetQuality) {
+					const qualityId = targetQuality.quality?.id;
+					if (qualityId !== undefined) {
+						itemIdMap.set(item.id, qualityId);
+					}
+					qualityItems.push({
+						...targetQuality,
+						allowed: item.allowed,
+					});
+				}
+			}
+		}
+
+		// Resolve cutoff ID from custom config
+		let cutoffId: number | null = null;
+		if (customQualityConfig.cutoffId) {
+			const mappedId = itemIdMap.get(customQualityConfig.cutoffId);
+			if (mappedId !== undefined) {
+				cutoffId = mappedId;
+			}
+		}
+
+		// If no cutoff found, use the last item (highest priority)
+		if (cutoffId === null && qualityItems.length > 0) {
+			const lastItem = qualityItems[qualityItems.length - 1];
+			cutoffId = lastItem.id ?? lastItem.quality?.id ?? 1;
+			console.warn(`[DEPLOYMENT] Custom quality cutoff not resolved, defaulting to: ${cutoffId}`);
+		}
+
+		// Get fresh CFs list with IDs for score application
+		const allCFs = await apiClient.getCustomFormats();
+		const scoreSet = templateConfig.qualityProfile?.trash_score_set;
+
+		// Apply CF scores from template
+		const formatItemsWithScores = schema.formatItems.map((item: any) => {
+			const cf = allCFs.find((c) => c.id === item.format);
+			if (cf) {
+				const templateCF = templateCFs.find((tcf) => tcf.name === cf.name);
+				if (templateCF) {
+					const { score } = calculateScoreAndSource(templateCF, scoreSet);
+					return { ...item, score };
+				}
+			}
+			return item;
+		});
+
+		// Build the profile to create
+		const profileToCreate = {
+			...schema,
+			name: profileName,
+			upgradeAllowed: templateConfig.qualityProfile?.upgradeAllowed ?? true,
+			cutoff: cutoffId ?? 1,
+			items: qualityItems,
+			minFormatScore: templateConfig.qualityProfile?.minFormatScore ?? 0,
+			cutoffFormatScore: templateConfig.qualityProfile?.cutoffFormatScore ?? 10000,
+			minUpgradeFormatScore: templateConfig.qualityProfile?.minUpgradeFormatScore ?? 1,
+			formatItems: formatItemsWithScores,
+		};
+
+		// Remove the id field
+		const { id: _unusedId, ...profileWithoutId } = profileToCreate as {
+			id?: number;
+		} & typeof profileToCreate;
+
+		console.log(`[DEPLOYMENT] Creating quality profile from custom config with ${qualityItems.length} items`);
 		return await apiClient.createQualityProfile(profileWithoutId);
 	}
 

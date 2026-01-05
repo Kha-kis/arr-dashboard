@@ -251,6 +251,91 @@ export interface TemplateSyncSettings {
 	deleteRemovedCFs?: boolean;
 }
 
+// ============================================================================
+// Quality Customization Types
+// ============================================================================
+
+/**
+ * A single quality definition for template configuration
+ * Used when a quality is not part of a group
+ */
+export interface TemplateQualityItem {
+	/** Internal ID for ordering and cutoff reference */
+	id: string;
+	/** Quality name (must match *arr quality name for deployment) */
+	name: string;
+	/** Whether this quality is enabled/wanted */
+	allowed: boolean;
+	/** Optional source info (e.g., "bluray", "webdl", "webrip") */
+	source?: string;
+	/** Optional resolution (e.g., 1080, 2160) */
+	resolution?: number;
+}
+
+/**
+ * A quality group containing multiple qualities
+ * Groups are treated as equivalent - any quality in the group satisfies the requirement
+ */
+export interface TemplateQualityGroup {
+	/** Internal ID for ordering and cutoff reference */
+	id: string;
+	/** Group display name (e.g., "WEB 1080p", "Bluray-1080p") */
+	name: string;
+	/** Whether this entire group is enabled/wanted */
+	allowed: boolean;
+	/** Qualities within this group */
+	qualities: Array<{
+		name: string;
+		source?: string;
+		resolution?: number;
+	}>;
+}
+
+/**
+ * Union type for quality items - can be single quality or group
+ */
+export type TemplateQualityEntry =
+	| { type: "quality"; item: TemplateQualityItem }
+	| { type: "group"; group: TemplateQualityGroup };
+
+/**
+ * Custom quality configuration for templates
+ * Allows power users to customize quality ordering, grouping, and preferences
+ */
+export interface CustomQualityConfig {
+	/**
+	 * Whether the user has customized qualities or is using TRaSH/instance defaults
+	 * - false: Use default quality items from TRaSH profile or cloned instance
+	 * - true: Use the custom items defined below
+	 */
+	useCustomQualities: boolean;
+
+	/**
+	 * Custom quality items (ordered from lowest to highest preference)
+	 * In Radarr/Sonarr, items at the bottom of the list are most preferred
+	 */
+	items: TemplateQualityEntry[];
+
+	/**
+	 * The cutoff quality/group ID
+	 * Upgrades will stop once this quality level is reached
+	 */
+	cutoffId?: string;
+
+	/**
+	 * Timestamp when qualities were last customized
+	 */
+	customizedAt?: string;
+
+	/**
+	 * Origin of the base quality configuration
+	 * - "trash_profile": Started from TRaSH Guides profile
+	 * - "instance_clone": Started from cloned instance profile
+	 * - "manual": Manually created from scratch
+	 */
+	origin?: "trash_profile" | "instance_clone" | "manual";
+}
+
 /**
  * Template configuration data
  */
@@ -277,6 +362,8 @@ export interface TemplateConfig {
 	completeQualityProfile?: CompleteQualityProfile;
 	// Sync behavior settings
 	syncSettings?: TemplateSyncSettings;
+	// Custom quality configuration (power user feature)
+	customQualityConfig?: CustomQualityConfig;
 }
 
 /**
