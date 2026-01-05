@@ -2,6 +2,7 @@ node_modules
 .pnpm-store
 .env
 .env.local
+.env.test
 .env.*.local
 .env.development.local
 .env.test.local
@@ -51,6 +52,7 @@ apps/api/dev.db
 .pf/
 .claude/
 .serena/
+.leann/
 claudedocs/
 
 # IDE and Editor files
