@@ -97,10 +97,12 @@ export interface MergeStats {
 	customFormatsRemoved: number;
 	customFormatsUpdated: number;
 	customFormatsPreserved: number;
+	customFormatsDeprecated: number; // CFs no longer in TRaSH but kept (user-added or deleteRemovedCFs=false)
 	customFormatGroupsAdded: number;
 	customFormatGroupsRemoved: number;
 	customFormatGroupsUpdated: number;
 	customFormatGroupsPreserved: number;
+	customFormatGroupsDeprecated: number;
 	userCustomizationsPreserved: string[];
 	// Score update tracking
 	scoresUpdated: number;
@@ -109,6 +111,7 @@ export interface MergeStats {
 	addedCFDetails: Array<{ trashId: string; name: string; score: number }>;
 	removedCFDetails: Array<{ trashId: string; name: string }>;
 	updatedCFDetails: Array<{ trashId: string; name: string }>;
+	deprecatedCFDetails: Array<{ trashId: string; name: string; reason: string }>;
 	scoreChangeDetails: Array<{ trashId: string; name: string; oldScore: number; newScore: number }>;
 }
 
@@ -611,6 +614,7 @@ export class TemplateUpdater {
 			const scoreSet = templateQualityProfile?.trash_score_set || "default";
 
 			// Perform merge: preserve user customizations, update specifications
+			// Default deleteRemovedCFs to false (conservative - matches Recyclarr behavior)
 			const mergeResult = this.mergeTemplateConfig(
 				currentConfig,
 				filteredCustomFormats,
@@ -618,6 +622,8 @@ export class TemplateUpdater {
 				{
 					applyScoreUpdates: options?.applyScoreUpdates,
 					scoreSet,
+					deleteRemovedCFs: false, // Conservative default: mark deprecated instead of deleting
+					targetCommitHash: targetCommit.commitHash,
 				},
 			);
 
@@ -845,11 +851,16 @@ export class TemplateUpdater {
 	 * Merge strategy:
 	 * - For existing CFs: Preserve user's scoreOverride and conditionsEnabled, update originalConfig
 	 * - For new CFs: Add with TRaSH defaults (or recommended scores if applyScoreUpdates)
-	 * - For removed CFs: Remove from template (TRaSH no longer maintains them)
+	 * - For removed CFs: Behavior depends on deleteRemovedCFs option and CF origin
+	 *   - deleteRemovedCFs: false (default) → Mark as deprecated, keep in template
+	 *   - deleteRemovedCFs: true + origin="trash_sync" → Remove from template
+	 *   - origin="user_added" → Always keep (never delete user CFs)
 	 * - For groups: Same strategy - preserve enabled state, update originalConfig
 	 *
 	 * @param scoreOptions.applyScoreUpdates - If true, apply recommended scores (but respect user overrides)
 	 * @param scoreOptions.scoreSet - The score set to use (e.g., "default", "sqp-1-1080p")
+	 * @param scoreOptions.deleteRemovedCFs - If true, delete CFs removed from TRaSH (only affects trash_sync origin)
+	 * @param scoreOptions.targetCommitHash - Target commit for deprecation reason
 	 * @private
 	 */
 	private mergeTemplateConfig(
@@ -859,6 +870,8 @@ export class TemplateUpdater {
 		scoreOptions?: {
 			applyScoreUpdates?: boolean;
 			scoreSet?: string;
+			deleteRemovedCFs?: boolean;
+			targetCommitHash?: string;
 		},
 	): MergeResult {
 		const stats: MergeStats = {
@@ -866,10 +879,12 @@ export class TemplateUpdater {
 			customFormatsRemoved: 0,
 			customFormatsUpdated: 0,
 			customFormatsPreserved: 0,
+			customFormatsDeprecated: 0,
 			customFormatGroupsAdded: 0,
 			customFormatGroupsRemoved: 0,
 			customFormatGroupsUpdated: 0,
 			customFormatGroupsPreserved: 0,
+			customFormatGroupsDeprecated: 0,
 			userCustomizationsPreserved: [],
 			scoresUpdated: 0,
 			scoresSkippedDueToOverride: 0,
@@ -877,6 +892,7 @@ export class TemplateUpdater {
 			addedCFDetails: [],
 			removedCFDetails: [],
 			updatedCFDetails: [],
+			deprecatedCFDetails: [],
 			scoreChangeDetails: [],
 		};
 		const warnings: string[] = [];
@@ -1007,6 +1023,13 @@ export class TemplateUpdater {
 					scoreOverride: finalScoreOverride,
 					conditionsEnabled: newConditionsEnabled,
 					originalConfig: latestCF,
+					// Preserve existing origin, or default to trash_sync for legacy CFs
+					origin: currentCF.origin || "trash_sync",
+					addedAt: currentCF.addedAt,
+					// Clear deprecation if CF is back in TRaSH (was re-added upstream)
+					deprecated: undefined,
+					deprecatedAt: undefined,
+					deprecatedReason: undefined,
 				});
 			} else {
 				// New CF from TRaSH Guides
@@ -1037,21 +1060,60 @@ export class TemplateUpdater {
 					scoreOverride: undefined,
 					conditionsEnabled,
 					originalConfig: latestCF,
+					// New CFs from sync get trash_sync origin
+					origin: "trash_sync",
+					addedAt: new Date().toISOString(),
 				});
 			}
 		}
 
-		// Track removed CFs
+		// Handle CFs no longer in TRaSH Guides
+		// Behavior depends on deleteRemovedCFs option and CF origin
+		const deleteRemovedCFs = scoreOptions?.deleteRemovedCFs ?? false;
+		const commitHash = scoreOptions?.targetCommitHash || "unknown";
+
 		for (const [trashId, currentCF] of currentCFMap) {
 			if (!latestCFMap.has(trashId)) {
-				stats.customFormatsRemoved++;
-				stats.removedCFDetails.push({
-					trashId,
-					name: currentCF.name,
-				});
-				warnings.push(
-					`Custom format "${currentCF.name}" (${trashId}) removed - no longer in TRaSH Guides`,
-				);
+				const cfOrigin = currentCF.origin || "trash_sync"; // Legacy CFs treated as trash_sync
+				const isUserAdded = cfOrigin === "user_added";
+				const deprecationReason = `No longer in TRaSH Guides as of commit ${commitHash}`;
+
+				// User-added CFs are NEVER deleted, only marked deprecated
+				// trash_sync CFs are deleted only if deleteRemovedCFs is true
+				if (isUserAdded || !deleteRemovedCFs) {
+					// Keep CF but mark as deprecated
+					stats.customFormatsDeprecated++;
+					stats.deprecatedCFDetails.push({
+						trashId,
+						name: currentCF.name,
+						reason: deprecationReason,
+					});
+
+					// Only add warning if this is newly deprecated (wasn't already deprecated)
+					if (!currentCF.deprecated) {
+						warnings.push(
+							`Custom format "${currentCF.name}" (${trashId}) marked deprecated - ${deprecationReason}`,
+						);
+					}
+
+					// Add to merged list with deprecation flag
+					mergedCustomFormats.push({
+						...currentCF,
+						deprecated: true,
+						deprecatedAt: currentCF.deprecatedAt || new Date().toISOString(),
+						deprecatedReason,
+					});
+				} else {
+					// Delete the CF (only trash_sync with deleteRemovedCFs=true)
+					stats.customFormatsRemoved++;
+					stats.removedCFDetails.push({
+						trashId,
+						name: currentCF.name,
+					});
+					warnings.push(
+						`Custom format "${currentCF.name}" (${trashId}) removed - ${deprecationReason}`,
+					);
+				}
 			}
 		}
 
@@ -1076,6 +1138,12 @@ export class TemplateUpdater {
 					name: latestGroup.name,
 					enabled: currentGroup.enabled,
 					originalConfig: latestGroup,
+					// Preserve origin, clear deprecation if back in TRaSH
+					origin: currentGroup.origin || "trash_sync",
+					addedAt: currentGroup.addedAt,
+					deprecated: undefined,
+					deprecatedAt: undefined,
+					deprecatedReason: undefined,
 				});
 			} else {
 				// New group from TRaSH Guides
@@ -1089,17 +1157,42 @@ export class TemplateUpdater {
 					name: latestGroup.name,
 					enabled: defaultEnabled,
 					originalConfig: latestGroup,
+					origin: "trash_sync",
+					addedAt: new Date().toISOString(),
 				});
 			}
 		}
 
-		// Track removed groups
+		// Handle groups no longer in TRaSH Guides
 		for (const [trashId, currentGroup] of currentGroupMap) {
 			if (!latestGroupMap.has(trashId)) {
-				stats.customFormatGroupsRemoved++;
-				warnings.push(
-					`Custom format group "${currentGroup.name}" (${trashId}) removed - no longer in TRaSH Guides`,
-				);
+				const groupOrigin = currentGroup.origin || "trash_sync";
+				const isUserAdded = groupOrigin === "user_added";
+				const deprecationReason = `No longer in TRaSH Guides as of commit ${commitHash}`;
+
+				if (isUserAdded || !deleteRemovedCFs) {
+					// Keep group but mark as deprecated
+					stats.customFormatGroupsDeprecated++;
+
+					if (!currentGroup.deprecated) {
+						warnings.push(
+							`Custom format group "${currentGroup.name}" (${trashId}) marked deprecated - ${deprecationReason}`,
+						);
+					}
+
+					mergedCustomFormatGroups.push({
+						...currentGroup,
+						deprecated: true,
+						deprecatedAt: currentGroup.deprecatedAt || new Date().toISOString(),
+						deprecatedReason,
+					});
+				} else {
+					// Delete the group
+					stats.customFormatGroupsRemoved++;
+					warnings.push(
+						`Custom format group "${currentGroup.name}" (${trashId}) removed - ${deprecationReason}`,
+					);
+				}
 			}
 		}
 

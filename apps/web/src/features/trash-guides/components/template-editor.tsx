@@ -5,7 +5,7 @@ import type { TrashTemplate, TemplateConfig, TrashCustomFormat, TrashCustomForma
 import { useCreateTemplate, useUpdateTemplate } from "../../../hooks/api/useTemplates";
 import { useTrashCacheEntries } from "../../../hooks/api/useTrashCache";
 import { Alert, AlertDescription, Input, Button } from "../../../components/ui";
-import { X, Save, Minus, Settings } from "lucide-react";
+import { X, Save, Minus, Settings, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { ConditionEditor } from "./condition-editor";
 
@@ -118,6 +118,12 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 					scoreOverride: settings.scoreOverride,
 					conditionsEnabled: settings.conditionsEnabled,
 					originalConfig: existingCf.originalConfig,
+					// Preserve origin and deprecation tracking
+					origin: existingCf.origin,
+					addedAt: existingCf.addedAt,
+					deprecated: existingCf.deprecated,
+					deprecatedAt: existingCf.deprecatedAt,
+					deprecatedReason: existingCf.deprecatedReason,
 				});
 			} else {
 				// NEW CF: Look up from cache (this is what cache is for - discovering new items)
@@ -129,6 +135,9 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 						scoreOverride: settings.scoreOverride,
 						conditionsEnabled: settings.conditionsEnabled,
 						originalConfig: cacheFormat,
+						// New CFs added via editor are user_added
+						origin: "user_added",
+						addedAt: new Date().toISOString(),
 					});
 				} else {
 					// New CF not in cache - shouldn't happen normally but track it
@@ -149,6 +158,12 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 					name: existingGroup.name,
 					enabled: true,
 					originalConfig: existingGroup.originalConfig,
+					// Preserve origin and deprecation tracking
+					origin: existingGroup.origin,
+					addedAt: existingGroup.addedAt,
+					deprecated: existingGroup.deprecated,
+					deprecatedAt: existingGroup.deprecatedAt,
+					deprecatedReason: existingGroup.deprecatedReason,
 				});
 			} else {
 				// NEW GROUP: Look up from cache
@@ -159,6 +174,9 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 						name: cacheGroup.name,
 						enabled: true,
 						originalConfig: cacheGroup,
+						// New groups added via editor are user_added
+						origin: "user_added",
+						addedAt: new Date().toISOString(),
 					});
 				} else {
 					unresolvedNewGroups.push(trashId);
@@ -243,6 +261,18 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 	const groupsCache = cacheEntries?.find(e => e.configType === "CF_GROUPS");
 	const availableFormats = (customFormatsCache?.data as TrashCustomFormat[]) || [];
 	const availableGroups = (groupsCache?.data as TrashCustomFormatGroup[]) || [];
+
+	// Find deprecated CFs (in template but not in cache)
+	const availableFormatIds = new Set(availableFormats.map(f => f.trash_id));
+	const deprecatedCFs = template?.config.customFormats.filter(
+		cf => cf.deprecated || !availableFormatIds.has(cf.trashId)
+	) || [];
+
+	// Find deprecated CF groups
+	const availableGroupIds = new Set(availableGroups.map(g => g.trash_id));
+	const deprecatedGroups = template?.config.customFormatGroups.filter(
+		g => g.deprecated || !availableGroupIds.has(g.trashId)
+	) || [];
 
 	const mutation = template ? updateMutation : createMutation;
 
@@ -400,6 +430,59 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 							</div>
 						)}
 					</div>
+
+					{/* Deprecated Custom Formats Warning */}
+					{deprecatedCFs.length > 0 && (
+						<div className="space-y-3">
+							<div className="flex items-center gap-2">
+								<AlertTriangle className="h-5 w-5 text-amber-500" />
+								<h3 className="text-lg font-medium text-amber-500">
+									Deprecated Custom Formats ({deprecatedCFs.length})
+								</h3>
+							</div>
+							<p className="text-sm text-fg-muted">
+								These custom formats are no longer available in TRaSH Guides. They will be preserved
+								in your template but may not work correctly. Consider removing them.
+							</p>
+							<div className="space-y-2 max-h-48 overflow-y-auto rounded border border-amber-500/30 bg-amber-500/5 p-4">
+								{deprecatedCFs.map((cf) => (
+									<div key={cf.trashId} className="flex items-center justify-between rounded border border-border bg-bg-subtle/50 p-3">
+										<div className="flex items-center gap-2">
+											<input
+												type="checkbox"
+												checked={selectedFormats.has(cf.trashId)}
+												onChange={() => {
+													const newMap = new Map(selectedFormats);
+													if (newMap.has(cf.trashId)) {
+														newMap.delete(cf.trashId);
+													} else {
+														newMap.set(cf.trashId, {
+															scoreOverride: cf.scoreOverride,
+															conditionsEnabled: cf.conditionsEnabled,
+														});
+													}
+													setSelectedFormats(newMap);
+												}}
+												className="h-4 w-4 rounded border-border bg-bg-subtle text-primary focus:ring-primary"
+											/>
+											<span className="text-sm font-medium text-fg opacity-70">{cf.name}</span>
+											<span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-xs text-amber-500">
+												Deprecated
+											</span>
+											{cf.origin === "user_added" && (
+												<span className="rounded bg-blue-500/20 px-1.5 py-0.5 text-xs text-blue-400">
+													User Added
+												</span>
+											)}
+										</div>
+										{cf.deprecatedReason && (
+											<span className="text-xs text-fg-muted">{cf.deprecatedReason}</span>
+										)}
+									</div>
+								))}
+							</div>
+						</div>
+					)}
 
 					{/* Custom Format Groups */}
 					<div className="space-y-3">

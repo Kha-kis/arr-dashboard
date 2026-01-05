@@ -196,6 +196,14 @@ export interface TrashCacheStatus {
 // ============================================================================
 
 /**
+ * Origin of a custom format in a template
+ * - "trash_sync": Added automatically during TRaSH Guides sync
+ * - "user_added": Manually added by user in template editor
+ * - "imported": Added via template import
+ */
+export type CFOrigin = "trash_sync" | "user_added" | "imported";
+
+/**
  * Custom Format with user customizations
  */
 export interface TemplateCustomFormat {
@@ -205,6 +213,13 @@ export interface TemplateCustomFormat {
 	scoreOverride?: number; // User-defined score
 	conditionsEnabled: Record<string, boolean>; // Which conditions are enabled
 	originalConfig: TrashCustomFormat; // Original TRaSH config
+	// Origin tracking (for controlling deletion behavior)
+	origin?: CFOrigin; // undefined = legacy (treat as "trash_sync")
+	addedAt?: string; // ISO timestamp when CF was added to template
+	// Deprecation tracking (CF no longer in TRaSH Guides)
+	deprecated?: boolean; // true if CF was removed from TRaSH Guides upstream
+	deprecatedAt?: string; // ISO timestamp when CF was marked deprecated
+	deprecatedReason?: string; // e.g., "Removed from TRaSH Guides as of commit abc123"
 }
 
 /**
@@ -215,6 +230,12 @@ export interface TemplateCustomFormatGroup {
 	name: string;
 	enabled: boolean;
 	originalConfig: TrashCustomFormatGroup;
+	// Origin tracking (mirrors TemplateCustomFormat)
+	origin?: CFOrigin;
+	addedAt?: string;
+	deprecated?: boolean;
+	deprecatedAt?: string;
+	deprecatedReason?: string;
 }
 
 /**
