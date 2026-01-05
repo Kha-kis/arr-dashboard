@@ -98,6 +98,7 @@ export class OIDCProvider {
 
 	/**
 	 * Discover OIDC configuration from issuer
+	 * Fetches the OpenID Connect discovery document from {issuer}/.well-known/openid-configuration
 	 */
 	private async discoverAuthServer(): Promise<oauth.AuthorizationServer> {
 		if (this.authServer) {
@@ -106,17 +107,46 @@ export class OIDCProvider {
 
 		const issuerUrl = new URL(this.config.issuer);
 
-		// Allow HTTP for local/development environments (localhost, 127.0.0.1, private IPs)
-		// In production with public domains, HTTPS is still enforced by oauth4webapi
-		const discoveryResponse = await oauth.discoveryRequest(issuerUrl, {
-			algorithm: "oidc",
-			[oauth.allowInsecureRequests]: this.shouldAllowInsecureRequests(),
-		});
+		try {
+			// Allow HTTP for local/development environments (localhost, 127.0.0.1, private IPs)
+			// In production with public domains, HTTPS is still enforced by oauth4webapi
+			const discoveryResponse = await oauth.discoveryRequest(issuerUrl, {
+				algorithm: "oidc",
+				[oauth.allowInsecureRequests]: this.shouldAllowInsecureRequests(),
+			});
 
-		const authServer = await oauth.processDiscoveryResponse(issuerUrl, discoveryResponse);
+			const authServer = await oauth.processDiscoveryResponse(issuerUrl, discoveryResponse);
 
-		this.authServer = authServer;
-		return authServer;
+			this.authServer = authServer;
+			return authServer;
+		} catch (error) {
+			const errMsg = error instanceof Error ? error.message : String(error);
+			const discoveryUrl = `${this.config.issuer}/.well-known/openid-configuration`;
+
+			// Provide helpful error messages for common issues
+			if (errMsg.includes("unexpected HTTP status code") || errMsg.includes("OAUTH_RESPONSE_IS_NOT_CONFORM")) {
+				throw new Error(
+					`OIDC discovery failed for "${this.config.issuer}". ` +
+					`The discovery endpoint (${discoveryUrl}) returned an invalid response. ` +
+					`Please verify: ` +
+					`(1) The issuer URL is correct (should NOT include trailing slash or .well-known/openid-configuration), ` +
+					`(2) The OIDC provider is accessible from this server, ` +
+					`(3) The provider supports OpenID Connect discovery. ` +
+					`Original error: ${errMsg}`
+				);
+			}
+
+			if (errMsg.includes("fetch") || errMsg.includes("ECONNREFUSED") || errMsg.includes("ENOTFOUND")) {
+				throw new Error(
+					`Cannot connect to OIDC provider at "${this.config.issuer}". ` +
+					`Please verify the provider is running and accessible from this server. ` +
+					`Original error: ${errMsg}`
+				);
+			}
+
+			// Re-throw with original error for unexpected cases
+			throw error;
+		}
 	}
 
 	/**

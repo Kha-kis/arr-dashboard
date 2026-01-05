@@ -9,6 +9,7 @@ import {
 import type { Prisma, OIDCProvider as PrismaOIDCProvider } from "@prisma/client";
 import type { FastifyInstance } from "fastify";
 import { hashPassword } from "../lib/auth/password.js";
+import { normalizeIssuerUrl } from "../lib/auth/oidc-utils.js";
 
 /**
  * Transform a Prisma OIDCProvider model to the public DTO shape
@@ -75,6 +76,23 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 
 			const data = validation.data;
 
+			// Normalize issuer URL to prevent discovery failures
+			let normalizedIssuer: string;
+			try {
+				normalizedIssuer = normalizeIssuerUrl(data.issuer);
+				if (normalizedIssuer !== data.issuer) {
+					request.log.info(
+						{ original: data.issuer, normalized: normalizedIssuer },
+						"Normalized OIDC issuer URL",
+					);
+				}
+			} catch (error) {
+				return reply.status(400).send({
+					error: "Invalid issuer URL",
+					details: error instanceof Error ? error.message : "Could not parse issuer URL",
+				});
+			}
+
 			// Auto-generate redirect URI if not provided
 			// Use the request origin to detect the correct URL (works in Docker/proxy environments)
 			let redirectUri = data.redirectUri;
@@ -111,7 +129,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 					clientId: data.clientId,
 					encryptedClientSecret,
 					clientSecretIv,
-					issuer: data.issuer,
+					issuer: normalizedIssuer,
 					redirectUri,
 					scopes: data.scopes,
 					enabled: data.enabled,
@@ -177,11 +195,30 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 				}
 			}
 
+			// Normalize issuer URL if provided
+			let normalizedIssuer: string | undefined;
+			if (data.issuer) {
+				try {
+					normalizedIssuer = normalizeIssuerUrl(data.issuer);
+					if (normalizedIssuer !== data.issuer) {
+						request.log.info(
+							{ original: data.issuer, normalized: normalizedIssuer },
+							"Normalized OIDC issuer URL",
+						);
+					}
+				} catch (error) {
+					return reply.status(400).send({
+						error: "Invalid issuer URL",
+						details: error instanceof Error ? error.message : "Could not parse issuer URL",
+					});
+				}
+			}
+
 			// Prepare update data
 			const updateData: Prisma.OIDCProviderUpdateInput = {
 				...(data.displayName && { displayName: data.displayName }),
 				...(data.clientId && { clientId: data.clientId }),
-				...(data.issuer && { issuer: data.issuer }),
+				...(normalizedIssuer && { issuer: normalizedIssuer }),
 				...(data.redirectUri && { redirectUri: data.redirectUri }),
 				...(data.scopes && { scopes: data.scopes }),
 				...(data.enabled !== undefined && { enabled: data.enabled }),
