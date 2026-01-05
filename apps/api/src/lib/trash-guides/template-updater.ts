@@ -1416,11 +1416,27 @@ export class TemplateUpdater {
 		}
 
 		// Validate cache commit matches target to ensure accurate diff
+		// If cache is stale, auto-refresh the required caches before computing diff
 		const cacheCommitHash = await this.cacheManager.getCommitHash(serviceType, "CUSTOM_FORMATS");
-		if (cacheCommitHash && cacheCommitHash !== targetCommit.commitHash) {
-			throw new Error(
-				`Cache is stale (${cacheCommitHash}), refresh before viewing diff for ${targetCommit.commitHash}`,
-			);
+		if (!cacheCommitHash || cacheCommitHash !== targetCommit.commitHash) {
+			// Cache is stale or empty - refresh the caches needed for diff computation
+			const requiredCacheTypes: TrashConfigType[] = [
+				"CUSTOM_FORMATS",
+				"CF_GROUPS",
+				"QUALITY_PROFILES",
+			];
+
+			for (const configType of requiredCacheTypes) {
+				try {
+					const data = await this.githubFetcher.fetchConfigs(serviceType, configType);
+					await this.cacheManager.set(serviceType, configType, data, targetCommit.commitHash);
+				} catch (fetchError) {
+					const errorMsg = fetchError instanceof Error ? fetchError.message : String(fetchError);
+					throw new Error(
+						`Failed to refresh ${configType} cache for ${serviceType}: ${errorMsg}`,
+					);
+				}
+			}
 		}
 
 		// Get latest cache data for comparison
