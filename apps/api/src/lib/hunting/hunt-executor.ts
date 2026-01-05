@@ -718,18 +718,29 @@ async function executeSonarrHunt(
 		// Get wanted episodes (fetch more than needed to account for filtering)
 		const fetchSize = Math.max(batchSize * 5, 50);
 		const endpoint = type === "missing" ? "/api/v3/wanted/missing" : "/api/v3/wanted/cutoff";
+
+		// Calculate page offset based on recently searched items to rotate through large libraries
+		// This prevents getting "stuck" when all items on page 1 have been searched
+		const recentSearchCount = historyManager.getRecentSearchCount();
+		const pageOffset = Math.floor(recentSearchCount / fetchSize) + 1;
+
 		const response = await fetcher(
-			`${endpoint}?pageSize=${fetchSize}&sortKey=airDateUtc&sortDirection=descending`,
+			`${endpoint}?page=${pageOffset}&pageSize=${fetchSize}&sortKey=airDateUtc&sortDirection=descending`,
 		);
 		const data = (await response.json()) as WantedResponse<SonarrEpisode>;
 
 		if (!data.records || data.records.length === 0) {
+			// If we're on page > 1 and got no results, we've exhausted all candidates
+			const exhaustedMessage =
+				pageOffset > 1
+					? ` (searched through ${recentSearchCount} items, reached end of list)`
+					: "";
 			return {
 				itemsSearched: 0,
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: `No ${type === "missing" ? "missing" : "upgradeable"} episodes found`,
+				message: `No ${type === "missing" ? "missing" : "upgradeable"} episodes found${exhaustedMessage}`,
 				status: "completed",
 			};
 		}
@@ -761,12 +772,14 @@ async function executeSonarrHunt(
 		const eligibleEpisodes = shuffleArray(filteredEpisodes);
 
 		if (eligibleEpisodes.length === 0) {
+			// Provide context about pagination position
+			const pageInfo = pageOffset > 1 ? ` (page ${pageOffset}, ${recentSearchCount} items searched)` : "";
 			return {
 				itemsSearched: 0,
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: "No episodes match the current filters",
+				message: `No episodes match the current filters${pageInfo}`,
 				status: "completed",
 			};
 		}
@@ -1039,30 +1052,40 @@ async function executeRadarrHunt(
 		// Fetch more than needed to account for filtering
 		const fetchSize = Math.max(batchSize * 5, 50);
 
+		// Calculate page offset based on recently searched items to rotate through large libraries
+		// This prevents getting "stuck" when all items on page 1 have been searched
+		const recentSearchCount = historyManager.getRecentSearchCount();
+		const pageOffset = Math.floor(recentSearchCount / fetchSize) + 1;
+
 		if (type === "missing") {
 			// Use wanted/missing endpoint - returns monitored movies without files
 			// Same data as shown on /wanted/missing page in Radarr UI
 			const response = await fetcher(
-				`/api/v3/wanted/missing?pageSize=${fetchSize}&sortKey=digitalRelease&sortDirection=descending`,
+				`/api/v3/wanted/missing?page=${pageOffset}&pageSize=${fetchSize}&sortKey=digitalRelease&sortDirection=descending`,
 			);
 			const data = (await response.json()) as WantedResponse<RadarrMovie>;
 			movies = data.records ?? [];
 		} else {
 			// For upgrades, use wanted/cutoff endpoint - returns movies that don't meet quality cutoff
 			const response = await fetcher(
-				`/api/v3/wanted/cutoff?pageSize=${fetchSize}&sortKey=digitalRelease&sortDirection=descending`,
+				`/api/v3/wanted/cutoff?page=${pageOffset}&pageSize=${fetchSize}&sortKey=digitalRelease&sortDirection=descending`,
 			);
 			const data = (await response.json()) as WantedResponse<RadarrMovie>;
 			movies = data.records ?? [];
 		}
 
 		if (movies.length === 0) {
+			// If we're on page > 1 and got no results, we've exhausted all candidates
+			const exhaustedMessage =
+				pageOffset > 1
+					? ` (searched through ${recentSearchCount} items, reached end of list)`
+					: "";
 			return {
 				itemsSearched: 0,
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: `No ${type === "missing" ? "missing" : "upgradeable"} movies found`,
+				message: `No ${type === "missing" ? "missing" : "upgradeable"} movies found${exhaustedMessage}`,
 				status: "completed",
 			};
 		}
@@ -1093,12 +1116,14 @@ async function executeRadarrHunt(
 		const eligibleMovies = shuffleArray(filteredMovies);
 
 		if (eligibleMovies.length === 0) {
+			// Provide context about pagination position
+			const pageInfo = pageOffset > 1 ? ` (page ${pageOffset}, ${recentSearchCount} items searched)` : "";
 			return {
 				itemsSearched: 0,
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: "No movies match the current filters",
+				message: `No movies match the current filters${pageInfo}`,
 				status: "completed",
 			};
 		}
