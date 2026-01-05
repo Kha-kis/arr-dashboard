@@ -239,6 +239,19 @@ export interface TemplateCustomFormatGroup {
 }
 
 /**
+ * Template sync settings
+ */
+export interface TemplateSyncSettings {
+	/**
+	 * Whether to delete CFs that are removed from TRaSH Guides.
+	 * - false (default): Mark deprecated but keep in template (Recyclarr-style conservative)
+	 * - true: Delete CFs that are no longer in TRaSH (only affects origin="trash_sync")
+	 * Note: User-added CFs are NEVER deleted regardless of this setting.
+	 */
+	deleteRemovedCFs?: boolean;
+}
+
+/**
  * Template configuration data
  */
 export interface TemplateConfig {
@@ -262,6 +275,8 @@ export interface TemplateConfig {
 	naming?: TrashNamingScheme[];
 	// Phase 5.3: Complete quality profile settings (imported from *arr instance)
 	completeQualityProfile?: CompleteQualityProfile;
+	// Sync behavior settings
+	syncSettings?: TemplateSyncSettings;
 }
 
 /**
