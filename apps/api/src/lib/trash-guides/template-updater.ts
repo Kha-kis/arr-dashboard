@@ -614,7 +614,8 @@ export class TemplateUpdater {
 			const scoreSet = templateQualityProfile?.trash_score_set || "default";
 
 			// Perform merge: preserve user customizations, update specifications
-			// Default deleteRemovedCFs to false (conservative - matches Recyclarr behavior)
+			// Read deleteRemovedCFs from template config, default to false (conservative - matches Recyclarr behavior)
+			const deleteRemovedCFs = currentConfig.syncSettings?.deleteRemovedCFs ?? false;
 			const mergeResult = this.mergeTemplateConfig(
 				currentConfig,
 				filteredCustomFormats,
@@ -622,7 +623,7 @@ export class TemplateUpdater {
 				{
 					applyScoreUpdates: options?.applyScoreUpdates,
 					scoreSet,
-					deleteRemovedCFs: false, // Conservative default: mark deprecated instead of deleting
+					deleteRemovedCFs,
 					targetCommitHash: targetCommit.commitHash,
 				},
 			);

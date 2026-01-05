@@ -5,7 +5,7 @@ import type { TrashTemplate, TemplateConfig, TrashCustomFormat, TrashCustomForma
 import { useCreateTemplate, useUpdateTemplate } from "../../../hooks/api/useTemplates";
 import { useTrashCacheEntries } from "../../../hooks/api/useTrashCache";
 import { Alert, AlertDescription, Input, Button } from "../../../components/ui";
-import { X, Save, Minus, Settings, AlertTriangle } from "lucide-react";
+import { X, Save, Minus, Settings, AlertTriangle, Info, Trash2, Shield } from "lucide-react";
 import { toast } from "sonner";
 import { ConditionEditor } from "./condition-editor";
 
@@ -31,6 +31,8 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 		trashId: string;
 		format: TrashCustomFormat;
 	} | null>(null);
+	// Sync settings
+	const [deleteRemovedCFs, setDeleteRemovedCFs] = useState(false);
 
 	const createMutation = useCreateTemplate();
 	const updateMutation = useUpdateTemplate();
@@ -60,6 +62,9 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 				}
 			}
 			setSelectedGroups(groupsSet);
+
+			// Initialize sync settings
+			setDeleteRemovedCFs(template.config.syncSettings?.deleteRemovedCFs ?? false);
 		} else {
 			// Reset for new template
 			setName("");
@@ -67,6 +72,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 			setServiceType("RADARR");
 			setSelectedFormats(new Map());
 			setSelectedGroups(new Set());
+			setDeleteRemovedCFs(false);
 		}
 	}, [template]);
 
@@ -98,6 +104,9 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 		const config: TemplateConfig = {
 			customFormats: [],
 			customFormatGroups: [],
+			syncSettings: {
+				deleteRemovedCFs,
+			},
 		};
 
 		// Track items that couldn't be resolved (new items not in cache)
@@ -348,6 +357,40 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 								</div>
 							</div>
 						)}
+					</div>
+
+					{/* Sync Settings */}
+					<div className="space-y-3">
+						<div className="flex items-center gap-2">
+							<Settings className="h-5 w-5 text-fg-muted" />
+							<h3 className="text-lg font-medium text-fg">Sync Settings</h3>
+						</div>
+						<div className="rounded-xl border border-border bg-bg-subtle/50 p-4 space-y-4">
+							<div className="flex items-start gap-3">
+								<input
+									type="checkbox"
+									id="deleteRemovedCFs"
+									checked={deleteRemovedCFs}
+									onChange={(e) => setDeleteRemovedCFs(e.target.checked)}
+									className="mt-1 h-4 w-4 rounded border-border bg-bg-subtle text-primary focus:ring-primary"
+								/>
+								<div className="flex-1">
+									<label htmlFor="deleteRemovedCFs" className="flex items-center gap-2 text-sm font-medium text-fg cursor-pointer">
+										<Trash2 className="h-4 w-4 text-red-500" />
+										Delete removed Custom Formats during sync
+									</label>
+									<p className="mt-1 text-xs text-fg-muted">
+										When TRaSH Guides removes a Custom Format, delete it from this template instead of marking it as deprecated.
+									</p>
+								</div>
+							</div>
+							<div className="flex items-start gap-2 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
+								<Shield className="h-4 w-4 text-blue-400 mt-0.5 flex-shrink-0" />
+								<div className="text-xs text-fg-muted">
+									<span className="font-medium text-blue-400">Note:</span> Custom Formats you manually add (marked as &ldquo;User Added&rdquo;) are always preserved regardless of this setting.
+								</div>
+							</div>
+						</div>
 					</div>
 
 					{/* Custom Formats */}
