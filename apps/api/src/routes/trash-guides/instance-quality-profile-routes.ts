@@ -69,7 +69,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		Body: z.infer<typeof updateScoresSchema>;
 	}>("/:instanceId/quality-profiles/:profileId/scores", async (request, reply) => {
 		// userId is guaranteed by preHandler authentication check
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { instanceId, profileId } = request.params;
 		const profileIdNum = Number.parseInt(profileId);
 
@@ -248,7 +248,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		Params: { instanceId: string; profileId: string };
 	}>("/:instanceId/quality-profiles/:profileId/overrides", async (request, reply) => {
 		// userId is guaranteed by preHandler authentication check
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { instanceId, profileId } = request.params;
 		const profileIdNum = Number.parseInt(profileId);
 
@@ -312,7 +312,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		Body: { customFormatId: number; templateId: string };
 	}>("/:instanceId/quality-profiles/:profileId/promote-override", async (request, reply) => {
 		// userId is guaranteed by preHandler authentication check
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { instanceId, profileId } = request.params;
 		const profileIdNum = Number.parseInt(profileId);
 		const { customFormatId, templateId } = request.body;
@@ -482,7 +482,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		Body: { profileIds: number[] };
 	}>("/:instanceId/quality-profiles/bulk-overrides", async (request, reply) => {
 		// userId is guaranteed by preHandler authentication check
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { instanceId } = request.params;
 		const { profileIds } = request.body;
 
@@ -585,7 +585,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		"/:instanceId/quality-profiles/:profileId/overrides/:customFormatId",
 		async (request, reply) => {
 			// userId is guaranteed by preHandler authentication check
-			const userId = request.currentUser!.id;
+			const userId = request.currentUser!.id; // preHandler guarantees auth
 			const { instanceId, profileId, customFormatId } = request.params;
 			const profileIdNum = Number.parseInt(profileId);
 			const customFormatIdNum = Number.parseInt(customFormatId);
@@ -792,7 +792,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		Body: { customFormatIds: number[] };
 	}>("/:instanceId/quality-profiles/:profileId/overrides/bulk-delete", async (request, reply) => {
 		// userId is guaranteed by preHandler authentication check
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { instanceId, profileId } = request.params;
 		const profileIdNum = Number.parseInt(profileId);
 		const { customFormatIds } = request.body;

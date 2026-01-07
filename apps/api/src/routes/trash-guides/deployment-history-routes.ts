@@ -37,7 +37,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			const history = await app.prisma.templateDeploymentHistory.findMany({
 				where: {
 					template: {
-						userId: request.currentUser!.id, // preHandler guarantees authentication
+						userId: request.currentUser?.id, // preHandler guarantees authentication
 					},
 				},
 				include: {
@@ -67,7 +67,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			const total = await app.prisma.templateDeploymentHistory.count({
 				where: {
 					template: {
-						userId: request.currentUser!.id, // preHandler guarantees authentication
+						userId: request.currentUser?.id, // preHandler guarantees authentication
 					},
 				},
 			});
@@ -111,7 +111,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			const template = await app.prisma.trashTemplate.findFirst({
 				where: {
 					id: templateId,
-					userId: request.currentUser!.id, // preHandler guarantees authentication
+					userId: request.currentUser?.id, // preHandler guarantees authentication
 				},
 			});
 
@@ -188,7 +188,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			const instance = await app.prisma.serviceInstance.findFirst({
 				where: {
 					id: instanceId,
-					userId: request.currentUser!.id, // preHandler guarantees authentication
+					userId: request.currentUser?.id, // preHandler guarantees authentication
 				},
 			});
 
@@ -257,7 +257,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 	}>("/history/:historyId", async (request, reply) => {
 		try {
 			const { historyId } = request.params;
-			const userId = request.currentUser!.id; // preHandler guarantees authentication
+			const userId = request.currentUser?.id; // preHandler guarantees authentication
 
 			// Get deployment history with all relations - verify ownership by including userId in where clause.
 			// Including userId ensures non-owned histories return null,
@@ -344,7 +344,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 		try {
 			const { historyId } = request.params;
 
-			const userId = request.currentUser!.id; // preHandler guarantees authentication
+			const userId = request.currentUser?.id; // preHandler guarantees authentication
 
 			// Get deployment history - verify ownership by including userId in where clause.
 			// Including userId ensures non-owned histories return null,
@@ -401,7 +401,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 	}>("/history/:historyId/undeploy", async (request, reply) => {
 		try {
 			const { historyId } = request.params;
-			const userId = request.currentUser!.id; // preHandler guarantees authentication
+			const userId = request.currentUser?.id; // preHandler guarantees authentication
 
 			// Get deployment history with template config - verify ownership by including userId in where clause.
 			// Including userId ensures non-owned histories return null,
@@ -575,7 +575,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 						data: {
 							rolledBack: true,
 							rolledBackAt: now,
-							rolledBackBy: request.currentUser!.id,
+							rolledBackBy: request.currentUser?.id,
 							errors: JSON.stringify({
 								undeploySucceeded: true,
 								deletedCFs,

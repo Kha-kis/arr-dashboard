@@ -137,6 +137,74 @@ export function useCFConfiguration({
 	});
 }
 
+/**
+ * Default quality definitions for Radarr
+ * Ordered from highest priority (bottom) to lowest priority (top)
+ * Higher quality items should be at the END of the array
+ */
+const RADARR_DEFAULT_QUALITIES = [
+	{ name: "Unknown", allowed: false, source: "unknown", resolution: 0 },
+	{ name: "SDTV", allowed: false, source: "tv", resolution: 480 },
+	{ name: "DVD", allowed: false, source: "dvd", resolution: 480 },
+	{ name: "WEBDL-480p", allowed: false, source: "webdl", resolution: 480 },
+	{ name: "WEBRip-480p", allowed: false, source: "webrip", resolution: 480 },
+	{ name: "Bluray-480p", allowed: false, source: "bluray", resolution: 480 },
+	{ name: "HDTV-720p", allowed: false, source: "tv", resolution: 720 },
+	{ name: "WEBDL-720p", allowed: true, source: "webdl", resolution: 720 },
+	{ name: "WEBRip-720p", allowed: true, source: "webrip", resolution: 720 },
+	{ name: "Bluray-720p", allowed: true, source: "bluray", resolution: 720 },
+	{ name: "HDTV-1080p", allowed: false, source: "tv", resolution: 1080 },
+	{ name: "WEBDL-1080p", allowed: true, source: "webdl", resolution: 1080 },
+	{ name: "WEBRip-1080p", allowed: true, source: "webrip", resolution: 1080 },
+	{ name: "Bluray-1080p", allowed: true, source: "bluray", resolution: 1080 },
+	{ name: "Remux-1080p", allowed: true, source: "bluray", resolution: 1080 },
+	{ name: "HDTV-2160p", allowed: false, source: "tv", resolution: 2160 },
+	{ name: "WEBDL-2160p", allowed: true, source: "webdl", resolution: 2160 },
+	{ name: "WEBRip-2160p", allowed: true, source: "webrip", resolution: 2160 },
+	{ name: "Bluray-2160p", allowed: true, source: "bluray", resolution: 2160 },
+	{ name: "Remux-2160p", allowed: true, source: "bluray", resolution: 2160 },
+];
+
+/**
+ * Default quality definitions for Sonarr
+ * Ordered from highest priority (bottom) to lowest priority (top)
+ * Higher quality items should be at the END of the array
+ */
+const SONARR_DEFAULT_QUALITIES = [
+	{ name: "Unknown", allowed: false, source: "unknown", resolution: 0 },
+	{ name: "SDTV", allowed: false, source: "tv", resolution: 480 },
+	{ name: "DVD", allowed: false, source: "dvd", resolution: 480 },
+	{ name: "WEBDL-480p", allowed: false, source: "webdl", resolution: 480 },
+	{ name: "WEBRip-480p", allowed: false, source: "webrip", resolution: 480 },
+	{ name: "Bluray-480p", allowed: false, source: "bluray", resolution: 480 },
+	{ name: "HDTV-720p", allowed: false, source: "tv", resolution: 720 },
+	{ name: "WEBDL-720p", allowed: true, source: "webdl", resolution: 720 },
+	{ name: "WEBRip-720p", allowed: true, source: "webrip", resolution: 720 },
+	{ name: "Bluray-720p", allowed: true, source: "bluray", resolution: 720 },
+	{ name: "HDTV-1080p", allowed: false, source: "tv", resolution: 1080 },
+	{ name: "WEBDL-1080p", allowed: true, source: "webdl", resolution: 1080 },
+	{ name: "WEBRip-1080p", allowed: true, source: "webrip", resolution: 1080 },
+	{ name: "Bluray-1080p", allowed: true, source: "bluray", resolution: 1080 },
+	{ name: "Remux-1080p", allowed: true, source: "bluray", resolution: 1080 },
+	{ name: "HDTV-2160p", allowed: false, source: "tv", resolution: 2160 },
+	{ name: "WEBDL-2160p", allowed: true, source: "webdl", resolution: 2160 },
+	{ name: "WEBRip-2160p", allowed: true, source: "webrip", resolution: 2160 },
+	{ name: "Bluray-2160p", allowed: true, source: "bluray", resolution: 2160 },
+	{ name: "Remux-2160p", allowed: true, source: "bluray", resolution: 2160 },
+];
+
+/**
+ * Get default quality definitions for a service type
+ */
+function getDefaultQualitiesForService(serviceType: string): Array<{
+	name: string;
+	allowed: boolean;
+	source?: string;
+	resolution?: number;
+}> {
+	return serviceType === "RADARR" ? RADARR_DEFAULT_QUALITIES : SONARR_DEFAULT_QUALITIES;
+}
+
 async function fetchEditModeData(serviceType: string, editingTemplate: any) {
 	const templateCFs = editingTemplate.config.customFormats || [];
 	const templateCFGroups = editingTemplate.config.customFormatGroups || [];
@@ -172,6 +240,11 @@ async function fetchEditModeData(serviceType: string, editingTemplate: any) {
 		quality_profiles: cfGroup.originalConfig?.quality_profiles,
 	}));
 
+	// In edit mode, provide default quality items from service type
+	// This allows users to configure qualities even if the template was created
+	// before the quality configuration feature was added
+	const qualityItems = getDefaultQualitiesForService(serviceType);
+
 	return {
 		cfGroups,
 		mandatoryCFs,
@@ -181,6 +254,7 @@ async function fetchEditModeData(serviceType: string, editingTemplate: any) {
 			optionalGroupCount: templateCFGroups.length,
 			totalOptionalCFs: availableFormats.length,
 		},
+		qualityItems,
 	};
 }
 
@@ -239,6 +313,16 @@ async function fetchClonedProfileData(trashId: string) {
 		},
 	}));
 
+	// Extract quality items from cloned profile
+	const qualityItems = profile.items?.map((item: any) => ({
+		name: item.name || item.quality?.name,
+		allowed: item.allowed ?? true,
+		source: item.quality?.source,
+		resolution: item.quality?.resolution,
+		// Group items contain nested quality names
+		items: item.items?.map((q: any) => typeof q === 'string' ? q : q.name || q.quality?.name),
+	})) || [];
+
 	return {
 		cfGroups: [], // Cloned profiles don't have CF groups
 		mandatoryCFs,
@@ -255,6 +339,7 @@ async function fetchClonedProfileData(trashId: string) {
 			totalOptionalCFs: allCustomFormats.length,
 		},
 		isClonedProfile: true,
+		qualityItems,
 	};
 }
 
@@ -273,10 +358,39 @@ async function fetchNormalModeData(
 
 	const availableFormats = await fetchAvailableFormats(serviceType);
 
+	// Extract quality items from profile for QualityGroupEditor
+	const qualityItems = extractQualityItems(profileData.profile);
+
 	return {
 		...profileData,
 		availableFormats,
+		qualityItems,
 	};
+}
+
+/**
+ * Extract quality items from TRaSH profile for QualityGroupEditor
+ * TRaSH profiles have items array with quality definitions
+ */
+function extractQualityItems(profile: any): Array<{
+	name: string;
+	allowed: boolean;
+	source?: string;
+	resolution?: number;
+	items?: string[];
+}> {
+	if (!profile?.items || !Array.isArray(profile.items)) {
+		return [];
+	}
+
+	return profile.items.map((item: any) => ({
+		name: item.name,
+		allowed: item.allowed ?? true,
+		source: item.quality?.source,
+		resolution: item.quality?.resolution,
+		// If this is a group, it has nested items
+		items: item.items,
+	}));
 }
 
 async function fetchAvailableFormats(serviceType: string) {
@@ -290,17 +404,14 @@ async function fetchAvailableFormats(serviceType: string) {
 
 	const allCustomFormats = customFormatsCacheEntry?.data || [];
 
-	return allCustomFormats.map((cf: any) => {
-		const trashScores = cf.trash_scores || {};
-		const defaultScore = trashScores.default || 0;
-
-		return {
-			trash_id: cf.trash_id,
-			name: cf.name,
-			displayName: cf.name,
-			description: cf.trash_description || "",
-			score: defaultScore,
-			originalConfig: cf,
-		};
-	});
+	// Note: We include originalConfig which contains trash_scores.
+	// The component resolves the actual score using the profile's scoreSet.
+	// No need to pre-compute 'score' here since it would only use default.
+	return allCustomFormats.map((cf: any) => ({
+		trash_id: cf.trash_id,
+		name: cf.name,
+		displayName: cf.name,
+		description: cf.trash_description || "",
+		originalConfig: cf,
+	}));
 }

@@ -7,6 +7,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
 	fetchCustomFormatsList,
 	fetchCFDescriptionsList,
+	fetchCFIncludesList,
 	deployCustomFormat,
 	deployMultipleCustomFormats,
 	type DeployCustomFormatRequest,
@@ -47,6 +48,18 @@ export function useCFDescriptions(serviceType?: "RADARR" | "SONARR") {
 		queryKey: ["cf-descriptions", "list", serviceType],
 		queryFn: () => fetchCFDescriptionsList(serviceType),
 		staleTime: 60 * 60 * 1000, // 1 hour - descriptions change less frequently
+	});
+}
+
+/**
+ * Hook to fetch CF include files from TRaSH Guides.
+ * These are MkDocs snippets referenced by CF descriptions using --8<-- syntax.
+ */
+export function useCFIncludes() {
+	return useQuery({
+		queryKey: ["cf-includes", "list"],
+		queryFn: () => fetchCFIncludesList(),
+		staleTime: 60 * 60 * 1000, // 1 hour - includes change less frequently
 	});
 }
 

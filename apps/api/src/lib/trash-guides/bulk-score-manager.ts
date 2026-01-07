@@ -398,12 +398,16 @@ export class BulkScoreManager {
 				let modified = false;
 
 				// Update custom formats
+				// Note: We use scoreOverride for user-set scores, which takes priority
+				// in deployment over originalConfig.trash_scores
 				for (const cf of config.customFormats) {
 					if (update.targetTrashIds.includes(cf.trashId)) {
-						if (update.resetToDefault && cf.originalConfig) {
-							cf.score = cf.originalConfig.score ?? 0;
+						if (update.resetToDefault) {
+							// Reset: remove scoreOverride so deployment uses trash_scores
+							cf.scoreOverride = undefined;
 						} else {
-							cf.score = update.newScore;
+							// Set new score as user override
+							cf.scoreOverride = update.newScore;
 						}
 						modified = true;
 						affectedCfTrashIds.add(cf.trashId);
@@ -467,7 +471,11 @@ export class BulkScoreManager {
 			};
 		}
 
-		const sourceConfig = safeJsonParse<TemplateConfig>(sourceTemplate.configData);
+		const sourceConfig = safeJsonParse<TemplateConfig>(sourceTemplate.configData, {
+			source: "BulkScoreManager",
+			identifier: copy.sourceTemplateId,
+			field: "configData",
+		});
 		if (!sourceConfig) {
 			return {
 				success: false,
@@ -478,10 +486,19 @@ export class BulkScoreManager {
 		}
 
 		// Build score map from source
+		// Priority: scoreOverride > trash_scores[scoreSet] > trash_scores.default > 0
+		const scoreSet = sourceConfig.qualityProfile?.trash_score_set || "default";
 		const scoreMap = new Map<string, number>();
 		for (const cf of sourceConfig.customFormats) {
 			if (!copy.cfTrashIds || copy.cfTrashIds.includes(cf.trashId)) {
-				scoreMap.set(cf.trashId, cf.score ?? 0);
+				let score = 0;
+				if (cf.scoreOverride !== undefined) {
+					score = cf.scoreOverride;
+				} else if (cf.originalConfig?.trash_scores) {
+					score =
+						cf.originalConfig.trash_scores[scoreSet] ?? cf.originalConfig.trash_scores.default ?? 0;
+				}
+				scoreMap.set(cf.trashId, score);
 			}
 		}
 
@@ -511,7 +528,8 @@ export class BulkScoreManager {
 							continue;
 						}
 
-						cf.score = newScore;
+						// Set as user override (deployment reads scoreOverride first)
+						cf.scoreOverride = newScore;
 						modified = true;
 						affectedCfTrashIds.add(cf.trashId);
 					}
@@ -578,9 +596,10 @@ export class BulkScoreManager {
 						continue;
 					}
 
-					// Reset to original score if available
-					if (cf.originalConfig && cf.originalConfig.score !== undefined) {
-						cf.score = cf.originalConfig.score;
+					// Reset: remove scoreOverride so deployment uses trash_scores
+					// (the authoritative TRaSH Guides scores stored in originalConfig.trash_scores)
+					if (cf.scoreOverride !== undefined) {
+						cf.scoreOverride = undefined;
 						modified = true;
 						affectedCfTrashIds.add(cf.trashId);
 					}
@@ -651,14 +670,29 @@ export class BulkScoreManager {
 
 		const exportTemplates = templates
 			.map((template) => {
-				const config = safeJsonParse<TemplateConfig>(template.configData);
+				const config = safeJsonParse<TemplateConfig>(template.configData, {
+					source: "BulkScoreManager",
+					identifier: template.id,
+					field: "configData",
+				});
 				if (!config) {
 					return null; // Skip templates with invalid config
 				}
 				const scores: Record<string, number> = {};
+				const scoreSet = config.qualityProfile?.trash_score_set || "default";
 
+				// Export effective scores using deployment priority order
 				for (const cf of config.customFormats) {
-					scores[cf.trashId] = cf.score ?? 0;
+					let score = 0;
+					if (cf.scoreOverride !== undefined) {
+						score = cf.scoreOverride;
+					} else if (cf.originalConfig?.trash_scores) {
+						score =
+							cf.originalConfig.trash_scores[scoreSet] ??
+							cf.originalConfig.trash_scores.default ??
+							0;
+					}
+					scores[cf.trashId] = score;
 				}
 
 				return {
@@ -720,7 +754,11 @@ export class BulkScoreManager {
 					continue;
 				}
 
-				const config = safeJsonParse<TemplateConfig>(template.configData);
+				const config = safeJsonParse<TemplateConfig>(template.configData, {
+					source: "BulkScoreManager",
+					identifier: template.id,
+					field: "configData",
+				});
 				if (!config) {
 					errors.push(`Template "${template.name}" has invalid configuration data`);
 					continue;
@@ -735,7 +773,8 @@ export class BulkScoreManager {
 							continue;
 						}
 
-						cf.score = importedScore;
+						// Set as user override (deployment reads scoreOverride first)
+						cf.scoreOverride = importedScore;
 						modified = true;
 						affectedCfTrashIds.add(cf.trashId);
 					}

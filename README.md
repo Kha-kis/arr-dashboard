@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.6.6** - Sync strategy-specific score handling for TRaSH Guides templates
+> **Version 2.6.7** - Bug fixes for Unraid, OIDC, hunting + sync metrics telemetry
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -141,6 +141,7 @@ docker-compose up -d
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.6.7` | Bug fixes for Unraid, OIDC, hunting + sync metrics telemetry |
 | `2.6.6` | Sync strategy-specific score handling for TRaSH Guides |
 | `2.6.5` | Fix permission errors on Unraid/PostgreSQL, System Information display |
 | `2.6.4` | Hotfix for upgrade crash loop affecting v2.6.3 |

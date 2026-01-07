@@ -24,6 +24,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { EnhancedTemplateExportModal } from "./enhanced-template-export-modal";
 import { EnhancedTemplateImportModal } from "./enhanced-template-import-modal";
+import { getEffectiveQualityConfig } from "../lib/quality-config-utils";
 
 interface TemplateListProps {
 	serviceType?: "RADARR" | "SONARR";
@@ -101,6 +102,9 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 	const [bulkDeployModal, setBulkDeployModal] = useState<{
 		templateId: string;
 		templateName: string;
+		serviceType: "RADARR" | "SONARR";
+		templateDefaultQualityConfig?: TrashTemplate["config"]["customQualityConfig"];
+		instanceOverrides?: TrashTemplate["instanceOverrides"];
 		instances: Array<{ instanceId: string; instanceLabel: string; instanceType: string }>;
 	} | null>(null);
 
@@ -607,6 +611,9 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 								) || [];
 
 								if (matchingInstances.length > 1) {
+									// Find the full template to get quality config and instance overrides
+									const fullTemplate = templates.find(t => t.id === instanceSelectorTemplate.templateId);
+
 									return (
 										<Button
 											variant="secondary"
@@ -614,6 +621,9 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 												setBulkDeployModal({
 													templateId: instanceSelectorTemplate.templateId,
 													templateName: instanceSelectorTemplate.templateName,
+													serviceType: instanceSelectorTemplate.serviceType,
+													templateDefaultQualityConfig: getEffectiveQualityConfig(fullTemplate?.config),
+													instanceOverrides: fullTemplate?.instanceOverrides,
 													instances: matchingInstances.map(inst => ({
 														instanceId: inst.id,
 														instanceLabel: inst.label,
@@ -770,6 +780,9 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 					onClose={() => setBulkDeployModal(null)}
 					templateId={bulkDeployModal.templateId}
 					templateName={bulkDeployModal.templateName}
+					serviceType={bulkDeployModal.serviceType}
+					templateDefaultQualityConfig={bulkDeployModal.templateDefaultQualityConfig}
+					instanceOverrides={bulkDeployModal.instanceOverrides}
 					instances={bulkDeployModal.instances}
 					onDeploySuccess={() => {
 						setBulkDeployModal(null);

@@ -54,7 +54,7 @@ export async function registerSettingsRoutes(app: FastifyInstance, opts: Fastify
 	 * Creates default settings if they don't exist.
 	 */
 	app.get("/", async (request: FastifyRequest, reply: FastifyReply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser!.id; // preHandler guarantees auth
 
 		// Get or create settings
 		let settings = await app.prisma.trashSettings.findUnique({
@@ -96,7 +96,7 @@ export async function registerSettingsRoutes(app: FastifyInstance, opts: Fastify
 	 * Update the current user's TRaSH Guides settings.
 	 */
 	app.patch("/", async (request: FastifyRequest, reply: FastifyReply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser!.id; // preHandler guarantees auth
 
 		// Validate request body
 		const parseResult = updateSettingsSchema.safeParse(request.body);
@@ -132,7 +132,7 @@ export async function registerSettingsRoutes(app: FastifyInstance, opts: Fastify
 	 * Useful for monitoring backup retention and cleanup effectiveness.
 	 */
 	app.get("/backup-stats", async (request: FastifyRequest, reply: FastifyReply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser!.id; // preHandler guarantees auth
 
 		// Run all independent queries in parallel for better performance
 		const [settings, totalBackups, expiredBackups, backupsPerInstance, oldestBackup, newestBackup] =

@@ -49,12 +49,14 @@ esac
 # This ensures correct permissions even when mounting pre-existing directories
 chown -R "${PUID}:${PGID}" /config
 
-# CRITICAL: Also set ownership of /app/api to handle Prisma client regeneration
-# When switching from SQLite to PostgreSQL (or vice versa), Prisma needs to regenerate
-# the client inside node_modules/.pnpm/@prisma+client@*/.
-# Without this, PUID/PGID mismatch causes EACCES errors:
-# "EACCES: permission denied, unlink '/app/api/node_modules/.pnpm/@prisma+client@.../index.js'"
-chown -R "${PUID}:${PGID}" /app/api
+# NOTE: We intentionally do NOT chown /app/api recursively here.
+# A recursive chown on /app/api (~40k+ files in node_modules) causes severe
+# performance issues on Unraid's FUSE-based filesystem (shfs), creating
+# startup hangs that can last several minutes or indefinitely.
+# See: https://github.com/Kha-kis/arr-dashboard/issues/29
+#
+# Instead, we only set permissions on specific Prisma directories when
+# a database provider switch actually requires client regeneration (below).
 
 # ============================================
 # Signal handling
@@ -134,6 +136,19 @@ if [ "$CURRENT_PROVIDER" != "$DB_PROVIDER" ]; then
 
     # Regenerate Prisma client for new provider
     echo "  - Regenerating Prisma client (this may take a moment)..."
+
+    # Set permissions ONLY on the specific Prisma client directories that need to be writable
+    # This is much faster than chown -R /app/api which causes Unraid startup hangs
+    # See: https://github.com/Kha-kis/arr-dashboard/issues/29
+    echo "  - Setting permissions for Prisma client directories..."
+    for dir in /app/api/node_modules/.pnpm/@prisma+client@*/; do
+        [ -d "$dir" ] && chown -R "${PUID}:${PGID}" "$dir"
+    done
+    # Also handle the top-level @prisma directory symlinks
+    [ -d "/app/api/node_modules/@prisma" ] && chown -R "${PUID}:${PGID}" "/app/api/node_modules/@prisma"
+    # Ensure prisma directory is writable for any generated files
+    [ -d "/app/api/node_modules/.prisma" ] && chown -R "${PUID}:${PGID}" "/app/api/node_modules/.prisma"
+
     if ! su-exec abc npx prisma generate --schema prisma/schema.prisma; then
         echo "ERROR: Failed to regenerate Prisma client" >&2
         echo "  Check that /app/api has correct permissions for PUID:$PUID PGID:$PGID" >&2

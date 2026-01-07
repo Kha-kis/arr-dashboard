@@ -19,6 +19,7 @@ import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js"
 const syncTemplateSchema = z.object({
 	targetCommitHash: z.string().optional(),
 	strategy: z.enum(["replace", "merge", "keep_custom"]).optional(),
+	applyScoreUpdates: z.boolean().optional(),
 });
 
 // ============================================================================
@@ -116,10 +117,19 @@ export async function registerUpdateRoutes(app: FastifyInstance, opts: FastifyPl
 			const { id } = request.params;
 			const body = syncTemplateSchema.parse(request.body);
 
+			// Determine whether to apply score updates based on strategy:
+			// - keep_custom: Don't apply score updates (preserve user's current scores)
+			// - replace: Apply score updates (sync everything from TRaSH)
+			// - merge (default): Apply score updates but respect user overrides
+			const shouldApplyScores = body.applyScoreUpdates ?? body.strategy !== "keep_custom";
+
 			const result = await templateUpdater.syncTemplate(
 				id,
 				body.targetCommitHash,
-				request.currentUser?.id,
+				request.currentUser!.id,
+				{
+					applyScoreUpdates: shouldApplyScores,
+				},
 			);
 
 			if (result.success) {
@@ -130,6 +140,8 @@ export async function registerUpdateRoutes(app: FastifyInstance, opts: FastifyPl
 						previousCommit: result.previousCommit,
 						newCommit: result.newCommit,
 						message: "Template synced successfully",
+						mergeStats: result.mergeStats,
+						scoreConflicts: result.scoreConflicts,
 					},
 				});
 			}
@@ -216,7 +228,7 @@ export async function registerUpdateRoutes(app: FastifyInstance, opts: FastifyPl
 			const diffResult = await templateUpdater.getTemplateDiff(
 				id,
 				targetCommit,
-				request.currentUser?.id,
+				request.currentUser!.id,
 			);
 
 			return reply.send({
@@ -239,11 +251,16 @@ export async function registerUpdateRoutes(app: FastifyInstance, opts: FastifyPl
 				}
 			}
 
-			request.log.error({ error }, "Failed to generate diff");
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			const errorStack = error instanceof Error ? error.stack : undefined;
+			request.log.error(
+				{ error: { message: errorMessage, stack: errorStack } },
+				"Failed to generate diff",
+			);
 			return reply.status(500).send({
 				success: false,
 				error: "Failed to generate template diff",
-				details: error instanceof Error ? error.message : String(error),
+				details: errorMessage,
 			});
 		}
 	});

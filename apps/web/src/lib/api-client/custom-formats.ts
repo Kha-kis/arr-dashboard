@@ -36,6 +36,16 @@ export interface CFDescriptionsListResponse {
 	sonarr?: CFDescription[];
 }
 
+export interface CFInclude {
+	path: string;
+	content: string;
+	fetchedAt: string;
+}
+
+export interface CFIncludesListResponse {
+	data: CFInclude[];
+}
+
 export interface DeployCustomFormatRequest {
 	trashId: string;
 	instanceId: string;
@@ -79,6 +89,15 @@ export async function fetchCFDescriptionsList(
 ): Promise<CFDescriptionsListResponse> {
 	const params = serviceType ? `?serviceType=${serviceType}` : "";
 	return await apiRequest<CFDescriptionsListResponse>(`/api/trash-guides/cache/cf-descriptions/list${params}`);
+}
+
+/**
+ * Fetch all CF include files from TRaSH Guides cache.
+ * These are MkDocs snippets referenced by CF descriptions using --8<-- syntax.
+ */
+export async function fetchCFIncludesList(): Promise<CFInclude[]> {
+	const response = await apiRequest<CFIncludesListResponse>(`/api/trash-guides/cache/cf-includes/list`);
+	return response.data || [];
 }
 
 /**
