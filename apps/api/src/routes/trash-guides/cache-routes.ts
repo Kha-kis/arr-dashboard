@@ -9,7 +9,7 @@ import type { TrashConfigType } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
-import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
+import { createTrashFetcher, getRateLimitState } from "../../lib/trash-guides/github-fetcher.js";
 
 // ============================================================================
 // Request Schemas
@@ -24,6 +24,7 @@ const getCacheParamsSchema = z.object({
 		"NAMING",
 		"QUALITY_PROFILES",
 		"CF_DESCRIPTIONS",
+		"CF_INCLUDES",
 	]),
 });
 
@@ -37,6 +38,7 @@ const refreshCacheBodySchema = z.object({
 			"NAMING",
 			"QUALITY_PROFILES",
 			"CF_DESCRIPTIONS",
+			"CF_INCLUDES",
 		])
 		.optional(),
 	force: z.boolean().optional().default(false),
@@ -168,7 +170,12 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 			// Refresh all config types for the service
 			app.log.info({ serviceType, force }, "Refreshing all caches");
 
-			const configTypes = Object.values(TRASH_CONFIG_TYPES) as TrashConfigType[];
+			// Skip heavy types during full refresh - they make 100+ requests and can crash the server.
+			// These are lazy-loaded by the frontend when needed.
+			const SKIP_DURING_FULL_REFRESH = ["CF_DESCRIPTIONS", "CF_INCLUDES"];
+			const configTypes = (Object.values(TRASH_CONFIG_TYPES) as TrashConfigType[]).filter(
+				(type) => !SKIP_DURING_FULL_REFRESH.includes(type),
+			);
 
 			for (const type of configTypes) {
 				try {
@@ -199,6 +206,15 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 						error: error instanceof Error ? error.message : "Unknown error",
 					};
 				}
+			}
+
+			// Mark skipped types
+			for (const type of SKIP_DURING_FULL_REFRESH) {
+				results[type] = {
+					success: true,
+					skipped: true,
+					reason: "Lazy-loaded on demand",
+				};
 			}
 
 			return reply.send({
@@ -417,6 +433,80 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 				statusCode: 500,
 				error: "InternalServerError",
 				message: error instanceof Error ? error.message : "Failed to fetch CF descriptions",
+			});
+		}
+	});
+
+	/**
+	 * GET /api/trash-guides/cache/rate-limit
+	 * Get current GitHub API rate limit status
+	 */
+	app.get("/rate-limit", async (_request, reply) => {
+		const state = getRateLimitState();
+
+		if (!state) {
+			return reply.send({
+				status: "unknown",
+				message: "No GitHub API requests made yet",
+			});
+		}
+
+		const now = Date.now();
+		const resetTime = state.resetAt.getTime();
+		const secondsUntilReset = Math.max(0, Math.ceil((resetTime - now) / 1000));
+
+		// Determine status based on remaining requests
+		let status: "ok" | "warning" | "critical";
+		if (state.remaining < 2) {
+			status = "critical";
+		} else if (state.remaining < 10) {
+			status = "warning";
+		} else {
+			status = "ok";
+		}
+
+		return reply.send({
+			status,
+			limit: state.limit,
+			remaining: state.remaining,
+			resetAt: state.resetAt.toISOString(),
+			secondsUntilReset,
+			lastUpdated: state.lastUpdated.toISOString(),
+			isAuthenticated: state.isAuthenticated,
+			message:
+				status === "critical"
+					? `Rate limit nearly exhausted. Resets in ${secondsUntilReset}s`
+					: status === "warning"
+						? `Rate limit running low (${state.remaining} remaining)`
+						: `Rate limit healthy (${state.remaining}/${state.limit} remaining)`,
+		});
+	});
+
+	/**
+	 * GET /api/trash-guides/cache/cf-includes/list
+	 * Get all CF include files from cache.
+	 * These are MkDocs snippets shared across CF descriptions.
+	 * Stored under RADARR serviceType as a convention (includes are shared).
+	 */
+	app.get("/cf-includes/list", async (_request, reply) => {
+		try {
+			// CF includes are stored under RADARR as they're shared across services
+			const isFresh = await cacheManager.isFresh("RADARR", "CF_INCLUDES");
+
+			if (!isFresh) {
+				const data = await fetcher.fetchConfigs("RADARR", "CF_INCLUDES");
+				await cacheManager.set("RADARR", "CF_INCLUDES", data);
+				return reply.send({ data });
+			}
+
+			const data = await cacheManager.get("RADARR", "CF_INCLUDES");
+			return reply.send({ data: data || [] });
+		} catch (error) {
+			app.log.error({ err: error }, "Failed to fetch CF includes");
+			return reply.status(500).send({
+				statusCode: 500,
+				error: "InternalServerError",
+				message: error instanceof Error ? error.message : "Failed to fetch CF includes",
 			});
 		}
 	});

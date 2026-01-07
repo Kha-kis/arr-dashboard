@@ -32,11 +32,14 @@ import {
 	Hand,
 	ChevronDown,
 	Loader2,
+	Sliders,
 } from "lucide-react";
 import { useBulkDeploymentPreviews, useExecuteBulkDeployment } from "../../../hooks/api/useDeploymentPreview";
 import { cn } from "../../../lib/utils";
 import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useColorTheme } from "../../../providers/color-theme-provider";
+import { InstanceQualityOverrideModal } from "./instance-quality-override-modal";
+import type { CustomQualityConfig, TemplateInstanceOverride } from "@arr/shared";
 
 type SyncStrategy = "auto" | "manual" | "notify";
 
@@ -62,11 +65,16 @@ interface BulkDeploymentModalProps {
 	onClose: () => void;
 	templateId: string | null;
 	templateName?: string;
+	serviceType?: "RADARR" | "SONARR";
+	/** The template's default quality config (used for override editor) */
+	templateDefaultQualityConfig?: CustomQualityConfig;
 	instances: Array<{
 		instanceId: string;
 		instanceLabel: string;
 		instanceType: string;
 	}>;
+	/** Map of instanceId to override info (from template.instanceOverrides) */
+	instanceOverrides?: Record<string, TemplateInstanceOverride>;
 	onDeploySuccess?: () => void;
 }
 
@@ -156,7 +164,10 @@ export const BulkDeploymentModal = ({
 	onClose,
 	templateId,
 	templateName,
+	serviceType,
+	templateDefaultQualityConfig,
 	instances,
+	instanceOverrides,
 	onDeploySuccess,
 }: BulkDeploymentModalProps) => {
 	const { colorTheme } = useColorTheme();
@@ -164,6 +175,11 @@ export const BulkDeploymentModal = ({
 	// Track selection state and sync strategies per instance
 	const [selectedInstances, setSelectedInstances] = useState<Set<string>>(new Set());
 	const [syncStrategies, setSyncStrategies] = useState<Record<string, SyncStrategy>>({});
+	// Quality override editor state
+	const [editingQualityOverride, setEditingQualityOverride] = useState<{
+		instanceId: string;
+		instanceLabel: string;
+	} | null>(null);
 
 	// Get all instance IDs for the bulk preview query
 	const allInstanceIds = useMemo(() => instances.map((i) => i.instanceId), [instances]);
@@ -403,6 +419,33 @@ export const BulkDeploymentModal = ({
 									{inst.instanceLabel}
 								</span>
 
+								{/* Quality config override indicator/button */}
+								{templateDefaultQualityConfig?.useCustomQualities && templateId && serviceType && (
+									<button
+										type="button"
+										onClick={() => setEditingQualityOverride({
+											instanceId: inst.instanceId,
+											instanceLabel: inst.instanceLabel,
+										})}
+										className={cn(
+											"flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium shrink-0 transition-colors",
+											instanceOverrides?.[inst.instanceId]?.qualityConfigOverride
+												? "bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20"
+												: "bg-bg-subtle border border-dashed border-border text-fg-muted hover:bg-bg-hover hover:border-primary/30"
+										)}
+										title={instanceOverrides?.[inst.instanceId]?.qualityConfigOverride
+											? "Click to edit custom quality configuration"
+											: "Click to customize quality configuration for this instance"
+										}
+									>
+										<Sliders className="h-3 w-3" />
+										{instanceOverrides?.[inst.instanceId]?.qualityConfigOverride
+											? "Custom Quality"
+											: "Customize"
+										}
+									</button>
+								)}
+
 								{/* Preview status */}
 								{inst.loading && (
 									<Loader2 className="h-4 w-4 animate-spin shrink-0" style={{ color: themeGradient.from }} />
@@ -584,6 +627,25 @@ export const BulkDeploymentModal = ({
 					)}
 				</Button>
 			</LegacyDialogFooter>
+
+			{/* Instance Quality Override Modal */}
+			{editingQualityOverride && templateId && serviceType && (
+				<InstanceQualityOverrideModal
+					open={true}
+					onClose={() => setEditingQualityOverride(null)}
+					templateId={templateId}
+					templateName={templateName ?? "Template"}
+					instanceId={editingQualityOverride.instanceId}
+					instanceLabel={editingQualityOverride.instanceLabel}
+					serviceType={serviceType}
+					templateDefaultConfig={templateDefaultQualityConfig}
+					onSaved={() => {
+						setEditingQualityOverride(null);
+						// Note: The deployment previews will need to be refetched
+						// to reflect the new quality config
+					}}
+				/>
+			)}
 		</LegacyDialog>
 	);
 };

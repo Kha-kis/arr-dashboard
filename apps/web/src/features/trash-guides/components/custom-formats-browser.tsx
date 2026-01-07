@@ -21,10 +21,10 @@ import {
 	X,
 } from "lucide-react";
 import { createSanitizedHtml } from "../../../lib/sanitize-html";
-import { useCustomFormats, useCFDescriptions, useDeployMultipleCustomFormats } from "../hooks/use-custom-formats";
+import { useCustomFormats, useCFDescriptions, useCFIncludes, useDeployMultipleCustomFormats } from "../hooks/use-custom-formats";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import type { CustomFormat } from "../../../lib/api-client/custom-formats";
-import { cleanDescription } from "../lib/description-utils";
+import { cleanDescription, markdownToFormattedHtml, resolveIncludes, buildIncludesMap } from "../lib/description-utils";
 import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useColorTheme } from "../../../providers/color-theme-provider";
 
@@ -218,6 +218,15 @@ export const CustomFormatsBrowser = () => {
 		selectedService === "ALL" ? undefined : selectedService
 	);
 
+	// Fetch CF includes (shared snippets for description resolution)
+	const { data: cfIncludesData } = useCFIncludes();
+
+	// Build includes map for efficient lookup
+	const includesMap = useMemo(() => {
+		if (!cfIncludesData || cfIncludesData.length === 0) return new Map();
+		return buildIncludesMap(cfIncludesData);
+	}, [cfIncludesData]);
+
 	// Fetch instances
 	const { data: instances } = useServicesQuery();
 
@@ -294,15 +303,41 @@ export const CustomFormatsBrowser = () => {
 		}
 	};
 
-	// Get description for a custom format
+	// Get description for a custom format using multiple matching strategies
 	const getDescription = (format: CustomFormat & { service: "RADARR" | "SONARR" }) => {
 		const service = format.service.toLowerCase() as "radarr" | "sonarr";
 		const descriptions = cfDescriptionsData?.[service] || [];
-		const slug = format.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-		const found = descriptions.find(d => d.cfName === slug);
-		if (found?.rawMarkdown) {
-			return cleanDescription(found.rawMarkdown, format.name);
+		const name = format.name;
+		const nameLower = name.toLowerCase();
+		const slug = nameLower.replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+		// Strategy 1: Exact slug match on cfName (file name)
+		let match = descriptions.find(d => d.cfName === slug);
+
+		// Strategy 2: Match displayName case-insensitively
+		if (!match) {
+			match = descriptions.find(d => d.displayName.toLowerCase() === nameLower);
 		}
+
+		// Strategy 3: Base name without parenthetical suffix (e.g., "ATMOS (undefined)" → "atmos")
+		if (!match) {
+			const baseName = nameLower.replace(/\s*\([^)]*\)\s*$/, '').trim();
+			const baseSlug = baseName.replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+			if (baseSlug !== slug) {
+				match = descriptions.find(d => d.cfName === baseSlug);
+			}
+
+			// Strategy 4: Partial displayName match (displayName starts with CF name)
+			if (!match) {
+				match = descriptions.find(d => d.displayName.toLowerCase().startsWith(baseName));
+			}
+		}
+
+		// Return cleaned description string for card display
+		if (match?.rawMarkdown) {
+			return cleanDescription(match.rawMarkdown, format.name);
+		}
+
 		return undefined;
 	};
 

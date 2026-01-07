@@ -1,4 +1,4 @@
-# Release Testing Checklist v2.6.6
+# Release Testing Checklist v2.6.7
 
 Pre-release verification checklist for arr-dashboard. Complete all sections before tagging a release.
 
@@ -257,7 +257,7 @@ rm -rf ./test-config
 
 ### Version Information
 
-- **Version**: 2.6.6
+- **Version**: 2.6.7
 - **Build Date**:
 - **Git Commit**:
 - **Last Updated**: 2025-12-18

@@ -38,6 +38,12 @@ export interface SearchHistoryManager {
 	 * Get count of items filtered due to recent search
 	 */
 	getFilteredCount(): number;
+
+	/**
+	 * Get total count of recently searched items (within researchAfterDays window).
+	 * Used for pagination offset to rotate through large libraries.
+	 */
+	getRecentSearchCount(): number;
 }
 
 /**
@@ -177,6 +183,10 @@ export async function createSearchHistoryManager(
 
 		getFilteredCount(): number {
 			return filteredCount;
+		},
+
+		getRecentSearchCount(): number {
+			return recentlySearchedSet.size;
 		},
 	};
 }

@@ -11,6 +11,32 @@ import type {
 	UpdateTemplateRequest,
 } from "@arr/shared";
 import type { Prisma, PrismaClient, TrashTemplate as PrismaTrashTemplate } from "@prisma/client";
+import { z } from "zod";
+import { safeJsonParse } from "./utils.js";
+
+/**
+ * Zod schema for template import validation
+ * Validates the essential structure of imported template JSON.
+ * Uses loose validation (.passthrough()) for nested config to allow
+ * all valid TRaSH Guides formats while still catching malformed imports.
+ */
+const templateImportSchema = z.object({
+	template: z.object({
+		name: z.string().min(1, "Template name is required").max(100, "Template name too long"),
+		serviceType: z.enum(["RADARR", "SONARR"]),
+		config: z
+			.object({
+				customFormats: z.array(z.record(z.unknown())), // Validate it's an array of objects
+				customFormatGroups: z.array(z.record(z.unknown())),
+			})
+			.passthrough(), // Allow qualitySize, naming, qualityProfile, etc.
+		description: z.string().max(500).optional(),
+		sourceQualityProfileTrashId: z.string().optional(),
+		sourceQualityProfileName: z.string().optional(),
+	}),
+	version: z.string().optional(),
+	exportedAt: z.string().optional(),
+});
 
 /**
  * Expected structure for template import JSON
@@ -26,31 +52,6 @@ interface TemplateImportData {
 	};
 	version?: string;
 	exportedAt?: string;
-}
-
-// ============================================================================
-// Utilities
-// ============================================================================
-
-/**
- * Safely parse JSON string, returning undefined on failure
- * Logs a warning with context when parsing fails
- */
-function safeJsonParse<T>(
-	value: string | null | undefined,
-	context: { templateId: string; fieldName: string },
-): T | undefined {
-	if (value === null || value === undefined) {
-		return undefined;
-	}
-	try {
-		return JSON.parse(value) as T;
-	} catch {
-		console.warn(
-			`[TemplateService] Failed to parse JSON for template ${context.templateId}, field: ${context.fieldName}`,
-		);
-		return undefined;
-	}
 }
 
 // ============================================================================
@@ -434,24 +435,24 @@ export class TemplateService {
 	 * Import template from JSON
 	 */
 	async importTemplate(userId: string, jsonData: string): Promise<TrashTemplate> {
-		let data: TemplateImportData;
+		// Parse JSON
+		let rawData: unknown;
 		try {
-			data = JSON.parse(jsonData) as TemplateImportData;
+			rawData = JSON.parse(jsonData);
 		} catch (parseError) {
 			throw new Error(
 				`Invalid JSON format: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
 			);
 		}
 
-		// Validate import structure
-		if (
-			!data.template ||
-			!data.template.name ||
-			!data.template.serviceType ||
-			!data.template.config
-		) {
-			throw new Error("Invalid template import format");
+		// Validate with Zod schema
+		const parseResult = templateImportSchema.safeParse(rawData);
+		if (!parseResult.success) {
+			const errors = parseResult.error.errors.map((e) => `${e.path.join(".")}: ${e.message}`);
+			throw new Error(`Invalid template import format: ${errors.join("; ")}`);
 		}
+		// Cast to TemplateImportData - Zod validated the structure, TypeScript interface provides proper typing
+		const data = parseResult.data as unknown as TemplateImportData;
 
 		// Check for name conflicts and auto-rename if needed
 		const MAX_RENAME_ATTEMPTS = 100;
@@ -534,8 +535,9 @@ export class TemplateService {
 
 		// Parse config to get counts with fallback to empty config on failure
 		const config = safeJsonParse<TemplateConfig>(template.configData, {
-			templateId: template.id,
-			fieldName: "configData",
+			source: "TemplateService",
+			identifier: template.id,
+			field: "configData",
 		}) ?? {
 			customFormats: [],
 			customFormatGroups: [],
@@ -663,8 +665,9 @@ export class TemplateService {
 
 		// Parse configData with fallback to empty config on failure
 		const config = safeJsonParse<TemplateConfig>(prismaTemplate.configData, {
-			templateId,
-			fieldName: "configData",
+			source: "TemplateService",
+			identifier: templateId,
+			field: "configData",
 		}) ?? {
 			customFormats: [],
 			customFormatGroups: [],
@@ -693,15 +696,17 @@ export class TemplateService {
 			// Phase 3: Customization Tracking
 			hasUserModifications: prismaTemplate.hasUserModifications ?? false,
 			modifiedFields: safeJsonParse<string[]>(prismaTemplate.modifiedFields, {
-				templateId,
-				fieldName: "modifiedFields",
+				source: "TemplateService",
+				identifier: templateId,
+				field: "modifiedFields",
 			}),
 			lastModifiedAt: prismaTemplate.lastModifiedAt?.toISOString(),
 			lastModifiedBy: prismaTemplate.lastModifiedBy || undefined,
 			// Phase 3: Change Log
 			changeLog: safeJsonParse<TrashTemplate["changeLog"]>(prismaTemplate.changeLog, {
-				templateId,
-				fieldName: "changeLog",
+				source: "TemplateService",
+				identifier: templateId,
+				field: "changeLog",
 			}),
 		};
 	}

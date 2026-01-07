@@ -15,7 +15,8 @@
 		"db:generate": "prisma generate --schema prisma/schema.prisma",
 		"db:push": "prisma db push --schema prisma/schema.prisma",
 		"db:sync": "prisma db push --schema prisma/schema.prisma --skip-generate",
-		"reset-admin-password": "tsx scripts/reset-admin-password.ts"
+		"reset-admin-password": "tsx scripts/reset-admin-password.ts",
+		"reset-oidc": "tsx scripts/reset-oidc.ts"
 	},
 	"dependencies": {
 		"@arr/shared": "workspace:*",

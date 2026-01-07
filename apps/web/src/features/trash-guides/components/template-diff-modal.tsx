@@ -94,12 +94,28 @@ export const TemplateDiffModal = ({
 		if (!templateId) return;
 
 		try {
-			await syncTemplate.mutateAsync({
+			const result = await syncTemplate.mutateAsync({
 				templateId,
 				payload: {
 					strategy: mapStrategyToApiStrategy(selectedStrategy),
 				},
 			});
+
+			// Show success toast with sync statistics
+			const stats = result.data?.mergeStats;
+			if (stats) {
+				const changes: string[] = [];
+				if (stats.customFormatsAdded > 0) changes.push(`${stats.customFormatsAdded} CFs added`);
+				if (stats.customFormatsUpdated > 0) changes.push(`${stats.customFormatsUpdated} CFs updated`);
+				if (stats.scoresUpdated > 0) changes.push(`${stats.scoresUpdated} scores updated`);
+
+				toast.success("Template synced", {
+					description: changes.length > 0 ? changes.join(", ") : "Template is now up to date",
+				});
+			} else {
+				toast.success("Template synced successfully");
+			}
+
 			onSyncSuccess?.();
 			onClose();
 		} catch (err) {
@@ -530,6 +546,46 @@ export const TemplateDiffModal = ({
 							</div>
 						)}
 
+						{/* Suggested Score Changes Section */}
+						{data.data.suggestedScoreChanges && data.data.suggestedScoreChanges.length > 0 && (
+							<div className="space-y-3">
+								<h3 className="text-sm font-medium text-fg flex items-center gap-2">
+									<TrendingUp className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+									Suggested Score Updates ({data.data.suggestedScoreChanges.length})
+								</h3>
+								<div className="rounded-lg border border-purple-500/30 bg-purple-500/5 p-3 max-h-60 overflow-y-auto">
+									<div className="space-y-2 text-sm">
+										{data.data.suggestedScoreChanges.map((change) => (
+											<div
+												key={change.trashId}
+												className="flex items-center justify-between py-1 border-b border-purple-500/10 last:border-0"
+											>
+												<span className="text-fg-muted truncate mr-2">{change.name}</span>
+												<span className="flex items-center gap-1 shrink-0 text-xs">
+													<span className="text-fg-muted">{change.currentScore}</span>
+													<span className="text-purple-500">→</span>
+													<span className="text-purple-600 dark:text-purple-400 font-medium">
+														{change.recommendedScore}
+													</span>
+												</span>
+											</div>
+										))}
+									</div>
+								</div>
+								<div className="space-y-1">
+									<p className="text-xs text-fg-muted">
+										Score set: <span className="font-mono text-xs">{data.data.suggestedScoreChanges[0]?.scoreSet || "default"}</span>
+									</p>
+									{data.data.suggestedScoreChanges.every(c => c.currentScore === 0) && (
+										<p className="text-xs text-amber-600 dark:text-amber-400">
+											⚠️ All current scores show 0 - this template may predate TRaSH&apos;s profile-specific scores.
+											Syncing will add the recommended scores.
+										</p>
+									)}
+								</div>
+							</div>
+						)}
+
 						{/* No Changes Message */}
 						{data.data.summary.totalChanges === 0 && !data.data.suggestedAdditions?.length && !data.data.suggestedScoreChanges?.length && (
 							<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-8 text-center">
@@ -595,61 +651,6 @@ export const TemplateDiffModal = ({
 								</div>
 							</div>
 						)}
-
-						{/* Suggested Score Changes Section */}
-						{data.data.suggestedScoreChanges && data.data.suggestedScoreChanges.length > 0 && (
-							<div className="space-y-3">
-								<div className="flex items-center gap-2">
-									<TrendingUp className="h-4 w-4" style={{ color: SEMANTIC_COLORS.info.from }} />
-									<h3 className="text-sm font-semibold text-foreground">
-										Suggested Score Updates ({data.data.suggestedScoreChanges.length})
-									</h3>
-								</div>
-								<p className="text-xs text-muted-foreground">
-									TRaSH Guides recommends different scores for these Custom Formats.
-									Edit the template to update scores if desired.
-								</p>
-								<div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-									{data.data.suggestedScoreChanges.map((change) => (
-										<div
-											key={change.trashId}
-											className="rounded-xl border p-3"
-											style={{
-												borderColor: SEMANTIC_COLORS.info.border,
-												backgroundColor: SEMANTIC_COLORS.info.bg,
-											}}
-										>
-											<div className="flex items-center justify-between gap-3">
-												<div className="flex items-center gap-2 flex-1 min-w-0">
-													<Edit className="h-4 w-4 shrink-0" style={{ color: SEMANTIC_COLORS.info.from }} />
-													<span className="text-sm font-medium truncate" style={{ color: SEMANTIC_COLORS.info.text }}>
-														{change.name}
-													</span>
-												</div>
-												<div className="flex items-center gap-2 shrink-0">
-													<span className="text-xs opacity-70" style={{ color: SEMANTIC_COLORS.info.text }}>
-														{change.currentScore}
-													</span>
-													<span className="text-xs" style={{ color: SEMANTIC_COLORS.info.from }}>→</span>
-													<span className="text-xs font-medium" style={{ color: SEMANTIC_COLORS.info.text }}>
-														{change.recommendedScore}
-													</span>
-													<span
-														className="text-xs px-2 py-0.5 rounded-full"
-														style={{
-															backgroundColor: `${SEMANTIC_COLORS.info.from}20`,
-															color: SEMANTIC_COLORS.info.text,
-														}}
-													>
-														{change.scoreSet}
-													</span>
-												</div>
-											</div>
-										</div>
-									))}
-								</div>
-							</div>
-						)}
 					</>
 				)}
 			</LegacyDialogContent>
@@ -661,14 +662,10 @@ export const TemplateDiffModal = ({
 				{!isHistorical && (
 					<Button
 						onClick={handleSync}
-						disabled={
-							syncTemplate.isPending ||
-							!data?.data ||
-							data.data.summary.totalChanges === 0
-						}
+						disabled={syncTemplate.isPending || !data?.data}
 						className="gap-2 rounded-xl font-medium"
 						style={
-							data?.data && data.data.summary.totalChanges > 0
+							data?.data
 								? {
 										background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
 										boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
@@ -681,6 +678,10 @@ export const TemplateDiffModal = ({
 								<Loader2 className="h-4 w-4 animate-spin" />
 								Syncing...
 							</>
+						) : data?.data?.summary.totalChanges === 0 &&
+						  !data?.data?.suggestedScoreChanges?.length &&
+						  !data?.data?.suggestedAdditions?.length ? (
+							"Mark as Current"
 						) : (
 							`Sync with ${selectedStrategy.replace(/_/g, " ")}`
 						)}

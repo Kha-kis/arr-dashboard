@@ -8,6 +8,7 @@ import { ChevronLeft, Download, CheckCircle, Info, Save, Edit2, TrendingUp, Tren
 import { THEME_GRADIENTS } from "../../../../lib/theme-gradients";
 import { useColorTheme } from "../../../../providers/color-theme-provider";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
+import type { CustomQualityConfig, TrashTemplate } from "@arr/shared";
 import { apiRequest } from "../../../../lib/api-client/base";
 
 /**
@@ -102,12 +103,14 @@ interface TemplateCreationProps {
 		}>;
 		templateName: string;
 		templateDescription: string;
+		customQualityConfig?: CustomQualityConfig;
 	};
 	templateId?: string; // For editing existing templates
 	isEditMode?: boolean;
+	editingTemplate?: TrashTemplate; // Original template data for CF group info in edit mode
 	onComplete: () => void;
 	onBack: () => void;
-	onEditStep?: (step: "profile" | "customize") => void; // Quick edit navigation
+	onEditStep?: (step: "profile" | "quality" | "customize") => void; // Quick edit navigation
 }
 
 export const TemplateCreation = ({
@@ -115,6 +118,7 @@ export const TemplateCreation = ({
 	wizardState,
 	templateId,
 	isEditMode = false,
+	editingTemplate,
 	onComplete,
 	onBack,
 	onEditStep,
@@ -156,6 +160,35 @@ export const TemplateCreation = ({
 		enabled: hasTrashId && !isEditMode,
 	});
 
+	// Fetch CF Groups from cache for edit mode categorization
+	// This helps determine which CFs belong to which groups even when template data is incomplete
+	const { data: cfGroupsCache } = useQuery({
+		queryKey: ["cf-groups-cache", serviceType],
+		queryFn: async () => {
+			// API returns array directly, not wrapped in { entries: [...] }
+			const entries = await apiRequest<any[]>(`/api/trash-guides/cache/entries?serviceType=${serviceType}`);
+			const cfGroupsEntry = entries?.find((e: any) => e.configType === "CF_GROUPS");
+			return cfGroupsEntry?.data || [];
+		},
+		// Fetch in edit mode to help categorize CFs
+		enabled: isEditMode,
+		staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+	});
+
+	// Fetch source profile data in edit mode to get mandatory CFs
+	// The template stores sourceQualityProfileTrashId which we can use to look up the profile
+	const sourceProfileTrashId = editingTemplate?.sourceQualityProfileTrashId;
+	const { data: sourceProfileData } = useQuery({
+		queryKey: ["source-profile-data", serviceType, sourceProfileTrashId],
+		queryFn: async () => {
+			return await apiRequest<any>(
+				`/api/trash-guides/quality-profiles/${serviceType}/${sourceProfileTrashId}`,
+			);
+		},
+		enabled: isEditMode && !!sourceProfileTrashId,
+		staleTime: 5 * 60 * 1000,
+	});
+
 	const handleSubmit = async () => {
 		if (!templateName.trim()) {
 			return;
@@ -169,8 +202,16 @@ export const TemplateCreation = ({
 		);
 
 		// Find all groups that contain at least one selected CF
-		const cfGroups = data?.cfGroups || [];
-		const relevantGroupIds = cfGroups
+		// In edit mode, prefer cfGroupsCache from TRaSH cache for comprehensive group coverage
+		const cfGroupsForSubmit = isEditMode
+			? (cfGroupsCache || editingTemplate?.config.customFormatGroups.map(g => ({
+				trash_id: g.trashId,
+				name: g.name,
+				custom_formats: g.originalConfig?.custom_formats || [],
+			})) || [])
+			: (data?.cfGroups || []);
+
+		const relevantGroupIds = cfGroupsForSubmit
 			.filter((group: any) => {
 				const groupCFs = Array.isArray(group.custom_formats) ? group.custom_formats : [];
 				return groupCFs.some((cf: any) => {
@@ -190,6 +231,7 @@ export const TemplateCreation = ({
 					templateDescription: templateDescription.trim() || undefined,
 					selectedCFGroups: relevantGroupIds,
 					customFormatSelections: wizardState.customFormatSelections,
+					customQualityConfig: wizardState.customQualityConfig,
 				});
 			} else if (isCloned && clonedProfileInfo) {
 				// Create template from cloned profile (instance-based)
@@ -219,6 +261,7 @@ export const TemplateCreation = ({
 						items: profileData?.items || [],
 						language: profileData?.language,
 					},
+					customQualityConfig: wizardState.customQualityConfig,
 				});
 			} else {
 				// Create new template from TRaSH Guides (trashId required)
@@ -232,6 +275,7 @@ export const TemplateCreation = ({
 					templateDescription: templateDescription.trim() || undefined,
 					selectedCFGroups: relevantGroupIds,
 					customFormatSelections: wizardState.customFormatSelections,
+					customQualityConfig: wizardState.customQualityConfig,
 				});
 			}
 
@@ -253,7 +297,16 @@ export const TemplateCreation = ({
 	}
 
 	// Build list of selected CF Groups for display (groups with at least one selected CF)
-	const cfGroups = data?.cfGroups || [];
+	// In edit mode, prefer cfGroupsCache from TRaSH cache, fallback to template's stored groups
+	// This ensures proper categorization even for templates with incomplete group data
+	const cfGroups = isEditMode
+		? (cfGroupsCache || editingTemplate?.config.customFormatGroups.map(g => ({
+			trash_id: g.trashId,
+			name: g.name,
+			custom_formats: g.originalConfig?.custom_formats || [],
+		})) || [])
+		: (data?.cfGroups || []);
+
 	const selectedCFTrashIds = new Set(
 		Object.entries(wizardState.customFormatSelections)
 			.filter(([_, sel]) => sel.selected)
@@ -273,7 +326,11 @@ export const TemplateCreation = ({
 	);
 
 	// Categorize CFs by their properties
-	const mandatoryCFs = data?.mandatoryCFs || [];
+	// In edit mode, use the source profile data to determine mandatory CFs
+	// This requires the template to have sourceQualityProfileTrashId set
+	const mandatoryCFs = isEditMode
+		? (sourceProfileData?.mandatoryCFs || [])
+		: (data?.mandatoryCFs || []);
 	const mandatoryCFIds = new Set(mandatoryCFs.map((cf: any) => cf.trash_id));
 
 	// CFs from groups that have at least one selected CF
@@ -287,7 +344,10 @@ export const TemplateCreation = ({
 		});
 	const cfsFromSelectedGroupsSet = new Set(cfsFromSelectedGroups);
 
-	// Count breakdown
+	// Count breakdown by category:
+	// - Mandatory: CFs required by the source TRaSH profile
+	// - From Groups: CFs that belong to selected CF Groups (but not mandatory)
+	// - Manual: CFs added individually by the user (not in any group or mandatory list)
 	const mandatoryCount = selectedCFs.filter(([trashId]) => mandatoryCFIds.has(trashId)).length;
 	const fromGroupsCount = selectedCFs.filter(([trashId]) =>
 		!mandatoryCFIds.has(trashId) && cfsFromSelectedGroupsSet.has(trashId)
@@ -338,7 +398,7 @@ export const TemplateCreation = ({
 			<div className="rounded-xl border border-border bg-bg-subtle p-6">
 				<div className="flex items-center justify-between mb-4">
 					<h3 className="text-lg font-medium text-fg">{isEditMode ? 'Review & Update Template' : 'Review & Create Template'}</h3>
-					{onEditStep && !isEditMode && (
+					{onEditStep && (
 						<button
 							type="button"
 							onClick={() => onEditStep("customize")}
@@ -361,7 +421,7 @@ export const TemplateCreation = ({
 								<CheckCircle className="h-4 w-4 text-green-400" />
 								Quality Profile
 							</div>
-							{onEditStep && !isEditMode && (
+							{onEditStep && (
 								<button
 									type="button"
 									onClick={() => onEditStep("profile")}
@@ -395,6 +455,52 @@ export const TemplateCreation = ({
 						</div>
 					</div>
 
+					{/* Quality Configuration - Always visible */}
+					<div className={`rounded-lg border p-4 ${
+						wizardState.customQualityConfig?.useCustomQualities
+							? "border-amber-500/20 bg-amber-500/5"
+							: "border-border bg-bg-subtle"
+					}`}>
+						<div className="flex items-center justify-between">
+							<div className="flex items-center gap-2 text-sm font-medium text-fg">
+								<CheckCircle className={`h-4 w-4 ${
+									wizardState.customQualityConfig?.useCustomQualities
+										? "text-amber-400"
+										: "text-green-400"
+								}`} />
+								Quality Configuration
+								{wizardState.customQualityConfig?.useCustomQualities && (
+									<span className="rounded bg-amber-500/20 px-2 py-0.5 text-xs text-amber-300">
+										Custom
+									</span>
+								)}
+							</div>
+							{onEditStep && (
+								<button
+									type="button"
+									onClick={() => onEditStep("quality")}
+									className="text-xs text-fg/60 hover:text-primary transition"
+								>
+									Edit
+								</button>
+							)}
+						</div>
+						{wizardState.customQualityConfig?.useCustomQualities ? (
+							<div className="mt-3 flex flex-wrap gap-2">
+								<span className="inline-flex items-center gap-1 rounded bg-amber-500/20 px-2 py-1 text-xs font-medium text-amber-300">
+									📊 {wizardState.customQualityConfig.items?.length || 0} quality items
+								</span>
+								{wizardState.customQualityConfig.cutoffId && (
+									<span className="inline-flex items-center gap-1 rounded bg-green-500/20 px-2 py-1 text-xs font-medium text-green-300">
+										🎯 Custom cutoff set
+									</span>
+								)}
+							</div>
+						) : (
+							<p className="mt-2 text-sm text-fg/70">Using profile defaults</p>
+						)}
+					</div>
+
 					{/* CF Groups */}
 					{selectedCFGroups.length > 0 && (
 						<div className="rounded-lg border border-border bg-bg-subtle p-4">
@@ -403,7 +509,7 @@ export const TemplateCreation = ({
 									<CheckCircle className="h-4 w-4 text-green-400" />
 									Custom Format Groups ({selectedCFGroups.length})
 								</div>
-								{onEditStep && !isEditMode && (
+								{onEditStep && (
 									<button
 										type="button"
 										onClick={() => onEditStep("customize")}
@@ -431,7 +537,7 @@ export const TemplateCreation = ({
 								<CheckCircle className="h-4 w-4 text-green-400" />
 								Custom Formats ({selectedCFs.length} total)
 							</div>
-							{onEditStep && !isEditMode && (
+							{onEditStep && (
 								<button
 									type="button"
 									onClick={() => onEditStep("customize")}

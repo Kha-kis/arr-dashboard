@@ -72,6 +72,7 @@ export const useImportQualityProfileWizard = () => {
 	return useMutation<ImportQualityProfileResponse, Error, ImportQualityProfilePayload & {
 		selectedCFGroups: string[];
 		customFormatSelections: Record<string, any>;
+		customQualityConfig?: any;
 	}>({
 		mutationFn: (payload) => importQualityProfile(payload),
 		onSuccess: () => {
@@ -90,6 +91,7 @@ export const useUpdateQualityProfileTemplate = () => {
 	return useMutation<ImportQualityProfileResponse, Error, UpdateQualityProfileTemplatePayload & {
 		selectedCFGroups: string[];
 		customFormatSelections: Record<string, any>;
+		customQualityConfig?: any;
 	}>({
 		mutationFn: (payload) => updateQualityProfileTemplate(payload),
 		onSuccess: () => {

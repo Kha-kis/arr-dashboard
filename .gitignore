@@ -52,6 +52,7 @@ apps/api/dev.db
 .pf/
 .claude/
 .serena/
+.leann/
 claudedocs/
 
 # IDE and Editor files
