@@ -732,9 +732,7 @@ async function executeSonarrHunt(
 		if (!data.records || data.records.length === 0) {
 			// If we're on page > 1 and got no results, we've exhausted all candidates
 			const exhaustedMessage =
-				pageOffset > 1
-					? ` (searched through ${recentSearchCount} items, reached end of list)`
-					: "";
+				pageOffset > 1 ? ` (searched through ${recentSearchCount} items, reached end of list)` : "";
 			return {
 				itemsSearched: 0,
 				itemsGrabbed: 0,
@@ -773,7 +771,8 @@ async function executeSonarrHunt(
 
 		if (eligibleEpisodes.length === 0) {
 			// Provide context about pagination position
-			const pageInfo = pageOffset > 1 ? ` (page ${pageOffset}, ${recentSearchCount} items searched)` : "";
+			const pageInfo =
+				pageOffset > 1 ? ` (page ${pageOffset}, ${recentSearchCount} items searched)` : "";
 			return {
 				itemsSearched: 0,
 				itemsGrabbed: 0,
@@ -1077,9 +1076,7 @@ async function executeRadarrHunt(
 		if (movies.length === 0) {
 			// If we're on page > 1 and got no results, we've exhausted all candidates
 			const exhaustedMessage =
-				pageOffset > 1
-					? ` (searched through ${recentSearchCount} items, reached end of list)`
-					: "";
+				pageOffset > 1 ? ` (searched through ${recentSearchCount} items, reached end of list)` : "";
 			return {
 				itemsSearched: 0,
 				itemsGrabbed: 0,
@@ -1117,7 +1114,8 @@ async function executeRadarrHunt(
 
 		if (eligibleMovies.length === 0) {
 			// Provide context about pagination position
-			const pageInfo = pageOffset > 1 ? ` (page ${pageOffset}, ${recentSearchCount} items searched)` : "";
+			const pageInfo =
+				pageOffset > 1 ? ` (page ${pageOffset}, ${recentSearchCount} items searched)` : "";
 			return {
 				itemsSearched: 0,
 				itemsGrabbed: 0,

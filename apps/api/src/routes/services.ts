@@ -53,7 +53,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	app.get("/services", async (request, reply) => {
 		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId: request.currentUser!.id },
+			where: { userId: request.currentUser?.id },
 			include: {
 				tags: {
 					include: {
@@ -90,7 +90,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 		const created = await app.prisma.serviceInstance.create({
 			data: {
-				userId: request.currentUser!.id,
+				userId: request.currentUser!.id, // preHandler guarantees auth
 				service: serviceEnum,
 				encryptedApiKey: encrypted.value,
 				encryptionIv: encrypted.iv,
@@ -122,7 +122,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		const payload = parsed.data;
-		const userId = request.currentUser!.id; // preHandler guarantees authentication
+		const userId = request.currentUser?.id; // preHandler guarantees authentication
 
 		// Verify instance exists and is owned by the current user.
 		// Including userId in the where clause ensures non-owned instances return null,
@@ -182,7 +182,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	app.delete("/services/:id", async (request, reply) => {
 		const { id } = request.params as { id: string };
-		const userId = request.currentUser!.id; // preHandler guarantees authentication
+		const userId = request.currentUser?.id; // preHandler guarantees authentication
 
 		// Verify instance exists and is owned by the current user.
 		// Including userId in the where clause ensures non-owned instances return null,
@@ -270,7 +270,7 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	app.post("/services/:id/test", async (request, reply) => {
 		const { id } = request.params as { id: string };
-		const userId = request.currentUser!.id; // preHandler guarantees authentication
+		const userId = request.currentUser?.id; // preHandler guarantees authentication
 
 		// Verify instance exists and is owned by the current user.
 		// Including userId in the where clause ensures non-owned instances return null,

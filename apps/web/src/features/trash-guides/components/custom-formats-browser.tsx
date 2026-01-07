@@ -27,10 +27,10 @@ import {
 } from "../../../components/ui";
 import { Search, Package, Download, CheckCircle2, XCircle, Loader2, Info } from "lucide-react";
 import { createSanitizedHtml } from "../../../lib/sanitize-html";
-import { useCustomFormats, useCFDescriptions, useDeployMultipleCustomFormats } from "../hooks/use-custom-formats";
+import { useCustomFormats, useCFDescriptions, useCFIncludes, useDeployMultipleCustomFormats } from "../hooks/use-custom-formats";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import type { CustomFormat } from "../../../lib/api-client/custom-formats";
-import { cleanDescription } from "../lib/description-utils";
+import { cleanDescription, markdownToFormattedHtml, resolveIncludes, buildIncludesMap } from "../lib/description-utils";
 
 /**
  * Custom Formats Browser Component
@@ -55,6 +55,15 @@ export const CustomFormatsBrowser = () => {
 	const { data: cfDescriptionsData } = useCFDescriptions(
 		selectedService === "ALL" ? undefined : selectedService
 	);
+
+	// Fetch CF includes (shared snippets for description resolution)
+	const { data: cfIncludesData } = useCFIncludes();
+
+	// Build includes map for efficient lookup
+	const includesMap = useMemo(() => {
+		if (!cfIncludesData || cfIncludesData.length === 0) return new Map();
+		return buildIncludesMap(cfIncludesData);
+	}, [cfIncludesData]);
 
 	// Fetch instances
 	const { data: instances } = useServicesQuery();
@@ -136,12 +145,35 @@ export const CustomFormatsBrowser = () => {
 		}
 	};
 
-	// Get description for a custom format
+	// Get description for a custom format using multiple matching strategies
 	const getDescription = (format: CustomFormat & { service: "RADARR" | "SONARR" }) => {
 		const service = format.service.toLowerCase() as "radarr" | "sonarr";
 		const descriptions = cfDescriptionsData?.[service] || [];
-		const slug = format.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-		return descriptions.find(d => d.cfName === slug);
+		const name = format.name;
+		const nameLower = name.toLowerCase();
+		const slug = nameLower.replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+		// Strategy 1: Exact slug match on cfName (file name)
+		let match = descriptions.find(d => d.cfName === slug);
+		if (match) return match;
+
+		// Strategy 2: Match displayName case-insensitively
+		match = descriptions.find(d => d.displayName.toLowerCase() === nameLower);
+		if (match) return match;
+
+		// Strategy 3: Base name without parenthetical suffix (e.g., "ATMOS (undefined)" → "atmos")
+		const baseName = nameLower.replace(/\s*\([^)]*\)\s*$/, '').trim();
+		const baseSlug = baseName.replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+		if (baseSlug !== slug) {
+			match = descriptions.find(d => d.cfName === baseSlug);
+			if (match) return match;
+		}
+
+		// Strategy 4: Partial displayName match (displayName starts with CF name)
+		match = descriptions.find(d => d.displayName.toLowerCase().startsWith(baseName));
+		if (match) return match;
+
+		return undefined;
 	};
 
 	// Handle view details
@@ -341,7 +373,9 @@ export const CustomFormatsBrowser = () => {
 									{(() => {
 										const description = getDescription(format);
 										if (description && description.rawMarkdown) {
-											const cleaned = cleanDescription(description.rawMarkdown, format.name);
+											// Resolve includes first, then clean
+											const resolved = resolveIncludes(description.rawMarkdown, includesMap);
+											const cleaned = cleanDescription(resolved, format.name);
 
 											if (cleaned) {
 												return (
@@ -466,22 +500,32 @@ export const CustomFormatsBrowser = () => {
 					</DialogHeader>
 
 					{selectedFormatForDetails && (() => {
-						// Find matching description using slug format (same as quality-profile-routes.ts)
-						const service = selectedFormatForDetails.service.toLowerCase() as "radarr" | "sonarr";
-						const descriptions = cfDescriptionsData?.[service] || [];
-						const slug = selectedFormatForDetails.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-						const description = descriptions.find(d => d.cfName === slug);
+						// Use the shared getDescription helper for consistent matching
+						const description = getDescription(selectedFormatForDetails);
+						// Resolve includes first, then get cleaned plain text
+						const resolvedMarkdown = description?.rawMarkdown
+							? resolveIncludes(description.rawMarkdown, includesMap)
+							: '';
+						const cleanedText = resolvedMarkdown
+							? cleanDescription(resolvedMarkdown, selectedFormatForDetails.name)
+							: '';
 
 						return (
 							<div className="space-y-6">
 								{/* Description */}
-								{description && (
+								{cleanedText ? (
 									<div className="space-y-2">
 										<h3 className="text-sm font-semibold text-fg">Description</h3>
-										<div
-											className="rounded-lg border border-border bg-bg-subtle p-4 text-sm text-fg-muted prose prose-invert prose-sm max-w-none"
-											dangerouslySetInnerHTML={createSanitizedHtml(description.description)}
-										/>
+										<div className="rounded-lg border border-border bg-bg-subtle p-4 text-sm text-fg-muted">
+											{cleanedText}
+										</div>
+									</div>
+								) : (
+									<div className="space-y-2">
+										<h3 className="text-sm font-semibold text-fg">Description</h3>
+										<p className="text-sm text-fg-muted italic">
+											No description available for this custom format.
+										</p>
 									</div>
 								)}
 

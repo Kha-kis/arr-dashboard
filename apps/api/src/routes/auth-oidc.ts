@@ -226,7 +226,10 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.send({ authorizationUrl });
 		} catch (error) {
 			const errMsg = error instanceof Error ? error.message : String(error);
-			request.log.error({ err: error, errorMessage: errMsg }, "Failed to generate OIDC authorization URL");
+			request.log.error(
+				{ err: error, errorMessage: errMsg },
+				"Failed to generate OIDC authorization URL",
+			);
 			return reply.status(500).send({
 				error: "Failed to initiate OIDC login",
 				details: errMsg,

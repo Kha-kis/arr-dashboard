@@ -1,4 +1,4 @@
-import { Database, Clock } from "lucide-react";
+import { Database, Clock, Trash2, RefreshCw } from "lucide-react";
 
 interface CacheStatusCardProps {
 	configTypeLabel: string;
@@ -6,6 +6,10 @@ interface CacheStatusCardProps {
 	itemCount: number;
 	lastFetched: string;
 	isStale: boolean;
+	onRefresh?: () => void;
+	onDelete?: () => void;
+	isRefreshing?: boolean;
+	isDeletePending?: boolean;
 }
 
 /**
@@ -17,6 +21,10 @@ interface CacheStatusCardProps {
  * @param itemCount - Number of items in cache
  * @param lastFetched - ISO timestamp of last fetch
  * @param isStale - Whether cache is stale
+ * @param onRefresh - Optional handler for refreshing this cache entry
+ * @param onDelete - Optional handler for deleting this cache entry
+ * @param isRefreshing - Whether this entry is currently being refreshed
+ * @param isDeletePending - Whether a delete operation is in progress
  *
  * @example
  * <CacheStatusCard
@@ -25,6 +33,8 @@ interface CacheStatusCardProps {
  *   itemCount={42}
  *   lastFetched="2025-01-19T12:00:00Z"
  *   isStale={false}
+ *   onRefresh={() => handleRefreshEntry("RADARR", "CUSTOM_FORMATS")}
+ *   onDelete={() => handleDelete("RADARR", "CUSTOM_FORMATS")}
  * />
  */
 export const CacheStatusCard = ({
@@ -33,6 +43,10 @@ export const CacheStatusCard = ({
 	itemCount,
 	lastFetched,
 	isStale,
+	onRefresh,
+	onDelete,
+	isRefreshing,
+	isDeletePending,
 }: CacheStatusCardProps) => {
 	return (
 		<article
@@ -47,11 +61,35 @@ export const CacheStatusCard = ({
 					<h3 className="font-medium text-fg">{configTypeLabel}</h3>
 					<p className="mt-1 text-xs text-fg-muted">v{version}</p>
 				</div>
-				{isStale && (
-					<span className="rounded-full bg-yellow-500/20 px-2 py-1 text-xs font-medium text-yellow-200">
-						Stale
-					</span>
-				)}
+				<div className="flex items-center gap-1">
+					{isStale && (
+						<span className="rounded-full bg-yellow-500/20 px-2 py-1 text-xs font-medium text-yellow-200 mr-1">
+							Stale
+						</span>
+					)}
+					{onRefresh && (
+						<button
+							type="button"
+							onClick={onRefresh}
+							disabled={isRefreshing || isDeletePending}
+							className="rounded-lg p-1.5 text-fg-muted hover:bg-primary/20 hover:text-primary transition disabled:opacity-50 disabled:cursor-not-allowed"
+							title="Refresh this cache entry"
+						>
+							<RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+						</button>
+					)}
+					{onDelete && (
+						<button
+							type="button"
+							onClick={onDelete}
+							disabled={isRefreshing || isDeletePending}
+							className="rounded-lg p-1.5 text-fg-muted hover:bg-red-500/20 hover:text-red-400 transition disabled:opacity-50 disabled:cursor-not-allowed"
+							title="Delete cache entry"
+						>
+							<Trash2 className="h-4 w-4" />
+						</button>
+					)}
+				</div>
 			</div>
 
 			<div className="mt-4 space-y-2 text-sm">

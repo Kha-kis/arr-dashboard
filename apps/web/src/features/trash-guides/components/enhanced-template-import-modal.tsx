@@ -180,7 +180,7 @@ export function EnhancedTemplateImportModal({
 								</span>
 							</div>
 							<ul className="list-disc list-inside space-y-1 text-xs text-destructive">
-								{validation.errors.map((error: any, i: number) => (
+								{validation.errors.map((error, i) => (
 									<li key={i}>
 										{error.field}: {error.message}
 									</li>
@@ -197,7 +197,7 @@ export function EnhancedTemplateImportModal({
 								<span className="font-medium text-sm text-warning">Warnings</span>
 							</div>
 							<ul className="list-disc list-inside space-y-1 text-xs text-warning">
-								{validation.warnings.map((warning: any, i: number) => (
+								{validation.warnings.map((warning, i) => (
 									<li key={i}>
 										{warning.field}: {warning.message}
 										{warning.suggestion && ` (${warning.suggestion})`}
@@ -217,7 +217,7 @@ export function EnhancedTemplateImportModal({
 								</span>
 							</div>
 
-							{validation.conflicts.map((conflict: any, i: number) => (
+							{validation.conflicts.map((conflict, i) => (
 								<div key={i} className="space-y-2">
 									<div className="text-xs text-fg">{conflict.message}</div>
 
@@ -231,7 +231,7 @@ export function EnhancedTemplateImportModal({
 												onChange={(e) =>
 													setOptions({
 														...options,
-														onNameConflict: e.target.value as any,
+														onNameConflict: e.target.value as "rename" | "replace" | "cancel",
 													})
 												}
 												className="w-full"
@@ -254,7 +254,7 @@ export function EnhancedTemplateImportModal({
 							<AlertDescription className="text-xs">
 								Template may not be fully compatible with this system
 								<ul className="list-disc list-inside mt-1 space-y-0.5">
-									{compatibility.issues.map((issue: any, i: number) => (
+									{compatibility.issues.map((issue, i) => (
 										<li key={i}>{issue.message}</li>
 									))}
 								</ul>

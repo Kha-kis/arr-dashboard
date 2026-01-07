@@ -1,5 +1,43 @@
 # Release Notes
 
+## Version 2.6.7
+
+### 🐛 Bug Fixes
+
+- **Unraid Startup Hang** - Resolved container hang during startup on Unraid by removing blanket chown on /app/api ([#29](https://github.com/Kha-kis/arr-dashboard/issues/29))
+- **OIDC Configuration** - Fixed URL normalization and added recovery options for Keycloak/Authelia users ([#27](https://github.com/Kha-kis/arr-dashboard/issues/27))
+- **Hunting Pagination** - Added page offset rotation to prevent hunting from getting "stuck" on large libraries ([#30](https://github.com/Kha-kis/arr-dashboard/issues/30))
+- **Template Editor** - Switched to patch-based approach to prevent custom format data loss
+- **Auto-Sync Diff** - Fixed stale cache issues when computing template diffs ([#23](https://github.com/Kha-kis/arr-dashboard/issues/23), [#25](https://github.com/Kha-kis/arr-dashboard/pull/25))
+
+### ✨ New Features
+
+- **TRaSH Guides**
+  - **Sync Metrics Telemetry** - New observability endpoint (`/api/trash-guides/metrics`) for tracking sync operations, success rates, timing, and error categorization
+  - **GitHub Rate Limit Awareness** - Intelligent backoff when approaching GitHub API rate limits
+  - **Quality Group Management** - Full quality group editing for power users
+  - **Per-Template deleteRemovedCFs** - Configure CF removal behavior per template
+  - **CF Origin Tracking** - Recyclarr-style origin tracking and deprecation handling
+  - **Instance Quality Overrides** - Per-instance quality configuration customization
+
+### 🔧 Code Quality
+
+- Fixed TypeScript errors across authenticated routes (userId type safety)
+- Fixed React hooks dependency warnings
+- Normalized line endings across codebase
+- Removed dead code (unused parameters)
+
+### 📦 Upgrade Notes
+
+This is a non-breaking release. Simply pull the latest image:
+
+```bash
+docker-compose pull
+docker-compose up -d
+```
+
+---
+
 ## Version 2.6.6
 
 ### ✨ New Features

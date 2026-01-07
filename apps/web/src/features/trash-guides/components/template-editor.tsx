@@ -6,9 +6,12 @@ import { QualityGroupEditor } from "./quality-group-editor";
 import { useCreateTemplate, useUpdateTemplate } from "../../../hooks/api/useTemplates";
 import { useTrashCacheEntries } from "../../../hooks/api/useTrashCache";
 import { Alert, AlertDescription, Input, Button } from "../../../components/ui";
-import { X, Save, Minus, Settings, AlertTriangle, Trash2, Shield, Gauge } from "lucide-react";
+import { X, Save, Minus, Settings, AlertTriangle, Trash2, Shield, Gauge, Sliders } from "lucide-react";
 import { toast } from "sonner";
 import { ConditionEditor } from "./condition-editor";
+import { InstanceOverridesPanel } from "./instance-overrides-panel";
+import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
+import { getEffectiveQualityConfig } from "../lib/quality-config-utils";
 
 /** Specification type from TrashCustomFormat with enabled flag for UI */
 type SpecificationWithEnabled = TrashCustomFormat["specifications"][number] & { enabled: boolean };
@@ -43,6 +46,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 	const createMutation = useCreateTemplate();
 	const updateMutation = useUpdateTemplate();
 	const { data: cacheEntries } = useTrashCacheEntries(serviceType);
+	const { data: servicesData } = useServicesQuery();
 
 	// Initialize form when template changes
 	useEffect(() => {
@@ -72,8 +76,9 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 			// Initialize sync settings
 			setDeleteRemovedCFs(template.config.syncSettings?.deleteRemovedCFs ?? false);
 
-			// Initialize quality configuration
-			setCustomQualityConfig(template.config.customQualityConfig ?? {
+			// Initialize quality configuration - use effective config from template
+			// (considers both customQualityConfig and qualityProfile)
+			setCustomQualityConfig(getEffectiveQualityConfig(template.config) ?? {
 				useCustomQualities: false,
 				items: [],
 			});
@@ -428,6 +433,27 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 							showToggle={true}
 						/>
 					</div>
+
+					{/* Instance Quality Overrides - Only show for existing templates with custom quality config */}
+					{template && customQualityConfig.useCustomQualities && servicesData && (
+						<div className="space-y-3">
+							<div className="flex items-center gap-2">
+								<Sliders className="h-5 w-5 text-purple-500" />
+								<h3 className="text-lg font-medium text-fg">Per-Instance Quality Overrides</h3>
+								<span className="rounded bg-purple-500/20 px-2 py-0.5 text-xs text-purple-400">
+									Optional
+								</span>
+							</div>
+							<InstanceOverridesPanel
+								template={template}
+								instances={servicesData.map(s => ({
+									id: s.id,
+									label: s.label,
+									service: s.service,
+								}))}
+							/>
+						</div>
+					)}
 
 					{/* Custom Formats */}
 					<div className="space-y-3">

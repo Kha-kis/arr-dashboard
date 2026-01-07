@@ -9,19 +9,96 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { createDeploymentExecutorService } from "../../lib/trash-guides/deployment-executor.js";
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
+import { parseInstanceOverrides } from "../../lib/trash-guides/utils.js";
 
 // ============================================================================
 // Request Schemas
 // ============================================================================
+
+// Custom Format Specification schema (validates TRaSH CF structure)
+const customFormatSpecificationSchema = z.object({
+	name: z.string(),
+	implementation: z.string(),
+	negate: z.boolean(),
+	required: z.boolean(),
+	fields: z.record(z.unknown()),
+});
+
+// TRaSH Custom Format schema (for originalConfig in template CFs)
+const trashCustomFormatSchema = z.object({
+	trash_id: z.string(),
+	name: z.string(),
+	score: z.number().optional(),
+	trash_scores: z.record(z.number()).optional(),
+	trash_description: z.string().optional(),
+	includeCustomFormatWhenRenaming: z.boolean().optional(),
+	specifications: z.array(customFormatSpecificationSchema),
+	// Optional metadata for instance-sourced CFs
+	_source: z.enum(["instance", "trash"]).optional(),
+	_instanceId: z.string().optional(),
+	_instanceCFId: z.number().optional(),
+});
+
+// Group Custom Format schema (CFs within a group)
+const groupCustomFormatSchema = z.union([
+	z.object({
+		name: z.string(),
+		trash_id: z.string(),
+		required: z.boolean(),
+		default: z.union([z.string(), z.boolean()]).optional(),
+	}),
+	z.string(), // Can also be just a trash_id string
+]);
+
+// TRaSH Custom Format Group schema (for originalConfig in template groups)
+const trashCustomFormatGroupSchema = z.object({
+	trash_id: z.string(),
+	name: z.string(),
+	trash_description: z.string().optional(),
+	default: z.union([z.string(), z.boolean()]).optional(),
+	required: z.boolean().optional(),
+	custom_formats: z.array(groupCustomFormatSchema),
+	quality_profiles: z
+		.object({
+			exclude: z.record(z.string()).optional(),
+			score: z.number().optional(),
+		})
+		.optional(),
+});
+
+// TRaSH Quality Size schema
+const trashQualitySizeSchema = z.object({
+	type: z.string(),
+	preferred: z.boolean().optional(),
+	min: z.number().optional(),
+	max: z.number().optional(),
+});
+
+// TRaSH Naming Scheme schema
+const trashNamingSchemeSchema = z.object({
+	type: z.enum(["movie", "series"]),
+	standard: z.string().optional(),
+	folder: z.string().optional(),
+	season_folder: z.string().optional(),
+});
+
+// CF Origin type
+const cfOriginSchema = z.enum(["trash_sync", "user_added", "imported"]).optional();
 
 const templateConfigSchema = z.object({
 	customFormats: z.array(
 		z.object({
 			trashId: z.string(),
 			name: z.string(),
+			score: z.number().optional(), // Deprecated but still accepted
 			scoreOverride: z.number().optional(),
 			conditionsEnabled: z.record(z.boolean()),
-			originalConfig: z.any(),
+			originalConfig: trashCustomFormatSchema,
+			origin: cfOriginSchema,
+			addedAt: z.string().optional(),
+			deprecated: z.boolean().optional(),
+			deprecatedAt: z.string().optional(),
+			deprecatedReason: z.string().optional(),
 		}),
 	),
 	customFormatGroups: z.array(
@@ -29,11 +106,16 @@ const templateConfigSchema = z.object({
 			trashId: z.string(),
 			name: z.string(),
 			enabled: z.boolean(),
-			originalConfig: z.any(),
+			originalConfig: trashCustomFormatGroupSchema,
+			origin: cfOriginSchema,
+			addedAt: z.string().optional(),
+			deprecated: z.boolean().optional(),
+			deprecatedAt: z.string().optional(),
+			deprecatedReason: z.string().optional(),
 		}),
 	),
-	qualitySize: z.array(z.any()).optional(),
-	naming: z.array(z.any()).optional(),
+	qualitySize: z.array(trashQualitySizeSchema).optional(),
+	naming: z.array(trashNamingSchemeSchema).optional(),
 }) as z.ZodType<TemplateConfig>;
 
 const createTemplateSchema = z.object({
@@ -124,7 +206,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			const query = listTemplatesQuerySchema.parse(request.query);
 
 			const templates = await templateService.listTemplates({
-				userId: request.currentUser!.id,
+				userId: request.currentUser!.id, // preHandler guarantees auth
 				serviceType: query.serviceType,
 				includeDeleted: query.includeDeleted,
 				active: query.active,
@@ -474,7 +556,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			const template = await app.prisma.trashTemplate.findFirst({
 				where: {
 					id: templateId,
-					userId: request.currentUser!.id,
+					userId: request.currentUser!.id, // preHandler guarantees auth
 				},
 			});
 
@@ -486,21 +568,36 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 				});
 			}
 
-			let instanceOverrides: Record<string, unknown> = {};
-			if (template.instanceOverrides) {
-				try {
-					instanceOverrides = JSON.parse(template.instanceOverrides);
-				} catch {
-					app.log.warn({ templateId }, "Malformed instanceOverrides JSON, using empty object");
-					instanceOverrides = {};
-				}
+			const instanceOverrides = parseInstanceOverrides(
+				template.instanceOverrides,
+				{ templateId, operation: "get" },
+				app.log,
+			);
+			const rawOverride = (instanceOverrides[instanceId] as Record<string, unknown>) || {};
+
+			// Transform storage field names back to API field names for frontend consistency
+			// Storage uses: cfScoreOverrides, cfSelectionOverrides
+			// API uses: scoreOverrides, cfOverrides
+			const transformedOverrides: Record<string, unknown> = {
+				...rawOverride,
+			};
+
+			// Map cfScoreOverrides → scoreOverrides
+			if ("cfScoreOverrides" in rawOverride) {
+				transformedOverrides.scoreOverrides = rawOverride.cfScoreOverrides;
+				transformedOverrides.cfScoreOverrides = undefined;
 			}
-			const overridesForInstance = instanceOverrides[instanceId] || {};
+
+			// Map cfSelectionOverrides → cfOverrides
+			if ("cfSelectionOverrides" in rawOverride) {
+				transformedOverrides.cfOverrides = rawOverride.cfSelectionOverrides;
+				transformedOverrides.cfSelectionOverrides = undefined;
+			}
 
 			return reply.send({
 				templateId,
 				instanceId,
-				overrides: overridesForInstance,
+				overrides: transformedOverrides,
 			});
 		} catch (error) {
 			app.log.error({ err: error }, "Failed to get instance overrides");
@@ -515,22 +612,30 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 	/**
 	 * PUT /api/trash-guides/templates/:templateId/instance-overrides/:instanceId
 	 * Update instance-specific overrides for a template
+	 * Supports: CF score overrides, CF selection overrides, and quality config override
 	 */
 	app.put<{
 		Params: { templateId: string; instanceId: string };
 		Body: {
 			scoreOverrides?: Record<string, number>;
 			cfOverrides?: Record<string, { enabled: boolean }>;
+			qualityConfigOverride?: {
+				useCustomQualities: boolean;
+				items: Array<unknown>;
+				cutoffId?: string;
+				customizedAt?: string;
+				origin?: string;
+			} | null; // null to clear the override
 		};
 	}>("/:templateId/instance-overrides/:instanceId", async (request, reply) => {
 		try {
 			const { templateId, instanceId } = request.params;
-			const { scoreOverrides, cfOverrides } = request.body;
+			const { scoreOverrides, cfOverrides, qualityConfigOverride } = request.body;
 
 			const template = await app.prisma.trashTemplate.findFirst({
 				where: {
 					id: templateId,
-					userId: request.currentUser!.id,
+					userId: request.currentUser!.id, // preHandler guarantees auth
 				},
 			});
 
@@ -543,21 +648,43 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			}
 
 			// Parse existing overrides with error handling for malformed JSON
-			let instanceOverrides: Record<string, unknown> = {};
-			if (template.instanceOverrides) {
-				try {
-					instanceOverrides = JSON.parse(template.instanceOverrides);
-				} catch {
-					app.log.warn({ templateId }, "Malformed instanceOverrides JSON, starting fresh");
-					instanceOverrides = {};
+			const instanceOverrides = parseInstanceOverrides(
+				template.instanceOverrides,
+				{ templateId, operation: "update" },
+				app.log,
+			);
+
+			// Get existing override for this instance to preserve fields not being updated
+			const existingOverride = (instanceOverrides[instanceId] as Record<string, unknown>) || {};
+
+			// Update overrides for this instance (merge with existing)
+			const updatedOverride: Record<string, unknown> = {
+				...existingOverride,
+				instanceId,
+				lastModifiedAt: new Date().toISOString(),
+				lastModifiedBy: request.currentUser!.id,
+			};
+
+			// Update score overrides if provided
+			if (scoreOverrides !== undefined) {
+				updatedOverride.cfScoreOverrides = scoreOverrides;
+			}
+
+			// Update CF selection overrides if provided
+			if (cfOverrides !== undefined) {
+				updatedOverride.cfSelectionOverrides = cfOverrides;
+			}
+
+			// Update quality config override if provided (null clears it)
+			if (qualityConfigOverride !== undefined) {
+				if (qualityConfigOverride === null) {
+					updatedOverride.qualityConfigOverride = undefined;
+				} else {
+					updatedOverride.qualityConfigOverride = qualityConfigOverride;
 				}
 			}
 
-			// Update overrides for this instance
-			instanceOverrides[instanceId] = {
-				scoreOverrides: scoreOverrides || {},
-				cfOverrides: cfOverrides || {},
-			};
+			instanceOverrides[instanceId] = updatedOverride;
 
 			// Save back to database
 			await app.prisma.trashTemplate.update({
@@ -596,7 +723,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			const template = await app.prisma.trashTemplate.findFirst({
 				where: {
 					id: templateId,
-					userId: request.currentUser!.id,
+					userId: request.currentUser!.id, // preHandler guarantees auth
 				},
 			});
 
@@ -693,7 +820,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			const template = await app.prisma.trashTemplate.findFirst({
 				where: {
 					id: templateId,
-					userId: request.currentUser!.id,
+					userId: request.currentUser!.id, // preHandler guarantees auth
 				},
 			});
 
@@ -709,7 +836,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			const instance = await app.prisma.serviceInstance.findFirst({
 				where: {
 					id: instanceId,
-					userId: request.currentUser!.id,
+					userId: request.currentUser!.id, // preHandler guarantees auth
 				},
 			});
 
@@ -776,7 +903,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			const template = await app.prisma.trashTemplate.findFirst({
 				where: {
 					id: templateId,
-					userId: request.currentUser!.id,
+					userId: request.currentUser!.id, // preHandler guarantees auth
 				},
 			});
 
@@ -792,7 +919,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			const instances = await app.prisma.serviceInstance.findMany({
 				where: {
 					id: { in: instanceIds },
-					userId: request.currentUser!.id,
+					userId: request.currentUser!.id, // preHandler guarantees auth
 				},
 			});
 
