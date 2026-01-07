@@ -7,6 +7,7 @@
 
 import type {
 	TrashCFDescription,
+	TrashCFInclude,
 	TrashConfigType,
 	TrashCustomFormat,
 	TrashCustomFormatGroup,
@@ -14,8 +15,30 @@ import type {
 	TrashQualityProfile,
 	TrashQualitySize,
 } from "@arr/shared";
+import type { FastifyBaseLogger } from "fastify";
 import DOMPurify from "isomorphic-dompurify";
 import { marked } from "marked";
+
+// ============================================================================
+// Logger Interface
+// ============================================================================
+
+/**
+ * Simple logger interface that matches Fastify's logger methods.
+ * Allows passing a Fastify logger or using console fallback.
+ */
+interface Logger {
+	warn: (msg: string | object, ...args: unknown[]) => void;
+	error: (msg: string | object, ...args: unknown[]) => void;
+	debug?: (msg: string | object, ...args: unknown[]) => void;
+}
+
+/** No-op logger for when logging is disabled */
+const noopLogger: Logger = {
+	warn: () => {},
+	error: () => {},
+	debug: () => {},
+};
 
 // ============================================================================
 // HTML Sanitization Configuration
@@ -88,6 +111,77 @@ const FETCH_TIMEOUT_MS = 15000; // 15 seconds
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000; // 1 second
 
+// Rate limit thresholds
+const RATE_LIMIT_WARNING_THRESHOLD = 10; // Warn when remaining < 10
+const RATE_LIMIT_BLOCK_THRESHOLD = 2; // Block new requests when remaining < 2
+
+// ============================================================================
+// Rate Limit Tracking
+// ============================================================================
+
+/**
+ * Rate limit state for GitHub API.
+ * GitHub returns these headers on every API response:
+ * - X-RateLimit-Limit: Total requests allowed per hour
+ * - X-RateLimit-Remaining: Requests remaining in current window
+ * - X-RateLimit-Reset: Unix timestamp when the rate limit resets
+ */
+export interface GitHubRateLimitState {
+	limit: number;
+	remaining: number;
+	resetAt: Date;
+	lastUpdated: Date;
+	isAuthenticated: boolean;
+}
+
+// Singleton rate limit state (shared across all fetcher instances)
+let rateLimitState: GitHubRateLimitState | null = null;
+
+/**
+ * Get the current rate limit state
+ */
+export function getRateLimitState(): GitHubRateLimitState | null {
+	return rateLimitState;
+}
+
+/**
+ * Update rate limit state from response headers
+ */
+function updateRateLimitFromResponse(response: Response, isAuthenticated: boolean): void {
+	const limit = response.headers.get("X-RateLimit-Limit");
+	const remaining = response.headers.get("X-RateLimit-Remaining");
+	const reset = response.headers.get("X-RateLimit-Reset");
+
+	if (limit && remaining && reset) {
+		rateLimitState = {
+			limit: Number.parseInt(limit, 10),
+			remaining: Number.parseInt(remaining, 10),
+			resetAt: new Date(Number.parseInt(reset, 10) * 1000),
+			lastUpdated: new Date(),
+			isAuthenticated,
+		};
+	}
+}
+
+/**
+ * Check if we should block due to rate limiting.
+ * Returns time to wait in milliseconds, or 0 if we can proceed.
+ */
+function checkRateLimitBlock(): number {
+	if (!rateLimitState) return 0;
+
+	// If we're below the block threshold and reset time is in the future
+	if (rateLimitState.remaining < RATE_LIMIT_BLOCK_THRESHOLD) {
+		const now = Date.now();
+		const resetTime = rateLimitState.resetAt.getTime();
+		if (resetTime > now) {
+			return resetTime - now;
+		}
+	}
+
+	return 0;
+}
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -102,6 +196,11 @@ interface FetchOptions {
 	 * Authenticated requests allow 5,000/hour.
 	 */
 	githubToken?: string;
+	/**
+	 * Optional logger for debug/error output.
+	 * If not provided, uses no-op logger (silent).
+	 */
+	logger?: Logger | FastifyBaseLogger;
 }
 
 interface TrashMetadata {
@@ -169,9 +268,13 @@ async function fetchWithTimeout(
 }
 
 /**
- * Fetch with retry logic
+ * Fetch with retry logic and proactive rate limit tracking
  */
-async function fetchWithRetry(url: string, options: FetchOptions = {}): Promise<Response> {
+async function fetchWithRetry(
+	url: string,
+	options: FetchOptions = {},
+	log: Logger = noopLogger,
+): Promise<Response> {
 	const {
 		timeout = FETCH_TIMEOUT_MS,
 		retries = MAX_RETRIES,
@@ -183,25 +286,61 @@ async function fetchWithRetry(url: string, options: FetchOptions = {}): Promise<
 	const isGitHubApi = url.includes("api.github.com");
 	const headers = buildHeaders(githubToken, isGitHubApi);
 
+	// Proactive rate limit check (only for GitHub API requests)
+	if (isGitHubApi) {
+		const waitTime = checkRateLimitBlock();
+		if (waitTime > 0) {
+			log.warn(
+				`Proactive rate limit wait: ${Math.ceil(waitTime / 1000)}s until reset. ` +
+					`Current remaining: ${rateLimitState?.remaining ?? "unknown"}`,
+			);
+			await delay(waitTime + 1000); // Add 1s buffer
+		}
+	}
+
 	let lastError: Error | undefined;
 
 	for (let attempt = 1; attempt <= retries; attempt++) {
 		try {
 			const response = await fetchWithTimeout(url, timeout, headers);
 
-			// Check for GitHub rate limiting
+			// Update rate limit state from response (GitHub API only)
+			if (isGitHubApi) {
+				updateRateLimitFromResponse(response, !!githubToken);
+
+				// Log warning when getting low on requests
+				if (
+					rateLimitState &&
+					rateLimitState.remaining < RATE_LIMIT_WARNING_THRESHOLD &&
+					rateLimitState.remaining > 0
+				) {
+					const resetIn = Math.ceil((rateLimitState.resetAt.getTime() - Date.now()) / 1000 / 60);
+					log.warn(
+						`GitHub API rate limit warning: ${rateLimitState.remaining} requests remaining. ` +
+							`Resets in ${resetIn} minutes. ` +
+							`${rateLimitState.isAuthenticated ? "(authenticated: 5000/hr)" : "(unauthenticated: 60/hr - set GITHUB_TOKEN for higher limits)"}`,
+					);
+				}
+			}
+
+			// Check for GitHub rate limiting (reactive - 429 response)
 			if (response.status === 429) {
 				const retryAfter = response.headers.get("Retry-After");
 				const waitTime = retryAfter ? Number.parseInt(retryAfter, 10) * 1000 : retryDelay * attempt;
 				const rateLimitRemaining = response.headers.get("X-RateLimit-Remaining");
 				const rateLimitReset = response.headers.get("X-RateLimit-Reset");
 
+				// Update state from 429 response
+				if (isGitHubApi) {
+					updateRateLimitFromResponse(response, !!githubToken);
+				}
+
 				if (!githubToken) {
-					console.warn(
+					log.warn(
 						`GitHub rate limit hit (unauthenticated: 60 req/hour). Consider setting GITHUB_TOKEN for 5,000 req/hour. Retrying after ${waitTime}ms`,
 					);
 				} else {
-					console.warn(
+					log.warn(
 						`GitHub rate limit hit. Remaining: ${rateLimitRemaining}, ` +
 							`Reset: ${rateLimitReset ? new Date(Number.parseInt(rateLimitReset, 10) * 1000).toISOString() : "unknown"}. ` +
 							`Retrying after ${waitTime}ms`,
@@ -218,7 +357,7 @@ async function fetchWithRetry(url: string, options: FetchOptions = {}): Promise<
 
 			// Server errors are retryable
 			if (response.status >= 500) {
-				console.warn(`GitHub server error (${response.status}), attempt ${attempt}/${retries}`);
+				log.warn(`GitHub server error (${response.status}), attempt ${attempt}/${retries}`);
 				if (attempt < retries) {
 					await delay(retryDelay * attempt); // Exponential backoff
 					continue;
@@ -229,7 +368,7 @@ async function fetchWithRetry(url: string, options: FetchOptions = {}): Promise<
 			throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 		} catch (error) {
 			lastError = error instanceof Error ? error : new Error(String(error));
-			console.error(`Fetch attempt ${attempt}/${retries} failed:`, lastError.message);
+			log.error(`Fetch attempt ${attempt}/${retries} failed:`, lastError.message);
 
 			if (attempt < retries) {
 				await delay(retryDelay * attempt); // Exponential backoff
@@ -268,16 +407,18 @@ function buildGitHubUrl(serviceType: "RADARR" | "SONARR", configType: TrashConfi
 
 export class TrashGitHubFetcher {
 	private fetchOptions: FetchOptions;
-
+	private log: Logger;
 	constructor(options: FetchOptions = {}) {
 		this.fetchOptions = options;
+		// Use provided logger or no-op logger (silent by default)
+		this.log = (options.logger as Logger) ?? noopLogger;
 	}
 
 	/**
 	 * Fetch TRaSH Guides metadata
 	 */
 	async fetchMetadata(): Promise<TrashMetadata> {
-		const response = await fetchWithRetry(TRASH_METADATA_URL, this.fetchOptions);
+		const response = await fetchWithRetry(TRASH_METADATA_URL, this.fetchOptions, this.log);
 
 		if (!response.ok) {
 			throw new Error(`Failed to fetch metadata: ${response.statusText}`);
@@ -305,7 +446,7 @@ export class TrashGitHubFetcher {
 		for (const file of knownFiles) {
 			try {
 				const url = `${baseUrl}/${file}`;
-				const response = await fetchWithRetry(url, this.fetchOptions);
+				const response = await fetchWithRetry(url, this.fetchOptions, this.log);
 
 				if (response.ok) {
 					const data = (await response.json()) as TrashCustomFormat | TrashCustomFormat[];
@@ -317,7 +458,7 @@ export class TrashGitHubFetcher {
 					}
 				}
 			} catch (error) {
-				console.warn(`Failed to fetch ${file}:`, error);
+				this.log.warn(`Failed to fetch ${file}:`, error);
 				// Continue with other files
 			}
 		}
@@ -339,7 +480,7 @@ export class TrashGitHubFetcher {
 		for (const file of knownFiles) {
 			try {
 				const url = `${baseUrl}/${file}`;
-				const response = await fetchWithRetry(url, this.fetchOptions);
+				const response = await fetchWithRetry(url, this.fetchOptions, this.log);
 
 				if (response.ok) {
 					const data = (await response.json()) as TrashCustomFormatGroup | TrashCustomFormatGroup[];
@@ -350,7 +491,7 @@ export class TrashGitHubFetcher {
 					}
 				}
 			} catch (error) {
-				console.warn(`Failed to fetch ${file}:`, error);
+				this.log.warn(`Failed to fetch ${file}:`, error);
 			}
 		}
 
@@ -369,7 +510,7 @@ export class TrashGitHubFetcher {
 		for (const file of knownFiles) {
 			try {
 				const url = `${baseUrl}/${file}`;
-				const response = await fetchWithRetry(url, this.fetchOptions);
+				const response = await fetchWithRetry(url, this.fetchOptions, this.log);
 
 				if (response.ok) {
 					const data = (await response.json()) as TrashQualitySize | TrashQualitySize[];
@@ -380,7 +521,7 @@ export class TrashGitHubFetcher {
 					}
 				}
 			} catch (error) {
-				console.warn(`Failed to fetch ${file}:`, error);
+				this.log.warn(`Failed to fetch ${file}:`, error);
 			}
 		}
 
@@ -399,7 +540,7 @@ export class TrashGitHubFetcher {
 		for (const file of knownFiles) {
 			try {
 				const url = `${baseUrl}/${file}`;
-				const response = await fetchWithRetry(url, this.fetchOptions);
+				const response = await fetchWithRetry(url, this.fetchOptions, this.log);
 
 				if (response.ok) {
 					const data = (await response.json()) as TrashNamingScheme | TrashNamingScheme[];
@@ -410,7 +551,7 @@ export class TrashGitHubFetcher {
 					}
 				}
 			} catch (error) {
-				console.warn(`Failed to fetch ${file}:`, error);
+				this.log.warn(`Failed to fetch ${file}:`, error);
 			}
 		}
 
@@ -429,7 +570,7 @@ export class TrashGitHubFetcher {
 		for (const file of knownFiles) {
 			try {
 				const url = `${baseUrl}/${file}`;
-				const response = await fetchWithRetry(url, this.fetchOptions);
+				const response = await fetchWithRetry(url, this.fetchOptions, this.log);
 
 				if (response.ok) {
 					const data = (await response.json()) as TrashQualityProfile | TrashQualityProfile[];
@@ -441,7 +582,7 @@ export class TrashGitHubFetcher {
 					}
 				}
 			} catch (error) {
-				console.warn(`Failed to fetch ${file}:`, error);
+				this.log.warn(`Failed to fetch ${file}:`, error);
 			}
 		}
 
@@ -454,10 +595,10 @@ export class TrashGitHubFetcher {
 	async fetchCFDescription(cfName: string): Promise<TrashCFDescription | null> {
 		try {
 			const url = `${TRASH_CF_DESCRIPTIONS_BASE_URL}/${cfName}.md`;
-			const response = await fetchWithRetry(url, this.fetchOptions);
+			const response = await fetchWithRetry(url, this.fetchOptions, this.log);
 
 			if (!response.ok) {
-				console.warn(`CF description not found: ${cfName}`);
+				this.log.warn(`CF description not found: ${cfName}`);
 				return null;
 			}
 
@@ -467,9 +608,13 @@ export class TrashGitHubFetcher {
 			const titleMatch = rawMarkdown.match(/^#\s+(.+)$/m);
 			const displayName = titleMatch?.[1] || cfName;
 
-			// Clean markdown: remove includes, title, and Kramdown-specific syntax
+			// NOTE: Include resolution is disabled for performance.
+			// Making 100+ additional network requests during cache refresh was crashing the server.
+			// The frontend cleanDescription() strips include directives for display.
+			// Future: Consider on-demand resolution when viewing individual CF details.
+
+			// Clean markdown: remove title and Kramdown-specific syntax
 			const cleanedMarkdown = rawMarkdown
-				.replace(/--8<--.*?--8<--/gs, "") // Remove includes
 				.replace(/^#\s+.+$/m, "") // Remove title
 				.replace(/\{:target="_blank"\s*rel="noopener noreferrer"\}/g, "") // Remove Kramdown link attributes
 				.replace(/\{:.*?\}/g, "") // Remove any other Kramdown inline attributes
@@ -487,11 +632,11 @@ export class TrashGitHubFetcher {
 				cfName,
 				displayName,
 				description,
-				rawMarkdown,
+				rawMarkdown, // Store raw markdown (includes not resolved)
 				fetchedAt: new Date().toISOString(),
 			};
 		} catch (error) {
-			console.error(`Failed to fetch CF description for ${cfName}:`, error);
+			this.log.error(`Failed to fetch CF description for ${cfName}:`, error);
 			return null;
 		}
 	}
@@ -505,13 +650,10 @@ export class TrashGitHubFetcher {
 			"https://api.github.com/repos/TRaSH-Guides/Guides/contents/includes/cf-descriptions";
 
 		try {
-			const response = await fetchWithRetry(apiUrl, {
-				...this.fetchOptions,
-				retries: 2,
-			});
+			const response = await fetchWithRetry(apiUrl, { ...this.fetchOptions, retries: 2 }, this.log);
 
 			if (!response.ok) {
-				console.warn(`GitHub API returned ${response.status} for CF descriptions`);
+				this.log.warn(`GitHub API returned ${response.status} for CF descriptions`);
 				return [];
 			}
 
@@ -544,7 +686,98 @@ export class TrashGitHubFetcher {
 
 			return descriptions;
 		} catch (error) {
-			console.error("Failed to fetch CF descriptions:", error);
+			this.log.error("Failed to fetch CF descriptions:", error);
+			return [];
+		}
+	}
+
+	/**
+	 * Fetch MkDocs include files that are actually referenced by CF descriptions.
+	 * Only fetches files that match known include patterns (not CF descriptions).
+	 *
+	 * Include files are short, reusable snippets like:
+	 * - apply-*.md (scoring application instructions)
+	 * - *-info.md (additional info sections)
+	 *
+	 * CF descriptions are named after specific formats (br-disk.md, dv.md, etc.)
+	 */
+	async fetchCFIncludes(): Promise<TrashCFInclude[]> {
+		// Known include file patterns - these are reusable snippets, not CF descriptions
+		// Include files typically have action-oriented or generic names
+		const KNOWN_INCLUDE_PATTERNS = [
+			/^apply-\d+\.md$/, // apply-10000.md, apply-5000.md, etc.
+			/^.*-info\.md$/, // *-info.md pattern
+			/^common-.*\.md$/, // common-*.md pattern
+			/^note-.*\.md$/, // note-*.md pattern
+		];
+
+		const INCLUDES_BASE = "includes/cf-descriptions";
+		const apiUrl = `https://api.github.com/repos/TRaSH-Guides/Guides/contents/${INCLUDES_BASE}`;
+		const GITHUB_RAW_BASE = "https://raw.githubusercontent.com/TRaSH-Guides/Guides/master";
+
+		try {
+			const response = await fetchWithRetry(apiUrl, { ...this.fetchOptions, retries: 2 }, this.log);
+
+			if (!response.ok) {
+				this.log.warn(`GitHub API returned ${response.status} for CF includes`);
+				return [];
+			}
+
+			const files = (await response.json()) as Array<{
+				name: string;
+				type: string;
+			}>;
+
+			// Filter for .md files that match known include patterns
+			const includeFiles = files
+				.filter((file) => {
+					if (file.type !== "file" || !file.name.endsWith(".md")) return false;
+					// Check if filename matches any known include pattern
+					return KNOWN_INCLUDE_PATTERNS.some((pattern) => pattern.test(file.name));
+				})
+				.map((file) => file.name);
+
+			this.log.debug?.(`Found ${includeFiles.length} include files matching patterns`);
+
+			if (includeFiles.length === 0) {
+				return [];
+			}
+
+			// Fetch all include files in parallel
+			const results = await Promise.all(
+				includeFiles.map(async (fileName) => {
+					try {
+						const path = `${INCLUDES_BASE}/${fileName}`;
+						const url = `${GITHUB_RAW_BASE}/${path}`;
+						const fetchResponse = await fetchWithRetry(
+							url,
+							{ ...this.fetchOptions, retries: 1 },
+							this.log,
+						);
+
+						if (fetchResponse.ok) {
+							let content = await fetchResponse.text();
+							// Clean the content: remove HTML comments
+							content = content.replace(/<!--.*?-->/gs, "").trim();
+							return {
+								path,
+								content,
+								fetchedAt: new Date().toISOString(),
+							} as TrashCFInclude;
+						}
+						return null;
+					} catch (error) {
+						this.log.warn(`Failed to fetch include file: ${fileName}`);
+						return null;
+					}
+				}),
+			);
+
+			const includes = results.filter((inc): inc is TrashCFInclude => inc !== null);
+			this.log.debug?.(`Fetched ${includes.length} CF include files`);
+			return includes;
+		} catch (error) {
+			this.log.error("Failed to fetch CF includes:", error);
 			return [];
 		}
 	}
@@ -569,6 +802,8 @@ export class TrashGitHubFetcher {
 				return this.fetchQualityProfiles(serviceType);
 			case "CF_DESCRIPTIONS":
 				return this.fetchAllCFDescriptions();
+			case "CF_INCLUDES":
+				return this.fetchCFIncludes();
 			default:
 				throw new Error(`Unsupported config type: ${configType}`);
 		}
@@ -582,7 +817,7 @@ export class TrashGitHubFetcher {
 		// baseUrl format: https://raw.githubusercontent.com/TRaSH-Guides/Guides/master/docs/json/{service}/{type}
 		const pathMatch = baseUrl.match(/\/master\/(.+)$/);
 		if (!pathMatch) {
-			console.warn(`Could not extract path from URL: ${baseUrl}`);
+			this.log.warn(`Could not extract path from URL: ${baseUrl}`);
 			return [];
 		}
 
@@ -590,13 +825,10 @@ export class TrashGitHubFetcher {
 		const apiUrl = `https://api.github.com/repos/TRaSH-Guides/Guides/contents/${repoPath}`;
 
 		try {
-			const response = await fetchWithRetry(apiUrl, {
-				...this.fetchOptions,
-				retries: 2,
-			});
+			const response = await fetchWithRetry(apiUrl, { ...this.fetchOptions, retries: 2 }, this.log);
 
 			if (!response.ok) {
-				console.warn(`GitHub API returned ${response.status} for ${apiUrl}`);
+				this.log.warn(`GitHub API returned ${response.status} for ${apiUrl}`);
 				return [];
 			}
 
@@ -612,12 +844,12 @@ export class TrashGitHubFetcher {
 				.map((file) => file.name);
 
 			if (jsonFiles.length === 0) {
-				console.warn(`No JSON files discovered at ${baseUrl}`);
+				this.log.warn(`No JSON files discovered at ${baseUrl}`);
 			}
 
 			return jsonFiles;
 		} catch (error) {
-			console.error(`Failed to discover config files at ${baseUrl}:`, error);
+			this.log.error(`Failed to discover config files at ${baseUrl}:`, error);
 			return [];
 		}
 	}

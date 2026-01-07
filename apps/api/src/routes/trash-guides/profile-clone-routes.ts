@@ -90,7 +90,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Import complete quality profile from *arr instance
 	 */
 	app.post("/import", async (request, reply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { instanceId, profileId } = request.body as {
 			instanceId: string;
 			profileId: number;
@@ -131,7 +131,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Preview deployment of complete quality profile
 	 */
 	app.post("/preview", async (request, reply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { instanceId, profile, customFormats } = request.body as {
 			instanceId: string;
 			profile: CompleteQualityProfile;
@@ -172,7 +172,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Deploy complete quality profile to *arr instance
 	 */
 	app.post("/deploy", async (request, reply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { instanceId, profile, customFormats, profileName, existingProfileId } = request.body as {
 			instanceId: string;
 			profile: CompleteQualityProfile;
@@ -221,7 +221,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Get list of quality profiles from an instance
 	 */
 	app.get("/profiles/:instanceId", async (request, reply) => {
-		const userId = request.currentUser!.id; // preHandler guarantees authentication
+		const userId = request.currentUser!.id; // preHandler guarantees auth // preHandler guarantees authentication
 		const { instanceId } = request.params as { instanceId: string };
 
 		try {
@@ -301,7 +301,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 			const instance = await app.prisma.serviceInstance.findFirst({
 				where: {
 					id: instanceId,
-					userId: request.currentUser!.id,
+					userId: request.currentUser?.id,
 				},
 			});
 
@@ -416,7 +416,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 			const instance = await app.prisma.serviceInstance.findFirst({
 				where: {
 					id: instanceId,
-					userId: request.currentUser!.id,
+					userId: request.currentUser?.id,
 				},
 			});
 
@@ -771,7 +771,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Create a template from a cloned instance profile with resolved CF mappings
 	 */
 	app.post("/create-template", async (request, reply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const {
 			serviceType,
 			trashId,
@@ -823,7 +823,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 			const instance = await app.prisma.serviceInstance.findFirst({
 				where: {
 					id: sourceInstanceId,
-					userId: request.currentUser!.id,
+					userId: request.currentUser?.id,
 				},
 			});
 

@@ -306,7 +306,7 @@ export function EnhancedTemplateImportModal({
 												onChange={(e) =>
 													setOptions({
 														...options,
-														onNameConflict: e.target.value as any,
+														onNameConflict: e.target.value as "rename" | "replace" | "cancel",
 													})
 												}
 												className="w-full rounded-lg border bg-card/50 backdrop-blur-sm px-3 py-2 text-sm text-foreground transition-all duration-200 focus:outline-none appearance-none cursor-pointer"

@@ -1,23 +1,26 @@
 import { useState, useCallback } from "react";
-import { useRefreshTrashCache } from "../../../hooks/api/useTrashCache";
+import { useRefreshTrashCache, useDeleteTrashCacheEntry, type DeleteCachePayload } from "../../../hooks/api/useTrashCache";
 
 type ServiceType = "RADARR" | "SONARR";
+type ConfigType = DeleteCachePayload["configType"];
 
 /**
- * Hook for managing TRaSH Guides actions (cache refresh).
- * Handles cache refresh mutations and tracking which service is being refreshed.
+ * Hook for managing TRaSH Guides actions (cache refresh and delete).
+ * Handles cache mutations and tracking which service/entry is being refreshed.
  *
- * @returns Refresh mutation state and handlers
+ * @returns Refresh and delete mutation state and handlers
  *
  * @example
- * const { handleRefresh, refreshing, refreshMutation } = useTrashGuidesActions();
+ * const { handleRefresh, handleRefreshEntry, handleDelete, refreshing, refreshingEntry } = useTrashGuidesActions();
  */
 export function useTrashGuidesActions() {
 	const refreshMutation = useRefreshTrashCache();
+	const deleteMutation = useDeleteTrashCacheEntry();
 	const [refreshing, setRefreshing] = useState<string | null>(null);
+	const [refreshingEntry, setRefreshingEntry] = useState<string | null>(null);
 
 	/**
-	 * Refresh cache for a specific service type
+	 * Refresh all cache entries for a specific service type
 	 */
 	const handleRefresh = useCallback(
 		async (serviceType: ServiceType) => {
@@ -31,9 +34,39 @@ export function useTrashGuidesActions() {
 		[refreshMutation],
 	);
 
+	/**
+	 * Refresh a single cache entry
+	 */
+	const handleRefreshEntry = useCallback(
+		async (serviceType: ServiceType, configType: ConfigType) => {
+			const entryKey = `${serviceType}-${configType}`;
+			setRefreshingEntry(entryKey);
+			try {
+				await refreshMutation.mutateAsync({ serviceType, configType, force: true });
+			} finally {
+				setRefreshingEntry(null);
+			}
+		},
+		[refreshMutation],
+	);
+
+	/**
+	 * Delete a specific cache entry
+	 */
+	const handleDelete = useCallback(
+		async (serviceType: ServiceType, configType: ConfigType) => {
+			await deleteMutation.mutateAsync({ serviceType, configType });
+		},
+		[deleteMutation],
+	);
+
 	return {
 		handleRefresh,
+		handleRefreshEntry,
+		handleDelete,
 		refreshing,
+		refreshingEntry,
 		refreshMutation,
+		deleteMutation,
 	};
 }

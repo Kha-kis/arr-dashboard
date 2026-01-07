@@ -749,15 +749,23 @@ async function executeSonarrHuntWithSdk(
 
 		// Get wanted episodes
 		const fetchSize = Math.max(batchSize * 5, 50);
+
+		// Calculate page offset based on recently searched items to rotate through large libraries
+		// This prevents getting "stuck" when all items on page 1 have been searched
+		const recentSearchCount = historyManager.getRecentSearchCount();
+		const pageOffset = Math.floor(recentSearchCount / fetchSize) + 1;
+
 		counter.count++;
 		const wantedData =
 			type === "missing"
 				? await client.wanted.missing({
+						page: pageOffset,
 						pageSize: fetchSize,
 						sortKey: "airDateUtc",
 						sortDirection: "descending",
 					})
 				: await client.wanted.cutoff({
+						page: pageOffset,
 						pageSize: fetchSize,
 						sortKey: "airDateUtc",
 						sortDirection: "descending",
@@ -766,12 +774,15 @@ async function executeSonarrHuntWithSdk(
 		const records = wantedData.records ?? [];
 
 		if (records.length === 0) {
+			// If we're on page > 1 and got no results, we've exhausted all candidates
+			const exhaustedMessage =
+				pageOffset > 1 ? ` (searched through ${recentSearchCount} items, reached end of list)` : "";
 			return {
 				itemsSearched: 0,
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: `No ${type === "missing" ? "missing" : "upgradeable"} episodes found`,
+				message: `No ${type === "missing" ? "missing" : "upgradeable"} episodes found${exhaustedMessage}`,
 				status: "completed",
 			};
 		}
@@ -799,12 +810,15 @@ async function executeSonarrHuntWithSdk(
 		const eligibleEpisodes = shuffleArray(filteredEpisodes);
 
 		if (eligibleEpisodes.length === 0) {
+			// Provide context about pagination position
+			const pageInfo =
+				pageOffset > 1 ? ` (page ${pageOffset}, ${recentSearchCount} items searched)` : "";
 			return {
 				itemsSearched: 0,
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: "No episodes match the current filters",
+				message: `No episodes match the current filters${pageInfo}`,
 				status: "completed",
 			};
 		}
@@ -1035,16 +1049,23 @@ async function executeRadarrHuntWithSdk(
 ): Promise<HuntResultWithoutApiCount> {
 	try {
 		const fetchSize = Math.max(batchSize * 5, 50);
-		counter.count++;
 
+		// Calculate page offset based on recently searched items to rotate through large libraries
+		// This prevents getting "stuck" when all items on page 1 have been searched
+		const recentSearchCount = historyManager.getRecentSearchCount();
+		const pageOffset = Math.floor(recentSearchCount / fetchSize) + 1;
+
+		counter.count++;
 		const wantedData =
 			type === "missing"
 				? await client.wanted.missing({
+						page: pageOffset,
 						pageSize: fetchSize,
 						sortKey: "digitalRelease",
 						sortDirection: "descending",
 					})
 				: await client.wanted.cutoff({
+						page: pageOffset,
 						pageSize: fetchSize,
 						sortKey: "digitalRelease",
 						sortDirection: "descending",
@@ -1053,12 +1074,15 @@ async function executeRadarrHuntWithSdk(
 		const movies = wantedData.records ?? [];
 
 		if (movies.length === 0) {
+			// If we're on page > 1 and got no results, we've exhausted all candidates
+			const exhaustedMessage =
+				pageOffset > 1 ? ` (searched through ${recentSearchCount} items, reached end of list)` : "";
 			return {
 				itemsSearched: 0,
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: `No ${type === "missing" ? "missing" : "upgradeable"} movies found`,
+				message: `No ${type === "missing" ? "missing" : "upgradeable"} movies found${exhaustedMessage}`,
 				status: "completed",
 			};
 		}
@@ -1089,12 +1113,15 @@ async function executeRadarrHuntWithSdk(
 		const eligibleMovies = shuffleArray(validMovies);
 
 		if (eligibleMovies.length === 0) {
+			// Provide context about pagination position
+			const pageInfo =
+				pageOffset > 1 ? ` (page ${pageOffset}, ${recentSearchCount} items searched)` : "";
 			return {
 				itemsSearched: 0,
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: "No movies match the current filters",
+				message: `No movies match the current filters${pageInfo}`,
 				status: "completed",
 			};
 		}

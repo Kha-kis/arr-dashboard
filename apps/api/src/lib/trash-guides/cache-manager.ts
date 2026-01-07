@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import { gunzip, gzip } from "node:zlib";
 import type { TrashCacheEntry, TrashCacheStatus, TrashConfigType } from "@arr/shared";
 import type { PrismaClient } from "@prisma/client";
+import { safeJsonParse } from "./utils.js";
 
 // ============================================================================
 // Compression Utilities
@@ -35,28 +36,6 @@ async function decompressData<T = unknown>(compressedData: string): Promise<T> {
 	const decompressed = await gunzipAsync(buffer);
 	const jsonString = decompressed.toString("utf-8");
 	return JSON.parse(jsonString) as T;
-}
-
-/**
- * Safely parse JSON data with error handling
- * @returns Parsed data or null if parsing fails
- */
-function safeJsonParse<T = unknown>(
-	data: string,
-	context: { serviceType: string; configType: string },
-): T | null {
-	try {
-		return JSON.parse(data) as T;
-	} catch (error) {
-		console.error(
-			`[TrashCacheManager] Failed to parse JSON for ${context.serviceType}/${context.configType}`,
-			{
-				dataSize: data.length,
-				error: error instanceof Error ? error.message : String(error),
-			},
-		);
-		return null;
-	}
 }
 
 // ============================================================================
@@ -121,10 +100,14 @@ export class TrashCacheManager {
 				return await decompressData<T>(cacheEntry.data);
 			}
 
-			const parsed = safeJsonParse<T>(cacheEntry.data, { serviceType, configType });
-			if (parsed === null) {
+			const parsed = safeJsonParse<T>(cacheEntry.data, {
+				source: "TrashCacheManager",
+				identifier: `${serviceType}/${configType}`,
+			});
+			if (parsed === undefined) {
 				// Invalidate corrupted cache entry
 				await this.delete(serviceType, configType);
+				return null;
 			}
 			return parsed;
 		} catch (error) {
@@ -250,15 +233,18 @@ export class TrashCacheManager {
 		try {
 			const data = this.options.compressionEnabled
 				? await decompressData<unknown[]>(cacheEntry.data)
-				: safeJsonParse<unknown[]>(cacheEntry.data, { serviceType, configType });
-
-			itemCount = Array.isArray(data) ? data.length : 0;
+				: safeJsonParse<unknown[]>(cacheEntry.data, {
+						source: "TrashCacheManager",
+						identifier: `${serviceType}/${configType}`,
+					});
 
 			// If parsing failed in non-compressed mode, invalidate the entry
-			if (!this.options.compressionEnabled && data === null) {
+			if (!this.options.compressionEnabled && data === undefined) {
 				await this.delete(serviceType, configType);
 				return null;
 			}
+
+			itemCount = Array.isArray(data) ? data.length : 0;
 		} catch (error) {
 			// Handle decompression errors
 			console.error(`[TrashCacheManager] Failed to get status for ${serviceType}/${configType}`, {
@@ -301,12 +287,12 @@ export class TrashCacheManager {
 				const data = this.options.compressionEnabled
 					? await decompressData<unknown[]>(entry.data)
 					: safeJsonParse<unknown[]>(entry.data, {
-							serviceType,
-							configType: entry.configType,
+							source: "TrashCacheManager",
+							identifier: `${serviceType}/${entry.configType}`,
 						});
 
 				// If parsing failed in non-compressed mode, mark for deletion
-				if (!this.options.compressionEnabled && data === null) {
+				if (!this.options.compressionEnabled && data === undefined) {
 					entriesToDelete.push(entry.configType);
 					continue;
 				}

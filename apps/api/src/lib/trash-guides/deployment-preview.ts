@@ -39,11 +39,13 @@ interface RawSpecification {
 
 /**
  * Instance-specific overrides structure stored in template.instanceOverrides JSON
+ * Storage uses: cfScoreOverrides, cfSelectionOverrides
  */
 interface InstanceOverridesMap {
 	[instanceId: string]: {
-		scoreOverrides?: Record<string, number>;
-		cfOverrides?: Record<string, { enabled?: boolean }>;
+		cfScoreOverrides?: Record<string, number>;
+		cfSelectionOverrides?: Record<string, { enabled?: boolean }>;
+		qualityConfigOverride?: Record<string, unknown>;
 	};
 }
 
@@ -320,8 +322,8 @@ export class DeploymentPreviewService {
 			console.warn(`Failed to parse instanceOverrides for template ${template.id}:`, parseError);
 		}
 		const overridesForInstance = instanceOverrides[instanceId] || {};
-		const scoreOverridesMap = overridesForInstance.scoreOverrides || {};
-		const cfOverridesMap = overridesForInstance.cfOverrides || {};
+		const scoreOverridesMap = overridesForInstance.cfScoreOverrides || {};
+		const cfOverridesMap = overridesForInstance.cfSelectionOverrides || {};
 
 		// Count CFs that are disabled for this instance (will be skipped)
 		let skipCount = 0;

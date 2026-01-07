@@ -7,14 +7,13 @@
 
 import { useState, useEffect, useRef } from "react";
 import { Alert, AlertDescription, Skeleton, Card, CardHeader, CardTitle, CardDescription, CardContent } from "../../../../components/ui";
-import { ChevronLeft, ChevronRight, Info, AlertCircle, Search, ChevronDown, Lock, Edit, RotateCcw, Settings } from "lucide-react";
+import { ChevronLeft, ChevronRight, Info, AlertCircle, Search, Edit, RotateCcw, Settings } from "lucide-react";
 import { createSanitizedHtml } from "../../../../lib/sanitize-html";
 import { THEME_GRADIENTS } from "../../../../lib/theme-gradients";
 import { useColorTheme } from "../../../../providers/color-theme-provider";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { ConditionEditor } from "../condition-editor";
 import { useCFConfiguration } from "../../../../hooks/api/useCFConfiguration";
-import { ErrorBoundary } from "../../../../components/error-boundary";
 import type { ResolvedCF } from "./cf-resolution";
 
 interface CustomFormatItem {
@@ -46,16 +45,12 @@ interface CFConfigurationProps {
 		scoreOverride?: number;
 		conditionsEnabled: Record<string, boolean>;
 	}>;
-	templateName: string;
-	templateDescription: string;
 	onNext: (
 		selections: Record<string, {
 			selected: boolean;
 			scoreOverride?: number;
 			conditionsEnabled: Record<string, boolean>;
-		}>,
-		name: string,
-		description: string
+		}>
 	) => void;
 	onBack?: () => void; // Optional - undefined means hide back button
 	isEditMode?: boolean; // Edit mode flag to skip API call
@@ -67,8 +62,6 @@ export const CFConfiguration = ({
 	serviceType,
 	qualityProfile,
 	initialSelections,
-	templateName: initialTemplateName,
-	templateDescription: initialTemplateDescription,
 	onNext,
 	onBack,
 	isEditMode = false,
@@ -78,8 +71,6 @@ export const CFConfiguration = ({
 	const { colorTheme } = useColorTheme();
 	const themeGradient = THEME_GRADIENTS[colorTheme];
 	const [selections, setSelections] = useState(initialSelections);
-	const [templateName, setTemplateName] = useState(initialTemplateName);
-	const [templateDescription, setTemplateDescription] = useState(initialTemplateDescription);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [conditionEditorFormat, setConditionEditorFormat] = useState<{
 		trashId: string;
@@ -258,10 +249,9 @@ export const CFConfiguration = ({
 	};
 
 	const handleNext = () => {
-		if (!templateName.trim()) return;
-
-		// Pass selections and template info to the next step (Summary/Review)
-		onNext(selections, templateName.trim(), templateDescription.trim());
+		// Pass selections to the next step (Summary/Review)
+		// Template naming is now handled in the Review step
+		onNext(selections);
 	};
 
 	// For cloned profile mode, skip loading state (we have cfResolutions)
@@ -421,30 +411,6 @@ export const CFConfiguration = ({
 					</CardHeader>
 				</Card>
 
-				{/* Template Name & Description */}
-				<div className="space-y-4">
-					<div className="space-y-2">
-						<label className="text-sm font-medium text-fg">Template Name</label>
-						<input
-							type="text"
-							value={templateName}
-							onChange={(e) => setTemplateName(e.target.value)}
-							placeholder="Enter template name"
-							className="w-full rounded-lg border border-border/50 bg-bg px-4 py-2 text-fg placeholder:text-fg-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition"
-						/>
-					</div>
-					<div className="space-y-2">
-						<label className="text-sm font-medium text-fg">Description (optional)</label>
-						<textarea
-							value={templateDescription}
-							onChange={(e) => setTemplateDescription(e.target.value)}
-							placeholder="Enter template description"
-							rows={2}
-							className="w-full rounded-lg border border-border/50 bg-bg px-4 py-2 text-fg placeholder:text-fg-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition resize-none"
-						/>
-					</div>
-				</div>
-
 				{/* Search */}
 				<div className="relative">
 					<Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
@@ -514,7 +480,7 @@ export const CFConfiguration = ({
 					<button
 						type="button"
 						onClick={handleNext}
-						disabled={!templateName.trim()}
+						disabled={selectedCount === 0}
 						className="ml-auto inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-2 font-medium text-primary-fg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition"
 					>
 						Continue
@@ -532,9 +498,18 @@ export const CFConfiguration = ({
 
 	// Build CF Groups with their CFs
 	// CF Groups already have enriched data from the API
+	// Get score set from quality profile to read correct scores from trash_scores
+	const scoreSet = qualityProfile.scoreSet || 'default';
+
+	// Helper to resolve score from trash_scores using profile's score set
+	// Priority: trash_scores[scoreSet] → trash_scores.default → fallback → 0
+	const resolveScore = (cf: any, fallback?: number): number => {
+		const trashScores = cf.originalConfig?.trash_scores ?? cf.trash_scores;
+		return trashScores?.[scoreSet] ?? trashScores?.default ?? fallback ?? 0;
+	};
+
 	const groupedCFs = cfGroups.map((group: any) => {
 		const cfs = Array.isArray(group.custom_formats) ? group.custom_formats : [];
-		// CFs already enriched by API with description, displayName, score, source
 		return {
 			...group,
 			customFormats: cfs.map((cf: any) => ({
@@ -542,7 +517,7 @@ export const CFConfiguration = ({
 				name: cf.name,
 				displayName: cf.displayName || cf.name,
 				description: cf.description,
-				score: cf.score ?? 0, // Explicit 0 for zero-score CFs
+				score: resolveScore(cf, cf.score),
 				isRequired: cf.required === true,
 				source: cf.source,
 			})),
@@ -595,13 +570,14 @@ export const CFConfiguration = ({
 				if (data?.availableFormats) {
 					const foundInAvailable = data.availableFormats.find((cf: any) => cf.trash_id === trashId);
 					if (foundInAvailable) {
+						const resolvedScore = resolveScore(foundInAvailable);
 						return {
 							trash_id: foundInAvailable.trash_id,
 							name: foundInAvailable.name,
 							displayName: foundInAvailable.displayName,
 							description: foundInAvailable.description,
-							score: foundInAvailable.score,
-							defaultScore: foundInAvailable.score,
+							score: resolvedScore,
+							defaultScore: resolvedScore,
 							originalConfig: foundInAvailable.originalConfig,
 						};
 					}
@@ -614,6 +590,7 @@ export const CFConfiguration = ({
 			const selection = selections[cf.trash_id];
 			const scoreOverride = selection?.scoreOverride;
 			const isRequired = cf.required === true;
+			const resolvedDefaultScore = resolveScore(cf, cf.defaultScore ?? cf.score);
 
 			return (
 				<div
@@ -656,9 +633,9 @@ export const CFConfiguration = ({
 							<div className="space-y-2">
 								{/* Show current score info */}
 								<div className="flex items-center gap-2 text-xs text-fg-muted">
-									<span>Current: {scoreOverride ?? cf.defaultScore ?? cf.score ?? 0}</span>
-									{cf.defaultScore !== undefined && (
-										<span>• TRaSH Default: {cf.defaultScore}</span>
+									<span>Current: {scoreOverride ?? resolvedDefaultScore}</span>
+									{cf.originalConfig?.trash_scores && (
+										<span>• TRaSH Default: {resolvedDefaultScore}</span>
 									)}
 								</div>
 
@@ -678,7 +655,7 @@ export const CFConfiguration = ({
 										type="number"
 										value={scoreOverride ?? ""}
 										onChange={(e) => updateScore(cf.trash_id, e.target.value)}
-										placeholder={cf.defaultScore?.toString() || cf.score?.toString() || "0"}
+										placeholder={resolvedDefaultScore.toString()}
 										className="w-20 rounded border border-border/50 bg-bg px-2 py-1 text-sm text-fg focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50 transition"
 									/>
 									{scoreOverride !== undefined && (
@@ -806,7 +783,7 @@ export const CFConfiguration = ({
 									.map((cf: any) => {
 										const isSelected = selections[cf.trash_id]?.selected ?? false;
 										const scoreOverride = selections[cf.trash_id]?.scoreOverride;
-										const displayScore = cf.score ?? 0;
+										const displayScore = resolveScore(cf, cf.score);
 										const isRequired = cf.required === true;
 										return (
 											<div key={cf.trash_id} className="rounded-lg p-4 border border-border/50 bg-bg-subtle transition-all hover:border-primary/50 hover:bg-bg-hover hover:shadow-md cursor-pointer" onClick={() => toggleCF(cf.trash_id, isRequired)}>
@@ -863,7 +840,7 @@ export const CFConfiguration = ({
 					<button
 						type="button"
 						onClick={handleNext}
-						disabled={!templateName.trim() || selectedCount === 0}
+						disabled={selectedCount === 0}
 						className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-fg transition hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
 					>
 						Continue to Review
@@ -1024,7 +1001,7 @@ export const CFConfiguration = ({
 							{filteredMandatoryCFs.map((cf: any) => {
 								const isSelected = selections[cf.trash_id]?.selected ?? true;
 								const scoreOverride = selections[cf.trash_id]?.scoreOverride;
-								const displayScore = cf.score ?? 0;
+								const displayScore = resolveScore(cf, cf.defaultScore ?? cf.score);
 
 								return (
 									<div
@@ -1072,12 +1049,12 @@ export const CFConfiguration = ({
 													<label className="text-xs text-fg-muted">
 														Score:
 														{scoreOverride === undefined && (
-															<span className="ml-1">(default: {formatScore(cf.score)})</span>
+															<span className="ml-1">(default: {formatScore(displayScore)})</span>
 														)}
 													</label>
 													<input
 														type="number"
-														value={scoreOverride ?? cf.score ?? 0}
+														value={scoreOverride ?? displayScore}
 														onChange={(e) => updateScore(cf.trash_id, e.target.value)}
 														min={-10000}
 														max={10000}
@@ -1386,7 +1363,7 @@ export const CFConfiguration = ({
 									{additionalCFs.map((cf: any) => {
 										const isSelected = selections[cf.trash_id]?.selected ?? false;
 										const scoreOverride = selections[cf.trash_id]?.scoreOverride;
-										const displayScore = cf.score ?? 0;
+										const displayScore = resolveScore(cf, cf.score);
 
 										return (
 											<div
@@ -1554,7 +1531,7 @@ export const CFConfiguration = ({
 									.map((cf: any) => {
 										const isSelected = selections[cf.trash_id]?.selected ?? false;
 										const scoreOverride = selections[cf.trash_id]?.scoreOverride;
-										const displayScore = cf.score ?? 0;
+										const displayScore = resolveScore(cf, cf.score);
 
 										return (
 											<div
@@ -1634,46 +1611,6 @@ export const CFConfiguration = ({
 				</div>
 			)}
 
-			{/* Template Creation Section */}
-			<Card>
-				<CardHeader>
-					<CardTitle>Create Template</CardTitle>
-					<CardDescription>
-						{isClonedProfile
-							? "Create a template from this cloned profile with an optional description"
-							: "Name your template and add an optional description"
-						}
-					</CardDescription>
-				</CardHeader>
-				<CardContent className="space-y-4">
-					<div>
-						<label className="mb-2 block text-sm font-medium text-fg">
-							Template Name <span className="text-red-400">*</span>
-						</label>
-						<input
-							type="text"
-							value={templateName}
-							onChange={(e) => setTemplateName(e.target.value)}
-							placeholder="Enter template name"
-							className="w-full rounded border border-border bg-bg-hover px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-						/>
-					</div>
-
-					<div>
-						<label className="mb-2 block text-sm font-medium text-fg">
-							Description (Optional)
-						</label>
-						<textarea
-							value={templateDescription}
-							onChange={(e) => setTemplateDescription(e.target.value)}
-							placeholder="Enter template description"
-							rows={4}
-							className="w-full rounded border border-border bg-bg-hover px-3 py-2 text-sm text-fg placeholder:text-fg-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-						/>
-					</div>
-				</CardContent>
-			</Card>
-
 			{/* Navigation */}
 			<div className={`flex flex-col-reverse sm:flex-row sm:items-center gap-3 border-t border-border pt-6 ${onBack ? 'sm:justify-between' : 'sm:justify-end'}`}>
 				{onBack && (
@@ -1690,7 +1627,7 @@ export const CFConfiguration = ({
 				<button
 					type="button"
 					onClick={handleNext}
-					disabled={!templateName.trim() || selectedCount === 0}
+					disabled={selectedCount === 0}
 					className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-fg transition hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
 				>
 					<span>Next: Review</span>
