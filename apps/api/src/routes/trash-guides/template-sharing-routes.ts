@@ -28,7 +28,7 @@ const templateSharingRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Export template with enhanced options
 	 */
 	app.post("/export", async (request, reply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { templateId, options } = request.body as {
 			templateId: string;
 			options?: TemplateExportOptions;
@@ -73,7 +73,7 @@ const templateSharingRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Validate template before import
 	 */
 	app.post("/validate", async (request, reply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { jsonData } = request.body as { jsonData: string };
 
 		try {
@@ -98,7 +98,7 @@ const templateSharingRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Import template with validation and conflict resolution
 	 */
 	app.post("/import", async (request, reply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { jsonData, options } = request.body as {
 			jsonData: string;
 			options?: TemplateImportOptions;
@@ -137,7 +137,7 @@ const templateSharingRoutes: FastifyPluginCallback = (app, opts, done) => {
 	 * Preview template import without saving
 	 */
 	app.post("/preview", async (request, reply) => {
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { jsonData } = request.body as { jsonData: string };
 
 		try {

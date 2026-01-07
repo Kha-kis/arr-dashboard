@@ -4,12 +4,14 @@ import { useState, useEffect, useMemo } from "react";
 import { Button } from "../../../components/ui";
 import { X } from "lucide-react";
 import type { QualityProfileSummary } from "../../../lib/api-client/trash-guides";
-import type { TrashTemplate } from "@arr/shared";
+import type { TrashTemplate, CustomQualityConfig } from "@arr/shared";
 import { QualityProfileSelection } from "./wizard-steps/quality-profile-selection";
+import { QualityConfiguration } from "./wizard-steps/quality-configuration";
 import { CFConfiguration } from "./wizard-steps/cf-configuration";
 import { CFResolution, type ResolvedCF } from "./wizard-steps/cf-resolution";
 import { TemplateCreation } from "./wizard-steps/template-creation";
 import { htmlToPlainText } from "../lib/description-utils";
+import { convertQualityProfileToConfig, getEffectiveQualityConfig } from "../lib/quality-config-utils";
 
 /**
  * Check if a trashId indicates a cloned profile from an instance
@@ -94,7 +96,7 @@ interface QualityProfileWizardProps {
 	editingTemplate?: TrashTemplate;
 }
 
-type WizardStep = "profile" | "customize" | "cf-resolution" | "summary";
+type WizardStep = "profile" | "quality" | "customize" | "cf-resolution" | "summary";
 
 /**
  * Wizard-specific profile type that allows undefined trashId for edit mode.
@@ -118,15 +120,18 @@ interface WizardState {
 	templateId?: string; // For editing existing templates
 	/** CF resolutions for cloned profiles (linking to TRaSH vs keeping instance) */
 	cfResolutions?: ResolvedCF[];
+	/** Custom quality configuration for power users */
+	customQualityConfig?: CustomQualityConfig;
 }
 
-// Standard step order for TRaSH Guides profiles
-const STANDARD_STEP_ORDER: WizardStep[] = ["profile", "customize", "summary"];
-// Step order for cloned profiles: resolution BEFORE configuration so users can see matches first
-const CLONED_STEP_ORDER: WizardStep[] = ["profile", "cf-resolution", "customize", "summary"];
+// Standard step order for TRaSH Guides profiles: quality config before CF config
+const STANDARD_STEP_ORDER: WizardStep[] = ["profile", "quality", "customize", "summary"];
+// Step order for cloned profiles: resolution BEFORE quality and configuration
+const CLONED_STEP_ORDER: WizardStep[] = ["profile", "cf-resolution", "quality", "customize", "summary"];
 
 const getStepTitles = (isEditMode: boolean, isClonedProfile: boolean): Record<WizardStep, string> => ({
 	profile: "Select Quality Profile",
+	quality: "Configure Qualities",
 	customize: isEditMode ? "Edit Custom Formats" : "Configure Custom Formats",
 	"cf-resolution": "Link Custom Formats",
 	summary: isEditMode ? "Review & Update" : "Review & Create",
@@ -134,6 +139,7 @@ const getStepTitles = (isEditMode: boolean, isClonedProfile: boolean): Record<Wi
 
 const getStepDescriptions = (isEditMode: boolean, isClonedProfile: boolean): Record<WizardStep, string> => ({
 	profile: "Select a TRaSH Guides quality profile to import",
+	quality: "Configure quality priorities, groupings, and cutoff settings",
 	customize: isEditMode
 		? "Modify formats, groups, and scores"
 		: isClonedProfile
@@ -203,7 +209,7 @@ export const QualityProfileWizard = ({
 			});
 
 			setWizardState({
-				currentStep: "customize", // Skip profile selection in edit mode
+				currentStep: "quality", // Start at quality configuration in edit mode
 				selectedProfile: {
 					// Note: trashId is intentionally undefined in edit mode.
 					// Templates don't persist the original TRaSH profile ID.
@@ -221,6 +227,9 @@ export const QualityProfileWizard = ({
 				templateName: editingTemplate.name,
 				templateDescription: editingTemplate.description || "",
 				templateId: editingTemplate.id,
+				// Initialize quality config: use effective config from template
+				// (considers both customQualityConfig and qualityProfile)
+				customQualityConfig: getEffectiveQualityConfig(editingTemplate.config),
 			});
 		} else if (!editingTemplate && open) {
 			// Reset to initial state for new template
@@ -232,13 +241,14 @@ export const QualityProfileWizard = ({
 				templateDescription: "",
 				templateId: undefined,
 				cfResolutions: undefined,
+				customQualityConfig: undefined,
 			});
 		}
 	}, [editingTemplate, open]);
 
 	const handleProfileSelected = (profile: QualityProfileSummary) => {
-		// For cloned profiles, go to cf-resolution first; for TRaSH profiles, go to customize
-		const nextStep: WizardStep = isClonedProfile(profile.trashId) ? "cf-resolution" : "customize";
+		// For cloned profiles, go to cf-resolution first; for TRaSH profiles, go to quality config
+		const nextStep: WizardStep = isClonedProfile(profile.trashId) ? "cf-resolution" : "quality";
 		setWizardState(prev => ({
 			...prev,
 			currentStep: nextStep,
@@ -251,30 +261,35 @@ export const QualityProfileWizard = ({
 		}));
 	};
 
+	const handleQualityConfigComplete = (qualityConfig: CustomQualityConfig) => {
+		// After quality configuration, go to CF customization
+		setWizardState(prev => ({
+			...prev,
+			currentStep: "customize",
+			customQualityConfig: qualityConfig,
+		}));
+	};
+
 	const handleCustomizationComplete = (
 		selections: Record<string, {
 			selected: boolean;
 			scoreOverride?: number;
 			conditionsEnabled: Record<string, boolean>;
-		}>,
-		name: string,
-		description: string
+		}>
 	) => {
-		// Always go to summary - CF resolution (if needed) already happened before customize
+		// Go to summary - template naming happens in the Review step
 		setWizardState(prev => ({
 			...prev,
 			currentStep: "summary",
 			customFormatSelections: selections,
-			templateName: name,
-			templateDescription: description,
 		}));
 	};
 
 	const handleCFResolutionComplete = (resolutions: ResolvedCF[]) => {
-		// After CF resolution, go to customize step so users can adjust scores
+		// After CF resolution, go to quality step
 		setWizardState(prev => ({
 			...prev,
-			currentStep: "customize",
+			currentStep: "quality",
 			cfResolutions: resolutions,
 		}));
 	};
@@ -288,6 +303,7 @@ export const QualityProfileWizard = ({
 			templateName: "",
 			templateDescription: "",
 			cfResolutions: undefined,
+			customQualityConfig: undefined,
 		});
 		onClose();
 	};
@@ -305,7 +321,7 @@ export const QualityProfileWizard = ({
 		}
 	};
 
-	const handleEditStep = (step: "profile" | "customize") => {
+	const handleEditStep = (step: WizardStep) => {
 		setWizardState(prev => ({
 			...prev,
 			currentStep: step,
@@ -321,6 +337,7 @@ export const QualityProfileWizard = ({
 			templateName: "",
 			templateDescription: "",
 			cfResolutions: undefined,
+			customQualityConfig: undefined,
 		});
 		onClose();
 	};
@@ -371,10 +388,21 @@ export const QualityProfileWizard = ({
 								const isActive = index === currentStepIndex;
 								const isCompleted = index < currentStepIndex;
 								const isAccessible = index <= currentStepIndex;
+								// In edit mode, allow navigating to any step except profile (step 0)
+								const canNavigate = isEditMode
+									? index > 0 && !isActive
+									: isCompleted && !isActive;
 
 								return (
 									<div key={step} className="flex items-center flex-1">
-										<div className="flex items-center gap-2 flex-1">
+										<button
+											type="button"
+											onClick={() => canNavigate && handleEditStep(step)}
+											disabled={!canNavigate}
+											className={`flex items-center gap-2 flex-1 ${
+												canNavigate ? "cursor-pointer group" : "cursor-default"
+											}`}
+										>
 											<div
 												className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-medium transition ${
 													isActive
@@ -382,20 +410,20 @@ export const QualityProfileWizard = ({
 														: isCompleted
 															? "bg-primary/20 text-primary"
 															: "bg-bg-hover text-fg-muted"
-												}`}
+												} ${canNavigate ? "group-hover:ring-2 group-hover:ring-primary/50" : ""}`}
 											>
 												{index + 1}
 											</div>
 											<div className="hidden sm:block flex-1 min-w-0">
 												<div
-													className={`text-xs font-medium truncate transition ${
+													className={`text-xs font-medium truncate transition text-left ${
 														isAccessible ? "text-fg" : "text-fg-muted"
-													}`}
+													} ${canNavigate ? "group-hover:text-primary" : ""}`}
 												>
 													{getStepTitles(isEditMode, isClonedProfileSelected)[step]}
 												</div>
 											</div>
-										</div>
+										</button>
 										{index < stepOrder.length - 1 && (
 											<div
 												className={`h-0.5 w-full mx-2 transition ${
@@ -419,14 +447,22 @@ export const QualityProfileWizard = ({
 						/>
 					)}
 
+					{wizardState.currentStep === "quality" && wizardState.selectedProfile && (
+						<QualityConfiguration
+							serviceType={serviceType}
+							qualityProfile={wizardState.selectedProfile}
+							initialQualityConfig={wizardState.customQualityConfig}
+							onNext={handleQualityConfigComplete}
+							onBack={isEditMode ? undefined : handleBack}
+							isEditMode={isEditMode}
+						/>
+					)}
 
 					{wizardState.currentStep === "customize" && wizardState.selectedProfile && (
 						<CFConfiguration
 							serviceType={serviceType}
 							qualityProfile={wizardState.selectedProfile}
 							initialSelections={wizardState.customFormatSelections}
-							templateName={wizardState.templateName}
-							templateDescription={wizardState.templateDescription}
 							onNext={handleCustomizationComplete}
 							onBack={isEditMode ? undefined : handleBack} // Disable back in edit mode
 							isEditMode={isEditMode} // Pass edit mode flag
@@ -455,9 +491,11 @@ export const QualityProfileWizard = ({
 								customFormatSelections: wizardState.customFormatSelections,
 								templateName: wizardState.templateName,
 								templateDescription: wizardState.templateDescription,
+								customQualityConfig: wizardState.customQualityConfig,
 							}}
 							templateId={wizardState.templateId} // Pass template ID for update
 							isEditMode={isEditMode}
+							editingTemplate={editingTemplate} // Pass template for CF group info in edit mode
 							onComplete={handleComplete}
 							onBack={handleBack}
 							onEditStep={handleEditStep}

@@ -8,6 +8,8 @@
 import type { PrismaClient, ServiceType } from "@prisma/client";
 import type { SonarrClient, RadarrClient } from "arr-sdk";
 import type { ArrClientFactory } from "../arr/client-factory.js";
+import type { CustomQualityConfig, TemplateQualityEntry } from "@arr/shared";
+import { getSyncMetrics } from "./sync-metrics.js";
 
 // SDK CustomFormat type for internal use
 type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]>>[number];
@@ -81,6 +83,13 @@ interface ValidatedDeploymentData {
 	templateCFs: TemplateCF[];
 	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR API override structure
 	overridesForInstance: Record<string, any>;
+	/**
+	 * Effective quality config for this instance.
+	 * Uses instance override if set, otherwise falls back to template default.
+	 */
+	effectiveQualityConfig: CustomQualityConfig | undefined;
+	/** Whether using an instance override for quality config */
+	usingQualityOverride: boolean;
 }
 
 interface TemplateCF {
@@ -249,11 +258,12 @@ export class DeploymentExecutorService {
 		const overridesForInstance = instanceOverrides[instanceId] || {};
 
 		// Apply instance-specific overrides to filter/modify CFs
-		if (overridesForInstance.scoreOverrides || overridesForInstance.cfOverrides) {
+		// Storage field names: cfScoreOverrides, cfSelectionOverrides
+		if (overridesForInstance.cfScoreOverrides || overridesForInstance.cfSelectionOverrides) {
 			templateCFs = templateCFs
 				.map((cf) => {
-					const cfOverride = overridesForInstance.cfOverrides?.[cf.trashId];
-					const scoreOverride = overridesForInstance.scoreOverrides?.[cf.trashId];
+					const cfOverride = overridesForInstance.cfSelectionOverrides?.[cf.trashId];
+					const scoreOverride = overridesForInstance.cfScoreOverrides?.[cf.trashId];
 
 					// Skip if CF is disabled for this instance
 					if (cfOverride?.enabled === false) {
@@ -270,6 +280,18 @@ export class DeploymentExecutorService {
 				})
 				.filter((cf): cf is NonNullable<typeof cf> => cf !== null);
 		}
+
+		// Determine effective quality config: instance override takes precedence over template default
+		const instanceQualityOverride = overridesForInstance.qualityConfigOverride as
+			| CustomQualityConfig
+			| undefined;
+		const templateQualityConfig = templateConfig.customQualityConfig as
+			| CustomQualityConfig
+			| undefined;
+		const effectiveQualityConfig = instanceQualityOverride ?? templateQualityConfig;
+		const usingQualityOverride = instanceQualityOverride !== undefined;
+
+		// Note: usingQualityOverride is returned in the result for callers to log if needed
 
 		return {
 			template: {
@@ -290,6 +312,8 @@ export class DeploymentExecutorService {
 			templateConfig,
 			templateCFs,
 			overridesForInstance,
+			effectiveQualityConfig,
+			usingQualityOverride,
 		};
 	}
 
@@ -468,6 +492,7 @@ export class DeploymentExecutorService {
 		conflictResolutions: Record<string, "use_template" | "keep_existing"> | undefined,
 		profileName: string,
 		previouslyDeployedCFs: PreviousDeploymentCF[],
+		effectiveQualityConfig?: CustomQualityConfig,
 	): Promise<SyncQualityProfileResult> {
 		const errors: string[] = [];
 		const orphanedCFs: string[] = [];
@@ -485,6 +510,7 @@ export class DeploymentExecutorService {
 					templateConfig,
 					templateCFs,
 					profileName,
+					effectiveQualityConfig,
 				);
 			}
 
@@ -751,12 +777,14 @@ export class DeploymentExecutorService {
 	/**
 	 * Creates a quality profile from schema with template configuration.
 	 * Supports both TRaSH Guides profiles (qualityProfile) and cloned instance profiles (completeQualityProfile)
+	 * @param effectiveQualityConfig - The quality config to use (may be instance override or template default)
 	 */
 	private async createQualityProfileFromSchema(
 		client: SonarrClient | RadarrClient,
 		templateConfig: Record<string, any>,
 		templateCFs: TemplateCF[],
 		profileName: string,
+		effectiveQualityConfig?: CustomQualityConfig,
 	): Promise<any> {
 		try {
 			// Get the quality profile schema to get proper structure
@@ -770,6 +798,21 @@ export class DeploymentExecutorService {
 					templateConfig,
 					templateCFs,
 					profileName,
+				);
+			}
+
+			// Check if custom quality config is enabled (use effectiveQualityConfig which may be instance override)
+			const customQualityConfig =
+				effectiveQualityConfig ??
+				(templateConfig.customQualityConfig as CustomQualityConfig | undefined);
+			if (customQualityConfig?.useCustomQualities && customQualityConfig.items.length > 0) {
+				return await this.createQualityProfileFromCustomConfig(
+					client,
+					schema,
+					templateConfig,
+					templateCFs,
+					profileName,
+					customQualityConfig,
 				);
 			}
 
@@ -1129,6 +1172,150 @@ export class DeploymentExecutorService {
 	}
 
 	/**
+	 * Creates a quality profile from custom quality configuration.
+	 * This uses the user's customized quality items (order, groups, enabled state).
+	 */
+	private async createQualityProfileFromCustomConfig(
+		client: SonarrClient | RadarrClient,
+		schema: any,
+		templateConfig: Record<string, any>,
+		templateCFs: TemplateCF[],
+		profileName: string,
+		customQualityConfig: CustomQualityConfig,
+	): Promise<any> {
+		// Build a map of all qualities available in the target instance schema
+		const normalizeQualityName = (name: string) => name.replace(/[\s-]/g, "").toLowerCase();
+		const qualitiesByName = new Map<string, any>();
+
+		// Extract all qualities from schema
+		const extractQualities = (items: any[]) => {
+			for (const item of items) {
+				if (item.quality) {
+					qualitiesByName.set(normalizeQualityName(item.quality.name), item);
+				} else if (item.id !== undefined && item.name && !item.items) {
+					const wrappedItem = {
+						quality: {
+							id: item.id,
+							name: item.name,
+							source: item.source,
+							resolution: item.resolution,
+						},
+						items: [],
+						allowed: item.allowed,
+					};
+					qualitiesByName.set(normalizeQualityName(item.name), wrappedItem);
+				}
+				if (item.items && Array.isArray(item.items)) {
+					extractQualities(item.items);
+				}
+			}
+		};
+		extractQualities(schema.items);
+
+		// Transform custom quality items to *arr format
+		let customGroupId = 1000;
+		const qualityItems: any[] = [];
+		const itemIdMap = new Map<string, number>(); // Maps custom item IDs to *arr IDs
+
+		for (const entry of customQualityConfig.items) {
+			if (entry.type === "group") {
+				// Quality group
+				const group = entry.group;
+				const groupQualities: any[] = [];
+
+				for (const quality of group.qualities) {
+					const targetQuality = qualitiesByName.get(normalizeQualityName(quality.name));
+					if (targetQuality) {
+						groupQualities.push({
+							quality: targetQuality.quality,
+							items: [],
+							allowed: false, // Individual items in groups have allowed=false
+						});
+					}
+				}
+
+				if (groupQualities.length > 0) {
+					const newGroupId = customGroupId++;
+					itemIdMap.set(group.id, newGroupId);
+					qualityItems.push({
+						name: group.name,
+						items: groupQualities,
+						allowed: group.allowed,
+						id: newGroupId,
+					});
+				}
+			} else {
+				// Individual quality
+				const item = entry.item;
+				const targetQuality = qualitiesByName.get(normalizeQualityName(item.name));
+				if (targetQuality) {
+					const qualityId = targetQuality.quality?.id;
+					if (qualityId !== undefined) {
+						itemIdMap.set(item.id, qualityId);
+					}
+					qualityItems.push({
+						...targetQuality,
+						allowed: item.allowed,
+					});
+				}
+			}
+		}
+
+		// Resolve cutoff ID from custom config
+		let cutoffId: number | null = null;
+		if (customQualityConfig.cutoffId) {
+			const mappedId = itemIdMap.get(customQualityConfig.cutoffId);
+			if (mappedId !== undefined) {
+				cutoffId = mappedId;
+			}
+		}
+
+		// If no cutoff found, use the last item (highest priority)
+		if (cutoffId === null && qualityItems.length > 0) {
+			const lastItem = qualityItems[qualityItems.length - 1];
+			cutoffId = lastItem.id ?? lastItem.quality?.id ?? 1;
+			console.warn(`[DEPLOYMENT] Custom quality cutoff not resolved, defaulting to: ${cutoffId}`);
+		}
+
+		// Get fresh CFs list with IDs for score application
+		const allCFs = await client.customFormat.getAll();
+		const scoreSet = templateConfig.qualityProfile?.trash_score_set;
+
+		// Apply CF scores from template
+		const formatItemsWithScores = schema.formatItems.map((item: any) => {
+			const cf = allCFs.find((c: SdkCustomFormat) => c.id === item.format);
+			if (cf) {
+				const templateCF = templateCFs.find((tcf) => tcf.name === cf.name);
+				if (templateCF) {
+					const { score } = calculateScoreAndSource(templateCF, scoreSet);
+					return { ...item, score };
+				}
+			}
+			return item;
+		});
+
+		// Build the profile to create
+		const profileToCreate = {
+			...schema,
+			name: profileName,
+			upgradeAllowed: templateConfig.qualityProfile?.upgradeAllowed ?? true,
+			cutoff: cutoffId ?? 1,
+			items: qualityItems,
+			minFormatScore: templateConfig.qualityProfile?.minFormatScore ?? 0,
+			cutoffFormatScore: templateConfig.qualityProfile?.cutoffFormatScore ?? 10000,
+			minUpgradeFormatScore: templateConfig.qualityProfile?.minUpgradeFormatScore ?? 1,
+			formatItems: formatItemsWithScores,
+		};
+
+		// Remove the id field
+		const { id: _unusedId, ...profileWithoutId } = profileToCreate as {
+			id?: number;
+		} & typeof profileToCreate;
+
+		return await apiClient.createQualityProfile(profileWithoutId);
+	}
+
+	/**
 	 * Finalizes deployment history records with results.
 	 */
 	private async finalizeDeploymentHistory(
@@ -1245,9 +1432,13 @@ export class DeploymentExecutorService {
 		let historyId: string | null = null;
 		let deploymentHistoryId: string | null = null;
 
+		// Start metrics tracking
+		const metrics = getSyncMetrics();
+		const completeMetrics = metrics.startOperation("deployment");
+
 		try {
 			// Step 1: Validate and prepare deployment data
-			const { template, instance, templateConfig, templateCFs } =
+			const { template, instance, templateConfig, templateCFs, effectiveQualityConfig } =
 				await this.validateAndPrepareDeployment(templateId, instanceId, userId);
 
 			// Step 2: Create backup snapshot before deployment
@@ -1358,6 +1549,7 @@ export class DeploymentExecutorService {
 				conflictResolutions,
 				profileName,
 				previouslyDeployedCFs,
+				effectiveQualityConfig,
 			);
 
 			// Combine errors from CF deployment and profile sync
@@ -1384,6 +1576,14 @@ export class DeploymentExecutorService {
 				allErrors,
 			);
 
+			// Record metrics
+			const metricsResult = completeMetrics();
+			if (allErrors.length === 0) {
+				metricsResult.recordSuccess();
+			} else {
+				metricsResult.recordFailure(allErrors[0]);
+			}
+
 			return {
 				instanceId,
 				instanceLabel: instance.label,
@@ -1396,6 +1596,11 @@ export class DeploymentExecutorService {
 				details: cfResult.details,
 			};
 		} catch (error) {
+			// Record failure metrics
+			const errorMessage = error instanceof Error ? error.message : "Unknown error";
+			const metricsResult = completeMetrics();
+			metricsResult.recordFailure(errorMessage);
+
 			// Update deployment history with failure
 			await this.finalizeDeploymentHistoryWithFailure(
 				historyId,
@@ -1411,7 +1616,7 @@ export class DeploymentExecutorService {
 				customFormatsCreated: 0,
 				customFormatsUpdated: 0,
 				customFormatsSkipped: 0,
-				errors: [error instanceof Error ? error.message : "Unknown error"],
+				errors: [errorMessage],
 			};
 		}
 	}

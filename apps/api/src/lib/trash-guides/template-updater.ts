@@ -26,6 +26,7 @@ import { dequal as deepEqual } from "dequal";
 import type { TrashCacheManager } from "./cache-manager.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
 import type { TrashGitHubFetcher } from "./github-fetcher.js";
+import { getSyncMetrics } from "./sync-metrics.js";
 import type { VersionInfo, VersionTracker } from "./version-tracker.js";
 
 // ============================================================================
@@ -97,10 +98,12 @@ export interface MergeStats {
 	customFormatsRemoved: number;
 	customFormatsUpdated: number;
 	customFormatsPreserved: number;
+	customFormatsDeprecated: number; // CFs no longer in TRaSH but kept (user-added or deleteRemovedCFs=false)
 	customFormatGroupsAdded: number;
 	customFormatGroupsRemoved: number;
 	customFormatGroupsUpdated: number;
 	customFormatGroupsPreserved: number;
+	customFormatGroupsDeprecated: number;
 	userCustomizationsPreserved: string[];
 	// Score update tracking
 	scoresUpdated: number;
@@ -109,6 +112,7 @@ export interface MergeStats {
 	addedCFDetails: Array<{ trashId: string; name: string; score: number }>;
 	removedCFDetails: Array<{ trashId: string; name: string }>;
 	updatedCFDetails: Array<{ trashId: string; name: string }>;
+	deprecatedCFDetails: Array<{ trashId: string; name: string; reason: string }>;
 	scoreChangeDetails: Array<{ trashId: string; name: string; oldScore: number; newScore: number }>;
 }
 
@@ -448,6 +452,10 @@ export class TemplateUpdater {
 			applyScoreUpdates?: boolean;
 		},
 	): Promise<SyncResult> {
+		// Start metrics tracking
+		const metrics = getSyncMetrics();
+		const completeMetrics = metrics.startOperation("template_update");
+
 		// First check if template exists at all
 		const templateExists = await this.prisma.trashTemplate.findUnique({
 			where: { id: templateId },
@@ -455,6 +463,7 @@ export class TemplateUpdater {
 		});
 
 		if (!templateExists) {
+			completeMetrics().recordFailure("Template not found");
 			return {
 				success: false,
 				templateId,
@@ -467,6 +476,7 @@ export class TemplateUpdater {
 
 		// Verify ownership if userId is provided
 		if (userId && templateExists.userId !== userId) {
+			completeMetrics().recordFailure("Not authorized");
 			return {
 				success: false,
 				templateId,
@@ -483,6 +493,7 @@ export class TemplateUpdater {
 		});
 
 		if (!template) {
+			completeMetrics().recordFailure("Template not found");
 			return {
 				success: false,
 				templateId,
@@ -500,14 +511,14 @@ export class TemplateUpdater {
 				? await this.versionTracker.getCommitInfo(targetCommitHash)
 				: await this.versionTracker.getLatestCommit();
 		} catch (error) {
+			const errorMsg = `Failed to get commit info from GitHub: ${error instanceof Error ? error.message : String(error)}`;
+			completeMetrics().recordFailure(errorMsg);
 			return {
 				success: false,
 				templateId,
 				previousCommit: template.trashGuidesCommitHash,
 				newCommit: targetCommitHash || "",
-				errors: [
-					`Failed to get commit info from GitHub: ${error instanceof Error ? error.message : String(error)}`,
-				],
+				errors: [errorMsg],
 				errorType: "sync_failed",
 			};
 		}
@@ -611,6 +622,8 @@ export class TemplateUpdater {
 			const scoreSet = templateQualityProfile?.trash_score_set || "default";
 
 			// Perform merge: preserve user customizations, update specifications
+			// Read deleteRemovedCFs from template config, default to false (conservative - matches Recyclarr behavior)
+			const deleteRemovedCFs = currentConfig.syncSettings?.deleteRemovedCFs ?? false;
 			const mergeResult = this.mergeTemplateConfig(
 				currentConfig,
 				filteredCustomFormats,
@@ -618,6 +631,8 @@ export class TemplateUpdater {
 				{
 					applyScoreUpdates: options?.applyScoreUpdates,
 					scoreSet,
+					deleteRemovedCFs,
+					targetCommitHash: targetCommit.commitHash,
 				},
 			);
 
@@ -698,6 +713,10 @@ export class TemplateUpdater {
 				},
 			});
 
+			// Record success metrics
+			const metricsResult = completeMetrics();
+			metricsResult.recordSuccess();
+
 			return {
 				success: true,
 				templateId,
@@ -708,12 +727,17 @@ export class TemplateUpdater {
 					mergeResult.scoreConflicts.length > 0 ? mergeResult.scoreConflicts : undefined,
 			};
 		} catch (error) {
+			// Record failure metrics
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			const metricsResult = completeMetrics();
+			metricsResult.recordFailure(errorMessage);
+
 			return {
 				success: false,
 				templateId,
 				previousCommit,
 				newCommit: targetCommit.commitHash,
-				errors: [error instanceof Error ? error.message : String(error)],
+				errors: [errorMessage],
 			};
 		}
 	}
@@ -845,11 +869,16 @@ export class TemplateUpdater {
 	 * Merge strategy:
 	 * - For existing CFs: Preserve user's scoreOverride and conditionsEnabled, update originalConfig
 	 * - For new CFs: Add with TRaSH defaults (or recommended scores if applyScoreUpdates)
-	 * - For removed CFs: Remove from template (TRaSH no longer maintains them)
+	 * - For removed CFs: Behavior depends on deleteRemovedCFs option and CF origin
+	 *   - deleteRemovedCFs: false (default) → Mark as deprecated, keep in template
+	 *   - deleteRemovedCFs: true + origin="trash_sync" → Remove from template
+	 *   - origin="user_added" → Always keep (never delete user CFs)
 	 * - For groups: Same strategy - preserve enabled state, update originalConfig
 	 *
 	 * @param scoreOptions.applyScoreUpdates - If true, apply recommended scores (but respect user overrides)
 	 * @param scoreOptions.scoreSet - The score set to use (e.g., "default", "sqp-1-1080p")
+	 * @param scoreOptions.deleteRemovedCFs - If true, delete CFs removed from TRaSH (only affects trash_sync origin)
+	 * @param scoreOptions.targetCommitHash - Target commit for deprecation reason
 	 * @private
 	 */
 	private mergeTemplateConfig(
@@ -859,6 +888,8 @@ export class TemplateUpdater {
 		scoreOptions?: {
 			applyScoreUpdates?: boolean;
 			scoreSet?: string;
+			deleteRemovedCFs?: boolean;
+			targetCommitHash?: string;
 		},
 	): MergeResult {
 		const stats: MergeStats = {
@@ -866,10 +897,12 @@ export class TemplateUpdater {
 			customFormatsRemoved: 0,
 			customFormatsUpdated: 0,
 			customFormatsPreserved: 0,
+			customFormatsDeprecated: 0,
 			customFormatGroupsAdded: 0,
 			customFormatGroupsRemoved: 0,
 			customFormatGroupsUpdated: 0,
 			customFormatGroupsPreserved: 0,
+			customFormatGroupsDeprecated: 0,
 			userCustomizationsPreserved: [],
 			scoresUpdated: 0,
 			scoresSkippedDueToOverride: 0,
@@ -877,10 +910,14 @@ export class TemplateUpdater {
 			addedCFDetails: [],
 			removedCFDetails: [],
 			updatedCFDetails: [],
+			deprecatedCFDetails: [],
 			scoreChangeDetails: [],
 		};
 		const warnings: string[] = [];
 		const scoreConflicts: ScoreConflict[] = [];
+
+		// Score set to use for trash_scores lookup (defined at function level for use in both helper and main loop)
+		const scoreSet = scoreOptions?.scoreSet || "default";
 
 		// Extended CF type with trash_scores
 		type TrashCFWithScores = TrashCustomFormat & { trash_scores?: Record<string, number> };
@@ -888,7 +925,6 @@ export class TemplateUpdater {
 		// Helper to get recommended score for a CF based on score set
 		const getRecommendedScore = (cf: TrashCFWithScores): number => {
 			if (cf.trash_scores) {
-				const scoreSet = scoreOptions?.scoreSet || "default";
 				if (cf.trash_scores[scoreSet] !== undefined) {
 					return cf.trash_scores[scoreSet];
 				}
@@ -926,7 +962,17 @@ export class TemplateUpdater {
 			if (currentCF) {
 				// Existing CF - preserve user customizations, update specifications
 				const hasScoreOverride = currentCF.scoreOverride !== undefined;
-				const currentScore = currentCF.scoreOverride ?? currentCF.score ?? 0;
+				// Get current score using correct priority: scoreOverride > trash_scores > fallback
+				const cfWithScores = currentCF.originalConfig as TrashCFWithScores | undefined;
+				let currentScore: number;
+				if (currentCF.scoreOverride !== undefined) {
+					currentScore = currentCF.scoreOverride;
+				} else if (cfWithScores?.trash_scores) {
+					currentScore =
+						cfWithScores.trash_scores[scoreSet] ?? cfWithScores.trash_scores.default ?? 0;
+				} else {
+					currentScore = 0;
+				}
 				const hasCustomConditions = Object.values(currentCF.conditionsEnabled || {}).some(
 					(enabled) => !enabled,
 				);
@@ -1000,13 +1046,23 @@ export class TemplateUpdater {
 					newConditionsEnabled[spec.name] = currentCF.conditionsEnabled?.[spec.name] ?? true;
 				}
 
+				// Note: We intentionally don't set the 'score' field on template CFs.
+				// Deployment reads scores from originalConfig.trash_scores (or scoreOverride
+				// if user has set one). The score field is vestigial and ignored.
 				mergedCustomFormats.push({
 					trashId: latestCF.trash_id,
 					name: latestCF.name,
-					score: finalScore,
+					// score field intentionally omitted - deployment uses originalConfig.trash_scores
 					scoreOverride: finalScoreOverride,
 					conditionsEnabled: newConditionsEnabled,
 					originalConfig: latestCF,
+					// Preserve existing origin, or default to trash_sync for legacy CFs
+					origin: currentCF.origin || "trash_sync",
+					addedAt: currentCF.addedAt,
+					// Clear deprecation if CF is back in TRaSH (was re-added upstream)
+					deprecated: undefined,
+					deprecatedAt: undefined,
+					deprecatedReason: undefined,
 				});
 			} else {
 				// New CF from TRaSH Guides
@@ -1018,40 +1074,81 @@ export class TemplateUpdater {
 					conditionsEnabled[spec.name] = true;
 				}
 
-				// Use recommended score if applyScoreUpdates, otherwise use default
-				const newCFScore = scoreOptions?.applyScoreUpdates
-					? recommendedScore
-					: (latestCF.score ?? 0);
+				// For changelog: always record the recommended score from trash_scores
+				// (This is the score that will be used during deployment)
+				const changelogScore = recommendedScore;
 
 				// Track added CF details for changelog
 				stats.addedCFDetails.push({
 					trashId: latestCF.trash_id,
 					name: latestCF.name,
-					score: newCFScore,
+					score: changelogScore,
 				});
 
+				// Note: We intentionally don't set the 'score' field on template CFs.
+				// Deployment reads scores from originalConfig.trash_scores, which is
+				// the authoritative source. The scoreOverride field is for user overrides.
 				mergedCustomFormats.push({
 					trashId: latestCF.trash_id,
 					name: latestCF.name,
-					score: newCFScore,
+					// score field intentionally omitted - deployment uses originalConfig.trash_scores
 					scoreOverride: undefined,
 					conditionsEnabled,
 					originalConfig: latestCF,
+					// New CFs from sync get trash_sync origin
+					origin: "trash_sync",
+					addedAt: new Date().toISOString(),
 				});
 			}
 		}
 
-		// Track removed CFs
+		// Handle CFs no longer in TRaSH Guides
+		// Behavior depends on deleteRemovedCFs option and CF origin
+		const deleteRemovedCFs = scoreOptions?.deleteRemovedCFs ?? false;
+		const commitHash = scoreOptions?.targetCommitHash || "unknown";
+
 		for (const [trashId, currentCF] of currentCFMap) {
 			if (!latestCFMap.has(trashId)) {
-				stats.customFormatsRemoved++;
-				stats.removedCFDetails.push({
-					trashId,
-					name: currentCF.name,
-				});
-				warnings.push(
-					`Custom format "${currentCF.name}" (${trashId}) removed - no longer in TRaSH Guides`,
-				);
+				const cfOrigin = currentCF.origin || "trash_sync"; // Legacy CFs treated as trash_sync
+				const isUserAdded = cfOrigin === "user_added";
+				const deprecationReason = `No longer in TRaSH Guides as of commit ${commitHash}`;
+
+				// User-added CFs are NEVER deleted, only marked deprecated
+				// trash_sync CFs are deleted only if deleteRemovedCFs is true
+				if (isUserAdded || !deleteRemovedCFs) {
+					// Keep CF but mark as deprecated
+					stats.customFormatsDeprecated++;
+					stats.deprecatedCFDetails.push({
+						trashId,
+						name: currentCF.name,
+						reason: deprecationReason,
+					});
+
+					// Only add warning if this is newly deprecated (wasn't already deprecated)
+					if (!currentCF.deprecated) {
+						warnings.push(
+							`Custom format "${currentCF.name}" (${trashId}) marked deprecated - ${deprecationReason}`,
+						);
+					}
+
+					// Add to merged list with deprecation flag
+					mergedCustomFormats.push({
+						...currentCF,
+						deprecated: true,
+						deprecatedAt: currentCF.deprecatedAt || new Date().toISOString(),
+						deprecatedReason: deprecationReason,
+					});
+				} else {
+					// Delete the CF (only trash_sync with deleteRemovedCFs=true)
+					stats.customFormatsRemoved++;
+					stats.removedCFDetails.push({
+						trashId,
+						name: currentCF.name,
+					});
+					warnings.push(
+						`Custom format "${currentCF.name}" (${trashId}) removed - ${deprecationReason}`,
+					);
+				}
 			}
 		}
 
@@ -1076,6 +1173,12 @@ export class TemplateUpdater {
 					name: latestGroup.name,
 					enabled: currentGroup.enabled,
 					originalConfig: latestGroup,
+					// Preserve origin, clear deprecation if back in TRaSH
+					origin: currentGroup.origin || "trash_sync",
+					addedAt: currentGroup.addedAt,
+					deprecated: undefined,
+					deprecatedAt: undefined,
+					deprecatedReason: undefined,
 				});
 			} else {
 				// New group from TRaSH Guides
@@ -1089,17 +1192,42 @@ export class TemplateUpdater {
 					name: latestGroup.name,
 					enabled: defaultEnabled,
 					originalConfig: latestGroup,
+					origin: "trash_sync",
+					addedAt: new Date().toISOString(),
 				});
 			}
 		}
 
-		// Track removed groups
+		// Handle groups no longer in TRaSH Guides
 		for (const [trashId, currentGroup] of currentGroupMap) {
 			if (!latestGroupMap.has(trashId)) {
-				stats.customFormatGroupsRemoved++;
-				warnings.push(
-					`Custom format group "${currentGroup.name}" (${trashId}) removed - no longer in TRaSH Guides`,
-				);
+				const groupOrigin = currentGroup.origin || "trash_sync";
+				const isUserAdded = groupOrigin === "user_added";
+				const deprecationReason = `No longer in TRaSH Guides as of commit ${commitHash}`;
+
+				if (isUserAdded || !deleteRemovedCFs) {
+					// Keep group but mark as deprecated
+					stats.customFormatGroupsDeprecated++;
+
+					if (!currentGroup.deprecated) {
+						warnings.push(
+							`Custom format group "${currentGroup.name}" (${trashId}) marked deprecated - ${deprecationReason}`,
+						);
+					}
+
+					mergedCustomFormatGroups.push({
+						...currentGroup,
+						deprecated: true,
+						deprecatedAt: currentGroup.deprecatedAt || new Date().toISOString(),
+						deprecatedReason: deprecationReason,
+					});
+				} else {
+					// Delete the group
+					stats.customFormatGroupsRemoved++;
+					warnings.push(
+						`Custom format group "${currentGroup.name}" (${trashId}) removed - ${deprecationReason}`,
+					);
+				}
 			}
 		}
 
@@ -1416,11 +1544,25 @@ export class TemplateUpdater {
 		}
 
 		// Validate cache commit matches target to ensure accurate diff
+		// If cache is stale, auto-refresh the required caches before computing diff
 		const cacheCommitHash = await this.cacheManager.getCommitHash(serviceType, "CUSTOM_FORMATS");
-		if (cacheCommitHash && cacheCommitHash !== targetCommit.commitHash) {
-			throw new Error(
-				`Cache is stale (${cacheCommitHash}), refresh before viewing diff for ${targetCommit.commitHash}`,
-			);
+		if (!cacheCommitHash || cacheCommitHash !== targetCommit.commitHash) {
+			// Cache is stale or empty - refresh the caches needed for diff computation
+			const requiredCacheTypes: TrashConfigType[] = [
+				"CUSTOM_FORMATS",
+				"CF_GROUPS",
+				"QUALITY_PROFILES",
+			];
+
+			for (const configType of requiredCacheTypes) {
+				try {
+					const data = await this.githubFetcher.fetchConfigs(serviceType, configType);
+					await this.cacheManager.set(serviceType, configType, data, targetCommit.commitHash);
+				} catch (fetchError) {
+					const errorMsg = fetchError instanceof Error ? fetchError.message : String(fetchError);
+					throw new Error(`Failed to refresh ${configType} cache for ${serviceType}: ${errorMsg}`);
+				}
+			}
 		}
 
 		// Get latest cache data for comparison
@@ -1449,6 +1591,51 @@ export class TemplateUpdater {
 		const currentGroups = new Map<string, TemplateCustomFormatGroup>(
 			templateConfig.customFormatGroups?.map((g) => [g.trashId, g]) || [],
 		);
+
+		// Extended CF type with trash_scores (actual TRaSH API data has this)
+		type TrashCFWithScores = TrashCustomFormat & { trash_scores?: Record<string, number> };
+
+		// Get the score set from template's linked quality profile
+		const scoreSet = templateConfig.qualityProfile?.trash_score_set || "default";
+
+		// Helper to get current score from template CF (mirrors deployment score resolution)
+		// Priority order:
+		// 1. scoreOverride - explicit user override (always wins)
+		// 2. originalConfig.trash_scores[scoreSet] - TRaSH's authoritative score for this profile
+		// 3. originalConfig.trash_scores.default - TRaSH's default score
+		// 4. cf.score - only if no trash_scores exist (legacy templates)
+		// 5. originalConfig.score - legacy score field
+		// 6. 0 - final fallback
+		const getCurrentScore = (cf: TemplateCustomFormat): number => {
+			// Priority 1: User override (explicit scoreOverride always wins)
+			if (cf.scoreOverride !== undefined) {
+				return cf.scoreOverride;
+			}
+
+			// Priority 2-3: Score from originalConfig.trash_scores (authoritative TRaSH scores)
+			const cfWithScores = cf.originalConfig as TrashCFWithScores | undefined;
+			if (cfWithScores?.trash_scores) {
+				if (scoreSet && cfWithScores.trash_scores[scoreSet] !== undefined) {
+					return cfWithScores.trash_scores[scoreSet];
+				}
+				if (cfWithScores.trash_scores.default !== undefined) {
+					return cfWithScores.trash_scores.default;
+				}
+			}
+
+			// Priority 4: cf.score field (only for templates without trash_scores)
+			if (cf.score !== undefined) {
+				return cf.score;
+			}
+
+			// Priority 5: Legacy score field on originalConfig
+			if (cf.originalConfig?.score !== undefined) {
+				return cf.originalConfig.score;
+			}
+
+			// Final fallback
+			return 0;
+		};
 
 		// Parse latest cache data (cache returns array directly, not wrapped in { data: T })
 		const latestCFsData = (customFormatsCache as TrashCustomFormat[] | null) ?? [];
@@ -1492,8 +1679,8 @@ export class TemplateUpdater {
 			const latestSpecs = latestCF.specifications ?? null;
 			const specificationsChanged = !deepEqual(currentSpecs, latestSpecs);
 
-			// Use scoreOverride if set, otherwise fall back to base score
-			const effectiveScore = currentCF.scoreOverride ?? currentCF.score;
+			// Get the effective score using the same logic as deployment
+			const effectiveScore = getCurrentScore(currentCF);
 
 			if (specificationsChanged) {
 				customFormatDiffs.push({
@@ -1525,8 +1712,8 @@ export class TemplateUpdater {
 		// Check for removed CFs
 		for (const [trashId, currentCF] of currentCFs) {
 			if (!latestCFs.has(trashId)) {
-				// Use scoreOverride if set, otherwise fall back to base score
-				const effectiveScore = currentCF.scoreOverride ?? currentCF.score;
+				// Get the effective score using the same logic as deployment
+				const effectiveScore = getCurrentScore(currentCF);
 				customFormatDiffs.push({
 					trashId,
 					name: currentCF.name,
@@ -1582,16 +1769,7 @@ export class TemplateUpdater {
 		const suggestedAdditions: SuggestedCFAddition[] = [];
 		const suggestedScoreChanges: SuggestedScoreChange[] = [];
 
-		// Extended CF type with trash_scores (actual TRaSH API data has this)
-		type TrashCFWithScores = TrashCustomFormat & { trash_scores?: Record<string, number> };
-
-		// Get the score set from template's linked quality profile
-		const templateQualityProfile = templateConfig.qualityProfile as
-			| { trash_score_set?: string }
-			| undefined;
-		const scoreSet = templateQualityProfile?.trash_score_set || "default";
-
-		// Helper to get recommended score for a CF
+		// Helper to get recommended score for a CF (from latest TRaSH data)
 		const getRecommendedScore = (cf: TrashCFWithScores): number => {
 			if (cf.trash_scores) {
 				if (scoreSet && cf.trash_scores[scoreSet] !== undefined) {
@@ -1673,7 +1851,7 @@ export class TemplateUpdater {
 			const latestCF = latestCFs.get(trashId) as TrashCFWithScores | undefined;
 			if (!latestCF) continue;
 
-			const currentScore = currentCF.scoreOverride ?? currentCF.score ?? 0;
+			const currentScore = getCurrentScore(currentCF);
 			const recommendedScore = getRecommendedScore(latestCF);
 
 			// Only suggest if scores differ and user hasn't set a manual override

@@ -3,10 +3,12 @@
 import { useState } from "react";
 import { useTemplateStats, useTemplate } from "../../../hooks/api/useTemplates";
 import type { TemplateStatsResponse } from "../../../lib/api-client/templates";
-import { ChevronDown, ChevronUp, Calendar, Package, Activity, Rocket, Layers, History, SlidersHorizontal, Unlink2, RefreshCw, Bell, Hand, X } from "lucide-react";
+import { ChevronDown, ChevronUp, Calendar, Package, Activity, Rocket, Layers, History, SlidersHorizontal, Unlink2, RefreshCw, Bell, Hand, X, Sliders } from "lucide-react";
 import { BulkDeploymentModal } from "./bulk-deployment-modal";
 import { DeploymentHistoryTable } from "./deployment-history-table";
 import { InstanceOverrideEditor } from "./instance-override-editor";
+import { InstanceQualityOverrideModal } from "./instance-quality-override-modal";
+import { getEffectiveQualityConfig } from "../lib/quality-config-utils";
 import { DropdownMenu, DropdownMenuItem, Badge, Button } from "../../../components/ui";
 import {
 	Dialog,
@@ -44,6 +46,10 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 	const [showBulkDeployment, setShowBulkDeployment] = useState(false);
 	const [showHistory, setShowHistory] = useState(false);
 	const [overrideModal, setOverrideModal] = useState<{
+		instanceId: string;
+		instanceName: string;
+	} | null>(null);
+	const [qualityOverrideModal, setQualityOverrideModal] = useState<{
 		instanceId: string;
 		instanceName: string;
 	} | null>(null);
@@ -87,8 +93,10 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 		);
 	};
 
-	// Fetch template data when override modal is open (to get customFormats)
-	const { data: templateData, isLoading: templateLoading } = useTemplate(overrideModal ? templateId : null);
+	// Fetch template data when expanded or modal is open (to show quality override button and modal content)
+	const { data: templateData, isLoading: templateLoading } = useTemplate(
+		expanded || overrideModal || qualityOverrideModal ? templateId : null
+	);
 
 	const { data, isLoading } = useTemplateStats(templateId);
 
@@ -326,6 +334,21 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 											>
 												<SlidersHorizontal className="h-3.5 w-3.5" />
 											</button>
+											{/* Quality Override Button - configure instance-specific quality settings */}
+											<button
+												type="button"
+												onClick={(e) => {
+													e.stopPropagation();
+													setQualityOverrideModal({
+														instanceId: instance.instanceId,
+														instanceName: instance.instanceName,
+													});
+												}}
+												className="flex items-center justify-center rounded border border-purple-500/30 bg-purple-500/10 p-1.5 text-purple-500 transition hover:bg-purple-500/20"
+												title="Configure quality settings for this instance"
+											>
+												<Sliders className="h-3.5 w-3.5" />
+											</button>
 											{onUnlinkInstance && (
 												<button
 													type="button"
@@ -362,6 +385,9 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 					onClose={() => setShowBulkDeployment(false)}
 					templateId={templateId}
 					templateName={templateName}
+					serviceType={templateData?.template?.serviceType}
+					templateDefaultQualityConfig={getEffectiveQualityConfig(templateData?.template?.config)}
+					instanceOverrides={templateData?.template?.instanceOverrides}
 					instances={stats.instances.map((inst) => ({
 						instanceId: inst.instanceId,
 						instanceLabel: inst.instanceName,
@@ -452,6 +478,23 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 							};
 						}) ?? []
 					}
+				/>
+			)}
+
+			{/* Instance Quality Override Modal */}
+			{qualityOverrideModal && (
+				<InstanceQualityOverrideModal
+					open={!!qualityOverrideModal}
+					onClose={() => setQualityOverrideModal(null)}
+					templateId={templateId}
+					templateName={templateName}
+					instanceId={qualityOverrideModal.instanceId}
+					instanceLabel={qualityOverrideModal.instanceName}
+					serviceType={(templateData?.template?.serviceType ?? stats?.instances.find(i => i.instanceId === qualityOverrideModal.instanceId)?.instanceType ?? "RADARR") as "RADARR" | "SONARR"}
+					templateDefaultConfig={getEffectiveQualityConfig(templateData?.template?.config)}
+					onSaved={() => {
+						// Optionally refresh data
+					}}
 				/>
 			)}
 		</div>

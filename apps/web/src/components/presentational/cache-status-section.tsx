@@ -1,11 +1,12 @@
 "use client";
 
 import { RefreshCw } from "lucide-react";
+import type { TrashConfigType } from "@arr/shared";
 import { CacheStatusCard } from "./cache-status-card";
 
 interface CacheStatusEntry {
 	serviceType: string;
-	configType: string;
+	configType: TrashConfigType;
 	version: number;
 	itemCount: number;
 	lastFetched: string;
@@ -18,7 +19,12 @@ interface CacheStatusSectionProps {
 	configTypeLabels: Record<string, string>;
 	refreshing: boolean;
 	onRefresh: () => void;
+	onRefreshEntry?: (serviceType: "RADARR" | "SONARR", configType: TrashConfigType) => void;
+	onDelete?: (serviceType: "RADARR" | "SONARR", configType: TrashConfigType) => void;
 	isRefreshPending: boolean;
+	isDeletePending?: boolean;
+	/** Key of the entry currently being refreshed (e.g., "RADARR-CUSTOM_FORMATS") */
+	refreshingEntry?: string | null;
 }
 
 /**
@@ -48,7 +54,11 @@ export const CacheStatusSection = ({
 	configTypeLabels,
 	refreshing,
 	onRefresh,
+	onRefreshEntry,
+	onDelete,
 	isRefreshPending,
+	isDeletePending,
+	refreshingEntry,
 }: CacheStatusSectionProps) => {
 	return (
 		<section className="space-y-4">
@@ -79,16 +89,33 @@ export const CacheStatusSection = ({
 				</div>
 			) : (
 				<div className="grid gap-4 md:grid-cols-2">
-					{statuses.map((status) => (
-						<CacheStatusCard
-							key={`${status.serviceType}-${status.configType}`}
-							configTypeLabel={configTypeLabels[status.configType] ?? status.configType}
-							version={status.version}
-							itemCount={status.itemCount}
-							lastFetched={status.lastFetched}
-							isStale={status.isStale}
-						/>
-					))}
+					{statuses.map((status) => {
+						const entryKey = `${serviceType}-${status.configType}`;
+						const isRefreshingThis = refreshingEntry === entryKey;
+
+						return (
+							<CacheStatusCard
+								key={entryKey}
+								configTypeLabel={configTypeLabels[status.configType] ?? status.configType}
+								version={status.version}
+								itemCount={status.itemCount}
+								lastFetched={status.lastFetched}
+								isStale={status.isStale}
+								onRefresh={
+									onRefreshEntry
+										? () => onRefreshEntry(serviceType, status.configType)
+										: undefined
+								}
+								onDelete={
+									onDelete
+										? () => onDelete(serviceType, status.configType)
+										: undefined
+								}
+								isRefreshing={isRefreshingThis}
+								isDeletePending={isDeletePending}
+							/>
+						);
+					})}
 				</div>
 			)}
 		</section>

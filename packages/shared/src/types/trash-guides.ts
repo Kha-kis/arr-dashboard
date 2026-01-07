@@ -19,6 +19,7 @@ export const TRASH_CONFIG_TYPES = {
 	NAMING: "NAMING",
 	QUALITY_PROFILES: "QUALITY_PROFILES",
 	CF_DESCRIPTIONS: "CF_DESCRIPTIONS",
+	CF_INCLUDES: "CF_INCLUDES", // MkDocs include files shared across CF descriptions
 } as const;
 
 export type TrashConfigType = (typeof TRASH_CONFIG_TYPES)[keyof typeof TRASH_CONFIG_TYPES];
@@ -70,7 +71,14 @@ export interface CustomFormatSpecification {
 export interface TrashCustomFormat {
 	trash_id: string;
 	name: string;
-	score?: number; // Default score from TRaSH Guides
+	/** @deprecated Use trash_scores instead. Legacy field for backwards compatibility. */
+	score?: number;
+	/**
+	 * Score mapping by profile score set (e.g., "default", "sqp-1", "anime-radarr").
+	 * This is the authoritative source for CF scores in modern TRaSH Guides data.
+	 */
+	trash_scores?: Record<string, number>;
+	trash_description?: string;
 	includeCustomFormatWhenRenaming?: boolean;
 	specifications: CustomFormatSpecification[];
 	// Optional metadata for instance-sourced CFs (not from TRaSH Guides)
@@ -160,6 +168,17 @@ export interface TrashCFDescription {
 	fetchedAt: string; // Timestamp when description was fetched
 }
 
+/**
+ * MkDocs include file content.
+ * These files are referenced by CF descriptions using --8<-- "path" syntax.
+ * Stored separately and resolved on the frontend to avoid excessive API calls.
+ */
+export interface TrashCFInclude {
+	path: string; // Full path (e.g., "includes/cf-descriptions/apply-10000.md")
+	content: string; // Cleaned content (HTML comments removed)
+	fetchedAt: string;
+}
+
 // ============================================================================
 // Cache Types
 // ============================================================================
@@ -191,20 +210,128 @@ export interface TrashCacheStatus {
 	isStale: boolean;
 }
 
+/**
+ * GitHub API rate limit status
+ */
+export type GitHubRateLimitStatus = "ok" | "warning" | "critical" | "unknown";
+
+/**
+ * GitHub API rate limit response
+ */
+export interface GitHubRateLimitResponse {
+	status: GitHubRateLimitStatus;
+	/** Maximum requests per hour */
+	limit?: number;
+	/** Remaining requests in current window */
+	remaining?: number;
+	/** ISO timestamp when rate limit resets */
+	resetAt?: string;
+	/** Seconds until rate limit resets */
+	secondsUntilReset?: number;
+	/** ISO timestamp of last rate limit update */
+	lastUpdated?: string;
+	/** Whether using authenticated requests (higher limits) */
+	isAuthenticated?: boolean;
+	/** Human-readable status message */
+	message: string;
+}
+
+// ============================================================================
+// Sync Metrics Types
+// ============================================================================
+
+/**
+ * Type of sync operation for metrics tracking
+ */
+export type SyncOperationType = "sync" | "deployment" | "rollback" | "template_update";
+
+/**
+ * Metrics for a single operation type
+ */
+export interface SyncOperationMetric {
+	count: number;
+	successCount: number;
+	failureCount: number;
+	lastRun: string | null;
+	lastSuccess: string | null;
+	lastFailure: string | null;
+	totalDurationMs: number;
+	avgDurationMs: number;
+	minDurationMs: number;
+	maxDurationMs: number;
+}
+
+/**
+ * Recent error information
+ */
+export interface SyncErrorMetric {
+	message: string;
+	count: number;
+	lastOccurred: string;
+	operationType: SyncOperationType;
+}
+
+/**
+ * Complete sync metrics snapshot
+ */
+export interface SyncMetricsSnapshot {
+	/** Server uptime in seconds */
+	uptime: number;
+	/** ISO timestamp when metrics collection started */
+	startedAt: string;
+	/** Metrics by operation type */
+	operations: Record<SyncOperationType, SyncOperationMetric>;
+	/** Recent errors (limited to last 20) */
+	recentErrors: SyncErrorMetric[];
+	/** Aggregate totals */
+	totals: {
+		totalOperations: number;
+		successRate: number;
+		avgDurationMs: number;
+	};
+}
+
 // ============================================================================
 // Template Types
 // ============================================================================
 
 /**
+ * Origin of a custom format in a template
+ * - "trash_sync": Added automatically during TRaSH Guides sync
+ * - "user_added": Manually added by user in template editor
+ * - "imported": Added via template import
+ */
+export type CFOrigin = "trash_sync" | "user_added" | "imported";
+
+/**
  * Custom Format with user customizations
+ *
+ * Score Resolution Priority (used by deployment and display):
+ * 1. scoreOverride - User's explicit override (always wins)
+ * 2. originalConfig.trash_scores[scoreSet] - TRaSH score for the profile's score set
+ * 3. originalConfig.trash_scores.default - TRaSH default score
+ * 4. 0 - Final fallback
  */
 export interface TemplateCustomFormat {
 	trashId: string;
 	name: string;
-	score?: number; // Current score (either from scoreOverride or originalConfig.score)
-	scoreOverride?: number; // User-defined score
+	/**
+	 * @deprecated Since v2.5.0 - Vestigial field, no longer set during template creation/update.
+	 * Will be removed in v3.0.0. Use scoreOverride for user overrides or
+	 * originalConfig.trash_scores[scoreSet] for TRaSH-recommended scores.
+	 * Migration: Safe to ignore - field is not read by any code paths.
+	 */
+	score?: number;
+	scoreOverride?: number; // User-defined score override
 	conditionsEnabled: Record<string, boolean>; // Which conditions are enabled
-	originalConfig: TrashCustomFormat; // Original TRaSH config
+	originalConfig: TrashCustomFormat; // Original TRaSH config with trash_scores
+	// Origin tracking (for controlling deletion behavior)
+	origin?: CFOrigin; // undefined = legacy (treat as "trash_sync")
+	addedAt?: string; // ISO timestamp when CF was added to template
+	// Deprecation tracking (CF no longer in TRaSH Guides)
+	deprecated?: boolean; // true if CF was removed from TRaSH Guides upstream
+	deprecatedAt?: string; // ISO timestamp when CF was marked deprecated
+	deprecatedReason?: string; // e.g., "Removed from TRaSH Guides as of commit abc123"
 }
 
 /**
@@ -215,6 +342,111 @@ export interface TemplateCustomFormatGroup {
 	name: string;
 	enabled: boolean;
 	originalConfig: TrashCustomFormatGroup;
+	// Origin tracking (mirrors TemplateCustomFormat)
+	origin?: CFOrigin;
+	addedAt?: string;
+	deprecated?: boolean;
+	deprecatedAt?: string;
+	deprecatedReason?: string;
+}
+
+/**
+ * Template sync settings
+ */
+export interface TemplateSyncSettings {
+	/**
+	 * Whether to delete CFs that are removed from TRaSH Guides.
+	 * - false (default): Mark deprecated but keep in template (Recyclarr-style conservative)
+	 * - true: Delete CFs that are no longer in TRaSH (only affects origin="trash_sync")
+	 * Note: User-added CFs are NEVER deleted regardless of this setting.
+	 */
+	deleteRemovedCFs?: boolean;
+}
+
+// ============================================================================
+// Quality Customization Types
+// ============================================================================
+
+/**
+ * A single quality definition for template configuration
+ * Used when a quality is not part of a group
+ */
+export interface TemplateQualityItem {
+	/** Internal ID for ordering and cutoff reference */
+	id: string;
+	/** Quality name (must match *arr quality name for deployment) */
+	name: string;
+	/** Whether this quality is enabled/wanted */
+	allowed: boolean;
+	/** Optional source info (e.g., "bluray", "webdl", "webrip") */
+	source?: string;
+	/** Optional resolution (e.g., 1080, 2160) */
+	resolution?: number;
+}
+
+/**
+ * A quality group containing multiple qualities
+ * Groups are treated as equivalent - any quality in the group satisfies the requirement
+ */
+export interface TemplateQualityGroup {
+	/** Internal ID for ordering and cutoff reference */
+	id: string;
+	/** Group display name (e.g., "WEB 1080p", "Bluray-1080p") */
+	name: string;
+	/** Whether this entire group is enabled/wanted */
+	allowed: boolean;
+	/** Qualities within this group */
+	qualities: Array<{
+		name: string;
+		source?: string;
+		resolution?: number;
+	}>;
+}
+
+/**
+ * Union type for quality items - can be single quality or group
+ */
+export type TemplateQualityEntry =
+	| { type: "quality"; item: TemplateQualityItem }
+	| { type: "group"; group: TemplateQualityGroup };
+
+/**
+ * Custom quality configuration for templates
+ * Allows power users to customize quality ordering, grouping, and preferences
+ */
+export interface CustomQualityConfig {
+	/**
+	 * Whether the user has customized qualities or is using TRaSH/instance defaults
+	 * - false: Use default quality items from TRaSH profile or cloned instance
+	 * - true: Use the custom items defined below
+	 */
+	useCustomQualities: boolean;
+
+	/**
+	 * Custom quality items (ordered from lowest to highest preference)
+	 * In Radarr/Sonarr, items at the bottom of the list are most preferred
+	 */
+	items: TemplateQualityEntry[];
+
+	/**
+	 * The cutoff quality/group ID
+	 * Upgrades will stop once this quality level is reached
+	 */
+	cutoffId?: string;
+
+	/**
+	 * Timestamp when qualities were last customized
+	 */
+	customizedAt?: string;
+
+	/**
+	 * Origin of the base quality configuration
+	 * - "trash_profile": Started from TRaSH Guides profile
+	 * - "instance_clone": Started from cloned instance profile
+	 * - "manual": Manually created from scratch
+	 * - "instance": Per-instance override (overrides template default)
+	 */
+	origin?: "trash_profile" | "instance_clone" | "manual" | "instance";
 }
 
 /**
@@ -241,6 +473,10 @@ export interface TemplateConfig {
 	naming?: TrashNamingScheme[];
 	// Phase 5.3: Complete quality profile settings (imported from *arr instance)
 	completeQualityProfile?: CompleteQualityProfile;
+	// Sync behavior settings
+	syncSettings?: TemplateSyncSettings;
+	// Custom quality configuration (power user feature)
+	customQualityConfig?: CustomQualityConfig;
 }
 
 /**
@@ -374,14 +610,56 @@ export interface AutoSyncChangeLogEntry {
 
 /**
  * Phase 3: Instance-specific overrides for a template
+ * Allows per-instance customization while keeping template as the default
  */
 export interface TemplateInstanceOverride {
 	instanceId: string;
-	cfScoreOverrides?: Record<string, number>; // CF trash_id → score
-	cfSelectionOverrides?: Record<string, boolean>; // CF trash_id → enabled
-	conditionOverrides?: Record<string, Record<string, boolean>>; // CF trash_id → condition name → enabled
+	/** CF score overrides - CF trash_id → score */
+	cfScoreOverrides?: Record<string, number>;
+	/** CF selection overrides - CF trash_id → { enabled } */
+	cfSelectionOverrides?: Record<string, { enabled: boolean }>;
+	/** CF condition overrides - CF trash_id → condition name → enabled */
+	conditionOverrides?: Record<string, Record<string, boolean>>;
+	/**
+	 * Quality configuration override for this instance
+	 * If set, this instance uses this config instead of template default
+	 * If undefined, instance uses template's customQualityConfig
+	 */
+	qualityConfigOverride?: CustomQualityConfig;
 	lastModifiedAt: string;
 	lastModifiedBy: string;
+}
+
+/**
+ * Instance quality override status for UI display
+ * Helps the frontend show which instances have overrides
+ */
+export interface InstanceQualityOverrideStatus {
+	instanceId: string;
+	instanceLabel: string;
+	/** Whether this instance has a quality config override */
+	hasOverride: boolean;
+	/** Source of the effective quality config */
+	effectiveConfigSource: "template_default" | "instance_override";
+	/** The cutoff name (for display) */
+	cutoffName?: string;
+	/** When the override was last modified */
+	lastModifiedAt?: string;
+}
+
+/**
+ * Helper to get effective quality config for an instance
+ * Returns instance override if set, otherwise returns template default
+ */
+export function getEffectiveQualityConfig(
+	template: TrashTemplate,
+	instanceId: string
+): { config: CustomQualityConfig | undefined; source: "template_default" | "instance_override" } {
+	const override = template.instanceOverrides?.[instanceId]?.qualityConfigOverride;
+	if (override) {
+		return { config: override, source: "instance_override" };
+	}
+	return { config: template.config.customQualityConfig, source: "template_default" };
 }
 
 /**

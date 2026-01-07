@@ -83,6 +83,14 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
 		const query = request.query as Record<string, string | undefined>;
 
+		// Validate required instanceId parameter
+		if (!query.instanceId) {
+			return reply.status(400).send({
+				success: false,
+				error: "instanceId query parameter is required for bulk score management",
+			});
+		}
+
 		// Build filters from query parameters
 		const filters: BulkScoreFilters = {
 			instanceId: query.instanceId,
@@ -104,10 +112,20 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 				},
 			});
 		} catch (error) {
+			const errorMessage = error instanceof Error ? error.message : "Failed to get scores";
 			app.log.error(`Failed to get bulk scores: ${error}`);
+
+			// Return 404 for "not found" errors, 500 for other errors
+			if (errorMessage.includes("not found") || errorMessage.includes("access denied")) {
+				return reply.status(404).send({
+					success: false,
+					error: errorMessage,
+				});
+			}
+
 			return reply.status(500).send({
 				success: false,
-				error: error instanceof Error ? error.message : "Failed to get scores",
+				error: errorMessage,
 			});
 		}
 	});
