@@ -26,6 +26,7 @@ import { dequal as deepEqual } from "dequal";
 import type { TrashCacheManager } from "./cache-manager.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
 import type { TrashGitHubFetcher } from "./github-fetcher.js";
+import { getSyncMetrics } from "./sync-metrics.js";
 import type { VersionInfo, VersionTracker } from "./version-tracker.js";
 
 // ============================================================================
@@ -451,6 +452,10 @@ export class TemplateUpdater {
 			applyScoreUpdates?: boolean;
 		},
 	): Promise<SyncResult> {
+		// Start metrics tracking
+		const metrics = getSyncMetrics();
+		const completeMetrics = metrics.startOperation("template_update");
+
 		// First check if template exists at all
 		const templateExists = await this.prisma.trashTemplate.findUnique({
 			where: { id: templateId },
@@ -458,6 +463,7 @@ export class TemplateUpdater {
 		});
 
 		if (!templateExists) {
+			completeMetrics().recordFailure("Template not found");
 			return {
 				success: false,
 				templateId,
@@ -470,6 +476,7 @@ export class TemplateUpdater {
 
 		// Verify ownership if userId is provided
 		if (userId && templateExists.userId !== userId) {
+			completeMetrics().recordFailure("Not authorized");
 			return {
 				success: false,
 				templateId,
@@ -486,6 +493,7 @@ export class TemplateUpdater {
 		});
 
 		if (!template) {
+			completeMetrics().recordFailure("Template not found");
 			return {
 				success: false,
 				templateId,
@@ -503,14 +511,14 @@ export class TemplateUpdater {
 				? await this.versionTracker.getCommitInfo(targetCommitHash)
 				: await this.versionTracker.getLatestCommit();
 		} catch (error) {
+			const errorMsg = `Failed to get commit info from GitHub: ${error instanceof Error ? error.message : String(error)}`;
+			completeMetrics().recordFailure(errorMsg);
 			return {
 				success: false,
 				templateId,
 				previousCommit: template.trashGuidesCommitHash,
 				newCommit: targetCommitHash || "",
-				errors: [
-					`Failed to get commit info from GitHub: ${error instanceof Error ? error.message : String(error)}`,
-				],
+				errors: [errorMsg],
 				errorType: "sync_failed",
 			};
 		}
@@ -705,6 +713,10 @@ export class TemplateUpdater {
 				},
 			});
 
+			// Record success metrics
+			const metricsResult = completeMetrics();
+			metricsResult.recordSuccess();
+
 			return {
 				success: true,
 				templateId,
@@ -715,12 +727,17 @@ export class TemplateUpdater {
 					mergeResult.scoreConflicts.length > 0 ? mergeResult.scoreConflicts : undefined,
 			};
 		} catch (error) {
+			// Record failure metrics
+			const errorMessage = error instanceof Error ? error.message : String(error);
+			const metricsResult = completeMetrics();
+			metricsResult.recordFailure(errorMessage);
+
 			return {
 				success: false,
 				templateId,
 				previousCommit,
 				newCommit: targetCommit.commitHash,
-				errors: [error instanceof Error ? error.message : String(error)],
+				errors: [errorMessage],
 			};
 		}
 	}
@@ -899,13 +916,15 @@ export class TemplateUpdater {
 		const warnings: string[] = [];
 		const scoreConflicts: ScoreConflict[] = [];
 
+		// Score set to use for trash_scores lookup (defined at function level for use in both helper and main loop)
+		const scoreSet = scoreOptions?.scoreSet || "default";
+
 		// Extended CF type with trash_scores
 		type TrashCFWithScores = TrashCustomFormat & { trash_scores?: Record<string, number> };
 
 		// Helper to get recommended score for a CF based on score set
 		const getRecommendedScore = (cf: TrashCFWithScores): number => {
 			if (cf.trash_scores) {
-				const scoreSet = scoreOptions?.scoreSet || "default";
 				if (cf.trash_scores[scoreSet] !== undefined) {
 					return cf.trash_scores[scoreSet];
 				}
@@ -943,7 +962,17 @@ export class TemplateUpdater {
 			if (currentCF) {
 				// Existing CF - preserve user customizations, update specifications
 				const hasScoreOverride = currentCF.scoreOverride !== undefined;
-				const currentScore = currentCF.scoreOverride ?? currentCF.score ?? 0;
+				// Get current score using correct priority: scoreOverride > trash_scores > fallback
+				const cfWithScores = currentCF.originalConfig as TrashCFWithScores | undefined;
+				let currentScore: number;
+				if (currentCF.scoreOverride !== undefined) {
+					currentScore = currentCF.scoreOverride;
+				} else if (cfWithScores?.trash_scores) {
+					currentScore =
+						cfWithScores.trash_scores[scoreSet] ?? cfWithScores.trash_scores.default ?? 0;
+				} else {
+					currentScore = 0;
+				}
 				const hasCustomConditions = Object.values(currentCF.conditionsEnabled || {}).some(
 					(enabled) => !enabled,
 				);
@@ -1017,10 +1046,13 @@ export class TemplateUpdater {
 					newConditionsEnabled[spec.name] = currentCF.conditionsEnabled?.[spec.name] ?? true;
 				}
 
+				// Note: We intentionally don't set the 'score' field on template CFs.
+				// Deployment reads scores from originalConfig.trash_scores (or scoreOverride
+				// if user has set one). The score field is vestigial and ignored.
 				mergedCustomFormats.push({
 					trashId: latestCF.trash_id,
 					name: latestCF.name,
-					score: finalScore,
+					// score field intentionally omitted - deployment uses originalConfig.trash_scores
 					scoreOverride: finalScoreOverride,
 					conditionsEnabled: newConditionsEnabled,
 					originalConfig: latestCF,
@@ -1042,22 +1074,24 @@ export class TemplateUpdater {
 					conditionsEnabled[spec.name] = true;
 				}
 
-				// Use recommended score if applyScoreUpdates, otherwise use default
-				const newCFScore = scoreOptions?.applyScoreUpdates
-					? recommendedScore
-					: (latestCF.score ?? 0);
+				// For changelog: always record the recommended score from trash_scores
+				// (This is the score that will be used during deployment)
+				const changelogScore = recommendedScore;
 
 				// Track added CF details for changelog
 				stats.addedCFDetails.push({
 					trashId: latestCF.trash_id,
 					name: latestCF.name,
-					score: newCFScore,
+					score: changelogScore,
 				});
 
+				// Note: We intentionally don't set the 'score' field on template CFs.
+				// Deployment reads scores from originalConfig.trash_scores, which is
+				// the authoritative source. The scoreOverride field is for user overrides.
 				mergedCustomFormats.push({
 					trashId: latestCF.trash_id,
 					name: latestCF.name,
-					score: newCFScore,
+					// score field intentionally omitted - deployment uses originalConfig.trash_scores
 					scoreOverride: undefined,
 					conditionsEnabled,
 					originalConfig: latestCF,
@@ -1102,7 +1136,7 @@ export class TemplateUpdater {
 						...currentCF,
 						deprecated: true,
 						deprecatedAt: currentCF.deprecatedAt || new Date().toISOString(),
-						deprecatedReason,
+						deprecatedReason: deprecationReason,
 					});
 				} else {
 					// Delete the CF (only trash_sync with deleteRemovedCFs=true)
@@ -1185,7 +1219,7 @@ export class TemplateUpdater {
 						...currentGroup,
 						deprecated: true,
 						deprecatedAt: currentGroup.deprecatedAt || new Date().toISOString(),
-						deprecatedReason,
+						deprecatedReason: deprecationReason,
 					});
 				} else {
 					// Delete the group
@@ -1526,9 +1560,7 @@ export class TemplateUpdater {
 					await this.cacheManager.set(serviceType, configType, data, targetCommit.commitHash);
 				} catch (fetchError) {
 					const errorMsg = fetchError instanceof Error ? fetchError.message : String(fetchError);
-					throw new Error(
-						`Failed to refresh ${configType} cache for ${serviceType}: ${errorMsg}`,
-					);
+					throw new Error(`Failed to refresh ${configType} cache for ${serviceType}: ${errorMsg}`);
 				}
 			}
 		}
@@ -1559,6 +1591,51 @@ export class TemplateUpdater {
 		const currentGroups = new Map<string, TemplateCustomFormatGroup>(
 			templateConfig.customFormatGroups?.map((g) => [g.trashId, g]) || [],
 		);
+
+		// Extended CF type with trash_scores (actual TRaSH API data has this)
+		type TrashCFWithScores = TrashCustomFormat & { trash_scores?: Record<string, number> };
+
+		// Get the score set from template's linked quality profile
+		const scoreSet = templateConfig.qualityProfile?.trash_score_set || "default";
+
+		// Helper to get current score from template CF (mirrors deployment score resolution)
+		// Priority order:
+		// 1. scoreOverride - explicit user override (always wins)
+		// 2. originalConfig.trash_scores[scoreSet] - TRaSH's authoritative score for this profile
+		// 3. originalConfig.trash_scores.default - TRaSH's default score
+		// 4. cf.score - only if no trash_scores exist (legacy templates)
+		// 5. originalConfig.score - legacy score field
+		// 6. 0 - final fallback
+		const getCurrentScore = (cf: TemplateCustomFormat): number => {
+			// Priority 1: User override (explicit scoreOverride always wins)
+			if (cf.scoreOverride !== undefined) {
+				return cf.scoreOverride;
+			}
+
+			// Priority 2-3: Score from originalConfig.trash_scores (authoritative TRaSH scores)
+			const cfWithScores = cf.originalConfig as TrashCFWithScores | undefined;
+			if (cfWithScores?.trash_scores) {
+				if (scoreSet && cfWithScores.trash_scores[scoreSet] !== undefined) {
+					return cfWithScores.trash_scores[scoreSet];
+				}
+				if (cfWithScores.trash_scores.default !== undefined) {
+					return cfWithScores.trash_scores.default;
+				}
+			}
+
+			// Priority 4: cf.score field (only for templates without trash_scores)
+			if (cf.score !== undefined) {
+				return cf.score;
+			}
+
+			// Priority 5: Legacy score field on originalConfig
+			if (cf.originalConfig?.score !== undefined) {
+				return cf.originalConfig.score;
+			}
+
+			// Final fallback
+			return 0;
+		};
 
 		// Parse latest cache data (cache returns array directly, not wrapped in { data: T })
 		const latestCFsData = (customFormatsCache as TrashCustomFormat[] | null) ?? [];
@@ -1602,8 +1679,8 @@ export class TemplateUpdater {
 			const latestSpecs = latestCF.specifications ?? null;
 			const specificationsChanged = !deepEqual(currentSpecs, latestSpecs);
 
-			// Use scoreOverride if set, otherwise fall back to base score
-			const effectiveScore = currentCF.scoreOverride ?? currentCF.score;
+			// Get the effective score using the same logic as deployment
+			const effectiveScore = getCurrentScore(currentCF);
 
 			if (specificationsChanged) {
 				customFormatDiffs.push({
@@ -1635,8 +1712,8 @@ export class TemplateUpdater {
 		// Check for removed CFs
 		for (const [trashId, currentCF] of currentCFs) {
 			if (!latestCFs.has(trashId)) {
-				// Use scoreOverride if set, otherwise fall back to base score
-				const effectiveScore = currentCF.scoreOverride ?? currentCF.score;
+				// Get the effective score using the same logic as deployment
+				const effectiveScore = getCurrentScore(currentCF);
 				customFormatDiffs.push({
 					trashId,
 					name: currentCF.name,
@@ -1692,16 +1769,7 @@ export class TemplateUpdater {
 		const suggestedAdditions: SuggestedCFAddition[] = [];
 		const suggestedScoreChanges: SuggestedScoreChange[] = [];
 
-		// Extended CF type with trash_scores (actual TRaSH API data has this)
-		type TrashCFWithScores = TrashCustomFormat & { trash_scores?: Record<string, number> };
-
-		// Get the score set from template's linked quality profile
-		const templateQualityProfile = templateConfig.qualityProfile as
-			| { trash_score_set?: string }
-			| undefined;
-		const scoreSet = templateQualityProfile?.trash_score_set || "default";
-
-		// Helper to get recommended score for a CF
+		// Helper to get recommended score for a CF (from latest TRaSH data)
 		const getRecommendedScore = (cf: TrashCFWithScores): number => {
 			if (cf.trash_scores) {
 				if (scoreSet && cf.trash_scores[scoreSet] !== undefined) {
@@ -1783,7 +1851,7 @@ export class TemplateUpdater {
 			const latestCF = latestCFs.get(trashId) as TrashCFWithScores | undefined;
 			if (!latestCF) continue;
 
-			const currentScore = currentCF.scoreOverride ?? currentCF.score ?? 0;
+			const currentScore = getCurrentScore(currentCF);
 			const recommendedScore = getRecommendedScore(latestCF);
 
 			// Only suggest if scores differ and user hasn't set a manual override

@@ -35,7 +35,7 @@ describe("OIDC Configuration Integration", () => {
 
 		it("should accept and normalize URL with .well-known suffix", () => {
 			const result = simulateOidcConfig(
-				"https://keycloak.example.com/realms/master/.well-known/openid-configuration"
+				"https://keycloak.example.com/realms/master/.well-known/openid-configuration",
 			);
 
 			expect(result.normalizedIssuer).toBe("https://keycloak.example.com/realms/master");
@@ -44,7 +44,7 @@ describe("OIDC Configuration Integration", () => {
 
 		it("should accept and normalize URL with both issues", () => {
 			const result = simulateOidcConfig(
-				"https://keycloak.example.com/realms/master/.well-known/openid-configuration/"
+				"https://keycloak.example.com/realms/master/.well-known/openid-configuration/",
 			);
 
 			expect(result.normalizedIssuer).toBe("https://keycloak.example.com/realms/master");
@@ -61,9 +61,15 @@ describe("OIDC Configuration Integration", () => {
 		it("should handle various common OIDC providers", () => {
 			const providers = [
 				{ input: "https://accounts.google.com/", expected: "https://accounts.google.com" },
-				{ input: "https://login.microsoftonline.com/tenant-id/v2.0/", expected: "https://login.microsoftonline.com/tenant-id/v2.0" },
+				{
+					input: "https://login.microsoftonline.com/tenant-id/v2.0/",
+					expected: "https://login.microsoftonline.com/tenant-id/v2.0",
+				},
 				{ input: "https://auth.example.com/", expected: "https://auth.example.com" },
-				{ input: "https://authentik.local/application/o/app/", expected: "https://authentik.local/application/o/app" },
+				{
+					input: "https://authentik.local/application/o/app/",
+					expected: "https://authentik.local/application/o/app",
+				},
 			];
 
 			for (const { input, expected } of providers) {
@@ -92,11 +98,13 @@ describe("OIDC Configuration Integration", () => {
 			const testCases = [
 				{
 					input: "https://keycloak.example.com/realms/master/",
-					expectedDiscovery: "https://keycloak.example.com/realms/master/.well-known/openid-configuration",
+					expectedDiscovery:
+						"https://keycloak.example.com/realms/master/.well-known/openid-configuration",
 				},
 				{
 					input: "https://keycloak.example.com/realms/master/.well-known/openid-configuration",
-					expectedDiscovery: "https://keycloak.example.com/realms/master/.well-known/openid-configuration",
+					expectedDiscovery:
+						"https://keycloak.example.com/realms/master/.well-known/openid-configuration",
 				},
 			];
 

@@ -124,23 +124,22 @@ export class OIDCProvider {
 			const discoveryUrl = `${this.config.issuer}/.well-known/openid-configuration`;
 
 			// Provide helpful error messages for common issues
-			if (errMsg.includes("unexpected HTTP status code") || errMsg.includes("OAUTH_RESPONSE_IS_NOT_CONFORM")) {
+			if (
+				errMsg.includes("unexpected HTTP status code") ||
+				errMsg.includes("OAUTH_RESPONSE_IS_NOT_CONFORM")
+			) {
 				throw new Error(
-					`OIDC discovery failed for "${this.config.issuer}". ` +
-					`The discovery endpoint (${discoveryUrl}) returned an invalid response. ` +
-					`Please verify: ` +
-					`(1) The issuer URL is correct (should NOT include trailing slash or .well-known/openid-configuration), ` +
-					`(2) The OIDC provider is accessible from this server, ` +
-					`(3) The provider supports OpenID Connect discovery. ` +
-					`Original error: ${errMsg}`
+					`OIDC discovery failed for "${this.config.issuer}". The discovery endpoint (${discoveryUrl}) returned an invalid response. Please verify: (1) The issuer URL is correct (should NOT include trailing slash or .well-known/openid-configuration), (2) The OIDC provider is accessible from this server, (3) The provider supports OpenID Connect discovery. Original error: ${errMsg}`,
 				);
 			}
 
-			if (errMsg.includes("fetch") || errMsg.includes("ECONNREFUSED") || errMsg.includes("ENOTFOUND")) {
+			if (
+				errMsg.includes("fetch") ||
+				errMsg.includes("ECONNREFUSED") ||
+				errMsg.includes("ENOTFOUND")
+			) {
 				throw new Error(
-					`Cannot connect to OIDC provider at "${this.config.issuer}". ` +
-					`Please verify the provider is running and accessible from this server. ` +
-					`Original error: ${errMsg}`
+					`Cannot connect to OIDC provider at "${this.config.issuer}". Please verify the provider is running and accessible from this server. Original error: ${errMsg}`,
 				);
 			}
 

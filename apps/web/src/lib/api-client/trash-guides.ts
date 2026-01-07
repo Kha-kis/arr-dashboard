@@ -1,4 +1,4 @@
-import type { TrashCacheStatus, TrashCacheEntry } from "@arr/shared";
+import type { TrashCacheStatus, TrashCacheEntry, CustomQualityConfig, TrashConfigType, GitHubRateLimitResponse, SyncMetricsSnapshot } from "@arr/shared";
 import { apiRequest } from "./base";
 
 export type TrashCacheStatusResponse = {
@@ -15,7 +15,7 @@ export type TrashCacheStatusResponse = {
 
 export type RefreshCachePayload = {
 	serviceType: "RADARR" | "SONARR";
-	configType?: "CUSTOM_FORMATS" | "CF_GROUPS" | "QUALITY_SIZE" | "NAMING";
+	configType?: TrashConfigType;
 	force?: boolean;
 };
 
@@ -47,6 +47,20 @@ export async function refreshCache(payload: RefreshCachePayload): Promise<Refres
 		method: "POST",
 		json: payload,
 	});
+}
+
+/**
+ * Fetch GitHub API rate limit status
+ */
+export async function fetchGitHubRateLimit(): Promise<GitHubRateLimitResponse> {
+	return await apiRequest<GitHubRateLimitResponse>("/api/trash-guides/cache/rate-limit");
+}
+
+/**
+ * Fetch sync operation metrics
+ */
+export async function fetchSyncMetrics(): Promise<SyncMetricsSnapshot> {
+	return await apiRequest<SyncMetricsSnapshot>("/api/trash-guides/sync/metrics");
 }
 
 // ============================================================================
@@ -212,7 +226,7 @@ export async function fetchCacheEntries(
  */
 export async function deleteCacheEntry(
 	serviceType: "RADARR" | "SONARR",
-	configType: "CUSTOM_FORMATS" | "CF_GROUPS" | "QUALITY_SIZE" | "NAMING",
+	configType: TrashConfigType,
 ): Promise<void> {
 	await apiRequest<void>(`/api/trash-guides/cache/${serviceType}/${configType}`, {
 		method: "DELETE",
@@ -246,6 +260,7 @@ export type ImportQualityProfilePayload = {
 	templateName: string;
 	templateDescription?: string;
 	syncStrategy?: "auto" | "manual" | "notify";
+	customQualityConfig?: CustomQualityConfig;
 };
 
 export type UpdateQualityProfileTemplatePayload = {
@@ -254,6 +269,7 @@ export type UpdateQualityProfileTemplatePayload = {
 	trashId?: string; // Optional - not needed when updating existing template
 	templateName: string;
 	templateDescription?: string;
+	customQualityConfig?: CustomQualityConfig;
 };
 
 export type ImportQualityProfileResponse = {
@@ -326,6 +342,7 @@ export type CreateClonedTemplatePayload = {
 		items?: unknown[];
 		language?: unknown;
 	};
+	customQualityConfig?: CustomQualityConfig;
 };
 
 /**
@@ -539,6 +556,25 @@ export type AttentionResponse = {
 export type SyncTemplatePayload = {
 	targetCommitHash?: string;
 	strategy?: "replace" | "merge" | "keep_custom";
+	/** Explicitly control whether to apply score updates. If not set, derived from strategy. */
+	applyScoreUpdates?: boolean;
+};
+
+export type SyncMergeStats = {
+	customFormatsAdded: number;
+	customFormatsRemoved: number;
+	customFormatsUpdated: number;
+	customFormatsPreserved: number;
+	scoresUpdated: number;
+	scoresSkippedDueToOverride: number;
+};
+
+export type SyncScoreConflict = {
+	trashId: string;
+	name: string;
+	currentScore: number;
+	recommendedScore: number;
+	userHasOverride: boolean;
 };
 
 export type SyncTemplateResponse = {
@@ -548,6 +584,8 @@ export type SyncTemplateResponse = {
 		previousCommit: string | null;
 		newCommit: string;
 		message: string;
+		mergeStats?: SyncMergeStats;
+		scoreConflicts?: SyncScoreConflict[];
 	};
 };
 
@@ -845,12 +883,13 @@ export type InstanceOverridesResponse = {
 export type UpdateInstanceOverridesPayload = {
 	scoreOverrides?: Record<string, number>;
 	cfOverrides?: Record<string, { enabled: boolean }>;
+	qualityConfigOverride?: CustomQualityConfig | null; // null to clear the override
 };
 
 export type UpdateInstanceOverridesResponse = {
 	success: boolean;
 	message: string;
-	overrides: InstanceOverrides;
+	overrides: InstanceOverrides | TemplateInstanceOverride;
 };
 
 /**
@@ -1269,6 +1308,70 @@ export async function importEnhancedTemplate(
 		{
 			method: "POST",
 			json: payload,
+		},
+	);
+}
+
+// ============================================================================
+// Template Instance Quality Override Functions
+// ============================================================================
+
+export type TemplateInstanceOverride = {
+	instanceId: string;
+	cfScoreOverrides?: Record<string, number>;
+	cfSelectionOverrides?: Record<string, { enabled: boolean }>;
+	qualityConfigOverride?: CustomQualityConfig;
+	lastModifiedAt: string;
+	lastModifiedBy: string;
+};
+
+export type GetInstanceOverridesResponse = {
+	templateId: string;
+	instanceId: string;
+	overrides: TemplateInstanceOverride;
+};
+
+/**
+ * Fetch instance-specific overrides for a template
+ */
+export async function fetchTemplateInstanceOverrides(
+	templateId: string,
+	instanceId: string,
+): Promise<GetInstanceOverridesResponse> {
+	return await apiRequest<GetInstanceOverridesResponse>(
+		`/api/trash-guides/templates/${templateId}/instance-overrides/${instanceId}`,
+	);
+}
+
+/**
+ * Update instance-specific overrides for a template
+ * Pass qualityConfigOverride: null to clear the override and use template default
+ */
+export async function updateTemplateInstanceOverrides(
+	templateId: string,
+	instanceId: string,
+	payload: UpdateInstanceOverridesPayload,
+): Promise<UpdateInstanceOverridesResponse> {
+	return await apiRequest<UpdateInstanceOverridesResponse>(
+		`/api/trash-guides/templates/${templateId}/instance-overrides/${instanceId}`,
+		{
+			method: "PUT",
+			json: payload,
+		},
+	);
+}
+
+/**
+ * Clear all instance-specific overrides for a template
+ */
+export async function clearTemplateInstanceOverrides(
+	templateId: string,
+	instanceId: string,
+): Promise<{ success: boolean; message: string }> {
+	return await apiRequest<{ success: boolean; message: string }>(
+		`/api/trash-guides/templates/${templateId}/instance-overrides/${instanceId}`,
+		{
+			method: "DELETE",
 		},
 	);
 }

@@ -12,6 +12,7 @@ import { createDeploymentExecutorService } from "../../lib/trash-guides/deployme
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { createSyncEngine } from "../../lib/trash-guides/sync-engine.js";
 import type { SyncProgress } from "../../lib/trash-guides/sync-engine.js";
+import { getSyncMetrics } from "../../lib/trash-guides/sync-metrics.js";
 import { createTemplateUpdater } from "../../lib/trash-guides/template-updater.js";
 import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js";
 import { safeJsonParse } from "../../lib/utils/json.js";
@@ -127,7 +128,7 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 	 */
 	app.post("/validate", async (request: FastifyRequest, reply) => {
 		const body = validateSyncSchema.parse(request.body);
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser!.id; // preHandler guarantees auth
 
 		const validation = await syncEngine.validate({
 			templateId: body.templateId,
@@ -145,7 +146,7 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 	 */
 	app.post("/execute", async (request: FastifyRequest, reply) => {
 		const body = executeSyncSchema.parse(request.body);
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser!.id; // preHandler guarantees auth
 
 		// Convert conflictResolutions object to Map
 		const resolutionsMap = body.conflictResolutions
@@ -279,7 +280,7 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 	}>("/history/:instanceId", async (request, reply) => {
 		const { instanceId } = request.params;
 		const query = syncHistoryQuerySchema.parse(request.query);
-		const userId = request.currentUser!.id; // preHandler guarantees authentication
+		const userId = request.currentUser?.id; // preHandler guarantees authentication
 
 		// Verify instance exists and is owned by the current user.
 		// Including userId in the where clause ensures non-owned instances return null,
@@ -346,7 +347,7 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 		Params: { syncId: string };
 	}>("/:syncId", async (request, reply) => {
 		const { syncId } = request.params;
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 
 		const sync = await app.prisma.trashSyncHistory.findFirst({
 			where: {
@@ -403,7 +404,7 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 		Params: { syncId: string };
 	}>("/:syncId/rollback", async (request, reply) => {
 		const { syncId } = request.params;
-		const userId = request.currentUser!.id;
+		const userId = request.currentUser?.id;
 
 		// Get sync record with backup (narrowed to current user for ownership check)
 		const sync = await app.prisma.trashSyncHistory.findFirst({
@@ -438,6 +439,10 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 				message: "This sync has already been rolled back",
 			});
 		}
+
+		// Start metrics tracking
+		const metrics = getSyncMetrics();
+		const completeMetrics = metrics.startOperation("rollback");
 
 		try {
 			// Create API client for the instance
@@ -585,6 +590,14 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 				"Sync rollback completed",
 			);
 
+			// Record metrics
+			const metricsResult = completeMetrics();
+			if (failedCount === 0) {
+				metricsResult.recordSuccess();
+			} else {
+				metricsResult.recordFailure(errors[0]);
+			}
+
 			return reply.send({
 				success: failedCount === 0,
 				restoredCount,
@@ -597,11 +610,27 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 						: `Rollback completed with errors: ${restoredCount} restored, ${deletedCount} deleted, ${failedCount} failed`,
 			});
 		} catch (error) {
+			// Record failure metrics
+			const errorMessage = error instanceof Error ? error.message : "Rollback failed";
+			const metricsResult = completeMetrics();
+			metricsResult.recordFailure(errorMessage);
+
 			request.log.error({ error, syncId }, "Sync rollback failed");
 			return reply.status(500).send({
 				error: "ROLLBACK_FAILED",
-				message: error instanceof Error ? error.message : "Rollback failed",
+				message: errorMessage,
 			});
 		}
+	});
+
+	/**
+	 * Get sync operation metrics
+	 * GET /api/trash-guides/sync/metrics
+	 */
+	app.get("/metrics", async (_request, reply) => {
+		const metrics = getSyncMetrics();
+		const snapshot = metrics.getSnapshot();
+
+		return reply.send(snapshot);
 	});
 }

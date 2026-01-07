@@ -9,6 +9,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { CustomQualityConfig, TemplateQualityEntry } from "@arr/shared";
 import { type ArrApiClient, createArrApiClient } from "./arr-api-client.js";
 import type { CustomFormat } from "./arr-api-client.js";
+import { getSyncMetrics } from "./sync-metrics.js";
 import { transformFieldsToArray } from "./utils.js";
 
 // ============================================================================
@@ -79,6 +80,13 @@ interface ValidatedDeploymentData {
 	templateCFs: TemplateCF[];
 	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR API override structure
 	overridesForInstance: Record<string, any>;
+	/**
+	 * Effective quality config for this instance.
+	 * Uses instance override if set, otherwise falls back to template default.
+	 */
+	effectiveQualityConfig: CustomQualityConfig | undefined;
+	/** Whether using an instance override for quality config */
+	usingQualityOverride: boolean;
 }
 
 interface TemplateCF {
@@ -250,11 +258,12 @@ export class DeploymentExecutorService {
 		const overridesForInstance = instanceOverrides[instanceId] || {};
 
 		// Apply instance-specific overrides to filter/modify CFs
-		if (overridesForInstance.scoreOverrides || overridesForInstance.cfOverrides) {
+		// Storage field names: cfScoreOverrides, cfSelectionOverrides
+		if (overridesForInstance.cfScoreOverrides || overridesForInstance.cfSelectionOverrides) {
 			templateCFs = templateCFs
 				.map((cf) => {
-					const cfOverride = overridesForInstance.cfOverrides?.[cf.trashId];
-					const scoreOverride = overridesForInstance.scoreOverrides?.[cf.trashId];
+					const cfOverride = overridesForInstance.cfSelectionOverrides?.[cf.trashId];
+					const scoreOverride = overridesForInstance.cfScoreOverrides?.[cf.trashId];
 
 					// Skip if CF is disabled for this instance
 					if (cfOverride?.enabled === false) {
@@ -271,6 +280,18 @@ export class DeploymentExecutorService {
 				})
 				.filter((cf): cf is NonNullable<typeof cf> => cf !== null);
 		}
+
+		// Determine effective quality config: instance override takes precedence over template default
+		const instanceQualityOverride = overridesForInstance.qualityConfigOverride as
+			| CustomQualityConfig
+			| undefined;
+		const templateQualityConfig = templateConfig.customQualityConfig as
+			| CustomQualityConfig
+			| undefined;
+		const effectiveQualityConfig = instanceQualityOverride ?? templateQualityConfig;
+		const usingQualityOverride = instanceQualityOverride !== undefined;
+
+		// Note: usingQualityOverride is returned in the result for callers to log if needed
 
 		return {
 			template: {
@@ -291,6 +312,8 @@ export class DeploymentExecutorService {
 			templateConfig,
 			templateCFs,
 			overridesForInstance,
+			effectiveQualityConfig,
+			usingQualityOverride,
 		};
 	}
 
@@ -464,6 +487,7 @@ export class DeploymentExecutorService {
 		conflictResolutions: Record<string, "use_template" | "keep_existing"> | undefined,
 		profileName: string,
 		previouslyDeployedCFs: PreviousDeploymentCF[],
+		effectiveQualityConfig?: CustomQualityConfig,
 	): Promise<SyncQualityProfileResult> {
 		const errors: string[] = [];
 		const orphanedCFs: string[] = [];
@@ -481,6 +505,7 @@ export class DeploymentExecutorService {
 					templateConfig,
 					templateCFs,
 					profileName,
+					effectiveQualityConfig,
 				);
 			}
 
@@ -740,12 +765,14 @@ export class DeploymentExecutorService {
 	/**
 	 * Creates a quality profile from schema with template configuration.
 	 * Supports both TRaSH Guides profiles (qualityProfile) and cloned instance profiles (completeQualityProfile)
+	 * @param effectiveQualityConfig - The quality config to use (may be instance override or template default)
 	 */
 	private async createQualityProfileFromSchema(
 		apiClient: ArrApiClient,
 		templateConfig: Record<string, any>,
 		templateCFs: TemplateCF[],
 		profileName: string,
+		effectiveQualityConfig?: CustomQualityConfig,
 	): Promise<any> {
 		try {
 			// Get the quality profile schema to get proper structure
@@ -762,8 +789,10 @@ export class DeploymentExecutorService {
 				);
 			}
 
-			// Check if custom quality config is enabled
-			const customQualityConfig = templateConfig.customQualityConfig as CustomQualityConfig | undefined;
+			// Check if custom quality config is enabled (use effectiveQualityConfig which may be instance override)
+			const customQualityConfig =
+				effectiveQualityConfig ??
+				(templateConfig.customQualityConfig as CustomQualityConfig | undefined);
 			if (customQualityConfig?.useCustomQualities && customQualityConfig.items.length > 0) {
 				return await this.createQualityProfileFromCustomConfig(
 					apiClient,
@@ -1269,7 +1298,6 @@ export class DeploymentExecutorService {
 			id?: number;
 		} & typeof profileToCreate;
 
-		console.log(`[DEPLOYMENT] Creating quality profile from custom config with ${qualityItems.length} items`);
 		return await apiClient.createQualityProfile(profileWithoutId);
 	}
 
@@ -1390,9 +1418,13 @@ export class DeploymentExecutorService {
 		let historyId: string | null = null;
 		let deploymentHistoryId: string | null = null;
 
+		// Start metrics tracking
+		const metrics = getSyncMetrics();
+		const completeMetrics = metrics.startOperation("deployment");
+
 		try {
 			// Step 1: Validate and prepare deployment data
-			const { template, instance, templateConfig, templateCFs } =
+			const { template, instance, templateConfig, templateCFs, effectiveQualityConfig } =
 				await this.validateAndPrepareDeployment(templateId, instanceId, userId);
 
 			// Step 2: Create backup snapshot before deployment
@@ -1501,6 +1533,7 @@ export class DeploymentExecutorService {
 				conflictResolutions,
 				profileName,
 				previouslyDeployedCFs,
+				effectiveQualityConfig,
 			);
 
 			// Combine errors from CF deployment and profile sync
@@ -1527,6 +1560,14 @@ export class DeploymentExecutorService {
 				allErrors,
 			);
 
+			// Record metrics
+			const metricsResult = completeMetrics();
+			if (allErrors.length === 0) {
+				metricsResult.recordSuccess();
+			} else {
+				metricsResult.recordFailure(allErrors[0]);
+			}
+
 			return {
 				instanceId,
 				instanceLabel: instance.label,
@@ -1539,6 +1580,11 @@ export class DeploymentExecutorService {
 				details: cfResult.details,
 			};
 		} catch (error) {
+			// Record failure metrics
+			const errorMessage = error instanceof Error ? error.message : "Unknown error";
+			const metricsResult = completeMetrics();
+			metricsResult.recordFailure(errorMessage);
+
 			// Update deployment history with failure
 			await this.finalizeDeploymentHistoryWithFailure(
 				historyId,
@@ -1554,7 +1600,7 @@ export class DeploymentExecutorService {
 				customFormatsCreated: 0,
 				customFormatsUpdated: 0,
 				customFormatsSkipped: 0,
-				errors: [error instanceof Error ? error.message : "Unknown error"],
+				errors: [errorMessage],
 			};
 		}
 	}

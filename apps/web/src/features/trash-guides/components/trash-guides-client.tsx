@@ -40,8 +40,8 @@ export const TrashGuidesClient = () => {
 	// Data fetching
 	const { cacheStatus, isLoading, error, refetchCache } = useTrashGuidesData();
 
-	// Cache refresh actions
-	const { handleRefresh, refreshing, refreshMutation } = useTrashGuidesActions();
+	// Cache refresh and delete actions
+	const { handleRefresh, handleRefreshEntry, handleDelete, refreshing, refreshingEntry, refreshMutation, deleteMutation } = useTrashGuidesActions();
 
 	// Modal management
 	const {
@@ -142,7 +142,11 @@ export const TrashGuidesClient = () => {
 						configTypeLabels={CONFIG_TYPE_LABELS}
 						refreshing={refreshing === "RADARR"}
 						onRefresh={() => handleRefresh("RADARR")}
+						onRefreshEntry={handleRefreshEntry}
+						onDelete={handleDelete}
 						isRefreshPending={refreshMutation.isPending}
+						isDeletePending={deleteMutation.isPending}
+						refreshingEntry={refreshingEntry}
 					/>
 					<CacheStatusSection
 						serviceType="SONARR"
@@ -150,7 +154,11 @@ export const TrashGuidesClient = () => {
 						configTypeLabels={CONFIG_TYPE_LABELS}
 						refreshing={refreshing === "SONARR"}
 						onRefresh={() => handleRefresh("SONARR")}
+						onRefreshEntry={handleRefreshEntry}
+						onDelete={handleDelete}
 						isRefreshPending={refreshMutation.isPending}
+						isDeletePending={deleteMutation.isPending}
+						refreshingEntry={refreshingEntry}
 					/>
 				</div>
 			) : activeTab === "scheduler" ? (

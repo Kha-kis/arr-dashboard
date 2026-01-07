@@ -8,6 +8,7 @@ import type { TemplateConfig } from "@arr/shared";
 import type { PrismaClient } from "@prisma/client";
 import { createArrApiClient } from "./arr-api-client.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
+import { getSyncMetrics } from "./sync-metrics.js";
 import type { TemplateUpdater } from "./template-updater.js";
 
 // ============================================================================
@@ -363,17 +364,7 @@ export class SyncEngine {
 			}
 		}
 
-		// Log validation result for debugging
-		if (errors.length === 0) {
-			console.log(
-				`[SyncEngine] Validation passed for template ${options.templateId} → instance ${options.instanceId}`,
-			);
-		} else {
-			console.warn(
-				`[SyncEngine] Validation failed for template ${options.templateId} → instance ${options.instanceId}:`,
-				errors,
-			);
-		}
+		// Errors are returned to caller; validation failures are handled upstream
 
 		return {
 			valid: errors.length === 0,
@@ -393,6 +384,8 @@ export class SyncEngine {
 		conflictResolutions?: Map<string, "REPLACE" | "SKIP">,
 	): Promise<SyncResult> {
 		const startTime = Date.now();
+		const metrics = getSyncMetrics();
+		const completeMetrics = metrics.startOperation("sync");
 
 		// Create sync history record
 		const syncHistory = await this.prisma.trashSyncHistory.create({
@@ -522,6 +515,14 @@ export class SyncEngine {
 				errors,
 			});
 
+			// Record metrics
+			const metricsResult = completeMetrics();
+			if (deployResult.success) {
+				metricsResult.recordSuccess();
+			} else {
+				metricsResult.recordFailure(errors[0]?.error);
+			}
+
 			return {
 				syncId,
 				success: deployResult.success,
@@ -543,6 +544,10 @@ export class SyncEngine {
 			} else if (typeof error === "string") {
 				errorMessage = error;
 			}
+
+			// Record failure metrics
+			const metricsResult = completeMetrics();
+			metricsResult.recordFailure(errorMessage);
 
 			// Update sync history with failure
 			await this.prisma.trashSyncHistory.update({
