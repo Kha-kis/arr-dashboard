@@ -143,8 +143,9 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 		}
 
 		// Search filter (case-insensitive title search)
+		// Note: SQLite's LIKE is case-insensitive by default, so we omit mode: "insensitive"
 		if (parsed.search) {
-			where.title = { contains: parsed.search, mode: "insensitive" };
+			where.title = { contains: parsed.search };
 		}
 
 		// Monitored filter

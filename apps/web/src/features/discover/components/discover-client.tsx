@@ -139,7 +139,7 @@ export const DiscoverClient = () => {
 				)}
 
 				{/* Premium Search Container */}
-				<GlassmorphicCard padding="lg" className="animate-in fade-in slide-in-from-bottom-4 duration-500" style={{ animationDelay: "100ms" }}>
+				<GlassmorphicCard padding="lg" animationDelay={100}>
 					<div className="space-y-6">
 						<MediaTypeToggle
 							searchType={searchType}

@@ -211,26 +211,32 @@ export class SyncEngine {
 		if (this.arrClientFactory) {
 			try {
 				const client = this.arrClientFactory.create(instance);
-				const status = await client.system.getStatus();
-				instanceVersion = status.version;
+				const status = await client.system.get();
+				instanceVersion = status.version ?? undefined;
 
 				// Add version info as a positive indicator
 				if (status.version) {
 					warnings.push(`Instance is reachable (${instance.service} v${status.version})`);
 				}
 
-				// Fetch quality profiles to validate mappings
-				try {
-					const profiles = await client.qualityProfile.getAll();
-					instanceQualityProfiles = profiles.map((p) => ({ id: p.id ?? 0, name: p.name ?? "" }));
-				} catch (profileError) {
-					console.warn(
-						`[SyncEngine] Failed to fetch quality profiles from instance ${instance.label}:`,
-						profileError,
-					);
-					warnings.push(
-						"Could not fetch quality profiles from instance. Profile validation will be skipped.",
-					);
+				// Fetch quality profiles to validate mappings (only for Sonarr/Radarr)
+				// Prowlarr doesn't have quality profiles
+				if ("qualityProfile" in client) {
+					try {
+						const profiles = await client.qualityProfile.getAll();
+						instanceQualityProfiles = profiles.map((p) => ({
+							id: p.id ?? 0,
+							name: p.name ?? "",
+						}));
+					} catch (profileError) {
+						console.warn(
+							`[SyncEngine] Failed to fetch quality profiles from instance ${instance.label}:`,
+							profileError,
+						);
+						warnings.push(
+							"Could not fetch quality profiles from instance. Profile validation will be skipped.",
+						);
+					}
 				}
 			} catch (connectError) {
 				const errorMessage =

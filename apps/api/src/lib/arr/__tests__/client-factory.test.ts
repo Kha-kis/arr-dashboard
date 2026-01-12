@@ -19,50 +19,52 @@ import {
 import { SonarrClient, RadarrClient, ProwlarrClient, NotFoundError, UnauthorizedError, ValidationError, TimeoutError, NetworkError } from "arr-sdk";
 import type { Encryptor } from "../../auth/encryption.js";
 
-// Mock the arr-sdk module
+// Mock the arr-sdk module to match actual SDK signatures
 vi.mock("arr-sdk", () => {
 	class MockArrError extends Error {
-		statusCode?: number;
-		constructor(message: string, statusCode?: number) {
+		readonly statusCode: number;
+		readonly details?: unknown;
+		constructor(message: string, statusCode: number, details?: unknown) {
 			super(message);
 			this.name = "ArrError";
 			this.statusCode = statusCode;
+			this.details = details;
 		}
 	}
 
 	class MockNotFoundError extends MockArrError {
-		constructor(message: string) {
-			super(message, 404);
+		constructor(message: string, details?: unknown) {
+			super(message, 404, details);
 			this.name = "NotFoundError";
 		}
 	}
 
 	class MockUnauthorizedError extends MockArrError {
-		constructor(message: string) {
-			super(message, 401);
+		constructor(message: string, details?: unknown) {
+			super(message, 401, details);
 			this.name = "UnauthorizedError";
 		}
 	}
 
 	class MockValidationError extends MockArrError {
-		validationErrors: unknown;
-		constructor(message: string, validationErrors?: unknown) {
-			super(message, 400);
+		readonly validationErrors: Array<{ propertyName: string; errorMessage: string }>;
+		constructor(message: string, validationErrors: Array<{ propertyName: string; errorMessage: string }>) {
+			super(message, 400, validationErrors);
 			this.name = "ValidationError";
 			this.validationErrors = validationErrors;
 		}
 	}
 
 	class MockTimeoutError extends MockArrError {
-		constructor(message: string) {
-			super(message, 504);
+		constructor(message: string, details?: unknown) {
+			super(message, 504, details);
 			this.name = "TimeoutError";
 		}
 	}
 
 	class MockNetworkError extends MockArrError {
-		constructor(message: string) {
-			super(message, 502);
+		constructor(message: string, details?: unknown) {
+			super(message, 502, details);
 			this.name = "NetworkError";
 		}
 	}
@@ -95,14 +97,15 @@ vi.mock("arr-sdk", () => {
 	};
 });
 
-// Create mock encryptor
-const createMockEncryptor = (): Encryptor => ({
+// Create mock encryptor (cast to Encryptor since we only mock the methods we need)
+const createMockEncryptor = () => ({
 	encrypt: vi.fn((value: string) => ({
 		value: `encrypted-${value}`,
 		iv: "test-iv",
 	})),
-	decrypt: vi.fn(({ value, iv }) => `decrypted-api-key`),
-});
+	decrypt: vi.fn(({ value }: { value: string; iv: string }) => `decrypted-api-key`),
+	safeCompare: vi.fn((a: string, b: string) => a === b),
+}) as unknown as Encryptor;
 
 // Create mock instance data
 const createMockInstance = (
@@ -305,7 +308,7 @@ describe("ArrClientFactory - Options and Callbacks", () => {
 
 describe("Error Type Guards", () => {
 	it("isArrError should return true for ArrError instances", () => {
-		const error = new ArrError("Test error");
+		const error = new ArrError("Test error", 500);
 		expect(isArrError(error)).toBe(true);
 	});
 
@@ -337,7 +340,8 @@ describe("arrErrorToHttpStatus", () => {
 	});
 
 	it("should return 400 for ValidationError", () => {
-		const error = new ValidationError("Invalid");
+		const validationErrors = [{ propertyName: "field", errorMessage: "is required" }];
+		const error = new ValidationError("Invalid", validationErrors);
 		expect(arrErrorToHttpStatus(error)).toBe(400);
 	});
 
@@ -352,20 +356,19 @@ describe("arrErrorToHttpStatus", () => {
 	});
 
 	it("should return error statusCode if available", () => {
-		const error = new ArrError("Custom error");
-		error.statusCode = 503;
+		const error = new ArrError("Custom error", 503);
 		expect(arrErrorToHttpStatus(error)).toBe(503);
 	});
 
 	it("should return 500 as fallback", () => {
-		const error = new ArrError("Generic error");
+		const error = new ArrError("Generic error", 500);
 		expect(arrErrorToHttpStatus(error)).toBe(500);
 	});
 });
 
 describe("arrErrorToResponse", () => {
 	it("should create error response with message and code", () => {
-		const error = new ArrError("Something went wrong");
+		const error = new ArrError("Something went wrong", 500);
 
 		const response = arrErrorToResponse(error);
 
@@ -378,7 +381,7 @@ describe("arrErrorToResponse", () => {
 	});
 
 	it("should include validation errors for ValidationError", () => {
-		const validationErrors = { field: ["must be a string"] };
+		const validationErrors = [{ propertyName: "field", errorMessage: "must be a string" }];
 		const error = new ValidationError("Validation failed", validationErrors);
 
 		const response = arrErrorToResponse(error);

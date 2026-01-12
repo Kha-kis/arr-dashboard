@@ -543,7 +543,10 @@ const tmdbRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					: await tmdb.tv.watchProviders(parsed.tmdbId);
 
 			// Get providers for the requested region
-			const regionData = providers.results[parsed.region as keyof typeof providers.results];
+			// Type assertion needed because the TMDB SDK types vary by region
+			const regionData = providers.results[parsed.region as keyof typeof providers.results] as
+				| { link: string; flatrate?: unknown[]; rent?: unknown[]; buy?: unknown[] }
+				| undefined;
 
 			if (!regionData) {
 				return {
@@ -556,23 +559,22 @@ const tmdbRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				};
 			}
 
-			const mapProvider = (p: {
-				provider_id: number;
-				provider_name: string;
-				logo_path: string;
-			}) => ({
-				id: p.provider_id,
-				name: p.provider_name,
-				logoUrl: tmdb.getImageUrl(p.logo_path, "w185") ?? undefined,
-			});
+			const mapProvider = (p: unknown) => {
+				const provider = p as { provider_id: number; provider_name: string; logo_path: string };
+				return {
+					id: provider.provider_id,
+					name: provider.provider_name,
+					logoUrl: tmdb.getImageUrl(provider.logo_path, "w185") ?? undefined,
+				};
+			};
 
 			return {
 				id: providers.id,
 				region: parsed.region,
 				link: regionData.link,
-				flatrate: (regionData.flatrate ?? []).map(mapProvider),
-				rent: (regionData.rent ?? []).map(mapProvider),
-				buy: (regionData.buy ?? []).map(mapProvider),
+				flatrate: ((regionData.flatrate ?? []) as unknown[]).map(mapProvider),
+				rent: ((regionData.rent ?? []) as unknown[]).map(mapProvider),
+				buy: ((regionData.buy ?? []) as unknown[]).map(mapProvider),
 			};
 		} catch (error) {
 			request.log.error({ err: error }, "Failed to fetch watch providers from TMDB");

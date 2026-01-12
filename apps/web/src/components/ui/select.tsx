@@ -67,12 +67,10 @@ const SelectTrigger = React.forwardRef<
       style={premiumFocusStyle}
       onFocus={(e) => {
         setIsFocused(true)
-        // @ts-expect-error - onFocus exists on the element
         props.onFocus?.(e)
       }}
       onBlur={(e) => {
         setIsFocused(false)
-        // @ts-expect-error - onBlur exists on the element
         props.onBlur?.(e)
       }}
       {...props}

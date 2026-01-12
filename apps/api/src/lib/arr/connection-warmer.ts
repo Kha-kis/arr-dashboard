@@ -63,12 +63,12 @@ async function warmSingleConnection(
 	const client = app.arrClientFactory.create(instance);
 
 	// Make a lightweight request to establish the connection
-	// system.status is fast and available on all ARR apps
+	// system.get() is fast and available on all ARR apps
 	if (isSonarrClient(client)) {
-		await client.system.status();
+		await client.system.get();
 	} else if (isRadarrClient(client)) {
-		await client.system.status();
+		await client.system.get();
 	} else if (isProwlarrClient(client)) {
-		await client.system.status();
+		await client.system.get();
 	}
 }
