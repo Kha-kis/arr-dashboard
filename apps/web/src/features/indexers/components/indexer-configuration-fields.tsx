@@ -3,8 +3,7 @@
 import type { ProwlarrIndexerField } from "@arr/shared";
 import { formatFieldValue, isApiKeyRelatedField } from "../lib/indexers-utils";
 import { Settings } from "lucide-react";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 /**
  * Premium Configuration Field Card
@@ -16,8 +15,7 @@ const FieldCard = ({
 	field: ProwlarrIndexerField;
 	index: number;
 }) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
 		<div
@@ -56,8 +54,7 @@ export const IndexerConfigurationFields = ({
 }: {
 	fields: ProwlarrIndexerField[];
 }) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const filteredFields = fields.filter((field) => !isApiKeyRelatedField(field));
 

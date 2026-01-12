@@ -48,7 +48,7 @@ export const SearchForm = ({
 		<form onSubmit={onSubmit} className="space-y-6">
 			<div className="flex flex-col gap-4 md:flex-row">
 				<div className="flex-1">
-					<label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg-muted">
+					<label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
 						Query
 					</label>
 					<Input
@@ -58,7 +58,7 @@ export const SearchForm = ({
 					/>
 				</div>
 				<div className="md:w-64">
-					<label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg-muted">
+					<label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
 						Type
 					</label>
 					<div className="flex flex-wrap gap-2">

@@ -9,7 +9,8 @@ import {
 	LegacyDialogContent,
 	LegacyDialogFooter,
 } from "../../../components/ui";
-import { Skeleton, Button, NativeSelect, SelectOption } from "../../../components/ui";
+import { Button, NativeSelect, SelectOption } from "../../../components/ui";
+import { PremiumSkeleton } from "../../../components/layout/premium-components";
 import {
 	AlertCircle,
 	Plus,
@@ -27,8 +28,8 @@ import {
 } from "lucide-react";
 import { useDeploymentPreview, useExecuteDeployment } from "../../../hooks/api/useDeploymentPreview";
 import { cn } from "../../../lib/utils";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { DeploymentAction, ConflictResolution } from "../../../lib/api-client/trash-guides";
 import { InstanceOverrideEditor } from "./instance-override-editor";
 
@@ -51,8 +52,7 @@ export const DeploymentPreviewModal = ({
 	instanceLabel,
 	onDeploySuccess,
 }: DeploymentPreviewModalProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const { data, isLoading, error } = useDeploymentPreview(templateId, instanceId);
 	const [expandedConflicts, setExpandedConflicts] = useState<Set<string>>(
 		new Set(),
@@ -235,8 +235,8 @@ export const DeploymentPreviewModal = ({
 			<LegacyDialogContent className="space-y-4">
 				{isLoading && (
 					<div className="space-y-4">
-						<Skeleton className="h-24 w-full" />
-						<Skeleton className="h-48 w-full" />
+						<PremiumSkeleton variant="card" className="h-24 w-full" />
+						<PremiumSkeleton variant="card" className="h-48 w-full" style={{ animationDelay: "50ms" }} />
 					</div>
 				)}
 

@@ -3,10 +3,10 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useImportQualityProfileWizard, useUpdateQualityProfileTemplate, useCreateClonedProfileTemplate } from "../../../../hooks/api/useQualityProfiles";
-import { Alert, AlertDescription, Skeleton } from "../../../../components/ui";
+import { Alert, AlertDescription } from "../../../../components/ui";
+import { PremiumSkeleton } from "../../../../components/layout/premium-components";
 import { ChevronLeft, Download, CheckCircle, Info, Save, Edit2, TrendingUp, TrendingDown, Minus } from "lucide-react";
-import { THEME_GRADIENTS } from "../../../../lib/theme-gradients";
-import { useColorTheme } from "../../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../../hooks/useThemeGradient";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import type { CustomQualityConfig, TrashTemplate } from "@arr/shared";
 import { apiRequest } from "../../../../lib/api-client/base";
@@ -123,8 +123,7 @@ export const TemplateCreation = ({
 	onBack,
 	onEditStep,
 }: TemplateCreationProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const [templateName, setTemplateName] = useState(wizardState.templateName);
 	const [templateDescription, setTemplateDescription] = useState(wizardState.templateDescription);
 
@@ -290,8 +289,8 @@ export const TemplateCreation = ({
 	if (isLoading && !isEditMode) {
 		return (
 			<div className="space-y-4">
-				<Skeleton className="h-32" />
-				<Skeleton className="h-48" />
+				<PremiumSkeleton variant="card" className="h-32" />
+				<PremiumSkeleton variant="card" className="h-48" style={{ animationDelay: "50ms" }} />
 			</div>
 		);
 	}
@@ -381,23 +380,23 @@ export const TemplateCreation = ({
 					backgroundColor: themeGradient.fromLight,
 				}}
 			>
-				<h4 className="font-medium text-fg mb-2">✅ {isEditMode ? 'Ready to Save!' : 'Almost Done!'}</h4>
-				<p className="text-sm text-fg/70 mb-3">
+				<h4 className="font-medium text-foregroundmb-2">✅ {isEditMode ? 'Ready to Save!' : 'Almost Done!'}</h4>
+				<p className="text-sm text-foreground/70 mb-3">
 					{isEditMode
 						? `You've made changes to your template. Review and save to apply the updates.`
 						: `You've completed the configuration. Now just name your template and you're ready to deploy it to your ${serviceType} instances.`}
 				</p>
 				{!isEditMode && (
-					<p className="text-xs text-fg/60 italic">
+					<p className="text-xs text-foreground/60 italic">
 						💡 Tip: Choose a descriptive name that reflects the quality preferences (e.g., &quot;4K HDR Optimized&quot;, &quot;Anime Quality Profile&quot;).
 					</p>
 				)}
 			</div>
 
 			{/* Summary */}
-			<div className="rounded-xl border border-border bg-bg-subtle p-6">
+			<div className="rounded-xl border border-border bg-card p-6">
 				<div className="flex items-center justify-between mb-4">
-					<h3 className="text-lg font-medium text-fg">{isEditMode ? 'Review & Update Template' : 'Review & Create Template'}</h3>
+					<h3 className="text-lg font-medium text-foreground">{isEditMode ? 'Review & Update Template' : 'Review & Create Template'}</h3>
 					{onEditStep && (
 						<button
 							type="button"
@@ -409,15 +408,15 @@ export const TemplateCreation = ({
 						</button>
 					)}
 				</div>
-				<p className="text-fg/70">
+				<p className="text-foreground/70">
 					Review your selections below. You can go back to make changes if needed.
 				</p>
 
 				<div className="mt-6 space-y-4">
 					{/* Quality Profile */}
-					<div className="rounded-lg border border-border bg-bg-subtle p-4">
+					<div className="rounded-lg border border-border bg-card p-4">
 						<div className="flex items-center justify-between">
-							<div className="flex items-center gap-2 text-sm font-medium text-fg">
+							<div className="flex items-center gap-2 text-sm font-medium text-foreground">
 								<CheckCircle className="h-4 w-4 text-green-400" />
 								Quality Profile
 							</div>
@@ -425,13 +424,13 @@ export const TemplateCreation = ({
 								<button
 									type="button"
 									onClick={() => onEditStep("profile")}
-									className="text-xs text-fg/60 hover:text-primary transition"
+									className="text-xs text-foreground/60 hover:text-primary transition"
 								>
 									Change
 								</button>
 							)}
 						</div>
-						<p className="mt-2 text-sm text-fg/70">{wizardState.selectedProfile.name}</p>
+						<p className="mt-2 text-sm text-foreground/70">{wizardState.selectedProfile.name}</p>
 						<div className="mt-3 flex flex-wrap gap-2">
 							{wizardState.selectedProfile.language && (
 								<span
@@ -459,10 +458,10 @@ export const TemplateCreation = ({
 					<div className={`rounded-lg border p-4 ${
 						wizardState.customQualityConfig?.useCustomQualities
 							? "border-amber-500/20 bg-amber-500/5"
-							: "border-border bg-bg-subtle"
+							: "border-border bg-card"
 					}`}>
 						<div className="flex items-center justify-between">
-							<div className="flex items-center gap-2 text-sm font-medium text-fg">
+							<div className="flex items-center gap-2 text-sm font-medium text-foreground">
 								<CheckCircle className={`h-4 w-4 ${
 									wizardState.customQualityConfig?.useCustomQualities
 										? "text-amber-400"
@@ -479,7 +478,7 @@ export const TemplateCreation = ({
 								<button
 									type="button"
 									onClick={() => onEditStep("quality")}
-									className="text-xs text-fg/60 hover:text-primary transition"
+									className="text-xs text-foreground/60 hover:text-primary transition"
 								>
 									Edit
 								</button>
@@ -497,15 +496,15 @@ export const TemplateCreation = ({
 								)}
 							</div>
 						) : (
-							<p className="mt-2 text-sm text-fg/70">Using profile defaults</p>
+							<p className="mt-2 text-sm text-foreground/70">Using profile defaults</p>
 						)}
 					</div>
 
 					{/* CF Groups */}
 					{selectedCFGroups.length > 0 && (
-						<div className="rounded-lg border border-border bg-bg-subtle p-4">
+						<div className="rounded-lg border border-border bg-card p-4">
 							<div className="flex items-center justify-between">
-								<div className="flex items-center gap-2 text-sm font-medium text-fg">
+								<div className="flex items-center gap-2 text-sm font-medium text-foreground">
 									<CheckCircle className="h-4 w-4 text-green-400" />
 									Custom Format Groups ({selectedCFGroups.length})
 								</div>
@@ -513,7 +512,7 @@ export const TemplateCreation = ({
 									<button
 										type="button"
 										onClick={() => onEditStep("customize")}
-										className="text-xs text-fg/60 hover:text-primary transition"
+										className="text-xs text-foreground/60 hover:text-primary transition"
 									>
 										Edit Custom Formats
 									</button>
@@ -521,7 +520,7 @@ export const TemplateCreation = ({
 							</div>
 							<div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
 								{selectedCFGroups.map((group: any) => (
-									<div key={group.trash_id} className="text-sm text-fg/70 flex items-start gap-2">
+									<div key={group.trash_id} className="text-sm text-foreground/70 flex items-start gap-2">
 										<span className="text-green-400 mt-0.5">•</span>
 										<span>{group.name}</span>
 									</div>
@@ -531,9 +530,9 @@ export const TemplateCreation = ({
 					)}
 
 					{/* Custom Formats Breakdown */}
-					<div className="rounded-lg border border-border bg-bg-subtle p-4">
+					<div className="rounded-lg border border-border bg-card p-4">
 						<div className="flex items-center justify-between">
-							<div className="flex items-center gap-2 text-sm font-medium text-fg">
+							<div className="flex items-center gap-2 text-sm font-medium text-foreground">
 								<CheckCircle className="h-4 w-4 text-green-400" />
 								Custom Formats ({selectedCFs.length} total)
 							</div>
@@ -541,7 +540,7 @@ export const TemplateCreation = ({
 								<button
 									type="button"
 									onClick={() => onEditStep("customize")}
-									className="text-xs text-fg/60 hover:text-primary transition"
+									className="text-xs text-foreground/60 hover:text-primary transition"
 								>
 									Customize
 								</button>
@@ -552,13 +551,13 @@ export const TemplateCreation = ({
 						<div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
 							<div className="rounded bg-amber-500/10 border border-amber-500/20 p-3">
 								<div className="text-xs font-medium text-amber-300">🔒 Mandatory</div>
-								<div className="text-2xl font-bold text-fg mt-1">{mandatoryCount}</div>
-								<div className="text-xs text-fg/60 mt-1">From profile</div>
+								<div className="text-2xl font-bold text-foregroundmt-1">{mandatoryCount}</div>
+								<div className="text-xs text-foreground/60 mt-1">From profile</div>
 							</div>
 							<div className="rounded bg-green-500/10 border border-green-500/20 p-3">
 								<div className="text-xs font-medium text-green-300">📦 From Groups</div>
-								<div className="text-2xl font-bold text-fg mt-1">{fromGroupsCount}</div>
-								<div className="text-xs text-fg/60 mt-1">Auto-selected</div>
+								<div className="text-2xl font-bold text-foregroundmt-1">{fromGroupsCount}</div>
+								<div className="text-xs text-foreground/60 mt-1">Auto-selected</div>
 							</div>
 							<div
 								className="rounded border p-3"
@@ -568,34 +567,34 @@ export const TemplateCreation = ({
 								}}
 							>
 								<div className="text-xs font-medium" style={{ color: themeGradient.from }}>✋ Manual</div>
-								<div className="text-2xl font-bold text-fg mt-1">{manuallySelectedCount}</div>
-								<div className="text-xs text-fg/60 mt-1">User added</div>
+								<div className="text-2xl font-bold text-foregroundmt-1">{manuallySelectedCount}</div>
+								<div className="text-xs text-foreground/60 mt-1">User added</div>
 							</div>
 						</div>
 
 						{/* Score Distribution */}
 						{scoreOverridesCount > 0 && (
 							<div className="mt-4 pt-4 border-t border-border">
-								<div className="flex items-center gap-2 text-xs font-medium text-fg/70 mb-3">
+								<div className="flex items-center gap-2 text-xs font-medium text-foreground/70 mb-3">
 									<Info className="h-3 w-3" />
 									Score Overrides ({scoreOverridesCount})
 								</div>
 								<div className="grid grid-cols-3 gap-2">
 									<div className="flex items-center gap-2 text-xs">
 										<TrendingUp className="h-3 w-3 text-green-400" />
-										<span className="text-fg/70">
+										<span className="text-foreground/70">
 											<span className="font-medium text-green-400">{positiveScores}</span> positive
 										</span>
 									</div>
 									<div className="flex items-center gap-2 text-xs">
 										<TrendingDown className="h-3 w-3 text-red-400" />
-										<span className="text-fg/70">
+										<span className="text-foreground/70">
 											<span className="font-medium text-red-400">{negativeScores}</span> negative
 										</span>
 									</div>
 									<div className="flex items-center gap-2 text-xs">
 										<Minus className="h-3 w-3 text-gray-400" />
-										<span className="text-fg/70">
+										<span className="text-foreground/70">
 											<span className="font-medium text-gray-400">{neutralScores}</span> neutral
 										</span>
 									</div>
@@ -609,7 +608,7 @@ export const TemplateCreation = ({
 			{/* Template Details */}
 			<div className="space-y-4">
 				<div>
-					<label className="mb-2 block text-sm font-medium text-fg">
+					<label className="mb-2 block text-sm font-medium text-foreground">
 						Template Name <span className="text-red-400">*</span>
 					</label>
 					<input
@@ -617,12 +616,12 @@ export const TemplateCreation = ({
 						value={templateName}
 						onChange={(e) => setTemplateName(e.target.value)}
 						placeholder="Enter template name"
-						className="w-full rounded border border-border bg-bg-subtle px-3 py-2 text-sm text-fg placeholder:text-fg/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+						className="w-full rounded border border-border bg-card px-3 py-2 text-sm text-foregroundplaceholder:text-foreground/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
 					/>
 				</div>
 
 				<div>
-					<label className="mb-2 block text-sm font-medium text-fg">
+					<label className="mb-2 block text-sm font-medium text-foreground">
 						Description (Optional)
 					</label>
 					<textarea
@@ -630,7 +629,7 @@ export const TemplateCreation = ({
 						onChange={(e) => setTemplateDescription(e.target.value)}
 						placeholder="Enter template description"
 						rows={4}
-						className="w-full rounded border border-border bg-bg-subtle px-3 py-2 text-sm text-fg placeholder:text-fg/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+						className="w-full rounded border border-border bg-card px-3 py-2 text-sm text-foregroundplaceholder:text-foreground/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
 					/>
 				</div>
 			</div>
@@ -672,7 +671,7 @@ export const TemplateCreation = ({
 					type="button"
 					onClick={onBack}
 					disabled={importMutation.isPending || updateMutation.isPending || clonedMutation.isPending}
-					className="inline-flex items-center gap-2 rounded-lg bg-bg-subtle px-4 py-2 text-sm font-medium text-fg transition hover:bg-bg-hover disabled:opacity-50"
+					className="inline-flex items-center gap-2 rounded-lg bg-card px-4 py-2 text-sm font-medium text-foregroundtransition hover:bg-muted disabled:opacity-50"
 				>
 					<ChevronLeft className="h-4 w-4" />
 					Back
@@ -682,7 +681,7 @@ export const TemplateCreation = ({
 					type="button"
 					onClick={handleSubmit}
 					disabled={!templateName.trim() || importMutation.isPending || updateMutation.isPending || clonedMutation.isPending}
-					className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-fg transition hover:bg-primary/90 disabled:opacity-50"
+					className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-foregroundtransition hover:bg-primary/90 disabled:opacity-50"
 				>
 					{(importMutation.isPending || updateMutation.isPending || clonedMutation.isPending) ? (
 						<>

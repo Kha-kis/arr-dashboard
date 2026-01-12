@@ -3,10 +3,11 @@
 import type { DiscoverSearchResult, DiscoverSearchType, ServiceInstanceSummary } from "@arr/shared";
 import { ExternalLink, PlusCircle, Star, Clock, CheckCircle2 } from "lucide-react";
 import { Button } from "../../../components/ui/button";
+import { GlassmorphicCard, StatusBadge } from "../../../components/layout";
 import { formatRuntime } from "../lib/discover-utils";
 import { InstanceBadge } from "./instance-badge";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 /**
  * Props for the MediaCard component
@@ -41,8 +42,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({
 	onAddClick,
 	animationDelay = 0,
 }) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const availableTargets = relevantInstances.filter((instance) => {
 		const state = result.instanceStates.find((entry) => entry.instanceId === instance.id);
@@ -54,12 +54,10 @@ export const MediaCard: React.FC<MediaCardProps> = ({
 	const ratingValue = result.ratings?.value;
 
 	return (
-		<div
-			className="group rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-5 transition-all duration-300 hover:border-border/80 hover:bg-card/50 animate-in fade-in slide-in-from-bottom-4"
-			style={{
-				animationDelay: `${animationDelay}ms`,
-				animationFillMode: "backwards",
-			}}
+		<GlassmorphicCard
+			className="group p-5 transition-all duration-300 hover:border-border/80 hover:bg-card/50"
+			animationDelay={animationDelay}
+			padding="none"
 		>
 			<div className="space-y-4">
 				{/* Main Content */}
@@ -81,16 +79,10 @@ export const MediaCard: React.FC<MediaCardProps> = ({
 
 						{/* Rating Overlay */}
 						{typeof ratingValue === "number" && (
-							<div
-								className="absolute right-1.5 top-1.5 flex items-center gap-1 rounded-lg px-1.5 py-0.5 text-xs font-medium backdrop-blur-md"
-								style={{
-									backgroundColor: "rgba(234, 179, 8, 0.2)",
-									border: "1px solid rgba(234, 179, 8, 0.4)",
-									color: "#fbbf24",
-								}}
-							>
-								<Star className="h-3 w-3 fill-yellow-400" />
-								{ratingValue.toFixed(1)}
+							<div className="absolute right-1.5 top-1.5">
+								<StatusBadge status="warning" icon={Star}>
+									{ratingValue.toFixed(1)}
+								</StatusBadge>
 							</div>
 						)}
 					</div>
@@ -233,6 +225,6 @@ export const MediaCard: React.FC<MediaCardProps> = ({
 					</Button>
 				</div>
 			</div>
-		</div>
+		</GlassmorphicCard>
 	);
 };

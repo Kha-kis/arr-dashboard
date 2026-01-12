@@ -133,11 +133,11 @@ export function ConditionEditor({
 		<div className="space-y-4">
 			{/* Header */}
 			<div className="border-b border-border/30 pb-3">
-				<h3 className="text-lg font-semibold text-fg flex items-center gap-2">
+				<h3 className="text-lg font-semibold text-foregroundflex items-center gap-2">
 					<Settings className="h-5 w-5" />
 					{customFormatName}
 				</h3>
-				<p className="text-sm text-fg-muted mt-1">
+				<p className="text-sm text-muted-foreground mt-1">
 					{enabledCount} of {totalCount} conditions enabled
 				</p>
 			</div>
@@ -157,8 +157,8 @@ export function ConditionEditor({
 							key={index}
 							className={`rounded border transition-all ${
 								spec.enabled
-									? "border-border/40 bg-bg-subtle/20"
-									: "border-border/20 bg-bg-subtle/10 opacity-50"
+									? "border-border/40 bg-card/20"
+									: "border-border/20 bg-card/10 opacity-50"
 							}`}
 						>
 							{/* Main Row */}
@@ -169,13 +169,13 @@ export function ConditionEditor({
 									checked={spec.enabled ?? true}
 									onChange={() => toggleSpecification(index)}
 									disabled={readonly || spec.required}
-									className="h-4 w-4 rounded border-border/50 bg-bg-hover text-primary focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
+									className="h-4 w-4 rounded border-border/50 bg-muted text-primary focus:ring-2 focus:ring-primary/50 disabled:opacity-50"
 								/>
 
 								{/* Name and Badges */}
 								<div className="flex-1 min-w-0">
 									<div className="flex items-center gap-2">
-										<span className="font-medium text-fg text-sm">
+										<span className="font-medium text-foregroundtext-sm">
 											{spec.name}
 										</span>
 										{spec.required && (
@@ -193,7 +193,7 @@ export function ConditionEditor({
 									{/* Pattern Display */}
 									{pattern && (
 										<div className="mt-1 flex items-center gap-2">
-											<code className="text-xs font-mono text-fg-muted truncate">
+											<code className="text-xs font-mono text-muted-foreground truncate">
 												{pattern}
 											</code>
 											{isValid ? (
@@ -230,8 +230,8 @@ export function ConditionEditor({
 
 							{/* Pattern Editor */}
 							{isEditing && !readonly && spec.enabled && (
-								<div className="border-t border-border/30 p-3 bg-bg-subtle/30">
-									<label className="block text-xs font-medium text-fg-muted mb-2">
+								<div className="border-t border-border/30 p-3 bg-card/30">
+									<label className="block text-xs font-medium text-muted-foreground mb-2">
 										Regex Pattern
 									</label>
 									<textarea
@@ -243,20 +243,20 @@ export function ConditionEditor({
 											});
 										}}
 										rows={2}
-										className="w-full rounded-xl border border-border bg-bg-subtle px-4 py-3 text-xs font-mono text-fg placeholder:text-fg-muted/60 transition-all duration-200 hover:border-border/80 hover:bg-bg-subtle/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-bg-subtle/80"
+										className="w-full rounded-xl border border-border bg-card px-4 py-3 text-xs font-mono text-foregroundplaceholder:text-muted-foreground/60 transition-all duration-200 hover:border-border/80 hover:bg-card/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-card/80"
 										placeholder="Enter regex pattern..."
 									/>
-									<p className="text-xs text-fg-muted mt-2">
-										Use <code className="px-1 py-0.5 rounded bg-bg-subtle/60">\b</code> for word boundaries,
-										<code className="px-1 py-0.5 rounded bg-bg-subtle/60">.*</code> for any characters,
-										<code className="px-1 py-0.5 rounded bg-bg-subtle/60">|</code> for OR
+									<p className="text-xs text-muted-foreground mt-2">
+										Use <code className="px-1 py-0.5 rounded bg-card/60">\b</code> for word boundaries,
+										<code className="px-1 py-0.5 rounded bg-card/60">.*</code> for any characters,
+										<code className="px-1 py-0.5 rounded bg-card/60">|</code> for OR
 									</p>
 								</div>
 							)}
 
 							{/* Pattern Tester */}
 							{isTesting && spec.enabled && (
-								<div className="border-t border-border/30 p-3 bg-bg-subtle/30">
+								<div className="border-t border-border/30 p-3 bg-card/30">
 									<PatternTester
 										pattern={pattern}
 										negate={spec.negate}
@@ -272,14 +272,14 @@ export function ConditionEditor({
 			{/* Footer Actions */}
 			{!readonly && (
 				<div className="flex items-center justify-between pt-2 border-t border-border/30">
-					<div className="text-sm text-fg-muted">
+					<div className="text-sm text-muted-foreground">
 						{enabledCount === totalCount ? (
 							<span className="text-green-400">All conditions enabled</span>
 						) : enabledCount === 0 ? (
 							<span className="text-red-400">All conditions disabled</span>
 						) : (
 							<span>
-								<span className="font-medium text-fg">{enabledCount}</span> / {totalCount} enabled
+								<span className="font-medium text-foreground">{enabledCount}</span> / {totalCount} enabled
 							</span>
 						)}
 					</div>

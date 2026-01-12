@@ -8,8 +8,7 @@ import {
 	PremiumEmptyState,
 	GlassmorphicCard,
 } from "../../../components/layout";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { TagListItem } from "./tag-list-item";
 
 /**
@@ -49,8 +48,7 @@ export const TagsTab = ({
 	isCreatingTag,
 	isDeletingTag,
 }: TagsTabProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
 		<div className="grid gap-6 lg:grid-cols-[1fr,2fr]">

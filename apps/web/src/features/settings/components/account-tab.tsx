@@ -7,8 +7,8 @@ import {
 	PremiumSection,
 	GlassmorphicCard,
 } from "../../../components/layout";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 /**
  * Account form state
@@ -59,8 +59,7 @@ export const AccountTab = ({
 	isUpdating,
 	updateResult,
 }: AccountTabProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
 		<div className="grid gap-6 lg:grid-cols-[2fr,1fr]">

@@ -36,12 +36,12 @@ export function Toaster({ ...props }: ToasterProps) {
 			toastOptions={{
 				classNames: {
 					toast:
-						"group toast group-[.toaster]:bg-bg-subtle/95 group-[.toaster]:backdrop-blur-xl group-[.toaster]:border-border/50 group-[.toaster]:text-fg group-[.toaster]:shadow-lg",
-					description: "group-[.toast]:text-fg-muted",
+						"group toast group-[.toaster]:bg-card/95 group-[.toaster]:backdrop-blur-xl group-[.toaster]:border-border/50 group-[.toaster]:text-foreground group-[.toaster]:shadow-lg",
+					description: "group-[.toast]:text-muted-foreground",
 					actionButton: "group-[.toast]:bg-primary group-[.toast]:text-white",
-					cancelButton: "group-[.toast]:bg-bg-muted group-[.toast]:text-fg-muted",
+					cancelButton: "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
 					closeButton:
-						"group-[.toast]:bg-bg-muted group-[.toast]:border-border/50 group-[.toast]:text-fg-muted hover:group-[.toast]:bg-bg-muted/80",
+						"group-[.toast]:bg-muted group-[.toast]:border-border/50 group-[.toast]:text-muted-foreground hover:group-[.toast]:bg-muted/80",
 					success: "group-[.toaster]:border-success/30 group-[.toaster]:text-success-fg",
 					error: "group-[.toaster]:border-danger/30 group-[.toaster]:text-danger-fg",
 					warning: "group-[.toaster]:border-warning/30 group-[.toaster]:text-warning-fg",

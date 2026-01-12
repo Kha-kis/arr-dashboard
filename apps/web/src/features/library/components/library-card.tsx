@@ -10,7 +10,13 @@ import {
 	PlayCircle,
 	Search,
 } from "lucide-react";
-import { Button, Card, CardContent } from "../../../components/ui";
+import { Button } from "../../../components/ui";
+import {
+	GlassmorphicCard,
+	ServiceBadge,
+	StatusBadge,
+} from "../../../components/layout";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
 import { LibraryBadge } from "./library-badge";
 import { formatBytes, formatRuntime } from "../lib/library-utils";
@@ -83,6 +89,7 @@ export const LibraryCard = ({
 	const hasFile = item.hasFile ?? false;
 	const sizeLabel = formatBytes(item.sizeOnDisk);
 	const runtimeLabel = formatRuntime(item.runtime);
+	const serviceType = item.service || "radarr";
 	const serviceLabel = item.service === "sonarr" ? "Sonarr" : "Radarr";
 	const rawMovieFileName =
 		item.type === "movie"
@@ -132,15 +139,13 @@ export const LibraryCard = ({
 			: runtimeLabel;
 	const showEpisodeProgress = item.type === "series" && effectiveTotalEpisodes > 0;
 
+	// Convert monitored status to StatusBadge status
+	const monitoredStatus: "success" | "warning" = monitored ? "success" : "warning";
+
 	const statusBadges: Array<{
 		tone: "green" | "blue" | "red" | "yellow";
 		label: React.ReactNode;
-	}> = [
-		{
-			tone: monitored ? "green" : "yellow",
-			label: monitored ? "Monitored" : "Not monitored",
-		},
-	];
+	}> = [];
 
 	if (item.type === "movie") {
 		statusBadges.push({
@@ -168,7 +173,6 @@ export const LibraryCard = ({
 
 	const metadata: Array<{ label: string; value: React.ReactNode }> = [
 		{ label: "Instance", value: item.instanceName },
-		{ label: "Service", value: serviceLabel },
 	];
 
 	if (item.qualityProfileName) {
@@ -227,15 +231,14 @@ export const LibraryCard = ({
 	const genreEntries = (item.genres ?? []).filter(Boolean);
 
 	return (
-		<Card className="border-border bg-bg-subtle p-4">
-			<CardContent className="flex flex-col gap-3">
+		<GlassmorphicCard padding="md" className="flex flex-col gap-3">
 				<div className="flex gap-3">
-					<div className="h-36 w-24 overflow-hidden rounded-lg border border-border bg-bg-hover shadow-md flex-shrink-0">
+					<div className="h-36 w-24 overflow-hidden rounded-lg border border-border bg-muted shadow-md flex-shrink-0">
 						{item.poster ? (
 							/* eslint-disable-next-line @next/next/no-img-element -- External poster from arr instance */
 							<img src={item.poster} alt={item.title} className="h-full w-full object-cover" />
 						) : (
-							<div className="flex h-full w-full items-center justify-center text-xs text-fg-muted">
+							<div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
 								{item.type === "movie" ? "Poster" : "Artwork"}
 							</div>
 						)}
@@ -244,19 +247,25 @@ export const LibraryCard = ({
 					<div className="flex-1 min-w-0 space-y-2">
 						<div>
 							<div className="flex flex-wrap items-baseline gap-2">
-								<h3 className="text-base font-semibold text-fg">{item.title}</h3>
+								<h3 className="text-base font-semibold text-foreground">{item.title}</h3>
 								{item.year && item.type === "movie" ? (
-									<span className="text-xs text-fg-muted">{item.year}</span>
+									<span className="text-xs text-muted-foreground">{item.year}</span>
 								) : null}
 							</div>
-							<p className="text-xs text-fg-muted">
-							{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}
-						</p>
+							<div className="flex flex-wrap items-center gap-2 mt-1">
+								<p className="text-xs text-muted-foreground">
+									{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}
+								</p>
+								<ServiceBadge service={serviceType} />
+								<StatusBadge status={monitoredStatus}>
+									{monitored ? "Monitored" : "Unmonitored"}
+								</StatusBadge>
+							</div>
 						</div>
 
 						{item.overview ? (
 							<div className="group relative">
-								<p className="text-xs leading-relaxed text-fg-muted line-clamp-2">
+								<p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
 									{item.overview}
 								</p>
 								{item.overview.length > 120 && onExpandDetails ? (
@@ -278,10 +287,10 @@ export const LibraryCard = ({
 							))}
 						</div>
 
-						<div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-fg-muted">
+						<div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
 							{metadata.slice(0, 4).map((entry) => (
 								<span key={`${item.id}-${entry.label}`}>
-									<span className="text-fg-muted/70">{entry.label}:</span> {entry.value}
+									<span className="text-muted-foreground/70">{entry.label}:</span> {entry.value}
 								</span>
 							))}
 						</div>
@@ -291,13 +300,13 @@ export const LibraryCard = ({
 								{genreEntries.slice(0, 3).map((genre) => (
 									<span
 										key={`${item.id}-genre-${genre}`}
-										className="rounded-full border border-border bg-bg-hover px-2 py-0.5 text-fg-muted"
+										className="rounded-full border border-border bg-muted px-2 py-0.5 text-muted-foreground"
 									>
 										{genre}
 									</span>
 								))}
 								{genreEntries.length > 3 && (
-									<span className="text-fg-muted">+{genreEntries.length - 3} more</span>
+									<span className="text-muted-foreground">+{genreEntries.length - 3} more</span>
 								)}
 							</div>
 						) : null}
@@ -373,7 +382,7 @@ export const LibraryCard = ({
 								type="button"
 								variant="ghost"
 								size="sm"
-								className="flex items-center gap-1.5 text-fg-muted hover:text-fg"
+								className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
 								onClick={() => safeOpenUrl(`https://www.themoviedb.org/${item.type === "movie" ? "movie" : "tv"}/${item.remoteIds?.tmdbId}`)}
 							>
 								<span>TMDB</span>
@@ -385,7 +394,7 @@ export const LibraryCard = ({
 								type="button"
 								variant="ghost"
 								size="sm"
-								className="flex items-center gap-1.5 text-fg-muted hover:text-fg"
+								className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
 								onClick={() => safeOpenUrl(`https://www.imdb.com/title/${item.remoteIds?.imdbId}`)}
 							>
 								<span>IMDB</span>
@@ -397,7 +406,7 @@ export const LibraryCard = ({
 								type="button"
 								variant="ghost"
 								size="sm"
-								className="flex items-center gap-1.5 text-fg-muted hover:text-fg"
+								className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
 								onClick={() => safeOpenUrl(`https://www.thetvdb.com/dereferrer/series/${item.remoteIds?.tvdbId}`)}
 							>
 								<span>TVDB</span>
@@ -436,7 +445,6 @@ export const LibraryCard = ({
 						{monitored ? "Unmonitor" : "Monitor"}
 					</Button>
 				</div>
-			</CardContent>
-		</Card>
+		</GlassmorphicCard>
 	);
 };

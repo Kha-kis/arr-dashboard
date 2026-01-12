@@ -18,8 +18,8 @@ import {
 	ChevronDown,
 } from "lucide-react";
 import { apiRequest } from "../../../lib/api-client/base";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import {
 	PremiumSection,
 	GlassmorphicCard,
@@ -158,8 +158,7 @@ function SystemInfoCard({ icon, label, value, subtitle, animationDelay = 0 }: Sy
  * - Staggered animations throughout
  */
 export function SystemTab() {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const queryClient = useQueryClient();
 	const [apiPort, setApiPort] = useState(3001);
 	const [webPort, setWebPort] = useState(3000);

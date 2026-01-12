@@ -84,7 +84,7 @@ export const SeasonEpisodeList = ({
 
 	if (isLoading) {
 		return (
-			<div className="flex items-center justify-center py-4 text-sm text-fg-muted">
+			<div className="flex items-center justify-center py-4 text-sm text-muted-foreground">
 				<Loader2 className="h-4 w-4 animate-spin mr-2" />
 				Loading episodes...
 			</div>
@@ -92,7 +92,7 @@ export const SeasonEpisodeList = ({
 	}
 
 	if (!data?.episodes || data.episodes.length === 0) {
-		return <div className="py-4 text-center text-sm text-fg-muted">No episodes found</div>;
+		return <div className="py-4 text-center text-sm text-muted-foreground">No episodes found</div>;
 	}
 
 	return (
@@ -100,15 +100,15 @@ export const SeasonEpisodeList = ({
 			{data.episodes.map((episode) => (
 				<div
 					key={episode.id}
-					className="flex items-center gap-3 rounded-lg border border-border/50 bg-bg/10 px-3 py-2 text-sm"
+					className="flex items-center gap-3 rounded-lg border border-border/50 bg-background/10 px-3 py-2 text-sm"
 				>
 					<div className="flex-1 min-w-0">
 						<div className="flex items-center gap-2">
-							<span className="font-medium text-fg">E{episode.episodeNumber}</span>
-							<span className="text-fg-muted truncate">{episode.title || "TBA"}</span>
+							<span className="font-medium text-foreground">E{episode.episodeNumber}</span>
+							<span className="text-muted-foreground truncate">{episode.title || "TBA"}</span>
 						</div>
 						{episode.airDate && (
-							<div className="text-xs text-fg-subtle mt-0.5">
+							<div className="text-xs text-muted-foreground mt-0.5">
 								{new Date(episode.airDate).toLocaleDateString()}
 							</div>
 						)}

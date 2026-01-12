@@ -2,8 +2,7 @@
 
 import * as React from "react"
 import { cn } from "@/lib/utils"
-import { useColorTheme } from "../../providers/color-theme-provider"
-import { THEME_GRADIENTS } from "../../lib/theme-gradients"
+import { useThemeGradient } from "../../hooks/useThemeGradient"
 
 interface InputProps extends React.ComponentProps<"input"> {
   /** Enable premium theme-aware focus styling */
@@ -24,8 +23,7 @@ interface InputProps extends React.ComponentProps<"input"> {
  */
 const Input = React.forwardRef<HTMLInputElement, InputProps>(
   ({ className, type, premium = false, ...props }, ref) => {
-    const { colorTheme } = useColorTheme()
-    const themeGradient = THEME_GRADIENTS[colorTheme]
+    const { gradient: themeGradient } = useThemeGradient()
     const [isFocused, setIsFocused] = React.useState(false)
 
     // Premium focus styles with theme-aware glow
@@ -40,8 +38,8 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
       <input
         type={type}
         className={cn(
-          // Base styles
-          "flex h-10 w-full px-4 py-2 text-sm",
+          // Base styles - use explicit pl/pr for better override support
+          "flex h-10 w-full pl-4 pr-4 py-2 text-sm",
           // Premium rounded corners
           "rounded-xl",
           // Border and background

@@ -193,7 +193,7 @@ export const InstanceQualityOverrideModal = ({
 						Quality Settings for {instanceLabel}
 					</DialogTitle>
 					<DialogDescription>
-						Customize quality settings for <strong className="text-fg">{instanceLabel}</strong> only.
+						Customize quality settings for <strong className="text-foreground">{instanceLabel}</strong> only.
 						Other instances using &ldquo;{templateName}&rdquo; will not be affected.
 					</DialogDescription>
 				</DialogHeader>
@@ -203,7 +203,7 @@ export const InstanceQualityOverrideModal = ({
 					{isLoading && (
 						<div className="flex items-center justify-center py-8">
 							<Loader2 className="h-6 w-6 animate-spin text-primary" />
-							<span className="ml-2 text-fg-muted">Loading configuration...</span>
+							<span className="ml-2 text-muted-foreground">Loading configuration...</span>
 						</div>
 					)}
 
@@ -224,10 +224,10 @@ export const InstanceQualityOverrideModal = ({
 									<div className="flex items-start gap-3 rounded-lg border border-blue-500/30 bg-blue-500/5 p-4">
 										<Info className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
 										<div className="space-y-1">
-											<p className="text-sm text-fg">
+											<p className="text-sm text-foreground">
 												This template doesn&apos;t have a default quality configuration.
 											</p>
-											<p className="text-xs text-fg-muted">
+											<p className="text-xs text-muted-foreground">
 												You can still set up quality settings for this instance by loading from its current profile.
 											</p>
 										</div>
@@ -247,7 +247,7 @@ export const InstanceQualityOverrideModal = ({
 							{hasTemplateQualityConfig && (
 								<div className="rounded-lg border border-border p-4 space-y-3">
 									<div className="flex items-center justify-between">
-										<div className="text-sm font-medium text-fg">Quality Configuration</div>
+										<div className="text-sm font-medium text-foreground">Quality Configuration</div>
 										{hasOverride && (
 											<span className="flex items-center gap-1 rounded-full bg-purple-500/10 px-2 py-0.5 text-xs font-medium text-purple-600 dark:text-purple-400">
 												<Sliders className="h-3 w-3" />
@@ -272,7 +272,7 @@ export const InstanceQualityOverrideModal = ({
 												"flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition",
 												mode === "default"
 													? "border-primary bg-primary/5 ring-1 ring-primary/30"
-													: "border-border bg-bg hover:border-border/80 hover:bg-bg-subtle"
+													: "border-border bg-background hover:border-border/80 hover:bg-card"
 											)}
 										>
 											<div className="flex items-center gap-2">
@@ -284,9 +284,9 @@ export const InstanceQualityOverrideModal = ({
 												)}>
 													{mode === "default" && <Check className="h-3 w-3" />}
 												</div>
-												<span className="text-sm font-medium text-fg">Use Template Default</span>
+												<span className="text-sm font-medium text-foreground">Use Template Default</span>
 											</div>
-											<p className="text-xs text-fg-muted pl-7">
+											<p className="text-xs text-muted-foreground pl-7">
 												Same as other instances using this template.
 											</p>
 										</button>
@@ -300,7 +300,7 @@ export const InstanceQualityOverrideModal = ({
 												"flex flex-col items-start gap-2 rounded-lg border p-4 text-left transition",
 												mode === "override"
 													? "border-purple-500 bg-purple-500/5 ring-1 ring-purple-500/30"
-													: "border-border bg-bg hover:border-border/80 hover:bg-bg-subtle"
+													: "border-border bg-background hover:border-border/80 hover:bg-card"
 											)}
 										>
 											<div className="flex items-center gap-2">
@@ -312,9 +312,9 @@ export const InstanceQualityOverrideModal = ({
 												)}>
 													{mode === "override" && <Check className="h-3 w-3" />}
 												</div>
-												<span className="text-sm font-medium text-fg">Customize for This Instance</span>
+												<span className="text-sm font-medium text-foreground">Customize for This Instance</span>
 											</div>
-											<p className="text-xs text-fg-muted pl-7">
+											<p className="text-xs text-muted-foreground pl-7">
 												Different settings just for {instanceLabel}.
 											</p>
 										</button>
@@ -338,7 +338,7 @@ export const InstanceQualityOverrideModal = ({
 							{/* Show template default preview when using default */}
 							{mode === "default" && hasTemplateQualityConfig && (
 								<div className="space-y-3">
-									<div className="flex items-center gap-2 text-sm text-fg-muted">
+									<div className="flex items-center gap-2 text-sm text-muted-foreground">
 										<Info className="h-4 w-4" />
 										<span>Preview of template&apos;s quality configuration:</span>
 									</div>
@@ -371,7 +371,7 @@ export const InstanceQualityOverrideModal = ({
 									variant="ghost"
 									onClick={resetToDefault}
 									disabled={isSaving}
-									className="gap-1 text-fg-muted"
+									className="gap-1 text-muted-foreground"
 								>
 									<RotateCcw className="h-4 w-4" />
 									Reset to Template Default

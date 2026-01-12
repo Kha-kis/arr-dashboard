@@ -10,7 +10,6 @@ import { LibraryCard } from "./library-card";
 import { ItemDetailsModal } from "./item-details-modal";
 import { SeasonBreakdownModal } from "./season-breakdown-modal";
 import { buildLibraryExternalLink } from "../lib/library-utils";
-import { AmbientGlow } from "../../../components/layout";
 
 /**
  * Main library client component
@@ -98,60 +97,55 @@ export const LibraryClient: React.FC = () => {
 
 	return (
 		<>
-			<section className="relative flex flex-col gap-6">
-				{/* Ambient background glow */}
-				<AmbientGlow />
+			<LibraryHeader
+				serviceFilter={filters.serviceFilter}
+				onServiceFilterChange={filters.setServiceFilter}
+				instanceFilter={filters.instanceFilter}
+				onInstanceFilterChange={filters.setInstanceFilter}
+				statusFilter={filters.statusFilter}
+				onStatusFilterChange={filters.setStatusFilter}
+				fileFilter={filters.fileFilter}
+				onFileFilterChange={filters.setFileFilter}
+				searchTerm={filters.searchTerm}
+				onSearchTermChange={filters.setSearchTerm}
+				sortBy={filters.sortBy}
+				onSortByChange={filters.setSortBy}
+				sortOrder={filters.sortOrder}
+				onSortOrderChange={filters.setSortOrder}
+				instanceOptions={data.instanceOptions}
+				syncStatus={data.syncStatus}
+				isSyncing={data.isSyncing}
+			/>
 
-				<LibraryHeader
-					serviceFilter={filters.serviceFilter}
-					onServiceFilterChange={filters.setServiceFilter}
-					instanceFilter={filters.instanceFilter}
-					onInstanceFilterChange={filters.setInstanceFilter}
-					statusFilter={filters.statusFilter}
-					onStatusFilterChange={filters.setStatusFilter}
-					fileFilter={filters.fileFilter}
-					onFileFilterChange={filters.setFileFilter}
-					searchTerm={filters.searchTerm}
-					onSearchTermChange={filters.setSearchTerm}
-					sortBy={filters.sortBy}
-					onSortByChange={filters.setSortBy}
-					sortOrder={filters.sortOrder}
-					onSortOrderChange={filters.setSortOrder}
-					instanceOptions={data.instanceOptions}
-					syncStatus={data.syncStatus}
+			<div
+				className="animate-in fade-in slide-in-from-bottom-4 duration-500"
+				style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
+			>
+				<LibraryContent
+					isLoading={data.isLoading}
+					isError={data.isError}
+					error={data.error}
+					grouped={data.grouped}
+					totalItems={data.pagination.totalItems}
+					page={filters.page}
+					pageSize={filters.pageSize}
+					onPageChange={filters.setPage}
+					onPageSizeChange={filters.setPageSize}
+					onToggleMonitor={handleToggleMonitor}
+					pendingKey={pendingKey}
+					isMonitorPending={monitorMutation.isPending}
+					serviceLookup={data.serviceLookup}
+					onViewSeasons={handleViewSeasons}
+					onSearchMovie={actions.handleMovieSearch}
+					pendingMovieSearch={actions.pendingMovieSearch}
+					onSearchSeries={actions.handleSeriesSearch}
+					pendingSeriesSearch={actions.pendingSeriesSearch}
+					onExpandDetails={handleExpandDetails}
+					buildLibraryExternalLink={buildLibraryExternalLink}
+					LibraryCard={LibraryCard}
 					isSyncing={data.isSyncing}
 				/>
-
-				<div
-					className="animate-in fade-in slide-in-from-bottom-4 duration-500"
-					style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
-				>
-					<LibraryContent
-						isLoading={data.isLoading}
-						isError={data.isError}
-						error={data.error}
-						grouped={data.grouped}
-						totalItems={data.pagination.totalItems}
-						page={filters.page}
-						pageSize={filters.pageSize}
-						onPageChange={filters.setPage}
-						onPageSizeChange={filters.setPageSize}
-						onToggleMonitor={handleToggleMonitor}
-						pendingKey={pendingKey}
-						isMonitorPending={monitorMutation.isPending}
-						serviceLookup={data.serviceLookup}
-						onViewSeasons={handleViewSeasons}
-						onSearchMovie={actions.handleMovieSearch}
-						pendingMovieSearch={actions.pendingMovieSearch}
-						onSearchSeries={actions.handleSeriesSearch}
-						pendingSeriesSearch={actions.pendingSeriesSearch}
-						onExpandDetails={handleExpandDetails}
-						buildLibraryExternalLink={buildLibraryExternalLink}
-						LibraryCard={LibraryCard}
-						isSyncing={data.isSyncing}
-					/>
-				</div>
-			</section>
+			</div>
 
 			{itemDetail && <ItemDetailsModal item={itemDetail} onClose={handleCloseItemDetail} />}
 

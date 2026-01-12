@@ -20,7 +20,7 @@ const SetupPage = () => {
 	// Show loading while checking
 	if (isLoading) {
 		return (
-			<main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 px-4">
+			<main className="flex min-h-screen items-center justify-center bg-background px-4">
 				<Skeleton className="h-10 w-10 rounded-full" />
 			</main>
 		);
@@ -32,7 +32,7 @@ const SetupPage = () => {
 	}
 
 	return (
-		<main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 px-4">
+		<main className="flex min-h-screen items-center justify-center bg-background px-4">
 			<SetupClient />
 		</main>
 	);

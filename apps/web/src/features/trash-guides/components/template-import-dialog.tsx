@@ -14,8 +14,8 @@ import { useState, useEffect, useRef } from "react";
 import { useImportTemplate } from "../../../hooks/api/useTemplates";
 import { Input, Button } from "../../../components/ui";
 import { Upload, X, FileJson, AlertCircle, Info, Loader2 } from "lucide-react";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 interface TemplateImportDialogProps {
 	open: boolean;
@@ -23,8 +23,7 @@ interface TemplateImportDialogProps {
 }
 
 export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const [jsonData, setJsonData] = useState("");
 	const [parseError, setParseError] = useState<string | null>(null);
 	const [isFocused, setIsFocused] = useState(false);

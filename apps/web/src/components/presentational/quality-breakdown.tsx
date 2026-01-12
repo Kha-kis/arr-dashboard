@@ -7,8 +7,7 @@
  * Pure UI component with no business logic.
  */
 
-import { THEME_GRADIENTS } from "../../lib/theme-gradients";
-import { useColorTheme } from "../../providers/color-theme-provider";
+import { useThemeGradient } from "../../hooks/useThemeGradient";
 
 const integer = new Intl.NumberFormat();
 const percentFormatter = new Intl.NumberFormat(undefined, {
@@ -38,13 +37,12 @@ interface QualityBreakdownProps {
 }
 
 export const QualityBreakdown = ({ breakdown }: QualityBreakdownProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	if (!breakdown) return null;
 
 	const total = Object.values(breakdown).reduce((sum, val) => sum + val, 0);
-	if (total === 0) return <p className="text-sm text-fg-muted">No quality data</p>;
+	if (total === 0) return <p className="text-sm text-muted-foreground">No quality data</p>;
 
 	return (
 		<div className="space-y-2">
@@ -54,7 +52,7 @@ export const QualityBreakdown = ({ breakdown }: QualityBreakdownProps) => {
 				const labelId = `quality-label-${key}`;
 				return (
 					<div key={key} className="flex items-center gap-3">
-						<div id={labelId} className="w-20 text-xs text-fg-muted">
+						<div id={labelId} className="w-20 text-xs text-muted-foreground">
 							{getQualityLabel(key)}
 						</div>
 						<div className="flex-1">
@@ -64,12 +62,12 @@ export const QualityBreakdown = ({ breakdown }: QualityBreakdownProps) => {
 								aria-valuemin={0}
 								aria-valuemax={100}
 								aria-labelledby={labelId}
-								className="h-2 overflow-hidden rounded-full bg-bg-subtle"
+								className="h-2 overflow-hidden rounded-full bg-muted"
 							>
 								<div className="h-full" style={{ width: `${percentage}%`, backgroundColor: themeGradient.fromMedium }} />
 							</div>
 						</div>
-						<div className="w-16 text-right text-xs text-fg-muted">
+						<div className="w-16 text-right text-xs text-muted-foreground">
 							{integer.format(count)} ({percentFormatter.format(percentage)}%)
 						</div>
 					</div>

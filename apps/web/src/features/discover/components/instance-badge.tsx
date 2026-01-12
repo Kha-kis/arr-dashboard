@@ -2,8 +2,8 @@
 
 import type { ServiceInstanceSummary, DiscoverSearchResult } from "@arr/shared";
 import { CheckCircle2, WifiOff, Circle } from "lucide-react";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 /**
  * Props for the InstanceBadge component
@@ -24,8 +24,7 @@ interface InstanceBadgeProps {
  * - Icon indicators for each state
  */
 export const InstanceBadge: React.FC<InstanceBadgeProps> = ({ instance, result }) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const state = result.instanceStates.find((entry) => entry.instanceId === instance.id);
 
 	// Offline State

@@ -3,9 +3,8 @@
 import type { DiscoverSearchResult, DiscoverSearchType, ServiceInstanceSummary } from "@arr/shared";
 import { Loader2, Search, Film, Tv } from "lucide-react";
 import { MediaCard } from "./media-card";
-import { PremiumEmptyState } from "../../../components/layout";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 /**
  * Props for the SearchResults component
@@ -39,8 +38,7 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
 	isLoading,
 	onAddClick,
 }) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	// Loading State
 	if (isLoading) {
@@ -69,18 +67,18 @@ export const SearchResults: React.FC<SearchResultsProps> = ({
 					{Array.from({ length: 4 }).map((_, i) => (
 						<div
 							key={i}
-							className="rounded-2xl border border-border/30 bg-card/20 p-5 animate-pulse"
+							className="rounded-2xl border border-border/30 bg-card/20 p-5"
 							style={{ animationDelay: `${i * 100}ms` }}
 						>
 							<div className="flex gap-4">
-								<div className="h-40 w-28 rounded-xl bg-muted/20 shrink-0" />
+								<PremiumSkeleton variant="card" className="h-40 w-28 rounded-xl shrink-0" style={{ animationDelay: `${i * 100}ms` }} />
 								<div className="flex-1 space-y-3">
-									<div className="h-6 w-3/4 rounded bg-muted/20" />
-									<div className="h-4 w-1/2 rounded bg-muted/15" />
-									<div className="h-16 w-full rounded bg-muted/10" />
+									<PremiumSkeleton variant="line" className="h-6 w-3/4" style={{ animationDelay: `${i * 100 + 50}ms` }} />
+									<PremiumSkeleton variant="line" className="h-4 w-1/2" style={{ animationDelay: `${i * 100 + 100}ms` }} />
+									<PremiumSkeleton variant="line" className="h-16 w-full" style={{ animationDelay: `${i * 100 + 150}ms` }} />
 									<div className="flex gap-2">
-										<div className="h-6 w-16 rounded-lg bg-muted/15" />
-										<div className="h-6 w-20 rounded-lg bg-muted/15" />
+										<PremiumSkeleton variant="line" className="h-6 w-16 rounded-lg" style={{ animationDelay: `${i * 100 + 200}ms` }} />
+										<PremiumSkeleton variant="line" className="h-6 w-20 rounded-lg" style={{ animationDelay: `${i * 100 + 250}ms` }} />
 									</div>
 								</div>
 							</div>

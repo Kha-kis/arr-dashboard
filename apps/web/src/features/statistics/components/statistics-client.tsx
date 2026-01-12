@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import type { ProwlarrIndexerStat } from "@arr/shared";
 import { Button } from "../../../components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "../../../components/ui";
-import { AmbientGlow, PremiumCard, StatCard } from "../../../components/layout";
+import { PremiumCard, StatCard, PremiumSkeleton } from "../../../components/layout";
 import {
 	useIncognitoMode,
 	getLinuxIndexer,
@@ -15,8 +15,8 @@ import {
 import { useStatisticsData } from "../hooks/useStatisticsData";
 import { QualityBreakdown } from "../../../components/presentational/quality-breakdown";
 import { formatBytes, formatPercent, formatRuntime } from "../lib/formatters";
-import { THEME_GRADIENTS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { getServiceGradient, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { cn } from "../../../lib/utils";
 import {
 	BarChart3,
@@ -43,8 +43,7 @@ export const StatisticsClient = () => {
 	const [mounted, setMounted] = useState(false);
 	const [activeTab, setActiveTab] = useState<StatisticsTab>("overview");
 	const [isRefreshing, setIsRefreshing] = useState(false);
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	useEffect(() => {
 		setMounted(true);
@@ -83,35 +82,29 @@ export const StatisticsClient = () => {
 	// Loading skeleton
 	if (!mounted || isLoading) {
 		return (
-			<section className="relative flex flex-col gap-8">
-				<AmbientGlow />
-				<div className="space-y-8 animate-in fade-in duration-500">
-					<div className="space-y-4">
-						<div className="h-8 w-48 rounded-lg bg-muted/50 animate-pulse" />
-						<div className="h-10 w-64 rounded-lg bg-muted/30 animate-pulse" />
-					</div>
-					<div className="grid gap-4 md:grid-cols-4">
-						{[0, 1, 2, 3].map((i) => (
-							<div
-								key={i}
-								className="rounded-2xl border border-border/30 bg-card/30 p-6"
-							>
-								<div className="h-12 w-12 rounded-xl bg-muted/30 animate-pulse mb-4" />
-								<div className="h-8 w-16 rounded bg-muted/40 animate-pulse mb-2" />
-								<div className="h-4 w-24 rounded bg-muted/20 animate-pulse" />
-							</div>
-						))}
-					</div>
+			<div className="space-y-8 animate-in fade-in duration-500">
+				<div className="space-y-4">
+					<PremiumSkeleton variant="line" className="h-8 w-48" />
+					<PremiumSkeleton variant="line" className="h-10 w-64" />
 				</div>
-			</section>
+				<div className="grid gap-4 md:grid-cols-4">
+					{[0, 1, 2, 3].map((i) => (
+						<div
+							key={i}
+							className="rounded-2xl border border-border/30 bg-card/30 p-6"
+						>
+							<PremiumSkeleton variant="circle" className="h-12 w-12 rounded-xl mb-4" style={{ animationDelay: `${i * 50}ms` }} />
+							<PremiumSkeleton variant="line" className="h-8 w-16 mb-2" style={{ animationDelay: `${i * 50 + 25}ms` }} />
+							<PremiumSkeleton variant="line" className="h-4 w-24" style={{ animationDelay: `${i * 50 + 50}ms` }} />
+						</div>
+					))}
+				</div>
+			</div>
 		);
 	}
 
 	return (
-		<section className="relative flex flex-col gap-8">
-			{/* Ambient background glow */}
-			<AmbientGlow />
-
+		<>
 			{/* Header */}
 			<header
 				className="relative animate-in fade-in slide-in-from-bottom-4 duration-500"
@@ -256,15 +249,20 @@ export const StatisticsClient = () => {
 									>
 										<div className="flex items-start justify-between gap-4">
 											<div className="flex items-center gap-3">
-												<span
-													className="px-2 py-1 rounded-lg text-xs font-medium uppercase"
-													style={{
-														background: `linear-gradient(135deg, ${SERVICE_GRADIENTS[issue.service as keyof typeof SERVICE_GRADIENTS]?.from ?? themeGradient.from}20, ${SERVICE_GRADIENTS[issue.service as keyof typeof SERVICE_GRADIENTS]?.to ?? themeGradient.to}20)`,
-														color: SERVICE_GRADIENTS[issue.service as keyof typeof SERVICE_GRADIENTS]?.from ?? themeGradient.from,
-													}}
-												>
-													{issue.service}
-												</span>
+												{(() => {
+													const serviceGradient = getServiceGradient(issue.service);
+													return (
+														<span
+															className="px-2 py-1 rounded-lg text-xs font-medium uppercase"
+															style={{
+																background: `linear-gradient(135deg, ${serviceGradient.from}20, ${serviceGradient.to}20)`,
+																color: serviceGradient.from,
+															}}
+														>
+															{issue.service}
+														</span>
+													);
+												})()}
 												<span className="text-sm text-muted-foreground">
 													{incognitoMode ? getLinuxInstanceName(issue.instanceName) : issue.instanceName}
 												</span>
@@ -798,6 +796,6 @@ export const StatisticsClient = () => {
 					</PremiumCard>
 				</div>
 			)}
-		</section>
+		</>
 	);
 };

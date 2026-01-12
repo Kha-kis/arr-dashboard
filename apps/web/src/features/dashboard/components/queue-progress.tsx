@@ -1,8 +1,7 @@
 "use client";
 
 import { cn } from "../../../lib/utils";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 interface QueueProgressProps {
 	value?: number;
@@ -15,8 +14,7 @@ interface QueueProgressProps {
  * Premium progress bar with theme-aware gradient and glow effects
  */
 export const QueueProgress = ({ value, size = "md", service }: QueueProgressProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	if (typeof value !== "number" || Number.isNaN(value)) {
 		return (

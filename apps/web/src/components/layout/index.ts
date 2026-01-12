@@ -5,7 +5,6 @@ export { PageHeader } from "./page-header";
 // Premium Components - Core
 export {
 	PremiumPageHeader,
-	AmbientGlow,
 	PremiumCard,
 	StatCard,
 } from "./premium-page-header";
@@ -38,3 +37,14 @@ export {
 	// Buttons
 	GradientButton,
 } from "./premium-components";
+
+// Bento Grid Layout System
+export {
+	BentoGrid,
+	BentoCard,
+	BentoCardHeader,
+	BentoCardIcon,
+	BentoCardTitle,
+	BentoCardDescription,
+	BentoCardValue,
+} from "./bento-grid";

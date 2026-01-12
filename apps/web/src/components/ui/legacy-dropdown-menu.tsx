@@ -57,7 +57,7 @@ export function LegacyDropdownMenu({
       {isOpen && (
         <div
           className={cn(
-            "absolute z-50 mt-1 min-w-[160px] py-1 rounded-lg border border-border bg-popover shadow-lg",
+            "absolute z-modal mt-1 min-w-[160px] py-1 rounded-lg border border-border bg-popover shadow-lg",
             "animate-in fade-in-0 zoom-in-95 duration-100",
             align === "right" ? "right-0" : "left-0",
           )}

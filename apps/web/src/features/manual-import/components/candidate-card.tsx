@@ -1,6 +1,5 @@
 import { Button } from "../../../components/ui/button";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { ManualImportCandidateUnion } from "../types";
 import {
 	candidateDisplayPath,
@@ -46,8 +45,7 @@ export const CandidateCard = ({
 	onClearEpisodes,
 	disabled = false,
 }: CandidateCardProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const key = candidateKey(candidate);
 	const rejection = describeRejections(candidate);
 	const downloadAvailable = Boolean(extractDownloadId(candidate) ?? downloadId);
@@ -90,7 +88,7 @@ export const CandidateCard = ({
 		<div
 			key={key}
 			className={cn(
-				"rounded-xl border border-border bg-bg-subtle p-4 transition",
+				"rounded-xl border border-border bg-card p-4 transition",
 				selected && "border-primary/40",
 				rejection && "border-amber-500/40",
 				!downloadAvailable && "border-red-500/40",
@@ -107,11 +105,11 @@ export const CandidateCard = ({
 					/>
 					<div className="min-w-0 space-y-2">
 						<div className="space-y-1">
-							<p className="font-medium text-fg">{describeCandidate(candidate)}</p>
-							<p className="break-words text-xs text-fg-muted">{candidateDisplayPath(candidate)}</p>
+							<p className="font-medium text-foreground">{describeCandidate(candidate)}</p>
+							<p className="break-words text-xs text-muted-foreground">{candidateDisplayPath(candidate)}</p>
 						</div>
 						{chips.length > 0 && (
-							<div className="flex flex-wrap gap-2 text-xs text-fg-muted">
+							<div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
 								{chips.map((chip, index) => (
 									<span
 										key={`${key}:chip:${index}`}
@@ -124,13 +122,13 @@ export const CandidateCard = ({
 						)}
 					</div>
 				</div>
-				<div className="space-y-2 text-sm text-fg-muted">
+				<div className="space-y-2 text-sm text-muted-foreground">
 					<div>
-						<p className="text-xs uppercase text-fg-muted">Mapping</p>
+						<p className="text-xs uppercase text-muted-foreground">Mapping</p>
 						<p>{mappingSummary}</p>
 					</div>
 					{isSonarrCandidate(candidate) && episodes.length > 0 && (
-						<div className="space-y-2 rounded-md border border-border bg-bg-hover p-3 text-xs text-fg-muted">
+						<div className="space-y-2 rounded-md border border-border bg-muted p-3 text-xs text-muted-foreground">
 							<div className="flex flex-wrap items-center justify-between gap-2">
 								<span>Episodes ({episodes.length})</span>
 								{selected && (
@@ -167,7 +165,7 @@ export const CandidateCard = ({
 										<label
 											key={`${key}:episode:${episodeId}`}
 											className={cn(
-												"flex items-center gap-2 rounded-md border border-border bg-bg-subtle px-2 py-1 text-fg-muted",
+												"flex items-center gap-2 rounded-md border border-border bg-card px-2 py-1 text-muted-foreground",
 												!selected && "opacity-60",
 											)}
 										>
@@ -186,12 +184,12 @@ export const CandidateCard = ({
 								})}
 							</div>
 							{!selected && (
-								<p className="text-xs text-fg-muted/70 italic">Select file to enable episode selection</p>
+								<p className="text-xs text-muted-foreground/70 italic">Select file to enable episode selection</p>
 							)}
 						</div>
 					)}
 				</div>
-				<div className="flex flex-col items-end gap-3 text-xs text-fg-muted">
+				<div className="flex flex-col items-end gap-3 text-xs text-muted-foreground">
 					<span className={statusToneClasses[statusTone]}>{statusText}</span>
 					<Button
 						variant={selected ? "secondary" : "ghost"}

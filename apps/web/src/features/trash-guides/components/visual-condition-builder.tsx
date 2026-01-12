@@ -349,7 +349,7 @@ export function VisualConditionBuilder({ onPatternChange, onClose }: VisualCondi
 	return (
 		<div className="space-y-4">
 			<div className="flex items-center justify-between">
-				<h4 className="text-sm font-medium text-fg">Visual Condition Builder</h4>
+				<h4 className="text-sm font-medium text-foreground">Visual Condition Builder</h4>
 				{onClose && (
 					<Button size="sm" variant="ghost" onClick={onClose}>
 						Close
@@ -368,7 +368,7 @@ export function VisualConditionBuilder({ onPatternChange, onClose }: VisualCondi
 			{/* Logic Operator (if multiple conditions) */}
 			{conditions.length > 1 && (
 				<div className="flex items-center gap-3 pb-2 border-b border-border/30">
-					<span className="text-sm text-fg-muted">Combine conditions with:</span>
+					<span className="text-sm text-muted-foreground">Combine conditions with:</span>
 					<div className="flex gap-2">
 						<Button
 							size="sm"
@@ -403,7 +403,7 @@ export function VisualConditionBuilder({ onPatternChange, onClose }: VisualCondi
 						<div key={condition.id} className="rounded border border-border/30 p-3 space-y-3">
 							{/* Header */}
 							<div className="flex items-center justify-between">
-								<span className="text-xs font-medium text-fg-muted">Condition {index + 1}</span>
+								<span className="text-xs font-medium text-muted-foreground">Condition {index + 1}</span>
 								{conditions.length > 1 && (
 									<Button size="sm" variant="ghost" onClick={() => removeCondition(condition.id)}>
 										<Trash2 className="h-4 w-4" />
@@ -414,7 +414,7 @@ export function VisualConditionBuilder({ onPatternChange, onClose }: VisualCondi
 							{/* Field Selection */}
 							<div className="grid grid-cols-1 md:grid-cols-2 gap-3">
 								<div>
-									<label className="block text-xs font-medium text-fg-muted mb-1">Field</label>
+									<label className="block text-xs font-medium text-muted-foreground mb-1">Field</label>
 									<NativeSelect
 										value={condition.field}
 										onChange={(e) => updateCondition(condition.id, { field: e.target.value })}
@@ -426,12 +426,12 @@ export function VisualConditionBuilder({ onPatternChange, onClose }: VisualCondi
 											</SelectOption>
 										))}
 									</NativeSelect>
-									{field && <p className="text-xs text-fg-muted mt-1">{field.description}</p>}
+									{field && <p className="text-xs text-muted-foreground mt-1">{field.description}</p>}
 								</div>
 
 								{/* Operator Selection */}
 								<div>
-									<label className="block text-xs font-medium text-fg-muted mb-1">Operator</label>
+									<label className="block text-xs font-medium text-muted-foreground mb-1">Operator</label>
 									<NativeSelect
 										value={condition.operator}
 										onChange={(e) => updateCondition(condition.id, { operator: e.target.value })}
@@ -449,7 +449,7 @@ export function VisualConditionBuilder({ onPatternChange, onClose }: VisualCondi
 							{/* Value Input */}
 							{showValueInput && (
 								<div>
-									<label className="block text-xs font-medium text-fg-muted mb-1">Value</label>
+									<label className="block text-xs font-medium text-muted-foreground mb-1">Value</label>
 									<Input
 										type="text"
 										value={condition.value}
@@ -463,13 +463,13 @@ export function VisualConditionBuilder({ onPatternChange, onClose }: VisualCondi
 									{/* Presets */}
 									{presets.length > 0 && (
 										<div className="mt-2">
-											<p className="text-xs text-fg-muted mb-1">Quick Values:</p>
+											<p className="text-xs text-muted-foreground mb-1">Quick Values:</p>
 											<div className="flex flex-wrap gap-1">
 												{presets.map((preset) => (
 													<button
 														key={preset}
 														onClick={() => insertPreset(condition.id, preset)}
-														className="px-2 py-1 text-xs rounded bg-bg-subtle/60 text-fg hover:bg-bg-subtle transition"
+														className="px-2 py-1 text-xs rounded bg-card/60 text-foreground hover:bg-card transition"
 													>
 														{preset}
 													</button>
@@ -490,11 +490,11 @@ export function VisualConditionBuilder({ onPatternChange, onClose }: VisualCondi
 										onChange={(e) =>
 											updateCondition(condition.id, { caseSensitive: e.target.checked })
 										}
-										className="h-4 w-4 rounded border-border bg-bg-hover text-primary focus:ring-primary cursor-pointer"
+										className="h-4 w-4 rounded border-border bg-muted text-primary focus:ring-primary cursor-pointer"
 									/>
 									<label
 										htmlFor={`case-${condition.id}`}
-										className="text-sm text-fg cursor-pointer"
+										className="text-sm text-foreground cursor-pointer"
 									>
 										Case sensitive
 									</label>
@@ -513,12 +513,12 @@ export function VisualConditionBuilder({ onPatternChange, onClose }: VisualCondi
 
 			{/* Generated Pattern Preview */}
 			{generatedPattern && (
-				<div className="rounded bg-bg-subtle/40 p-3 border border-border/30">
+				<div className="rounded bg-card/40 p-3 border border-border/30">
 					<div className="flex items-center gap-2 mb-2">
-						<Code className="h-4 w-4 text-fg-muted" />
-						<span className="text-xs font-medium text-fg-muted">Generated Pattern:</span>
+						<Code className="h-4 w-4 text-muted-foreground" />
+						<span className="text-xs font-medium text-muted-foreground">Generated Pattern:</span>
 					</div>
-					<code className="text-xs font-mono text-fg break-all">{generatedPattern}</code>
+					<code className="text-xs font-mono text-foreground break-all">{generatedPattern}</code>
 					{hasPositionalAnd && (
 						<Alert className="mt-3">
 							<Info className="h-4 w-4" />

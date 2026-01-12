@@ -26,8 +26,8 @@ import {
 	ArrowUpDown,
 	Loader2,
 } from "lucide-react";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS, getServiceGradient } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useUnlinkTemplateFromInstance } from "../../../hooks/api/useDeploymentPreview";
 import { TemplateStats } from "./template-stats";
 import { SyncValidationModal } from "./sync-validation-modal";
@@ -62,8 +62,7 @@ interface TemplateListProps {
  * - Premium action buttons
  */
 export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBrowseQualityProfiles }: TemplateListProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	// Search, filter, and sort state
 	const [searchInput, setSearchInput] = useState("");
@@ -339,8 +338,8 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 							placeholder="Search templates..."
 							value={searchInput}
 							onChange={(e) => setSearchInput(e.target.value)}
-							className="w-full rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 pl-10 text-sm text-foreground placeholder:text-muted-foreground focus:border-border focus:outline-none focus:ring-2 transition-all duration-200"
-							style={{ focusRing: `${themeGradient.from}40` } as React.CSSProperties}
+							className="w-full rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-border focus:outline-none focus:ring-2 transition-all duration-200"
+							style={{ focusRing: `${themeGradient.from}40`, paddingLeft: "2.5rem" } as React.CSSProperties}
 						/>
 					</div>
 				</div>
@@ -361,6 +360,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 					<button
 						type="button"
 						onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+						aria-label={sortOrder === "asc" ? "Sort descending" : "Sort ascending"}
 						title={sortOrder === "asc" ? "Sort ascending" : "Sort descending"}
 						className="rounded-xl border border-border/50 bg-card/50 p-2.5 hover:bg-card/80 transition-all duration-200"
 					>
@@ -479,7 +479,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 												<h3 className="font-semibold text-foreground">{template.name}</h3>
 												<p
 													className="mt-1 text-xs font-medium"
-													style={{ color: template.serviceType === "RADARR" ? "#f97316" : "#06b6d4" }}
+													style={{ color: getServiceGradient(template.serviceType).from }}
 												>
 													{template.serviceType}
 												</p>
@@ -590,6 +590,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 												type="button"
 												onClick={() => onEdit(template)}
 												className="flex-1 rounded-xl p-2.5 border border-border/50 bg-card/30 hover:bg-card/50 transition-all"
+												aria-label={`Edit template ${template.name}`}
 												title="Edit template"
 											>
 												<Edit className="mx-auto h-4 w-4" />
@@ -601,6 +602,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 													setDuplicateName(`${template.name} Copy`);
 												}}
 												className="flex-1 rounded-xl p-2.5 border border-border/50 bg-card/30 hover:bg-card/50 transition-all"
+												aria-label={`Duplicate template ${template.name}`}
 												title="Duplicate template"
 											>
 												<Copy className="mx-auto h-4 w-4" />
@@ -609,6 +611,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 												type="button"
 												onClick={() => setExportModal({ templateId: template.id, templateName: template.name })}
 												className="flex-1 rounded-xl p-2.5 border border-border/50 bg-card/30 hover:bg-card/50 transition-all"
+												aria-label={`Export template ${template.name}`}
 												title="Export template"
 											>
 												<Download className="mx-auto h-4 w-4" />
@@ -622,6 +625,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 													border: `1px solid ${SEMANTIC_COLORS.error.border}`,
 													color: SEMANTIC_COLORS.error.text,
 												}}
+												aria-label={`Delete template ${template.name}`}
 												title="Delete template"
 											>
 												<Trash2 className="mx-auto h-4 w-4" />
@@ -670,7 +674,12 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 
 			{/* Instance Selector Modal */}
 			{instanceSelectorTemplate && (
-				<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+				<div
+					className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-modal p-4 animate-in fade-in duration-200"
+					role="dialog"
+					aria-modal="true"
+					aria-labelledby="deploy-template-title"
+				>
 					<div
 						className="rounded-2xl shadow-2xl border border-border/50 bg-card/95 backdrop-blur-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-300"
 					>
@@ -691,13 +700,14 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 									<Rocket className="h-5 w-5" style={{ color: themeGradient.from }} />
 								</div>
 								<div>
-									<h2 className="text-lg font-semibold text-foreground">Deploy Template</h2>
+									<h2 id="deploy-template-title" className="text-lg font-semibold text-foreground">Deploy Template</h2>
 									<p className="text-sm text-muted-foreground">{instanceSelectorTemplate.templateName}</p>
 								</div>
 							</div>
 							<button
 								type="button"
 								onClick={() => setInstanceSelectorTemplate(null)}
+								aria-label="Close modal"
 								className="rounded-lg p-2 hover:bg-card/80 transition-colors"
 							>
 								<X className="h-5 w-5" />
@@ -813,7 +823,12 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 
 			{/* Export Modal */}
 			{exportModal && (
-				<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+				<div
+					className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-modal p-4 animate-in fade-in duration-200"
+					role="dialog"
+					aria-modal="true"
+					aria-label="Export Template"
+				>
 					<div className="rounded-2xl shadow-2xl border border-border/50 bg-card/95 backdrop-blur-xl max-w-2xl w-full max-h-[90vh] overflow-auto animate-in zoom-in-95 duration-300">
 						<EnhancedTemplateExportModal
 							templateId={exportModal.templateId}
@@ -826,7 +841,12 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 
 			{/* Import Modal */}
 			{importModal && (
-				<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+				<div
+					className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-modal p-4 animate-in fade-in duration-200"
+					role="dialog"
+					aria-modal="true"
+					aria-label="Import Template"
+				>
 					<div className="rounded-2xl shadow-2xl border border-border/50 bg-card/95 backdrop-blur-xl max-w-2xl w-full max-h-[90vh] overflow-auto animate-in zoom-in-95 duration-300">
 						<EnhancedTemplateImportModal
 							onImportComplete={() => {
@@ -841,7 +861,12 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 
 			{/* Unlink Confirmation Modal */}
 			{unlinkConfirm && (
-				<div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+				<div
+					className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-modal p-4 animate-in fade-in duration-200"
+					role="dialog"
+					aria-modal="true"
+					aria-labelledby="unlink-confirm-title"
+				>
 					<div className="rounded-2xl shadow-2xl border border-border/50 bg-card/95 backdrop-blur-xl max-w-md w-full p-6 animate-in zoom-in-95 duration-300">
 						<div className="text-center space-y-4">
 							<div
@@ -853,7 +878,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 							>
 								<AlertCircle className="h-7 w-7" style={{ color: SEMANTIC_COLORS.error.from }} />
 							</div>
-							<h3 className="text-lg font-semibold text-foreground">
+							<h3 id="unlink-confirm-title" className="text-lg font-semibold text-foreground">
 								Remove from Instance?
 							</h3>
 							<p className="text-sm text-muted-foreground">

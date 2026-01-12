@@ -40,7 +40,7 @@ export const ServiceDefaultsSection = ({
 }: ServiceDefaultsSectionProps): ReactNode => {
 	// Show loading state
 	if (optionsPending) {
-		return <p className="text-sm text-fg-muted">Fetching available quality profiles...</p>;
+		return <p className="text-sm text-muted-foreground">Fetching available quality profiles...</p>;
 	}
 
 	// Show error state
@@ -65,7 +65,7 @@ export const ServiceDefaultsSection = ({
 		<>
 			<div className="grid gap-3 sm:grid-cols-2">
 				<div className="space-y-2">
-					<label className="text-xs uppercase text-fg-muted">Quality profile</label>
+					<label className="text-xs uppercase text-muted-foreground">Quality profile</label>
 					<select
 						className={SELECT_CLASS}
 						value={formState.defaultQualityProfileId}
@@ -91,7 +91,7 @@ export const ServiceDefaultsSection = ({
 					)}
 				</div>
 				<div className="space-y-2">
-					<label className="text-xs uppercase text-fg-muted">Root folder</label>
+					<label className="text-xs uppercase text-muted-foreground">Root folder</label>
 					<select
 						className={SELECT_CLASS}
 						value={formState.defaultRootFolderPath}
@@ -118,7 +118,7 @@ export const ServiceDefaultsSection = ({
 			{formState.service === "sonarr" && (
 				<div className="grid gap-3 sm:grid-cols-2">
 					<div className="space-y-2">
-						<label className="text-xs uppercase text-fg-muted">Language profile</label>
+						<label className="text-xs uppercase text-muted-foreground">Language profile</label>
 						<select
 							className={SELECT_CLASS}
 							value={formState.defaultLanguageProfileId}
@@ -144,7 +144,7 @@ export const ServiceDefaultsSection = ({
 						)}
 					</div>
 					<div className="space-y-2">
-						<label className="text-xs uppercase text-fg-muted">Season folders</label>
+						<label className="text-xs uppercase text-muted-foreground">Season folders</label>
 						<select
 							className={SELECT_CLASS}
 							value={formState.defaultSeasonFolder}

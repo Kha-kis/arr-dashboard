@@ -4,14 +4,13 @@ import { useState } from "react";
 import { Target, Activity, Settings, RefreshCw } from "lucide-react";
 import { Button, Alert, AlertDescription } from "../../../components/ui";
 import {
-	AmbientGlow,
 	PremiumPageHeader,
 	PremiumTabs,
 	PremiumPageLoading,
 	type PremiumTab,
 } from "../../../components/layout";
-import { THEME_GRADIENTS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { HuntingOverview } from "./hunting-overview";
 import { HuntingActivity } from "./hunting-activity";
 import { HuntingConfig } from "./hunting-config";
@@ -23,14 +22,12 @@ export type HuntingTab = "overview" | "activity" | "config";
  * Premium Hunting Client
  *
  * Main orchestrator for the hunting feature with:
- * - Ambient background glow
  * - Premium gradient header
  * - Theme-aware tab navigation
  * - Staggered entrance animations
  */
 export const HuntingClient = () => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const [activeTab, setActiveTab] = useState<HuntingTab>("overview");
 	const { status, isLoading, error, refetch } = useHuntingStatus();
@@ -57,33 +54,22 @@ export const HuntingClient = () => {
 
 	// Loading state
 	if (isLoading) {
-		return (
-			<section className="relative flex flex-col gap-8">
-				<AmbientGlow />
-				<PremiumPageLoading showHeader cardCount={4} />
-			</section>
-		);
+		return <PremiumPageLoading showHeader cardCount={4} />;
 	}
 
 	// Error state
 	if (error) {
 		return (
-			<section className="relative flex flex-col gap-8">
-				<AmbientGlow />
-				<Alert variant="danger">
-					<AlertDescription>
-						Failed to load hunting status. Please try again later.
-					</AlertDescription>
-				</Alert>
-			</section>
+			<Alert variant="danger">
+				<AlertDescription>
+					Failed to load hunting status. Please try again later.
+				</AlertDescription>
+			</Alert>
 		);
 	}
 
 	return (
-		<section className="relative flex flex-col gap-8">
-			{/* Ambient background glow */}
-			<AmbientGlow />
-
+		<>
 			{/* Premium Header */}
 			<PremiumPageHeader
 				label="Automated Search"
@@ -126,6 +112,6 @@ export const HuntingClient = () => {
 				{activeTab === "activity" && <HuntingActivity />}
 				{activeTab === "config" && <HuntingConfig />}
 			</div>
-		</section>
+		</>
 	);
 };

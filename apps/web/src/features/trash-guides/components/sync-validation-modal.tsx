@@ -29,8 +29,8 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui";
 import { useValidateSync, MAX_RETRY_ATTEMPTS } from "../../../hooks/api/useSync";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { ValidationResult } from "../../../lib/api-client/sync";
 
 // Check if we're in development mode
@@ -103,8 +103,7 @@ export const SyncValidationModal = ({
 	onViewChanges,
 	onSwitchToManualSync,
 }: SyncValidationModalProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const [resolutions, setResolutions] = useState<Record<string, "REPLACE" | "SKIP">>({});
 	const [validation, setValidation] = useState<ValidationResult | null>(null);
 	const [retryCount, setRetryCount] = useState(0);
@@ -348,6 +347,7 @@ export const SyncValidationModal = ({
 				<button
 					type="button"
 					onClick={onCancel}
+					aria-label="Close validation modal"
 					className="absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-lg bg-black/50 text-white/70 transition-colors hover:bg-black/70 hover:text-white"
 				>
 					<X className="h-4 w-4" />

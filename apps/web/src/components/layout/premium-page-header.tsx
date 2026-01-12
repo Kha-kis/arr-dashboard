@@ -2,8 +2,7 @@
 
 import type { ReactNode } from "react";
 import { cn } from "../../lib/utils";
-import { THEME_GRADIENTS } from "../../lib/theme-gradients";
-import { useColorTheme } from "../../providers/color-theme-provider";
+import { useThemeGradient } from "../../hooks/useThemeGradient";
 import type { LucideIcon } from "lucide-react";
 
 interface PremiumPageHeaderProps {
@@ -63,8 +62,7 @@ export const PremiumPageHeader = ({
 	className,
 	animationDelay = 0,
 }: PremiumPageHeaderProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
 		<header
@@ -132,27 +130,6 @@ export const PremiumPageHeader = ({
 		</header>
 	);
 };
-
-/**
- * Ambient Background Glow Component
- *
- * Creates the subtle radial gradient glow effect used in the dashboard.
- * Should be placed at the top of a page's main section.
- */
-export const AmbientGlow = () => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
-
-	return (
-		<div
-			className="pointer-events-none fixed inset-0 opacity-20 blur-3xl transition-all duration-1000"
-			style={{
-				background: `radial-gradient(ellipse at 30% 20%, ${themeGradient.glow} 0%, transparent 50%)`,
-			}}
-		/>
-	);
-};
-
 /**
  * Premium Section Card Component
  *
@@ -187,8 +164,7 @@ export const PremiumCard = ({
 	animationDelay = 0,
 	showHeader = true,
 }: PremiumCardProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
 		<div
@@ -270,8 +246,8 @@ export const StatCard = ({
 	onClick,
 	animationDelay = 0,
 }: StatCardProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = gradient ?? THEME_GRADIENTS[colorTheme];
+	const { gradient: defaultGradient } = useThemeGradient();
+	const themeGradient = gradient ?? defaultGradient;
 
 	return (
 		<button

@@ -1,9 +1,10 @@
 ﻿import { HistoryClient } from "../../src/features/history/components/history-client";
+import { PageLayout } from "../../src/components/layout";
 
 const HistoryPage = () => (
-	<main className="mx-auto flex max-w-6xl flex-col gap-12 px-6 py-16">
+	<PageLayout>
 		<HistoryClient />
-	</main>
+	</PageLayout>
 );
 
 export default HistoryPage;

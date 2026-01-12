@@ -4,9 +4,10 @@ import { useState } from "react";
 import { Key, Lock, Shield, Trash2, AlertTriangle, Check, Loader2, X } from "lucide-react";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
+import { PasswordInput } from "../../../components/ui/password-input";
 import { PremiumSection, GlassmorphicCard } from "../../../components/layout";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useUpdateAccountMutation, useRemovePasswordMutation } from "../../../hooks/api/useAuth";
 import { useOIDCProviders } from "../../../hooks/api/useOIDCProviders";
 import { useQuery } from "@tanstack/react-query";
@@ -29,8 +30,7 @@ interface PasswordSectionProps {
  * - Staggered animations
  */
 export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	// Password change/add state
 	const [currentPassword, setCurrentPassword] = useState("");
@@ -192,8 +192,7 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 									<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
 										Current Password
 									</label>
-									<Input
-										type="password"
+									<PasswordInput
 										value={currentPassword}
 										onChange={(e) => setCurrentPassword(e.target.value)}
 										placeholder="Enter current password"
@@ -206,8 +205,7 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 								<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
 									{currentUser?.hasPassword ? "New Password" : "Password"}
 								</label>
-								<Input
-									type="password"
+								<PasswordInput
 									value={newPassword}
 									onChange={(e) => setNewPassword(e.target.value)}
 									placeholder="At least 8 characters"
@@ -222,8 +220,7 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 								<label className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
 									{currentUser?.hasPassword ? "Confirm New Password" : "Confirm Password"}
 								</label>
-								<Input
-									type="password"
+								<PasswordInput
 									value={confirmPassword}
 									onChange={(e) => setConfirmPassword(e.target.value)}
 									placeholder={currentUser?.hasPassword ? "Re-enter new password" : "Re-enter password"}
@@ -327,6 +324,7 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 											type="button"
 											variant="outline"
 											onClick={() => setShowRemovePassword(true)}
+											aria-expanded={false}
 											className="gap-2"
 											style={{
 												borderColor: SEMANTIC_COLORS.error.border,

@@ -7,8 +7,7 @@
 
 import type { QueueItem } from "@arr/shared";
 import { cn } from "../../../lib/utils";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
 import type { QueueAction } from "./queue-action-buttons";
 import { QueueActionButtons } from "./queue-action-buttons";
@@ -51,8 +50,7 @@ export const QueueItemCard = ({
 	primaryAction,
 }: QueueItemCardProps) => {
 	const [incognitoMode] = useIncognitoMode();
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const issueSummary = summarizeIssueCounts(issueLines);
 	const progressValue = computeProgressValue([item]);
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
+import { motion } from "framer-motion";
 import type { ServiceInstanceSummary } from "@arr/shared";
 import {
 	Button,
@@ -12,6 +13,7 @@ import {
 	Typography,
 } from "../../../components/ui";
 import { Section } from "../../../components/layout";
+import { PremiumSkeleton } from "../../../components/layout/premium-components";
 import {
 	AlertCircle,
 	RefreshCw,
@@ -24,6 +26,7 @@ import {
 	Server,
 	ChevronRight
 } from "lucide-react";
+import { springs } from "../../../components/motion";
 import { QueueTable } from "./queue-table";
 import { DashboardTabs, type DashboardTab } from "./dashboard-tabs";
 import ManualImportModal from "../../manual-import/components/manual-import-modal";
@@ -33,8 +36,8 @@ import { useDashboardFilters } from "../hooks/useDashboardFilters";
 import { useDashboardQueue } from "../hooks/useDashboardQueue";
 import { useQueueGrouping } from "../hooks";
 import { useIncognitoMode } from "../../../lib/incognito";
-import { THEME_GRADIENTS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SERVICE_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { cn } from "../../../lib/utils";
 
 /** Map of instanceId to baseUrl for linking to instances */
@@ -76,26 +79,37 @@ const ServiceStatCard = ({
 		? { ...themeGradient, icon: ListOrdered, label: "Queue" }
 		: service !== "queue"
 			? SERVICE_CONFIG[service]
-			: { from: "#22c55e", to: "#14b8a6", glow: "rgba(34, 197, 94, 0.4)", icon: ListOrdered, label: "Queue" };
+			: { from: SEMANTIC_COLORS.success.from, to: SEMANTIC_COLORS.success.to, glow: SEMANTIC_COLORS.success.glow, icon: ListOrdered, label: "Queue" };
 
 	const Icon = config.icon;
 	const hasItems = isQueue && value > 0;
 
 	return (
-		<button
+		<motion.button
 			type="button"
 			onClick={onClick}
 			disabled={!onClick}
 			className={cn(
-				"group relative overflow-hidden rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm p-6 text-left transition-all duration-500",
-				"animate-in fade-in slide-in-from-bottom-4",
-				onClick && "cursor-pointer hover:border-border hover:shadow-lg",
+				"group relative overflow-hidden rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm p-6 text-left transition-colors duration-300",
+				onClick && "cursor-pointer hover:border-border",
 				!onClick && "cursor-default"
 			)}
-			style={{
-				animationDelay: `${animationDelay}ms`,
-				animationFillMode: "backwards",
+			initial={{ opacity: 0, y: 20 }}
+			animate={{ opacity: 1, y: 0 }}
+			transition={{
+				...springs.soft,
+				delay: animationDelay / 1000,
 			}}
+			whileHover={onClick ? {
+				y: -4,
+				scale: 1.02,
+				boxShadow: `0 20px 40px -12px ${config.glow}`,
+				transition: springs.soft,
+			} : undefined}
+			whileTap={onClick ? {
+				scale: 0.98,
+				transition: springs.quick,
+			} : undefined}
 		>
 			{/* Ambient glow on hover */}
 			<div
@@ -183,7 +197,7 @@ const ServiceStatCard = ({
 					}}
 				/>
 			</div>
-		</button>
+		</motion.button>
 	);
 };
 
@@ -194,24 +208,20 @@ const DashboardSkeleton = () => (
 	<div className="space-y-8 animate-in fade-in duration-500">
 		{/* Header skeleton */}
 		<div className="space-y-4">
-			<div className="h-8 w-48 rounded-lg bg-muted/50 animate-pulse" />
-			<div className="h-10 w-64 rounded-lg bg-muted/30 animate-pulse" />
-			<div className="h-4 w-96 rounded bg-muted/20 animate-pulse" />
+			<PremiumSkeleton variant="line" className="h-8 w-48" />
+			<PremiumSkeleton variant="line" className="h-10 w-64" />
+			<PremiumSkeleton variant="line" className="h-4 w-96" />
 		</div>
 
 		{/* Stats skeleton */}
 		<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-			{[0, 1, 2, 3].map((i) => (
-				<div
+			{Array.from({ length: 4 }).map((_, i) => (
+				<PremiumSkeleton
 					key={i}
-					className="relative overflow-hidden rounded-2xl border border-border/30 bg-card/30 p-6"
-					style={{ animationDelay: `${i * 100}ms` }}
-				>
-					<div className="absolute inset-0 bg-gradient-to-r from-transparent via-muted/10 to-transparent animate-shimmer" />
-					<div className="h-12 w-12 rounded-xl bg-muted/30 animate-pulse mb-4" />
-					<div className="h-8 w-16 rounded bg-muted/40 animate-pulse mb-2" />
-					<div className="h-4 w-24 rounded bg-muted/20 animate-pulse" />
-				</div>
+					variant="card"
+					className="h-40"
+					style={{ animationDelay: `${i * 50}ms` }}
+				/>
 			))}
 		</div>
 	</div>
@@ -224,8 +234,7 @@ export const DashboardClient = () => {
 	const [isRefreshing, setIsRefreshing] = useState(false);
 
 	// Get the user's selected color theme
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	useEffect(() => {
 		setMounted(true);
@@ -343,15 +352,7 @@ export const DashboardClient = () => {
 	const totalInstances = (groupedByService.sonarr ?? 0) + (groupedByService.radarr ?? 0) + (groupedByService.prowlarr ?? 0);
 
 	return (
-		<section className="relative flex flex-col gap-8">
-			{/* Ambient background glow - uses theme color */}
-			<div
-				className="pointer-events-none fixed inset-0 opacity-20 blur-3xl transition-all duration-1000"
-				style={{
-					background: `radial-gradient(ellipse at 30% 20%, ${themeGradient.glow} 0%, transparent 50%)`,
-				}}
-			/>
-
+		<>
 			{/* Header */}
 			<header
 				className="relative animate-in fade-in slide-in-from-bottom-4 duration-500"
@@ -637,6 +638,6 @@ export const DashboardClient = () => {
 				onOpenChange={handleManualImportOpenChange}
 				onCompleted={handleManualImportCompleted}
 			/>
-		</section>
+		</>
 	);
 };

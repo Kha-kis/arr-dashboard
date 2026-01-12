@@ -9,8 +9,8 @@ import {
 	protocolLabel,
 } from "../lib/indexers-utils";
 import { Zap, Tag } from "lucide-react";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { PROTOCOL_COLORS } from "../../../lib/theme-gradients";
 
 /**
  * Premium Capability/Category Badge
@@ -49,15 +49,14 @@ export const IndexerDetailsInfo = ({
 	detail: ProwlarrIndexerDetails;
 	indexer: ProwlarrIndexer;
 }) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const stats = detail.stats;
 	const capabilities = detail.capabilities ?? indexer.capabilities ?? [];
 	const categories = detail.categories ?? [];
 
 	// Protocol-based colors
-	const protocolColor = (detail.protocol ?? indexer.protocol) === "torrent" ? "#f97316" : "#06b6d4";
+	const protocolColor = (detail.protocol ?? indexer.protocol) === "torrent" ? PROTOCOL_COLORS.torrent : PROTOCOL_COLORS.usenet;
 
 	return (
 		<div className="space-y-5 flex-1">
@@ -142,7 +141,7 @@ export const IndexerDetailsInfo = ({
 						{categories.map((category, index) => (
 							<PremiumBadge
 								key={`${index}-${category}`}
-								label={category}
+								label={String(category)}
 								color={themeGradient.fromMuted || themeGradient.from}
 							/>
 						))}

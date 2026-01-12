@@ -5,8 +5,7 @@ import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
-import { useColorTheme } from "../../providers/color-theme-provider"
-import { THEME_GRADIENTS } from "../../lib/theme-gradients"
+import { useThemeGradient } from "../../hooks/useThemeGradient"
 
 /**
  * Premium Button Variants
@@ -99,8 +98,7 @@ export interface ButtonProps
  */
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, style, ...props }, ref) => {
-    const { colorTheme } = useColorTheme()
-    const themeGradient = THEME_GRADIENTS[colorTheme]
+    const { gradient: themeGradient } = useThemeGradient()
     const Comp = asChild ? Slot : "button"
 
     // Gradient variant gets dynamic theme styles

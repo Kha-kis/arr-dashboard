@@ -3,8 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import { Button } from "../../../components/ui";
 import { Clock, X, Calendar, AlertCircle, Loader2, Check, Bell, Zap, Power } from "lucide-react";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 interface TemplateScheduleModalProps {
 	open: boolean;
@@ -58,8 +58,7 @@ export const TemplateScheduleModal = ({
 	const [isSaving, setIsSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const modalRef = useRef<HTMLDivElement>(null);
 	const previousActiveElement = useRef<HTMLElement | null>(null);

@@ -117,20 +117,20 @@ export const InstanceOverridesPanel = ({
 
 	return (
 		<>
-			<div className="rounded-lg border border-border bg-bg-subtle/30">
+			<div className="rounded-lg border border-border bg-card/30">
 				{/* Header */}
 				<button
 					type="button"
 					onClick={() => setIsExpanded(!isExpanded)}
-					className="flex items-center justify-between w-full p-4 text-left hover:bg-bg-subtle/50 transition rounded-lg"
+					className="flex items-center justify-between w-full p-4 text-left hover:bg-card/50 transition rounded-lg"
 				>
 					<div className="flex items-center gap-3">
 						<div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-500/10">
 							<Sliders className="h-5 w-5 text-purple-500" />
 						</div>
 						<div>
-							<h3 className="text-sm font-medium text-fg">Instance Quality Overrides</h3>
-							<p className="text-xs text-fg-muted">
+							<h3 className="text-sm font-medium text-foreground">Instance Quality Overrides</h3>
+							<p className="text-xs text-muted-foreground">
 								{overrideCount === 0 ? (
 									"All instances use template default"
 								) : (
@@ -145,13 +145,13 @@ export const InstanceOverridesPanel = ({
 						</div>
 					</div>
 					<div className="flex items-center gap-2">
-						<span className="text-xs text-fg-muted">
+						<span className="text-xs text-muted-foreground">
 							{overrideStatuses.length} instance{overrideStatuses.length !== 1 ? "s" : ""}
 						</span>
 						{isExpanded ? (
-							<ChevronUp className="h-4 w-4 text-fg-muted" />
+							<ChevronUp className="h-4 w-4 text-muted-foreground" />
 						) : (
-							<ChevronDown className="h-4 w-4 text-fg-muted" />
+							<ChevronDown className="h-4 w-4 text-muted-foreground" />
 						)}
 					</div>
 				</button>
@@ -163,8 +163,8 @@ export const InstanceOverridesPanel = ({
 						{templateDefaultConfig?.useCustomQualities && (
 							<div className="flex items-start gap-3 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
 								<Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
-								<div className="text-xs text-fg-muted">
-									<span className="font-medium text-fg">Template Default:</span>{" "}
+								<div className="text-xs text-muted-foreground">
+									<span className="font-medium text-foreground">Template Default:</span>{" "}
 									{templateDefaultConfig.items.length} quality items
 									{getCutoffName(templateDefaultConfig) && (
 										<>
@@ -184,17 +184,17 @@ export const InstanceOverridesPanel = ({
 										"flex items-center justify-between gap-3 rounded-lg border p-3 transition",
 										status.hasQualityOverride
 											? "border-purple-500/30 bg-purple-500/5"
-											: "border-border bg-bg"
+											: "border-border bg-background"
 									)}
 								>
 									<div className="flex items-center gap-3 min-w-0">
-										<Server className="h-4 w-4 text-fg-muted shrink-0" />
+										<Server className="h-4 w-4 text-muted-foreground shrink-0" />
 										<div className="min-w-0">
-											<div className="text-sm font-medium text-fg truncate">
+											<div className="text-sm font-medium text-foreground truncate">
 												{status.instanceLabel}
 											</div>
 											{status.hasQualityOverride && status.qualityOverride ? (
-												<div className="flex items-center gap-2 text-xs text-fg-muted">
+												<div className="flex items-center gap-2 text-xs text-muted-foreground">
 													<span className="flex items-center gap-1">
 														<Layers className="h-3 w-3" />
 														{status.qualityOverride.items?.length ?? 0} items
@@ -207,7 +207,7 @@ export const InstanceOverridesPanel = ({
 													)}
 												</div>
 											) : (
-												<div className="text-xs text-fg-muted flex items-center gap-1">
+												<div className="text-xs text-muted-foreground flex items-center gap-1">
 													<Check className="h-3 w-3 text-green-500" />
 													Using template default
 												</div>
@@ -242,7 +242,7 @@ export const InstanceOverridesPanel = ({
 						{/* Summary footer */}
 						{overrideCount > 0 && (
 							<div className="flex items-center justify-between pt-2 border-t border-border">
-								<div className="flex items-center gap-2 text-xs text-fg-muted">
+								<div className="flex items-center gap-2 text-xs text-muted-foreground">
 									<AlertTriangle className="h-3 w-3 text-amber-500" />
 									<span>
 										Instances with overrides won&apos;t receive template quality updates

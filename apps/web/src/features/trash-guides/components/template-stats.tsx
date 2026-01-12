@@ -20,8 +20,7 @@ import {
 } from "../../../components/ui";
 import { useUpdateSyncStrategy, useBulkUpdateSyncStrategy } from "../../../hooks/api/useDeploymentPreview";
 import { cn } from "../../../lib/utils";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { toast } from "sonner";
 
 // Helper to get sync strategy display info - color is handled dynamically for notify
@@ -44,8 +43,7 @@ interface TemplateStatsProps {
 }
 
 export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInstance }: TemplateStatsProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const [expanded, setExpanded] = useState(false);
 	const [showBulkDeployment, setShowBulkDeployment] = useState(false);
 	const [showHistory, setShowHistory] = useState(false);
@@ -106,8 +104,8 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 
 	if (isLoading && expanded) {
 		return (
-			<div className="rounded-lg border border-border bg-bg-subtle p-4">
-				<div className="flex items-center gap-2 text-sm text-fg-muted">
+			<div className="rounded-lg border border-border bg-card p-4">
+				<div className="flex items-center gap-2 text-sm text-muted-foreground">
 					<Activity className="h-4 w-4 animate-spin" />
 					<span>Loading stats...</span>
 				</div>
@@ -123,33 +121,34 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 			<button
 				type="button"
 				onClick={() => setExpanded(!expanded)}
-				className="flex w-full items-center justify-between rounded-lg border border-border bg-bg-subtle p-3 text-left transition hover:bg-bg-subtle/80"
+				aria-expanded={expanded}
+				className="flex w-full items-center justify-between rounded-lg border border-border bg-card p-3 text-left transition hover:bg-card/80"
 			>
 				<div className="flex items-center gap-3">
 					<Activity className="h-4 w-4 text-primary" />
-					<span className="text-sm font-medium text-fg">Template Stats</span>
+					<span className="text-sm font-medium text-foreground">Template Stats</span>
 					{stats && stats.instances.length > 0 && (
-						<span className="text-xs text-fg-muted">
+						<span className="text-xs text-muted-foreground">
 							{stats.instances.length} instance{stats.instances.length !== 1 ? "s" : ""}
 						</span>
 					)}
 				</div>
 				{expanded ? (
-					<ChevronUp className="h-4 w-4 text-fg-muted" />
+					<ChevronUp className="h-4 w-4 text-muted-foreground" />
 				) : (
-					<ChevronDown className="h-4 w-4 text-fg-muted" />
+					<ChevronDown className="h-4 w-4 text-muted-foreground" />
 				)}
 			</button>
 
 			{/* Expanded Stats Details */}
 			{expanded && stats && (
-				<div className="rounded-lg border border-border bg-bg-subtle p-4 space-y-4">
+				<div className="rounded-lg border border-border bg-card p-4 space-y-4">
 					{/* Action Buttons */}
 					<div className="flex items-center gap-2 justify-center">
 						<button
 							type="button"
 							onClick={() => setShowHistory(true)}
-							className="flex items-center gap-2 rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm font-medium text-fg transition hover:bg-bg-subtle/80"
+							className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground transition hover:bg-card/80"
 						>
 							<History className="h-4 w-4" />
 							View Deployment History
@@ -159,27 +158,27 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 					{/* Metrics Grid */}
 					<div className="grid grid-cols-3 gap-4">
 						<div className="space-y-1 text-center">
-							<div className="flex items-center gap-2 text-xs text-fg-muted justify-center">
+							<div className="flex items-center gap-2 text-xs text-muted-foreground justify-center">
 								<Package className="h-3 w-3" />
 								<span>Formats</span>
 							</div>
-							<p className="text-lg font-semibold text-fg">{stats.formatCount}</p>
+							<p className="text-lg font-semibold text-foreground">{stats.formatCount}</p>
 						</div>
 
 						<div className="space-y-1 text-center">
-							<div className="flex items-center gap-2 text-xs text-fg-muted justify-center">
+							<div className="flex items-center gap-2 text-xs text-muted-foreground justify-center">
 								<Package className="h-3 w-3" />
 								<span>Groups</span>
 							</div>
-							<p className="text-lg font-semibold text-fg">{stats.groupCount}</p>
+							<p className="text-lg font-semibold text-foreground">{stats.groupCount}</p>
 						</div>
 
 						<div className="space-y-1 text-center">
-							<div className="flex items-center gap-2 text-xs text-fg-muted justify-center">
+							<div className="flex items-center gap-2 text-xs text-muted-foreground justify-center">
 								<Calendar className="h-3 w-3" />
 								<span>Last Deployed</span>
 							</div>
-							<p className="text-xs font-medium text-fg">
+							<p className="text-xs font-medium text-foreground">
 								{stats.lastUsedAt ? new Date(stats.lastUsedAt).toLocaleDateString() : "Never"}
 							</p>
 						</div>
@@ -189,7 +188,7 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 					{stats.instances.length > 0 && (
 						<div className="space-y-2">
 							<div className="flex flex-col items-center gap-2">
-								<h4 className="text-sm font-medium text-fg-muted">Instances Using This Template</h4>
+								<h4 className="text-sm font-medium text-muted-foreground">Instances Using This Template</h4>
 								{stats.instances.length > 1 && (
 									<div className="flex items-center gap-2">
 										<button
@@ -209,7 +208,7 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 											trigger={
 												<div
 													className={cn(
-														"flex items-center gap-1 rounded border border-border bg-bg-subtle px-2 py-1 text-xs font-medium text-fg-muted transition hover:bg-bg-subtle/80 cursor-pointer",
+														"flex items-center gap-1 rounded border border-border bg-card px-2 py-1 text-xs font-medium text-muted-foreground transition hover:bg-card/80 cursor-pointer",
 														bulkUpdateSyncStrategyMutation.isPending && "opacity-50 pointer-events-none"
 													)}
 													title="Set sync strategy for all instances"
@@ -258,11 +257,11 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 									return (
 									<div
 										key={instance.instanceId}
-										className="flex flex-col gap-2 rounded border border-border bg-bg-subtle p-2"
+										className="flex flex-col gap-2 rounded border border-border bg-card p-2"
 									>
 										{/* Top: Instance name + strategy badge */}
 										<div className="flex items-center justify-center gap-2">
-											<span className="text-sm font-medium text-fg">{instance.instanceName}</span>
+											<span className="text-sm font-medium text-foreground">{instance.instanceName}</span>
 											<Badge variant={strategyInfo.variant} className="text-[10px] px-1.5 py-0 flex items-center gap-1">
 												<StrategyIcon className={cn("h-2.5 w-2.5", isUpdating && "animate-spin")} />
 												{strategyInfo.label}
@@ -288,7 +287,7 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 											{instance.hasMapping ? (
 												<LegacyDropdownMenu
 													trigger={
-														<div className="flex items-center justify-center rounded border border-border bg-bg-subtle p-1.5 text-fg-muted transition hover:bg-bg-subtle/80 cursor-pointer" title="Change sync strategy">
+														<div className="flex items-center justify-center rounded border border-border bg-card p-1.5 text-muted-foreground transition hover:bg-card/80 cursor-pointer" title="Change sync strategy">
 															<StrategyIcon className={cn("h-3.5 w-3.5", strategyInfo.colorClass, isUpdating && "animate-spin")} />
 														</div>
 													}
@@ -318,10 +317,10 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 												</LegacyDropdownMenu>
 											) : (
 												<div
-													className="flex items-center justify-center rounded border border-border bg-bg-subtle p-1.5 text-fg-muted/50 cursor-not-allowed"
+													className="flex items-center justify-center rounded border border-border bg-card p-1.5 text-muted-foreground/50 cursor-not-allowed"
 													title="Re-deploy template to change sync strategy"
 												>
-													<StrategyIcon className="h-3.5 w-3.5 text-fg-muted/50" />
+													<StrategyIcon className="h-3.5 w-3.5 text-muted-foreground/50" />
 												</div>
 											)}
 											<button
@@ -333,7 +332,7 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 														instanceName: instance.instanceName,
 													});
 												}}
-												className="flex items-center justify-center rounded border border-border bg-bg-subtle p-1.5 text-fg-muted transition hover:bg-bg-subtle/80"
+												className="flex items-center justify-center rounded border border-border bg-card p-1.5 text-muted-foreground transition hover:bg-card/80"
 												title="Manage instance score overrides"
 											>
 												<SlidersHorizontal className="h-3.5 w-3.5" />
@@ -375,8 +374,8 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 					)}
 
 					{stats.instances.length === 0 && (
-						<div className="rounded border border-border bg-bg-subtle p-4 text-center">
-							<p className="text-sm text-fg-muted">No instances have used this template yet.</p>
+						<div className="rounded border border-border bg-card p-4 text-center">
+							<p className="text-sm text-muted-foreground">No instances have used this template yet.</p>
 						</div>
 					)}
 				</div>
@@ -430,10 +429,15 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 
 			{/* Instance Override Editor Modal */}
 			{overrideModal && templateLoading && (
-				<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+				<div
+					className="fixed inset-0 bg-black/50 flex items-center justify-center z-modal"
+					role="dialog"
+					aria-modal="true"
+					aria-label="Loading template data"
+				>
 					<div className="bg-background rounded-lg shadow-lg p-8 text-center">
 						<Activity className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
-						<p className="text-sm text-fg-muted">Loading template data...</p>
+						<p className="text-sm text-muted-foreground">Loading template data...</p>
 					</div>
 				</div>
 			)}

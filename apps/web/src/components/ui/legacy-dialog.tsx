@@ -7,21 +7,24 @@
  * - Glassmorphic container with backdrop blur
  * - Theme-aware styling using THEME_GRADIENTS
  * - Animated entrance effects
+ * - Uses React Portal to render at document root (fixes backdrop-filter containing block issues)
  *
  * For new code, consider using the shadcn Dialog components or standalone modals.
  */
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { THEME_GRADIENTS } from "@/lib/theme-gradients";
-import { useColorTheme } from "@/providers/color-theme-provider";
+import { useThemeGradient } from "@/hooks/useThemeGradient";
 
 export interface LegacyDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   children: React.ReactNode;
   size?: "sm" | "md" | "lg" | "xl";
+  /** Unique ID for the dialog, used for aria-labelledby */
+  dialogId?: string;
 }
 
 const sizeStyles = {
@@ -31,9 +34,28 @@ const sizeStyles = {
   xl: "max-w-5xl",
 };
 
-export function LegacyDialog({ open, onOpenChange, children, size = "md" }: LegacyDialogProps) {
-  const { colorTheme } = useColorTheme();
-  const themeGradient = THEME_GRADIENTS[colorTheme];
+// Context for passing dialog ID to child components
+interface LegacyDialogContextValue {
+  dialogId: string;
+}
+
+const LegacyDialogContext = React.createContext<LegacyDialogContextValue | null>(null);
+
+function useLegacyDialogContext() {
+  return React.useContext(LegacyDialogContext);
+}
+
+export function LegacyDialog({ open, onOpenChange, children, size = "md", dialogId }: LegacyDialogProps) {
+  const { gradient: themeGradient } = useThemeGradient();
+  const [mounted, setMounted] = React.useState(false);
+  // Generate a stable ID if not provided
+  const generatedId = React.useId();
+  const effectiveDialogId = dialogId || `legacy-dialog-${generatedId}`;
+
+  // Ensure we're mounted before using portal (SSR safety)
+  React.useEffect(() => {
+    setMounted(true);
+  }, []);
 
   // Handle ESC key
   React.useEffect(() => {
@@ -59,9 +81,12 @@ export function LegacyDialog({ open, onOpenChange, children, size = "md" }: Lega
     };
   }, [open]);
 
-  if (!open) return null;
+  if (!open || !mounted) return null;
 
-  return (
+  // Use portal to render at document.body level
+  // This escapes any ancestor elements with backdrop-filter that would
+  // create a new containing block and break position:fixed
+  return createPortal(
     <div className="fixed inset-0 z-modal-backdrop animate-in fade-in duration-200">
       {/* Backdrop */}
       <div
@@ -74,7 +99,7 @@ export function LegacyDialog({ open, onOpenChange, children, size = "md" }: Lega
       <div className="fixed inset-0 flex items-center justify-center p-4 sm:p-6 md:p-8">
         <div
           className={cn(
-            "relative z-50 w-full overflow-hidden rounded-2xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl",
+            "relative z-modal w-full overflow-hidden rounded-2xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl",
             "max-h-[90vh] flex flex-col",
             "animate-in zoom-in-95 slide-in-from-bottom-4 duration-300",
             sizeStyles[size],
@@ -85,11 +110,16 @@ export function LegacyDialog({ open, onOpenChange, children, size = "md" }: Lega
           onClick={(e) => e.stopPropagation()}
           role="dialog"
           aria-modal="true"
+          aria-labelledby={`${effectiveDialogId}-title`}
         >
-          {children}
+          {/* Pass the dialog ID to children via context or data attribute */}
+          <LegacyDialogContext.Provider value={{ dialogId: effectiveDialogId }}>
+            {children}
+          </LegacyDialogContext.Provider>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -102,8 +132,7 @@ export function LegacyDialogHeader({
   className?: string;
   icon?: React.ReactNode;
 }) {
-  const { colorTheme } = useColorTheme();
-  const themeGradient = THEME_GRADIENTS[colorTheme];
+  const { gradient: themeGradient } = useThemeGradient();
 
   return (
     <div
@@ -132,8 +161,10 @@ export function LegacyDialogHeader({
   );
 }
 
-export function LegacyDialogTitle({ children, className }: { children: React.ReactNode; className?: string }) {
-  return <h2 className={cn("text-xl font-bold text-foreground", className)}>{children}</h2>;
+export function LegacyDialogTitle({ children, className, id }: { children: React.ReactNode; className?: string; id?: string }) {
+  const context = useLegacyDialogContext();
+  const titleId = id || (context ? `${context.dialogId}-title` : undefined);
+  return <h2 id={titleId} className={cn("text-xl font-bold text-foreground", className)}>{children}</h2>;
 }
 
 export function LegacyDialogDescription({ children, className }: { children: React.ReactNode; className?: string }) {

@@ -1,9 +1,10 @@
 import { LibraryClient } from "../../src/features/library/components/library-client";
+import { PageLayout } from "../../src/components/layout";
 
 const LibraryPage = () => (
-	<main className="mx-auto flex max-w-6xl flex-col gap-12 px-6 py-16">
+	<PageLayout gap="6">
 		<LibraryClient />
-	</main>
+	</PageLayout>
 );
 
 export default LibraryPage;

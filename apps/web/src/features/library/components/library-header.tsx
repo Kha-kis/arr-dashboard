@@ -10,10 +10,10 @@ import {
 	RefreshCw,
 	Tv,
 } from "lucide-react";
-import { useState } from "react";
 import { Button, Input } from "../../../components/ui";
-import { THEME_GRADIENTS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { GlassmorphicCard, FilterSelect } from "../../../components/layout";
+import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { cn } from "../../../lib/utils";
 import type { SortByValue, SortOrderValue } from "../hooks/use-library-filters";
 import type { SyncStatus } from "../hooks/use-library-data";
@@ -144,8 +144,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 	syncStatus,
 	isSyncing,
 }) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
 		<header className="space-y-6">
@@ -217,9 +216,10 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 			</div>
 
 			{/* Filters Card */}
-			<div
-				className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500"
-				style={{ animationDelay: "100ms", animationFillMode: "backwards" }}
+			<GlassmorphicCard
+				padding="none"
+				animationDelay={100}
+				className="overflow-hidden"
 			>
 				{/* Header */}
 				<div className="flex items-center gap-3 px-6 py-4 border-b border-border/50">
@@ -288,89 +288,62 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 
 					{/* Filter Dropdowns Row */}
 					<div className="flex flex-wrap items-end gap-4">
-						<div className="flex min-w-[160px] flex-col gap-1.5">
-							<label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-								Instance
-							</label>
-							<select
-								value={instanceFilter}
-								onChange={(event) => onInstanceFilterChange(event.target.value)}
-								disabled={instanceOptions.length === 0}
-								className="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 [&>option]:bg-background [&>option]:text-foreground disabled:opacity-50"
-							>
-								<option value="all">All instances</option>
-								{instanceOptions
+						<FilterSelect
+							label="Instance"
+							value={instanceFilter}
+							onChange={onInstanceFilterChange}
+							options={[
+								{ value: "all", label: "All instances" },
+								...instanceOptions
 									.filter(
 										(option) => serviceFilter === "all" || option.service === serviceFilter,
 									)
-									.map((option) => (
-										<option key={option.id} value={option.id}>
-											{option.label}
-										</option>
-									))}
-							</select>
-						</div>
+									.map((option) => ({
+										value: option.id,
+										label: option.label,
+									})),
+							]}
+							className="min-w-[160px]"
+						/>
 
-						<div className="flex min-w-[140px] flex-col gap-1.5">
-							<label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-								Status
-							</label>
-							<select
-								value={statusFilter}
-								onChange={(event) =>
-									onStatusFilterChange(
-										event.target.value as (typeof STATUS_FILTERS)[number]["value"],
-									)
-								}
-								className="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 [&>option]:bg-background [&>option]:text-foreground"
-							>
-								{STATUS_FILTERS.map((option) => (
-									<option key={option.value} value={option.value}>
-										{option.label}
-									</option>
-								))}
-							</select>
-						</div>
+						<FilterSelect
+							label="Status"
+							value={statusFilter}
+							onChange={(value) =>
+								onStatusFilterChange(value as (typeof STATUS_FILTERS)[number]["value"])
+							}
+							options={STATUS_FILTERS.map((option) => ({
+								value: option.value,
+								label: option.label,
+							}))}
+							className="min-w-[140px]"
+						/>
 
-						<div className="flex min-w-[130px] flex-col gap-1.5">
-							<label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-								Files
-							</label>
-							<select
-								value={fileFilter}
-								onChange={(event) =>
-									onFileFilterChange(
-										event.target.value as (typeof FILE_FILTERS)[number]["value"],
-									)
-								}
-								className="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 [&>option]:bg-background [&>option]:text-foreground"
-							>
-								{FILE_FILTERS.map((option) => (
-									<option key={option.value} value={option.value}>
-										{option.label}
-									</option>
-								))}
-							</select>
-						</div>
+						<FilterSelect
+							label="Files"
+							value={fileFilter}
+							onChange={(value) =>
+								onFileFilterChange(value as (typeof FILE_FILTERS)[number]["value"])
+							}
+							options={FILE_FILTERS.map((option) => ({
+								value: option.value,
+								label: option.label,
+							}))}
+							className="min-w-[130px]"
+						/>
 
 						{/* Sort Controls */}
 						<div className="flex items-end gap-2 ml-auto">
-							<div className="flex min-w-[120px] flex-col gap-1.5">
-								<label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-									Sort By
-								</label>
-								<select
-									value={sortBy}
-									onChange={(event) => onSortByChange(event.target.value as SortByValue)}
-									className="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 [&>option]:bg-background [&>option]:text-foreground"
-								>
-									{SORT_OPTIONS.map((option) => (
-										<option key={option.value} value={option.value}>
-											{option.label}
-										</option>
-									))}
-								</select>
-							</div>
+							<FilterSelect
+								label="Sort By"
+								value={sortBy}
+								onChange={(value) => onSortByChange(value as SortByValue)}
+								options={SORT_OPTIONS.map((option) => ({
+									value: option.value,
+									label: option.label,
+								}))}
+								className="min-w-[120px]"
+							/>
 							<Button
 								type="button"
 								variant="ghost"
@@ -388,7 +361,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 						</div>
 					</div>
 				</div>
-			</div>
+			</GlassmorphicCard>
 		</header>
 	);
 };

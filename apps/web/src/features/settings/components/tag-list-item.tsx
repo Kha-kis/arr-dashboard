@@ -2,8 +2,7 @@
 
 import { Tag, X, Loader2 } from "lucide-react";
 import { Button } from "../../../components/ui/button";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 /**
  * Props for the TagListItem component
@@ -36,8 +35,7 @@ export const TagListItem = ({
 	isPending,
 	animationDelay = 0,
 }: TagListItemProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
 		<li
@@ -64,6 +62,7 @@ export const TagListItem = ({
 				size="sm"
 				onClick={() => onRemove(id)}
 				disabled={isPending}
+				aria-label={`Remove ${name}`}
 				className="gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
 			>
 				{isPending ? (

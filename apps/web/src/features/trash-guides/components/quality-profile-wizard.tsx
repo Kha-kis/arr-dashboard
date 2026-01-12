@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { createPortal } from "react-dom";
 import { Button } from "../../../components/ui";
 import { X } from "lucide-react";
 import type { QualityProfileSummary } from "../../../lib/api-client/trash-guides";
@@ -163,6 +164,12 @@ export const QualityProfileWizard = ({
 		templateDescription: "",
 		cfResolutions: undefined,
 	});
+	const [mounted, setMounted] = useState(false);
+
+	// Ensure we're mounted before using portal (SSR safety)
+	useEffect(() => {
+		setMounted(true);
+	}, []);
 
 	const isEditMode = !!editingTemplate;
 
@@ -349,26 +356,29 @@ export const QualityProfileWizard = ({
 		}
 	};
 
-	if (!open) return null;
+	if (!open || !mounted) return null;
 
-	return (
+	// Use portal to render at document.body level
+	// This escapes any ancestor elements with backdrop-filter that would
+	// create a new containing block and break position:fixed
+	return createPortal(
 		<div
-			className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+			className="fixed inset-0 z-modal flex items-center justify-center bg-black/70 backdrop-blur-sm"
 			onKeyDown={handleKeyDown}
 			role="dialog"
 			aria-modal="true"
 			aria-labelledby="wizard-title"
 		>
-			<div className="relative w-full max-w-6xl max-h-[90vh] overflow-hidden rounded-xl border border-border/50 bg-bg-subtle shadow-xl">
+			<div className="relative w-full max-w-6xl max-h-[90vh] overflow-hidden rounded-xl border border-border/50 bg-card shadow-2xl">
 				{/* Header with Progress Indicator */}
-				<div className="sticky top-0 z-10 border-b border-border/50 bg-bg-subtle/95 backdrop-blur">
+				<div className="sticky top-0 z-10 border-b border-border/50 bg-card">
 					<div className="p-6">
 						<div className="flex items-center justify-between mb-4">
 							<div>
-								<h2 id="wizard-title" className="text-xl font-semibold text-fg">
+								<h2 id="wizard-title" className="text-xl font-semibold text-foreground">
 									{getStepTitles(isEditMode, isClonedProfileSelected)[wizardState.currentStep]}
 								</h2>
-								<p className="mt-1 text-sm text-fg-muted">
+								<p className="mt-1 text-sm text-muted-foreground">
 									{getStepDescriptions(isEditMode, isClonedProfileSelected)[wizardState.currentStep]}
 								</p>
 							</div>
@@ -409,7 +419,7 @@ export const QualityProfileWizard = ({
 														? "bg-primary text-primary-fg ring-2 ring-primary/30"
 														: isCompleted
 															? "bg-primary/20 text-primary"
-															: "bg-bg-hover text-fg-muted"
+															: "bg-muted text-muted-foreground"
 												} ${canNavigate ? "group-hover:ring-2 group-hover:ring-primary/50" : ""}`}
 											>
 												{index + 1}
@@ -417,7 +427,7 @@ export const QualityProfileWizard = ({
 											<div className="hidden sm:block flex-1 min-w-0">
 												<div
 													className={`text-xs font-medium truncate transition text-left ${
-														isAccessible ? "text-fg" : "text-fg-muted"
+														isAccessible ? "text-foreground" : "text-muted-foreground"
 													} ${canNavigate ? "group-hover:text-primary" : ""}`}
 												>
 													{getStepTitles(isEditMode, isClonedProfileSelected)[step]}
@@ -427,7 +437,7 @@ export const QualityProfileWizard = ({
 										{index < stepOrder.length - 1 && (
 											<div
 												className={`h-0.5 w-full mx-2 transition ${
-													isCompleted ? "bg-primary" : "bg-bg-hover"
+													isCompleted ? "bg-primary" : "bg-muted"
 												}`}
 											/>
 										)}
@@ -503,6 +513,7 @@ export const QualityProfileWizard = ({
 					)}
 				</div>
 			</div>
-		</div>
+		</div>,
+		document.body
 	);
 };

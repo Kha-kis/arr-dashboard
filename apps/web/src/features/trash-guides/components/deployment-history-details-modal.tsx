@@ -3,8 +3,8 @@
 import { useDeploymentHistoryDetail } from "../../../hooks/api/useDeploymentHistory";
 import { format } from "date-fns";
 import { History, AlertCircle, CheckCircle2, XCircle } from "lucide-react";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import {
 	LegacyDialog,
 	LegacyDialogHeader,
@@ -13,7 +13,8 @@ import {
 	LegacyDialogContent,
 	LegacyDialogFooter,
 } from "../../../components/ui";
-import { Button, Skeleton } from "../../../components/ui";
+import { Button } from "../../../components/ui";
+import { PremiumSkeleton } from "../../../components/layout/premium-components";
 
 interface DeploymentHistoryDetailsModalProps {
 	historyId: string;
@@ -26,8 +27,7 @@ export function DeploymentHistoryDetailsModal({
 	onClose,
 	onUndeploy,
 }: DeploymentHistoryDetailsModalProps) {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const { data, isLoading, error } = useDeploymentHistoryDetail(historyId);
 
 	return (
@@ -46,9 +46,9 @@ export function DeploymentHistoryDetailsModal({
 			<LegacyDialogContent className="space-y-6">
 				{isLoading && (
 					<div className="space-y-4">
-						<Skeleton className="h-24 w-full" />
-						<Skeleton className="h-32 w-full" />
-						<Skeleton className="h-48 w-full" />
+						<PremiumSkeleton variant="card" className="h-24 w-full" />
+						<PremiumSkeleton variant="card" className="h-32 w-full" style={{ animationDelay: "50ms" }} />
+						<PremiumSkeleton variant="card" className="h-48 w-full" style={{ animationDelay: "100ms" }} />
 					</div>
 				)}
 

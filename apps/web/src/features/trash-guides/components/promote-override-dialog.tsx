@@ -13,8 +13,8 @@
 import { useState, useEffect } from "react";
 import { Button } from "../../../components/ui/button";
 import { AlertTriangle, ArrowUpCircle, X, Loader2, Layers } from "lucide-react";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { toast } from "sonner";
 import { usePromoteOverride } from "../../../hooks/api/useQualityProfileOverrides";
 
@@ -43,8 +43,7 @@ export function PromoteOverrideDialog({
 	templateName,
 	onSuccess,
 }: PromoteOverrideDialogProps) {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const [isPromoting, setIsPromoting] = useState(false);
 	const promoteOverride = usePromoteOverride();
 

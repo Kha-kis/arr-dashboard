@@ -3,8 +3,7 @@
 import type { SearchIndexersResponse } from "@arr/shared";
 import { Button } from "../../../components/ui";
 import { useIncognitoMode, getLinuxIndexer, getLinuxInstanceName } from "../../../lib/incognito";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 interface IndexerSelectorProps {
 	/**
@@ -38,8 +37,7 @@ export const IndexerSelector = ({
 	onToggleAll,
 }: IndexerSelectorProps) => {
 	const [incognitoMode] = useIncognitoMode();
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
 		<div className="space-y-4">
@@ -51,16 +49,16 @@ export const IndexerSelector = ({
 				return (
 					<div
 						key={instance.instanceId}
-						className="rounded-xl border border-border bg-bg-subtle p-4"
+						className="rounded-xl border border-border bg-card p-4"
 					>
 						<div className="mb-3 flex flex-wrap items-center justify-between gap-2">
 							<div>
-								<p className="text-sm font-semibold text-fg">
+								<p className="text-sm font-semibold text-foreground">
 									{incognitoMode
 										? getLinuxInstanceName(instance.instanceName)
 										: instance.instanceName}
 								</p>
-								<p className="text-xs text-fg-muted">
+								<p className="text-xs text-muted-foreground">
 									{ids.length} of {instance.data.length} indexers selected
 								</p>
 							</div>
@@ -82,8 +80,8 @@ export const IndexerSelector = ({
 										onClick={() => onToggleIndexer(instance.instanceId, indexer.id)}
 										className={`rounded-full border px-3 py-1 text-xs transition ${
 											isSelected
-												? "text-fg"
-												: "border-border bg-transparent text-fg-muted hover:border-primary/40"
+												? "text-foreground"
+												: "border-border bg-transparent text-muted-foreground hover:border-primary/40"
 										}`}
 										style={
 											isSelected
@@ -99,7 +97,7 @@ export const IndexerSelector = ({
 								);
 							})}
 							{instance.data.length === 0 && (
-								<span className="text-xs text-fg-muted">
+								<span className="text-xs text-muted-foreground">
 									No indexers configured on this instance.
 								</span>
 							)}

@@ -14,8 +14,8 @@ import { SearchForm } from "./search-form";
 import { SearchResults } from "./search-results";
 import { TMDBCarousel } from "./tmdb-carousel";
 import { GlassmorphicCard } from "../../../components/layout";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 /**
  * Premium Discover Client
@@ -27,8 +27,7 @@ import { useColorTheme } from "../../../providers/color-theme-provider";
  * - Staggered animations
  */
 export const DiscoverClient = () => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const { data: currentUser } = useCurrentUser();
 	const { data: services = [] } = useServicesQuery();
@@ -76,7 +75,7 @@ export const DiscoverClient = () => {
 	} = useDiscoverActions(searchType, relevantInstances);
 
 	return (
-		<div className="space-y-10">
+		<div className="space-y-10 overflow-x-hidden">
 			{/* Premium Header */}
 			<header className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
 				<div className="space-y-3">

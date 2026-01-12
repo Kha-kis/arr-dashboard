@@ -4,8 +4,7 @@ import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
-import { useColorTheme } from "../../providers/color-theme-provider"
-import { THEME_GRADIENTS } from "../../lib/theme-gradients"
+import { useThemeGradient } from "../../hooks/useThemeGradient"
 
 /**
  * Premium Skeleton Variants
@@ -61,8 +60,7 @@ function Skeleton({
   themed,
   ...props
 }: SkeletonProps) {
-  const { colorTheme } = useColorTheme()
-  const themeGradient = THEME_GRADIENTS[colorTheme]
+  const { gradient: themeGradient } = useThemeGradient()
 
   // Shimmer gradient colors
   const shimmerGradient = themed

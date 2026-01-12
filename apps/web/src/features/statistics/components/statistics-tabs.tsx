@@ -39,8 +39,8 @@ export const StatisticsTabs = ({
 						onClick={() => onTabChange(tab.id)}
 						className={`border-b-2 px-1 pb-3 text-sm font-medium transition flex items-center gap-2 ${
 							activeTab === tab.id
-								? "border-primary text-fg"
-								: "border-transparent text-fg-muted hover:text-fg"
+								? "border-primary text-foreground"
+								: "border-transparent text-muted-foreground hover:text-foreground"
 						}`}
 					>
 						{tab.label}

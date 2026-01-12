@@ -22,8 +22,8 @@ import {
 	Loader2,
 	History,
 } from "lucide-react";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 interface DeploymentHistoryTableProps {
 	templateId?: string;
@@ -102,8 +102,7 @@ export function DeploymentHistoryTable({
 	instanceId,
 	limit = 20,
 }: DeploymentHistoryTableProps) {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const [offset, setOffset] = useState(0);
 	const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);

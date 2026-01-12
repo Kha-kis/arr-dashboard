@@ -36,8 +36,8 @@ import {
 } from "lucide-react";
 import { useBulkDeploymentPreviews, useExecuteBulkDeployment } from "../../../hooks/api/useDeploymentPreview";
 import { cn } from "../../../lib/utils";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { InstanceQualityOverrideModal } from "./instance-quality-override-modal";
 import type { CustomQualityConfig, TemplateInstanceOverride } from "@arr/shared";
 
@@ -94,8 +94,7 @@ const SyncStrategySelector = ({
 	onChange: (strategy: SyncStrategy) => void;
 	disabled?: boolean;
 }) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const [isOpen, setIsOpen] = useState(false);
 	const current = syncStrategyOptions.find((opt) => opt.value === value) ?? syncStrategyOptions[0]!;
 	const Icon = current.icon;
@@ -121,10 +120,10 @@ const SyncStrategySelector = ({
 			{isOpen && (
 				<>
 					{/* Backdrop */}
-					<div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
+					<div className="fixed inset-0 z-modal-backdrop" onClick={() => setIsOpen(false)} />
 					{/* Dropdown */}
 					<div
-						className="absolute right-0 top-full mt-1 z-50 rounded-xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-xl min-w-[130px] overflow-hidden"
+						className="absolute right-0 top-full mt-1 z-modal rounded-xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-xl min-w-[130px] overflow-hidden"
 						style={{
 							boxShadow: `0 10px 40px -10px rgba(0, 0, 0, 0.3), 0 0 0 1px ${themeGradient.from}10`,
 						}}
@@ -170,8 +169,7 @@ export const BulkDeploymentModal = ({
 	instanceOverrides,
 	onDeploySuccess,
 }: BulkDeploymentModalProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	// Track selection state and sync strategies per instance
 	const [selectedInstances, setSelectedInstances] = useState<Set<string>>(new Set());
 	const [syncStrategies, setSyncStrategies] = useState<Record<string, SyncStrategy>>({});
@@ -431,7 +429,7 @@ export const BulkDeploymentModal = ({
 											"flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium shrink-0 transition-colors",
 											instanceOverrides?.[inst.instanceId]?.qualityConfigOverride
 												? "bg-purple-500/10 text-purple-600 dark:text-purple-400 hover:bg-purple-500/20"
-												: "bg-bg-subtle border border-dashed border-border text-fg-muted hover:bg-bg-hover hover:border-primary/30"
+												: "bg-card border border-dashed border-border text-muted-foreground hover:bg-muted hover:border-primary/30"
 										)}
 										title={instanceOverrides?.[inst.instanceId]?.qualityConfigOverride
 											? "Click to edit custom quality configuration"

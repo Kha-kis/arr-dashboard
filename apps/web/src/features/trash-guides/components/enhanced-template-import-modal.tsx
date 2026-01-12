@@ -29,8 +29,8 @@ import type {
 	TemplateCompatibility,
 } from "@arr/shared";
 import { useEnhancedImportTemplate } from "../../../hooks/api/useTemplates";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 interface EnhancedTemplateImportModalProps {
 	onImportComplete?: () => void;
@@ -41,8 +41,7 @@ export function EnhancedTemplateImportModal({
 	onImportComplete,
 	onClose,
 }: EnhancedTemplateImportModalProps) {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const [jsonData, setJsonData] = useState("");
 	const [validation, setValidation] = useState<TemplateImportValidation | null>(
@@ -149,6 +148,7 @@ export function EnhancedTemplateImportModal({
 					<button
 						type="button"
 						onClick={onClose}
+						aria-label="Close import modal"
 						className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
 					>
 						<X className="h-4 w-4" />

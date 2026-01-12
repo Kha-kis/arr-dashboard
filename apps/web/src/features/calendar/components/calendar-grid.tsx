@@ -1,8 +1,7 @@
 "use client";
 
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { DeduplicatedCalendarItem } from "../hooks/use-calendar-data";
 
 interface CalendarGridProps {
@@ -45,8 +44,7 @@ export const CalendarGrid = ({
 	eventsByDate,
 	className,
 }: CalendarGridProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
 		<div className={cn("grid grid-cols-7 gap-2", className)}>
@@ -67,9 +65,9 @@ export const CalendarGrid = ({
 						isSelected
 							? ""
 							: hasEvents
-								? "border-border bg-bg-subtle"
-								: "border-border bg-bg hover:border-border",
-						inCurrentMonth ? "text-fg" : "text-fg-muted",
+								? "border-border bg-card"
+								: "border-border bg-background hover:border-border",
+						inCurrentMonth ? "text-foreground" : "text-muted-foreground",
 					)}
 					style={
 						isSelected
@@ -96,7 +94,7 @@ export const CalendarGrid = ({
 					<div className="flex shrink-0 items-center justify-between text-xs font-semibold uppercase tracking-wide">
 						<span>{formatDayNumber(date)}</span>
 						{hasEvents && (
-							<span className="rounded-full bg-bg-subtle px-2 py-0.5 text-[10px] text-fg-muted">
+							<span className="rounded-full bg-card px-2 py-0.5 text-[10px] text-muted-foreground">
 								{events.length}
 							</span>
 						)}
@@ -105,15 +103,15 @@ export const CalendarGrid = ({
 						{events.map((event) => (
 							<div
 								key={`${key}:${String(event.id)}`}
-								className="truncate rounded-md bg-bg-subtle px-2 py-1 text-xs text-fg-muted"
+								className="truncate rounded-md bg-card px-2 py-1 text-xs text-muted-foreground"
 							>
-								<span className="font-medium text-fg">
+								<span className="font-medium text-foreground">
 									{event.service === "sonarr"
 										? (event.seriesTitle ?? event.title)
 										: (event.movieTitle ?? event.title)}
 								</span>
 								{event.type === "episode" && event.episodeTitle && (
-									<span className="ml-1 text-fg-muted">{event.episodeTitle}</span>
+									<span className="ml-1 text-muted-foreground">{event.episodeTitle}</span>
 								)}
 							</div>
 						))}

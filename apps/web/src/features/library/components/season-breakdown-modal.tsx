@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useFocusTrap } from "../../../hooks/useFocusTrap";
 import type { LibraryItem } from "@arr/shared";
 import {
 	ChevronDown,
@@ -17,8 +18,8 @@ import {
 import { Button } from "../../../components/ui";
 import { cn } from "../../../lib/utils";
 import { SeasonEpisodeList } from "./season-episode-list";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 /**
  * Props for the SeasonBreakdownModal component
@@ -36,8 +37,8 @@ interface SeasonBreakdownModalProps {
 	pendingActionKey: string | null;
 }
 
-// Sonarr-specific color
-const SONARR_COLOR = "#06b6d4";
+// Use centralized Sonarr color
+const SONARR_COLOR = SERVICE_GRADIENTS.sonarr.from;
 
 /**
  * Premium Season Badge Component
@@ -87,9 +88,9 @@ export const SeasonBreakdownModal = ({
 	onSearchSeason,
 	pendingActionKey,
 }: SeasonBreakdownModalProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const [expandedSeasons, setExpandedSeasons] = useState<Set<number>>(new Set());
+	const focusTrapRef = useFocusTrap<HTMLDivElement>(true, onClose);
 
 	if (item.type !== "series" || !item.seasons?.length) {
 		return null;
@@ -123,12 +124,16 @@ export const SeasonBreakdownModal = ({
 		<div
 			className="fixed inset-0 z-modal-backdrop flex items-center justify-center p-4 animate-in fade-in duration-200"
 			onClick={onClose}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="season-breakdown-title"
 		>
 			{/* Backdrop */}
 			<div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
 
 			{/* Modal */}
 			<div
+				ref={focusTrapRef}
 				className="relative w-full max-w-3xl max-h-[90vh] overflow-hidden rounded-2xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
 				style={{
 					boxShadow: `0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px ${SONARR_COLOR}15`,
@@ -139,6 +144,7 @@ export const SeasonBreakdownModal = ({
 				<button
 					type="button"
 					onClick={onClose}
+					aria-label="Close modal"
 					className="absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-lg bg-black/50 text-white/70 transition-colors hover:bg-black/70 hover:text-white"
 				>
 					<X className="h-4 w-4" />
@@ -162,7 +168,7 @@ export const SeasonBreakdownModal = ({
 							<Tv className="h-6 w-6" style={{ color: SONARR_COLOR }} />
 						</div>
 						<div className="flex-1 min-w-0">
-							<h2 className="text-xl font-bold text-foreground">{item.title}</h2>
+							<h2 id="season-breakdown-title" className="text-xl font-bold text-foreground">{item.title}</h2>
 							<div className="flex flex-wrap items-center gap-3 mt-1 text-sm text-muted-foreground">
 								<span>{item.instanceName}</span>
 								<span>•</span>
@@ -244,6 +250,7 @@ export const SeasonBreakdownModal = ({
 									<div className="flex flex-wrap items-center justify-between gap-3">
 										<button
 											onClick={() => toggleSeasonExpanded(season.seasonNumber)}
+											aria-expanded={isExpanded}
 											className="flex items-center gap-2 text-left hover:text-foreground transition-colors group"
 										>
 											<div

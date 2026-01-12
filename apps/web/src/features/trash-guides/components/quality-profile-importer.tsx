@@ -96,7 +96,7 @@ export function QualityProfileImporter({
 	return (
 		<div className="space-y-4">
 			<div className="flex items-center justify-between">
-				<h3 className="text-lg font-semibold text-fg">
+				<h3 className="text-lg font-semibold text-foreground">
 					Import Quality Profile
 				</h3>
 				{onClose && (
@@ -117,7 +117,7 @@ export function QualityProfileImporter({
 
 			{/* Step 1: Select Instance */}
 			<div className="space-y-2">
-				<label className="block text-sm font-medium text-fg">
+				<label className="block text-sm font-medium text-foreground">
 					Step 1: Select Instance
 				</label>
 				<NativeSelect
@@ -138,11 +138,11 @@ export function QualityProfileImporter({
 			{/* Step 2: Select Profile */}
 			{selectedInstanceId && (
 				<div className="space-y-2">
-					<label className="block text-sm font-medium text-fg">
+					<label className="block text-sm font-medium text-foreground">
 						Step 2: Select Quality Profile
 					</label>
 					{loadingProfiles ? (
-						<div className="text-sm text-fg-muted">Loading profiles...</div>
+						<div className="text-sm text-muted-foreground">Loading profiles...</div>
 					) : profiles && profiles.length > 0 ? (
 						<div className="space-y-2">
 							{profiles.map((profile) => (
@@ -152,13 +152,13 @@ export function QualityProfileImporter({
 									className={`w-full rounded border p-3 text-left transition ${
 										selectedProfileId === profile.id
 											? "border-primary bg-primary/10"
-											: "border-border bg-bg-hover hover:bg-bg-subtle"
+											: "border-border bg-muted hover:bg-card"
 									}`}
 								>
 									<div className="flex items-center justify-between">
 										<div className="flex-1">
-											<div className="font-medium text-fg">{profile.name}</div>
-											<div className="text-xs text-fg-muted mt-1">
+											<div className="font-medium text-foreground">{profile.name}</div>
+											<div className="text-xs text-muted-foreground mt-1">
 												Cutoff: {profile.cutoffQuality?.name || "Unknown"} •
 												Upgrade: {profile.upgradeAllowed ? "Yes" : "No"} • Min
 												Score: {profile.minFormatScore} •{" "}
@@ -211,47 +211,47 @@ export function QualityProfileImporter({
 
 			{/* Import Success */}
 			{importedProfile && (
-				<div className="space-y-4 rounded border border-border/30 p-4 bg-bg-subtle/40">
+				<div className="space-y-4 rounded border border-border/30 p-4 bg-card/40">
 					<div className="flex items-center gap-2">
 						<CheckCircle className="h-5 w-5 text-success" />
-						<span className="font-medium text-fg">Profile Imported Successfully</span>
+						<span className="font-medium text-foreground">Profile Imported Successfully</span>
 					</div>
 
 					<div className="space-y-2 text-sm">
 						<div className="grid grid-cols-2 gap-2">
 							<div>
-								<span className="text-fg-muted">Profile Name:</span>
-								<div className="font-medium text-fg">
+								<span className="text-muted-foreground">Profile Name:</span>
+								<div className="font-medium text-foreground">
 									{importedProfile.sourceProfileName}
 								</div>
 							</div>
 							<div>
-								<span className="text-fg-muted">Source Instance:</span>
-								<div className="font-medium text-fg">
+								<span className="text-muted-foreground">Source Instance:</span>
+								<div className="font-medium text-foreground">
 									{selectedInstance?.label}
 								</div>
 							</div>
 							<div>
-								<span className="text-fg-muted">Upgrade Allowed:</span>
-								<div className="font-medium text-fg">
+								<span className="text-muted-foreground">Upgrade Allowed:</span>
+								<div className="font-medium text-foreground">
 									{importedProfile.upgradeAllowed ? "Yes" : "No"}
 								</div>
 							</div>
 							<div>
-								<span className="text-fg-muted">Cutoff:</span>
-								<div className="font-medium text-fg">
+								<span className="text-muted-foreground">Cutoff:</span>
+								<div className="font-medium text-foreground">
 									{importedProfile.cutoffQuality?.name || "Unknown"}
 								</div>
 							</div>
 							<div>
-								<span className="text-fg-muted">Quality Items:</span>
-								<div className="font-medium text-fg">
+								<span className="text-muted-foreground">Quality Items:</span>
+								<div className="font-medium text-foreground">
 									{importedProfile.items.length} items
 								</div>
 							</div>
 							<div>
-								<span className="text-fg-muted">Min Format Score:</span>
-								<div className="font-medium text-fg">
+								<span className="text-muted-foreground">Min Format Score:</span>
+								<div className="font-medium text-foreground">
 									{importedProfile.minFormatScore}
 								</div>
 							</div>

@@ -20,8 +20,9 @@ import {
 	XCircle,
 	Search,
 } from "lucide-react";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { PremiumSkeleton } from "../../../components/layout/premium-components";
 
 /**
  * Premium Indexers Client
@@ -33,8 +34,7 @@ import { useColorTheme } from "../../../providers/color-theme-provider";
  * - Premium pagination styling
  */
 export const IndexersClient = () => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const { data, isLoading, error, refetch, isFetching } = useSearchIndexersQuery();
 	const testMutation = useTestIndexerMutation();
@@ -134,17 +134,18 @@ export const IndexersClient = () => {
 			<section className="space-y-8 animate-in fade-in duration-300">
 				{/* Header Skeleton */}
 				<div className="space-y-4">
-					<div className="h-4 w-32 rounded-lg bg-muted/30 animate-pulse" />
-					<div className="h-10 w-48 rounded-lg bg-muted/30 animate-pulse" />
-					<div className="h-4 w-96 rounded-lg bg-muted/20 animate-pulse" />
+					<PremiumSkeleton variant="line" className="h-4 w-32" />
+					<PremiumSkeleton variant="line" className="h-10 w-48" style={{ animationDelay: "50ms" }} />
+					<PremiumSkeleton variant="line" className="h-4 w-96" style={{ animationDelay: "100ms" }} />
 				</div>
 
 				{/* Stats Grid Skeleton */}
 				<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 					{Array.from({ length: 4 }).map((_, i) => (
-						<div
+						<PremiumSkeleton
 							key={i}
-							className="h-24 rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm animate-pulse"
+							variant="card"
+							className="h-24"
 							style={{ animationDelay: `${i * 100}ms` }}
 						/>
 					))}

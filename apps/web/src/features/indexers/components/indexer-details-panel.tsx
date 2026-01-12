@@ -15,8 +15,9 @@ import {
 	Save,
 	Info,
 } from "lucide-react";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { PremiumSkeleton } from "../../../components/layout/premium-components";
 
 /**
  * Premium Indexer Details Panel
@@ -42,8 +43,7 @@ export const IndexerDetailsPanel = ({
 		payload: ProwlarrIndexerDetails,
 	) => Promise<ProwlarrIndexerDetails>;
 }) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const { data, isLoading, error, refetch, isFetching } = useIndexerDetailsQuery(
 		expanded ? instanceId : null,
@@ -147,12 +147,29 @@ export const IndexerDetailsPanel = ({
 		>
 			{/* Loading State */}
 			{isLoadingState ? (
-				<div className="flex items-center justify-center py-8">
-					<div
-						className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
-						style={{ borderColor: `${themeGradient.from}40`, borderTopColor: "transparent" }}
-					/>
-					<span className="ml-3 text-sm text-muted-foreground">Loading indexer settings...</span>
+				<div className="space-y-4 py-4">
+					{/* Header skeleton */}
+					<div className="flex items-start justify-between">
+						<div className="space-y-3 flex-1">
+							<div className="flex items-center gap-3">
+								<PremiumSkeleton variant="line" className="h-5 w-32" />
+								<PremiumSkeleton variant="line" className="h-5 w-24" style={{ animationDelay: "50ms" }} />
+							</div>
+							<PremiumSkeleton variant="line" className="h-4 w-48" style={{ animationDelay: "100ms" }} />
+						</div>
+						<PremiumSkeleton variant="line" className="h-9 w-24" style={{ animationDelay: "150ms" }} />
+					</div>
+					{/* Details grid skeleton */}
+					<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+						{Array.from({ length: 6 }).map((_, i) => (
+							<PremiumSkeleton
+								key={i}
+								variant="line"
+								className="h-12"
+								style={{ animationDelay: `${(i + 4) * 50}ms` }}
+							/>
+						))}
+					</div>
 				</div>
 			) : detailError ? (
 				/* Error State */

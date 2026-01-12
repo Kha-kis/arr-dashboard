@@ -10,8 +10,9 @@ import {
 	Search,
 	Wifi,
 } from "lucide-react";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS, PROTOCOL_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { GlassmorphicCard } from "../../../components/layout";
 
 /**
  * Premium Stat Card Component
@@ -29,17 +30,14 @@ const StatCard = ({
 	color?: string;
 	index: number;
 }) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const displayColor = color || themeGradient.from;
 
 	return (
-		<article
-			className="group rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-5 transition-all duration-300 hover:bg-card/50 hover:shadow-lg hover:shadow-black/5 animate-in fade-in slide-in-from-bottom-2"
-			style={{
-				animationDelay: `${index * 50}ms`,
-				animationFillMode: "backwards",
-			}}
+		<GlassmorphicCard
+			padding="sm"
+			animationDelay={index * 50}
+			className="group transition-all duration-300 hover:bg-card/50 hover:shadow-lg hover:shadow-black/5"
 		>
 			<div className="flex items-center justify-between">
 				<div className="flex items-center gap-3">
@@ -61,7 +59,7 @@ const StatCard = ({
 					{numberFormatter.format(value)}
 				</p>
 			</div>
-		</article>
+		</GlassmorphicCard>
 	);
 };
 
@@ -75,8 +73,7 @@ const StatCard = ({
  * - Two-tier grid layout (4 primary + 2 secondary)
  */
 export const IndexerStatsGrid = ({ stats }: { stats: IndexerStats }) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
 		<div className="space-y-4">
@@ -99,14 +96,14 @@ export const IndexerStatsGrid = ({ stats }: { stats: IndexerStats }) => {
 					icon={Download}
 					label="Torrent"
 					value={stats.torrent}
-					color="#f97316"
+					color={PROTOCOL_COLORS.torrent}
 					index={2}
 				/>
 				<StatCard
 					icon={Wifi}
 					label="Usenet"
 					value={stats.usenet}
-					color="#06b6d4"
+					color={PROTOCOL_COLORS.usenet}
 					index={3}
 				/>
 			</div>

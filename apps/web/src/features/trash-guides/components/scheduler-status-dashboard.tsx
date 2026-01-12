@@ -15,8 +15,8 @@ import {
 	Timer,
 } from "lucide-react";
 import { useSchedulerStatus, useTriggerUpdateCheck } from "../../../hooks/api/useTemplateUpdates";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 /**
  * Safely formats a date value as relative time (e.g., "5 minutes ago").
@@ -48,8 +48,7 @@ const StatCard = ({
 	color?: string;
 	subtext?: string;
 }) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const displayColor = color || themeGradient.from;
 
 	return (
@@ -85,8 +84,7 @@ const StatCard = ({
  * - Gradient accents
  */
 export const SchedulerStatusDashboard = () => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const { data, isLoading, error } = useSchedulerStatus({
 		refetchInterval: 60000, // Refresh every minute
 	});

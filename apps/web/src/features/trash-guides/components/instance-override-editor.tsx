@@ -9,7 +9,8 @@ import {
 	LegacyDialogContent,
 	LegacyDialogFooter,
 } from "../../../components/ui";
-import { Skeleton, Button } from "../../../components/ui";
+import { Button } from "../../../components/ui";
+import { PremiumSkeleton } from "../../../components/layout/premium-components";
 import {
 	AlertCircle,
 	Settings,
@@ -233,8 +234,8 @@ export const InstanceOverrideEditor = ({
 			<LegacyDialogContent className="space-y-4">
 				{isLoading && (
 					<div className="space-y-4">
-						<Skeleton className="h-12 w-full" />
-						<Skeleton className="h-64 w-full" />
+						<PremiumSkeleton variant="card" className="h-12 w-full" />
+						<PremiumSkeleton variant="card" className="h-64 w-full" style={{ animationDelay: "50ms" }} />
 					</div>
 				)}
 
@@ -243,10 +244,10 @@ export const InstanceOverrideEditor = ({
 						<div className="flex items-start gap-3">
 							<AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5 shrink-0" />
 							<div>
-								<p className="text-sm font-medium text-fg">
+								<p className="text-sm font-medium text-foreground">
 									Failed to load instance overrides
 								</p>
-								<p className="text-sm text-fg-muted mt-1">
+								<p className="text-sm text-muted-foreground mt-1">
 									{error instanceof Error ? error.message : "Please try again"}
 								</p>
 							</div>
@@ -257,13 +258,13 @@ export const InstanceOverrideEditor = ({
 				{data && editedOverrides.length > 0 && (
 					<>
 						{/* Summary Stats */}
-						<div className="rounded-lg border border-border bg-bg-subtle p-4">
+						<div className="rounded-lg border border-border bg-card p-4">
 							<div className="flex items-center justify-between">
 								<div>
-									<p className="text-sm font-medium text-fg">
+									<p className="text-sm font-medium text-foreground">
 										Active Overrides: {totalOverrides} / {editedOverrides.length}
 									</p>
-									<p className="text-xs text-fg-muted mt-1">
+									<p className="text-xs text-muted-foreground mt-1">
 										Customize scores and enable/disable Custom Formats for this instance only
 									</p>
 								</div>
@@ -283,16 +284,16 @@ export const InstanceOverrideEditor = ({
 
 						{/* Custom Format Override Table */}
 						<div className="space-y-2">
-							<h3 className="text-sm font-medium text-fg">Custom Format Overrides</h3>
+							<h3 className="text-sm font-medium text-foreground">Custom Format Overrides</h3>
 							<div className="max-h-96 overflow-y-auto border border-border rounded-lg">
 								<table className="w-full text-sm">
-									<thead className="bg-bg-subtle sticky top-0">
+									<thead className="bg-card sticky top-0">
 										<tr>
-											<th className="text-left p-3 font-medium text-fg">Enabled</th>
-											<th className="text-left p-3 font-medium text-fg">Custom Format</th>
-											<th className="text-center p-3 font-medium text-fg">Default Score</th>
-											<th className="text-center p-3 font-medium text-fg">Override Score</th>
-											<th className="text-center p-3 font-medium text-fg">Actions</th>
+											<th className="text-left p-3 font-medium text-foreground">Enabled</th>
+											<th className="text-left p-3 font-medium text-foreground">Custom Format</th>
+											<th className="text-center p-3 font-medium text-foreground">Default Score</th>
+											<th className="text-center p-3 font-medium text-foreground">Override Score</th>
+											<th className="text-center p-3 font-medium text-foreground">Actions</th>
 										</tr>
 									</thead>
 									<tbody className="divide-y divide-border">
@@ -318,13 +319,13 @@ export const InstanceOverrideEditor = ({
 													<td className="p-3">
 														<span className={cn(
 															"text-sm",
-															!row.enabled && "text-fg-muted line-through",
+															!row.enabled && "text-muted-foreground line-through",
 														)}>
 															{row.name}
 														</span>
 													</td>
 													<td className="p-3 text-center">
-														<span className="text-sm text-fg-muted">{row.defaultScore}</span>
+														<span className="text-sm text-muted-foreground">{row.defaultScore}</span>
 													</td>
 													<td className="p-3">
 														<input
@@ -333,7 +334,7 @@ export const InstanceOverrideEditor = ({
 															onChange={(e) => handleScoreChange(row.trashId, e.target.value)}
 															placeholder={row.defaultScore.toString()}
 															disabled={!row.enabled}
-															className="w-20 px-2 py-1 text-center rounded border border-border bg-bg text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+															className="w-20 px-2 py-1 text-center rounded border border-border bg-background text-sm disabled:opacity-50 disabled:cursor-not-allowed"
 														/>
 													</td>
 													<td className="p-3 text-center">

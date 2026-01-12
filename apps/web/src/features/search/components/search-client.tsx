@@ -14,7 +14,7 @@ import {
 	AlertDescription,
 	Pagination,
 } from "../../../components/ui";
-import { AmbientGlow, PremiumCard } from "../../../components/layout";
+import { PremiumCard, PremiumSkeleton } from "../../../components/layout";
 import { SearchResultsTable } from "./search-results-table";
 import { IndexerSelector } from "./indexer-selector";
 import { SearchForm } from "./search-form";
@@ -26,16 +26,14 @@ import { useSearchData } from "../hooks/use-search-data";
 import { useSearchPagination } from "../hooks/use-search-pagination";
 import { useSearchActions } from "../hooks/use-search-actions";
 import { useSearchIndexers } from "../hooks/use-search-indexers";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { Search, Settings, Globe } from "lucide-react";
 
 /**
  * Main search client component for manual indexer searches.
  */
 export const SearchClient = () => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	// Search state management
 	const searchState = useSearchState();
@@ -82,33 +80,27 @@ export const SearchClient = () => {
 	// Loading skeleton
 	if (indexersQuery.isLoading) {
 		return (
-			<section className="relative flex flex-col gap-8">
-				<AmbientGlow />
-				<div className="space-y-8 animate-in fade-in duration-500">
+			<div className="space-y-8 animate-in fade-in duration-500">
+				<div className="space-y-4">
+					<PremiumSkeleton variant="line" className="h-8 w-48" />
+					<PremiumSkeleton variant="line" className="h-10 w-64" style={{ animationDelay: "50ms" }} />
+				</div>
+				<div className="rounded-2xl border border-border/30 bg-card/30 p-6">
 					<div className="space-y-4">
-						<div className="h-8 w-48 rounded-lg bg-muted/50 animate-pulse" />
-						<div className="h-10 w-64 rounded-lg bg-muted/30 animate-pulse" />
-					</div>
-					<div className="rounded-2xl border border-border/30 bg-card/30 p-6">
-						<div className="space-y-4">
-							<div className="h-10 w-full rounded-lg bg-muted/30 animate-pulse" />
-							<div className="h-32 w-full rounded-lg bg-muted/20 animate-pulse" />
-						</div>
+						<PremiumSkeleton variant="card" className="h-10 w-full" style={{ animationDelay: "100ms" }} />
+						<PremiumSkeleton variant="card" className="h-32 w-full" style={{ animationDelay: "150ms" }} />
 					</div>
 				</div>
-			</section>
+			</div>
 		);
 	}
 
 	if (indexersQuery.error) {
 		return (
-			<section className="relative flex flex-col gap-8">
-				<AmbientGlow />
-				<Alert variant="danger">
-					<AlertTitle>Unable to load indexers</AlertTitle>
-					<AlertDescription>Please verify your API connection and try again.</AlertDescription>
-				</Alert>
-			</section>
+			<Alert variant="danger">
+				<AlertTitle>Unable to load indexers</AlertTitle>
+				<AlertDescription>Please verify your API connection and try again.</AlertDescription>
+			</Alert>
 		);
 	}
 
@@ -122,10 +114,7 @@ export const SearchClient = () => {
 				: "No results to display.";
 
 	return (
-		<section className="relative flex flex-col gap-8">
-			{/* Ambient background glow */}
-			<AmbientGlow />
-
+		<>
 			{/* Header */}
 			<header
 				className="relative animate-in fade-in slide-in-from-bottom-4 duration-500"
@@ -315,6 +304,6 @@ export const SearchClient = () => {
 					)}
 				</>
 			)}
-		</section>
+		</>
 	);
 };

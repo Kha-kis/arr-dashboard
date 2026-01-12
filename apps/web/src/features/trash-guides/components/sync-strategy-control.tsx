@@ -1,8 +1,7 @@
 "use client";
 
 import { Info } from "lucide-react";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 interface SyncStrategyControlProps {
 	value: "auto" | "manual" | "notify";
@@ -15,8 +14,7 @@ export const SyncStrategyControl = ({
 	onChange,
 	disabled,
 }: SyncStrategyControlProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	// Strategy definitions - notify uses theme colors (applied via inline style)
 	const strategies = [
@@ -52,7 +50,7 @@ export const SyncStrategyControl = ({
 	return (
 		<div className="space-y-3">
 			<div className="flex items-center gap-2">
-				<label className="text-sm font-medium text-fg">
+				<label className="text-sm font-medium text-foreground">
 					TRaSH Guides Sync Strategy
 				</label>
 				<button
@@ -61,11 +59,11 @@ export const SyncStrategyControl = ({
 					aria-label="More info about sync strategy"
 					aria-describedby="sync-strategy-tooltip"
 				>
-					<Info className="h-4 w-4 text-fg-muted cursor-help" />
+					<Info className="h-4 w-4 text-muted-foreground cursor-help" />
 					<div
 						id="sync-strategy-tooltip"
 						role="tooltip"
-						className="invisible group-hover:visible group-focus:visible absolute left-0 top-6 z-10 w-64 rounded-lg border border-border bg-bg p-3 text-xs text-fg-muted shadow-lg"
+						className="invisible group-hover:visible group-focus:visible absolute left-0 top-6 z-10 w-64 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-background p-3 text-xs text-muted-foreground shadow-lg"
 					>
 						<p>
 							Controls how this template handles TRaSH Guides updates from
@@ -96,7 +94,7 @@ export const SyncStrategyControl = ({
 								isSelected && !strategy.useTheme
 									? `${strategy.borderClass} ${strategy.bgClass}`
 									: !isSelected
-									? "border-border bg-bg-subtle hover:border-border-hover hover:bg-bg-hover"
+									? "border-border bg-card hover:border-primary/50 hover:bg-muted"
 									: ""
 							}`}
 							style={useThemeStyle ? {
@@ -109,17 +107,17 @@ export const SyncStrategyControl = ({
 									<div className="flex items-center gap-2">
 										<span
 											className={`text-sm font-medium ${
-												isSelected && !strategy.useTheme ? strategy.colorClass : !isSelected ? "text-fg" : ""
+												isSelected && !strategy.useTheme ? strategy.colorClass : !isSelected ? "text-foreground" : ""
 											}`}
 											style={useThemeStyle ? { color: themeGradient.from } : undefined}
 										>
 											{strategy.label}
 										</span>
 										{isSelected && (
-											<span className="text-xs text-fg-muted">(Current)</span>
+											<span className="text-xs text-muted-foreground">(Current)</span>
 										)}
 									</div>
-									<p className="text-xs text-fg-muted mt-1">
+									<p className="text-xs text-muted-foreground mt-1">
 										{strategy.description}
 									</p>
 								</div>
@@ -138,7 +136,7 @@ export const SyncStrategyControl = ({
 									} : undefined}
 								>
 									{isSelected && (
-										<span className="h-1.5 w-1.5 rounded-full bg-bg" />
+										<span className="h-1.5 w-1.5 rounded-full bg-background" />
 									)}
 								</span>
 							</div>

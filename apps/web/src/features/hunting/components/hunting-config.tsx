@@ -28,8 +28,8 @@ import {
 	GradientButton,
 	PremiumSkeleton,
 } from "../../../components/layout";
-import { THEME_GRADIENTS, SERVICE_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import {
 	useHuntingConfigs,
 	useUpdateHuntConfig,
@@ -62,8 +62,7 @@ import {
  * - Filter controls
  */
 export const HuntingConfig = () => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const { configs, instances, isLoading, error, refetch } = useHuntingConfigs();
 	const { status, refetch: refetchStatus } = useHuntingStatus();
@@ -270,8 +269,7 @@ interface InstanceConfigCardProps {
 }
 
 const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceConfigCardProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const [formState, setFormState] = useState<HuntConfigUpdate>({
 		huntMissingEnabled: config.huntMissingEnabled,
@@ -348,8 +346,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 		});
 
 	// Get service gradient
-	const serviceKey = config.service.toLowerCase() as keyof typeof SERVICE_GRADIENTS;
-	const serviceGradient = SERVICE_GRADIENTS[serviceKey] ?? SERVICE_GRADIENTS.prowlarr;
+	const serviceGradient = getServiceGradient(config.service);
 
 	return (
 		<PremiumCard
@@ -587,8 +584,7 @@ const ConfigSection = ({
 	onToggle,
 	children,
 }: ConfigSectionProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
 		<div className="space-y-4">
@@ -697,8 +693,7 @@ const UnconfiguredInstanceCard = ({
 	onConfigure,
 	animationDelay = 0,
 }: UnconfiguredInstanceCardProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const { createConfig, isCreating } = useUpdateHuntConfig();
 
 	const handleConfigure = async () => {

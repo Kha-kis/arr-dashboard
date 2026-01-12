@@ -6,6 +6,7 @@ import { RootProviders } from "../src/providers/root-providers";
 import { LayoutWrapper } from "../src/components/layout/layout-wrapper";
 import { AuthGate } from "../src/components/auth/auth-gate";
 import { Toaster } from "../src/components/ui";
+import { COLOR_THEMES } from "../src/lib/theme-constants";
 
 /**
  * Premium Typography System
@@ -60,6 +61,23 @@ interface RootLayoutProps {
 const RootLayout = ({ children }: RootLayoutProps) => {
 	return (
 		<html lang="en" suppressHydrationWarning className={`${satoshi.variable} ${dmSans.variable}`}>
+			<head>
+				{/*
+				  Color Theme Initialization Script (Inline)
+
+				  This script is inlined directly in the HTML to execute synchronously
+				  during HTML parsing, BEFORE any CSS is applied. This prevents the
+				  theme flash that occurs with external scripts.
+
+				  The script reads localStorage and sets data-theme immediately.
+				  Theme list is imported from COLOR_THEMES - single source of truth.
+				*/}
+				<script
+					dangerouslySetInnerHTML={{
+						__html: `(function(){try{var t=localStorage.getItem("arr-color-theme");if(t&&${JSON.stringify([...COLOR_THEMES])}.indexOf(t)!==-1&&t!=="blue"){document.documentElement.setAttribute("data-theme",t)}}catch(e){}})();`,
+					}}
+				/>
+			</head>
 			<body className="font-body antialiased">
 				<RootProviders>
 					<AuthGate>

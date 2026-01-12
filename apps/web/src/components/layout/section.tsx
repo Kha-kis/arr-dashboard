@@ -26,8 +26,8 @@ export const Section = ({ title, description, children, className }: SectionProp
 		<section className={cn("space-y-6", className)}>
 			{(title || description) && (
 				<header className="space-y-2">
-					{title && <h2 className="text-2xl font-bold text-fg">{title}</h2>}
-					{description && <p className="text-sm text-fg-muted">{description}</p>}
+					{title && <h2 className="text-2xl font-bold text-foreground">{title}</h2>}
+					{description && <p className="text-sm text-muted-foreground">{description}</p>}
 				</header>
 			)}
 			{children}

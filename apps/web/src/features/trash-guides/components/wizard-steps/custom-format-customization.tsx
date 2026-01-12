@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Alert, AlertDescription, Skeleton } from "../../../../components/ui";
+import { Alert, AlertDescription } from "../../../../components/ui";
+import { PremiumSkeleton } from "../../../../components/layout/premium-components";
 import { ChevronRight, ChevronLeft, Info, Settings } from "lucide-react";
-import { THEME_GRADIENTS } from "../../../../lib/theme-gradients";
-import { useColorTheme } from "../../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../../hooks/useThemeGradient";
 import { createSanitizedHtml } from "../../../../lib/sanitize-html";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { apiRequest } from "../../../../lib/api-client/base";
@@ -31,8 +31,7 @@ export const CustomFormatCustomization = ({
 	onNext,
 	onBack,
 }: CustomFormatCustomizationProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const [selections, setSelections] = useState(initialSelections);
 	const [expandedCF, setExpandedCF] = useState<string | null>(null);
 	// Track initialization key to avoid re-running when data/selectedCFGroups haven't changed
@@ -160,9 +159,9 @@ export const CustomFormatCustomization = ({
 	if (isLoading) {
 		return (
 			<div className="space-y-4">
-				<Skeleton className="h-32" />
-				<Skeleton className="h-48" />
-				<Skeleton className="h-48" />
+				<PremiumSkeleton variant="card" className="h-32" />
+				<PremiumSkeleton variant="card" className="h-48" style={{ animationDelay: "50ms" }} />
+				<PremiumSkeleton variant="card" className="h-48" style={{ animationDelay: "100ms" }} />
 			</div>
 		);
 	}
@@ -220,27 +219,27 @@ export const CustomFormatCustomization = ({
 					backgroundColor: themeGradient.fromLight,
 				}}
 			>
-				<h4 className="font-medium text-fg mb-2">⚙️ Review & Customize Formats</h4>
-				<p className="text-sm text-fg/70 mb-3">
-					TRaSH Guides recommends specific Custom Formats for this profile. <strong className="text-fg">Pre-selected formats are based on the quality profile&apos;s configuration</strong>. You can adjust as needed:
+				<h4 className="font-medium text-foregroundmb-2">⚙️ Review & Customize Formats</h4>
+				<p className="text-sm text-foreground/70 mb-3">
+					TRaSH Guides recommends specific Custom Formats for this profile. <strong className="text-foreground">Pre-selected formats are based on the quality profile&apos;s configuration</strong>. You can adjust as needed:
 				</p>
-				<div className="space-y-2 text-sm text-fg/70 ml-4 mb-3">
-					<div>• <strong className="text-fg">Pre-selected</strong> - Recommended by TRaSH for this profile</div>
-					<div>• <strong className="text-fg">Unselected</strong> - Optional, choose based on your preferences</div>
-					<div>• <strong className="text-fg">Score overrides</strong> - Click gear icon to customize priority/conditions</div>
+				<div className="space-y-2 text-sm text-foreground/70 ml-4 mb-3">
+					<div>• <strong className="text-foreground">Pre-selected</strong> - Recommended by TRaSH for this profile</div>
+					<div>• <strong className="text-foreground">Unselected</strong> - Optional, choose based on your preferences</div>
+					<div>• <strong className="text-foreground">Score overrides</strong> - Click gear icon to customize priority/conditions</div>
 				</div>
-				<p className="text-xs text-fg/60 italic">
+				<p className="text-xs text-foreground/60 italic">
 					💡 Tip: The defaults are carefully chosen for this quality profile. Only change if you have specific requirements.
 				</p>
 			</div>
 
 			{/* Overview */}
-			<div className="rounded-xl border border-border bg-bg-subtle p-6">
-				<h3 className="text-lg font-medium text-fg">Customize Custom Formats</h3>
-				<p className="mt-2 text-sm text-fg/70">
+			<div className="rounded-xl border border-border bg-card p-6">
+				<h3 className="text-lg font-medium text-foreground">Customize Custom Formats</h3>
+				<p className="mt-2 text-sm text-foreground/70">
 					Review and customize the Custom Formats from your selected CF Groups.
 				</p>
-				<div className="mt-4 flex items-center gap-2 text-sm text-fg/60">
+				<div className="mt-4 flex items-center gap-2 text-sm text-foreground/60">
 					<Info className="h-4 w-4" />
 					<span>
 						{cfList.length} Custom Formats available • {selectedCount} selected
@@ -262,7 +261,7 @@ export const CustomFormatCustomization = ({
 							className={`rounded-xl border ${
 								isSelected
 									? "border-primary/50 bg-primary/5"
-									: "border-border bg-bg-subtle"
+									: "border-border bg-card"
 							}`}
 						>
 							<div className="flex items-start gap-4 p-6">
@@ -271,14 +270,14 @@ export const CustomFormatCustomization = ({
 									type="checkbox"
 									checked={isSelected}
 									onChange={() => toggleCF(cf.trash_id)}
-									className="mt-1 h-5 w-5 rounded border-border bg-bg-subtle text-primary focus:ring-primary"
+									className="mt-1 h-5 w-5 rounded border-border bg-card text-primary focus:ring-primary"
 								/>
 
 								<div className="flex-1">
 									<div className="flex items-start justify-between">
 										<div>
 											<div className="flex items-center gap-2 flex-wrap">
-												<h4 className="font-medium text-fg">{cf.name}</h4>
+												<h4 className="font-medium text-foreground">{cf.name}</h4>
 												{cf.isRequired && (
 													<span className="inline-flex items-center gap-1 rounded bg-red-500/20 px-2 py-0.5 text-xs font-medium text-red-300">
 														Required
@@ -287,7 +286,7 @@ export const CustomFormatCustomization = ({
 											</div>
 											{cf.trash_description && (
 												<p
-													className="mt-1 text-sm text-fg/70"
+													className="mt-1 text-sm text-foreground/70"
 													dangerouslySetInnerHTML={createSanitizedHtml(cf.trash_description)}
 												/>
 											)}
@@ -296,7 +295,7 @@ export const CustomFormatCustomization = ({
 										<button
 											type="button"
 											onClick={() => setExpandedCF(isExpanded ? null : cf.trash_id)}
-											className="rounded p-1 text-fg/60 hover:bg-bg-subtle hover:text-fg"
+											className="rounded p-1 text-foreground/60 hover:bg-card hover:text-foreground"
 											disabled={!isSelected}
 										>
 											<Settings className="h-4 w-4" />
@@ -308,7 +307,7 @@ export const CustomFormatCustomization = ({
 										<div className="mt-4 space-y-4 border-t border-border pt-4">
 											{/* Score Override */}
 											<div>
-												<label className="mb-2 block text-sm font-medium text-fg">
+												<label className="mb-2 block text-sm font-medium text-foreground">
 													Score Override (optional)
 												</label>
 												<input
@@ -316,29 +315,29 @@ export const CustomFormatCustomization = ({
 													value={scoreOverride ?? ""}
 													onChange={(e) => updateScoreOverride(cf.trash_id, e.target.value)}
 													placeholder="Leave empty for default score"
-													className="w-full rounded border border-border bg-bg-subtle px-3 py-2 text-sm text-fg placeholder:text-fg/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+													className="w-full rounded border border-border bg-card px-3 py-2 text-sm text-foregroundplaceholder:text-foreground/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
 												/>
 											</div>
 
 											{/* Conditions */}
 											{cf.specifications && cf.specifications.length > 0 && (
 												<div>
-													<label className="mb-2 block text-sm font-medium text-fg">
+													<label className="mb-2 block text-sm font-medium text-foreground">
 														Conditions ({cf.specifications.length})
 													</label>
 													<div className="space-y-2">
 														{cf.specifications.map((spec: any) => (
 															<label
 																key={spec.name}
-																className="flex items-center gap-2 rounded bg-bg-subtle px-3 py-2"
+																className="flex items-center gap-2 rounded bg-card px-3 py-2"
 															>
 																<input
 																	type="checkbox"
 																	checked={conditionsEnabled[spec.name] ?? true}
 																	onChange={() => toggleCondition(cf.trash_id, spec.name)}
-																	className="h-4 w-4 rounded border-border bg-bg-subtle text-primary focus:ring-primary"
+																	className="h-4 w-4 rounded border-border bg-card text-primary focus:ring-primary"
 																/>
-																<span className="text-sm text-fg/70">{spec.name}</span>
+																<span className="text-sm text-foreground/70">{spec.name}</span>
 															</label>
 														))}
 													</div>
@@ -354,8 +353,8 @@ export const CustomFormatCustomization = ({
 			</div>
 
 			{cfList.length === 0 && (
-				<div className="rounded-xl border border-border bg-bg-subtle p-8 text-center">
-					<p className="text-fg/60">
+				<div className="rounded-xl border border-border bg-card p-8 text-center">
+					<p className="text-foreground/60">
 						No Custom Formats available. Please select some CF Groups in the previous step.
 					</p>
 				</div>
@@ -366,7 +365,7 @@ export const CustomFormatCustomization = ({
 				<button
 					type="button"
 					onClick={onBack}
-					className="inline-flex items-center gap-2 rounded-lg bg-bg-subtle px-4 py-2 text-sm font-medium text-fg transition hover:bg-bg-hover"
+					className="inline-flex items-center gap-2 rounded-lg bg-card px-4 py-2 text-sm font-medium text-foregroundtransition hover:bg-muted"
 				>
 					<ChevronLeft className="h-4 w-4" />
 					Back
@@ -376,7 +375,7 @@ export const CustomFormatCustomization = ({
 					type="button"
 					onClick={() => onNext(selections)}
 					disabled={selectedCount === 0}
-					className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-fg transition hover:bg-primary/90 disabled:opacity-50"
+					className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-foregroundtransition hover:bg-primary/90 disabled:opacity-50"
 				>
 					Next: Create Template
 					<ChevronRight className="h-4 w-4" />

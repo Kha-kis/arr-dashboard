@@ -2,17 +2,22 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Lock, Loader2 } from "lucide-react";
 import { apiRequest } from "../../../lib/api-client/base";
 import type { CurrentUser } from "@arr/shared";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
+import { PasswordInput } from "../../../components/ui/password-input";
 import { Alert, AlertDescription } from "../../../components/ui";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 interface RegisterResponse {
 	user: CurrentUser;
 }
 
 export const PasswordSetup = () => {
+	const { gradient: themeGradient } = useThemeGradient();
+
 	const router = useRouter();
 	const [formState, setFormState] = useState({
 		username: "",
@@ -78,7 +83,7 @@ export const PasswordSetup = () => {
 	return (
 		<form className="space-y-4" onSubmit={handleSubmit}>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-fg-muted">Username</label>
+				<label className="text-xs uppercase text-muted-foreground font-medium">Username</label>
 				<Input
 					type="text"
 					value={formState.username}
@@ -87,26 +92,26 @@ export const PasswordSetup = () => {
 					required
 					minLength={3}
 					maxLength={50}
+					className="rounded-xl"
 				/>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-fg-muted">Password</label>
-				<Input
-					type="password"
+				<label className="text-xs uppercase text-muted-foreground font-medium">Password</label>
+				<PasswordInput
 					value={formState.password}
 					onChange={(e) => setFormState((prev) => ({ ...prev, password: e.target.value }))}
 					placeholder="At least 8 characters"
 					required
 					minLength={8}
+					className="rounded-xl"
 				/>
-				<p className="text-xs text-fg-muted">
+				<p className="text-xs text-muted-foreground">
 					Must include uppercase, lowercase, number, and special character
 				</p>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-fg-muted">Confirm Password</label>
-				<Input
-					type="password"
+				<label className="text-xs uppercase text-muted-foreground font-medium">Confirm Password</label>
+				<PasswordInput
 					value={formState.confirmPassword}
 					onChange={(e) =>
 						setFormState((prev) => ({
@@ -116,6 +121,7 @@ export const PasswordSetup = () => {
 					}
 					placeholder="Re-enter password"
 					required
+					className="rounded-xl"
 				/>
 			</div>
 			{error && (
@@ -123,8 +129,26 @@ export const PasswordSetup = () => {
 					<AlertDescription>{error}</AlertDescription>
 				</Alert>
 			)}
-			<Button type="submit" disabled={isSubmitting} className="w-full">
-				{isSubmitting ? "Creating account..." : "Create Admin Account"}
+			<Button
+				type="submit"
+				disabled={isSubmitting}
+				className="w-full gap-2 rounded-xl font-medium"
+				style={{
+					background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+					boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
+				}}
+			>
+				{isSubmitting ? (
+					<>
+						<Loader2 className="h-4 w-4 animate-spin" />
+						Creating account...
+					</>
+				) : (
+					<>
+						<Lock className="h-4 w-4" />
+						Create Admin Account
+					</>
+				)}
 			</Button>
 		</form>
 	);

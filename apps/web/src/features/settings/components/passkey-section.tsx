@@ -6,8 +6,8 @@ import { Key, Fingerprint, Plus, Trash2, Pencil, Check, X, Loader2, ShieldCheck,
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { PremiumSection, GlassmorphicCard, PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import {
 	getPasskeyCredentials,
 	getPasskeyRegistrationOptions,
@@ -28,8 +28,7 @@ import { cn } from "../../../lib/utils";
  * - Premium status feedback
  */
 export const PasskeySection = () => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const [credentials, setCredentials] = useState<PasskeyCredential[]>([]);
 	const [loading, setLoading] = useState(true);

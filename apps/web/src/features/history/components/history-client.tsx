@@ -7,21 +7,20 @@ import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Alert, AlertDescription, Pagination } from "../../../components/ui";
-import { AmbientGlow, PremiumPageHeader, PremiumCard, StatCard } from "../../../components/layout";
+import { PremiumPageHeader, PremiumCard, StatCard, PremiumSkeleton } from "../../../components/layout";
 import { HistoryTable } from "./history-table";
 import { SERVICE_FILTERS } from "../lib/history-utils";
 import { useHistoryState } from "../hooks/use-history-state";
 import { useHistoryData } from "../hooks/use-history-data";
 import { History, RefreshCw, Tv, Film, Search as SearchIcon, Filter, RotateCcw } from "lucide-react";
-import { THEME_GRADIENTS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { cn } from "../../../lib/utils";
 
 export const HistoryClient = () => {
 	const [mounted, setMounted] = useState(false);
 	const [isRefreshing, setIsRefreshing] = useState(false);
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	useEffect(() => {
 		setMounted(true);
@@ -109,27 +108,24 @@ export const HistoryClient = () => {
 	// Loading skeleton
 	if (!mounted || isLoading) {
 		return (
-			<section className="relative flex flex-col gap-8">
-				<AmbientGlow />
-				<div className="space-y-8 animate-in fade-in duration-500">
-					<div className="space-y-4">
-						<div className="h-8 w-48 rounded-lg bg-muted/50 animate-pulse" />
-						<div className="h-10 w-64 rounded-lg bg-muted/30 animate-pulse" />
-					</div>
-					<div className="grid gap-4 md:grid-cols-3">
-						{[0, 1, 2].map((i) => (
-							<div
-								key={i}
-								className="relative overflow-hidden rounded-2xl border border-border/30 bg-card/30 p-6"
-							>
-								<div className="h-12 w-12 rounded-xl bg-muted/30 animate-pulse mb-4" />
-								<div className="h-8 w-16 rounded bg-muted/40 animate-pulse mb-2" />
-								<div className="h-4 w-24 rounded bg-muted/20 animate-pulse" />
-							</div>
-						))}
-					</div>
+			<div className="space-y-8 animate-in fade-in duration-500">
+				<div className="space-y-4">
+					<PremiumSkeleton variant="line" className="h-8 w-48" />
+					<PremiumSkeleton variant="line" className="h-10 w-64" style={{ animationDelay: "50ms" }} />
 				</div>
-			</section>
+				<div className="grid gap-4 md:grid-cols-3">
+					{[0, 1, 2].map((i) => (
+						<div
+							key={i}
+							className="relative overflow-hidden rounded-2xl border border-border/30 bg-card/30 p-6"
+						>
+							<PremiumSkeleton variant="card" className="h-12 w-12 rounded-xl mb-4" style={{ animationDelay: `${(i + 2) * 50}ms` }} />
+							<PremiumSkeleton variant="line" className="h-8 w-16 mb-2" style={{ animationDelay: `${(i + 3) * 50}ms` }} />
+							<PremiumSkeleton variant="line" className="h-4 w-24" style={{ animationDelay: `${(i + 4) * 50}ms` }} />
+						</div>
+					))}
+				</div>
+			</div>
 		);
 	}
 
@@ -139,10 +135,7 @@ export const HistoryClient = () => {
 	const prowlarrCount = serviceSummary.get("prowlarr") ?? 0;
 
 	return (
-		<section className="relative flex flex-col gap-8">
-			{/* Ambient background glow */}
-			<AmbientGlow />
-
+		<>
 			{/* Header */}
 			<PremiumPageHeader
 				label="Activity"
@@ -409,6 +402,6 @@ export const HistoryClient = () => {
 					serviceMap={serviceMap}
 				/>
 			</div>
-		</section>
+		</>
 	);
 };
