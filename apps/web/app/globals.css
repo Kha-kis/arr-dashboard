@@ -152,6 +152,14 @@
 		/* Gradients */
 		--gradient-primary: linear-gradient(135deg, hsl(217 91% 60%) 0%, hsl(270 95% 75%) 100%);
 		--gradient-subtle: linear-gradient(135deg, hsl(240 4.8% 95.9%) 0%, hsl(240 4.8% 90%) 100%);
+
+		/* Theme gradient colors (used in JS via var()) */
+		--theme-from: #3b82f6;
+		--theme-to: #8b5cf6;
+		--theme-glow: rgba(59, 130, 246, 0.4);
+		--theme-from-light: rgba(59, 130, 246, 0.1);
+		--theme-from-medium: rgba(59, 130, 246, 0.2);
+		--theme-from-muted: rgba(59, 130, 246, 0.3);
 	}
 
 	/* ========================================
@@ -218,19 +226,76 @@
 		/* Dark gradients */
 		--gradient-primary: linear-gradient(135deg, hsl(217 91% 60%) 0%, hsl(270 95% 75%) 100%);
 		--gradient-subtle: linear-gradient(135deg, hsl(240 6% 10%) 0%, hsl(240 5% 15%) 100%);
+
+		/* Theme gradient colors (same as light mode for blue theme) */
+		--theme-from: #3b82f6;
+		--theme-to: #8b5cf6;
+		--theme-glow: rgba(59, 130, 246, 0.4);
+		--theme-from-light: rgba(59, 130, 246, 0.1);
+		--theme-from-medium: rgba(59, 130, 246, 0.2);
+		--theme-from-muted: rgba(59, 130, 246, 0.3);
+	}
+
+	/* ========================================
+	 * OLED DARK MODE
+	 * Pure black backgrounds for OLED displays
+	 * Apply via: data-oled="true" alongside .dark
+	 * ======================================== */
+	.dark[data-oled="true"] {
+		--background: 0 0% 0%;
+		--card: 0 0% 2%;
+		--popover: 0 0% 2%;
+		--secondary: 0 0% 6%;
+		--muted: 0 0% 8%;
+		--sidebar: 0 0% 0%;
+		--sidebar-accent: 0 0% 6%;
+		--border: 0 0% 12%;
+		--input: 0 0% 8%;
+
+		/* Slightly enhanced gradient mesh for OLED */
+		--gradient-mesh:
+			radial-gradient(at 0% 0%, hsl(var(--primary) / 0.03) 0%, transparent 50%),
+			radial-gradient(at 100% 0%, hsl(var(--accent) / 0.03) 0%, transparent 50%),
+			radial-gradient(at 100% 100%, hsl(var(--primary) / 0.02) 0%, transparent 50%),
+			radial-gradient(at 0% 100%, hsl(var(--accent) / 0.02) 0%, transparent 50%);
 	}
 
 	/* ========================================
 	 * THEME PRESETS
 	 * Apply via: data-theme="purple" on <html>
+	 * Light mode uses darker/more saturated colors for contrast
+	 * Dark mode uses brighter colors that pop on dark backgrounds
 	 * ======================================== */
 
-	/* Purple Theme */
-	[data-theme="purple"],
+	/* Purple Theme - Light Mode */
+	[data-theme="purple"] {
+		--primary: 270 90% 48%;
+		--primary-foreground: 0 0% 100%;
+		--ring: 270 90% 48%;
+		--accent: 330 80% 52%;
+		--accent-foreground: 0 0% 100%;
+		--sidebar-primary: 270 90% 48%;
+		--sidebar-ring: 270 90% 48%;
+		--chart-1: 270 90% 48%;
+		--chart-2: 330 80% 52%;
+		--gradient-primary: linear-gradient(135deg, hsl(270 90% 48%) 0%, hsl(330 80% 52%) 100%);
+		--shadow-primary: 0 10px 40px -10px hsl(270 90% 48% / 0.35);
+		--shadow-accent: 0 10px 40px -10px hsl(330 80% 52% / 0.25);
+		--theme-from: #7c3aed;
+		--theme-to: #db2777;
+		--theme-glow: rgba(124, 58, 237, 0.35);
+		--theme-from-light: rgba(124, 58, 237, 0.08);
+		--theme-from-medium: rgba(124, 58, 237, 0.15);
+		--theme-from-muted: rgba(124, 58, 237, 0.25);
+	}
+
+	/* Purple Theme - Dark Mode */
 	[data-theme="purple"].dark {
 		--primary: 270 95% 60%;
+		--primary-foreground: 0 0% 100%;
 		--ring: 270 95% 60%;
 		--accent: 330 85% 65%;
+		--accent-foreground: 0 0% 100%;
 		--sidebar-primary: 270 95% 60%;
 		--sidebar-ring: 270 95% 60%;
 		--chart-1: 270 95% 60%;
@@ -238,29 +303,87 @@
 		--gradient-primary: linear-gradient(135deg, hsl(270 95% 60%) 0%, hsl(330 85% 65%) 100%);
 		--shadow-primary: 0 10px 40px -10px hsl(270 95% 60% / 0.4);
 		--shadow-accent: 0 10px 40px -10px hsl(330 85% 65% / 0.3);
+		--theme-from: #8b5cf6;
+		--theme-to: #ec4899;
+		--theme-glow: rgba(139, 92, 246, 0.4);
+		--theme-from-light: rgba(139, 92, 246, 0.1);
+		--theme-from-medium: rgba(139, 92, 246, 0.2);
+		--theme-from-muted: rgba(139, 92, 246, 0.3);
 	}
 
-	/* Green Theme */
-	[data-theme="green"],
+	/* Green Theme - Light Mode */
+	[data-theme="green"] {
+		--primary: 142 76% 32%;
+		--primary-foreground: 0 0% 100%;
+		--ring: 142 76% 32%;
+		--accent: 172 66% 40%;
+		--accent-foreground: 0 0% 100%;
+		--sidebar-primary: 142 76% 32%;
+		--sidebar-ring: 142 76% 32%;
+		--chart-1: 142 76% 32%;
+		--chart-2: 172 66% 40%;
+		--gradient-primary: linear-gradient(135deg, hsl(142 76% 32%) 0%, hsl(172 66% 40%) 100%);
+		--shadow-primary: 0 10px 40px -10px hsl(142 76% 32% / 0.35);
+		--shadow-accent: 0 10px 40px -10px hsl(172 66% 40% / 0.25);
+		--theme-from: #16a34a;
+		--theme-to: #0d9488;
+		--theme-glow: rgba(22, 163, 74, 0.35);
+		--theme-from-light: rgba(22, 163, 74, 0.08);
+		--theme-from-medium: rgba(22, 163, 74, 0.15);
+		--theme-from-muted: rgba(22, 163, 74, 0.25);
+	}
+
+	/* Green Theme - Dark Mode */
 	[data-theme="green"].dark {
-		--primary: 142 76% 36%;
-		--ring: 142 76% 36%;
+		--primary: 142 76% 42%;
+		--primary-foreground: 0 0% 100%;
+		--ring: 142 76% 42%;
 		--accent: 172 66% 50%;
-		--sidebar-primary: 142 76% 36%;
-		--sidebar-ring: 142 76% 36%;
-		--chart-1: 142 76% 36%;
+		--accent-foreground: 0 0% 100%;
+		--sidebar-primary: 142 76% 42%;
+		--sidebar-ring: 142 76% 42%;
+		--chart-1: 142 76% 42%;
 		--chart-2: 172 66% 50%;
-		--gradient-primary: linear-gradient(135deg, hsl(142 76% 36%) 0%, hsl(172 66% 50%) 100%);
-		--shadow-primary: 0 10px 40px -10px hsl(142 76% 36% / 0.4);
+		--gradient-primary: linear-gradient(135deg, hsl(142 76% 42%) 0%, hsl(172 66% 50%) 100%);
+		--shadow-primary: 0 10px 40px -10px hsl(142 76% 42% / 0.4);
 		--shadow-accent: 0 10px 40px -10px hsl(172 66% 50% / 0.3);
+		--theme-from: #22c55e;
+		--theme-to: #14b8a6;
+		--theme-glow: rgba(34, 197, 94, 0.4);
+		--theme-from-light: rgba(34, 197, 94, 0.1);
+		--theme-from-medium: rgba(34, 197, 94, 0.2);
+		--theme-from-muted: rgba(34, 197, 94, 0.3);
 	}
 
-	/* Orange Theme */
-	[data-theme="orange"],
+	/* Orange Theme - Light Mode */
+	[data-theme="orange"] {
+		--primary: 25 95% 45%;
+		--primary-foreground: 0 0% 100%;
+		--ring: 25 95% 45%;
+		--accent: 38 92% 42%;
+		--accent-foreground: 0 0% 100%;
+		--sidebar-primary: 25 95% 45%;
+		--sidebar-ring: 25 95% 45%;
+		--chart-1: 25 95% 45%;
+		--chart-2: 38 92% 42%;
+		--gradient-primary: linear-gradient(135deg, hsl(25 95% 45%) 0%, hsl(38 92% 42%) 100%);
+		--shadow-primary: 0 10px 40px -10px hsl(25 95% 45% / 0.35);
+		--shadow-accent: 0 10px 40px -10px hsl(38 92% 42% / 0.25);
+		--theme-from: #ea580c;
+		--theme-to: #ca8a04;
+		--theme-glow: rgba(234, 88, 12, 0.35);
+		--theme-from-light: rgba(234, 88, 12, 0.08);
+		--theme-from-medium: rgba(234, 88, 12, 0.15);
+		--theme-from-muted: rgba(234, 88, 12, 0.25);
+	}
+
+	/* Orange Theme - Dark Mode */
 	[data-theme="orange"].dark {
 		--primary: 25 95% 53%;
+		--primary-foreground: 0 0% 100%;
 		--ring: 25 95% 53%;
 		--accent: 38 92% 50%;
+		--accent-foreground: 0 0% 100%;
 		--sidebar-primary: 25 95% 53%;
 		--sidebar-ring: 25 95% 53%;
 		--chart-1: 25 95% 53%;
@@ -268,36 +391,792 @@
 		--gradient-primary: linear-gradient(135deg, hsl(25 95% 53%) 0%, hsl(38 92% 50%) 100%);
 		--shadow-primary: 0 10px 40px -10px hsl(25 95% 53% / 0.4);
 		--shadow-accent: 0 10px 40px -10px hsl(38 92% 50% / 0.3);
+		--theme-from: #f97316;
+		--theme-to: #eab308;
+		--theme-glow: rgba(249, 115, 22, 0.4);
+		--theme-from-light: rgba(249, 115, 22, 0.1);
+		--theme-from-medium: rgba(249, 115, 22, 0.2);
+		--theme-from-muted: rgba(249, 115, 22, 0.3);
 	}
 
-	/* Rose Theme */
-	[data-theme="rose"],
+	/* Rose Theme - Light Mode */
+	[data-theme="rose"] {
+		--primary: 346 77% 45%;
+		--primary-foreground: 0 0% 100%;
+		--ring: 346 77% 45%;
+		--accent: 330 85% 50%;
+		--accent-foreground: 0 0% 100%;
+		--sidebar-primary: 346 77% 45%;
+		--sidebar-ring: 346 77% 45%;
+		--chart-1: 346 77% 45%;
+		--chart-2: 330 85% 50%;
+		--gradient-primary: linear-gradient(135deg, hsl(346 77% 45%) 0%, hsl(330 85% 50%) 100%);
+		--shadow-primary: 0 10px 40px -10px hsl(346 77% 45% / 0.35);
+		--shadow-accent: 0 10px 40px -10px hsl(330 85% 50% / 0.25);
+		--theme-from: #e11d48;
+		--theme-to: #db2777;
+		--theme-glow: rgba(225, 29, 72, 0.35);
+		--theme-from-light: rgba(225, 29, 72, 0.08);
+		--theme-from-medium: rgba(225, 29, 72, 0.15);
+		--theme-from-muted: rgba(225, 29, 72, 0.25);
+	}
+
+	/* Rose Theme - Dark Mode */
 	[data-theme="rose"].dark {
-		--primary: 346 77% 50%;
-		--ring: 346 77% 50%;
+		--primary: 346 77% 55%;
+		--primary-foreground: 0 0% 100%;
+		--ring: 346 77% 55%;
 		--accent: 330 85% 65%;
-		--sidebar-primary: 346 77% 50%;
-		--sidebar-ring: 346 77% 50%;
-		--chart-1: 346 77% 50%;
+		--accent-foreground: 0 0% 100%;
+		--sidebar-primary: 346 77% 55%;
+		--sidebar-ring: 346 77% 55%;
+		--chart-1: 346 77% 55%;
 		--chart-2: 330 85% 65%;
-		--gradient-primary: linear-gradient(135deg, hsl(346 77% 50%) 0%, hsl(330 85% 65%) 100%);
-		--shadow-primary: 0 10px 40px -10px hsl(346 77% 50% / 0.4);
+		--gradient-primary: linear-gradient(135deg, hsl(346 77% 55%) 0%, hsl(330 85% 65%) 100%);
+		--shadow-primary: 0 10px 40px -10px hsl(346 77% 55% / 0.4);
 		--shadow-accent: 0 10px 40px -10px hsl(330 85% 65% / 0.3);
+		--theme-from: #f43f5e;
+		--theme-to: #ec4899;
+		--theme-glow: rgba(244, 63, 94, 0.4);
+		--theme-from-light: rgba(244, 63, 94, 0.1);
+		--theme-from-medium: rgba(244, 63, 94, 0.2);
+		--theme-from-muted: rgba(244, 63, 94, 0.3);
 	}
 
-	/* Slate Theme (Neutral/Minimal) */
-	[data-theme="slate"],
+	/* Slate Theme - Light Mode (Neutral/Minimal) */
+	[data-theme="slate"] {
+		--primary: 215 25% 38%;
+		--primary-foreground: 0 0% 100%;
+		--ring: 215 25% 38%;
+		--accent: 215 20% 48%;
+		--accent-foreground: 0 0% 100%;
+		--sidebar-primary: 215 25% 38%;
+		--sidebar-ring: 215 25% 38%;
+		--chart-1: 215 25% 38%;
+		--chart-2: 215 20% 48%;
+		--gradient-primary: linear-gradient(135deg, hsl(215 25% 38%) 0%, hsl(215 20% 48%) 100%);
+		--shadow-primary: 0 10px 40px -10px hsl(215 25% 38% / 0.35);
+		--shadow-accent: 0 10px 40px -10px hsl(215 20% 48% / 0.25);
+		--theme-from: #475569;
+		--theme-to: #64748b;
+		--theme-glow: rgba(71, 85, 105, 0.3);
+		--theme-from-light: rgba(71, 85, 105, 0.08);
+		--theme-from-medium: rgba(71, 85, 105, 0.12);
+		--theme-from-muted: rgba(71, 85, 105, 0.18);
+	}
+
+	/* Slate Theme - Dark Mode */
 	[data-theme="slate"].dark {
-		--primary: 215 20% 45%;
-		--ring: 215 20% 45%;
-		--accent: 215 14% 55%;
-		--sidebar-primary: 215 20% 45%;
-		--sidebar-ring: 215 20% 45%;
-		--chart-1: 215 20% 45%;
-		--chart-2: 215 14% 55%;
-		--gradient-primary: linear-gradient(135deg, hsl(215 20% 45%) 0%, hsl(215 14% 55%) 100%);
-		--shadow-primary: 0 10px 40px -10px hsl(215 20% 45% / 0.4);
-		--shadow-accent: 0 10px 40px -10px hsl(215 14% 55% / 0.3);
+		--primary: 215 20% 55%;
+		--primary-foreground: 0 0% 100%;
+		--ring: 215 20% 55%;
+		--accent: 215 14% 65%;
+		--accent-foreground: 0 0% 100%;
+		--sidebar-primary: 215 20% 55%;
+		--sidebar-ring: 215 20% 55%;
+		--chart-1: 215 20% 55%;
+		--chart-2: 215 14% 65%;
+		--gradient-primary: linear-gradient(135deg, hsl(215 20% 55%) 0%, hsl(215 14% 65%) 100%);
+		--shadow-primary: 0 10px 40px -10px hsl(215 20% 55% / 0.4);
+		--shadow-accent: 0 10px 40px -10px hsl(215 14% 65% / 0.3);
+		--theme-from: #64748b;
+		--theme-to: #94a3b8;
+		--theme-glow: rgba(100, 116, 139, 0.3);
+		--theme-from-light: rgba(100, 116, 139, 0.1);
+		--theme-from-medium: rgba(100, 116, 139, 0.15);
+		--theme-from-muted: rgba(100, 116, 139, 0.2);
+	}
+
+	/* ========================================
+	 * NOSTALGIC / SPECIAL THEMES
+	 * These are IMMERSIVE themes that always use their
+	 * dark aesthetic regardless of light/dark mode setting.
+	 * They include unique visual effects and custom backgrounds.
+	 * ======================================== */
+
+	/* Winamp Theme - Classic media player aesthetic
+	 * Always uses dark appearance for authentic Winamp feel */
+	[data-theme="winamp"],
+	[data-theme="winamp"].dark {
+		--primary: 120 100% 50%;
+		--primary-foreground: 0 0% 0%;
+		--ring: 120 100% 50%;
+		--accent: 120 100% 60%;
+		--accent-foreground: 0 0% 0%;
+		--sidebar-primary: 120 100% 50%;
+		--sidebar-ring: 120 100% 50%;
+		--chart-1: 120 100% 50%;
+		--chart-2: 80 100% 50%;
+		--gradient-primary: linear-gradient(135deg, hsl(120 100% 50%) 0%, hsl(100 100% 55%) 100%);
+		--shadow-primary: 0 10px 40px -10px hsl(120 100% 50% / 0.6);
+		--shadow-accent: 0 10px 40px -10px hsl(80 100% 50% / 0.4);
+		--theme-from: #00ff00;
+		--theme-to: #39ff14;
+		--theme-glow: rgba(0, 255, 0, 0.5);
+		--theme-from-light: rgba(0, 255, 0, 0.1);
+		--theme-from-medium: rgba(0, 255, 0, 0.2);
+		--theme-from-muted: rgba(0, 255, 0, 0.3);
+		/* Winamp dark background - always applied */
+		--background: 220 13% 10%;
+		--foreground: 0 0% 95%;
+		--card: 220 13% 13%;
+		--card-foreground: 0 0% 95%;
+		--popover: 220 13% 13%;
+		--popover-foreground: 0 0% 95%;
+		--secondary: 220 10% 18%;
+		--secondary-foreground: 0 0% 95%;
+		--muted: 220 10% 18%;
+		--muted-foreground: 0 0% 65%;
+		--border: 220 10% 20%;
+		--input: 220 10% 18%;
+		--sidebar: 220 13% 8%;
+		--sidebar-foreground: 0 0% 95%;
+		--sidebar-accent: 220 10% 18%;
+		--sidebar-accent-foreground: 0 0% 95%;
+		--sidebar-border: 220 10% 20%;
+	}
+
+	/* Terminal Theme - Matrix hacker aesthetic
+	 * Always uses dark appearance for CRT monitor feel */
+	[data-theme="terminal"],
+	[data-theme="terminal"].dark {
+		--primary: 120 90% 40%;
+		--primary-foreground: 0 0% 0%;
+		--ring: 120 90% 40%;
+		--accent: 120 100% 50%;
+		--accent-foreground: 0 0% 0%;
+		--sidebar-primary: 120 90% 40%;
+		--sidebar-ring: 120 90% 40%;
+		--chart-1: 120 90% 40%;
+		--chart-2: 120 100% 50%;
+		--gradient-primary: linear-gradient(135deg, hsl(120 90% 40%) 0%, hsl(120 100% 50%) 100%);
+		--shadow-primary: 0 10px 40px -10px hsl(120 90% 40% / 0.6);
+		--shadow-accent: 0 10px 40px -10px hsl(120 100% 50% / 0.4);
+		--theme-from: #20c20e;
+		--theme-to: #00ff41;
+		--theme-glow: rgba(32, 194, 14, 0.5);
+		--theme-from-light: rgba(32, 194, 14, 0.1);
+		--theme-from-medium: rgba(32, 194, 14, 0.2);
+		--theme-from-muted: rgba(32, 194, 14, 0.3);
+		/* Pure black CRT background - always applied */
+		--background: 0 0% 2%;
+		--foreground: 120 100% 50%;
+		--card: 0 0% 4%;
+		--card-foreground: 120 80% 70%;
+		--popover: 0 0% 4%;
+		--popover-foreground: 120 80% 70%;
+		--secondary: 0 0% 8%;
+		--secondary-foreground: 120 70% 60%;
+		--muted: 0 0% 8%;
+		--muted-foreground: 120 40% 50%;
+		--border: 120 50% 15%;
+		--input: 0 0% 8%;
+		--sidebar: 0 0% 2%;
+		--sidebar-foreground: 120 100% 50%;
+		--sidebar-accent: 0 0% 8%;
+		--sidebar-accent-foreground: 120 80% 70%;
+		--sidebar-border: 120 50% 15%;
+	}
+
+	/* Vaporwave Theme - Retro 80s sunset aesthetic
+	 * Always uses dark appearance for neon glow effects */
+	[data-theme="vaporwave"],
+	[data-theme="vaporwave"].dark {
+		--primary: 320 100% 70%;
+		--primary-foreground: 0 0% 0%;
+		--ring: 320 100% 70%;
+		--accent: 180 100% 50%;
+		--accent-foreground: 0 0% 0%;
+		--sidebar-primary: 320 100% 70%;
+		--sidebar-ring: 320 100% 70%;
+		--chart-1: 320 100% 70%;
+		--chart-2: 180 100% 50%;
+		--gradient-primary: linear-gradient(135deg, hsl(320 100% 70%) 0%, hsl(180 100% 50%) 100%);
+		--shadow-primary: 0 10px 40px -10px hsl(320 100% 70% / 0.5);
+		--shadow-accent: 0 10px 40px -10px hsl(180 100% 50% / 0.4);
+		--theme-from: #ff6ec7;
+		--theme-to: #00ffff;
+		--theme-glow: rgba(255, 110, 199, 0.5);
+		--theme-from-light: rgba(255, 110, 199, 0.1);
+		--theme-from-medium: rgba(255, 110, 199, 0.2);
+		--theme-from-muted: rgba(255, 110, 199, 0.3);
+		/* Deep purple/blue sunset background - always applied */
+		--background: 260 60% 8%;
+		--foreground: 0 0% 95%;
+		--card: 260 50% 12%;
+		--card-foreground: 0 0% 95%;
+		--popover: 260 50% 12%;
+		--popover-foreground: 0 0% 95%;
+		--secondary: 260 40% 18%;
+		--secondary-foreground: 0 0% 95%;
+		--muted: 260 40% 18%;
+		--muted-foreground: 0 0% 65%;
+		--border: 280 40% 25%;
+		--input: 260 40% 18%;
+		--sidebar: 260 60% 6%;
+		--sidebar-foreground: 0 0% 95%;
+		--sidebar-accent: 260 40% 18%;
+		--sidebar-accent-foreground: 0 0% 95%;
+		--sidebar-border: 280 40% 25%;
+	}
+
+	/* Y2K Cyber Theme - Futuristic chrome aesthetic
+	 * Always uses dark appearance for holographic effects */
+	[data-theme="cyber"],
+	[data-theme="cyber"].dark {
+		--primary: 195 100% 50%;
+		--primary-foreground: 0 0% 0%;
+		--ring: 195 100% 50%;
+		--accent: 300 100% 50%;
+		--accent-foreground: 0 0% 0%;
+		--sidebar-primary: 195 100% 50%;
+		--sidebar-ring: 195 100% 50%;
+		--chart-1: 195 100% 50%;
+		--chart-2: 300 100% 50%;
+		--gradient-primary: linear-gradient(135deg, hsl(195 100% 50%) 0%, hsl(300 100% 50%) 100%);
+		--shadow-primary: 0 10px 40px -10px hsl(195 100% 50% / 0.6);
+		--shadow-accent: 0 10px 40px -10px hsl(300 100% 50% / 0.4);
+		--theme-from: #00d4ff;
+		--theme-to: #ff00ff;
+		--theme-glow: rgba(0, 212, 255, 0.5);
+		--theme-from-light: rgba(0, 212, 255, 0.1);
+		--theme-from-medium: rgba(0, 212, 255, 0.2);
+		--theme-from-muted: rgba(0, 212, 255, 0.3);
+		/* Dark blue-tinted background - always applied */
+		--background: 220 30% 6%;
+		--foreground: 0 0% 95%;
+		--card: 220 25% 10%;
+		--card-foreground: 0 0% 95%;
+		--popover: 220 25% 10%;
+		--popover-foreground: 0 0% 95%;
+		--secondary: 220 20% 15%;
+		--secondary-foreground: 0 0% 95%;
+		--muted: 220 20% 15%;
+		--muted-foreground: 0 0% 65%;
+		--border: 220 30% 20%;
+		--input: 220 20% 15%;
+		--sidebar: 220 30% 5%;
+		--sidebar-foreground: 0 0% 95%;
+		--sidebar-accent: 220 20% 15%;
+		--sidebar-accent-foreground: 0 0% 95%;
+		--sidebar-border: 220 30% 20%;
+	}
+
+	/* Film Noir Theme - 1940s cinema aesthetic
+	 * Always uses dark appearance for dramatic shadows */
+	[data-theme="noir"],
+	[data-theme="noir"].dark {
+		--primary: 45 60% 55%;
+		--primary-foreground: 0 0% 5%;
+		--ring: 45 60% 55%;
+		--accent: 40 30% 75%;
+		--accent-foreground: 0 0% 5%;
+		--sidebar-primary: 45 60% 55%;
+		--sidebar-ring: 45 60% 55%;
+		--chart-1: 45 60% 55%;
+		--chart-2: 40 30% 75%;
+		--gradient-primary: linear-gradient(135deg, hsl(45 60% 55%) 0%, hsl(40 30% 75%) 100%);
+		--shadow-primary: 0 10px 40px -10px hsl(45 60% 55% / 0.4);
+		--shadow-accent: 0 10px 40px -10px hsl(40 30% 75% / 0.3);
+		--theme-from: #c9a855;
+		--theme-to: #e8dcc8;
+		--theme-glow: rgba(201, 168, 85, 0.5);
+		--theme-from-light: rgba(201, 168, 85, 0.1);
+		--theme-from-medium: rgba(201, 168, 85, 0.2);
+		--theme-from-muted: rgba(201, 168, 85, 0.3);
+		/* Near-black background with warm undertones */
+		--background: 30 10% 3%;
+		--foreground: 40 20% 90%;
+		--card: 30 8% 7%;
+		--card-foreground: 40 20% 90%;
+		--popover: 30 8% 7%;
+		--popover-foreground: 40 20% 90%;
+		--secondary: 30 6% 12%;
+		--secondary-foreground: 40 20% 90%;
+		--muted: 30 6% 12%;
+		--muted-foreground: 40 15% 55%;
+		--border: 40 10% 18%;
+		--input: 30 6% 12%;
+		--sidebar: 30 10% 2%;
+		--sidebar-foreground: 40 20% 90%;
+		--sidebar-accent: 30 6% 12%;
+		--sidebar-accent-foreground: 40 20% 90%;
+		--sidebar-border: 40 10% 18%;
+	}
+
+	/* VHS Theme - Analog video nostalgia
+	 * Always uses dark appearance for tape tracking effect */
+	[data-theme="vhs"],
+	[data-theme="vhs"].dark {
+		--primary: 200 15% 75%;
+		--primary-foreground: 0 0% 5%;
+		--ring: 200 15% 75%;
+		--accent: 0 80% 55%;
+		--accent-foreground: 0 0% 100%;
+		--sidebar-primary: 200 15% 75%;
+		--sidebar-ring: 200 15% 75%;
+		--chart-1: 200 15% 75%;
+		--chart-2: 0 80% 55%;
+		--gradient-primary: linear-gradient(135deg, hsl(200 15% 75%) 0%, hsl(0 80% 55%) 100%);
+		--shadow-primary: 0 10px 40px -10px hsl(200 15% 75% / 0.4);
+		--shadow-accent: 0 10px 40px -10px hsl(0 80% 55% / 0.4);
+		--theme-from: #b8c4d0;
+		--theme-to: #d94545;
+		--theme-glow: rgba(184, 196, 208, 0.5);
+		--theme-from-light: rgba(184, 196, 208, 0.1);
+		--theme-from-medium: rgba(184, 196, 208, 0.2);
+		--theme-from-muted: rgba(184, 196, 208, 0.3);
+		/* Dark charcoal with slight blue tint */
+		--background: 220 10% 8%;
+		--foreground: 200 20% 92%;
+		--card: 220 8% 12%;
+		--card-foreground: 200 20% 92%;
+		--popover: 220 8% 12%;
+		--popover-foreground: 200 20% 92%;
+		--secondary: 220 6% 16%;
+		--secondary-foreground: 200 20% 92%;
+		--muted: 220 6% 16%;
+		--muted-foreground: 200 10% 55%;
+		--border: 220 8% 22%;
+		--input: 220 6% 16%;
+		--sidebar: 220 10% 6%;
+		--sidebar-foreground: 200 20% 92%;
+		--sidebar-accent: 220 6% 16%;
+		--sidebar-accent-foreground: 200 20% 92%;
+		--sidebar-border: 220 8% 22%;
+	}
+
+	/* Synthwave Theme - 80s retrofuturism
+	 * Always uses dark appearance for neon contrast */
+	[data-theme="synthwave"],
+	[data-theme="synthwave"].dark {
+		--primary: 320 100% 60%;
+		--primary-foreground: 0 0% 100%;
+		--ring: 320 100% 60%;
+		--accent: 180 100% 50%;
+		--accent-foreground: 0 0% 0%;
+		--sidebar-primary: 320 100% 60%;
+		--sidebar-ring: 320 100% 60%;
+		--chart-1: 320 100% 60%;
+		--chart-2: 180 100% 50%;
+		--gradient-primary: linear-gradient(135deg, hsl(320 100% 60%) 0%, hsl(180 100% 50%) 100%);
+		--shadow-primary: 0 10px 40px -10px hsl(320 100% 60% / 0.6);
+		--shadow-accent: 0 10px 40px -10px hsl(180 100% 50% / 0.4);
+		--theme-from: #ff2d95;
+		--theme-to: #00ffff;
+		--theme-glow: rgba(255, 45, 149, 0.5);
+		--theme-from-light: rgba(255, 45, 149, 0.1);
+		--theme-from-medium: rgba(255, 45, 149, 0.2);
+		--theme-from-muted: rgba(255, 45, 149, 0.3);
+		/* Deep purple-black for neon contrast */
+		--background: 270 50% 5%;
+		--foreground: 320 30% 92%;
+		--card: 270 40% 9%;
+		--card-foreground: 320 30% 92%;
+		--popover: 270 40% 9%;
+		--popover-foreground: 320 30% 92%;
+		--secondary: 270 35% 14%;
+		--secondary-foreground: 320 30% 92%;
+		--muted: 270 35% 14%;
+		--muted-foreground: 270 20% 55%;
+		--border: 280 40% 20%;
+		--input: 270 35% 14%;
+		--sidebar: 270 50% 4%;
+		--sidebar-foreground: 320 30% 92%;
+		--sidebar-accent: 270 35% 14%;
+		--sidebar-accent-foreground: 320 30% 92%;
+		--sidebar-border: 280 40% 20%;
+	}
+
+	/* Amber CRT Theme - Classic monochrome terminal
+	 * Always uses dark appearance for phosphor glow effect */
+	[data-theme="amber"],
+	[data-theme="amber"].dark {
+		--primary: 35 100% 50%;
+		--primary-foreground: 0 0% 0%;
+		--ring: 35 100% 50%;
+		--accent: 40 100% 60%;
+		--accent-foreground: 0 0% 0%;
+		--sidebar-primary: 35 100% 50%;
+		--sidebar-ring: 35 100% 50%;
+		--chart-1: 35 100% 50%;
+		--chart-2: 40 100% 60%;
+		--gradient-primary: linear-gradient(135deg, hsl(35 100% 50%) 0%, hsl(40 100% 60%) 100%);
+		--shadow-primary: 0 10px 40px -10px hsl(35 100% 50% / 0.6);
+		--shadow-accent: 0 10px 40px -10px hsl(40 100% 60% / 0.4);
+		--theme-from: #ffb000;
+		--theme-to: #ffc940;
+		--theme-glow: rgba(255, 176, 0, 0.5);
+		--theme-from-light: rgba(255, 176, 0, 0.1);
+		--theme-from-medium: rgba(255, 176, 0, 0.2);
+		--theme-from-muted: rgba(255, 176, 0, 0.3);
+		/* Pure black background for maximum contrast */
+		--background: 0 0% 0%;
+		--foreground: 35 100% 50%;
+		--card: 35 20% 4%;
+		--card-foreground: 35 100% 50%;
+		--popover: 35 20% 4%;
+		--popover-foreground: 35 100% 50%;
+		--secondary: 35 15% 8%;
+		--secondary-foreground: 35 100% 50%;
+		--muted: 35 15% 8%;
+		--muted-foreground: 35 60% 40%;
+		--border: 35 30% 15%;
+		--input: 35 15% 8%;
+		--sidebar: 0 0% 0%;
+		--sidebar-foreground: 35 100% 50%;
+		--sidebar-accent: 35 15% 8%;
+		--sidebar-accent-foreground: 35 100% 50%;
+		--sidebar-border: 35 30% 15%;
+	}
+
+	/* ========================================
+	 * PREMIUM THEMES (Development Placeholders)
+	 * ======================================== */
+
+	/* *arr Suite Theme - Authentic Sonarr/Radarr interface */
+	/* Colors extracted from Sonarr/Radarr source: github.com/Sonarr/Sonarr */
+
+	/* Light mode - Sonarr light theme with dark sidebar */
+	[data-theme="arr"] {
+		/* Theme colors: Use Sonarr primaryColor #5d9cec for flat appearance (no gradients) */
+		/* Both from/to are same color to create solid fills instead of gradients */
+		--theme-from: #5d9cec;
+		--theme-to: #5d9cec;
+		--theme-glow: rgba(93, 156, 236, 0.5);
+		--theme-from-light: rgba(93, 156, 236, 0.1);
+		--theme-from-medium: rgba(93, 156, 236, 0.2);
+		--theme-from-muted: rgba(93, 156, 236, 0.3);
+
+		/* Primary: Sonarr blue #35c5f4 */
+		--primary: 193 91% 58%;
+		--primary-foreground: 0 0% 100%;
+
+		/* Accent: primaryColor #5d9cec */
+		--accent: 214 80% 65%;
+		--accent-foreground: 0 0% 100%;
+
+		/* pageBackground: #f5f7fa (off-white) */
+		--background: 218 33% 97%;
+		/* textColor: #515253 */
+		--foreground: 200 2% 32%;
+
+		/* cardBackgroundColor: #fff */
+		--card: 0 0% 100%;
+		--card-foreground: 200 2% 32%;
+
+		/* modalBackgroundColor: #fff */
+		--popover: 0 0% 100%;
+		--popover-foreground: 200 2% 32%;
+
+		/* themeDarkColor for buttons/secondary: #3a3f51 = hsl(227, 17%, 27%) */
+		--secondary: 227 17% 27%;
+		--secondary-foreground: 0 0% 93%;
+
+		/* Muted backgrounds */
+		--muted: 218 20% 95%;
+		--muted-foreground: 200 2% 45%;
+
+		/* borderColor: #e5e5e5 */
+		--border: 0 0% 90%;
+		/* Input border: #dde6e9 */
+		--input: 197 18% 89%;
+
+		/* Sidebar stays dark in light mode (Sonarr design) */
+		/* sidebarBackgroundColor: #3a3f51 = hsl(227, 17%, 27%) */
+		--sidebar: 227 17% 27%;
+		/* sidebarColor: #e1e2e3 */
+		--sidebar-foreground: 210 6% 89%;
+		/* sidebarActiveBackgroundColor: #252833 */
+		--sidebar-accent: 228 21% 17%;
+		--sidebar-accent-foreground: 193 91% 58%;
+		--sidebar-border: 227 17% 22%;
+
+		/* toolbarBackgroundColor: #4f566f = hsl(227, 17%, 37%) - lighter than sidebar */
+		--toolbar: 227 17% 37%;
+	}
+
+	/* Dark mode - Sonarr dark theme */
+	[data-theme="arr"].dark,
+	.dark [data-theme="arr"] {
+		/* Theme colors: Use Sonarr primaryColor #5d9cec for flat appearance (no gradients) */
+		/* Both from/to are same color to create solid fills instead of gradients */
+		--theme-from: #5d9cec;
+		--theme-to: #5d9cec;
+		--theme-glow: rgba(93, 156, 236, 0.5);
+		--theme-from-light: rgba(93, 156, 236, 0.1);
+		--theme-from-medium: rgba(93, 156, 236, 0.2);
+		--theme-from-muted: rgba(93, 156, 236, 0.3);
+
+		/* Primary: Sonarr blue #35c5f4 */
+		--primary: 193 91% 58%;
+		--primary-foreground: 0 0% 100%;
+
+		/* Accent: primaryColor #5d9cec (softer blue used for buttons) */
+		--accent: 214 80% 65%;
+		--accent-foreground: 0 0% 100%;
+
+		/* pageBackground: #202020 */
+		--background: 0 0% 12.5%;
+		/* textColor: #ccc */
+		--foreground: 0 0% 80%;
+
+		/* cardBackgroundColor: #333333 */
+		--card: 0 0% 20%;
+		--card-foreground: 0 0% 80%;
+
+		/* modalBackgroundColor: #2a2a2a */
+		--popover: 0 0% 16.5%;
+		--popover-foreground: 0 0% 80%;
+
+		/* themeDarkColor: #494949 */
+		--secondary: 0 0% 28.5%;
+		--secondary-foreground: 0 0% 80%;
+
+		/* dimColor: #555, helpTextColor: #909293 */
+		--muted: 0 0% 20%;
+		--muted-foreground: 200 1% 57%;
+
+		/* borderColor - subtle dark borders */
+		--border: 0 0% 28%;
+		/* Input backgrounds */
+		--input: 0 0% 16.5%;
+
+		/* sidebarBackgroundColor: #2a2a2a */
+		--sidebar: 0 0% 16.5%;
+		/* sidebarColor: #e1e2e3 */
+		--sidebar-foreground: 210 6% 89%;
+		/* sidebarActiveBackgroundColor: #333333 */
+		--sidebar-accent: 0 0% 20%;
+		--sidebar-accent-foreground: 193 91% 58%;
+		--sidebar-border: 0 0% 20%;
+	}
+
+	/* qBittorrent Theme - Authentic torrent client desktop UI
+	 * Colors extracted from official qBittorrent WebUI style.css
+	 * Goal: Make it look like actual qBittorrent, not a themed web app
+	 * Supports both light and dark modes like real qBittorrent
+	 */
+
+	/* qBittorrent Light Mode */
+	[data-theme="qbittorrent"]:not(.dark) {
+		/* Theme colors - minimal for flat design (no glow effects used) */
+		--theme-from: #4a90c2;
+		--theme-to: #4a90c2; /* Same color - no gradient in qBittorrent */
+		--theme-glow: transparent; /* No glow effects */
+		--theme-from-light: rgba(74, 144, 194, 0.1);
+		--theme-from-medium: rgba(74, 144, 194, 0.15);
+		--theme-from-muted: rgba(74, 144, 194, 0.2);
+
+		/* Primary: qBittorrent accent blue hsl(210deg 65% 55%) for light mode */
+		--primary: 210 65% 55%;
+		--primary-foreground: 0 0% 100%;
+
+		/* Accent: Orange for seeding/download indicators hsl(26deg 100% 45%) */
+		--accent: 26 100% 45%;
+		--accent-foreground: 0 0% 100%;
+
+		/* Background: qBittorrent light mode hsl(0deg 0% 100%) */
+		--background: 0 0% 100%;
+		--foreground: 0 0% 33%;
+
+		/* Card: Default background hsl(0deg 0% 94%) */
+		--card: 0 0% 96%;
+		--card-foreground: 0 0% 33%;
+
+		/* Popover: White background */
+		--popover: 0 0% 100%;
+		--popover-foreground: 0 0% 33%;
+
+		/* Secondary: Slightly darker than card */
+		--secondary: 0 0% 90%;
+		--secondary-foreground: 0 0% 33%;
+
+		/* Muted: For disabled and less important elements */
+		--muted: 0 0% 94%;
+		--muted-foreground: 0 0% 60%;
+
+		/* Border: qBittorrent light mode border hsl(0deg 0% 85%) */
+		--border: 0 0% 85%;
+
+		/* Input: White input fields */
+		--input: 0 0% 100%;
+
+		/* Sidebar: Light gray toolbar style */
+		--sidebar: 0 0% 96%;
+		--sidebar-foreground: 0 0% 33%;
+		--sidebar-accent: 210 65% 55%;
+		--sidebar-accent-foreground: 0 0% 100%;
+		--sidebar-border: 0 0% 85%;
+
+		/* Ring focus color */
+		--ring: 210 65% 55%;
+
+		/* Chart colors - qBittorrent style */
+		--chart-1: 210 65% 55%; /* Blue - downloading */
+		--chart-2: 26 100% 45%; /* Orange - seeding */
+		--chart-3: 110 94% 27%; /* Green - completed */
+		--chart-4: 0 100% 65%;  /* Red - error */
+		--chart-5: 0 0% 60%;    /* Gray - paused */
+
+		/* Radius: qBittorrent uses very minimal radius (3px) */
+		--radius: 0.1875rem;
+
+		/* qBittorrent-specific: no gradient mesh */
+		--gradient-mesh: transparent;
+	}
+
+	/* qBittorrent Dark Mode */
+	[data-theme="qbittorrent"].dark {
+		/* Theme colors - minimal for flat design (no glow effects used) */
+		--theme-from: #4a90c2;
+		--theme-to: #4a90c2; /* Same color - no gradient in qBittorrent */
+		--theme-glow: transparent; /* No glow effects */
+		--theme-from-light: rgba(74, 144, 194, 0.1);
+		--theme-from-medium: rgba(74, 144, 194, 0.15);
+		--theme-from-muted: rgba(74, 144, 194, 0.2);
+
+		/* Primary: qBittorrent accent blue hsl(210deg 42% 48%) for dark mode */
+		--primary: 210 42% 48%;
+		--primary-foreground: 0 0% 100%;
+
+		/* Accent: Orange for seeding/download indicators hsl(26deg 65% 70%) */
+		--accent: 26 65% 70%;
+		--accent-foreground: 0 0% 10%;
+
+		/* Background: qBittorrent dark mode hsl(0deg 0% 7%) */
+		--background: 0 0% 7%;
+		--foreground: 0 0% 90%;
+
+		/* Card: Slightly lighter than background hsl(0deg 0% 12%) */
+		--card: 0 0% 12%;
+		--card-foreground: 0 0% 90%;
+
+		/* Popover: Same as card for consistency */
+		--popover: 0 0% 15%;
+		--popover-foreground: 0 0% 90%;
+
+		/* Secondary: Default background color hsl(0deg 0% 25%) */
+		--secondary: 0 0% 20%;
+		--secondary-foreground: 0 0% 90%;
+
+		/* Muted: For disabled and less important elements */
+		--muted: 0 0% 16%;
+		--muted-foreground: 0 0% 60%;
+
+		/* Border: qBittorrent dark mode border hsl(0deg 0% 33%) */
+		--border: 0 0% 33%;
+
+		/* Input: Darker input fields */
+		--input: 0 0% 10%;
+
+		/* Sidebar: qBittorrent toolbar style */
+		--sidebar: 0 0% 10%;
+		--sidebar-foreground: 0 0% 90%;
+		--sidebar-accent: 210 42% 48%;
+		--sidebar-accent-foreground: 0 0% 100%;
+		--sidebar-border: 0 0% 25%;
+
+		/* Ring focus color */
+		--ring: 210 42% 48%;
+
+		/* Chart colors - qBittorrent style */
+		--chart-1: 210 42% 48%; /* Blue - downloading */
+		--chart-2: 26 65% 70%;  /* Orange - seeding */
+		--chart-3: 110 94% 27%; /* Green - completed */
+		--chart-4: 0 80% 55%;   /* Red - error */
+		--chart-5: 0 0% 50%;    /* Gray - paused */
+
+		/* Radius: qBittorrent uses very minimal radius (3px) */
+		--radius: 0.1875rem;
+
+		/* qBittorrent-specific: no gradient mesh */
+		--gradient-mesh: transparent;
+	}
+
+	/* Cyberpunk Theme - Night City neon chaos
+	 * Inspired by Cyberpunk 2077's signature hot pink/cyan palette
+	 * Designed for readability while maintaining visual intensity */
+	[data-theme="cyberpunk"],
+	[data-theme="cyberpunk"].dark {
+		/* Theme gradient: Signature hot pink to electric cyan */
+		--theme-from: #ff2a6d;
+		--theme-to: #05d9e8;
+		--theme-glow: rgba(255, 42, 109, 0.6);
+		--theme-from-light: rgba(255, 42, 109, 0.1);
+		--theme-from-medium: rgba(255, 42, 109, 0.2);
+		--theme-from-muted: rgba(255, 42, 109, 0.35);
+		/* Primary: Hot pink - THE Cyberpunk color */
+		--primary: 342 100% 58%;
+		--primary-foreground: 0 0% 100%;
+		/* Accent: Electric cyan */
+		--accent: 185 95% 46%;
+		--accent-foreground: 0 0% 0%;
+		/* Background: Deep black with subtle magenta - Night City darkness */
+		--background: 280 40% 4%;
+		/* Foreground: Clean white for maximum readability */
+		--foreground: 0 0% 95%;
+		/* Cards: Elevated surface with magenta tint */
+		--card: 280 35% 7%;
+		--card-foreground: 0 0% 95%;
+		--popover: 280 35% 9%;
+		--popover-foreground: 0 0% 95%;
+		/* Secondary: Subtle elevation */
+		--secondary: 280 30% 11%;
+		--secondary-foreground: 0 0% 95%;
+		/* Muted: Readable gray with warmth */
+		--muted: 280 20% 14%;
+		--muted-foreground: 280 10% 60%;
+		/* Border: Hot pink glow hint */
+		--border: 342 50% 25%;
+		--input: 280 30% 8%;
+		/* Sidebar: Deepest black */
+		--sidebar: 280 50% 2%;
+		--sidebar-foreground: 0 0% 95%;
+		--sidebar-accent: 280 35% 10%;
+		--sidebar-accent-foreground: 342 100% 65%;
+		--sidebar-border: 342 40% 18%;
+		/* Ring: Neon pink focus */
+		--ring: 342 100% 58%;
+		/* Chart colors for data viz */
+		--chart-1: 342 100% 58%;
+		--chart-2: 185 95% 46%;
+		--chart-3: 55 100% 50%;
+		--chart-4: 280 80% 60%;
+		--chart-5: 120 100% 50%;
+	}
+
+	/* Midnight Theme - Deep space galaxy with stars and nebulae */
+	[data-theme="midnight"],
+	[data-theme="midnight"].dark {
+		/* Theme gradient colors (hex for JS gradient compatibility) */
+		--theme-from: #4a0080;
+		--theme-to: #000033;
+		--theme-glow: rgba(100, 50, 180, 0.5);
+		--theme-from-light: rgba(74, 0, 128, 0.1);
+		--theme-from-medium: rgba(74, 0, 128, 0.2);
+		--theme-from-muted: rgba(74, 0, 128, 0.3);
+		--primary: 270 80% 60%;
+		--primary-foreground: 0 0% 100%;
+		--accent: 200 100% 60%;
+		--accent-foreground: 0 0% 0%;
+		--background: 230 50% 3%;
+		--foreground: 230 20% 90%;
+		--card: 230 40% 6%;
+		--card-foreground: 230 20% 90%;
+		--popover: 230 40% 6%;
+		--popover-foreground: 230 20% 90%;
+		--secondary: 230 30% 10%;
+		--secondary-foreground: 230 20% 90%;
+		--muted: 230 20% 10%;
+		--muted-foreground: 230 20% 50%;
+		--border: 270 40% 15%;
+		--input: 230 20% 8%;
+		--sidebar: 230 50% 2%;
+		--sidebar-foreground: 230 20% 90%;
+		--sidebar-accent: 230 30% 10%;
+		--sidebar-accent-foreground: 270 80% 70%;
+		--sidebar-border: 270 30% 12%;
 	}
 
 	/* ========================================
@@ -361,6 +1240,2885 @@
 	}
 
 	/* ========================================
+	 * NOSTALGIC THEME SPECIAL EFFECTS
+	 * These effects always apply for immersive themes
+	 * (they have their own dark backgrounds regardless of mode)
+	 * ======================================== */
+
+	/* Terminal Theme - CRT Scanlines Effect */
+	[data-theme="terminal"] body::after {
+		content: "";
+		position: fixed;
+		inset: 0;
+		pointer-events: none;
+		z-index: 50; /* Decorative overlay - below interactive UI */
+		background: repeating-linear-gradient(
+			0deg,
+			rgba(0, 0, 0, 0.15) 0px,
+			rgba(0, 0, 0, 0.15) 1px,
+			transparent 1px,
+			transparent 2px
+		);
+		animation: scanlines 0.1s linear infinite;
+	}
+
+	@keyframes scanlines {
+		0% { background-position: 0 0; }
+		100% { background-position: 0 4px; }
+	}
+
+	/* Terminal - CRT screen glow/bloom */
+	[data-theme="terminal"] body::before {
+		content: "";
+		position: fixed;
+		inset: 0;
+		pointer-events: none;
+		z-index: 49; /* Decorative overlay - below scanlines */
+		background: radial-gradient(
+			ellipse at center,
+			transparent 0%,
+			rgba(0, 0, 0, 0.3) 90%,
+			rgba(0, 0, 0, 0.6) 100%
+		);
+	}
+
+	/* Terminal - Text glow effect */
+	[data-theme="terminal"] h1,
+	[data-theme="terminal"] h2,
+	[data-theme="terminal"] h3,
+	[data-theme="terminal"] .gradient-text {
+		text-shadow: 0 0 10px hsl(120 100% 50% / 0.8), 0 0 20px hsl(120 100% 50% / 0.4);
+	}
+
+	/* Winamp Theme - LED glow effect */
+	[data-theme="winamp"] h1,
+	[data-theme="winamp"] h2,
+	[data-theme="winamp"] h3,
+	[data-theme="winamp"] .gradient-text {
+		text-shadow: 0 0 8px hsl(120 100% 50% / 0.9), 0 0 16px hsl(120 100% 50% / 0.5);
+	}
+
+	/* Winamp - Brushed metal effect on cards */
+	[data-theme="winamp"] .glass,
+	[data-theme="winamp"] [class*="rounded"][class*="border"][class*="bg-card"] {
+		background-image:
+			linear-gradient(135deg, rgba(255,255,255,0.03) 0%, transparent 50%, rgba(0,0,0,0.05) 100%),
+			linear-gradient(to bottom, rgba(255,255,255,0.02) 0%, transparent 100%);
+		border-color: hsl(120 50% 25% / 0.5);
+	}
+
+	/* Vaporwave Theme - Sunset gradient background effect */
+	[data-theme="vaporwave"] body::before {
+		content: "";
+		position: fixed;
+		inset: 0;
+		pointer-events: none;
+		z-index: -1;
+		background: linear-gradient(
+			180deg,
+			hsl(280 60% 15%) 0%,
+			hsl(320 50% 12%) 50%,
+			hsl(200 60% 10%) 100%
+		);
+		opacity: 0.5;
+	}
+
+	/* Vaporwave - Neon glow on text */
+	[data-theme="vaporwave"] h1,
+	[data-theme="vaporwave"] h2,
+	[data-theme="vaporwave"] h3,
+	[data-theme="vaporwave"] .gradient-text {
+		text-shadow:
+			0 0 10px hsl(320 100% 70% / 0.8),
+			0 0 30px hsl(320 100% 70% / 0.4),
+			0 0 60px hsl(180 100% 50% / 0.2);
+	}
+
+	/* Vaporwave - Grid floor effect */
+	[data-theme="vaporwave"] body::after {
+		content: "";
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		height: 30vh;
+		pointer-events: none;
+		z-index: -1;
+		background:
+			linear-gradient(transparent 0%, hsl(180 100% 50% / 0.03) 100%),
+			repeating-linear-gradient(
+				90deg,
+				hsl(320 100% 70% / 0.05) 0px,
+				hsl(320 100% 70% / 0.05) 1px,
+				transparent 1px,
+				transparent 60px
+			),
+			repeating-linear-gradient(
+				0deg,
+				hsl(180 100% 50% / 0.05) 0px,
+				hsl(180 100% 50% / 0.05) 1px,
+				transparent 1px,
+				transparent 60px
+			);
+		transform: perspective(500px) rotateX(60deg);
+		transform-origin: bottom;
+		mask-image: linear-gradient(transparent 0%, black 100%);
+		-webkit-mask-image: linear-gradient(transparent 0%, black 100%);
+	}
+
+	/* Y2K Cyber Theme - Chrome/metallic shine effect */
+	[data-theme="cyber"] h1,
+	[data-theme="cyber"] h2,
+	[data-theme="cyber"] h3,
+	[data-theme="cyber"] .gradient-text {
+		text-shadow:
+			0 0 10px hsl(195 100% 50% / 0.8),
+			0 0 20px hsl(300 100% 50% / 0.4);
+		background: linear-gradient(
+			135deg,
+			hsl(195 100% 60%) 0%,
+			hsl(195 100% 80%) 25%,
+			hsl(300 100% 70%) 50%,
+			hsl(195 100% 80%) 75%,
+			hsl(195 100% 60%) 100%
+		);
+		-webkit-background-clip: text;
+		-webkit-text-fill-color: transparent;
+		background-clip: text;
+		background-size: 200% 200%;
+		animation: chrome-shine 3s ease-in-out infinite;
+	}
+
+	@keyframes chrome-shine {
+		0%, 100% { background-position: 0% 50%; }
+		50% { background-position: 100% 50%; }
+	}
+
+	/* Y2K Cyber - Holographic card effect */
+	[data-theme="cyber"] .glass,
+	[data-theme="cyber"] [class*="rounded"][class*="border"][class*="bg-card"] {
+		background-image:
+			linear-gradient(135deg,
+				hsl(195 100% 50% / 0.05) 0%,
+				hsl(300 100% 50% / 0.05) 50%,
+				hsl(195 100% 50% / 0.05) 100%
+			);
+		border-color: hsl(195 80% 40% / 0.4);
+	}
+
+	/* ========================================
+	 * FILM NOIR THEME EFFECTS
+	 * ======================================== */
+
+	/* Film Noir - Film grain overlay with slow drift */
+	[data-theme="noir"] body::after {
+		content: "";
+		position: fixed;
+		inset: 0;
+		pointer-events: none;
+		z-index: 50; /* Decorative overlay - below interactive UI */
+		opacity: 0.06;
+		background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+		animation: grain-drift 4s ease-in-out infinite;
+	}
+
+	@keyframes grain-drift {
+		0%, 100% { transform: translate(0, 0); }
+		50% { transform: translate(-2%, -2%); }
+	}
+
+	/* Film Noir - Cinematic vignette effect */
+	[data-theme="noir"] body::before {
+		content: "";
+		position: fixed;
+		inset: 0;
+		pointer-events: none;
+		z-index: 49; /* Decorative overlay - below grain */
+		background: radial-gradient(
+			ellipse at center,
+			transparent 35%,
+			rgba(0, 0, 0, 0.3) 70%,
+			rgba(0, 0, 0, 0.6) 100%
+		);
+	}
+
+	/* Film Noir - High contrast text with hard shadows */
+	[data-theme="noir"] h1,
+	[data-theme="noir"] h2,
+	[data-theme="noir"] h3,
+	[data-theme="noir"] .gradient-text {
+		text-shadow:
+			2px 2px 0 rgba(0, 0, 0, 0.8),
+			-1px -1px 0 rgba(232, 220, 200, 0.1);
+	}
+
+	/* Film Noir - Card styling with vintage paper look */
+	[data-theme="noir"] .glass,
+	[data-theme="noir"] [class*="rounded"][class*="border"][class*="bg-card"] {
+		background-image: linear-gradient(
+			135deg,
+			rgba(232, 220, 200, 0.02) 0%,
+			transparent 50%,
+			rgba(0, 0, 0, 0.05) 100%
+		);
+		border-color: hsl(45 30% 20% / 0.4);
+	}
+
+	/* ========================================
+	 * VHS THEME EFFECTS
+	 * ======================================== */
+
+	/* VHS - Analog TV scanlines */
+	[data-theme="vhs"] body::after {
+		content: "";
+		position: fixed;
+		inset: 0;
+		pointer-events: none;
+		z-index: 50; /* Decorative overlay - below interactive UI */
+		background: repeating-linear-gradient(
+			0deg,
+			rgba(0, 0, 0, 0.12) 0px,
+			rgba(0, 0, 0, 0.12) 1px,
+			transparent 1px,
+			transparent 3px
+		);
+	}
+
+	/* VHS - Subtle static noise with occasional flicker */
+	[data-theme="vhs"] body::before {
+		content: "";
+		position: fixed;
+		inset: 0;
+		pointer-events: none;
+		z-index: 49; /* Decorative overlay - below scanlines */
+		opacity: 0.03;
+		background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+		animation: vhs-flicker 8s ease-in-out infinite;
+	}
+
+	@keyframes vhs-flicker {
+		0%, 90%, 100% { opacity: 0.03; }
+		92% { opacity: 0.05; }
+		94% { opacity: 0.02; }
+	}
+
+	/* VHS - RGB color fringe/chromatic aberration on text */
+	[data-theme="vhs"] h1,
+	[data-theme="vhs"] h2,
+	[data-theme="vhs"] h3,
+	[data-theme="vhs"] .gradient-text {
+		text-shadow:
+			-1px 0 rgba(255, 0, 0, 0.2),
+			1px 0 rgba(0, 255, 255, 0.2),
+			0 0 8px rgba(184, 196, 208, 0.35);
+	}
+
+	/* VHS - Worn tape edge effect on cards */
+	[data-theme="vhs"] .glass,
+	[data-theme="vhs"] [class*="rounded"][class*="border"][class*="bg-card"] {
+		background-image: linear-gradient(
+			180deg,
+			rgba(200, 200, 220, 0.03) 0%,
+			transparent 20%,
+			transparent 80%,
+			rgba(0, 0, 0, 0.05) 100%
+		);
+		border-color: hsl(220 10% 25% / 0.5);
+	}
+
+	/* ========================================
+	 * SYNTHWAVE THEME EFFECTS
+	 * ======================================== */
+
+	/* Synthwave - Sunset gradient band at horizon */
+	[data-theme="synthwave"] body::before {
+		content: "";
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		height: 40vh;
+		pointer-events: none;
+		z-index: -1;
+		background: linear-gradient(
+			180deg,
+			transparent 0%,
+			hsl(320 100% 50% / 0.1) 30%,
+			hsl(35 100% 50% / 0.15) 60%,
+			hsl(320 100% 50% / 0.2) 100%
+		);
+		mask-image: linear-gradient(transparent 0%, black 30%, black 100%);
+		-webkit-mask-image: linear-gradient(transparent 0%, black 30%, black 100%);
+	}
+
+	/* Synthwave - Aggressive 3D grid floor */
+	[data-theme="synthwave"] body::after {
+		content: "";
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		height: 35vh;
+		pointer-events: none;
+		z-index: -1;
+		background:
+			linear-gradient(transparent 0%, hsl(320 100% 60% / 0.05) 100%),
+			repeating-linear-gradient(
+				90deg,
+				hsl(320 100% 60% / 0.15) 0px,
+				hsl(320 100% 60% / 0.15) 1px,
+				transparent 1px,
+				transparent 40px
+			),
+			repeating-linear-gradient(
+				0deg,
+				hsl(180 100% 50% / 0.1) 0px,
+				hsl(180 100% 50% / 0.1) 1px,
+				transparent 1px,
+				transparent 40px
+			);
+		transform: perspective(400px) rotateX(70deg);
+		transform-origin: bottom;
+		mask-image: linear-gradient(transparent 0%, black 100%);
+		-webkit-mask-image: linear-gradient(transparent 0%, black 100%);
+	}
+
+	/* Synthwave - Triple-layer intense neon glow */
+	[data-theme="synthwave"] h1,
+	[data-theme="synthwave"] h2,
+	[data-theme="synthwave"] h3,
+	[data-theme="synthwave"] .gradient-text {
+		text-shadow:
+			0 0 10px hsl(320 100% 60% / 1),
+			0 0 30px hsl(320 100% 60% / 0.6),
+			0 0 60px hsl(180 100% 50% / 0.4),
+			0 0 100px hsl(320 100% 60% / 0.2);
+	}
+
+	/* Synthwave - Neon border glow on cards */
+	[data-theme="synthwave"] .glass,
+	[data-theme="synthwave"] [class*="rounded"][class*="border"][class*="bg-card"] {
+		background-image: linear-gradient(
+			135deg,
+			hsl(320 100% 60% / 0.05) 0%,
+			transparent 50%,
+			hsl(180 100% 50% / 0.05) 100%
+		);
+		border-color: hsl(320 80% 50% / 0.4);
+		box-shadow: 0 0 20px hsl(320 100% 60% / 0.1), inset 0 0 20px hsl(320 100% 60% / 0.02);
+	}
+
+	/* ========================================
+	 * AMBER CRT THEME EFFECTS
+	 * ======================================== */
+
+	/* Amber CRT - Classic CRT scanlines */
+	[data-theme="amber"] body::after {
+		content: "";
+		position: fixed;
+		inset: 0;
+		pointer-events: none;
+		z-index: 50; /* Decorative overlay - below interactive UI */
+		background: repeating-linear-gradient(
+			0deg,
+			rgba(0, 0, 0, 0.15) 0px,
+			rgba(0, 0, 0, 0.15) 1px,
+			transparent 1px,
+			transparent 2px
+		);
+		animation: scanlines 0.1s linear infinite;
+	}
+
+	/* Amber CRT - Vignette for CRT curvature simulation */
+	[data-theme="amber"] body::before {
+		content: "";
+		position: fixed;
+		inset: 0;
+		pointer-events: none;
+		z-index: 49; /* Decorative overlay - below scanlines */
+		background: radial-gradient(
+			ellipse at center,
+			transparent 0%,
+			rgba(0, 0, 0, 0.25) 80%,
+			rgba(0, 0, 0, 0.5) 100%
+		);
+	}
+
+	/* Amber CRT - Intense phosphor bloom/glow */
+	[data-theme="amber"] h1,
+	[data-theme="amber"] h2,
+	[data-theme="amber"] h3,
+	[data-theme="amber"] .gradient-text {
+		text-shadow:
+			0 0 5px hsl(35 100% 50% / 1),
+			0 0 15px hsl(35 100% 50% / 0.8),
+			0 0 30px hsl(35 100% 50% / 0.5),
+			0 0 50px hsl(35 100% 50% / 0.3);
+	}
+
+	/* Amber CRT - Monochrome amber styling on cards */
+	[data-theme="amber"] .glass,
+	[data-theme="amber"] [class*="rounded"][class*="border"][class*="bg-card"] {
+		background-image: linear-gradient(
+			180deg,
+			hsl(35 100% 50% / 0.03) 0%,
+			transparent 100%
+		);
+		border-color: hsl(35 80% 40% / 0.4);
+		box-shadow: 0 0 15px hsl(35 100% 50% / 0.05), inset 0 0 10px hsl(35 100% 50% / 0.02);
+	}
+
+	/* ========================================
+	 * CYBERPUNK 2077 THEME EFFECTS
+	 * NIGHT CITY DIGITAL CHAOS
+	 * Authentic CP2077 aesthetic: hot pink, cyan,
+	 * glitch artifacts, holographic UI, targeting HUD
+	 * ======================================== */
+
+	/* Cyberpunk 2077 Color Constants (used throughout effects):
+	 * Hot Pink: #ff2a6d (primary brand color)
+	 * Electric Cyan: #05d9e8 (secondary/accent)
+	 * Deep Magenta: #1a0a14 (background tint)
+	 * Warning Orange: #ff6b35 (alerts/warnings)
+	 */
+
+	/* Cyberpunk - Keyframe Animations */
+	@keyframes cyberpunk-glitch {
+		0%, 100% {
+			clip-path: inset(0 0 0 0);
+			transform: translate(0);
+		}
+		2% {
+			clip-path: inset(80% 0 5% 0);
+			transform: translate(-4px, 2px) skewX(-2deg);
+		}
+		4% {
+			clip-path: inset(10% 0 75% 0);
+			transform: translate(4px, -2px) skewX(2deg);
+		}
+		6% {
+			clip-path: inset(45% 0 35% 0);
+			transform: translate(-2px, 0) skewX(-1deg);
+		}
+		8% {
+			clip-path: inset(70% 0 15% 0);
+			transform: translate(3px, 1px);
+		}
+		10% {
+			clip-path: inset(5% 0 85% 0);
+			transform: translate(-3px, -1px) skewX(1deg);
+		}
+		12%, 100% {
+			clip-path: inset(0 0 0 0);
+			transform: translate(0);
+		}
+	}
+
+	@keyframes cyberpunk-chromatic {
+		0%, 100% {
+			text-shadow:
+				-2px 0 #ff2a6d,
+				2px 0 #05d9e8,
+				0 0 20px #ff2a6d,
+				0 0 40px #ff2a6d,
+				0 0 80px #05d9e8;
+		}
+		25% {
+			text-shadow:
+				-3px 0 #ff2a6d,
+				3px 0 #05d9e8,
+				0 0 25px #05d9e8,
+				0 0 50px #ff2a6d,
+				0 0 100px #ff2a6d;
+		}
+		50% {
+			text-shadow:
+				-1px 0 #ff2a6d,
+				1px 0 #05d9e8,
+				0 0 15px #ff2a6d,
+				0 0 30px #05d9e8,
+				0 0 60px #ff2a6d;
+		}
+		75% {
+			text-shadow:
+				-4px 0 #ff2a6d,
+				4px 0 #05d9e8,
+				0 0 30px #05d9e8,
+				0 0 60px #ff2a6d,
+				0 0 120px #05d9e8;
+		}
+	}
+
+	@keyframes cyberpunk-flicker {
+		0%, 100% { opacity: 1; }
+		2% { opacity: 0.85; }
+		4% { opacity: 1; }
+		5% { opacity: 0.9; }
+		6% { opacity: 1; }
+		41% { opacity: 1; }
+		42% { opacity: 0.88; }
+		43% { opacity: 1; }
+		77% { opacity: 1; }
+		78% { opacity: 0.92; }
+		79% { opacity: 1; }
+		80% { opacity: 0.85; }
+		81% { opacity: 1; }
+	}
+
+	@keyframes cyberpunk-scanline-move {
+		0% { transform: translateY(-100%); }
+		100% { transform: translateY(100vh); }
+	}
+
+	@keyframes cyberpunk-noise {
+		0%, 100% { background-position: 0 0; }
+		10% { background-position: -5% -10%; }
+		20% { background-position: -15% 5%; }
+		30% { background-position: 7% -25%; }
+		40% { background-position: 20% 15%; }
+		50% { background-position: -25% 10%; }
+		60% { background-position: 15% 5%; }
+		70% { background-position: 0% 15%; }
+		80% { background-position: 25% 35%; }
+		90% { background-position: -10% 10%; }
+	}
+
+	@keyframes cyberpunk-border-pulse {
+		0%, 100% {
+			box-shadow:
+				0 0 5px #ff2a6d,
+				0 0 10px #ff2a6d88,
+				0 0 20px #05d9e844,
+				inset 0 0 5px #ff2a6d22;
+		}
+		50% {
+			box-shadow:
+				0 0 8px #05d9e8,
+				0 0 15px #ff2a6d,
+				0 0 30px #05d9e866,
+				inset 0 0 8px #05d9e822;
+		}
+	}
+
+	@keyframes cyberpunk-data-stream {
+		0% { background-position: 0 0; }
+		100% { background-position: 0 200px; }
+	}
+
+	@keyframes cyberpunk-holo-shimmer {
+		0% { background-position: -200% 0; }
+		100% { background-position: 200% 0; }
+	}
+
+	@keyframes cyberpunk-pulse-ring {
+		0% {
+			box-shadow: 0 0 0 0 #ff2a6d88;
+		}
+		70% {
+			box-shadow: 0 0 0 10px #ff2a6d00;
+		}
+		100% {
+			box-shadow: 0 0 0 0 #ff2a6d00;
+		}
+	}
+
+	@keyframes cyberpunk-warning-blink {
+		0%, 100% { opacity: 1; }
+		50% { opacity: 0.5; }
+	}
+
+	/* Cyberpunk - Digital noise/static overlay */
+	[data-theme="cyberpunk"] body::before {
+		content: "";
+		position: fixed;
+		inset: 0;
+		pointer-events: none;
+		z-index: 49; /* Decorative overlay - below scanline */
+		opacity: 0.035;
+		background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+		animation: cyberpunk-noise 0.4s steps(8) infinite;
+	}
+
+	/* Cyberpunk - Animated scanline that sweeps down */
+	[data-theme="cyberpunk"] body::after {
+		content: "";
+		position: fixed;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 3px;
+		pointer-events: none;
+		z-index: 50; /* Decorative overlay - below interactive UI */
+		background: linear-gradient(
+			180deg,
+			transparent 0%,
+			#05d9e8cc 50%,
+			transparent 100%
+		);
+		box-shadow:
+			0 0 15px #05d9e8,
+			0 0 30px #05d9e8,
+			0 0 60px #ff2a6d;
+		animation: cyberpunk-scanline-move 3s linear infinite;
+	}
+
+	/* Cyberpunk - INTENSE glitchy chromatic text on headings */
+	[data-theme="cyberpunk"] h1,
+	[data-theme="cyberpunk"] h2 {
+		animation: cyberpunk-chromatic 2.5s ease-in-out infinite, cyberpunk-flicker 6s linear infinite;
+		position: relative;
+		letter-spacing: 0.05em;
+		text-transform: uppercase;
+	}
+
+	/* Cyberpunk - Glitch clone effect on h1 */
+	[data-theme="cyberpunk"] h1::before,
+	[data-theme="cyberpunk"] h1::after {
+		content: attr(data-text);
+		position: absolute;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		pointer-events: none;
+	}
+
+	[data-theme="cyberpunk"] h1::before {
+		color: #ff2a6d;
+		animation: cyberpunk-glitch 2s infinite;
+		clip-path: inset(0 0 0 0);
+		left: 2px;
+	}
+
+	[data-theme="cyberpunk"] h1::after {
+		color: #05d9e8;
+		animation: cyberpunk-glitch 2s infinite reverse;
+		clip-path: inset(0 0 0 0);
+		left: -2px;
+	}
+
+	/* Cyberpunk - Neon glow on h3 and smaller */
+	[data-theme="cyberpunk"] h3,
+	[data-theme="cyberpunk"] h4,
+	[data-theme="cyberpunk"] h5,
+	[data-theme="cyberpunk"] h6,
+	[data-theme="cyberpunk"] .gradient-text {
+		text-shadow:
+			0 0 5px #ff2a6d,
+			0 0 10px #ff2a6d88,
+			0 0 20px #05d9e866,
+			0 0 40px #ff2a6d44;
+		letter-spacing: 0.02em;
+	}
+
+	/* Cyberpunk - Cards with TARGETING RETICLE corners */
+	[data-theme="cyberpunk"] .glass,
+	[data-theme="cyberpunk"] [class*="rounded"][class*="border"][class*="bg-card"] {
+		border: 1px solid #ff2a6d55 !important;
+		animation: cyberpunk-border-pulse 3s ease-in-out infinite;
+		background-image:
+			/* Top-left corner reticle */
+			linear-gradient(to right, #05d9e8 0, #05d9e8 20px, transparent 20px),
+			linear-gradient(to bottom, #05d9e8 0, #05d9e8 20px, transparent 20px),
+			/* Top-right corner reticle */
+			linear-gradient(to left, #05d9e8 0, #05d9e8 20px, transparent 20px),
+			linear-gradient(to bottom, #05d9e8 0, #05d9e8 20px, transparent 20px),
+			/* Bottom-left corner reticle */
+			linear-gradient(to right, #ff2a6d 0, #ff2a6d 20px, transparent 20px),
+			linear-gradient(to top, #ff2a6d 0, #ff2a6d 20px, transparent 20px),
+			/* Bottom-right corner reticle */
+			linear-gradient(to left, #ff2a6d 0, #ff2a6d 20px, transparent 20px),
+			linear-gradient(to top, #ff2a6d 0, #ff2a6d 20px, transparent 20px),
+			/* Diagonal tech lines */
+			linear-gradient(135deg, #ff2a6d08 0%, transparent 30%, transparent 70%, #05d9e808 100%);
+		background-size:
+			20px 2px, 2px 20px,
+			20px 2px, 2px 20px,
+			20px 2px, 2px 20px,
+			20px 2px, 2px 20px,
+			100% 100%;
+		background-position:
+			top left, top left,
+			top right, top right,
+			bottom left, bottom left,
+			bottom right, bottom right,
+			0 0;
+		background-repeat: no-repeat;
+		position: relative;
+	}
+
+	/* Cyberpunk - Targeting animation on card hover (no opacity flicker) */
+	[data-theme="cyberpunk"] .glass:hover,
+	[data-theme="cyberpunk"] [class*="rounded"][class*="border"][class*="bg-card"]:hover {
+		animation: cyberpunk-border-pulse 1.5s ease-in-out infinite;
+		border-color: #05d9e8 !important;
+		box-shadow:
+			0 0 10px #05d9e8,
+			0 0 20px #ff2a6d66,
+			inset 0 0 30px #05d9e811;
+	}
+
+	/* Cyberpunk - Primary buttons with NEON GLOW */
+	[data-theme="cyberpunk"] button[class*="bg-primary"],
+	[data-theme="cyberpunk"] [role="button"][class*="bg-primary"] {
+		background: linear-gradient(135deg, #ff2a6d 0%, #d4145a 100%) !important;
+		color: #fff !important;
+		font-weight: 700 !important;
+		text-transform: uppercase;
+		letter-spacing: 0.15em;
+		border: 2px solid #ff2a6d !important;
+		box-shadow:
+			0 0 10px #ff2a6d,
+			0 0 20px #ff2a6d66,
+			0 0 40px #ff2a6d33,
+			inset 0 1px 0 #ff6b9d44;
+		animation: cyberpunk-pulse-ring 2s ease-out infinite;
+		position: relative;
+		overflow: hidden;
+	}
+
+	/* Cyberpunk - Button holographic sweep effect */
+	[data-theme="cyberpunk"] button[class*="bg-primary"]::before,
+	[data-theme="cyberpunk"] [role="button"][class*="bg-primary"]::before {
+		content: "";
+		position: absolute;
+		top: 0;
+		left: -100%;
+		width: 100%;
+		height: 100%;
+		background: linear-gradient(
+			90deg,
+			transparent 0%,
+			#ffffff33 50%,
+			transparent 100%
+		);
+		animation: cyberpunk-holo-shimmer 3s linear infinite;
+	}
+
+	[data-theme="cyberpunk"] button[class*="bg-primary"]:hover,
+	[data-theme="cyberpunk"] [role="button"][class*="bg-primary"]:hover {
+		background: linear-gradient(135deg, #05d9e8 0%, #0ab3c4 100%) !important;
+		border-color: #05d9e8 !important;
+		box-shadow:
+			0 0 15px #05d9e8,
+			0 0 30px #05d9e888,
+			0 0 60px #ff2a6d44,
+			inset 0 1px 0 #6ef3ff44;
+		color: #000 !important;
+	}
+
+	/* Cyberpunk - Secondary buttons with tech outline */
+	[data-theme="cyberpunk"] button[class*="bg-secondary"],
+	[data-theme="cyberpunk"] [role="button"][class*="bg-secondary"] {
+		border: 1px solid #05d9e866 !important;
+		position: relative;
+	}
+
+	[data-theme="cyberpunk"] button[class*="bg-secondary"]::after,
+	[data-theme="cyberpunk"] [role="button"][class*="bg-secondary"]::after {
+		content: "";
+		position: absolute;
+		inset: -2px;
+		background: linear-gradient(135deg, #ff2a6d44 0%, transparent 50%, #05d9e844 100%);
+		z-index: -1;
+		opacity: 0;
+		transition: opacity 0.3s ease;
+	}
+
+	[data-theme="cyberpunk"] button[class*="bg-secondary"]:hover::after,
+	[data-theme="cyberpunk"] [role="button"][class*="bg-secondary"]:hover::after {
+		opacity: 1;
+	}
+
+	/* Cyberpunk - Holographic shimmer on badges */
+	[data-theme="cyberpunk"] [class*="badge"],
+	[data-theme="cyberpunk"] [class*="Badge"] {
+		background: linear-gradient(
+			90deg,
+			#ff2a6d 0%,
+			#ff6b9d 25%,
+			#05d9e8 50%,
+			#ff6b9d 75%,
+			#ff2a6d 100%
+		) !important;
+		background-size: 200% 100%;
+		animation: cyberpunk-holo-shimmer 2s linear infinite;
+		color: #000 !important;
+		font-weight: 700;
+		border: 1px solid #ffffff55;
+		text-shadow: none;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	/* Cyberpunk - Glowing input fields with tech corners */
+	[data-theme="cyberpunk"] input,
+	[data-theme="cyberpunk"] select,
+	[data-theme="cyberpunk"] textarea {
+		border: 1px solid #ff2a6d44 !important;
+		background-color: #0a0510cc !important;
+		transition: all 0.3s ease;
+		position: relative;
+	}
+
+	[data-theme="cyberpunk"] input:focus,
+	[data-theme="cyberpunk"] select:focus,
+	[data-theme="cyberpunk"] textarea:focus {
+		border-color: #05d9e8 !important;
+		box-shadow:
+			0 0 5px #05d9e8,
+			0 0 15px #05d9e866,
+			0 0 30px #ff2a6d33,
+			inset 0 0 10px #05d9e811 !important;
+		outline: none !important;
+	}
+
+	/* Cyberpunk - Sidebar with data stream effect */
+	[data-theme="cyberpunk"] aside,
+	[data-theme="cyberpunk"] [class*="sidebar"] {
+		background-image:
+			/* Vertical data lines */
+			repeating-linear-gradient(
+				0deg,
+				transparent 0px,
+				transparent 30px,
+				#ff2a6d06 30px,
+				#ff2a6d06 31px
+			),
+			/* Horizontal scan lines */
+			repeating-linear-gradient(
+				90deg,
+				transparent 0px,
+				transparent 2px,
+				#05d9e802 2px,
+				#05d9e802 4px
+			),
+			/* Animated data stream */
+			linear-gradient(
+				180deg,
+				transparent 0%,
+				#05d9e805 50%,
+				transparent 100%
+			) !important;
+		background-size: 100% 100%, 100% 100%, 100% 200px;
+		animation: cyberpunk-data-stream 4s linear infinite;
+		border-right: 1px solid #ff2a6d44 !important;
+		box-shadow:
+			inset -15px 0 40px -15px #ff2a6d22,
+			inset 0 0 100px #05d9e805;
+	}
+
+	/* Cyberpunk - Links with neon underline */
+	[data-theme="cyberpunk"] a:not([class*="button"]):not([role="button"]) {
+		text-decoration: none;
+		position: relative;
+		color: #05d9e8;
+		transition: color 0.2s ease;
+	}
+
+	[data-theme="cyberpunk"] a:not([class*="button"]):not([role="button"]):hover {
+		color: #ff2a6d;
+		text-shadow: 0 0 10px #ff2a6d88;
+	}
+
+	[data-theme="cyberpunk"] a:not([class*="button"]):not([role="button"])::after {
+		content: "";
+		position: absolute;
+		bottom: -2px;
+		left: 0;
+		width: 100%;
+		height: 2px;
+		background: linear-gradient(90deg, #ff2a6d, #ff6b9d, #05d9e8);
+		transform: scaleX(0);
+		transform-origin: right;
+		transition: transform 0.3s ease;
+	}
+
+	[data-theme="cyberpunk"] a:not([class*="button"]):not([role="button"]):hover::after {
+		transform: scaleX(1);
+		transform-origin: left;
+		box-shadow: 0 0 10px #05d9e8;
+	}
+
+	/* Cyberpunk - Tables with tech scan effect */
+	[data-theme="cyberpunk"] table,
+	[data-theme="cyberpunk"] [role="table"] {
+		border: 1px solid #ff2a6d33;
+	}
+
+	[data-theme="cyberpunk"] th,
+	[data-theme="cyberpunk"] [role="columnheader"] {
+		background: linear-gradient(180deg, #ff2a6d22 0%, #0a051066 100%);
+		border-bottom: 2px solid #ff2a6d;
+		text-transform: uppercase;
+		letter-spacing: 0.08em;
+		text-shadow: 0 0 5px #ff2a6d88;
+		font-weight: 700;
+	}
+
+	[data-theme="cyberpunk"] tr:hover,
+	[data-theme="cyberpunk"] [role="row"]:hover {
+		background: linear-gradient(90deg, #ff2a6d11 0%, #05d9e811 50%, #ff2a6d11 100%);
+	}
+
+	/* Cyberpunk - Scrollbar styling */
+	[data-theme="cyberpunk"] ::-webkit-scrollbar {
+		width: 8px;
+		height: 8px;
+	}
+
+	[data-theme="cyberpunk"] ::-webkit-scrollbar-track {
+		background: #0a0510;
+		border-left: 1px solid #ff2a6d33;
+	}
+
+	[data-theme="cyberpunk"] ::-webkit-scrollbar-thumb {
+		background: linear-gradient(180deg, #ff2a6d 0%, #d4145a 50%, #05d9e8 100%);
+		border-radius: 0;
+		box-shadow: 0 0 8px #ff2a6d88;
+	}
+
+	[data-theme="cyberpunk"] ::-webkit-scrollbar-thumb:hover {
+		background: linear-gradient(180deg, #05d9e8 0%, #0ab3c4 50%, #ff2a6d 100%);
+		box-shadow: 0 0 15px #05d9e8;
+	}
+
+	/* Cyberpunk - Selection highlight */
+	[data-theme="cyberpunk"] ::selection {
+		background: #ff2a6d;
+		color: #fff;
+		text-shadow: none;
+	}
+
+	/* Cyberpunk - Modal/dialog with WARNING aesthetic */
+	[data-theme="cyberpunk"] [role="dialog"],
+	[data-theme="cyberpunk"] [data-radix-dialog-content] {
+		border: 2px solid #ff2a6d !important;
+		box-shadow:
+			0 0 20px #ff2a6d66,
+			0 0 40px #05d9e833,
+			0 0 100px #ff2a6d22,
+			inset 0 0 50px #0a051088 !important;
+		/* Note: Do NOT set position here - breaks Radix dialog centering */
+	}
+
+	/* Cyberpunk - Destructive/danger elements with WARNING STRIPES */
+	[data-theme="cyberpunk"] [class*="destructive"],
+	[data-theme="cyberpunk"] [class*="danger"],
+	[data-theme="cyberpunk"] button[class*="destructive"],
+	[data-theme="cyberpunk"] button[class*="danger"] {
+		background: repeating-linear-gradient(
+			-45deg,
+			#ff2a6d 0px,
+			#ff2a6d 10px,
+			#1a0a14 10px,
+			#1a0a14 20px
+		) !important;
+		border: 2px solid #ff2a6d !important;
+		animation: cyberpunk-warning-blink 1s ease-in-out infinite;
+		text-transform: uppercase;
+		font-weight: 700;
+		letter-spacing: 0.1em;
+	}
+
+	/* Cyberpunk - Progress bars with data flow */
+	[data-theme="cyberpunk"] [role="progressbar"],
+	[data-theme="cyberpunk"] progress,
+	[data-theme="cyberpunk"] [class*="progress"] {
+		background: #0a0510 !important;
+		border: 1px solid #ff2a6d44;
+		overflow: hidden;
+	}
+
+	[data-theme="cyberpunk"] [role="progressbar"] > div,
+	[data-theme="cyberpunk"] progress::-webkit-progress-value,
+	[data-theme="cyberpunk"] [class*="progress"] > div {
+		background: linear-gradient(90deg, #ff2a6d, #ff6b9d, #05d9e8, #ff2a6d) !important;
+		background-size: 200% 100%;
+		animation: cyberpunk-holo-shimmer 2s linear infinite;
+	}
+
+	/* Cyberpunk - Tooltips with tech styling */
+	[data-theme="cyberpunk"] [role="tooltip"],
+	[data-theme="cyberpunk"] [data-radix-popper-content-wrapper] {
+		border: 1px solid #05d9e8 !important;
+		background: #0a0510ee !important;
+		box-shadow: 0 0 15px #05d9e844 !important;
+	}
+
+	/* Cyberpunk - Switch/toggle with neon indicator */
+	[data-theme="cyberpunk"] [role="switch"][data-state="checked"],
+	[data-theme="cyberpunk"] [role="switch"][aria-checked="true"] {
+		background: linear-gradient(135deg, #ff2a6d, #d4145a) !important;
+		box-shadow: 0 0 10px #ff2a6d88;
+	}
+
+	/* Cyberpunk - Dropdown menus with tech aesthetic */
+	[data-theme="cyberpunk"] [role="menu"],
+	[data-theme="cyberpunk"] [role="listbox"],
+	[data-theme="cyberpunk"] [data-radix-menu-content] {
+		border: 1px solid #ff2a6d55 !important;
+		background: #0a0510f5 !important;
+		box-shadow:
+			0 0 20px #ff2a6d33,
+			inset 0 0 30px #05d9e808 !important;
+	}
+
+	[data-theme="cyberpunk"] [role="menuitem"]:hover,
+	[data-theme="cyberpunk"] [role="option"]:hover,
+	[data-theme="cyberpunk"] [role="menuitem"][data-highlighted],
+	[data-theme="cyberpunk"] [role="option"][data-highlighted] {
+		background: linear-gradient(90deg, #ff2a6d22 0%, #05d9e822 100%) !important;
+	}
+
+	/* Cyberpunk - Checkbox/Radio with neon check */
+	[data-theme="cyberpunk"] [role="checkbox"][data-state="checked"],
+	[data-theme="cyberpunk"] [role="radio"][data-state="checked"] {
+		background: #ff2a6d !important;
+		border-color: #ff2a6d !important;
+		box-shadow: 0 0 8px #ff2a6d88;
+	}
+
+	/* Cyberpunk - Tabs with underline glow */
+	[data-theme="cyberpunk"] [role="tab"][data-state="active"],
+	[data-theme="cyberpunk"] [role="tab"][aria-selected="true"] {
+		border-bottom: 2px solid #05d9e8 !important;
+		box-shadow: 0 2px 10px #05d9e866;
+		text-shadow: 0 0 10px #05d9e888;
+	}
+
+	/* Cyberpunk - Accordion with tech styling */
+	[data-theme="cyberpunk"] [data-state="open"] > [role="button"],
+	[data-theme="cyberpunk"] details[open] > summary {
+		background: linear-gradient(90deg, #ff2a6d11 0%, transparent 100%);
+		border-left: 3px solid #ff2a6d;
+	}
+
+	/* Cyberpunk - Skeleton loading with scan effect */
+	[data-theme="cyberpunk"] [class*="skeleton"],
+	[data-theme="cyberpunk"] [class*="Skeleton"] {
+		background: linear-gradient(
+			90deg,
+			#1a0a14 0%,
+			#ff2a6d22 50%,
+			#1a0a14 100%
+		) !important;
+		background-size: 200% 100%;
+		animation: cyberpunk-holo-shimmer 1.5s linear infinite;
+	}
+
+	/* ========================================
+	 * CYBERPUNK 2077 - PREMIUM IMMERSIVE EFFECTS
+	 * These go beyond standard theming for full immersion
+	 * ======================================== */
+
+	/* Cyberpunk - Sporadic glitch animation (rare bursts, not constant) */
+	@keyframes cyberpunk-sporadic-glitch {
+		0%, 95% {
+			transform: translate(0);
+			text-shadow:
+				-2px 0 #ff2a6d,
+				2px 0 #05d9e8,
+				0 0 20px #ff2a6d;
+		}
+		95.5% {
+			transform: translate(-3px, 1px) skewX(-5deg);
+			text-shadow:
+				-4px 0 #ff2a6d,
+				4px 0 #05d9e8,
+				0 0 30px #ff2a6d;
+		}
+		96% {
+			transform: translate(3px, -1px) skewX(3deg);
+			text-shadow:
+				3px 0 #ff2a6d,
+				-3px 0 #05d9e8,
+				0 0 25px #05d9e8;
+		}
+		96.5% {
+			transform: translate(-2px, 2px) skewX(-2deg);
+			text-shadow:
+				-5px 0 #ff2a6d,
+				5px 0 #05d9e8,
+				0 0 40px #ff2a6d;
+		}
+		97% {
+			transform: translate(0);
+			text-shadow:
+				-2px 0 #ff2a6d,
+				2px 0 #05d9e8,
+				0 0 20px #ff2a6d;
+		}
+		97.5%, 100% {
+			transform: translate(0);
+			text-shadow:
+				-2px 0 #ff2a6d,
+				2px 0 #05d9e8,
+				0 0 20px #ff2a6d;
+		}
+	}
+
+	@keyframes cyberpunk-header-sweep {
+		0% {
+			background-position: -200% 0;
+		}
+		50% {
+			background-position: 200% 0;
+		}
+		50.01%, 100% {
+			background-position: -200% 0;
+		}
+	}
+
+	@keyframes cyberpunk-skyline-glow {
+		0%, 100% {
+			filter: drop-shadow(0 0 10px #ff2a6d66) drop-shadow(0 0 20px #05d9e833);
+		}
+		50% {
+			filter: drop-shadow(0 0 15px #ff2a6d88) drop-shadow(0 0 30px #05d9e855);
+		}
+	}
+
+	@keyframes cyberpunk-bracket-pulse {
+		0%, 100% {
+			opacity: 0.7;
+		}
+		50% {
+			opacity: 1;
+		}
+	}
+
+	/* Cyberpunk - HUD Corner Brackets (viewport frame) */
+	[data-theme="cyberpunk"] body {
+		position: relative;
+	}
+
+	/* Top-left corner bracket */
+	[data-theme="cyberpunk"] #__next::before {
+		content: "";
+		position: fixed;
+		top: 12px;
+		left: 12px;
+		width: 60px;
+		height: 60px;
+		border-top: 2px solid #05d9e8;
+		border-left: 2px solid #05d9e8;
+		pointer-events: none;
+		z-index: 100; /* Below interactive UI (dropdowns, modals, etc.) */
+		animation: cyberpunk-bracket-pulse 3s ease-in-out infinite;
+	}
+
+	/* Top-right corner bracket */
+	[data-theme="cyberpunk"] #__next::after {
+		content: "";
+		position: fixed;
+		top: 12px;
+		right: 12px;
+		width: 60px;
+		height: 60px;
+		border-top: 2px solid #05d9e8;
+		border-right: 2px solid #05d9e8;
+		pointer-events: none;
+		z-index: 100; /* Below interactive UI (dropdowns, modals, etc.) */
+		animation: cyberpunk-bracket-pulse 3s ease-in-out infinite 0.5s;
+	}
+
+	/* Bottom-left corner bracket */
+	[data-theme="cyberpunk"] main::before {
+		content: "";
+		position: fixed;
+		bottom: 12px;
+		left: 12px;
+		width: 60px;
+		height: 60px;
+		border-bottom: 2px solid #ff2a6d;
+		border-left: 2px solid #ff2a6d;
+		pointer-events: none;
+		z-index: 100; /* Below interactive UI (dropdowns, modals, etc.) */
+		animation: cyberpunk-bracket-pulse 3s ease-in-out infinite 1s;
+	}
+
+	/* Bottom-right corner bracket */
+	[data-theme="cyberpunk"] main::after {
+		content: "";
+		position: fixed;
+		bottom: 12px;
+		right: 12px;
+		width: 60px;
+		height: 60px;
+		border-bottom: 2px solid #ff2a6d;
+		border-right: 2px solid #ff2a6d;
+		pointer-events: none;
+		z-index: 100; /* Below interactive UI (dropdowns, modals, etc.) */
+		animation: cyberpunk-bracket-pulse 3s ease-in-out infinite 1.5s;
+	}
+
+	/* Cyberpunk - Holographic Header Sweep */
+	[data-theme="cyberpunk"] header,
+	[data-theme="cyberpunk"] nav[class*="top"],
+	[data-theme="cyberpunk"] [class*="header"] {
+		position: relative;
+		overflow: hidden;
+	}
+
+	[data-theme="cyberpunk"] header::before,
+	[data-theme="cyberpunk"] [class*="topbar"]::before {
+		content: "";
+		position: absolute;
+		top: 0;
+		left: 0;
+		right: 0;
+		height: 100%;
+		background: linear-gradient(
+			90deg,
+			transparent 0%,
+			#ff2a6d22 20%,
+			#05d9e844 50%,
+			#ff2a6d22 80%,
+			transparent 100%
+		);
+		background-size: 200% 100%;
+		animation: cyberpunk-header-sweep 8s ease-in-out infinite;
+		pointer-events: none;
+		z-index: 1;
+	}
+
+	/* Cyberpunk - Night City Skyline (external detailed SVG) - BACKGROUND layer */
+	[data-theme="cyberpunk"]::after {
+		content: "";
+		position: fixed;
+		bottom: 0;
+		left: 0;
+		right: 0;
+		height: 200px;
+		background-image: url("/images/night-city-skyline.svg");
+		background-size: auto 100%;
+		background-position: bottom center;
+		background-repeat: repeat-x; /* Tile horizontally for wide screens */
+		pointer-events: none;
+		z-index: 0; /* Behind all content */
+		opacity: 0.9;
+	}
+
+	/* Cyberpunk - Sporadic glitch on main page titles only */
+	[data-theme="cyberpunk"] h1:first-of-type {
+		animation: cyberpunk-sporadic-glitch 10s ease-in-out infinite;
+	}
+
+	/* Cyberpunk - Small HUD data display in corner */
+	[data-theme="cyberpunk"] #__next > div:first-child::after {
+		content: "◉ NIGHT CITY // SYSTEM ONLINE";
+		position: fixed;
+		bottom: 20px;
+		left: 80px;
+		font-family: 'Courier New', monospace;
+		font-size: 10px;
+		letter-spacing: 0.15em;
+		color: #05d9e888;
+		text-transform: uppercase;
+		pointer-events: none;
+		z-index: 101; /* Below interactive UI (dropdowns, modals, etc.) */
+		animation: cyberpunk-flicker 8s linear infinite;
+	}
+
+	/* ========================================
+	 * *ARR SUITE PREMIUM THEME EFFECTS
+	 * Authentic Sonarr/Radarr interface styling
+	 * Extracted from github.com/Sonarr/Sonarr
+	 * ======================================== */
+
+	/* *arr Suite - Typography: Roboto font stack from Sonarr */
+	[data-theme="arr"] {
+		font-family: 'Roboto', 'Open Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+		font-size: 14px;
+		line-height: 1.528571429;
+	}
+
+	/* *arr Suite - Global border radius reset (Sonarr uses 4px max) */
+	[data-theme="arr"] .rounded,
+	[data-theme="arr"] .rounded-sm {
+		border-radius: 2px !important;
+	}
+
+	[data-theme="arr"] .rounded-md {
+		border-radius: 3px !important;
+	}
+
+	[data-theme="arr"] .rounded-lg,
+	[data-theme="arr"] .rounded-xl,
+	[data-theme="arr"] .rounded-2xl,
+	[data-theme="arr"] .rounded-3xl {
+		border-radius: 4px !important;
+	}
+
+	[data-theme="arr"] .rounded-full {
+		border-radius: 4px !important;
+	}
+
+	/* *arr Suite - Modal/dialog uses 6px radius */
+	[data-theme="arr"] [role="dialog"],
+	[data-theme="arr"] [data-radix-dialog-content] {
+		border-radius: 6px !important;
+		background-color: hsl(var(--popover));
+	}
+
+	/* *arr Suite - Button styling to match Sonarr (medium: 6px 16px) */
+	[data-theme="arr"] button,
+	[data-theme="arr"] [role="button"] {
+		border-radius: 4px;
+		font-weight: 400;
+		font-size: 14px;
+		transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+	}
+
+	/* *arr Suite - Default button (Sonarr style) */
+	[data-theme="arr"] button[class*="bg-secondary"],
+	[data-theme="arr"] button[class*="variant-secondary"],
+	[data-theme="arr"] button[class*="variant-outline"] {
+		background-color: hsl(var(--secondary));
+		border: 1px solid hsl(var(--border));
+		color: hsl(var(--foreground));
+	}
+
+	[data-theme="arr"] button[class*="bg-secondary"]:hover,
+	[data-theme="arr"] button[class*="variant-secondary"]:hover,
+	[data-theme="arr"] button[class*="variant-outline"]:hover {
+		background-color: hsl(var(--secondary) / 0.8);
+		border-color: hsl(var(--border) / 0.8);
+	}
+
+	/* *arr Suite - Primary button (Sonarr primaryColor #5d9cec) */
+	[data-theme="arr"] button[class*="bg-primary"],
+	[data-theme="arr"] [class*="btn-primary"] {
+		background-color: #5d9cec !important;
+		border-color: #5d9cec !important;
+		color: #fff !important;
+	}
+
+	[data-theme="arr"] button[class*="bg-primary"]:hover {
+		background-color: #4a89dc !important;
+		border-color: #4a89dc !important;
+	}
+
+	/* *arr Suite - Success button (Sonarr successColor #27c24c) */
+	[data-theme="arr"] button[class*="bg-green"],
+	[data-theme="arr"] button[class*="success"] {
+		background-color: #27c24c !important;
+		border-color: #27c24c !important;
+	}
+
+	[data-theme="arr"] button[class*="bg-green"]:hover,
+	[data-theme="arr"] button[class*="success"]:hover {
+		background-color: #1ea03d !important;
+		border-color: #1ea03d !important;
+	}
+
+	/* *arr Suite - Danger button (Sonarr dangerColor #f05050) */
+	[data-theme="arr"] button[class*="bg-red"],
+	[data-theme="arr"] button[class*="destructive"],
+	[data-theme="arr"] button[class*="danger"] {
+		background-color: #f05050 !important;
+		border-color: #f05050 !important;
+	}
+
+	[data-theme="arr"] button[class*="bg-red"]:hover,
+	[data-theme="arr"] button[class*="destructive"]:hover,
+	[data-theme="arr"] button[class*="danger"]:hover {
+		background-color: #d94040 !important;
+		border-color: #d94040 !important;
+	}
+
+	/* *arr Suite - Warning button (Sonarr warningColor #ff902b) */
+	[data-theme="arr"] button[class*="bg-amber"],
+	[data-theme="arr"] button[class*="bg-yellow"],
+	[data-theme="arr"] button[class*="warning"] {
+		background-color: #ff902b !important;
+		border-color: #ff902b !important;
+	}
+
+	/* *arr Suite - Disabled button (Sonarr uses 0.65 opacity) */
+	[data-theme="arr"] button:disabled,
+	[data-theme="arr"] button[disabled] {
+		opacity: 0.65;
+		cursor: not-allowed;
+	}
+
+	/* *arr Suite - Input fields (35px height, 6px 16px padding) */
+	[data-theme="arr"] input[type="text"],
+	[data-theme="arr"] input[type="password"],
+	[data-theme="arr"] input[type="email"],
+	[data-theme="arr"] input[type="number"],
+	[data-theme="arr"] input[type="search"],
+	[data-theme="arr"] input[type="url"],
+	[data-theme="arr"] input[type="tel"],
+	[data-theme="arr"] textarea,
+	[data-theme="arr"] select {
+		height: 35px;
+		padding: 6px 16px;
+		border-radius: 4px;
+		border: 1px solid hsl(var(--border));
+		background-color: hsl(var(--input));
+		font-size: 14px;
+		color: hsl(var(--foreground));
+		transition: border-color 0.15s ease-in-out, box-shadow 0.15s ease-in-out;
+	}
+
+	[data-theme="arr"] textarea {
+		height: auto;
+		min-height: 70px;
+	}
+
+	/* *arr Suite - Input focus state (Sonarr's glow effect) */
+	[data-theme="arr"] input:focus,
+	[data-theme="arr"] textarea:focus,
+	[data-theme="arr"] select:focus {
+		outline: none;
+		border-color: #66afe9;
+		box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.075), 0 0 8px rgba(102, 175, 233, 0.6);
+	}
+
+	/* *arr Suite - Input error state */
+	[data-theme="arr"] input[aria-invalid="true"],
+	[data-theme="arr"] input.error {
+		border-color: #f05050;
+		box-shadow: 0 0 8px rgba(240, 80, 80, 0.6);
+	}
+
+	/* *arr Suite - Input warning state */
+	[data-theme="arr"] input.warning {
+		border-color: #ffa500;
+		box-shadow: 0 0 8px rgba(255, 165, 0, 0.6);
+	}
+
+	/* *arr Suite - Cards: Sonarr/Radarr use flat design without card containers
+	   Make cards blend into background for authentic *arr feel */
+	[data-theme="arr"] .glass,
+	[data-theme="arr"] [class*="bg-card"] {
+		background-color: transparent !important;
+		border: none !important;
+		border-radius: 0 !important;
+		box-shadow: none !important;
+	}
+
+	/* *arr Suite - Content sections that need subtle separation get page background */
+	[data-theme="arr"] [class*="bg-card"][class*="border"] {
+		background-color: hsl(var(--background)) !important;
+		border: 1px solid hsl(var(--border)) !important;
+		border-radius: 4px !important;
+	}
+
+	/* *arr Suite - Modal/dialog cards DO get a background (popoverBackgroundColor) */
+	[data-theme="arr"] [role="dialog"] [class*="bg-card"],
+	[data-theme="arr"] [data-radix-dialog-content] {
+		background-color: hsl(var(--popover)) !important;
+		border: 1px solid hsl(var(--border)) !important;
+		border-radius: 4px !important;
+	}
+
+	/* *arr Suite - Sidebar (dark sidebar in both light and dark modes, like Sonarr) */
+	[data-theme="arr"] aside,
+	[data-theme="arr"] [data-sidebar] {
+		background-color: hsl(var(--sidebar)) !important;
+		background: hsl(var(--sidebar)) !important;
+		border-color: hsl(var(--sidebar-border)) !important;
+	}
+
+	/* *arr Suite - Sidebar text colors */
+	[data-theme="arr"] aside .text-muted-foreground,
+	[data-theme="arr"] aside p {
+		color: hsl(var(--sidebar-foreground)) !important;
+	}
+
+	/* *arr Suite - Sidebar brand/logo visibility */
+	/* Ensure the "Arr Control" title gradient text is visible */
+	[data-theme="arr"] aside h1 {
+		background: linear-gradient(135deg, #35c5f4, #ffc230) !important;
+		-webkit-background-clip: text !important;
+		background-clip: text !important;
+		-webkit-text-fill-color: transparent !important;
+	}
+
+	/* Ensure the logo icon container gradient is visible */
+	/* Target ONLY the brand logo box (first child div inside the brand area) */
+	[data-theme="arr"] aside > div:first-child > div > div:first-child {
+		background: linear-gradient(135deg, #35c5f4, #ffc230) !important;
+		box-shadow: 0 8px 24px -8px rgba(53, 197, 244, 0.5) !important;
+	}
+
+	/* *arr Suite - Sidebar items (12px 24px padding, square edges) */
+	[data-theme="arr"] [data-sidebar] a,
+	[data-theme="arr"] [data-sidebar] button {
+		border-radius: 0 !important;
+		color: hsl(var(--sidebar-foreground));
+		padding: 12px 24px;
+		border-left: 3px solid transparent;
+		transition: color 0.3s ease-in-out, border-color 0.3s ease-in-out, background-color 0.3s ease-in-out;
+	}
+
+	/* *arr Suite - Sidebar hover (themeBlue on hover) */
+	[data-theme="arr"] [data-sidebar] a:hover,
+	[data-theme="arr"] [data-sidebar] button:hover {
+		color: #35c5f4;
+		text-decoration: none;
+		background-color: transparent;
+	}
+
+	/* *arr Suite - Sidebar active (3px left border, themeAlternateBlue: #2193b5) */
+	[data-theme="arr"] [data-sidebar] a[data-active="true"],
+	[data-theme="arr"] [data-sidebar] [aria-current="page"],
+	[data-theme="arr"] [data-sidebar] a[class*="active"] {
+		border-left-color: #2193b5 !important;
+		color: #2193b5 !important;
+		background-color: hsl(var(--sidebar-accent)) !important;
+	}
+
+	/* *arr Suite - Override the gradient indicator for active sidebar items */
+	/* Make the gradient transparent so the parent's background shows through */
+	[data-theme="arr"] [data-sidebar] [aria-current="page"] > .absolute {
+		background: transparent !important;
+		box-shadow: none !important;
+		opacity: 0 !important;
+		visibility: hidden !important;
+	}
+
+	/* *arr Suite - Active sidebar item icons and chevrons */
+	[data-theme="arr"] [data-sidebar] [aria-current="page"] svg {
+		color: #2193b5 !important;
+	}
+
+	/* *arr Suite - Table styling (8px padding, top border only) */
+	[data-theme="arr"] table {
+		border-collapse: collapse;
+		width: 100%;
+	}
+
+	[data-theme="arr"] th {
+		padding: 8px;
+		border-top: 1px solid hsl(var(--border));
+		font-weight: 500;
+		text-align: left;
+		color: hsl(var(--foreground)) !important;
+		background-color: hsl(var(--sidebar));
+	}
+
+	/* *arr Suite - Table header text must be visible (override utility classes) */
+	/* Target all common patterns: text-fg-muted, text-muted-foreground, etc. */
+	[data-theme="arr"] thead,
+	[data-theme="arr"] thead th,
+	[data-theme="arr"] thead [class*="text-fg"],
+	[data-theme="arr"] thead [class*="text-muted"],
+	[data-theme="arr"] th[class*="text-muted"] {
+		color: hsl(var(--sidebar-foreground)) !important;
+	}
+
+	/* *arr Suite - Ensure dark backgrounds have visible text */
+	[data-theme="arr"] [class*="bg-bg-hover"][class*="text-fg-muted"],
+	[data-theme="arr"] [class*="bg-bg-subtle"][class*="text-fg-muted"] {
+		color: hsl(var(--foreground)) !important;
+	}
+
+	[data-theme="arr"] td {
+		padding: 8px;
+		border-top: 1px solid hsl(var(--border));
+		line-height: 1.528571429;
+		font-size: 14px;
+	}
+
+	[data-theme="arr"] tr:hover td {
+		background-color: hsl(var(--muted) / 0.5);
+	}
+
+	/* *arr Suite - Links (linkColor with underline on hover) */
+	[data-theme="arr"] a {
+		color: hsl(var(--primary));
+		text-decoration: none;
+		transition: color 0.15s ease-in-out;
+	}
+
+	[data-theme="arr"] a:hover {
+		color: hsl(var(--primary) / 0.8);
+		text-decoration: underline;
+	}
+
+	/* *arr Suite - Headers */
+	[data-theme="arr"] h1,
+	[data-theme="arr"] h2,
+	[data-theme="arr"] h3,
+	[data-theme="arr"] h4 {
+		font-weight: 500;
+		letter-spacing: -0.01em;
+		color: hsl(var(--foreground));
+	}
+
+	/* *arr Suite - Labels/Badges (2px radius, compact padding) */
+	[data-theme="arr"] [class*="badge"],
+	[data-theme="arr"] .label {
+		display: inline-block;
+		margin: 2px;
+		border: 1px solid;
+		border-radius: 2px !important;
+		text-align: center;
+		white-space: nowrap;
+		line-height: 1;
+		color: #fff;
+		font-size: 12px;
+		font-weight: 400;
+		padding: 2px 5px;
+	}
+
+	/* *arr Suite - Badge variants */
+	[data-theme="arr"] [class*="badge-success"],
+	[data-theme="arr"] [class*="bg-green"] {
+		background-color: #27c24c;
+		border-color: #27c24c;
+	}
+
+	[data-theme="arr"] [class*="badge-danger"],
+	[data-theme="arr"] [class*="bg-red"] {
+		background-color: #f05050;
+		border-color: #f05050;
+	}
+
+	[data-theme="arr"] [class*="badge-warning"],
+	[data-theme="arr"] [class*="bg-amber"] {
+		background-color: #ffa500;
+		border-color: #ffa500;
+	}
+
+	[data-theme="arr"] [class*="badge-info"],
+	[data-theme="arr"] [class*="bg-blue"] {
+		background-color: #5d9cec;
+		border-color: #5d9cec;
+	}
+
+	[data-theme="arr"] [class*="badge-purple"] {
+		background-color: #7a43b6;
+		border-color: #7a43b6;
+	}
+
+	/* *arr Suite - Dropdown menus */
+	[data-theme="arr"] [role="menu"],
+	[data-theme="arr"] [data-radix-menu-content],
+	[data-theme="arr"] [role="listbox"] {
+		background-color: hsl(var(--popover)) !important;
+		border: 1px solid hsl(var(--border)) !important;
+		border-radius: 4px !important;
+		box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3) !important;
+	}
+
+	[data-theme="arr"] [role="menuitem"],
+	[data-theme="arr"] [role="option"] {
+		padding: 8px 16px;
+		color: hsl(var(--foreground));
+	}
+
+	[data-theme="arr"] [role="menuitem"]:hover,
+	[data-theme="arr"] [role="option"]:hover,
+	[data-theme="arr"] [role="option"][data-highlighted] {
+		background-color: hsl(var(--muted));
+		color: hsl(var(--primary));
+	}
+
+	/* *arr Suite - Tabs styling (underline style) */
+	[data-theme="arr"] [role="tablist"] {
+		border-bottom: 1px solid hsl(var(--border));
+		gap: 0;
+	}
+
+	[data-theme="arr"] [role="tab"] {
+		border-radius: 0 !important;
+		border-bottom: 2px solid transparent;
+		padding: 10px 15px;
+		color: hsl(var(--foreground));
+		background: transparent !important;
+		margin-bottom: -1px;
+	}
+
+	[data-theme="arr"] [role="tab"]:hover {
+		color: hsl(var(--primary));
+		border-bottom-color: hsl(var(--primary));
+	}
+
+	[data-theme="arr"] [role="tab"][aria-selected="true"],
+	[data-theme="arr"] [role="tab"][data-state="active"] {
+		border-bottom-color: hsl(var(--primary)) !important;
+		color: hsl(var(--primary)) !important;
+		background: transparent !important;
+	}
+
+	/* *arr Suite - Progress bars (small: 5px, medium: 15px, large: 20px) */
+	[data-theme="arr"] [role="progressbar"],
+	[data-theme="arr"] .progress {
+		background-color: hsl(var(--muted));
+		border-radius: 2px;
+		height: 15px;
+		overflow: hidden;
+	}
+
+	[data-theme="arr"] [role="progressbar"] > div,
+	[data-theme="arr"] .progress-bar {
+		background-color: hsl(var(--accent));
+		border-radius: 0;
+		height: 100%;
+	}
+
+	/* *arr Suite - Tooltips */
+	[data-theme="arr"] [role="tooltip"] {
+		background-color: hsl(var(--popover)) !important;
+		border: 1px solid hsl(var(--border)) !important;
+		border-radius: 4px !important;
+		font-size: 13px;
+		padding: 6px 10px;
+		color: hsl(var(--foreground));
+	}
+
+	/* *arr Suite - Alerts/Notifications */
+	[data-theme="arr"] [role="alert"] {
+		border-radius: 4px;
+		border-width: 1px;
+	}
+
+	/* *arr Suite - Scrollbar styling */
+	[data-theme="arr"] ::-webkit-scrollbar {
+		width: 8px;
+		height: 8px;
+	}
+
+	[data-theme="arr"] ::-webkit-scrollbar-track {
+		background: hsl(var(--background));
+	}
+
+	[data-theme="arr"] ::-webkit-scrollbar-thumb {
+		background: hsl(var(--muted-foreground));
+		border-radius: 4px;
+	}
+
+	[data-theme="arr"] ::-webkit-scrollbar-thumb:hover {
+		background: hsl(var(--foreground) / 0.6);
+	}
+
+	/* *arr Suite - Status colors (exact Sonarr values - consistent across modes) */
+	[data-theme="arr"] .text-green-500,
+	[data-theme="arr"] .text-success,
+	[data-theme="arr"] [class*="text-green"] {
+		color: #27c24c !important;
+	}
+
+	[data-theme="arr"] .text-red-500,
+	[data-theme="arr"] .text-destructive,
+	[data-theme="arr"] [class*="text-red"] {
+		color: #f05050 !important;
+	}
+
+	[data-theme="arr"] .text-amber-500,
+	[data-theme="arr"] .text-warning,
+	[data-theme="arr"] [class*="text-amber"],
+	[data-theme="arr"] [class*="text-yellow"] {
+		color: #ffa500 !important;
+	}
+
+	[data-theme="arr"] .text-blue-500,
+	[data-theme="arr"] .text-info,
+	[data-theme="arr"] [class*="text-blue"] {
+		color: #5d9cec !important;
+	}
+
+	[data-theme="arr"] .text-purple-500,
+	[data-theme="arr"] [class*="text-purple"] {
+		color: #7a43b6 !important;
+	}
+
+	/* *arr Suite - Selection color (selectedColor: #f9be03) */
+	[data-theme="arr"] ::selection {
+		background-color: rgba(249, 190, 3, 0.3);
+	}
+
+	/* *arr Suite - Checkbox/Radio styling */
+	[data-theme="arr"] input[type="checkbox"],
+	[data-theme="arr"] input[type="radio"] {
+		accent-color: hsl(var(--primary));
+	}
+
+	/* *arr Suite - Switch/Toggle styling */
+	[data-theme="arr"] [role="switch"] {
+		background-color: hsl(var(--muted));
+		border-radius: 4px;
+	}
+
+	[data-theme="arr"] [role="switch"][data-state="checked"],
+	[data-theme="arr"] [role="switch"][aria-checked="true"] {
+		background-color: hsl(var(--primary));
+	}
+
+	/* *arr Suite - Top navigation bar only (not page section headers) */
+	[data-theme="arr"] header.bg-bg\/80,
+	[data-theme="arr"] > div > div > header {
+		background-color: hsl(var(--sidebar)) !important;
+		background: hsl(var(--sidebar)) !important;
+		border-color: hsl(var(--sidebar-border)) !important;
+	}
+
+	/* *arr Suite - Top bar text colors */
+	[data-theme="arr"] header.bg-bg\/80 h2,
+	[data-theme="arr"] header.bg-bg\/80 p,
+	[data-theme="arr"] > div > div > header h2,
+	[data-theme="arr"] > div > div > header p {
+		color: hsl(var(--sidebar-foreground)) !important;
+	}
+
+	/* *arr Suite - Error/Warning message boxes (queue status, etc.) */
+	/* In light mode: use Sonarr's approach - clearer contrast with dark text on light tinted bg */
+	[data-theme="arr"] .bg-red-500\/10,
+	[data-theme="arr"] [class*="bg-red-500/10"] {
+		background-color: rgba(240, 80, 80, 0.15) !important; /* Sonarr dangerColor */
+	}
+	[data-theme="arr"] .text-red-300,
+	[data-theme="arr"] [class*="text-red-300"] {
+		color: #c53030 !important; /* Darker red for better contrast in light mode */
+	}
+	[data-theme="arr"] .text-red-400,
+	[data-theme="arr"] [class*="text-red-400"] {
+		color: #c53030 !important;
+	}
+	[data-theme="arr"].dark .text-red-300,
+	.dark [data-theme="arr"] .text-red-300,
+	[data-theme="arr"].dark [class*="text-red-300"],
+	.dark [data-theme="arr"] [class*="text-red-300"] {
+		color: #fc8181 !important; /* Lighter red for dark mode */
+	}
+	[data-theme="arr"].dark .text-red-400,
+	.dark [data-theme="arr"] .text-red-400,
+	[data-theme="arr"].dark [class*="text-red-400"],
+	.dark [data-theme="arr"] [class*="text-red-400"] {
+		color: #fc8181 !important;
+	}
+
+	/* *arr Suite - Warning messages */
+	[data-theme="arr"] .text-amber-300,
+	[data-theme="arr"] [class*="text-amber-300"] {
+		color: #b45309 !important; /* Darker amber for light mode */
+	}
+	[data-theme="arr"].dark .text-amber-300,
+	.dark [data-theme="arr"] .text-amber-300,
+	[data-theme="arr"].dark [class*="text-amber-300"],
+	.dark [data-theme="arr"] [class*="text-amber-300"] {
+		color: #fbbf24 !important; /* Lighter amber for dark mode */
+	}
+
+	/* *arr Suite - Footer */
+	[data-theme="arr"] footer {
+		background-color: hsl(var(--background) / 0.75);
+	}
+
+	/* *arr Suite - Separator/Divider styling */
+	[data-theme="arr"] hr,
+	[data-theme="arr"] [role="separator"] {
+		border-color: hsl(var(--border));
+	}
+
+	/* *arr Suite - Toast notifications */
+	[data-theme="arr"] [data-sonner-toast] {
+		background-color: hsl(var(--popover)) !important;
+		border: 1px solid hsl(var(--border)) !important;
+		border-radius: 4px !important;
+	}
+
+	/* *arr Suite - Skeleton loading */
+	[data-theme="arr"] .skeleton,
+	[data-theme="arr"] [class*="skeleton"] {
+		background-color: #3a3a3a;
+	}
+
+	/* *arr Suite - Full-width layout (like Sonarr/Radarr) */
+	/* Remove max-width constraints and reduce padding for utility-first layout */
+	[data-theme="arr"] main {
+		max-width: none !important;
+		padding-left: 20px !important;
+		padding-right: 20px !important;
+		padding-top: 20px !important;
+		padding-bottom: 20px !important;
+	}
+
+	/* *arr Suite - Reduce content area padding in layout wrapper */
+	[data-theme="arr"] .flex-1.p-6 {
+		padding: 0 !important;
+	}
+
+	/* *arr Suite - Full-width cards and sections */
+	[data-theme="arr"] .mx-auto {
+		margin-left: 0 !important;
+		margin-right: 0 !important;
+	}
+
+	/* *arr Suite - Fix active tab text contrast in light mode */
+	/* The cyan-to-gold gradient is too light for white text */
+	[data-theme="arr"]:not(.dark) button.text-white {
+		color: #1a1a1a !important;
+	}
+	/* Fix icon color in active tabs for light mode */
+	[data-theme="arr"]:not(.dark) button.text-white svg {
+		color: #1a1a1a !important;
+	}
+
+	/* ========================================
+	 * QBITTORRENT PREMIUM THEME EFFECTS
+	 * SUPER AUTHENTIC desktop torrent client UI
+	 * Pixel-perfect match to actual qBittorrent WebUI
+	 * ======================================== */
+
+	/* ---- GLOBAL: REMOVE DECORATIVE GRADIENTS ---- */
+	/* qBittorrent is a Qt desktop app - NO gradients, NO glows, NO shadows */
+	/* Only hide DECORATIVE gradient overlays (pointer-events-none, fixed backgrounds) */
+	/* PRESERVE gradients in: theme selector orbs, live preview, badges (functional UI) */
+	[data-theme="qbittorrent"] .fixed.inset-0.pointer-events-none,
+	[data-theme="qbittorrent"] .pointer-events-none[style*="gradient"],
+	[data-theme="qbittorrent"] .absolute[style*="radial-gradient"]:not(:has(*)) {
+		background: transparent !important;
+		opacity: 0 !important;
+		display: none !important;
+	}
+
+	/* Remove gradients from content containers EXCEPT:
+	   - Appearance settings (theme preview needs gradients)
+	   - Elements inside buttons (interactive orbs)
+	   - Gradient text (elements with background-clip: text)
+	   Using :not() with :where() for broader exclusions */
+	[data-theme="qbittorrent"] [style*="gradient"]:where(
+		:not(.pointer-events-none):not(.fixed):not([data-appearance-settings] *)
+	):not([style*="background-clip"]):not([style*="BackgroundClip"]) {
+		background: transparent !important;
+	}
+
+	/* Force preserve gradients in appearance settings - critical for theme selector */
+	[data-theme="qbittorrent"] [data-appearance-settings] [style*="linear-gradient"],
+	[data-theme="qbittorrent"] [data-appearance-settings] [style*="radial-gradient"] {
+		/* Use unset to let inline styles take precedence (removes !important override) */
+	}
+
+	/* ---- DASHBOARD STAT CARDS: GRADIENT TEXT FIX ---- */
+	/* Gradient text uses background-clip: text with WebkitTextFillColor: transparent. */
+	/* When qBittorrent theme removes gradients, this makes text invisible. */
+	/* Fix: Override to use solid primary color instead of transparent. */
+	[data-theme="qbittorrent"] main span[style*="gradient"],
+	[data-theme="qbittorrent"] main span[style*="background-clip"] {
+		background: none !important;
+		-webkit-text-fill-color: hsl(var(--primary)) !important;
+		color: hsl(var(--primary)) !important;
+	}
+
+	/* ZERO border radius - Qt apps are sharp */
+	[data-theme="qbittorrent"] .rounded,
+	[data-theme="qbittorrent"] .rounded-sm,
+	[data-theme="qbittorrent"] .rounded-md,
+	[data-theme="qbittorrent"] .rounded-lg,
+	[data-theme="qbittorrent"] .rounded-xl,
+	[data-theme="qbittorrent"] .rounded-2xl,
+	[data-theme="qbittorrent"] .rounded-full {
+		border-radius: 0 !important;
+	}
+
+	/* Remove ALL shadows - qBittorrent is completely flat */
+	[data-theme="qbittorrent"] * {
+		box-shadow: none !important;
+		text-shadow: none !important;
+	}
+
+	/* Remove all backdrop blur effects */
+	[data-theme="qbittorrent"] [class*="backdrop-blur"],
+	[data-theme="qbittorrent"] [class*="bg-background/"],
+	[data-theme="qbittorrent"] [class*="bg-card/"] {
+		backdrop-filter: none !important;
+	}
+
+	/* ---- TYPOGRAPHY: EXACT qBittorrent FONTS ---- */
+	/* qBittorrent uses Arial, Helvetica, sans-serif at 12px base with 1.5 line-height */
+	[data-theme="qbittorrent"],
+	[data-theme="qbittorrent"] * {
+		font-family: Arial, Helvetica, sans-serif !important;
+	}
+
+	[data-theme="qbittorrent"] body,
+	[data-theme="qbittorrent"] {
+		font-size: 12px !important;
+		line-height: 1.5 !important;
+	}
+
+	/* Headings - exact qBittorrent: H1=14px, H2=14px bold, H3/H4=12px/11px bold */
+	[data-theme="qbittorrent"] h1 {
+		font-size: 14px !important;
+		font-weight: bold !important;
+		line-height: 1.3 !important;
+	}
+
+	[data-theme="qbittorrent"] h2 {
+		font-size: 14px !important;
+		font-weight: bold !important;
+		line-height: 1.3 !important;
+	}
+
+	[data-theme="qbittorrent"] h3 {
+		font-size: 12px !important;
+		font-weight: bold !important;
+	}
+
+	[data-theme="qbittorrent"] h4,
+	[data-theme="qbittorrent"] h5,
+	[data-theme="qbittorrent"] h6 {
+		font-size: 11px !important;
+		font-weight: bold !important;
+	}
+
+	/* Paragraph and body text - 12px */
+	[data-theme="qbittorrent"] p,
+	[data-theme="qbittorrent"] span,
+	[data-theme="qbittorrent"] label {
+		font-size: 12px !important;
+	}
+
+	/* ---- CARDS: MOCHA UI WINDOW STYLE ---- */
+	/* Exclude form elements - they have their own styling and need custom padding */
+	[data-theme="qbittorrent"] .glass:not(input):not(textarea):not(select),
+	[data-theme="qbittorrent"] [class*="bg-card"]:not(input):not(textarea):not(select) {
+		background: hsl(var(--card)) !important;
+		border: 1px solid hsl(var(--border)) !important;
+		border-radius: 0 !important;
+		backdrop-filter: none !important;
+		padding: 0 !important;
+	}
+
+	/* Card content padding - qBittorrent style (10px 12px) */
+	[data-theme="qbittorrent"] [class*="bg-card"] > div {
+		padding: 10px 12px !important;
+	}
+
+	/* ---- SIDEBAR: CATEGORY TREE STYLE ---- */
+	[data-theme="qbittorrent"] [data-sidebar] {
+		background: hsl(var(--sidebar)) !important;
+		border-right: 1px solid hsl(var(--border)) !important;
+		backdrop-filter: none !important;
+		padding: 0 !important;
+		width: 200px !important;
+	}
+
+	/* Remove ALL decorative elements from sidebar */
+	[data-theme="qbittorrent"] [data-sidebar] > div.absolute,
+	[data-theme="qbittorrent"] [data-sidebar] .pointer-events-none {
+		display: none !important;
+	}
+
+	/* Sidebar brand - minimal like qBittorrent */
+	[data-theme="qbittorrent"] [data-sidebar] > div:first-child {
+		padding: 8px 10px !important;
+		margin-bottom: 0 !important;
+		border-bottom: 1px solid hsl(var(--border)) !important;
+	}
+
+	/* Sidebar title - FORCE plain text, override ALL inline gradient styling */
+	/* The inline style uses WebkitBackgroundClip + WebkitTextFillColor: transparent */
+	[data-theme="qbittorrent"] [data-sidebar] h1 {
+		background: none !important;
+		background-image: none !important;
+		-webkit-background-clip: border-box !important;
+		background-clip: border-box !important;
+		-webkit-text-fill-color: #e5e5e5 !important; /* Direct color, not CSS var */
+		color: #e5e5e5 !important;
+		font-size: 12px !important;
+		font-weight: bold !important;
+	}
+
+	/* Light mode title color */
+	[data-theme="qbittorrent"]:not(.dark) [data-sidebar] h1 {
+		-webkit-text-fill-color: #555555 !important;
+		color: #555555 !important;
+	}
+
+	/* Sidebar logo box - flat qBittorrent style */
+	[data-theme="qbittorrent"] [data-sidebar] > div:first-child > div:first-child,
+	[data-theme="qbittorrent"] [data-sidebar] > div:first-child div[style*="gradient"],
+	[data-theme="qbittorrent"] [data-sidebar] > div:first-child div[style*="box-shadow"] {
+		background: hsl(var(--primary)) !important;
+		border-radius: 0 !important;
+		width: 20px !important;
+		height: 20px !important;
+		box-shadow: none !important;
+	}
+
+	[data-theme="qbittorrent"] [data-sidebar] > div:first-child > div:first-child svg {
+		width: 12px !important;
+		height: 12px !important;
+	}
+
+	/* Sidebar navigation - tree view style */
+	[data-theme="qbittorrent"] [data-sidebar] nav {
+		padding: 4px 0 !important;
+	}
+
+	[data-theme="qbittorrent"] [data-sidebar] nav a {
+		padding: 2px 10px 2px 12px !important;
+		font-size: 11px !important;
+		border-radius: 0 !important;
+		margin: 0 !important;
+		gap: 6px !important;
+		min-height: 22px !important;
+	}
+
+	/* Sidebar active - qBittorrent selection (blue bg, white text) */
+	[data-theme="qbittorrent"] [data-sidebar] nav a[aria-current="page"] {
+		background: hsl(var(--sidebar-accent)) !important;
+		color: white !important;
+	}
+
+	/* HIDE the motion.div gradient indicator - qBittorrent uses simple bg color */
+	/* Target ALL absolutely positioned divs inside nav links (the indicator) */
+	[data-theme="qbittorrent"] [data-sidebar] nav a > div.absolute,
+	[data-theme="qbittorrent"] [data-sidebar] nav a > .absolute,
+	[data-theme="qbittorrent"] [data-sidebar] nav a div[style],
+	[data-theme="qbittorrent"] [data-sidebar] nav a > div[class*="rounded"],
+	[data-theme="qbittorrent"] [data-sidebar] nav a > div[class*="inset"] {
+		display: none !important;
+		opacity: 0 !important;
+		visibility: hidden !important;
+	}
+
+	/* Also hide any hover glow effects in sidebar */
+	[data-theme="qbittorrent"] [data-sidebar] nav a > div:not(:has(svg)):not(:has(span)) {
+		display: none !important;
+	}
+
+	/* Sidebar hover - subtle highlight */
+	[data-theme="qbittorrent"] [data-sidebar] nav a:not([aria-current="page"]):hover {
+		background: hsl(var(--accent) / 0.3) !important;
+	}
+
+	/* Sidebar icons - 16x16 like qBittorrent */
+	[data-theme="qbittorrent"] [data-sidebar] nav a svg {
+		width: 16px !important;
+		height: 16px !important;
+		flex-shrink: 0 !important;
+	}
+
+	/* Hide chevrons - qBittorrent doesn't have them */
+	[data-theme="qbittorrent"] [data-sidebar] nav a svg:last-child:not(:first-child) {
+		display: none !important;
+	}
+
+	/* Sidebar bottom decorative line - hide */
+	[data-theme="qbittorrent"] [data-sidebar] > div:last-child {
+		display: none !important;
+	}
+
+	/* ---- TOPBAR: TOOLBAR STYLE ---- */
+	[data-theme="qbittorrent"] header {
+		background: hsl(var(--card)) !important;
+		border-bottom: 1px solid hsl(var(--border)) !important;
+		backdrop-filter: none !important;
+		padding: 4px 10px !important;
+	}
+
+	/* ---- TABLES: TORRENT LIST STYLE ---- */
+	/* qBittorrent tables span the full width of available space */
+	[data-theme="qbittorrent"] table {
+		font-size: 11px !important;
+		border-collapse: collapse !important;
+		border: 1px solid hsl(var(--border)) !important;
+		width: 100% !important;
+		table-layout: auto !important;
+	}
+
+	/* Table container should be full width (exclude buttons which also have rounded-xl border) */
+	[data-theme="qbittorrent"] [class*="overflow-x-auto"],
+	[data-theme="qbittorrent"] [class*="rounded-xl"][class*="border"]:not(button) {
+		width: 100% !important;
+		max-width: none !important;
+	}
+
+	/* Table headers - exact qBittorrent styling: padding 4px 2px */
+	[data-theme="qbittorrent"] th {
+		padding: 4px 2px !important;
+		font-size: 12px !important;
+		font-weight: normal !important;
+		text-transform: none !important;
+		background: hsl(var(--secondary)) !important;
+		border-bottom: 1px solid hsl(var(--border)) !important;
+		border-right: 1px solid hsl(var(--border)) !important;
+		color: hsl(var(--foreground)) !important;
+		white-space: nowrap !important;
+	}
+
+	[data-theme="qbittorrent"] th:last-child {
+		border-right: none !important;
+	}
+
+	/* Table cells - exact qBittorrent styling: padding 4px 2px */
+	[data-theme="qbittorrent"] td {
+		padding: 4px 2px !important;
+		font-size: 12px !important;
+		border-bottom: 1px solid hsl(var(--border) / 0.5) !important;
+		white-space: nowrap !important;
+		overflow: hidden !important;
+		text-overflow: ellipsis !important;
+	}
+
+	/* Action columns (contain buttons) - ensure adequate space for buttons */
+	[data-theme="qbittorrent"] td:has(button),
+	[data-theme="qbittorrent"] td[class*="text-right"],
+	[data-theme="qbittorrent"] td:last-child:has(div) {
+		overflow: visible !important;
+		text-overflow: clip !important;
+		white-space: nowrap !important;
+		min-width: 150px !important;
+		width: auto !important;
+	}
+
+	/* Action button container - horizontal layout */
+	[data-theme="qbittorrent"] td:has(button) > div,
+	[data-theme="qbittorrent"] td[class*="text-right"] > div {
+		display: flex !important;
+		flex-direction: row !important;
+		flex-wrap: wrap !important;
+		gap: 6px !important;
+		justify-content: flex-end !important;
+	}
+
+	/* Table row hover - qBittorrent ORANGE highlight (signature style) */
+	/* Light: hsl(26deg 80% 60%), Dark: hsl(26deg 50% 55%) */
+	[data-theme="qbittorrent"]:not(.dark) tbody tr:hover {
+		background: hsl(26 80% 60%) !important;
+		color: white !important;
+	}
+
+	[data-theme="qbittorrent"].dark tbody tr:hover {
+		background: hsl(26 50% 55%) !important;
+		color: white !important;
+	}
+
+	/* Table row selected - qBittorrent BLUE background */
+	[data-theme="qbittorrent"] tbody tr[data-state="selected"],
+	[data-theme="qbittorrent"] tbody tr.selected,
+	[data-theme="qbittorrent"] tbody tr[aria-selected="true"] {
+		background: hsl(var(--primary)) !important;
+		color: white !important;
+	}
+
+	/* Selected row hover - slightly darker blue */
+	[data-theme="qbittorrent"] tbody tr[data-state="selected"]:hover,
+	[data-theme="qbittorrent"] tbody tr.selected:hover {
+		background: hsl(210 65% 45%) !important;
+		color: white !important;
+	}
+
+	/* ---- BUTTONS: TOOLBAR BUTTON STYLE ---- */
+	/* Exclude stat card buttons (which have p children) from compact toolbar styling */
+	[data-theme="qbittorrent"] button:not(:has(p)),
+	[data-theme="qbittorrent"] [role="button"]:not(:has(p)) {
+		border-radius: 0 !important;
+		font-size: 11px !important;
+		font-weight: normal !important;
+		padding: 3px 8px !important;
+		min-height: 22px !important;
+	}
+
+	/* Stat card buttons (contain p elements) - preserve natural height for content */
+	[data-theme="qbittorrent"] main button:has(p) {
+		border-radius: 0 !important;
+		padding: 12px 16px !important;
+		min-height: auto !important;
+		height: auto !important;
+		overflow: visible !important;
+		/* Disable Framer Motion scale animations - qBittorrent is flat */
+		transform: none !important;
+	}
+
+	/* Prevent hover scale animation on stat cards - keep flat qBittorrent style */
+	[data-theme="qbittorrent"] main button:has(p):hover {
+		transform: none !important;
+		/* Simple subtle highlight instead of scale */
+		background: hsl(var(--muted) / 0.3) !important;
+	}
+
+	/* Primary button */
+	[data-theme="qbittorrent"] button[class*="bg-primary"],
+	[data-theme="qbittorrent"] [class*="variant-default"] {
+		background: hsl(var(--primary)) !important;
+		border: 1px solid hsl(210 42% 35%) !important;
+		color: white !important;
+	}
+
+	/* Secondary/outline buttons */
+	[data-theme="qbittorrent"] button[class*="bg-secondary"],
+	[data-theme="qbittorrent"] [class*="variant-secondary"],
+	[data-theme="qbittorrent"] [class*="variant-outline"] {
+		background: hsl(var(--secondary)) !important;
+		border: 1px solid hsl(var(--border)) !important;
+	}
+
+	/* Ghost buttons - base style */
+	[data-theme="qbittorrent"] [class*="variant-ghost"] {
+		background: transparent !important;
+		border: none !important;
+	}
+
+	[data-theme="qbittorrent"] [class*="variant-ghost"]:hover {
+		background: hsl(var(--secondary)) !important;
+	}
+
+	/* Ghost buttons in table rows - need visible styling for contrast */
+	/* On row hover (orange bg), ghost buttons should have a visible background */
+	[data-theme="qbittorrent"] tbody tr:hover [class*="variant-ghost"],
+	[data-theme="qbittorrent"] tbody tr:hover button:not([class*="variant-"]) {
+		background: hsl(var(--secondary)) !important;
+		border: 1px solid hsl(var(--border)) !important;
+		color: hsl(var(--foreground)) !important;
+	}
+
+	/* All action buttons in table cells - ensure consistent visibility */
+	[data-theme="qbittorrent"] td button {
+		background: hsl(var(--secondary)) !important;
+		border: 1px solid hsl(var(--border)) !important;
+		color: hsl(var(--foreground)) !important;
+		min-width: auto !important;
+	}
+
+	/* Override row text color for buttons on hover */
+	[data-theme="qbittorrent"] tbody tr:hover td button {
+		color: hsl(var(--foreground)) !important;
+	}
+
+	/* ---- FORM INPUTS: qBittorrent STYLE ---- */
+	[data-theme="qbittorrent"] input,
+	[data-theme="qbittorrent"] textarea,
+	[data-theme="qbittorrent"] select {
+		padding: 2px 4px; /* No !important - allows component overrides for icons */
+		font-size: 11px !important;
+		border: 1px solid hsl(var(--border)) !important;
+		border-radius: 0 !important;
+		background: hsl(var(--input)) !important;
+		min-height: 20px !important;
+	}
+
+	[data-theme="qbittorrent"] input:focus,
+	[data-theme="qbittorrent"] textarea:focus,
+	[data-theme="qbittorrent"] select:focus {
+		outline: none !important;
+		border-color: hsl(var(--primary)) !important;
+	}
+
+	/* ---- BADGES: qBittorrent STYLE (minimal, no backgrounds) ---- */
+	[data-theme="qbittorrent"] [class*="badge"],
+	[data-theme="qbittorrent"] span[class*="rounded-full"][class*="text-xs"],
+	[data-theme="qbittorrent"] span[class*="rounded"][class*="px-"],
+	[data-theme="qbittorrent"] span[class*="badge"] {
+		padding: 1px 4px !important;
+		font-size: 10px !important;
+		border-radius: 0 !important;
+		font-weight: normal !important;
+		min-height: 16px !important;
+		line-height: 14px !important;
+		/* qBittorrent uses colored text on transparent bg, minimal border */
+		background: transparent !important;
+		border: 1px solid currentColor !important;
+	}
+
+	/* Event type badges - colored text like qBittorrent status */
+	[data-theme="qbittorrent"] td span[class*="bg-"],
+	[data-theme="qbittorrent"] td [class*="badge"] {
+		background: transparent !important;
+		border: 1px solid hsl(var(--border)) !important;
+	}
+
+	/* ---- PROGRESS BARS: TORRENT PROGRESS STYLE ---- */
+	[data-theme="qbittorrent"] [role="progressbar"],
+	[data-theme="qbittorrent"] .progress,
+	[data-theme="qbittorrent"] [class*="progress"] {
+		border-radius: 0 !important;
+		height: 14px !important;
+		border: 1px solid hsl(var(--border)) !important;
+	}
+
+	/* ---- TABS: qBittorrent TAB MENU STYLE ---- */
+	/* From Tabs.css: border-radius: 3px 3px 0 0, padding: 5px 7px 3px */
+	[data-theme="qbittorrent"] [role="tablist"] {
+		background: transparent !important;
+		border-radius: 0 !important;
+		padding: 0 !important;
+		gap: 0 !important;
+		border-bottom: 1px solid hsl(var(--border)) !important;
+	}
+
+	[data-theme="qbittorrent"] [role="tab"] {
+		border-radius: 3px 3px 0 0 !important;
+		padding: 5px 7px 3px !important;
+		font-size: 11px !important;
+		margin-left: 4px !important;
+		background: hsl(var(--secondary)) !important;
+		border: none !important;
+	}
+
+	[data-theme="qbittorrent"] [role="tab"]:first-child {
+		margin-left: 4px !important;
+	}
+
+	[data-theme="qbittorrent"] [role="tab"][data-state="active"] {
+		background: hsl(var(--primary)) !important;
+		color: white !important;
+	}
+
+	[data-theme="qbittorrent"] [role="tab"]:hover:not([data-state="active"]) {
+		background: hsl(var(--accent) / 0.3) !important;
+	}
+
+	/* ---- DIALOGS: MOCHA UI WINDOW STYLE (exact qBittorrent) ---- */
+	/* From Window.css: border-radius: 5px, box-shadow: rgb(51 51 51) 0 1px 5px */
+	[data-theme="qbittorrent"] [role="dialog"],
+	[data-theme="qbittorrent"] [data-radix-dialog-content] {
+		border-radius: 5px !important;
+		border: 1px solid hsl(var(--border)) !important;
+		background: hsl(var(--card)) !important;
+		box-shadow: rgb(51 51 51) 0 1px 5px !important;
+	}
+
+	/* Modal overlay - exact qBittorrent: hsl(0deg 0% 0% / 30%) */
+	[data-theme="qbittorrent"] [data-radix-dialog-overlay],
+	[data-theme="qbittorrent"] [role="dialog"] + div[data-state] {
+		background: hsl(0 0% 0% / 30%) !important;
+	}
+
+	/* Dialog titlebar - exact Mocha UI: padding 5px 10px 4px 12px, 12px bold */
+	[data-theme="qbittorrent"] [role="dialog"] > div:first-child,
+	[data-theme="qbittorrent"] [data-radix-dialog-content] > div:first-child {
+		padding: 5px 10px 4px 12px !important;
+		font-size: 12px !important;
+		font-weight: bold !important;
+		line-height: 15px !important;
+		border-bottom: 1px solid hsl(var(--border)) !important;
+		background: hsl(var(--secondary)) !important;
+	}
+
+	/* Dialog content - exact Mocha UI: padding 10px 12px */
+	[data-theme="qbittorrent"] [role="dialog"] > div:nth-child(2),
+	[data-theme="qbittorrent"] [data-radix-dialog-content] > div:nth-child(2) {
+		padding: 10px 12px !important;
+		font-size: 12px !important;
+		background: hsl(var(--popover)) !important;
+	}
+
+	/* Dialog close button - qBittorrent style (14x14px) */
+	[data-theme="qbittorrent"] [role="dialog"] button[aria-label*="close"],
+	[data-theme="qbittorrent"] [role="dialog"] button[aria-label*="Close"] {
+		width: 14px !important;
+		height: 14px !important;
+		padding: 0 !important;
+	}
+
+	/* ---- DROPDOWNS/MENUS: CONTEXT MENU STYLE ---- */
+	/* Ensure dropdown wrappers have high z-index and aren't clipped */
+	[data-theme="qbittorrent"] [data-radix-popper-content-wrapper] {
+		z-index: 9999 !important;
+	}
+
+	[data-theme="qbittorrent"] [role="menu"],
+	[data-theme="qbittorrent"] [role="listbox"],
+	[data-theme="qbittorrent"] [data-radix-popper-content-wrapper] > div {
+		border-radius: 0 !important;
+		border: 1px solid hsl(var(--border)) !important;
+		background: hsl(var(--popover)) !important;
+		padding: 2px !important;
+		box-shadow: rgb(51 51 51) 0 1px 5px !important;
+	}
+
+	[data-theme="qbittorrent"] [role="menuitem"],
+	[data-theme="qbittorrent"] [role="option"] {
+		padding: 3px 20px 3px 8px !important;
+		font-size: 11px !important;
+		border-radius: 0 !important;
+		gap: 5px !important;
+	}
+
+	[data-theme="qbittorrent"] [role="menuitem"]:hover,
+	[data-theme="qbittorrent"] [role="option"]:hover,
+	[data-theme="qbittorrent"] [role="menuitem"][data-highlighted],
+	[data-theme="qbittorrent"] [role="option"][data-highlighted] {
+		background: hsl(var(--primary)) !important;
+		color: white !important;
+	}
+
+	/* ---- SCROLLBARS: SYSTEM STYLE ---- */
+	[data-theme="qbittorrent"] ::-webkit-scrollbar {
+		width: 12px !important;
+		height: 12px !important;
+	}
+
+	[data-theme="qbittorrent"] ::-webkit-scrollbar-track {
+		background: hsl(var(--secondary)) !important;
+	}
+
+	[data-theme="qbittorrent"] ::-webkit-scrollbar-thumb {
+		background: hsl(0 0% 45%) !important;
+		border-radius: 0 !important;
+		border: 1px solid hsl(var(--border)) !important;
+	}
+
+	[data-theme="qbittorrent"] ::-webkit-scrollbar-thumb:hover {
+		background: hsl(0 0% 55%) !important;
+	}
+
+	[data-theme="qbittorrent"] ::-webkit-scrollbar-corner {
+		background: hsl(var(--secondary)) !important;
+	}
+
+	/* ---- STATUS COLORS: qBittorrent EXACT COLORS ---- */
+	[data-theme="qbittorrent"] .text-green-500,
+	[data-theme="qbittorrent"] .text-green-400,
+	[data-theme="qbittorrent"] [class*="text-success"] {
+		color: hsl(110 94% 27%) !important;
+	}
+
+	[data-theme="qbittorrent"] .text-red-500,
+	[data-theme="qbittorrent"] .text-red-400,
+	[data-theme="qbittorrent"] [class*="text-destructive"] {
+		color: hsl(0 100% 65%) !important;
+	}
+
+	[data-theme="qbittorrent"] .text-yellow-500,
+	[data-theme="qbittorrent"] .text-yellow-400,
+	[data-theme="qbittorrent"] [class*="text-warning"] {
+		color: hsl(26 100% 45%) !important;
+	}
+
+	[data-theme="qbittorrent"] .text-blue-500,
+	[data-theme="qbittorrent"] .text-blue-400 {
+		color: hsl(210 100% 55%) !important;
+	}
+
+	/* ---- ICONS: qBittorrent TOOLBAR STYLE ---- */
+	/* Icons are 16x16 with hover border */
+	[data-theme="qbittorrent"] svg:not([class*="w-"]):not([class*="h-"]) {
+		width: 16px !important;
+		height: 16px !important;
+	}
+
+	/* Toolbar icon buttons - qBittorrent style with hover border */
+	[data-theme="qbittorrent"] button:has(svg):not(:has(span)),
+	[data-theme="qbittorrent"] [role="button"]:has(svg):not(:has(span)) {
+		padding: 3px !important;
+		border-radius: 3px !important;
+		border: 1px solid transparent !important;
+	}
+
+	[data-theme="qbittorrent"] button:has(svg):not(:has(span)):hover,
+	[data-theme="qbittorrent"] [role="button"]:has(svg):not(:has(span)):hover {
+		border: 1px solid #a0a0a0 !important;
+		background: transparent !important;
+	}
+
+	/* ---- TRANSITIONS: INSTANT (desktop app feel) ---- */
+	[data-theme="qbittorrent"] * {
+		transition-duration: 0.1s !important;
+	}
+
+	/* ---- CHECKBOXES: qBittorrent STYLE ---- */
+	[data-theme="qbittorrent"] [role="checkbox"],
+	[data-theme="qbittorrent"] input[type="checkbox"] {
+		width: 13px !important;
+		height: 13px !important;
+		border-radius: 0 !important;
+	}
+
+	/* ---- PAGINATION: qBittorrent STYLE ---- */
+	[data-theme="qbittorrent"] nav[aria-label*="pagination"] button,
+	[data-theme="qbittorrent"] [class*="pagination"] button {
+		min-width: 24px !important;
+		min-height: 24px !important;
+		padding: 2px 6px !important;
+	}
+
+	/* ---- TOOLTIP: qBittorrent STYLE ---- */
+	[data-theme="qbittorrent"] [role="tooltip"] {
+		border-radius: 0 !important;
+		padding: 4px 8px !important;
+		font-size: 11px !important;
+		border: 1px solid hsl(var(--border)) !important;
+	}
+
+	[data-theme="qbittorrent"] .text-blue-500,
+	[data-theme="qbittorrent"] .text-blue-400 {
+		color: hsl(210 88% 74%) !important; /* qBittorrent blue text */
+	}
+
+	/* ---- AVATAR/ICONS ---- */
+	/* qBittorrent: Smaller icons, no fancy effects */
+	[data-theme="qbittorrent"] svg {
+		width: 16px;
+		height: 16px;
+	}
+
+	/* Larger icons where needed */
+	[data-theme="qbittorrent"] .w-5.h-5 svg,
+	[data-theme="qbittorrent"] svg.w-5.h-5 {
+		width: 20px !important;
+		height: 20px !important;
+	}
+
+	/* ---- TRANSITIONS ---- */
+	/* qBittorrent: Quick, subtle transitions */
+	[data-theme="qbittorrent"] * {
+		transition-duration: 0.15s !important;
+	}
+
+	/* ---- FULL-WIDTH LAYOUT ---- */
+	/* qBittorrent: Utilitarian full-width layout, no wasted space */
+
+	/* Main content area - full width, reduced padding */
+	[data-theme="qbittorrent"] main {
+		padding: 8px !important;
+		width: 100% !important;
+		max-width: none !important;
+	}
+
+	/* Remove max-width constraints on ALL content containers */
+	[data-theme="qbittorrent"] main > div,
+	[data-theme="qbittorrent"] main > div > div,
+	[data-theme="qbittorrent"] main [class*="container"],
+	[data-theme="qbittorrent"] main [class*="max-w-"] {
+		max-width: none !important;
+		width: 100% !important;
+	}
+
+	/* Flex containers should also expand */
+	[data-theme="qbittorrent"] .flex-1 {
+		max-width: none !important;
+	}
+
+	/* Page padding reduction */
+	[data-theme="qbittorrent"] .p-6 {
+		padding: 8px !important;
+	}
+
+	[data-theme="qbittorrent"] .p-4 {
+		padding: 6px !important;
+	}
+
+	/* Gap reduction for tighter layout */
+	[data-theme="qbittorrent"] .gap-6 {
+		gap: 4px !important;
+	}
+
+	[data-theme="qbittorrent"] .gap-4 {
+		gap: 2px !important;
+	}
+
+	/* ---- SETTINGS PAGE PROTECTION ---- */
+	/* Prevent qBittorrent media card styling from affecting Settings/TabPanel content */
+	/* This resets any inherited/cascading row-style rules for cards inside tabpanels */
+	[data-theme="qbittorrent"] [role="tabpanel"] [class*="backdrop-blur"][class*="rounded-2xl"] {
+		display: block !important;
+		flex-direction: column !important;
+		padding: 0 !important;
+		padding-right: 0 !important;
+		border-radius: 0.75rem !important;
+		border: 1px solid hsl(var(--border) / 0.5) !important;
+		background: hsl(var(--card) / 0.3) !important;
+		min-height: auto !important;
+		max-height: none !important;
+		overflow: hidden !important;
+		position: relative !important;
+	}
+
+	/* Reset inner content padding for cards in tabpanels */
+	[data-theme="qbittorrent"] [role="tabpanel"] [class*="backdrop-blur"][class*="rounded-2xl"] > .p-4,
+	[data-theme="qbittorrent"] [role="tabpanel"] [class*="backdrop-blur"][class*="rounded-2xl"] .p-4 {
+		padding: 16px !important;
+		display: block !important;
+	}
+
+	/* Reset flex containers inside tabpanel cards */
+	[data-theme="qbittorrent"] [role="tabpanel"] [class*="backdrop-blur"][class*="rounded-2xl"] .flex {
+		flex-direction: row !important;
+	}
+
+	[data-theme="qbittorrent"] [role="tabpanel"] [class*="backdrop-blur"][class*="rounded-2xl"] .flex-col {
+		flex-direction: column !important;
+	}
+
+	/* Ensure all content is visible in tabpanel cards (undo display:none rules) */
+	/* NOTE: Exclude .grid elements so theme selectors maintain grid layout */
+	[data-theme="qbittorrent"] [role="tabpanel"] [class*="backdrop-blur"][class*="rounded-2xl"] *:not(.grid) {
+		display: revert !important;
+	}
+
+	/* Re-apply flex where needed */
+	[data-theme="qbittorrent"] [role="tabpanel"] [class*="backdrop-blur"][class*="rounded-2xl"] .flex {
+		display: flex !important;
+	}
+
+	[data-theme="qbittorrent"] [role="tabpanel"] [class*="backdrop-blur"][class*="rounded-2xl"] .hidden {
+		display: none !important;
+	}
+
+	/* ---- LIST VIEW FOR MEDIA CARDS (LIBRARY/DISCOVER ONLY) ---- */
+	/* qBittorrent: Convert card GRIDS to ultra-compact list rows */
+	/* SCOPED: Only targets cards within grid-cols containers (NOT Dashboard/Settings sections) */
+	/* NOTE: GlassmorphicCard uses bg-card/30 and backdrop-blur-sm, NOT .glass */
+
+	/* Force grid containers to single column FIRST - ONLY for MEDIA CARDS (Library/Discover) */
+	/* NOTE: Must exclude tabpanels (settings) and grids containing articles (TRaSH templates) */
+	/* Only target grids with media cards that have poster thumbnails (h-36 class) */
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)):has([class*="backdrop-blur"][class*="rounded-2xl"] [class*="h-36"]) {
+		display: flex !important;
+		flex-direction: column !important;
+		gap: 0 !important;
+	}
+
+	/* Target GlassmorphicCard elements ONLY within grids - for library/media pages */
+	/* IMPORTANT: Exclude button elements, standard Card components, tabpanels, and articles (TRaSH templates) */
+	/* NOTE: Must exclude both [role="tabpanel"] itself AND descendants */
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) > [class*="backdrop-blur"][class*="rounded-2xl"]:not(button):not([class*="text-card-foreground"]):not(article) {
+		display: flex !important;
+		flex-direction: row !important;
+		align-items: center !important;
+		padding: 6px 10px !important;
+		padding-right: 220px !important;
+		gap: 10px !important;
+		border-radius: 0 !important;
+		border: none !important;
+		border-bottom: 1px solid hsl(var(--border) / 0.5) !important;
+		background: transparent !important;
+		backdrop-filter: none !important;
+		box-shadow: none !important;
+		min-height: 44px !important;
+		max-height: none !important;
+		overflow: visible !important;
+		position: relative !important;
+	}
+
+	/* Alternating row colors - only for direct grid children (library cards, NOT articles) */
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) > [class*="backdrop-blur"][class*="rounded-2xl"]:nth-child(odd) {
+		background: hsl(var(--muted) / 0.2) !important;
+	}
+
+	/* Row hover - qBittorrent selection blue - only for direct grid children */
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) > [class*="backdrop-blur"][class*="rounded-2xl"]:hover {
+		background: hsl(210 65% 55% / 0.2) !important;
+	}
+
+	/* Poster/thumbnail - smaller (ONLY for media cards with posters - library/discover pages) */
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] [class*="h-36"],
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] [class*="w-24"] {
+		width: 32px !important;
+		height: 48px !important;
+		min-width: 32px !important;
+		flex-shrink: 0 !important;
+		border-radius: 2px !important;
+	}
+
+	/* Inner content - horizontal flow (ONLY for media cards - exclude articles) */
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] > .flex {
+		flex-direction: row !important;
+		align-items: center !important;
+		flex: 1 !important;
+		gap: 10px !important;
+		min-width: 0 !important;
+	}
+
+	/* Title container (ONLY for media cards - exclude articles) */
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] .flex-1.min-w-0 {
+		display: flex !important;
+		flex-direction: row !important;
+		flex-wrap: wrap !important;
+		align-items: center !important;
+		gap: 6px 12px !important;
+		flex: 1 !important;
+	}
+
+	/* Title - compact (ONLY for media cards - exclude articles) */
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] h3 {
+		font-size: 12px !important;
+		font-weight: 500 !important;
+		white-space: nowrap !important;
+		overflow: hidden !important;
+		text-overflow: ellipsis !important;
+		max-width: 280px !important;
+	}
+
+	/* Hide space-y vertical gaps (ONLY for media cards - exclude articles) */
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] .space-y-2 {
+		display: contents !important;
+	}
+
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] .space-y-2 > * {
+		margin-top: 0 !important;
+	}
+
+	/* HIDE: Description/overview (ONLY for media cards - exclude articles) */
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] [class*="line-clamp"],
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] p[class*="leading-relaxed"] {
+		display: none !important;
+	}
+
+	/* HIDE: Read more button and its container (ONLY for media cards - exclude articles) */
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] .group.relative {
+		display: none !important;
+	}
+
+	/* HIDE: Genres row (has text-xs class, unlike action button group) (ONLY for media cards) */
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] [class*="gap-1.5"][class*="flex-wrap"][class*="text-xs"] {
+		display: none !important;
+	}
+
+	/* Keep status badges visible but compact (ONLY for media cards - exclude articles) */
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] .gap-2:has(.rounded-full) {
+		gap: 4px !important;
+		flex-wrap: nowrap !important;
+	}
+
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] .rounded-full {
+		padding: 1px 5px !important;
+		font-size: 9px !important;
+	}
+
+	/* Metadata row - inline (ONLY for media cards - exclude articles) */
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] [class*="gap-x-4"] {
+		gap: 10px !important;
+		flex-wrap: nowrap !important;
+		font-size: 10px !important;
+	}
+
+	/* Action buttons container - positioned right (ONLY for media cards - exclude articles) */
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] > .flex.items-center.justify-between,
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] > div:last-child:has(button) {
+		position: absolute !important;
+		right: 10px !important;
+		top: 50% !important;
+		transform: translateY(-50%) !important;
+		border: none !important;
+		padding: 0 !important;
+		gap: 3px !important;
+		flex-wrap: wrap !important;
+		max-width: 200px !important;
+		justify-content: flex-end !important;
+	}
+
+	/* Buttons - compact (ONLY for media cards - exclude articles) */
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] button {
+		padding: 3px 6px !important;
+		font-size: 10px !important;
+		min-height: 22px !important;
+		height: 22px !important;
+		border-radius: 2px !important;
+	}
+
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] button svg {
+		width: 12px !important;
+		height: 12px !important;
+	}
+
+	/* HIDE: Ghost buttons (TMDB, IMDB, TVDB links) (ONLY for media cards - exclude articles) */
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] button[class*="text-fg-muted"],
+	[data-theme="qbittorrent"] main [class*="grid-cols-"]:not([role="tabpanel"]):not([role="tabpanel"] *):not(:has(article)) [class*="backdrop-blur"][class*="rounded-2xl"] button[class*="ghost"] {
+		display: none !important;
+	}
+
+	/* ========================================
 	 * PREMIUM ANIMATIONS
 	 * ======================================== */
 
@@ -394,6 +4152,12 @@
 			hsl(var(--muted)) 100%
 		);
 		background-size: 1000px 100%;
+	}
+
+	/* Premium shimmer for locked themes */
+	@keyframes premium-shimmer {
+		0%, 100% { background-position: 0% 50%; }
+		50% { background-position: 100% 50%; }
 	}
 
 	/* Glow pulse effect */

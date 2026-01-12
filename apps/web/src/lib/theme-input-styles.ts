@@ -7,11 +7,9 @@
  * Usage:
  * ```tsx
  * import { getInputStyles, getSelectStyles } from "@/lib/theme-input-styles";
- * import { THEME_GRADIENTS } from "@/lib/theme-gradients";
- * import { useColorTheme } from "@/providers/color-theme-provider";
+ * import { useThemeGradient } from "@/hooks/useThemeGradient";
  *
- * const { colorTheme } = useColorTheme();
- * const themeGradient = THEME_GRADIENTS[colorTheme];
+ * const { gradient: themeGradient } = useThemeGradient();
  * const inputStyles = getInputStyles(themeGradient);
  *
  * <input
@@ -56,7 +54,7 @@ export const getInputStyles = (gradient: ThemeGradient) => ({
 	/**
 	 * Base Tailwind classes for inputs (without focus colors)
 	 */
-	base: "w-full rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg transition-all duration-200",
+	base: "w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition-all duration-200",
 
 	/**
 	 * Style object to apply on focus (use with onFocus handler or CSS)
@@ -97,7 +95,7 @@ export const getSelectStyles = (gradient: ThemeGradient) => ({
 	/**
 	 * Base Tailwind classes for select elements
 	 */
-	base: "w-full rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg transition-all duration-200 cursor-pointer",
+	base: "w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition-all duration-200 cursor-pointer",
 
 	/**
 	 * Apply focus styles programmatically
@@ -140,7 +138,7 @@ export const getToggleButtonStyles = (gradient: ThemeGradient, isActive: boolean
 	/**
 	 * Additional classes for inactive state
 	 */
-	inactiveClasses: "border-border bg-bg-subtle text-fg-muted hover:text-fg",
+	inactiveClasses: "border-border bg-card text-muted-foreground hover:text-foreground",
 });
 
 /**
@@ -160,13 +158,13 @@ export const getChipStyles = (gradient: ThemeGradient, isActive: boolean = false
  */
 export const INPUT_BASE_CLASSES = {
 	/** Standard text input */
-	input: "w-full rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg transition-all duration-200 focus:outline-none",
+	input: "w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition-all duration-200 focus:outline-none",
 
 	/** Select/dropdown */
-	select: "w-full rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg transition-all duration-200 cursor-pointer focus:outline-none",
+	select: "w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition-all duration-200 cursor-pointer focus:outline-none",
 
 	/** Textarea */
-	textarea: "w-full rounded-lg border border-border bg-bg-subtle px-3 py-2 text-sm text-fg transition-all duration-200 resize-none focus:outline-none",
+	textarea: "w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition-all duration-200 resize-none focus:outline-none",
 
 	/** Checkbox/Radio */
 	checkbox: "h-4 w-4 rounded border-2 transition-all duration-200 cursor-pointer border-border/50 bg-card/50 focus:ring-2 focus:ring-offset-0",
