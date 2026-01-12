@@ -191,7 +191,7 @@ describe("TMDBClient - Movies Endpoints", () => {
 
 		expect(result.cast).toHaveLength(1);
 		expect(result.crew).toHaveLength(1);
-		expect(result.cast[0].name).toBe("Edward Norton");
+		expect(result.cast[0]!.name).toBe("Edward Norton");
 	});
 
 	it("should fetch movie videos", async () => {
@@ -214,7 +214,7 @@ describe("TMDBClient - Movies Endpoints", () => {
 		const result = await client.movies.videos(550);
 
 		expect(result.results).toHaveLength(1);
-		expect(result.results[0].key).toBe("SUXWAEX2jlg");
+		expect(result.results[0]!.key).toBe("SUXWAEX2jlg");
 	});
 
 	it("should fetch movie watch providers", async () => {
@@ -282,8 +282,8 @@ describe("TMDBClient - TV Shows Endpoints", () => {
 		const result = await client.tv.popular(1);
 
 		expect(result.results).toBeDefined();
-		expect(result.results[0]).toHaveProperty("name");
-		expect(result.results[0]).toHaveProperty("first_air_date");
+		expect(result.results[0]!).toHaveProperty("name");
+		expect(result.results[0]!).toHaveProperty("first_air_date");
 	});
 
 	it("should fetch TV show aggregate credits", async () => {
@@ -307,7 +307,7 @@ describe("TMDBClient - TV Shows Endpoints", () => {
 		const result = await client.tv.aggregateCredits(1399);
 
 		expect(result.cast).toHaveLength(1);
-		expect(result.cast[0].total_episode_count).toBe(73);
+		expect(result.cast[0]!.total_episode_count).toBe(73);
 	});
 });
 
@@ -372,7 +372,7 @@ describe("TMDBClient - Search Endpoints", () => {
 		const result = await client.search.tv({ query: "Game of Thrones" });
 
 		expect(result.results).toHaveLength(1);
-		expect(result.results[0].name).toBe("Game of Thrones");
+		expect(result.results[0]!.name).toBe("Game of Thrones");
 	});
 });
 
@@ -402,7 +402,7 @@ describe("TMDBClient - Genres Endpoints", () => {
 		const result = await client.genres.movies();
 
 		expect(result.genres).toHaveLength(3);
-		expect(result.genres[0].name).toBe("Action");
+		expect(result.genres[0]!.name).toBe("Action");
 	});
 
 	it("should fetch TV genres", async () => {

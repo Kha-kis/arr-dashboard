@@ -471,11 +471,7 @@ export class BulkScoreManager {
 			};
 		}
 
-		const sourceConfig = safeJsonParse<TemplateConfig>(sourceTemplate.configData, {
-			source: "BulkScoreManager",
-			identifier: copy.sourceTemplateId,
-			field: "configData",
-		});
+		const sourceConfig = safeJsonParse<TemplateConfig>(sourceTemplate.configData);
 		if (!sourceConfig) {
 			return {
 				success: false,
@@ -670,11 +666,7 @@ export class BulkScoreManager {
 
 		const exportTemplates = templates
 			.map((template) => {
-				const config = safeJsonParse<TemplateConfig>(template.configData, {
-					source: "BulkScoreManager",
-					identifier: template.id,
-					field: "configData",
-				});
+				const config = safeJsonParse<TemplateConfig>(template.configData);
 				if (!config) {
 					return null; // Skip templates with invalid config
 				}
@@ -754,11 +746,7 @@ export class BulkScoreManager {
 					continue;
 				}
 
-				const config = safeJsonParse<TemplateConfig>(template.configData, {
-					source: "BulkScoreManager",
-					identifier: template.id,
-					field: "configData",
-				});
+				const config = safeJsonParse<TemplateConfig>(template.configData);
 				if (!config) {
 					errors.push(`Template "${template.name}" has invalid configuration data`);
 					continue;

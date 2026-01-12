@@ -1312,7 +1312,7 @@ export class DeploymentExecutorService {
 			id?: number;
 		} & typeof profileToCreate;
 
-		return await apiClient.createQualityProfile(profileWithoutId);
+		return await client.qualityProfile.create(profileWithoutId);
 	}
 
 	/**

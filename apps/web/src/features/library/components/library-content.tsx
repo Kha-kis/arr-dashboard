@@ -1,8 +1,9 @@
 "use client";
 
 import type { LibraryItem, ServiceInstanceSummary } from "@arr/shared";
-import { Library as LibraryIcon, Loader2 } from "lucide-react";
-import { Alert, AlertDescription, AlertTitle, EmptyState, Pagination } from "../../../components/ui";
+import { Library as LibraryIcon } from "lucide-react";
+import { Pagination } from "../../../components/ui";
+import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 
 /**
  * Props for LibraryCard component (passthrough)
@@ -77,11 +78,11 @@ interface LibraryContentProps {
  * Content area for the library page
  *
  * Displays the library items with appropriate states:
- * - Loading state with spinner
+ * - Loading state with premium skeleton components
  * - Empty state when no items match filters
  * - Movies section (if movies exist)
  * - Series section (if series exist)
- * - Error alert if loading fails
+ * - Error state with premium empty state component
  */
 export const LibraryContent: React.FC<LibraryContentProps> = ({
 	isLoading,
@@ -114,13 +115,15 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 	return (
 		<>
 			{isLoading ? (
-				<div className="flex items-center gap-3 text-fg-muted">
-					<Loader2 className="h-5 w-5 animate-spin" /> Loading library from your instances...
+				<div className="space-y-4">
+					<PremiumSkeleton variant="card" />
+					<PremiumSkeleton variant="card" />
+					<PremiumSkeleton variant="card" />
 				</div>
 			) : null}
 
 			{!isLoading && totalItems === 0 ? (
-				<EmptyState
+				<PremiumEmptyState
 					icon={LibraryIcon}
 					title={isSyncing ? "Building your library cache..." : "No items found"}
 					description={
@@ -221,12 +224,11 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 			)}
 
 			{isError ? (
-				<Alert variant="danger">
-					<AlertTitle>Failed to load library</AlertTitle>
-					<AlertDescription>
-						{error?.message ?? "An error occurred while loading your library."}
-					</AlertDescription>
-				</Alert>
+				<PremiumEmptyState
+					icon={LibraryIcon}
+					title="Failed to load library"
+					description={error?.message ?? "An error occurred while loading your library. Please try again."}
+				/>
 			) : null}
 		</>
 	);

@@ -60,6 +60,12 @@ const createMockInstance = (
 	encryptionIv: "iv-123",
 	enabled,
 	userId: "user-123",
+	isDefault: false,
+	defaultQualityProfileId: null,
+	defaultLanguageProfileId: null,
+	defaultRootFolderPath: null,
+	defaultSeasonFolder: null,
+	storageGroupId: null,
 	createdAt: new Date(),
 	updatedAt: new Date(),
 });
@@ -90,13 +96,14 @@ const createMockApp = (
 		log: createMockLogger(),
 		arrClientFactory: clientFactory ?? {
 			create: vi.fn((instance: ServiceInstance) => {
+				const config = { baseUrl: "http://test", apiKey: "key" };
 				switch (instance.service) {
 					case "SONARR":
-						return new SonarrClient("http://test", "key");
+						return new SonarrClient(config);
 					case "RADARR":
-						return new RadarrClient("http://test", "key");
+						return new RadarrClient(config);
 					case "PROWLARR":
-						return new ProwlarrClient("http://test", "key");
+						return new ProwlarrClient(config);
 					default:
 						throw new Error(`Unknown service: ${instance.service}`);
 				}
@@ -219,7 +226,7 @@ describe("executeOnInstances - Error Handling", () => {
 			log: createMockLogger(),
 			arrClientFactory: {
 				create: vi.fn((instance: ServiceInstance) => {
-					return new SonarrClient("http://test", "key");
+					return new SonarrClient({ baseUrl: "http://test", apiKey: "key" });
 				}),
 			},
 		} as unknown as FastifyInstance;
@@ -255,7 +262,7 @@ describe("executeOnInstances - Error Handling", () => {
 		const result = await executeOnInstances(app, "user-123", {}, operation);
 
 		expect(result.errorCount).toBe(1);
-		const errorResult = result.instances[0];
+		const errorResult = result.instances[0]!;
 		expect(errorResult.success).toBe(false);
 		if (!errorResult.success) {
 			expect(errorResult.error).toBe("Connection failed");
@@ -320,9 +327,9 @@ describe("executeOnInstances - Result Aggregation", () => {
 
 describe("Type Guards", () => {
 	it("isSonarrClient should correctly identify Sonarr clients", () => {
-		const sonarr = new SonarrClient("http://test", "key");
-		const radarr = new RadarrClient("http://test", "key");
-		const prowlarr = new ProwlarrClient("http://test", "key");
+		const sonarr = new SonarrClient({ baseUrl: "http://test", apiKey: "key" });
+		const radarr = new RadarrClient({ baseUrl: "http://test", apiKey: "key" });
+		const prowlarr = new ProwlarrClient({ baseUrl: "http://test", apiKey: "key" });
 
 		expect(isSonarrClient(sonarr)).toBe(true);
 		expect(isSonarrClient(radarr)).toBe(false);
@@ -330,9 +337,9 @@ describe("Type Guards", () => {
 	});
 
 	it("isRadarrClient should correctly identify Radarr clients", () => {
-		const sonarr = new SonarrClient("http://test", "key");
-		const radarr = new RadarrClient("http://test", "key");
-		const prowlarr = new ProwlarrClient("http://test", "key");
+		const sonarr = new SonarrClient({ baseUrl: "http://test", apiKey: "key" });
+		const radarr = new RadarrClient({ baseUrl: "http://test", apiKey: "key" });
+		const prowlarr = new ProwlarrClient({ baseUrl: "http://test", apiKey: "key" });
 
 		expect(isRadarrClient(sonarr)).toBe(false);
 		expect(isRadarrClient(radarr)).toBe(true);
@@ -340,9 +347,9 @@ describe("Type Guards", () => {
 	});
 
 	it("isProwlarrClient should correctly identify Prowlarr clients", () => {
-		const sonarr = new SonarrClient("http://test", "key");
-		const radarr = new RadarrClient("http://test", "key");
-		const prowlarr = new ProwlarrClient("http://test", "key");
+		const sonarr = new SonarrClient({ baseUrl: "http://test", apiKey: "key" });
+		const radarr = new RadarrClient({ baseUrl: "http://test", apiKey: "key" });
+		const prowlarr = new ProwlarrClient({ baseUrl: "http://test", apiKey: "key" });
 
 		expect(isProwlarrClient(sonarr)).toBe(false);
 		expect(isProwlarrClient(radarr)).toBe(false);
@@ -392,7 +399,7 @@ describe("getClientForInstance - Authentication", () => {
 		},
 		log: createMockLogger(),
 		arrClientFactory: {
-			create: vi.fn(() => new SonarrClient("http://test", "key")),
+			create: vi.fn(() => new SonarrClient({ baseUrl: "http://test", apiKey: "key" })),
 		},
 	} as unknown as FastifyInstance);
 
