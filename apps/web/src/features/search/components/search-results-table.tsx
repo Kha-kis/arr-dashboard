@@ -1,16 +1,22 @@
 "use client";
 
 import type { SearchResult } from "@arr/shared";
-import { Copy, ExternalLink } from "lucide-react";
+import { Copy, ExternalLink, Search } from "lucide-react";
 import { Button } from "../../../components/ui/button";
+import {
+	PremiumTable,
+	PremiumTableHeader,
+	PremiumTableRow,
+	PremiumEmptyState,
+	PremiumSkeleton,
+	StatusBadge,
+} from "../../../components/layout";
 import {
 	useIncognitoMode,
 	getLinuxIsoName,
 	getLinuxIndexer,
 	getLinuxInstanceName,
 } from "../../../lib/incognito";
-import { THEME_GRADIENTS, type ThemeGradient } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
 
 const integer = new Intl.NumberFormat();
 
@@ -108,31 +114,8 @@ const getQualityLabel = (quality: SearchResult["quality"]): string | null => {
 	return typeof name === "string" ? name : null;
 };
 
-const getProtocolBadgeStyle = (
-	protocol: SearchResult["protocol"],
-	themeGradient: ThemeGradient,
-): { className: string; style?: React.CSSProperties } => {
-	switch (protocol) {
-		case "torrent":
-			return {
-				className: "border-emerald-400/40 bg-emerald-500/10 text-emerald-200",
-			};
-		case "usenet":
-			return {
-				className: "",
-				style: {
-					borderColor: `${themeGradient.from}66`,
-					backgroundColor: themeGradient.fromLight,
-					color: themeGradient.from,
-				},
-			};
-		default:
-			return { className: "border-border bg-bg-subtle text-fg-muted" };
-	}
-};
-
 const metricBadgeClass =
-	"inline-flex items-center gap-1 rounded-full border border-border bg-bg-subtle px-2 py-0.5 text-[11px] text-fg-muted";
+	"inline-flex items-center gap-1 rounded-full border border-border bg-card px-2 py-0.5 text-[11px] text-muted-foreground";
 
 interface SearchResultsTableProps {
 	results: SearchResult[];
@@ -157,34 +140,30 @@ export const SearchResultsTable = ({
 	onOpenInfo,
 }: SearchResultsTableProps) => {
 	const [incognitoMode] = useIncognitoMode();
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
 
 	if (loading) {
-		return (
-			<div className="rounded-xl border border-border bg-bg-subtle px-4 py-6 text-center text-sm text-fg-muted">
-				Searching across selected indexers...
-			</div>
-		);
+		return <PremiumSkeleton variant="card" className="h-48" />;
 	}
 
 	if (results.length === 0) {
 		return (
-			<div className="rounded-xl border border-border bg-bg-subtle px-4 py-6 text-center text-sm text-fg-muted">
-				{emptyMessage ?? "No results yet. Submit a query to begin."}
-			</div>
+			<PremiumEmptyState
+				icon={Search}
+				title="No Results"
+				description={emptyMessage ?? "No results yet. Submit a query to begin."}
+			/>
 		);
 	}
 
 	return (
-		<div className="rounded-xl border border-border bg-bg-subtle">
-			<table className="w-full divide-y divide-border text-sm text-fg-muted">
-				<thead className="bg-bg-subtle text-left text-xs uppercase tracking-wide text-fg-muted">
+		<PremiumTable>
+			<table className="w-full divide-y divide-border text-sm text-muted-foreground">
+				<PremiumTableHeader>
 					<tr>
-						<th className="px-4 py-3">Release</th>
-						<th className="px-4 py-3 text-right">Actions</th>
+						<th className="px-4 py-3 text-left text-xs uppercase tracking-wide text-muted-foreground">Release</th>
+						<th className="px-4 py-3 text-right text-xs uppercase tracking-wide text-muted-foreground">Actions</th>
 					</tr>
-				</thead>
+				</PremiumTableHeader>
 				<tbody className="divide-y divide-border">
 					{results.map((result) => {
 						const key = buildRowKey(result);
@@ -200,45 +179,38 @@ export const SearchResultsTable = ({
 								? result.rejectionReasons.join(", ")
 								: null;
 
-						const protocolStyle = getProtocolBadgeStyle(result.protocol, themeGradient);
-
 						return (
-							<tr key={key} className="align-top hover:bg-bg-subtle">
-								<td className="px-4 py-4 text-fg">
+							<PremiumTableRow key={key} className="align-top">
+								<td className="px-4 py-4 text-foreground">
 									<div className="space-y-3 break-words">
 										<div className="flex flex-wrap items-center gap-2">
 											<span className="font-semibold leading-tight break-words">
 												{incognitoMode ? getLinuxIsoName(result.title) : result.title}
 											</span>
-											<span
-												className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${protocolStyle.className}`}
-												style={protocolStyle.style}
-											>
+											<StatusBadge status={result.protocol === "torrent" ? "success" : "info"}>
 												{result.protocol.toUpperCase()}
-											</span>
+											</StatusBadge>
 											{qualityLabel ? (
-												<span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[11px] text-fg-muted">
+												<span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
 													{qualityLabel}
 												</span>
 											) : null}
 											{result.rejected ? (
-												<span className="inline-flex items-center rounded-full border border-red-400/40 bg-red-500/10 px-2 py-0.5 text-[11px] font-medium text-red-200">
-													Rejected
-												</span>
+												<StatusBadge status="error">Rejected</StatusBadge>
 											) : null}
 										</div>
 
-										<div className="flex flex-wrap items-center gap-3 text-xs text-fg-muted">
-											<span className="font-medium text-fg-muted">
+										<div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+											<span className="font-medium text-muted-foreground">
 												{incognitoMode ? getLinuxIndexer(result.indexer) : result.indexer}
 											</span>
-											<span className="text-fg-muted">#{result.indexerId}</span>
-											<span className="text-fg-muted">
+											<span className="text-muted-foreground">#{result.indexerId}</span>
+											<span className="text-muted-foreground">
 												{incognitoMode ? getLinuxInstanceName(result.instanceName) : result.instanceName}
 											</span>
 										</div>
 
-										<div className="flex flex-wrap gap-2 text-[11px] text-fg-muted">
+										<div className="flex flex-wrap gap-2 text-[11px] text-muted-foreground">
 											<span className={metricBadgeClass}>Size {sizeLabel}</span>
 											<span className={metricBadgeClass}>
 												Seeders {integer.format(result.seeders ?? 0)}
@@ -257,15 +229,15 @@ export const SearchResultsTable = ({
 										</div>
 
 										{result.categories?.length ? (
-											<div className="flex flex-wrap gap-2 text-xs text-fg-muted">
-												<span className="uppercase text-fg-muted">Categories</span>
+											<div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+												<span className="uppercase text-muted-foreground">Categories</span>
 												<span>{result.categories.join(", ")}</span>
 											</div>
 										) : null}
 
 										{result.languages?.length ? (
-											<div className="flex flex-wrap gap-2 text-xs text-fg-muted">
-												<span className="uppercase text-fg-muted">Languages</span>
+											<div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+												<span className="uppercase text-muted-foreground">Languages</span>
 												<span>{result.languages.map((language) => language.name).join(", ")}</span>
 											</div>
 										) : null}
@@ -277,7 +249,7 @@ export const SearchResultsTable = ({
 										) : null}
 									</div>
 								</td>
-								<td className="px-4 py-4 text-right text-fg-muted">
+								<td className="px-4 py-4 text-right text-muted-foreground">
 									<div className="flex flex-col items-end gap-2 sm:flex-row sm:justify-end sm:gap-3">
 										<Button
 											variant="secondary"
@@ -305,11 +277,11 @@ export const SearchResultsTable = ({
 										</Button>
 									</div>
 								</td>
-							</tr>
+							</PremiumTableRow>
 						);
 					})}
 				</tbody>
 			</table>
-		</div>
+		</PremiumTable>
 	);
 };

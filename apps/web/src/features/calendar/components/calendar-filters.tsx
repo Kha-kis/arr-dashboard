@@ -2,8 +2,7 @@
 
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { Filter, RotateCcw } from "lucide-react";
 import type { ServiceFilterValue } from "../hooks/use-calendar-state";
 
@@ -38,8 +37,7 @@ export const CalendarFilters = ({
 	onIncludeUnmonitoredChange,
 	onResetFilters,
 }: CalendarFiltersProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const isFilterActive =
 		serviceFilter !== "all" ||

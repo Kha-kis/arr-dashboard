@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useFocusTrap } from "../../../hooks/useFocusTrap";
 import type {
 	DiscoverAddRequest,
 	DiscoverSearchResult,
@@ -12,8 +13,8 @@ import { X, Film, Tv, Loader2, Plus, CheckCircle2, AlertTriangle, FolderOpen, Se
 import { Button } from "../../../components/ui/button";
 import { cn } from "../../../lib/utils";
 import { useDiscoverOptionsQuery } from "../../../hooks/api/useDiscover";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 interface AddToLibraryDialogProps {
 	open: boolean;
@@ -49,9 +50,9 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 	onSubmit,
 	submitting = false,
 }) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const [focusedSelect, setFocusedSelect] = useState<string | null>(null);
+	const focusTrapRef = useFocusTrap<HTMLDivElement>(open, onClose);
 
 	const targetInstances = useMemo(
 		() =>
@@ -283,7 +284,12 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 	};
 
 	return (
-		<div className="fixed inset-0 z-modal-backdrop flex items-center justify-center px-4 py-8 animate-in fade-in duration-200">
+		<div
+			className="fixed inset-0 z-modal-backdrop flex items-center justify-center px-4 py-8 animate-in fade-in duration-200"
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="add-to-library-title"
+		>
 			{/* Backdrop */}
 			<div
 				className="absolute inset-0 bg-black/70 backdrop-blur-sm"
@@ -292,6 +298,7 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 
 			{/* Dialog */}
 			<div
+				ref={focusTrapRef}
 				className="relative w-full max-w-2xl rounded-2xl border border-border/50 bg-card/95 backdrop-blur-xl p-8 shadow-2xl animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
 				style={{
 					boxShadow: `0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px ${themeGradient.from}10`,
@@ -303,6 +310,7 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 					className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
 					onClick={onClose}
 					disabled={submitting}
+					aria-label="Close dialog"
 				>
 					<X className="h-4 w-4" />
 				</button>
@@ -327,7 +335,7 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 							<p className="text-xs uppercase tracking-[0.2em] text-muted-foreground font-medium">
 								Add to Library
 							</p>
-							<h2 className="text-xl font-semibold text-foreground">
+							<h2 id="add-to-library-title" className="text-xl font-semibold text-foreground">
 								{result.title}
 								{result.year && (
 									<span className="ml-2 text-muted-foreground font-normal">({result.year})</span>

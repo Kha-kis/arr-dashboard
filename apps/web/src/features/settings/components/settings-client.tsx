@@ -17,14 +17,12 @@ import { useTagsQuery } from "../../../hooks/api/useTags";
 import { useDiscoverOptionsQuery, useDiscoverTestOptionsQuery } from "../../../hooks/api/useDiscover";
 import { useCurrentUser } from "../../../hooks/api/useAuth";
 import {
-	AmbientGlow,
 	PremiumPageHeader,
 	PremiumTabs,
 	PremiumPageLoading,
 	type PremiumTab,
 } from "../../../components/layout";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { TABS, type TabType } from "../lib/settings-constants";
 import {
 	useServiceFormState,
@@ -49,14 +47,12 @@ import { SystemTab } from "./system-tab";
  * Premium Settings Client
  *
  * Main orchestrator for the settings feature with:
- * - Ambient background glow
  * - Premium gradient header
  * - Theme-aware tab navigation
  * - Staggered entrance animations
  */
 export const SettingsClient = () => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	// Data queries
 	const { data: services = [], isLoading: servicesLoading } = useServicesQuery();
@@ -192,19 +188,11 @@ export const SettingsClient = () => {
 
 	// Loading state
 	if (servicesLoading && !services.length) {
-		return (
-			<section className="relative flex flex-col gap-8">
-				<AmbientGlow />
-				<PremiumPageLoading showHeader cardCount={4} />
-			</section>
-		);
+		return <PremiumPageLoading showHeader cardCount={4} />;
 	}
 
 	return (
-		<section className="relative flex flex-col gap-8">
-			{/* Ambient background glow */}
-			<AmbientGlow />
-
+		<>
 			{/* Premium Header */}
 			<PremiumPageHeader
 				label="Configuration"
@@ -356,6 +344,6 @@ export const SettingsClient = () => {
 					</div>
 				)}
 			</div>
-		</section>
+		</>
 	);
 };

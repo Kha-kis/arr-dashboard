@@ -16,8 +16,9 @@ import {
 	Download,
 	Wifi,
 } from "lucide-react";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS, PROTOCOL_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { StatusBadge } from "../../../components/layout";
 
 /**
  * Capability Badge Component
@@ -74,12 +75,11 @@ export const IndexerRow = ({
 	expanded: boolean;
 	onToggleDetails: () => void;
 }) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const [incognitoMode] = useIncognitoMode();
 
 	// Protocol-based colors
-	const protocolColor = indexer.protocol === "torrent" ? "#f97316" : "#06b6d4";
+	const protocolColor = indexer.protocol === "torrent" ? PROTOCOL_COLORS.torrent : PROTOCOL_COLORS.usenet;
 
 	return (
 		<div className="space-y-0 overflow-hidden">
@@ -95,22 +95,13 @@ export const IndexerRow = ({
 					{/* Indexer Info */}
 					<div className="space-y-2 flex-1 min-w-0">
 						<div className="flex items-center gap-3">
-							{/* Enable Status Indicator */}
-							<div
-								className="flex h-8 w-8 items-center justify-center rounded-lg shrink-0"
-								style={{
-									backgroundColor: indexer.enable
-										? `${SEMANTIC_COLORS.success.from}15`
-										: "rgba(var(--muted), 0.2)",
-									border: `1px solid ${indexer.enable ? SEMANTIC_COLORS.success.from : "rgba(var(--muted), 0.3)"}30`,
-								}}
+							{/* Enable Status Badge */}
+							<StatusBadge
+								status={indexer.enable ? "success" : "default"}
+								icon={indexer.enable ? CheckCircle2 : XCircle}
 							>
-								{indexer.enable ? (
-									<CheckCircle2 className="h-4 w-4" style={{ color: SEMANTIC_COLORS.success.from }} />
-								) : (
-									<XCircle className="h-4 w-4 text-muted-foreground" />
-								)}
-							</div>
+								{indexer.enable ? "Enabled" : "Disabled"}
+							</StatusBadge>
 
 							<div className="min-w-0">
 								<h3 className="font-semibold text-foreground truncate">

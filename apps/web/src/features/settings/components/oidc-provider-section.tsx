@@ -19,8 +19,8 @@ import {
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { PremiumSection, GlassmorphicCard, PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import {
 	useOIDCProvider,
 	useCreateOIDCProvider,
@@ -39,8 +39,7 @@ import { cn } from "../../../lib/utils";
  * - Staggered animations
  */
 export const OIDCProviderSection = () => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const { data: providerData, isLoading } = useOIDCProvider();
 	const createMutation = useCreateOIDCProvider();

@@ -10,8 +10,7 @@
 import { Filter, X, ChevronDown, RotateCcw, Check } from "lucide-react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { cn } from "../../lib/utils";
-import { THEME_GRADIENTS } from "../../lib/theme-gradients";
-import { useColorTheme } from "../../providers/color-theme-provider";
+import { useThemeGradient } from "../../hooks/useThemeGradient";
 
 interface FilterOption {
 	value: string;
@@ -119,7 +118,7 @@ const PremiumSelect = ({
 				<SelectPrimitive.Portal>
 					<SelectPrimitive.Content
 						className={cn(
-							"relative z-50 max-h-[300px] min-w-[var(--radix-select-trigger-width)] overflow-hidden",
+							"relative z-modal max-h-[300px] min-w-[var(--radix-select-trigger-width)] overflow-hidden",
 							"rounded-xl border border-border/50 bg-card/95 backdrop-blur-xl",
 							"shadow-xl shadow-black/20",
 							"data-[state=open]:animate-in data-[state=closed]:animate-out",
@@ -234,8 +233,7 @@ export const QueueFilters = ({
 	filtersActive,
 	onReset,
 }: QueueFiltersProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	// Build instance options with "All instances" at the top
 	const allInstanceOptions: FilterOption[] = [

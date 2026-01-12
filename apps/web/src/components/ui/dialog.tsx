@@ -5,8 +5,7 @@ import * as DialogPrimitive from "@radix-ui/react-dialog"
 import { X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { useColorTheme } from "../../providers/color-theme-provider"
-import { THEME_GRADIENTS } from "../../lib/theme-gradients"
+import { useThemeGradient } from "../../hooks/useThemeGradient"
 
 const Dialog = DialogPrimitive.Root
 
@@ -28,7 +27,7 @@ const DialogOverlay = React.forwardRef<
   <DialogPrimitive.Overlay
     ref={ref}
     className={cn(
-      "fixed inset-0 z-50 backdrop-blur-sm",
+      "fixed inset-0 z-modal-backdrop backdrop-blur-sm",
       "bg-gradient-to-br from-black/70 via-black/60 to-black/70",
       "data-[state=open]:animate-in data-[state=closed]:animate-out",
       "data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
@@ -57,8 +56,7 @@ const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   DialogContentProps
 >(({ className, children, showAccent = true, ...props }, ref) => {
-  const { colorTheme } = useColorTheme()
-  const themeGradient = THEME_GRADIENTS[colorTheme]
+  const { gradient: themeGradient } = useThemeGradient()
 
   return (
     <DialogPortal>
@@ -67,7 +65,7 @@ const DialogContent = React.forwardRef<
         ref={ref}
         className={cn(
           // Positioning
-          "fixed left-[50%] top-[50%] z-50 w-full max-w-lg",
+          "fixed left-[50%] top-[50%] z-modal w-full max-w-lg",
           "translate-x-[-50%] translate-y-[-50%]",
           // Glassmorphic styling
           "rounded-2xl border border-border/50 bg-card/95 backdrop-blur-xl",

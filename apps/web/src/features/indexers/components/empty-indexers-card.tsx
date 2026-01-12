@@ -1,12 +1,12 @@
 "use client";
 
 import { Server, Settings, ArrowRight } from "lucide-react";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import Link from "next/link";
 
-// Prowlarr-specific color
-const PROWLARR_COLOR = "#e6a23c";
+// Use centralized Prowlarr color
+const PROWLARR_COLOR = SERVICE_GRADIENTS.prowlarr.from;
 
 /**
  * Premium Empty Indexers Card
@@ -17,8 +17,7 @@ const PROWLARR_COLOR = "#e6a23c";
  * - CTA to settings page
  */
 export const EmptyIndexersCard = () => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
 		<div className="rounded-2xl border border-dashed border-border/50 bg-card/20 backdrop-blur-sm p-12 text-center animate-in fade-in slide-in-from-bottom-4 duration-500">

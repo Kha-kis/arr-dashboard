@@ -6,11 +6,11 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Alert, AlertDescription, Skeleton, Card, CardHeader, CardTitle, CardDescription, CardContent } from "../../../../components/ui";
+import { Alert, AlertDescription, Card, CardHeader, CardTitle, CardDescription, CardContent } from "../../../../components/ui";
+import { PremiumSkeleton } from "../../../../components/layout/premium-components";
 import { ChevronLeft, ChevronRight, Info, AlertCircle, Search, Edit, RotateCcw, Settings } from "lucide-react";
 import { createSanitizedHtml } from "../../../../lib/sanitize-html";
-import { THEME_GRADIENTS } from "../../../../lib/theme-gradients";
-import { useColorTheme } from "../../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../../hooks/useThemeGradient";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { ConditionEditor } from "../condition-editor";
 import { useCFConfiguration } from "../../../../hooks/api/useCFConfiguration";
@@ -68,8 +68,7 @@ export const CFConfiguration = ({
 	editingTemplate,
 	cfResolutions,
 }: CFConfigurationProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const [selections, setSelections] = useState(initialSelections);
 	const [searchQuery, setSearchQuery] = useState("");
 	const [conditionEditorFormat, setConditionEditorFormat] = useState<{
@@ -234,7 +233,7 @@ export const CFConfiguration = ({
 
 		if (displayScore === 0) {
 			return (
-				<span className="text-fg-muted">
+				<span className="text-muted-foreground">
 					0 <span className="text-xs">(neutral)</span>
 				</span>
 			);
@@ -260,28 +259,28 @@ export const CFConfiguration = ({
 			<div className="space-y-6 animate-in fade-in duration-300">
 				{/* Header Skeleton */}
 				<div className="space-y-3">
-					<Skeleton className="h-8 w-3/4 animate-pulse" />
-					<Skeleton className="h-4 w-full animate-pulse delay-75" />
-					<Skeleton className="h-4 w-5/6 animate-pulse delay-100" />
+					<PremiumSkeleton variant="line" className="h-8 w-3/4" />
+					<PremiumSkeleton variant="line" className="h-4 w-full" style={{ animationDelay: "50ms" }} />
+					<PremiumSkeleton variant="line" className="h-4 w-5/6" style={{ animationDelay: "100ms" }} />
 				</div>
 
 				{/* Search Bar Skeleton */}
-				<Skeleton className="h-12 w-full animate-pulse delay-150" />
+				<PremiumSkeleton variant="card" className="h-12 w-full" style={{ animationDelay: "150ms" }} />
 
 				{/* Mandatory CFs Skeleton */}
 				<div className="space-y-3">
-					<Skeleton className="h-6 w-48 animate-pulse delay-200" />
+					<PremiumSkeleton variant="line" className="h-6 w-48" style={{ animationDelay: "200ms" }} />
 					<div className="space-y-2">
-						<Skeleton className="h-24 w-full animate-pulse delay-250" />
-						<Skeleton className="h-24 w-full animate-pulse delay-300" />
+						<PremiumSkeleton variant="card" className="h-24 w-full" style={{ animationDelay: "250ms" }} />
+						<PremiumSkeleton variant="card" className="h-24 w-full" style={{ animationDelay: "300ms" }} />
 					</div>
 				</div>
 
 				{/* Optional CF Groups Skeleton */}
 				<div className="space-y-3">
-					<Skeleton className="h-6 w-56 animate-pulse delay-350" />
-					<Skeleton className="h-48 w-full animate-pulse delay-400" />
-					<Skeleton className="h-48 w-full animate-pulse delay-450" />
+					<PremiumSkeleton variant="line" className="h-6 w-56" style={{ animationDelay: "350ms" }} />
+					<PremiumSkeleton variant="card" className="h-48 w-full" style={{ animationDelay: "400ms" }} />
+					<PremiumSkeleton variant="card" className="h-48 w-full" style={{ animationDelay: "450ms" }} />
 				</div>
 			</div>
 		);
@@ -322,18 +321,18 @@ export const CFConfiguration = ({
 			return (
 				<div
 					key={cfKey}
-					className="rounded-lg p-4 border border-border/50 bg-bg-subtle transition-all hover:border-primary/50 hover:shadow-md"
+					className="rounded-lg p-4 border border-border/50 bg-card transition-all hover:border-primary/50 hover:shadow-md"
 				>
 					<div className="flex items-start gap-3">
 						<input
 							type="checkbox"
 							checked={selection?.selected ?? true}
 							onChange={() => toggleCF(cfKey)}
-							className="mt-1 h-5 w-5 rounded border-border/50 bg-bg-subtle text-primary focus:ring-2 focus:ring-primary/50 cursor-pointer transition"
+							className="mt-1 h-5 w-5 rounded border-border/50 bg-card text-primary focus:ring-2 focus:ring-primary/50 cursor-pointer transition"
 						/>
 						<div className="flex-1">
 							<div className="flex items-center gap-2 mb-2">
-								<span className="font-medium text-fg">{resolution.instanceCFName}</span>
+								<span className="font-medium text-foreground">{resolution.instanceCFName}</span>
 								{resolution.decision === "use_trash" && resolution.trashId && (
 									<span className="inline-flex items-center gap-1 rounded bg-green-500/20 px-2 py-0.5 text-xs font-medium text-green-300">
 										Linked to TRaSH
@@ -359,7 +358,7 @@ export const CFConfiguration = ({
 
 							<div className="space-y-2">
 								{/* Show score info */}
-								<div className="flex items-center gap-2 text-xs text-fg-muted">
+								<div className="flex items-center gap-2 text-xs text-muted-foreground">
 									<span>Current: {scoreOverride ?? defaultScore}</span>
 									{resolution.decision === "use_trash" && resolution.recommendedScore !== undefined && (
 										<span>• TRaSH Recommended: {resolution.recommendedScore}</span>
@@ -371,13 +370,13 @@ export const CFConfiguration = ({
 
 								{/* Score input */}
 								<div className="flex items-center gap-2 flex-wrap">
-									<label className="text-sm text-fg-muted">Override Score:</label>
+									<label className="text-sm text-muted-foreground">Override Score:</label>
 									<input
 										type="number"
 										value={scoreOverride ?? ""}
 										onChange={(e) => updateScore(cfKey, e.target.value)}
 										placeholder={defaultScore.toString()}
-										className="w-20 rounded border border-border/50 bg-bg px-2 py-1 text-sm text-fg focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50 transition"
+										className="w-20 rounded border border-border/50 bg-background px-2 py-1 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50 transition"
 									/>
 									{scoreOverride !== undefined && (
 										<button
@@ -413,13 +412,14 @@ export const CFConfiguration = ({
 
 				{/* Search */}
 				<div className="relative">
-					<Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-fg-muted" />
+					<Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
 					<input
 						type="text"
 						value={searchQuery}
 						onChange={(e) => setSearchQuery(e.target.value)}
 						placeholder="Search custom formats..."
-						className="w-full rounded-lg border border-border/50 bg-bg py-3 pl-10 pr-4 text-fg placeholder:text-fg-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition"
+						className="w-full rounded-lg border border-border/50 bg-background py-3 pr-4 text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition"
+						style={{ paddingLeft: "2.5rem" }}
 					/>
 				</div>
 
@@ -427,13 +427,13 @@ export const CFConfiguration = ({
 				{linkedToTrash.length > 0 && (
 					<div className="space-y-3">
 						<div className="flex items-center justify-between">
-							<h3 className="text-lg font-medium text-fg flex items-center gap-2">
+							<h3 className="text-lg font-medium text-foreground flex items-center gap-2">
 								<span className="w-2 h-2 rounded-full bg-green-500" />
 								Linked to TRaSH Guides
 							</h3>
-							<span className="text-sm text-fg-muted">{linkedToTrash.length} formats</span>
+							<span className="text-sm text-muted-foreground">{linkedToTrash.length} formats</span>
 						</div>
-						<p className="text-sm text-fg-muted">
+						<p className="text-sm text-muted-foreground">
 							These CFs are linked to TRaSH Guides and will receive recommended scores and updates.
 						</p>
 						<div className="space-y-2">
@@ -448,13 +448,13 @@ export const CFConfiguration = ({
 				{keepInstance.length > 0 && (
 					<div className="space-y-3">
 						<div className="flex items-center justify-between">
-							<h3 className="text-lg font-medium text-fg flex items-center gap-2">
+							<h3 className="text-lg font-medium text-foreground flex items-center gap-2">
 								<span className="w-2 h-2 rounded-full bg-blue-500" />
 								Instance Custom Formats
 							</h3>
-							<span className="text-sm text-fg-muted">{keepInstance.length} formats</span>
+							<span className="text-sm text-muted-foreground">{keepInstance.length} formats</span>
 						</div>
-						<p className="text-sm text-fg-muted">
+						<p className="text-sm text-muted-foreground">
 							These CFs are unique to your instance and will keep their current configuration.
 						</p>
 						<div className="space-y-2">
@@ -471,7 +471,7 @@ export const CFConfiguration = ({
 						<button
 							type="button"
 							onClick={onBack}
-							className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-fg-muted hover:text-fg hover:bg-bg-hover transition"
+							className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-muted-foreground hover:text-foreground hover:bg-muted transition"
 						>
 							<ChevronLeft className="h-4 w-4" />
 							Back
@@ -595,18 +595,18 @@ export const CFConfiguration = ({
 			return (
 				<div
 					key={cf.trash_id}
-					className="rounded-lg p-4 border border-border/50 bg-bg-subtle transition-all hover:border-primary/50 hover:shadow-md"
+					className="rounded-lg p-4 border border-border/50 bg-card transition-all hover:border-primary/50 hover:shadow-md"
 				>
 					<div className="flex items-start gap-3">
 						<input
 							type="checkbox"
 							checked={selection?.selected ?? false}
 							onChange={() => toggleCF(cf.trash_id, isRequired)}
-							className="mt-1 h-5 w-5 rounded border-border/50 bg-bg-subtle text-primary focus:ring-2 focus:ring-primary/50 cursor-pointer transition"
+							className="mt-1 h-5 w-5 rounded border-border/50 bg-card text-primary focus:ring-2 focus:ring-primary/50 cursor-pointer transition"
 						/>
 						<div className="flex-1">
 							<div className="flex items-center gap-2 mb-2">
-								<span className="font-medium text-fg">{cf.displayName || cf.name}</span>
+								<span className="font-medium text-foreground">{cf.displayName || cf.name}</span>
 								{isRequired && (
 									<span className="inline-flex items-center gap-1 rounded bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-300" title="TRaSH Guides recommends this CF as required">
 										⭐ TRaSH Required
@@ -632,7 +632,7 @@ export const CFConfiguration = ({
 
 							<div className="space-y-2">
 								{/* Show current score info */}
-								<div className="flex items-center gap-2 text-xs text-fg-muted">
+								<div className="flex items-center gap-2 text-xs text-muted-foreground">
 									<span>Current: {scoreOverride ?? resolvedDefaultScore}</span>
 									{cf.originalConfig?.trash_scores && (
 										<span>• TRaSH Default: {resolvedDefaultScore}</span>
@@ -644,19 +644,19 @@ export const CFConfiguration = ({
 									<button
 										type="button"
 										onClick={() => setConditionEditorFormat({ trashId: cf.trash_id, format: cf })}
-										className="inline-flex items-center gap-1 rounded bg-bg-subtle px-2 py-1 text-xs font-medium text-fg transition hover:bg-bg-hover"
+										className="inline-flex items-center gap-1 rounded bg-card px-2 py-1 text-xs font-medium text-foreground transition hover:bg-muted"
 										title="Advanced condition editing"
 									>
 										<Settings className="h-3 w-3" />
 										Advanced
 									</button>
-									<label className="text-sm text-fg-muted">Override Score:</label>
+									<label className="text-sm text-muted-foreground">Override Score:</label>
 									<input
 										type="number"
 										value={scoreOverride ?? ""}
 										onChange={(e) => updateScore(cf.trash_id, e.target.value)}
 										placeholder={resolvedDefaultScore.toString()}
-										className="w-20 rounded border border-border/50 bg-bg px-2 py-1 text-sm text-fg focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50 transition"
+										className="w-20 rounded border border-border/50 bg-background px-2 py-1 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50 transition"
 									/>
 									{scoreOverride !== undefined && (
 										<button
@@ -691,10 +691,10 @@ export const CFConfiguration = ({
 				{/* Quality Profile CFs */}
 				<div className="space-y-3">
 					<div className="flex items-center justify-between">
-						<h3 className="text-lg font-medium text-fg">Quality Profile Custom Formats</h3>
-						<span className="text-sm text-fg-muted">{profileCFs.length} formats</span>
+						<h3 className="text-lg font-medium text-foreground">Quality Profile Custom Formats</h3>
+						<span className="text-sm text-muted-foreground">{profileCFs.length} formats</span>
 					</div>
-					<p className="text-sm text-fg-muted">
+					<p className="text-sm text-muted-foreground">
 						These custom formats come from the TRaSH Guides quality profile &quot;{qualityProfile.name}&quot;. You can adjust scores or disable them.
 					</p>
 
@@ -716,10 +716,10 @@ export const CFConfiguration = ({
 				{additionalCFs.length > 0 && (
 					<div className="space-y-3">
 						<div className="flex items-center justify-between">
-							<h3 className="text-lg font-medium text-fg">Additional Custom Formats</h3>
-							<span className="text-sm text-fg-muted">{additionalCFs.length} formats</span>
+							<h3 className="text-lg font-medium text-foreground">Additional Custom Formats</h3>
+							<span className="text-sm text-muted-foreground">{additionalCFs.length} formats</span>
 						</div>
-						<p className="text-sm text-fg-muted">
+						<p className="text-sm text-muted-foreground">
 							These custom formats were added beyond the quality profile&apos;s defaults.
 						</p>
 
@@ -734,15 +734,15 @@ export const CFConfiguration = ({
 			{data.availableFormats && (
 				<div className="space-y-4">
 					<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-						<h3 className="text-lg font-semibold text-fg">
+						<h3 className="text-lg font-semibold text-foreground">
 							<span className="flex flex-col sm:inline-flex sm:items-center sm:gap-2">
 								<span>Browse Custom Formats</span>
-								<span className="text-sm font-normal text-fg-muted">
+								<span className="text-sm font-normal text-muted-foreground">
 									(Add additional custom formats to your template)
 								</span>
 							</span>
 						</h3>
-						<span className="text-sm text-fg-muted whitespace-nowrap">
+						<span className="text-sm text-muted-foreground whitespace-nowrap">
 							{data.availableFormats.length} formats available
 						</span>
 					</div>
@@ -786,12 +786,12 @@ export const CFConfiguration = ({
 										const displayScore = resolveScore(cf, cf.score);
 										const isRequired = cf.required === true;
 										return (
-											<div key={cf.trash_id} className="rounded-lg p-4 border border-border/50 bg-bg-subtle transition-all hover:border-primary/50 hover:bg-bg-hover hover:shadow-md cursor-pointer" onClick={() => toggleCF(cf.trash_id, isRequired)}>
+											<div key={cf.trash_id} className="rounded-lg p-4 border border-border/50 bg-card transition-all hover:border-primary/50 hover:bg-muted hover:shadow-md cursor-pointer" role="button" tabIndex={0} onClick={() => toggleCF(cf.trash_id, isRequired)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleCF(cf.trash_id, isRequired); } }} aria-pressed={isSelected} aria-label={`${isSelected ? "Deselect" : "Select"} custom format: ${cf.displayName || cf.name}`}>
 												<div className="flex items-start gap-3">
-													<input type="checkbox" checked={isSelected} onChange={() => toggleCF(cf.trash_id, isRequired)} className="mt-1 h-4 w-4 rounded border-border bg-bg-hover text-primary focus:ring-primary focus:ring-offset-0 cursor-pointer" onClick={(e) => e.stopPropagation()} />
+													<input type="checkbox" checked={isSelected} onChange={() => toggleCF(cf.trash_id, isRequired)} className="mt-1 h-4 w-4 rounded border-border bg-muted text-primary focus:ring-primary focus:ring-offset-0 cursor-pointer" onClick={(e) => e.stopPropagation()} />
 													<div className="flex-1">
 														<div className="flex items-center gap-2 mb-2">
-															<span className="font-medium text-fg">{cf.displayName || cf.name}</span>
+															<span className="font-medium text-foreground">{cf.displayName || cf.name}</span>
 														</div>
 														{cf.description && (
 															<details className="mb-2 group">
@@ -799,15 +799,15 @@ export const CFConfiguration = ({
 																	<span className="group-open:rotate-90 transition-transform">▶</span>
 																	<span>What is this?</span>
 																</summary>
-																<div className="mt-2 pl-4 text-sm text-fg-subtle prose prose-invert prose-sm max-w-none">
+																<div className="mt-2 pl-4 text-sm text-muted-foreground prose prose-invert prose-sm max-w-none">
 																	<div dangerouslySetInnerHTML={createSanitizedHtml(cf.description)} />
 																</div>
 															</details>
 														)}
 														{isSelected && (
 															<div className="flex items-center gap-2">
-																<label className="text-xs text-fg-muted">Score (Default: {displayScore}):</label>
-																<input type="number" value={scoreOverride ?? ""} onChange={(e) => updateScore(cf.trash_id, e.target.value)} placeholder={String(displayScore)} className="w-24 rounded border border-border bg-bg-hover px-2 py-1 text-sm text-fg placeholder:text-fg-muted focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" onClick={(e) => e.stopPropagation()} />
+																<label className="text-xs text-muted-foreground">Score (Default: {displayScore}):</label>
+																<input type="number" value={scoreOverride ?? ""} onChange={(e) => updateScore(cf.trash_id, e.target.value)} placeholder={String(displayScore)} className="w-24 rounded border border-border bg-muted px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" onClick={(e) => e.stopPropagation()} />
 																{scoreOverride !== undefined && (
 																	<button type="button" onClick={(e) => { e.stopPropagation(); updateScore(cf.trash_id, ""); }} className="text-xs text-primary hover:text-primary/80 transition" title="Reset to default">↺ Reset</button>
 																)}
@@ -830,7 +830,7 @@ export const CFConfiguration = ({
 						<button
 							type="button"
 							onClick={onBack}
-							className="inline-flex items-center gap-2 rounded-lg bg-bg-hover px-4 py-2 text-sm font-medium text-fg transition hover:bg-bg-muted"
+							className="inline-flex items-center gap-2 rounded-lg bg-muted px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted/80"
 						>
 							<ChevronLeft className="h-4 w-4" />
 							Back
@@ -862,13 +862,18 @@ export const CFConfiguration = ({
 				}));
 
 				return (
-					<div className="fixed inset-0 z-[60] flex items-center justify-center bg-bg/80 backdrop-blur-sm">
-						<div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-bg-subtle p-6">
+					<div
+						className="fixed inset-0 z-popover flex items-center justify-center bg-background/80 backdrop-blur-sm"
+						role="dialog"
+						aria-modal="true"
+						aria-label="Condition Editor"
+					>
+						<div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card p-6">
 							{/* Close button */}
 							<button
 								type="button"
 								onClick={() => setConditionEditorFormat(null)}
-								className="absolute top-4 right-4 rounded p-1 text-fg-muted hover:bg-bg-hover hover:text-fg z-10"
+								className="absolute top-4 right-4 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground z-10"
 								aria-label="Close"
 							>
 								<svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -922,19 +927,20 @@ export const CFConfiguration = ({
 
 			{/* Search Bar */}
 			<div className="relative">
-				<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-fg-muted" />
+				<Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
 				<input
 					type="text"
 					value={searchQuery}
 					onChange={(e) => setSearchQuery(e.target.value)}
 					placeholder="Search custom formats by name or description..."
-					className="w-full rounded-lg border border-border/50 bg-bg-subtle pl-10 pr-4 py-2.5 text-sm text-fg placeholder:text-fg-muted focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition"
+					className="w-full rounded-lg border border-border/50 bg-card pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition"
+					style={{ paddingLeft: "2.5rem" }}
 				/>
 				{searchQuery && (
 					<button
 						type="button"
 						onClick={() => setSearchQuery("")}
-						className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-fg-muted hover:text-fg transition"
+						className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foregroundtransition"
 					>
 						Clear
 					</button>
@@ -985,7 +991,7 @@ export const CFConfiguration = ({
 									⭐ TRaSH Recommended Formats
 								</span>
 							)}
-							<span className="text-sm font-normal text-fg-muted">
+							<span className="text-sm font-normal text-muted-foreground">
 								({filteredMandatoryCFs.length}{searchQuery ? ` of ${mandatoryCFs.length}` : ""} formats)
 							</span>
 						</CardTitle>
@@ -1017,11 +1023,11 @@ export const CFConfiguration = ({
 												type="checkbox"
 												checked={isSelected}
 												onChange={() => toggleCF(cf.trash_id, false)}
-												className="mt-1 h-5 w-5 rounded border-border/50 bg-bg-subtle text-primary focus:ring-2 focus:ring-primary/50 cursor-pointer transition"
+												className="mt-1 h-5 w-5 rounded border-border/50 bg-card text-primary focus:ring-2 focus:ring-primary/50 cursor-pointer transition"
 											/>
 											<div className="flex-1">
 												<div className="flex items-center gap-2 mb-2">
-													<span className="font-medium text-fg">{cf.displayName || cf.name}</span>
+													<span className="font-medium text-foreground">{cf.displayName || cf.name}</span>
 													{isClonedProfile ? (
 														<span className="inline-flex items-center gap-1 rounded bg-blue-500/20 px-2 py-0.5 text-xs font-medium text-blue-300" title="From source instance">
 															Score: {displayScore}
@@ -1039,14 +1045,14 @@ export const CFConfiguration = ({
 															<span className="group-open:rotate-90 transition-transform">▶</span>
 															<span>What is this?</span>
 														</summary>
-														<div className="mt-2 pl-4 text-sm text-fg-subtle prose prose-invert prose-sm max-w-none">
+														<div className="mt-2 pl-4 text-sm text-muted-foreground prose prose-invert prose-sm max-w-none">
 															<div dangerouslySetInnerHTML={createSanitizedHtml(cf.description)} />
 														</div>
 													</details>
 												)}
 
 												<div className="flex items-center gap-2">
-													<label className="text-xs text-fg-muted">
+													<label className="text-xs text-muted-foreground">
 														Score:
 														{scoreOverride === undefined && (
 															<span className="ml-1">(default: {formatScore(displayScore)})</span>
@@ -1058,10 +1064,10 @@ export const CFConfiguration = ({
 														onChange={(e) => updateScore(cf.trash_id, e.target.value)}
 														min={-10000}
 														max={10000}
-														className={`w-24 rounded border px-2 py-1 text-sm text-fg focus:outline-none focus:ring-1 ${
+														className={`w-24 rounded border px-2 py-1 text-sm text-foregroundfocus:outline-none focus:ring-1 ${
 															scoreOverride !== undefined
 																? "border-primary ring-1 ring-primary/20 bg-primary/5"
-																: "border-border bg-bg-hover"
+																: "border-border bg-muted"
 														}`}
 														onClick={(e) => e.stopPropagation()}
 													/>
@@ -1073,7 +1079,7 @@ export const CFConfiguration = ({
 															<button
 																type="button"
 																onClick={() => resetScore(cf.trash_id)}
-																className="flex items-center gap-1 text-xs text-fg-muted hover:text-primary transition"
+																className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition"
 																title="Reset to default"
 															>
 																<RotateCcw className="h-3 w-3" />
@@ -1096,15 +1102,15 @@ export const CFConfiguration = ({
 			{!isEditMode && filteredGroupedCFs.length > 0 && (
 				<div className="space-y-4">
 					<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-						<h3 className="text-lg font-semibold text-fg">
+						<h3 className="text-lg font-semibold text-foreground">
 							<span className="flex flex-col sm:inline-flex sm:items-center sm:gap-2">
 								<span>Optional Custom Format Groups</span>
-								<span className="text-sm font-normal text-fg-muted">
+								<span className="text-sm font-normal text-muted-foreground">
 									(Select groups and formats based on your preferences)
 								</span>
 							</span>
 						</h3>
-						<span className="text-sm text-fg-muted whitespace-nowrap">
+						<span className="text-sm text-muted-foreground whitespace-nowrap">
 							{filteredGroupedCFs.length}{searchQuery ? ` of ${groupedCFs.length}` : ""} groups {searchQuery ? "matching" : "available"}
 						</span>
 					</div>
@@ -1143,7 +1149,7 @@ export const CFConfiguration = ({
 														deselectAllInGroup(groupCFs);
 													}
 												}}
-												className="h-5 w-5 rounded border-border bg-bg-hover text-primary focus:ring-primary cursor-pointer"
+												className="h-5 w-5 rounded border-border bg-muted text-primary focus:ring-primary cursor-pointer"
 												title={selectedInGroup === groupCFs.length ? "Deselect all formats in this group" : "Select all formats in this group"}
 											/>
 											<div className="flex items-center gap-2 flex-wrap">
@@ -1166,7 +1172,7 @@ export const CFConfiguration = ({
 												)}
 											</div>
 										</div>
-										<div className="flex gap-2 text-xs text-fg-muted items-center">
+										<div className="flex gap-2 text-xs text-muted-foreground items-center">
 											<span>{selectedInGroup} of {groupCFs.length} selected</span>
 										</div>
 									</div>
@@ -1206,7 +1212,7 @@ export const CFConfiguration = ({
 													className={`rounded-lg p-3 border transition-all duration-200 hover:shadow-md ${
 														isSelected
 															? "bg-primary/10 border-primary/30 hover:border-primary/50"
-															: "bg-bg-hover border-border/50 hover:border-border hover:bg-bg-active"
+															: "bg-muted border-border/50 hover:border-border hover:bg-accent"
 													}`}
 												>
 													<div className="flex items-start gap-3">
@@ -1214,11 +1220,11 @@ export const CFConfiguration = ({
 															type="checkbox"
 															checked={isSelected}
 															onChange={() => toggleCF(cf.trash_id, false)}
-															className="mt-1 h-5 w-5 rounded border-border bg-bg-hover text-primary focus:ring-primary cursor-pointer"
+															className="mt-1 h-5 w-5 rounded border-border bg-muted text-primary focus:ring-primary cursor-pointer"
 														/>
 														<div className="flex-1">
 															<div className="flex items-center gap-2 flex-wrap mb-2">
-																<span className="font-medium text-fg">{cf.displayName || cf.name}</span>
+																<span className="font-medium text-foreground">{cf.displayName || cf.name}</span>
 																{isCFRequired && (
 																	<span className="inline-flex items-center gap-1 rounded bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-300" title="TRaSH Guides recommends this format">
 																		⭐ Recommended
@@ -1247,7 +1253,7 @@ export const CFConfiguration = ({
 																		<span className="group-open:rotate-90 transition-transform">▶</span>
 																		<span>What is this?</span>
 																	</summary>
-																	<div className="mt-2 pl-4 text-sm text-fg-subtle prose prose-invert prose-sm max-w-none">
+																	<div className="mt-2 pl-4 text-sm text-muted-foreground prose prose-invert prose-sm max-w-none">
 																		<div dangerouslySetInnerHTML={createSanitizedHtml(cf.description)} />
 																	</div>
 																</details>
@@ -1255,7 +1261,7 @@ export const CFConfiguration = ({
 
 															{isSelected && (
 																<div className="flex flex-col sm:flex-row sm:items-center gap-2">
-																	<label className="text-xs text-fg-muted whitespace-nowrap">
+																	<label className="text-xs text-muted-foreground whitespace-nowrap">
 																		Score:
 																		{scoreOverride === undefined && (
 																			<span className="ml-1">(default: {formatScore(cf.score)})</span>
@@ -1268,10 +1274,10 @@ export const CFConfiguration = ({
 																			onChange={(e) => updateScore(cf.trash_id, e.target.value)}
 																			min={-10000}
 																			max={10000}
-																			className={`w-full sm:w-24 rounded border px-2 py-1 text-sm text-fg focus:outline-none focus:ring-1 ${
+																			className={`w-full sm:w-24 rounded border px-2 py-1 text-sm text-foregroundfocus:outline-none focus:ring-1 ${
 																				scoreOverride !== undefined
 																					? "border-primary ring-1 ring-primary/20 bg-primary/5"
-																					: "border-border bg-bg-hover"
+																					: "border-border bg-muted"
 																			}`}
 																			onClick={(e) => e.stopPropagation()}
 																		/>
@@ -1283,7 +1289,7 @@ export const CFConfiguration = ({
 																				<button
 																					type="button"
 																					onClick={() => resetScore(cf.trash_id)}
-																					className="flex items-center gap-1 text-xs text-fg-muted hover:text-primary transition whitespace-nowrap"
+																					className="flex items-center gap-1 text-xs text-muted-foreground hover:text-primary transition whitespace-nowrap"
 																					title="Reset to default"
 																				>
 																					<RotateCcw className="h-3 w-3" />
@@ -1336,15 +1342,15 @@ export const CFConfiguration = ({
 				return (
 					<div className="space-y-4">
 						<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-							<h3 className="text-lg font-semibold text-fg">
+							<h3 className="text-lg font-semibold text-foreground">
 								<span className="flex flex-col sm:inline-flex sm:items-center sm:gap-2">
 									<span>Additional Custom Formats</span>
-									<span className="text-sm font-normal text-fg-muted">
+									<span className="text-sm font-normal text-muted-foreground">
 										(Custom formats you&apos;ve added from the catalog)
 									</span>
 								</span>
 							</h3>
-							<span className="text-sm text-fg-muted whitespace-nowrap">
+							<span className="text-sm text-muted-foreground whitespace-nowrap">
 								{additionalCFs.length} format{additionalCFs.length !== 1 ? 's' : ''} added
 							</span>
 						</div>
@@ -1375,11 +1381,11 @@ export const CFConfiguration = ({
 														type="checkbox"
 														checked={isSelected}
 														onChange={() => toggleCF(cf.trash_id, false)}
-														className="mt-1 h-5 w-5 rounded border-border/50 bg-bg-subtle text-green-500 focus:ring-2 focus:ring-green-500/50 cursor-pointer transition"
+														className="mt-1 h-5 w-5 rounded border-border/50 bg-card text-green-500 focus:ring-2 focus:ring-green-500/50 cursor-pointer transition"
 													/>
 													<div className="flex-1">
 														<div className="flex items-center gap-2 mb-2">
-															<span className="font-medium text-fg">{cf.displayName || cf.name}</span>
+															<span className="font-medium text-foreground">{cf.displayName || cf.name}</span>
 															<span className="inline-flex items-center gap-1 rounded bg-green-500/20 px-2 py-0.5 text-xs font-medium text-green-300">
 																➕ Added
 															</span>
@@ -1391,7 +1397,7 @@ export const CFConfiguration = ({
 																	<span className="group-open:rotate-90 transition-transform">▶</span>
 																	<span>What is this?</span>
 																</summary>
-																<div className="mt-2 pl-4 text-sm text-fg-subtle prose prose-invert prose-sm max-w-none">
+																<div className="mt-2 pl-4 text-sm text-muted-foreground prose prose-invert prose-sm max-w-none">
 																	<div dangerouslySetInnerHTML={createSanitizedHtml(cf.description)} />
 																</div>
 															</details>
@@ -1399,11 +1405,11 @@ export const CFConfiguration = ({
 
 														<div className="flex items-center gap-3 flex-wrap">
 															<div className="flex items-center gap-2">
-																<label className="text-sm text-fg-muted">TRaSH Score:</label>
-																<span className="text-sm font-medium text-fg">{displayScore}</span>
+																<label className="text-sm text-muted-foreground">TRaSH Score:</label>
+																<span className="text-sm font-medium text-foreground">{displayScore}</span>
 															</div>
 															<div className="flex items-center gap-2">
-																<label className="text-sm text-fg-muted">Custom Score:</label>
+																<label className="text-sm text-muted-foreground">Custom Score:</label>
 																<input
 																	type="number"
 																	value={scoreOverride ?? ""}
@@ -1418,10 +1424,10 @@ export const CFConfiguration = ({
 																		}));
 																	}}
 																	placeholder={`Default: ${displayScore}`}
-																	className="w-28 rounded border border-border bg-bg-hover px-3 py-1.5 text-sm text-fg focus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+																	className="w-28 rounded border border-border bg-muted px-3 py-1.5 text-sm text-foregroundfocus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
 																/>
 															</div>
-															<span className="text-xs text-fg-muted">
+															<span className="text-xs text-muted-foreground">
 																(leave empty to use TRaSH score)
 															</span>
 														</div>
@@ -1441,10 +1447,10 @@ export const CFConfiguration = ({
 			{data.availableFormats && data.availableFormats.length > 0 && (
 				<div className="space-y-4">
 					<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-						<h3 className="text-lg font-semibold text-fg">
+						<h3 className="text-lg font-semibold text-foreground">
 							<span className="flex flex-col sm:inline-flex sm:items-center sm:gap-2">
 								<span>{isClonedProfile ? "Browse Instance Custom Formats" : "Browse All Custom Formats"}</span>
-								<span className="text-sm font-normal text-fg-muted">
+								<span className="text-sm font-normal text-muted-foreground">
 									{isClonedProfile
 										? "(Add additional formats from the instance's catalog)"
 										: "(Add any additional custom formats to your template)"
@@ -1452,7 +1458,7 @@ export const CFConfiguration = ({
 								</span>
 							</span>
 						</h3>
-						<span className="text-sm text-fg-muted whitespace-nowrap">
+						<span className="text-sm text-muted-foreground whitespace-nowrap">
 							{data.availableFormats.filter((cf: any) => {
 								// Hide formats already in template (mandatory or in groups)
 								const isInMandatory = data.mandatoryCFs?.some((mandatoryCF: any) => mandatoryCF.trash_id === cf.trash_id);
@@ -1536,7 +1542,7 @@ export const CFConfiguration = ({
 										return (
 											<div
 												key={cf.trash_id}
-												className={`rounded-lg p-3 border border-border/50 bg-bg-subtle transition-all hover:bg-bg-hover hover:shadow-md cursor-pointer ${
+												className={`rounded-lg p-3 border border-border/50 bg-card transition-all hover:bg-muted hover:shadow-md cursor-pointer ${
 													isClonedProfile ? "hover:border-blue-500/50" : "hover:border-purple-500/50"
 												}`}
 												onClick={() => toggleCF(cf.trash_id, false)}
@@ -1546,15 +1552,15 @@ export const CFConfiguration = ({
 														type="checkbox"
 														checked={isSelected}
 														onChange={() => toggleCF(cf.trash_id, false)}
-														className={`mt-1 h-4 w-4 rounded border-border bg-bg-hover focus:ring-offset-0 cursor-pointer ${
+														className={`mt-1 h-4 w-4 rounded border-border bg-muted focus:ring-offset-0 cursor-pointer ${
 															isClonedProfile ? "text-blue-500 focus:ring-blue-500" : "text-purple-500 focus:ring-purple-500"
 														}`}
 														onClick={(e) => e.stopPropagation()}
 													/>
 													<div className="flex-1">
 														<div className="flex items-center gap-2 mb-2">
-															<span className="font-medium text-fg">{cf.displayName || cf.name}</span>
-															<span className="text-xs text-fg-muted">
+															<span className="font-medium text-foreground">{cf.displayName || cf.name}</span>
+															<span className="text-xs text-muted-foreground">
 																(Score: {displayScore})
 															</span>
 														</div>
@@ -1567,7 +1573,7 @@ export const CFConfiguration = ({
 																	<span className="group-open:rotate-90 transition-transform">▶</span>
 																	<span>What is this?</span>
 																</summary>
-																<div className="mt-2 pl-4 text-sm text-fg-subtle prose prose-invert prose-sm max-w-none">
+																<div className="mt-2 pl-4 text-sm text-muted-foreground prose prose-invert prose-sm max-w-none">
 																	<div dangerouslySetInnerHTML={createSanitizedHtml(cf.description)} />
 																</div>
 															</details>
@@ -1575,7 +1581,7 @@ export const CFConfiguration = ({
 
 														{isSelected && (
 															<div className="flex items-center gap-2 mt-2">
-																<label className="text-xs text-fg-muted">Custom Score:</label>
+																<label className="text-xs text-muted-foreground">Custom Score:</label>
 																<input
 																	type="number"
 																	value={scoreOverride ?? ""}
@@ -1591,11 +1597,11 @@ export const CFConfiguration = ({
 																	}}
 																	onClick={(e) => e.stopPropagation()}
 																	placeholder={`Default: ${displayScore}`}
-																	className={`w-24 rounded border border-border bg-bg-hover px-2 py-1 text-xs text-fg focus:outline-none focus:ring-1 ${
+																	className={`w-24 rounded border border-border bg-muted px-2 py-1 text-xs text-foregroundfocus:outline-none focus:ring-1 ${
 																		isClonedProfile ? "focus:border-blue-500 focus:ring-blue-500" : "focus:border-purple-500 focus:ring-purple-500"
 																	}`}
 																/>
-																<span className="text-xs text-fg-muted">
+																<span className="text-xs text-muted-foreground">
 																	(leave empty for default: {displayScore})
 																</span>
 															</div>
@@ -1617,7 +1623,7 @@ export const CFConfiguration = ({
 					<button
 						type="button"
 						onClick={onBack}
-						className="inline-flex items-center justify-center gap-2 rounded-lg bg-bg-hover px-4 py-2.5 text-sm font-medium text-fg transition hover:bg-bg-active disabled:opacity-50"
+						className="inline-flex items-center justify-center gap-2 rounded-lg bg-muted px-4 py-2.5 text-sm font-medium text-foregroundtransition hover:bg-accent disabled:opacity-50"
 					>
 						<ChevronLeft className="h-4 w-4" />
 						<span>Back</span>

@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { Button, Input } from "../../../components/ui";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { PROTOCOL_FILTERS, type ProtocolFilter } from "../lib/search-utils";
 
 interface FilterControlsProps {
@@ -62,8 +61,7 @@ export const FilterControls = ({
 	onHideRejectedToggle,
 	onReset,
 }: FilterControlsProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const [isFocused, setIsFocused] = useState(false);
 	const [isHovered, setIsHovered] = useState(false);
 
@@ -74,9 +72,9 @@ export const FilterControls = ({
 			: undefined;
 
 	return (
-		<div className="space-y-4 rounded-xl border border-border bg-bg-subtle p-4">
+		<div className="space-y-4 rounded-xl border border-border bg-card p-4">
 			<div className="flex flex-wrap items-center justify-between gap-2">
-				<h3 className="text-sm font-semibold text-fg">Result filters</h3>
+				<h3 className="text-sm font-semibold text-foreground">Result filters</h3>
 				<Button
 					type="button"
 					variant="ghost"
@@ -89,7 +87,7 @@ export const FilterControls = ({
 
 			<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
 				<div>
-					<label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg-muted">
+					<label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
 						Protocol
 					</label>
 					<select
@@ -99,11 +97,11 @@ export const FilterControls = ({
 						onBlur={() => setIsFocused(false)}
 						onMouseEnter={() => setIsHovered(true)}
 						onMouseLeave={() => setIsHovered(false)}
-						className="w-full rounded-md border border-border bg-bg-subtle px-3 py-2 text-sm text-fg transition-all duration-200 focus:outline-none"
+						className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground transition-all duration-200 focus:outline-none"
 						style={selectStyle}
 					>
 						{PROTOCOL_FILTERS.map((option) => (
-							<option key={option.value} value={option.value} className="bg-bg text-fg">
+							<option key={option.value} value={option.value} className="bg-background text-foreground">
 								{option.label}
 							</option>
 						))}
@@ -111,7 +109,7 @@ export const FilterControls = ({
 				</div>
 
 				<div>
-					<label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg-muted">
+					<label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
 						Minimum seeders
 					</label>
 					<Input
@@ -124,7 +122,7 @@ export const FilterControls = ({
 				</div>
 
 				<div>
-					<label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg-muted">
+					<label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
 						Maximum age (hours)
 					</label>
 					<Input
@@ -137,7 +135,7 @@ export const FilterControls = ({
 				</div>
 
 				<div className="flex flex-col justify-end gap-2">
-					<label className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
+					<label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
 						Visibility
 					</label>
 					<Button

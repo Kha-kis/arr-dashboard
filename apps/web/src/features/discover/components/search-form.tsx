@@ -4,8 +4,8 @@ import type { DiscoverSearchType } from "@arr/shared";
 import { Loader2, Search, AlertTriangle } from "lucide-react";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 /**
  * Props for the SearchForm component
@@ -42,8 +42,7 @@ export const SearchForm: React.FC<SearchFormProps> = ({
 	isLoading,
 	canSearch,
 }) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
 		<div className="space-y-4">
@@ -59,9 +58,9 @@ export const SearchForm: React.FC<SearchFormProps> = ({
 						placeholder={`Search for ${searchType === "movie" ? "movies" : "series"} (title, keyword, remote id...)`}
 						value={searchInput}
 						onChange={(event) => onSearchInputChange(event.target.value)}
-						className="pl-11 h-12 bg-card/50 border-border/50 rounded-xl focus:border-transparent transition-all duration-200"
+						className="h-12 bg-card/50 border-border/50 rounded-xl focus:border-transparent transition-all duration-200"
 						style={{
-							// Focus ring will be handled by the component's own focus styles
+							paddingLeft: "2.75rem", // 44px - clears the search icon
 						}}
 					/>
 				</div>

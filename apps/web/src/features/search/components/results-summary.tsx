@@ -32,11 +32,11 @@ export const ResultsSummary = ({
 	filtersActive,
 }: ResultsSummaryProps) => {
 	return (
-		<div className="rounded-xl border border-border bg-bg-subtle px-4 py-3 text-sm text-fg-muted">
-			Showing <span className="font-semibold text-fg">{displayedCount}</span> of{" "}
-			<span className="font-semibold text-fg">{totalCount}</span> results.
+		<div className="rounded-xl border border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+			Showing <span className="font-semibold text-foreground">{displayedCount}</span> of{" "}
+			<span className="font-semibold text-foreground">{totalCount}</span> results.
 			{filtersActive && hiddenCount > 0 ? (
-				<span className="ml-2 text-xs text-fg-muted">{hiddenCount} hidden by filters.</span>
+				<span className="ml-2 text-xs text-muted-foreground">{hiddenCount} hidden by filters.</span>
 			) : null}
 		</div>
 	);

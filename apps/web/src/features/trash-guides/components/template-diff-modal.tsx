@@ -9,7 +9,7 @@
  * - Glassmorphic content cards
  */
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
 	LegacyDialog,
 	LegacyDialogHeader,
@@ -19,7 +19,8 @@ import {
 	LegacyDialogFooter,
 	LegacyDialogClose,
 } from "../../../components/ui";
-import { Skeleton, Button } from "../../../components/ui";
+import { Button } from "../../../components/ui";
+import { PremiumSkeleton } from "../../../components/layout/premium-components";
 import {
 	AlertCircle,
 	Plus,
@@ -34,13 +35,110 @@ import {
 	History,
 	Clock,
 	Loader2,
+	Code,
+	List,
 } from "lucide-react";
 import { useTemplateDiff, useSyncTemplate } from "../../../hooks/api/useTemplateUpdates";
 import { cn } from "../../../lib/utils";
 import { toast } from "sonner";
 import type { CustomFormatDiffItem } from "../../../lib/api-client/trash-guides";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+
+/**
+ * Helper component to display specifications in a more navigable format
+ * Shows a summary with the option to expand to see full JSON
+ */
+interface SpecificationDisplayProps {
+	specifications: unknown;
+	label: string;
+	color: string;
+}
+
+function SpecificationDisplay({ specifications, label, color }: SpecificationDisplayProps) {
+	const [showFullJson, setShowFullJson] = useState(false);
+
+	// Calculate summary statistics from specifications
+	const summary = useMemo(() => {
+		if (!specifications || !Array.isArray(specifications)) {
+			return { count: 0, types: new Map<string, number>() };
+		}
+
+		const types = new Map<string, number>();
+		for (const spec of specifications) {
+			if (typeof spec === "object" && spec !== null && "implementation" in spec) {
+				const impl = String(spec.implementation);
+				types.set(impl, (types.get(impl) || 0) + 1);
+			}
+		}
+		return { count: specifications.length, types };
+	}, [specifications]);
+
+	if (!specifications) return null;
+
+	const specArray = Array.isArray(specifications) ? specifications : [specifications];
+	const typeEntries = Array.from(summary.types.entries());
+
+	return (
+		<div className="pt-2">
+			<p className="font-medium opacity-80 mb-1.5">{label}</p>
+
+			{/* Summary view */}
+			<div className="flex flex-wrap items-center gap-2 mb-2">
+				<span
+					className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium"
+					style={{ backgroundColor: "rgba(0,0,0,0.15)", color }}
+				>
+					<List className="h-3 w-3" />
+					{summary.count} specification{summary.count !== 1 ? "s" : ""}
+				</span>
+				{typeEntries.slice(0, 3).map(([type, count]) => (
+					<span
+						key={type}
+						className="px-2 py-0.5 rounded-md text-[10px]"
+						style={{ backgroundColor: "rgba(0,0,0,0.1)", color }}
+					>
+						{type.replace("Specification", "")}: {count}
+					</span>
+				))}
+				{typeEntries.length > 3 && (
+					<span
+						className="px-2 py-0.5 rounded-md text-[10px]"
+						style={{ backgroundColor: "rgba(0,0,0,0.1)", color }}
+					>
+						+{typeEntries.length - 3} more types
+					</span>
+				)}
+			</div>
+
+			{/* Toggle for full JSON */}
+			<button
+				type="button"
+				onClick={() => setShowFullJson(!showFullJson)}
+				className="flex items-center gap-1.5 text-[10px] font-medium opacity-70 hover:opacity-100 transition-opacity mb-1.5"
+				style={{ color }}
+			>
+				<Code className="h-3 w-3" />
+				{showFullJson ? "Hide" : "Show"} full JSON
+				{showFullJson ? (
+					<ChevronDown className="h-3 w-3" />
+				) : (
+					<ChevronRight className="h-3 w-3" />
+				)}
+			</button>
+
+			{/* Full JSON with constrained height */}
+			{showFullJson && (
+				<pre
+					className="p-2 rounded-lg bg-black/10 overflow-auto text-[10px] leading-relaxed"
+					style={{ maxHeight: "200px" }}
+				>
+					{JSON.stringify(specArray, null, 2)}
+				</pre>
+			)}
+		</div>
+	);
+}
 
 /** Maps UI strategy names to API strategy names */
 function mapStrategyToApiStrategy(selectedStrategy: string): "keep_custom" | "replace" | "merge" {
@@ -71,8 +169,7 @@ export const TemplateDiffModal = ({
 	templateName,
 	onSyncSuccess,
 }: TemplateDiffModalProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const { data, isLoading, error } = useTemplateDiff(templateId);
 	const syncTemplate = useSyncTemplate();
 	const [selectedStrategy, setSelectedStrategy] = useState<MergeStrategy>("smart_merge");
@@ -248,8 +345,8 @@ export const TemplateDiffModal = ({
 			<LegacyDialogContent className="space-y-5">
 				{isLoading && (
 					<div className="space-y-4">
-						<Skeleton className="h-24 w-full rounded-xl" />
-						<Skeleton className="h-48 w-full rounded-xl" />
+						<PremiumSkeleton variant="card" className="h-24 w-full rounded-xl" />
+						<PremiumSkeleton variant="card" className="h-48 w-full rounded-xl" style={{ animationDelay: "50ms" }} />
 					</div>
 				)}
 
@@ -426,7 +523,7 @@ export const TemplateDiffModal = ({
 								<h3 className="text-sm font-semibold text-foreground">
 									Custom Format Changes ({data.data.customFormatDiffs.filter(d => d.changeType !== "unchanged").length})
 								</h3>
-								<div className="space-y-2 max-h-80 overflow-y-auto pr-1">
+								<div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
 									{data.data.customFormatDiffs
 										.filter((diff) => diff.changeType !== "unchanged")
 										.map((diff) => {
@@ -498,42 +595,34 @@ export const TemplateDiffModal = ({
 															style={{ borderColor: styles.borderColor, color: styles.color }}
 														>
 															{diff.changeType === "removed" && diff.currentSpecifications && (
-																<div className="pt-2">
-																	<p className="font-medium opacity-80 mb-1">
-																		Specifications (will be removed):
-																	</p>
-																	<pre className="p-2 rounded-lg bg-black/10 overflow-x-auto text-[10px] leading-relaxed">
-																		{JSON.stringify(diff.currentSpecifications, null, 2)}
-																	</pre>
-																</div>
+																<SpecificationDisplay
+																	specifications={diff.currentSpecifications}
+																	label="Specifications (will be removed):"
+																	color={styles.color ?? "#94a3b8"}
+																/>
 															)}
 															{diff.changeType === "added" && diff.newSpecifications && (
-																<div className="pt-2">
-																	<p className="font-medium opacity-80 mb-1">
-																		Specifications (will be added):
-																	</p>
-																	<pre className="p-2 rounded-lg bg-black/10 overflow-x-auto text-[10px] leading-relaxed">
-																		{JSON.stringify(diff.newSpecifications, null, 2)}
-																	</pre>
-																</div>
+																<SpecificationDisplay
+																	specifications={diff.newSpecifications}
+																	label="Specifications (will be added):"
+																	color={styles.color ?? "#94a3b8"}
+																/>
 															)}
 															{diff.changeType === "modified" && (
 																<>
 																	{diff.currentSpecifications && (
-																		<div className="pt-2">
-																			<p className="font-medium opacity-80 mb-1">Current:</p>
-																			<pre className="p-2 rounded-lg bg-black/10 overflow-x-auto text-[10px] leading-relaxed">
-																				{JSON.stringify(diff.currentSpecifications, null, 2)}
-																			</pre>
-																		</div>
+																		<SpecificationDisplay
+																			specifications={diff.currentSpecifications}
+																			label="Current:"
+																			color={styles.color ?? "#94a3b8"}
+																		/>
 																	)}
 																	{diff.newSpecifications && (
-																		<div>
-																			<p className="font-medium opacity-80 mb-1">New:</p>
-																			<pre className="p-2 rounded-lg bg-black/10 overflow-x-auto text-[10px] leading-relaxed">
-																				{JSON.stringify(diff.newSpecifications, null, 2)}
-																			</pre>
-																		</div>
+																		<SpecificationDisplay
+																			specifications={diff.newSpecifications}
+																			label="New:"
+																			color={styles.color ?? "#94a3b8"}
+																		/>
 																	)}
 																</>
 															)}
@@ -549,7 +638,7 @@ export const TemplateDiffModal = ({
 						{/* Suggested Score Changes Section */}
 						{data.data.suggestedScoreChanges && data.data.suggestedScoreChanges.length > 0 && (
 							<div className="space-y-3">
-								<h3 className="text-sm font-medium text-fg flex items-center gap-2">
+								<h3 className="text-sm font-medium text-foreground flex items-center gap-2">
 									<TrendingUp className="h-4 w-4 text-purple-600 dark:text-purple-400" />
 									Suggested Score Updates ({data.data.suggestedScoreChanges.length})
 								</h3>
@@ -560,9 +649,9 @@ export const TemplateDiffModal = ({
 												key={change.trashId}
 												className="flex items-center justify-between py-1 border-b border-purple-500/10 last:border-0"
 											>
-												<span className="text-fg-muted truncate mr-2">{change.name}</span>
+												<span className="text-muted-foreground truncate mr-2">{change.name}</span>
 												<span className="flex items-center gap-1 shrink-0 text-xs">
-													<span className="text-fg-muted">{change.currentScore}</span>
+													<span className="text-muted-foreground">{change.currentScore}</span>
 													<span className="text-purple-500">→</span>
 													<span className="text-purple-600 dark:text-purple-400 font-medium">
 														{change.recommendedScore}
@@ -573,7 +662,7 @@ export const TemplateDiffModal = ({
 									</div>
 								</div>
 								<div className="space-y-1">
-									<p className="text-xs text-fg-muted">
+									<p className="text-xs text-muted-foreground">
 										Score set: <span className="font-mono text-xs">{data.data.suggestedScoreChanges[0]?.scoreSet || "default"}</span>
 									</p>
 									{data.data.suggestedScoreChanges.every(c => c.currentScore === 0) && (

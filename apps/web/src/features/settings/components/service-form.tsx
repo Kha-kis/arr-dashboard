@@ -16,8 +16,7 @@ import {
 	SimpleFormField,
 } from "../../../components/ui";
 import { cn } from "../../../lib/utils";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { SERVICE_TYPES } from "../lib/settings-constants";
 import { getServicePlaceholders } from "../lib/settings-utils";
 
@@ -71,8 +70,7 @@ export const ServiceForm = ({
 	testResult,
 	defaultSectionContent,
 }: ServiceFormProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const placeholders = getServicePlaceholders(formState.service);
 
 	return (
@@ -88,7 +86,7 @@ export const ServiceForm = ({
 			<CardContent>
 				<form className="space-y-4" onSubmit={onSubmit} autoComplete="off">
 					<div className="space-y-2">
-						<label className="text-xs uppercase text-fg-muted">Service</label>
+						<label className="text-xs uppercase text-muted-foreground">Service</label>
 						<div className="flex gap-2">
 							{SERVICE_TYPES.map((service) => (
 								<button
@@ -108,7 +106,7 @@ export const ServiceForm = ({
 									className={cn(
 										"flex-1 rounded-lg border px-3 py-2 text-sm capitalize transition-all duration-200",
 										formState.service !== service &&
-											"border-border bg-bg-subtle text-fg-muted hover:text-fg",
+											"border-border bg-card text-muted-foreground hover:text-foreground",
 									)}
 									style={
 										formState.service === service
@@ -209,7 +207,7 @@ export const ServiceForm = ({
 						)}
 					</div>
 					<div className="space-y-2">
-						<label className="text-xs uppercase text-fg-muted">Tags</label>
+						<label className="text-xs uppercase text-muted-foreground">Tags</label>
 						<Input
 							value={formState.tags}
 							onChange={(event) =>
@@ -248,12 +246,12 @@ export const ServiceForm = ({
 						</SimpleFormField>
 					)}
 					{formState.service !== "prowlarr" && (
-						<div className="space-y-3 rounded-xl border border-border bg-bg-subtle p-4">
+						<div className="space-y-3 rounded-xl border border-border bg-card p-4">
 							<div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-								<p className="text-xs uppercase tracking-widest text-fg-muted">
+								<p className="text-xs uppercase tracking-widest text-muted-foreground">
 									Default add settings
 								</p>
-								<span className="text-xs text-fg-muted">
+								<span className="text-xs text-muted-foreground">
 									Applied when using Discover and library tools.
 								</span>
 							</div>
@@ -261,10 +259,10 @@ export const ServiceForm = ({
 						</div>
 					)}
 					<div className="flex items-center gap-3">
-						<label className="flex items-center gap-2 text-sm text-fg-muted">
+						<label className="flex items-center gap-2 text-sm text-muted-foreground">
 							<input
 								type="checkbox"
-								className="h-4 w-4 border border-border bg-bg-subtle"
+								className="h-4 w-4 border border-border bg-card"
 								checked={formState.enabled}
 								onChange={(event) =>
 									onFormStateChange((prev) => ({
@@ -276,10 +274,10 @@ export const ServiceForm = ({
 							Enabled
 						</label>
 						{formState.service !== "prowlarr" && (
-							<label className="flex items-center gap-2 text-sm text-fg-muted">
+							<label className="flex items-center gap-2 text-sm text-muted-foreground">
 								<input
 									type="checkbox"
-									className="h-4 w-4 border border-border bg-bg-subtle"
+									className="h-4 w-4 border border-border bg-card"
 									checked={formState.isDefault}
 									onChange={(event) =>
 										onFormStateChange((prev) => ({

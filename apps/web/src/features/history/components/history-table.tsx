@@ -1,7 +1,7 @@
-﻿"use client";
+"use client";
 
 import type { HistoryItem, ServiceInstanceSummary } from "@arr/shared";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, History } from "lucide-react";
 import {
 	useIncognitoMode,
 	getLinuxIsoName,
@@ -9,9 +9,16 @@ import {
 	getLinuxDownloadClient,
 	getLinuxInstanceName,
 } from "../../../lib/incognito";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { buildHistoryExternalLink } from "../lib/history-utils";
+import {
+	PremiumTable,
+	PremiumTableHeader,
+	PremiumTableRow,
+	PremiumEmptyState,
+	PremiumSkeleton,
+	StatusBadge,
+} from "../../../components/layout";
 
 interface HistoryGroup {
 	downloadId?: string;
@@ -55,35 +62,41 @@ const formatDateTime = (value?: string): string => {
 	}).format(date);
 };
 
-const getEventTypeBadgeClass = (eventType: string): string => {
+const getEventTypeStatusBadge = (eventType: string): "success" | "warning" | "error" | "info" | "default" => {
 	const normalized = eventType.toLowerCase();
-	if (
-		normalized.includes("grab") ||
-		normalized.includes("indexerquery") ||
-		normalized.includes("query")
-	) {
-		return "bg-blue-500/20 text-blue-200";
-	}
 	if (normalized.includes("download") || normalized.includes("import")) {
-		return "bg-emerald-500/20 text-emerald-200";
-	}
-	if (normalized.includes("delete") || normalized.includes("removed")) {
-		return "bg-red-500/20 text-red-200";
+		return "success";
 	}
 	if (
 		normalized.includes("fail") ||
 		normalized.includes("error") ||
 		normalized.includes("reject")
 	) {
-		return "bg-red-500/20 text-red-200";
+		return "error";
 	}
-	if (normalized.includes("renam") || normalized.includes("upgrade")) {
-		return "bg-purple-500/20 text-purple-200";
+	if (
+		normalized.includes("delete") ||
+		normalized.includes("removed")
+	) {
+		return "error";
 	}
-	if (normalized.includes("ignored") || normalized.includes("skip")) {
-		return "bg-amber-500/20 text-amber-200";
+	if (
+		normalized.includes("ignored") ||
+		normalized.includes("skip") ||
+		normalized.includes("renam") ||
+		normalized.includes("upgrade")
+	) {
+		return "warning";
 	}
-	return "bg-bg-subtle text-fg-muted";
+	if (
+		normalized.includes("grab") ||
+		normalized.includes("indexerquery") ||
+		normalized.includes("query") ||
+		normalized.includes("rss")
+	) {
+		return "info";
+	}
+	return "default";
 };
 
 const getDisplayTitle = (item: HistoryItem): string => {
@@ -180,38 +193,35 @@ export const HistoryTable = ({
 	serviceMap,
 }: HistoryTableProps) => {
 	const [incognitoMode] = useIncognitoMode();
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	if (loading) {
-		return (
-			<div className="rounded-xl border border-border bg-bg-subtle p-6 text-sm text-fg-muted">
-				Fetching history records...
-			</div>
-		);
+		return <PremiumSkeleton variant="card" className="h-96" />;
 	}
 
 	if (groups.length === 0) {
 		return (
-			<div className="rounded-xl border border-border bg-bg-subtle p-6 text-sm text-fg-muted">
-				{emptyMessage ?? "No history records available."}
-			</div>
+			<PremiumEmptyState
+				icon={History}
+				title="No History Records"
+				description={emptyMessage ?? "No history records available."}
+			/>
 		);
 	}
 
 	return (
-		<div className="overflow-hidden rounded-xl border border-border bg-bg-subtle">
-			<table className="min-w-full divide-y divide-border text-sm text-fg-muted">
-				<thead className="bg-bg-subtle text-left text-xs uppercase tracking-wide text-fg-muted">
+		<PremiumTable>
+			<table className="min-w-full text-sm text-muted-foreground">
+				<PremiumTableHeader>
 					<tr>
-						<th className="px-4 py-3">Event</th>
-						<th className="px-4 py-3">Title</th>
-						<th className="px-4 py-3">Quality</th>
-						<th className="px-4 py-3">Source/Client</th>
-						<th className="px-4 py-3 text-right">Size</th>
-						<th className="px-4 py-3">Date</th>
+						<th className="px-4 py-3 text-left text-xs uppercase tracking-wide">Event</th>
+						<th className="px-4 py-3 text-left text-xs uppercase tracking-wide">Title</th>
+						<th className="px-4 py-3 text-left text-xs uppercase tracking-wide">Quality</th>
+						<th className="px-4 py-3 text-left text-xs uppercase tracking-wide">Source/Client</th>
+						<th className="px-4 py-3 text-right text-xs uppercase tracking-wide">Size</th>
+						<th className="px-4 py-3 text-left text-xs uppercase tracking-wide">Date</th>
 					</tr>
-				</thead>
+				</PremiumTableHeader>
 				<tbody className="divide-y divide-border/50">
 					{groups.map((group, groupIndex) => {
 						const isGrouped = groupingEnabled && group.items.length > 1;
@@ -226,7 +236,7 @@ export const HistoryTable = ({
 							const eventCount = group.items.length;
 
 							return (
-								<tr key={key} className="hover:bg-bg-subtle/80">
+								<PremiumTableRow key={key}>
 									<td className="px-4 py-3">
 										<div className="flex flex-col gap-1">
 											<div
@@ -235,9 +245,7 @@ export const HistoryTable = ({
 											>
 												📡 RSS Sync - {eventCount} feeds
 											</div>
-											<span className="inline-flex w-fit rounded-full px-2 py-0.5 text-xs font-semibold bg-blue-500/20 text-blue-200">
-												indexerRss
-											</span>
+											<StatusBadge status="info">indexerRss</StatusBadge>
 											{(() => {
 												const instance = firstItem ? serviceMap.get(firstItem.instanceId) : undefined;
 												const externalLink = firstItem ? buildHistoryExternalLink(firstItem, instance) : null;
@@ -252,7 +260,7 @@ export const HistoryTable = ({
 														href={externalLink}
 														target="_blank"
 														rel="noopener noreferrer"
-														className="inline-flex items-center gap-1 text-xs text-fg-muted transition-colors"
+														className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors"
 														onMouseEnter={(e) => {
 															e.currentTarget.style.color = themeGradient.from;
 														}}
@@ -264,25 +272,25 @@ export const HistoryTable = ({
 														<ExternalLink className="h-3 w-3 opacity-50" />
 													</a>
 												) : (
-													<span className="text-xs text-fg-muted">{displayName}</span>
+													<span className="text-xs text-muted-foreground">{displayName}</span>
 												);
 											})()}
 										</div>
 									</td>
-									<td className="px-4 py-3 text-fg">
+									<td className="px-4 py-3 text-foreground">
 										<div className="truncate">RSS Feed Sync</div>
 									</td>
-									<td className="px-4 py-3 text-fg-muted">-</td>
-									<td className="px-4 py-3 text-fg-muted">
-										<div className="text-xs text-fg-muted">
+									<td className="px-4 py-3 text-muted-foreground">-</td>
+									<td className="px-4 py-3 text-muted-foreground">
+										<div className="text-xs text-muted-foreground">
 											{eventCount} {eventCount === 1 ? "feed" : "feeds"}
 										</div>
 									</td>
-									<td className="px-4 py-3 text-right text-fg-muted">-</td>
-									<td className="px-4 py-3 text-fg-muted whitespace-nowrap">
+									<td className="px-4 py-3 text-right text-muted-foreground">-</td>
+									<td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
 										{firstItem?.date ? formatDateTime(firstItem.date) : "-"}
 									</td>
-								</tr>
+								</PremiumTableRow>
 							);
 						}
 
@@ -338,9 +346,9 @@ export const HistoryTable = ({
 							const isLastInGroup = itemIndex === group.items.length - 1;
 
 							return (
-								<tr
+								<PremiumTableRow
 									key={key}
-									className={`hover:bg-bg-subtle/80 ${isGrouped ? "border-l-2 border-l-primary/50" : ""} ${isGrouped && !isLastInGroup ? "border-b-0" : ""}`}
+									className={`${isGrouped ? "border-l-2 border-l-primary/50" : ""} ${isGrouped && !isLastInGroup ? "border-b-0" : ""}`}
 								>
 									<td className={`px-4 py-3 ${isGrouped && !isFirstInGroup ? "pl-8" : ""}`}>
 										<div className="flex flex-col gap-1">
@@ -352,11 +360,9 @@ export const HistoryTable = ({
 													📦 {group.items.length} events
 												</div>
 											)}
-											<span
-												className={`inline-flex w-fit rounded-full px-2 py-0.5 text-xs font-semibold ${getEventTypeBadgeClass(eventType)}`}
-											>
+											<StatusBadge status={getEventTypeStatusBadge(eventType)}>
 												{eventType}
-											</span>
+											</StatusBadge>
 											{(() => {
 												const instance = serviceMap.get(item.instanceId);
 												const externalLink = buildHistoryExternalLink(item, instance);
@@ -369,7 +375,7 @@ export const HistoryTable = ({
 														href={externalLink}
 														target="_blank"
 														rel="noopener noreferrer"
-														className="inline-flex items-center gap-1 text-xs text-fg-muted transition-colors"
+														className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors"
 														onMouseEnter={(e) => {
 															e.currentTarget.style.color = themeGradient.from;
 														}}
@@ -381,28 +387,28 @@ export const HistoryTable = ({
 														<ExternalLink className="h-3 w-3 opacity-50" />
 													</a>
 												) : (
-													<span className="text-xs text-fg-muted">{displayName}</span>
+													<span className="text-xs text-muted-foreground">{displayName}</span>
 												);
 											})()}
 										</div>
 									</td>
-									<td className="max-w-xs px-4 py-3 text-fg" title={anonymizedTitle}>
+									<td className="max-w-xs px-4 py-3 text-foreground" title={anonymizedTitle}>
 										<div className="truncate">{anonymizedTitle}</div>
 									</td>
-									<td className="px-4 py-3 text-fg-muted">
+									<td className="px-4 py-3 text-muted-foreground">
 										{(item.quality as { quality?: { name?: string } })?.quality?.name ?? "-"}
 									</td>
-									<td className="px-4 py-3 text-fg-muted">{sourceClient}</td>
-									<td className="px-4 py-3 text-right text-fg-muted">{formatBytes(item.size)}</td>
-									<td className="px-4 py-3 text-fg-muted whitespace-nowrap">
+									<td className="px-4 py-3 text-muted-foreground">{sourceClient}</td>
+									<td className="px-4 py-3 text-right text-muted-foreground">{formatBytes(item.size)}</td>
+									<td className="px-4 py-3 text-muted-foreground whitespace-nowrap">
 										{formatDateTime(item.date)}
 									</td>
-								</tr>
+								</PremiumTableRow>
 							);
 						});
 					})}
 				</tbody>
 			</table>
-		</div>
+		</PremiumTable>
 	);
 };

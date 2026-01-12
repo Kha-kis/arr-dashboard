@@ -2,8 +2,7 @@
 
 import type { DiscoverSearchType } from "@arr/shared";
 import { Film, Tv, Check } from "lucide-react";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { cn } from "../../../lib/utils";
 
 /**
@@ -31,8 +30,7 @@ export const MediaTypeToggle: React.FC<MediaTypeToggleProps> = ({
 	onTypeChange,
 	instanceCount,
 }) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const options: { type: DiscoverSearchType; label: string; icon: typeof Film; service: string }[] = [
 		{ type: "movie", label: "Movies", icon: Film, service: "Radarr" },

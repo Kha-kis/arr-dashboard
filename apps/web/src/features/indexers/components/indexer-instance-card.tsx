@@ -4,11 +4,11 @@ import type { ProwlarrIndexer, ProwlarrIndexerDetails } from "@arr/shared";
 import { IndexerRow } from "./indexer-row";
 import { useIncognitoMode, getLinuxInstanceName } from "../../../lib/incognito";
 import { Server, Globe, Hash } from "lucide-react";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 
-// Prowlarr-specific color
-const PROWLARR_COLOR = "#e6a23c";
+// Use centralized Prowlarr color
+const PROWLARR_COLOR = SERVICE_GRADIENTS.prowlarr.from;
 
 /**
  * Premium Instance Card
@@ -44,8 +44,7 @@ export const IndexerInstanceCard = ({
 	expandedKey: string | null;
 	onToggleDetails: (instanceId: string, indexerId: number) => void;
 }) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const [incognitoMode] = useIncognitoMode();
 
 	return (

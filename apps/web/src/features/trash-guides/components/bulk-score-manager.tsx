@@ -33,15 +33,16 @@ import { useDeleteOverride, useBulkDeleteOverrides } from "../../../hooks/api/us
 import { useBulkUpdateScores, type BulkScoreUpdateEntry } from "../../../hooks/api/useQualityProfileScores";
 import { useBulkScores } from "../../../hooks/api/useBulkScores";
 import { useQueryClient } from "@tanstack/react-query";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 /**
  * Service-specific colors for Radarr/Sonarr identification
+ * Using centralized SERVICE_GRADIENTS
  */
 const SERVICE_COLORS = {
-	radarr: { from: "#f97316", to: "#ea580c" },
-	sonarr: { from: "#06b6d4", to: "#0891b2" },
+	radarr: SERVICE_GRADIENTS.radarr,
+	sonarr: SERVICE_GRADIENTS.sonarr,
 };
 
 interface BulkScoreManagerProps {
@@ -55,8 +56,7 @@ export function BulkScoreManager({
 	userId,
 	onOperationComplete,
 }: BulkScoreManagerProps) {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const queryClient = useQueryClient();
 
 	// Fetch available instances
@@ -467,8 +467,8 @@ export function BulkScoreManager({
 							placeholder="Search custom formats..."
 							value={searchTerm}
 							onChange={(e) => setSearchTerm(e.target.value)}
-							className="w-full rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 pl-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 transition-all"
-							style={{ ["--tw-ring-color" as string]: themeGradient.from }}
+							className="w-full rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 transition-all"
+							style={{ ["--tw-ring-color" as string]: themeGradient.from, paddingLeft: "2.5rem" }}
 						/>
 					</div>
 
@@ -610,10 +610,11 @@ export function BulkScoreManager({
 					<table className="w-full table-fixed">
 						<thead>
 							<tr className="border-b border-border/50">
-								<th className="sticky left-0 z-20 w-12 bg-card/95 backdrop-blur-sm px-3 py-4 text-center">
+								<th className="sticky left-0 z-sticky w-12 bg-card/95 backdrop-blur-sm px-3 py-4 text-center">
 									<button
 										type="button"
 										onClick={toggleSelectAll}
+										aria-label={filteredScores.length > 0 && selectedCFs.size === filteredScores.length ? "Deselect all custom formats" : "Select all custom formats"}
 										className="flex h-6 w-6 mx-auto items-center justify-center rounded-lg transition-all duration-200"
 										style={{
 											backgroundColor: filteredScores.length > 0 && selectedCFs.size === filteredScores.length
@@ -678,10 +679,11 @@ export function BulkScoreManager({
 											animationFillMode: "backwards",
 										}}
 									>
-										<td className="sticky left-0 z-20 bg-card/95 backdrop-blur-sm px-3 py-3 text-center">
+										<td className="sticky left-0 z-sticky bg-card/95 backdrop-blur-sm px-3 py-3 text-center">
 											<button
 												type="button"
 												onClick={() => toggleCFSelection(score.trashId)}
+												aria-label={selectedCFs.has(score.trashId) ? `Deselect ${score.name}` : `Select ${score.name}`}
 												className="flex h-6 w-6 mx-auto items-center justify-center rounded-lg transition-all duration-200"
 												style={{
 													backgroundColor: selectedCFs.has(score.trashId)
@@ -773,6 +775,7 @@ export function BulkScoreManager({
 																	background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
 																	boxShadow: `0 2px 6px -2px ${themeGradient.glow}`,
 																}}
+																aria-label={`Remove override for ${score.name}`}
 																title="Remove override (revert to template score on next sync)"
 															>
 																<X className="h-3 w-3" />

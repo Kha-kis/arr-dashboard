@@ -461,16 +461,16 @@ export const QualityGroupEditor = ({
 						? "border-primary bg-primary/10 opacity-50"
 						: isCutoff
 						? "border-primary bg-primary/5 ring-1 ring-primary/30"
-						: "border-border bg-bg-subtle/50 hover:border-border/80"
+						: "border-border bg-card/50 hover:border-border/80"
 				}`}
 			>
 				{/* Priority number */}
-				<div className="w-6 text-center text-xs font-medium text-fg-muted">
+				<div className="w-6 text-center text-xs font-medium text-muted-foreground">
 					#{priority}
 				</div>
 
 				{/* Drag handle */}
-				<div className="cursor-grab text-fg-muted hover:text-fg">
+				<div className="cursor-grab text-muted-foreground hover:text-foreground">
 					<GripVertical className="h-4 w-4" />
 				</div>
 
@@ -479,17 +479,17 @@ export const QualityGroupEditor = ({
 					type="checkbox"
 					checked={item.allowed}
 					onChange={() => toggleEnabled(item.id)}
-					className="h-4 w-4 rounded border-border bg-bg-subtle text-primary focus:ring-primary"
+					className="h-4 w-4 rounded border-border bg-card text-primary focus:ring-primary"
 					title={item.allowed ? "Enabled - click to disable" : "Disabled - click to enable"}
 				/>
 
 				{/* Quality name */}
 				<div className="flex-1">
-					<span className={`text-sm font-medium ${item.allowed ? "text-fg" : "text-fg-muted line-through"}`}>
+					<span className={`text-sm font-medium ${item.allowed ? "text-foreground" : "text-muted-foreground line-through"}`}>
 						{item.name}
 					</span>
 					{item.resolution && (
-						<span className="ml-2 text-xs text-fg-muted">({item.resolution}p)</span>
+						<span className="ml-2 text-xs text-muted-foreground">({item.resolution}p)</span>
 					)}
 				</div>
 
@@ -508,7 +508,7 @@ export const QualityGroupEditor = ({
 						size="sm"
 						onClick={() => setCutoff(item.id)}
 						title="Set as cutoff (upgrades stop here)"
-						className="text-fg-muted hover:text-primary"
+						className="text-muted-foreground hover:text-primary"
 					>
 						<Target className="h-3 w-3" />
 					</Button>
@@ -543,7 +543,7 @@ export const QualityGroupEditor = ({
 					variant="ghost"
 					size="sm"
 					onClick={() => deleteItem(item.id)}
-					className="text-fg-muted hover:text-danger px-1"
+					className="text-muted-foreground hover:text-danger px-1"
 					title="Remove quality"
 				>
 					<Trash2 className="h-3 w-3" />
@@ -573,18 +573,18 @@ export const QualityGroupEditor = ({
 						? "border-primary bg-primary/10 opacity-50"
 						: isCutoff
 						? "border-primary bg-primary/5 ring-1 ring-primary/30"
-						: "border-border bg-bg-subtle/50"
+						: "border-border bg-card/50"
 				}`}
 			>
 				{/* Group header */}
 				<div className="flex items-center gap-2 p-3">
 					{/* Priority number */}
-					<div className="w-6 text-center text-xs font-medium text-fg-muted">
+					<div className="w-6 text-center text-xs font-medium text-muted-foreground">
 						#{priority}
 					</div>
 
 					{/* Drag handle */}
-					<div className="cursor-grab text-fg-muted hover:text-fg">
+					<div className="cursor-grab text-muted-foreground hover:text-foreground">
 						<GripVertical className="h-4 w-4" />
 					</div>
 
@@ -592,7 +592,9 @@ export const QualityGroupEditor = ({
 					<button
 						type="button"
 						onClick={() => toggleExpanded(group.id)}
-						className="text-fg-muted hover:text-fg"
+						aria-expanded={isExpanded}
+						aria-label={isExpanded ? "Collapse group" : "Expand group"}
+						className="text-muted-foreground hover:text-foreground"
 					>
 						{isExpanded ? (
 							<ChevronDown className="h-4 w-4" />
@@ -606,17 +608,17 @@ export const QualityGroupEditor = ({
 						type="checkbox"
 						checked={group.allowed}
 						onChange={() => toggleEnabled(group.id)}
-						className="h-4 w-4 rounded border-border bg-bg-subtle text-primary focus:ring-primary"
+						className="h-4 w-4 rounded border-border bg-card text-primary focus:ring-primary"
 						title={group.allowed ? "Enabled - click to disable" : "Disabled - click to enable"}
 					/>
 
 					{/* Group icon and name */}
 					<Layers className="h-4 w-4 text-primary" />
 					<div className="flex-1">
-						<span className={`text-sm font-medium ${group.allowed ? "text-fg" : "text-fg-muted line-through"}`}>
+						<span className={`text-sm font-medium ${group.allowed ? "text-foreground" : "text-muted-foreground line-through"}`}>
 							{group.name}
 						</span>
-						<span className="ml-2 text-xs text-fg-muted">
+						<span className="ml-2 text-xs text-muted-foreground">
 							({group.qualities.length} qualities)
 						</span>
 					</div>
@@ -636,7 +638,7 @@ export const QualityGroupEditor = ({
 							size="sm"
 							onClick={() => setCutoff(group.id)}
 							title="Set as cutoff (upgrades stop here)"
-							className="text-fg-muted hover:text-primary"
+							className="text-muted-foreground hover:text-primary"
 						>
 							<Target className="h-3 w-3" />
 						</Button>
@@ -671,7 +673,7 @@ export const QualityGroupEditor = ({
 						variant="ghost"
 						size="sm"
 						onClick={() => openEditGroupModal(group.id)}
-						className="text-fg-muted hover:text-primary px-1"
+						className="text-muted-foreground hover:text-primary px-1"
 						title="Edit group"
 					>
 						<Edit3 className="h-3 w-3" />
@@ -682,7 +684,7 @@ export const QualityGroupEditor = ({
 						variant="ghost"
 						size="sm"
 						onClick={() => ungroupQualities(group.id)}
-						className="text-fg-muted hover:text-fg px-1"
+						className="text-muted-foreground hover:text-foreground px-1"
 						title="Ungroup qualities"
 					>
 						<Ungroup className="h-3 w-3" />
@@ -693,7 +695,7 @@ export const QualityGroupEditor = ({
 						variant="ghost"
 						size="sm"
 						onClick={() => deleteItem(group.id)}
-						className="text-fg-muted hover:text-danger px-1"
+						className="text-muted-foreground hover:text-danger px-1"
 						title="Remove group"
 					>
 						<Trash2 className="h-3 w-3" />
@@ -702,12 +704,12 @@ export const QualityGroupEditor = ({
 
 				{/* Group contents (when expanded) */}
 				{isExpanded && (
-					<div className="border-t border-border bg-bg-subtle/30 px-3 py-2">
+					<div className="border-t border-border bg-card/30 px-3 py-2">
 						<div className="space-y-1 pl-8">
 							{group.qualities.map((quality, qIndex) => (
 								<div
 									key={`${group.id}-${quality.name}-${qIndex}`}
-									className="flex items-center gap-2 text-sm text-fg-muted"
+									className="flex items-center gap-2 text-sm text-muted-foreground"
 								>
 									<Check className="h-3 w-3 text-green-500" />
 									<span>{quality.name}</span>
@@ -727,12 +729,12 @@ export const QualityGroupEditor = ({
 		<div className="space-y-4">
 			{/* Header with Help Toggle */}
 			<div className="flex items-center justify-between">
-				<div className="text-sm font-medium text-fg">Quality Priority Configuration</div>
+				<div className="text-sm font-medium text-foreground">Quality Priority Configuration</div>
 				<Button
 					variant="ghost"
 					size="sm"
 					onClick={() => setShowHelp(!showHelp)}
-					className="gap-1 text-fg-muted"
+					className="gap-1 text-muted-foreground"
 				>
 					<HelpCircle className="h-4 w-4" />
 					{showHelp ? "Hide Help" : "Help"}
@@ -744,11 +746,11 @@ export const QualityGroupEditor = ({
 				<div className="rounded-lg border border-blue-500/30 bg-blue-500/5 p-4 space-y-3">
 					<div className="flex items-start gap-2">
 						<Info className="h-4 w-4 text-blue-500 mt-0.5 shrink-0" />
-						<div className="space-y-2 text-sm text-fg-muted">
-							<p><strong className="text-fg">Priority Order:</strong> Items at the top have higher priority. Radarr/Sonarr will prefer higher priority qualities when downloading.</p>
-							<p><strong className="text-fg">Cutoff:</strong> The quality level where upgrades stop. Once you have a file at cutoff quality or higher, no more upgrades will be searched.</p>
-							<p><strong className="text-fg">Groups:</strong> Qualities in the same group are treated as equivalent. Use groups for qualities you consider interchangeable (e.g., &quot;WEB-DL 1080p&quot; and &quot;WEBRip 1080p&quot;). Click &quot;Create Group&quot; to make one.</p>
-							<p><strong className="text-fg">Scope:</strong> This configuration is saved with the template and applied to all instances that use this template.</p>
+						<div className="space-y-2 text-sm text-muted-foreground">
+							<p><strong className="text-foreground">Priority Order:</strong> Items at the top have higher priority. Radarr/Sonarr will prefer higher priority qualities when downloading.</p>
+							<p><strong className="text-foreground">Cutoff:</strong> The quality level where upgrades stop. Once you have a file at cutoff quality or higher, no more upgrades will be searched.</p>
+							<p><strong className="text-foreground">Groups:</strong> Qualities in the same group are treated as equivalent. Use groups for qualities you consider interchangeable (e.g., &quot;WEB-DL 1080p&quot; and &quot;WEBRip 1080p&quot;). Click &quot;Create Group&quot; to make one.</p>
+							<p><strong className="text-foreground">Scope:</strong> This configuration is saved with the template and applied to all instances that use this template.</p>
 						</div>
 					</div>
 				</div>
@@ -757,9 +759,9 @@ export const QualityGroupEditor = ({
 			{/* Empty state message */}
 			{config.items.length === 0 && (
 				<div className="rounded-lg border border-dashed border-border p-6 text-center">
-					<Layers className="mx-auto h-8 w-8 text-fg-muted" />
-					<p className="mt-2 text-sm font-medium text-fg">No Quality Configuration</p>
-					<p className="text-xs text-fg-muted">
+					<Layers className="mx-auto h-8 w-8 text-muted-foreground" />
+					<p className="mt-2 text-sm font-medium text-foreground">No Quality Configuration</p>
+					<p className="text-xs text-muted-foreground">
 						Quality settings will be added when you select a TRaSH Guides profile
 					</p>
 				</div>
@@ -769,24 +771,24 @@ export const QualityGroupEditor = ({
 			{config.items.length > 0 && (
 				<>
 					{/* Cutoff Display */}
-					<div className="flex items-center justify-between rounded-lg border border-border bg-bg-subtle/50 p-3">
+					<div className="flex items-center justify-between rounded-lg border border-border bg-card/50 p-3">
 						<div className="flex items-center gap-2">
 							<Target className="h-4 w-4 text-primary" />
-							<span className="text-sm font-medium text-fg">Cutoff:</span>
+							<span className="text-sm font-medium text-foreground">Cutoff:</span>
 							{cutoffName ? (
 								<span className="text-sm text-primary">{cutoffName}</span>
 							) : (
-								<span className="text-sm text-fg-muted italic">Not set - click target icon on any quality</span>
+								<span className="text-sm text-muted-foreground italic">Not set - click target icon on any quality</span>
 							)}
 						</div>
-						<div className="text-xs text-fg-muted">
+						<div className="text-xs text-muted-foreground">
 							Upgrades stop at this quality
 						</div>
 					</div>
 
 					{/* Toolbar */}
 					<div className="flex items-center justify-between flex-wrap gap-2 border-b border-border pb-3">
-						<div className="text-sm text-fg-muted">
+						<div className="text-sm text-muted-foreground">
 							{config.items.length} item{config.items.length !== 1 ? "s" : ""}
 						</div>
 						<div className="flex flex-wrap gap-2">
@@ -806,7 +808,7 @@ export const QualityGroupEditor = ({
 					</div>
 
 					{/* Priority label */}
-					<div className="flex items-center justify-between text-xs text-fg-muted px-1">
+					<div className="flex items-center justify-between text-xs text-muted-foreground px-1">
 						<span className="flex items-center gap-1">
 							<ArrowUp className="h-3 w-3" />
 							Higher Priority
@@ -824,7 +826,7 @@ export const QualityGroupEditor = ({
 					</div>
 
 					{/* Legend */}
-					<div className="flex flex-wrap gap-4 text-xs text-fg-muted pt-2 border-t border-border">
+					<div className="flex flex-wrap gap-4 text-xs text-muted-foreground pt-2 border-t border-border">
 						<div className="flex items-center gap-1">
 							<div className="w-4 h-4 rounded border border-primary bg-primary/10" />
 							<span>Cutoff quality</span>
@@ -843,13 +845,18 @@ export const QualityGroupEditor = ({
 
 			{/* Group Creation/Edit Modal */}
 			{showGroupModal && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-					<div className="w-full max-w-lg rounded-lg border border-border bg-bg p-6 shadow-xl mx-4">
+				<div
+					className="fixed inset-0 z-modal flex items-center justify-center bg-black/50"
+					role="dialog"
+					aria-modal="true"
+					aria-labelledby="group-modal-title"
+				>
+					<div className="w-full max-w-lg rounded-lg border border-border bg-background p-6 shadow-xl mx-4">
 						{/* Modal Header */}
 						<div className="flex items-center justify-between mb-4">
 							<div className="flex items-center gap-2">
 								<FolderPlus className="h-5 w-5 text-primary" />
-								<h3 className="text-lg font-medium text-fg">
+								<h3 id="group-modal-title" className="text-lg font-medium text-foreground">
 									{editingGroupId ? "Edit Quality Group" : "Create Quality Group"}
 								</h3>
 							</div>
@@ -862,21 +869,22 @@ export const QualityGroupEditor = ({
 									setGroupModalName("");
 									setEditingGroupId(null);
 								}}
-								className="text-fg-muted hover:text-fg"
+								aria-label="Close group editor"
+								className="text-muted-foreground hover:text-foreground"
 							>
 								<X className="h-4 w-4" />
 							</Button>
 						</div>
 
 						{/* Instructions */}
-						<p className="text-sm text-fg-muted mb-4">
+						<p className="text-sm text-muted-foreground mb-4">
 							Select 2 or more qualities to group together. Grouped qualities are treated as equivalent -
 							Radarr/Sonarr won&apos;t upgrade between them.
 						</p>
 
 						{/* Group Name Input */}
 						<div className="mb-4">
-							<label className="block text-sm font-medium text-fg mb-1">
+							<label className="block text-sm font-medium text-foreground mb-1">
 								Group Name
 							</label>
 							<Input
@@ -890,12 +898,12 @@ export const QualityGroupEditor = ({
 
 						{/* Quality Selection */}
 						<div className="mb-4">
-							<label className="block text-sm font-medium text-fg mb-2">
+							<label className="block text-sm font-medium text-foreground mb-2">
 								Select Qualities ({groupModalSelection.size} selected)
 							</label>
 							<div className="max-h-64 overflow-y-auto rounded-lg border border-border">
 								{ungroupedQualities.length === 0 ? (
-									<p className="p-4 text-sm text-fg-muted text-center">
+									<p className="p-4 text-sm text-muted-foreground text-center">
 										No ungrouped qualities available. Ungroup existing groups first.
 									</p>
 								) : (
@@ -907,21 +915,21 @@ export const QualityGroupEditor = ({
 												className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors ${
 													isSelected
 														? "bg-primary/10"
-														: "hover:bg-bg-subtle"
+														: "hover:bg-card"
 												} border-b border-border last:border-b-0`}
 											>
 												<input
 													type="checkbox"
 													checked={isSelected}
 													onChange={() => toggleModalSelection(quality.id)}
-													className="h-4 w-4 rounded border-border bg-bg-subtle text-primary focus:ring-primary"
+													className="h-4 w-4 rounded border-border bg-card text-primary focus:ring-primary"
 												/>
 												<div className="flex-1">
-													<span className="text-sm font-medium text-fg">
+													<span className="text-sm font-medium text-foreground">
 														{quality.name}
 													</span>
 													{quality.resolution && (
-														<span className="ml-2 text-xs text-fg-muted">
+														<span className="ml-2 text-xs text-muted-foreground">
 															({quality.resolution}p)
 														</span>
 													)}
@@ -942,8 +950,8 @@ export const QualityGroupEditor = ({
 								<div className="text-xs font-medium text-primary mb-1">Preview:</div>
 								<div className="flex items-center gap-2">
 									<Layers className="h-4 w-4 text-primary" />
-									<span className="text-sm font-medium text-fg">{groupModalName}</span>
-									<span className="text-xs text-fg-muted">
+									<span className="text-sm font-medium text-foreground">{groupModalName}</span>
+									<span className="text-xs text-muted-foreground">
 										({groupModalSelection.size} qualities)
 									</span>
 								</div>

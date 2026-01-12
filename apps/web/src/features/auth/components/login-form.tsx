@@ -5,9 +5,11 @@ import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { useQueryClient } from "@tanstack/react-query";
+import { KeyRound, Zap, Lock, Loader2 } from "lucide-react";
 import { useCurrentUser, useSetupRequired, useLoginMutation } from "../../../hooks/api/useAuth";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
+import { PasswordInput } from "../../../components/ui/password-input";
 import {
 	Card,
 	CardContent,
@@ -22,6 +24,8 @@ import {
 	getPasskeyLoginOptions,
 	verifyPasskeyLogin,
 } from "../../../lib/api-client/auth";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 const DEFAULT_REDIRECT = "/dashboard";
 
@@ -41,6 +45,8 @@ const sanitizeRedirect = (value: string | null): string => {
 };
 
 export const LoginForm = () => {
+	const { gradient: themeGradient } = useThemeGradient();
+
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const queryClient = useQueryClient();
@@ -163,7 +169,10 @@ export const LoginForm = () => {
 	if (setupLoading) {
 		return (
 			<div className="flex min-h-[60vh] flex-col items-center justify-center">
-				<div className="h-10 w-10 animate-spin rounded-full border-4 border-white/20 border-t-white" />
+				<div
+					className="h-10 w-10 animate-spin rounded-full border-4 border-t-transparent"
+					style={{ borderColor: `${themeGradient.from}30`, borderTopColor: 'transparent' }}
+				/>
 			</div>
 		);
 	}
@@ -174,19 +183,28 @@ export const LoginForm = () => {
 		return (
 			<div className="flex min-h-[60vh] flex-col items-center justify-center gap-6">
 				<div className="text-center">
-					<p className="text-sm uppercase tracking-[0.3em] text-white/50">Arr Control Center</p>
-					<h1 className="mt-2 text-3xl font-semibold text-white">Connection Error</h1>
+					<p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Arr Control Center</p>
+					<h1 className="mt-2 text-3xl font-semibold text-foreground">Connection Error</h1>
 				</div>
 
-				<Card className="w-full max-w-md border-red-500/30 bg-red-500/10">
+				<Card
+					className="w-full max-w-md border-border/50 bg-card/80 backdrop-blur-sm"
+					style={{
+						borderColor: SEMANTIC_COLORS.error.border,
+						backgroundColor: SEMANTIC_COLORS.error.bg,
+					}}
+				>
 					<CardHeader>
-						<CardTitle className="flex items-center gap-2 text-xl text-red-400">
+						<CardTitle
+							className="flex items-center gap-2 text-xl"
+							style={{ color: SEMANTIC_COLORS.error.from }}
+						>
 							<svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
 								<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
 							</svg>
 							{isNetworkError ? "Cannot Connect to API" : "Server Error"}
 						</CardTitle>
-						<CardDescription className="text-white/70">
+						<CardDescription className="text-muted-foreground">
 							{isNetworkError
 								? "The dashboard cannot reach the API server. This usually means:"
 								: "An unexpected error occurred while connecting to the server."}
@@ -194,18 +212,18 @@ export const LoginForm = () => {
 					</CardHeader>
 					<CardContent className="space-y-4">
 						{isNetworkError && (
-							<ul className="list-disc space-y-2 pl-5 text-sm text-white/60">
+							<ul className="list-disc space-y-2 pl-5 text-sm text-muted-foreground">
 								<li>The API server is not running or starting up</li>
 								<li>The API port configuration is incorrect</li>
 								<li>A firewall or network issue is blocking the connection</li>
 							</ul>
 						)}
-						<div className="rounded bg-black/30 p-3 font-mono text-xs text-white/50">
+						<div className="rounded-lg bg-muted/50 p-3 font-mono text-xs text-muted-foreground">
 							{setupError.message}
 						</div>
 						<Button
-							variant="secondary"
-							className="w-full border-white/20 bg-white/5 text-white hover:bg-white/10"
+							variant="outline"
+							className="w-full rounded-xl"
 							onClick={() => window.location.reload()}
 						>
 							<svg className="mr-2 h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -226,20 +244,31 @@ export const LoginForm = () => {
 
 	return (
 		<div className="flex min-h-[60vh] flex-col items-center justify-center gap-6">
+			{/* Header */}
 			<div className="text-center">
-				<p className="text-sm uppercase tracking-[0.3em] text-white/50">Arr Control Center</p>
-				<h1 className="mt-2 text-3xl font-semibold text-white">Sign in to your dashboard</h1>
-				<p className="mt-2 text-sm text-white/60">
+				<p className="text-sm uppercase tracking-[0.3em] text-muted-foreground">Arr Control Center</p>
+				<h1
+					className="mt-2 text-3xl font-bold tracking-tight"
+					style={{
+						background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+						WebkitBackgroundClip: "text",
+						WebkitTextFillColor: "transparent",
+					}}
+				>
+					Sign in to your dashboard
+				</h1>
+				<p className="mt-2 text-sm text-muted-foreground">
 					{hasAlternativeMethods
 						? "Choose your preferred authentication method."
 						: "Use your admin credentials to continue."}
 				</p>
 			</div>
 
-			<Card className="w-full max-w-sm border-white/10 bg-white/5">
+			{/* Login Card */}
+			<Card className="w-full max-w-sm border-border/50 bg-card/80 backdrop-blur-sm">
 				<CardHeader>
-					<CardTitle className="text-xl text-white">Welcome back</CardTitle>
-					<CardDescription className="text-white/60">
+					<CardTitle className="text-xl text-foreground">Welcome back</CardTitle>
+					<CardDescription className="text-muted-foreground">
 						Sign in to manage your Sonarr, Radarr, and Prowlarr instances.
 					</CardDescription>
 				</CardHeader>
@@ -248,31 +277,19 @@ export const LoginForm = () => {
 					<div className="space-y-3">
 						<Button
 							type="button"
-							variant="secondary"
-							className="w-full border-white/20 bg-white/5 text-white hover:bg-white/10"
+							variant="outline"
+							className="w-full rounded-xl gap-2"
 							onClick={handlePasskeyLogin}
 							disabled={disabled}
 						>
 							{passkeyLoading ? (
 								<>
-									<div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+									<Loader2 className="h-4 w-4 animate-spin" />
 									Authenticating with passkey...
 								</>
 							) : (
 								<>
-									<svg
-										className="mr-2 h-4 w-4"
-										fill="none"
-										stroke="currentColor"
-										viewBox="0 0 24 24"
-									>
-										<path
-											strokeLinecap="round"
-											strokeLinejoin="round"
-											strokeWidth={2}
-											d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"
-										/>
-									</svg>
+									<KeyRound className="h-4 w-4" />
 									Sign in with passkey
 								</>
 							)}
@@ -284,31 +301,19 @@ export const LoginForm = () => {
 						<div className="space-y-3">
 							<Button
 								type="button"
-								variant="secondary"
-								className="w-full border-white/20 bg-white/5 text-white hover:bg-white/10"
+								variant="outline"
+								className="w-full rounded-xl gap-2"
 								onClick={handleOIDCLogin}
 								disabled={disabled}
 							>
 								{oidcLoading ? (
 									<>
-										<div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/20 border-t-white" />
+										<Loader2 className="h-4 w-4 animate-spin" />
 										Redirecting...
 									</>
 								) : (
 									<>
-										<svg
-											className="mr-2 h-4 w-4"
-											fill="none"
-											stroke="currentColor"
-											viewBox="0 0 24 24"
-										>
-											<path
-												strokeLinecap="round"
-												strokeLinejoin="round"
-												strokeWidth={2}
-												d="M13 10V3L4 14h7v7l9-11h-7z"
-											/>
-										</svg>
+										<Zap className="h-4 w-4" />
 										Sign in with {oidcProvider.displayName}
 									</>
 								)}
@@ -320,10 +325,10 @@ export const LoginForm = () => {
 					{hasAlternativeMethods && (
 						<div className="relative">
 							<div className="absolute inset-0 flex items-center">
-								<div className="w-full border-t border-white/10" />
+								<div className="w-full border-t border-border/50" />
 							</div>
 							<div className="relative flex justify-center text-xs uppercase">
-								<span className="bg-[#0a0a0a] px-2 text-white/40">Or continue with</span>
+								<span className="bg-card px-2 text-muted-foreground">Or continue with</span>
 							</div>
 						</div>
 					)}
@@ -333,7 +338,7 @@ export const LoginForm = () => {
 						<div className="space-y-2">
 							<label
 								htmlFor="username"
-								className="block text-xs font-semibold uppercase tracking-wide text-white/60"
+								className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground"
 							>
 								Username
 							</label>
@@ -346,26 +351,27 @@ export const LoginForm = () => {
 								autoComplete="off"
 								required
 								disabled={disabled}
+								className="rounded-xl"
 							/>
 						</div>
 
 						<div className="space-y-2">
 							<label
 								htmlFor="password"
-								className="block text-xs font-semibold uppercase tracking-wide text-white/60"
+								className="block text-xs font-semibold uppercase tracking-wide text-muted-foreground"
 							>
 								Password
 							</label>
-							<Input
+							<PasswordInput
 								id="password"
 								name="password"
-								type="password"
 								value={password}
 								onChange={(event) => setPassword(event.target.value)}
 								placeholder="Enter your password"
 								autoComplete="off"
 								required
 								disabled={disabled}
+								className="rounded-xl"
 							/>
 						</div>
 
@@ -376,10 +382,10 @@ export const LoginForm = () => {
 								name="rememberMe"
 								checked={rememberMe}
 								onChange={(e) => setRememberMe(e.target.checked)}
-								className="h-4 w-4 rounded border-white/20 bg-white/5 text-primary focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 focus:ring-offset-bg"
+								className="h-4 w-4 rounded border-border bg-background text-primary focus:ring-2 focus:ring-primary/50 focus:ring-offset-2 focus:ring-offset-background"
 								disabled={disabled}
 							/>
-							<label htmlFor="rememberMe" className="text-sm text-white/70 cursor-pointer">
+							<label htmlFor="rememberMe" className="text-sm text-muted-foreground cursor-pointer">
 								Remember me for 30 days
 							</label>
 						</div>
@@ -390,16 +396,38 @@ export const LoginForm = () => {
 							</Alert>
 						)}
 
-						<Button className="w-full" type="submit" disabled={disabled}>
-							{loginMutation.isPending ? "Signing in..." : "Sign in with password"}
+						<Button
+							className="w-full gap-2 rounded-xl font-medium"
+							type="submit"
+							disabled={disabled}
+							style={{
+								background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+								boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
+							}}
+						>
+							{loginMutation.isPending ? (
+								<>
+									<Loader2 className="h-4 w-4 animate-spin" />
+									Signing in...
+								</>
+							) : (
+								<>
+									<Lock className="h-4 w-4" />
+									Sign in with password
+								</>
+							)}
 						</Button>
 					</form>
 				</CardContent>
 			</Card>
 
-			<p className="text-xs text-white/40">
+			<p className="text-xs text-muted-foreground">
 				Need to configure services? Head over to{" "}
-				<Link href="/settings" className="text-white/70 underline hover:text-white">
+				<Link
+					href="/settings"
+					className="font-medium underline transition-colors hover:text-foreground"
+					style={{ color: themeGradient.from }}
+				>
 					Settings
 				</Link>{" "}
 				after signing in.

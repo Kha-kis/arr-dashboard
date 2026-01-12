@@ -4,8 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Download, RefreshCw, Tag, Trash2, ChevronDown } from "lucide-react";
 import { cn } from "../../../lib/utils";
 import { Button } from "../../../components/ui/button";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
 
 export type QueueAction = "retry" | "manualImport" | "remove" | "category";
@@ -146,7 +145,7 @@ const RemoveActionMenu = ({
 
 			{/* Dropdown menu */}
 			{open && (
-				<div className="absolute right-0 top-full z-30 mt-2 w-80 animate-in fade-in slide-in-from-top-2 duration-200">
+				<div className="absolute right-0 top-full z-fixed mt-2 w-80 max-w-[calc(100vw-2rem)] animate-in fade-in slide-in-from-top-2 duration-200">
 					<div className="rounded-xl border border-border/50 bg-card/95 backdrop-blur-xl p-2 shadow-xl shadow-black/20">
 						<div className="flex flex-col gap-1">
 							{REMOVE_OPTIONS.map((option) => (
@@ -192,8 +191,7 @@ export const QueueActionButtons = ({
 	primaryAction,
 	primaryDisabled,
 }: QueueActionButtonsProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const secondaryButtonClass = cn(
 		"inline-flex h-9 items-center justify-center gap-2 rounded-full border px-4 text-xs font-medium transition-all duration-300",

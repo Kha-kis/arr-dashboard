@@ -42,21 +42,21 @@ export function EmptyState({ icon: Icon, title, description, action, className }
 	return (
 		<div
 			className={cn(
-				"flex flex-col items-center justify-center text-center p-12 rounded-2xl border border-border/30 bg-bg-subtle/20",
+				"flex flex-col items-center justify-center text-center p-12 rounded-2xl border border-border/30 bg-card/20",
 				className,
 			)}
 			role="status"
 			aria-live="polite"
 		>
 			{Icon && (
-				<div className="mb-4 p-4 rounded-xl bg-bg-muted/50">
-					<Icon className="h-8 w-8 text-fg-muted" aria-hidden="true" />
+				<div className="mb-4 p-4 rounded-xl bg-muted/50">
+					<Icon className="h-8 w-8 text-muted-foreground" aria-hidden="true" />
 				</div>
 			)}
 
-			<h3 className="text-lg font-semibold text-fg mb-2">{title}</h3>
+			<h3 className="text-lg font-semibold text-foreground mb-2">{title}</h3>
 
-			{description && <p className="text-sm text-fg-muted max-w-md mb-6">{description}</p>}
+			{description && <p className="text-sm text-muted-foreground max-w-md mb-6">{description}</p>}
 
 			{action && (
 				<Button

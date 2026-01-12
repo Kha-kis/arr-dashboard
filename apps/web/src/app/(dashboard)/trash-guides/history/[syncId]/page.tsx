@@ -168,7 +168,7 @@ export default function SyncDetailPage() {
 		return (
 			<div className="flex h-[60vh] items-center justify-center">
 				<div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-				<span className="ml-3 text-fg-muted">Loading sync details...</span>
+				<span className="ml-3 text-muted-foreground">Loading sync details...</span>
 			</div>
 		);
 	}
@@ -178,12 +178,12 @@ export default function SyncDetailPage() {
 			<div className="flex h-[60vh] items-center justify-center">
 				<div className="text-center">
 					<XCircle className="mx-auto h-12 w-12 text-red-400" />
-					<h2 className="mt-4 text-xl font-semibold text-fg">Error Loading Details</h2>
-					<p className="mt-2 text-fg-muted">{error?.message || "Sync not found"}</p>
+					<h2 className="mt-4 text-xl font-semibold text-foreground">Error Loading Details</h2>
+					<p className="mt-2 text-muted-foreground">{error?.message || "Sync not found"}</p>
 					<button
 						type="button"
 						onClick={() => router.back()}
-						className="mt-4 rounded-lg border border-border bg-bg-subtle px-4 py-2 text-sm font-medium text-fg transition hover:bg-bg-subtle/80"
+						className="mt-4 rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition hover:bg-card/80"
 					>
 						Go Back
 					</button>
@@ -203,13 +203,13 @@ export default function SyncDetailPage() {
 					<button
 						type="button"
 						onClick={() => router.back()}
-						className="rounded-lg border border-border bg-bg-subtle p-2 text-fg transition hover:bg-bg-subtle/80"
+						className="rounded-lg border border-border bg-card p-2 text-foreground transition hover:bg-card/80"
 					>
 						<ArrowLeft className="h-5 w-5" />
 					</button>
 					<div>
-						<h1 className="text-2xl font-bold text-fg">Sync Details</h1>
-						<p className="mt-1 text-fg-muted">
+						<h1 className="text-2xl font-bold text-foreground">Sync Details</h1>
+						<p className="mt-1 text-muted-foreground">
 							{sync.templateName} → {sync.instanceName}
 						</p>
 					</div>
@@ -237,28 +237,28 @@ export default function SyncDetailPage() {
 					<p className="mt-2 text-lg font-semibold">{sync.status.replace("_", " ")}</p>
 				</div>
 
-				<div className="rounded-xl border border-border bg-bg-subtle p-4">
-					<div className="flex items-center gap-2 text-fg-muted">
+				<div className="rounded-xl border border-border bg-card p-4">
+					<div className="flex items-center gap-2 text-muted-foreground">
 						<Calendar className="h-4 w-4" />
 						<span className="text-sm font-medium">Started</span>
 					</div>
-					<p className="mt-2 text-sm text-fg">{formatDate(sync.startedAt)}</p>
+					<p className="mt-2 text-sm text-foreground">{formatDate(sync.startedAt)}</p>
 				</div>
 
-				<div className="rounded-xl border border-border bg-bg-subtle p-4">
-					<div className="flex items-center gap-2 text-fg-muted">
+				<div className="rounded-xl border border-border bg-card p-4">
+					<div className="flex items-center gap-2 text-muted-foreground">
 						<Clock className="h-4 w-4" />
 						<span className="text-sm font-medium">Duration</span>
 					</div>
-					<p className="mt-2 text-sm text-fg">{formatDuration(sync.duration)}</p>
+					<p className="mt-2 text-sm text-foreground">{formatDuration(sync.duration)}</p>
 				</div>
 
-				<div className="rounded-xl border border-border bg-bg-subtle p-4">
-					<div className="flex items-center gap-2 text-fg-muted">
+				<div className="rounded-xl border border-border bg-card p-4">
+					<div className="flex items-center gap-2 text-muted-foreground">
 						<Database className="h-4 w-4" />
 						<span className="text-sm font-medium">Backup</span>
 					</div>
-					<p className="mt-2 text-sm text-fg">{sync.backupId ? "Available" : "N/A"}</p>
+					<p className="mt-2 text-sm text-foreground">{sync.backupId ? "Available" : "N/A"}</p>
 				</div>
 			</div>
 
@@ -280,15 +280,15 @@ export default function SyncDetailPage() {
 
 			{/* Applied Configurations */}
 			{sync.appliedConfigs && sync.appliedConfigs.length > 0 && (
-				<div className="rounded-xl border border-border bg-bg-subtle p-6">
-					<h2 className="mb-4 text-lg font-semibold text-fg">Applied Configurations</h2>
+				<div className="rounded-xl border border-border bg-card p-6">
+					<h2 className="mb-4 text-lg font-semibold text-foreground">Applied Configurations</h2>
 					<div className="space-y-2">
 						{sync.appliedConfigs.map((config: any, index: number) => (
 							<div
 								key={index}
-								className="flex items-center justify-between rounded-lg border border-border bg-bg-subtle p-3"
+								className="flex items-center justify-between rounded-lg border border-border bg-card p-3"
 							>
-								<span className="font-medium text-fg">{config.name}</span>
+								<span className="font-medium text-foreground">{config.name}</span>
 								<CheckCircle2 className="h-5 w-5 text-green-400" />
 							</div>
 						))}
@@ -319,8 +319,8 @@ export default function SyncDetailPage() {
 
 			{/* Error Log */}
 			{sync.errorLog && (
-				<div className="rounded-xl border border-border bg-bg-subtle p-6">
-					<h2 className="mb-4 text-lg font-semibold text-fg">Error Log</h2>
+				<div className="rounded-xl border border-border bg-card p-6">
+					<h2 className="mb-4 text-lg font-semibold text-foreground">Error Log</h2>
 					<pre className="overflow-x-auto rounded-lg bg-black/40 p-4 text-xs text-red-300">
 						{sync.errorLog}
 					</pre>
@@ -330,7 +330,7 @@ export default function SyncDetailPage() {
 			{/* Rollback Confirmation Modal */}
 			{showRollbackConfirm && (
 				<div
-					className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+					className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 p-4"
 					onClick={(e) => {
 						// Close on backdrop click only if not pending
 						if (e.target === e.currentTarget && !rollbackMutation.isPending) {
@@ -345,20 +345,20 @@ export default function SyncDetailPage() {
 						aria-modal="true"
 						aria-labelledby="rollback-confirm-title"
 						aria-describedby="rollback-confirm-description"
-						className="w-full max-w-md rounded-xl border border-border bg-bg p-6 focus:outline-none"
+						className="w-full max-w-md rounded-xl border border-border bg-background p-6 focus:outline-none"
 						onClick={(e) => e.stopPropagation()}
 					>
-						<h3 
+						<h3
 							id="rollback-confirm-title"
 							ref={titleRef}
 							tabIndex={-1}
-							className="text-xl font-semibold text-fg focus:outline-none"
+							className="text-xl font-semibold text-foreground focus:outline-none"
 						>
 							Confirm Rollback
 						</h3>
-						<p 
+						<p
 							id="rollback-confirm-description"
-							className="mt-2 text-sm text-fg-muted"
+							className="mt-2 text-sm text-muted-foreground"
 						>
 							This will restore the instance to its state before this sync operation. All configurations
 							applied during this sync will be removed.
@@ -368,7 +368,7 @@ export default function SyncDetailPage() {
 								type="button"
 								onClick={() => setShowRollbackConfirm(false)}
 								disabled={rollbackMutation.isPending}
-								className="rounded-lg border border-border bg-bg-subtle px-4 py-2 text-sm font-medium text-fg transition hover:bg-bg-subtle/80 disabled:opacity-50 disabled:cursor-not-allowed"
+								className="rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition hover:bg-card/80 disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								Cancel
 							</button>

@@ -151,6 +151,7 @@ const preset: Partial<Config> = {
 				"modal-backdrop": "var(--z-modal-backdrop)",
 				modal: "var(--z-modal)",
 				popover: "var(--z-popover)",
+				"command-palette": "var(--z-command-palette)",
 				toast: "var(--z-toast)",
 				tooltip: "var(--z-tooltip)",
 			},

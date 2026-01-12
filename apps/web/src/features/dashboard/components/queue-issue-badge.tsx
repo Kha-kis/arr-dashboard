@@ -2,8 +2,8 @@
 
 import { AlertTriangle, CheckCircle2, Info } from "lucide-react";
 import { cn } from "../../../lib/utils";
-import { THEME_GRADIENTS, getInfoColor } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { getInfoColor } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 export type MessageTone = "info" | "warning" | "error";
 
@@ -22,8 +22,7 @@ interface QueueIssueBadgeProps {
  * Uses semantic colors for error/warning, theme colors for info
  */
 export const QueueIssueBadge = ({ summary, size = "md" }: QueueIssueBadgeProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const themeInfo = getInfoColor("info", themeGradient);
 
 	const textSize = size === "sm" ? "text-[11px]" : "text-xs";

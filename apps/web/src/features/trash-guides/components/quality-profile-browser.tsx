@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { toast } from "sonner";
 import { useQualityProfiles, useImportQualityProfile } from "../../../hooks/api/useQualityProfiles";
-import { Alert, AlertDescription, EmptyState, Skeleton, Input, Button } from "../../../components/ui";
+import { Alert, AlertDescription, EmptyState, Input, Button } from "../../../components/ui";
+import { PremiumSkeleton } from "../../../components/layout/premium-components";
 import { X, Download, FileText, Star, Languages, Gauge } from "lucide-react";
 import { createSanitizedHtml } from "../../../lib/sanitize-html";
 import type { QualityProfileSummary } from "../../../lib/api-client/trash-guides";
@@ -67,19 +68,19 @@ export const QualityProfileBrowser = ({
 
 	return (
 		<div
-			className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+			className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 backdrop-blur-sm"
 			role="dialog"
 			aria-modal="true"
 			aria-labelledby="quality-profile-browser-title"
 		>
-			<div className="relative w-full max-w-4xl max-h-[90vh] overflow-hidden rounded-xl border border-border bg-bg-subtle shadow-xl">
+			<div className="relative w-full max-w-4xl max-h-[90vh] overflow-hidden rounded-xl border border-border bg-card shadow-xl">
 				{/* Header */}
-				<div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-bg-subtle/95 p-6 backdrop-blur">
+				<div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card/95 p-6 backdrop-blur">
 					<div>
-						<h2 id="quality-profile-browser-title" className="text-xl font-semibold text-fg">
+						<h2 id="quality-profile-browser-title" className="text-xl font-semibold text-foreground">
 							Browse TRaSH Quality Profiles
 						</h2>
-						<p className="mt-1 text-sm text-fg-muted">
+						<p className="mt-1 text-sm text-muted-foreground">
 							Select a quality profile to import as a template for {serviceType}
 						</p>
 					</div>
@@ -115,10 +116,14 @@ export const QualityProfileBrowser = ({
 
 					{isLoading ? (
 						<div className="grid gap-4 md:grid-cols-2">
-							<Skeleton className="h-48" />
-							<Skeleton className="h-48" />
-							<Skeleton className="h-48" />
-							<Skeleton className="h-48" />
+							{Array.from({ length: 4 }).map((_, i) => (
+								<PremiumSkeleton
+									key={i}
+									variant="card"
+									className="h-48"
+									style={{ animationDelay: `${i * 50}ms` }}
+								/>
+							))}
 						</div>
 					) : data?.profiles.length === 0 ? (
 						<EmptyState
@@ -135,12 +140,12 @@ export const QualityProfileBrowser = ({
 											key={profile.trashId}
 											type="button"
 											onClick={() => handleSelectProfile(profile)}
-											className="group relative flex flex-col rounded-xl border border-border bg-bg-subtle/50 p-6 text-left transition hover:border-primary hover:bg-bg-hover"
+											className="group relative flex flex-col rounded-xl border border-border bg-card/50 p-6 text-left transition hover:border-primary hover:bg-muted"
 										>
 											{/* Variable height content */}
 											<div className="flex-1 space-y-3">
 												<div className="flex items-start justify-between">
-													<h3 className="font-medium text-fg">{profile.name}</h3>
+													<h3 className="font-medium text-foreground">{profile.name}</h3>
 													{profile.scoreSet && (
 														<span className="rounded bg-primary/20 px-2 py-1 text-xs text-primary">
 															{profile.scoreSet}
@@ -150,12 +155,12 @@ export const QualityProfileBrowser = ({
 
 												{profile.description && (
 													<p
-														className="text-sm text-fg-muted line-clamp-2"
+														className="text-sm text-muted-foreground line-clamp-2"
 														dangerouslySetInnerHTML={createSanitizedHtml(profile.description)}
 													/>
 												)}
 
-												<div className="flex flex-wrap gap-3 text-xs text-fg-muted">
+												<div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
 													<span className="inline-flex items-center gap-1">
 														<Star className="h-3 w-3" />
 														{profile.customFormatCount} formats
@@ -176,12 +181,12 @@ export const QualityProfileBrowser = ({
 											{/* Fixed bottom section */}
 											<div className="mt-auto pt-3">
 												<div className="flex items-center justify-between text-xs">
-													<span className="text-fg-muted">Cutoff: {profile.cutoff}</span>
+													<span className="text-muted-foreground">Cutoff: {profile.cutoff}</span>
 													<span
 														className={`rounded px-2 py-1 ${
 															profile.upgradeAllowed
 																? "bg-green-500/20 text-green-300"
-																: "bg-bg-hover text-fg-muted"
+																: "bg-muted text-muted-foreground"
 														}`}
 													>
 														{profile.upgradeAllowed ? "Upgrades On" : "Upgrades Off"}
@@ -193,13 +198,13 @@ export const QualityProfileBrowser = ({
 								</div>
 							) : (
 								<div className="space-y-4">
-									<div className="rounded-xl border border-border bg-bg-subtle/50 p-6">
+									<div className="rounded-xl border border-border bg-card/50 p-6">
 										<div className="mb-4 flex items-center justify-between">
 											<div>
-												<h3 className="text-lg font-medium text-fg">
+												<h3 className="text-lg font-medium text-foreground">
 													{selectedProfile.name}
 												</h3>
-												<p className="mt-1 text-sm text-fg-muted">
+												<p className="mt-1 text-sm text-muted-foreground">
 													{selectedProfile.customFormatCount} Custom Formats •{" "}
 													{selectedProfile.qualityCount} Quality Settings
 												</p>
@@ -215,7 +220,7 @@ export const QualityProfileBrowser = ({
 
 										{selectedProfile.description && (
 											<p
-												className="text-sm text-fg-muted"
+												className="text-sm text-muted-foreground"
 												dangerouslySetInnerHTML={createSanitizedHtml(selectedProfile.description)}
 											/>
 										)}
@@ -223,7 +228,7 @@ export const QualityProfileBrowser = ({
 
 									<div className="space-y-4">
 										<div>
-											<label className="mb-2 block text-sm font-medium text-fg">
+											<label className="mb-2 block text-sm font-medium text-foreground">
 												Template Name <span className="text-danger">*</span>
 											</label>
 											<Input
@@ -236,7 +241,7 @@ export const QualityProfileBrowser = ({
 										</div>
 
 										<div>
-											<label className="mb-2 block text-sm font-medium text-fg">
+											<label className="mb-2 block text-sm font-medium text-foreground">
 												Description (Optional)
 											</label>
 											<textarea
@@ -244,7 +249,7 @@ export const QualityProfileBrowser = ({
 												onChange={(e) => setTemplateDescription(e.target.value)}
 												placeholder="Enter template description"
 												rows={4}
-												className="w-full rounded-xl border border-border bg-bg-subtle px-4 py-3 text-sm text-fg placeholder:text-fg-muted/60 transition-all duration-200 hover:border-border/80 hover:bg-bg-subtle/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-bg-subtle/80"
+												className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/60 transition-all duration-200 hover:border-border/80 hover:bg-card/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-card/80"
 											/>
 										</div>
 									</div>
@@ -255,7 +260,7 @@ export const QualityProfileBrowser = ({
 				</div>
 
 				{/* Footer */}
-				<div className="sticky bottom-0 flex justify-end gap-2 border-t border-border bg-bg-subtle/95 p-6 backdrop-blur">
+				<div className="sticky bottom-0 flex justify-end gap-2 border-t border-border bg-card/95 p-6 backdrop-blur">
 					<Button variant="secondary" onClick={onClose}>
 						Cancel
 					</Button>

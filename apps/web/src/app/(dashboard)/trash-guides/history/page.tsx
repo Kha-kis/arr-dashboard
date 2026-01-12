@@ -63,8 +63,8 @@ export default function SyncHistoryPage() {
 			<div className="flex h-[60vh] items-center justify-center">
 				<div className="text-center">
 					<AlertCircle className="mx-auto h-12 w-12 text-yellow-400" />
-					<h2 className="mt-4 text-xl font-semibold text-fg">No Instance Selected</h2>
-					<p className="mt-2 text-fg-muted">Please select an instance to view sync history</p>
+					<h2 className="mt-4 text-xl font-semibold text-foreground">No Instance Selected</h2>
+					<p className="mt-2 text-muted-foreground">Please select an instance to view sync history</p>
 				</div>
 			</div>
 		);
@@ -74,7 +74,7 @@ export default function SyncHistoryPage() {
 		return (
 			<div className="flex h-[60vh] items-center justify-center">
 				<div className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent" />
-				<span className="ml-3 text-fg-muted">Loading sync history...</span>
+				<span className="ml-3 text-muted-foreground">Loading sync history...</span>
 			</div>
 		);
 	}
@@ -84,8 +84,8 @@ export default function SyncHistoryPage() {
 			<div className="flex h-[60vh] items-center justify-center">
 				<div className="text-center">
 					<XCircle className="mx-auto h-12 w-12 text-red-400" />
-					<h2 className="mt-4 text-xl font-semibold text-fg">Error Loading History</h2>
-					<p className="mt-2 text-fg-muted">{error.message}</p>
+					<h2 className="mt-4 text-xl font-semibold text-foreground">Error Loading History</h2>
+					<p className="mt-2 text-muted-foreground">{error.message}</p>
 				</div>
 			</div>
 		);
@@ -97,37 +97,37 @@ export default function SyncHistoryPage() {
 		<div className="space-y-6 p-6">
 			{/* Header */}
 			<div>
-				<h1 className="text-2xl font-bold text-fg">Sync History</h1>
-				<p className="mt-1 text-fg-muted">
+				<h1 className="text-2xl font-bold text-foreground">Sync History</h1>
+				<p className="mt-1 text-muted-foreground">
 					{data?.total || 0} sync operation{data?.total !== 1 ? "s" : ""} recorded
 				</p>
 			</div>
 
 			{/* History Table */}
 			{data && data.syncs.length > 0 ? (
-				<div className="overflow-hidden rounded-xl border border-border bg-bg-subtle">
+				<div className="overflow-hidden rounded-xl border border-border bg-card">
 					<table className="w-full">
-						<thead className="border-b border-border bg-bg-subtle">
+						<thead className="border-b border-border bg-card">
 							<tr>
-								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-fg-muted">
+								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
 									Template
 								</th>
-								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-fg-muted">
+								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
 									Status
 								</th>
-								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-fg-muted">
+								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
 									Type
 								</th>
-								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-fg-muted">
+								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
 									Results
 								</th>
-								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-fg-muted">
+								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
 									Started
 								</th>
-								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-fg-muted">
+								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
 									Duration
 								</th>
-								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-fg-muted">
+								<th className="px-6 py-3 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
 									Actions
 								</th>
 							</tr>
@@ -140,12 +140,12 @@ export default function SyncHistoryPage() {
 								return (
 									<tr
 										key={sync.id}
-										className="transition hover:bg-bg-subtle/50 cursor-pointer"
+										className="transition hover:bg-card/50 cursor-pointer"
 										onClick={() => handleViewDetails(sync.id)}
 									>
 										<td className="px-6 py-4">
 											<div className="flex items-center gap-2">
-												<span className="font-medium text-fg">{sync.templateName}</span>
+												<span className="font-medium text-foreground">{sync.templateName}</span>
 											</div>
 										</td>
 										<td className="px-6 py-4">
@@ -155,7 +155,7 @@ export default function SyncHistoryPage() {
 											</Badge>
 										</td>
 										<td className="px-6 py-4">
-											<span className="text-sm text-fg-muted">{sync.syncType}</span>
+											<span className="text-sm text-muted-foreground">{sync.syncType}</span>
 										</td>
 										<td className="px-6 py-4">
 											<div className="flex items-center gap-3 text-xs">
@@ -169,13 +169,13 @@ export default function SyncHistoryPage() {
 											</div>
 										</td>
 										<td className="px-6 py-4">
-											<div className="flex items-center gap-1.5 text-sm text-fg-muted">
+											<div className="flex items-center gap-1.5 text-sm text-muted-foreground">
 												<Calendar className="h-3.5 w-3.5" />
 												{formatDate(sync.startedAt)}
 											</div>
 										</td>
 										<td className="px-6 py-4">
-											<div className="flex items-center gap-1.5 text-sm text-fg-muted">
+											<div className="flex items-center gap-1.5 text-sm text-muted-foreground">
 												<Clock className="h-3.5 w-3.5" />
 												{formatDuration(sync.duration)}
 											</div>
@@ -201,11 +201,11 @@ export default function SyncHistoryPage() {
 					</table>
 				</div>
 			) : (
-				<div className="flex h-[40vh] items-center justify-center rounded-xl border border-border bg-bg-subtle">
+				<div className="flex h-[40vh] items-center justify-center rounded-xl border border-border bg-card">
 					<div className="text-center">
-						<Clock className="mx-auto h-12 w-12 text-fg-muted" />
-						<h3 className="mt-4 text-lg font-medium text-fg">No Sync History</h3>
-						<p className="mt-2 text-fg-muted">No sync operations have been performed yet</p>
+						<Clock className="mx-auto h-12 w-12 text-muted-foreground" />
+						<h3 className="mt-4 text-lg font-medium text-foreground">No Sync History</h3>
+						<p className="mt-2 text-muted-foreground">No sync operations have been performed yet</p>
 					</div>
 				</div>
 			)}
@@ -213,9 +213,9 @@ export default function SyncHistoryPage() {
 			{/* Pagination */}
 			{totalPages > 1 && (
 				<div className="flex items-center justify-between">
-					<p className="text-sm text-fg-muted">
-						Page <span className="font-medium text-fg">{page + 1}</span> of{" "}
-						<span className="font-medium text-fg">{totalPages}</span>
+					<p className="text-sm text-muted-foreground">
+						Page <span className="font-medium text-foreground">{page + 1}</span> of{" "}
+						<span className="font-medium text-foreground">{totalPages}</span>
 					</p>
 					<div className="flex gap-2">
 						<Button

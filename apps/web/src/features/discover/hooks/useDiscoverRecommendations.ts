@@ -7,8 +7,9 @@ import { deduplicateItems, filterExistingItems } from "../lib/discover-utils";
 /**
  * Minimum number of visible items required before auto-loading next page.
  * This ensures carousels always have sufficient content after filtering.
+ * Set to 20 to fill the carousel row before scrolling is needed.
  */
-const MIN_VISIBLE_ITEMS = 10;
+const MIN_VISIBLE_ITEMS = 20;
 
 /**
  * Hook for managing TMDB recommendation carousels with auto-pagination.

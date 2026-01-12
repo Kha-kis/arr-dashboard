@@ -25,8 +25,8 @@ import {
 	PremiumTableRow,
 	StatusBadge,
 } from "../../../components/layout";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import {
 	useCreateBackup,
 	useRestoreBackup,
@@ -54,8 +54,7 @@ import type { BackupFileInfo, BackupIntervalType } from "@arr/shared";
  * - Premium glassmorphic styling
  */
 export const BackupTab = () => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	// Create backup state
 	const [createSuccess, setCreateSuccess] = useState(false);
@@ -800,15 +799,18 @@ export const BackupTab = () => {
 					/>
 				) : (
 					<PremiumTable>
-						<PremiumTableHeader
-							columns={["Type", "Filename", "Date", "Size", "Actions"]}
-						/>
+						<PremiumTableHeader>
+							<tr>
+								<th className="py-3 px-4 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Type</th>
+								<th className="py-3 px-4 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Filename</th>
+								<th className="py-3 px-4 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Date</th>
+								<th className="py-3 px-4 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Size</th>
+								<th className="py-3 px-4 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Actions</th>
+							</tr>
+						</PremiumTableHeader>
 						<tbody>
-							{backups.map((backup, index) => (
-								<PremiumTableRow
-									key={backup.id}
-									animationDelay={index * 30}
-								>
+							{backups.map((backup) => (
+								<PremiumTableRow key={backup.id}>
 									<td className="py-3 px-4">
 										<StatusBadge status={getTypeStatus(backup.type)}>
 											{backup.type.charAt(0).toUpperCase() + backup.type.slice(1)}
@@ -864,10 +866,15 @@ export const BackupTab = () => {
 
 			{/* Restore Backup Modal */}
 			{showBackupRestoreModal && selectedBackupForRestore && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+				<div
+					className="fixed inset-0 z-modal flex items-center justify-center bg-black/80 backdrop-blur-sm"
+					role="dialog"
+					aria-modal="true"
+					aria-labelledby="restore-backup-title"
+				>
 					<GlassmorphicCard padding="lg" className="w-full max-w-md m-4">
 						<div className="space-y-4">
-							<h3 className="text-lg font-semibold text-foreground">Restore Backup</h3>
+							<h3 id="restore-backup-title" className="text-lg font-semibold text-foreground">Restore Backup</h3>
 
 							<div
 								className="p-3 rounded-lg text-sm"
@@ -925,7 +932,12 @@ export const BackupTab = () => {
 
 			{/* Server Restarting Modal */}
 			{isRestarting && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+				<div
+					className="fixed inset-0 z-modal flex items-center justify-center bg-black/80 backdrop-blur-sm"
+					role="dialog"
+					aria-modal="true"
+					aria-labelledby="server-restarting-title"
+				>
 					<GlassmorphicCard padding="lg" className="w-full max-w-md m-4">
 						<div className="flex flex-col items-center text-center space-y-4 py-4">
 							<div
@@ -933,7 +945,7 @@ export const BackupTab = () => {
 								style={{ borderColor: themeGradient.from }}
 							/>
 							<div>
-								<h3 className="text-lg font-semibold mb-2 text-foreground">Server Restarting</h3>
+								<h3 id="server-restarting-title" className="text-lg font-semibold mb-2 text-foreground">Server Restarting</h3>
 								<p className="text-sm text-muted-foreground">
 									Backup restored successfully. The server is restarting...
 								</p>

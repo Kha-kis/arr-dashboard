@@ -1,9 +1,10 @@
 ﻿import { StatisticsClient } from "../../src/features/statistics/components/statistics-client";
+import { PageLayout } from "../../src/components/layout";
 
 const StatisticsPage = () => (
-	<main className="mx-auto flex max-w-6xl flex-col gap-12 px-6 py-16">
+	<PageLayout>
 		<StatisticsClient />
-	</main>
+	</PageLayout>
 );
 
 export default StatisticsPage;

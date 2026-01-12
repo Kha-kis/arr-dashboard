@@ -2,6 +2,7 @@
 
 import type { DiscoverSearchResult, ServiceInstanceSummary } from "@arr/shared";
 import { Loader2, CheckCircle2 } from "lucide-react";
+import { PremiumSkeleton } from "../../../components/layout";
 
 /**
  * Props for the RecommendationCarousel component
@@ -55,12 +56,21 @@ export const RecommendationCarousel: React.FC<RecommendationCarouselProps> = ({
 		return (
 			<section className="space-y-3">
 				<div>
-					<h2 className="text-lg font-semibold text-fg">{title}</h2>
-					{description && <p className="text-sm text-fg-muted">{description}</p>}
+					<h2 className="text-lg font-semibold text-foreground">{title}</h2>
+					{description && <p className="text-sm text-muted-foreground">{description}</p>}
 				</div>
-				<div className="flex items-center gap-3 text-fg-muted">
-					<Loader2 className="h-5 w-5 animate-spin" />
-					Loading recommendations...
+				<div className="flex gap-4 overflow-hidden">
+					{Array.from({ length: 6 }).map((_, i) => (
+						<div key={i} className="w-[160px] flex-shrink-0">
+							<div className="rounded-lg border border-border/30 bg-card/30 overflow-hidden">
+								<PremiumSkeleton variant="card" className="aspect-[2/3] rounded-none" style={{ animationDelay: `${i * 50}ms` }} />
+								<div className="p-2 space-y-2">
+									<PremiumSkeleton variant="line" className="h-4 w-3/4" style={{ animationDelay: `${i * 50 + 25}ms` }} />
+									<PremiumSkeleton variant="line" className="h-3 w-1/2" style={{ animationDelay: `${i * 50 + 50}ms` }} />
+								</div>
+							</div>
+						</div>
+					))}
 				</div>
 			</section>
 		);
@@ -73,8 +83,8 @@ export const RecommendationCarousel: React.FC<RecommendationCarouselProps> = ({
 	return (
 		<section className="space-y-3">
 			<div>
-				<h2 className="text-lg font-semibold text-fg">{title}</h2>
-				{description && <p className="text-sm text-fg-muted">{description}</p>}
+				<h2 className="text-lg font-semibold text-foreground">{title}</h2>
+				{description && <p className="text-sm text-muted-foreground">{description}</p>}
 			</div>
 			<div className="relative -mx-6 px-6">
 				<div className="flex gap-4 overflow-x-auto pb-4 scrollbar-thin scrollbar-track-transparent scrollbar-thumb-border/50">
@@ -89,7 +99,7 @@ export const RecommendationCarousel: React.FC<RecommendationCarouselProps> = ({
 						return (
 							<div
 								key={result.id}
-								className="group relative w-[160px] flex-shrink-0 cursor-pointer overflow-hidden rounded-lg border border-border/50 bg-bg-subtle transition-all hover:scale-105 hover:border-border"
+								className="group relative w-[160px] flex-shrink-0 cursor-pointer overflow-hidden rounded-lg border border-border/50 bg-card transition-all hover:scale-105 hover:border-border"
 								onClick={() => onSelectResult(result)}
 							>
 								<div className="relative aspect-[2/3] w-full overflow-hidden bg-gradient-to-br from-slate-700 to-slate-900">
@@ -117,10 +127,10 @@ export const RecommendationCarousel: React.FC<RecommendationCarouselProps> = ({
 									)}
 								</div>
 								<div className="p-2">
-									<p className="truncate text-sm font-medium text-fg">{result.title}</p>
-									<p className="text-xs text-fg-muted">{result.year}</p>
+									<p className="truncate text-sm font-medium text-foreground">{result.title}</p>
+									<p className="text-xs text-muted-foreground">{result.year}</p>
 									{result.genres && result.genres.length > 0 && (
-										<p className="mt-1 truncate text-xs text-fg-muted">
+										<p className="mt-1 truncate text-xs text-muted-foreground">
 											{result.genres.slice(0, 2).join(", ")}
 										</p>
 									)}

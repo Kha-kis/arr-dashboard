@@ -1,8 +1,9 @@
 "use client";
 
+import type { TrashConfigType } from "@arr/shared";
 import { RefreshCw, Database, Clock, AlertTriangle, Package } from "lucide-react";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS, getServiceGradient } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 interface CacheStatusEntry {
 	serviceType: string;
@@ -19,7 +20,11 @@ interface CacheStatusSectionProps {
 	configTypeLabels: Record<string, string>;
 	refreshing: boolean;
 	onRefresh: () => void;
+	onRefreshEntry?: (serviceType: "RADARR" | "SONARR", configType: TrashConfigType) => void;
+	onDelete?: (serviceType: "RADARR" | "SONARR", configType: TrashConfigType) => void;
 	isRefreshPending: boolean;
+	isDeletePending?: boolean;
+	refreshingEntry?: string | null;
 }
 
 /**
@@ -38,8 +43,7 @@ const CacheStatusCard = ({
 	lastFetched: string;
 	isStale: boolean;
 }) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
 		<article
@@ -120,13 +124,16 @@ export const CacheStatusSection = ({
 	configTypeLabels,
 	refreshing,
 	onRefresh,
+	onRefreshEntry: _onRefreshEntry,
+	onDelete: _onDelete,
 	isRefreshPending,
+	isDeletePending: _isDeletePending,
+	refreshingEntry: _refreshingEntry,
 }: CacheStatusSectionProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
-	// Service-specific colors (keep for identification)
-	const serviceColor = serviceType === "RADARR" ? "#f97316" : "#06b6d4";
+	// Use centralized service colors
+	const serviceColor = getServiceGradient(serviceType).from;
 
 	return (
 		<section className="space-y-6 animate-in fade-in duration-300">

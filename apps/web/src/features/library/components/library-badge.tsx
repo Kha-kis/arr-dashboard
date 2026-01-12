@@ -1,8 +1,7 @@
 "use client";
 
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 export interface LibraryBadgeProps {
 	children: React.ReactNode;
@@ -15,8 +14,7 @@ export interface LibraryBadgeProps {
  * The "blue" tone uses the user's selected theme color
  */
 export const LibraryBadge = ({ children, tone }: LibraryBadgeProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	// Theme-aware styling for "blue" (info) tone
 	const blueStyle =

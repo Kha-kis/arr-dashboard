@@ -1,7 +1,6 @@
 "use client";
 
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 /**
  * Premium Detail Stat Component
@@ -20,8 +19,7 @@ export const DetailStat = ({
 	value?: string;
 	color?: string;
 }) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	if (!value || value.trim().length === 0) {
 		return null;

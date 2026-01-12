@@ -2,8 +2,7 @@
 
 import { Button } from "../../../components/ui/button";
 import { formatMonthLabel } from "../lib/calendar-formatters";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { Calendar, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
 import { cn } from "../../../lib/utils";
 import { useState } from "react";
@@ -25,8 +24,7 @@ export const CalendarHeader = ({
 	onGoToday,
 	onRefresh,
 }: CalendarHeaderProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const [isRefreshing, setIsRefreshing] = useState(false);
 
 	const handleRefresh = () => {

@@ -51,8 +51,8 @@ export function QualityProfilePreview({
 
 	if (previewMutation.isPending) {
 		return (
-			<div className="rounded border border-border/30 p-4 bg-bg-subtle/40">
-				<div className="text-sm text-fg-muted">Loading preview...</div>
+			<div className="rounded border border-border/30 p-4 bg-card/40">
+				<div className="text-sm text-muted-foreground">Loading preview...</div>
 			</div>
 		);
 	}
@@ -79,60 +79,60 @@ export function QualityProfilePreview({
 
 	return (
 		<div className="space-y-4">
-			<h4 className="text-sm font-medium text-fg">Deployment Preview</h4>
+			<h4 className="text-sm font-medium text-foreground">Deployment Preview</h4>
 
 			{/* Quality Definitions */}
-			<div className="rounded border border-border/30 p-4 bg-bg-subtle/40 space-y-3">
+			<div className="rounded border border-border/30 p-4 bg-card/40 space-y-3">
 				<div className="flex items-center gap-2">
-					<Target className="h-4 w-4 text-fg-muted" />
-					<span className="font-medium text-fg">Quality Definitions</span>
+					<Target className="h-4 w-4 text-muted-foreground" />
+					<span className="font-medium text-foreground">Quality Definitions</span>
 				</div>
 
 				<div className="grid grid-cols-2 gap-3 text-sm">
 					<div>
-						<span className="text-fg-muted">Cutoff Quality:</span>
-						<div className="font-medium text-fg">{preview.qualityDefinitions.cutoff}</div>
+						<span className="text-muted-foreground">Cutoff Quality:</span>
+						<div className="font-medium text-foreground">{preview.qualityDefinitions.cutoff}</div>
 					</div>
 					<div>
-						<span className="text-fg-muted">Upgrade Allowed:</span>
-						<div className="font-medium text-fg">
+						<span className="text-muted-foreground">Upgrade Allowed:</span>
+						<div className="font-medium text-foreground">
 							{preview.qualityDefinitions.upgradeAllowed ? (
 								<span className="text-success">Yes</span>
 							) : (
-								<span className="text-fg-muted">No</span>
+								<span className="text-muted-foreground">No</span>
 							)}
 						</div>
 					</div>
 					<div>
-						<span className="text-fg-muted">Total Qualities:</span>
-						<div className="font-medium text-fg">{preview.qualityDefinitions.totalQualities}</div>
+						<span className="text-muted-foreground">Total Qualities:</span>
+						<div className="font-medium text-foreground">{preview.qualityDefinitions.totalQualities}</div>
 					</div>
 					<div>
-						<span className="text-fg-muted">Allowed Qualities:</span>
-						<div className="font-medium text-fg">{preview.qualityDefinitions.allowedQualities}</div>
+						<span className="text-muted-foreground">Allowed Qualities:</span>
+						<div className="font-medium text-foreground">{preview.qualityDefinitions.allowedQualities}</div>
 					</div>
 				</div>
 			</div>
 
 			{/* Custom Formats */}
-			<div className="rounded border border-border/30 p-4 bg-bg-subtle/40 space-y-3">
+			<div className="rounded border border-border/30 p-4 bg-card/40 space-y-3">
 				<div className="flex items-center gap-2">
-					<Award className="h-4 w-4 text-fg-muted" />
-					<span className="font-medium text-fg">Custom Formats</span>
+					<Award className="h-4 w-4 text-muted-foreground" />
+					<span className="font-medium text-foreground">Custom Formats</span>
 				</div>
 
 				<div className="grid grid-cols-3 gap-3 text-sm">
 					<div>
-						<span className="text-fg-muted">Total Selected:</span>
-						<div className="font-medium text-fg">{preview.customFormats.total}</div>
+						<span className="text-muted-foreground">Total Selected:</span>
+						<div className="font-medium text-foreground">{preview.customFormats.total}</div>
 					</div>
 					<div>
-						<span className="text-fg-muted">Matched:</span>
+						<span className="text-muted-foreground">Matched:</span>
 						<div className="font-medium text-success">{preview.customFormats.matched}</div>
 					</div>
 					<div>
-						<span className="text-fg-muted">Unmatched:</span>
-						<div className={`font-medium ${hasUnmatched ? "text-warning" : "text-fg-muted"}`}>
+						<span className="text-muted-foreground">Unmatched:</span>
+						<div className={`font-medium ${hasUnmatched ? "text-warning" : "text-muted-foreground"}`}>
 							{preview.customFormats.unmatched.length}
 						</div>
 					</div>
@@ -160,24 +160,24 @@ export function QualityProfilePreview({
 			</div>
 
 			{/* Format Scores */}
-			<div className="rounded border border-border/30 p-4 bg-bg-subtle/40 space-y-3">
+			<div className="rounded border border-border/30 p-4 bg-card/40 space-y-3">
 				<div className="flex items-center gap-2">
-					<TrendingUp className="h-4 w-4 text-fg-muted" />
-					<span className="font-medium text-fg">Format Scores</span>
+					<TrendingUp className="h-4 w-4 text-muted-foreground" />
+					<span className="font-medium text-foreground">Format Scores</span>
 				</div>
 
 				<div className="grid grid-cols-3 gap-3 text-sm">
 					<div>
-						<span className="text-fg-muted">Minimum Score:</span>
-						<div className="font-medium text-fg">{preview.formatScores.minScore}</div>
+						<span className="text-muted-foreground">Minimum Score:</span>
+						<div className="font-medium text-foreground">{preview.formatScores.minScore}</div>
 					</div>
 					<div>
-						<span className="text-fg-muted">Cutoff Score:</span>
-						<div className="font-medium text-fg">{preview.formatScores.cutoffScore}</div>
+						<span className="text-muted-foreground">Cutoff Score:</span>
+						<div className="font-medium text-foreground">{preview.formatScores.cutoffScore}</div>
 					</div>
 					<div>
-						<span className="text-fg-muted">Average Score:</span>
-						<div className="font-medium text-fg">{preview.formatScores.avgScore}</div>
+						<span className="text-muted-foreground">Average Score:</span>
+						<div className="font-medium text-foreground">{preview.formatScores.avgScore}</div>
 					</div>
 				</div>
 			</div>

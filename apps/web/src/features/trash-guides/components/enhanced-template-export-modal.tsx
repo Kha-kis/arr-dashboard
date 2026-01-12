@@ -24,8 +24,7 @@ import {
 	X,
 } from "lucide-react";
 import type { TemplateExportOptions } from "@arr/shared";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 interface EnhancedTemplateExportModalProps {
 	templateId: string;
@@ -47,8 +46,7 @@ export function EnhancedTemplateExportModal({
 	templateName,
 	onClose,
 }: EnhancedTemplateExportModalProps) {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const [options, setOptions] = useState<TemplateExportOptions>({
 		includeQualitySettings: true,
@@ -142,6 +140,7 @@ export function EnhancedTemplateExportModal({
 					<button
 						type="button"
 						onClick={onClose}
+						aria-label="Close export modal"
 						className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
 					>
 						<X className="h-4 w-4" />

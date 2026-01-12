@@ -17,8 +17,8 @@ import {
 } from "lucide-react";
 import { Button } from "../../../components/ui/button";
 import { PremiumSection, GlassmorphicCard, PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import {
 	type DeviceType,
 	type SessionInfo,
@@ -31,14 +31,22 @@ import { cn } from "../../../lib/utils";
 /**
  * Device type icon component using lucide-react
  */
-const DeviceIcon = ({ device, className }: { device: DeviceType; className?: string }) => {
+const DeviceIcon = ({
+	device,
+	className,
+	style,
+}: {
+	device: DeviceType;
+	className?: string;
+	style?: React.CSSProperties;
+}) => {
 	switch (device) {
 		case "mobile":
-			return <Smartphone className={className} />;
+			return <Smartphone className={className} style={style} />;
 		case "tablet":
-			return <Tablet className={className} />;
+			return <Tablet className={className} style={style} />;
 		default:
-			return <Monitor className={className} />;
+			return <Monitor className={className} style={style} />;
 	}
 };
 
@@ -52,8 +60,7 @@ const DeviceIcon = ({ device, className }: { device: DeviceType; className?: str
  * - Staggered animations
  */
 export const SessionsSection = () => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const [sessions, setSessions] = useState<SessionInfo[]>([]);
 	const [totalSessions, setTotalSessions] = useState(0);
@@ -176,7 +183,7 @@ export const SessionsSection = () => {
 			title="Active Sessions"
 			description="View and manage all devices where you're currently signed in. You can revoke access for any session except your current one."
 			icon={Shield}
-			action={
+			actions={
 				<Button
 					variant="outline"
 					size="sm"
@@ -313,7 +320,7 @@ export const SessionsSection = () => {
 																	: isExpired
 																		? SEMANTIC_COLORS.error.from
 																		: "var(--muted-foreground)",
-															} as React.CSSProperties}
+															}}
 														/>
 													</div>
 													<div className="min-w-0 flex-1">

@@ -311,17 +311,23 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 	const mutation = template ? updateMutation : createMutation;
 
 	return (
-		<div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-			<div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-bg-subtle p-6">
+		<div
+			className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 backdrop-blur-sm"
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="template-editor-title"
+		>
+			<div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card p-6">
 				{/* Header */}
 				<div className="mb-6 flex items-center justify-between border-b border-border pb-4">
-					<h2 className="text-2xl font-semibold text-fg">
+					<h2 id="template-editor-title" className="text-2xl font-semibold text-foreground">
 						{template ? "Edit Template" : "Create Template"}
 					</h2>
 					<Button
 						variant="ghost"
 						size="sm"
 						onClick={onClose}
+						aria-label="Close editor"
 					>
 						<X className="h-5 w-5" />
 					</Button>
@@ -340,7 +346,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 					{/* Basic Info */}
 					<div className="space-y-4">
 						<div>
-							<label className="mb-2 block text-sm font-medium text-fg">Template Name</label>
+							<label className="mb-2 block text-sm font-medium text-foreground">Template Name</label>
 							<Input
 								type="text"
 								value={name}
@@ -351,19 +357,19 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 						</div>
 
 						<div>
-							<label className="mb-2 block text-sm font-medium text-fg">Description (Optional)</label>
+							<label className="mb-2 block text-sm font-medium text-foreground">Description (Optional)</label>
 							<textarea
 								value={description}
 								onChange={(e) => setDescription(e.target.value)}
 								placeholder="Describe what this template is for..."
 								rows={3}
-								className="w-full rounded-xl border border-border bg-bg-subtle px-4 py-3 text-sm text-fg placeholder:text-fg-muted/60 transition-all duration-200 hover:border-border/80 hover:bg-bg-subtle/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-bg-subtle/80"
+								className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/60 transition-all duration-200 hover:border-border/80 hover:bg-card/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-card/80"
 							/>
 						</div>
 
 						{!template && (
 							<div>
-								<label className="mb-2 block text-sm font-medium text-fg">Service Type</label>
+								<label className="mb-2 block text-sm font-medium text-foreground">Service Type</label>
 								<div className="flex gap-4">
 									<Button
 										variant={serviceType === "RADARR" ? "primary" : "secondary"}
@@ -387,31 +393,31 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 					{/* Sync Settings */}
 					<div className="space-y-3">
 						<div className="flex items-center gap-2">
-							<Settings className="h-5 w-5 text-fg-muted" />
-							<h3 className="text-lg font-medium text-fg">Sync Settings</h3>
+							<Settings className="h-5 w-5 text-muted-foreground" />
+							<h3 className="text-lg font-medium text-foreground">Sync Settings</h3>
 						</div>
-						<div className="rounded-xl border border-border bg-bg-subtle/50 p-4 space-y-4">
+						<div className="rounded-xl border border-border bg-card/50 p-4 space-y-4">
 							<div className="flex items-start gap-3">
 								<input
 									type="checkbox"
 									id="deleteRemovedCFs"
 									checked={deleteRemovedCFs}
 									onChange={(e) => setDeleteRemovedCFs(e.target.checked)}
-									className="mt-1 h-4 w-4 rounded border-border bg-bg-subtle text-primary focus:ring-primary"
+									className="mt-1 h-4 w-4 rounded border-border bg-card text-primary focus:ring-primary"
 								/>
 								<div className="flex-1">
-									<label htmlFor="deleteRemovedCFs" className="flex items-center gap-2 text-sm font-medium text-fg cursor-pointer">
+									<label htmlFor="deleteRemovedCFs" className="flex items-center gap-2 text-sm font-medium text-foreground cursor-pointer">
 										<Trash2 className="h-4 w-4 text-red-500" />
 										Delete removed Custom Formats during sync
 									</label>
-									<p className="mt-1 text-xs text-fg-muted">
+									<p className="mt-1 text-xs text-muted-foreground">
 										When TRaSH Guides removes a Custom Format, delete it from this template instead of marking it as deprecated.
 									</p>
 								</div>
 							</div>
 							<div className="flex items-start gap-2 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
 								<Shield className="h-4 w-4 text-blue-400 mt-0.5 flex-shrink-0" />
-								<div className="text-xs text-fg-muted">
+								<div className="text-xs text-muted-foreground">
 									<span className="font-medium text-blue-400">Note:</span> Custom Formats you manually add (marked as &ldquo;User Added&rdquo;) are always preserved regardless of this setting.
 								</div>
 							</div>
@@ -421,8 +427,8 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 					{/* Quality Configuration (Power User Feature) */}
 					<div className="space-y-3">
 						<div className="flex items-center gap-2">
-							<Gauge className="h-5 w-5 text-fg-muted" />
-							<h3 className="text-lg font-medium text-fg">Quality Configuration</h3>
+							<Gauge className="h-5 w-5 text-muted-foreground" />
+							<h3 className="text-lg font-medium text-foreground">Quality Configuration</h3>
 							<span className="rounded bg-amber-500/20 px-2 py-0.5 text-xs text-amber-400">
 								Advanced
 							</span>
@@ -439,7 +445,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 						<div className="space-y-3">
 							<div className="flex items-center gap-2">
 								<Sliders className="h-5 w-5 text-purple-500" />
-								<h3 className="text-lg font-medium text-fg">Per-Instance Quality Overrides</h3>
+								<h3 className="text-lg font-medium text-foreground">Per-Instance Quality Overrides</h3>
 								<span className="rounded bg-purple-500/20 px-2 py-0.5 text-xs text-purple-400">
 									Optional
 								</span>
@@ -457,26 +463,26 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 
 					{/* Custom Formats */}
 					<div className="space-y-3">
-						<h3 className="text-lg font-medium text-fg">Custom Formats</h3>
+						<h3 className="text-lg font-medium text-foreground">Custom Formats</h3>
 						{availableFormats.length === 0 ? (
-							<p className="text-sm text-fg-muted">No custom formats available in cache. Refresh cache first.</p>
+							<p className="text-sm text-muted-foreground">No custom formats available in cache. Refresh cache first.</p>
 						) : (
-							<div className="space-y-2 max-h-64 overflow-y-auto rounded border border-border bg-bg-subtle/50 p-4">
+							<div className="space-y-2 max-h-64 overflow-y-auto rounded border border-border bg-card/50 p-4">
 								{availableFormats.map((format) => {
 									const isSelected = selectedFormats.has(format.trash_id);
 									const settings = selectedFormats.get(format.trash_id);
 
 									return (
-										<div key={format.trash_id} className="space-y-2 rounded border border-border bg-bg-subtle/50 p-3">
+										<div key={format.trash_id} className="space-y-2 rounded border border-border bg-card/50 p-3">
 											<div className="flex items-center justify-between">
 												<label className="flex items-center gap-2">
 													<input
 														type="checkbox"
 														checked={isSelected}
 														onChange={() => handleToggleFormat(format.trash_id, format)}
-														className="h-4 w-4 rounded border-border bg-bg-subtle text-primary focus:ring-primary"
+														className="h-4 w-4 rounded border-border bg-card text-primary focus:ring-primary"
 													/>
-													<span className="text-sm font-medium text-fg">{format.name}</span>
+													<span className="text-sm font-medium text-foreground">{format.name}</span>
 												</label>
 												{isSelected && (
 													<div className="flex items-center gap-2">
@@ -492,13 +498,13 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 															<Settings className="h-3 w-3" />
 															Advanced
 														</Button>
-														<label className="text-xs text-fg-muted">Score:</label>
+														<label className="text-xs text-muted-foreground">Score:</label>
 														<input
 															type="number"
 															value={settings?.scoreOverride ?? ""}
 															onChange={(e) => handleScoreChange(format.trash_id, e.target.value ? Number(e.target.value) : undefined)}
 															placeholder="Default"
-															className="w-20 rounded border border-border bg-bg-subtle px-2 py-1 text-xs text-fg"
+															className="w-20 rounded border border-border bg-card px-2 py-1 text-xs text-foreground"
 														/>
 														<Button
 															variant="danger"
@@ -515,16 +521,16 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 											</div>
 											{isSelected && format.specifications.length > 0 && (
 												<div className="ml-6 space-y-1">
-													<p className="text-xs font-medium text-fg-muted">Conditions:</p>
+													<p className="text-xs font-medium text-muted-foreground">Conditions:</p>
 													{format.specifications.map((spec) => (
 														<label key={spec.name} className="flex items-center gap-2">
 															<input
 																type="checkbox"
 																checked={settings?.conditionsEnabled[spec.name] !== false}
 																onChange={() => handleToggleCondition(format.trash_id, spec.name)}
-																className="h-3 w-3 rounded border-border bg-bg-subtle text-primary focus:ring-primary"
+																className="h-3 w-3 rounded border-border bg-card text-primary focus:ring-primary"
 															/>
-															<span className="text-xs text-fg-muted">{spec.name}</span>
+															<span className="text-xs text-muted-foreground">{spec.name}</span>
 														</label>
 													))}
 												</div>
@@ -545,13 +551,13 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 									Deprecated Custom Formats ({deprecatedCFs.length})
 								</h3>
 							</div>
-							<p className="text-sm text-fg-muted">
+							<p className="text-sm text-muted-foreground">
 								These custom formats are no longer available in TRaSH Guides. They will be preserved
 								in your template but may not work correctly. Consider removing them.
 							</p>
 							<div className="space-y-2 max-h-48 overflow-y-auto rounded border border-amber-500/30 bg-amber-500/5 p-4">
 								{deprecatedCFs.map((cf) => (
-									<div key={cf.trashId} className="flex items-center justify-between rounded border border-border bg-bg-subtle/50 p-3">
+									<div key={cf.trashId} className="flex items-center justify-between rounded border border-border bg-card/50 p-3">
 										<div className="flex items-center gap-2">
 											<input
 												type="checkbox"
@@ -568,9 +574,9 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 													}
 													setSelectedFormats(newMap);
 												}}
-												className="h-4 w-4 rounded border-border bg-bg-subtle text-primary focus:ring-primary"
+												className="h-4 w-4 rounded border-border bg-card text-primary focus:ring-primary"
 											/>
-											<span className="text-sm font-medium text-fg opacity-70">{cf.name}</span>
+											<span className="text-sm font-medium text-foreground opacity-70">{cf.name}</span>
 											<span className="rounded bg-amber-500/20 px-1.5 py-0.5 text-xs text-amber-500">
 												Deprecated
 											</span>
@@ -581,7 +587,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 											)}
 										</div>
 										{cf.deprecatedReason && (
-											<span className="text-xs text-fg-muted">{cf.deprecatedReason}</span>
+											<span className="text-xs text-muted-foreground">{cf.deprecatedReason}</span>
 										)}
 									</div>
 								))}
@@ -591,21 +597,21 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 
 					{/* Custom Format Groups */}
 					<div className="space-y-3">
-						<h3 className="text-lg font-medium text-fg">Custom Format Groups</h3>
+						<h3 className="text-lg font-medium text-foreground">Custom Format Groups</h3>
 						{availableGroups.length === 0 ? (
-							<p className="text-sm text-fg-muted">No CF groups available in cache.</p>
+							<p className="text-sm text-muted-foreground">No CF groups available in cache.</p>
 						) : (
-							<div className="space-y-2 max-h-48 overflow-y-auto rounded border border-border bg-bg-subtle/50 p-4">
+							<div className="space-y-2 max-h-48 overflow-y-auto rounded border border-border bg-card/50 p-4">
 								{availableGroups.map((group) => (
 									<label key={group.trash_id} className="flex items-center gap-2">
 										<input
 											type="checkbox"
 											checked={selectedGroups.has(group.trash_id)}
 											onChange={() => handleToggleGroup(group.trash_id)}
-											className="h-4 w-4 rounded border-border bg-bg-subtle text-primary focus:ring-primary"
+											className="h-4 w-4 rounded border-border bg-card text-primary focus:ring-primary"
 										/>
-										<span className="text-sm text-fg">{group.name}</span>
-										<span className="text-xs text-fg-muted">({group.custom_formats.length} formats)</span>
+										<span className="text-sm text-foreground">{group.name}</span>
+										<span className="text-xs text-muted-foreground">({group.custom_formats.length} formats)</span>
 									</label>
 								))}
 							</div>
@@ -638,13 +644,19 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 					}));
 
 					return (
-						<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm">
-							<div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-bg-subtle p-6">
+						<div
+							className="fixed inset-0 z-popover flex items-center justify-center bg-black/80 backdrop-blur-sm"
+							role="dialog"
+							aria-modal="true"
+							aria-label="Condition Editor"
+						>
+							<div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card p-6">
 								{/* Close button */}
 								<Button
 									variant="ghost"
 									size="sm"
 									onClick={() => setConditionEditorFormat(null)}
+									aria-label="Close condition editor"
 									className="absolute top-4 right-4"
 								>
 									<X className="h-5 w-5" />

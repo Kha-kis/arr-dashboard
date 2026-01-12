@@ -9,8 +9,7 @@ import {
 	Database,
 } from "lucide-react";
 import type { TrashGuidesTab } from "../hooks/use-trash-guides-state";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 interface TrashGuidesTabsProps {
 	activeTab: TrashGuidesTab;
@@ -27,10 +26,9 @@ interface TrashGuidesTabsProps {
  * - Responsive design
  */
 export const TrashGuidesTabs = ({ activeTab, onTabChange }: TrashGuidesTabsProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
-	const tabs: Array<{ id: TrashGuidesTab; label: string; icon: React.ComponentType<{ className?: string }> }> = [
+	const tabs: Array<{ id: TrashGuidesTab; label: string; icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }> }> = [
 		{ id: "templates", label: "Templates", icon: FileText },
 		{ id: "custom-formats", label: "Custom Formats", icon: Palette },
 		{ id: "bulk-scores", label: "Bulk Scores", icon: SlidersHorizontal },

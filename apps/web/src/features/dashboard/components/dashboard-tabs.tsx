@@ -1,7 +1,9 @@
 "use client";
 
+import { motion, LayoutGroup } from "framer-motion";
 import { LayoutGrid, ListOrdered } from "lucide-react";
 import { cn } from "../../../lib/utils";
+import { springs } from "../../../components/motion";
 
 export type DashboardTab = "overview" | "queue";
 
@@ -38,25 +40,29 @@ export const DashboardTabs = ({
 			style={{ animationDelay: "50ms", animationFillMode: "backwards" }}
 		>
 			<div className="relative border-b border-border/50">
-				<nav className="flex gap-1" role="tablist">
+				<LayoutGroup>
+					<nav className="flex gap-1" role="tablist">
 					{tabs.map((tab) => {
 						const Icon = tab.icon;
 						const isActive = activeTab === tab.id;
 						const hasBadge = tab.badge !== undefined && tab.badge > 0;
 
 						return (
-							<button
+							<motion.button
 								key={tab.id}
 								type="button"
 								role="tab"
 								aria-selected={isActive}
 								onClick={() => onTabChange(tab.id)}
 								className={cn(
-									"group relative flex items-center gap-2 px-4 py-3 text-sm font-medium transition-all duration-300",
+									"group relative flex items-center gap-2 px-4 py-3 text-sm font-medium transition-colors duration-300",
 									isActive
 										? "text-foreground"
 										: "text-muted-foreground hover:text-foreground"
 								)}
+								whileHover={{ scale: 1.02 }}
+								whileTap={{ scale: 0.98 }}
+								transition={springs.quick}
 							>
 								{/* Icon */}
 								<Icon
@@ -105,22 +111,28 @@ export const DashboardTabs = ({
 									</span>
 								)}
 
-								{/* Active indicator - animated underline */}
-								<span
-									className={cn(
-										"absolute bottom-0 left-0 right-0 h-0.5 transition-all duration-300",
-										isActive
-											? "opacity-100"
-											: "opacity-0 group-hover:opacity-100"
-									)}
-									style={{
-										background: isActive && themeGradient
-											? `linear-gradient(90deg, ${themeGradient.from}, ${themeGradient.to})`
-											: isActive
-												? "hsl(var(--primary))"
-												: "hsl(var(--muted-foreground) / 0.3)",
-									}}
-								/>
+								{/* Active indicator - animated underline with layoutId for sliding effect */}
+								{isActive && (
+									<motion.span
+										layoutId="dashboard-tab-indicator"
+										className="absolute bottom-0 left-0 right-0 h-0.5"
+										style={{
+											background: themeGradient
+												? `linear-gradient(90deg, ${themeGradient.from}, ${themeGradient.to})`
+												: "hsl(var(--primary))",
+										}}
+										transition={springs.snappy}
+									/>
+								)}
+								{/* Hover indicator for non-active tabs */}
+								{!isActive && (
+									<span
+										className="absolute bottom-0 left-0 right-0 h-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+										style={{
+											background: "hsl(var(--muted-foreground) / 0.3)",
+										}}
+									/>
+								)}
 
 								{/* Hover glow effect */}
 								<span
@@ -138,10 +150,11 @@ export const DashboardTabs = ({
 												: "hsl(var(--muted) / 0.3)",
 									}}
 								/>
-							</button>
+							</motion.button>
 						);
 					})}
-				</nav>
+					</nav>
+				</LayoutGroup>
 			</div>
 		</div>
 	);

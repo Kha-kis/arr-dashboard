@@ -1,10 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useFocusTrap } from "../../../hooks/useFocusTrap";
 import { X, Loader2, FolderOpen, Download, CheckSquare, XSquare, Filter, AlertTriangle } from "lucide-react";
+import { PremiumSkeleton } from "../../../components/layout/premium-components";
 import { Button } from "../../../components/ui/button";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useManualImportQuery } from "../../../hooks/api/useManualImport";
 import type { ManualImportModalProps, ManualImportCandidateUnion } from "../types";
 import { candidateKey, describeRejections } from "../helpers";
@@ -23,10 +25,10 @@ const importModeOptions = [
 
 type ImportMode = (typeof importModeOptions)[number]["value"];
 
-// Service-specific colors
+// Use centralized service colors
 const SERVICE_COLORS = {
-	sonarr: "#06b6d4", // Cyan
-	radarr: "#f97316", // Orange
+	sonarr: SERVICE_GRADIENTS.sonarr.from,
+	radarr: SERVICE_GRADIENTS.radarr.from,
 } as const;
 
 /**
@@ -48,10 +50,10 @@ export const ManualImportModal = ({
 	onOpenChange,
 	onCompleted,
 }: ManualImportModalProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const serviceColor = SERVICE_COLORS[service] ?? themeGradient.from;
 	const { selections, toggleSelection, clear } = useManualImportStore();
+	const focusTrapRef = useFocusTrap<HTMLDivElement>(open, () => onOpenChange(false));
 	const [showSelectedOnly, setShowSelectedOnly] = useState(false);
 	const [importMode, setImportMode] = useState<ImportMode>("auto");
 	const [isFocused, setIsFocused] = useState(false);
@@ -187,12 +189,16 @@ export const ManualImportModal = ({
 		<div
 			className="fixed inset-0 z-modal-backdrop flex items-center justify-center p-4 animate-in fade-in duration-200"
 			onClick={() => handleClose(false)}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="manual-import-title"
 		>
 			{/* Backdrop */}
 			<div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
 
 			{/* Modal */}
 			<div
+				ref={focusTrapRef}
 				className="relative w-full max-w-5xl max-h-[90vh] overflow-hidden rounded-2xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
 				style={{
 					boxShadow: `0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px ${serviceColor}15`,
@@ -204,6 +210,7 @@ export const ManualImportModal = ({
 					type="button"
 					onClick={() => handleClose(false)}
 					disabled={isPending}
+					aria-label="Close modal"
 					className="absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-lg bg-black/50 text-white/70 transition-colors hover:bg-black/70 hover:text-white disabled:opacity-50"
 				>
 					<X className="h-4 w-4" />
@@ -227,7 +234,7 @@ export const ManualImportModal = ({
 							<FolderOpen className="h-6 w-6" style={{ color: serviceColor }} />
 						</div>
 						<div>
-							<h2 className="text-xl font-bold text-foreground">
+							<h2 id="manual-import-title" className="text-xl font-bold text-foreground">
 								Manual Import - {instanceName}
 							</h2>
 							<p className="text-sm text-muted-foreground">
@@ -395,9 +402,15 @@ export const ManualImportModal = ({
 				{/* Candidate List */}
 				<div className="px-6 py-4 max-h-[420px] overflow-y-auto space-y-2">
 					{query.isLoading && (
-						<div className="flex flex-col items-center justify-center py-12 text-center">
-							<Loader2 className="h-8 w-8 animate-spin mb-3" style={{ color: themeGradient.from }} />
-							<p className="text-sm text-muted-foreground">Loading manual import candidates...</p>
+						<div className="space-y-2">
+							{Array.from({ length: 5 }).map((_, i) => (
+								<PremiumSkeleton
+									key={i}
+									variant="card"
+									className="h-20"
+									style={{ animationDelay: `${i * 50}ms` }}
+								/>
+							))}
 						</div>
 					)}
 

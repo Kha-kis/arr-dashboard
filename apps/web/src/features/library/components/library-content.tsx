@@ -168,7 +168,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 					{grouped.movies.length > 0 ? (
 						<section className="space-y-4">
 							<div className="flex items-center justify-between">
-								<h2 className="text-xl font-semibold text-fg">Movies</h2>
+								<h2 className="text-xl font-semibold text-foreground">Movies</h2>
 							</div>
 							<div className="grid gap-4 lg:grid-cols-2">
 								{grouped.movies.map((item) => (
@@ -190,7 +190,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 					{grouped.series.length > 0 ? (
 						<section className="space-y-4">
 							<div className="flex items-center justify-between">
-								<h2 className="text-xl font-semibold text-fg">Series</h2>
+								<h2 className="text-xl font-semibold text-foreground">Series</h2>
 							</div>
 							<div className="grid gap-4 lg:grid-cols-2">
 								{grouped.series.map((item) => (

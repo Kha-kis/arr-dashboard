@@ -2,10 +2,10 @@
 
 import { useState } from "react";
 import { useQualityProfiles } from "../../../../hooks/api/useQualityProfiles";
-import { Alert, AlertDescription, EmptyState, Skeleton, Card, CardHeader, CardTitle, CardDescription, CardContent, Button } from "../../../../components/ui";
+import { Alert, AlertDescription, EmptyState, Card, CardHeader, CardTitle, CardDescription, CardContent, Button } from "../../../../components/ui";
+import { PremiumSkeleton } from "../../../../components/layout/premium-components";
 import { FileText, Star, Languages, Gauge, Info, Download, Layers } from "lucide-react";
-import { THEME_GRADIENTS } from "../../../../lib/theme-gradients";
-import { useColorTheme } from "../../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../../hooks/useThemeGradient";
 import { createSanitizedHtml } from "../../../../lib/sanitize-html";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import type { CompleteQualityProfile } from "@arr/shared";
@@ -20,8 +20,7 @@ export const QualityProfileSelection = ({
 	serviceType,
 	onSelect,
 }: QualityProfileSelectionProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const [showCloneImporter, setShowCloneImporter] = useState(false);
 	const { data, isLoading, error } = useQualityProfiles(serviceType);
 
@@ -60,10 +59,14 @@ export const QualityProfileSelection = ({
 	if (isLoading) {
 		return (
 			<div className="grid gap-4 md:grid-cols-2">
-				<Skeleton className="h-48" />
-				<Skeleton className="h-48" />
-				<Skeleton className="h-48" />
-				<Skeleton className="h-48" />
+				{Array.from({ length: 4 }).map((_, i) => (
+					<PremiumSkeleton
+						key={i}
+						variant="card"
+						className="h-48"
+						style={{ animationDelay: `${i * 50}ms` }}
+					/>
+				))}
 			</div>
 		);
 	}
@@ -94,8 +97,8 @@ export const QualityProfileSelection = ({
 			<div className="space-y-4">
 				<div className="flex items-center justify-between">
 					<div>
-						<h3 className="text-lg font-semibold text-fg">Clone from Instance</h3>
-						<p className="text-sm text-fg-muted mt-1">
+						<h3 className="text-lg font-semibold text-foreground">Clone from Instance</h3>
+						<p className="text-sm text-muted-foreground mt-1">
 							Import a complete quality profile from an existing *arr instance
 						</p>
 					</div>
@@ -135,8 +138,8 @@ export const QualityProfileSelection = ({
 								<Layers className="h-5 w-5 text-primary" />
 							</div>
 							<div className="flex-1">
-								<div className="font-medium text-fg">TRaSH Guides Profiles</div>
-								<div className="text-xs text-fg-muted mt-0.5">
+								<div className="font-medium text-foreground">TRaSH Guides Profiles</div>
+								<div className="text-xs text-muted-foreground mt-0.5">
 									Expert-curated configurations (selected)
 								</div>
 							</div>
@@ -157,8 +160,8 @@ export const QualityProfileSelection = ({
 								<Download className="h-5 w-5" style={{ color: themeGradient.from }} />
 							</div>
 							<div className="flex-1">
-								<div className="font-medium text-fg">Clone from Instance</div>
-								<div className="text-xs text-fg-muted mt-0.5">
+								<div className="font-medium text-foreground">Clone from Instance</div>
+								<div className="text-xs text-muted-foreground mt-0.5">
 									Import from existing *arr instance
 								</div>
 							</div>
@@ -194,7 +197,7 @@ export const QualityProfileSelection = ({
 
 						<CardContent>
 							<div className="space-y-3">
-								<div className="flex flex-wrap gap-3 text-xs text-fg-muted">
+								<div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
 									<span className="inline-flex items-center gap-1">
 										<Star className="h-3 w-3" />
 										{profile.customFormatCount} formats
@@ -212,12 +215,12 @@ export const QualityProfileSelection = ({
 								</div>
 
 								<div className="flex items-center justify-between text-xs">
-									<span className="text-fg-muted">Cutoff: {profile.cutoff}</span>
+									<span className="text-muted-foreground">Cutoff: {profile.cutoff}</span>
 									<span
 										className={`rounded px-2 py-1 ${
 											profile.upgradeAllowed
 												? "bg-green-500/20 text-green-300"
-												: "bg-bg-hover text-fg-muted"
+												: "bg-muted text-muted-foreground"
 										}`}
 									>
 										{profile.upgradeAllowed ? "Upgrades On" : "Upgrades Off"}

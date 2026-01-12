@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "../../../components/ui";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { OPTION_STYLE } from "../../settings/lib/settings-constants";
 import { SORT_OPTIONS, type SortKey } from "../lib/search-utils";
 
@@ -38,8 +37,7 @@ export const SortControls = ({
 	onSortKeyChange,
 	onSortDirectionChange,
 }: SortControlsProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const [isFocused, setIsFocused] = useState(false);
 	const [isHovered, setIsHovered] = useState(false);
 
@@ -52,7 +50,7 @@ export const SortControls = ({
 	return (
 		<div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
 			<div>
-				<label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-fg-muted">
+				<label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-muted-foreground">
 					Sort results by
 				</label>
 				<select
@@ -62,7 +60,7 @@ export const SortControls = ({
 					onBlur={() => setIsFocused(false)}
 					onMouseEnter={() => setIsHovered(true)}
 					onMouseLeave={() => setIsHovered(false)}
-					className="w-full rounded-md border border-border bg-bg-subtle px-3 py-2 text-sm text-fg transition-all duration-200 focus:outline-none"
+					className="w-full rounded-md border border-border bg-card px-3 py-2 text-sm text-foreground transition-all duration-200 focus:outline-none"
 					style={selectStyle}
 				>
 					{SORT_OPTIONS.map((option) => (
@@ -74,7 +72,7 @@ export const SortControls = ({
 			</div>
 
 			<div className="flex flex-col justify-end gap-2">
-				<label className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
+				<label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
 					Sort direction
 				</label>
 				<div className="flex gap-2">

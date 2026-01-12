@@ -18,15 +18,14 @@ import { useTrashGuidesActions } from "../hooks/use-trash-guides-actions";
 import { useTrashGuidesModals } from "../hooks/use-trash-guides-modals";
 import { CONFIG_TYPE_LABELS } from "../lib/constants";
 import { useCurrentUser } from "../../../hooks/api/useAuth";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 /**
  * Premium Loading Skeleton for TRaSH Guides
  */
 const PremiumSkeleton = () => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
 		<div className="space-y-8 animate-in fade-in duration-500">
@@ -90,8 +89,7 @@ const PremiumSkeleton = () => {
  * - Smooth animations
  */
 export const TrashGuidesClient = () => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	// Get current user
 	const { data: currentUser, isLoading: isAuthLoading } = useCurrentUser();

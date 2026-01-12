@@ -2,8 +2,7 @@
 
 import * as React from "react"
 import { cn } from "@/lib/utils"
-import { useColorTheme } from "../../providers/color-theme-provider"
-import { THEME_GRADIENTS } from "../../lib/theme-gradients"
+import { useThemeGradient } from "../../hooks/useThemeGradient"
 
 /**
  * Premium Table Container
@@ -88,8 +87,7 @@ interface TableRowProps extends React.HTMLAttributes<HTMLTableRowElement> {
  */
 const TableRow = React.forwardRef<HTMLTableRowElement, TableRowProps>(
   ({ className, premium = false, isSelected = false, ...props }, ref) => {
-    const { colorTheme } = useColorTheme()
-    const themeGradient = THEME_GRADIENTS[colorTheme]
+    const { gradient: themeGradient } = useThemeGradient()
 
     return (
       <tr

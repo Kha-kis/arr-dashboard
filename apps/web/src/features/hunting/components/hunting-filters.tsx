@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { ChevronDown, ChevronUp, Filter, X, Check } from "lucide-react";
-import { Button, Input, Switch, Badge, Skeleton } from "../../../components/ui";
+import { Button, Input, Switch, Badge } from "../../../components/ui";
+import { PremiumSkeleton } from "../../../components/layout";
 import { useFilterOptions } from "../hooks/useFilterOptions";
 import type { HuntConfigWithInstance, HuntConfigUpdate } from "../lib/hunting-types";
 import { cn } from "../../../lib/utils";
@@ -74,16 +75,16 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 				className="w-full flex items-center justify-between text-left"
 			>
 				<div className="flex items-center gap-2">
-					<Filter className="h-4 w-4 text-fg-muted" />
-					<span className="font-medium text-fg">Filters</span>
+					<Filter className="h-4 w-4 text-muted-foreground" />
+					<span className="font-medium text-foreground">Filters</span>
 					{hasActiveFilters && (
 						<Badge variant="info" size="sm">Active</Badge>
 					)}
 				</div>
 				{expanded ? (
-					<ChevronUp className="h-4 w-4 text-fg-muted" />
+					<ChevronUp className="h-4 w-4 text-muted-foreground" />
 				) : (
-					<ChevronDown className="h-4 w-4 text-fg-muted" />
+					<ChevronDown className="h-4 w-4 text-muted-foreground" />
 				)}
 			</button>
 
@@ -91,16 +92,16 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 				<div className="mt-4 space-y-6">
 					{isLoading ? (
 						<div className="space-y-4">
-							<Skeleton className="h-8 w-full" />
-							<Skeleton className="h-20 w-full" />
-							<Skeleton className="h-20 w-full" />
+							<PremiumSkeleton variant="line" className="h-8 w-full" style={{ animationDelay: "0ms" }} />
+							<PremiumSkeleton variant="card" className="h-20" style={{ animationDelay: "50ms" }} />
+							<PremiumSkeleton variant="card" className="h-20" style={{ animationDelay: "100ms" }} />
 						</div>
 					) : (
 						<>
 							{/* Filter Logic & Monitored */}
 							<div className="grid grid-cols-2 gap-4">
 								<div className="space-y-2">
-									<label className="text-xs text-fg-muted">Filter Logic</label>
+									<label className="text-xs text-muted-foreground">Filter Logic</label>
 									<div className="flex gap-2">
 										<Button
 											type="button"
@@ -119,22 +120,22 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 											OR
 										</Button>
 									</div>
-									<p className="text-xs text-fg-muted">
+									<p className="text-xs text-muted-foreground">
 										{filterLogic === "AND" ? "All conditions must match" : "Any condition can match"}
 									</p>
 								</div>
 								<div className="space-y-2">
-									<label className="text-xs text-fg-muted">Monitored Only</label>
+									<label className="text-xs text-muted-foreground">Monitored Only</label>
 									<div className="flex items-center gap-2">
 										<Switch
 											checked={monitoredOnly}
 											onCheckedChange={(checked) => onChange({ monitoredOnly: checked })}
 										/>
-										<span className="text-sm text-fg">
+										<span className="text-sm text-foreground">
 											{monitoredOnly ? "Yes" : "No"}
 										</span>
 									</div>
-									<p className="text-xs text-fg-muted">
+									<p className="text-xs text-muted-foreground">
 										Only hunt monitored content
 									</p>
 								</div>
@@ -143,12 +144,12 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 							{/* Tags */}
 							{filterOptions && filterOptions.tags.length > 0 && (
 								<div className="space-y-3">
-									<label className="text-xs text-fg-muted">Tags</label>
+									<label className="text-xs text-muted-foreground">Tags</label>
 									<div className="space-y-2">
 										<div className="flex items-center gap-2 mb-1">
 											<span className="text-xs text-green-500 font-medium">Include:</span>
 											{includeTags.length === 0 && (
-												<span className="text-xs text-fg-muted">Any tag</span>
+												<span className="text-xs text-muted-foreground">Any tag</span>
 											)}
 										</div>
 										<div className="flex flex-wrap gap-1.5">
@@ -172,7 +173,7 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 										<div className="flex items-center gap-2 mb-1 mt-3">
 											<span className="text-xs text-red-500 font-medium">Exclude:</span>
 											{excludeTags.length === 0 && (
-												<span className="text-xs text-fg-muted">None</span>
+												<span className="text-xs text-muted-foreground">None</span>
 											)}
 										</div>
 										<div className="flex flex-wrap gap-1.5">
@@ -200,12 +201,12 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 							{/* Quality Profiles */}
 							{filterOptions && filterOptions.qualityProfiles.length > 0 && (
 								<div className="space-y-3">
-									<label className="text-xs text-fg-muted">Quality Profiles</label>
+									<label className="text-xs text-muted-foreground">Quality Profiles</label>
 									<div className="space-y-2">
 										<div className="flex items-center gap-2 mb-1">
 											<span className="text-xs text-green-500 font-medium">Include:</span>
 											{includeQualityProfiles.length === 0 && (
-												<span className="text-xs text-fg-muted">Any profile</span>
+												<span className="text-xs text-muted-foreground">Any profile</span>
 											)}
 										</div>
 										<div className="flex flex-wrap gap-1.5">
@@ -228,7 +229,7 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 										<div className="flex items-center gap-2 mb-1 mt-3">
 											<span className="text-xs text-red-500 font-medium">Exclude:</span>
 											{excludeQualityProfiles.length === 0 && (
-												<span className="text-xs text-fg-muted">None</span>
+												<span className="text-xs text-muted-foreground">None</span>
 											)}
 										</div>
 										<div className="flex flex-wrap gap-1.5">
@@ -255,7 +256,7 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 							{/* Status */}
 							{filterOptions && filterOptions.statuses.length > 0 && (
 								<div className="space-y-2">
-									<label className="text-xs text-fg-muted">Status</label>
+									<label className="text-xs text-muted-foreground">Status</label>
 									<div className="flex flex-wrap gap-1.5">
 										{filterOptions.statuses.map((status) => (
 											<TagButton
@@ -268,17 +269,17 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 										))}
 									</div>
 									{includeStatuses.length === 0 && (
-										<p className="text-xs text-fg-muted">Any status</p>
+										<p className="text-xs text-muted-foreground">Any status</p>
 									)}
 								</div>
 							)}
 
 							{/* Year Range */}
 							<div className="space-y-2">
-								<label className="text-xs text-fg-muted">Year Range</label>
+								<label className="text-xs text-muted-foreground">Year Range</label>
 								<div className="grid grid-cols-2 gap-4">
 									<div className="space-y-1">
-										<label className="text-xs text-fg-muted">From</label>
+										<label className="text-xs text-muted-foreground">From</label>
 										<Input
 											type="number"
 											placeholder="Min"
@@ -291,7 +292,7 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 										/>
 									</div>
 									<div className="space-y-1">
-										<label className="text-xs text-fg-muted">To</label>
+										<label className="text-xs text-muted-foreground">To</label>
 										<Input
 											type="number"
 											placeholder="Max"
@@ -308,7 +309,7 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 
 							{/* Age Threshold */}
 							<div className="space-y-2">
-								<label className="text-xs text-fg-muted">Age Threshold (Days)</label>
+								<label className="text-xs text-muted-foreground">Age Threshold (Days)</label>
 								<div className="flex items-center gap-2">
 									<Input
 										type="number"
@@ -321,9 +322,9 @@ export const HuntingFilters = ({ config, formState, onChange }: HuntingFiltersPr
 										})}
 										className="w-32"
 									/>
-									<span className="text-sm text-fg-muted">days old</span>
+									<span className="text-sm text-muted-foreground">days old</span>
 								</div>
-								<p className="text-xs text-fg-muted">
+								<p className="text-xs text-muted-foreground">
 									Skip content released within this many days (wait for better releases)
 								</p>
 							</div>
@@ -381,7 +382,7 @@ const TagButton = ({ label, selected, excluded, onClick, variant }: TagButtonPro
 				"px-2.5 py-1 text-xs rounded-full border transition-all",
 				"flex items-center gap-1",
 				isDisabled && "opacity-40 cursor-not-allowed",
-				!selected && !isDisabled && "border-border bg-bg-subtle text-fg-muted hover:border-fg-muted",
+				!selected && !isDisabled && "border-border bg-card text-muted-foreground hover:border-muted-foreground",
 				selected && variant === "include" && "border-green-500 bg-green-500/10 text-green-500",
 				selected && variant === "exclude" && "border-red-500 bg-red-500/10 text-red-500",
 			)}

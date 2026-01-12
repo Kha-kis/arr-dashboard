@@ -26,8 +26,8 @@ import {
 	PremiumProgress,
 	GlassmorphicCard,
 } from "../../../components/layout";
-import { THEME_GRADIENTS, SERVICE_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SERVICE_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { HuntingStatus, InstanceHuntStatus } from "../lib/hunting-types";
 import { API_USAGE_WARNING_THRESHOLD, API_USAGE_DANGER_THRESHOLD } from "../lib/constants";
 import { useManualHunt } from "../hooks/useManualHunt";
@@ -46,8 +46,7 @@ interface HuntingOverviewProps {
  * - Theme-aware progress bars for API usage
  */
 export const HuntingOverview = ({ status, onRefresh }: HuntingOverviewProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	if (!status || status.instances.length === 0) {
 		return (
@@ -134,8 +133,7 @@ interface HuntDropdownProps {
 }
 
 const HuntDropdown = ({ instance, isTriggering, onTrigger }: HuntDropdownProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const [isOpen, setIsOpen] = useState(false);
 
 	const handleSelect = (type: "missing" | "upgrade") => {
@@ -166,10 +164,10 @@ const HuntDropdown = ({ instance, isTriggering, onTrigger }: HuntDropdownProps) 
 			{isOpen && (
 				<>
 					{/* Backdrop */}
-					<div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} />
+					<div className="fixed inset-0 z-modal-backdrop" onClick={() => setIsOpen(false)} />
 
 					{/* Dropdown menu */}
-					<div className="absolute right-0 mt-2 min-w-[180px] rounded-xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl z-50 overflow-hidden">
+					<div className="absolute right-0 mt-2 min-w-[180px] rounded-xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl z-modal overflow-hidden">
 						{instance.huntMissingEnabled && (
 							<button
 								type="button"
@@ -231,8 +229,7 @@ interface InstanceStatusCardProps {
 }
 
 const InstanceStatusCard = ({ instance, onRefresh, animationDelay = 0 }: InstanceStatusCardProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const isActive = instance.huntMissingEnabled || instance.huntUpgradesEnabled;
 	const { triggerHunt, isTriggering, isCooldownError } = useManualHunt();

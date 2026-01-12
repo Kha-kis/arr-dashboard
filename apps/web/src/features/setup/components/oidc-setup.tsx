@@ -1,12 +1,16 @@
 "use client";
 
 import { useState } from "react";
+import { Zap, Loader2 } from "lucide-react";
 import { apiRequest } from "../../../lib/api-client/base";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Alert, AlertDescription } from "../../../components/ui";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 export const OIDCSetup = () => {
+	const { gradient: themeGradient } = useThemeGradient();
+
 	const [formState, setFormState] = useState({
 		displayName: "",
 		clientId: "",
@@ -64,48 +68,52 @@ export const OIDCSetup = () => {
 	return (
 		<form className="space-y-4" onSubmit={handleSubmit}>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-white/60">Display Name</label>
+				<label className="text-xs uppercase text-muted-foreground font-medium">Display Name</label>
 				<Input
 					value={formState.displayName}
 					onChange={(e) => setFormState({ ...formState, displayName: e.target.value })}
 					placeholder="e.g., My Auth Server"
 					required
 					autoFocus
+					className="rounded-xl"
 				/>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-white/60">Client ID</label>
+				<label className="text-xs uppercase text-muted-foreground font-medium">Client ID</label>
 				<Input
 					value={formState.clientId}
 					onChange={(e) => setFormState({ ...formState, clientId: e.target.value })}
 					placeholder="OAuth client ID"
 					required
+					className="rounded-xl"
 				/>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-white/60">Client Secret</label>
+				<label className="text-xs uppercase text-muted-foreground font-medium">Client Secret</label>
 				<Input
 					type="password"
 					value={formState.clientSecret}
 					onChange={(e) => setFormState({ ...formState, clientSecret: e.target.value })}
 					placeholder="OAuth client secret"
 					required
+					className="rounded-xl"
 				/>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-white/60">Issuer URL</label>
+				<label className="text-xs uppercase text-muted-foreground font-medium">Issuer URL</label>
 				<Input
 					value={formState.issuer}
 					onChange={(e) => setFormState({ ...formState, issuer: e.target.value })}
 					placeholder="https://auth.example.com"
 					required
+					className="rounded-xl"
 				/>
-				<p className="text-xs text-white/50">
+				<p className="text-xs text-muted-foreground">
 					The base URL of your OIDC provider (issuer URL from provider config)
 				</p>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-white/60">Redirect URI</label>
+				<label className="text-xs uppercase text-muted-foreground font-medium">Redirect URI</label>
 				<Input
 					value={formState.redirectUri}
 					onChange={(e) => setFormState({ ...formState, redirectUri: e.target.value })}
@@ -114,17 +122,19 @@ export const OIDCSetup = () => {
 							? `${window.location.origin}/auth/oidc/callback`
 							: "/auth/oidc/callback"
 					}
+					className="rounded-xl"
 				/>
-				<p className="text-xs text-white/50">
+				<p className="text-xs text-muted-foreground">
 					Leave empty to auto-detect. Must match the redirect URI configured in your OIDC provider.
 				</p>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-white/60">Scopes (comma-separated)</label>
+				<label className="text-xs uppercase text-muted-foreground font-medium">Scopes (comma-separated)</label>
 				<Input
 					value={formState.scopes}
 					onChange={(e) => setFormState({ ...formState, scopes: e.target.value })}
 					placeholder="openid,email,profile"
+					className="rounded-xl"
 				/>
 			</div>
 			{error && (
@@ -132,10 +142,28 @@ export const OIDCSetup = () => {
 					<AlertDescription>{error}</AlertDescription>
 				</Alert>
 			)}
-			<Button type="submit" disabled={isSubmitting} className="w-full">
-				{isSubmitting ? "Configuring..." : "Continue with OIDC"}
+			<Button
+				type="submit"
+				disabled={isSubmitting}
+				className="w-full gap-2 rounded-xl font-medium"
+				style={{
+					background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+					boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
+				}}
+			>
+				{isSubmitting ? (
+					<>
+						<Loader2 className="h-4 w-4 animate-spin" />
+						Configuring...
+					</>
+				) : (
+					<>
+						<Zap className="h-4 w-4" />
+						Continue with OIDC
+					</>
+				)}
 			</Button>
-			<p className="text-xs text-white/50 text-center">
+			<p className="text-xs text-muted-foreground text-center">
 				You&apos;ll be redirected to your OIDC provider to complete authentication. The first user
 				will become an admin.
 			</p>

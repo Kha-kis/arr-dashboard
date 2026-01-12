@@ -4,8 +4,7 @@ import { useState } from "react";
 import { RefreshCw, Clock, AlertCircle, CheckCircle2, ChevronDown, ChevronUp, History } from "lucide-react";
 import type { TemplateUpdateInfo } from "../../../lib/api-client/trash-guides";
 import { cn } from "../../../lib/utils";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { TemplateDiffModal } from "./template-diff-modal";
 
 interface TemplateUpdateBannerProps {
@@ -33,8 +32,7 @@ export const TemplateUpdateBanner = ({
 	update,
 	onSyncSuccess,
 }: TemplateUpdateBannerProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const [showDetails, setShowDetails] = useState(false);
 	const [showDiffModal, setShowDiffModal] = useState(false);
 
@@ -91,7 +89,7 @@ export const TemplateUpdateBanner = ({
 				)}
 
 				{/* Message */}
-				<span className="text-sm font-medium text-fg">
+				<span className="text-sm font-medium text-foreground">
 					{isRecentlyAutoSynced ? "Recently Auto-Synced" : "Update Available"}
 				</span>
 
@@ -122,7 +120,7 @@ export const TemplateUpdateBanner = ({
 				<button
 					type="button"
 					onClick={() => setShowDetails(!showDetails)}
-					className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-fg-muted hover:text-fg hover:bg-bg-subtle rounded transition-colors shrink-0"
+					className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-card rounded transition-colors shrink-0"
 				>
 					{showDetails ? (
 						<>
@@ -162,11 +160,11 @@ export const TemplateUpdateBanner = ({
 					)}
 					style={!isRecentlyAutoSynced ? { borderColor: themeGradient.fromMuted } : undefined}
 				>
-					<div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-fg-muted">
+					<div className="flex flex-wrap gap-x-6 gap-y-2 text-xs text-muted-foreground">
 						<div className="flex items-center gap-1.5">
 							<Clock className="h-3 w-3" />
 							<span>{isRecentlyAutoSynced ? "Version:" : "Current:"}</span>
-							<code className="px-1.5 py-0.5 rounded bg-black/10 dark:bg-white/10 font-mono text-fg">
+							<code className="px-1.5 py-0.5 rounded bg-black/10 dark:bg-white/10 font-mono text-foreground">
 								{update.currentCommit?.substring(0, 8) || "unknown"}
 							</code>
 						</div>
@@ -174,7 +172,7 @@ export const TemplateUpdateBanner = ({
 							<div className="flex items-center gap-1.5">
 								<RefreshCw className="h-3 w-3" />
 								<span>Latest:</span>
-								<code className="px-1.5 py-0.5 rounded bg-black/10 dark:bg-white/10 font-mono text-fg">
+								<code className="px-1.5 py-0.5 rounded bg-black/10 dark:bg-white/10 font-mono text-foreground">
 									{update.latestCommit.substring(0, 8)}
 								</code>
 							</div>

@@ -4,8 +4,8 @@ import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
-import { useColorTheme } from "../../providers/color-theme-provider"
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../lib/theme-gradients"
+import { useThemeGradient } from "../../hooks/useThemeGradient"
+import { SEMANTIC_COLORS } from "../../lib/theme-gradients"
 
 /**
  * Premium Badge Variants
@@ -78,8 +78,7 @@ export interface BadgeProps
  * ```
  */
 function Badge({ className, variant, size, glow, pulse, style, ...props }: BadgeProps) {
-  const { colorTheme } = useColorTheme()
-  const themeGradient = THEME_GRADIENTS[colorTheme]
+  const { gradient: themeGradient } = useThemeGradient()
 
   // Dynamic styles based on variant
   const getVariantStyles = (): React.CSSProperties | undefined => {

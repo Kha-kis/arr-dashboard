@@ -4,8 +4,7 @@ import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
-import { useColorTheme } from "../../providers/color-theme-provider"
-import { THEME_GRADIENTS } from "../../lib/theme-gradients"
+import { useThemeGradient } from "../../hooks/useThemeGradient"
 
 /**
  * Premium Card Variants
@@ -101,8 +100,7 @@ export interface CardProps
  */
 const Card = React.forwardRef<HTMLDivElement, CardProps>(
   ({ className, variant, hover, animationDelay, glow, style, ...props }, ref) => {
-    const { colorTheme } = useColorTheme()
-    const themeGradient = THEME_GRADIENTS[colorTheme]
+    const { gradient: themeGradient } = useThemeGradient()
 
     // Calculate animation delay in ms (50ms per index)
     const delayMs = animationDelay ? animationDelay * 50 : 0
@@ -155,8 +153,7 @@ interface CardHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
 
 const CardHeader = React.forwardRef<HTMLDivElement, CardHeaderProps>(
   ({ className, accent, ...props }, ref) => {
-    const { colorTheme } = useColorTheme()
-    const themeGradient = THEME_GRADIENTS[colorTheme]
+    const { gradient: themeGradient } = useThemeGradient()
 
     return (
       <div

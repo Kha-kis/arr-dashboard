@@ -176,6 +176,9 @@ export {
 // Simple form field for non-react-hook-form usage
 export { SimpleFormField } from "./simple-form-field";
 
+// Password input with show/hide toggle
+export { PasswordInput } from "./password-input";
+
 // ========================================
 // Custom Components (arr-dashboard specific)
 // ========================================

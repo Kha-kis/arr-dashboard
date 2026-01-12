@@ -4,6 +4,7 @@ import { useState, useMemo } from "react";
 import {
 	toast,
 } from "../../../components/ui";
+import { PremiumSkeleton } from "../../../components/layout";
 import {
 	Search,
 	Package,
@@ -25,15 +26,16 @@ import { useCustomFormats, useCFDescriptions, useCFIncludes, useDeployMultipleCu
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import type { CustomFormat } from "../../../lib/api-client/custom-formats";
 import { cleanDescription, markdownToFormattedHtml, resolveIncludes, buildIncludesMap } from "../lib/description-utils";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 /**
  * Service-specific colors for Radarr/Sonarr identification
+ * Using centralized SERVICE_GRADIENTS
  */
 const SERVICE_COLORS = {
-	RADARR: { from: "#f97316", to: "#ea580c", glow: "rgba(249, 115, 22, 0.5)" },
-	SONARR: { from: "#06b6d4", to: "#0891b2", glow: "rgba(6, 182, 212, 0.5)" },
+	RADARR: SERVICE_GRADIENTS.radarr,
+	SONARR: SERVICE_GRADIENTS.sonarr,
 };
 
 /**
@@ -73,8 +75,7 @@ const CustomFormatCard = ({
 	onViewDetails: () => void;
 	index: number;
 }) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const serviceColors = SERVICE_COLORS[format.service];
 
 	return (
@@ -87,7 +88,17 @@ const CustomFormatCard = ({
 				animationDelay: `${index * 30}ms`,
 				animationFillMode: "backwards",
 			}}
+			role="button"
+			tabIndex={0}
 			onClick={onToggle}
+			onKeyDown={(e) => {
+				if (e.key === "Enter" || e.key === " ") {
+					e.preventDefault();
+					onToggle();
+				}
+			}}
+			aria-pressed={isSelected}
+			aria-label={`${isSelected ? "Deselect" : "Select"} custom format: ${format.name}`}
 		>
 			{/* Selection indicator bar */}
 			{isSelected && (
@@ -197,8 +208,7 @@ const SanitizedDescription = ({ html }: { html: string }) => {
  * - Premium deploy modal
  */
 export const CustomFormatsBrowser = () => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const [selectedService, setSelectedService] = useState<"RADARR" | "SONARR" | "ALL">("ALL");
 	const [searchQuery, setSearchQuery] = useState("");
@@ -407,23 +417,23 @@ export const CustomFormatsBrowser = () => {
 				<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-6">
 					<div className="space-y-4">
 						<div className="flex items-center gap-4">
-							<div className="h-12 w-12 rounded-xl bg-muted/30 animate-pulse" />
+							<PremiumSkeleton variant="card" className="h-12 w-12 rounded-xl" />
 							<div className="space-y-2 flex-1">
-								<div className="h-6 w-48 rounded-lg bg-muted/30 animate-pulse" />
-								<div className="h-4 w-96 rounded bg-muted/20 animate-pulse" />
+								<PremiumSkeleton variant="line" className="h-6 w-48" style={{ animationDelay: "50ms" }} />
+								<PremiumSkeleton variant="line" className="h-4 w-96" style={{ animationDelay: "100ms" }} />
 							</div>
 						</div>
 						<div className="flex gap-4">
-							<div className="h-10 w-40 rounded-xl bg-muted/20 animate-pulse" />
-							<div className="h-10 flex-1 rounded-xl bg-muted/20 animate-pulse" />
-							<div className="h-10 w-32 rounded-xl bg-muted/20 animate-pulse" />
+							<PremiumSkeleton variant="card" className="h-10 w-40 rounded-xl" style={{ animationDelay: "150ms" }} />
+							<PremiumSkeleton variant="card" className="h-10 flex-1 rounded-xl" style={{ animationDelay: "200ms" }} />
+							<PremiumSkeleton variant="card" className="h-10 w-32 rounded-xl" style={{ animationDelay: "250ms" }} />
 						</div>
 					</div>
 				</div>
 				{/* Cards Skeleton */}
 				<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
 					{Array.from({ length: 6 }).map((_, i) => (
-						<div key={i} className="h-56 rounded-2xl bg-muted/20 animate-pulse" />
+						<PremiumSkeleton key={i} variant="card" className="h-56 rounded-2xl" style={{ animationDelay: `${(i + 6) * 50}ms` }} />
 					))}
 				</div>
 			</div>
@@ -519,8 +529,8 @@ export const CustomFormatsBrowser = () => {
 								placeholder="Search custom formats..."
 								value={searchQuery}
 								onChange={(e) => setSearchQuery(e.target.value)}
-								className="w-full rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 pl-10 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 transition-all"
-								style={{ ["--tw-ring-color" as string]: themeGradient.from }}
+								className="w-full rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 transition-all"
+								style={{ ["--tw-ring-color" as string]: themeGradient.from, paddingLeft: "2.5rem" }}
 							/>
 						</div>
 
@@ -596,7 +606,12 @@ export const CustomFormatsBrowser = () => {
 
 			{/* Deploy Dialog */}
 			{deployDialogOpen && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center">
+				<div
+					className="fixed inset-0 z-modal flex items-center justify-center"
+					role="dialog"
+					aria-modal="true"
+					aria-labelledby="deploy-cf-title"
+				>
 					{/* Backdrop */}
 					<div
 						className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
@@ -621,7 +636,7 @@ export const CustomFormatsBrowser = () => {
 									<Download className="h-5 w-5" style={{ color: themeGradient.from }} />
 								</div>
 								<div>
-									<h3 className="text-lg font-bold text-foreground">Deploy Custom Formats</h3>
+									<h3 id="deploy-cf-title" className="text-lg font-bold text-foreground">Deploy Custom Formats</h3>
 									<p className="text-sm text-muted-foreground">
 										{selectedFormats.size} format{selectedFormats.size !== 1 ? "s" : ""} selected
 									</p>
@@ -631,6 +646,7 @@ export const CustomFormatsBrowser = () => {
 								type="button"
 								onClick={() => setDeployDialogOpen(false)}
 								disabled={deployMutation.isPending}
+								aria-label="Close deploy dialog"
 								className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-card/80 transition-colors disabled:opacity-50"
 							>
 								<X className="h-5 w-5" />
@@ -737,7 +753,12 @@ export const CustomFormatsBrowser = () => {
 
 			{/* Details Dialog */}
 			{detailsDialogOpen && selectedFormatForDetails && (
-				<div className="fixed inset-0 z-50 flex items-center justify-center">
+				<div
+					className="fixed inset-0 z-modal flex items-center justify-center"
+					role="dialog"
+					aria-modal="true"
+					aria-labelledby="cf-details-title"
+				>
 					{/* Backdrop */}
 					<div
 						className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
@@ -762,13 +783,14 @@ export const CustomFormatsBrowser = () => {
 									<Palette className="h-5 w-5" style={{ color: SERVICE_COLORS[selectedFormatForDetails.service].from }} />
 								</div>
 								<div>
-									<h3 className="text-lg font-bold text-foreground">{selectedFormatForDetails.name}</h3>
+									<h3 id="cf-details-title" className="text-lg font-bold text-foreground">{selectedFormatForDetails.name}</h3>
 									<ServiceBadge service={selectedFormatForDetails.service} />
 								</div>
 							</div>
 							<button
 								type="button"
 								onClick={() => setDetailsDialogOpen(false)}
+								aria-label="Close details dialog"
 								className="rounded-lg p-2 text-muted-foreground hover:text-foreground hover:bg-card/80 transition-colors"
 							>
 								<X className="h-5 w-5" />

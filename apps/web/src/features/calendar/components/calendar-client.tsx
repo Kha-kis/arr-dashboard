@@ -4,7 +4,6 @@ import { useCallback, useMemo, useState, useEffect } from "react";
 import { useMultiInstanceCalendarQuery } from "../../../hooks/api/useDashboard";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { Alert, AlertDescription } from "../../../components/ui";
-import { AmbientGlow } from "../../../components/layout";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
 import { formatDateOnly } from "../lib/calendar-formatters";
 import { useCalendarState } from "../hooks/use-calendar-state";
@@ -13,6 +12,10 @@ import { CalendarHeader } from "./calendar-header";
 import { CalendarFilters } from "./calendar-filters";
 import { CalendarGrid } from "./calendar-grid";
 import { CalendarEventList } from "./calendar-event-list";
+import {
+	PremiumSkeleton,
+	GlassmorphicCard,
+} from "../../../components/layout";
 
 export const CalendarClient = () => {
 	const [mounted, setMounted] = useState(false);
@@ -53,34 +56,28 @@ export const CalendarClient = () => {
 	// Loading skeleton
 	if (!mounted || isLoading) {
 		return (
-			<section className="relative flex flex-col gap-8">
-				<AmbientGlow />
-				<div className="space-y-8 animate-in fade-in duration-500">
-					<div className="space-y-4">
-						<div className="h-8 w-48 rounded-lg bg-muted/50 animate-pulse" />
-						<div className="h-10 w-64 rounded-lg bg-muted/30 animate-pulse" />
-					</div>
-					<div className="rounded-2xl border border-border/30 bg-card/30 p-6">
-						<div className="grid grid-cols-7 gap-2">
-							{Array.from({ length: 35 }).map((_, i) => (
-								<div
-									key={i}
-									className="h-20 rounded-lg bg-muted/20 animate-pulse"
-									style={{ animationDelay: `${i * 20}ms` }}
-								/>
-							))}
-						</div>
-					</div>
+			<div className="space-y-8 animate-in fade-in duration-500">
+				<div className="space-y-4">
+					<PremiumSkeleton className="h-8 w-48" />
+					<PremiumSkeleton className="h-10 w-64" />
 				</div>
-			</section>
+				<GlassmorphicCard padding="md">
+					<div className="grid grid-cols-7 gap-2">
+						{Array.from({ length: 35 }).map((_, i) => (
+							<PremiumSkeleton
+								key={i}
+								className="h-20"
+								style={{ animationDelay: `${i * 20}ms` }}
+							/>
+						))}
+					</div>
+				</GlassmorphicCard>
+			</div>
 		);
 	}
 
 	return (
-		<section className="relative flex flex-col gap-8">
-			{/* Ambient background glow */}
-			<AmbientGlow />
-
+		<>
 			{/* Header with navigation */}
 			<CalendarHeader
 				monthStart={monthStart}
@@ -115,10 +112,7 @@ export const CalendarClient = () => {
 			)}
 
 			{/* Calendar Grid */}
-			<div
-				className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
-				style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
-			>
+			<GlassmorphicCard padding="sm" animationDelay={200}>
 				<CalendarGrid
 					days={daysInView}
 					currentMonth={monthStart}
@@ -127,7 +121,7 @@ export const CalendarClient = () => {
 					eventsByDate={eventsByDate}
 					className="min-h-[520px]"
 				/>
-			</div>
+			</GlassmorphicCard>
 
 			{/* Event List */}
 			<div
@@ -141,6 +135,6 @@ export const CalendarClient = () => {
 					onOpenExternal={handleOpenExternal}
 				/>
 			</div>
-		</section>
+		</>
 	);
 };

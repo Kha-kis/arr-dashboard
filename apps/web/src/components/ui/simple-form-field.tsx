@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { type ReactNode, type ReactElement, cloneElement, isValidElement, useId } from "react";
 import { cn } from "@/lib/utils";
 
 interface SimpleFormFieldProps {
@@ -18,6 +18,9 @@ interface SimpleFormFieldProps {
  *
  * Use this for basic form layouts outside of react-hook-form.
  * For react-hook-form integration, use the Form components from shadcn.
+ *
+ * This component automatically injects aria-invalid and aria-describedby
+ * into direct child input elements for accessibility compliance.
  *
  * @example
  * ```tsx
@@ -41,6 +44,24 @@ export function SimpleFormField({
   children,
   className,
 }: SimpleFormFieldProps) {
+  const generatedId = useId();
+  const errorId = `${generatedId}-error`;
+  const hintId = `${generatedId}-hint`;
+
+  // Build aria-describedby value based on what's visible
+  const describedBy = [
+    error ? errorId : null,
+    hint && !error ? hintId : null,
+  ].filter(Boolean).join(" ") || undefined;
+
+  // Inject aria attributes into the child input if it's a valid React element
+  const enhancedChildren = isValidElement(children)
+    ? cloneElement(children as ReactElement<{ "aria-invalid"?: boolean; "aria-describedby"?: string }>, {
+        "aria-invalid": !!error || undefined,
+        "aria-describedby": describedBy,
+      })
+    : children;
+
   return (
     <div className={cn("flex flex-col gap-1.5", className)}>
       <label
@@ -50,12 +71,12 @@ export function SimpleFormField({
         {label}
         {required && <span className="ml-1 text-destructive">*</span>}
       </label>
-      {children}
+      {enhancedChildren}
       {hint && !error && (
-        <p className="text-xs text-muted-foreground">{hint}</p>
+        <p id={hintId} className="text-xs text-muted-foreground">{hint}</p>
       )}
       {error && (
-        <p className="text-xs text-destructive">{error}</p>
+        <p id={errorId} className="text-xs text-destructive" role="alert">{error}</p>
       )}
     </div>
   );

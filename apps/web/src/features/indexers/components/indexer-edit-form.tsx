@@ -2,8 +2,8 @@
 
 import { Input } from "../../../components/ui/input";
 import { CheckCircle2, XCircle, Hash } from "lucide-react";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 /**
  * Premium Indexer Edit Form
@@ -24,8 +24,7 @@ export const IndexerEditForm = ({
 	onEnableChange: (enabled: boolean) => void;
 	onPriorityChange: (priority: number | undefined) => void;
 }) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
 		<div className="flex flex-wrap items-center gap-6">

@@ -17,8 +17,8 @@ import {
 	ServiceBadge,
 	StatusBadge,
 } from "../../../components/layout";
-import { THEME_GRADIENTS, SERVICE_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useIncognitoMode, getLinuxUrl } from "../../../lib/incognito";
 import { cn } from "../../../lib/utils";
 
@@ -73,14 +73,12 @@ export const ServiceInstanceCard = ({
 	testResult,
 	animationDelay = 0,
 }: ServiceInstanceCardProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const [incognitoMode] = useIncognitoMode();
 	const displayUrl = incognitoMode ? getLinuxUrl(instance.baseUrl) : instance.baseUrl;
 
 	// Get service gradient for accent
-	const serviceKey = instance.service.toLowerCase() as keyof typeof SERVICE_GRADIENTS;
-	const serviceGradient = SERVICE_GRADIENTS[serviceKey] ?? SERVICE_GRADIENTS.prowlarr;
+	const serviceGradient = getServiceGradient(instance.service);
 
 	// Check if this card has test results
 	const hasTestResult = testResult && testResult.id === instance.id;

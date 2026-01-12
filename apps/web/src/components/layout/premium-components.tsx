@@ -2,8 +2,8 @@
 
 import type { ReactNode } from "react";
 import { cn } from "../../lib/utils";
-import { THEME_GRADIENTS, SERVICE_GRADIENTS, SEMANTIC_COLORS } from "../../lib/theme-gradients";
-import { useColorTheme } from "../../providers/color-theme-provider";
+import { getServiceGradient, SEMANTIC_COLORS } from "../../lib/theme-gradients";
+import { useThemeGradient } from "../../hooks/useThemeGradient";
 import type { LucideIcon } from "lucide-react";
 
 /* =============================================================================
@@ -28,8 +28,7 @@ interface PremiumTabsProps {
 }
 
 export const PremiumTabs = ({ tabs, activeTab, onTabChange, className }: PremiumTabsProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
 		<div
@@ -113,7 +112,7 @@ export const PremiumTable = ({ children, className }: PremiumTableProps) => {
 	return (
 		<div
 			className={cn(
-				"rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm overflow-hidden",
+				"rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm overflow-x-auto",
 				className
 			)}
 		>
@@ -179,8 +178,7 @@ export const PremiumEmptyState = ({
 	action,
 	className,
 }: PremiumEmptyStateProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
 		<div
@@ -240,8 +238,7 @@ export const PremiumProgress = ({
 	size = "md",
 	className,
 }: PremiumProgressProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const percentage = Math.min((value / max) * 100, 100);
 
@@ -294,8 +291,7 @@ interface ServiceBadgeProps {
 }
 
 export const ServiceBadge = ({ service, className }: ServiceBadgeProps) => {
-	const serviceKey = service.toLowerCase() as keyof typeof SERVICE_GRADIENTS;
-	const gradient = SERVICE_GRADIENTS[serviceKey] ?? SERVICE_GRADIENTS.prowlarr;
+	const gradient = getServiceGradient(service);
 
 	return (
 		<span
@@ -327,8 +323,7 @@ interface StatusBadgeProps {
 }
 
 export const StatusBadge = ({ status, children, icon: Icon, className }: StatusBadgeProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const getColors = () => {
 		switch (status) {
@@ -401,8 +396,7 @@ export const InstanceCard = ({
 	className,
 	animationDelay = 0,
 }: InstanceCardProps) => {
-	const serviceKey = service.toLowerCase() as keyof typeof SERVICE_GRADIENTS;
-	const gradient = SERVICE_GRADIENTS[serviceKey] ?? SERVICE_GRADIENTS.prowlarr;
+	const gradient = getServiceGradient(service);
 
 	return (
 		<div
@@ -486,8 +480,7 @@ export const PremiumSection = ({
 	className,
 	animationDelay = 0,
 }: PremiumSectionProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
 		<section
@@ -538,11 +531,12 @@ export const PremiumSection = ({
    Simple glassmorphic container without header
    ============================================================================= */
 
-interface GlassmorphicCardProps {
+export interface GlassmorphicCardProps {
 	children: ReactNode;
 	className?: string;
 	padding?: "none" | "sm" | "md" | "lg";
 	animationDelay?: number;
+	style?: React.CSSProperties;
 }
 
 export const GlassmorphicCard = ({
@@ -550,6 +544,7 @@ export const GlassmorphicCard = ({
 	className,
 	padding = "md",
 	animationDelay = 0,
+	style,
 }: GlassmorphicCardProps) => {
 	const paddingClass = {
 		none: "",
@@ -567,8 +562,9 @@ export const GlassmorphicCard = ({
 				className
 			)}
 			style={{
-				animationDelay: `${animationDelay}ms`,
+				animationDelay: style?.animationDelay ?? `${animationDelay}ms`,
 				animationFillMode: "backwards",
+				...style,
 			}}
 		>
 			{children}
@@ -596,8 +592,7 @@ export const FilterSelect = ({
 	label,
 	className,
 }: FilterSelectProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
 		<div className={cn("flex flex-col gap-1.5", className)}>
@@ -650,8 +645,7 @@ export const GradientButton = ({
 	size = "md",
 	className,
 }: GradientButtonProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const sizeClasses = {
 		sm: "px-3 py-1.5 text-sm gap-1.5",

@@ -103,7 +103,7 @@ export function PatternTester({
 	return (
 		<div className="space-y-4">
 			<div className="flex items-center justify-between">
-				<h4 className="text-sm font-medium text-fg">Pattern Tester</h4>
+				<h4 className="text-sm font-medium text-foreground">Pattern Tester</h4>
 				{onClose && (
 					<Button size="sm" variant="ghost" onClick={onClose}>
 						Close
@@ -112,16 +112,16 @@ export function PatternTester({
 			</div>
 
 			{/* Pattern Display */}
-			<div className="rounded bg-bg-subtle/40 p-3 border border-border/30">
+			<div className="rounded bg-card/40 p-3 border border-border/30">
 				<div className="flex items-center gap-2 mb-2">
-					<span className="text-xs font-medium text-fg-muted">Pattern:</span>
+					<span className="text-xs font-medium text-muted-foreground">Pattern:</span>
 					{negate && (
 						<span className="inline-flex items-center gap-1 rounded bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-300">
 							Negated (must NOT match)
 						</span>
 					)}
 				</div>
-				<code className="text-sm font-mono text-fg break-all">{pattern}</code>
+				<code className="text-sm font-mono text-foregroundbreak-all">{pattern}</code>
 
 				{!testResult.valid && (
 					<Alert variant="danger" className="mt-3">
@@ -135,7 +135,7 @@ export function PatternTester({
 
 			{/* Quick Presets */}
 			<div className="space-y-2">
-				<label className="text-xs font-medium text-fg-muted">Quick Test Cases:</label>
+				<label className="text-xs font-medium text-muted-foreground">Quick Test Cases:</label>
 				<div className="flex flex-wrap gap-2">
 					{Object.entries(COMMON_TEST_CASES).map(([key, cases]) => (
 						<Button
@@ -162,7 +162,7 @@ export function PatternTester({
 
 			{/* Test Input */}
 			<div className="space-y-2">
-				<label className="text-sm font-medium text-fg">
+				<label className="text-sm font-medium text-foreground">
 					Test Text (one per line for multiple tests)
 				</label>
 				<textarea
@@ -172,7 +172,7 @@ export function PatternTester({
 						setSelectedPreset(null);
 					}}
 					rows={6}
-					className="w-full rounded-xl border border-border bg-bg-subtle px-4 py-3 text-sm font-mono text-fg placeholder:text-fg-muted/60 transition-all duration-200 hover:border-border/80 hover:bg-bg-subtle/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-bg-subtle/80"
+					className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm font-mono text-foregroundplaceholder:text-muted-foreground/60 transition-all duration-200 hover:border-border/80 hover:bg-card/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-card/80"
 					placeholder="Enter release names or file names to test..."
 				/>
 			</div>
@@ -180,7 +180,7 @@ export function PatternTester({
 			{/* Results */}
 			{testText && testResult.valid && (
 				<div className="space-y-3">
-					<h5 className="text-sm font-medium text-fg">Results</h5>
+					<h5 className="text-sm font-medium text-foreground">Results</h5>
 
 					{testText.split("\n").filter(Boolean).map((line, index) => {
 						try {
@@ -206,17 +206,17 @@ export function PatternTester({
 										)}
 
 										<div className="flex-1 min-w-0">
-											<code className="text-xs font-mono text-fg break-all">
+											<code className="text-xs font-mono text-foregroundbreak-all">
 												{line}
 											</code>
 
 											{exec && exec.length > 1 && finalMatch && (
 												<div className="mt-2 space-y-1">
-													<p className="text-xs text-fg-muted">Captured groups:</p>
+													<p className="text-xs text-muted-foreground">Captured groups:</p>
 													{exec.slice(1).map((group, groupIndex) => (
 														<div key={groupIndex} className="text-xs">
-															<span className="text-fg-muted">Group {groupIndex + 1}:</span>{" "}
-															<code className="text-fg">{group}</code>
+															<span className="text-muted-foreground">Group {groupIndex + 1}:</span>{" "}
+															<code className="text-foreground">{group}</code>
 														</div>
 													))}
 												</div>
@@ -244,7 +244,7 @@ export function PatternTester({
 									<div className="flex items-start gap-3">
 										<AlertCircle className="h-5 w-5 text-amber-400 flex-shrink-0 mt-0.5" />
 										<div className="flex-1 min-w-0">
-											<code className="text-xs font-mono text-fg break-all">
+											<code className="text-xs font-mono text-foregroundbreak-all">
 												{line}
 											</code>
 											<p className="text-xs text-amber-300 mt-1">
@@ -268,10 +268,10 @@ export function PatternTester({
 					</p>
 					<ul className="list-disc list-inside space-y-1 ml-2">
 						<li>Patterns are case-insensitive by default</li>
-						<li>Use <code className="px-1 py-0.5 rounded bg-bg-subtle/60">\b</code> for word boundaries</li>
-						<li>Use <code className="px-1 py-0.5 rounded bg-bg-subtle/60">|</code> for OR (e.g., <code className="px-1 py-0.5 rounded bg-bg-subtle/60">2160p|4320p</code>)</li>
-						<li>Use <code className="px-1 py-0.5 rounded bg-bg-subtle/60">.*</code> to match any characters</li>
-						<li>Use <code className="px-1 py-0.5 rounded bg-bg-subtle/60">[...]</code> for character sets (e.g., <code className="px-1 py-0.5 rounded bg-bg-subtle/60">[0-9]</code>)</li>
+						<li>Use <code className="px-1 py-0.5 rounded bg-card/60">\b</code> for word boundaries</li>
+						<li>Use <code className="px-1 py-0.5 rounded bg-card/60">|</code> for OR (e.g., <code className="px-1 py-0.5 rounded bg-card/60">2160p|4320p</code>)</li>
+						<li>Use <code className="px-1 py-0.5 rounded bg-card/60">.*</code> to match any characters</li>
+						<li>Use <code className="px-1 py-0.5 rounded bg-card/60">[...]</code> for character sets (e.g., <code className="px-1 py-0.5 rounded bg-card/60">[0-9]</code>)</li>
 						{negate && <li className="text-amber-300"><strong>Negated mode:</strong> Pattern must NOT match for condition to pass</li>}
 					</ul>
 				</AlertDescription>

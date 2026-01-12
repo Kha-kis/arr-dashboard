@@ -26,8 +26,8 @@ import {
 	StatusBadge,
 	PremiumSkeleton,
 } from "../../../components/layout";
-import { THEME_GRADIENTS, SERVICE_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useHuntingLogs } from "../hooks/useHuntingLogs";
 import type { HuntLog } from "../lib/hunting-types";
 
@@ -41,8 +41,7 @@ import type { HuntLog } from "../lib/hunting-types";
  * - Theme-aware status badges
  */
 export const HuntingActivity = () => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	const [typeFilter, setTypeFilter] = useState<string>("all");
 	const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -198,8 +197,7 @@ interface ActivityLogEntryProps {
 }
 
 const ActivityLogEntry = ({ log, animationDelay = 0 }: ActivityLogEntryProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const [expanded, setExpanded] = useState(false);
 
 	const Icon = log.huntType === "missing" ? Search : ArrowUpCircle;
@@ -219,8 +217,7 @@ const ActivityLogEntry = ({ log, animationDelay = 0 }: ActivityLogEntryProps) =>
 	const StatusIcon = statusInfo.icon;
 
 	// Get service gradient
-	const serviceKey = log.service.toLowerCase() as keyof typeof SERVICE_GRADIENTS;
-	const serviceGradient = SERVICE_GRADIENTS[serviceKey] ?? SERVICE_GRADIENTS.prowlarr;
+	const serviceGradient = getServiceGradient(log.service);
 
 	return (
 		<div

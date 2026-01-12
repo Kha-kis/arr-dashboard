@@ -5,8 +5,7 @@ import * as SelectPrimitive from "@radix-ui/react-select"
 import { Check, ChevronDown, ChevronUp } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { useColorTheme } from "../../providers/color-theme-provider"
-import { THEME_GRADIENTS } from "../../lib/theme-gradients"
+import { useThemeGradient } from "../../hooks/useThemeGradient"
 
 const Select = SelectPrimitive.Root
 
@@ -28,8 +27,7 @@ const SelectTrigger = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Trigger>,
   SelectTriggerProps
 >(({ className, children, premium = false, ...props }, ref) => {
-  const { colorTheme } = useColorTheme()
-  const themeGradient = THEME_GRADIENTS[colorTheme]
+  const { gradient: themeGradient } = useThemeGradient()
   const [isFocused, setIsFocused] = React.useState(false)
 
   const premiumFocusStyle = premium && isFocused
@@ -127,8 +125,7 @@ const SelectContent = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
 >(({ className, children, position = "popper", ...props }, ref) => {
-  const { colorTheme } = useColorTheme()
-  const themeGradient = THEME_GRADIENTS[colorTheme]
+  const { gradient: themeGradient } = useThemeGradient()
 
   return (
     <SelectPrimitive.Portal>
@@ -136,7 +133,7 @@ const SelectContent = React.forwardRef<
         ref={ref}
         className={cn(
           // Base
-          "relative z-50 max-h-[--radix-select-content-available-height] min-w-[8rem]",
+          "relative z-modal max-h-[--radix-select-content-available-height] min-w-[8rem]",
           "overflow-y-auto overflow-x-hidden",
           // Glassmorphic styling
           "rounded-xl border border-border/50 bg-popover/95 backdrop-blur-xl",
@@ -200,8 +197,7 @@ const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
 >(({ className, children, ...props }, ref) => {
-  const { colorTheme } = useColorTheme()
-  const themeGradient = THEME_GRADIENTS[colorTheme]
+  const { gradient: themeGradient } = useThemeGradient()
 
   return (
     <SelectPrimitive.Item

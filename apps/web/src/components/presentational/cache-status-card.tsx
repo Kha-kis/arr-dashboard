@@ -53,13 +53,13 @@ export const CacheStatusCard = ({
 			className={`rounded-xl border p-6 transition ${
 				isStale
 					? "border-yellow-500/30 bg-yellow-500/5"
-					: "border-border bg-bg-subtle hover:border-border"
+					: "border-border bg-card hover:border-border"
 			}`}
 		>
 			<div className="flex items-start justify-between">
 				<div>
-					<h3 className="font-medium text-fg">{configTypeLabel}</h3>
-					<p className="mt-1 text-xs text-fg-muted">v{version}</p>
+					<h3 className="font-medium text-foreground">{configTypeLabel}</h3>
+					<p className="mt-1 text-xs text-muted-foreground">v{version}</p>
 				</div>
 				<div className="flex items-center gap-1">
 					{isStale && (
@@ -72,7 +72,7 @@ export const CacheStatusCard = ({
 							type="button"
 							onClick={onRefresh}
 							disabled={isRefreshing || isDeletePending}
-							className="rounded-lg p-1.5 text-fg-muted hover:bg-primary/20 hover:text-primary transition disabled:opacity-50 disabled:cursor-not-allowed"
+							className="rounded-lg p-1.5 text-muted-foreground hover:bg-primary/20 hover:text-primary transition disabled:opacity-50 disabled:cursor-not-allowed"
 							title="Refresh this cache entry"
 						>
 							<RefreshCw className={`h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
@@ -83,7 +83,7 @@ export const CacheStatusCard = ({
 							type="button"
 							onClick={onDelete}
 							disabled={isRefreshing || isDeletePending}
-							className="rounded-lg p-1.5 text-fg-muted hover:bg-red-500/20 hover:text-red-400 transition disabled:opacity-50 disabled:cursor-not-allowed"
+							className="rounded-lg p-1.5 text-muted-foreground hover:bg-red-500/20 hover:text-red-400 transition disabled:opacity-50 disabled:cursor-not-allowed"
 							title="Delete cache entry"
 						>
 							<Trash2 className="h-4 w-4" />
@@ -93,11 +93,11 @@ export const CacheStatusCard = ({
 			</div>
 
 			<div className="mt-4 space-y-2 text-sm">
-				<div className="flex items-center gap-2 text-fg-muted">
+				<div className="flex items-center gap-2 text-muted-foreground">
 					<Database className="h-4 w-4" />
 					<span>{itemCount} items</span>
 				</div>
-				<div className="flex items-center gap-2 text-fg-muted">
+				<div className="flex items-center gap-2 text-muted-foreground">
 					<Clock className="h-4 w-4" />
 					<span>Last fetched: {new Date(lastFetched).toLocaleString()}</span>
 				</div>

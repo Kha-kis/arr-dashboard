@@ -6,7 +6,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, Skeleton } from "../../../../components/ui";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "../../../../components/ui";
+import { PremiumSkeleton } from "../../../../components/layout/premium-components";
 import { ChevronLeft, ChevronRight, Gauge, AlertCircle } from "lucide-react";
 import type { CustomQualityConfig } from "@arr/shared";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
@@ -241,14 +242,19 @@ export const QualityConfiguration = ({
 			<div className="space-y-6">
 				<Card>
 					<CardHeader>
-						<Skeleton className="h-6 w-48" />
-						<Skeleton className="h-4 w-96 mt-2" />
+						<PremiumSkeleton variant="line" className="h-6 w-48" />
+						<PremiumSkeleton variant="line" className="h-4 w-96 mt-2" style={{ animationDelay: "50ms" }} />
 					</CardHeader>
 					<CardContent>
 						<div className="space-y-4">
-							<Skeleton className="h-12 w-full" />
-							<Skeleton className="h-12 w-full" />
-							<Skeleton className="h-12 w-full" />
+							{Array.from({ length: 3 }).map((_, i) => (
+								<PremiumSkeleton
+									key={i}
+									variant="card"
+									className="h-12 w-full"
+									style={{ animationDelay: `${(i + 2) * 50}ms` }}
+								/>
+							))}
 						</div>
 					</CardContent>
 				</Card>
@@ -304,7 +310,7 @@ export const QualityConfiguration = ({
 					<button
 						type="button"
 						onClick={onBack}
-						className="inline-flex items-center gap-2 rounded-lg bg-bg-hover px-4 py-2 text-sm font-medium text-fg transition hover:bg-bg-muted"
+						className="inline-flex items-center gap-2 rounded-lg bg-muted px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted"
 					>
 						<ChevronLeft className="h-4 w-4" />
 						Back

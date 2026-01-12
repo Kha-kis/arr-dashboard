@@ -5,8 +5,8 @@ import { CheckCircle2, XCircle, Loader2, AlertCircle, RefreshCw, Zap } from "luc
 import { useSyncProgress } from "../../../hooks/api/useSync";
 import type { SyncProgressStatus } from "../../../lib/api-client/sync";
 import { Button } from "../../../components/ui";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 const FOCUSABLE_SELECTOR =
 	'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
@@ -57,8 +57,7 @@ export const SyncProgressModal = ({
 	onComplete,
 	onClose,
 }: SyncProgressModalProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 	const { progress, error, isLoading, isPolling } = useSyncProgress(syncId);
 
 	// Track whether completion callback has been scheduled to prevent duplicate calls
@@ -151,7 +150,7 @@ export const SyncProgressModal = ({
 
 	return (
 		<div
-			className="fixed inset-0 z-50 flex items-center justify-center p-4 animate-in fade-in duration-200"
+			className="fixed inset-0 z-modal flex items-center justify-center p-4 animate-in fade-in duration-200"
 			onClick={(e) => {
 				if (isCompleted || isFailed) {
 					onClose();

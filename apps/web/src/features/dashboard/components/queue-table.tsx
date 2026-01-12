@@ -4,8 +4,7 @@ import { useMemo } from "react";
 import type { QueueItem } from "@arr/shared";
 import { Inbox, Loader2 } from "lucide-react";
 import { cn } from "../../../lib/utils";
-import { THEME_GRADIENTS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
 import type { InstanceUrlMap } from "./dashboard-client";
 import type { QueueAction } from "./queue-action-buttons";
@@ -72,8 +71,7 @@ export const QueueTable = ({
 	onPrefetchManualImport,
 	emptyMessage,
 }: QueueTableProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
 
 	// Custom hooks for state management
 	const selection = useQueueSelection(items);

@@ -3,17 +3,21 @@
 import { useState } from "react";
 import { startRegistration } from "@simplewebauthn/browser";
 import { useRouter } from "next/navigation";
+import { KeyRound, Loader2 } from "lucide-react";
 import { apiRequest } from "../../../lib/api-client/base";
 import type { CurrentUser } from "@arr/shared";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { Alert, AlertDescription } from "../../../components/ui";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 interface RegisterResponse {
 	user: CurrentUser;
 }
 
 export const PasskeySetup = () => {
+	const { gradient: themeGradient } = useThemeGradient();
+
 	const router = useRouter();
 	const [formState, setFormState] = useState({
 		username: "",
@@ -122,7 +126,7 @@ export const PasskeySetup = () => {
 	return (
 		<form className="space-y-4" onSubmit={handleSubmit}>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-fg-muted">Username</label>
+				<label className="text-xs uppercase text-muted-foreground font-medium">Username</label>
 				<Input
 					type="text"
 					value={formState.username}
@@ -132,10 +136,11 @@ export const PasskeySetup = () => {
 					minLength={3}
 					maxLength={50}
 					autoFocus
+					className="rounded-xl"
 				/>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-fg-muted">Password (Fallback)</label>
+				<label className="text-xs uppercase text-muted-foreground font-medium">Password (Fallback)</label>
 				<Input
 					type="password"
 					value={formState.password}
@@ -143,30 +148,33 @@ export const PasskeySetup = () => {
 					placeholder="At least 8 characters"
 					required
 					minLength={8}
+					className="rounded-xl"
 				/>
-				<p className="text-xs text-fg-muted">
+				<p className="text-xs text-muted-foreground">
 					Required as a backup login method. Must include uppercase, lowercase, number, and special character.
 				</p>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-fg-muted">Confirm Password</label>
+				<label className="text-xs uppercase text-muted-foreground font-medium">Confirm Password</label>
 				<Input
 					type="password"
 					value={formState.confirmPassword}
 					onChange={(e) => setFormState((prev) => ({ ...prev, confirmPassword: e.target.value }))}
 					placeholder="Re-enter password"
 					required
+					className="rounded-xl"
 				/>
 			</div>
 			<div className="space-y-2">
-				<label className="text-xs uppercase text-fg-muted">Passkey Name (Optional)</label>
+				<label className="text-xs uppercase text-muted-foreground font-medium">Passkey Name (Optional)</label>
 				<Input
 					value={formState.passkeyName}
 					onChange={(e) => setFormState((prev) => ({ ...prev, passkeyName: e.target.value }))}
 					placeholder="e.g., My Laptop"
 					maxLength={100}
+					className="rounded-xl"
 				/>
-				<p className="text-xs text-fg-muted">
+				<p className="text-xs text-muted-foreground">
 					Give this passkey a friendly name to identify it later
 				</p>
 			</div>
@@ -175,10 +183,28 @@ export const PasskeySetup = () => {
 					<AlertDescription>{error}</AlertDescription>
 				</Alert>
 			)}
-			<Button type="submit" disabled={isSubmitting} className="w-full">
-				{isSubmitting ? "Creating account..." : "Create Admin Account"}
+			<Button
+				type="submit"
+				disabled={isSubmitting}
+				className="w-full gap-2 rounded-xl font-medium"
+				style={{
+					background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+					boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
+				}}
+			>
+				{isSubmitting ? (
+					<>
+						<Loader2 className="h-4 w-4 animate-spin" />
+						Creating account...
+					</>
+				) : (
+					<>
+						<KeyRound className="h-4 w-4" />
+						Create Admin Account
+					</>
+				)}
 			</Button>
-			<p className="text-xs text-fg-muted text-center">
+			<p className="text-xs text-muted-foreground text-center">
 				You&apos;ll be prompted to register a passkey using your device&apos;s biometrics or security key.
 				The password serves as a backup login method if passkey authentication fails.
 			</p>

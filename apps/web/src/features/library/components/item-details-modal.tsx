@@ -16,18 +16,19 @@ import {
 } from "lucide-react";
 import { formatBytes, formatRuntime } from "../lib/library-utils";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
-import { THEME_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useColorTheme } from "../../../providers/color-theme-provider";
+import { SEMANTIC_COLORS, BRAND_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { useFocusTrap } from "../../../hooks/useFocusTrap";
 
 export interface ItemDetailsModalProps {
 	item: LibraryItem;
 	onClose: () => void;
 }
 
-// Service-specific colors
+// Use centralized service colors
 const SERVICE_COLORS = {
-	sonarr: "#06b6d4", // Cyan
-	radarr: "#f97316", // Orange
+	sonarr: SERVICE_GRADIENTS.sonarr.from,
+	radarr: SERVICE_GRADIENTS.radarr.from,
 };
 
 /**
@@ -42,9 +43,6 @@ const MetadataItem = ({
 	value: React.ReactNode;
 	icon?: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
 }) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
-
 	return (
 		<div className="space-y-1">
 			<div className="flex items-center gap-1.5">
@@ -67,8 +65,8 @@ const MetadataItem = ({
  * - External link buttons
  */
 export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
-	const { colorTheme } = useColorTheme();
-	const themeGradient = THEME_GRADIENTS[colorTheme];
+	const { gradient: themeGradient } = useThemeGradient();
+	const focusTrapRef = useFocusTrap<HTMLDivElement>(true, onClose);
 
 	const sizeLabel = formatBytes(item.sizeOnDisk);
 	const runtimeLabel = formatRuntime(item.runtime);
@@ -141,12 +139,16 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 		<div
 			className="fixed inset-0 z-modal-backdrop flex items-center justify-center p-4 animate-in fade-in duration-200"
 			onClick={onClose}
+			role="dialog"
+			aria-modal="true"
+			aria-labelledby="item-details-title"
 		>
 			{/* Backdrop */}
 			<div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
 
 			{/* Modal */}
 			<div
+				ref={focusTrapRef}
 				className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-2xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
 				style={{
 					boxShadow: `0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px ${serviceColor}15`,
@@ -157,6 +159,7 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 				<button
 					type="button"
 					onClick={onClose}
+					aria-label="Close modal"
 					className="absolute right-4 top-4 z-10 flex h-8 w-8 items-center justify-center rounded-lg bg-black/50 text-white/70 transition-colors hover:bg-black/70 hover:text-white"
 				>
 					<X className="h-4 w-4" />
@@ -199,7 +202,7 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 								</span>
 							</div>
 
-							<h2 className="text-2xl font-bold text-foreground mb-1">{item.title}</h2>
+							<h2 id="item-details-title" className="text-2xl font-bold text-foreground mb-1">{item.title}</h2>
 
 							<div className="flex items-center gap-3 text-sm text-muted-foreground">
 								{item.year && item.type === "movie" && (
@@ -277,9 +280,9 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 										type="button"
 										className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:opacity-80"
 										style={{
-											backgroundColor: "#f5c518" + "20",
-											border: "1px solid " + "#f5c518" + "40",
-											color: "#f5c518",
+											backgroundColor: BRAND_COLORS.imdb.bg,
+											border: `1px solid ${BRAND_COLORS.imdb.border}`,
+											color: BRAND_COLORS.imdb.text,
 										}}
 										onClick={() => safeOpenUrl(`https://www.imdb.com/title/${item.remoteIds?.imdbId}`)}
 									>
@@ -292,9 +295,9 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 										type="button"
 										className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:opacity-80"
 										style={{
-											backgroundColor: "#5d8a3a" + "20",
-											border: "1px solid " + "#5d8a3a" + "40",
-											color: "#5d8a3a",
+											backgroundColor: BRAND_COLORS.rottenTomatoes.bg,
+											border: `1px solid ${BRAND_COLORS.rottenTomatoes.border}`,
+											color: BRAND_COLORS.rottenTomatoes.text,
 										}}
 										onClick={() => safeOpenUrl(`https://www.thetvdb.com/dereferrer/series/${item.remoteIds?.tvdbId}`)}
 									>

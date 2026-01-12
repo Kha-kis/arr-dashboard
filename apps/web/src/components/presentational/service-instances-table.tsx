@@ -17,9 +17,9 @@ interface ServiceInstancesTableProps {
 
 export const ServiceInstancesTable = ({ instances, incognitoMode }: ServiceInstancesTableProps) => {
 	return (
-		<div className="overflow-hidden rounded-xl border border-border bg-bg-subtle">
-			<table className="min-w-full divide-y divide-border text-sm text-fg-muted">
-				<thead className="bg-bg-hover text-left text-xs uppercase tracking-wide text-fg-muted">
+		<div className="overflow-hidden rounded-xl border border-border bg-card">
+			<table className="min-w-full divide-y divide-border text-sm text-muted-foreground">
+				<thead className="bg-muted text-left text-xs uppercase tracking-wide text-muted-foreground">
 					<tr>
 						<th className="px-4 py-3">Label</th>
 						<th className="px-4 py-3">Service</th>
@@ -31,12 +31,12 @@ export const ServiceInstancesTable = ({ instances, incognitoMode }: ServiceInsta
 				<tbody className="divide-y divide-border/50">
 					{instances.map((instance) => (
 						<tr key={instance.id}>
-							<td className="px-4 py-3 font-medium text-fg">
+							<td className="px-4 py-3 font-medium text-foreground">
 								<a
 									href={instance.baseUrl}
 									target="_blank"
 									rel="noopener noreferrer"
-									className="inline-flex items-center gap-1.5 text-fg hover:text-sky-400 transition-colors"
+									className="inline-flex items-center gap-1.5 text-foreground hover:text-sky-400 transition-colors"
 									title={`Open ${instance.label} in new tab`}
 								>
 									{instance.label}
@@ -44,18 +44,18 @@ export const ServiceInstancesTable = ({ instances, incognitoMode }: ServiceInsta
 								</a>
 							</td>
 							<td className="px-4 py-3 capitalize">{instance.service}</td>
-							<td className="px-4 py-3 text-fg-muted">
+							<td className="px-4 py-3 text-muted-foreground">
 								{incognitoMode ? getLinuxUrl(instance.baseUrl) : instance.baseUrl}
 							</td>
 							<td className="px-4 py-3">
 								{instance.tags.length === 0 ? (
-									<span className="text-fg-muted/60">-</span>
+									<span className="text-muted-foreground/60">-</span>
 								) : (
 									<div className="flex flex-wrap gap-2">
 										{instance.tags.map((tag) => (
 											<span
 												key={tag.id}
-												className="rounded-full bg-bg-hover px-3 py-1 text-xs font-medium text-fg"
+												className="rounded-full bg-muted px-3 py-1 text-xs font-medium text-foreground"
 											>
 												{tag.name}
 											</span>
@@ -68,7 +68,7 @@ export const ServiceInstancesTable = ({ instances, incognitoMode }: ServiceInsta
 									className={`inline-flex items-center justify-center rounded-full px-3 py-1 text-xs font-semibold ${
 										instance.enabled
 											? "bg-emerald-500/20 text-emerald-200"
-											: "bg-bg-hover text-fg-muted"
+											: "bg-muted text-muted-foreground"
 									}`}
 								>
 									{instance.enabled ? "Enabled" : "Disabled"}

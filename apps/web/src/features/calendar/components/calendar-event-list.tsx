@@ -17,20 +17,20 @@ export const CalendarEventList = ({
 	onOpenExternal,
 }: CalendarEventListProps) => {
 	return (
-		<div className="rounded-2xl border border-border bg-bg-subtle p-4">
+		<div className="rounded-2xl border border-border bg-card p-4">
 			<div className="flex flex-wrap items-center justify-between gap-2">
 				<div>
-					<h2 className="text-lg font-semibold text-fg">
+					<h2 className="text-lg font-semibold text-foreground">
 						{selectedDate ? formatLongDate(selectedDate) : "Select a date"}
 					</h2>
-					<p className="text-xs uppercase text-fg-muted">
+					<p className="text-xs uppercase text-muted-foreground">
 						{selectedEvents.length} scheduled item
 						{selectedEvents.length === 1 ? "" : "s"}
 					</p>
 				</div>
 			</div>
 			{selectedEvents.length === 0 ? (
-				<p className="mt-4 text-sm text-fg-muted">No scheduled items for this date.</p>
+				<p className="mt-4 text-sm text-muted-foreground">No scheduled items for this date.</p>
 			) : (
 				<div className="mt-4 space-y-3">
 					{selectedEvents.map((event) => (
