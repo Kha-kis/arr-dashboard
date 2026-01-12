@@ -113,7 +113,8 @@ const createMockClientFactory = (overrides: {
 } = {}): ArrClientFactory => {
 	const mockClient = {
 		system: {
-			getStatus: vi.fn().mockImplementation(() => {
+			// Note: SDK uses get() not getStatus()
+			get: vi.fn().mockImplementation(() => {
 				if (overrides.connectError) {
 					return Promise.reject(overrides.connectError);
 				}
