@@ -753,10 +753,10 @@ async function executeSonarrHuntWithSdk(
 		// Calculate page offset based on recently searched items to rotate through large libraries
 		// This prevents getting "stuck" when all items on page 1 have been searched
 		const recentSearchCount = historyManager.getRecentSearchCount();
-		const pageOffset = Math.floor(recentSearchCount / fetchSize) + 1;
+		let pageOffset = Math.floor(recentSearchCount / fetchSize) + 1;
 
 		counter.count++;
-		const wantedData =
+		let wantedData =
 			type === "missing"
 				? await client.wanted.missing({
 						page: pageOffset,
@@ -771,18 +771,41 @@ async function executeSonarrHuntWithSdk(
 						sortDirection: "descending",
 					});
 
-		const records = wantedData.records ?? [];
+		let records = wantedData.records ?? [];
+
+		// If no records on calculated page and we're past page 1, wrap around to page 1
+		// This handles the case where recentSearchCount exceeds total available items
+		if (records.length === 0 && pageOffset > 1) {
+			logger.debug(
+				{ pageOffset, recentSearchCount, fetchSize },
+				"No records on calculated page, wrapping to page 1",
+			);
+			pageOffset = 1;
+			counter.count++;
+			wantedData =
+				type === "missing"
+					? await client.wanted.missing({
+							page: 1,
+							pageSize: fetchSize,
+							sortKey: "airDateUtc",
+							sortDirection: "descending",
+						})
+					: await client.wanted.cutoff({
+							page: 1,
+							pageSize: fetchSize,
+							sortKey: "airDateUtc",
+							sortDirection: "descending",
+						});
+			records = wantedData.records ?? [];
+		}
 
 		if (records.length === 0) {
-			// If we're on page > 1 and got no results, we've exhausted all candidates
-			const exhaustedMessage =
-				pageOffset > 1 ? ` (searched through ${recentSearchCount} items, reached end of list)` : "";
 			return {
 				itemsSearched: 0,
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: `No ${type === "missing" ? "missing" : "upgradeable"} episodes found${exhaustedMessage}`,
+				message: `No ${type === "missing" ? "missing" : "upgradeable"} episodes found`,
 				status: "completed",
 			};
 		}
@@ -810,15 +833,12 @@ async function executeSonarrHuntWithSdk(
 		const eligibleEpisodes = shuffleArray(filteredEpisodes);
 
 		if (eligibleEpisodes.length === 0) {
-			// Provide context about pagination position
-			const pageInfo =
-				pageOffset > 1 ? ` (page ${pageOffset}, ${recentSearchCount} items searched)` : "";
 			return {
 				itemsSearched: 0,
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: `No episodes match the current filters${pageInfo}`,
+				message: `No episodes match the current filters`,
 				status: "completed",
 			};
 		}
@@ -1053,10 +1073,10 @@ async function executeRadarrHuntWithSdk(
 		// Calculate page offset based on recently searched items to rotate through large libraries
 		// This prevents getting "stuck" when all items on page 1 have been searched
 		const recentSearchCount = historyManager.getRecentSearchCount();
-		const pageOffset = Math.floor(recentSearchCount / fetchSize) + 1;
+		let pageOffset = Math.floor(recentSearchCount / fetchSize) + 1;
 
 		counter.count++;
-		const wantedData =
+		let wantedData =
 			type === "missing"
 				? await client.wanted.missing({
 						page: pageOffset,
@@ -1071,18 +1091,41 @@ async function executeRadarrHuntWithSdk(
 						sortDirection: "descending",
 					});
 
-		const movies = wantedData.records ?? [];
+		let movies = wantedData.records ?? [];
+
+		// If no records on calculated page and we're past page 1, wrap around to page 1
+		// This handles the case where recentSearchCount exceeds total available items
+		if (movies.length === 0 && pageOffset > 1) {
+			logger.debug(
+				{ pageOffset, recentSearchCount, fetchSize },
+				"No records on calculated page, wrapping to page 1",
+			);
+			pageOffset = 1;
+			counter.count++;
+			wantedData =
+				type === "missing"
+					? await client.wanted.missing({
+							page: 1,
+							pageSize: fetchSize,
+							sortKey: "digitalRelease",
+							sortDirection: "descending",
+						})
+					: await client.wanted.cutoff({
+							page: 1,
+							pageSize: fetchSize,
+							sortKey: "digitalRelease",
+							sortDirection: "descending",
+						});
+			movies = wantedData.records ?? [];
+		}
 
 		if (movies.length === 0) {
-			// If we're on page > 1 and got no results, we've exhausted all candidates
-			const exhaustedMessage =
-				pageOffset > 1 ? ` (searched through ${recentSearchCount} items, reached end of list)` : "";
 			return {
 				itemsSearched: 0,
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: `No ${type === "missing" ? "missing" : "upgradeable"} movies found${exhaustedMessage}`,
+				message: `No ${type === "missing" ? "missing" : "upgradeable"} movies found`,
 				status: "completed",
 			};
 		}
@@ -1113,15 +1156,12 @@ async function executeRadarrHuntWithSdk(
 		const eligibleMovies = shuffleArray(validMovies);
 
 		if (eligibleMovies.length === 0) {
-			// Provide context about pagination position
-			const pageInfo =
-				pageOffset > 1 ? ` (page ${pageOffset}, ${recentSearchCount} items searched)` : "";
 			return {
 				itemsSearched: 0,
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: `No movies match the current filters${pageInfo}`,
+				message: `No movies match the current filters`,
 				status: "completed",
 			};
 		}
