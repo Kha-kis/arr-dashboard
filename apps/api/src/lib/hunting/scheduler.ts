@@ -296,8 +296,21 @@ class HuntingScheduler {
 		if (!this.app) return;
 
 		const now = new Date();
+		const newResetAt = new Date(now.getTime() + 60 * 60 * 1000);
 
-		// Get all enabled hunt configs
+		// Batch reset all expired API call counters in a single query (avoids N+1)
+		await this.app.prisma.huntConfig.updateMany({
+			where: {
+				OR: [{ huntMissingEnabled: true }, { huntUpgradesEnabled: true }],
+				apiCallsResetAt: { lt: now },
+			},
+			data: {
+				apiCallsThisHour: 0,
+				apiCallsResetAt: newResetAt,
+			},
+		});
+
+		// Get all enabled hunt configs (after reset, so counts are fresh)
 		const configs = await this.app.prisma.huntConfig.findMany({
 			where: {
 				OR: [{ huntMissingEnabled: true }, { huntUpgradesEnabled: true }],
@@ -308,20 +321,6 @@ class HuntingScheduler {
 		});
 
 		for (const config of configs) {
-			// Reset hourly API cap if needed
-			if (config.apiCallsResetAt && config.apiCallsResetAt < now) {
-				const newResetAt = new Date(now.getTime() + 60 * 60 * 1000);
-				await this.app.prisma.huntConfig.update({
-					where: { id: config.id },
-					data: {
-						apiCallsThisHour: 0,
-						apiCallsResetAt: newResetAt,
-					},
-				});
-				// Update in-memory object to avoid stale cap check
-				config.apiCallsThisHour = 0;
-				config.apiCallsResetAt = newResetAt;
-			}
 
 			// Check if we're over API cap
 			if (config.apiCallsThisHour >= config.hourlyApiCap) {

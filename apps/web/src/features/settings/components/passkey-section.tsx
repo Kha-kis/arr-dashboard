@@ -54,7 +54,10 @@ export const PasskeySection = () => {
 	};
 
 	useEffect(() => {
-		loadCredentials();
+		loadCredentials().catch((err) => {
+			console.error("Failed to load passkey credentials:", err);
+			setError("Failed to load passkeys. Please refresh the page.");
+		});
 	}, []);
 
 	const handleRegisterPasskey = async () => {

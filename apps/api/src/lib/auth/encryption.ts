@@ -1,4 +1,4 @@
-import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
 const ALGORITHM = "aes-256-gcm";
 const IV_LENGTH = 12;
@@ -63,11 +63,9 @@ export class Encryptor {
 	}
 
 	safeCompare(a: string, b: string): boolean {
-		const bufferA = Buffer.from(a);
-		const bufferB = Buffer.from(b);
-		if (bufferA.length !== bufferB.length) {
-			return false;
-		}
-		return timingSafeEqual(bufferA, bufferB);
+		// Hash both inputs to fixed length to prevent length-based timing attacks
+		const hashA = createHash("sha256").update(a).digest();
+		const hashB = createHash("sha256").update(b).digest();
+		return timingSafeEqual(hashA, hashB);
 	}
 }

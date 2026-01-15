@@ -52,20 +52,25 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.get("/services", async (request, reply) => {
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: { userId: request.currentUser?.id },
-			include: {
-				tags: {
-					include: {
-						tag: true,
+		try {
+			const instances = await app.prisma.serviceInstance.findMany({
+				where: { userId: request.currentUser?.id },
+				include: {
+					tags: {
+						include: {
+							tag: true,
+						},
 					},
 				},
-			},
-			orderBy: { createdAt: "asc" },
-		});
+				orderBy: { createdAt: "asc" },
+			});
 
-		const formatted = instances.map(formatServiceInstance);
-		return reply.send({ services: formatted });
+			const formatted = instances.map(formatServiceInstance);
+			return reply.send({ services: formatted });
+		} catch (error) {
+			request.log.error({ err: error }, "Failed to fetch service instances");
+			return reply.status(500).send({ error: "Failed to fetch service instances" });
+		}
 	});
 
 	app.post("/services", async (request, reply) => {
@@ -74,44 +79,49 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
 		}
 
-		const { apiKey, service, tags, isDefault, ...rest } = parsed.data;
-		const encrypted = app.encryptor.encrypt(apiKey);
+		try {
+			const { apiKey, service, tags, isDefault, ...rest } = parsed.data;
+			const encrypted = app.encryptor.encrypt(apiKey);
 
-		const serviceEnum = service.toUpperCase() as ServiceType;
+			const serviceEnum = service.toUpperCase() as ServiceType;
 
-		if (isDefault) {
-			await app.prisma.serviceInstance.updateMany({
-				where: { service: serviceEnum },
-				data: { isDefault: false },
-			});
-		}
+			if (isDefault) {
+				await app.prisma.serviceInstance.updateMany({
+					where: { service: serviceEnum },
+					data: { isDefault: false },
+				});
+			}
 
-		const tagRecords = await upsertTags(app.prisma, tags);
+			const tagRecords = await upsertTags(app.prisma, tags);
 
-		const created = await app.prisma.serviceInstance.create({
-			data: {
-				userId: request.currentUser!.id, // preHandler guarantees auth
-				service: serviceEnum,
-				encryptedApiKey: encrypted.value,
-				encryptionIv: encrypted.iv,
-				isDefault,
-				...rest,
-				tags: {
-					create: tagRecords,
-				},
-			},
-			include: {
-				tags: {
-					include: {
-						tag: true,
+			const created = await app.prisma.serviceInstance.create({
+				data: {
+					userId: request.currentUser!.id, // preHandler guarantees auth
+					service: serviceEnum,
+					encryptedApiKey: encrypted.value,
+					encryptionIv: encrypted.iv,
+					isDefault,
+					...rest,
+					tags: {
+						create: tagRecords,
 					},
 				},
-			},
-		});
+				include: {
+					tags: {
+						include: {
+							tag: true,
+						},
+					},
+				},
+			});
 
-		return reply.status(201).send({
-			service: formatServiceInstance(created),
-		});
+			return reply.status(201).send({
+				service: formatServiceInstance(created),
+			});
+		} catch (error) {
+			request.log.error({ err: error }, "Failed to create service instance");
+			return reply.status(500).send({ error: "Failed to create service instance" });
+		}
 	});
 
 	app.put("/services/:id", async (request, reply) => {
@@ -121,93 +131,108 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
 		}
 
-		const payload = parsed.data;
-		const userId = request.currentUser?.id; // preHandler guarantees authentication
+		try {
+			const payload = parsed.data;
+			const userId = request.currentUser?.id; // preHandler guarantees authentication
 
-		// Verify instance exists and is owned by the current user.
-		// Including userId in the where clause ensures non-owned instances return null,
-		// preventing instance enumeration attacks (all non-owned instances return 404).
-		const existing = await app.prisma.serviceInstance.findFirst({
-			where: {
-				id,
-				userId,
-			},
-		});
-
-		if (!existing) {
-			return reply.status(404).send({ error: "Service instance not found" });
-		}
-
-		const updateData = buildUpdateData(payload, app.encryptor);
-
-		if (payload.isDefault === true || payload.service) {
-			const targetService = (
-				payload.service ?? existing.service.toLowerCase()
-			).toUpperCase() as ServiceType;
-			await app.prisma.serviceInstance.updateMany({
-				where: { service: targetService, NOT: { id } },
-				data: { isDefault: false },
+			// Verify instance exists and is owned by the current user.
+			// Including userId in the where clause ensures non-owned instances return null,
+			// preventing instance enumeration attacks (all non-owned instances return 404).
+			const existing = await app.prisma.serviceInstance.findFirst({
+				where: {
+					id,
+					userId,
+				},
 			});
+
+			if (!existing) {
+				return reply.status(404).send({ error: "Service instance not found" });
+			}
+
+			const updateData = buildUpdateData(payload, app.encryptor);
+
+			if (payload.isDefault === true || payload.service) {
+				const targetService = (
+					payload.service ?? existing.service.toLowerCase()
+				).toUpperCase() as ServiceType;
+				await app.prisma.serviceInstance.updateMany({
+					where: { service: targetService, NOT: { id } },
+					data: { isDefault: false },
+				});
+			}
+
+			const updated = await app.prisma.serviceInstance.update({
+				where: { id },
+				data: updateData,
+				include: {
+					tags: { include: { tag: true } },
+				},
+			});
+
+			if (payload.tags) {
+				await updateInstanceTags(app.prisma, id, payload.tags);
+			}
+
+			// Fetch updated instance - include userId to ensure we only get owned instances
+			const fresh = await app.prisma.serviceInstance.findFirst({
+				where: {
+					id,
+					userId,
+				},
+				include: { tags: { include: { tag: true } } },
+			});
+
+			if (!fresh) {
+				return reply.status(404).send({ error: "Service instance not found" });
+			}
+
+			return reply.send({
+				service: formatServiceInstance(fresh),
+			});
+		} catch (error) {
+			request.log.error({ err: error }, "Failed to update service instance");
+			return reply.status(500).send({ error: "Failed to update service instance" });
 		}
-
-		const updated = await app.prisma.serviceInstance.update({
-			where: { id },
-			data: updateData,
-			include: {
-				tags: { include: { tag: true } },
-			},
-		});
-
-		if (payload.tags) {
-			await updateInstanceTags(app.prisma, id, payload.tags);
-		}
-
-		// Fetch updated instance - include userId to ensure we only get owned instances
-		const fresh = await app.prisma.serviceInstance.findFirst({
-			where: {
-				id,
-				userId,
-			},
-			include: { tags: { include: { tag: true } } },
-		});
-
-		if (!fresh) {
-			return reply.status(404).send({ error: "Service instance not found" });
-		}
-
-		return reply.send({
-			service: formatServiceInstance(fresh),
-		});
 	});
 
 	app.delete("/services/:id", async (request, reply) => {
 		const { id } = request.params as { id: string };
 		const userId = request.currentUser?.id; // preHandler guarantees authentication
 
-		// Verify instance exists and is owned by the current user.
-		// Including userId in the where clause ensures non-owned instances return null,
-		// preventing instance enumeration attacks (all non-owned instances return 404).
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: {
-				id,
-				userId,
-			},
-		});
+		try {
+			// Verify instance exists and is owned by the current user.
+			// Including userId in the where clause ensures non-owned instances return null,
+			// preventing instance enumeration attacks (all non-owned instances return 404).
+			const instance = await app.prisma.serviceInstance.findFirst({
+				where: {
+					id,
+					userId,
+				},
+			});
 
-		if (!instance) {
-			return reply.status(404).send({ error: "Service instance not found" });
+			if (!instance) {
+				return reply.status(404).send({ error: "Service instance not found" });
+			}
+
+			await app.prisma.serviceInstance.delete({ where: { id } });
+			return reply.status(204).send();
+		} catch (error) {
+			request.log.error({ err: error }, "Failed to delete service instance");
+			return reply.status(500).send({ error: "Failed to delete service instance" });
 		}
-
-		await app.prisma.serviceInstance.delete({ where: { id } });
-		return reply.status(204).send();
 	});
 
 	app.get("/tags", async (request, reply) => {
-		const tags = await app.prisma.serviceTag.findMany({
-			orderBy: { name: "asc" },
-		});
+		try {
+			const tags = await app.prisma.serviceTag.findMany({
+				orderBy: { name: "asc" },
+			});
 
-		return reply.send({ tags });
+			return reply.send({ tags });
+		} catch (error) {
+			request.log.error({ err: error }, "Failed to fetch tags");
+			return reply.status(500).send({ error: "Failed to fetch tags" });
+		}
 	});
 
 	app.post("/tags", async (request, reply) => {
@@ -216,27 +241,37 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
 		}
 
-		const tag = await app.prisma.serviceTag.upsert({
-			where: { name: parsed.data.name },
-			update: {},
-			create: { name: parsed.data.name },
-		});
+		try {
+			const tag = await app.prisma.serviceTag.upsert({
+				where: { name: parsed.data.name },
+				update: {},
+				create: { name: parsed.data.name },
+			});
 
-		return reply.status(201).send({ tag });
+			return reply.status(201).send({ tag });
+		} catch (error) {
+			request.log.error({ err: error }, "Failed to create tag");
+			return reply.status(500).send({ error: "Failed to create tag" });
+		}
 	});
 
 	app.delete("/tags/:id", async (request, reply) => {
 		const { id } = request.params as { id: string };
 
-		await app.prisma.serviceTag
-			.delete({
+		try {
+			await app.prisma.serviceTag.delete({
 				where: { id },
-			})
-			.catch(() => {
-				return reply.status(404).send({ error: "Tag not found" });
 			});
-
-		return reply.status(204).send();
+			return reply.status(204).send();
+		} catch (error) {
+			// Prisma P2025 = Record not found
+			const prismaError = error as { code?: string };
+			if (prismaError.code === "P2025") {
+				return reply.status(404).send({ error: "Tag not found" });
+			}
+			request.log.error({ err: error }, "Failed to delete tag");
+			return reply.status(500).send({ error: "Failed to delete tag" });
+		}
 	});
 
 	app.post("/services/test-connection", async (request, reply) => {
@@ -264,36 +299,46 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
-		const result = await testServiceConnection(baseUrl, apiKey, service);
-		return reply.status(200).send(result);
+		try {
+			const result = await testServiceConnection(baseUrl, apiKey, service);
+			return reply.status(200).send(result);
+		} catch (error) {
+			request.log.error({ err: error }, "Failed to test service connection");
+			return reply.status(500).send({ error: "Failed to test service connection" });
+		}
 	});
 
 	app.post("/services/:id/test", async (request, reply) => {
 		const { id } = request.params as { id: string };
 		const userId = request.currentUser?.id; // preHandler guarantees authentication
 
-		// Verify instance exists and is owned by the current user.
-		// Including userId in the where clause ensures non-owned instances return null,
-		// preventing instance enumeration attacks (all non-owned instances return 404).
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: {
-				id,
-				userId,
-			},
-		});
+		try {
+			// Verify instance exists and is owned by the current user.
+			// Including userId in the where clause ensures non-owned instances return null,
+			// preventing instance enumeration attacks (all non-owned instances return 404).
+			const instance = await app.prisma.serviceInstance.findFirst({
+				where: {
+					id,
+					userId,
+				},
+			});
 
-		if (!instance) {
-			return reply.status(404).send({ error: "Service instance not found" });
+			if (!instance) {
+				return reply.status(404).send({ error: "Service instance not found" });
+			}
+
+			const apiKey = app.encryptor.decrypt({
+				value: instance.encryptedApiKey,
+				iv: instance.encryptionIv,
+			});
+			const service = instance.service.toLowerCase();
+
+			const result = await testServiceConnection(instance.baseUrl, apiKey, service);
+			return reply.status(200).send(result);
+		} catch (error) {
+			request.log.error({ err: error }, "Failed to test service instance connection");
+			return reply.status(500).send({ error: "Failed to test service instance connection" });
 		}
-
-		const apiKey = app.encryptor.decrypt({
-			value: instance.encryptedApiKey,
-			iv: instance.encryptionIv,
-		});
-		const service = instance.service.toLowerCase();
-
-		const result = await testServiceConnection(instance.baseUrl, apiKey, service);
-		return reply.status(200).send(result);
 	});
 
 	done();
