@@ -92,7 +92,9 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			app.sessionService.attachCookie(reply, session.token, parsed.data.rememberMe);
 
 			// Pre-warm connections to ARR instances in background (don't await)
-			warmConnectionsForUser(app, user.id).catch(() => {});
+			warmConnectionsForUser(app, user.id).catch((err) => {
+				request.log.debug({ err }, "Connection warm-up wrapper error (non-critical)");
+			});
 
 			return reply.status(201).send({
 				user: {
