@@ -81,7 +81,8 @@ export const HuntingConfig = () => {
 				});
 			}
 		} catch (err) {
-			toast.error("Failed to toggle automation");
+			const message = err instanceof Error ? err.message : "An unexpected error occurred";
+			toast.error("Failed to toggle automation", { description: message });
 		}
 	};
 
@@ -302,7 +303,8 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 			toast.success("Settings saved");
 			onSaved();
 		} catch (err) {
-			toast.error("Failed to save settings");
+			const message = err instanceof Error ? err.message : "An unexpected error occurred";
+			toast.error("Failed to save settings", { description: message });
 		}
 	};
 
@@ -316,7 +318,8 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 					description: "Please wait before running another hunt",
 				});
 			} else {
-				toast.error(`Failed to trigger ${type} hunt`);
+				const message = err instanceof Error ? err.message : "An unexpected error occurred";
+				toast.error(`Failed to trigger ${type} hunt`, { description: message });
 			}
 		}
 	};
@@ -329,7 +332,8 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 			});
 			onSaved();
 		} catch (err) {
-			toast.error("Failed to clear search history");
+			const message = err instanceof Error ? err.message : "An unexpected error occurred";
+			toast.error("Failed to clear search history", { description: message });
 		}
 	};
 
@@ -724,8 +728,13 @@ const UnconfiguredInstanceCard = ({
 	const { createConfig, isCreating } = useUpdateHuntConfig();
 
 	const handleConfigure = async () => {
-		await createConfig(instanceId);
-		onConfigure();
+		try {
+			await createConfig(instanceId);
+			onConfigure();
+		} catch (err) {
+			const message = err instanceof Error ? err.message : "An unexpected error occurred";
+			toast.error("Failed to enable hunting", { description: message });
+		}
 	};
 
 	return (
