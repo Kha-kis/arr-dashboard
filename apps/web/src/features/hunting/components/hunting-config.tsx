@@ -13,15 +13,13 @@ import {
 	Search,
 	ArrowUpCircle,
 	Gauge,
-	Clock,
-	Filter,
+	Trash2,
 } from "lucide-react";
 import { Button, Input, Switch, Alert, AlertDescription } from "../../../components/ui";
 import {
 	PremiumSection,
 	PremiumEmptyState,
 	PremiumCard,
-	InstanceCard,
 	ServiceBadge,
 	StatusBadge,
 	GlassmorphicCard,
@@ -34,6 +32,7 @@ import {
 	useHuntingConfigs,
 	useUpdateHuntConfig,
 	useToggleScheduler,
+	useClearSearchHistory,
 } from "../hooks/useHuntingConfig";
 import { useHuntingStatus } from "../hooks/useHuntingStatus";
 import { useManualHunt } from "../hooks/useManualHunt";
@@ -295,6 +294,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 
 	const { updateConfig, isUpdating, error } = useUpdateHuntConfig();
 	const { triggerHunt, isTriggering, isCooldownError } = useManualHunt();
+	const { clearHistory, isClearing } = useClearSearchHistory();
 
 	const handleSave = async () => {
 		try {
@@ -318,6 +318,18 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 			} else {
 				toast.error(`Failed to trigger ${type} hunt`);
 			}
+		}
+	};
+
+	const handleResetHistory = async () => {
+		try {
+			const result = await clearHistory(config.instanceId);
+			toast.success("Search history cleared", {
+				description: `${result.deleted} records removed. Next hunt will start from page 1.`,
+			});
+			onSaved();
+		} catch (err) {
+			toast.error("Failed to clear search history");
 		}
 	};
 
@@ -515,7 +527,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 
 				{/* Actions */}
 				<div className="flex justify-between items-center gap-2 pt-4 border-t border-border/30">
-					<div className="flex gap-2">
+					<div className="flex gap-2 flex-wrap">
 						{formState.huntMissingEnabled && (
 							<Button
 								variant="secondary"
@@ -548,6 +560,21 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 								Run Upgrade Hunt
 							</Button>
 						)}
+						<Button
+							variant="ghost"
+							size="sm"
+							onClick={() => void handleResetHistory()}
+							disabled={isClearing}
+							className="gap-2 text-muted-foreground hover:text-foreground"
+							title="Reset search history to start from page 1"
+						>
+							{isClearing ? (
+								<RotateCcw className="h-4 w-4 animate-spin" />
+							) : (
+								<Trash2 className="h-4 w-4" />
+							)}
+							Reset History
+						</Button>
 					</div>
 					<GradientButton
 						onClick={() => void handleSave()}

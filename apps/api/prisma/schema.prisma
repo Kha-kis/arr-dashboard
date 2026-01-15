@@ -212,6 +212,12 @@ model SystemSettings {
   // Application metadata
   appName           String    @default("Arr Dashboard")
 
+  // External URL configuration
+  // Used for OIDC callbacks, WebAuthn origins, and external link generation
+  // Leave empty to auto-detect from request origin
+  // Set explicitly when behind a reverse proxy (e.g., https://arr.example.com)
+  externalUrl       String?
+
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 

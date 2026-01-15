@@ -141,3 +141,55 @@ export function useToggleScheduler() {
 		error: mutation.error,
 	};
 }
+
+/**
+ * Clear the search history for an instance to reset the pagination offset.
+ *
+ * @param instanceId - The instance whose search history will be cleared
+ * @param huntType - Optional filter to clear only "missing" or "upgrade" history
+ * @returns An object with the number of deleted records and hunt type
+ */
+async function clearSearchHistory(
+	instanceId: string,
+	huntType?: "missing" | "upgrade",
+): Promise<{ message: string; deleted: number; huntType: string }> {
+	const params = huntType ? `?huntType=${huntType}` : "";
+	return apiRequest<{ message: string; deleted: number; huntType: string }>(
+		`/api/hunting/history/${instanceId}${params}`,
+		{ method: "DELETE" },
+	);
+}
+
+/**
+ * Provides a mutation hook to clear the search history for a hunting configuration.
+ *
+ * This resets the pagination offset so the next hunt starts from page 1 again.
+ *
+ * @returns An object with:
+ * - `clearHistory(instanceId, huntType?)` — clears search history for the instance
+ * - `isClearing` — `true` if the clear operation is in progress
+ * - `error` — the mutation error if the operation failed
+ */
+export function useClearSearchHistory() {
+	const queryClient = useQueryClient();
+
+	const mutation = useMutation({
+		mutationFn: ({
+			instanceId,
+			huntType,
+		}: {
+			instanceId: string;
+			huntType?: "missing" | "upgrade";
+		}) => clearSearchHistory(instanceId, huntType),
+		onSuccess: () => {
+			void queryClient.invalidateQueries({ queryKey: ["hunting"] });
+		},
+	});
+
+	return {
+		clearHistory: (instanceId: string, huntType?: "missing" | "upgrade") =>
+			mutation.mutateAsync({ instanceId, huntType }),
+		isClearing: mutation.isPending,
+		error: mutation.error,
+	};
+}

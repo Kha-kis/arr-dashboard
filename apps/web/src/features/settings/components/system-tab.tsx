@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import {
-	Settings,
 	RefreshCw,
 	AlertTriangle,
 	Info,
@@ -16,6 +15,7 @@ import {
 	Loader2,
 	Save,
 	ChevronDown,
+	Globe,
 } from "lucide-react";
 import { apiRequest } from "../../../lib/api-client/base";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
@@ -34,6 +34,7 @@ interface SystemSettings {
 	webPort: number;
 	listenAddress: string;
 	appName: string;
+	externalUrl: string | null;
 	effectiveApiPort: number;
 	effectiveWebPort: number;
 	effectiveListenAddress: string;
@@ -92,6 +93,7 @@ async function updateSystemSettings(data: {
 	webPort?: number;
 	listenAddress?: string;
 	appName?: string;
+	externalUrl?: string | null;
 }): Promise<SystemSettingsResponse> {
 	return apiRequest<SystemSettingsResponse>("/api/system/settings", {
 		method: "PUT",
@@ -163,6 +165,7 @@ export function SystemTab() {
 	const [apiPort, setApiPort] = useState(3001);
 	const [webPort, setWebPort] = useState(3000);
 	const [listenAddress, setListenAddress] = useState("0.0.0.0");
+	const [externalUrl, setExternalUrl] = useState("");
 	const [hasChanges, setHasChanges] = useState(false);
 	const [isDockerInfoOpen, setIsDockerInfoOpen] = useState(false);
 
@@ -204,36 +207,49 @@ export function SystemTab() {
 			setApiPort(settings.data.apiPort);
 			setWebPort(settings.data.webPort);
 			setListenAddress(settings.data.listenAddress || "0.0.0.0");
+			setExternalUrl(settings.data.externalUrl || "");
 		}
 	}, [settings?.data]);
 
-	const checkForChanges = (newApiPort: number, newWebPort: number, newListenAddress: string) => {
+	const checkForChanges = (
+		newApiPort: number,
+		newWebPort: number,
+		newListenAddress: string,
+		newExternalUrl: string
+	) => {
 		const originalApiPort = settings?.data?.apiPort ?? 3001;
 		const originalWebPort = settings?.data?.webPort ?? 3000;
 		const originalListenAddress = settings?.data?.listenAddress ?? "0.0.0.0";
+		const originalExternalUrl = settings?.data?.externalUrl ?? "";
 
 		setHasChanges(
 			newApiPort !== originalApiPort ||
 			newWebPort !== originalWebPort ||
-			newListenAddress !== originalListenAddress
+			newListenAddress !== originalListenAddress ||
+			newExternalUrl !== originalExternalUrl
 		);
 	};
 
 	const handleApiPortChange = (value: string) => {
 		const port = Number.parseInt(value, 10) || 0;
 		setApiPort(port);
-		checkForChanges(port, webPort, listenAddress);
+		checkForChanges(port, webPort, listenAddress, externalUrl);
 	};
 
 	const handleWebPortChange = (value: string) => {
 		const port = Number.parseInt(value, 10) || 0;
 		setWebPort(port);
-		checkForChanges(apiPort, port, listenAddress);
+		checkForChanges(apiPort, port, listenAddress, externalUrl);
 	};
 
 	const handleListenAddressChange = (value: string) => {
 		setListenAddress(value);
-		checkForChanges(apiPort, webPort, value);
+		checkForChanges(apiPort, webPort, value, externalUrl);
+	};
+
+	const handleExternalUrlChange = (value: string) => {
+		setExternalUrl(value);
+		checkForChanges(apiPort, webPort, listenAddress, value);
 	};
 
 	const handleSave = () => {
@@ -249,7 +265,26 @@ export function SystemTab() {
 			toast.error("API Port and Web Port cannot be the same");
 			return;
 		}
-		updateMutation.mutate({ apiPort, webPort, listenAddress });
+		// Validate external URL if provided
+		if (externalUrl) {
+			try {
+				const url = new URL(externalUrl);
+				if (!["http:", "https:"].includes(url.protocol)) {
+					toast.error("External URL must use http or https protocol");
+					return;
+				}
+			} catch {
+				toast.error("External URL must be a valid URL (e.g., https://arr.example.com)");
+				return;
+			}
+		}
+		// Send null for empty string to clear the value
+		updateMutation.mutate({
+			apiPort,
+			webPort,
+			listenAddress,
+			externalUrl: externalUrl || null,
+		});
 	};
 
 	const handleRestart = () => {
@@ -641,6 +676,60 @@ ports:
 							</div>
 						</div>
 					</div>
+				</div>
+			</PremiumSection>
+
+			{/* External URL Section */}
+			<PremiumSection
+				title="External URL"
+				description="Configure the public URL for accessing this application"
+				icon={Globe}
+			>
+				<div className="space-y-6">
+					<div className="max-w-xl space-y-2">
+						<label
+							htmlFor="externalUrl"
+							className="text-xs font-medium uppercase tracking-wide text-muted-foreground"
+						>
+							External URL
+						</label>
+						<Input
+							id="externalUrl"
+							type="url"
+							value={externalUrl}
+							onChange={(e) => handleExternalUrlChange(e.target.value)}
+							placeholder="https://arr.example.com"
+							className="bg-card/30 border-border/50"
+						/>
+						<p className="text-xs text-muted-foreground">
+							Leave empty to auto-detect from browser. Set this if you're behind a reverse proxy.
+						</p>
+					</div>
+
+					<GlassmorphicCard padding="md">
+						<div className="flex gap-3">
+							<div
+								className="flex h-10 w-10 items-center justify-center rounded-xl shrink-0"
+								style={{
+									background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+									border: `1px solid ${themeGradient.from}30`,
+								}}
+							>
+								<Info className="h-5 w-5" style={{ color: themeGradient.from }} />
+							</div>
+							<div className="space-y-2 text-sm">
+								<p className="font-semibold text-foreground">
+									When to set this
+								</p>
+								<ul className="text-muted-foreground space-y-1 list-disc list-inside">
+									<li>Behind a reverse proxy (Nginx, Traefik, Caddy)</li>
+									<li>Using a custom domain name</li>
+									<li>Accessing via HTTPS with SSL termination</li>
+									<li>OIDC authentication requires correct callback URLs</li>
+								</ul>
+							</div>
+						</div>
+					</GlassmorphicCard>
 				</div>
 			</PremiumSection>
 
