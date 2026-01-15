@@ -159,8 +159,12 @@ export const BackupTab = () => {
 					window.location.href = "/login";
 					return;
 				}
-			} catch {
-				// Server not ready yet
+			} catch (error) {
+				// Server not ready yet - expected during restart
+				// Log on final attempt to aid debugging if server never comes back
+				if (attempts === maxAttempts) {
+					console.error("Server health check failed after maximum attempts:", error);
+				}
 			}
 			if (attempts < maxAttempts) {
 				setTimeout(checkServer, 1000);
