@@ -75,6 +75,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				webPort: settings.webPort,
 				listenAddress: settings.listenAddress,
 				appName: settings.appName,
+				externalUrl: settings.externalUrl,
 				effectiveApiPort,
 				effectiveWebPort,
 				effectiveListenAddress,
@@ -95,9 +96,10 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			webPort?: number;
 			listenAddress?: string;
 			appName?: string;
+			externalUrl?: string | null;
 		};
 	}>("/settings", async (request, reply) => {
-		const { apiPort, webPort, listenAddress, appName } = request.body;
+		const { apiPort, webPort, listenAddress, appName, externalUrl } = request.body;
 
 		// Validate port numbers if provided
 		if (apiPort !== undefined) {
@@ -143,6 +145,28 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			}
 		}
 
+		// Validate external URL if provided (not null - null means clear)
+		if (externalUrl !== undefined && externalUrl !== null && externalUrl !== "") {
+			try {
+				const url = new URL(externalUrl);
+				// Must be http or https
+				if (!["http:", "https:"].includes(url.protocol)) {
+					return reply.status(400).send({
+						success: false,
+						error: "External URL must use http or https protocol",
+					});
+				}
+			} catch {
+				return reply.status(400).send({
+					success: false,
+					error: "External URL must be a valid URL (e.g., https://arr.example.com)",
+				});
+			}
+		}
+
+		// Normalize external URL (empty string becomes null)
+		const normalizedExternalUrl = externalUrl === "" ? null : externalUrl;
+
 		// Update or create settings
 		const settings = await app.prisma.systemSettings.upsert({
 			where: { id: 1 },
@@ -151,6 +175,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				...(webPort !== undefined && { webPort }),
 				...(listenAddress !== undefined && { listenAddress }),
 				...(appName !== undefined && { appName }),
+				...(externalUrl !== undefined && { externalUrl: normalizedExternalUrl }),
 			},
 			create: {
 				id: 1,
@@ -158,6 +183,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				webPort: webPort || 3000,
 				listenAddress: listenAddress || "0.0.0.0",
 				appName: appName || "Arr Dashboard",
+				externalUrl: normalizedExternalUrl,
 			},
 		});
 
@@ -178,6 +204,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				apiPort: settings.apiPort,
 				webPort: settings.webPort,
 				listenAddress: settings.listenAddress,
+				externalUrl: settings.externalUrl,
 				requiresRestart,
 			},
 			"System settings updated",
@@ -190,6 +217,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				webPort: settings.webPort,
 				listenAddress: settings.listenAddress,
 				appName: settings.appName,
+				externalUrl: settings.externalUrl,
 				effectiveApiPort: currentApiPort,
 				effectiveWebPort: currentWebPort,
 				effectiveListenAddress: currentListenAddress,
