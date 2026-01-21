@@ -65,6 +65,6 @@
 		"globals": "^17.0.0",
 		"postcss": "^8.4.47",
 		"tailwindcss": "^4.1.18",
-		"typescript": "^5.6.3"
+		"typescript": "^5.9.3"
 	}
 }
