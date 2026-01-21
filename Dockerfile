@@ -3,9 +3,9 @@
 # syntax=docker/dockerfile:1
 
 # ===== BUILD BASE =====
-FROM node:20-alpine AS build-base
+FROM node:22-alpine AS build-base
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN corepack enable && corepack prepare pnpm@9.12.0 --activate
+RUN corepack enable && corepack prepare pnpm@10.28.1 --activate
 
 # ===== DEPENDENCIES STAGE =====
 FROM build-base AS deps
@@ -62,7 +62,7 @@ RUN cd /app/apps/web/.next/standalone/node_modules && \
     done
 
 # ===== RUNTIME STAGE =====
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 
 # OCI Image Labels
 LABEL org.opencontainers.image.title="Arr Dashboard" \
