@@ -45,6 +45,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Audit dependencies for vulnerabilities
+        run: pnpm audit --audit-level=high
+
       - name: Generate Prisma Client
         run: cd apps/api && pnpm exec prisma generate
 
