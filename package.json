@@ -2,7 +2,7 @@
   "name": "arr-dashboard-platform",
   "version": "2.6.7",
   "private": true,
-  "packageManager": "pnpm@9.12.0",
+  "packageManager": "pnpm@10.28.1",
   "scripts": {
     "dev": "turbo run dev --parallel",
     "build": "turbo run build",
