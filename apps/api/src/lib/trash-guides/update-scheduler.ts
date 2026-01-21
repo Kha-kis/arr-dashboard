@@ -5,7 +5,7 @@
  * Automatically syncs templates based on user preferences and notifies when manual review needed.
  */
 
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "../../lib/prisma.js";
 import type {
 	ScoreConflict,
 	SyncResult,

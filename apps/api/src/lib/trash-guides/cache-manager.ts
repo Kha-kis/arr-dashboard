@@ -8,7 +8,7 @@
 import { promisify } from "node:util";
 import { gunzip, gzip } from "node:zlib";
 import type { TrashCacheEntry, TrashCacheStatus, TrashConfigType } from "@arr/shared";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "../../lib/prisma.js";
 import { safeJsonParse } from "./utils.js";
 
 // ============================================================================

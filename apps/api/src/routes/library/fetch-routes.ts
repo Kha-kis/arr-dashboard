@@ -7,7 +7,7 @@ import {
 	libraryEpisodesResponseSchema,
 	paginatedLibraryResponseSchema,
 } from "@arr/shared";
-import type { Prisma, ServiceType } from "@prisma/client";
+import type { Prisma, ServiceType } from "../../lib/prisma.js";
 import type { FastifyPluginCallback } from "fastify";
 import { getClientForInstance, isSonarrClient } from "../../lib/arr/client-helpers.js";
 import { ArrError, arrErrorToHttpStatus } from "../../lib/arr/client-factory.js";

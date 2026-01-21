@@ -5,7 +5,7 @@
  * All operations are request-scoped and follow security best practices.
  */
 
-import type { ServiceInstance, ServiceType } from "@prisma/client";
+import type { ServiceInstance, ServiceType } from "../../lib/prisma.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
 	type ArrClient,

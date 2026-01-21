@@ -3,7 +3,7 @@ import type {
 	DiscoverSearchResult,
 	DiscoverSearchType,
 } from "@arr/shared";
-import type { ServiceInstance } from "@prisma/client";
+import type { ServiceInstance } from "../../lib/prisma.js";
 import type { SonarrClient } from "arr-sdk/sonarr";
 import type { RadarrClient } from "arr-sdk/radarr";
 import type { FastifyBaseLogger } from "fastify";

@@ -20,7 +20,7 @@ import {
 	TimeoutError,
 	NetworkError,
 } from "arr-sdk";
-import type { ServiceInstance, ServiceType } from "@prisma/client";
+import type { ServiceInstance, ServiceType } from "../../lib/prisma.js";
 import type { Encryptor } from "../auth/encryption.js";
 
 // Re-export error types for convenience

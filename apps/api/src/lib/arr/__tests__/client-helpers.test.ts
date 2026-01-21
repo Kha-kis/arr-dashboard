@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { ServiceInstance, ServiceType } from "@prisma/client";
+import type { ServiceInstance, ServiceType } from "../../../lib/prisma.js";
 import type { FastifyInstance } from "fastify";
 import {
 	executeOnInstances,

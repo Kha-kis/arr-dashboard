@@ -6,7 +6,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { ServiceType } from "@prisma/client";
+import type { ServiceType } from "../../../lib/prisma.js";
 import {
 	ArrClientFactory,
 	ArrError,

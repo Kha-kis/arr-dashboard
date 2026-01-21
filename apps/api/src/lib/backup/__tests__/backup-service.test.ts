@@ -8,7 +8,8 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "../../../lib/prisma.js";
+import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BackupService } from "../backup-service.js";
 
@@ -37,7 +38,7 @@ const mockEncryptor = {
 
 		beforeEach(async () => {
 			// Create a new Prisma client for each test
-			prisma = new PrismaClient();
+			prisma = createTestPrismaClient();
 
 			// Create temp directories for backups and secrets
 			testBackupsDir = path.join(os.tmpdir(), `backup-test-${Date.now()}`);
@@ -115,7 +116,7 @@ const mockEncryptor = {
 		let testSecretsPath: string;
 
 		beforeEach(async () => {
-			prisma = new PrismaClient();
+			prisma = createTestPrismaClient();
 			testBackupsDir = path.join(os.tmpdir(), `backup-test-${Date.now()}`);
 			testSecretsPath = path.join(testBackupsDir, "secrets.json");
 			await fs.mkdir(testBackupsDir, { recursive: true });
@@ -184,7 +185,7 @@ const mockEncryptor = {
 	let testSecretsPath: string;
 
 	beforeEach(async () => {
-		prisma = new PrismaClient();
+		prisma = createTestPrismaClient();
 		testBackupsDir = path.join(os.tmpdir(), `backup-test-${Date.now()}`);
 		testSecretsPath = path.join(testBackupsDir, "secrets.json");
 		await fs.mkdir(testBackupsDir, { recursive: true });

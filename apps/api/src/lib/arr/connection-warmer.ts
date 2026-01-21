@@ -6,7 +6,7 @@
  */
 
 import type { FastifyInstance } from "fastify";
-import type { ServiceInstance } from "@prisma/client";
+import type { ServiceInstance } from "../../lib/prisma.js";
 import { isSonarrClient, isRadarrClient, isProwlarrClient } from "./client-helpers.js";
 
 /**

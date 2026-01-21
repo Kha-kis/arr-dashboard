@@ -14,7 +14,7 @@ import type {
 	TemplateImportValidation,
 	TemplateMetadata,
 } from "@arr/shared";
-import type { PrismaClient, ServiceType, TrashTemplate } from "@prisma/client";
+import type { PrismaClient, ServiceType, TrashTemplate } from "../../lib/prisma.js";
 import { createTemplateValidator } from "./template-validator.js";
 
 export class EnhancedTemplateService {

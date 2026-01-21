@@ -6,7 +6,7 @@
  */
 
 import type { TrashConfigType, TrashCustomFormat } from "@arr/shared";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "../../lib/prisma.js";
 import { dequal as deepEqual } from "dequal";
 import { createCacheManager } from "./cache-manager.js";
 

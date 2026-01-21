@@ -10,7 +10,7 @@ import type {
 	TrashTemplate,
 	UpdateTemplateRequest,
 } from "@arr/shared";
-import type { Prisma, PrismaClient, TrashTemplate as PrismaTrashTemplate } from "@prisma/client";
+import type { Prisma, PrismaClient, TrashTemplate as PrismaTrashTemplate } from "../../lib/prisma.js";
 import { z } from "zod";
 import { safeJsonParse } from "./utils.js";
 

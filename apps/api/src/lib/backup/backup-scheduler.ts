@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "../../lib/prisma.js";
 import type { FastifyBaseLogger } from "fastify";
 import { getAppVersion } from "../utils/version.js";
 import { BackupService } from "./backup-service.js";

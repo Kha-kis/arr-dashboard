@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "../../../lib/prisma.js";
 import type { SonarrClient } from "arr-sdk";
 import { DeploymentExecutorService } from "../deployment-executor.js";
 import type { ArrClientFactory } from "../../arr/client-factory.js";

@@ -5,7 +5,7 @@
  */
 
 import type { TemplateConfig } from "@arr/shared";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import { SonarrClient, RadarrClient } from "arr-sdk";
 import type { DeploymentExecutorService } from "./deployment-executor.js";

@@ -5,7 +5,7 @@
  * Handles both single and bulk deployments.
  */
 
-import type { PrismaClient, ServiceType } from "@prisma/client";
+import type { PrismaClient, ServiceType } from "../../lib/prisma.js";
 import type { SonarrClient, RadarrClient } from "arr-sdk";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import type { CustomQualityConfig, TemplateQualityEntry } from "@arr/shared";

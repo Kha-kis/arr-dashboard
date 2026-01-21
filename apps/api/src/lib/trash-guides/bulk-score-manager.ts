@@ -4,7 +4,7 @@
  * Provides bulk operations for managing custom format scores across multiple templates
  */
 
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "../../lib/prisma.js";
 import type {
 	CustomFormatScoreEntry,
 	BulkScoreFilters,

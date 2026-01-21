@@ -12,7 +12,7 @@ import {
 	prowlarrIndexerStatsSchema,
 	searchResultSchema,
 } from "@arr/shared";
-import type { ServiceInstance } from "@prisma/client";
+import type { ServiceInstance } from "../../lib/prisma.js";
 
 /**
  * Converts a value to a number if possible, otherwise returns undefined.

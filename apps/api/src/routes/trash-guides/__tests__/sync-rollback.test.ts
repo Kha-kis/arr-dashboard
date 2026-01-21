@@ -10,7 +10,8 @@
  * Integration tests with database are skipped unless TEST_DB=true.
  */
 
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "../../../lib/prisma.js";
+import { createTestPrismaClient } from "../../../lib/__tests__/test-prisma.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Check if we should run integration tests (requires writable test database)
@@ -169,7 +170,7 @@ describe("Sync Rollback Logic Tests", () => {
 		let prisma: PrismaClient;
 
 		beforeEach(() => {
-			prisma = new PrismaClient();
+			prisma = createTestPrismaClient();
 		});
 
 		afterEach(async () => {
