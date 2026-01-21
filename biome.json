@@ -21,6 +21,6 @@
     "enabled": true
   },
   "files": {
-    "ignore": ["legacy/**", "**/node_modules/**", "**/dist/**", "**/__tests__/**"]
+    "ignore": ["legacy/**", "**/node_modules/**", "**/dist/**", "**/__tests__/**", "**/generated/**"]
   }
 }

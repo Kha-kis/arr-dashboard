@@ -838,7 +838,7 @@ async function executeSonarrHuntWithSdk(
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: `No episodes match the current filters`,
+				message: "No episodes match the current filters",
 				status: "completed",
 			};
 		}
@@ -1161,7 +1161,7 @@ async function executeRadarrHuntWithSdk(
 				itemsGrabbed: 0,
 				searchedItems: [],
 				grabbedItems: [],
-				message: `No movies match the current filters`,
+				message: "No movies match the current filters",
 				status: "completed",
 			};
 		}
