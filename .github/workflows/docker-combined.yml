@@ -58,6 +58,20 @@ jobs:
         env:
           PLATFORM: ${{ matrix.platform }}
 
+      - name: Extract version metadata
+        id: version
+        run: |
+          # Extract version from tag (strip 'v' prefix) or use 'dev' for manual runs
+          if [[ "${{ github.ref_type }}" == "tag" ]]; then
+            VERSION="${{ github.ref_name }}"
+            VERSION="${VERSION#v}"  # Remove 'v' prefix
+          else
+            VERSION="dev"
+          fi
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "commit_sha=${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+
       - name: Build and push by digest
         id: build
         uses: docker/build-push-action@v5
@@ -66,6 +80,10 @@ jobs:
           platforms: ${{ matrix.platform }}
           provenance: true
           sbom: true
+          build-args: |
+            VERSION=${{ steps.version.outputs.version }}
+            COMMIT_SHA=${{ steps.version.outputs.commit_sha }}
+            BUILD_DATE=${{ steps.version.outputs.build_date }}
           outputs: type=image,name=${{ env.DOCKERHUB_IMAGE }},push-by-digest=true,name-canonical=true,push=true
           cache-from: type=registry,ref=${{ env.DOCKERHUB_IMAGE }}:buildcache-${{ steps.platform.outputs.name }}
           cache-to: type=registry,ref=${{ env.DOCKERHUB_IMAGE }}:buildcache-${{ steps.platform.outputs.name }},mode=max
