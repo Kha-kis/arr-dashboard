@@ -262,3 +262,271 @@ export const formatSizeGB = (bytes?: number): string | null => {
 	}
 	return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 };
+
+// ============================================================================
+// Problematic Item Detection
+// ============================================================================
+
+/**
+ * Issue types that can be detected in queue items
+ */
+export type ProblematicIssueType =
+	| "failed_import"      // Manual import required
+	| "stalled"            // Download has stalled
+	| "download_error"     // Download client reported error
+	| "import_error"       // Import failed with error
+	| "warning"            // Has warnings but not critical
+	| "timeout"            // Connection/timeout issues
+	| "missing_files";     // No files found for import
+
+/**
+ * Result of analyzing a queue item for problems
+ */
+export type ProblematicAnalysis = {
+	isProblematic: boolean;
+	issueTypes: ProblematicIssueType[];
+	primaryIssue: ProblematicIssueType | null;
+	severity: "error" | "warning" | "info";
+	canManualImport: boolean;
+	canRetry: boolean;
+	recommendedAction: "manual_import" | "retry" | "remove" | "blocklist" | null;
+};
+
+/**
+ * Keywords indicating manual import is needed
+ */
+const MANUAL_IMPORT_KEYWORDS = [
+	"manual import",
+	"cannot be imported",
+	"no files were found",
+	"unable to parse",
+	"not a valid",
+	"missing from disk",
+	"import failed",
+];
+
+/**
+ * Keywords indicating stalled downloads
+ */
+const STALLED_KEYWORDS = [
+	"stalled",
+	"stuck",
+	"no active peers",
+	"not downloading",
+	"paused",
+];
+
+/**
+ * Keywords indicating errors
+ */
+const ERROR_KEYWORDS = [
+	"error",
+	"failed",
+	"failure",
+	"denied",
+	"unauthorized",
+	"invalid",
+	"corrupted",
+	"broken",
+];
+
+/**
+ * Keywords indicating timeout/connection issues
+ */
+const TIMEOUT_KEYWORDS = [
+	"timeout",
+	"timed out",
+	"connection",
+	"network",
+	"unreachable",
+];
+
+/**
+ * Analyze a queue item for problems
+ */
+export const analyzeQueueItem = (item: QueueItem): ProblematicAnalysis => {
+	const issueTypes: ProblematicIssueType[] = [];
+	let severity: "error" | "warning" | "info" = "info";
+	let canManualImport = false;
+	let canRetry = false;
+
+	// Collect all text to analyze
+	const textsToAnalyze: string[] = [];
+
+	// Add status
+	if (item.status) {
+		textsToAnalyze.push(item.status);
+	}
+
+	// Add tracked download status
+	if (item.trackedDownloadStatus) {
+		textsToAnalyze.push(item.trackedDownloadStatus);
+	}
+
+	// Add error message
+	if (item.errorMessage) {
+		textsToAnalyze.push(item.errorMessage);
+		severity = "error";
+	}
+
+	// Add status messages
+	if (Array.isArray(item.statusMessages)) {
+		for (const entry of item.statusMessages) {
+			if (entry?.title) {
+				textsToAnalyze.push(entry.title);
+			}
+			if (Array.isArray(entry?.messages)) {
+				for (const msg of entry.messages) {
+					if (typeof msg === "string") {
+						textsToAnalyze.push(msg);
+					}
+				}
+			}
+		}
+	}
+
+	const combinedText = textsToAnalyze.join(" ").toLowerCase();
+
+	// Check for stalled
+	const statusLower = (item.status ?? "").toLowerCase();
+	if (statusLower.includes("stalled") || STALLED_KEYWORDS.some(kw => combinedText.includes(kw))) {
+		issueTypes.push("stalled");
+		canRetry = true;
+		if (severity === "info") severity = "warning";
+	}
+
+	// Check for manual import needed
+	const trackedStatus = (item.trackedDownloadStatus ?? "").toLowerCase();
+	const trackedState = (item.trackedDownloadState ?? "").toLowerCase();
+
+	if (
+		trackedState === "importpending" ||
+		trackedState === "import pending" ||
+		trackedStatus.includes("warning") ||
+		MANUAL_IMPORT_KEYWORDS.some(kw => combinedText.includes(kw))
+	) {
+		issueTypes.push("failed_import");
+		canManualImport = Boolean(item.downloadId);
+		if (severity === "info") severity = "warning";
+	}
+
+	// Check for missing files
+	if (combinedText.includes("no files") || combinedText.includes("missing from disk")) {
+		issueTypes.push("missing_files");
+		if (severity === "info") severity = "warning";
+	}
+
+	// Check for timeout issues
+	if (TIMEOUT_KEYWORDS.some(kw => combinedText.includes(kw))) {
+		issueTypes.push("timeout");
+		canRetry = true;
+		if (severity === "info") severity = "warning";
+	}
+
+	// Check for download errors
+	if (trackedStatus.includes("error") || statusLower.includes("failed")) {
+		issueTypes.push("download_error");
+		canRetry = true;
+		severity = "error";
+	}
+
+	// Check for import errors
+	if (combinedText.includes("import") && ERROR_KEYWORDS.some(kw => combinedText.includes(kw))) {
+		issueTypes.push("import_error");
+		severity = "error";
+	}
+
+	// Check for general warnings
+	if (
+		trackedStatus.includes("warning") &&
+		!issueTypes.includes("failed_import")
+	) {
+		issueTypes.push("warning");
+		if (severity === "info") severity = "warning";
+	}
+
+	// Check for general errors in combined text
+	if (issueTypes.length === 0 && ERROR_KEYWORDS.some(kw => combinedText.includes(kw))) {
+		issueTypes.push("download_error");
+		canRetry = true;
+		if (severity === "info") severity = "warning";
+	}
+
+	const isProblematic = issueTypes.length > 0;
+	const primaryIssue = issueTypes[0] ?? null;
+
+	// Determine recommended action
+	let recommendedAction: ProblematicAnalysis["recommendedAction"] = null;
+	if (isProblematic) {
+		if (canManualImport && (primaryIssue === "failed_import" || primaryIssue === "import_error")) {
+			recommendedAction = "manual_import";
+		} else if (canRetry && (primaryIssue === "stalled" || primaryIssue === "timeout" || primaryIssue === "download_error")) {
+			recommendedAction = "retry";
+		} else if (primaryIssue === "missing_files" || severity === "error") {
+			recommendedAction = "blocklist";
+		} else {
+			recommendedAction = "remove";
+		}
+	}
+
+	return {
+		isProblematic,
+		issueTypes,
+		primaryIssue,
+		severity,
+		canManualImport,
+		canRetry,
+		recommendedAction,
+	};
+};
+
+/**
+ * Filter queue items to only include problematic ones
+ */
+export const filterProblematicItems = (items: QueueItem[]): QueueItem[] => {
+	return items.filter(item => analyzeQueueItem(item).isProblematic);
+};
+
+/**
+ * Get counts of problematic items by issue type
+ */
+export const getProblematicCounts = (items: QueueItem[]): Record<ProblematicIssueType, number> => {
+	const counts: Record<ProblematicIssueType, number> = {
+		failed_import: 0,
+		stalled: 0,
+		download_error: 0,
+		import_error: 0,
+		warning: 0,
+		timeout: 0,
+		missing_files: 0,
+	};
+
+	for (const item of items) {
+		const analysis = analyzeQueueItem(item);
+		for (const issueType of analysis.issueTypes) {
+			counts[issueType]++;
+		}
+	}
+
+	return counts;
+};
+
+/**
+ * Human-readable labels for issue types
+ */
+export const ISSUE_TYPE_LABELS: Record<ProblematicIssueType, string> = {
+	failed_import: "Failed Import",
+	stalled: "Stalled",
+	download_error: "Download Error",
+	import_error: "Import Error",
+	warning: "Warning",
+	timeout: "Timeout",
+	missing_files: "Missing Files",
+};
+
+/**
+ * Get total count of problematic items
+ */
+export const getProblematicCount = (items: QueueItem[]): number => {
+	return items.filter(item => analyzeQueueItem(item).isProblematic).length;
+};

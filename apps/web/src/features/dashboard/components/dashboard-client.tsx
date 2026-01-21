@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import type { ServiceInstanceSummary } from "@arr/shared";
+import type { ServiceInstanceSummary, QueueItem } from "@arr/shared";
 import {
 	Button,
 	Alert,
@@ -16,6 +16,7 @@ import { Section } from "../../../components/layout";
 import { PremiumSkeleton } from "../../../components/layout/premium-components";
 import {
 	AlertCircle,
+	AlertTriangle,
 	RefreshCw,
 	Tv,
 	Film,
@@ -30,11 +31,14 @@ import { springs } from "../../../components/motion";
 import { QueueTable } from "./queue-table";
 import { DashboardTabs, type DashboardTab } from "./dashboard-tabs";
 import ManualImportModal from "../../manual-import/components/manual-import-modal";
+import { BulkClearModal } from "./bulk-clear-modal";
 import { ServiceInstancesTable, QueueFilters } from "../../../components/presentational";
 import { useDashboardData } from "../hooks/useDashboardData";
 import { useDashboardFilters } from "../hooks/useDashboardFilters";
 import { useDashboardQueue } from "../hooks/useDashboardQueue";
 import { useQueueGrouping } from "../hooks";
+import { filterProblematicItems } from "../lib/queue-utils";
+import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
 import { useIncognitoMode } from "../../../lib/incognito";
 import { SERVICE_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -232,6 +236,7 @@ export const DashboardClient = () => {
 	const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
 	const [mounted, setMounted] = useState(false);
 	const [isRefreshing, setIsRefreshing] = useState(false);
+	const [bulkClearOpen, setBulkClearOpen] = useState(false);
 
 	// Get the user's selected color theme
 	const { gradient: themeGradient } = useThemeGradient();
@@ -291,6 +296,8 @@ export const DashboardClient = () => {
 		setInstanceFilter,
 		statusFilter,
 		setStatusFilter,
+		sortBy,
+		setSortBy,
 		page,
 		setPage,
 		pageSize,
@@ -299,8 +306,19 @@ export const DashboardClient = () => {
 		filtersActive,
 		emptyMessage,
 		resetFilters,
+		problematicCount,
 		SERVICE_FILTERS,
+		SORT_OPTIONS,
 	} = filterState;
+
+	// Build enhanced status options with "Problematic" at the top
+	const enhancedStatusOptions = useMemo(() => {
+		const problematicOption = {
+			value: "problematic",
+			label: problematicCount > 0 ? `⚠ Problematic (${problematicCount})` : "⚠ Problematic",
+		};
+		return [problematicOption, ...statusOptions];
+	}, [statusOptions, problematicCount]);
 
 	// Queue action hooks
 	const {
@@ -323,6 +341,46 @@ export const DashboardClient = () => {
 		setIsRefreshing(true);
 		await Promise.all([servicesRefetch(), queueRefetch()]);
 		setTimeout(() => setIsRefreshing(false), 500);
+	};
+
+	// Get problematic items for bulk clear modal
+	const problematicItems = useMemo(
+		() => filterProblematicItems(queueAggregated),
+		[queueAggregated]
+	);
+
+	// Bulk clear execute handler
+	const handleBulkClearExecute = async (
+		itemsToRemove: { item: QueueItem; options: QueueActionOptions }[],
+		itemsToRetry: QueueItem[]
+	) => {
+		// Group items by options for efficient batching
+		const optionsGroups = new Map<string, { items: QueueItem[]; options: QueueActionOptions }>();
+
+		for (const { item, options } of itemsToRemove) {
+			const key = JSON.stringify(options);
+			const group = optionsGroups.get(key);
+			if (group) {
+				group.items.push(item);
+			} else {
+				optionsGroups.set(key, { items: [item], options });
+			}
+		}
+
+		// Execute all remove operations in parallel
+		const removePromises = Array.from(optionsGroups.values()).map(({ items, options }) =>
+			handleQueueRemove(items, options)
+		);
+
+		// Execute retry operations
+		const retryPromise = itemsToRetry.length > 0
+			? handleQueueRetry(itemsToRetry)
+			: Promise.resolve();
+
+		await Promise.all([...removePromises, retryPromise]);
+
+		// Refetch queue data
+		await queueRefetch();
 	};
 
 	if (isLoading || !mounted) {
@@ -549,9 +607,24 @@ export const DashboardClient = () => {
 									</div>
 								</div>
 
-								<Typography variant="caption" className="text-muted-foreground">
-									Showing {paginatedRows.length} of {allSummaryRows.length} cards ({filteredItems.length} items)
-								</Typography>
+								<div className="flex items-center gap-3">
+									{/* Clear Problematic button */}
+									{problematicCount > 0 && (
+										<Button
+											variant="secondary"
+											size="sm"
+											onClick={() => setBulkClearOpen(true)}
+											className="gap-2"
+										>
+											<AlertTriangle className="h-4 w-4 text-amber-500" />
+											Clear {problematicCount} Problematic
+										</Button>
+									)}
+
+									<Typography variant="caption" className="text-muted-foreground">
+										Showing {paginatedRows.length} of {allSummaryRows.length} cards ({filteredItems.length} items)
+									</Typography>
+								</div>
 							</div>
 
 							<div className="p-6 space-y-4">
@@ -564,7 +637,10 @@ export const DashboardClient = () => {
 									instanceOptions={instanceOptions}
 									statusFilter={statusFilter}
 									onStatusFilterChange={setStatusFilter}
-									statusOptions={statusOptions}
+									statusOptions={enhancedStatusOptions}
+									sortBy={sortBy}
+									onSortChange={(value) => setSortBy(value as typeof sortBy)}
+									sortOptions={SORT_OPTIONS}
 									filtersActive={filtersActive}
 									onReset={resetFilters}
 								/>
@@ -637,6 +713,13 @@ export const DashboardClient = () => {
 				open={manualImportContext.open}
 				onOpenChange={handleManualImportOpenChange}
 				onCompleted={handleManualImportCompleted}
+			/>
+
+			<BulkClearModal
+				open={bulkClearOpen}
+				onOpenChange={setBulkClearOpen}
+				items={problematicItems}
+				onExecute={handleBulkClearExecute}
 			/>
 		</>
 	);
