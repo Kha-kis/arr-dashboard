@@ -264,8 +264,8 @@ arr-dashboard/
 
 ### Prerequisites
 
-- Node.js 20+
-- pnpm 9.12.0+
+- Node.js 22+
+- pnpm 10+
 
 ### Setup
 
