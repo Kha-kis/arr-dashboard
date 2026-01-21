@@ -1,26 +1,31 @@
 {
-  "$schema": "https://biomejs.dev/schemas/1.9.4/schema.json",
-  "formatter": {
-    "enabled": true,
-    "lineWidth": 100
-  },
-  "linter": {
-    "enabled": true,
-    "rules": {
-      "recommended": true,
-      "style": {
-        "noNonNullAssertion": "warn",
-        "noUselessElse": "warn"
-      },
-      "suspicious": {
-        "noExplicitAny": "warn"
-      }
-    }
-  },
-  "organizeImports": {
-    "enabled": true
-  },
-  "files": {
-    "ignore": ["legacy/**", "**/node_modules/**", "**/dist/**", "**/__tests__/**", "**/generated/**"]
-  }
+	"$schema": "https://biomejs.dev/schemas/2.3.11/schema.json",
+	"formatter": {
+		"enabled": true,
+		"lineWidth": 100
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"recommended": true,
+			"style": {
+				"noNonNullAssertion": "warn",
+				"noUselessElse": "warn"
+			},
+			"suspicious": {
+				"noExplicitAny": "warn"
+			}
+		}
+	},
+	"assist": { "actions": { "source": { "organizeImports": "on" } } },
+	"files": {
+		"includes": [
+			"**",
+			"!**/legacy/**",
+			"!**/node_modules/**",
+			"!**/dist/**",
+			"!**/__tests__/**",
+			"!**/generated/**"
+		]
+	}
 }
