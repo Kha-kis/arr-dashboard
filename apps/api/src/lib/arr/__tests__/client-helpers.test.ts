@@ -56,6 +56,7 @@ const createMockInstance = (
 	service,
 	label,
 	baseUrl: `http://${label.toLowerCase()}.local`,
+	externalUrl: null,
 	encryptedApiKey: "encrypted-key",
 	encryptionIv: "iv-123",
 	enabled,

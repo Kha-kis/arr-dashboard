@@ -136,6 +136,7 @@ export const ServiceInstanceScalarFieldEnum = {
   service: 'service',
   label: 'label',
   baseUrl: 'baseUrl',
+  externalUrl: 'externalUrl',
   encryptedApiKey: 'encryptedApiKey',
   encryptionIv: 'encryptionIv',
   isDefault: 'isDefault',

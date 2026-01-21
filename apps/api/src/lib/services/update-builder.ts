@@ -7,6 +7,7 @@ import type { ServiceType } from "../../lib/prisma.js";
 export interface UpdatePayload {
 	label?: string;
 	baseUrl?: string;
+	externalUrl?: string | null;
 	enabled?: boolean;
 	isDefault?: boolean;
 	service?: string;
@@ -26,6 +27,7 @@ export interface EncryptedData {
 export interface UpdateData {
 	label?: string;
 	baseUrl?: string;
+	externalUrl?: string | null;
 	enabled?: boolean;
 	isDefault?: boolean;
 	service?: ServiceType;
@@ -69,6 +71,9 @@ export function buildUpdateData(
 	}
 
 	// Handle nullable fields explicitly
+	if (Object.prototype.hasOwnProperty.call(payload, "externalUrl")) {
+		updateData.externalUrl = payload.externalUrl ?? null;
+	}
 	if (Object.prototype.hasOwnProperty.call(payload, "defaultQualityProfileId")) {
 		updateData.defaultQualityProfileId = payload.defaultQualityProfileId ?? null;
 	}

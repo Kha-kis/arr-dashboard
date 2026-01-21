@@ -7,6 +7,7 @@ import type { ServiceType } from "./settings-constants";
 export type ServiceFormState = {
 	label: string;
 	baseUrl: string;
+	externalUrl: string;
 	apiKey: string;
 	service: ServiceType;
 	enabled: boolean;
@@ -25,6 +26,7 @@ export type ServiceFormState = {
 export const defaultFormState = (service: ServiceType): ServiceFormState => ({
 	label: "",
 	baseUrl: "",
+	externalUrl: "",
 	apiKey: "",
 	service,
 	enabled: true,

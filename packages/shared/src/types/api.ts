@@ -10,6 +10,7 @@ export interface ServiceInstanceSummary {
   service: ArrServiceType;
   label: string;
   baseUrl: string;
+  externalUrl: string | null;
   enabled: boolean;
   isDefault: boolean;
   hasApiKey: boolean;

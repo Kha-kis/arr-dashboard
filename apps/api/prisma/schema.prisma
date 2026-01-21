@@ -66,6 +66,7 @@ model ServiceInstance {
   service         ServiceType
   label           String
   baseUrl         String
+  externalUrl     String?             // Optional external URL for browser access (reverse proxy)
   encryptedApiKey String
   encryptionIv    String
   isDefault       Boolean             @default(false)

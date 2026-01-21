@@ -21,6 +21,7 @@ export const useServiceFormState = () => {
 		setFormState({
 			label: service.label,
 			baseUrl: service.baseUrl,
+			externalUrl: service.externalUrl ?? "",
 			apiKey: "",
 			service: service.service,
 			enabled: service.enabled,
