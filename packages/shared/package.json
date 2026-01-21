@@ -21,7 +21,7 @@
     "zod": "^4.3.5"
   },
   "devDependencies": {
-    "tsup": "^8.1.0",
+    "tsup": "^8.5.1",
     "typescript": "^5.9.3",
     "vitest": "^4.0.17"
   },
