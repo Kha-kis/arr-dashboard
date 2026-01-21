@@ -143,7 +143,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 			return reply.status(400).send({
 				success: false,
 				message: "Invalid request body",
-				errors: parseResult.error.errors.map((e) => ({
+				errors: parseResult.error.issues.map((e) => ({
 					path: e.path.join("."),
 					message: e.message,
 				})),
@@ -183,7 +183,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 			return reply.status(400).send({
 				success: false,
 				message: "Invalid request body",
-				errors: parseResult.error.errors.map((e) => ({
+				errors: parseResult.error.issues.map((e) => ({
 					path: e.path.join("."),
 					message: e.message,
 				})),
@@ -223,7 +223,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 			return reply.status(400).send({
 				success: false,
 				message: "Invalid request body",
-				errors: parseResult.error.errors.map((e) => ({
+				errors: parseResult.error.issues.map((e) => ({
 					path: e.path.join("."),
 					message: e.message,
 				})),
@@ -291,7 +291,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
 			return reply.status(400).send({
 				success: false,
 				message: "Invalid import data",
-				errors: parseResult.error.errors.map((e) => ({
+				errors: parseResult.error.issues.map((e) => ({
 					path: e.path.join("."),
 					message: e.message,
 				})),

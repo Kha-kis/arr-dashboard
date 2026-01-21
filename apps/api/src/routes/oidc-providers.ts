@@ -76,7 +76,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 			if (!validation.success) {
 				return reply
 					.status(400)
-					.send({ error: "Validation failed", details: validation.error.errors });
+					.send({ error: "Validation failed", details: validation.error.issues });
 			}
 
 			const data = validation.data;
@@ -170,7 +170,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 			if (!validation.success) {
 				return reply
 					.status(400)
-					.send({ error: "Validation failed", details: validation.error.errors });
+					.send({ error: "Validation failed", details: validation.error.issues });
 			}
 
 			const data = validation.data;
@@ -304,7 +304,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 				return reply.status(400).send({
 					error:
 						"Replacement password required. You must provide a password to switch to password-based authentication.",
-					details: validation.error.errors,
+					details: validation.error.issues,
 				});
 			}
 

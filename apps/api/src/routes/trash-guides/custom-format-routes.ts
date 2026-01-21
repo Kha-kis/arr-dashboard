@@ -86,7 +86,7 @@ export async function registerCustomFormatRoutes(
 			return reply.status(400).send({
 				error: "VALIDATION_ERROR",
 				message: "Invalid request body",
-				details: bodyResult.error.errors,
+				details: bodyResult.error.issues,
 			});
 		}
 

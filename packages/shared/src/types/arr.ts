@@ -1,8 +1,8 @@
 import { z } from "zod";
 
-export const arrServiceTypeSchema = z.enum(["sonarr", "radarr", "prowlarr"], {
-  description: "Supported *arr service types",
-});
+export const arrServiceTypeSchema = z
+  .enum(["sonarr", "radarr", "prowlarr"])
+  .describe("Supported *arr service types");
 
 export type ArrServiceType = z.infer<typeof arrServiceTypeSchema>;
 

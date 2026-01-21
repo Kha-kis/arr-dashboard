@@ -21,7 +21,7 @@ const customFormatSpecificationSchema = z.object({
 	implementation: z.string(),
 	negate: z.boolean(),
 	required: z.boolean(),
-	fields: z.record(z.unknown()),
+	fields: z.record(z.string(), z.unknown()),
 });
 
 // TRaSH Custom Format schema (for originalConfig in template CFs)
@@ -29,7 +29,7 @@ const trashCustomFormatSchema = z.object({
 	trash_id: z.string(),
 	name: z.string(),
 	score: z.number().optional(),
-	trash_scores: z.record(z.number()).optional(),
+	trash_scores: z.record(z.string(), z.number()).optional(),
 	trash_description: z.string().optional(),
 	includeCustomFormatWhenRenaming: z.boolean().optional(),
 	specifications: z.array(customFormatSpecificationSchema),
@@ -60,7 +60,7 @@ const trashCustomFormatGroupSchema = z.object({
 	custom_formats: z.array(groupCustomFormatSchema),
 	quality_profiles: z
 		.object({
-			exclude: z.record(z.string()).optional(),
+			exclude: z.record(z.string(), z.string()).optional(),
 			score: z.number().optional(),
 		})
 		.optional(),
@@ -92,7 +92,7 @@ const templateConfigSchema = z.object({
 			name: z.string(),
 			score: z.number().optional(), // Deprecated but still accepted
 			scoreOverride: z.number().optional(),
-			conditionsEnabled: z.record(z.boolean()),
+			conditionsEnabled: z.record(z.string(), z.boolean()),
 			originalConfig: trashCustomFormatSchema,
 			origin: cfOriginSchema,
 			addedAt: z.string().optional(),
