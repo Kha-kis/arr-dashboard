@@ -6,7 +6,8 @@
  */
 
 import type { TrashConfigType } from "@arr/shared";
-import { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "../../../lib/prisma.js";
+import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TrashCacheManager } from "../cache-manager.js";
 
@@ -20,7 +21,7 @@ const RUN_DB_TESTS = process.env.TEST_DB === "true";
 
 	beforeEach(() => {
 		// Create a new Prisma client for each test
-		prisma = new PrismaClient();
+		prisma = createTestPrismaClient();
 
 		// Create cache manager with default options
 		cacheManager = new TrashCacheManager(prisma, {

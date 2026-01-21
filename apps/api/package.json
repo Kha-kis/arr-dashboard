@@ -25,7 +25,8 @@
 		"@fastify/helmet": "^13.0.2",
 		"@fastify/rate-limit": "^10.3.0",
 		"@fastify/websocket": "^11.2.0",
-		"@prisma/client": "^6.16.2",
+		"@prisma/adapter-better-sqlite3": "^7.3.0",
+		"@prisma/client": "^7.2.0",
 		"@simplewebauthn/server": "^13.2.2",
 		"arctic": "^3.7.0",
 		"argon2": "^0.44.0",
@@ -39,7 +40,7 @@
 		"marked": "^17.0.1",
 		"oauth4webapi": "^3.8.3",
 		"pino": "^9.3.2",
-		"prisma": "^6.16.2",
+		"prisma": "^7.2.0",
 		"tmdb-ts": "^2.2.0",
 		"zod": "^4.3.5"
 	},

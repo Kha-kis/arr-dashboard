@@ -1,5 +1,5 @@
 import type { LibraryItem, LibraryService } from "@arr/shared";
-import type { ServiceInstance } from "@prisma/client";
+import type { ServiceInstance } from "../../lib/prisma.js";
 import { buildMovieItem } from "./movie-normalizer.js";
 import { buildSeriesItem } from "./series-normalizer.js";
 

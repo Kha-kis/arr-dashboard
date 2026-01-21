@@ -5,7 +5,7 @@
  * actual Custom Formats in Radarr/Sonarr instance, detecting conflicts.
  */
 
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "../../lib/prisma.js";
 import type {
 	DeploymentPreview,
 	CustomFormatDeploymentItem,

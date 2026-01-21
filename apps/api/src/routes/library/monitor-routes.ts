@@ -17,7 +17,7 @@ import { toNumber } from "../../lib/library/type-converters.js";
  * Updates both the indexed `monitored` field and the JSON `data` blob
  */
 async function updateCacheMonitoredStatus(
-	prisma: typeof import("@prisma/client").PrismaClient.prototype,
+	prisma: import("../../lib/prisma.js").PrismaClientInstance,
 	instanceId: string,
 	arrItemId: number,
 	itemType: "movie" | "series",
