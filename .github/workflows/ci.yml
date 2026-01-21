@@ -19,7 +19,7 @@ on:
       - ".gitignore"
 
 env:
-  NODE_VERSION: "20"
+  NODE_VERSION: "22"
   DOCKERHUB_IMAGE: khak1s/arr-dashboard
 
 jobs:
@@ -34,8 +34,7 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 9.12.0
+        # Version read from package.json packageManager field
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
