@@ -42,6 +42,14 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
 
+      - name: Cache Turbo build
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-lint-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            turbo-lint-${{ runner.os }}-
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -74,6 +82,14 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"
+
+      - name: Cache Turbo build
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-test-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            turbo-test-${{ runner.os }}-
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
