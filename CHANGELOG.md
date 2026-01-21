@@ -34,6 +34,9 @@ This release includes significant upgrades to the entire technology stack for im
 
 ### Added
 
+#### Dashboard Features
+- **Queue sorting** - Sort downloads by title (A-Z, Z-A), size (largest/smallest), progress, or status ([#32](https://github.com/Kha-kis/arr-dashboard/issues/32))
+
 #### CI/CD Improvements
 - **Automated testing** in CI pipeline with Vitest
 - **Dependency vulnerability auditing** with `pnpm audit`

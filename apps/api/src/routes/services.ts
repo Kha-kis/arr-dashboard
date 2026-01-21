@@ -10,6 +10,7 @@ import { buildUpdateData } from "../lib/services/update-builder.js";
 const servicePayloadSchema = z.object({
 	label: z.string().min(1).max(120),
 	baseUrl: z.string().url(),
+	externalUrl: z.string().url().nullable().optional(), // Optional browser-accessible URL for reverse proxy setups
 	apiKey: z.string().min(8),
 	service: arrServiceTypeSchema,
 	enabled: z.boolean().default(true),

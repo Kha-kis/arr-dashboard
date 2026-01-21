@@ -56,9 +56,14 @@ export const useServicesManagement = () => {
 		const trimmedStorageGroupId = formState.storageGroupId.trim();
 		const storageGroupId = trimmedStorageGroupId.length > 0 ? trimmedStorageGroupId : null;
 
+		// Handle external URL: empty string becomes null
+		const trimmedExternalUrl = formState.externalUrl.trim();
+		const externalUrl = trimmedExternalUrl.length > 0 ? trimmedExternalUrl : null;
+
 		const basePayload = {
 			label: formState.label.trim(),
 			baseUrl: formState.baseUrl.trim(),
+			externalUrl,
 			apiKey: formState.apiKey.trim(),
 			service: formState.service,
 			enabled: formState.enabled,

@@ -75,7 +75,9 @@ export const ServiceInstanceCard = ({
 }: ServiceInstanceCardProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const [incognitoMode] = useIncognitoMode();
-	const displayUrl = incognitoMode ? getLinuxUrl(instance.baseUrl) : instance.baseUrl;
+	// Use externalUrl for browser navigation if available, otherwise fall back to baseUrl
+	const linkUrl = instance.externalUrl || instance.baseUrl;
+	const displayUrl = incognitoMode ? getLinuxUrl(linkUrl) : linkUrl;
 
 	// Get service gradient for accent
 	const serviceGradient = getServiceGradient(instance.service);
@@ -138,7 +140,7 @@ export const ServiceInstanceCard = ({
 						<div className="flex items-center gap-2">
 							<p className="truncate text-sm text-muted-foreground">{displayUrl}</p>
 							<a
-								href={instance.baseUrl}
+								href={linkUrl}
 								target="_blank"
 								rel="noopener noreferrer"
 								className="text-muted-foreground hover:text-foreground transition-colors"

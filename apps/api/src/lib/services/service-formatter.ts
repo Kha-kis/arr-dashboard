@@ -7,6 +7,7 @@ interface ServiceInstanceWithTags {
 	service: string;
 	label: string;
 	baseUrl: string;
+	externalUrl: string | null;
 	enabled: boolean;
 	isDefault: boolean;
 	createdAt: Date;
@@ -30,6 +31,7 @@ export interface FormattedServiceInstance {
 	service: string;
 	label: string;
 	baseUrl: string;
+	externalUrl: string | null;
 	enabled: boolean;
 	isDefault: boolean;
 	createdAt: Date;
@@ -52,6 +54,7 @@ export function formatServiceInstance(instance: ServiceInstanceWithTags): Format
 		service: instance.service.toLowerCase(),
 		label: instance.label,
 		baseUrl: instance.baseUrl,
+		externalUrl: instance.externalUrl,
 		enabled: instance.enabled,
 		isDefault: instance.isDefault,
 		createdAt: instance.createdAt,

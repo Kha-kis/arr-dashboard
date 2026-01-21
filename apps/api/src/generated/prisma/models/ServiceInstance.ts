@@ -42,6 +42,7 @@ export type ServiceInstanceMinAggregateOutputType = {
   service: $Enums.ServiceType | null
   label: string | null
   baseUrl: string | null
+  externalUrl: string | null
   encryptedApiKey: string | null
   encryptionIv: string | null
   isDefault: boolean | null
@@ -61,6 +62,7 @@ export type ServiceInstanceMaxAggregateOutputType = {
   service: $Enums.ServiceType | null
   label: string | null
   baseUrl: string | null
+  externalUrl: string | null
   encryptedApiKey: string | null
   encryptionIv: string | null
   isDefault: boolean | null
@@ -80,6 +82,7 @@ export type ServiceInstanceCountAggregateOutputType = {
   service: number
   label: number
   baseUrl: number
+  externalUrl: number
   encryptedApiKey: number
   encryptionIv: number
   isDefault: number
@@ -111,6 +114,7 @@ export type ServiceInstanceMinAggregateInputType = {
   service?: true
   label?: true
   baseUrl?: true
+  externalUrl?: true
   encryptedApiKey?: true
   encryptionIv?: true
   isDefault?: true
@@ -130,6 +134,7 @@ export type ServiceInstanceMaxAggregateInputType = {
   service?: true
   label?: true
   baseUrl?: true
+  externalUrl?: true
   encryptedApiKey?: true
   encryptionIv?: true
   isDefault?: true
@@ -149,6 +154,7 @@ export type ServiceInstanceCountAggregateInputType = {
   service?: true
   label?: true
   baseUrl?: true
+  externalUrl?: true
   encryptedApiKey?: true
   encryptionIv?: true
   isDefault?: true
@@ -255,6 +261,7 @@ export type ServiceInstanceGroupByOutputType = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault: boolean
@@ -297,6 +304,7 @@ export type ServiceInstanceWhereInput = {
   service?: Prisma.EnumServiceTypeFilter<"ServiceInstance"> | $Enums.ServiceType
   label?: Prisma.StringFilter<"ServiceInstance"> | string
   baseUrl?: Prisma.StringFilter<"ServiceInstance"> | string
+  externalUrl?: Prisma.StringNullableFilter<"ServiceInstance"> | string | null
   encryptedApiKey?: Prisma.StringFilter<"ServiceInstance"> | string
   encryptionIv?: Prisma.StringFilter<"ServiceInstance"> | string
   isDefault?: Prisma.BoolFilter<"ServiceInstance"> | boolean
@@ -329,6 +337,7 @@ export type ServiceInstanceOrderByWithRelationInput = {
   service?: Prisma.SortOrder
   label?: Prisma.SortOrder
   baseUrl?: Prisma.SortOrder
+  externalUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   encryptedApiKey?: Prisma.SortOrder
   encryptionIv?: Prisma.SortOrder
   isDefault?: Prisma.SortOrder
@@ -364,6 +373,7 @@ export type ServiceInstanceWhereUniqueInput = Prisma.AtLeast<{
   service?: Prisma.EnumServiceTypeFilter<"ServiceInstance"> | $Enums.ServiceType
   label?: Prisma.StringFilter<"ServiceInstance"> | string
   baseUrl?: Prisma.StringFilter<"ServiceInstance"> | string
+  externalUrl?: Prisma.StringNullableFilter<"ServiceInstance"> | string | null
   encryptedApiKey?: Prisma.StringFilter<"ServiceInstance"> | string
   encryptionIv?: Prisma.StringFilter<"ServiceInstance"> | string
   isDefault?: Prisma.BoolFilter<"ServiceInstance"> | boolean
@@ -396,6 +406,7 @@ export type ServiceInstanceOrderByWithAggregationInput = {
   service?: Prisma.SortOrder
   label?: Prisma.SortOrder
   baseUrl?: Prisma.SortOrder
+  externalUrl?: Prisma.SortOrderInput | Prisma.SortOrder
   encryptedApiKey?: Prisma.SortOrder
   encryptionIv?: Prisma.SortOrder
   isDefault?: Prisma.SortOrder
@@ -423,6 +434,7 @@ export type ServiceInstanceScalarWhereWithAggregatesInput = {
   service?: Prisma.EnumServiceTypeWithAggregatesFilter<"ServiceInstance"> | $Enums.ServiceType
   label?: Prisma.StringWithAggregatesFilter<"ServiceInstance"> | string
   baseUrl?: Prisma.StringWithAggregatesFilter<"ServiceInstance"> | string
+  externalUrl?: Prisma.StringNullableWithAggregatesFilter<"ServiceInstance"> | string | null
   encryptedApiKey?: Prisma.StringWithAggregatesFilter<"ServiceInstance"> | string
   encryptionIv?: Prisma.StringWithAggregatesFilter<"ServiceInstance"> | string
   isDefault?: Prisma.BoolWithAggregatesFilter<"ServiceInstance"> | boolean
@@ -441,6 +453,7 @@ export type ServiceInstanceCreateInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -473,6 +486,7 @@ export type ServiceInstanceUncheckedCreateInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -503,6 +517,7 @@ export type ServiceInstanceUpdateInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -535,6 +550,7 @@ export type ServiceInstanceUncheckedUpdateInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -566,6 +582,7 @@ export type ServiceInstanceCreateManyInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -584,6 +601,7 @@ export type ServiceInstanceUpdateManyMutationInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -603,6 +621,7 @@ export type ServiceInstanceUncheckedUpdateManyInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -632,6 +651,7 @@ export type ServiceInstanceCountOrderByAggregateInput = {
   service?: Prisma.SortOrder
   label?: Prisma.SortOrder
   baseUrl?: Prisma.SortOrder
+  externalUrl?: Prisma.SortOrder
   encryptedApiKey?: Prisma.SortOrder
   encryptionIv?: Prisma.SortOrder
   isDefault?: Prisma.SortOrder
@@ -656,6 +676,7 @@ export type ServiceInstanceMaxOrderByAggregateInput = {
   service?: Prisma.SortOrder
   label?: Prisma.SortOrder
   baseUrl?: Prisma.SortOrder
+  externalUrl?: Prisma.SortOrder
   encryptedApiKey?: Prisma.SortOrder
   encryptionIv?: Prisma.SortOrder
   isDefault?: Prisma.SortOrder
@@ -675,6 +696,7 @@ export type ServiceInstanceMinOrderByAggregateInput = {
   service?: Prisma.SortOrder
   label?: Prisma.SortOrder
   baseUrl?: Prisma.SortOrder
+  externalUrl?: Prisma.SortOrder
   encryptedApiKey?: Prisma.SortOrder
   encryptionIv?: Prisma.SortOrder
   isDefault?: Prisma.SortOrder
@@ -936,6 +958,7 @@ export type ServiceInstanceCreateWithoutUserInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -966,6 +989,7 @@ export type ServiceInstanceUncheckedCreateWithoutUserInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -1025,6 +1049,7 @@ export type ServiceInstanceScalarWhereInput = {
   service?: Prisma.EnumServiceTypeFilter<"ServiceInstance"> | $Enums.ServiceType
   label?: Prisma.StringFilter<"ServiceInstance"> | string
   baseUrl?: Prisma.StringFilter<"ServiceInstance"> | string
+  externalUrl?: Prisma.StringNullableFilter<"ServiceInstance"> | string | null
   encryptedApiKey?: Prisma.StringFilter<"ServiceInstance"> | string
   encryptionIv?: Prisma.StringFilter<"ServiceInstance"> | string
   isDefault?: Prisma.BoolFilter<"ServiceInstance"> | boolean
@@ -1043,6 +1068,7 @@ export type ServiceInstanceCreateWithoutTagsInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -1074,6 +1100,7 @@ export type ServiceInstanceUncheckedCreateWithoutTagsInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -1119,6 +1146,7 @@ export type ServiceInstanceUpdateWithoutTagsInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -1150,6 +1178,7 @@ export type ServiceInstanceUncheckedUpdateWithoutTagsInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -1179,6 +1208,7 @@ export type ServiceInstanceCreateWithoutTrashSyncHistoryInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -1210,6 +1240,7 @@ export type ServiceInstanceUncheckedCreateWithoutTrashSyncHistoryInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -1255,6 +1286,7 @@ export type ServiceInstanceUpdateWithoutTrashSyncHistoryInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -1286,6 +1318,7 @@ export type ServiceInstanceUncheckedUpdateWithoutTrashSyncHistoryInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -1315,6 +1348,7 @@ export type ServiceInstanceCreateWithoutTrashBackupsInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -1346,6 +1380,7 @@ export type ServiceInstanceUncheckedCreateWithoutTrashBackupsInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -1391,6 +1426,7 @@ export type ServiceInstanceUpdateWithoutTrashBackupsInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -1422,6 +1458,7 @@ export type ServiceInstanceUncheckedUpdateWithoutTrashBackupsInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -1451,6 +1488,7 @@ export type ServiceInstanceCreateWithoutTrashSchedulesInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -1482,6 +1520,7 @@ export type ServiceInstanceUncheckedCreateWithoutTrashSchedulesInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -1527,6 +1566,7 @@ export type ServiceInstanceUpdateWithoutTrashSchedulesInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -1558,6 +1598,7 @@ export type ServiceInstanceUncheckedUpdateWithoutTrashSchedulesInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -1587,6 +1628,7 @@ export type ServiceInstanceCreateWithoutQualityProfileMappingsInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -1618,6 +1660,7 @@ export type ServiceInstanceUncheckedCreateWithoutQualityProfileMappingsInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -1663,6 +1706,7 @@ export type ServiceInstanceUpdateWithoutQualityProfileMappingsInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -1694,6 +1738,7 @@ export type ServiceInstanceUncheckedUpdateWithoutQualityProfileMappingsInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -1723,6 +1768,7 @@ export type ServiceInstanceCreateWithoutQualityProfileOverridesInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -1754,6 +1800,7 @@ export type ServiceInstanceUncheckedCreateWithoutQualityProfileOverridesInput = 
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -1799,6 +1846,7 @@ export type ServiceInstanceUpdateWithoutQualityProfileOverridesInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -1830,6 +1878,7 @@ export type ServiceInstanceUncheckedUpdateWithoutQualityProfileOverridesInput = 
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -1859,6 +1908,7 @@ export type ServiceInstanceCreateWithoutDeploymentHistoryInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -1890,6 +1940,7 @@ export type ServiceInstanceUncheckedCreateWithoutDeploymentHistoryInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -1935,6 +1986,7 @@ export type ServiceInstanceUpdateWithoutDeploymentHistoryInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -1966,6 +2018,7 @@ export type ServiceInstanceUncheckedUpdateWithoutDeploymentHistoryInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -1995,6 +2048,7 @@ export type ServiceInstanceCreateWithoutStandaloneCFDeploymentsInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -2026,6 +2080,7 @@ export type ServiceInstanceUncheckedCreateWithoutStandaloneCFDeploymentsInput = 
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -2071,6 +2126,7 @@ export type ServiceInstanceUpdateWithoutStandaloneCFDeploymentsInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -2102,6 +2158,7 @@ export type ServiceInstanceUncheckedUpdateWithoutStandaloneCFDeploymentsInput = 
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -2131,6 +2188,7 @@ export type ServiceInstanceCreateWithoutHuntConfigInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -2162,6 +2220,7 @@ export type ServiceInstanceUncheckedCreateWithoutHuntConfigInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -2207,6 +2266,7 @@ export type ServiceInstanceUpdateWithoutHuntConfigInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -2238,6 +2298,7 @@ export type ServiceInstanceUncheckedUpdateWithoutHuntConfigInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -2267,6 +2328,7 @@ export type ServiceInstanceCreateWithoutHuntLogsInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -2298,6 +2360,7 @@ export type ServiceInstanceUncheckedCreateWithoutHuntLogsInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -2343,6 +2406,7 @@ export type ServiceInstanceUpdateWithoutHuntLogsInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -2374,6 +2438,7 @@ export type ServiceInstanceUncheckedUpdateWithoutHuntLogsInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -2403,6 +2468,7 @@ export type ServiceInstanceCreateWithoutLibraryCacheInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -2434,6 +2500,7 @@ export type ServiceInstanceUncheckedCreateWithoutLibraryCacheInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -2479,6 +2546,7 @@ export type ServiceInstanceUpdateWithoutLibraryCacheInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -2510,6 +2578,7 @@ export type ServiceInstanceUncheckedUpdateWithoutLibraryCacheInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -2539,6 +2608,7 @@ export type ServiceInstanceCreateWithoutLibrarySyncStatusInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -2570,6 +2640,7 @@ export type ServiceInstanceUncheckedCreateWithoutLibrarySyncStatusInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -2615,6 +2686,7 @@ export type ServiceInstanceUpdateWithoutLibrarySyncStatusInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -2646,6 +2718,7 @@ export type ServiceInstanceUncheckedUpdateWithoutLibrarySyncStatusInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -2675,6 +2748,7 @@ export type ServiceInstanceCreateManyUserInput = {
   service: $Enums.ServiceType
   label: string
   baseUrl: string
+  externalUrl?: string | null
   encryptedApiKey: string
   encryptionIv: string
   isDefault?: boolean
@@ -2693,6 +2767,7 @@ export type ServiceInstanceUpdateWithoutUserInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -2723,6 +2798,7 @@ export type ServiceInstanceUncheckedUpdateWithoutUserInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -2753,6 +2829,7 @@ export type ServiceInstanceUncheckedUpdateManyWithoutUserInput = {
   service?: Prisma.EnumServiceTypeFieldUpdateOperationsInput | $Enums.ServiceType
   label?: Prisma.StringFieldUpdateOperationsInput | string
   baseUrl?: Prisma.StringFieldUpdateOperationsInput | string
+  externalUrl?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   encryptedApiKey?: Prisma.StringFieldUpdateOperationsInput | string
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
@@ -2884,6 +2961,7 @@ export type ServiceInstanceSelect<ExtArgs extends runtime.Types.Extensions.Inter
   service?: boolean
   label?: boolean
   baseUrl?: boolean
+  externalUrl?: boolean
   encryptedApiKey?: boolean
   encryptionIv?: boolean
   isDefault?: boolean
@@ -2917,6 +2995,7 @@ export type ServiceInstanceSelectCreateManyAndReturn<ExtArgs extends runtime.Typ
   service?: boolean
   label?: boolean
   baseUrl?: boolean
+  externalUrl?: boolean
   encryptedApiKey?: boolean
   encryptionIv?: boolean
   isDefault?: boolean
@@ -2937,6 +3016,7 @@ export type ServiceInstanceSelectUpdateManyAndReturn<ExtArgs extends runtime.Typ
   service?: boolean
   label?: boolean
   baseUrl?: boolean
+  externalUrl?: boolean
   encryptedApiKey?: boolean
   encryptionIv?: boolean
   isDefault?: boolean
@@ -2957,6 +3037,7 @@ export type ServiceInstanceSelectScalar = {
   service?: boolean
   label?: boolean
   baseUrl?: boolean
+  externalUrl?: boolean
   encryptedApiKey?: boolean
   encryptionIv?: boolean
   isDefault?: boolean
@@ -2970,7 +3051,7 @@ export type ServiceInstanceSelectScalar = {
   updatedAt?: boolean
 }
 
-export type ServiceInstanceOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "service" | "label" | "baseUrl" | "encryptedApiKey" | "encryptionIv" | "isDefault" | "enabled" | "defaultQualityProfileId" | "defaultLanguageProfileId" | "defaultRootFolderPath" | "defaultSeasonFolder" | "storageGroupId" | "createdAt" | "updatedAt", ExtArgs["result"]["serviceInstance"]>
+export type ServiceInstanceOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "service" | "label" | "baseUrl" | "externalUrl" | "encryptedApiKey" | "encryptionIv" | "isDefault" | "enabled" | "defaultQualityProfileId" | "defaultLanguageProfileId" | "defaultRootFolderPath" | "defaultSeasonFolder" | "storageGroupId" | "createdAt" | "updatedAt", ExtArgs["result"]["serviceInstance"]>
 export type ServiceInstanceInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
   tags?: boolean | Prisma.ServiceInstance$tagsArgs<ExtArgs>
@@ -3017,6 +3098,7 @@ export type $ServiceInstancePayload<ExtArgs extends runtime.Types.Extensions.Int
     service: $Enums.ServiceType
     label: string
     baseUrl: string
+    externalUrl: string | null
     encryptedApiKey: string
     encryptionIv: string
     isDefault: boolean
@@ -3469,6 +3551,7 @@ export interface ServiceInstanceFieldRefs {
   readonly service: Prisma.FieldRef<"ServiceInstance", 'ServiceType'>
   readonly label: Prisma.FieldRef<"ServiceInstance", 'String'>
   readonly baseUrl: Prisma.FieldRef<"ServiceInstance", 'String'>
+  readonly externalUrl: Prisma.FieldRef<"ServiceInstance", 'String'>
   readonly encryptedApiKey: Prisma.FieldRef<"ServiceInstance", 'String'>
   readonly encryptionIv: Prisma.FieldRef<"ServiceInstance", 'String'>
   readonly isDefault: Prisma.FieldRef<"ServiceInstance", 'Boolean'>

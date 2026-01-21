@@ -16,6 +16,7 @@ export async function fetchServices(): Promise<ServiceInstanceSummary[]> {
 export type CreateServicePayload = {
 	label: string;
 	baseUrl: string;
+	externalUrl?: string | null;
 	apiKey: string;
 	service: "sonarr" | "radarr" | "prowlarr";
 	enabled?: boolean;

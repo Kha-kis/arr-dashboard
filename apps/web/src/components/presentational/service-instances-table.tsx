@@ -29,11 +29,14 @@ export const ServiceInstancesTable = ({ instances, incognitoMode }: ServiceInsta
 					</tr>
 				</thead>
 				<tbody className="divide-y divide-border/50">
-					{instances.map((instance) => (
+					{instances.map((instance) => {
+						// Use externalUrl for browser navigation if available, otherwise fall back to baseUrl
+						const linkUrl = instance.externalUrl || instance.baseUrl;
+						return (
 						<tr key={instance.id}>
 							<td className="px-4 py-3 font-medium text-foreground">
 								<a
-									href={instance.baseUrl}
+									href={linkUrl}
 									target="_blank"
 									rel="noopener noreferrer"
 									className="inline-flex items-center gap-1.5 text-foreground hover:text-sky-400 transition-colors"
@@ -45,7 +48,7 @@ export const ServiceInstancesTable = ({ instances, incognitoMode }: ServiceInsta
 							</td>
 							<td className="px-4 py-3 capitalize">{instance.service}</td>
 							<td className="px-4 py-3 text-muted-foreground">
-								{incognitoMode ? getLinuxUrl(instance.baseUrl) : instance.baseUrl}
+								{incognitoMode ? getLinuxUrl(linkUrl) : linkUrl}
 							</td>
 							<td className="px-4 py-3">
 								{instance.tags.length === 0 ? (
@@ -75,7 +78,8 @@ export const ServiceInstancesTable = ({ instances, incognitoMode }: ServiceInsta
 								</span>
 							</td>
 						</tr>
-					))}
+					);
+					})}
 				</tbody>
 			</table>
 		</div>

@@ -168,6 +168,28 @@ export const ServiceForm = ({
 						/>
 					</SimpleFormField>
 					<SimpleFormField
+						label="External URL"
+						htmlFor="service-externalurl"
+						hint="Browser-accessible URL if using a reverse proxy (leave empty to use Base URL)"
+					>
+						<Input
+							id="service-externalurl"
+							type="url"
+							value={formState.externalUrl}
+							onChange={(event) =>
+								onFormStateChange((prev) => ({
+									...prev,
+									externalUrl: event.target.value,
+								}))
+							}
+							placeholder="https://sonarr.example.com"
+							autoComplete="off"
+							data-1p-ignore
+							data-lpignore="true"
+							data-form-type="other"
+						/>
+					</SimpleFormField>
+					<SimpleFormField
 						label="API Key"
 						htmlFor="service-apikey"
 						hint={selectedService ? "Leave empty to keep current key" : "Found in Settings > General"}
