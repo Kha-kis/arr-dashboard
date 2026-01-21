@@ -4,76 +4,71 @@
  * Unit tests for the TMDB client wrapper, including caching and normalization.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { TMDBClient } from "../tmdb-client.js";
 
 // Mock tmdb-ts module
+// Note: Vitest 4 requires class/function syntax for mocks used with `new`
+const mockMovies = {
+	popular: vi.fn(),
+	topRated: vi.fn(),
+	upcoming: vi.fn(),
+	similar: vi.fn(),
+	externalIds: vi.fn(),
+	credits: vi.fn(),
+	videos: vi.fn(),
+	watchProviders: vi.fn(),
+};
+
+const mockTvShows = {
+	popular: vi.fn(),
+	topRated: vi.fn(),
+	airingToday: vi.fn(),
+	similar: vi.fn(),
+	externalIds: vi.fn(),
+	credits: vi.fn(),
+	aggregateCredits: vi.fn(),
+	videos: vi.fn(),
+	watchProviders: vi.fn(),
+};
+
+const mockTrending = {
+	trending: vi.fn(),
+};
+
+const mockSearch = {
+	movies: vi.fn(),
+	tvShows: vi.fn(),
+};
+
+const mockGenres = {
+	movies: vi.fn(),
+	tvShows: vi.fn(),
+};
+
 vi.mock("tmdb-ts", () => {
-	const mockMovies = {
-		popular: vi.fn(),
-		topRated: vi.fn(),
-		upcoming: vi.fn(),
-		similar: vi.fn(),
-		externalIds: vi.fn(),
-		credits: vi.fn(),
-		videos: vi.fn(),
-		watchProviders: vi.fn(),
-	};
-
-	const mockTvShows = {
-		popular: vi.fn(),
-		topRated: vi.fn(),
-		airingToday: vi.fn(),
-		similar: vi.fn(),
-		externalIds: vi.fn(),
-		credits: vi.fn(),
-		aggregateCredits: vi.fn(),
-		videos: vi.fn(),
-		watchProviders: vi.fn(),
-	};
-
-	const mockTrending = {
-		trending: vi.fn(),
-	};
-
-	const mockSearch = {
-		movies: vi.fn(),
-		tvShows: vi.fn(),
-	};
-
-	const mockGenres = {
-		movies: vi.fn(),
-		tvShows: vi.fn(),
-	};
+	// Use a class to ensure it can be instantiated with `new`
+	class MockTMDB {
+		movies = mockMovies;
+		tvShows = mockTvShows;
+		trending = mockTrending;
+		search = mockSearch;
+		genres = mockGenres;
+	}
 
 	return {
-		TMDB: vi.fn().mockImplementation(() => ({
-			movies: mockMovies,
-			tvShows: mockTvShows,
-			trending: mockTrending,
-			search: mockSearch,
-			genres: mockGenres,
-		})),
-		// Export mock references for test access
-		__mockMovies: mockMovies,
-		__mockTvShows: mockTvShows,
-		__mockTrending: mockTrending,
-		__mockSearch: mockSearch,
-		__mockGenres: mockGenres,
+		TMDB: MockTMDB,
 	};
 });
 
-// Helper to get mock references
-const getMocks = async () => {
-	const mod = await import("tmdb-ts");
-	return {
-		mockMovies: (mod as any).__mockMovies,
-		mockTvShows: (mod as any).__mockTvShows,
-		mockTrending: (mod as any).__mockTrending,
-		mockSearch: (mod as any).__mockSearch,
-		mockGenres: (mod as any).__mockGenres,
-	};
-};
+// Helper to get mock references (now uses module-scoped constants)
+const getMocks = () => ({
+	mockMovies,
+	mockTvShows,
+	mockTrending,
+	mockSearch,
+	mockGenres,
+});
 
 describe("TMDBClient - Image URL Generation", () => {
 	let client: TMDBClient;
@@ -115,11 +110,11 @@ describe("TMDBClient - Image URL Generation", () => {
 
 describe("TMDBClient - Movies Endpoints", () => {
 	let client: TMDBClient;
-	let mocks: Awaited<ReturnType<typeof getMocks>>;
+	let mocks: ReturnType<typeof getMocks>;
 
 	beforeEach(async () => {
 		vi.clearAllMocks();
-		mocks = await getMocks();
+		mocks = getMocks();
 		client = new TMDBClient("test-api-key", {
 			imageBaseUrl: "https://image.tmdb.org/t/p",
 		});
@@ -243,11 +238,11 @@ describe("TMDBClient - Movies Endpoints", () => {
 
 describe("TMDBClient - TV Shows Endpoints", () => {
 	let client: TMDBClient;
-	let mocks: Awaited<ReturnType<typeof getMocks>>;
+	let mocks: ReturnType<typeof getMocks>;
 
 	beforeEach(async () => {
 		vi.clearAllMocks();
-		mocks = await getMocks();
+		mocks = getMocks();
 		client = new TMDBClient("test-api-key", {
 			imageBaseUrl: "https://image.tmdb.org/t/p",
 		});
@@ -313,11 +308,11 @@ describe("TMDBClient - TV Shows Endpoints", () => {
 
 describe("TMDBClient - Search Endpoints", () => {
 	let client: TMDBClient;
-	let mocks: Awaited<ReturnType<typeof getMocks>>;
+	let mocks: ReturnType<typeof getMocks>;
 
 	beforeEach(async () => {
 		vi.clearAllMocks();
-		mocks = await getMocks();
+		mocks = getMocks();
 		client = new TMDBClient("test-api-key", {
 			imageBaseUrl: "https://image.tmdb.org/t/p",
 		});
@@ -378,11 +373,11 @@ describe("TMDBClient - Search Endpoints", () => {
 
 describe("TMDBClient - Genres Endpoints", () => {
 	let client: TMDBClient;
-	let mocks: Awaited<ReturnType<typeof getMocks>>;
+	let mocks: ReturnType<typeof getMocks>;
 
 	beforeEach(async () => {
 		vi.clearAllMocks();
-		mocks = await getMocks();
+		mocks = getMocks();
 		client = new TMDBClient("test-api-key", {
 			imageBaseUrl: "https://image.tmdb.org/t/p",
 		});
@@ -423,11 +418,11 @@ describe("TMDBClient - Genres Endpoints", () => {
 
 describe("TMDBClient - Batch External IDs", () => {
 	let client: TMDBClient;
-	let mocks: Awaited<ReturnType<typeof getMocks>>;
+	let mocks: ReturnType<typeof getMocks>;
 
 	beforeEach(async () => {
 		vi.clearAllMocks();
-		mocks = await getMocks();
+		mocks = getMocks();
 		client = new TMDBClient("test-api-key", {
 			imageBaseUrl: "https://image.tmdb.org/t/p",
 		});
