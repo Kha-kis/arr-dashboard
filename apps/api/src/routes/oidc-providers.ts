@@ -383,7 +383,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 					await app.prisma.session.deleteMany({});
 				}
 
-				return reply.status(204).send();
+				return reply.status(204).send(undefined);
 			} catch (error) {
 				const prismaError = error as { code?: string };
 				if (prismaError.code === "P2025") {
