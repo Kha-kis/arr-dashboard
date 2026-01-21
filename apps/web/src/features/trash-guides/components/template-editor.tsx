@@ -312,7 +312,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 
 	return (
 		<div
-			className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 backdrop-blur-sm"
+			className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 backdrop-blur-xs"
 			role="dialog"
 			aria-modal="true"
 			aria-labelledby="template-editor-title"
@@ -363,7 +363,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 								onChange={(e) => setDescription(e.target.value)}
 								placeholder="Describe what this template is for..."
 								rows={3}
-								className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/60 transition-all duration-200 hover:border-border/80 hover:bg-card/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-card/80"
+								className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/60 transition-all duration-200 hover:border-border/80 hover:bg-card/80 focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:bg-card/80"
 							/>
 						</div>
 
@@ -416,7 +416,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 								</div>
 							</div>
 							<div className="flex items-start gap-2 rounded-lg border border-blue-500/20 bg-blue-500/5 p-3">
-								<Shield className="h-4 w-4 text-blue-400 mt-0.5 flex-shrink-0" />
+								<Shield className="h-4 w-4 text-blue-400 mt-0.5 shrink-0" />
 								<div className="text-xs text-muted-foreground">
 									<span className="font-medium text-blue-400">Note:</span> Custom Formats you manually add (marked as &ldquo;User Added&rdquo;) are always preserved regardless of this setting.
 								</div>
@@ -645,7 +645,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 
 					return (
 						<div
-							className="fixed inset-0 z-popover flex items-center justify-center bg-black/80 backdrop-blur-sm"
+							className="fixed inset-0 z-popover flex items-center justify-center bg-black/80 backdrop-blur-xs"
 							role="dialog"
 							aria-modal="true"
 							aria-label="Condition Editor"

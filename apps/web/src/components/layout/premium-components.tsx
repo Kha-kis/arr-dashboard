@@ -33,7 +33,7 @@ export const PremiumTabs = ({ tabs, activeTab, onTabChange, className }: Premium
 	return (
 		<div
 			className={cn(
-				"inline-flex rounded-xl bg-card/30 backdrop-blur-sm border border-border/50 p-1.5",
+				"inline-flex rounded-xl bg-card/30 backdrop-blur-xs border border-border/50 p-1.5",
 				className
 			)}
 		>
@@ -112,7 +112,7 @@ export const PremiumTable = ({ children, className }: PremiumTableProps) => {
 	return (
 		<div
 			className={cn(
-				"rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm overflow-x-auto",
+				"rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-x-auto",
 				className
 			)}
 		>
@@ -401,7 +401,7 @@ export const InstanceCard = ({
 	return (
 		<div
 			className={cn(
-				"group relative overflow-hidden rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm",
+				"group relative overflow-hidden rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs",
 				"transition-all duration-300 hover:border-border hover:shadow-lg",
 				"animate-in fade-in slide-in-from-bottom-4 duration-500",
 				className
@@ -556,7 +556,7 @@ export const GlassmorphicCard = ({
 	return (
 		<div
 			className={cn(
-				"rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm",
+				"rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs",
 				"animate-in fade-in slide-in-from-bottom-4 duration-500",
 				paddingClass,
 				className
@@ -605,7 +605,7 @@ export const FilterSelect = ({
 				value={value}
 				onChange={(e) => onChange(e.target.value)}
 				className="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm
-					focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/20
+					focus:outline-hidden focus:border-primary focus:ring-1 focus:ring-primary/20
 					[&>option]:bg-background [&>option]:text-foreground"
 				style={{
 					// Theme-aware focus state
@@ -688,7 +688,7 @@ export const GradientButton = ({
 				disabled={disabled}
 				className={cn(
 					"relative inline-flex items-center justify-center font-medium rounded-lg",
-					"border border-border/50 bg-card/50 backdrop-blur-sm",
+					"border border-border/50 bg-card/50 backdrop-blur-xs",
 					"text-foreground transition-all duration-300",
 					"disabled:opacity-50 disabled:cursor-not-allowed",
 					"hover:border-border hover:bg-card/80",

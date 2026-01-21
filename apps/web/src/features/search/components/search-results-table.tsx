@@ -182,9 +182,9 @@ export const SearchResultsTable = ({
 						return (
 							<PremiumTableRow key={key} className="align-top">
 								<td className="px-4 py-4 text-foreground">
-									<div className="space-y-3 break-words">
+									<div className="space-y-3 wrap-break-word">
 										<div className="flex flex-wrap items-center gap-2">
-											<span className="font-semibold leading-tight break-words">
+											<span className="font-semibold leading-tight wrap-break-word">
 												{incognitoMode ? getLinuxIsoName(result.title) : result.title}
 											</span>
 											<StatusBadge status={result.protocol === "torrent" ? "success" : "info"}>
@@ -243,7 +243,7 @@ export const SearchResultsTable = ({
 										) : null}
 
 										{rejectionMessage ? (
-											<div className="rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs leading-relaxed text-red-100 whitespace-pre-wrap break-words">
+											<div className="rounded-lg border border-red-400/30 bg-red-500/10 px-3 py-2 text-xs leading-relaxed text-red-100 whitespace-pre-wrap wrap-break-word">
 												{rejectionMessage}
 											</div>
 										) : null}

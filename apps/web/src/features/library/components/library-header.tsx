@@ -184,7 +184,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 					{/* Sync Status Indicator */}
 					{syncStatus && (
 						<div
-							className="flex items-center gap-2 rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm px-4 py-2 text-sm"
+							className="flex items-center gap-2 rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs px-4 py-2 text-sm"
 						>
 							{isSyncing ? (
 								<>

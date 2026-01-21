@@ -90,7 +90,7 @@ export function LegacyDialog({ open, onOpenChange, children, size = "md", dialog
     <div className="fixed inset-0 z-modal-backdrop animate-in fade-in duration-200">
       {/* Backdrop */}
       <div
-        className="fixed inset-0 bg-black/70 backdrop-blur-sm"
+        className="fixed inset-0 bg-black/70 backdrop-blur-xs"
         onClick={() => onOpenChange(false)}
         aria-hidden="true"
       />

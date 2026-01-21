@@ -35,7 +35,7 @@ const HomePage = () => {
 	}, [setupLoading, setupRequired, userLoading, user, router]);
 
 	return (
-		<main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
+		<main className="flex min-h-screen flex-col items-center justify-center gap-6 bg-linear-to-br from-slate-900 via-slate-800 to-slate-900 text-white">
 			<Skeleton className="h-10 w-10 rounded-full" />
 		</main>
 	);

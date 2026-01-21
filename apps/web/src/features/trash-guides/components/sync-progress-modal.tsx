@@ -158,7 +158,7 @@ export const SyncProgressModal = ({
 			}}
 		>
 			{/* Backdrop */}
-			<div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+			<div className="absolute inset-0 bg-black/70 backdrop-blur-xs" />
 
 			{/* Modal */}
 			<div
@@ -168,7 +168,7 @@ export const SyncProgressModal = ({
 				aria-labelledby="sync-progress-title"
 				aria-describedby="sync-progress-description"
 				tabIndex={-1}
-				className="relative w-full max-w-3xl rounded-2xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl outline-none animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
+				className="relative w-full max-w-3xl rounded-2xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl outline-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
 				style={{
 					boxShadow: `0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px ${themeGradient.from}15`,
 				}}
@@ -317,7 +317,7 @@ export const SyncProgressModal = ({
 							</div>
 
 							{/* Progress Bar */}
-							<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+							<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
 								<div className="mb-2 flex items-center justify-between text-sm">
 									<span className="font-medium text-foreground">{progress.currentStep}</span>
 									<span className="text-muted-foreground">{Math.round(progress.progress)}%</span>
@@ -339,7 +339,7 @@ export const SyncProgressModal = ({
 
 							{/* Statistics */}
 							<div className="grid grid-cols-3 gap-4">
-								<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+								<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
 									<p className="text-sm text-muted-foreground">Total Configs</p>
 									<p
 										className="mt-1 text-2xl font-bold"
@@ -389,7 +389,7 @@ export const SyncProgressModal = ({
 								>
 									<div className="flex items-start gap-3">
 										<AlertCircle
-											className="h-5 w-5 flex-shrink-0 mt-0.5"
+											className="h-5 w-5 shrink-0 mt-0.5"
 											style={{ color: SEMANTIC_COLORS.error.from }}
 										/>
 										<div className="flex-1">
@@ -454,7 +454,7 @@ export const SyncProgressModal = ({
 						>
 							<div className="flex items-start gap-3">
 								<XCircle
-									className="h-5 w-5 flex-shrink-0 mt-0.5"
+									className="h-5 w-5 shrink-0 mt-0.5"
 									style={{ color: SEMANTIC_COLORS.error.from }}
 								/>
 								<div>

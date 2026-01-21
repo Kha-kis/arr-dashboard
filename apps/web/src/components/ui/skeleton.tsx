@@ -130,7 +130,7 @@ function SkeletonCard({ className, animation, themed }: SkeletonCardProps) {
   return (
     <div
       className={cn(
-        "rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-6 space-y-4",
+        "rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6 space-y-4",
         className
       )}
       role="status"
@@ -197,7 +197,7 @@ function SkeletonTable({
   return (
     <div
       className={cn(
-        "rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm overflow-hidden",
+        "rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden",
         className
       )}
       role="status"
@@ -253,7 +253,7 @@ function SkeletonStatCard({ className, animation, themed }: SkeletonStatCardProp
   return (
     <div
       className={cn(
-        "rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-6",
+        "rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6",
         className
       )}
       role="status"

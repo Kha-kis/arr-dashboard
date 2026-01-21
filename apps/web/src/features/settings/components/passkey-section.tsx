@@ -271,7 +271,7 @@ export const PasskeySection = () => {
 								{credentials.map((credential, index) => (
 									<div
 										key={credential.id}
-										className="flex items-center justify-between rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4 transition-all duration-300 hover:border-border/80 animate-in fade-in slide-in-from-bottom-2"
+										className="flex items-center justify-between rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4 transition-all duration-300 hover:border-border/80 animate-in fade-in slide-in-from-bottom-2"
 										style={{
 											animationDelay: `${index * 50}ms`,
 											animationFillMode: "backwards",

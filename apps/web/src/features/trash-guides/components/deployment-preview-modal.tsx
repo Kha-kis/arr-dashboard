@@ -268,7 +268,7 @@ export const DeploymentPreviewModal = ({
 				{data?.data && (
 					<>
 						{/* Instance Status */}
-						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
 							<div className="flex items-center gap-3 mb-3">
 								<Server className="h-5 w-5 text-muted-foreground" />
 								<div className="flex-1">
@@ -312,7 +312,7 @@ export const DeploymentPreviewModal = ({
 						</div>
 
 						{/* Sync Strategy Selector */}
-						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
 							<h3 className="text-sm font-medium text-foreground mb-3">
 								Update Behavior
 							</h3>
@@ -430,7 +430,7 @@ export const DeploymentPreviewModal = ({
 						)}
 
 						{/* Summary Statistics */}
-						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
 							<h3 className="text-sm font-medium text-foreground mb-3">
 								Deployment Summary
 							</h3>
@@ -574,7 +574,7 @@ export const DeploymentPreviewModal = ({
 																			}}
 																		>
 																			<p className="font-semibold mb-1.5" style={{ color: SEMANTIC_COLORS.success.from }}>Template:</p>
-																			<pre className="overflow-auto max-h-48 whitespace-pre-wrap break-words text-muted-foreground font-mono text-[10px]">
+																			<pre className="overflow-auto max-h-48 whitespace-pre-wrap wrap-break-word text-muted-foreground font-mono text-[10px]">
 																				{typeof conflict.templateValue === 'object'
 																					? JSON.stringify(conflict.templateValue, null, 2)
 																					: String(conflict.templateValue)}
@@ -588,7 +588,7 @@ export const DeploymentPreviewModal = ({
 																			}}
 																		>
 																			<p className="font-semibold mb-1.5" style={{ color: SEMANTIC_COLORS.warning.from }}>Instance:</p>
-																			<pre className="overflow-auto max-h-48 whitespace-pre-wrap break-words text-muted-foreground font-mono text-[10px]">
+																			<pre className="overflow-auto max-h-48 whitespace-pre-wrap wrap-break-word text-muted-foreground font-mono text-[10px]">
 																				{typeof conflict.instanceValue === 'object'
 																					? JSON.stringify(conflict.instanceValue, null, 2)
 																					: String(conflict.instanceValue)}
@@ -645,7 +645,7 @@ export const DeploymentPreviewModal = ({
 
 						{/* No Changes Message */}
 						{data.data.summary.totalItems === 0 && (
-							<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-8 text-center">
+							<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-8 text-center">
 								<CheckCircle2 className="h-12 w-12 mx-auto mb-3" style={{ color: SEMANTIC_COLORS.success.from }} />
 								<p className="text-sm font-medium text-foreground">
 									Instance is up to date

@@ -225,7 +225,7 @@ export const SettingsClient = () => {
 						role="tabpanel"
 						id="settings-panel-services"
 						aria-labelledby="settings-tab-services"
-						className="grid gap-6 xl:grid-cols-[2fr,1fr]"
+						className="grid gap-6 xl:grid-cols-[2fr_1fr]"
 					>
 						<ServicesTab
 							services={services}

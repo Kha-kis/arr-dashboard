@@ -126,7 +126,7 @@ export const TrashGuidesClient = () => {
 	if (error) {
 		return (
 			<div
-				className="rounded-2xl border p-6 backdrop-blur-sm animate-in fade-in duration-300"
+				className="rounded-2xl border p-6 backdrop-blur-xs animate-in fade-in duration-300"
 				style={{
 					backgroundColor: SEMANTIC_COLORS.error.bg,
 					borderColor: SEMANTIC_COLORS.error.border,
@@ -237,7 +237,7 @@ export const TrashGuidesClient = () => {
 			{/* Refresh Error Alert */}
 			{refreshMutation.isError && (
 				<div
-					className="rounded-2xl border p-4 backdrop-blur-sm animate-in fade-in slide-in-from-top-2 duration-300"
+					className="rounded-2xl border p-4 backdrop-blur-xs animate-in fade-in slide-in-from-top-2 duration-300"
 					style={{
 						backgroundColor: SEMANTIC_COLORS.error.bg,
 						borderColor: SEMANTIC_COLORS.error.border,
@@ -301,7 +301,7 @@ export const TrashGuidesClient = () => {
 					<div className="space-y-6">
 						{/* History Header Card */}
 						<div
-							className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-6"
+							className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6"
 						>
 							<div className="flex items-start gap-4">
 								<div
@@ -336,7 +336,7 @@ export const TrashGuidesClient = () => {
 					</div>
 				) : activeTab === "bulk-scores" ? (
 					<div
-						className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-6"
+						className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6"
 					>
 						{isAuthLoading ? (
 							<div className="flex items-center justify-center py-12">

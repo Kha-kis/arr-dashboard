@@ -61,9 +61,9 @@ export const RecommendationCarousel: React.FC<RecommendationCarouselProps> = ({
 				</div>
 				<div className="flex gap-4 overflow-hidden">
 					{Array.from({ length: 6 }).map((_, i) => (
-						<div key={i} className="w-[160px] flex-shrink-0">
+						<div key={i} className="w-[160px] shrink-0">
 							<div className="rounded-lg border border-border/30 bg-card/30 overflow-hidden">
-								<PremiumSkeleton variant="card" className="aspect-[2/3] rounded-none" style={{ animationDelay: `${i * 50}ms` }} />
+								<PremiumSkeleton variant="card" className="aspect-2/3 rounded-none" style={{ animationDelay: `${i * 50}ms` }} />
 								<div className="p-2 space-y-2">
 									<PremiumSkeleton variant="line" className="h-4 w-3/4" style={{ animationDelay: `${i * 50 + 25}ms` }} />
 									<PremiumSkeleton variant="line" className="h-3 w-1/2" style={{ animationDelay: `${i * 50 + 50}ms` }} />
@@ -99,10 +99,10 @@ export const RecommendationCarousel: React.FC<RecommendationCarouselProps> = ({
 						return (
 							<div
 								key={result.id}
-								className="group relative w-[160px] flex-shrink-0 cursor-pointer overflow-hidden rounded-lg border border-border/50 bg-card transition-all hover:scale-105 hover:border-border"
+								className="group relative w-[160px] shrink-0 cursor-pointer overflow-hidden rounded-lg border border-border/50 bg-card transition-all hover:scale-105 hover:border-border"
 								onClick={() => onSelectResult(result)}
 							>
-								<div className="relative aspect-[2/3] w-full overflow-hidden bg-gradient-to-br from-slate-700 to-slate-900">
+								<div className="relative aspect-2/3 w-full overflow-hidden bg-linear-to-br from-slate-700 to-slate-900">
 									{result.images?.poster ? (
 										/* eslint-disable-next-line @next/next/no-img-element -- External TMDB image with dynamic URL */
 										<img
@@ -116,12 +116,12 @@ export const RecommendationCarousel: React.FC<RecommendationCarouselProps> = ({
 										</div>
 									)}
 									{typeof ratingValue === "number" && (
-										<div className="absolute right-2 top-2 rounded-full border border-yellow-500/40 bg-yellow-500/10 px-2 py-0.5 text-xs text-yellow-200 backdrop-blur-sm">
+										<div className="absolute right-2 top-2 rounded-full border border-yellow-500/40 bg-yellow-500/10 px-2 py-0.5 text-xs text-yellow-200 backdrop-blur-xs">
 											{ratingValue.toFixed(1)}
 										</div>
 									)}
 									{!canAdd && (
-										<div className="absolute left-2 top-2 rounded-full border border-emerald-400/40 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-200 backdrop-blur-sm">
+										<div className="absolute left-2 top-2 rounded-full border border-emerald-400/40 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-200 backdrop-blur-xs">
 											<CheckCircle2 className="inline h-3 w-3" />
 										</div>
 									)}

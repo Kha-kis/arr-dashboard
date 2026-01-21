@@ -153,7 +153,7 @@ export const TemplateScheduleModal = ({
 			onClick={onClose}
 		>
 			{/* Backdrop */}
-			<div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+			<div className="absolute inset-0 bg-black/70 backdrop-blur-xs" />
 
 			{/* Modal */}
 			{/* biome-ignore lint/a11y/useSemanticElements: Using custom modal with proper ARIA for consistent styling */}
@@ -226,7 +226,7 @@ export const TemplateScheduleModal = ({
 								border: `1px solid ${SEMANTIC_COLORS.error.border}`,
 							}}
 						>
-							<AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
+							<AlertCircle className="h-4 w-4 mt-0.5 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
 							<div style={{ color: SEMANTIC_COLORS.error.text }}>
 								<p className="font-medium">Error</p>
 								<p className="text-sm opacity-90">{error}</p>
@@ -280,7 +280,7 @@ export const TemplateScheduleModal = ({
 					</div>
 
 					{/* Options */}
-					<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4 space-y-4">
+					<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4 space-y-4">
 						<h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
 							Sync Options
 						</h3>

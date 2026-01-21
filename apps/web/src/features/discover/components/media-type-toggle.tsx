@@ -39,7 +39,7 @@ export const MediaTypeToggle: React.FC<MediaTypeToggleProps> = ({
 
 	return (
 		<div className="flex flex-wrap items-center gap-4">
-			<div className="inline-flex rounded-xl bg-card/50 backdrop-blur-sm p-1 border border-border/50">
+			<div className="inline-flex rounded-xl bg-card/50 backdrop-blur-xs p-1 border border-border/50">
 				{options.map(({ type, label, icon: Icon }) => {
 					const isActive = searchType === type;
 					return (

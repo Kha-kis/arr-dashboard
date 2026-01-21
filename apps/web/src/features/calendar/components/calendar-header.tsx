@@ -70,7 +70,7 @@ export const CalendarHeader = ({
 				<div className="flex items-center gap-2">
 					{/* Month navigation group */}
 					<div
-						className="flex items-center rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm overflow-hidden"
+						className="flex items-center rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden"
 					>
 						<Button
 							variant="ghost"
@@ -101,7 +101,7 @@ export const CalendarHeader = ({
 						variant="ghost"
 						size="sm"
 						onClick={onGoToday}
-						className="border border-border/50 bg-card/30 backdrop-blur-sm"
+						className="border border-border/50 bg-card/30 backdrop-blur-xs"
 					>
 						Today
 					</Button>

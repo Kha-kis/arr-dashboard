@@ -409,7 +409,7 @@ export function BulkScoreManager({
 	return (
 		<div className="space-y-6 animate-in fade-in duration-300">
 			{/* Header */}
-			<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-6">
+			<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6">
 				<div className="flex items-center gap-4 mb-6">
 					<div
 						className="flex h-12 w-12 items-center justify-center rounded-xl shrink-0"
@@ -444,7 +444,7 @@ export function BulkScoreManager({
 						<select
 							value={instanceId}
 							onChange={(e) => setInstanceId(e.target.value)}
-							className="w-full appearance-none rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 pr-10 text-sm font-medium text-foreground focus:outline-none focus:ring-2 transition-all"
+							className="w-full appearance-none rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 pr-10 text-sm font-medium text-foreground focus:outline-hidden focus:ring-2 transition-all"
 							style={{ ["--tw-ring-color" as string]: themeGradient.from }}
 						>
 							<option value="">Select Instance</option>
@@ -467,7 +467,7 @@ export function BulkScoreManager({
 							placeholder="Search custom formats..."
 							value={searchTerm}
 							onChange={(e) => setSearchTerm(e.target.value)}
-							className="w-full rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 transition-all"
+							className="w-full rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 transition-all"
 							style={{ ["--tw-ring-color" as string]: themeGradient.from, paddingLeft: "2.5rem" }}
 						/>
 					</div>
@@ -605,12 +605,12 @@ export function BulkScoreManager({
 			)}
 
 			{/* Scores Table */}
-			<div className="overflow-hidden rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm">
+			<div className="overflow-hidden rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs">
 				<div className="overflow-x-auto">
 					<table className="w-full table-fixed">
 						<thead>
 							<tr className="border-b border-border/50">
-								<th className="sticky left-0 z-sticky w-12 bg-card/95 backdrop-blur-sm px-3 py-4 text-center">
+								<th className="sticky left-0 z-sticky w-12 bg-card/95 backdrop-blur-xs px-3 py-4 text-center">
 									<button
 										type="button"
 										onClick={toggleSelectAll}
@@ -630,7 +630,7 @@ export function BulkScoreManager({
 										)}
 									</button>
 								</th>
-								<th className="sticky left-12 z-10 w-64 bg-card/95 backdrop-blur-sm px-4 py-4 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+								<th className="sticky left-12 z-10 w-64 bg-card/95 backdrop-blur-xs px-4 py-4 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
 									Custom Format
 								</th>
 								{/* Dynamic columns for each unique template */}
@@ -679,7 +679,7 @@ export function BulkScoreManager({
 											animationFillMode: "backwards",
 										}}
 									>
-										<td className="sticky left-0 z-sticky bg-card/95 backdrop-blur-sm px-3 py-3 text-center">
+										<td className="sticky left-0 z-sticky bg-card/95 backdrop-blur-xs px-3 py-3 text-center">
 											<button
 												type="button"
 												onClick={() => toggleCFSelection(score.trashId)}
@@ -699,7 +699,7 @@ export function BulkScoreManager({
 												)}
 											</button>
 										</td>
-										<td className="sticky left-12 z-10 bg-card/95 backdrop-blur-sm px-4 py-3 text-sm">
+										<td className="sticky left-12 z-10 bg-card/95 backdrop-blur-xs px-4 py-3 text-sm">
 											<div className="flex items-center gap-2">
 												<span className="font-medium text-foreground">{score.name}</span>
 												{score.hasAnyModifications && (
@@ -737,7 +737,7 @@ export function BulkScoreManager({
 																const newScore = parseInt(e.target.value) || 0;
 																handleScoreChange(score.trashId, templateScore.templateId, newScore);
 															}}
-															className="w-full rounded-xl border px-3 py-2 text-center text-sm font-medium transition-all duration-200 focus:outline-none focus:ring-2"
+															className="w-full rounded-xl border px-3 py-2 text-center text-sm font-medium transition-all duration-200 focus:outline-hidden focus:ring-2"
 															style={{
 																borderColor: showOverrideUI
 																	? themeGradient.from

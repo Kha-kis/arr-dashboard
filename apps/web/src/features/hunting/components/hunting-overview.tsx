@@ -148,7 +148,7 @@ const HuntDropdown = ({ instance, isTriggering, onTrigger }: HuntDropdownProps) 
 				size="sm"
 				onClick={() => setIsOpen(!isOpen)}
 				disabled={isTriggering}
-				className="gap-2 border-border/50 bg-card/50 backdrop-blur-sm hover:bg-card/80"
+				className="gap-2 border-border/50 bg-card/50 backdrop-blur-xs hover:bg-card/80"
 			>
 				{isTriggering ? (
 					<Loader2 className="h-4 w-4 animate-spin" />

@@ -53,7 +53,7 @@ const StatCard = ({
 
 	return (
 		<div
-			className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4 transition-all duration-300 hover:bg-card/50"
+			className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4 transition-all duration-300 hover:bg-card/50"
 		>
 			<div className="flex items-center gap-2 mb-3">
 				<div
@@ -110,7 +110,7 @@ export const SchedulerStatusDashboard = () => {
 	// Loading State
 	if (isLoading) {
 		return (
-			<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-8 animate-pulse">
+			<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-8 animate-pulse">
 				<div className="space-y-6">
 					<div className="flex items-center justify-between">
 						<div className="space-y-2">
@@ -133,7 +133,7 @@ export const SchedulerStatusDashboard = () => {
 	if (error) {
 		return (
 			<div
-				className="rounded-2xl border p-6 backdrop-blur-sm"
+				className="rounded-2xl border p-6 backdrop-blur-xs"
 				style={{
 					backgroundColor: SEMANTIC_COLORS.error.bg,
 					borderColor: SEMANTIC_COLORS.error.border,
@@ -163,7 +163,7 @@ export const SchedulerStatusDashboard = () => {
 	if (!schedulerData) {
 		return (
 			<div
-				className="rounded-2xl border p-6 backdrop-blur-sm"
+				className="rounded-2xl border p-6 backdrop-blur-xs"
 				style={{
 					backgroundColor: SEMANTIC_COLORS.info.bg,
 					borderColor: SEMANTIC_COLORS.info.border,
@@ -178,7 +178,7 @@ export const SchedulerStatusDashboard = () => {
 	}
 
 	return (
-		<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+		<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
 			<div className="space-y-6">
 				{/* Header */}
 				<div className="flex items-start justify-between gap-4 flex-wrap">

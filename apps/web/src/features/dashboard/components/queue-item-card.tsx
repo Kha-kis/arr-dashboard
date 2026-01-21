@@ -76,7 +76,7 @@ export const QueueItemCard = ({
 	return (
 		<div
 			className={cn(
-				"group relative overflow-hidden rounded-xl border border-border/40 bg-card/50 backdrop-blur-sm p-4 transition-all duration-300",
+				"group relative overflow-hidden rounded-xl border border-border/40 bg-card/50 backdrop-blur-xs p-4 transition-all duration-300",
 				selected && "ring-2 ring-primary/50 border-primary/50",
 				"hover:border-primary/30 hover:shadow-xl",
 			)}
@@ -140,7 +140,7 @@ export const QueueItemCard = ({
 				</div>
 
 				{/* Right column: issue badge, progress, actions */}
-				<div className="flex flex-col gap-3 lg:flex-shrink-0 lg:gap-4 lg:pl-4 lg:border-l lg:border-border/30">
+				<div className="flex flex-col gap-3 lg:shrink-0 lg:gap-4 lg:pl-4 lg:border-l lg:border-border/30">
 					<div className="flex justify-end">
 						<QueueIssueBadge summary={issueSummary} size="sm" />
 					</div>

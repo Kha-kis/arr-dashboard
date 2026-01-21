@@ -233,7 +233,7 @@ export const LibraryCard = ({
 	return (
 		<GlassmorphicCard padding="md" className="flex flex-col gap-3">
 				<div className="flex gap-3">
-					<div className="h-36 w-24 overflow-hidden rounded-lg border border-border bg-muted shadow-md flex-shrink-0">
+					<div className="h-36 w-24 overflow-hidden rounded-lg border border-border bg-muted shadow-md shrink-0">
 						{item.poster ? (
 							/* eslint-disable-next-line @next/next/no-img-element -- External poster from arr instance */
 							<img src={item.poster} alt={item.title} className="h-full w-full object-cover" />

@@ -158,13 +158,13 @@ export const getChipStyles = (gradient: ThemeGradient, isActive: boolean = false
  */
 export const INPUT_BASE_CLASSES = {
 	/** Standard text input */
-	input: "w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition-all duration-200 focus:outline-none",
+	input: "w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition-all duration-200 focus:outline-hidden",
 
 	/** Select/dropdown */
-	select: "w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition-all duration-200 cursor-pointer focus:outline-none",
+	select: "w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition-all duration-200 cursor-pointer focus:outline-hidden",
 
 	/** Textarea */
-	textarea: "w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition-all duration-200 resize-none focus:outline-none",
+	textarea: "w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition-all duration-200 resize-none focus:outline-hidden",
 
 	/** Checkbox/Radio */
 	checkbox: "h-4 w-4 rounded border-2 transition-all duration-200 cursor-pointer border-border/50 bg-card/50 focus:ring-2 focus:ring-offset-0",
