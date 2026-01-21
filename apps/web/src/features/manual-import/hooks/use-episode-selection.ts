@@ -7,7 +7,7 @@ import { useManualImportStore } from "../store";
  * Hook for managing episode selection within a candidate
  */
 export const useEpisodeSelection = () => {
-	const { updateSelection } = useManualImportStore();
+	const updateSelection = useManualImportStore((state) => state.updateSelection);
 
 	const toggleEpisode = useCallback(
 		(candidate: ManualImportCandidateUnion, episodeId: number) => {
