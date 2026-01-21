@@ -103,7 +103,7 @@ importers:
         specifier: ^7.6.13
         version: 7.6.13
       '@types/node':
-        specifier: ^22.7.4
+        specifier: ^25.0.9
         version: 25.0.9
       tsup:
         specifier: ^8.5.1
@@ -248,7 +248,7 @@ importers:
         specifier: ^4.1.18
         version: 4.1.18
       '@types/node':
-        specifier: ^22.7.4
+        specifier: ^25.0.9
         version: 25.0.9
       '@types/react':
         specifier: ^19.2.9
