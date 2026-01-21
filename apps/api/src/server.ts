@@ -87,16 +87,18 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		}
 	});
 
-	app.setErrorHandler((error, request, reply) => {
+	app.setErrorHandler((error: unknown, request, reply) => {
 		request.log.error({ err: error }, "request failed");
 		if (!reply.statusCode || reply.statusCode < 400) {
 			reply.status(500);
 		}
 
+		// Fastify 5 types errors as unknown for safety
+		const err = error instanceof Error ? error : new Error(String(error));
 		reply.send({
 			statusCode: reply.statusCode,
-			error: error.name ?? "InternalServerError",
-			message: env.NODE_ENV === "production" ? "Unexpected error" : error.message,
+			error: err.name ?? "InternalServerError",
+			message: env.NODE_ENV === "production" ? "Unexpected error" : err.message,
 		});
 	});
 
