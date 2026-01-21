@@ -10,6 +10,7 @@ import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useManualImportQuery } from "../../../hooks/api/useManualImport";
 import type { ManualImportModalProps, ManualImportCandidateUnion } from "../types";
 import { candidateKey, describeRejections } from "../helpers";
+import { useShallow } from "zustand/shallow";
 import { useManualImportStore, getSelectionForCandidate } from "../store";
 import { buildSubmissionDefaults } from "../lib/submission-builder";
 import { useEpisodeSelection } from "../hooks/use-episode-selection";
@@ -52,7 +53,13 @@ export const ManualImportModal = ({
 }: ManualImportModalProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const serviceColor = SERVICE_COLORS[service] ?? themeGradient.from;
-	const { selections, toggleSelection, clear } = useManualImportStore();
+	const { selections, toggleSelection, clear } = useManualImportStore(
+		useShallow((state) => ({
+			selections: state.selections,
+			toggleSelection: state.toggleSelection,
+			clear: state.clear,
+		})),
+	);
 	const focusTrapRef = useFocusTrap<HTMLDivElement>(open, () => onOpenChange(false));
 	const [showSelectedOnly, setShowSelectedOnly] = useState(false);
 	const [importMode, setImportMode] = useState<ImportMode>("auto");
