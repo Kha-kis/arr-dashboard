@@ -39,7 +39,7 @@
 		"date-fns": "^4.1.0",
 		"dequal": "^2.0.3",
 		"dompurify": "^3.3.1",
-		"framer-motion": "^11.11.17",
+		"framer-motion": "^12.28.1",
 		"lucide-react": "^0.441.0",
 		"next": "^16.1.4",
 		"next-themes": "^0.4.6",
