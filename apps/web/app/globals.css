@@ -1845,51 +1845,68 @@
 		50% { opacity: 0.5; }
 	}
 
-	/* Cyberpunk - Digital noise/static overlay */
+	/* Cyberpunk - Digital noise/static overlay (static - no animation) */
 	[data-theme="cyberpunk"] body::before {
 		content: "";
 		position: fixed;
 		inset: 0;
 		pointer-events: none;
 		z-index: 49; /* Decorative overlay - below scanline */
-		opacity: 0.035;
+		opacity: 0.025; /* Reduced opacity for subtlety */
 		background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-		animation: cyberpunk-noise 0.4s steps(8) infinite;
+		/* Removed constant animation - static noise texture only */
 	}
 
-	/* Cyberpunk - Animated scanline that sweeps down */
+	/* Cyberpunk - Static top border glow (removed moving scanline) */
 	[data-theme="cyberpunk"] body::after {
 		content: "";
 		position: fixed;
 		top: 0;
 		left: 0;
 		right: 0;
-		height: 3px;
+		height: 2px;
 		pointer-events: none;
 		z-index: 50; /* Decorative overlay - below interactive UI */
 		background: linear-gradient(
-			180deg,
-			transparent 0%,
-			#05d9e8cc 50%,
-			transparent 100%
+			90deg,
+			#ff2a6d 0%,
+			#05d9e8 50%,
+			#ff2a6d 100%
 		);
 		box-shadow:
-			0 0 15px #05d9e8,
-			0 0 30px #05d9e8,
-			0 0 60px #ff2a6d;
-		animation: cyberpunk-scanline-move 3s linear infinite;
+			0 0 10px #05d9e8,
+			0 0 20px #ff2a6d66;
+		/* Removed constant scanline animation */
 	}
 
-	/* Cyberpunk - INTENSE glitchy chromatic text on headings */
+	/* Cyberpunk - Neon glow text on headings (static by default, animation on hover) */
 	[data-theme="cyberpunk"] h1,
 	[data-theme="cyberpunk"] h2 {
-		animation: cyberpunk-chromatic 2.5s ease-in-out infinite, cyberpunk-flicker 6s linear infinite;
 		position: relative;
 		letter-spacing: 0.05em;
 		text-transform: uppercase;
+		/* Static neon glow - no constant animation */
+		text-shadow:
+			-2px 0 #ff2a6d,
+			2px 0 #05d9e8,
+			0 0 20px #ff2a6d,
+			0 0 40px #ff2a6d88,
+			0 0 80px #05d9e844;
+		transition: text-shadow 0.3s ease;
 	}
 
-	/* Cyberpunk - Glitch clone effect on h1 */
+	/* Cyberpunk - Enhanced glow on hover (static - no animation to prevent flicker) */
+	[data-theme="cyberpunk"] h1:hover,
+	[data-theme="cyberpunk"] h2:hover {
+		text-shadow:
+			-3px 0 #ff2a6d,
+			3px 0 #05d9e8,
+			0 0 30px #ff2a6d,
+			0 0 60px #ff2a6d,
+			0 0 100px #05d9e8;
+	}
+
+	/* Cyberpunk - Glitch clone effect on h1 (hover-only) */
 	[data-theme="cyberpunk"] h1::before,
 	[data-theme="cyberpunk"] h1::after {
 		content: attr(data-text);
@@ -1899,20 +1916,35 @@
 		width: 100%;
 		height: 100%;
 		pointer-events: none;
+		opacity: 0;
+		transition: opacity 0.2s ease;
+	}
+
+	[data-theme="cyberpunk"] h1:hover::before,
+	[data-theme="cyberpunk"] h1:hover::after {
+		opacity: 1;
 	}
 
 	[data-theme="cyberpunk"] h1::before {
 		color: #ff2a6d;
-		animation: cyberpunk-glitch 2s infinite;
 		clip-path: inset(0 0 0 0);
 		left: 2px;
 	}
 
+	[data-theme="cyberpunk"] h1:hover::before {
+		/* Static offset - no glitch animation (causes hover flicker due to transform) */
+		left: 3px;
+	}
+
 	[data-theme="cyberpunk"] h1::after {
 		color: #05d9e8;
-		animation: cyberpunk-glitch 2s infinite reverse;
 		clip-path: inset(0 0 0 0);
 		left: -2px;
+	}
+
+	[data-theme="cyberpunk"] h1:hover::after {
+		/* Static offset - no glitch animation (causes hover flicker due to transform) */
+		left: -3px;
 	}
 
 	/* Cyberpunk - Neon glow on h3 and smaller */
@@ -1929,11 +1961,16 @@
 		letter-spacing: 0.02em;
 	}
 
-	/* Cyberpunk - Cards with TARGETING RETICLE corners */
+	/* Cyberpunk - Cards with TARGETING RETICLE corners (static glow, animation on hover) */
 	[data-theme="cyberpunk"] .glass,
 	[data-theme="cyberpunk"] [class*="rounded"][class*="border"][class*="bg-card"] {
 		border: 1px solid #ff2a6d55 !important;
-		animation: cyberpunk-border-pulse 3s ease-in-out infinite;
+		/* Static glow - no constant animation */
+		box-shadow:
+			0 0 5px #ff2a6d44,
+			0 0 10px #05d9e822,
+			inset 0 0 5px #ff2a6d11;
+		transition: box-shadow 0.3s ease, border-color 0.3s ease;
 		background-image:
 			/* Top-left corner reticle */
 			linear-gradient(to right, #05d9e8 0, #05d9e8 20px, transparent 20px),
@@ -1965,18 +2002,18 @@
 		position: relative;
 	}
 
-	/* Cyberpunk - Targeting animation on card hover (no opacity flicker) */
+	/* Cyberpunk - Enhanced glow on card hover (static - no animation) */
 	[data-theme="cyberpunk"] .glass:hover,
 	[data-theme="cyberpunk"] [class*="rounded"][class*="border"][class*="bg-card"]:hover {
-		animation: cyberpunk-border-pulse 1.5s ease-in-out infinite;
 		border-color: #05d9e8 !important;
 		box-shadow:
 			0 0 10px #05d9e8,
 			0 0 20px #ff2a6d66,
 			inset 0 0 30px #05d9e811;
+		/* Removed animation - static enhanced glow on hover */
 	}
 
-	/* Cyberpunk - Primary buttons with NEON GLOW */
+	/* Cyberpunk - Primary buttons with NEON GLOW (static, no pulse) */
 	[data-theme="cyberpunk"] button[class*="bg-primary"],
 	[data-theme="cyberpunk"] [role="button"][class*="bg-primary"] {
 		background: linear-gradient(135deg, #ff2a6d 0%, #d4145a 100%) !important;
@@ -1990,12 +2027,13 @@
 			0 0 20px #ff2a6d66,
 			0 0 40px #ff2a6d33,
 			inset 0 1px 0 #ff6b9d44;
-		animation: cyberpunk-pulse-ring 2s ease-out infinite;
+		/* Removed constant pulse-ring animation */
+		transition: box-shadow 0.3s ease, transform 0.2s ease;
 		position: relative;
 		overflow: hidden;
 	}
 
-	/* Cyberpunk - Button holographic sweep effect */
+	/* Cyberpunk - Button holographic sweep effect (hover-only) */
 	[data-theme="cyberpunk"] button[class*="bg-primary"]::before,
 	[data-theme="cyberpunk"] [role="button"][class*="bg-primary"]::before {
 		content: "";
@@ -2010,7 +2048,14 @@
 			#ffffff33 50%,
 			transparent 100%
 		);
-		animation: cyberpunk-holo-shimmer 3s linear infinite;
+		/* Animation only on hover */
+	}
+
+	[data-theme="cyberpunk"] button[class*="bg-primary"]:hover::before,
+	[data-theme="cyberpunk"] [role="button"][class*="bg-primary"]:hover::before {
+		/* Static shimmer position on hover - no animation */
+		left: 100%;
+		opacity: 0.3;
 	}
 
 	[data-theme="cyberpunk"] button[class*="bg-primary"]:hover,
@@ -2048,25 +2093,21 @@
 		opacity: 1;
 	}
 
-	/* Cyberpunk - Holographic shimmer on badges */
+	/* Cyberpunk - Neon badges (static gradient, no constant shimmer) */
 	[data-theme="cyberpunk"] [class*="badge"],
 	[data-theme="cyberpunk"] [class*="Badge"] {
 		background: linear-gradient(
 			90deg,
 			#ff2a6d 0%,
-			#ff6b9d 25%,
-			#05d9e8 50%,
-			#ff6b9d 75%,
-			#ff2a6d 100%
+			#05d9e8 100%
 		) !important;
-		background-size: 200% 100%;
-		animation: cyberpunk-holo-shimmer 2s linear infinite;
 		color: #000 !important;
 		font-weight: 700;
 		border: 1px solid #ffffff55;
 		text-shadow: none;
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
+		/* Removed constant shimmer animation */
 	}
 
 	/* Cyberpunk - Glowing input fields with tech corners */
@@ -2091,7 +2132,7 @@
 		outline: none !important;
 	}
 
-	/* Cyberpunk - Sidebar with data stream effect */
+	/* Cyberpunk - Sidebar with tech lines (static, no data stream animation) */
 	[data-theme="cyberpunk"] aside,
 	[data-theme="cyberpunk"] [class*="sidebar"] {
 		background-image:
@@ -2110,16 +2151,8 @@
 				transparent 2px,
 				#05d9e802 2px,
 				#05d9e802 4px
-			),
-			/* Animated data stream */
-			linear-gradient(
-				180deg,
-				transparent 0%,
-				#05d9e805 50%,
-				transparent 100%
 			) !important;
-		background-size: 100% 100%, 100% 100%, 100% 200px;
-		animation: cyberpunk-data-stream 4s linear infinite;
+		/* Removed animated data stream and constant animation */
 		border-right: 1px solid #ff2a6d44 !important;
 		box-shadow:
 			inset -15px 0 40px -15px #ff2a6d22,
@@ -2220,7 +2253,7 @@
 		/* Note: Do NOT set position here - breaks Radix dialog centering */
 	}
 
-	/* Cyberpunk - Destructive/danger elements with WARNING STRIPES */
+	/* Cyberpunk - Destructive/danger elements with WARNING STRIPES (no blink) */
 	[data-theme="cyberpunk"] [class*="destructive"],
 	[data-theme="cyberpunk"] [class*="danger"],
 	[data-theme="cyberpunk"] button[class*="destructive"],
@@ -2233,7 +2266,7 @@
 			#1a0a14 20px
 		) !important;
 		border: 2px solid #ff2a6d !important;
-		animation: cyberpunk-warning-blink 1s ease-in-out infinite;
+		/* Removed constant warning-blink animation - distracting and accessibility issue */
 		text-transform: uppercase;
 		font-weight: 700;
 		letter-spacing: 0.1em;
@@ -2251,9 +2284,8 @@
 	[data-theme="cyberpunk"] [role="progressbar"] > div,
 	[data-theme="cyberpunk"] progress::-webkit-progress-value,
 	[data-theme="cyberpunk"] [class*="progress"] > div {
-		background: linear-gradient(90deg, #ff2a6d, #ff6b9d, #05d9e8, #ff2a6d) !important;
-		background-size: 200% 100%;
-		animation: cyberpunk-holo-shimmer 2s linear infinite;
+		background: linear-gradient(90deg, #ff2a6d 0%, #ff6b9d 50%, #05d9e8 100%) !important;
+		/* Static gradient - removed shimmer animation */
 	}
 
 	/* Cyberpunk - Tooltips with tech styling */
@@ -2321,8 +2353,7 @@
 			#ff2a6d22 50%,
 			#1a0a14 100%
 		) !important;
-		background-size: 200% 100%;
-		animation: cyberpunk-holo-shimmer 1.5s linear infinite;
+		/* Static gradient - removed shimmer animation */
 	}
 
 	/* ========================================
@@ -2411,7 +2442,7 @@
 		position: relative;
 	}
 
-	/* Top-left corner bracket */
+	/* Top-left corner bracket (static - no animation) */
 	[data-theme="cyberpunk"] #__next::before {
 		content: "";
 		position: fixed;
@@ -2423,10 +2454,10 @@
 		border-left: 2px solid #05d9e8;
 		pointer-events: none;
 		z-index: 100; /* Below interactive UI (dropdowns, modals, etc.) */
-		animation: cyberpunk-bracket-pulse 3s ease-in-out infinite;
+		opacity: 0.8;
 	}
 
-	/* Top-right corner bracket */
+	/* Top-right corner bracket (static - no animation) */
 	[data-theme="cyberpunk"] #__next::after {
 		content: "";
 		position: fixed;
@@ -2438,10 +2469,10 @@
 		border-right: 2px solid #05d9e8;
 		pointer-events: none;
 		z-index: 100; /* Below interactive UI (dropdowns, modals, etc.) */
-		animation: cyberpunk-bracket-pulse 3s ease-in-out infinite 0.5s;
+		opacity: 0.8;
 	}
 
-	/* Bottom-left corner bracket */
+	/* Bottom-left corner bracket (static - no animation) */
 	[data-theme="cyberpunk"] main::before {
 		content: "";
 		position: fixed;
@@ -2453,10 +2484,10 @@
 		border-left: 2px solid #ff2a6d;
 		pointer-events: none;
 		z-index: 100; /* Below interactive UI (dropdowns, modals, etc.) */
-		animation: cyberpunk-bracket-pulse 3s ease-in-out infinite 1s;
+		opacity: 0.8;
 	}
 
-	/* Bottom-right corner bracket */
+	/* Bottom-right corner bracket (static - no animation) */
 	[data-theme="cyberpunk"] main::after {
 		content: "";
 		position: fixed;
@@ -2468,7 +2499,7 @@
 		border-right: 2px solid #ff2a6d;
 		pointer-events: none;
 		z-index: 100; /* Below interactive UI (dropdowns, modals, etc.) */
-		animation: cyberpunk-bracket-pulse 3s ease-in-out infinite 1.5s;
+		opacity: 0.8;
 	}
 
 	/* Cyberpunk - Holographic Header Sweep */
@@ -2487,16 +2518,15 @@
 		left: 0;
 		right: 0;
 		height: 100%;
+		/* Static gradient overlay - no constant sweep animation */
 		background: linear-gradient(
 			90deg,
 			transparent 0%,
-			#ff2a6d22 20%,
-			#05d9e844 50%,
-			#ff2a6d22 80%,
+			#ff2a6d11 30%,
+			#05d9e822 50%,
+			#ff2a6d11 70%,
 			transparent 100%
 		);
-		background-size: 200% 100%;
-		animation: cyberpunk-header-sweep 8s ease-in-out infinite;
 		pointer-events: none;
 		z-index: 1;
 	}
@@ -2518,12 +2548,10 @@
 		opacity: 0.9;
 	}
 
-	/* Cyberpunk - Sporadic glitch on main page titles only */
-	[data-theme="cyberpunk"] h1:first-of-type {
-		animation: cyberpunk-sporadic-glitch 10s ease-in-out infinite;
-	}
+	/* Cyberpunk - Page titles (static - sporadic glitch removed for accessibility) */
+	/* Note: h1/h2 already have neon glow styling with hover animation above */
 
-	/* Cyberpunk - Small HUD data display in corner */
+	/* Cyberpunk - Small HUD data display in corner (static - no flicker) */
 	[data-theme="cyberpunk"] #__next > div:first-child::after {
 		content: "◉ NIGHT CITY // SYSTEM ONLINE";
 		position: fixed;
@@ -2536,7 +2564,51 @@
 		text-transform: uppercase;
 		pointer-events: none;
 		z-index: 101; /* Below interactive UI (dropdowns, modals, etc.) */
-		animation: cyberpunk-flicker 8s linear infinite;
+		/* Removed flicker animation - static display for accessibility */
+	}
+
+	/* ========================================
+	 * REDUCED MOTION ACCESSIBILITY
+	 * Respects user's system preference for reduced motion
+	 * WCAG 2.3.3 Animation from Interactions (Level AAA)
+	 * ======================================== */
+	@media (prefers-reduced-motion: reduce) {
+		/* Disable ALL theme animations for users who prefer reduced motion */
+		[data-theme="cyberpunk"] *,
+		[data-theme="cyberpunk"] *::before,
+		[data-theme="cyberpunk"] *::after {
+			animation: none !important;
+			transition-duration: 0.01ms !important;
+		}
+
+		/* Keep static visual effects (colors, glows, gradients) but no movement */
+		[data-theme="cyberpunk"] h1,
+		[data-theme="cyberpunk"] h2 {
+			text-shadow:
+				-2px 0 #ff2a6d,
+				2px 0 #05d9e8,
+				0 0 20px #ff2a6d,
+				0 0 40px #ff2a6d88;
+		}
+
+		/* Disable hover animations too */
+		[data-theme="cyberpunk"] h1:hover,
+		[data-theme="cyberpunk"] h2:hover,
+		[data-theme="cyberpunk"] h1:hover::before,
+		[data-theme="cyberpunk"] h1:hover::after {
+			animation: none !important;
+		}
+
+		/* Also apply to other themes that may have animations */
+		[data-theme="neon"] *,
+		[data-theme="neon"] *::before,
+		[data-theme="neon"] *::after,
+		[data-theme="aurora"] *,
+		[data-theme="aurora"] *::before,
+		[data-theme="aurora"] *::after {
+			animation: none !important;
+			transition-duration: 0.01ms !important;
+		}
 	}
 
 	/* ========================================
