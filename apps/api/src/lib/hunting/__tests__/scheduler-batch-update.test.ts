@@ -22,6 +22,8 @@ describe("HuntingScheduler - Batch Update Optimization", () => {
 		huntLog: {
 			create: ReturnType<typeof vi.fn>;
 			update: ReturnType<typeof vi.fn>;
+			findMany: ReturnType<typeof vi.fn>;
+			updateMany: ReturnType<typeof vi.fn>;
 		};
 	};
 
@@ -38,6 +40,8 @@ describe("HuntingScheduler - Batch Update Optimization", () => {
 			huntLog: {
 				create: vi.fn(),
 				update: vi.fn(),
+				findMany: vi.fn().mockResolvedValue([]), // For cleanupStuckHunts()
+				updateMany: vi.fn().mockResolvedValue({ count: 0 }), // For cleanupStuckHunts()
 			},
 		};
 
@@ -137,7 +141,7 @@ describe("HuntingScheduler - Batch Update Optimization", () => {
 		const afterCall = Date.now();
 
 		// Extract the reset time from the updateMany call
-		const updateManyCall = mockPrisma.huntConfig.updateMany.mock.calls[0][0];
+		const updateManyCall = mockPrisma.huntConfig.updateMany.mock.calls[0]![0];
 		const newResetAt = updateManyCall.data.apiCallsResetAt as Date;
 
 		// New reset time should be ~1 hour from now
@@ -155,7 +159,7 @@ describe("HuntingScheduler - Batch Update Optimization", () => {
 		await scheduler.processScheduledHunts();
 
 		// Verify the where clause filters by apiCallsResetAt < now
-		const updateManyCall = mockPrisma.huntConfig.updateMany.mock.calls[0][0];
+		const updateManyCall = mockPrisma.huntConfig.updateMany.mock.calls[0]![0];
 		expect(updateManyCall.where.apiCallsResetAt).toEqual({
 			lt: expect.any(Date),
 		});

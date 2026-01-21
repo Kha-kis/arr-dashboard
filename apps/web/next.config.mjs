@@ -3,9 +3,7 @@
 const nextConfig = {
 	output: "standalone",
 	transpilePackages: ["@arr/shared"],
-	eslint: {
-		dirs: ["app", "src"],
-	},
+	// Note: eslint config moved to next lint CLI options in Next.js 16
 	poweredByHeader: false,
 	async rewrites() {
 		const apiHost = process.env.API_HOST || "http://localhost:3001";
