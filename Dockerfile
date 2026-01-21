@@ -3,7 +3,7 @@
 # syntax=docker/dockerfile:1
 
 # ===== BUILD BASE =====
-FROM node:22-alpine AS build-base
+FROM node:22-alpine3.21 AS build-base
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN corepack enable && corepack prepare pnpm@10.28.1 --activate
 
@@ -50,7 +50,9 @@ RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     mkdir -p ../../ && cp /app/tsconfig.base.json ../../tsconfig.base.json && \
     npx prisma generate --schema prisma/schema.prisma && \
     rm -rf ../../tsconfig.base.json tsconfig.json && \
-    node -e "const p=require('/app/package.json'); console.log(JSON.stringify({version:p.version,name:p.name}))" > ./version.json
+    node -e "const p=require('/app/package.json'); console.log(JSON.stringify({version:p.version,name:p.name}))" > ./version.json && \
+    # Remove non-Linux native module prebuilds to reduce image size (~1MB)
+    find node_modules -type d -name "prebuilds" -exec sh -c 'cd "{}" && rm -rf darwin-* win32-* freebsd-*' \; 2>/dev/null || true
 
 # Prepare web output (consolidate standalone + static + custom server)
 RUN cp /app/apps/web/server.js /app/apps/web/.next/standalone/server.js && \
@@ -66,9 +68,14 @@ RUN cd /app/apps/web/.next/standalone/node_modules && \
     done
 
 # ===== RUNTIME STAGE =====
-FROM node:22-alpine AS runner
+FROM node:22-alpine3.21 AS runner
 
-# OCI Image Labels
+# Build arguments for version injection (set by CI)
+ARG VERSION=dev
+ARG COMMIT_SHA=unknown
+ARG BUILD_DATE=unknown
+
+# OCI Image Labels (including build-time metadata)
 LABEL org.opencontainers.image.title="Arr Dashboard" \
       org.opencontainers.image.description="Unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances" \
       org.opencontainers.image.source="https://github.com/Kha-kis/arr-dashboard" \
@@ -76,14 +83,21 @@ LABEL org.opencontainers.image.title="Arr Dashboard" \
       org.opencontainers.image.documentation="https://github.com/Kha-kis/arr-dashboard#readme" \
       org.opencontainers.image.licenses="MIT" \
       org.opencontainers.image.vendor="khak1s" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${COMMIT_SHA}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
       maintainer="khak1s"
 
-# Install runtime dependencies and create user (single layer)
+# Install runtime dependencies, create user, and clean up unused package managers (single layer)
+# Removes ~25MB of unused npm, yarn, and corepack from the Node.js base image
 RUN apk add --no-cache tini su-exec shadow \
     && addgroup -g 911 abc \
     && adduser -D -u 911 -G abc abc \
     && mkdir -p /app/api /app/web /config \
-    && chown -R abc:abc /app /config
+    && chown -R abc:abc /app /config \
+    && rm -rf /opt/yarn-v* \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+    && rm -f /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/yarn /usr/local/bin/yarnpkg /usr/local/bin/corepack
 
 WORKDIR /app
 
@@ -109,10 +123,15 @@ ENV DATABASE_URL="file:/config/prod.db" \
     HOSTNAME=0.0.0.0 \
     NODE_ENV=production \
     PUID=911 \
-    PGID=911
+    PGID=911 \
+    # Node.js memory optimization for containers (can be overridden)
+    NODE_OPTIONS="--max-old-space-size=512 --dns-result-order=ipv4first"
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
     CMD node -e "require('http').get('http://localhost:'+(process.env.API_PORT||3001)+'/auth/setup-required',(r)=>{process.exit(r.statusCode>=200&&r.statusCode<300?0:1)}).on('error',()=>process.exit(1))"
+
+# Signal for graceful shutdown (tini forwards to child processes)
+STOPSIGNAL SIGTERM
 
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["/app/start.sh"]
