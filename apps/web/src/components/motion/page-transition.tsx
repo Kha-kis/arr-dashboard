@@ -30,8 +30,8 @@ const pageVariants: Variants = {
  * Fast enough to not feel sluggish, slow enough to be noticeable
  */
 const pageTransition = {
-	type: "tween",
-	ease: [0.25, 0.1, 0.25, 1], // Smooth ease-out curve
+	type: "tween" as const,
+	ease: [0.25, 0.1, 0.25, 1] as [number, number, number, number], // Smooth ease-out curve
 	duration: 0.25,
 };
 
