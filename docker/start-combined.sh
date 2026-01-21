@@ -149,7 +149,7 @@ if [ "$CURRENT_PROVIDER" != "$DB_PROVIDER" ]; then
     # Ensure prisma directory is writable for any generated files
     [ -d "/app/api/node_modules/.prisma" ] && chown -R "${PUID}:${PGID}" "/app/api/node_modules/.prisma"
 
-    if ! su-exec abc npx prisma generate --schema prisma/schema.prisma; then
+    if ! su-exec abc ./node_modules/.bin/prisma generate --schema prisma/schema.prisma; then
         echo "ERROR: Failed to regenerate Prisma client" >&2
         echo "  Check that /app/api has correct permissions for PUID:$PUID PGID:$PGID" >&2
         exit 1
@@ -170,7 +170,7 @@ echo "Synchronizing database schema..."
 # Prisma migrations are provider-specific SQL, but db push generates correct SQL for any provider
 # --accept-data-loss allows dropping unused columns during schema updates (e.g., removed urlBase)
 # Note: Prisma 7 removed --skip-generate flag (db push no longer regenerates by default)
-if ! su-exec abc npx prisma db push --schema prisma/schema.prisma --accept-data-loss; then
+if ! su-exec abc ./node_modules/.bin/prisma db push --schema prisma/schema.prisma --accept-data-loss; then
     echo "ERROR: Database schema synchronization failed" >&2
     echo "  - Ensure DATABASE_URL is correct and the database is accessible" >&2
     echo "  - For PostgreSQL: Check that the database exists and user has permissions" >&2
