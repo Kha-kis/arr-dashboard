@@ -171,7 +171,7 @@ export async function registerUpdateRoutes(app: FastifyInstance, opts: FastifyPl
 				return reply.status(400).send({
 					success: false,
 					error: "Invalid request data",
-					details: error.errors,
+					details: error.issues,
 				});
 			}
 

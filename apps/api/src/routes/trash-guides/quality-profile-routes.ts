@@ -33,10 +33,11 @@ const importQualityProfileSchema = z.object({
 	// Wizard selections (REQUIRED - legacy mode removed)
 	selectedCFGroups: z.array(z.string()),
 	customFormatSelections: z.record(
+		z.string(),
 		z.object({
 			selected: z.boolean(),
 			scoreOverride: z.number().optional(),
-			conditionsEnabled: z.record(z.boolean()),
+			conditionsEnabled: z.record(z.string(), z.boolean()),
 		}),
 	),
 });
@@ -49,10 +50,11 @@ const updateQualityProfileTemplateSchema = z.object({
 	// Wizard selections (REQUIRED - legacy mode removed)
 	selectedCFGroups: z.array(z.string()),
 	customFormatSelections: z.record(
+		z.string(),
 		z.object({
 			selected: z.boolean(),
 			scoreOverride: z.number().optional(),
-			conditionsEnabled: z.record(z.boolean()),
+			conditionsEnabled: z.record(z.string(), z.boolean()),
 		}),
 	),
 });
@@ -487,7 +489,7 @@ export async function registerQualityProfileRoutes(
 					statusCode: 400,
 					error: "ValidationError",
 					message: "Invalid request data",
-					errors: error.errors,
+					errors: error.issues,
 				});
 			}
 
@@ -607,7 +609,7 @@ export async function registerQualityProfileRoutes(
 					statusCode: 400,
 					error: "ValidationError",
 					message: "Invalid request data",
-					errors: error.errors,
+					errors: error.issues,
 				});
 			}
 

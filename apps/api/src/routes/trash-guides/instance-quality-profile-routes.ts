@@ -228,7 +228,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 					statusCode: 400,
 					error: "BadRequest",
 					message: "Invalid request data",
-					errors: error.errors,
+					errors: error.issues,
 				});
 			}
 

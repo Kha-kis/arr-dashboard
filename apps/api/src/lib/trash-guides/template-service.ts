@@ -26,8 +26,8 @@ const templateImportSchema = z.object({
 		serviceType: z.enum(["RADARR", "SONARR"]),
 		config: z
 			.object({
-				customFormats: z.array(z.record(z.unknown())), // Validate it's an array of objects
-				customFormatGroups: z.array(z.record(z.unknown())),
+				customFormats: z.array(z.record(z.string(), z.unknown())), // Validate it's an array of objects
+				customFormatGroups: z.array(z.record(z.string(), z.unknown())),
 			})
 			.passthrough(), // Allow qualitySize, naming, qualityProfile, etc.
 		description: z.string().max(500).optional(),
@@ -448,7 +448,7 @@ export class TemplateService {
 		// Validate with Zod schema
 		const parseResult = templateImportSchema.safeParse(rawData);
 		if (!parseResult.success) {
-			const errors = parseResult.error.errors.map((e) => `${e.path.join(".")}: ${e.message}`);
+			const errors = parseResult.error.issues.map((e) => `${e.path.join(".")}: ${e.message}`);
 			throw new Error(`Invalid template import format: ${errors.join("; ")}`);
 		}
 		// Cast to TemplateImportData - Zod validated the structure, TypeScript interface provides proper typing

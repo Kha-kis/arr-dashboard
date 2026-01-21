@@ -30,7 +30,7 @@ const executeSyncSchema = z.object({
 	templateId: z.string().cuid(),
 	instanceId: z.string().cuid(),
 	syncType: z.enum(["MANUAL", "SCHEDULED"]),
-	conflictResolutions: z.record(z.enum(["REPLACE", "SKIP"])).optional(),
+	conflictResolutions: z.record(z.string(), z.enum(["REPLACE", "SKIP"])).optional(),
 });
 
 const syncHistoryQuerySchema = z.object({
