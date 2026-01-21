@@ -144,7 +144,7 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 			aria-labelledby="item-details-title"
 		>
 			{/* Backdrop */}
-			<div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+			<div className="absolute inset-0 bg-black/70 backdrop-blur-xs" />
 
 			{/* Modal */}
 			<div
@@ -174,7 +174,7 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 				>
 					<div className="flex gap-5">
 						{item.poster && (
-							<div className="h-48 w-32 overflow-hidden rounded-xl border border-border/50 shadow-lg flex-shrink-0">
+							<div className="h-48 w-32 overflow-hidden rounded-xl border border-border/50 shadow-lg shrink-0">
 								{/* eslint-disable-next-line @next/next/no-img-element -- External poster from arr instance */}
 								<img src={item.poster} alt={item.title} className="h-full w-full object-cover" />
 							</div>
@@ -334,7 +334,7 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 						<h3 className="text-xs uppercase tracking-wider font-medium text-muted-foreground mb-3">
 							Metadata
 						</h3>
-						<div className="grid grid-cols-2 md:grid-cols-3 gap-4 rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+						<div className="grid grid-cols-2 md:grid-cols-3 gap-4 rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
 							{metadata.map((entry) => (
 								<MetadataItem
 									key={entry.label}
@@ -352,7 +352,7 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 							<h3 className="text-xs uppercase tracking-wider font-medium text-muted-foreground mb-3">
 								File Information
 							</h3>
-							<div className="space-y-3 rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+							<div className="space-y-3 rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
 								{locationEntries.map((entry) => (
 									<div key={entry.label} className="space-y-1">
 										<div className="flex items-center gap-1.5">

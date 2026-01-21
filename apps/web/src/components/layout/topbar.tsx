@@ -56,10 +56,10 @@ export const TopBar = () => {
 								<Eye className="h-4 w-4" />
 							)}
 						</Button>
-						<div className="group relative flex items-center gap-3 px-3 py-2 rounded-lg bg-card/40 backdrop-blur-sm border border-border/50 hover:border-primary/30 transition-all duration-200 cursor-pointer">
-							<div className="absolute inset-0 rounded-lg bg-gradient-to-r from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+						<div className="group relative flex items-center gap-3 px-3 py-2 rounded-lg bg-card/40 backdrop-blur-xs border border-border/50 hover:border-primary/30 transition-all duration-200 cursor-pointer">
+							<div className="absolute inset-0 rounded-lg bg-linear-to-r from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
 
-							<div className="relative h-9 w-9 rounded-full bg-gradient-to-br from-primary to-accent text-white flex items-center justify-center shadow-md ring-1 ring-white/10">
+							<div className="relative h-9 w-9 rounded-full bg-linear-to-br from-primary to-accent text-white flex items-center justify-center shadow-md ring-1 ring-white/10">
 								<span className="text-sm font-semibold">
 									{user.username[0]?.toUpperCase() ?? "U"}
 								</span>

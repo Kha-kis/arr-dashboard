@@ -108,7 +108,7 @@ const SyncStrategySelector = ({
 				disabled={disabled}
 				className={cn(
 					"flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-all duration-200",
-					"border-border/50 bg-card/50 backdrop-blur-sm hover:bg-card/80",
+					"border-border/50 bg-card/50 backdrop-blur-xs hover:bg-card/80",
 					disabled && "opacity-50 cursor-not-allowed"
 				)}
 			>
@@ -346,7 +346,7 @@ export const BulkDeploymentModal = ({
 
 			<LegacyDialogContent className="space-y-5">
 				{/* Instance Selection with Per-Instance Strategy */}
-				<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+				<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
 					<div className="flex items-center justify-between mb-3">
 						<h3 className="text-sm font-semibold text-foreground">
 							Select Instances ({selectedCount} / {instancePreviews.length})
@@ -487,7 +487,7 @@ export const BulkDeploymentModal = ({
 
 				{/* Summary Statistics */}
 				{allPreviewsLoaded && (
-					<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+					<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
 						<h3 className="text-sm font-semibold text-foreground mb-3">Deployment Summary</h3>
 						<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
 							<div className="space-y-1">

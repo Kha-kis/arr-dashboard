@@ -376,7 +376,7 @@ export const CFConfiguration = ({
 										value={scoreOverride ?? ""}
 										onChange={(e) => updateScore(cfKey, e.target.value)}
 										placeholder={defaultScore.toString()}
-										className="w-20 rounded border border-border/50 bg-background px-2 py-1 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50 transition"
+										className="w-20 rounded border border-border/50 bg-background px-2 py-1 text-sm text-foreground focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary/50 transition"
 									/>
 									{scoreOverride !== undefined && (
 										<button
@@ -418,7 +418,7 @@ export const CFConfiguration = ({
 						value={searchQuery}
 						onChange={(e) => setSearchQuery(e.target.value)}
 						placeholder="Search custom formats..."
-						className="w-full rounded-lg border border-border/50 bg-background py-3 pr-4 text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition"
+						className="w-full rounded-lg border border-border/50 bg-background py-3 pr-4 text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-primary/20 transition"
 						style={{ paddingLeft: "2.5rem" }}
 					/>
 				</div>
@@ -656,7 +656,7 @@ export const CFConfiguration = ({
 										value={scoreOverride ?? ""}
 										onChange={(e) => updateScore(cf.trash_id, e.target.value)}
 										placeholder={resolvedDefaultScore.toString()}
-										className="w-20 rounded border border-border/50 bg-background px-2 py-1 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/50 transition"
+										className="w-20 rounded border border-border/50 bg-background px-2 py-1 text-sm text-foreground focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary/50 transition"
 									/>
 									{scoreOverride !== undefined && (
 										<button
@@ -807,7 +807,7 @@ export const CFConfiguration = ({
 														{isSelected && (
 															<div className="flex items-center gap-2">
 																<label className="text-xs text-muted-foreground">Score (Default: {displayScore}):</label>
-																<input type="number" value={scoreOverride ?? ""} onChange={(e) => updateScore(cf.trash_id, e.target.value)} placeholder={String(displayScore)} className="w-24 rounded border border-border bg-muted px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" onClick={(e) => e.stopPropagation()} />
+																<input type="number" value={scoreOverride ?? ""} onChange={(e) => updateScore(cf.trash_id, e.target.value)} placeholder={String(displayScore)} className="w-24 rounded border border-border bg-muted px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary" onClick={(e) => e.stopPropagation()} />
 																{scoreOverride !== undefined && (
 																	<button type="button" onClick={(e) => { e.stopPropagation(); updateScore(cf.trash_id, ""); }} className="text-xs text-primary hover:text-primary/80 transition" title="Reset to default">↺ Reset</button>
 																)}
@@ -863,7 +863,7 @@ export const CFConfiguration = ({
 
 				return (
 					<div
-						className="fixed inset-0 z-popover flex items-center justify-center bg-background/80 backdrop-blur-sm"
+						className="fixed inset-0 z-popover flex items-center justify-center bg-background/80 backdrop-blur-xs"
 						role="dialog"
 						aria-modal="true"
 						aria-label="Condition Editor"
@@ -933,7 +933,7 @@ export const CFConfiguration = ({
 					value={searchQuery}
 					onChange={(e) => setSearchQuery(e.target.value)}
 					placeholder="Search custom formats by name or description..."
-					className="w-full rounded-lg border border-border/50 bg-card pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 transition"
+					className="w-full rounded-lg border border-border/50 bg-card pr-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-primary/20 transition"
 					style={{ paddingLeft: "2.5rem" }}
 				/>
 				{searchQuery && (
@@ -1126,9 +1126,9 @@ export const CFConfiguration = ({
 						return (
 							<Card key={group.trash_id} className={`transition-all hover:shadow-lg ${
 								isGroupDefault
-									? "!border-amber-500/50 !bg-amber-500/10"
+									? "border-amber-500/50! bg-amber-500/10!"
 									: isGroupRequired
-										? "!border-red-500/50 !bg-red-500/10"
+										? "border-red-500/50! bg-red-500/10!"
 										: "hover:border-primary/20"
 							}`}>
 								<CardHeader>
@@ -1187,7 +1187,7 @@ export const CFConfiguration = ({
 											}}
 										>
 											<div className="flex items-start gap-2">
-												<AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" style={{ color: themeGradient.from }} />
+												<AlertCircle className="h-4 w-4 mt-0.5 shrink-0" style={{ color: themeGradient.from }} />
 												<div
 													className="text-sm"
 													style={{ color: themeGradient.from }}
@@ -1424,7 +1424,7 @@ export const CFConfiguration = ({
 																		}));
 																	}}
 																	placeholder={`Default: ${displayScore}`}
-																	className="w-28 rounded border border-border bg-muted px-3 py-1.5 text-sm text-foregroundfocus:border-green-500 focus:outline-none focus:ring-1 focus:ring-green-500"
+																	className="w-28 rounded border border-border bg-muted px-3 py-1.5 text-sm text-foregroundfocus:border-green-500 focus:outline-hidden focus:ring-1 focus:ring-green-500"
 																/>
 															</div>
 															<span className="text-xs text-muted-foreground">

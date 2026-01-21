@@ -21,7 +21,7 @@ const buttonVariants = cva(
     "rounded-xl", // Premium rounded corners
     "ring-offset-background",
     "transition-all duration-300", // Smooth transitions
-    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+    "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
     "disabled:pointer-events-none disabled:opacity-50",
     "[&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
     "active:scale-[0.98]", // Press-down effect
@@ -44,14 +44,14 @@ const buttonVariants = cva(
         outline: [
           "border border-border/50 bg-transparent",
           "hover:bg-muted/50 hover:border-border",
-          "backdrop-blur-sm",
+          "backdrop-blur-xs",
         ].join(" "),
 
         // Secondary - glassmorphic style
         secondary: [
           "bg-card/50 text-foreground",
           "border border-border/50",
-          "backdrop-blur-sm",
+          "backdrop-blur-xs",
           "hover:bg-card/80 hover:border-border",
         ].join(" "),
 

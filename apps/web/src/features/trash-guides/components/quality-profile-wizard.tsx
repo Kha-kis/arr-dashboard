@@ -363,7 +363,7 @@ export const QualityProfileWizard = ({
 	// create a new containing block and break position:fixed
 	return createPortal(
 		<div
-			className="fixed inset-0 z-modal flex items-center justify-center bg-black/70 backdrop-blur-sm"
+			className="fixed inset-0 z-modal flex items-center justify-center bg-black/70 backdrop-blur-xs"
 			onKeyDown={handleKeyDown}
 			role="dialog"
 			aria-modal="true"

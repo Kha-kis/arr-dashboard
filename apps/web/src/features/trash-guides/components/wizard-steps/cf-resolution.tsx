@@ -670,7 +670,7 @@ export const CFResolution = ({
 				}`}>
 					<div className="flex items-start justify-between gap-4">
 						<div className="flex items-start gap-3">
-							<Sparkles className={`h-5 w-5 mt-0.5 flex-shrink-0 ${
+							<Sparkles className={`h-5 w-5 mt-0.5 shrink-0 ${
 								profileMatchData.matched ? "text-purple-400" : "text-gray-400"
 							}`} />
 							<div>
@@ -717,7 +717,7 @@ export const CFResolution = ({
 						</div>
 						{/* Toggle for recommendations */}
 						{profileMatchData.matched && profileMatchData.recommendations && (
-							<div className="flex items-center gap-2 flex-shrink-0">
+							<div className="flex items-center gap-2 shrink-0">
 								<label htmlFor="use-recommendations" className="text-xs text-foreground/70 cursor-pointer">
 									Auto-exclude non-recommended
 								</label>
@@ -848,7 +848,7 @@ export const CFResolution = ({
 					<select
 						value={filterMode}
 						onChange={(e) => setFilterMode(e.target.value as FilterMode)}
-						className="rounded border border-border bg-card px-2 py-1 text-sm text-foreground focus:border-primary focus:outline-none"
+						className="rounded border border-border bg-card px-2 py-1 text-sm text-foreground focus:border-primary focus:outline-hidden"
 					>
 						<option value="all">All ({data?.results?.length ?? 0})</option>
 						<option value="matched">Matched ({matchStats?.matched || 0})</option>
@@ -862,7 +862,7 @@ export const CFResolution = ({
 						value={searchQuery}
 						onChange={(e) => setSearchQuery(e.target.value)}
 						placeholder="Search Custom Formats..."
-						className="w-full rounded border border-border bg-card pr-3 py-1 text-sm text-foreground placeholder:text-foreground/40 focus:border-primary focus:outline-none"
+						className="w-full rounded border border-border bg-card pr-3 py-1 text-sm text-foreground placeholder:text-foreground/40 focus:border-primary focus:outline-hidden"
 						style={{ paddingLeft: "2.25rem" }}
 					/>
 				</div>
@@ -920,7 +920,7 @@ export const CFResolution = ({
 						<div className="border-t border-purple-500/20 p-3">
 							{/* Info banner */}
 							<div className="flex items-start gap-2 rounded-lg bg-purple-500/10 p-3 mb-3">
-								<Info className="h-4 w-4 text-purple-400 mt-0.5 flex-shrink-0" />
+								<Info className="h-4 w-4 text-purple-400 mt-0.5 shrink-0" />
 								<div className="text-xs text-purple-200/80">
 									<p>
 										These Custom Formats exist in your instance but have a <span className="font-medium text-foreground">score of 0</span> in this profile.
@@ -979,7 +979,7 @@ export const CFResolution = ({
 						<div className="border-t border-amber-500/20 p-3">
 							{/* Info banner */}
 							<div className="flex items-start gap-2 rounded-lg bg-amber-500/10 p-3 mb-3">
-								<Info className="h-4 w-4 text-amber-400 mt-0.5 flex-shrink-0" />
+								<Info className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
 								<div className="text-xs text-amber-200/80 space-y-1">
 									{matchStats && matchStats.excludedByScore > 0 && (
 										<p>
@@ -1025,7 +1025,7 @@ export const CFResolution = ({
 			{/* Info about unmatched */}
 			{matchStats && matchStats.unmatched > 0 && (
 				<div className="flex items-start gap-2 rounded-lg border border-border bg-card p-3">
-					<Info className="h-4 w-4 text-foreground/60 mt-0.5 flex-shrink-0" />
+					<Info className="h-4 w-4 text-foreground/60 mt-0.5 shrink-0" />
 					<div className="text-xs text-foreground/60">
 						<span className="font-medium text-foreground/80">{matchStats.unmatched} Custom Format{matchStats.unmatched > 1 ? "s" : ""}</span> couldn&apos;t be matched to TRaSH Guides.
 						These are likely custom formats you created or from a different source.
@@ -1184,7 +1184,7 @@ const CFResolutionItem = ({ result, decision, onDecisionChange, onExclude, isRec
 					</div>
 
 					{/* Actions */}
-					<div className="flex items-center gap-1 flex-shrink-0">
+					<div className="flex items-center gap-1 shrink-0">
 						{/* Expand/Compare button for matched CFs */}
 						{hasComparableData && (
 							<button
@@ -1246,7 +1246,7 @@ const CFResolutionItem = ({ result, decision, onDecisionChange, onExclude, isRec
 
 						{/* Instance score for unmatched */}
 						{!hasMatch && result.instanceCF.score !== undefined && (
-							<div className="text-xs text-foreground/60 flex-shrink-0">
+							<div className="text-xs text-foreground/60 shrink-0">
 								Score: {result.instanceCF.score}
 							</div>
 						)}
@@ -1346,7 +1346,7 @@ const CFComparisonView = ({ instanceCF, trashCF, matchDetails, recommendedScore,
 					<div className="grid grid-cols-2 gap-3">
 						<div className="bg-amber-500/10 rounded-lg p-2.5 border border-amber-500/20">
 							<p className="font-semibold text-amber-600 dark:text-amber-400 mb-1.5">Instance:</p>
-							<pre className="p-2 rounded bg-black/20 overflow-auto max-h-48 whitespace-pre-wrap break-words text-foreground/70 font-mono text-[10px]">
+							<pre className="p-2 rounded bg-black/20 overflow-auto max-h-48 whitespace-pre-wrap wrap-break-word text-foreground/70 font-mono text-[10px]">
 								{instanceSpecs.length > 0
 									? JSON.stringify(instanceSpecs, null, 2)
 									: "(no specifications)"}
@@ -1354,7 +1354,7 @@ const CFComparisonView = ({ instanceCF, trashCF, matchDetails, recommendedScore,
 						</div>
 						<div className="bg-green-500/10 rounded-lg p-2.5 border border-green-500/20">
 							<p className="font-semibold text-green-600 dark:text-green-400 mb-1.5">TRaSH Guides:</p>
-							<pre className="p-2 rounded bg-black/20 overflow-auto max-h-48 whitespace-pre-wrap break-words text-foreground/70 font-mono text-[10px]">
+							<pre className="p-2 rounded bg-black/20 overflow-auto max-h-48 whitespace-pre-wrap wrap-break-word text-foreground/70 font-mono text-[10px]">
 								{trashSpecs.length > 0
 									? JSON.stringify(trashSpecs, null, 2)
 									: "(no specifications)"}
@@ -1492,7 +1492,7 @@ const ExcludedCFItem = ({
 					</div>
 
 					{/* Actions */}
-					<div className="flex items-center gap-1 flex-shrink-0">
+					<div className="flex items-center gap-1 shrink-0">
 						{/* Expand/Compare button */}
 						{hasComparableData && (
 							<button

@@ -296,9 +296,9 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 		(type === "series" && !languageProfileId);
 
 	const selectClassName = cn(
-		"w-full rounded-xl border bg-card/50 backdrop-blur-sm px-4 py-3 text-sm text-foreground",
+		"w-full rounded-xl border bg-card/50 backdrop-blur-xs px-4 py-3 text-sm text-foreground",
 		"hover:border-border transition-all duration-200",
-		"focus:outline-none appearance-none cursor-pointer"
+		"focus:outline-hidden appearance-none cursor-pointer"
 	);
 
 	const getSelectStyle = (id: string): React.CSSProperties => {
@@ -318,7 +318,7 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 		>
 			{/* Backdrop */}
 			<div
-				className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+				className="absolute inset-0 bg-black/70 backdrop-blur-xs"
 				onClick={onClose}
 			/>
 
@@ -572,7 +572,7 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 					<div className="grid gap-3 md:grid-cols-2">
 						{/* Monitor Toggle */}
 						<label
-							className="flex items-center justify-between rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm px-4 py-3 cursor-pointer transition-colors hover:border-border/80"
+							className="flex items-center justify-between rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs px-4 py-3 cursor-pointer transition-colors hover:border-border/80"
 						>
 							<span className="text-sm font-medium text-foreground">Monitor future releases</span>
 							<div
@@ -600,7 +600,7 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 
 						{/* Search on Add Toggle */}
 						<label
-							className="flex items-center justify-between rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm px-4 py-3 cursor-pointer transition-colors hover:border-border/80"
+							className="flex items-center justify-between rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs px-4 py-3 cursor-pointer transition-colors hover:border-border/80"
 						>
 							<span className="flex items-center gap-2 text-sm font-medium text-foreground">
 								<Search className="h-4 w-4 text-muted-foreground" />
@@ -632,7 +632,7 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 						{/* Season Folder Toggle (Series only) */}
 						{type === "series" && (
 							<label
-								className="flex items-center justify-between rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm px-4 py-3 cursor-pointer transition-colors hover:border-border/80"
+								className="flex items-center justify-between rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs px-4 py-3 cursor-pointer transition-colors hover:border-border/80"
 							>
 								<span className="flex items-center gap-2 text-sm font-medium text-foreground">
 									<FolderOpen className="h-4 w-4 text-muted-foreground" />

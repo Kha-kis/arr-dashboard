@@ -221,7 +221,7 @@ const ActivityLogEntry = ({ log, animationDelay = 0 }: ActivityLogEntryProps) =>
 
 	return (
 		<div
-			className="group rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm overflow-hidden
+			className="group rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden
 				animate-in fade-in slide-in-from-bottom-2 duration-300 hover:border-border/80 transition-colors"
 			style={{
 				animationDelay: `${animationDelay}ms`,

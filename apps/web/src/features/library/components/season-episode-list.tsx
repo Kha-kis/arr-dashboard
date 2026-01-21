@@ -113,7 +113,7 @@ export const SeasonEpisodeList = ({
 							</div>
 						)}
 					</div>
-					<div className="flex items-center gap-2 flex-shrink-0">
+					<div className="flex items-center gap-2 shrink-0">
 						<LibraryBadge tone={episode.hasFile ? "green" : "blue"}>
 							{episode.hasFile ? "Downloaded" : "Missing"}
 						</LibraryBadge>
@@ -123,7 +123,7 @@ export const SeasonEpisodeList = ({
 							</LibraryBadge>
 						)}
 					</div>
-					<div className="flex items-center gap-1.5 flex-shrink-0">
+					<div className="flex items-center gap-1.5 shrink-0">
 						<Button
 							type="button"
 							variant="secondary"

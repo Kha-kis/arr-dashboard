@@ -41,7 +41,7 @@ export function Toaster({ ...props }: ToasterProps) {
 					actionButton: "group-[.toast]:bg-primary group-[.toast]:text-white",
 					cancelButton: "group-[.toast]:bg-muted group-[.toast]:text-muted-foreground",
 					closeButton:
-						"group-[.toast]:bg-muted group-[.toast]:border-border/50 group-[.toast]:text-muted-foreground hover:group-[.toast]:bg-muted/80",
+						"group-[.toast]:bg-muted group-[.toast]:border-border/50 group-[.toast]:text-muted-foreground group-[.toast]:hover:bg-muted/80",
 					success: "group-[.toaster]:border-success/30 group-[.toaster]:text-success-fg",
 					error: "group-[.toaster]:border-danger/30 group-[.toaster]:text-danger-fg",
 					warning: "group-[.toaster]:border-warning/30 group-[.toaster]:text-warning-fg",

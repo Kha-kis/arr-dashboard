@@ -399,7 +399,7 @@ export const TemplateDiffModal = ({
 						)}
 
 						{/* Summary Statistics */}
-						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
 							<h3 className="text-sm font-semibold text-foreground mb-3">Change Summary</h3>
 							<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
 								<div className="space-y-1">
@@ -677,7 +677,7 @@ export const TemplateDiffModal = ({
 
 						{/* No Changes Message */}
 						{data.data.summary.totalChanges === 0 && !data.data.suggestedAdditions?.length && !data.data.suggestedScoreChanges?.length && (
-							<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-8 text-center">
+							<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-8 text-center">
 								<Check className="h-12 w-12 mx-auto mb-3" style={{ color: SEMANTIC_COLORS.success.from }} />
 								<p className="text-sm font-medium text-foreground">
 									{isHistorical ? "No changes recorded" : "Template is up to date"}

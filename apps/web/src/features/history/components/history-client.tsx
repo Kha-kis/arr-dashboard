@@ -270,7 +270,7 @@ export const HistoryClient = () => {
 									event.target.value as (typeof SERVICE_FILTERS)[number]["value"],
 								)
 							}
-							className="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 [&>option]:bg-background [&>option]:text-foreground"
+							className="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary/20 [&>option]:bg-background [&>option]:text-foreground"
 						>
 							{SERVICE_FILTERS.map((option) => (
 								<option key={option.value} value={option.value}>
@@ -287,7 +287,7 @@ export const HistoryClient = () => {
 							id="history-instance-filter"
 							value={instanceFilter}
 							onChange={(event) => actions.setInstanceFilter(event.target.value)}
-							className="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 [&>option]:bg-background [&>option]:text-foreground"
+							className="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary/20 [&>option]:bg-background [&>option]:text-foreground"
 						>
 							<option value="all">All instances</option>
 							{instanceOptions.map((option) => (
@@ -305,7 +305,7 @@ export const HistoryClient = () => {
 							id="history-status-filter"
 							value={statusFilter}
 							onChange={(event) => actions.setStatusFilter(event.target.value)}
-							className="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 [&>option]:bg-background [&>option]:text-foreground"
+							className="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary/20 [&>option]:bg-background [&>option]:text-foreground"
 						>
 							<option value="all">All statuses</option>
 							{statusOptions.map((option) => (
@@ -351,7 +351,7 @@ export const HistoryClient = () => {
 					{statusSummary.map(([label, count], index) => (
 						<div
 							key={`${index}-${label}`}
-							className="flex items-center gap-2 rounded-full border border-border/50 bg-card/30 backdrop-blur-sm px-4 py-2 text-sm"
+							className="flex items-center gap-2 rounded-full border border-border/50 bg-card/30 backdrop-blur-xs px-4 py-2 text-sm"
 						>
 							<span className="text-muted-foreground">{label}</span>
 							<span

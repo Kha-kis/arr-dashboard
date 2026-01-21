@@ -138,7 +138,7 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 			role="presentation"
 		>
 			{/* Backdrop */}
-			<div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+			<div className="absolute inset-0 bg-black/70 backdrop-blur-xs" />
 
 			{/* Modal */}
 			<div
@@ -262,7 +262,7 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 							onBlur={() => setIsFocused(false)}
 							placeholder='{"version": "1.0", "template": {...}}'
 							rows={10}
-							className="w-full rounded-xl border bg-card/50 backdrop-blur-sm px-4 py-3 font-mono text-sm text-foreground placeholder:text-muted-foreground/60 transition-all duration-200 focus:outline-none resize-none"
+							className="w-full rounded-xl border bg-card/50 backdrop-blur-xs px-4 py-3 font-mono text-sm text-foreground placeholder:text-muted-foreground/60 transition-all duration-200 focus:outline-hidden resize-none"
 							style={{
 								borderColor: isFocused ? themeGradient.from : "hsl(var(--border) / 0.5)",
 								boxShadow: isFocused ? `0 0 0 1px ${themeGradient.from}` : undefined,

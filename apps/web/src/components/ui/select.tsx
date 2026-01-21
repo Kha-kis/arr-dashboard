@@ -46,13 +46,13 @@ const SelectTrigger = React.forwardRef<
         // Premium rounded corners
         "rounded-xl",
         // Border and background (glassmorphic)
-        "border border-border/50 bg-background/50 backdrop-blur-sm",
+        "border border-border/50 bg-background/50 backdrop-blur-xs",
         // Placeholder
-        "data-[placeholder]:text-muted-foreground/60",
+        "data-placeholder:text-muted-foreground/60",
         // Standard focus (non-premium)
-        !premium && "focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ring-offset-background",
+        !premium && "focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2 ring-offset-background",
         // Premium focus removes default ring
-        premium && "focus:outline-none",
+        premium && "focus:outline-hidden",
         // Transitions
         "transition-all duration-300",
         // States
@@ -133,7 +133,7 @@ const SelectContent = React.forwardRef<
         ref={ref}
         className={cn(
           // Base
-          "relative z-modal max-h-[--radix-select-content-available-height] min-w-[8rem]",
+          "relative z-modal max-h-(--radix-select-content-available-height) min-w-32",
           "overflow-y-auto overflow-x-hidden",
           // Glassmorphic styling
           "rounded-xl border border-border/50 bg-popover/95 backdrop-blur-xl",
@@ -144,7 +144,7 @@ const SelectContent = React.forwardRef<
           "data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
           "data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2",
           "data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
-          "origin-[--radix-select-content-transform-origin]",
+          "origin-(--radix-select-content-transform-origin)",
           // Position adjustments
           position === "popper" &&
             "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
@@ -161,7 +161,7 @@ const SelectContent = React.forwardRef<
           className={cn(
             "p-1.5",
             position === "popper" &&
-              "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]"
+              "h-(--radix-select-trigger-height) w-full min-w-(--radix-select-trigger-width)"
           )}
         >
           {children}
@@ -205,13 +205,13 @@ const SelectItem = React.forwardRef<
       className={cn(
         // Base
         "relative flex w-full cursor-pointer select-none items-center",
-        "rounded-lg py-2 pl-8 pr-3 text-sm outline-none",
+        "rounded-lg py-2 pl-8 pr-3 text-sm outline-hidden",
         // Hover/focus with gradient background
         "focus:text-foreground",
         // Transitions
         "transition-colors duration-150",
         // States
-        "data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+        "data-disabled:pointer-events-none data-disabled:opacity-50",
         className
       )}
       style={{

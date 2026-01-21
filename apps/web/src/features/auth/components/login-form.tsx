@@ -188,7 +188,7 @@ export const LoginForm = () => {
 				</div>
 
 				<Card
-					className="w-full max-w-md border-border/50 bg-card/80 backdrop-blur-sm"
+					className="w-full max-w-md border-border/50 bg-card/80 backdrop-blur-xs"
 					style={{
 						borderColor: SEMANTIC_COLORS.error.border,
 						backgroundColor: SEMANTIC_COLORS.error.bg,
@@ -265,7 +265,7 @@ export const LoginForm = () => {
 			</div>
 
 			{/* Login Card */}
-			<Card className="w-full max-w-sm border-border/50 bg-card/80 backdrop-blur-sm">
+			<Card className="w-full max-w-sm border-border/50 bg-card/80 backdrop-blur-xs">
 				<CardHeader>
 					<CardTitle className="text-xl text-foreground">Welcome back</CardTitle>
 					<CardDescription className="text-muted-foreground">

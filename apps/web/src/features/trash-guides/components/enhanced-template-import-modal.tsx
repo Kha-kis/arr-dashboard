@@ -282,7 +282,7 @@ export function EnhancedTemplateImportModal({
 
 					{/* Conflicts */}
 					{hasConflicts && (
-						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4 space-y-4">
+						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4 space-y-4">
 							<div className="flex items-center gap-2">
 								<AlertTriangle className="h-4 w-4 text-muted-foreground" />
 								<span className="font-medium text-sm text-foreground">
@@ -309,7 +309,7 @@ export function EnhancedTemplateImportModal({
 														onNameConflict: e.target.value as "rename" | "replace" | "cancel",
 													})
 												}
-												className="w-full rounded-lg border bg-card/50 backdrop-blur-sm px-3 py-2 text-sm text-foreground transition-all duration-200 focus:outline-none appearance-none cursor-pointer"
+												className="w-full rounded-lg border bg-card/50 backdrop-blur-xs px-3 py-2 text-sm text-foreground transition-all duration-200 focus:outline-hidden appearance-none cursor-pointer"
 												style={{
 													borderColor: focusedSelect ? themeGradient.from : "hsl(var(--border) / 0.5)",
 													boxShadow: focusedSelect ? `0 0 0 1px ${themeGradient.from}` : undefined,
@@ -356,7 +356,7 @@ export function EnhancedTemplateImportModal({
 
 			{/* Import Options */}
 			{validation && validation.valid && (
-				<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4 space-y-4">
+				<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4 space-y-4">
 					<div className="flex items-center gap-2">
 						<Settings2 className="h-4 w-4" style={{ color: themeGradient.from }} />
 						<h4 className="text-sm font-semibold text-foreground">Import Options</h4>

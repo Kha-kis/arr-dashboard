@@ -194,7 +194,7 @@ export const ManualImportModal = ({
 			aria-labelledby="manual-import-title"
 		>
 			{/* Backdrop */}
-			<div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+			<div className="absolute inset-0 bg-black/70 backdrop-blur-xs" />
 
 			{/* Modal */}
 			<div
@@ -284,7 +284,7 @@ export const ManualImportModal = ({
 
 				{/* Controls */}
 				<div className="px-6 pt-4">
-					<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4 space-y-4">
+					<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4 space-y-4">
 						{/* Stats Row */}
 						<div className="flex flex-wrap items-center gap-4 text-sm">
 							<div className="flex items-center gap-2">
@@ -330,7 +330,7 @@ export const ManualImportModal = ({
 									onChange={(event) => setImportMode(event.target.value as ImportMode)}
 									onFocus={() => setIsFocused(true)}
 									onBlur={() => setIsFocused(false)}
-									className="rounded-lg border bg-card/50 backdrop-blur-sm px-3 py-2 text-sm text-foreground transition-all duration-200 focus:outline-none appearance-none cursor-pointer min-w-[200px]"
+									className="rounded-lg border bg-card/50 backdrop-blur-xs px-3 py-2 text-sm text-foreground transition-all duration-200 focus:outline-hidden appearance-none cursor-pointer min-w-[200px]"
 									style={{
 										borderColor: isFocused ? themeGradient.from : "hsl(var(--border) / 0.5)",
 										boxShadow: isFocused ? `0 0 0 1px ${themeGradient.from}` : undefined,

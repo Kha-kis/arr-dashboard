@@ -36,7 +36,7 @@
  * };
  *
  * <select
- *   className="border border-border bg-card focus:outline-none"
+ *   className="border border-border bg-card focus:outline-hidden"
  *   style={getSelectStyle("mySelect")}
  *   onFocus={() => setFocusedSelect("mySelect")}
  *   onBlur={() => setFocusedSelect(null)}

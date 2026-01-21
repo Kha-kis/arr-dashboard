@@ -126,7 +126,7 @@ interface SystemInfoCardProps {
 function SystemInfoCard({ icon, label, value, subtitle, animationDelay = 0 }: SystemInfoCardProps) {
 	return (
 		<div
-			className="flex items-start gap-3 p-4 rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm transition-all duration-300 hover:border-border/80 animate-in fade-in slide-in-from-bottom-2"
+			className="flex items-start gap-3 p-4 rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs transition-all duration-300 hover:border-border/80 animate-in fade-in slide-in-from-bottom-2"
 			style={{
 				animationDelay: `${animationDelay}ms`,
 				animationFillMode: "backwards",

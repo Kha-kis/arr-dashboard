@@ -136,7 +136,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 			onClick={() => onOpenChange(false)}
 		>
 			{/* Backdrop */}
-			<div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+			<div className="absolute inset-0 bg-black/60 backdrop-blur-xs" />
 
 			{/* Command Dialog */}
 			<Command
@@ -164,7 +164,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 						onValueChange={setSearch}
 						placeholder="Type a command or search..."
 						className={cn(
-							"flex h-14 w-full bg-transparent py-4 text-base outline-none",
+							"flex h-14 w-full bg-transparent py-4 text-base outline-hidden",
 							"placeholder:text-muted-foreground"
 						)}
 						autoFocus
@@ -199,7 +199,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 									value={`${item.label} ${item.keywords.join(" ")}`}
 									onSelect={() => runCommand(() => router.push(item.href))}
 									className={cn(
-										"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-none transition-colors",
+										"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
 										"aria-selected:bg-muted/50"
 									)}
 								>
@@ -233,7 +233,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 							value="light mode theme"
 							onSelect={() => runCommand(() => setTheme("light"))}
 							className={cn(
-								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-none transition-colors",
+								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
 								"aria-selected:bg-muted/50"
 							)}
 						>
@@ -255,7 +255,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 							value="dark mode theme"
 							onSelect={() => runCommand(() => setTheme("dark"))}
 							className={cn(
-								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-none transition-colors",
+								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
 								"aria-selected:bg-muted/50"
 							)}
 						>
@@ -277,7 +277,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 							value="system mode theme auto"
 							onSelect={() => runCommand(() => setTheme("system"))}
 							className={cn(
-								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-none transition-colors",
+								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
 								"aria-selected:bg-muted/50"
 							)}
 						>
@@ -299,7 +299,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 							value="oled dark black amoled pure"
 							onSelect={() => isDarkMode && runCommand(toggleOLED)}
 							className={cn(
-								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-none transition-colors",
+								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
 								"aria-selected:bg-muted/50",
 								!isDarkMode && "opacity-50"
 							)}
@@ -336,7 +336,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 								value={`theme color ${option.label} ${option.name}`}
 								onSelect={() => runCommand(() => setColorTheme(option.name))}
 								className={cn(
-									"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-none transition-colors",
+									"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
 									"aria-selected:bg-muted/50"
 								)}
 							>
@@ -370,7 +370,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 							value="refresh data reload"
 							onSelect={() => runCommand(handleRefreshData)}
 							className={cn(
-								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-none transition-colors",
+								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
 								"aria-selected:bg-muted/50"
 							)}
 						>
@@ -387,7 +387,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 							value="account profile user"
 							onSelect={() => runCommand(() => router.push("/settings"))}
 							className={cn(
-								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-none transition-colors",
+								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
 								"aria-selected:bg-muted/50"
 							)}
 						>
@@ -406,7 +406,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 								runCommand(() => window.open("https://github.com/khak1s/arr-dashboard", "_blank"))
 							}
 							className={cn(
-								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-none transition-colors",
+								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
 								"aria-selected:bg-muted/50"
 							)}
 						>
@@ -423,7 +423,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 							value="logout sign out"
 							onSelect={() => runCommand(handleLogout)}
 							className={cn(
-								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-none transition-colors",
+								"group relative flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2.5 text-sm outline-hidden transition-colors",
 								"aria-selected:bg-muted/50"
 							)}
 						>

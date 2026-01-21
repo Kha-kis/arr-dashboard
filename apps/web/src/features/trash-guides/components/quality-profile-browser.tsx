@@ -68,14 +68,14 @@ export const QualityProfileBrowser = ({
 
 	return (
 		<div
-			className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 backdrop-blur-sm"
+			className="fixed inset-0 z-modal flex items-center justify-center bg-black/50 backdrop-blur-xs"
 			role="dialog"
 			aria-modal="true"
 			aria-labelledby="quality-profile-browser-title"
 		>
 			<div className="relative w-full max-w-4xl max-h-[90vh] overflow-hidden rounded-xl border border-border bg-card shadow-xl">
 				{/* Header */}
-				<div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card/95 p-6 backdrop-blur">
+				<div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card/95 p-6 backdrop-blur-sm">
 					<div>
 						<h2 id="quality-profile-browser-title" className="text-xl font-semibold text-foreground">
 							Browse TRaSH Quality Profiles
@@ -249,7 +249,7 @@ export const QualityProfileBrowser = ({
 												onChange={(e) => setTemplateDescription(e.target.value)}
 												placeholder="Enter template description"
 												rows={4}
-												className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/60 transition-all duration-200 hover:border-border/80 hover:bg-card/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-card/80"
+												className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/60 transition-all duration-200 hover:border-border/80 hover:bg-card/80 focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:bg-card/80"
 											/>
 										</div>
 									</div>
@@ -260,7 +260,7 @@ export const QualityProfileBrowser = ({
 				</div>
 
 				{/* Footer */}
-				<div className="sticky bottom-0 flex justify-end gap-2 border-t border-border bg-card/95 p-6 backdrop-blur">
+				<div className="sticky bottom-0 flex justify-end gap-2 border-t border-border bg-card/95 p-6 backdrop-blur-sm">
 					<Button variant="secondary" onClick={onClose}>
 						Cancel
 					</Button>

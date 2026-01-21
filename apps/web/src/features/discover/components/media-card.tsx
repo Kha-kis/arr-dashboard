@@ -63,7 +63,7 @@ export const MediaCard: React.FC<MediaCardProps> = ({
 				{/* Main Content */}
 				<div className="flex gap-4">
 					{/* Poster */}
-					<div className="relative h-40 w-28 overflow-hidden rounded-xl border border-border/30 bg-gradient-to-br from-slate-800 to-slate-900 shrink-0">
+					<div className="relative h-40 w-28 overflow-hidden rounded-xl border border-border/30 bg-linear-to-br from-slate-800 to-slate-900 shrink-0">
 						{result.images?.poster ? (
 							/* eslint-disable-next-line @next/next/no-img-element -- External TMDB image with dynamic URL */
 							<img

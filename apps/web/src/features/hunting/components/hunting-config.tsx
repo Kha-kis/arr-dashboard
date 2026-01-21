@@ -538,7 +538,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 								size="sm"
 								onClick={() => void handleRunNow("missing")}
 								disabled={isTriggering}
-								className="gap-2 border-border/50 bg-card/50 backdrop-blur-sm"
+								className="gap-2 border-border/50 bg-card/50 backdrop-blur-xs"
 							>
 								{isTriggering ? (
 									<RotateCcw className="h-4 w-4 animate-spin" />
@@ -554,7 +554,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 								size="sm"
 								onClick={() => void handleRunNow("upgrade")}
 								disabled={isTriggering}
-								className="gap-2 border-border/50 bg-card/50 backdrop-blur-sm"
+								className="gap-2 border-border/50 bg-card/50 backdrop-blur-xs"
 							>
 								{isTriggering ? (
 									<RotateCcw className="h-4 w-4 animate-spin" />
@@ -770,7 +770,7 @@ const UnconfiguredInstanceCard = ({
 				size="sm"
 				onClick={() => void handleConfigure()}
 				disabled={isCreating}
-				className="gap-2 border-border/50 bg-card/50 backdrop-blur-sm"
+				className="gap-2 border-border/50 bg-card/50 backdrop-blur-xs"
 			>
 				{isCreating ? (
 					<RotateCcw className="h-4 w-4 animate-spin" />

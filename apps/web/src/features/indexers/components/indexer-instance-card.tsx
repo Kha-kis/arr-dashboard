@@ -48,7 +48,7 @@ export const IndexerInstanceCard = ({
 	const [incognitoMode] = useIncognitoMode();
 
 	return (
-		<article className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm overflow-hidden">
+		<article className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden">
 			{/* Header */}
 			<header
 				className="p-5 border-b border-border/30"

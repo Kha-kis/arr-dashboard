@@ -23,7 +23,7 @@ export const QueueProgress = ({ value, size = "md", service }: QueueProgressProp
 					"relative overflow-hidden rounded-full bg-muted/30",
 					size === "sm" ? "h-2" : "h-2.5"
 				)}>
-					<div className="absolute inset-0 bg-gradient-to-r from-muted/20 via-muted/40 to-muted/20 animate-pulse" />
+					<div className="absolute inset-0 bg-linear-to-r from-muted/20 via-muted/40 to-muted/20 animate-pulse" />
 				</div>
 				<span className="text-xs text-muted-foreground">–</span>
 			</div>

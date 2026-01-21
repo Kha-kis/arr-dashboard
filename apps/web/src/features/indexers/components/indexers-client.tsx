@@ -218,7 +218,7 @@ export const IndexersClient = () => {
 			{/* Error Alert */}
 			{error && (
 				<div
-					className="rounded-2xl border p-5 backdrop-blur-sm animate-in fade-in slide-in-from-top-2 duration-300"
+					className="rounded-2xl border p-5 backdrop-blur-xs animate-in fade-in slide-in-from-top-2 duration-300"
 					style={{
 						backgroundColor: SEMANTIC_COLORS.error.bg,
 						borderColor: SEMANTIC_COLORS.error.border,
@@ -244,7 +244,7 @@ export const IndexersClient = () => {
 			{/* Feedback Alert */}
 			{feedback && (
 				<div
-					className="rounded-2xl border p-5 backdrop-blur-sm animate-in fade-in slide-in-from-top-2 duration-300"
+					className="rounded-2xl border p-5 backdrop-blur-xs animate-in fade-in slide-in-from-top-2 duration-300"
 					style={{
 						backgroundColor: feedback.type === "success" ? SEMANTIC_COLORS.success.bg : SEMANTIC_COLORS.error.bg,
 						borderColor: feedback.type === "success" ? SEMANTIC_COLORS.success.border : SEMANTIC_COLORS.error.border,
@@ -277,7 +277,7 @@ export const IndexersClient = () => {
 
 					{/* Top Pagination */}
 					{aggregated.length > 0 && (
-						<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+						<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
 							<Pagination
 								currentPage={page}
 								totalItems={aggregated.length}
@@ -320,7 +320,7 @@ export const IndexersClient = () => {
 
 					{/* Bottom Pagination */}
 					{aggregated.length > 0 && (
-						<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+						<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
 							<Pagination
 								currentPage={page}
 								totalItems={aggregated.length}

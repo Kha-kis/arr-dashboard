@@ -871,7 +871,7 @@ export const BackupTab = () => {
 			{/* Restore Backup Modal */}
 			{showBackupRestoreModal && selectedBackupForRestore && (
 				<div
-					className="fixed inset-0 z-modal flex items-center justify-center bg-black/80 backdrop-blur-sm"
+					className="fixed inset-0 z-modal flex items-center justify-center bg-black/80 backdrop-blur-xs"
 					role="dialog"
 					aria-modal="true"
 					aria-labelledby="restore-backup-title"
@@ -937,7 +937,7 @@ export const BackupTab = () => {
 			{/* Server Restarting Modal */}
 			{isRestarting && (
 				<div
-					className="fixed inset-0 z-modal flex items-center justify-center bg-black/80 backdrop-blur-sm"
+					className="fixed inset-0 z-modal flex items-center justify-center bg-black/80 backdrop-blur-xs"
 					role="dialog"
 					aria-modal="true"
 					aria-labelledby="server-restarting-title"

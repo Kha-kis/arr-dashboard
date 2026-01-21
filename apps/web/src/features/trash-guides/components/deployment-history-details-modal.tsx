@@ -78,7 +78,7 @@ export function DeploymentHistoryDetailsModal({
 				{data?.data && (
 					<>
 						{/* Overview Section */}
-						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
 							<h3 className="text-sm font-medium text-foreground mb-3">Overview</h3>
 							<div className="grid grid-cols-2 gap-4">
 								<InfoField
@@ -113,7 +113,7 @@ export function DeploymentHistoryDetailsModal({
 						</div>
 
 						{/* Instance & Template Section */}
-						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
 							<h3 className="text-sm font-medium text-foreground mb-3">
 								Instance & Template
 							</h3>
@@ -151,7 +151,7 @@ export function DeploymentHistoryDetailsModal({
 						</div>
 
 						{/* Results Section */}
-						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+						<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
 							<h3 className="text-sm font-medium text-foreground mb-3">Results</h3>
 							<div className="grid grid-cols-3 gap-4">
 								<div className="space-y-1">
@@ -305,7 +305,7 @@ export function DeploymentHistoryDetailsModal({
 
 						{/* Backup Info Section */}
 						{data.data.backup && (
-							<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+							<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
 								<h3 className="text-sm font-medium text-foreground mb-3">Backup</h3>
 								<InfoField
 									label="Backup Created"

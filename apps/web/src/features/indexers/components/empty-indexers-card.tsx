@@ -20,7 +20,7 @@ export const EmptyIndexersCard = () => {
 	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
-		<div className="rounded-2xl border border-dashed border-border/50 bg-card/20 backdrop-blur-sm p-12 text-center animate-in fade-in slide-in-from-bottom-4 duration-500">
+		<div className="rounded-2xl border border-dashed border-border/50 bg-card/20 backdrop-blur-xs p-12 text-center animate-in fade-in slide-in-from-bottom-4 duration-500">
 			{/* Icon */}
 			<div
 				className="mx-auto mb-6 flex h-16 w-16 items-center justify-center rounded-2xl"

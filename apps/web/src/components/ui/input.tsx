@@ -43,15 +43,15 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
           // Premium rounded corners
           "rounded-xl",
           // Border and background
-          "border border-border/50 bg-background/50 backdrop-blur-sm",
+          "border border-border/50 bg-background/50 backdrop-blur-xs",
           // Placeholder
           "placeholder:text-muted-foreground/60",
           // File input styling
           "file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground",
           // Standard focus (non-premium) - kept for compatibility
-          !premium && "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background",
+          !premium && "focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 ring-offset-background",
           // Premium focus removes default ring for custom styling
-          premium && "focus-visible:outline-none",
+          premium && "focus-visible:outline-hidden",
           // Transitions
           "transition-all duration-300",
           // Disabled state

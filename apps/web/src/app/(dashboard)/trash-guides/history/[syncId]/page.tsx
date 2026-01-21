@@ -310,7 +310,7 @@ export default function SyncDetailPage() {
 									<p className="font-medium text-red-200">{config.name}</p>
 									{config.error && <p className="mt-1 text-sm text-red-300">{config.error}</p>}
 								</div>
-								<XCircle className="h-5 w-5 flex-shrink-0 text-red-400" />
+								<XCircle className="h-5 w-5 shrink-0 text-red-400" />
 							</div>
 						))}
 					</div>
@@ -345,14 +345,14 @@ export default function SyncDetailPage() {
 						aria-modal="true"
 						aria-labelledby="rollback-confirm-title"
 						aria-describedby="rollback-confirm-description"
-						className="w-full max-w-md rounded-xl border border-border bg-background p-6 focus:outline-none"
+						className="w-full max-w-md rounded-xl border border-border bg-background p-6 focus:outline-hidden"
 						onClick={(e) => e.stopPropagation()}
 					>
 						<h3
 							id="rollback-confirm-title"
 							ref={titleRef}
 							tabIndex={-1}
-							className="text-xl font-semibold text-foreground focus:outline-none"
+							className="text-xl font-semibold text-foreground focus:outline-hidden"
 						>
 							Confirm Rollback
 						</h3>

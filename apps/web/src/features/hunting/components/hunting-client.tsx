@@ -81,7 +81,7 @@ export const HuntingClient = () => {
 					<Button
 						variant="secondary"
 						onClick={() => void refetch()}
-						className="gap-2 border-border/50 bg-card/50 backdrop-blur-sm hover:bg-card/80"
+						className="gap-2 border-border/50 bg-card/50 backdrop-blur-xs hover:bg-card/80"
 					>
 						<RefreshCw className="h-4 w-4" />
 						Refresh

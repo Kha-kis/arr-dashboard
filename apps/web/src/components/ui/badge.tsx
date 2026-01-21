@@ -14,7 +14,7 @@ import { SEMANTIC_COLORS } from "../../lib/theme-gradients"
  * All variants use rounded-lg for premium feel.
  */
 const badgeVariants = cva(
-  "inline-flex items-center gap-1 rounded-lg border font-medium transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2",
+  "inline-flex items-center gap-1 rounded-lg border font-medium transition-all duration-200 focus:outline-hidden focus:ring-2 focus:ring-ring focus:ring-offset-2",
   {
     variants: {
       variant: {
@@ -23,7 +23,7 @@ const badgeVariants = cva(
         // Gradient - theme-aware (handled separately)
         gradient: "border-transparent text-white",
         // Secondary - subtle glassmorphic
-        secondary: "border-border/50 bg-muted/50 text-foreground backdrop-blur-sm",
+        secondary: "border-border/50 bg-muted/50 text-foreground backdrop-blur-xs",
         // Outline - border only
         outline: "border-border text-foreground bg-transparent",
         // Destructive

@@ -47,7 +47,7 @@ export const CalendarFilters = ({
 
 	return (
 		<div
-			className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500"
+			className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-500"
 			style={{ animationDelay: "100ms", animationFillMode: "backwards" }}
 		>
 			{/* Header */}
@@ -96,7 +96,7 @@ export const CalendarFilters = ({
 						id="calendar-service-filter"
 						value={serviceFilter}
 						onChange={(event) => onServiceFilterChange(event.target.value as ServiceFilterValue)}
-						className="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 [&>option]:bg-background [&>option]:text-foreground"
+						className="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary/20 [&>option]:bg-background [&>option]:text-foreground"
 					>
 						{SERVICE_FILTERS.map((option) => (
 							<option key={option.value} value={option.value}>
@@ -117,7 +117,7 @@ export const CalendarFilters = ({
 						id="calendar-instance-filter"
 						value={instanceFilter}
 						onChange={(event) => onInstanceFilterChange(event.target.value)}
-						className="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary/20 [&>option]:bg-background [&>option]:text-foreground"
+						className="rounded-lg border border-border/50 bg-background/50 px-3 py-2 text-sm focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary/20 [&>option]:bg-background [&>option]:text-foreground"
 					>
 						<option value="all">All instances</option>
 						{instanceOptions.map((option) => (

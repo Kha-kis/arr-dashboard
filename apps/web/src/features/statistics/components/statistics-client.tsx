@@ -172,7 +172,7 @@ export const StatisticsClient = () => {
 				className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 				style={{ animationDelay: "100ms", animationFillMode: "backwards" }}
 			>
-				<div className="inline-flex rounded-xl bg-card/30 backdrop-blur-sm border border-border/50 p-1.5">
+				<div className="inline-flex rounded-xl bg-card/30 backdrop-blur-xs border border-border/50 p-1.5">
 					{tabs.map((tab) => {
 						const Icon = tab.icon;
 						const isActive = activeTab === tab.id;
@@ -289,7 +289,7 @@ export const StatisticsClient = () => {
 						</PremiumCard>
 					) : (
 						<div
-							className="flex items-center gap-4 p-6 rounded-2xl border border-border/50 bg-emerald-500/10 backdrop-blur-sm animate-in fade-in slide-in-from-bottom-4 duration-500"
+							className="flex items-center gap-4 p-6 rounded-2xl border border-border/50 bg-emerald-500/10 backdrop-blur-xs animate-in fade-in slide-in-from-bottom-4 duration-500"
 							style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
 						>
 							<div
@@ -357,7 +357,7 @@ export const StatisticsClient = () => {
 						style={{ animationDelay: "400ms", animationFillMode: "backwards" }}
 					>
 						{/* Sonarr Card */}
-						<div className="group relative rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-6 overflow-hidden transition-all duration-300 hover:border-border">
+						<div className="group relative rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6 overflow-hidden transition-all duration-300 hover:border-border">
 							<div
 								className="absolute inset-0 opacity-0 group-hover:opacity-20 transition-opacity duration-500"
 								style={{ background: `radial-gradient(circle at 50% 0%, ${SERVICE_GRADIENTS.sonarr.glow}, transparent 70%)` }}
@@ -407,7 +407,7 @@ export const StatisticsClient = () => {
 						</div>
 
 						{/* Radarr Card */}
-						<div className="group relative rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-6 overflow-hidden transition-all duration-300 hover:border-border">
+						<div className="group relative rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6 overflow-hidden transition-all duration-300 hover:border-border">
 							<div
 								className="absolute inset-0 opacity-0 group-hover:opacity-20 transition-opacity duration-500"
 								style={{ background: `radial-gradient(circle at 50% 0%, ${SERVICE_GRADIENTS.radarr.glow}, transparent 70%)` }}
@@ -457,7 +457,7 @@ export const StatisticsClient = () => {
 						</div>
 
 						{/* Prowlarr Card */}
-						<div className="group relative rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-6 overflow-hidden transition-all duration-300 hover:border-border">
+						<div className="group relative rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6 overflow-hidden transition-all duration-300 hover:border-border">
 							<div
 								className="absolute inset-0 opacity-0 group-hover:opacity-20 transition-opacity duration-500"
 								style={{ background: `radial-gradient(circle at 50% 0%, ${SERVICE_GRADIENTS.prowlarr.glow}, transparent 70%)` }}

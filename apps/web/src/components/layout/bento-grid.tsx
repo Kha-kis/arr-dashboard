@@ -135,7 +135,7 @@ export function BentoCard({
 	return (
 		<motion.div
 			className={cn(
-				"group relative overflow-hidden rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm",
+				"group relative overflow-hidden rounded-2xl border border-border/50 bg-card/50 backdrop-blur-xs",
 				"transition-colors duration-300",
 				interactive && "cursor-pointer hover:border-border",
 				sizeClasses,

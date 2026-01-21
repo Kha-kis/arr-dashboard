@@ -197,9 +197,9 @@ export function ConditionEditor({
 												{pattern}
 											</code>
 											{isValid ? (
-												<CheckCircle className="h-3 w-3 text-green-400 flex-shrink-0" />
+												<CheckCircle className="h-3 w-3 text-green-400 shrink-0" />
 											) : (
-												<AlertCircle className="h-3 w-3 text-red-400 flex-shrink-0" />
+												<AlertCircle className="h-3 w-3 text-red-400 shrink-0" />
 											)}
 										</div>
 									)}
@@ -243,7 +243,7 @@ export function ConditionEditor({
 											});
 										}}
 										rows={2}
-										className="w-full rounded-xl border border-border bg-card px-4 py-3 text-xs font-mono text-foregroundplaceholder:text-muted-foreground/60 transition-all duration-200 hover:border-border/80 hover:bg-card/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-card/80"
+										className="w-full rounded-xl border border-border bg-card px-4 py-3 text-xs font-mono text-foregroundplaceholder:text-muted-foreground/60 transition-all duration-200 hover:border-border/80 hover:bg-card/80 focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:bg-card/80"
 										placeholder="Enter regex pattern..."
 									/>
 									<p className="text-xs text-muted-foreground mt-2">

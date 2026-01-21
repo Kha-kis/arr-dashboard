@@ -79,9 +79,9 @@ const PremiumSelect = ({
 				<SelectPrimitive.Trigger
 					className={cn(
 						"relative flex h-11 w-full min-w-[150px] items-center justify-between gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all duration-300",
-						"bg-card/60 backdrop-blur-sm text-foreground",
-						"focus:outline-none focus:ring-2 focus:ring-offset-0 focus:ring-offset-transparent",
-						"data-[placeholder]:text-muted-foreground",
+						"bg-card/60 backdrop-blur-xs text-foreground",
+						"focus:outline-hidden focus:ring-2 focus:ring-offset-0 focus:ring-offset-transparent",
+						"data-placeholder:text-muted-foreground",
 						"disabled:cursor-not-allowed disabled:opacity-50",
 						isActive
 							? "border-primary/50"
@@ -118,14 +118,14 @@ const PremiumSelect = ({
 				<SelectPrimitive.Portal>
 					<SelectPrimitive.Content
 						className={cn(
-							"relative z-modal max-h-[300px] min-w-[var(--radix-select-trigger-width)] overflow-hidden",
+							"relative z-modal max-h-[300px] min-w-(--radix-select-trigger-width) overflow-hidden",
 							"rounded-xl border border-border/50 bg-card/95 backdrop-blur-xl",
 							"shadow-xl shadow-black/20",
 							"data-[state=open]:animate-in data-[state=closed]:animate-out",
 							"data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
 							"data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
 							"data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
-							"origin-[--radix-select-content-transform-origin]"
+							"origin-(--radix-select-content-transform-origin)"
 						)}
 						position="popper"
 						sideOffset={6}
@@ -147,11 +147,11 @@ const PremiumSelect = ({
 									key={option.value}
 									value={option.value}
 									className={cn(
-										"relative flex w-full cursor-pointer select-none items-center rounded-lg py-2.5 pl-9 pr-3 text-sm font-medium outline-none transition-all duration-200",
+										"relative flex w-full cursor-pointer select-none items-center rounded-lg py-2.5 pl-9 pr-3 text-sm font-medium outline-hidden transition-all duration-200",
 										"text-foreground/80",
 										"focus:text-foreground",
-										"data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-										"data-[highlighted]:outline-none"
+										"data-disabled:pointer-events-none data-disabled:opacity-50",
+										"data-highlighted:outline-hidden"
 									)}
 									style={{
 										// Hover/focus background with theme color
@@ -281,7 +281,7 @@ export const QueueFilters = ({
 		<div className="space-y-3">
 			{/* Main filter bar */}
 			<div
-				className="relative overflow-hidden rounded-2xl border border-border/40 bg-card/50 backdrop-blur-sm transition-all duration-300"
+				className="relative overflow-hidden rounded-2xl border border-border/40 bg-card/50 backdrop-blur-xs transition-all duration-300"
 				style={{
 					boxShadow: filtersActive ? `0 4px 20px -4px ${themeGradient.glow}` : undefined,
 				}}
