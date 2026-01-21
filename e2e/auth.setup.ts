@@ -43,9 +43,9 @@ setup("authenticate", async ({ page }) => {
 		timeout: 10000,
 	});
 
-	// Fill login form
-	await page.getByLabel(/username/i).fill(TEST_CREDENTIALS.username);
-	await page.getByLabel(/password/i).fill(TEST_CREDENTIALS.password);
+	// Fill login form - use getByRole for specificity (avoids matching "Show password" button)
+	await page.getByRole("textbox", { name: /username/i }).fill(TEST_CREDENTIALS.username);
+	await page.getByRole("textbox", { name: /password/i }).fill(TEST_CREDENTIALS.password);
 
 	// Click sign in with password button (be specific to avoid matching passkey button)
 	await page.getByRole("button", { name: /sign in with password/i }).click();
@@ -53,9 +53,9 @@ setup("authenticate", async ({ page }) => {
 	// Wait for successful login (redirect to dashboard)
 	await expect(page).toHaveURL(/\/dashboard/, { timeout: 15000 });
 
-	// Verify we're logged in by checking for the greeting heading
+	// Verify we're logged in by checking for the greeting heading (format: "Hi, username")
 	await expect(
-		page.getByRole("heading", { name: new RegExp(`Hi ${TEST_CREDENTIALS.username}`, "i") }),
+		page.getByRole("heading", { name: new RegExp(`Hi,?\\s*${TEST_CREDENTIALS.username}`, "i") }),
 	).toBeVisible({ timeout: 5000 });
 
 	// Save authentication state
