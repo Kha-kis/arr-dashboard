@@ -54,11 +54,38 @@ jobs:
       - name: Run type checking
         run: pnpm run typecheck
 
+  # Unit and Integration Tests
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: cd apps/api && pnpm exec prisma generate
+
+      - name: Run tests
+        run: pnpm run test
+
   # Docker Build Test (validates Dockerfile and warms registry cache)
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
-    needs: [lint]
+    needs: [lint, test]
 
     steps:
       - name: Checkout code
