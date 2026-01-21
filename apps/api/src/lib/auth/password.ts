@@ -1,15 +1,25 @@
-import { Argon2id } from "oslo/password";
+import * as argon2 from "argon2";
 
-const argon2id = new Argon2id({
-	memorySize: 19456,
-	iterations: 2,
+/**
+ * Argon2id configuration matching the previous oslo/password settings.
+ * These values provide a good balance of security and performance.
+ */
+const ARGON2_OPTIONS: argon2.Options = {
+	type: argon2.argon2id,
+	memoryCost: 19456, // 19 MiB
+	timeCost: 2, // iterations
 	parallelism: 1,
-});
+};
 
 export const hashPassword = async (password: string): Promise<string> => {
-	return argon2id.hash(password);
+	return argon2.hash(password, ARGON2_OPTIONS);
 };
 
 export const verifyPassword = async (password: string, hash: string): Promise<boolean> => {
-	return argon2id.verify(hash, password);
+	try {
+		return await argon2.verify(hash, password);
+	} catch {
+		// Invalid hash format or other verification error
+		return false;
+	}
 };
