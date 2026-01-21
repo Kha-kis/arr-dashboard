@@ -9,7 +9,7 @@ import type {
 	DiscoverResultInstanceState,
 } from "@arr/shared";
 import type { ServiceInstanceSummary } from "@arr/shared";
-import { X, Film, Tv, Loader2, Plus, CheckCircle2, AlertTriangle, FolderOpen, Settings2, Search } from "lucide-react";
+import { X, Film, Tv, Loader2, Plus, CheckCircle2, AlertTriangle, FolderOpen, Settings2, Search, Clock } from "lucide-react";
 import { Button } from "../../../components/ui/button";
 import { cn } from "../../../lib/utils";
 import { useDiscoverOptionsQuery } from "../../../hooks/api/useDiscover";
@@ -31,6 +31,26 @@ const getInstanceState = (
 	instanceId: string,
 ): DiscoverResultInstanceState | undefined =>
 	result?.instanceStates.find((state) => state.instanceId === instanceId);
+
+/**
+ * Radarr minimum availability options
+ * Controls when a movie is considered "available" for download
+ */
+const MINIMUM_AVAILABILITY_OPTIONS = [
+	{ value: "announced", label: "Announced", description: "As soon as the movie is announced" },
+	{ value: "inCinemas", label: "In Cinemas", description: "When the movie is in theaters" },
+	{ value: "released", label: "Released", description: "When physically/digitally released" },
+] as const;
+
+/**
+ * Sonarr series type options
+ * Controls how episodes are matched and numbered
+ */
+const SERIES_TYPE_OPTIONS = [
+	{ value: "standard", label: "Standard", description: "Normal TV shows (S01E01)" },
+	{ value: "daily", label: "Daily", description: "Daily shows like talk shows (2024-01-15)" },
+	{ value: "anime", label: "Anime", description: "Anime with absolute numbering (Episode 123)" },
+] as const;
 
 /**
  * Premium Add to Library Dialog
@@ -71,6 +91,8 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 	const [monitored, setMonitored] = useState(true);
 	const [searchOnAdd, setSearchOnAdd] = useState(true);
 	const [seasonFolder, setSeasonFolder] = useState(true);
+	const [minimumAvailability, setMinimumAvailability] = useState<string>("announced");
+	const [seriesType, setSeriesType] = useState<string>("standard");
 
 	const selectedInstance = useMemo(
 		() => instances.find((instance) => instance.id === instanceId),
@@ -87,6 +109,8 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 			setMonitored(true);
 			setSearchOnAdd(true);
 			setSeasonFolder(true);
+			setMinimumAvailability("announced");
+			setSeriesType("standard");
 			return;
 		}
 
@@ -240,6 +264,7 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 							rootFolderPath,
 							monitored,
 							searchOnAdd,
+							minimumAvailability,
 						}
 					: {
 							type: "series",
@@ -252,6 +277,7 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 							monitored,
 							searchOnAdd,
 							seasonFolder,
+							seriesType,
 						},
 		};
 
@@ -490,6 +516,56 @@ export const AddToLibraryDialog: React.FC<AddToLibraryDialogProps> = ({
 								))}
 							</select>
 						</div>
+
+						{/* Minimum Availability Select (Movies only) */}
+						{type === "movie" && (
+							<div className="space-y-2">
+								<label className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground font-medium">
+									<Clock className="h-3 w-3" />
+									Minimum Availability
+								</label>
+								<select
+									className={selectClassName}
+									style={getSelectStyle("minimumAvailability")}
+									onFocus={() => setFocusedSelect("minimumAvailability")}
+									onBlur={() => setFocusedSelect(null)}
+									value={minimumAvailability}
+									onChange={(event) => setMinimumAvailability(event.target.value)}
+									disabled={submitting || noInstances}
+								>
+									{MINIMUM_AVAILABILITY_OPTIONS.map((option) => (
+										<option key={option.value} value={option.value}>
+											{option.label}
+										</option>
+									))}
+								</select>
+							</div>
+						)}
+
+						{/* Series Type Select (Series only) */}
+						{type === "series" && (
+							<div className="space-y-2">
+								<label className="flex items-center gap-1.5 text-xs uppercase tracking-wider text-muted-foreground font-medium">
+									<Tv className="h-3 w-3" />
+									Series Type
+								</label>
+								<select
+									className={selectClassName}
+									style={getSelectStyle("seriesType")}
+									onFocus={() => setFocusedSelect("seriesType")}
+									onBlur={() => setFocusedSelect(null)}
+									value={seriesType}
+									onChange={(event) => setSeriesType(event.target.value)}
+									disabled={submitting || noInstances}
+								>
+									{SERIES_TYPE_OPTIONS.map((option) => (
+										<option key={option.value} value={option.value}>
+											{option.label}
+										</option>
+									))}
+								</select>
+							</div>
+						)}
 					</div>
 
 					{/* Toggle Options */}

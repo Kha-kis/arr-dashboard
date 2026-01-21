@@ -147,6 +147,10 @@ export const registerAddRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					rootFolderPath: seriesPayload.rootFolderPath,
 					seasonFolder: seriesPayload.seasonFolder ?? true,
 					monitored: seriesPayload.monitored ?? true,
+					seriesType:
+						seriesPayload.seriesType ??
+						toStringValue(remote?.seriesType) ??
+						"standard",
 					seasons,
 					addOptions: {
 						searchForMissingEpisodes: seriesPayload.searchOnAdd ?? true,
