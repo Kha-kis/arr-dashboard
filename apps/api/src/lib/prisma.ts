@@ -13,8 +13,8 @@
 // Re-export everything from the generated Prisma client
 export * from "../generated/prisma/client.js";
 
-// Import the PrismaClient constructor for creating an instance type
-import { PrismaClient as PrismaClientClass } from "../generated/prisma/client.js";
+// Import the PrismaClient constructor type for creating an instance type
+import type { PrismaClient as PrismaClientClass } from "../generated/prisma/client.js";
 
 /**
  * PrismaClientInstance type - represents any instantiated PrismaClient
