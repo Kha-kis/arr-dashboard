@@ -12,7 +12,7 @@ FROM build-base AS deps
 WORKDIR /app
 
 # Copy workspace configuration and package.json files
-COPY pnpm-workspace.yaml pnpm-lock.yaml package.json ./
+COPY .npmrc pnpm-workspace.yaml pnpm-lock.yaml package.json ./
 COPY packages/shared/package.json ./packages/shared/
 COPY apps/api/package.json ./apps/api/
 COPY apps/web/package.json ./apps/web/
@@ -39,10 +39,9 @@ RUN --mount=type=cache,id=turbo,target=/app/.turbo \
 # Deploy API for production and generate Prisma client
 # Also create version.json from root package.json for runtime version detection
 # Note: Prisma 7 uses prisma.config.ts for CLI configuration
-# Note: pnpm 10 requires --legacy flag for deploy without injected workspace packages
 # Note: prisma.config.ts needs tsconfig files for TypeScript compilation
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
-    pnpm --filter @arr/api --prod deploy --legacy /app/deploy-api && \
+    pnpm --filter @arr/api --prod deploy /app/deploy-api && \
     cd /app/deploy-api && \
     cp -r /app/apps/api/dist ./dist && \
     cp -r /app/apps/api/prisma ./prisma && \
