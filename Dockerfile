@@ -38,11 +38,13 @@ RUN --mount=type=cache,id=turbo,target=/app/.turbo \
 
 # Deploy API for production and generate Prisma client
 # Also create version.json from root package.json for runtime version detection
+# Note: Prisma 7 uses prisma.config.ts for CLI configuration
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm --filter @arr/api --prod deploy /app/deploy-api && \
     cd /app/deploy-api && \
     cp -r /app/apps/api/dist ./dist && \
     cp -r /app/apps/api/prisma ./prisma && \
+    cp /app/apps/api/prisma.config.ts ./prisma.config.ts && \
     npx prisma generate --schema prisma/schema.prisma && \
     node -e "const p=require('/app/package.json'); console.log(JSON.stringify({version:p.version,name:p.name}))" > ./version.json
 
