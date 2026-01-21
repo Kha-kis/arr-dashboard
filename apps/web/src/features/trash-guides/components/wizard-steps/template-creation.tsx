@@ -616,7 +616,7 @@ export const TemplateCreation = ({
 						value={templateName}
 						onChange={(e) => setTemplateName(e.target.value)}
 						placeholder="Enter template name"
-						className="w-full rounded border border-border bg-card px-3 py-2 text-sm text-foregroundplaceholder:text-foreground/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+						className="w-full rounded border border-border bg-card px-3 py-2 text-sm text-foregroundplaceholder:text-foreground/40 focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary"
 					/>
 				</div>
 
@@ -629,7 +629,7 @@ export const TemplateCreation = ({
 						onChange={(e) => setTemplateDescription(e.target.value)}
 						placeholder="Enter template description"
 						rows={4}
-						className="w-full rounded border border-border bg-card px-3 py-2 text-sm text-foregroundplaceholder:text-foreground/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+						className="w-full rounded border border-border bg-card px-3 py-2 text-sm text-foregroundplaceholder:text-foreground/40 focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary"
 					/>
 				</div>
 			</div>

@@ -21,13 +21,13 @@ const cardVariants = cva(
     variants: {
       variant: {
         // Default glassmorphic card
-        default: "border border-border/50 bg-card/80 backdrop-blur-sm shadow-sm",
+        default: "border border-border/50 bg-card/80 backdrop-blur-xs shadow-sm",
         // Elevated with stronger presence
         elevated: "border border-border/40 bg-card/90 backdrop-blur-md shadow-lg",
         // Ghost - minimal styling
         ghost: "border border-transparent bg-transparent",
         // Gradient accent - theme-aware top border
-        gradient: "border border-border/30 bg-card/80 backdrop-blur-sm",
+        gradient: "border border-border/30 bg-card/80 backdrop-blur-xs",
       },
       hover: {
         true: "",

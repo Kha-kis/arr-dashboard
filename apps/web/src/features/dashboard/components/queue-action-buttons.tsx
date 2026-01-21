@@ -132,7 +132,7 @@ const RemoveActionMenu = ({
 					disabled={disabled}
 					className={cn(
 						"group inline-flex h-9 items-center justify-center gap-2 rounded-full border px-4 text-xs font-medium transition-all duration-300",
-						"border-border/50 bg-card/50 text-muted-foreground backdrop-blur-sm",
+						"border-border/50 bg-card/50 text-muted-foreground backdrop-blur-xs",
 						"hover:border-red-500/30 hover:bg-red-500/5 hover:text-red-400",
 						disabled && "cursor-not-allowed opacity-50",
 						fullWidth && "w-full"
@@ -195,7 +195,7 @@ export const QueueActionButtons = ({
 
 	const secondaryButtonClass = cn(
 		"inline-flex h-9 items-center justify-center gap-2 rounded-full border px-4 text-xs font-medium transition-all duration-300",
-		"border-border/50 bg-card/50 text-muted-foreground backdrop-blur-sm",
+		"border-border/50 bg-card/50 text-muted-foreground backdrop-blur-xs",
 		"hover:border-border hover:bg-card hover:text-foreground",
 		fullWidth && "w-full"
 	);

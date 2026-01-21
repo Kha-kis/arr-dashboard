@@ -51,7 +51,7 @@ export const TagsTab = ({
 	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
-		<div className="grid gap-6 lg:grid-cols-[1fr,2fr]">
+		<div className="grid gap-6 lg:grid-cols-[1fr_2fr]">
 			{/* Create tag form */}
 			<GlassmorphicCard padding="lg">
 				<div className="space-y-4">

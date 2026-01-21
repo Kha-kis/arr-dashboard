@@ -121,8 +121,8 @@ export const QueueStatusMessages = ({ lines }: QueueStatusMessagesProps) => {
 					animationFillMode: "backwards",
 				}}
 			>
-				<Icon className={cn("mt-0.5 h-3.5 w-3.5 flex-shrink-0 transition-transform duration-300 group-hover:scale-110", style.iconClass)} />
-				<span className="break-words leading-relaxed">
+				<Icon className={cn("mt-0.5 h-3.5 w-3.5 shrink-0 transition-transform duration-300 group-hover:scale-110", style.iconClass)} />
+				<span className="wrap-break-word leading-relaxed">
 					{incognitoMode ? anonymizeStatusMessage(entry.text) : entry.text}
 				</span>
 			</div>
@@ -130,7 +130,7 @@ export const QueueStatusMessages = ({ lines }: QueueStatusMessagesProps) => {
 	};
 
 	return (
-		<div className="space-y-2 break-words">
+		<div className="space-y-2 wrap-break-word">
 			{/* Render standalone messages with staggered animation */}
 			{standalone.map((entry, index) => renderMessage(entry, index))}
 
@@ -150,7 +150,7 @@ export const QueueStatusMessages = ({ lines }: QueueStatusMessagesProps) => {
 								style.container,
 							)}
 						>
-							<Icon className={cn("h-3.5 w-3.5 flex-shrink-0", style.iconClass)} />
+							<Icon className={cn("h-3.5 w-3.5 shrink-0", style.iconClass)} />
 							<span className="flex-1 leading-relaxed font-medium">
 								{group.pattern}
 							</span>

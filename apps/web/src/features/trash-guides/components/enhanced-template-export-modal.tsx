@@ -164,7 +164,7 @@ export function EnhancedTemplateExportModal({
 			</div>
 
 			{/* Export Options */}
-			<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4 space-y-4">
+			<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4 space-y-4">
 				<div className="flex items-center gap-2">
 					<Settings2 className="h-4 w-4" style={{ color: themeGradient.from }} />
 					<h4 className="text-sm font-semibold text-foreground">Export Options</h4>
@@ -271,7 +271,7 @@ export function EnhancedTemplateExportModal({
 
 			{/* Metadata */}
 			{options.includeMetadata && (
-				<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4 space-y-4">
+				<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4 space-y-4">
 					<div className="flex items-center gap-2">
 						<FileJson className="h-4 w-4" style={{ color: themeGradient.from }} />
 						<h4 className="text-sm font-semibold text-foreground">Metadata</h4>
@@ -310,7 +310,7 @@ export function EnhancedTemplateExportModal({
 								onChange={(e) => setCategory(e.target.value)}
 								onFocus={() => setFocusedField("category")}
 								onBlur={() => setFocusedField(null)}
-								className="w-full rounded-lg border bg-card/50 backdrop-blur-sm px-3 py-2 text-sm text-foreground transition-all duration-200 focus:outline-none appearance-none cursor-pointer"
+								className="w-full rounded-lg border bg-card/50 backdrop-blur-xs px-3 py-2 text-sm text-foreground transition-all duration-200 focus:outline-hidden appearance-none cursor-pointer"
 								style={{
 									borderColor: focusedField === "category" ? themeGradient.from : "hsl(var(--border) / 0.5)",
 									boxShadow: focusedField === "category" ? `0 0 0 1px ${themeGradient.from}` : undefined,
@@ -359,7 +359,7 @@ export function EnhancedTemplateExportModal({
 								onBlur={() => setFocusedField(null)}
 								placeholder="Additional notes about this template..."
 								rows={3}
-								className="w-full rounded-xl border bg-card/50 backdrop-blur-sm px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/60 transition-all duration-200 focus:outline-none resize-none"
+								className="w-full rounded-xl border bg-card/50 backdrop-blur-xs px-4 py-3 text-sm text-foreground placeholder:text-muted-foreground/60 transition-all duration-200 focus:outline-hidden resize-none"
 								style={{
 									borderColor: focusedField === "notes" ? themeGradient.from : "hsl(var(--border) / 0.5)",
 									boxShadow: focusedField === "notes" ? `0 0 0 1px ${themeGradient.from}` : undefined,

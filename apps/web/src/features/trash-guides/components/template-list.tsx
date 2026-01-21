@@ -241,7 +241,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 	if (error) {
 		return (
 			<div
-				className="rounded-2xl border p-6 backdrop-blur-sm"
+				className="rounded-2xl border p-6 backdrop-blur-xs"
 				style={{
 					backgroundColor: SEMANTIC_COLORS.error.bg,
 					borderColor: SEMANTIC_COLORS.error.border,
@@ -327,7 +327,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 
 			{/* Search and Sort Controls */}
 			<div
-				className="flex flex-col gap-4 rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-4 sm:flex-row sm:items-center sm:justify-between"
+				className="flex flex-col gap-4 rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-4 sm:flex-row sm:items-center sm:justify-between"
 			>
 				{/* Search Input */}
 				<div className="flex-1 max-w-md">
@@ -338,7 +338,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 							placeholder="Search templates..."
 							value={searchInput}
 							onChange={(e) => setSearchInput(e.target.value)}
-							className="w-full rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-border focus:outline-none focus:ring-2 transition-all duration-200"
+							className="w-full rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-border focus:outline-hidden focus:ring-2 transition-all duration-200"
 							style={{ focusRing: `${themeGradient.from}40`, paddingLeft: "2.5rem" } as React.CSSProperties}
 						/>
 					</div>
@@ -349,7 +349,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 					<select
 						value={sortBy}
 						onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-						className="rounded-xl border border-border/50 bg-card/50 px-3 py-2.5 text-sm text-foreground focus:border-border focus:outline-none focus:ring-2 transition-all duration-200"
+						className="rounded-xl border border-border/50 bg-card/50 px-3 py-2.5 text-sm text-foreground focus:border-border focus:outline-hidden focus:ring-2 transition-all duration-200"
 					>
 						<option value="updatedAt">Last Updated</option>
 						<option value="createdAt">Date Created</option>
@@ -395,7 +395,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 						{templates.map((template, index) => (
 							<article
 								key={template.id}
-								className="group relative flex flex-col rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-6 transition-all duration-300 hover:border-border hover:bg-card/50 hover:shadow-lg animate-in fade-in slide-in-from-bottom-2"
+								className="group relative flex flex-col rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6 transition-all duration-300 hover:border-border hover:bg-card/50 hover:shadow-lg animate-in fade-in slide-in-from-bottom-2"
 								style={{
 									animationDelay: `${index * 50}ms`,
 									animationFillMode: "backwards",
@@ -403,7 +403,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 							>
 								{/* Delete Confirmation Overlay */}
 								{deleteConfirm === template.id && (
-									<div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 rounded-2xl bg-black/90 backdrop-blur-sm p-6">
+									<div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 rounded-2xl bg-black/90 backdrop-blur-xs p-6">
 										<p className="text-center text-sm text-foreground">
 											Delete &quot;{template.name}&quot;?
 										</p>
@@ -434,14 +434,14 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 
 								{/* Duplicate Dialog Overlay */}
 								{duplicatingId === template.id && (
-									<div className="absolute inset-0 z-10 flex flex-col gap-4 rounded-2xl bg-black/90 backdrop-blur-sm p-6">
+									<div className="absolute inset-0 z-10 flex flex-col gap-4 rounded-2xl bg-black/90 backdrop-blur-xs p-6">
 										<p className="text-sm text-foreground">Duplicate as:</p>
 										<input
 											type="text"
 											value={duplicateName}
 											onChange={(e) => setDuplicateName(e.target.value)}
 											placeholder="New template name"
-											className="rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-border focus:outline-none"
+											className="rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-border focus:outline-hidden"
 											autoFocus
 										/>
 										<div className="flex gap-2">
@@ -675,7 +675,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 			{/* Instance Selector Modal */}
 			{instanceSelectorTemplate && (
 				<div
-					className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-modal p-4 animate-in fade-in duration-200"
+					className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center z-modal p-4 animate-in fade-in duration-200"
 					role="dialog"
 					aria-modal="true"
 					aria-labelledby="deploy-template-title"
@@ -824,7 +824,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 			{/* Export Modal */}
 			{exportModal && (
 				<div
-					className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-modal p-4 animate-in fade-in duration-200"
+					className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center z-modal p-4 animate-in fade-in duration-200"
 					role="dialog"
 					aria-modal="true"
 					aria-label="Export Template"
@@ -842,7 +842,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 			{/* Import Modal */}
 			{importModal && (
 				<div
-					className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-modal p-4 animate-in fade-in duration-200"
+					className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center z-modal p-4 animate-in fade-in duration-200"
 					role="dialog"
 					aria-modal="true"
 					aria-label="Import Template"
@@ -862,7 +862,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 			{/* Unlink Confirmation Modal */}
 			{unlinkConfirm && (
 				<div
-					className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-modal p-4 animate-in fade-in duration-200"
+					className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center z-modal p-4 animate-in fade-in duration-200"
 					role="dialog"
 					aria-modal="true"
 					aria-labelledby="unlink-confirm-title"

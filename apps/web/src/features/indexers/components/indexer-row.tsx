@@ -84,7 +84,7 @@ export const IndexerRow = ({
 	return (
 		<div className="space-y-0 overflow-hidden">
 			<div
-				className={`rounded-xl border bg-card/40 backdrop-blur-sm p-4 transition-all duration-200 ${
+				className={`rounded-xl border bg-card/40 backdrop-blur-xs p-4 transition-all duration-200 ${
 					expanded ? "rounded-b-none border-b-0" : ""
 				}`}
 				style={{

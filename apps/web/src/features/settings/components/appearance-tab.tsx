@@ -47,7 +47,7 @@ export function AppearanceTab() {
 		return (
 			<div className="relative min-h-[600px]">
 				<div className="absolute inset-0 flex items-center justify-center">
-					<div className="h-16 w-16 rounded-full bg-gradient-to-br from-primary/20 to-primary/5 animate-pulse" />
+					<div className="h-16 w-16 rounded-full bg-linear-to-br from-primary/20 to-primary/5 animate-pulse" />
 				</div>
 			</div>
 		);
@@ -174,7 +174,7 @@ export function AppearanceTab() {
 				</div>
 
 				{/* Main Grid Layout */}
-				<div className="grid gap-6 lg:grid-cols-[1fr,380px]">
+				<div className="grid gap-6 lg:grid-cols-[1fr_380px]">
 					{/* Left Column - Controls */}
 					<div className="space-y-6">
 						{/* Color Scheme Toggle */}
@@ -183,7 +183,7 @@ export function AppearanceTab() {
 							style={{ animationDelay: "100ms" }}
 						>
 							<div className={cn(
-								"rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm p-6 transition-opacity duration-300",
+								"rounded-2xl border border-border/50 bg-card/50 backdrop-blur-xs p-6 transition-opacity duration-300",
 								isImmersive && "opacity-60"
 							)}>
 								<h3 className="text-sm font-medium text-foreground mb-4 flex items-center gap-2">
@@ -268,7 +268,7 @@ export function AppearanceTab() {
 								className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 								style={{ animationDelay: "150ms" }}
 							>
-								<div className="rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm p-6">
+								<div className="rounded-2xl border border-border/50 bg-card/50 backdrop-blur-xs p-6">
 									<h3 className="text-sm font-medium text-foreground mb-4 flex items-center gap-2">
 										<span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
 										OLED Mode
@@ -332,7 +332,7 @@ export function AppearanceTab() {
 							className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 							style={{ animationDelay: "200ms" }}
 						>
-							<div className="rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm p-6">
+							<div className="rounded-2xl border border-border/50 bg-card/50 backdrop-blur-xs p-6">
 								<h3 className="text-sm font-medium text-foreground mb-2 flex items-center gap-2">
 									<span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
 									Standard Themes
@@ -443,7 +443,7 @@ export function AppearanceTab() {
 							className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 							style={{ animationDelay: "250ms" }}
 						>
-							<div className="rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm p-6 relative overflow-hidden">
+							<div className="rounded-2xl border border-border/50 bg-card/50 backdrop-blur-xs p-6 relative overflow-hidden">
 								{/* Subtle background effect for immersive section */}
 								<div className="absolute inset-0 opacity-[0.03] pointer-events-none">
 									<div className="absolute inset-0" style={{
@@ -463,7 +463,7 @@ export function AppearanceTab() {
 											background: "linear-gradient(135deg, #ff00ff, #00ffff)",
 										}} />
 										Immersive Themes
-										<span className="ml-auto text-[10px] font-medium px-2 py-0.5 rounded-full bg-gradient-to-r from-purple-500/20 to-cyan-500/20 text-muted-foreground border border-purple-500/20">
+										<span className="ml-auto text-[10px] font-medium px-2 py-0.5 rounded-full bg-linear-to-r from-purple-500/20 to-cyan-500/20 text-muted-foreground border border-purple-500/20">
 											<Zap className="inline h-3 w-3 mr-1 -mt-0.5" />
 											Special Effects
 										</span>
@@ -598,7 +598,7 @@ export function AppearanceTab() {
 							className="animate-in fade-in slide-in-from-bottom-4 duration-500"
 							style={{ animationDelay: "300ms" }}
 						>
-							<div className="rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm p-6 relative overflow-hidden">
+							<div className="rounded-2xl border border-border/50 bg-card/50 backdrop-blur-xs p-6 relative overflow-hidden">
 								{/* Premium shimmer background */}
 								<div className="absolute inset-0 opacity-[0.02] pointer-events-none overflow-hidden">
 									<div
@@ -628,12 +628,12 @@ export function AppearanceTab() {
 										/>
 										Premium Themes
 										{premiumUnlocked ? (
-											<span className="ml-auto text-[10px] font-medium px-2 py-0.5 rounded-full bg-gradient-to-r from-green-500/20 to-emerald-500/20 text-green-600 dark:text-green-400 border border-green-500/20">
+											<span className="ml-auto text-[10px] font-medium px-2 py-0.5 rounded-full bg-linear-to-r from-green-500/20 to-emerald-500/20 text-green-600 dark:text-green-400 border border-green-500/20">
 												<Zap className="inline h-3 w-3 mr-1 -mt-0.5" />
 												Unlocked (Dev)
 											</span>
 										) : (
-											<span className="ml-auto text-[10px] font-medium px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+											<span className="ml-auto text-[10px] font-medium px-2 py-0.5 rounded-full bg-linear-to-r from-amber-500/20 to-orange-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20">
 												<Crown className="inline h-3 w-3 mr-1 -mt-0.5" />
 												Coming Soon
 											</span>
@@ -831,7 +831,7 @@ export function AppearanceTab() {
 						style={{ animationDelay: "300ms" }}
 					>
 						<div className="sticky top-6">
-							<div className="rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm p-6">
+							<div className="rounded-2xl border border-border/50 bg-card/50 backdrop-blur-xs p-6">
 								<h3 className="text-sm font-medium text-foreground mb-4 flex items-center gap-2">
 									<span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
 									Live Preview

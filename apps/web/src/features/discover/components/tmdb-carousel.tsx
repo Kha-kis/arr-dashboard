@@ -51,7 +51,7 @@ const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, mediaType
 
 	return (
 		<div
-			className="group relative w-[160px] flex-shrink-0 cursor-pointer overflow-hidden rounded-xl transition-all duration-300 hover:scale-[1.03] animate-in fade-in slide-in-from-bottom-2"
+			className="group relative w-[160px] shrink-0 cursor-pointer overflow-hidden rounded-xl transition-all duration-300 hover:scale-[1.03] animate-in fade-in slide-in-from-bottom-2"
 			style={{
 				animationDelay: `${index * 30}ms`,
 				animationFillMode: "backwards",
@@ -69,9 +69,9 @@ const RecommendationCard: React.FC<RecommendationCardProps> = ({ item, mediaType
 			/>
 
 			{/* Card Content */}
-			<div className="relative rounded-xl border border-border/50 bg-card/80 backdrop-blur-sm overflow-hidden group-hover:border-transparent transition-colors duration-300">
+			<div className="relative rounded-xl border border-border/50 bg-card/80 backdrop-blur-xs overflow-hidden group-hover:border-transparent transition-colors duration-300">
 				{/* Poster */}
-				<div className="relative aspect-[2/3] w-full overflow-hidden bg-gradient-to-br from-slate-800 to-slate-900">
+				<div className="relative aspect-2/3 w-full overflow-hidden bg-linear-to-br from-slate-800 to-slate-900">
 					{item.posterUrl ? (
 						/* eslint-disable-next-line @next/next/no-img-element -- External TMDB image with dynamic URL */
 						<img
@@ -174,10 +174,10 @@ const CarouselSkeleton: React.FC = () => (
 		{Array.from({ length: 7 }).map((_, i) => (
 			<div
 				key={i}
-				className="w-[160px] flex-shrink-0"
+				className="w-[160px] shrink-0"
 			>
 				<div className="rounded-xl border border-border/30 bg-card/30 overflow-hidden">
-					<PremiumSkeleton variant="card" className="aspect-[2/3] rounded-none" style={{ animationDelay: `${i * 50}ms` }} />
+					<PremiumSkeleton variant="card" className="aspect-2/3 rounded-none" style={{ animationDelay: `${i * 50}ms` }} />
 					<div className="p-3 space-y-2">
 						<PremiumSkeleton variant="line" className="h-4 w-3/4" style={{ animationDelay: `${i * 50 + 25}ms` }} />
 						<PremiumSkeleton variant="line" className="h-3 w-1/2" style={{ animationDelay: `${i * 50 + 50}ms` }} />
@@ -422,7 +422,7 @@ export const TMDBCarousel: React.FC<TMDBCarouselProps> = ({
 
 					{/* Loading More Indicator */}
 					{isFetchingNextPage && (
-						<div className="flex w-[160px] flex-shrink-0 items-center justify-center">
+						<div className="flex w-[160px] shrink-0 items-center justify-center">
 							<div
 								className="flex h-12 w-12 items-center justify-center rounded-xl"
 								style={{

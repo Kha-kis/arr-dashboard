@@ -31,7 +31,7 @@ export const InstanceBadge: React.FC<InstanceBadgeProps> = ({ instance, result }
 	if (!state) {
 		return (
 			<span
-				className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium backdrop-blur-sm"
+				className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium backdrop-blur-xs"
 				style={{
 					backgroundColor: "rgba(100, 116, 139, 0.1)",
 					border: "1px solid rgba(100, 116, 139, 0.2)",
@@ -49,7 +49,7 @@ export const InstanceBadge: React.FC<InstanceBadgeProps> = ({ instance, result }
 	if (state.exists) {
 		return (
 			<span
-				className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium backdrop-blur-sm"
+				className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium backdrop-blur-xs"
 				style={{
 					backgroundColor: SEMANTIC_COLORS.success.bg,
 					border: `1px solid ${SEMANTIC_COLORS.success.border}`,
@@ -65,7 +65,7 @@ export const InstanceBadge: React.FC<InstanceBadgeProps> = ({ instance, result }
 	// Available State (theme-aware)
 	return (
 		<span
-			className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium backdrop-blur-sm"
+			className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-medium backdrop-blur-xs"
 			style={{
 				backgroundColor: `${themeGradient.from}10`,
 				border: `1px solid ${themeGradient.from}25`,

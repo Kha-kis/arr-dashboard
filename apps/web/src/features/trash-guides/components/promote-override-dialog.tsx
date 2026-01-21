@@ -97,7 +97,7 @@ export function PromoteOverrideDialog({
 			role="presentation"
 		>
 			{/* Backdrop */}
-			<div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+			<div className="absolute inset-0 bg-black/70 backdrop-blur-xs" />
 
 			{/* Modal */}
 			<div
@@ -160,7 +160,7 @@ export function PromoteOverrideDialog({
 						}}
 					>
 						<AlertTriangle
-							className="h-5 w-5 flex-shrink-0 mt-0.5"
+							className="h-5 w-5 shrink-0 mt-0.5"
 							style={{ color: SEMANTIC_COLORS.warning.from }}
 						/>
 						<div className="text-sm" style={{ color: SEMANTIC_COLORS.warning.text }}>
@@ -172,7 +172,7 @@ export function PromoteOverrideDialog({
 					</div>
 
 					{/* Score Details */}
-					<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+					<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
 						<div className="flex items-center gap-2 mb-3">
 							<Layers className="h-4 w-4" style={{ color: themeGradient.from }} />
 							<span className="text-sm font-semibold text-foreground">Score Details</span>

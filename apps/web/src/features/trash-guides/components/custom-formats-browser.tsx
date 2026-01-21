@@ -414,7 +414,7 @@ export const CustomFormatsBrowser = () => {
 		return (
 			<div className="space-y-6 animate-in fade-in duration-300">
 				{/* Header Skeleton */}
-				<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-6">
+				<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6">
 					<div className="space-y-4">
 						<div className="flex items-center gap-4">
 							<PremiumSkeleton variant="card" className="h-12 w-12 rounded-xl" />
@@ -444,7 +444,7 @@ export const CustomFormatsBrowser = () => {
 	if (error) {
 		return (
 			<div
-				className="rounded-2xl border p-6 backdrop-blur-sm"
+				className="rounded-2xl border p-6 backdrop-blur-xs"
 				style={{
 					backgroundColor: SEMANTIC_COLORS.error.bg,
 					borderColor: SEMANTIC_COLORS.error.border,
@@ -471,7 +471,7 @@ export const CustomFormatsBrowser = () => {
 	return (
 		<div className="space-y-6 animate-in fade-in duration-300">
 			{/* Header and Controls */}
-			<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm p-6">
+			<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6">
 				<div className="space-y-5">
 					{/* Title */}
 					<div className="flex items-center gap-4">
@@ -511,7 +511,7 @@ export const CustomFormatsBrowser = () => {
 									setSelectedService(e.target.value as "RADARR" | "SONARR" | "ALL");
 									setSelectedFormats(new Set());
 								}}
-								className="appearance-none rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 pr-10 text-sm font-medium text-foreground focus:outline-none focus:ring-2 transition-all"
+								className="appearance-none rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 pr-10 text-sm font-medium text-foreground focus:outline-hidden focus:ring-2 transition-all"
 								style={{ ["--tw-ring-color" as string]: themeGradient.from }}
 							>
 								<option value="ALL">All Services</option>
@@ -529,7 +529,7 @@ export const CustomFormatsBrowser = () => {
 								placeholder="Search custom formats..."
 								value={searchQuery}
 								onChange={(e) => setSearchQuery(e.target.value)}
-								className="w-full rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 transition-all"
+								className="w-full rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-hidden focus:ring-2 transition-all"
 								style={{ ["--tw-ring-color" as string]: themeGradient.from, paddingLeft: "2.5rem" }}
 							/>
 						</div>
@@ -576,7 +576,7 @@ export const CustomFormatsBrowser = () => {
 
 			{/* Custom Formats Grid */}
 			{customFormats.length === 0 ? (
-				<div className="rounded-2xl border border-dashed border-border/50 bg-card/20 backdrop-blur-sm p-12 text-center">
+				<div className="rounded-2xl border border-dashed border-border/50 bg-card/20 backdrop-blur-xs p-12 text-center">
 					<Package className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
 					<p className="text-lg font-medium text-foreground mb-2">No custom formats found</p>
 					<p className="text-sm text-muted-foreground">
@@ -614,7 +614,7 @@ export const CustomFormatsBrowser = () => {
 				>
 					{/* Backdrop */}
 					<div
-						className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+						className="absolute inset-0 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
 						onClick={() => !deployMutation.isPending && setDeployDialogOpen(false)}
 					/>
 
@@ -698,7 +698,7 @@ export const CustomFormatsBrowser = () => {
 										<select
 											value={selectedInstance}
 											onChange={(e) => setSelectedInstance(e.target.value)}
-											className="w-full appearance-none rounded-xl border border-border/50 bg-card/50 px-4 py-3 pr-10 text-sm text-foreground focus:outline-none focus:ring-2 transition-all"
+											className="w-full appearance-none rounded-xl border border-border/50 bg-card/50 px-4 py-3 pr-10 text-sm text-foreground focus:outline-hidden focus:ring-2 transition-all"
 											style={{ ["--tw-ring-color" as string]: themeGradient.from }}
 										>
 											<option value="">Choose an instance...</option>
@@ -761,7 +761,7 @@ export const CustomFormatsBrowser = () => {
 				>
 					{/* Backdrop */}
 					<div
-						className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+						className="absolute inset-0 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
 						onClick={() => setDetailsDialogOpen(false)}
 					/>
 

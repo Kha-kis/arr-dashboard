@@ -49,7 +49,7 @@ export const SetupClient = () => {
 			</div>
 
 			{/* Setup Card */}
-			<Card className="border-border/50 bg-card/80 backdrop-blur-sm">
+			<Card className="border-border/50 bg-card/80 backdrop-blur-xs">
 				<CardHeader>
 					<CardTitle className="text-xl text-foreground">Create Admin Account</CardTitle>
 					<CardDescription className="text-muted-foreground">

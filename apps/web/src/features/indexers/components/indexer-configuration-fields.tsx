@@ -19,7 +19,7 @@ const FieldCard = ({
 
 	return (
 		<div
-			className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4 transition-all duration-200 hover:bg-card/50 animate-in fade-in slide-in-from-bottom-1"
+			className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4 transition-all duration-200 hover:bg-card/50 animate-in fade-in slide-in-from-bottom-1"
 			style={{
 				animationDelay: `${index * 30}ms`,
 				animationFillMode: "backwards",

@@ -129,7 +129,7 @@ export const SeasonBreakdownModal = ({
 			aria-labelledby="season-breakdown-title"
 		>
 			{/* Backdrop */}
-			<div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+			<div className="absolute inset-0 bg-black/70 backdrop-blur-xs" />
 
 			{/* Modal */}
 			<div
@@ -237,7 +237,7 @@ export const SeasonBreakdownModal = ({
 						return (
 							<div
 								key={season.seasonNumber}
-								className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm overflow-hidden transition-all duration-300 hover:border-border/80 animate-in fade-in slide-in-from-bottom-2"
+								className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden transition-all duration-300 hover:border-border/80 animate-in fade-in slide-in-from-bottom-2"
 								style={{
 									animationDelay: `${index * 50}ms`,
 									animationFillMode: "backwards",

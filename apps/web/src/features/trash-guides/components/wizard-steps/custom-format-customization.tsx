@@ -315,7 +315,7 @@ export const CustomFormatCustomization = ({
 													value={scoreOverride ?? ""}
 													onChange={(e) => updateScoreOverride(cf.trash_id, e.target.value)}
 													placeholder="Leave empty for default score"
-													className="w-full rounded border border-border bg-card px-3 py-2 text-sm text-foregroundplaceholder:text-foreground/40 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+													className="w-full rounded border border-border bg-card px-3 py-2 text-sm text-foregroundplaceholder:text-foreground/40 focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary"
 												/>
 											</div>
 

@@ -151,7 +151,7 @@ export const Sidebar = () => {
 							<Icon
 								className={cn(
 									"relative z-10 h-4 w-4 transition-all duration-300",
-									isActive && "drop-shadow-sm",
+									isActive && "drop-shadow-xs",
 									!isActive && "group-hover:scale-110"
 								)}
 								style={!isActive ? { color: themeGradient.from } : undefined}
@@ -249,7 +249,7 @@ export const Sidebar = () => {
 			<AnimatePresence>
 				{mobileMenuOpen && (
 					<motion.div
-						className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-modal-backdrop"
+						className="lg:hidden fixed inset-0 bg-black/60 backdrop-blur-xs z-modal-backdrop"
 						onClick={() => setMobileMenuOpen(false)}
 						aria-hidden="true"
 						initial={{ opacity: 0 }}
@@ -286,7 +286,7 @@ export const Sidebar = () => {
 			</AnimatePresence>
 
 			{/* Desktop sidebar */}
-			<aside data-sidebar className="hidden w-64 flex-shrink-0 flex-col border-r border-border/30 bg-background/50 backdrop-blur-xl p-6 lg:flex relative">
+			<aside data-sidebar className="hidden w-64 shrink-0 flex-col border-r border-border/30 bg-background/50 backdrop-blur-xl p-6 lg:flex relative">
 				{/* Decorative gradient orb */}
 				<div
 					className="absolute top-0 left-0 w-64 h-64 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2 pointer-events-none"

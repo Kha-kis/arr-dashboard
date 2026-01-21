@@ -329,13 +329,13 @@ export const SyncValidationModal = ({
 			onClick={(e) => e.target === e.currentTarget && onCancel()}
 		>
 			{/* Backdrop */}
-			<div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
+			<div className="absolute inset-0 bg-black/70 backdrop-blur-xs" />
 
 			{/* Modal */}
 			<div
 				ref={dialogRef}
 				tabIndex={-1}
-				className="relative w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-2xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl focus:outline-none animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
+				className="relative w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-2xl border border-border/50 bg-card/95 backdrop-blur-xl shadow-2xl focus:outline-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-300"
 				style={{
 					boxShadow: `0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 0 1px ${themeGradient.from}15`,
 				}}
@@ -428,7 +428,7 @@ export const SyncValidationModal = ({
 									}}
 								>
 									<div className="flex items-start gap-3">
-										<HelpCircle className="h-5 w-5 flex-shrink-0" style={{ color: SEMANTIC_COLORS.warning.from }} />
+										<HelpCircle className="h-5 w-5 shrink-0" style={{ color: SEMANTIC_COLORS.warning.from }} />
 										<div className="flex-1">
 											<h3 className="font-medium" style={{ color: SEMANTIC_COLORS.warning.text }}>
 												Validation Failed
@@ -469,7 +469,7 @@ export const SyncValidationModal = ({
 									}}
 								>
 									<div className="flex items-start gap-3">
-										<XCircle className="h-5 w-5 flex-shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
+										<XCircle className="h-5 w-5 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
 										<div className="flex-1">
 											<h3 className="font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
 												Validation Failed
@@ -588,7 +588,7 @@ export const SyncValidationModal = ({
 									}}
 								>
 									<div className="flex items-start gap-3">
-										<AlertCircle className="h-5 w-5 flex-shrink-0" style={{ color: SEMANTIC_COLORS.warning.from }} />
+										<AlertCircle className="h-5 w-5 shrink-0" style={{ color: SEMANTIC_COLORS.warning.from }} />
 										<div className="flex-1">
 											<h3 className="font-medium" style={{ color: SEMANTIC_COLORS.warning.text }}>
 												Warnings
@@ -613,7 +613,7 @@ export const SyncValidationModal = ({
 									}}
 								>
 									<div className="flex items-start gap-3">
-										<Info className="h-5 w-5 flex-shrink-0" style={{ color: themeGradient.from }} />
+										<Info className="h-5 w-5 shrink-0" style={{ color: themeGradient.from }} />
 										<div className="flex-1">
 											<ul className="space-y-1 text-sm text-muted-foreground">
 												{informationalWarnings.map((info, index) => (
@@ -627,9 +627,9 @@ export const SyncValidationModal = ({
 
 							{/* Conflicts */}
 							{hasConflicts && validation.conflicts && (
-								<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-sm p-4">
+								<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
 									<div className="flex items-start gap-3">
-										<Info className="h-5 w-5 flex-shrink-0" style={{ color: themeGradient.from }} />
+										<Info className="h-5 w-5 shrink-0" style={{ color: themeGradient.from }} />
 										<div className="flex-1">
 											<h3 className="font-medium text-foreground">
 												{validation.conflicts.length} Conflict
@@ -727,7 +727,7 @@ export const SyncValidationModal = ({
 							}}
 						>
 							<div className="flex items-start gap-3">
-								<XCircle className="h-5 w-5 flex-shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
+								<XCircle className="h-5 w-5 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
 								<div className="flex-1">
 									<h3 className="font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
 										Validation Error

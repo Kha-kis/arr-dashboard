@@ -45,7 +45,7 @@ export const QueueSelectionToolbar = ({
 
 	const actionButtonClass = cn(
 		"group inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium uppercase tracking-wide transition-all duration-300",
-		"border-border/50 bg-card/50 text-muted-foreground backdrop-blur-sm",
+		"border-border/50 bg-card/50 text-muted-foreground backdrop-blur-xs",
 		"hover:border-border hover:bg-card hover:text-foreground",
 		"disabled:cursor-not-allowed disabled:opacity-50",
 	);

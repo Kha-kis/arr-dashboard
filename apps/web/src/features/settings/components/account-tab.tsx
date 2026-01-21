@@ -62,7 +62,7 @@ export const AccountTab = ({
 	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
-		<div className="grid gap-6 lg:grid-cols-[2fr,1fr]">
+		<div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
 			{/* Main form section */}
 			<PremiumSection
 				title="Account Information"

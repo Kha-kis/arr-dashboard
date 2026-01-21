@@ -169,7 +169,7 @@ export const PremiumCard = ({
 	return (
 		<div
 			className={cn(
-				"rounded-2xl border border-border/50 bg-card/30 backdrop-blur-sm overflow-hidden",
+				"rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden",
 				"animate-in fade-in slide-in-from-bottom-4 duration-500",
 				className
 			)}
@@ -255,7 +255,7 @@ export const StatCard = ({
 			onClick={onClick}
 			disabled={!onClick}
 			className={cn(
-				"group relative overflow-hidden rounded-2xl border border-border/50 bg-card/50 backdrop-blur-sm p-6 text-left transition-all duration-500",
+				"group relative overflow-hidden rounded-2xl border border-border/50 bg-card/50 backdrop-blur-xs p-6 text-left transition-all duration-500",
 				"animate-in fade-in slide-in-from-bottom-4",
 				onClick && "cursor-pointer hover:border-border hover:shadow-lg",
 				!onClick && "cursor-default"

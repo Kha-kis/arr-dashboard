@@ -172,7 +172,7 @@ export function PatternTester({
 						setSelectedPreset(null);
 					}}
 					rows={6}
-					className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm font-mono text-foregroundplaceholder:text-muted-foreground/60 transition-all duration-200 hover:border-border/80 hover:bg-card/80 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 focus:bg-card/80"
+					className="w-full rounded-xl border border-border bg-card px-4 py-3 text-sm font-mono text-foregroundplaceholder:text-muted-foreground/60 transition-all duration-200 hover:border-border/80 hover:bg-card/80 focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-primary/20 focus:bg-card/80"
 					placeholder="Enter release names or file names to test..."
 				/>
 			</div>
@@ -200,9 +200,9 @@ export function PatternTester({
 								>
 									<div className="flex items-start gap-3">
 										{finalMatch ? (
-											<CheckCircle className="h-5 w-5 text-green-400 flex-shrink-0 mt-0.5" />
+											<CheckCircle className="h-5 w-5 text-green-400 shrink-0 mt-0.5" />
 										) : (
-											<XCircle className="h-5 w-5 text-red-400 flex-shrink-0 mt-0.5" />
+											<XCircle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
 										)}
 
 										<div className="flex-1 min-w-0">
@@ -223,7 +223,7 @@ export function PatternTester({
 											)}
 										</div>
 
-										<div className="text-xs font-medium flex-shrink-0">
+										<div className="text-xs font-medium shrink-0">
 											{finalMatch ? (
 												<span className="text-green-400">Match</span>
 											) : (
@@ -242,7 +242,7 @@ export function PatternTester({
 									className="rounded border border-amber-500/30 bg-amber-500/10 p-3"
 								>
 									<div className="flex items-start gap-3">
-										<AlertCircle className="h-5 w-5 text-amber-400 flex-shrink-0 mt-0.5" />
+										<AlertCircle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
 										<div className="flex-1 min-w-0">
 											<code className="text-xs font-mono text-foregroundbreak-all">
 												{line}
