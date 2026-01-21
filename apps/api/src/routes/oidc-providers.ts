@@ -6,7 +6,7 @@ import {
 	deleteOidcProviderSchema,
 	updateOidcProviderSchema,
 } from "@arr/shared";
-import type { Prisma, OIDCProvider as PrismaOIDCProvider } from "@prisma/client";
+import type { Prisma, OIDCProvider as PrismaOIDCProvider } from "../lib/prisma.js";
 import type { FastifyInstance } from "fastify";
 import { hashPassword } from "../lib/auth/password.js";
 import { normalizeIssuerUrl } from "../lib/auth/oidc-utils.js";

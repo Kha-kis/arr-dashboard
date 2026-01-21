@@ -6,7 +6,7 @@
  */
 
 import type { LibraryItem, LibraryService } from "@arr/shared";
-import type { Prisma, PrismaClient, ServiceInstance } from "@prisma/client";
+import type { Prisma, PrismaClient, ServiceInstance } from "../../lib/prisma.js";
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import { SonarrClient, RadarrClient } from "arr-sdk";

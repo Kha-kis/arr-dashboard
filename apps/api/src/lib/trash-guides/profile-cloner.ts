@@ -5,7 +5,7 @@
  * and creates templates with full profile settings
  */
 
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "../../lib/prisma.js";
 import type { CompleteQualityProfile } from "@arr/shared";
 import type { SonarrClient, RadarrClient } from "arr-sdk";
 import type { ArrClientFactory } from "../arr/client-factory.js";

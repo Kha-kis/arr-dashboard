@@ -1,4 +1,4 @@
-import type { ServiceType } from "@prisma/client";
+import type { ServiceType } from "../../lib/prisma.js";
 
 /**
  * Service instance update data builder

@@ -6,7 +6,7 @@
  * the configured researchAfterDays period.
  */
 
-import { Prisma, type PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "../../lib/prisma.js";
 
 export interface SearchedItem {
 	mediaType: "movie" | "series" | "season" | "episode";

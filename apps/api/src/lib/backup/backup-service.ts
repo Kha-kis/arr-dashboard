@@ -20,7 +20,7 @@ import type {
 	BackupFileInfoInternal,
 	BackupMetadata,
 } from "@arr/shared";
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "../../lib/prisma.js";
 import type { Encryptor } from "../auth/encryption.js";
 
 const BACKUP_VERSION = "1.0";

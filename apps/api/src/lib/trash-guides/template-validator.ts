@@ -14,7 +14,7 @@ import type {
 	ValidationError,
 	ValidationWarning,
 } from "@arr/shared";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "../../lib/prisma.js";
 
 export class TemplateValidator {
 	constructor(private prisma: PrismaClient) {}

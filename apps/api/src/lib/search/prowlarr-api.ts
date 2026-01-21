@@ -6,7 +6,7 @@ import type {
 	SearchResult,
 } from "@arr/shared";
 import { prowlarrIndexerDetailsSchema } from "@arr/shared";
-import type { ServiceInstance } from "@prisma/client";
+import type { ServiceInstance } from "../../lib/prisma.js";
 import type { ProwlarrClient } from "arr-sdk/prowlarr";
 import { normalizeIndexer, normalizeIndexerDetails, normalizeSearchResult } from "./normalizers.js";
 

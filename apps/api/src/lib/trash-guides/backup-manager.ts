@@ -4,8 +4,8 @@
  * Creates and manages backups of Radarr/Sonarr configurations before sync operations
  */
 
-import type { PrismaClient } from "@prisma/client";
-import type { ServiceInstance } from "@prisma/client";
+import type { PrismaClient } from "../../lib/prisma.js";
+import type { ServiceInstance } from "../../lib/prisma.js";
 
 // ============================================================================
 // Types

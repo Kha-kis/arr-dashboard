@@ -1,4 +1,4 @@
-import type { HuntConfig, ServiceInstance } from "@prisma/client";
+import type { HuntConfig, ServiceInstance } from "../../lib/prisma.js";
 import type { FastifyInstance, FastifyBaseLogger } from "fastify";
 import type { SonarrClient } from "arr-sdk/sonarr";
 import type { RadarrClient } from "arr-sdk/radarr";

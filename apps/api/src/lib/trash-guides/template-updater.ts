@@ -21,7 +21,7 @@ import type {
 	TrashCustomFormatGroup,
 	TrashQualityProfile,
 } from "@arr/shared";
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "../../lib/prisma.js";
 import { dequal as deepEqual } from "dequal";
 import type { TrashCacheManager } from "./cache-manager.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";

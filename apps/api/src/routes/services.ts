@@ -1,5 +1,5 @@
 import { arrServiceTypeSchema } from "@arr/shared";
-import type { ServiceType } from "@prisma/client";
+import type { ServiceType } from "../lib/prisma.js";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { testServiceConnection } from "../lib/services/connection-tester.js";
