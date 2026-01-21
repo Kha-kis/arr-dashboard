@@ -9,9 +9,12 @@ import { defineConfig } from "prisma/config";
  * in the PrismaClient constructor within src/plugins/prisma.ts.
  *
  * The DATABASE_URL auto-defaults based on environment:
- * - Production/Docker: file:/app/data/prod.db
+ * - Production/Docker: file:/config/prod.db
  * - Development: file:./dev.db
  */
 export default defineConfig({
 	schema: "prisma/schema.prisma",
+	datasource: {
+		url: process.env.DATABASE_URL || "file:./dev.db",
+	},
 });
