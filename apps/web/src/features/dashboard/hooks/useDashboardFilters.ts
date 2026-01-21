@@ -1,22 +1,86 @@
 /**
  * Dashboard Filters Hook
  *
- * Manages queue filtering and pagination state.
- * Handles service, instance, and status filters.
+ * Manages queue filtering, sorting, and pagination state.
+ * Handles service, instance, status filters, and sort options.
  *
- * IMPORTANT: This hook handles FILTERING only. Pagination should happen
+ * IMPORTANT: This hook handles FILTERING and SORTING only. Pagination should happen
  * AFTER grouping in the component to ensure the correct number of visual
  * cards (groups/items) are displayed per page.
  */
 
 import { useMemo, useState } from "react";
 import type { QueueItem } from "@arr/shared";
+import { analyzeQueueItem, getProblematicCount } from "../lib/queue-utils";
 
 const SERVICE_FILTERS = [
 	{ value: "all" as const, label: "All services" },
 	{ value: "sonarr" as const, label: "Sonarr" },
 	{ value: "radarr" as const, label: "Radarr" },
 ] as const;
+
+/**
+ * Sort options for queue items
+ * @see https://github.com/Kha-kis/arr-dashboard/issues/32
+ */
+const SORT_OPTIONS = [
+	{ value: "default" as const, label: "Default" },
+	{ value: "title-asc" as const, label: "Title (A-Z)" },
+	{ value: "title-desc" as const, label: "Title (Z-A)" },
+	{ value: "size-desc" as const, label: "Size (Largest)" },
+	{ value: "size-asc" as const, label: "Size (Smallest)" },
+	{ value: "progress-asc" as const, label: "Progress (Least)" },
+	{ value: "progress-desc" as const, label: "Progress (Most)" },
+	{ value: "status" as const, label: "Status" },
+] as const;
+
+type SortOption = (typeof SORT_OPTIONS)[number]["value"];
+
+/**
+ * Get display title from queue item (handles both series and movies)
+ */
+const getItemTitle = (item: QueueItem): string => {
+	if (item.series?.title) return item.series.title;
+	if (item.movie?.title) return item.movie.title;
+	return item.title ?? "";
+};
+
+/**
+ * Calculate progress percentage (0-100)
+ */
+const getProgress = (item: QueueItem): number => {
+	if (!item.size || item.size === 0) return 0;
+	const downloaded = item.size - (item.sizeleft ?? 0);
+	return (downloaded / item.size) * 100;
+};
+
+/**
+ * Sort queue items based on selected option
+ */
+const sortItems = (items: QueueItem[], sortBy: SortOption): QueueItem[] => {
+	if (sortBy === "default") return items;
+
+	return [...items].sort((a, b) => {
+		switch (sortBy) {
+			case "title-asc":
+				return getItemTitle(a).localeCompare(getItemTitle(b));
+			case "title-desc":
+				return getItemTitle(b).localeCompare(getItemTitle(a));
+			case "size-desc":
+				return (b.size ?? 0) - (a.size ?? 0);
+			case "size-asc":
+				return (a.size ?? 0) - (b.size ?? 0);
+			case "progress-asc":
+				return getProgress(a) - getProgress(b);
+			case "progress-desc":
+				return getProgress(b) - getProgress(a);
+			case "status":
+				return (a.status ?? "").localeCompare(b.status ?? "");
+			default:
+				return 0;
+		}
+	});
+};
 
 /**
  * Hook for dashboard queue filtering and pagination state
@@ -29,25 +93,41 @@ export const useDashboardFilters = (queueItems: QueueItem[]) => {
 		useState<(typeof SERVICE_FILTERS)[number]["value"]>("all");
 	const [instanceFilter, setInstanceFilter] = useState<string>("all");
 	const [statusFilter, setStatusFilter] = useState<string>("all");
+	const [sortBy, setSortBy] = useState<SortOption>("default");
 	const [page, setPage] = useState(1);
 	const [pageSize, setPageSize] = useState(5);
 
 	// Apply all filters to raw items
 	const filteredItems = useMemo(() => {
-		return queueItems.filter((item) => {
+		const filtered = queueItems.filter((item) => {
 			if (serviceFilter !== "all" && item.service !== serviceFilter) {
 				return false;
 			}
 			if (instanceFilter !== "all" && item.instanceId !== instanceFilter) {
 				return false;
 			}
+
+			// Special handling for "problematic" filter
+			if (statusFilter === "problematic") {
+				return analyzeQueueItem(item).isProblematic;
+			}
+
 			const statusValue = (item.status ?? "Pending").toLowerCase();
 			if (statusFilter !== "all" && statusValue !== statusFilter.toLowerCase()) {
 				return false;
 			}
 			return true;
 		});
-	}, [queueItems, serviceFilter, instanceFilter, statusFilter]);
+
+		// Apply sorting after filtering
+		return sortItems(filtered, sortBy);
+	}, [queueItems, serviceFilter, instanceFilter, statusFilter, sortBy]);
+
+	// Count of problematic items (for badge display)
+	const problematicCount = useMemo(
+		() => getProblematicCount(queueItems),
+		[queueItems]
+	);
 
 	// Status summary for filtered items
 	const statusSummary = useMemo(() => {
@@ -60,7 +140,7 @@ export const useDashboardFilters = (queueItems: QueueItem[]) => {
 	}, [filteredItems]);
 
 	const filtersActive =
-		serviceFilter !== "all" || instanceFilter !== "all" || statusFilter !== "all";
+		serviceFilter !== "all" || instanceFilter !== "all" || statusFilter !== "all" || sortBy !== "default";
 
 	const emptyMessage =
 		filteredItems.length === 0 && queueItems.length > 0
@@ -71,7 +151,13 @@ export const useDashboardFilters = (queueItems: QueueItem[]) => {
 		setServiceFilter("all");
 		setInstanceFilter("all");
 		setStatusFilter("all");
+		setSortBy("default");
 		setPage(1);
+	};
+
+	const handleSortChange = (value: SortOption) => {
+		setPage(1);
+		setSortBy(value);
 	};
 
 	const handleServiceFilterChange = (value: (typeof SERVICE_FILTERS)[number]["value"]) => {
@@ -103,6 +189,10 @@ export const useDashboardFilters = (queueItems: QueueItem[]) => {
 		statusFilter,
 		setStatusFilter: handleStatusFilterChange,
 
+		// Sort state
+		sortBy,
+		setSortBy: handleSortChange,
+
 		// Pagination state (managed here, but pagination should be done on grouped rows)
 		page,
 		setPage,
@@ -114,11 +204,13 @@ export const useDashboardFilters = (queueItems: QueueItem[]) => {
 		statusSummary,
 		filtersActive,
 		emptyMessage,
+		problematicCount,
 
 		// Actions
 		resetFilters,
 
 		// Constants
 		SERVICE_FILTERS,
+		SORT_OPTIONS,
 	};
 };

@@ -7,7 +7,7 @@
  * Uses Radix UI Select primitives for proper accessibility and UX.
  */
 
-import { Filter, X, ChevronDown, RotateCcw, Check } from "lucide-react";
+import { Filter, X, ChevronDown, RotateCcw, Check, ArrowUpDown } from "lucide-react";
 import * as SelectPrimitive from "@radix-ui/react-select";
 import { cn } from "../../lib/utils";
 import { useThemeGradient } from "../../hooks/useThemeGradient";
@@ -32,6 +32,11 @@ interface QueueFiltersProps {
 	statusFilter: string;
 	onStatusFilterChange: (value: string) => void;
 	statusOptions: FilterOption[];
+
+	// Sort
+	sortBy?: string;
+	onSortChange?: (value: string) => void;
+	sortOptions?: readonly FilterOption[];
 
 	// Reset
 	filtersActive: boolean;
@@ -230,6 +235,9 @@ export const QueueFilters = ({
 	statusFilter,
 	onStatusFilterChange,
 	statusOptions,
+	sortBy,
+	onSortChange,
+	sortOptions,
 	filtersActive,
 	onReset,
 }: QueueFiltersProps) => {
@@ -246,6 +254,10 @@ export const QueueFilters = ({
 		{ value: "all", label: "All statuses" },
 		...statusOptions,
 	];
+
+	// Check if sorting is enabled and active
+	const hasSorting = sortBy !== undefined && onSortChange !== undefined && sortOptions !== undefined;
+	const sortIsActive = hasSorting && sortBy !== "default";
 
 	// Determine which filters are active for chips
 	const activeFilters: { label: string; value: string; onClear: () => void }[] = [];
@@ -275,6 +287,18 @@ export const QueueFilters = ({
 			value: selectedStatus.label,
 			onClear: () => onStatusFilterChange("all"),
 		});
+	}
+
+	// Add sort to active filters if not default
+	if (hasSorting && sortIsActive) {
+		const selectedSort = sortOptions.find((opt) => opt.value === sortBy);
+		if (selectedSort) {
+			activeFilters.push({
+				label: "Sort",
+				value: selectedSort.label,
+				onClear: () => onSortChange("default"),
+			});
+		}
 	}
 
 	return (
@@ -348,6 +372,46 @@ export const QueueFilters = ({
 							isActive={statusFilter !== "all"}
 							themeGradient={themeGradient}
 						/>
+
+						{/* Sort selector - only render if sorting is enabled */}
+						{hasSorting && (
+							<>
+								{/* Visual separator */}
+								<div className="hidden sm:block h-8 w-px bg-border/50" />
+
+								<div className="relative group">
+									{/* Sort icon indicator */}
+									<div
+										className={cn(
+											"absolute -left-7 top-1/2 -translate-y-1/2 hidden sm:flex h-6 w-6 items-center justify-center rounded-lg transition-all duration-300",
+											sortIsActive ? "scale-110" : "opacity-50"
+										)}
+										style={
+											sortIsActive
+												? {
+														background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+												  }
+												: undefined
+										}
+									>
+										<ArrowUpDown
+											className="h-3.5 w-3.5"
+											style={sortIsActive ? { color: themeGradient.from } : undefined}
+										/>
+									</div>
+
+									<PremiumSelect
+										label="Sort by"
+										value={sortBy}
+										options={sortOptions}
+										onChange={onSortChange}
+										placeholder="Default"
+										isActive={sortIsActive}
+										themeGradient={themeGradient}
+									/>
+								</div>
+							</>
+						)}
 					</div>
 
 					{/* Reset button */}
