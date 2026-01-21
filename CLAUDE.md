@@ -54,7 +54,7 @@ arr-dashboard/
     └── start-combined.sh  # Single-container startup
 ```
 
-**Package Manager**: pnpm 9.12.0 with Turbo for builds.
+**Package Manager**: pnpm 10+ with Turbo for builds.
 
 ### Technology Stack
 
@@ -1057,7 +1057,7 @@ app.config            // Environment config
 
 ---
 
-**Last Updated:** 2026-01-08
+**Last Updated:** 2026-01-21
 **Version:** 2.7.0
-**Node:** 20+
-**pnpm:** 9.12.0+
+**Node:** 22+
+**pnpm:** 10+
