@@ -17,6 +17,10 @@ import {
 	SERVICE_TYPES,
 } from "./utils/test-helpers";
 
+// CI auto-generates credentials if not provided (must match auth.setup.ts)
+const CI_TEST_USERNAME = "ci-test-user";
+const TEST_USERNAME = process.env.TEST_USERNAME || (process.env.CI ? CI_TEST_USERNAME : "user");
+
 test.describe("Dashboard - Page Load", () => {
 	test("should display dashboard with welcome message", async ({ page }) => {
 		await page.goto(ROUTES.dashboard);
@@ -30,9 +34,8 @@ test.describe("Dashboard - Page Load", () => {
 		});
 
 		// Should see greeting with username (the h1 heading) - may have comma "Hi, username"
-		const username = process.env.TEST_USERNAME || "user";
 		await expect(
-			page.getByRole("heading", { name: new RegExp(`Hi,?\\s*${username}`, "i"), level: 1 }),
+			page.getByRole("heading", { name: new RegExp(`Hi,?\\s*${TEST_USERNAME}`, "i"), level: 1 }),
 		).toBeVisible({
 			timeout: TIMEOUTS.medium,
 		});
