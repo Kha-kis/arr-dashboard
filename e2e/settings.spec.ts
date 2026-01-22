@@ -30,13 +30,19 @@ test.describe("Settings - Tab Navigation", () => {
 	test.beforeEach(async ({ page }) => {
 		await page.goto(ROUTES.settings);
 		await waitForLoadingComplete(page);
+
+		// Wait for Settings page to fully load - look for the Settings heading
+		await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible({
+			timeout: TIMEOUTS.medium,
+		});
 	});
 
 	test("should have multiple settings tabs", async ({ page }) => {
-		// Look for tabs like Account, Instances, Tags, etc.
+		// Look for tabs like Services, Account, Tags, Backup, System, etc.
+		// The actual tab names are: Services, Tags, Account, Auth, Appearance, Backup, System
 		const tabs = page.getByRole("tab");
-		const tabButtons = page.getByRole("button", {
-			name: /account|instance|tag|backup|system/i,
+		const tabButtons = page.locator("button").filter({
+			hasText: /^(Services|Account|Tags|Backup|System|Auth|Appearance)$/,
 		});
 
 		const hasTabs = (await tabs.count()) > 0 || (await tabButtons.count()) > 0;
@@ -62,11 +68,15 @@ test.describe("Settings - Account Tab", () => {
 		await page.goto(ROUTES.settings);
 		await waitForLoadingComplete(page);
 
-		// Click Account tab if not already selected
-		const accountTab = page.getByRole("tab", { name: /account/i });
-		if ((await accountTab.count()) > 0) {
-			await accountTab.click();
-		}
+		// Navigate to Account tab - use locator to find button containing "Account" text
+		const accountTab = page.locator("button").filter({ hasText: /^Account$/ });
+		await expect(accountTab).toBeVisible({ timeout: TIMEOUTS.medium });
+		await accountTab.click();
+
+		// Wait for Account tab content to appear
+		await expect(page.getByText("TMDB API Integration")).toBeVisible({
+			timeout: TIMEOUTS.medium,
+		});
 	});
 
 	test("should display account section", async ({ page }) => {
@@ -107,12 +117,15 @@ test.describe("Settings - Authentication Tab", () => {
 		await page.goto(ROUTES.settings);
 		await waitForLoadingComplete(page);
 
-		// Click Authentication tab
-		const authTab = page.getByRole("tab", { name: /authentication/i });
-		if ((await authTab.count()) > 0) {
-			await authTab.click();
-			await page.waitForTimeout(300);
-		}
+		// Navigate to Auth tab - use locator to find button containing "Auth" text
+		const authTab = page.locator("button").filter({ hasText: /^Auth$/ });
+		await expect(authTab).toBeVisible({ timeout: TIMEOUTS.medium });
+		await authTab.click();
+
+		// Wait for Auth tab content to appear (Password Authentication section)
+		await expect(page.getByText("Password Authentication")).toBeVisible({
+			timeout: TIMEOUTS.medium,
+		});
 	});
 
 	test("should have password change option", async ({ page }) => {
@@ -141,21 +154,23 @@ test.describe("Settings - Authentication Tab", () => {
 	});
 
 	test("should have configure OIDC button or provider details", async ({ page }) => {
+		// The OIDC section is further down in the Auth tab - wait for it to appear
+		// First scroll to make sure all content is visible
+		await page.mouse.wheel(0, 500);
+		await page.waitForTimeout(300);
+
 		// Look for either "Configure OIDC" button (no provider) or provider info (provider exists)
 		const configureButton = page.getByRole("button", { name: /configure oidc/i });
-		const providerInfo = page.getByText(/no oidc provider configured|issuer|client id/i);
-		const loadingState = page.getByText(/loading/i);
+		const oidcHeading = page.getByRole("heading", { name: /no oidc provider configured/i });
+		const providerInfo = page.getByText(/issuer|client id/i);
 
-		// Wait for any loading to complete (up to 5 seconds)
-		try {
-			await loadingState.waitFor({ state: "hidden", timeout: 5000 });
-		} catch {
-			// Loading state may not be present
-		}
+		// Wait for OIDC section to be visible - use Promise.race with timeout
+		const buttonVisible = await configureButton.isVisible({ timeout: 5000 }).catch(() => false);
+		const headingVisible = await oidcHeading.isVisible({ timeout: 1000 }).catch(() => false);
+		const providerVisible = await providerInfo.first().isVisible({ timeout: 1000 }).catch(() => false);
 
 		// One of these should be visible
-		const hasOIDCContent =
-			(await configureButton.count()) > 0 || (await providerInfo.count()) > 0;
+		const hasOIDCContent = buttonVisible || headingVisible || providerVisible;
 		expect(hasOIDCContent).toBe(true);
 	});
 
@@ -221,10 +236,16 @@ test.describe("Settings - Service Instances", () => {
 		await page.goto(ROUTES.settings);
 		await waitForLoadingComplete(page);
 
-		// Click Instances tab
-		const instancesTab = page.getByRole("button", { name: /instance/i }).first();
-		if ((await instancesTab.count()) > 0) {
-			await instancesTab.click();
+		// Wait for Settings page to load
+		await expect(page.getByRole("heading", { name: "Settings", level: 1 })).toBeVisible({
+			timeout: TIMEOUTS.medium,
+		});
+
+		// Click Services tab (actual tab name, not "Instances")
+		const servicesTab = page.locator("button").filter({ hasText: /^Services$/ });
+		if (await servicesTab.isVisible({ timeout: 5000 }).catch(() => false)) {
+			await servicesTab.click();
+			await page.waitForTimeout(300);
 		}
 	});
 
@@ -327,10 +348,10 @@ test.describe("Settings - Instance Card Actions", () => {
 		await page.goto(ROUTES.settings);
 		await waitForLoadingComplete(page);
 
-		// Navigate to Instances tab
-		const instancesTab = page.getByRole("tab", { name: /instance/i });
-		if ((await instancesTab.count()) > 0) {
-			await instancesTab.click();
+		// Navigate to Services tab (the default tab, but click to ensure)
+		const servicesTab = page.getByRole("button", { name: /^services$/i });
+		if ((await servicesTab.count()) > 0) {
+			await servicesTab.click();
 			await page.waitForTimeout(300);
 		}
 	});
@@ -465,12 +486,15 @@ test.describe("Settings - Tags", () => {
 		await page.goto(ROUTES.settings);
 		await waitForLoadingComplete(page);
 
-		// Use role="tab" for proper tab navigation
-		const tagsTab = page.getByRole("tab", { name: /tags/i });
-		if ((await tagsTab.count()) > 0) {
-			await tagsTab.click();
-			await page.waitForTimeout(300);
-		}
+		// Navigate to Tags tab - use locator to find button containing "Tags" text
+		const tagsTab = page.locator("button").filter({ hasText: /^Tags$/ });
+		await expect(tagsTab).toBeVisible({ timeout: TIMEOUTS.medium });
+		await tagsTab.click();
+
+		// Wait for Tags tab content to appear (h3 with "Create Tag" text)
+		await expect(page.locator("h3").filter({ hasText: "Create Tag" })).toBeVisible({
+			timeout: TIMEOUTS.medium,
+		});
 	});
 
 	test("should display tags section", async ({ page }) => {
@@ -479,19 +503,19 @@ test.describe("Settings - Tags", () => {
 	});
 
 	test("should display Create Tag card", async ({ page }) => {
-		// Create Tag is a heading in the tags card
-		const createTagCard = page.getByRole("heading", { name: /create tag/i });
+		// Create Tag is an h3 heading in the tags card
+		const createTagCard = page.locator("h3").filter({ hasText: "Create Tag" });
 		await expect(createTagCard).toBeVisible({ timeout: TIMEOUTS.medium });
 	});
 
 	test("should display Existing Tags card", async ({ page }) => {
-		// Existing Tags is a heading in the tags card
-		const existingTagsCard = page.getByRole("heading", { name: /existing tags/i });
+		// Existing Tags is displayed as title in PremiumSection
+		const existingTagsCard = page.getByText("Existing Tags");
 		await expect(existingTagsCard).toBeVisible({ timeout: TIMEOUTS.medium });
 	});
 
 	test("should have tag name input field", async ({ page }) => {
-		// Look for the input with placeholder "Production"
+		// Look for the input with placeholder containing "Production"
 		const tagNameInput = page.getByPlaceholder(/production/i);
 		await expect(tagNameInput).toBeVisible({ timeout: TIMEOUTS.medium });
 	});
@@ -502,8 +526,8 @@ test.describe("Settings - Tags", () => {
 	});
 
 	test("should show empty state or existing tags", async ({ page }) => {
-		// Either show "No tags created yet" or show existing tags with Remove buttons
-		const emptyState = page.getByText(/no tags created yet/i);
+		// Either show "No tags yet" or show existing tags with Remove buttons
+		const emptyState = page.getByText(/no tags yet/i);
 		const removeButton = page.getByRole("button", { name: /remove/i });
 
 		const hasEmptyOrTags =

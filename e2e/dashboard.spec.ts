@@ -29,10 +29,10 @@ test.describe("Dashboard - Page Load", () => {
 			timeout: TIMEOUTS.long,
 		});
 
-		// Should see greeting with username (the h1 heading)
+		// Should see greeting with username (the h1 heading) - may have comma "Hi, username"
 		const username = process.env.TEST_USERNAME || "user";
 		await expect(
-			page.getByRole("heading", { name: new RegExp(`Hi ${username}`, "i"), level: 1 }),
+			page.getByRole("heading", { name: new RegExp(`Hi,?\\s*${username}`, "i"), level: 1 }),
 		).toBeVisible({
 			timeout: TIMEOUTS.medium,
 		});
@@ -136,9 +136,10 @@ test.describe("Dashboard - Tab Navigation", () => {
 
 		await waitForLoadingComplete(page);
 
-		// Look for tab buttons - Active Queue button includes badge with item count
-		const overviewTab = page.getByRole("button", { name: /^overview$/i });
-		const queueTab = page.getByRole("button", { name: /active queue/i });
+		// Dashboard uses proper tab components (role="tab") with accessible names
+		// The queue tab includes the count badge: "Active Queue 51"
+		const overviewTab = page.getByRole("tab", { name: /overview/i });
+		const queueTab = page.getByRole("tab", { name: /active queue/i });
 
 		await expect(overviewTab).toBeVisible();
 		await expect(queueTab).toBeVisible();
@@ -149,8 +150,8 @@ test.describe("Dashboard - Tab Navigation", () => {
 
 		await waitForLoadingComplete(page);
 
-		// Click Active Queue tab (button name includes badge with count)
-		await page.getByRole("button", { name: /active queue/i }).click();
+		// Click Active Queue tab (role="tab", name includes badge count like "Active Queue 51")
+		await page.getByRole("tab", { name: /active queue/i }).click();
 
 		// Wait for content to load
 		await page.waitForTimeout(500);
@@ -166,11 +167,11 @@ test.describe("Dashboard - Tab Navigation", () => {
 		await waitForLoadingComplete(page);
 
 		// Go to Queue first
-		await page.getByRole("button", { name: /active queue/i }).click();
+		await page.getByRole("tab", { name: /active queue/i }).click();
 		await page.waitForTimeout(300);
 
 		// Then back to Overview
-		await page.getByRole("button", { name: /^overview$/i }).click();
+		await page.getByRole("tab", { name: /overview/i }).click();
 
 		// Should see configured instances heading
 		await expect(page.getByRole("heading", { name: /configured instances/i })).toBeVisible({
@@ -183,7 +184,7 @@ test.describe("Dashboard - Tab Navigation", () => {
 
 		await waitForLoadingComplete(page);
 
-		// Find the queue stat card button and click it
+		// Find the queue stat card button and click it (button role for stat cards)
 		const queueCard = page.getByRole("button", { name: /queue.*items/i });
 
 		if ((await queueCard.count()) > 0) {
@@ -201,8 +202,8 @@ test.describe("Dashboard - Queue Tab", () => {
 	test.beforeEach(async ({ page }) => {
 		await page.goto(ROUTES.dashboard);
 		await waitForLoadingComplete(page);
-		// Click the Active Queue tab button
-		await page.getByRole("button", { name: /active queue/i }).click();
+		// Click the Active Queue tab (role="tab")
+		await page.getByRole("tab", { name: /active queue/i }).click();
 		await page.waitForTimeout(500);
 	});
 
@@ -273,9 +274,9 @@ test.describe("Dashboard - Refresh Functionality", () => {
 	test("should update queue data on refresh", async ({ page }) => {
 		await page.goto(ROUTES.dashboard);
 
-		// Go to queue tab
+		// Go to queue tab (role="tab")
 		await waitForLoadingComplete(page);
-		await page.getByRole("button", { name: /active queue/i }).click();
+		await page.getByRole("tab", { name: /active queue/i }).click();
 		await page.waitForTimeout(300);
 
 		// Refresh
@@ -342,7 +343,7 @@ test.describe("Dashboard - Pagination", () => {
 		await page.goto(ROUTES.dashboard);
 
 		await waitForLoadingComplete(page);
-		await page.getByRole("button", { name: /active queue/i }).click();
+		await page.getByRole("tab", { name: /active queue/i }).click();
 		await page.waitForTimeout(500);
 
 		// Pagination might be visible if there are items
@@ -356,7 +357,7 @@ test.describe("Dashboard - Pagination", () => {
 		await page.goto(ROUTES.dashboard);
 
 		await waitForLoadingComplete(page);
-		await page.getByRole("button", { name: /active queue/i }).click();
+		await page.getByRole("tab", { name: /active queue/i }).click();
 		await page.waitForTimeout(500);
 
 		// Look for "Per page" text and associated combobox

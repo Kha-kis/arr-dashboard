@@ -77,6 +77,7 @@ export const CalendarHeader = ({
 							size="sm"
 							onClick={onPreviousMonth}
 							className="rounded-none border-r border-border/50 px-3"
+							aria-label="Previous month"
 						>
 							<ChevronLeft className="h-4 w-4" />
 						</Button>
@@ -91,6 +92,7 @@ export const CalendarHeader = ({
 							size="sm"
 							onClick={onNextMonth}
 							className="rounded-none border-l border-border/50 px-3"
+							aria-label="Next month"
 						>
 							<ChevronRight className="h-4 w-4" />
 						</Button>
@@ -112,6 +114,7 @@ export const CalendarHeader = ({
 						size="sm"
 						onClick={handleRefresh}
 						disabled={isLoading}
+						aria-label="Refresh calendar"
 						className={cn(
 							"relative overflow-hidden transition-all duration-300",
 							isRefreshing && "pointer-events-none"

@@ -20,11 +20,11 @@ test.describe("Authentication - Login Page", () => {
 		// Check page title/heading
 		await expect(page.getByRole("heading", { name: /sign in/i })).toBeVisible();
 
-		// Check for username field
-		await expect(page.getByLabel(/username/i)).toBeVisible();
+		// Check for username field (use getByRole for accessible name matching)
+		await expect(page.getByRole("textbox", { name: /username/i })).toBeVisible();
 
-		// Check for password field
-		await expect(page.getByLabel(/password/i)).toBeVisible();
+		// Check for password field (use getByRole for accessible name matching)
+		await expect(page.getByRole("textbox", { name: /password/i })).toBeVisible();
 
 		// Check for sign in button
 		await expect(page.getByRole("button", { name: /sign in with password/i })).toBeVisible();
@@ -39,15 +39,15 @@ test.describe("Authentication - Login Page", () => {
 		// Passkey button may or may not be visible depending on setup
 		const passkeyButton = page.getByRole("button", { name: /passkey/i });
 		// Just verify the login page loads properly
-		await expect(page.getByLabel(/username/i)).toBeVisible();
+		await expect(page.getByRole("textbox", { name: /username/i })).toBeVisible();
 	});
 
 	test("should show error for invalid credentials", async ({ page }) => {
 		await page.goto(ROUTES.login);
 
-		// Fill in wrong credentials
-		await page.getByLabel(/username/i).fill("wronguser");
-		await page.getByLabel(/password/i).fill("wrongpassword123!");
+		// Fill in wrong credentials (use getByRole for accessible name matching)
+		await page.getByRole("textbox", { name: /username/i }).fill("wronguser");
+		await page.getByRole("textbox", { name: /password/i }).fill("wrongpassword123!");
 
 		// Submit form
 		await page.getByRole("button", { name: /sign in with password/i }).click();
@@ -82,9 +82,9 @@ test.describe("Authentication - Login Page", () => {
 
 		await page.goto(ROUTES.login);
 
-		// Fill in correct credentials
-		await page.getByLabel(/username/i).fill(username);
-		await page.getByLabel(/password/i).fill(password);
+		// Fill in correct credentials (use getByRole for accessible name matching)
+		await page.getByRole("textbox", { name: /username/i }).fill(username);
+		await page.getByRole("textbox", { name: /password/i }).fill(password);
 
 		// Submit form
 		await page.getByRole("button", { name: /sign in with password/i }).click();
@@ -116,10 +116,10 @@ test.describe("Authentication - Session Management", () => {
 	test("should display user info in header when logged in", async ({ page }) => {
 		await page.goto(ROUTES.dashboard);
 
-		// Should see username in the greeting heading (Hi <username>)
+		// Should see username in the greeting heading (format: "Hi, <username>")
 		const username = process.env.TEST_USERNAME || "user";
 		await expect(
-			page.getByRole("heading", { name: new RegExp(`Hi ${username}`, "i") }),
+			page.getByRole("heading", { name: new RegExp(`Hi,?\\s*${username}`, "i") }),
 		).toBeVisible({
 			timeout: TIMEOUTS.medium,
 		});
@@ -170,10 +170,10 @@ test.describe("Authentication - Logout", () => {
 			return;
 		}
 
-		// First log in with fresh session
+		// First log in with fresh session (use getByRole for accessible name matching)
 		await page.goto(ROUTES.login);
-		await page.getByLabel(/username/i).fill(username);
-		await page.getByLabel(/password/i).fill(password);
+		await page.getByRole("textbox", { name: /username/i }).fill(username);
+		await page.getByRole("textbox", { name: /password/i }).fill(password);
 		await page.getByRole("button", { name: /sign in with password/i }).click();
 
 		// Wait for redirect to dashboard
@@ -199,10 +199,10 @@ test.describe("Authentication - Logout", () => {
 			return;
 		}
 
-		// First log in with fresh session
+		// First log in with fresh session (use getByRole for accessible name matching)
 		await page.goto(ROUTES.login);
-		await page.getByLabel(/username/i).fill(username);
-		await page.getByLabel(/password/i).fill(password);
+		await page.getByRole("textbox", { name: /username/i }).fill(username);
+		await page.getByRole("textbox", { name: /password/i }).fill(password);
 		await page.getByRole("button", { name: /sign in with password/i }).click();
 		await expect(page).toHaveURL(/\/dashboard/, { timeout: TIMEOUTS.long });
 

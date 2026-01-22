@@ -28,10 +28,19 @@ test.describe("Search - Page Load", () => {
 
 	test("should have search button", async ({ page }) => {
 		await page.goto(ROUTES.search);
+		await waitForLoadingComplete(page);
+
+		// Wait for page to be authenticated (not showing Sign in link)
+		// If we see "Sign in", test should be skipped (session expired)
+		const signInLink = page.getByRole("link", { name: /sign in/i });
+		if (await signInLink.isVisible({ timeout: 1000 }).catch(() => false)) {
+			test.skip(true, "Session expired - Sign in link visible");
+			return;
+		}
 
 		const searchButton = page.getByRole("button", { name: /search/i });
 
-		await expect(searchButton).toBeVisible();
+		await expect(searchButton).toBeVisible({ timeout: TIMEOUTS.medium });
 	});
 });
 

@@ -15,9 +15,9 @@ test.describe("Library - Page Load", () => {
 	test("should display library page with heading", async ({ page }) => {
 		await page.goto(ROUTES.library);
 
-		// The page has a descriptive heading "Everything your *arr instances manage"
+		// The page has a heading "Your Collection"
 		await expect(
-			page.getByRole("heading", { name: /everything your|library/i }).first(),
+			page.getByRole("heading", { name: /your collection|library/i }).first(),
 		).toBeVisible({
 			timeout: TIMEOUTS.medium,
 		});

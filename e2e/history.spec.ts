@@ -161,9 +161,14 @@ test.describe("History - Responsive Design", () => {
 
 		await page.goto(ROUTES.history);
 
-		// Look for history page content on mobile
+		// Wait for page to load properly on mobile
+		await waitForLoadingComplete(page);
+		await page.waitForLoadState("networkidle");
+
+		// Look for history page heading in main content (not sidebar which is hidden on mobile)
+		// The actual h1 is "Download History"
 		const mainContent = page.locator("main");
-		await expect(mainContent.getByText(/history|download/i).first()).toBeVisible({
+		await expect(mainContent.getByRole("heading", { name: /download history/i })).toBeVisible({
 			timeout: TIMEOUTS.medium,
 		});
 	});
