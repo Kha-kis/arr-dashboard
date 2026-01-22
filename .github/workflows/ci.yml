@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, "release/**"]
     paths-ignore:
       - "**.md"
       - "docs/**"
@@ -10,7 +10,7 @@ on:
       - "LICENSE"
       - ".gitignore"
   pull_request:
-    branches: [main]
+    branches: [main, "release/**"]
     paths-ignore:
       - "**.md"
       - "docs/**"
@@ -100,11 +100,114 @@ jobs:
       - name: Run tests
         run: pnpm run test
 
+  # End-to-End Tests with Playwright
+  e2e:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: [lint]
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Cache Turbo build
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-e2e-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: |
+            turbo-e2e-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: cd apps/api && pnpm exec prisma generate
+
+      - name: Build shared package
+        run: pnpm --filter @arr/shared run build
+
+      - name: Cache Playwright Browsers
+        uses: actions/cache@v4
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
+
+      - name: Install Playwright Browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Install Playwright System Dependencies
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm exec playwright install-deps chromium
+
+      - name: Setup database
+        run: cd apps/api && pnpm exec prisma db push
+        env:
+          DATABASE_URL: file:./test.db
+
+      - name: Run E2E tests
+        run: |
+          # Start API server in background
+          (cd apps/api && DATABASE_URL=file:./test.db pnpm run dev) &
+          API_PID=$!
+
+          # Start Web server in background
+          (cd apps/web && pnpm run dev) &
+          WEB_PID=$!
+
+          # Wait for both servers to be ready
+          echo "Waiting for servers to start..."
+          for i in {1..60}; do
+            if curl -s http://localhost:3001/health > /dev/null 2>&1 && curl -s http://localhost:3000 > /dev/null 2>&1; then
+              echo "Both servers are ready!"
+              break
+            fi
+            echo "Waiting... ($i/60)"
+            sleep 2
+          done
+
+          # Run the E2E tests
+          pnpm exec playwright test --project=chromium
+
+          # Cleanup
+          kill $API_PID $WEB_PID 2>/dev/null || true
+        env:
+          NODE_ENV: test
+          CI: true
+
+      - name: Upload Playwright Report
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+      - name: Upload Test Screenshots
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: test-screenshots
+          path: test-results/
+          retention-days: 7
+
   # Docker Build Test (validates Dockerfile and warms registry cache)
   docker:
     name: Docker Build
     runs-on: ubuntu-latest
-    needs: [lint, test]
+    needs: [lint, test, e2e]
 
     steps:
       - name: Checkout code
