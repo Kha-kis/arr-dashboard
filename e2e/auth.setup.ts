@@ -39,28 +39,31 @@ async function ensureTestUserExists(): Promise<void> {
 	});
 
 	try {
-		// Check if setup is required (no users exist)
-		const setupCheck = await apiContext.get("/auth/setup-required");
-		const setupData = await setupCheck.json();
+		// Always attempt to register - the API will return an error if user exists
+		// This is more reliable than checking setupRequired first
+		console.log("CI: Attempting to register test user...");
+		const registerResponse = await apiContext.post("/auth/register", {
+			data: {
+				username: CI_TEST_USERNAME,
+				password: CI_TEST_PASSWORD,
+			},
+		});
 
-		if (setupData.setupRequired) {
-			// Register the test user
-			console.log("CI: Registering test user...");
-			const registerResponse = await apiContext.post("/auth/register", {
-				data: {
-					username: CI_TEST_USERNAME,
-					password: CI_TEST_PASSWORD,
-				},
-			});
-
-			if (!registerResponse.ok()) {
-				const errorBody = await registerResponse.text();
-				throw new Error(`Failed to register CI test user: ${registerResponse.status()} - ${errorBody}`);
-			}
-
+		if (registerResponse.ok()) {
 			console.log("CI: Test user registered successfully");
+			// Registration creates a session, but we want to test the login flow
+			// So we need to logout first
+			await apiContext.post("/auth/logout");
+			console.log("CI: Logged out after registration to test login flow");
 		} else {
-			console.log("CI: User already exists, skipping registration");
+			const errorBody = await registerResponse.text();
+			// If user already exists or registration disabled, that's fine
+			if (errorBody.includes("already") || errorBody.includes("disabled") || registerResponse.status() === 403) {
+				console.log("CI: User already exists or registration disabled, will use existing user");
+			} else {
+				console.log(`CI: Registration failed (${registerResponse.status()}): ${errorBody}`);
+				// Don't throw - let the test attempt to login anyway
+			}
 		}
 	} finally {
 		await apiContext.dispose();
