@@ -149,7 +149,8 @@ test.describe("Settings - Authentication Tab", () => {
 
 	test("should display OIDC provider section", async ({ page }) => {
 		// OIDC Provider section should be visible in Authentication tab
-		const oidcSection = page.getByRole("heading", { name: "OIDC Provider" });
+		// Use exact: true to avoid matching "No OIDC provider configured" heading
+		const oidcSection = page.getByRole("heading", { name: "OIDC Provider", exact: true });
 		await expect(oidcSection).toBeVisible({ timeout: TIMEOUTS.medium });
 	});
 
