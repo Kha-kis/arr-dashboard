@@ -221,7 +221,8 @@ test.describe("Hunting - Responsive Design", () => {
 
 		await page.goto(ROUTES.hunting);
 
-		await expect(page.getByRole("heading", { name: /hunt/i })).toBeVisible({
+		// Use .first() to avoid strict mode violation when multiple headings match
+		await expect(page.getByRole("heading", { name: /hunt/i }).first()).toBeVisible({
 			timeout: TIMEOUTS.medium,
 		});
 	});
