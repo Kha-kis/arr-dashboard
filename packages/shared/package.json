@@ -13,7 +13,7 @@
     "dev": "tsup src/index.ts --watch --format esm --format cjs --dts",
     "lint": "biome lint .",
     "format": "biome format .",
-    "test": "echo 'No tests in shared package'",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "clean": "rimraf dist"
   },

@@ -4,11 +4,12 @@
  * API endpoints for browsing and importing TRaSH Guides quality profiles
  */
 
-import type {
-	GroupCustomFormat,
-	TemplateConfig,
-	TrashCustomFormat,
-	TrashQualityProfile,
+import {
+	isCFGroupApplicableToProfile,
+	type GroupCustomFormat,
+	type TemplateConfig,
+	type TrashCustomFormat,
+	type TrashQualityProfile,
 } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
@@ -199,15 +200,12 @@ export async function registerQualityProfileRoutes(
 				}
 			}
 
-			// Filter CF Groups that apply to this quality profile (not in exclude list)
-			// and enrich with full CF details
+			// Filter CF Groups that apply to this quality profile
+			// Supports both new `include` semantics (TRaSH Guides PR #2590) and legacy `exclude` semantics
 			const applicableCFGroups =
 				cfGroups
 					?.filter((group) => {
-						const isExcluded =
-							group.quality_profiles?.exclude &&
-							Object.values(group.quality_profiles.exclude).includes(profile.trash_id);
-						return !isExcluded;
+						return isCFGroupApplicableToProfile(group, profile.trash_id);
 					})
 					.map((group) => {
 						// Enrich each CF in the group with full details

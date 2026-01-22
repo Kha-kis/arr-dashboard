@@ -99,6 +99,13 @@ export interface GroupCustomFormat {
 
 /**
  * Custom Format Group from TRaSH Guides
+ *
+ * CF Group Application Logic (quality_profiles):
+ * - `include`: (NEW - TRaSH Guides PR #2590) Explicitly lists profiles that SHOULD receive this CF group
+ * - `exclude`: (LEGACY) Lists profiles that should NOT receive this CF group
+ *
+ * Priority: If `include` is present, use include semantics. Otherwise, fall back to exclude semantics.
+ * This provides backward compatibility during the TRaSH Guides transition period.
  */
 export interface TrashCustomFormatGroup {
 	trash_id: string;
@@ -108,9 +115,61 @@ export interface TrashCustomFormatGroup {
 	required?: boolean; // If true, this CF Group cannot be disabled (always required)
 	custom_formats: Array<GroupCustomFormat | string>; // Can be objects or trash_id strings
 	quality_profiles?: {
-		exclude?: Record<string, string>; // profile name → trash_id
+		/**
+		 * NEW (TRaSH Guides PR #2590): Profiles that SHOULD receive this CF group.
+		 * If present, only these profiles get this CF group (include semantics).
+		 * Maps profile name → trash_id
+		 */
+		include?: Record<string, string>;
+		/**
+		 * LEGACY: Profiles that should NOT receive this CF group.
+		 * Only used if `include` is not present (exclude semantics).
+		 * Maps profile name → trash_id
+		 * @deprecated Will be removed once TRaSH Guides fully migrates to include semantics
+		 */
+		exclude?: Record<string, string>;
 		score?: number; // Recommended score
 	};
+}
+
+/**
+ * Helper function to determine if a CF Group applies to a quality profile.
+ *
+ * Supports both new `include` semantics (TRaSH Guides PR #2590) and legacy `exclude` semantics.
+ *
+ * Logic:
+ * 1. If `include` is present: CF group applies ONLY to profiles listed in include
+ * 2. If `include` is absent: CF group applies to ALL profiles EXCEPT those in exclude
+ *
+ * @param group - The CF Group to check
+ * @param profileTrashId - The trash_id of the quality profile
+ * @returns true if the CF group should be applied to this profile
+ */
+export function isCFGroupApplicableToProfile(
+	group: TrashCustomFormatGroup,
+	profileTrashId: string
+): boolean {
+	const qualityProfiles = group.quality_profiles;
+
+	// No quality_profiles restriction - applies to all profiles
+	if (!qualityProfiles) {
+		return true;
+	}
+
+	// NEW: Include semantics (TRaSH Guides PR #2590)
+	// If include is present, only apply to explicitly listed profiles
+	if (qualityProfiles.include) {
+		return Object.values(qualityProfiles.include).includes(profileTrashId);
+	}
+
+	// LEGACY: Exclude semantics
+	// Apply to all profiles EXCEPT those in the exclude list
+	if (qualityProfiles.exclude) {
+		return !Object.values(qualityProfiles.exclude).includes(profileTrashId);
+	}
+
+	// No include or exclude - applies to all profiles
+	return true;
 }
 
 /**

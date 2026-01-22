@@ -5,21 +5,22 @@
  * Detects when new versions are available and handles update logic based on user preferences.
  */
 
-import type {
-	AutoSyncChangeLogEntry,
-	CustomFormatDiff,
-	CustomFormatGroupDiff,
-	GroupCustomFormat,
-	SuggestedCFAddition,
-	SuggestedScoreChange,
-	TemplateConfig,
-	TemplateCustomFormat,
-	TemplateCustomFormatGroup,
-	TemplateDiffResult,
-	TrashConfigType,
-	TrashCustomFormat,
-	TrashCustomFormatGroup,
-	TrashQualityProfile,
+import {
+	isCFGroupApplicableToProfile,
+	type AutoSyncChangeLogEntry,
+	type CustomFormatDiff,
+	type CustomFormatGroupDiff,
+	type GroupCustomFormat,
+	type SuggestedCFAddition,
+	type SuggestedScoreChange,
+	type TemplateConfig,
+	type TemplateCustomFormat,
+	type TemplateCustomFormatGroup,
+	type TemplateDiffResult,
+	type TrashConfigType,
+	type TrashCustomFormat,
+	type TrashCustomFormatGroup,
+	type TrashQualityProfile,
 } from "@arr/shared";
 import type { PrismaClient } from "../../lib/prisma.js";
 import { dequal as deepEqual } from "dequal";
@@ -838,13 +839,9 @@ export class TemplateUpdater {
 
 			if (cfGroups) {
 				// Add CFs from CF Groups that apply to this profile
+				// Supports both new `include` semantics (TRaSH Guides PR #2590) and legacy `exclude` semantics
 				for (const group of cfGroups) {
-					// Check if this group is excluded from the profile
-					const isExcluded =
-						group.quality_profiles?.exclude &&
-						Object.values(group.quality_profiles.exclude).includes(profileTrashId);
-
-					if (!isExcluded && group.custom_formats) {
+					if (isCFGroupApplicableToProfile(group, profileTrashId) && group.custom_formats) {
 						// Add all CFs from this applicable group
 						for (const cf of group.custom_formats) {
 							const cfTrashId = typeof cf === "string" ? cf : (cf as GroupCustomFormat).trash_id;

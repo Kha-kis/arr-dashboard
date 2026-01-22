@@ -130,6 +130,150 @@ interface PreviousDeploymentCF {
 	name: string;
 }
 
+// ============================================================================
+// Quality Items Format Detection & Reversal (TRaSH Guides PR #2590)
+// ============================================================================
+
+/**
+ * Known low-quality indicator names that appear at the start in NEW TRaSH format.
+ * These are quality names that typically represent the lowest quality tier.
+ * NOTE: These should be pre-normalized (lowercase, no hyphens/spaces) since
+ * the matching function normalizes input but not the indicators.
+ */
+const LOW_QUALITY_INDICATORS = new Set([
+	"unknown",
+	"workprint",
+	"cam",
+	"telesync",
+	"ts",
+	"telecine",
+	"tc",
+	"dvdscr",
+	"regional",
+	"sdtv",
+	"dvd",
+	"rawhd", // Lowest HD quality (normalized from "Raw-HD")
+]);
+
+/**
+ * Known high-quality indicator names that appear at the start in OLD TRaSH format.
+ * These represent the highest quality tiers.
+ * NOTE: These should be pre-normalized (lowercase, no hyphens/spaces).
+ */
+const HIGH_QUALITY_INDICATORS = new Set([
+	"remux",
+	"bluray",
+	"br",
+	"uhd",
+	"2160p",
+	"4k",
+	"webdl", // Normalized from "WEB-DL"
+	"hdtv",
+]);
+
+/**
+ * Extracts the quality name from a quality item (handles both individual and group items).
+ */
+function getQualityItemName(item: { name?: string; quality?: { name?: string } }): string {
+	return (item.name || item.quality?.name || "").toLowerCase().replace(/[\s-]/g, "");
+}
+
+/**
+ * Checks if a quality name indicates low quality.
+ */
+function isLowQualityName(name: string): boolean {
+	const normalized = name.toLowerCase().replace(/[\s-]/g, "");
+	return [...LOW_QUALITY_INDICATORS].some(
+		(indicator) => normalized.includes(indicator) || indicator.includes(normalized),
+	);
+}
+
+/**
+ * Checks if a quality name indicates high quality.
+ */
+function isHighQualityName(name: string): boolean {
+	const normalized = name.toLowerCase().replace(/[\s-]/g, "");
+	return [...HIGH_QUALITY_INDICATORS].some(
+		(indicator) => normalized.includes(indicator) || indicator.includes(normalized),
+	);
+}
+
+/**
+ * Detects if quality items are in the NEW TRaSH format (low quality first).
+ *
+ * TRaSH Guides PR #2590 changes the quality ordering:
+ * - OLD format: Highest quality at index 0 (Remux → Unknown) - matches Sonarr/Radarr API
+ * - NEW format: Lowest quality at index 0 (Unknown → Remux) - human-readable
+ *
+ * Detection strategy:
+ * 1. Check first items for low-quality indicators (suggests NEW format)
+ * 2. Check last items for high-quality indicators (suggests NEW format)
+ * 3. If inconclusive, assume OLD format (backward compatible)
+ *
+ * @param items Quality items array from TRaSH template
+ * @returns true if items are in NEW format (need reversal), false otherwise
+ */
+function isNewTrashQualityFormat(
+	items: Array<{ name?: string; quality?: { name?: string } }>,
+): boolean {
+	if (!items || items.length < 2) {
+		return false; // Can't determine with less than 2 items
+	}
+
+	// Get first and last items with explicit checks for TypeScript strict mode
+	const firstItem = items[0];
+	const lastItem = items[items.length - 1];
+	if (!firstItem || !lastItem) {
+		return false;
+	}
+
+	// Check first item for low-quality indicators
+	const firstName = getQualityItemName(firstItem);
+	const firstIsLowQuality = isLowQualityName(firstName);
+
+	// Check last item for high-quality indicators
+	const lastName = getQualityItemName(lastItem);
+	const lastIsHighQuality = isHighQualityName(lastName);
+
+	// If first item is low quality AND last is high quality, it's NEW format
+	if (firstIsLowQuality && lastIsHighQuality) {
+		return true;
+	}
+
+	// If first item is high quality OR last is low quality, it's OLD format
+	if (isHighQualityName(firstName) || isLowQualityName(lastName)) {
+		return false;
+	}
+
+	// Inconclusive - assume OLD format for backward compatibility
+	return false;
+}
+
+/**
+ * Reverses quality items if they are in NEW TRaSH format.
+ * Sonarr/Radarr API expects highest quality first (index 0).
+ *
+ * @param items Quality items from TRaSH template
+ * @returns Items in correct order for API (highest quality first)
+ */
+function reverseQualityItemsIfNeeded<T>(items: T[]): T[] {
+	if (!items || items.length === 0) {
+		return items;
+	}
+
+	// Type assertion for format detection
+	const typedItems = items as Array<{ name?: string; quality?: { name?: string } }>;
+
+	if (isNewTrashQualityFormat(typedItems)) {
+		console.log(
+			"[DEPLOYMENT] Detected NEW TRaSH quality format (low→high), reversing for API compatibility",
+		);
+		return [...items].reverse();
+	}
+
+	return items;
+}
+
 /**
  * Calculates the resolved score for a Custom Format using priority rules:
  * 1. Instance-level override (manual changes in instance)
@@ -839,7 +983,14 @@ export class DeploymentExecutorService {
 			const qualityItems: any[] = [];
 			let customGroupId = 1000; // Start custom group IDs at 1000
 
-			for (const templateItem of templateConfig.qualityProfile?.items || []) {
+			// TRaSH Guides PR #2590: Handle inverted quality ordering
+			// NEW format has low quality first (Unknown→Remux), API expects high quality first
+			// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality item structure
+			const templateQualityItems: any[] = reverseQualityItemsIfNeeded(
+				templateConfig.qualityProfile?.items || [],
+			);
+
+			for (const templateItem of templateQualityItems) {
 				if (
 					templateItem.items &&
 					Array.isArray(templateItem.items) &&
