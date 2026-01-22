@@ -10,6 +10,18 @@ import { ROUTES, TIMEOUTS, navigateTo, waitForPageHeading } from "./utils/test-h
 
 const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:3000";
 
+// CI auto-generates credentials if not provided (must match auth.setup.ts)
+const CI_TEST_USERNAME = "ci-test-user";
+const CI_TEST_PASSWORD = "CiTestP@ssw0rd123!";
+
+const TEST_CREDENTIALS = {
+	username: process.env.TEST_USERNAME || (process.env.CI ? CI_TEST_USERNAME : ""),
+	password: process.env.TEST_PASSWORD || (process.env.CI ? CI_TEST_PASSWORD : ""),
+};
+
+// For display purposes (fallback to generic "user" if not in CI and no env vars)
+const TEST_USERNAME = TEST_CREDENTIALS.username || "user";
+
 test.describe("Authentication - Login Page", () => {
 	// Use a fresh context without auth for login tests
 	test.use({ storageState: { cookies: [], origins: [] } });
@@ -72,8 +84,7 @@ test.describe("Authentication - Login Page", () => {
 	});
 
 	test("should redirect to dashboard after successful login", async ({ page }) => {
-		const username = process.env.TEST_USERNAME;
-		const password = process.env.TEST_PASSWORD;
+		const { username, password } = TEST_CREDENTIALS;
 
 		if (!username || !password) {
 			test.skip();
@@ -117,9 +128,8 @@ test.describe("Authentication - Session Management", () => {
 		await page.goto(ROUTES.dashboard);
 
 		// Should see username in the greeting heading (format: "Hi, <username>")
-		const username = process.env.TEST_USERNAME || "user";
 		await expect(
-			page.getByRole("heading", { name: new RegExp(`Hi,?\\s*${username}`, "i") }),
+			page.getByRole("heading", { name: new RegExp(`Hi,?\\s*${TEST_USERNAME}`, "i") }),
 		).toBeVisible({
 			timeout: TIMEOUTS.medium,
 		});
@@ -162,8 +172,7 @@ test.describe("Authentication - Logout", () => {
 	test.use({ storageState: { cookies: [], origins: [] } });
 
 	test("should log out user and redirect to login", async ({ page }) => {
-		const username = process.env.TEST_USERNAME;
-		const password = process.env.TEST_PASSWORD;
+		const { username, password } = TEST_CREDENTIALS;
 
 		if (!username || !password) {
 			test.skip();
@@ -191,8 +200,7 @@ test.describe("Authentication - Logout", () => {
 	});
 
 	test("should not allow access to protected routes after logout", async ({ page }) => {
-		const username = process.env.TEST_USERNAME;
-		const password = process.env.TEST_PASSWORD;
+		const { username, password } = TEST_CREDENTIALS;
 
 		if (!username || !password) {
 			test.skip();
