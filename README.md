@@ -161,6 +161,18 @@ docker-compose up -d
 
 The application auto-generates all necessary security keys on first run. No environment variables needed for basic operation.
 
+### Config Volume Contents
+
+The `/config` volume contains critical data that must be preserved:
+
+| File | Purpose |
+|------|---------|
+| `prod.db` | SQLite database with all your settings, users, and configurations |
+| `secrets.json` | Auto-generated encryption keys for API credentials |
+| `backups/` | Automated database backups (when enabled) |
+
+> ⚠️ **Important:** If `secrets.json` is lost, encrypted API keys cannot be decrypted. You would need to re-enter all service API keys. Always preserve your entire `/config` volume when upgrading or migrating.
+
 ### Optional Environment Variables
 
 | Variable | Default | Description |

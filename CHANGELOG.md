@@ -32,6 +32,18 @@ This release includes significant upgrades to the entire technology stack for im
 - **Biome** 1 → 2 (improved linting rules)
 - **TypeScript** 5.7 → 5.9
 
+### Upgrade Notes
+
+> **Important:** If upgrading from a previous version, ensure your `/config` volume is preserved. This directory contains:
+> - `prod.db` - Your database with all configurations
+> - `secrets.json` - Encryption keys for API credentials
+>
+> If `secrets.json` is missing after upgrade, your service connections will fail to decrypt. The volume should be automatically preserved in standard Docker setups.
+
+#### Database Changes
+- The deprecated `urlBase` column in system settings has been removed. This is handled automatically during startup with no action required.
+- New library caching tables (`library_cache`, `library_sync_status`) are created automatically for server-side pagination support.
+
 ### Added
 
 #### Dashboard Features
