@@ -3,7 +3,7 @@
 # syntax=docker/dockerfile:1
 
 # ===== BUILD BASE =====
-FROM node:22-alpine3.21 AS build-base
+FROM node:25-alpine3.21 AS build-base
 ENV NEXT_TELEMETRY_DISABLED=1
 RUN corepack enable && corepack prepare pnpm@10.28.1 --activate
 
@@ -68,7 +68,7 @@ RUN cd /app/apps/web/.next/standalone/node_modules && \
     done
 
 # ===== RUNTIME STAGE =====
-FROM node:22-alpine3.21 AS runner
+FROM node:25-alpine3.21 AS runner
 
 # Build arguments for version injection (set by CI)
 ARG VERSION=dev
