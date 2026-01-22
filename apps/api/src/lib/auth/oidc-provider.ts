@@ -23,17 +23,71 @@ export class OIDCProvider {
 	private config: OIDCProviderConfig;
 	private authServer: oauth.AuthorizationServer | null = null;
 	private client: oauth.Client;
-	private clientAuth: oauth.ClientAuth;
+	// Client auth is determined dynamically based on provider's supported methods
+	private clientAuth: oauth.ClientAuth | null = null;
 
 	constructor(config: OIDCProviderConfig) {
 		this.config = config;
+		// Client object is initialized with basic auth, but actual auth method
+		// is determined after discovery based on token_endpoint_auth_methods_supported
 		this.client = {
 			client_id: config.clientId,
 			client_secret: config.clientSecret,
 			token_endpoint_auth_method: "client_secret_basic",
 		};
-		// Create client authentication method for token endpoint requests
-		this.clientAuth = oauth.ClientSecretBasic(config.clientSecret);
+	}
+
+	/**
+	 * Get the appropriate client authentication method based on provider's supported methods
+	 *
+	 * Strategy:
+	 * 1. If provider advertises supported methods, respect them (prefer basic if both supported)
+	 * 2. If provider doesn't advertise methods, default to client_secret_post for broader compatibility
+	 *
+	 * Why default to client_secret_post?
+	 * - Many simple OIDC providers (like Pocket ID) don't advertise token_endpoint_auth_methods_supported
+	 * - These providers often only check POST body parameters first
+	 * - client_secret_post works more reliably across different implementations
+	 * - The OIDC spec says default is client_secret_basic, but real-world compatibility is better with post
+	 */
+	private getClientAuth(authServer: oauth.AuthorizationServer): oauth.ClientAuth {
+		// If we've already determined the auth method, return it
+		if (this.clientAuth) {
+			return this.clientAuth;
+		}
+
+		// Check what methods the provider supports
+		const supportedMethods = authServer.token_endpoint_auth_methods_supported;
+
+		// If provider doesn't advertise supported methods, default to client_secret_post
+		// This provides better compatibility with providers like Pocket ID that don't
+		// advertise their supported methods but work best with POST body credentials
+		if (!supportedMethods || supportedMethods.length === 0) {
+			this.clientAuth = oauth.ClientSecretPost(this.config.clientSecret);
+			this.client.token_endpoint_auth_method = "client_secret_post";
+			return this.clientAuth;
+		}
+
+		// Prefer client_secret_basic if explicitly supported (more secure - credentials not in logs)
+		if (supportedMethods.includes("client_secret_basic")) {
+			this.clientAuth = oauth.ClientSecretBasic(this.config.clientSecret);
+			this.client.token_endpoint_auth_method = "client_secret_basic";
+			return this.clientAuth;
+		}
+
+		// Use client_secret_post if that's what the provider supports
+		if (supportedMethods.includes("client_secret_post")) {
+			this.clientAuth = oauth.ClientSecretPost(this.config.clientSecret);
+			this.client.token_endpoint_auth_method = "client_secret_post";
+			return this.clientAuth;
+		}
+
+		// If neither method is explicitly supported (e.g., provider only lists private_key_jwt),
+		// fall back to client_secret_post for broader compatibility
+		// Same rationale as defaulting to post when no methods advertised
+		this.clientAuth = oauth.ClientSecretPost(this.config.clientSecret);
+		this.client.token_endpoint_auth_method = "client_secret_post";
+		return this.clientAuth;
 	}
 
 	/**
@@ -217,11 +271,14 @@ export class OIDCProvider {
 			throw new Error(`OAuth error: ${params.error} - ${errorDesc}`);
 		}
 
+		// Get the appropriate client authentication method based on provider's supported methods
+		const clientAuth = this.getClientAuth(authServer);
+
 		// Exchange the authorization code for tokens
 		const response = await oauth.authorizationCodeGrantRequest(
 			authServer,
 			this.client,
-			this.clientAuth, // Client authentication method (ClientSecretBasic)
+			clientAuth, // Client authentication method (auto-detected: basic or post)
 			params, // Use validated params from validateAuthResponse
 			redirectUri,
 			codeVerifier, // PKCE code verifier for authorization code protection

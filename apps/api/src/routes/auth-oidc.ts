@@ -330,9 +330,14 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				}
 			}
 
-			request.log.info({ redirectUri: dbProvider.redirectUri }, "Exchanging authorization code");
+			request.log.info(
+				{ redirectUri: dbProvider.redirectUri, issuer: dbProvider.issuer },
+				"Exchanging authorization code",
+			);
 
 			// Exchange code for tokens (with state, nonce validation and PKCE)
+			// Note: OIDCProvider auto-detects the token_endpoint_auth_method from discovery
+			// Supports both client_secret_basic and client_secret_post for provider compatibility
 			const tokenResponse = await oidcProvider.exchangeCode(
 				queryParams,
 				dbProvider.redirectUri,
