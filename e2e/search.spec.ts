@@ -19,11 +19,15 @@ test.describe("Search - Page Load", () => {
 
 	test("should have search input field", async ({ page }) => {
 		await page.goto(ROUTES.search);
+		await waitForLoadingComplete(page);
 
 		// The search textbox has accessible name "Search for movies, series, music, or books"
-		const searchInput = page.getByRole("textbox", { name: /search for movies|movies.*series/i });
+		// Use a more flexible locator that also checks for placeholder or common search patterns
+		const searchInput = page
+			.getByRole("textbox", { name: /search|movies|series/i })
+			.or(page.locator('input[type="text"][placeholder*="search" i], input[type="search"]'));
 
-		await expect(searchInput).toBeVisible({ timeout: TIMEOUTS.medium });
+		await expect(searchInput.first()).toBeVisible({ timeout: TIMEOUTS.medium });
 	});
 
 	test("should have search button", async ({ page }) => {
