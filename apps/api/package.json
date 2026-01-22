@@ -42,7 +42,7 @@
 		"pino": "^10.2.1",
 		"prisma": "^7.3.0",
 		"tmdb-ts": "^2.2.0",
-		"zod": "^4.3.5"
+		"zod": "^4.3.6"
 	},
 	"devDependencies": {
 		"@types/better-sqlite3": "^7.6.13",
