@@ -1,16 +1,22 @@
-import { test as setup, expect } from "@playwright/test";
+import { test as setup, expect, request } from "@playwright/test";
 import path from "node:path";
 
 const authFile = path.join(__dirname, "../.playwright-auth/user.json");
 
 // Configuration from environment variables
 const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:3000";
+const API_URL = process.env.TEST_API_URL || "http://localhost:3001";
+
+// CI auto-generates credentials if not provided
+const CI_TEST_USERNAME = "ci-test-user";
+const CI_TEST_PASSWORD = "CiTestP@ssw0rd123!";
+
 const TEST_CREDENTIALS = {
-	username: process.env.TEST_USERNAME || "",
-	password: process.env.TEST_PASSWORD || "",
+	username: process.env.TEST_USERNAME || (process.env.CI ? CI_TEST_USERNAME : ""),
+	password: process.env.TEST_PASSWORD || (process.env.CI ? CI_TEST_PASSWORD : ""),
 };
 
-// Fail fast if credentials not configured
+// Fail fast if credentials not configured (only in non-CI environments)
 if (!TEST_CREDENTIALS.username || !TEST_CREDENTIALS.password) {
 	throw new Error(
 		"TEST_USERNAME and TEST_PASSWORD environment variables are required for E2E tests. " +
@@ -19,15 +25,62 @@ if (!TEST_CREDENTIALS.username || !TEST_CREDENTIALS.password) {
 }
 
 /**
+ * In CI, ensure a test user exists by registering via the API.
+ * This runs before authentication to create the user if needed.
+ */
+async function ensureTestUserExists(): Promise<void> {
+	// Only auto-register in CI when using default CI credentials
+	if (!process.env.CI || process.env.TEST_USERNAME) {
+		return;
+	}
+
+	const apiContext = await request.newContext({
+		baseURL: API_URL,
+	});
+
+	try {
+		// Check if setup is required (no users exist)
+		const setupCheck = await apiContext.get("/auth/setup-required");
+		const setupData = await setupCheck.json();
+
+		if (setupData.setupRequired) {
+			// Register the test user
+			console.log("CI: Registering test user...");
+			const registerResponse = await apiContext.post("/auth/register", {
+				data: {
+					username: CI_TEST_USERNAME,
+					password: CI_TEST_PASSWORD,
+				},
+			});
+
+			if (!registerResponse.ok()) {
+				const errorBody = await registerResponse.text();
+				throw new Error(`Failed to register CI test user: ${registerResponse.status()} - ${errorBody}`);
+			}
+
+			console.log("CI: Test user registered successfully");
+		} else {
+			console.log("CI: User already exists, skipping registration");
+		}
+	} finally {
+		await apiContext.dispose();
+	}
+}
+
+/**
  * Authentication setup for Playwright tests.
  * This runs before all tests to create an authenticated session.
  *
  * Since the app uses session-based auth with cookies, we need to:
- * 1. Login via the login page
- * 2. Store the session cookie state
- * 3. Reuse it across all tests
+ * 1. In CI: Auto-register a test user if needed
+ * 2. Login via the login page
+ * 3. Store the session cookie state
+ * 4. Reuse it across all tests
  */
 setup("authenticate", async ({ page }) => {
+	// In CI, ensure test user exists
+	await ensureTestUserExists();
+
 	// Go to login page
 	await page.goto(`${BASE_URL}/login`);
 

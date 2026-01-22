@@ -13,12 +13,17 @@ import { test, expect, type Page } from "@playwright/test";
 
 // Test configuration
 const BASE_URL = process.env.TEST_BASE_URL || "http://localhost:3000";
+
+// CI auto-generates credentials if not provided
+const CI_TEST_USERNAME = "ci-test-user";
+const CI_TEST_PASSWORD = "CiTestP@ssw0rd123!";
+
 const TEST_CREDENTIALS = {
-	username: process.env.TEST_USERNAME || "",
-	password: process.env.TEST_PASSWORD || "",
+	username: process.env.TEST_USERNAME || (process.env.CI ? CI_TEST_USERNAME : ""),
+	password: process.env.TEST_PASSWORD || (process.env.CI ? CI_TEST_PASSWORD : ""),
 };
 
-// Fail fast if credentials not configured
+// Fail fast if credentials not configured (only in non-CI environments)
 if (!TEST_CREDENTIALS.username || !TEST_CREDENTIALS.password) {
 	throw new Error(
 		"TEST_USERNAME and TEST_PASSWORD environment variables are required for E2E tests. " +
