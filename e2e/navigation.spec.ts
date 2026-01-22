@@ -8,6 +8,10 @@
 import { test, expect } from "@playwright/test";
 import { ROUTES, TIMEOUTS, clickSidebarLink } from "./utils/test-helpers";
 
+// CI auto-generates credentials if not provided (must match auth.setup.ts)
+const CI_TEST_USERNAME = "ci-test-user";
+const TEST_USERNAME = process.env.TEST_USERNAME || (process.env.CI ? CI_TEST_USERNAME : undefined);
+
 test.describe("Navigation - Sidebar", () => {
 	test.beforeEach(async ({ page }) => {
 		await page.goto(ROUTES.dashboard);
@@ -118,11 +122,10 @@ test.describe("Navigation - Header", () => {
 		// User info section should be visible in header (avatar or username)
 		// The header contains a user section with avatar and/or username text
 		const userSection = page.locator("header, [role='banner']");
-		const username = process.env.TEST_USERNAME;
 
-		if (username) {
-			// If TEST_USERNAME is set, check for it
-			await expect(userSection.getByText(new RegExp(username, "i")).first()).toBeVisible({
+		if (TEST_USERNAME) {
+			// If TEST_USERNAME is set (or CI default), check for it
+			await expect(userSection.getByText(new RegExp(TEST_USERNAME, "i")).first()).toBeVisible({
 				timeout: TIMEOUTS.medium,
 			});
 		} else {
