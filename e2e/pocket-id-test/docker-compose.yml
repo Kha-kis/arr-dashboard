@@ -1,0 +1,46 @@
+# Docker Compose for Pocket ID integration testing
+# Used to validate OIDC token_endpoint_auth_method fix (Issue #52)
+
+services:
+  pocket-id:
+    image: ghcr.io/pocket-id/pocket-id:latest
+    container_name: pocket-id-test
+    environment:
+      - APP_URL=https://localhost:8443
+      - TRUST_PROXY=true
+      # Generate a random encryption key for testing
+      - ENCRYPTION_KEY=test-encryption-key-for-e2e-testing-only
+      # Disable analytics for testing
+      - ANALYTICS_DISABLED=true
+    volumes:
+      - pocket-id-data:/data
+    networks:
+      - pocket-id-net
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:1411/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # Caddy reverse proxy for TLS termination
+  caddy:
+    image: caddy:2-alpine
+    container_name: pocket-id-caddy
+    ports:
+      - "8443:8443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
+    networks:
+      - pocket-id-net
+    depends_on:
+      pocket-id:
+        condition: service_healthy
+
+volumes:
+  pocket-id-data:
+
+networks:
+  pocket-id-net:
+    driver: bridge

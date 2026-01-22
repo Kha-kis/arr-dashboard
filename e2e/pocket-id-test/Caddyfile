@@ -1,0 +1,26 @@
+# Caddyfile for Pocket ID TLS reverse proxy
+# Uses mkcert certificates for local development
+
+{
+	# Disable automatic HTTPS since we're using our own certs
+	auto_https off
+}
+
+:8443 {
+	# Use mkcert-generated certificates
+	tls /certs/pocket-id.pem /certs/pocket-id-key.pem
+
+	# Reverse proxy to Pocket ID
+	reverse_proxy pocket-id:1411 {
+		# Forward headers for proper request handling
+		header_up X-Forwarded-Proto {scheme}
+		header_up X-Forwarded-Host {host}
+		header_up X-Real-IP {remote_host}
+	}
+
+	# Logging for debugging
+	log {
+		output stdout
+		format console
+	}
+}
