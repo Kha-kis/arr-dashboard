@@ -100,12 +100,17 @@ jobs:
       - name: Run tests
         run: pnpm run test
 
-  # End-to-End Tests with Playwright
+  # End-to-End Tests with Playwright (sharded for parallelism)
   e2e:
-    name: E2E Tests
+    name: E2E Tests (${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
     runs-on: ubuntu-latest
     needs: [lint]
-    timeout-minutes: 30
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shardIndex: [1, 2, 3, 4]
+        shardTotal: [4]
 
     steps:
       - name: Checkout code
@@ -178,8 +183,8 @@ jobs:
             sleep 2
           done
 
-          # Run the E2E tests
-          pnpm exec playwright test --project=chromium
+          # Run the E2E tests (sharded)
+          pnpm exec playwright test --project=chromium --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
 
           # Cleanup
           kill $API_PID $WEB_PID 2>/dev/null || true
@@ -191,7 +196,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.shardIndex }}
           path: playwright-report/
           retention-days: 7
 
@@ -199,7 +204,7 @@ jobs:
         uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: test-screenshots
+          name: test-screenshots-${{ matrix.shardIndex }}
           path: test-results/
           retention-days: 7
 
