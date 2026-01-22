@@ -101,16 +101,17 @@ jobs:
         run: pnpm run test
 
   # End-to-End Tests with Playwright (sharded for parallelism)
+  # Reduced to 2 shards - balances parallelism vs startup overhead
   e2e:
     name: E2E Tests (${{ matrix.shardIndex }}/${{ matrix.shardTotal }})
     runs-on: ubuntu-latest
     needs: [lint]
-    timeout-minutes: 20
+    timeout-minutes: 12
     strategy:
       fail-fast: false
       matrix:
-        shardIndex: [1, 2, 3, 4]
-        shardTotal: [4]
+        shardIndex: [1, 2]
+        shardTotal: [2]
 
     steps:
       - name: Checkout code
@@ -165,29 +166,33 @@ jobs:
       - name: Run E2E tests
         run: |
           # Start API server in background (disable rate limiting for E2E tests)
-          (cd apps/api && DATABASE_URL=file:./test.db API_RATE_LIMIT_MAX=10000 pnpm run dev) &
+          (cd apps/api && DATABASE_URL=file:./test.db API_RATE_LIMIT_MAX=10000 LOG_LEVEL=warn pnpm run dev) &
           API_PID=$!
 
           # Start Web server in background
           (cd apps/web && pnpm run dev) &
           WEB_PID=$!
 
-          # Wait for both servers to be ready
+          # Wait for servers with faster polling
           echo "Waiting for servers to start..."
-          for i in {1..60}; do
-            if curl -s http://localhost:3001/health > /dev/null 2>&1 && curl -s http://localhost:3000 > /dev/null 2>&1; then
-              echo "Both servers are ready!"
+          for i in {1..40}; do
+            API_OK=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3001/health 2>/dev/null || echo "000")
+            WEB_OK=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000 2>/dev/null || echo "000")
+            if [ "$API_OK" = "200" ] && [ "$WEB_OK" != "000" ]; then
+              echo "Both servers ready! (API: $API_OK, Web: $WEB_OK)"
               break
             fi
-            echo "Waiting... ($i/60)"
-            sleep 2
+            [ $((i % 5)) -eq 0 ] && echo "Waiting... ($i/40) API=$API_OK WEB=$WEB_OK"
+            sleep 1
           done
 
           # Run the E2E tests (sharded)
           pnpm exec playwright test --project=chromium --shard=${{ matrix.shardIndex }}/${{ matrix.shardTotal }}
+          EXIT_CODE=$?
 
           # Cleanup
           kill $API_PID $WEB_PID 2>/dev/null || true
+          exit $EXIT_CODE
         env:
           NODE_ENV: test
           CI: true

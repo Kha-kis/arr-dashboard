@@ -11,25 +11,23 @@ config({ path: '.env.test' });
  */
 
 const authFile = path.join(__dirname, '.playwright-auth/user.json');
+const isCI = !!process.env.CI;
 
 export default defineConfig({
   testDir: './e2e',
   /* Run tests in files in parallel - limited workers to prevent session race conditions */
   fullyParallel: true,
   /* Fail the build on CI if you accidentally left test.only in the source code. */
-  forbidOnly: !!process.env.CI,
-  /* Retry on CI only */
-  retries: process.env.CI ? 2 : 1,
+  forbidOnly: isCI,
+  /* Retry on CI only - reduced to 1 retry to speed up CI */
+  retries: isCI ? 1 : 0,
   /* Force single worker to ensure auth state reliability
    * Parallel execution causes race conditions with session-based auth */
   workers: 1,
   /* Reporter to use. See https://playwright.dev/docs/test-reporters */
-  reporter: [
-    ['html'],
-    ['list'],
-  ],
-  /* Global timeout for each test - increased for slower page loads */
-  timeout: 60000,
+  reporter: isCI ? [['list'], ['html', { open: 'never' }]] : [['html'], ['list']],
+  /* Global timeout for each test - reduced for CI efficiency */
+  timeout: isCI ? 30000 : 60000,
   /* Shared settings for all the projects below. */
   use: {
     /* Base URL to use in actions like `await page.goto('')`. */
@@ -77,7 +75,10 @@ export default defineConfig({
 
   /* Expect configuration */
   expect: {
-    /* Maximum time to wait for assertions */
-    timeout: 10000,
+    /* Maximum time to wait for assertions - reduced for CI */
+    timeout: isCI ? 8000 : 10000,
   },
+
+  /* Exclude Pocket ID tests in CI (requires external Pocket ID server) */
+  testIgnore: isCI ? ['**/pocket-id-test/**'] : [],
 });
