@@ -15,6 +15,9 @@
 
 import { test, expect, type CDPSession, type BrowserContext } from '@playwright/test';
 
+// Skip entire test suite in CI - requires running Pocket ID server
+const isCI = process.env.CI === 'true' || process.env.CI === '1' || !!process.env.CI;
+
 // Pocket ID test configuration
 const POCKET_ID_URL = 'https://localhost:8443';
 const ARR_DASHBOARD_URL = 'http://localhost:3000';
@@ -50,6 +53,8 @@ async function setupVirtualAuthenticator(context: BrowserContext): Promise<CDPSe
 }
 
 test.describe('Pocket ID OIDC Integration', () => {
+  // Skip in CI - requires running Pocket ID server
+  test.skip(() => isCI, 'Pocket ID tests require a running Pocket ID server');
   test.describe.configure({ mode: 'serial' });
 
   let cdpSession: CDPSession;
