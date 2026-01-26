@@ -16,7 +16,7 @@
     "@biomejs/biome": "^2.3.11",
     "@playwright/test": "^1.57.0",
     "dotenv": "^17.2.3",
-    "turbo": "^2.7.5",
+    "turbo": "^2.7.6",
     "typescript": "^5.9.3"
   }
 }
