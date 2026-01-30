@@ -5,6 +5,24 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.1] - 2026-01-30
+
+### Fixed
+
+- **TRaSH Guides template persistence** - Fix custom quality configurations, quality profiles,
+  sync settings, and cloned quality profiles being silently dropped when saving templates.
+  The Zod validation schema was missing 4 of 8 TemplateConfig fields, causing them to be
+  stripped during parsing ([#69](https://github.com/Kha-kis/arr-dashboard/issues/69))
+- **TRaSH CF Group validation** - Add missing `include` field to CF Group quality_profiles
+  validation schema for TRaSH Guides PR #2590 include/exclude semantics support
+
+### Security
+
+- **Next.js** - Bump minimum version to 16.1.5 to address HTTP request deserialization DoS
+  ([GHSA-h25m-26qc-wcjf](https://github.com/advisories/GHSA-h25m-26qc-wcjf))
+
+---
+
 ## [2.7.0] - 2026-01-21
 
 ### Major Upgrades
@@ -406,6 +424,7 @@ Major dependency updates:
 
 ---
 
+[2.7.1]: https://github.com/Kha-kis/arr-dashboard/compare/v2.7.0...v2.7.1
 [2.7.0]: https://github.com/Kha-kis/arr-dashboard/compare/v2.6.7...v2.7.0
 [2.6.7]: https://github.com/Kha-kis/arr-dashboard/compare/v2.6.6...v2.6.7
 [2.6.6]: https://github.com/Kha-kis/arr-dashboard/compare/v2.6.5...v2.6.6

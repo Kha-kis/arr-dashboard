@@ -61,6 +61,7 @@ const trashCustomFormatGroupSchema = z.object({
 	quality_profiles: z
 		.object({
 			exclude: z.record(z.string(), z.string()).optional(),
+			include: z.record(z.string(), z.string()).optional(),
 			score: z.number().optional(),
 		})
 		.optional(),
@@ -84,6 +85,72 @@ const trashNamingSchemeSchema = z.object({
 
 // CF Origin type
 const cfOriginSchema = z.enum(["trash_sync", "user_added", "imported"]).optional();
+
+// Sync settings schema
+const templateSyncSettingsSchema = z.object({
+	deleteRemovedCFs: z.boolean().optional(),
+});
+
+// Quality profile schema (TRaSH-style profile settings)
+const qualityProfileSchema = z.object({
+	upgradeAllowed: z.boolean().optional(),
+	cutoff: z.string().optional(),
+	items: z
+		.array(
+			z.object({
+				name: z.string(),
+				allowed: z.boolean(),
+				items: z.array(z.string()).optional(),
+			}),
+		)
+		.optional(),
+	minFormatScore: z.number().optional(),
+	cutoffFormatScore: z.number().optional(),
+	minUpgradeFormatScore: z.number().optional(),
+	trash_score_set: z.string().optional(),
+	language: z.string().optional(),
+});
+
+// Quality item schema (single quality definition)
+const templateQualityItemSchema = z.object({
+	id: z.string(),
+	name: z.string(),
+	allowed: z.boolean(),
+	source: z.string().optional(),
+	resolution: z.number().optional(),
+});
+
+// Quality group schema (group of equivalent qualities)
+const templateQualityGroupSchema = z.object({
+	id: z.string(),
+	name: z.string(),
+	allowed: z.boolean(),
+	qualities: z.array(
+		z.object({
+			name: z.string(),
+			source: z.string().optional(),
+			resolution: z.number().optional(),
+		}),
+	),
+});
+
+// Quality entry schema (discriminated union of item or group)
+const templateQualityEntrySchema = z.union([
+	z.object({ type: z.literal("quality"), item: templateQualityItemSchema }),
+	z.object({ type: z.literal("group"), group: templateQualityGroupSchema }),
+]);
+
+// Custom quality configuration schema
+const customQualityConfigSchema = z.object({
+	useCustomQualities: z.boolean(),
+	items: z.array(templateQualityEntrySchema),
+	cutoffId: z.string().optional(),
+	customizedAt: z.string().optional(),
+	origin: z.enum(["trash_profile", "instance_clone", "manual", "instance"]).optional(),
+});
+
+// Complete quality profile schema — permissive record for deeply nested external data
+const completeQualityProfileSchema = z.record(z.string(), z.unknown());
 
 const templateConfigSchema = z.object({
 	customFormats: z.array(
@@ -114,8 +181,12 @@ const templateConfigSchema = z.object({
 			deprecatedReason: z.string().optional(),
 		}),
 	),
+	qualityProfile: qualityProfileSchema.optional(),
 	qualitySize: z.array(trashQualitySizeSchema).optional(),
 	naming: z.array(trashNamingSchemeSchema).optional(),
+	completeQualityProfile: completeQualityProfileSchema.optional(),
+	syncSettings: templateSyncSettingsSchema.optional(),
+	customQualityConfig: customQualityConfigSchema.optional(),
 }) as z.ZodType<TemplateConfig>;
 
 const createTemplateSchema = z.object({

@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.6.7** - Bug fixes for Unraid, OIDC, hunting + sync metrics telemetry
+> **Version 2.7.1** - TRaSH template persistence fix + Next.js security patch
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
