@@ -16,6 +16,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **TRaSH CF Group validation** - Add missing `include` field to CF Group quality_profiles
   validation schema for TRaSH Guides PR #2590 include/exclude semantics support
 
+### Security
+
+- **Next.js** - Bump minimum version to 16.1.5 to address HTTP request deserialization DoS
+  ([GHSA-h25m-26qc-wcjf](https://github.com/advisories/GHSA-h25m-26qc-wcjf))
+
 ---
 
 ## [2.7.0] - 2026-01-21
