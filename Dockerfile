@@ -88,9 +88,11 @@ LABEL org.opencontainers.image.title="Arr Dashboard" \
       org.opencontainers.image.created="${BUILD_DATE}" \
       maintainer="khak1s"
 
-# Install runtime dependencies, create user, and clean up unused package managers (single layer)
+# Upgrade base packages (security patches for libcrypto3, libssl3, busybox, etc.)
+# then install runtime dependencies, create user, and clean up unused package managers (single layer)
 # Removes ~25MB of unused npm, yarn, and corepack from the Node.js base image
-RUN apk add --no-cache tini su-exec shadow \
+RUN apk upgrade --no-cache \
+    && apk add --no-cache tini su-exec shadow \
     && addgroup -g 911 abc \
     && adduser -D -u 911 -G abc abc \
     && mkdir -p /app/api /app/web /config \

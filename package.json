@@ -12,6 +12,12 @@
     "format": "turbo run format",
     "clean": "turbo prune --scope='@arr/*' --docker"
   },
+  "pnpm": {
+    "overrides": {
+      "lodash@<4.17.23": "4.17.23",
+      "hono@<4.11.7": "4.11.7"
+    }
+  },
   "devDependencies": {
     "@biomejs/biome": "^2.3.11",
     "@playwright/test": "^1.57.0",
