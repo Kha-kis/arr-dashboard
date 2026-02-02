@@ -261,6 +261,7 @@ export type UserWhereInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialListRelationFilter
   trashSettings?: Prisma.XOR<Prisma.TrashSettingsNullableScalarRelationFilter, Prisma.TrashSettingsWhereInput> | null
   serviceInstances?: Prisma.ServiceInstanceListRelationFilter
+  userCustomFormats?: Prisma.UserCustomFormatListRelationFilter
 }
 
 export type UserOrderByWithRelationInput = {
@@ -279,6 +280,7 @@ export type UserOrderByWithRelationInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialOrderByRelationAggregateInput
   trashSettings?: Prisma.TrashSettingsOrderByWithRelationInput
   serviceInstances?: Prisma.ServiceInstanceOrderByRelationAggregateInput
+  userCustomFormats?: Prisma.UserCustomFormatOrderByRelationAggregateInput
 }
 
 export type UserWhereUniqueInput = Prisma.AtLeast<{
@@ -300,6 +302,7 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   webauthnCredentials?: Prisma.WebAuthnCredentialListRelationFilter
   trashSettings?: Prisma.XOR<Prisma.TrashSettingsNullableScalarRelationFilter, Prisma.TrashSettingsWhereInput> | null
   serviceInstances?: Prisma.ServiceInstanceListRelationFilter
+  userCustomFormats?: Prisma.UserCustomFormatListRelationFilter
 }, "id" | "username">
 
 export type UserOrderByWithAggregationInput = {
@@ -352,6 +355,7 @@ export type UserCreateInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateInput = {
@@ -370,6 +374,7 @@ export type UserUncheckedCreateInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserUpdateInput = {
@@ -388,6 +393,7 @@ export type UserUpdateInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateInput = {
@@ -406,6 +412,7 @@ export type UserUncheckedUpdateInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateManyInput = {
@@ -597,6 +604,20 @@ export type UserUpdateOneRequiredWithoutTrashSettingsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutTrashSettingsInput, Prisma.UserUpdateWithoutTrashSettingsInput>, Prisma.UserUncheckedUpdateWithoutTrashSettingsInput>
 }
 
+export type UserCreateNestedOneWithoutUserCustomFormatsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutUserCustomFormatsInput, Prisma.UserUncheckedCreateWithoutUserCustomFormatsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutUserCustomFormatsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutUserCustomFormatsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutUserCustomFormatsInput, Prisma.UserUncheckedCreateWithoutUserCustomFormatsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutUserCustomFormatsInput
+  upsert?: Prisma.UserUpsertWithoutUserCustomFormatsInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutUserCustomFormatsInput, Prisma.UserUpdateWithoutUserCustomFormatsInput>, Prisma.UserUncheckedUpdateWithoutUserCustomFormatsInput>
+}
+
 export type UserCreateWithoutSessionsInput = {
   id?: string
   username: string
@@ -612,6 +633,7 @@ export type UserCreateWithoutSessionsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutSessionsInput = {
@@ -629,6 +651,7 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutSessionsInput = {
@@ -662,6 +685,7 @@ export type UserUpdateWithoutSessionsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutSessionsInput = {
@@ -679,6 +703,7 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutServiceInstancesInput = {
@@ -696,6 +721,7 @@ export type UserCreateWithoutServiceInstancesInput = {
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutServiceInstancesInput = {
@@ -713,6 +739,7 @@ export type UserUncheckedCreateWithoutServiceInstancesInput = {
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutServiceInstancesInput = {
@@ -746,6 +773,7 @@ export type UserUpdateWithoutServiceInstancesInput = {
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutServiceInstancesInput = {
@@ -763,6 +791,7 @@ export type UserUncheckedUpdateWithoutServiceInstancesInput = {
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutOidcAccountsInput = {
@@ -780,6 +809,7 @@ export type UserCreateWithoutOidcAccountsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutOidcAccountsInput = {
@@ -797,6 +827,7 @@ export type UserUncheckedCreateWithoutOidcAccountsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutOidcAccountsInput = {
@@ -830,6 +861,7 @@ export type UserUpdateWithoutOidcAccountsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutOidcAccountsInput = {
@@ -847,6 +879,7 @@ export type UserUncheckedUpdateWithoutOidcAccountsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutWebauthnCredentialsInput = {
@@ -864,6 +897,7 @@ export type UserCreateWithoutWebauthnCredentialsInput = {
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
@@ -881,6 +915,7 @@ export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutWebauthnCredentialsInput = {
@@ -914,6 +949,7 @@ export type UserUpdateWithoutWebauthnCredentialsInput = {
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
@@ -931,6 +967,7 @@ export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutTrashSettingsInput = {
@@ -948,6 +985,7 @@ export type UserCreateWithoutTrashSettingsInput = {
   oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutTrashSettingsInput = {
@@ -965,6 +1003,7 @@ export type UserUncheckedCreateWithoutTrashSettingsInput = {
   oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutTrashSettingsInput = {
@@ -998,6 +1037,7 @@ export type UserUpdateWithoutTrashSettingsInput = {
   oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutTrashSettingsInput = {
@@ -1015,6 +1055,95 @@ export type UserUncheckedUpdateWithoutTrashSettingsInput = {
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutUserCustomFormatsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutUserCustomFormatsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutUserCustomFormatsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutUserCustomFormatsInput, Prisma.UserUncheckedCreateWithoutUserCustomFormatsInput>
+}
+
+export type UserUpsertWithoutUserCustomFormatsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutUserCustomFormatsInput, Prisma.UserUncheckedUpdateWithoutUserCustomFormatsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutUserCustomFormatsInput, Prisma.UserUncheckedCreateWithoutUserCustomFormatsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutUserCustomFormatsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutUserCustomFormatsInput, Prisma.UserUncheckedUpdateWithoutUserCustomFormatsInput>
+}
+
+export type UserUpdateWithoutUserCustomFormatsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutUserCustomFormatsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
 }
 
 
@@ -1027,6 +1156,7 @@ export type UserCountOutputType = {
   oidcAccounts: number
   webauthnCredentials: number
   serviceInstances: number
+  userCustomFormats: number
 }
 
 export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -1034,6 +1164,7 @@ export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.I
   oidcAccounts?: boolean | UserCountOutputTypeCountOidcAccountsArgs
   webauthnCredentials?: boolean | UserCountOutputTypeCountWebauthnCredentialsArgs
   serviceInstances?: boolean | UserCountOutputTypeCountServiceInstancesArgs
+  userCustomFormats?: boolean | UserCountOutputTypeCountUserCustomFormatsArgs
 }
 
 /**
@@ -1074,6 +1205,13 @@ export type UserCountOutputTypeCountServiceInstancesArgs<ExtArgs extends runtime
   where?: Prisma.ServiceInstanceWhereInput
 }
 
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountUserCustomFormatsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.UserCustomFormatWhereInput
+}
+
 
 export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -1091,6 +1229,7 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   webauthnCredentials?: boolean | Prisma.User$webauthnCredentialsArgs<ExtArgs>
   trashSettings?: boolean | Prisma.User$trashSettingsArgs<ExtArgs>
   serviceInstances?: boolean | Prisma.User$serviceInstancesArgs<ExtArgs>
+  userCustomFormats?: boolean | Prisma.User$userCustomFormatsArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["user"]>
 
@@ -1140,6 +1279,7 @@ export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   webauthnCredentials?: boolean | Prisma.User$webauthnCredentialsArgs<ExtArgs>
   trashSettings?: boolean | Prisma.User$trashSettingsArgs<ExtArgs>
   serviceInstances?: boolean | Prisma.User$serviceInstancesArgs<ExtArgs>
+  userCustomFormats?: boolean | Prisma.User$userCustomFormatsArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type UserIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
@@ -1153,6 +1293,7 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     webauthnCredentials: Prisma.$WebAuthnCredentialPayload<ExtArgs>[]
     trashSettings: Prisma.$TrashSettingsPayload<ExtArgs> | null
     serviceInstances: Prisma.$ServiceInstancePayload<ExtArgs>[]
+    userCustomFormats: Prisma.$UserCustomFormatPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1564,6 +1705,7 @@ export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Typ
   webauthnCredentials<T extends Prisma.User$webauthnCredentialsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$webauthnCredentialsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$WebAuthnCredentialPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   trashSettings<T extends Prisma.User$trashSettingsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$trashSettingsArgs<ExtArgs>>): Prisma.Prisma__TrashSettingsClient<runtime.Types.Result.GetResult<Prisma.$TrashSettingsPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   serviceInstances<T extends Prisma.User$serviceInstancesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$serviceInstancesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ServiceInstancePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  userCustomFormats<T extends Prisma.User$userCustomFormatsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$userCustomFormatsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$UserCustomFormatPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -2101,6 +2243,30 @@ export type User$serviceInstancesArgs<ExtArgs extends runtime.Types.Extensions.I
   take?: number
   skip?: number
   distinct?: Prisma.ServiceInstanceScalarFieldEnum | Prisma.ServiceInstanceScalarFieldEnum[]
+}
+
+/**
+ * User.userCustomFormats
+ */
+export type User$userCustomFormatsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the UserCustomFormat
+   */
+  select?: Prisma.UserCustomFormatSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the UserCustomFormat
+   */
+  omit?: Prisma.UserCustomFormatOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.UserCustomFormatInclude<ExtArgs> | null
+  where?: Prisma.UserCustomFormatWhereInput
+  orderBy?: Prisma.UserCustomFormatOrderByWithRelationInput | Prisma.UserCustomFormatOrderByWithRelationInput[]
+  cursor?: Prisma.UserCustomFormatWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.UserCustomFormatScalarFieldEnum | Prisma.UserCustomFormatScalarFieldEnum[]
 }
 
 /**

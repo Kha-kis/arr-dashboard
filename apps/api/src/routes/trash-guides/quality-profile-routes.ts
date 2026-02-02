@@ -15,6 +15,7 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
+import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
 import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js";
 
@@ -78,10 +79,16 @@ export async function registerQualityProfileRoutes(
 		}
 	});
 
-	const fetcher = createTrashFetcher();
 	const cacheManager = createCacheManager(app.prisma);
 	const templateService = createTemplateService(app.prisma);
-	const versionTracker = createVersionTracker();
+
+	/** Create repo-aware services configured for the current user's repo settings */
+	async function getServices(userId: string) {
+		const repoConfig = await getRepoConfig(app.prisma, userId);
+		const fetcher = createTrashFetcher({ repoConfig, logger: app.log });
+		const versionTracker = createVersionTracker(repoConfig);
+		return { fetcher, versionTracker };
+	}
 
 	/**
 	 * GET /api/trash-guides/quality-profiles/:serviceType
@@ -101,6 +108,7 @@ export async function registerQualityProfileRoutes(
 			// If cache miss or stale, fetch fresh data
 			if (!profiles || !(await cacheManager.isFresh(serviceType, "QUALITY_PROFILES"))) {
 				app.log.info({ serviceType }, "Fetching quality profiles from GitHub");
+				const { fetcher } = await getServices(request.currentUser!.id);
 				profiles = await fetcher.fetchQualityProfiles(serviceType);
 				await cacheManager.set(serviceType, "QUALITY_PROFILES", profiles);
 			}
@@ -447,6 +455,7 @@ export async function registerQualityProfileRoutes(
 			// Fetch latest TRaSH Guides commit hash for version tracking
 			let latestCommitHash: string | undefined;
 			try {
+				const { versionTracker } = await getServices(request.currentUser!.id);
 				const latestCommit = await versionTracker.getLatestCommit();
 				latestCommitHash = latestCommit?.commitHash;
 				app.log.info(

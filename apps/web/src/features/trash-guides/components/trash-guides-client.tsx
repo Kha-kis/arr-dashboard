@@ -9,7 +9,9 @@ import { SchedulerStatusDashboard } from "./scheduler-status-dashboard";
 import { DeploymentHistoryTable } from "./deployment-history-table";
 import { BulkScoreManager } from "./bulk-score-manager";
 import { CustomFormatsBrowser } from "./custom-formats-browser";
+import { RepoSettingsSection } from "./repo-settings-section";
 import { PremiumEmptyState } from "../../../components/layout";
+import { ErrorBoundary } from "../../../components/error-boundary";
 import { CacheStatusSection } from "./cache-status-section";
 import { TrashGuidesTabs } from "./trash-guides-tabs";
 import { useTrashGuidesState } from "../hooks/use-trash-guides-state";
@@ -21,10 +23,7 @@ import { useCurrentUser } from "../../../hooks/api/useAuth";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
-/**
- * Premium Loading Skeleton for TRaSH Guides
- */
-const PremiumSkeleton = () => {
+function PremiumSkeleton() {
 	const { gradient: themeGradient } = useThemeGradient();
 
 	return (
@@ -43,14 +42,14 @@ const PremiumSkeleton = () => {
 				</div>
 			</div>
 
-			{/* Tabs Skeleton */}
+			{/* Tabs Skeleton — deterministic widths to avoid SSR hydration mismatch */}
 			<div className="flex gap-6 border-b border-border/30 pb-4">
-				{Array.from({ length: 6 }).map((_, i) => (
+				{[76, 62, 88, 64, 80, 72].map((w, i) => (
 					<div
 						key={i}
 						className="h-6 rounded bg-muted/20 animate-pulse"
 						style={{
-							width: `${60 + Math.random() * 40}px`,
+							width: `${w}px`,
 							animationDelay: `${i * 100}ms`,
 						}}
 					/>
@@ -77,33 +76,15 @@ const PremiumSkeleton = () => {
 			</div>
 		</div>
 	);
-};
+}
 
-/**
- * Premium TRaSH Guides Client Component
- *
- * Main orchestrator for the TRaSH Guides interface with:
- * - Theme-aware premium styling
- * - Glassmorphic effects
- * - Gradient accents
- * - Smooth animations
- */
-export const TrashGuidesClient = () => {
+export function TrashGuidesClient() {
 	const { gradient: themeGradient } = useThemeGradient();
 
-	// Get current user
 	const { data: currentUser, isLoading: isAuthLoading } = useCurrentUser();
-
-	// State management
 	const { activeTab, setActiveTab } = useTrashGuidesState();
-
-	// Data fetching
 	const { cacheStatus, isLoading, error, refetchCache } = useTrashGuidesData();
-
-	// Cache refresh and delete actions
 	const { handleRefresh, handleRefreshEntry, handleDelete, refreshing, refreshingEntry, refreshMutation, deleteMutation } = useTrashGuidesActions();
-
-	// Modal management
 	const {
 		editorOpen,
 		importOpen,
@@ -118,6 +99,114 @@ export const TrashGuidesClient = () => {
 		handleEditTemplate,
 		handleCloseQualityProfileBrowser,
 	} = useTrashGuidesModals();
+
+	function renderTabContent(): React.ReactNode {
+		switch (activeTab) {
+			case "cache":
+				return (
+					<div className="space-y-10">
+						<CacheStatusSection
+							serviceType="RADARR"
+							statuses={cacheStatus!.radarr}
+							configTypeLabels={CONFIG_TYPE_LABELS}
+							refreshing={refreshing === "RADARR"}
+							onRefresh={() => handleRefresh("RADARR")}
+							onRefreshEntry={handleRefreshEntry}
+							onDelete={handleDelete}
+							isRefreshPending={refreshMutation.isPending}
+							isDeletePending={deleteMutation.isPending}
+							refreshingEntry={refreshingEntry}
+						/>
+						<CacheStatusSection
+							serviceType="SONARR"
+							statuses={cacheStatus!.sonarr}
+							configTypeLabels={CONFIG_TYPE_LABELS}
+							refreshing={refreshing === "SONARR"}
+							onRefresh={() => handleRefresh("SONARR")}
+							onRefreshEntry={handleRefreshEntry}
+							onDelete={handleDelete}
+							isRefreshPending={refreshMutation.isPending}
+							isDeletePending={deleteMutation.isPending}
+							refreshingEntry={refreshingEntry}
+						/>
+					</div>
+				);
+			case "scheduler":
+				return <SchedulerStatusDashboard />;
+			case "history":
+				return (
+					<div className="space-y-6">
+						<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6">
+							<div className="flex items-start gap-4">
+								<div
+									className="flex h-12 w-12 items-center justify-center rounded-xl shrink-0"
+									style={{
+										background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+										border: `1px solid ${themeGradient.from}30`,
+									}}
+								>
+									<Zap className="h-6 w-6" style={{ color: themeGradient.from }} />
+								</div>
+								<div>
+									<h3
+										className="text-lg font-semibold"
+										style={{
+											background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+											WebkitBackgroundClip: "text",
+											WebkitTextFillColor: "transparent",
+										}}
+									>
+										Deployment History
+									</h3>
+									<p className="text-muted-foreground mt-1">
+										View all template deployments across your instances. Track deployment status, review applied configurations, and undeploy when needed.
+									</p>
+								</div>
+							</div>
+						</div>
+						<DeploymentHistoryTable />
+					</div>
+				);
+			case "bulk-scores":
+				return (
+					<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6">
+						{isAuthLoading ? (
+							<div className="flex items-center justify-center py-12">
+								<div
+									className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
+									style={{ borderColor: `${themeGradient.from}40`, borderTopColor: 'transparent' }}
+								/>
+							</div>
+						) : currentUser?.id ? (
+							<BulkScoreManager
+								userId={currentUser.id}
+								onOperationComplete={() => refetchCache()}
+							/>
+						) : (
+							<div className="text-center py-12">
+								<Sparkles className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+								<p className="text-muted-foreground">
+									Please log in to manage bulk scores
+								</p>
+							</div>
+						)}
+					</div>
+				);
+			case "custom-formats":
+				return <CustomFormatsBrowser />;
+			case "settings":
+				return <RepoSettingsSection />;
+			default:
+				return (
+					<TemplateList
+						onCreateNew={handleCreateNew}
+						onEdit={handleEditTemplate}
+						onImport={handleImport}
+						onBrowseQualityProfiles={handleBrowseQualityProfiles}
+					/>
+				);
+		}
+	}
 
 	if (isLoading) {
 		return <PremiumSkeleton />;
@@ -266,112 +355,12 @@ export const TrashGuidesClient = () => {
 				</div>
 			)}
 
-			{/* Tab Content */}
-			<div className="animate-in fade-in duration-300">
-				{activeTab === "cache" ? (
-					<div className="space-y-10">
-						<CacheStatusSection
-							serviceType="RADARR"
-							statuses={cacheStatus.radarr}
-							configTypeLabels={CONFIG_TYPE_LABELS}
-							refreshing={refreshing === "RADARR"}
-							onRefresh={() => handleRefresh("RADARR")}
-							onRefreshEntry={handleRefreshEntry}
-							onDelete={handleDelete}
-							isRefreshPending={refreshMutation.isPending}
-							isDeletePending={deleteMutation.isPending}
-							refreshingEntry={refreshingEntry}
-						/>
-						<CacheStatusSection
-							serviceType="SONARR"
-							statuses={cacheStatus.sonarr}
-							configTypeLabels={CONFIG_TYPE_LABELS}
-							refreshing={refreshing === "SONARR"}
-							onRefresh={() => handleRefresh("SONARR")}
-							onRefreshEntry={handleRefreshEntry}
-							onDelete={handleDelete}
-							isRefreshPending={refreshMutation.isPending}
-							isDeletePending={deleteMutation.isPending}
-							refreshingEntry={refreshingEntry}
-						/>
-					</div>
-				) : activeTab === "scheduler" ? (
-					<SchedulerStatusDashboard />
-				) : activeTab === "history" ? (
-					<div className="space-y-6">
-						{/* History Header Card */}
-						<div
-							className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6"
-						>
-							<div className="flex items-start gap-4">
-								<div
-									className="flex h-12 w-12 items-center justify-center rounded-xl shrink-0"
-									style={{
-										background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
-										border: `1px solid ${themeGradient.from}30`,
-									}}
-								>
-									<Zap className="h-6 w-6" style={{ color: themeGradient.from }} />
-								</div>
-								<div>
-									<h3
-										className="text-lg font-semibold"
-										style={{
-											background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-											WebkitBackgroundClip: "text",
-											WebkitTextFillColor: "transparent",
-										}}
-									>
-										Deployment History
-									</h3>
-									<p className="text-muted-foreground mt-1">
-										View all template deployments across your instances. Track deployment status, review applied configurations, and undeploy when needed.
-									</p>
-								</div>
-							</div>
-						</div>
-
-						{/* Global Deployment History Table */}
-						<DeploymentHistoryTable />
-					</div>
-				) : activeTab === "bulk-scores" ? (
-					<div
-						className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6"
-					>
-						{isAuthLoading ? (
-							<div className="flex items-center justify-center py-12">
-								<div
-									className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
-									style={{ borderColor: `${themeGradient.from}40`, borderTopColor: 'transparent' }}
-								/>
-							</div>
-						) : currentUser?.id ? (
-							<BulkScoreManager
-								userId={currentUser.id}
-								onOperationComplete={() => {
-									refetchCache();
-								}}
-							/>
-						) : (
-							<div className="text-center py-12">
-								<Sparkles className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-								<p className="text-muted-foreground">
-									Please log in to manage bulk scores
-								</p>
-							</div>
-						)}
-					</div>
-				) : activeTab === "custom-formats" ? (
-					<CustomFormatsBrowser />
-				) : (
-					<TemplateList
-						onCreateNew={handleCreateNew}
-						onEdit={handleEditTemplate}
-						onImport={handleImport}
-						onBrowseQualityProfiles={handleBrowseQualityProfiles}
-					/>
-				)}
-			</div>
+			{/* Tab Content -- key forces remount + re-animation on tab switch */}
+			<ErrorBoundary key={activeTab}>
+				<div className="animate-in fade-in duration-300">
+					{renderTabContent()}
+				</div>
+			</ErrorBoundary>
 
 			{/* Modals */}
 			<TemplateEditor
@@ -393,4 +382,4 @@ export const TrashGuidesClient = () => {
 			)}
 		</div>
 	);
-};
+}

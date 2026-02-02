@@ -35,6 +35,7 @@ model User {
   webauthnCredentials WebAuthnCredential[]
   trashSettings       TrashSettings?
   serviceInstances    ServiceInstance[]
+  userCustomFormats   UserCustomFormat[]
 }
 
 model Session {
@@ -397,6 +398,11 @@ model TrashSettings {
   backupRetention    Int      @default(10) // number of backups to keep per instance
   backupRetentionDays Int     @default(30) // days before backup auto-expires (0 = never expire)
 
+  // Custom upstream repository (null = official TRaSH-Guides/Guides)
+  customRepoOwner    String?   // GitHub owner
+  customRepoName     String?   // Repository name
+  customRepoBranch   String?   // Branch name
+
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
 
@@ -727,4 +733,30 @@ model LibrarySyncStatus {
   @@index([lastFullSync])
   @@index([pollingEnabled])
   @@map("library_sync_status")
+}
+
+// ============================================================================
+// User Custom Formats
+// User-created or imported custom formats for TRaSH Guides templates
+// ============================================================================
+
+model UserCustomFormat {
+  id                              String   @id @default(cuid())
+  userId                          String
+  name                            String
+  serviceType                     String   // "RADARR" | "SONARR"
+  description                     String?
+  includeCustomFormatWhenRenaming Boolean  @default(false)
+  specifications                  String   // JSON: CustomFormatSpecification[]
+  defaultScore                    Int      @default(0)
+  sourceInstanceId                String?  // If imported from an instance
+  sourceCFId                      Int?     // Original CF ID in the source instance
+  createdAt                       DateTime @default(now())
+  updatedAt                       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name, serviceType])
+  @@index([userId, serviceType])
+  @@map("user_custom_formats")
 }

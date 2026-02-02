@@ -9,6 +9,7 @@ import { z } from "zod";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createDeploymentExecutorService } from "../../lib/trash-guides/deployment-executor.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
+import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { createTemplateUpdater } from "../../lib/trash-guides/template-updater.js";
 import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js";
 
@@ -37,18 +38,24 @@ export async function registerUpdateRoutes(app: FastifyInstance, opts: FastifyPl
 		}
 	});
 
-	// Initialize services
-	const versionTracker = createVersionTracker();
+	// Shared services (repo-independent)
 	const cacheManager = createCacheManager(app.prisma);
-	const githubFetcher = createTrashFetcher();
 	const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.encryptor);
-	const templateUpdater = createTemplateUpdater(
-		app.prisma,
-		versionTracker,
-		cacheManager,
-		githubFetcher,
-		deploymentExecutor,
-	);
+
+	/** Create repo-aware services configured for the current user's repo settings */
+	async function getServices(userId: string) {
+		const repoConfig = await getRepoConfig(app.prisma, userId);
+		const versionTracker = createVersionTracker(repoConfig);
+		const githubFetcher = createTrashFetcher({ repoConfig, logger: app.log });
+		const templateUpdater = createTemplateUpdater(
+			app.prisma,
+			versionTracker,
+			cacheManager,
+			githubFetcher,
+			deploymentExecutor,
+		);
+		return { versionTracker, templateUpdater };
+	}
 
 	/**
 	 * GET /api/trash-guides/updates
@@ -56,6 +63,7 @@ export async function registerUpdateRoutes(app: FastifyInstance, opts: FastifyPl
 	 */
 	app.get("/", async (request, reply) => {
 		try {
+			const { templateUpdater } = await getServices(request.currentUser!.id);
 			const updateCheck = await templateUpdater.checkForUpdates(request.currentUser!.id);
 
 			return reply.send({
@@ -86,6 +94,7 @@ export async function registerUpdateRoutes(app: FastifyInstance, opts: FastifyPl
 	 */
 	app.get("/attention", async (request, reply) => {
 		try {
+			const { templateUpdater } = await getServices(request.currentUser!.id);
 			const templates = await templateUpdater.getTemplatesNeedingAttention(request.currentUser!.id);
 
 			return reply.send({
@@ -123,6 +132,7 @@ export async function registerUpdateRoutes(app: FastifyInstance, opts: FastifyPl
 			// - merge (default): Apply score updates but respect user overrides
 			const shouldApplyScores = body.applyScoreUpdates ?? body.strategy !== "keep_custom";
 
+			const { templateUpdater } = await getServices(request.currentUser!.id);
 			const result = await templateUpdater.syncTemplate(
 				id,
 				body.targetCommitHash,
@@ -190,6 +200,7 @@ export async function registerUpdateRoutes(app: FastifyInstance, opts: FastifyPl
 	 */
 	app.post("/process-auto", async (request, reply) => {
 		try {
+			const { templateUpdater } = await getServices(request.currentUser!.id);
 			const result = await templateUpdater.processAutoUpdates(request.currentUser!.id);
 
 			return reply.send({
@@ -225,6 +236,7 @@ export async function registerUpdateRoutes(app: FastifyInstance, opts: FastifyPl
 			const { id } = request.params;
 			const { targetCommit } = request.query;
 
+			const { templateUpdater } = await getServices(request.currentUser!.id);
 			const diffResult = await templateUpdater.getTemplateDiff(
 				id,
 				targetCommit,
@@ -271,6 +283,7 @@ export async function registerUpdateRoutes(app: FastifyInstance, opts: FastifyPl
 	 */
 	app.get("/version/latest", async (request, reply) => {
 		try {
+			const { versionTracker } = await getServices(request.currentUser!.id);
 			const latestCommit = await versionTracker.getLatestCommit();
 
 			return reply.send({

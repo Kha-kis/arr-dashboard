@@ -9,6 +9,7 @@ import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
+import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import type { TrashCustomFormat, CustomFormatSpecification } from "@arr/shared";
 import type { SonarrClient, RadarrClient } from "arr-sdk";
 
@@ -70,7 +71,12 @@ export async function registerCustomFormatRoutes(
 	});
 
 	const cacheManager = createCacheManager(app.prisma);
-	const fetcher = createTrashFetcher();
+
+	/** Create a fetcher configured for the current user's repo settings */
+	async function getFetcher(userId: string) {
+		const repoConfig = await getRepoConfig(app.prisma, userId);
+		return createTrashFetcher({ repoConfig, logger: app.log });
+	}
 
 	/**
 	 * POST /api/trash-guides/custom-formats/deploy-multiple
@@ -121,6 +127,7 @@ export async function registerCustomFormatRoutes(
 			let allCustomFormats: TrashCustomFormat[];
 
 			if (!isFresh) {
+				const fetcher = await getFetcher(request.currentUser!.id);
 				const data = await fetcher.fetchConfigs(serviceType, "CUSTOM_FORMATS");
 				await cacheManager.set(serviceType, "CUSTOM_FORMATS", data);
 				allCustomFormats = data as TrashCustomFormat[];
