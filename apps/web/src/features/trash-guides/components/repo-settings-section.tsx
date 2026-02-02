@@ -430,7 +430,7 @@ export const RepoSettingsSection = () => {
 					>
 						<CheckCircle2 className="h-4 w-4" />
 						{updateMutation.data.cacheCleared
-							? "Settings saved — cache is being populated from the new repository."
+							? "Settings saved — cache is repopulating from the new repository (this may take up to a minute)."
 							: "Settings saved."}
 					</div>
 				)}
@@ -486,7 +486,7 @@ export const RepoSettingsSection = () => {
 							Reset complete — using official TRaSH-Guides repository.
 							{resetMutation.data.cacheEntriesCleared > 0 && (
 								<span className="text-muted-foreground ml-1">
-									({resetMutation.data.cacheEntriesCleared} cache entries cleared)
+									Cache is repopulating in the background (this may take up to a minute).
 								</span>
 							)}
 						</div>

@@ -1,8 +1,3 @@
-/**
- * Custom hook for fetching CF configuration data
- * Extracted from cf-configuration.tsx to reduce component complexity
- */
-
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../../lib/api-client/base";
 import type { QualityProfileSummary } from "../../lib/api-client/trash-guides";
@@ -112,25 +107,16 @@ export function useCFConfiguration({
 				? ["cloned-profile-details", qualityProfile.trashId]
 				: ["quality-profile-details", serviceType, qualityProfile.trashId],
 		queryFn: async () => {
-			try {
-				if (isEditMode && editingTemplate) {
-					return await fetchEditModeData(serviceType, editingTemplate);
-				} else if (isCloned && qualityProfile.trashId) {
-					// Handle cloned profile - fetch from source instance
-					return await fetchClonedProfileData(qualityProfile.trashId);
-				} else {
-					// Guard: trashId must exist in normal mode
-					if (!qualityProfile.trashId) {
-						throw new Error("Missing trashId for quality profile fetch");
-					}
-					return await fetchNormalModeData(serviceType, qualityProfile.trashId);
-				}
-			} catch (error) {
-				console.error("Failed to fetch CF configuration:", error);
-				throw new Error(
-					`Failed to load custom formats: ${error instanceof Error ? error.message : "Unknown error"}`
-				);
+			if (isEditMode && editingTemplate) {
+				return await fetchEditModeData(serviceType, editingTemplate);
 			}
+			if (isCloned && qualityProfile.trashId) {
+				return await fetchClonedProfileData(qualityProfile.trashId);
+			}
+			if (!qualityProfile.trashId) {
+				throw new Error("Missing trashId for quality profile fetch");
+			}
+			return await fetchNormalModeData(serviceType, qualityProfile.trashId);
 		},
 		// Only enable in edit mode (with template) or normal mode (with valid trashId)
 		enabled: isEditMode ? !!editingTemplate : hasValidTrashId,
@@ -206,30 +192,47 @@ function getDefaultQualitiesForService(serviceType: string): Array<{
 }
 
 /**
- * Fetch CF descriptions from cache and build a slug→description Map.
- * Replicates the server-side enrichment logic from quality-profile-routes.ts.
- * Slug format: lowercase name with spaces replaced by hyphens, non-alphanumeric stripped.
+ * Fetch CF descriptions and build lookup Maps for enrichment.
+ *
+ * Uses the dedicated cf-descriptions/list endpoint which lazy-loads
+ * descriptions from GitHub on demand (the generic /cache/entries endpoint
+ * does NOT populate CF_DESCRIPTIONS during full cache refresh).
+ *
+ * Returns two maps for multi-strategy matching:
+ * - bySlug: cfName slug → description (primary, e.g. "br-disk")
+ * - byDisplayName: lowercased displayName → description (fallback, e.g. "br-disk")
  */
-async function fetchCFDescriptionMap(serviceType: string): Promise<Map<string, { description: string; displayName: string }>> {
-	const map = new Map<string, { description: string; displayName: string }>();
+type DescEntry = { description: string; displayName: string };
+
+async function fetchCFDescriptionMap(serviceType: string): Promise<{
+	bySlug: Map<string, DescEntry>;
+	byDisplayName: Map<string, DescEntry>;
+}> {
+	const bySlug = new Map<string, DescEntry>();
+	const byDisplayName = new Map<string, DescEntry>();
 	try {
 		const res = await apiRequest<any>(
-			`/api/trash-guides/cache/entries?serviceType=${serviceType}&configType=CF_DESCRIPTIONS`
+			`/api/trash-guides/cache/cf-descriptions/list?serviceType=${serviceType}`
 		);
-		const entry = Array.isArray(res) ? res[0] : res;
-		const descriptions: any[] = entry?.data || [];
+		const serviceKey = serviceType.toLowerCase();
+		const descriptions: any[] = res?.[serviceKey] || [];
 		for (const desc of descriptions) {
-			if (desc.cfName) {
-				map.set(desc.cfName, {
-					description: desc.description || "",
+			if (desc.cfName && desc.description) {
+				const entry: DescEntry = {
+					description: desc.description,
 					displayName: desc.displayName || "",
-				});
+				};
+				bySlug.set(desc.cfName, entry);
+				if (desc.displayName) {
+					byDisplayName.set(desc.displayName.toLowerCase(), entry);
+				}
 			}
 		}
-	} catch {
+	} catch (error) {
 		// Descriptions are optional enrichment; don't fail the whole flow
+		console.warn("[useCFConfiguration] Failed to fetch CF descriptions:", error);
 	}
-	return map;
+	return { bySlug, byDisplayName };
 }
 
 /**
@@ -241,15 +244,41 @@ function cfNameToSlug(name: string): string {
 }
 
 /**
- * Enrich a CF object with description from the description map.
- * Falls back to existing description/trash_description if no match found.
+ * Enrich a CF object with description using multiple matching strategies.
+ * Mirrors the 4-strategy approach from custom-formats-browser.tsx.
  */
 function enrichWithDescription(
 	cf: any,
-	descMap: Map<string, { description: string; displayName: string }>,
+	descMaps: { bySlug: Map<string, DescEntry>; byDisplayName: Map<string, DescEntry> },
 ): { description: string; displayName: string } {
-	const slug = cfNameToSlug(cf.name || cf.originalConfig?.name || "");
-	const match = descMap.get(slug);
+	const name = cf.name || cf.originalConfig?.name || "";
+	const slug = cfNameToSlug(name);
+	const nameLower = name.toLowerCase();
+
+	// Strategy 1: Exact slug match (e.g. "BR-DISK" → "br-disk")
+	let match = descMaps.bySlug.get(slug);
+
+	// Strategy 2: Display name match (case-insensitive)
+	if (!match) {
+		match = descMaps.byDisplayName.get(nameLower);
+	}
+
+	// Strategies 3 & 4: Strip parenthetical suffix (e.g. "ATMOS (undefined)" → "atmos")
+	if (!match) {
+		const baseName = nameLower.replace(/\s*\([^)]*\)\s*$/, "").trim();
+		const baseSlug = cfNameToSlug(baseName);
+
+		if (baseSlug !== slug) {
+			// Strategy 3: Base slug match
+			match = descMaps.bySlug.get(baseSlug);
+
+			// Strategy 4: Base display name match
+			if (!match) {
+				match = descMaps.byDisplayName.get(baseName);
+			}
+		}
+	}
+
 	return {
 		description: match?.description || cf.trash_description || cf.description || "",
 		displayName: match?.displayName || cf.displayName || cf.name || "",
@@ -462,7 +491,7 @@ function extractQualityItems(profile: any): Array<{
 
 async function fetchAvailableFormats(
 	serviceType: string,
-	existingDescMap?: Map<string, { description: string; displayName: string }>,
+	existingDescMap?: { bySlug: Map<string, DescEntry>; byDisplayName: Map<string, DescEntry> },
 ) {
 	const customFormatsRes = await apiRequest<any>(
 		`/api/trash-guides/cache/entries?serviceType=${serviceType}&configType=CUSTOM_FORMATS`
@@ -513,8 +542,9 @@ async function fetchAvailableFormats(
 		}));
 
 		return [...trashFormats, ...userFormats];
-	} catch {
+	} catch (error) {
 		// User CFs are optional enrichment; don't fail the whole flow
+		console.warn("[useCFConfiguration] Failed to fetch user custom formats:", error);
 		return trashFormats;
 	}
 }

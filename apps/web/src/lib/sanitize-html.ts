@@ -40,8 +40,24 @@ function getDOMPurify(): typeof import("dompurify").default | null {
 	}
 
 	if (!DOMPurify) {
-		// Dynamic require for browser-only usage (synchronous loading needed here)
-		DOMPurify = require("dompurify").default;
+		try {
+			// Dynamic require for browser-only usage (synchronous loading needed here)
+			// DOMPurify v3 CJS exports the instance directly (not as .default)
+			// Use fallback pattern to support both CJS and ESM interop
+			const mod = require("dompurify");
+			const instance = mod.default || mod;
+
+			// Validate the loaded module has the expected API
+			if (typeof instance?.sanitize !== "function") {
+				console.error("[sanitize-html] DOMPurify loaded but sanitize() not found");
+				return null;
+			}
+
+			DOMPurify = instance;
+		} catch (error) {
+			console.error("[sanitize-html] Failed to load DOMPurify:", error);
+			return null;
+		}
 
 		// Initialize hooks on first load
 		if (DOMPurify && !hooksInitialized) {
