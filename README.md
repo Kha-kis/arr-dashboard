@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.7.1** - TRaSH template persistence fix + Next.js security patch
+> **Version 2.7.2** - Custom upstream repos, user custom formats & bug fixes
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -141,6 +141,9 @@ docker-compose up -d
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.7.2` | Custom upstream repos, user custom formats & bug fixes |
+| `2.7.1` | TRaSH template persistence fix + Next.js security patch |
+| `2.7.0` | Major stack upgrade (Node 22, Next.js 16, Prisma 7, Tailwind 4) |
 | `2.6.7` | Bug fixes for Unraid, OIDC, hunting + sync metrics telemetry |
 | `2.6.6` | Sync strategy-specific score handling for TRaSH Guides |
 | `2.6.5` | Fix permission errors on Unraid/PostgreSQL, System Information display |
