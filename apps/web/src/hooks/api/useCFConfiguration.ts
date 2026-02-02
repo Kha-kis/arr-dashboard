@@ -1,8 +1,3 @@
-/**
- * Custom hook for fetching CF configuration data
- * Extracted from cf-configuration.tsx to reduce component complexity
- */
-
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../../lib/api-client/base";
 import type { QualityProfileSummary } from "../../lib/api-client/trash-guides";
@@ -112,25 +107,16 @@ export function useCFConfiguration({
 				? ["cloned-profile-details", qualityProfile.trashId]
 				: ["quality-profile-details", serviceType, qualityProfile.trashId],
 		queryFn: async () => {
-			try {
-				if (isEditMode && editingTemplate) {
-					return await fetchEditModeData(serviceType, editingTemplate);
-				} else if (isCloned && qualityProfile.trashId) {
-					// Handle cloned profile - fetch from source instance
-					return await fetchClonedProfileData(qualityProfile.trashId);
-				} else {
-					// Guard: trashId must exist in normal mode
-					if (!qualityProfile.trashId) {
-						throw new Error("Missing trashId for quality profile fetch");
-					}
-					return await fetchNormalModeData(serviceType, qualityProfile.trashId);
-				}
-			} catch (error) {
-				console.error("Failed to fetch CF configuration:", error);
-				throw new Error(
-					`Failed to load custom formats: ${error instanceof Error ? error.message : "Unknown error"}`
-				);
+			if (isEditMode && editingTemplate) {
+				return await fetchEditModeData(serviceType, editingTemplate);
 			}
+			if (isCloned && qualityProfile.trashId) {
+				return await fetchClonedProfileData(qualityProfile.trashId);
+			}
+			if (!qualityProfile.trashId) {
+				throw new Error("Missing trashId for quality profile fetch");
+			}
+			return await fetchNormalModeData(serviceType, qualityProfile.trashId);
 		},
 		// Only enable in edit mode (with template) or normal mode (with valid trashId)
 		enabled: isEditMode ? !!editingTemplate : hasValidTrashId,
@@ -205,20 +191,119 @@ function getDefaultQualitiesForService(serviceType: string): Array<{
 	return serviceType === "RADARR" ? RADARR_DEFAULT_QUALITIES : SONARR_DEFAULT_QUALITIES;
 }
 
+/**
+ * Fetch CF descriptions and build lookup Maps for enrichment.
+ *
+ * Uses the dedicated cf-descriptions/list endpoint which lazy-loads
+ * descriptions from GitHub on demand (the generic /cache/entries endpoint
+ * does NOT populate CF_DESCRIPTIONS during full cache refresh).
+ *
+ * Returns two maps for multi-strategy matching:
+ * - bySlug: cfName slug → description (primary, e.g. "br-disk")
+ * - byDisplayName: lowercased displayName → description (fallback, e.g. "br-disk")
+ */
+type DescEntry = { description: string; displayName: string };
+
+async function fetchCFDescriptionMap(serviceType: string): Promise<{
+	bySlug: Map<string, DescEntry>;
+	byDisplayName: Map<string, DescEntry>;
+}> {
+	const bySlug = new Map<string, DescEntry>();
+	const byDisplayName = new Map<string, DescEntry>();
+	try {
+		const res = await apiRequest<any>(
+			`/api/trash-guides/cache/cf-descriptions/list?serviceType=${serviceType}`
+		);
+		const serviceKey = serviceType.toLowerCase();
+		const descriptions: any[] = res?.[serviceKey] || [];
+		for (const desc of descriptions) {
+			if (desc.cfName && desc.description) {
+				const entry: DescEntry = {
+					description: desc.description,
+					displayName: desc.displayName || "",
+				};
+				bySlug.set(desc.cfName, entry);
+				if (desc.displayName) {
+					byDisplayName.set(desc.displayName.toLowerCase(), entry);
+				}
+			}
+		}
+	} catch (error) {
+		// Descriptions are optional enrichment; don't fail the whole flow
+		console.warn("[useCFConfiguration] Failed to fetch CF descriptions:", error);
+	}
+	return { bySlug, byDisplayName };
+}
+
+/**
+ * Convert a CF name to the slug format used for description lookup.
+ * Matches the server-side logic: lowercase → spaces to hyphens → strip non-alphanumeric.
+ */
+function cfNameToSlug(name: string): string {
+	return name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+}
+
+/**
+ * Enrich a CF object with description using multiple matching strategies.
+ * Mirrors the 4-strategy approach from custom-formats-browser.tsx.
+ */
+function enrichWithDescription(
+	cf: any,
+	descMaps: { bySlug: Map<string, DescEntry>; byDisplayName: Map<string, DescEntry> },
+): { description: string; displayName: string } {
+	const name = cf.name || cf.originalConfig?.name || "";
+	const slug = cfNameToSlug(name);
+	const nameLower = name.toLowerCase();
+
+	// Strategy 1: Exact slug match (e.g. "BR-DISK" → "br-disk")
+	let match = descMaps.bySlug.get(slug);
+
+	// Strategy 2: Display name match (case-insensitive)
+	if (!match) {
+		match = descMaps.byDisplayName.get(nameLower);
+	}
+
+	// Strategies 3 & 4: Strip parenthetical suffix (e.g. "ATMOS (undefined)" → "atmos")
+	if (!match) {
+		const baseName = nameLower.replace(/\s*\([^)]*\)\s*$/, "").trim();
+		const baseSlug = cfNameToSlug(baseName);
+
+		if (baseSlug !== slug) {
+			// Strategy 3: Base slug match
+			match = descMaps.bySlug.get(baseSlug);
+
+			// Strategy 4: Base display name match
+			if (!match) {
+				match = descMaps.byDisplayName.get(baseName);
+			}
+		}
+	}
+
+	return {
+		description: match?.description || cf.trash_description || cf.description || "",
+		displayName: match?.displayName || cf.displayName || cf.name || "",
+	};
+}
+
 async function fetchEditModeData(serviceType: string, editingTemplate: any) {
 	const templateCFs = editingTemplate.config.customFormats || [];
 	const templateCFGroups = editingTemplate.config.customFormatGroups || [];
+
+	// Fetch description map for enrichment
+	const descMap = await fetchCFDescriptionMap(serviceType);
 
 	// Extract custom formats from template's originalConfig
 	const mandatoryCFs = templateCFs.map((cf: any) => {
 		const trashScores = cf.originalConfig?.trash_scores || {};
 		const defaultScore = trashScores.default || 0;
+		const cfName = cf.originalConfig?.name || cf.name;
+		const enriched = enrichWithDescription({ name: cfName, ...cf }, descMap);
 
 		return {
 			trash_id: cf.trashId,
-			name: cf.originalConfig?.name || cf.name,
-			displayName: cf.originalConfig?.name || cf.name,
-			description: "",
+			name: cfName,
+			displayName: enriched.displayName,
+			description: enriched.description,
 			defaultScore,
 			scoreOverride: cf.scoreOverride,
 			source: "template" as const,
@@ -227,8 +312,8 @@ async function fetchEditModeData(serviceType: string, editingTemplate: any) {
 		};
 	});
 
-	// Fetch all available custom formats from cache
-	const availableFormats = await fetchAvailableFormats(serviceType);
+	// Fetch all available custom formats from cache (pass descMap for enrichment)
+	const availableFormats = await fetchAvailableFormats(serviceType, descMap);
 
 	// Map CF Groups
 	const cfGroups = templateCFGroups.map((cfGroup: any) => ({
@@ -281,37 +366,48 @@ async function fetchClonedProfileData(trashId: string) {
 
 	const { profile, customFormats, allCustomFormats } = response.data;
 
+	// Detect service type from instance for description enrichment
+	// Instance response may include serviceType; fall back to inferring from trashId
+	const instanceServiceType = response.data.serviceType || "RADARR";
+	const descMap = await fetchCFDescriptionMap(instanceServiceType);
+
 	// Convert instance CFs to the format expected by the wizard
-	const mandatoryCFs = customFormats.map((cf: any) => ({
-		trash_id: cf.trash_id,
-		name: cf.name,
-		displayName: cf.name,
-		description: "",
-		score: cf.score,
-		defaultScore: cf.score,
-		source: "instance" as const,
-		locked: false,
-		specifications: cf.specifications,
-		originalConfig: {
+	const mandatoryCFs = customFormats.map((cf: any) => {
+		const enriched = enrichWithDescription(cf, descMap);
+		return {
+			trash_id: cf.trash_id,
 			name: cf.name,
+			displayName: enriched.displayName,
+			description: enriched.description,
+			score: cf.score,
+			defaultScore: cf.score,
+			source: "instance" as const,
+			locked: false,
 			specifications: cf.specifications,
-			includeCustomFormatWhenRenaming: cf.includeCustomFormatWhenRenaming,
-		},
-	}));
+			originalConfig: {
+				name: cf.name,
+				specifications: cf.specifications,
+				includeCustomFormatWhenRenaming: cf.includeCustomFormatWhenRenaming,
+			},
+		};
+	});
 
 	// All instance CFs as available formats
-	const availableFormats = allCustomFormats.map((cf: any) => ({
-		trash_id: cf.trash_id,
-		name: cf.name,
-		displayName: cf.name,
-		description: "",
-		score: 0, // Instance CFs don't have TRaSH scores by default
-		originalConfig: {
+	const availableFormats = allCustomFormats.map((cf: any) => {
+		const enriched = enrichWithDescription(cf, descMap);
+		return {
+			trash_id: cf.trash_id,
 			name: cf.name,
-			specifications: cf.specifications,
-			includeCustomFormatWhenRenaming: cf.includeCustomFormatWhenRenaming,
-		},
-	}));
+			displayName: enriched.displayName,
+			description: enriched.description,
+			score: 0, // Instance CFs don't have TRaSH scores by default
+			originalConfig: {
+				name: cf.name,
+				specifications: cf.specifications,
+				includeCustomFormatWhenRenaming: cf.includeCustomFormatWhenRenaming,
+			},
+		};
+	});
 
 	// Extract quality items from cloned profile
 	const qualityItems = profile.items?.map((item: any) => ({
@@ -393,7 +489,10 @@ function extractQualityItems(profile: any): Array<{
 	}));
 }
 
-async function fetchAvailableFormats(serviceType: string) {
+async function fetchAvailableFormats(
+	serviceType: string,
+	existingDescMap?: { bySlug: Map<string, DescEntry>; byDisplayName: Map<string, DescEntry> },
+) {
 	const customFormatsRes = await apiRequest<any>(
 		`/api/trash-guides/cache/entries?serviceType=${serviceType}&configType=CUSTOM_FORMATS`
 	);
@@ -404,14 +503,48 @@ async function fetchAvailableFormats(serviceType: string) {
 
 	const allCustomFormats = customFormatsCacheEntry?.data || [];
 
+	// Fetch descriptions if not already provided by caller
+	const descMap = existingDescMap ?? await fetchCFDescriptionMap(serviceType);
+
 	// Note: We include originalConfig which contains trash_scores.
 	// The component resolves the actual score using the profile's scoreSet.
 	// No need to pre-compute 'score' here since it would only use default.
-	return allCustomFormats.map((cf: any) => ({
-		trash_id: cf.trash_id,
-		name: cf.name,
-		displayName: cf.name,
-		description: cf.trash_description || "",
-		originalConfig: cf,
-	}));
+	const trashFormats = allCustomFormats.map((cf: any) => {
+		const enriched = enrichWithDescription(cf, descMap);
+		return {
+			trash_id: cf.trash_id,
+			name: cf.name,
+			displayName: enriched.displayName,
+			description: enriched.description,
+			originalConfig: cf,
+		};
+	});
+
+	// Also fetch user custom formats and merge them in
+	try {
+		const userCFsRes = await apiRequest<any>(
+			`/api/trash-guides/user-custom-formats?serviceType=${serviceType}`
+		);
+		const userCFs = userCFsRes?.customFormats || [];
+
+		const userFormats = userCFs.map((cf: any) => ({
+			trash_id: `user-${cf.id}`,
+			name: cf.name,
+			displayName: cf.name,
+			description: cf.description || "",
+			_source: "user_created" as const,
+			originalConfig: {
+				name: cf.name,
+				specifications: cf.specifications,
+				includeCustomFormatWhenRenaming: cf.includeCustomFormatWhenRenaming,
+				trash_scores: { default: cf.defaultScore },
+			},
+		}));
+
+		return [...trashFormats, ...userFormats];
+	} catch (error) {
+		// User CFs are optional enrichment; don't fail the whole flow
+		console.warn("[useCFConfiguration] Failed to fetch user custom formats:", error);
+		return trashFormats;
+	}
 }

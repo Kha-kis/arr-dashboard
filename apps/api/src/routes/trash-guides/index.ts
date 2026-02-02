@@ -18,6 +18,7 @@ import { registerSyncRoutes } from "./sync-routes.js";
 import { registerTemplateRoutes } from "./template-routes.js";
 import templateSharingRoutes from "./template-sharing-routes.js";
 import { registerUpdateRoutes } from "./update-routes.js";
+import { registerUserCustomFormatRoutes } from "./user-custom-format-routes.js";
 
 export async function registerTrashGuidesRoutes(app: FastifyInstance, opts: FastifyPluginOptions) {
 	// Register cache routes under /cache
@@ -58,4 +59,7 @@ export async function registerTrashGuidesRoutes(app: FastifyInstance, opts: Fast
 
 	// Register settings routes under /settings
 	app.register(registerSettingsRoutes, { prefix: "/settings" });
+
+	// Register user custom format routes under /user-custom-formats
+	app.register(registerUserCustomFormatRoutes, { prefix: "/user-custom-formats" });
 }

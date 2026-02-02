@@ -408,7 +408,8 @@ export const ModelName = {
   HuntLog: 'HuntLog',
   HuntSearchHistory: 'HuntSearchHistory',
   LibraryCache: 'LibraryCache',
-  LibrarySyncStatus: 'LibrarySyncStatus'
+  LibrarySyncStatus: 'LibrarySyncStatus',
+  UserCustomFormat: 'UserCustomFormat'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -424,7 +425,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -2278,6 +2279,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    UserCustomFormat: {
+      payload: Prisma.$UserCustomFormatPayload<ExtArgs>
+      fields: Prisma.UserCustomFormatFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.UserCustomFormatFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserCustomFormatPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.UserCustomFormatFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserCustomFormatPayload>
+        }
+        findFirst: {
+          args: Prisma.UserCustomFormatFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserCustomFormatPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.UserCustomFormatFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserCustomFormatPayload>
+        }
+        findMany: {
+          args: Prisma.UserCustomFormatFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserCustomFormatPayload>[]
+        }
+        create: {
+          args: Prisma.UserCustomFormatCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserCustomFormatPayload>
+        }
+        createMany: {
+          args: Prisma.UserCustomFormatCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.UserCustomFormatCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserCustomFormatPayload>[]
+        }
+        delete: {
+          args: Prisma.UserCustomFormatDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserCustomFormatPayload>
+        }
+        update: {
+          args: Prisma.UserCustomFormatUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserCustomFormatPayload>
+        }
+        deleteMany: {
+          args: Prisma.UserCustomFormatDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.UserCustomFormatUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.UserCustomFormatUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserCustomFormatPayload>[]
+        }
+        upsert: {
+          args: Prisma.UserCustomFormatUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$UserCustomFormatPayload>
+        }
+        aggregate: {
+          args: Prisma.UserCustomFormatAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateUserCustomFormat>
+        }
+        groupBy: {
+          args: Prisma.UserCustomFormatGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.UserCustomFormatGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.UserCustomFormatCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.UserCustomFormatCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -2566,6 +2641,9 @@ export const TrashSettingsScalarFieldEnum = {
   notifyOnSyncFail: 'notifyOnSyncFail',
   backupRetention: 'backupRetention',
   backupRetentionDays: 'backupRetentionDays',
+  customRepoOwner: 'customRepoOwner',
+  customRepoName: 'customRepoName',
+  customRepoBranch: 'customRepoBranch',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
@@ -2753,6 +2831,24 @@ export const LibrarySyncStatusScalarFieldEnum = {
 } as const
 
 export type LibrarySyncStatusScalarFieldEnum = (typeof LibrarySyncStatusScalarFieldEnum)[keyof typeof LibrarySyncStatusScalarFieldEnum]
+
+
+export const UserCustomFormatScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  name: 'name',
+  serviceType: 'serviceType',
+  description: 'description',
+  includeCustomFormatWhenRenaming: 'includeCustomFormatWhenRenaming',
+  specifications: 'specifications',
+  defaultScore: 'defaultScore',
+  sourceInstanceId: 'sourceInstanceId',
+  sourceCFId: 'sourceCFId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type UserCustomFormatScalarFieldEnum = (typeof UserCustomFormatScalarFieldEnum)[keyof typeof UserCustomFormatScalarFieldEnum]
 
 
 export const SortOrder = {
@@ -2959,6 +3055,7 @@ export type GlobalOmitConfig = {
   huntSearchHistory?: Prisma.HuntSearchHistoryOmit
   libraryCache?: Prisma.LibraryCacheOmit
   librarySyncStatus?: Prisma.LibrarySyncStatusOmit
+  userCustomFormat?: Prisma.UserCustomFormatOmit
 }
 
 /* Types for Logging */

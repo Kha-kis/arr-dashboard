@@ -165,3 +165,8 @@ export type LibraryCache = Prisma.LibraryCacheModel
  * Tracks sync status per instance for the library cache
  */
 export type LibrarySyncStatus = Prisma.LibrarySyncStatusModel
+/**
+ * Model UserCustomFormat
+ * 
+ */
+export type UserCustomFormat = Prisma.UserCustomFormatModel

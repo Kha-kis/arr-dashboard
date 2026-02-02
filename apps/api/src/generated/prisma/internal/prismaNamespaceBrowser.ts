@@ -75,7 +75,8 @@ export const ModelName = {
   HuntLog: 'HuntLog',
   HuntSearchHistory: 'HuntSearchHistory',
   LibraryCache: 'LibraryCache',
-  LibrarySyncStatus: 'LibrarySyncStatus'
+  LibrarySyncStatus: 'LibrarySyncStatus',
+  UserCustomFormat: 'UserCustomFormat'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -343,6 +344,9 @@ export const TrashSettingsScalarFieldEnum = {
   notifyOnSyncFail: 'notifyOnSyncFail',
   backupRetention: 'backupRetention',
   backupRetentionDays: 'backupRetentionDays',
+  customRepoOwner: 'customRepoOwner',
+  customRepoName: 'customRepoName',
+  customRepoBranch: 'customRepoBranch',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const
@@ -530,6 +534,24 @@ export const LibrarySyncStatusScalarFieldEnum = {
 } as const
 
 export type LibrarySyncStatusScalarFieldEnum = (typeof LibrarySyncStatusScalarFieldEnum)[keyof typeof LibrarySyncStatusScalarFieldEnum]
+
+
+export const UserCustomFormatScalarFieldEnum = {
+  id: 'id',
+  userId: 'userId',
+  name: 'name',
+  serviceType: 'serviceType',
+  description: 'description',
+  includeCustomFormatWhenRenaming: 'includeCustomFormatWhenRenaming',
+  specifications: 'specifications',
+  defaultScore: 'defaultScore',
+  sourceInstanceId: 'sourceInstanceId',
+  sourceCFId: 'sourceCFId',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type UserCustomFormatScalarFieldEnum = (typeof UserCustomFormatScalarFieldEnum)[keyof typeof UserCustomFormatScalarFieldEnum]
 
 
 export const SortOrder = {

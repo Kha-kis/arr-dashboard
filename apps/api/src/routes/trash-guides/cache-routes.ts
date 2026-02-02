@@ -10,6 +10,7 @@ import type { FastifyInstance, FastifyPluginOptions, FastifyRequest } from "fast
 import { z } from "zod";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher, getRateLimitState } from "../../lib/trash-guides/github-fetcher.js";
+import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 
 // ============================================================================
 // Request Schemas
@@ -68,7 +69,12 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 	});
 
 	const cacheManager = createCacheManager(app.prisma);
-	const fetcher = createTrashFetcher();
+
+	/** Create a fetcher configured for the current user's repo settings */
+	async function getFetcher(userId: string) {
+		const repoConfig = await getRepoConfig(app.prisma, userId);
+		return createTrashFetcher({ repoConfig, logger: app.log });
+	}
 
 	/**
 	 * GET /api/trash-guides/cache/:serviceType/:configType
@@ -87,6 +93,7 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 				// Cache is stale or doesn't exist, fetch fresh data
 				app.log.info({ serviceType, configType }, "Cache miss or stale, fetching fresh data");
 
+				const fetcher = await getFetcher(request.currentUser!.id);
 				const data = await fetcher.fetchConfigs(serviceType, configType);
 				await cacheManager.set(serviceType, configType, data);
 
@@ -151,6 +158,7 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 
 				app.log.info({ serviceType, configType, force }, "Refreshing cache");
 
+				const fetcher = await getFetcher(request.currentUser!.id);
 				const data = await fetcher.fetchConfigs(serviceType, configType);
 				await cacheManager.set(serviceType, configType, data);
 
@@ -176,6 +184,8 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 			const configTypes = (Object.values(TRASH_CONFIG_TYPES) as TrashConfigType[]).filter(
 				(type) => !SKIP_DURING_FULL_REFRESH.includes(type),
 			);
+
+			const fetcher = await getFetcher(request.currentUser!.id);
 
 			for (const type of configTypes) {
 				try {
@@ -373,6 +383,7 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 
 				if (!isFresh) {
 					// Fetch fresh data if cache is stale
+					const fetcher = await getFetcher(request.currentUser!.id);
 					const data = await fetcher.fetchConfigs(service as "RADARR" | "SONARR", "CUSTOM_FORMATS");
 					await cacheManager.set(service as "RADARR" | "SONARR", "CUSTOM_FORMATS", data);
 					results[service.toLowerCase()] = data;
@@ -414,6 +425,7 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 				);
 
 				if (!isFresh) {
+					const fetcher = await getFetcher(request.currentUser!.id);
 					const data = await fetcher.fetchConfigs(
 						service as "RADARR" | "SONARR",
 						"CF_DESCRIPTIONS",
@@ -488,12 +500,13 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 	 * These are MkDocs snippets shared across CF descriptions.
 	 * Stored under RADARR serviceType as a convention (includes are shared).
 	 */
-	app.get("/cf-includes/list", async (_request, reply) => {
+	app.get("/cf-includes/list", async (request, reply) => {
 		try {
 			// CF includes are stored under RADARR as they're shared across services
 			const isFresh = await cacheManager.isFresh("RADARR", "CF_INCLUDES");
 
 			if (!isFresh) {
+				const fetcher = await getFetcher(request.currentUser!.id);
 				const data = await fetcher.fetchConfigs("RADARR", "CF_INCLUDES");
 				await cacheManager.set("RADARR", "CF_INCLUDES", data);
 				return reply.send({ data });

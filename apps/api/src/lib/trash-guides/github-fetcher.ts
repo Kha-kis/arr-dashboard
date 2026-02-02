@@ -14,7 +14,9 @@ import type {
 	TrashNamingScheme,
 	TrashQualityProfile,
 	TrashQualitySize,
+	TrashRepoConfig,
 } from "@arr/shared";
+import { DEFAULT_TRASH_REPO } from "@arr/shared";
 import type { FastifyBaseLogger } from "fastify";
 import DOMPurify from "isomorphic-dompurify";
 import { marked } from "marked";
@@ -99,13 +101,6 @@ function sanitizeHtml(html: string): string {
 // ============================================================================
 // Constants
 // ============================================================================
-
-const TRASH_GITHUB_BASE_URL =
-	"https://raw.githubusercontent.com/TRaSH-Guides/Guides/master/docs/json";
-const TRASH_METADATA_URL =
-	"https://raw.githubusercontent.com/TRaSH-Guides/Guides/master/metadata.json";
-const TRASH_CF_DESCRIPTIONS_BASE_URL =
-	"https://raw.githubusercontent.com/TRaSH-Guides/Guides/master/includes/cf-descriptions";
 
 const FETCH_TIMEOUT_MS = 15000; // 15 seconds
 const MAX_RETRIES = 3;
@@ -201,6 +196,11 @@ interface FetchOptions {
 	 * If not provided, uses no-op logger (silent).
 	 */
 	logger?: Logger | FastifyBaseLogger;
+	/**
+	 * Custom repository configuration. If not provided, uses official TRaSH-Guides/Guides.
+	 * Forks must follow the same directory structure as the official repo.
+	 */
+	repoConfig?: TrashRepoConfig;
 }
 
 interface TrashMetadata {
@@ -379,28 +379,6 @@ async function fetchWithRetry(
 	throw lastError || new Error("Fetch failed after all retries");
 }
 
-/**
- * Build GitHub URL for specific config type and service
- */
-function buildGitHubUrl(serviceType: "RADARR" | "SONARR", configType: TrashConfigType): string {
-	const service = serviceType.toLowerCase();
-
-	switch (configType) {
-		case "CUSTOM_FORMATS":
-			return `${TRASH_GITHUB_BASE_URL}/${service}/cf`;
-		case "CF_GROUPS":
-			return `${TRASH_GITHUB_BASE_URL}/${service}/cf-groups`;
-		case "QUALITY_SIZE":
-			return `${TRASH_GITHUB_BASE_URL}/${service}/quality-size`;
-		case "NAMING":
-			return `${TRASH_GITHUB_BASE_URL}/${service}/naming`;
-		case "QUALITY_PROFILES":
-			return `${TRASH_GITHUB_BASE_URL}/${service}/quality-profiles`;
-		default:
-			throw new Error(`Unknown config type: ${configType}`);
-	}
-}
-
 // ============================================================================
 // Main Fetcher Class
 // ============================================================================
@@ -408,17 +386,57 @@ function buildGitHubUrl(serviceType: "RADARR" | "SONARR", configType: TrashConfi
 export class TrashGitHubFetcher {
 	private fetchOptions: FetchOptions;
 	private log: Logger;
+	private repoConfig: TrashRepoConfig;
+
+	// Instance-specific URLs built from repoConfig
+	private baseUrl: string;
+	private metadataUrl: string;
+	private cfDescriptionsBaseUrl: string;
+	private repoContentsApiUrl: string;
+	private rawBaseUrl: string;
+
 	constructor(options: FetchOptions = {}) {
 		this.fetchOptions = options;
 		// Use provided logger or no-op logger (silent by default)
 		this.log = (options.logger as Logger) ?? noopLogger;
+
+		// Build URLs from repo config (custom fork or official)
+		this.repoConfig = options.repoConfig ?? DEFAULT_TRASH_REPO;
+		const { owner, name, branch } = this.repoConfig;
+		this.rawBaseUrl = `https://raw.githubusercontent.com/${owner}/${name}/${branch}`;
+		this.baseUrl = `${this.rawBaseUrl}/docs/json`;
+		this.metadataUrl = `${this.rawBaseUrl}/metadata.json`;
+		this.cfDescriptionsBaseUrl = `${this.rawBaseUrl}/includes/cf-descriptions`;
+		this.repoContentsApiUrl = `https://api.github.com/repos/${owner}/${name}/contents`;
+	}
+
+	/**
+	 * Build GitHub raw URL for specific config type and service
+	 */
+	private buildGitHubUrl(serviceType: "RADARR" | "SONARR", configType: TrashConfigType): string {
+		const service = serviceType.toLowerCase();
+
+		switch (configType) {
+			case "CUSTOM_FORMATS":
+				return `${this.baseUrl}/${service}/cf`;
+			case "CF_GROUPS":
+				return `${this.baseUrl}/${service}/cf-groups`;
+			case "QUALITY_SIZE":
+				return `${this.baseUrl}/${service}/quality-size`;
+			case "NAMING":
+				return `${this.baseUrl}/${service}/naming`;
+			case "QUALITY_PROFILES":
+				return `${this.baseUrl}/${service}/quality-profiles`;
+			default:
+				throw new Error(`Unknown config type: ${configType}`);
+		}
 	}
 
 	/**
 	 * Fetch TRaSH Guides metadata
 	 */
 	async fetchMetadata(): Promise<TrashMetadata> {
-		const response = await fetchWithRetry(TRASH_METADATA_URL, this.fetchOptions, this.log);
+		const response = await fetchWithRetry(this.metadataUrl, this.fetchOptions, this.log);
 
 		if (!response.ok) {
 			throw new Error(`Failed to fetch metadata: ${response.statusText}`);
@@ -431,7 +449,7 @@ export class TrashGitHubFetcher {
 	 * Fetch Custom Formats for a service
 	 */
 	async fetchCustomFormats(serviceType: "RADARR" | "SONARR"): Promise<TrashCustomFormat[]> {
-		const baseUrl = buildGitHubUrl(serviceType, "CUSTOM_FORMATS");
+		const baseUrl = this.buildGitHubUrl(serviceType, "CUSTOM_FORMATS");
 
 		// First, try to fetch the directory listing (GitHub API)
 		// For simplicity in Sprint 1, we'll use a known list approach
@@ -472,7 +490,7 @@ export class TrashGitHubFetcher {
 	async fetchCustomFormatGroups(
 		serviceType: "RADARR" | "SONARR",
 	): Promise<TrashCustomFormatGroup[]> {
-		const baseUrl = buildGitHubUrl(serviceType, "CF_GROUPS");
+		const baseUrl = this.buildGitHubUrl(serviceType, "CF_GROUPS");
 
 		const groups: TrashCustomFormatGroup[] = [];
 		const knownFiles = await this.discoverConfigFiles(baseUrl);
@@ -502,7 +520,7 @@ export class TrashGitHubFetcher {
 	 * Fetch Quality Size settings for a service
 	 */
 	async fetchQualitySize(serviceType: "RADARR" | "SONARR"): Promise<TrashQualitySize[]> {
-		const baseUrl = buildGitHubUrl(serviceType, "QUALITY_SIZE");
+		const baseUrl = this.buildGitHubUrl(serviceType, "QUALITY_SIZE");
 
 		const settings: TrashQualitySize[] = [];
 		const knownFiles = await this.discoverConfigFiles(baseUrl);
@@ -532,7 +550,7 @@ export class TrashGitHubFetcher {
 	 * Fetch Naming schemes for a service
 	 */
 	async fetchNaming(serviceType: "RADARR" | "SONARR"): Promise<TrashNamingScheme[]> {
-		const baseUrl = buildGitHubUrl(serviceType, "NAMING");
+		const baseUrl = this.buildGitHubUrl(serviceType, "NAMING");
 
 		const schemes: TrashNamingScheme[] = [];
 		const knownFiles = await this.discoverConfigFiles(baseUrl);
@@ -562,7 +580,7 @@ export class TrashGitHubFetcher {
 	 * Fetch Quality Profiles for a service
 	 */
 	async fetchQualityProfiles(serviceType: "RADARR" | "SONARR"): Promise<TrashQualityProfile[]> {
-		const baseUrl = buildGitHubUrl(serviceType, "QUALITY_PROFILES");
+		const baseUrl = this.buildGitHubUrl(serviceType, "QUALITY_PROFILES");
 
 		const profiles: TrashQualityProfile[] = [];
 		const knownFiles = await this.discoverConfigFiles(baseUrl);
@@ -594,7 +612,7 @@ export class TrashGitHubFetcher {
 	 */
 	async fetchCFDescription(cfName: string): Promise<TrashCFDescription | null> {
 		try {
-			const url = `${TRASH_CF_DESCRIPTIONS_BASE_URL}/${cfName}.md`;
+			const url = `${this.cfDescriptionsBaseUrl}/${cfName}.md`;
 			const response = await fetchWithRetry(url, this.fetchOptions, this.log);
 
 			if (!response.ok) {
@@ -646,8 +664,7 @@ export class TrashGitHubFetcher {
 	 */
 	async fetchAllCFDescriptions(): Promise<TrashCFDescription[]> {
 		// First, discover all markdown files in cf-descriptions directory
-		const apiUrl =
-			"https://api.github.com/repos/TRaSH-Guides/Guides/contents/includes/cf-descriptions";
+		const apiUrl = `${this.repoContentsApiUrl}/includes/cf-descriptions`;
 
 		try {
 			const response = await fetchWithRetry(apiUrl, { ...this.fetchOptions, retries: 2 }, this.log);
@@ -712,8 +729,8 @@ export class TrashGitHubFetcher {
 		];
 
 		const INCLUDES_BASE = "includes/cf-descriptions";
-		const apiUrl = `https://api.github.com/repos/TRaSH-Guides/Guides/contents/${INCLUDES_BASE}`;
-		const GITHUB_RAW_BASE = "https://raw.githubusercontent.com/TRaSH-Guides/Guides/master";
+		const apiUrl = `${this.repoContentsApiUrl}/${INCLUDES_BASE}`;
+		const GITHUB_RAW_BASE = this.rawBaseUrl;
 
 		try {
 			const response = await fetchWithRetry(apiUrl, { ...this.fetchOptions, retries: 2 }, this.log);
@@ -813,16 +830,17 @@ export class TrashGitHubFetcher {
 	 * Discover available config files in a directory using GitHub API
 	 */
 	private async discoverConfigFiles(baseUrl: string): Promise<string[]> {
-		// Extract the path from the base URL
-		// baseUrl format: https://raw.githubusercontent.com/TRaSH-Guides/Guides/master/docs/json/{service}/{type}
-		const pathMatch = baseUrl.match(/\/master\/(.+)$/);
+		// Extract the path after the branch segment in the raw URL
+		// baseUrl format: https://raw.githubusercontent.com/{owner}/{name}/{branch}/docs/json/{service}/{type}
+		const branchEscaped = this.repoConfig.branch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+		const pathMatch = baseUrl.match(new RegExp(`/${branchEscaped}/(.+)$`));
 		if (!pathMatch) {
 			this.log.warn(`Could not extract path from URL: ${baseUrl}`);
 			return [];
 		}
 
 		const repoPath = pathMatch[1];
-		const apiUrl = `https://api.github.com/repos/TRaSH-Guides/Guides/contents/${repoPath}`;
+		const apiUrl = `${this.repoContentsApiUrl}/${repoPath}`;
 
 		try {
 			const response = await fetchWithRetry(apiUrl, { ...this.fetchOptions, retries: 2 }, this.log);
@@ -862,6 +880,7 @@ export class TrashGitHubFetcher {
 /**
  * Create a fetcher instance with optional configuration.
  * If no githubToken is provided, attempts to read from GITHUB_TOKEN environment variable.
+ * If no repoConfig is provided, uses the official TRaSH-Guides/Guides repository.
  */
 export function createTrashFetcher(options: FetchOptions = {}): TrashGitHubFetcher {
 	// Auto-inject GitHub token from environment if not provided

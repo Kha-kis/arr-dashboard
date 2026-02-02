@@ -10,6 +10,7 @@ import type { SonarrClient, RadarrClient } from "arr-sdk";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createDeploymentExecutorService } from "../../lib/trash-guides/deployment-executor.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
+import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { createSyncEngine } from "../../lib/trash-guides/sync-engine.js";
 import type { SyncProgress } from "../../lib/trash-guides/sync-engine.js";
 import { getSyncMetrics } from "../../lib/trash-guides/sync-metrics.js";
@@ -101,26 +102,30 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 		}
 	});
 
-	// Create template updater services
-	const versionTracker = createVersionTracker();
+	// Shared services (repo-independent)
 	const cacheManager = createCacheManager(app.prisma);
-	const githubFetcher = createTrashFetcher();
 	const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.encryptor);
-	const templateUpdater = createTemplateUpdater(
-		app.prisma,
-		versionTracker,
-		cacheManager,
-		githubFetcher,
-		deploymentExecutor,
-	);
 
-	// Create sync engine with template updater, deployment executor, and ARR client factory
-	const syncEngine = createSyncEngine(
-		app.prisma,
-		templateUpdater,
-		deploymentExecutor,
-		app.arrClientFactory,
-	);
+	/** Create repo-aware services configured for the current user's repo settings */
+	async function getServices(userId: string) {
+		const repoConfig = await getRepoConfig(app.prisma, userId);
+		const versionTracker = createVersionTracker(repoConfig);
+		const githubFetcher = createTrashFetcher({ repoConfig, logger: app.log });
+		const templateUpdater = createTemplateUpdater(
+			app.prisma,
+			versionTracker,
+			cacheManager,
+			githubFetcher,
+			deploymentExecutor,
+		);
+		const syncEngine = createSyncEngine(
+			app.prisma,
+			templateUpdater,
+			deploymentExecutor,
+			app.arrClientFactory,
+		);
+		return { versionTracker, githubFetcher, templateUpdater, syncEngine };
+	}
 
 	/**
 	 * Validate sync before execution
@@ -130,6 +135,7 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 		const body = validateSyncSchema.parse(request.body);
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 
+		const { syncEngine } = await getServices(userId);
 		const validation = await syncEngine.validate({
 			templateId: body.templateId,
 			instanceId: body.instanceId,
@@ -154,6 +160,7 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 			: undefined;
 
 		// Execute sync - this will complete synchronously
+		const { syncEngine } = await getServices(userId);
 		const result = await syncEngine.execute(
 			{
 				templateId: body.templateId,
@@ -225,6 +232,7 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 
 		// Register callback FIRST to avoid race condition where sync completes
 		// between registration and currentProgress check
+		const { syncEngine } = await getServices(request.currentUser!.id);
 		syncEngine.onProgress(syncId, streamProgress);
 
 		// Set up cleanup handler immediately after registration to ensure

@@ -794,7 +794,7 @@ export const CFConfiguration = ({
 															<span className="font-medium text-foreground">{cf.displayName || cf.name}</span>
 														</div>
 														{cf.description && (
-															<details className="mb-2 group">
+															<details className="mb-2 group" onClick={(e) => e.stopPropagation()}>
 																<summary className="cursor-pointer text-xs text-primary hover:text-primary/80 transition flex items-center gap-1">
 																	<span className="group-open:rotate-90 transition-transform">▶</span>
 																	<span>What is this?</span>
@@ -1040,7 +1040,7 @@ export const CFConfiguration = ({
 												</div>
 
 												{cf.description && (
-													<details className="mb-2 group">
+													<details className="mb-2 group" onClick={(e) => e.stopPropagation()}>
 														<summary className="cursor-pointer text-xs text-primary hover:text-primary/80 transition flex items-center gap-1">
 															<span className="group-open:rotate-90 transition-transform">▶</span>
 															<span>What is this?</span>
@@ -1248,7 +1248,7 @@ export const CFConfiguration = ({
 															</div>
 
 															{cf.description && (
-																<details className="mb-2 group">
+																<details className="mb-2 group" onClick={(e) => e.stopPropagation()}>
 																	<summary className="cursor-pointer text-xs text-primary hover:text-primary/80 transition flex items-center gap-1">
 																		<span className="group-open:rotate-90 transition-transform">▶</span>
 																		<span>What is this?</span>
@@ -1392,7 +1392,7 @@ export const CFConfiguration = ({
 														</div>
 
 														{cf.description && (
-															<details className="mb-2 group">
+															<details className="mb-2 group" onClick={(e) => e.stopPropagation()}>
 																<summary className="cursor-pointer text-xs text-green-400 hover:text-green-300 transition flex items-center gap-1">
 																	<span className="group-open:rotate-90 transition-transform">▶</span>
 																	<span>What is this?</span>
@@ -1566,7 +1566,7 @@ export const CFConfiguration = ({
 														</div>
 
 														{cf.description && (
-															<details className="mb-2 group">
+															<details className="mb-2 group" onClick={(e) => e.stopPropagation()}>
 																<summary className={`cursor-pointer text-xs transition flex items-center gap-1 ${
 																	isClonedProfile ? "text-blue-400 hover:text-blue-300" : "text-purple-400 hover:text-purple-300"
 																}`}>

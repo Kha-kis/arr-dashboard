@@ -6,7 +6,10 @@
  * - Templates
  * - Sync operations
  * - Backups and rollback
+ * - User custom formats
  */
+
+import { z } from "zod";
 
 // ============================================================================
 // Enums and Constants
@@ -82,7 +85,7 @@ export interface TrashCustomFormat {
 	includeCustomFormatWhenRenaming?: boolean;
 	specifications: CustomFormatSpecification[];
 	// Optional metadata for instance-sourced CFs (not from TRaSH Guides)
-	_source?: "instance" | "trash";
+	_source?: "instance" | "trash" | "user_created";
 	_instanceId?: string;
 	_instanceCFId?: number;
 }
@@ -965,6 +968,30 @@ export interface UpdateScheduleRequest {
 // ============================================================================
 
 /**
+ * Custom upstream repository configuration for TRaSH Guides.
+ * Allows users to point at a fork that follows the same directory structure
+ * as the official TRaSH-Guides/Guides repo.
+ *
+ * When a custom repo is configured, it **replaces** the official upstream
+ * entirely (forks already contain all official CFs plus custom additions).
+ */
+export interface TrashRepoConfig {
+	owner: string;   // GitHub owner, e.g., "TRaSH-Guides"
+	name: string;    // Repository name, e.g., "Guides"
+	branch: string;  // Branch name, e.g., "master" or "main"
+}
+
+/**
+ * Default TRaSH Guides repository configuration.
+ * Used when no custom repo is configured by the user.
+ */
+export const DEFAULT_TRASH_REPO: TrashRepoConfig = {
+	owner: "TRaSH-Guides",
+	name: "Guides",
+	branch: "master",
+};
+
+/**
  * User TRaSH Guides settings
  */
 export interface TrashSettings {
@@ -975,6 +1002,9 @@ export interface TrashSettings {
 	notifyOnUpdates: boolean;
 	notifyOnSyncFail: boolean;
 	backupRetention: number;
+	customRepoOwner?: string | null;
+	customRepoName?: string | null;
+	customRepoBranch?: string | null;
 	createdAt: string;
 	updatedAt: string;
 }
@@ -988,6 +1018,9 @@ export interface UpdateTrashSettingsRequest {
 	notifyOnUpdates?: boolean;
 	notifyOnSyncFail?: boolean;
 	backupRetention?: number;
+	customRepoOwner?: string | null;
+	customRepoName?: string | null;
+	customRepoBranch?: string | null;
 }
 
 // ============================================================================
@@ -1477,4 +1510,109 @@ export interface StandaloneCFDeploymentsResponse {
 	success: boolean;
 	deployments: StandaloneCFDeployment[];
 	count: number;
+}
+
+// ============================================================================
+// User Custom Formats
+// User-created or imported custom formats for TRaSH Guides templates
+// ============================================================================
+
+/**
+ * Zod schema for creating a user custom format
+ */
+export const createUserCustomFormatSchema = z.object({
+	name: z.string().min(1, "Name is required").max(200),
+	serviceType: z.enum(["RADARR", "SONARR"]),
+	description: z.string().max(2000).optional(),
+	includeCustomFormatWhenRenaming: z.boolean().default(false),
+	specifications: z.array(z.object({
+		name: z.string().min(1),
+		implementation: z.string().min(1),
+		negate: z.boolean().default(false),
+		required: z.boolean().default(false),
+		fields: z.record(z.string(), z.unknown()).default({}),
+	})).min(1, "At least one specification is required"),
+	defaultScore: z.number().int().default(0),
+});
+
+export type CreateUserCustomFormatInput = z.infer<typeof createUserCustomFormatSchema>;
+
+/**
+ * Zod schema for updating a user custom format
+ */
+export const updateUserCustomFormatSchema = createUserCustomFormatSchema.partial().extend({
+	name: z.string().min(1).max(200).optional(),
+});
+
+export type UpdateUserCustomFormatInput = z.infer<typeof updateUserCustomFormatSchema>;
+
+/**
+ * Zod schema for importing CFs from JSON (Sonarr/Radarr export format)
+ */
+export const importUserCFFromJsonSchema = z.object({
+	serviceType: z.enum(["RADARR", "SONARR"]),
+	customFormats: z.array(z.object({
+		name: z.string().min(1),
+		includeCustomFormatWhenRenaming: z.boolean().optional(),
+		specifications: z.array(z.object({
+			name: z.string(),
+			implementation: z.string(),
+			negate: z.boolean().optional(),
+			required: z.boolean().optional(),
+			fields: z.union([
+				z.record(z.string(), z.unknown()),
+				z.array(z.object({ name: z.string(), value: z.unknown() })),
+			]).optional(),
+		})).optional(),
+	})).min(1, "At least one custom format is required"),
+	defaultScore: z.number().int().optional().default(0),
+});
+
+export type ImportUserCFFromJsonInput = z.infer<typeof importUserCFFromJsonSchema>;
+
+/**
+ * Zod schema for importing CFs from a connected instance
+ */
+export const importUserCFFromInstanceSchema = z.object({
+	instanceId: z.string().min(1),
+	cfIds: z.array(z.number().int()).min(1, "At least one CF ID is required"),
+	defaultScore: z.number().int().optional().default(0),
+});
+
+export type ImportUserCFFromInstanceInput = z.infer<typeof importUserCFFromInstanceSchema>;
+
+/**
+ * User Custom Format response type (from API)
+ */
+export interface UserCustomFormat {
+	id: string;
+	name: string;
+	serviceType: "RADARR" | "SONARR";
+	description: string | null;
+	includeCustomFormatWhenRenaming: boolean;
+	specifications: CustomFormatSpecification[];
+	defaultScore: number;
+	sourceInstanceId: string | null;
+	sourceCFId: number | null;
+	createdAt: string;
+	updatedAt: string;
+}
+
+/**
+ * Response from user custom formats list endpoint
+ */
+export interface UserCustomFormatsResponse {
+	success: boolean;
+	customFormats: UserCustomFormat[];
+	count: number;
+}
+
+/**
+ * Response from user custom format import operations
+ */
+export interface UserCFImportResponse {
+	success: boolean;
+	created: string[];
+	skipped: string[];
+	failed: Array<{ name: string; error: string }>;
 }

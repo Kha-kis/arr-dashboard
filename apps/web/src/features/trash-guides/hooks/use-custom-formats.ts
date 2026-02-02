@@ -10,8 +10,19 @@ import {
 	fetchCFIncludesList,
 	deployCustomFormat,
 	deployMultipleCustomFormats,
+	fetchUserCustomFormats,
+	createUserCustomFormat,
+	updateUserCustomFormat,
+	deleteUserCustomFormat,
+	importUserCFsFromJson,
+	importUserCFsFromInstance,
+	deployUserCustomFormats,
 	type DeployCustomFormatRequest,
 	type DeployMultipleCustomFormatsRequest,
+	type CreateUserCFRequest,
+	type ImportUserCFFromJsonRequest,
+	type ImportUserCFFromInstanceRequest,
+	type DeployUserCFsRequest,
 } from "../../../lib/api-client/custom-formats";
 
 /**
@@ -74,6 +85,107 @@ export function useDeployMultipleCustomFormats() {
 			deployMultipleCustomFormats(request),
 		onSuccess: () => {
 			// Invalidate related queries
+			queryClient.invalidateQueries({ queryKey: ["custom-formats"] });
+		},
+	});
+}
+
+// ============================================================================
+// User Custom Format Hooks
+// ============================================================================
+
+/**
+ * Hook to fetch user custom formats
+ */
+export function useUserCustomFormats(serviceType?: "RADARR" | "SONARR") {
+	return useQuery({
+		queryKey: ["user-custom-formats", serviceType],
+		queryFn: () => fetchUserCustomFormats(serviceType),
+		staleTime: 60 * 1000, // 1 minute
+	});
+}
+
+/**
+ * Hook to create a user custom format
+ */
+export function useCreateUserCustomFormat() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: (request: CreateUserCFRequest) => createUserCustomFormat(request),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["user-custom-formats"] });
+		},
+	});
+}
+
+/**
+ * Hook to update a user custom format
+ */
+export function useUpdateUserCustomFormat() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: ({ id, ...request }: { id: string } & Partial<CreateUserCFRequest>) =>
+			updateUserCustomFormat(id, request),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["user-custom-formats"] });
+		},
+	});
+}
+
+/**
+ * Hook to delete a user custom format
+ */
+export function useDeleteUserCustomFormat() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: (id: string) => deleteUserCustomFormat(id),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["user-custom-formats"] });
+		},
+	});
+}
+
+/**
+ * Hook to import user CFs from JSON
+ */
+export function useImportUserCFFromJson() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: (request: ImportUserCFFromJsonRequest) => importUserCFsFromJson(request),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["user-custom-formats"] });
+		},
+	});
+}
+
+/**
+ * Hook to import user CFs from a connected instance
+ */
+export function useImportUserCFFromInstance() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: (request: ImportUserCFFromInstanceRequest) => importUserCFsFromInstance(request),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["user-custom-formats"] });
+		},
+	});
+}
+
+/**
+ * Hook to deploy user custom formats to an instance
+ */
+export function useDeployUserCustomFormats() {
+	const queryClient = useQueryClient();
+
+	return useMutation({
+		mutationFn: (request: DeployUserCFsRequest) => deployUserCustomFormats(request),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ["user-custom-formats"] });
 			queryClient.invalidateQueries({ queryKey: ["custom-formats"] });
 		},
 	});

@@ -20,14 +20,26 @@ import {
 	Square,
 	ChevronDown,
 	X,
+	Plus,
+	Trash2,
+	User,
 } from "lucide-react";
 import { createSanitizedHtml } from "../../../lib/sanitize-html";
-import { useCustomFormats, useCFDescriptions, useCFIncludes, useDeployMultipleCustomFormats } from "../hooks/use-custom-formats";
+import {
+	useCustomFormats,
+	useCFDescriptions,
+	useCFIncludes,
+	useDeployMultipleCustomFormats,
+	useUserCustomFormats,
+	useDeleteUserCustomFormat,
+	useDeployUserCustomFormats,
+} from "../hooks/use-custom-formats";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
-import type { CustomFormat } from "../../../lib/api-client/custom-formats";
+import type { CustomFormat, UserCustomFormat } from "../../../lib/api-client/custom-formats";
 import { cleanDescription, markdownToFormattedHtml, resolveIncludes, buildIncludesMap } from "../lib/description-utils";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { UserCFImportDialog } from "./user-cf-import-dialog";
 
 /**
  * Service-specific colors for Radarr/Sonarr identification
@@ -217,6 +229,27 @@ export const CustomFormatsBrowser = () => {
 	const [selectedInstance, setSelectedInstance] = useState("");
 	const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
 	const [selectedFormatForDetails, setSelectedFormatForDetails] = useState<(CustomFormat & { service: "RADARR" | "SONARR" }) | null>(null);
+	const [importDialogOpen, setImportDialogOpen] = useState(false);
+	const [selectedUserCFs, setSelectedUserCFs] = useState<Set<string>>(new Set());
+	const [userCFDeployInstance, setUserCFDeployInstance] = useState("");
+
+	// Fetch user custom formats
+	const { data: userCFsData } = useUserCustomFormats(
+		selectedService === "ALL" ? undefined : selectedService
+	);
+	const deleteMutation = useDeleteUserCustomFormat();
+	const deployUserCFsMutation = useDeployUserCustomFormats();
+
+	const userCustomFormats = useMemo(() => {
+		const cfs = userCFsData?.customFormats || [];
+		if (searchQuery) {
+			return cfs.filter((cf) =>
+				cf.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+				cf.description?.toLowerCase().includes(searchQuery.toLowerCase())
+			);
+		}
+		return cfs;
+	}, [userCFsData, searchQuery]);
 
 	// Fetch custom formats
 	const { data: customFormatsData, isLoading, error } = useCustomFormats(
@@ -574,7 +607,192 @@ export const CustomFormatsBrowser = () => {
 				</div>
 			</div>
 
-			{/* Custom Formats Grid */}
+			{/* My Custom Formats Section */}
+			{userCustomFormats.length > 0 && (
+				<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden">
+					<div className="p-5 border-b border-border/30">
+						<div className="flex items-center justify-between">
+							<div className="flex items-center gap-3">
+								<div
+									className="flex h-9 w-9 items-center justify-center rounded-lg"
+									style={{
+										background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+										border: `1px solid ${themeGradient.from}30`,
+									}}
+								>
+									<User className="h-4.5 w-4.5" style={{ color: themeGradient.from }} />
+								</div>
+								<div>
+									<h4 className="font-semibold text-foreground">My Custom Formats</h4>
+									<p className="text-xs text-muted-foreground">{userCustomFormats.length} format{userCustomFormats.length !== 1 ? "s" : ""}</p>
+								</div>
+							</div>
+							<div className="flex items-center gap-2">
+								{selectedUserCFs.size > 0 && (
+									<>
+										<select
+											value={userCFDeployInstance}
+											onChange={(e) => setUserCFDeployInstance(e.target.value)}
+											className="rounded-lg border border-border/50 bg-card/50 px-3 py-1.5 text-xs text-foreground focus:outline-hidden focus:ring-2"
+											style={{ ["--tw-ring-color" as string]: themeGradient.from }}
+										>
+											<option value="">Deploy to...</option>
+											{(instances || [])
+												.filter((inst: any) => inst.service !== "PROWLARR")
+												.map((inst: any) => (
+													<option key={inst.id} value={inst.id}>
+														{inst.label} ({inst.service})
+													</option>
+												))}
+										</select>
+										<button
+											type="button"
+											onClick={() => {
+												if (!userCFDeployInstance || selectedUserCFs.size === 0) return;
+												deployUserCFsMutation.mutate({
+													userCFIds: Array.from(selectedUserCFs),
+													instanceId: userCFDeployInstance,
+												}, {
+													onSuccess: (data) => {
+														toast.success("Deployed custom formats", {
+															description: `Created: ${data.created.length}, Updated: ${data.updated.length}`,
+														});
+														setSelectedUserCFs(new Set());
+													},
+													onError: (err) => {
+														toast.error("Deploy failed", {
+															description: err instanceof Error ? err.message : "Unknown error",
+														});
+													},
+												});
+											}}
+											disabled={!userCFDeployInstance || deployUserCFsMutation.isPending}
+											className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-white transition disabled:opacity-50"
+											style={{
+												backgroundColor: themeGradient.from,
+											}}
+										>
+											{deployUserCFsMutation.isPending ? (
+												<Loader2 className="h-3 w-3 animate-spin" />
+											) : (
+												<Download className="h-3 w-3" />
+											)}
+											Deploy ({selectedUserCFs.size})
+										</button>
+									</>
+								)}
+								<button
+									type="button"
+									onClick={() => setImportDialogOpen(true)}
+									className="inline-flex items-center gap-1.5 rounded-lg border border-border/50 px-3 py-1.5 text-xs font-medium text-foreground transition hover:bg-muted"
+								>
+									<Plus className="h-3 w-3" />
+									Add
+								</button>
+							</div>
+						</div>
+					</div>
+
+					<div className="p-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+						{userCustomFormats.map((cf, index) => {
+							const isSelected = selectedUserCFs.has(cf.id);
+							return (
+								<div
+									key={cf.id}
+									className="group rounded-xl border p-4 transition-all hover:shadow-md animate-in fade-in slide-in-from-bottom-2 duration-300"
+									style={{
+										borderColor: isSelected ? themeGradient.from : "rgba(var(--border), 0.5)",
+										backgroundColor: isSelected ? `${themeGradient.from}08` : "rgba(var(--card), 0.3)",
+										animationDelay: `${index * 30}ms`,
+										animationFillMode: "backwards",
+									}}
+								>
+									<div className="flex items-start gap-3">
+										<input
+											type="checkbox"
+											checked={isSelected}
+											onChange={() => {
+												setSelectedUserCFs((prev) => {
+													const next = new Set(prev);
+													if (next.has(cf.id)) next.delete(cf.id);
+													else next.add(cf.id);
+													return next;
+												});
+											}}
+											className="mt-1 h-4 w-4 rounded border-border bg-muted text-primary focus:ring-primary cursor-pointer"
+										/>
+										<div className="flex-1 min-w-0">
+											<div className="flex items-center gap-2 mb-1">
+												<span className="font-medium text-sm text-foreground truncate">{cf.name}</span>
+												<span
+													className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium shrink-0"
+													style={{
+														backgroundColor: `${themeGradient.from}20`,
+														color: themeGradient.from,
+													}}
+												>
+													User
+												</span>
+											</div>
+											<ServiceBadge service={cf.serviceType} />
+											{cf.description && (
+												<p className="text-xs text-muted-foreground mt-1.5 line-clamp-2">
+													{cf.description}
+												</p>
+											)}
+											<div className="flex items-center gap-2 mt-2">
+												<span className="text-xs text-muted-foreground">
+													{cf.specifications.length} spec{cf.specifications.length !== 1 ? "s" : ""}
+												</span>
+												{cf.defaultScore !== 0 && (
+													<span className={`text-xs font-medium ${cf.defaultScore > 0 ? "text-green-400" : "text-red-400"}`}>
+														{cf.defaultScore > 0 ? "+" : ""}{cf.defaultScore}
+													</span>
+												)}
+												<button
+													type="button"
+													onClick={() => {
+														if (confirm(`Delete "${cf.name}"?`)) {
+															deleteMutation.mutate(cf.id);
+														}
+													}}
+													className="ml-auto rounded p-1 text-muted-foreground opacity-0 group-hover:opacity-100 hover:text-destructive transition"
+													title="Delete"
+												>
+													<Trash2 className="h-3.5 w-3.5" />
+												</button>
+											</div>
+										</div>
+									</div>
+								</div>
+							);
+						})}
+					</div>
+				</div>
+			)}
+
+			{/* Create/Import Button (when no user CFs exist) */}
+			{userCustomFormats.length === 0 && (
+				<div className="flex justify-center">
+					<button
+						type="button"
+						onClick={() => setImportDialogOpen(true)}
+						className="inline-flex items-center gap-2 rounded-xl border border-dashed border-border/50 px-5 py-3 text-sm text-muted-foreground transition hover:bg-card/50 hover:border-border hover:text-foreground"
+					>
+						<Plus className="h-4 w-4" />
+						Create or Import Custom Formats
+					</button>
+				</div>
+			)}
+
+			{/* Import Dialog */}
+			<UserCFImportDialog
+				open={importDialogOpen}
+				onOpenChange={setImportDialogOpen}
+				defaultServiceType={selectedService === "ALL" ? "RADARR" : selectedService}
+			/>
+
+			{/* TRaSH Custom Formats Grid */}
 			{customFormats.length === 0 ? (
 				<div className="rounded-2xl border border-dashed border-border/50 bg-card/20 backdrop-blur-xs p-12 text-center">
 					<Package className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />

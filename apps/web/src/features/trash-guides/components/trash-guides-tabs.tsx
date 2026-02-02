@@ -7,6 +7,7 @@ import {
 	History,
 	Clock,
 	Database,
+	Settings,
 } from "lucide-react";
 import type { TrashGuidesTab } from "../hooks/use-trash-guides-state";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -35,6 +36,7 @@ export const TrashGuidesTabs = ({ activeTab, onTabChange }: TrashGuidesTabsProps
 		{ id: "history", label: "History", icon: History },
 		{ id: "scheduler", label: "Scheduler", icon: Clock },
 		{ id: "cache", label: "Cache", icon: Database },
+		{ id: "settings", label: "Settings", icon: Settings },
 	];
 
 	return (

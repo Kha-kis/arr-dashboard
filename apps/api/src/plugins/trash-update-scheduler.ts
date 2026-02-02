@@ -9,6 +9,7 @@ import fastifyPlugin from "fastify-plugin";
 import { createCacheManager } from "../lib/trash-guides/cache-manager.js";
 import { createDeploymentExecutorService } from "../lib/trash-guides/deployment-executor.js";
 import { createTrashFetcher } from "../lib/trash-guides/github-fetcher.js";
+import { getGlobalRepoConfig } from "../lib/trash-guides/repo-config.js";
 import { createTemplateUpdater } from "../lib/trash-guides/template-updater.js";
 import {
 	type UpdateScheduler,
@@ -44,10 +45,18 @@ const trashUpdateSchedulerPlugin = fastifyPlugin(
 				intervalHours,
 			};
 
-			// Create services
-			const versionTracker = createVersionTracker();
+			// Create services using the global repo config (scheduler runs outside user context).
+			// TODO: The repo config is read once at startup. If the user changes their custom
+			// repo via settings, the scheduler continues using the old config until server restart.
+			// To fix, either re-read config each tick or add a refresh mechanism.
+			const repoConfig = await getGlobalRepoConfig(app.prisma);
+			app.log.info(
+				{ repoOwner: repoConfig.owner, repoName: repoConfig.name, repoBranch: repoConfig.branch },
+				"Scheduler using repository configuration",
+			);
+			const versionTracker = createVersionTracker(repoConfig);
 			const cacheManager = createCacheManager(app.prisma);
-			const githubFetcher = createTrashFetcher();
+			const githubFetcher = createTrashFetcher({ repoConfig, logger: app.log });
 			const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.encryptor);
 			const templateUpdater = createTemplateUpdater(
 				app.prisma,
