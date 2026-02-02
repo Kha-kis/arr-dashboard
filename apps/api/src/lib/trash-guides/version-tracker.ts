@@ -5,13 +5,14 @@
  * Fetches latest commit hashes to detect when new updates are available.
  */
 
+import { DEFAULT_TRASH_REPO } from "@arr/shared";
+import type { TrashRepoConfig } from "@arr/shared";
+
 // ============================================================================
 // Constants
 // ============================================================================
 
 const GITHUB_API_BASE = "https://api.github.com";
-const TRASH_REPO = "TRaSH-Guides/Guides";
-const TRASH_BRANCH = "master";
 
 const FETCH_TIMEOUT_MS = 10000; // 10 seconds
 const MAX_RETRIES = 3;
@@ -162,17 +163,19 @@ export interface VersionTracker {
 	}>;
 }
 
-export function createVersionTracker(): VersionTracker {
+export function createVersionTracker(repoConfig?: TrashRepoConfig): VersionTracker {
 	// Optional GitHub token for higher rate limits (5000/hour vs 60/hour)
 	const githubToken = process.env.GITHUB_TOKEN;
+	const config = repoConfig ?? DEFAULT_TRASH_REPO;
+	const repoSlug = `${config.owner}/${config.name}`;
 
 	const headers = githubToken ? { Authorization: `Bearer ${githubToken}` } : undefined;
 
 	/**
-	 * Get the latest commit on the master branch
+	 * Get the latest commit on the configured branch
 	 */
 	async function getLatestCommit(): Promise<VersionInfo> {
-		const url = `${GITHUB_API_BASE}/repos/${TRASH_REPO}/commits/${TRASH_BRANCH}`;
+		const url = `${GITHUB_API_BASE}/repos/${repoSlug}/commits/${config.branch}`;
 
 		const response = await fetchWithRetry(url, {}, headers);
 		const commit: GitHubCommit = await response.json();
@@ -189,7 +192,7 @@ export function createVersionTracker(): VersionTracker {
 	 * Get information about a specific commit
 	 */
 	async function getCommitInfo(commitHash: string): Promise<VersionInfo> {
-		const url = `${GITHUB_API_BASE}/repos/${TRASH_REPO}/commits/${commitHash}`;
+		const url = `${GITHUB_API_BASE}/repos/${repoSlug}/commits/${commitHash}`;
 
 		const response = await fetchWithRetry(url, {}, headers);
 		const commit: GitHubCommit = await response.json();

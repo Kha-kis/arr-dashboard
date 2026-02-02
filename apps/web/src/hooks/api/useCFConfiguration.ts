@@ -205,20 +205,76 @@ function getDefaultQualitiesForService(serviceType: string): Array<{
 	return serviceType === "RADARR" ? RADARR_DEFAULT_QUALITIES : SONARR_DEFAULT_QUALITIES;
 }
 
+/**
+ * Fetch CF descriptions from cache and build a slug→description Map.
+ * Replicates the server-side enrichment logic from quality-profile-routes.ts.
+ * Slug format: lowercase name with spaces replaced by hyphens, non-alphanumeric stripped.
+ */
+async function fetchCFDescriptionMap(serviceType: string): Promise<Map<string, { description: string; displayName: string }>> {
+	const map = new Map<string, { description: string; displayName: string }>();
+	try {
+		const res = await apiRequest<any>(
+			`/api/trash-guides/cache/entries?serviceType=${serviceType}&configType=CF_DESCRIPTIONS`
+		);
+		const entry = Array.isArray(res) ? res[0] : res;
+		const descriptions: any[] = entry?.data || [];
+		for (const desc of descriptions) {
+			if (desc.cfName) {
+				map.set(desc.cfName, {
+					description: desc.description || "",
+					displayName: desc.displayName || "",
+				});
+			}
+		}
+	} catch {
+		// Descriptions are optional enrichment; don't fail the whole flow
+	}
+	return map;
+}
+
+/**
+ * Convert a CF name to the slug format used for description lookup.
+ * Matches the server-side logic: lowercase → spaces to hyphens → strip non-alphanumeric.
+ */
+function cfNameToSlug(name: string): string {
+	return name.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
+}
+
+/**
+ * Enrich a CF object with description from the description map.
+ * Falls back to existing description/trash_description if no match found.
+ */
+function enrichWithDescription(
+	cf: any,
+	descMap: Map<string, { description: string; displayName: string }>,
+): { description: string; displayName: string } {
+	const slug = cfNameToSlug(cf.name || cf.originalConfig?.name || "");
+	const match = descMap.get(slug);
+	return {
+		description: match?.description || cf.trash_description || cf.description || "",
+		displayName: match?.displayName || cf.displayName || cf.name || "",
+	};
+}
+
 async function fetchEditModeData(serviceType: string, editingTemplate: any) {
 	const templateCFs = editingTemplate.config.customFormats || [];
 	const templateCFGroups = editingTemplate.config.customFormatGroups || [];
+
+	// Fetch description map for enrichment
+	const descMap = await fetchCFDescriptionMap(serviceType);
 
 	// Extract custom formats from template's originalConfig
 	const mandatoryCFs = templateCFs.map((cf: any) => {
 		const trashScores = cf.originalConfig?.trash_scores || {};
 		const defaultScore = trashScores.default || 0;
+		const cfName = cf.originalConfig?.name || cf.name;
+		const enriched = enrichWithDescription({ name: cfName, ...cf }, descMap);
 
 		return {
 			trash_id: cf.trashId,
-			name: cf.originalConfig?.name || cf.name,
-			displayName: cf.originalConfig?.name || cf.name,
-			description: "",
+			name: cfName,
+			displayName: enriched.displayName,
+			description: enriched.description,
 			defaultScore,
 			scoreOverride: cf.scoreOverride,
 			source: "template" as const,
@@ -227,8 +283,8 @@ async function fetchEditModeData(serviceType: string, editingTemplate: any) {
 		};
 	});
 
-	// Fetch all available custom formats from cache
-	const availableFormats = await fetchAvailableFormats(serviceType);
+	// Fetch all available custom formats from cache (pass descMap for enrichment)
+	const availableFormats = await fetchAvailableFormats(serviceType, descMap);
 
 	// Map CF Groups
 	const cfGroups = templateCFGroups.map((cfGroup: any) => ({
@@ -281,37 +337,48 @@ async function fetchClonedProfileData(trashId: string) {
 
 	const { profile, customFormats, allCustomFormats } = response.data;
 
+	// Detect service type from instance for description enrichment
+	// Instance response may include serviceType; fall back to inferring from trashId
+	const instanceServiceType = response.data.serviceType || "RADARR";
+	const descMap = await fetchCFDescriptionMap(instanceServiceType);
+
 	// Convert instance CFs to the format expected by the wizard
-	const mandatoryCFs = customFormats.map((cf: any) => ({
-		trash_id: cf.trash_id,
-		name: cf.name,
-		displayName: cf.name,
-		description: "",
-		score: cf.score,
-		defaultScore: cf.score,
-		source: "instance" as const,
-		locked: false,
-		specifications: cf.specifications,
-		originalConfig: {
+	const mandatoryCFs = customFormats.map((cf: any) => {
+		const enriched = enrichWithDescription(cf, descMap);
+		return {
+			trash_id: cf.trash_id,
 			name: cf.name,
+			displayName: enriched.displayName,
+			description: enriched.description,
+			score: cf.score,
+			defaultScore: cf.score,
+			source: "instance" as const,
+			locked: false,
 			specifications: cf.specifications,
-			includeCustomFormatWhenRenaming: cf.includeCustomFormatWhenRenaming,
-		},
-	}));
+			originalConfig: {
+				name: cf.name,
+				specifications: cf.specifications,
+				includeCustomFormatWhenRenaming: cf.includeCustomFormatWhenRenaming,
+			},
+		};
+	});
 
 	// All instance CFs as available formats
-	const availableFormats = allCustomFormats.map((cf: any) => ({
-		trash_id: cf.trash_id,
-		name: cf.name,
-		displayName: cf.name,
-		description: "",
-		score: 0, // Instance CFs don't have TRaSH scores by default
-		originalConfig: {
+	const availableFormats = allCustomFormats.map((cf: any) => {
+		const enriched = enrichWithDescription(cf, descMap);
+		return {
+			trash_id: cf.trash_id,
 			name: cf.name,
-			specifications: cf.specifications,
-			includeCustomFormatWhenRenaming: cf.includeCustomFormatWhenRenaming,
-		},
-	}));
+			displayName: enriched.displayName,
+			description: enriched.description,
+			score: 0, // Instance CFs don't have TRaSH scores by default
+			originalConfig: {
+				name: cf.name,
+				specifications: cf.specifications,
+				includeCustomFormatWhenRenaming: cf.includeCustomFormatWhenRenaming,
+			},
+		};
+	});
 
 	// Extract quality items from cloned profile
 	const qualityItems = profile.items?.map((item: any) => ({
@@ -393,7 +460,10 @@ function extractQualityItems(profile: any): Array<{
 	}));
 }
 
-async function fetchAvailableFormats(serviceType: string) {
+async function fetchAvailableFormats(
+	serviceType: string,
+	existingDescMap?: Map<string, { description: string; displayName: string }>,
+) {
 	const customFormatsRes = await apiRequest<any>(
 		`/api/trash-guides/cache/entries?serviceType=${serviceType}&configType=CUSTOM_FORMATS`
 	);
@@ -404,14 +474,47 @@ async function fetchAvailableFormats(serviceType: string) {
 
 	const allCustomFormats = customFormatsCacheEntry?.data || [];
 
+	// Fetch descriptions if not already provided by caller
+	const descMap = existingDescMap ?? await fetchCFDescriptionMap(serviceType);
+
 	// Note: We include originalConfig which contains trash_scores.
 	// The component resolves the actual score using the profile's scoreSet.
 	// No need to pre-compute 'score' here since it would only use default.
-	return allCustomFormats.map((cf: any) => ({
-		trash_id: cf.trash_id,
-		name: cf.name,
-		displayName: cf.name,
-		description: cf.trash_description || "",
-		originalConfig: cf,
-	}));
+	const trashFormats = allCustomFormats.map((cf: any) => {
+		const enriched = enrichWithDescription(cf, descMap);
+		return {
+			trash_id: cf.trash_id,
+			name: cf.name,
+			displayName: enriched.displayName,
+			description: enriched.description,
+			originalConfig: cf,
+		};
+	});
+
+	// Also fetch user custom formats and merge them in
+	try {
+		const userCFsRes = await apiRequest<any>(
+			`/api/trash-guides/user-custom-formats?serviceType=${serviceType}`
+		);
+		const userCFs = userCFsRes?.customFormats || [];
+
+		const userFormats = userCFs.map((cf: any) => ({
+			trash_id: `user-${cf.id}`,
+			name: cf.name,
+			displayName: cf.name,
+			description: cf.description || "",
+			_source: "user_created" as const,
+			originalConfig: {
+				name: cf.name,
+				specifications: cf.specifications,
+				includeCustomFormatWhenRenaming: cf.includeCustomFormatWhenRenaming,
+				trash_scores: { default: cf.defaultScore },
+			},
+		}));
+
+		return [...trashFormats, ...userFormats];
+	} catch {
+		// User CFs are optional enrichment; don't fail the whole flow
+		return trashFormats;
+	}
 }

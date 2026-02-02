@@ -9,6 +9,7 @@ import { SchedulerStatusDashboard } from "./scheduler-status-dashboard";
 import { DeploymentHistoryTable } from "./deployment-history-table";
 import { BulkScoreManager } from "./bulk-score-manager";
 import { CustomFormatsBrowser } from "./custom-formats-browser";
+import { RepoSettingsSection } from "./repo-settings-section";
 import { PremiumEmptyState } from "../../../components/layout";
 import { CacheStatusSection } from "./cache-status-section";
 import { TrashGuidesTabs } from "./trash-guides-tabs";
@@ -363,6 +364,8 @@ export const TrashGuidesClient = () => {
 					</div>
 				) : activeTab === "custom-formats" ? (
 					<CustomFormatsBrowser />
+				) : activeTab === "settings" ? (
+					<RepoSettingsSection />
 				) : (
 					<TemplateList
 						onCreateNew={handleCreateNew}
