@@ -5,6 +5,36 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.2] - 2026-02-02
+
+### Added
+
+- **Custom upstream repository** - Configure a custom GitHub fork as TRaSH Guides upstream source, replacing the official TRaSH-Guides/Guides repo. Includes settings UI with Git URL input, test connection, and reset to official ([#77](https://github.com/Kha-kis/arr-dashboard/pull/77))
+- **User custom formats** - Full CRUD management for user-defined custom formats with specification builder, import from TRaSH upstream, and deploy to Sonarr/Radarr instances
+- **UserCustomFormat database model** - New Prisma model for persisting user-created custom format definitions with specifications
+
+### Fixed
+
+- **DOMPurify v3 CJS import** - Fix silently returning empty HTML for all sanitized content by using `mod.default || mod` with `sanitize()` validation ([#74](https://github.com/Kha-kis/arr-dashboard/issues/74))
+- **CF description endpoint** - Switch to dedicated lazy-loading endpoint with multi-strategy slug matching (exact, displayName, base name fallbacks) ([#74](https://github.com/Kha-kis/arr-dashboard/issues/74))
+- **Template update banner overflow** - Fix wrapping badge row layout that overflowed on narrow viewports
+- **SSR hydration mismatch** - Use deterministic skeleton widths to prevent server/client rendering differences
+- **Timer stacking** - Prevent `scheduleCacheRefresh` from stacking on rapid mutations
+- **Silent error swallowing** - Add `console.warn` to catch blocks for diagnostic visibility
+
+### Changed
+
+- **Parameterized TRaSH fetcher URLs** - `github-fetcher` and `version-tracker` now accept `TrashRepoConfig` for per-request fetcher creation
+- **Tab content rendering** - Refactored from nested ternary to switch statement with ErrorBoundary wrappers
+- **UX copy improvements** - Better messaging for cache repopulation timing expectations
+
+### Security
+
+- **Alpine package CVEs** - Patch libcrypto3/libssl3 3.3.5→3.3.6, busybox 1.37.0-r13→r14 via `apk upgrade` in Dockerfile ([#75](https://github.com/Kha-kis/arr-dashboard/pull/75))
+- **Dependency overrides** - Force lodash ≥4.17.23 (prototype pollution) and hono ≥4.11.7 (XSS, cache deception, IP spoofing) in Prisma transitive dependency chain ([#75](https://github.com/Kha-kis/arr-dashboard/pull/75))
+
+---
+
 ## [2.7.1] - 2026-01-30
 
 ### Fixed
@@ -424,6 +454,7 @@ Major dependency updates:
 
 ---
 
+[2.7.2]: https://github.com/Kha-kis/arr-dashboard/compare/v2.7.1...v2.7.2
 [2.7.1]: https://github.com/Kha-kis/arr-dashboard/compare/v2.7.0...v2.7.1
 [2.7.0]: https://github.com/Kha-kis/arr-dashboard/compare/v2.6.7...v2.7.0
 [2.6.7]: https://github.com/Kha-kis/arr-dashboard/compare/v2.6.6...v2.6.7
