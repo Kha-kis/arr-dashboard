@@ -20,10 +20,7 @@
 		"baseUrl": ".",
 		"paths": {
 			"@/*": ["./src/*"],
-			"@arr/web/*": ["./src/*"],
-			"@arr/shared": ["../../packages/shared/src/index.ts"],
-			"@arr/shared/*": ["../../packages/shared/src/*"],
-			"@arr/types": ["../../packages/shared/src/types/index.ts"]
+			"@arr/web/*": ["./src/*"]
 		}
 	},
 	"include": ["next-env.d.ts", "src/types/**/*.d.ts", "**/*.ts", "**/*.tsx", "**/*.cjs", ".next/types/**/*.ts"],

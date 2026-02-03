@@ -76,7 +76,10 @@ export const ModelName = {
   HuntSearchHistory: 'HuntSearchHistory',
   LibraryCache: 'LibraryCache',
   LibrarySyncStatus: 'LibrarySyncStatus',
-  UserCustomFormat: 'UserCustomFormat'
+  UserCustomFormat: 'UserCustomFormat',
+  QueueCleanerConfig: 'QueueCleanerConfig',
+  QueueCleanerLog: 'QueueCleanerLog',
+  QueueCleanerStrike: 'QueueCleanerStrike'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -552,6 +555,81 @@ export const UserCustomFormatScalarFieldEnum = {
 } as const
 
 export type UserCustomFormatScalarFieldEnum = (typeof UserCustomFormatScalarFieldEnum)[keyof typeof UserCustomFormatScalarFieldEnum]
+
+
+export const QueueCleanerConfigScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  enabled: 'enabled',
+  intervalMins: 'intervalMins',
+  stalledEnabled: 'stalledEnabled',
+  stalledThresholdMins: 'stalledThresholdMins',
+  failedEnabled: 'failedEnabled',
+  slowEnabled: 'slowEnabled',
+  slowSpeedThreshold: 'slowSpeedThreshold',
+  slowGracePeriodMins: 'slowGracePeriodMins',
+  errorPatternsEnabled: 'errorPatternsEnabled',
+  errorPatterns: 'errorPatterns',
+  removeFromClient: 'removeFromClient',
+  addToBlocklist: 'addToBlocklist',
+  searchAfterRemoval: 'searchAfterRemoval',
+  dryRunMode: 'dryRunMode',
+  maxRemovalsPerRun: 'maxRemovalsPerRun',
+  minQueueAgeMins: 'minQueueAgeMins',
+  strikeSystemEnabled: 'strikeSystemEnabled',
+  maxStrikes: 'maxStrikes',
+  strikeDecayHours: 'strikeDecayHours',
+  seedingTimeoutEnabled: 'seedingTimeoutEnabled',
+  seedingTimeoutHours: 'seedingTimeoutHours',
+  estimatedCompletionEnabled: 'estimatedCompletionEnabled',
+  estimatedCompletionMultiplier: 'estimatedCompletionMultiplier',
+  importPendingThresholdMins: 'importPendingThresholdMins',
+  whitelistEnabled: 'whitelistEnabled',
+  whitelistPatterns: 'whitelistPatterns',
+  lastRunAt: 'lastRunAt',
+  lastRunItemsCleaned: 'lastRunItemsCleaned',
+  lastRunItemsSkipped: 'lastRunItemsSkipped',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type QueueCleanerConfigScalarFieldEnum = (typeof QueueCleanerConfigScalarFieldEnum)[keyof typeof QueueCleanerConfigScalarFieldEnum]
+
+
+export const QueueCleanerLogScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  itemsCleaned: 'itemsCleaned',
+  itemsSkipped: 'itemsSkipped',
+  itemsWarned: 'itemsWarned',
+  isDryRun: 'isDryRun',
+  cleanedItems: 'cleanedItems',
+  skippedItems: 'skippedItems',
+  warnedItems: 'warnedItems',
+  status: 'status',
+  message: 'message',
+  durationMs: 'durationMs',
+  startedAt: 'startedAt',
+  completedAt: 'completedAt'
+} as const
+
+export type QueueCleanerLogScalarFieldEnum = (typeof QueueCleanerLogScalarFieldEnum)[keyof typeof QueueCleanerLogScalarFieldEnum]
+
+
+export const QueueCleanerStrikeScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  downloadId: 'downloadId',
+  downloadTitle: 'downloadTitle',
+  downloadHash: 'downloadHash',
+  strikeCount: 'strikeCount',
+  lastRule: 'lastRule',
+  lastReason: 'lastReason',
+  firstStrikeAt: 'firstStrikeAt',
+  lastStrikeAt: 'lastStrikeAt'
+} as const
+
+export type QueueCleanerStrikeScalarFieldEnum = (typeof QueueCleanerStrikeScalarFieldEnum)[keyof typeof QueueCleanerStrikeScalarFieldEnum]
 
 
 export const SortOrder = {

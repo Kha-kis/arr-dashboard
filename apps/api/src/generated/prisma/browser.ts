@@ -148,3 +148,18 @@ export type LibrarySyncStatus = Prisma.LibrarySyncStatusModel
  * 
  */
 export type UserCustomFormat = Prisma.UserCustomFormatModel
+/**
+ * Model QueueCleanerConfig
+ * Per-instance queue cleaner configuration (1:1 with ServiceInstance)
+ */
+export type QueueCleanerConfig = Prisma.QueueCleanerConfigModel
+/**
+ * Model QueueCleanerLog
+ * Queue cleaner activity audit log
+ */
+export type QueueCleanerLog = Prisma.QueueCleanerLogModel
+/**
+ * Model QueueCleanerStrike
+ * Queue cleaner strike tracking for gradual removal
+ */
+export type QueueCleanerStrike = Prisma.QueueCleanerStrikeModel
