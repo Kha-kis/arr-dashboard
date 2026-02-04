@@ -5,6 +5,23 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.3] - 2026-02-04
+
+### Added
+
+- **Queue Cleaner** - New automated queue cleanup feature for Sonarr/Radarr with multi-rule detection (stalled, failed, slow, seeding timeout, error patterns, import blocks), strike system, whitelist protection, dry-run mode, rich preview UI, statistics dashboard, and per-instance configuration ([#81](https://github.com/Kha-kis/arr-dashboard/pull/81))
+- **Prefer Season Packs** - New hunting toggle for Sonarr that prioritizes season pack releases over individual episode searches. When enabled, always triggers SeasonSearch for any missing content to catch season packs ([#79](https://github.com/Kha-kis/arr-dashboard/issues/79))
+
+### Fixed
+
+- **CI build order** - Build shared package before lint and test jobs to ensure types are available ([#81](https://github.com/Kha-kis/arr-dashboard/pull/81))
+
+### Security
+
+- **Fastify** - Update to 5.7.2 to address HTTP request smuggling vulnerability ([GHSA-jx2c-rxcm-jvmq](https://github.com/advisories/GHSA-jx2c-rxcm-jvmq))
+
+---
+
 ## [2.7.2] - 2026-02-02
 
 ### Added
@@ -454,6 +471,7 @@ Major dependency updates:
 
 ---
 
+[2.7.3]: https://github.com/Kha-kis/arr-dashboard/compare/v2.7.2...v2.7.3
 [2.7.2]: https://github.com/Kha-kis/arr-dashboard/compare/v2.7.1...v2.7.2
 [2.7.1]: https://github.com/Kha-kis/arr-dashboard/compare/v2.7.0...v2.7.1
 [2.7.0]: https://github.com/Kha-kis/arr-dashboard/compare/v2.6.7...v2.7.0
