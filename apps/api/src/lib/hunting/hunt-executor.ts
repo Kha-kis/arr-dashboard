@@ -524,6 +524,7 @@ export async function executeHuntWithSdk(
 			historyManager,
 			apiCallCounter,
 			logger,
+			config.preferSeasonPacks,
 		);
 		return { ...result, apiCallsMade: apiCallCounter.count };
 	}
@@ -740,6 +741,7 @@ async function executeSonarrHuntWithSdk(
 	historyManager: SearchHistoryManager,
 	counter: ApiCallCounter,
 	logger: HuntLogger,
+	preferSeasonPacks: boolean,
 ): Promise<HuntResultWithoutApiCount> {
 	try {
 		// First, get all series to have filter data available
@@ -861,8 +863,11 @@ async function executeSonarrHuntWithSdk(
 		}[] = [];
 		const individualEpisodes: typeof eligibleEpisodes = [];
 
+		// Use threshold of 1 when preferSeasonPacks is enabled, otherwise use default (3)
+		const seasonThreshold = preferSeasonPacks ? 1 : SEASON_SEARCH_THRESHOLD;
+
 		for (const [, episodes] of seasonGroups) {
-			if (episodes.length >= SEASON_SEARCH_THRESHOLD) {
+			if (episodes.length >= seasonThreshold) {
 				const firstEp = episodes[0];
 				if (!firstEp) continue;
 				const series = seriesMap.get(firstEp.seriesId ?? 0);

@@ -2970,6 +2970,7 @@ export const HuntConfigScalarFieldEnum = {
   yearMin: 'yearMin',
   yearMax: 'yearMax',
   ageThresholdDays: 'ageThresholdDays',
+  preferSeasonPacks: 'preferSeasonPacks',
   researchAfterDays: 'researchAfterDays',
   lastMissingHunt: 'lastMissingHunt',
   lastUpgradeHunt: 'lastUpgradeHunt',
