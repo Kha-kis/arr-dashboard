@@ -5,6 +5,7 @@ import Fastify, { type FastifyInstance } from "fastify";
 import { type ApiEnv, envSchema } from "./config/env.js";
 import { arrClientPlugin } from "./plugins/arr-client.js";
 import backupSchedulerPlugin from "./plugins/backup-scheduler.js";
+import queueCleanerSchedulerPlugin from "./plugins/queue-cleaner-scheduler.js";
 import librarySyncSchedulerPlugin from "./plugins/library-sync-scheduler.js";
 import lifecyclePlugin from "./plugins/lifecycle.js";
 import { prismaPlugin } from "./plugins/prisma.js";
@@ -20,6 +21,7 @@ import { registerDashboardRoutes } from "./routes/dashboard.js";
 import { registerDiscoverRoutes } from "./routes/discover.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerHuntingRoutes } from "./routes/hunting.js";
+import { registerQueueCleanerRoutes } from "./routes/queue-cleaner.js";
 import { registerLibraryRoutes } from "./routes/library.js";
 import { registerManualImportRoutes } from "./routes/manual-import.js";
 import oidcProvidersRoutes from "./routes/oidc-providers.js";
@@ -73,6 +75,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(sessionCleanupPlugin);
 	app.register(trashBackupCleanupPlugin);
 	app.register(trashUpdateSchedulerPlugin);
+	app.register(queueCleanerSchedulerPlugin);
 
 	app.decorateRequest("currentUser", null);
 	app.decorateRequest("sessionToken", null);
@@ -119,6 +122,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(registerSystemRoutes, { prefix: "/api/system" });
 	app.register(registerTrashGuidesRoutes, { prefix: "/api/trash-guides" });
 	app.register(registerHuntingRoutes, { prefix: "/api" });
+	app.register(registerQueueCleanerRoutes, { prefix: "/api" });
 
 	return app;
 };
