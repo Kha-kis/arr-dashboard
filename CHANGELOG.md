@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **CI build order** - Build shared package before lint and test jobs to ensure types are available ([#81](https://github.com/Kha-kis/arr-dashboard/pull/81))
 - **Environment validation errors** - Replace cryptic Zod stack traces with user-friendly error messages showing which env var failed, its current value, and hints for common issues like SESSION_TTL_HOURS limits ([#78](https://github.com/Kha-kis/arr-dashboard/issues/78))
+- **Login page API health check** - Always verify API connectivity when login page loads, ensuring users see the "Connection Error" screen immediately when API is down instead of a stale cached login form ([#78](https://github.com/Kha-kis/arr-dashboard/issues/78))
 
 ### Security
 
