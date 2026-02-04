@@ -409,7 +409,10 @@ export const ModelName = {
   HuntSearchHistory: 'HuntSearchHistory',
   LibraryCache: 'LibraryCache',
   LibrarySyncStatus: 'LibrarySyncStatus',
-  UserCustomFormat: 'UserCustomFormat'
+  UserCustomFormat: 'UserCustomFormat',
+  QueueCleanerConfig: 'QueueCleanerConfig',
+  QueueCleanerLog: 'QueueCleanerLog',
+  QueueCleanerStrike: 'QueueCleanerStrike'
 } as const
 
 export type ModelName = (typeof ModelName)[keyof typeof ModelName]
@@ -425,7 +428,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -2353,6 +2356,228 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    QueueCleanerConfig: {
+      payload: Prisma.$QueueCleanerConfigPayload<ExtArgs>
+      fields: Prisma.QueueCleanerConfigFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.QueueCleanerConfigFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerConfigPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.QueueCleanerConfigFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerConfigPayload>
+        }
+        findFirst: {
+          args: Prisma.QueueCleanerConfigFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerConfigPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.QueueCleanerConfigFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerConfigPayload>
+        }
+        findMany: {
+          args: Prisma.QueueCleanerConfigFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerConfigPayload>[]
+        }
+        create: {
+          args: Prisma.QueueCleanerConfigCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerConfigPayload>
+        }
+        createMany: {
+          args: Prisma.QueueCleanerConfigCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.QueueCleanerConfigCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerConfigPayload>[]
+        }
+        delete: {
+          args: Prisma.QueueCleanerConfigDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerConfigPayload>
+        }
+        update: {
+          args: Prisma.QueueCleanerConfigUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerConfigPayload>
+        }
+        deleteMany: {
+          args: Prisma.QueueCleanerConfigDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.QueueCleanerConfigUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.QueueCleanerConfigUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerConfigPayload>[]
+        }
+        upsert: {
+          args: Prisma.QueueCleanerConfigUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerConfigPayload>
+        }
+        aggregate: {
+          args: Prisma.QueueCleanerConfigAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateQueueCleanerConfig>
+        }
+        groupBy: {
+          args: Prisma.QueueCleanerConfigGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.QueueCleanerConfigGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.QueueCleanerConfigCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.QueueCleanerConfigCountAggregateOutputType> | number
+        }
+      }
+    }
+    QueueCleanerLog: {
+      payload: Prisma.$QueueCleanerLogPayload<ExtArgs>
+      fields: Prisma.QueueCleanerLogFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.QueueCleanerLogFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerLogPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.QueueCleanerLogFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerLogPayload>
+        }
+        findFirst: {
+          args: Prisma.QueueCleanerLogFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerLogPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.QueueCleanerLogFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerLogPayload>
+        }
+        findMany: {
+          args: Prisma.QueueCleanerLogFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerLogPayload>[]
+        }
+        create: {
+          args: Prisma.QueueCleanerLogCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerLogPayload>
+        }
+        createMany: {
+          args: Prisma.QueueCleanerLogCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.QueueCleanerLogCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerLogPayload>[]
+        }
+        delete: {
+          args: Prisma.QueueCleanerLogDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerLogPayload>
+        }
+        update: {
+          args: Prisma.QueueCleanerLogUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerLogPayload>
+        }
+        deleteMany: {
+          args: Prisma.QueueCleanerLogDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.QueueCleanerLogUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.QueueCleanerLogUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerLogPayload>[]
+        }
+        upsert: {
+          args: Prisma.QueueCleanerLogUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerLogPayload>
+        }
+        aggregate: {
+          args: Prisma.QueueCleanerLogAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateQueueCleanerLog>
+        }
+        groupBy: {
+          args: Prisma.QueueCleanerLogGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.QueueCleanerLogGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.QueueCleanerLogCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.QueueCleanerLogCountAggregateOutputType> | number
+        }
+      }
+    }
+    QueueCleanerStrike: {
+      payload: Prisma.$QueueCleanerStrikePayload<ExtArgs>
+      fields: Prisma.QueueCleanerStrikeFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.QueueCleanerStrikeFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerStrikePayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.QueueCleanerStrikeFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerStrikePayload>
+        }
+        findFirst: {
+          args: Prisma.QueueCleanerStrikeFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerStrikePayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.QueueCleanerStrikeFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerStrikePayload>
+        }
+        findMany: {
+          args: Prisma.QueueCleanerStrikeFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerStrikePayload>[]
+        }
+        create: {
+          args: Prisma.QueueCleanerStrikeCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerStrikePayload>
+        }
+        createMany: {
+          args: Prisma.QueueCleanerStrikeCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.QueueCleanerStrikeCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerStrikePayload>[]
+        }
+        delete: {
+          args: Prisma.QueueCleanerStrikeDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerStrikePayload>
+        }
+        update: {
+          args: Prisma.QueueCleanerStrikeUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerStrikePayload>
+        }
+        deleteMany: {
+          args: Prisma.QueueCleanerStrikeDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.QueueCleanerStrikeUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.QueueCleanerStrikeUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerStrikePayload>[]
+        }
+        upsert: {
+          args: Prisma.QueueCleanerStrikeUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QueueCleanerStrikePayload>
+        }
+        aggregate: {
+          args: Prisma.QueueCleanerStrikeAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateQueueCleanerStrike>
+        }
+        groupBy: {
+          args: Prisma.QueueCleanerStrikeGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.QueueCleanerStrikeGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.QueueCleanerStrikeCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.QueueCleanerStrikeCountAggregateOutputType> | number
+        }
+      }
+    }
   }
 } & {
   other: {
@@ -2851,6 +3076,85 @@ export const UserCustomFormatScalarFieldEnum = {
 export type UserCustomFormatScalarFieldEnum = (typeof UserCustomFormatScalarFieldEnum)[keyof typeof UserCustomFormatScalarFieldEnum]
 
 
+export const QueueCleanerConfigScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  enabled: 'enabled',
+  intervalMins: 'intervalMins',
+  stalledEnabled: 'stalledEnabled',
+  stalledThresholdMins: 'stalledThresholdMins',
+  failedEnabled: 'failedEnabled',
+  slowEnabled: 'slowEnabled',
+  slowSpeedThreshold: 'slowSpeedThreshold',
+  slowGracePeriodMins: 'slowGracePeriodMins',
+  errorPatternsEnabled: 'errorPatternsEnabled',
+  errorPatterns: 'errorPatterns',
+  removeFromClient: 'removeFromClient',
+  addToBlocklist: 'addToBlocklist',
+  searchAfterRemoval: 'searchAfterRemoval',
+  changeCategoryEnabled: 'changeCategoryEnabled',
+  dryRunMode: 'dryRunMode',
+  maxRemovalsPerRun: 'maxRemovalsPerRun',
+  minQueueAgeMins: 'minQueueAgeMins',
+  strikeSystemEnabled: 'strikeSystemEnabled',
+  maxStrikes: 'maxStrikes',
+  strikeDecayHours: 'strikeDecayHours',
+  seedingTimeoutEnabled: 'seedingTimeoutEnabled',
+  seedingTimeoutHours: 'seedingTimeoutHours',
+  estimatedCompletionEnabled: 'estimatedCompletionEnabled',
+  estimatedCompletionMultiplier: 'estimatedCompletionMultiplier',
+  importPendingThresholdMins: 'importPendingThresholdMins',
+  importBlockCleanupLevel: 'importBlockCleanupLevel',
+  importBlockPatternMode: 'importBlockPatternMode',
+  importBlockPatterns: 'importBlockPatterns',
+  whitelistEnabled: 'whitelistEnabled',
+  whitelistPatterns: 'whitelistPatterns',
+  lastRunAt: 'lastRunAt',
+  lastRunItemsCleaned: 'lastRunItemsCleaned',
+  lastRunItemsSkipped: 'lastRunItemsSkipped',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type QueueCleanerConfigScalarFieldEnum = (typeof QueueCleanerConfigScalarFieldEnum)[keyof typeof QueueCleanerConfigScalarFieldEnum]
+
+
+export const QueueCleanerLogScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  itemsCleaned: 'itemsCleaned',
+  itemsSkipped: 'itemsSkipped',
+  itemsWarned: 'itemsWarned',
+  isDryRun: 'isDryRun',
+  cleanedItems: 'cleanedItems',
+  skippedItems: 'skippedItems',
+  warnedItems: 'warnedItems',
+  status: 'status',
+  message: 'message',
+  durationMs: 'durationMs',
+  startedAt: 'startedAt',
+  completedAt: 'completedAt'
+} as const
+
+export type QueueCleanerLogScalarFieldEnum = (typeof QueueCleanerLogScalarFieldEnum)[keyof typeof QueueCleanerLogScalarFieldEnum]
+
+
+export const QueueCleanerStrikeScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  downloadId: 'downloadId',
+  downloadTitle: 'downloadTitle',
+  downloadHash: 'downloadHash',
+  strikeCount: 'strikeCount',
+  lastRule: 'lastRule',
+  lastReason: 'lastReason',
+  firstStrikeAt: 'firstStrikeAt',
+  lastStrikeAt: 'lastStrikeAt'
+} as const
+
+export type QueueCleanerStrikeScalarFieldEnum = (typeof QueueCleanerStrikeScalarFieldEnum)[keyof typeof QueueCleanerStrikeScalarFieldEnum]
+
+
 export const SortOrder = {
   asc: 'asc',
   desc: 'desc'
@@ -3056,6 +3360,9 @@ export type GlobalOmitConfig = {
   libraryCache?: Prisma.LibraryCacheOmit
   librarySyncStatus?: Prisma.LibrarySyncStatusOmit
   userCustomFormat?: Prisma.UserCustomFormatOmit
+  queueCleanerConfig?: Prisma.QueueCleanerConfigOmit
+  queueCleanerLog?: Prisma.QueueCleanerLogOmit
+  queueCleanerStrike?: Prisma.QueueCleanerStrikeOmit
 }
 
 /* Types for Logging */

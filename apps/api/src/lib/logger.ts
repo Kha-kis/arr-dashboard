@@ -46,6 +46,7 @@ export const loggers = {
 	trashGuides: logger.child({ module: "trash-guides" }),
 	deployment: logger.child({ module: "deployment" }),
 	scheduler: logger.child({ module: "scheduler" }),
+	queueCleaner: logger.child({ module: "queue-cleaner" }),
 };
 
 /**

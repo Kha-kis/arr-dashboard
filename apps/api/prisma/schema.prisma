@@ -92,6 +92,9 @@ model ServiceInstance {
   standaloneCFDeployments     StandaloneCFDeployment[]
   huntConfig                  HuntConfig?
   huntLogs                    HuntLog[]
+  queueCleanerConfig          QueueCleanerConfig?
+  queueCleanerLogs            QueueCleanerLog[]
+  queueCleanerStrikes         QueueCleanerStrike[]
   libraryCache                LibraryCache[]
   librarySyncStatus           LibrarySyncStatus?
 
@@ -759,4 +762,148 @@ model UserCustomFormat {
   @@unique([userId, name, serviceType])
   @@index([userId, serviceType])
   @@map("user_custom_formats")
+}
+
+// ============================================================================
+// Queue Cleaner Feature Models
+// Automated cleanup of stuck/failed downloads from Sonarr/Radarr queues
+// ============================================================================
+
+/// Per-instance queue cleaner configuration (1:1 with ServiceInstance)
+model QueueCleanerConfig {
+  id                    String          @id @default(cuid())
+  instanceId            String          @unique
+  instance              ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  // Master toggle
+  enabled               Boolean         @default(false)
+
+  // Check frequency
+  intervalMins          Int             @default(30)
+
+  // Rule: Stalled downloads
+  stalledEnabled        Boolean         @default(true)
+  stalledThresholdMins  Int             @default(60)
+
+  // Rule: Failed downloads
+  failedEnabled         Boolean         @default(true)
+
+  // Rule: Slow downloads
+  slowEnabled           Boolean         @default(false)
+  slowSpeedThreshold    Int             @default(100)     // KB/s
+  slowGracePeriodMins   Int             @default(30)
+
+  // Rule: Error pattern matching
+  errorPatternsEnabled  Boolean         @default(false)
+  errorPatterns         String?                           // JSON array of pattern strings
+
+  // Removal options
+  removeFromClient      Boolean         @default(true)
+  addToBlocklist        Boolean         @default(true)
+  searchAfterRemoval    Boolean         @default(false)
+
+  // Change category option (torrent only - usenet doesn't support this)
+  // Instead of deleting, move torrent to a different category in the client
+  // The actual category name is configured in Sonarr/Radarr's download client settings
+  changeCategoryEnabled Boolean         @default(false)
+
+  // Safety settings
+  dryRunMode            Boolean         @default(true)    // Safe by default!
+  maxRemovalsPerRun     Int             @default(10)
+  minQueueAgeMins       Int             @default(5)
+
+  // Rule: Strike system (gradual removal)
+  strikeSystemEnabled   Boolean         @default(false)
+  maxStrikes            Int             @default(3)
+  strikeDecayHours      Int             @default(24)
+
+  // Rule: Seeding timeout
+  seedingTimeoutEnabled Boolean         @default(false)
+  seedingTimeoutHours   Int             @default(72)
+
+  // Rule: Estimated completion exceeded
+  estimatedCompletionEnabled    Boolean @default(false)
+  estimatedCompletionMultiplier Float   @default(2.0)
+
+  // Rule: Import pending timeout
+  importPendingThresholdMins    Int     @default(60)
+
+  // Import block cleanup aggressiveness: "safe" | "moderate" | "aggressive"
+  // safe = only redundant/quality mismatch, moderate = + manual review, aggressive = + technical
+  importBlockCleanupLevel       String  @default("safe")
+
+  // Import block pattern mode: "defaults" | "include" | "exclude"
+  // defaults = use built-in categorized keywords based on cleanup level
+  // include = only clean if message matches one of the custom patterns
+  // exclude = don't clean if message matches any custom patterns (clean everything else)
+  importBlockPatternMode        String  @default("defaults")
+
+  // Custom import block patterns (JSON array of strings)
+  // Used when patternMode is "include" or "exclude"
+  importBlockPatterns           String?
+
+  // Whitelist/Ignore patterns
+  whitelistEnabled      Boolean         @default(false)
+  whitelistPatterns     String?                           // JSON: [{ type, pattern }]
+
+  // State tracking
+  lastRunAt             DateTime?
+  lastRunItemsCleaned   Int             @default(0)
+  lastRunItemsSkipped   Int             @default(0)
+
+  createdAt             DateTime        @default(now())
+  updatedAt             DateTime        @updatedAt
+
+  @@index([lastRunAt])
+  @@map("queue_cleaner_configs")
+}
+
+/// Queue cleaner activity audit log
+model QueueCleanerLog {
+  id              String          @id @default(cuid())
+  instanceId      String
+  instance        ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  itemsCleaned    Int             @default(0)
+  itemsSkipped    Int             @default(0)
+  itemsWarned     Int             @default(0)       // Items that got strikes but weren't removed
+  isDryRun        Boolean         @default(false)
+
+  // Detailed results (JSON arrays)
+  cleanedItems    String?                           // JSON: [{ id, title, reason }]
+  skippedItems    String?                           // JSON: [{ id, title, reason }]
+  warnedItems     String?                           // JSON: [{ id, title, reason, strikeCount }]
+
+  status          String                            // "running" | "completed" | "partial" | "skipped" | "error"
+  message         String?
+  durationMs      Int?
+
+  startedAt       DateTime        @default(now())
+  completedAt     DateTime?
+
+  @@index([instanceId, startedAt])
+  @@index([startedAt])
+  @@map("queue_cleaner_logs")
+}
+
+/// Queue cleaner strike tracking for gradual removal
+model QueueCleanerStrike {
+  id              String          @id @default(cuid())
+  instanceId      String
+  instance        ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  downloadId      String                                // ARR queue item ID (string for consistency with shared types)
+  downloadTitle   String                                // For display purposes
+  downloadHash    String?                               // Torrent hash for correlation
+
+  strikeCount     Int             @default(1)
+  lastRule        String                                // Which rule triggered: stalled, failed, slow, error_pattern, seeding_timeout
+  lastReason      String                                // Human-readable reason
+
+  firstStrikeAt   DateTime        @default(now())
+  lastStrikeAt    DateTime        @updatedAt
+
+  @@unique([instanceId, downloadId])
+  @@index([instanceId, lastStrikeAt])
+  @@map("queue_cleaner_strikes")
 }

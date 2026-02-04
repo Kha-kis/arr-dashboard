@@ -59,6 +59,9 @@ jobs:
       - name: Generate Prisma Client
         run: cd apps/api && pnpm exec prisma generate
 
+      - name: Build shared package
+        run: pnpm --filter @arr/shared run build
+
       - name: Run linting
         run: pnpm run lint
 
@@ -96,6 +99,9 @@ jobs:
 
       - name: Generate Prisma Client
         run: cd apps/api && pnpm exec prisma generate
+
+      - name: Build shared package
+        run: pnpm --filter @arr/shared run build
 
       - name: Run tests
         run: pnpm run test

@@ -2,8 +2,8 @@
 
 const nextConfig = {
 	output: "standalone",
-	transpilePackages: ["@arr/shared"],
-	// Note: eslint config moved to next lint CLI options in Next.js 16
+	// Empty turbopack config to silence Next.js 16 warning when using --webpack for builds
+	turbopack: {},
 	poweredByHeader: false,
 	async rewrites() {
 		const apiHost = process.env.API_HOST || "http://localhost:3001";
