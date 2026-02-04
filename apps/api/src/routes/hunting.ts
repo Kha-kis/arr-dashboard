@@ -71,6 +71,8 @@ const huntConfigUpdateSchema = z.object({
 	yearMin: z.number().int().min(1900).max(2100).nullable().optional(),
 	yearMax: z.number().int().min(1900).max(2100).nullable().optional(),
 	ageThresholdDays: z.number().int().min(0).max(365).nullable().optional(),
+	// Season pack preference (Sonarr only)
+	preferSeasonPacks: z.boolean().optional(),
 	// Re-search settings (0 = never re-search already searched items)
 	researchAfterDays: z.number().int().min(0).max(MAX_RESEARCH_AFTER_DAYS).optional(),
 });

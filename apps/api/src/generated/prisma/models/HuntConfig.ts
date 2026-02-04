@@ -75,6 +75,7 @@ export type HuntConfigMinAggregateOutputType = {
   yearMin: number | null
   yearMax: number | null
   ageThresholdDays: number | null
+  preferSeasonPacks: boolean | null
   researchAfterDays: number | null
   lastMissingHunt: Date | null
   lastUpgradeHunt: Date | null
@@ -105,6 +106,7 @@ export type HuntConfigMaxAggregateOutputType = {
   yearMin: number | null
   yearMax: number | null
   ageThresholdDays: number | null
+  preferSeasonPacks: boolean | null
   researchAfterDays: number | null
   lastMissingHunt: Date | null
   lastUpgradeHunt: Date | null
@@ -135,6 +137,7 @@ export type HuntConfigCountAggregateOutputType = {
   yearMin: number
   yearMax: number
   ageThresholdDays: number
+  preferSeasonPacks: number
   researchAfterDays: number
   lastMissingHunt: number
   lastUpgradeHunt: number
@@ -195,6 +198,7 @@ export type HuntConfigMinAggregateInputType = {
   yearMin?: true
   yearMax?: true
   ageThresholdDays?: true
+  preferSeasonPacks?: true
   researchAfterDays?: true
   lastMissingHunt?: true
   lastUpgradeHunt?: true
@@ -225,6 +229,7 @@ export type HuntConfigMaxAggregateInputType = {
   yearMin?: true
   yearMax?: true
   ageThresholdDays?: true
+  preferSeasonPacks?: true
   researchAfterDays?: true
   lastMissingHunt?: true
   lastUpgradeHunt?: true
@@ -255,6 +260,7 @@ export type HuntConfigCountAggregateInputType = {
   yearMin?: true
   yearMax?: true
   ageThresholdDays?: true
+  preferSeasonPacks?: true
   researchAfterDays?: true
   lastMissingHunt?: true
   lastUpgradeHunt?: true
@@ -372,6 +378,7 @@ export type HuntConfigGroupByOutputType = {
   yearMin: number | null
   yearMax: number | null
   ageThresholdDays: number | null
+  preferSeasonPacks: boolean
   researchAfterDays: number
   lastMissingHunt: Date | null
   lastUpgradeHunt: Date | null
@@ -425,6 +432,7 @@ export type HuntConfigWhereInput = {
   yearMin?: Prisma.IntNullableFilter<"HuntConfig"> | number | null
   yearMax?: Prisma.IntNullableFilter<"HuntConfig"> | number | null
   ageThresholdDays?: Prisma.IntNullableFilter<"HuntConfig"> | number | null
+  preferSeasonPacks?: Prisma.BoolFilter<"HuntConfig"> | boolean
   researchAfterDays?: Prisma.IntFilter<"HuntConfig"> | number
   lastMissingHunt?: Prisma.DateTimeNullableFilter<"HuntConfig"> | Date | string | null
   lastUpgradeHunt?: Prisma.DateTimeNullableFilter<"HuntConfig"> | Date | string | null
@@ -457,6 +465,7 @@ export type HuntConfigOrderByWithRelationInput = {
   yearMin?: Prisma.SortOrderInput | Prisma.SortOrder
   yearMax?: Prisma.SortOrderInput | Prisma.SortOrder
   ageThresholdDays?: Prisma.SortOrderInput | Prisma.SortOrder
+  preferSeasonPacks?: Prisma.SortOrder
   researchAfterDays?: Prisma.SortOrder
   lastMissingHunt?: Prisma.SortOrderInput | Prisma.SortOrder
   lastUpgradeHunt?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -492,6 +501,7 @@ export type HuntConfigWhereUniqueInput = Prisma.AtLeast<{
   yearMin?: Prisma.IntNullableFilter<"HuntConfig"> | number | null
   yearMax?: Prisma.IntNullableFilter<"HuntConfig"> | number | null
   ageThresholdDays?: Prisma.IntNullableFilter<"HuntConfig"> | number | null
+  preferSeasonPacks?: Prisma.BoolFilter<"HuntConfig"> | boolean
   researchAfterDays?: Prisma.IntFilter<"HuntConfig"> | number
   lastMissingHunt?: Prisma.DateTimeNullableFilter<"HuntConfig"> | Date | string | null
   lastUpgradeHunt?: Prisma.DateTimeNullableFilter<"HuntConfig"> | Date | string | null
@@ -524,6 +534,7 @@ export type HuntConfigOrderByWithAggregationInput = {
   yearMin?: Prisma.SortOrderInput | Prisma.SortOrder
   yearMax?: Prisma.SortOrderInput | Prisma.SortOrder
   ageThresholdDays?: Prisma.SortOrderInput | Prisma.SortOrder
+  preferSeasonPacks?: Prisma.SortOrder
   researchAfterDays?: Prisma.SortOrder
   lastMissingHunt?: Prisma.SortOrderInput | Prisma.SortOrder
   lastUpgradeHunt?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -562,6 +573,7 @@ export type HuntConfigScalarWhereWithAggregatesInput = {
   yearMin?: Prisma.IntNullableWithAggregatesFilter<"HuntConfig"> | number | null
   yearMax?: Prisma.IntNullableWithAggregatesFilter<"HuntConfig"> | number | null
   ageThresholdDays?: Prisma.IntNullableWithAggregatesFilter<"HuntConfig"> | number | null
+  preferSeasonPacks?: Prisma.BoolWithAggregatesFilter<"HuntConfig"> | boolean
   researchAfterDays?: Prisma.IntWithAggregatesFilter<"HuntConfig"> | number
   lastMissingHunt?: Prisma.DateTimeNullableWithAggregatesFilter<"HuntConfig"> | Date | string | null
   lastUpgradeHunt?: Prisma.DateTimeNullableWithAggregatesFilter<"HuntConfig"> | Date | string | null
@@ -591,6 +603,7 @@ export type HuntConfigCreateInput = {
   yearMin?: number | null
   yearMax?: number | null
   ageThresholdDays?: number | null
+  preferSeasonPacks?: boolean
   researchAfterDays?: number
   lastMissingHunt?: Date | string | null
   lastUpgradeHunt?: Date | string | null
@@ -623,6 +636,7 @@ export type HuntConfigUncheckedCreateInput = {
   yearMin?: number | null
   yearMax?: number | null
   ageThresholdDays?: number | null
+  preferSeasonPacks?: boolean
   researchAfterDays?: number
   lastMissingHunt?: Date | string | null
   lastUpgradeHunt?: Date | string | null
@@ -653,6 +667,7 @@ export type HuntConfigUpdateInput = {
   yearMin?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   yearMax?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   ageThresholdDays?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  preferSeasonPacks?: Prisma.BoolFieldUpdateOperationsInput | boolean
   researchAfterDays?: Prisma.IntFieldUpdateOperationsInput | number
   lastMissingHunt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastUpgradeHunt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -685,6 +700,7 @@ export type HuntConfigUncheckedUpdateInput = {
   yearMin?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   yearMax?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   ageThresholdDays?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  preferSeasonPacks?: Prisma.BoolFieldUpdateOperationsInput | boolean
   researchAfterDays?: Prisma.IntFieldUpdateOperationsInput | number
   lastMissingHunt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastUpgradeHunt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -716,6 +732,7 @@ export type HuntConfigCreateManyInput = {
   yearMin?: number | null
   yearMax?: number | null
   ageThresholdDays?: number | null
+  preferSeasonPacks?: boolean
   researchAfterDays?: number
   lastMissingHunt?: Date | string | null
   lastUpgradeHunt?: Date | string | null
@@ -745,6 +762,7 @@ export type HuntConfigUpdateManyMutationInput = {
   yearMin?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   yearMax?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   ageThresholdDays?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  preferSeasonPacks?: Prisma.BoolFieldUpdateOperationsInput | boolean
   researchAfterDays?: Prisma.IntFieldUpdateOperationsInput | number
   lastMissingHunt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastUpgradeHunt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -775,6 +793,7 @@ export type HuntConfigUncheckedUpdateManyInput = {
   yearMin?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   yearMax?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   ageThresholdDays?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  preferSeasonPacks?: Prisma.BoolFieldUpdateOperationsInput | boolean
   researchAfterDays?: Prisma.IntFieldUpdateOperationsInput | number
   lastMissingHunt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastUpgradeHunt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -810,6 +829,7 @@ export type HuntConfigCountOrderByAggregateInput = {
   yearMin?: Prisma.SortOrder
   yearMax?: Prisma.SortOrder
   ageThresholdDays?: Prisma.SortOrder
+  preferSeasonPacks?: Prisma.SortOrder
   researchAfterDays?: Prisma.SortOrder
   lastMissingHunt?: Prisma.SortOrder
   lastUpgradeHunt?: Prisma.SortOrder
@@ -854,6 +874,7 @@ export type HuntConfigMaxOrderByAggregateInput = {
   yearMin?: Prisma.SortOrder
   yearMax?: Prisma.SortOrder
   ageThresholdDays?: Prisma.SortOrder
+  preferSeasonPacks?: Prisma.SortOrder
   researchAfterDays?: Prisma.SortOrder
   lastMissingHunt?: Prisma.SortOrder
   lastUpgradeHunt?: Prisma.SortOrder
@@ -884,6 +905,7 @@ export type HuntConfigMinOrderByAggregateInput = {
   yearMin?: Prisma.SortOrder
   yearMax?: Prisma.SortOrder
   ageThresholdDays?: Prisma.SortOrder
+  preferSeasonPacks?: Prisma.SortOrder
   researchAfterDays?: Prisma.SortOrder
   lastMissingHunt?: Prisma.SortOrder
   lastUpgradeHunt?: Prisma.SortOrder
@@ -978,6 +1000,7 @@ export type HuntConfigCreateWithoutInstanceInput = {
   yearMin?: number | null
   yearMax?: number | null
   ageThresholdDays?: number | null
+  preferSeasonPacks?: boolean
   researchAfterDays?: number
   lastMissingHunt?: Date | string | null
   lastUpgradeHunt?: Date | string | null
@@ -1008,6 +1031,7 @@ export type HuntConfigUncheckedCreateWithoutInstanceInput = {
   yearMin?: number | null
   yearMax?: number | null
   ageThresholdDays?: number | null
+  preferSeasonPacks?: boolean
   researchAfterDays?: number
   lastMissingHunt?: Date | string | null
   lastUpgradeHunt?: Date | string | null
@@ -1054,6 +1078,7 @@ export type HuntConfigUpdateWithoutInstanceInput = {
   yearMin?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   yearMax?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   ageThresholdDays?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  preferSeasonPacks?: Prisma.BoolFieldUpdateOperationsInput | boolean
   researchAfterDays?: Prisma.IntFieldUpdateOperationsInput | number
   lastMissingHunt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastUpgradeHunt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1084,6 +1109,7 @@ export type HuntConfigUncheckedUpdateWithoutInstanceInput = {
   yearMin?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   yearMax?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   ageThresholdDays?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  preferSeasonPacks?: Prisma.BoolFieldUpdateOperationsInput | boolean
   researchAfterDays?: Prisma.IntFieldUpdateOperationsInput | number
   lastMissingHunt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastUpgradeHunt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1114,6 +1140,7 @@ export type HuntConfigCreateWithoutSearchHistoryInput = {
   yearMin?: number | null
   yearMax?: number | null
   ageThresholdDays?: number | null
+  preferSeasonPacks?: boolean
   researchAfterDays?: number
   lastMissingHunt?: Date | string | null
   lastUpgradeHunt?: Date | string | null
@@ -1145,6 +1172,7 @@ export type HuntConfigUncheckedCreateWithoutSearchHistoryInput = {
   yearMin?: number | null
   yearMax?: number | null
   ageThresholdDays?: number | null
+  preferSeasonPacks?: boolean
   researchAfterDays?: number
   lastMissingHunt?: Date | string | null
   lastUpgradeHunt?: Date | string | null
@@ -1190,6 +1218,7 @@ export type HuntConfigUpdateWithoutSearchHistoryInput = {
   yearMin?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   yearMax?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   ageThresholdDays?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  preferSeasonPacks?: Prisma.BoolFieldUpdateOperationsInput | boolean
   researchAfterDays?: Prisma.IntFieldUpdateOperationsInput | number
   lastMissingHunt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastUpgradeHunt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1221,6 +1250,7 @@ export type HuntConfigUncheckedUpdateWithoutSearchHistoryInput = {
   yearMin?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   yearMax?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
   ageThresholdDays?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
+  preferSeasonPacks?: Prisma.BoolFieldUpdateOperationsInput | boolean
   researchAfterDays?: Prisma.IntFieldUpdateOperationsInput | number
   lastMissingHunt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
   lastUpgradeHunt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1282,6 +1312,7 @@ export type HuntConfigSelect<ExtArgs extends runtime.Types.Extensions.InternalAr
   yearMin?: boolean
   yearMax?: boolean
   ageThresholdDays?: boolean
+  preferSeasonPacks?: boolean
   researchAfterDays?: boolean
   lastMissingHunt?: boolean
   lastUpgradeHunt?: boolean
@@ -1315,6 +1346,7 @@ export type HuntConfigSelectCreateManyAndReturn<ExtArgs extends runtime.Types.Ex
   yearMin?: boolean
   yearMax?: boolean
   ageThresholdDays?: boolean
+  preferSeasonPacks?: boolean
   researchAfterDays?: boolean
   lastMissingHunt?: boolean
   lastUpgradeHunt?: boolean
@@ -1346,6 +1378,7 @@ export type HuntConfigSelectUpdateManyAndReturn<ExtArgs extends runtime.Types.Ex
   yearMin?: boolean
   yearMax?: boolean
   ageThresholdDays?: boolean
+  preferSeasonPacks?: boolean
   researchAfterDays?: boolean
   lastMissingHunt?: boolean
   lastUpgradeHunt?: boolean
@@ -1377,6 +1410,7 @@ export type HuntConfigSelectScalar = {
   yearMin?: boolean
   yearMax?: boolean
   ageThresholdDays?: boolean
+  preferSeasonPacks?: boolean
   researchAfterDays?: boolean
   lastMissingHunt?: boolean
   lastUpgradeHunt?: boolean
@@ -1386,7 +1420,7 @@ export type HuntConfigSelectScalar = {
   updatedAt?: boolean
 }
 
-export type HuntConfigOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "huntMissingEnabled" | "huntUpgradesEnabled" | "missingBatchSize" | "missingIntervalMins" | "upgradeBatchSize" | "upgradeIntervalMins" | "hourlyApiCap" | "queueThreshold" | "filterLogic" | "monitoredOnly" | "includeTags" | "excludeTags" | "includeQualityProfiles" | "excludeQualityProfiles" | "includeStatuses" | "yearMin" | "yearMax" | "ageThresholdDays" | "researchAfterDays" | "lastMissingHunt" | "lastUpgradeHunt" | "apiCallsThisHour" | "apiCallsResetAt" | "createdAt" | "updatedAt", ExtArgs["result"]["huntConfig"]>
+export type HuntConfigOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "huntMissingEnabled" | "huntUpgradesEnabled" | "missingBatchSize" | "missingIntervalMins" | "upgradeBatchSize" | "upgradeIntervalMins" | "hourlyApiCap" | "queueThreshold" | "filterLogic" | "monitoredOnly" | "includeTags" | "excludeTags" | "includeQualityProfiles" | "excludeQualityProfiles" | "includeStatuses" | "yearMin" | "yearMax" | "ageThresholdDays" | "preferSeasonPacks" | "researchAfterDays" | "lastMissingHunt" | "lastUpgradeHunt" | "apiCallsThisHour" | "apiCallsResetAt" | "createdAt" | "updatedAt", ExtArgs["result"]["huntConfig"]>
 export type HuntConfigInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
   searchHistory?: boolean | Prisma.HuntConfig$searchHistoryArgs<ExtArgs>
@@ -1426,6 +1460,7 @@ export type $HuntConfigPayload<ExtArgs extends runtime.Types.Extensions.Internal
     yearMin: number | null
     yearMax: number | null
     ageThresholdDays: number | null
+    preferSeasonPacks: boolean
     researchAfterDays: number
     lastMissingHunt: Date | null
     lastUpgradeHunt: Date | null
@@ -1878,6 +1913,7 @@ export interface HuntConfigFieldRefs {
   readonly yearMin: Prisma.FieldRef<"HuntConfig", 'Int'>
   readonly yearMax: Prisma.FieldRef<"HuntConfig", 'Int'>
   readonly ageThresholdDays: Prisma.FieldRef<"HuntConfig", 'Int'>
+  readonly preferSeasonPacks: Prisma.FieldRef<"HuntConfig", 'Boolean'>
   readonly researchAfterDays: Prisma.FieldRef<"HuntConfig", 'Int'>
   readonly lastMissingHunt: Prisma.FieldRef<"HuntConfig", 'DateTime'>
   readonly lastUpgradeHunt: Prisma.FieldRef<"HuntConfig", 'DateTime'>

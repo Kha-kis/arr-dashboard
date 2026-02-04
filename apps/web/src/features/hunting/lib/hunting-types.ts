@@ -47,6 +47,8 @@ export interface HuntConfig {
 	yearMin: number | null;
 	yearMax: number | null;
 	ageThresholdDays: number | null;
+	// Season pack preference (Sonarr only)
+	preferSeasonPacks: boolean;
 	// Re-search settings
 	researchAfterDays: number;
 	// State tracking
@@ -86,6 +88,8 @@ export interface HuntConfigUpdate {
 	yearMin?: number | null;
 	yearMax?: number | null;
 	ageThresholdDays?: number | null;
+	// Season pack preference (Sonarr only)
+	preferSeasonPacks?: boolean;
 	// Re-search settings
 	researchAfterDays?: number;
 }

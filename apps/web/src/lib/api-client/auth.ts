@@ -3,7 +3,7 @@ import type {
 	CurrentUserResponse,
 	OIDCProvider as SharedOIDCProvider,
 } from "@arr/shared";
-import { NetworkError, UnauthorizedError, apiRequest } from "./base";
+import { ApiError, NetworkError, UnauthorizedError, apiRequest } from "./base";
 
 export async function fetchCurrentUser(): Promise<CurrentUser | null> {
 	try {
@@ -83,7 +83,11 @@ export async function checkSetupRequired(): Promise<boolean> {
 		if (error instanceof NetworkError) {
 			throw error;
 		}
-		// For other errors, assume setup is not required
+		// Propagate server errors (500+) - these indicate real problems
+		if (error instanceof ApiError && error.status >= 500) {
+			throw new NetworkError(`API server error: ${error.message}`);
+		}
+		// For client errors (4xx), assume setup is not required
 		return false;
 	}
 }

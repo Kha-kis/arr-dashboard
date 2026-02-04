@@ -593,6 +593,9 @@ model HuntConfig {
   // Age threshold - skip content released recently (avoid hammering indexers)
   ageThresholdDays      Int?                             // Don't hunt content newer than X days
 
+  // Season pack preference (Sonarr only)
+  preferSeasonPacks     Boolean         @default(false)  // Always search full seasons to catch season packs
+
   // Re-search settings
   researchAfterDays     Int             @default(7)      // Re-search items after X days (0 = never re-search)
 

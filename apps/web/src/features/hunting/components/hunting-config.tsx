@@ -14,6 +14,7 @@ import {
 	ArrowUpCircle,
 	Gauge,
 	Trash2,
+	Package,
 } from "lucide-react";
 import { Button, Input, Switch, Alert, AlertDescription } from "../../../components/ui";
 import {
@@ -291,6 +292,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 		yearMin: config.yearMin,
 		yearMax: config.yearMax,
 		ageThresholdDays: config.ageThresholdDays,
+		preferSeasonPacks: config.preferSeasonPacks,
 	});
 
 	const { updateConfig, isUpdating, error } = useUpdateHuntConfig();
@@ -358,6 +360,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 			yearMin: config.yearMin,
 			yearMax: config.yearMax,
 			ageThresholdDays: config.ageThresholdDays,
+			preferSeasonPacks: config.preferSeasonPacks,
 			researchAfterDays: config.researchAfterDays,
 		});
 
@@ -476,6 +479,30 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 						/>
 					</div>
 				</ConfigSection>
+
+				{/* Season Pack Preference - Sonarr Only */}
+				{config.service === "sonarr" && (
+					<div className="rounded-lg border border-border/50 bg-card/30 p-4">
+						<div className="flex items-center justify-between">
+							<div className="flex items-center gap-3">
+								<Package className="h-5 w-5 text-muted-foreground" />
+								<div>
+									<p className="font-medium">Prefer Season Packs</p>
+									<p className="text-sm text-muted-foreground">
+										Always search for full seasons to catch season pack releases, even when only 1-2
+										episodes are missing
+									</p>
+								</div>
+							</div>
+							<Switch
+								checked={formState.preferSeasonPacks ?? false}
+								onCheckedChange={(checked) =>
+									setFormState((prev) => ({ ...prev, preferSeasonPacks: checked }))
+								}
+							/>
+						</div>
+					</div>
+				)}
 
 				{/* Rate Limiting */}
 				<div className="pt-4 border-t border-border/30">

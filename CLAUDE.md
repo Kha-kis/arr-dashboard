@@ -1057,7 +1057,7 @@ app.config            // Environment config
 
 ---
 
-**Last Updated:** 2026-02-02
-**Version:** 2.7.2
+**Last Updated:** 2026-02-04
+**Version:** 2.7.3
 **Node:** 22+
 **pnpm:** 10+
