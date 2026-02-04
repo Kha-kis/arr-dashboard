@@ -125,6 +125,7 @@ export const useSetupRequired = () =>
 		queryFn: checkSetupRequired,
 		staleTime: 5 * 60 * 1000,
 		retry: 1,
+		refetchOnMount: "always", // Always check API health when login page loads
 		refetchOnWindowFocus: false,
 		refetchOnReconnect: false,
 	});
