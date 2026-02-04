@@ -802,6 +802,11 @@ model QueueCleanerConfig {
   addToBlocklist        Boolean         @default(true)
   searchAfterRemoval    Boolean         @default(false)
 
+  // Change category option (torrent only - usenet doesn't support this)
+  // Instead of deleting, move torrent to a different category in the client
+  // The actual category name is configured in Sonarr/Radarr's download client settings
+  changeCategoryEnabled Boolean         @default(false)
+
   // Safety settings
   dryRunMode            Boolean         @default(true)    // Safe by default!
   maxRemovalsPerRun     Int             @default(10)
@@ -887,7 +892,7 @@ model QueueCleanerStrike {
   instanceId      String
   instance        ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
 
-  downloadId      Int                                   // ARR queue item ID
+  downloadId      String                                // ARR queue item ID (string for consistency with shared types)
   downloadTitle   String                                // For display purposes
   downloadHash    String?                               // Torrent hash for correlation
 

@@ -190,6 +190,11 @@ const configUpdateSchema = z.object({
 	// Whitelist
 	whitelistEnabled: z.boolean().optional(),
 	whitelistPatterns: patternJsonSchema,
+
+	// Change category (torrent-only option)
+	// Instead of deleting, move torrent to a different category in the client
+	// The actual category name is configured in Sonarr/Radarr's download client settings
+	changeCategoryEnabled: z.boolean().optional(),
 });
 
 const configCreateSchema = z.object({
@@ -209,7 +214,8 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 		// Check if queue cleaner feature is available
 		if (!app.queueCleanerEnabled) {
 			return reply.status(503).send({
-				error: "Queue cleaner feature is unavailable due to initialization error. Check server logs.",
+				error: "Queue cleaner feature is unavailable due to initialization error",
+				details: app.queueCleanerInitError ?? "Check server logs for details",
 			});
 		}
 	});
@@ -277,7 +283,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 				instances: instanceStatuses,
 			});
 		} catch (error) {
-			request.log.error({ err: error }, "Failed to fetch queue cleaner status");
+			request.log.error({ err: error, userId: request.currentUser?.id }, "Failed to fetch queue cleaner status");
 			return reply.status(500).send({ error: "Failed to fetch queue cleaner status" });
 		}
 	});
@@ -319,7 +325,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 			return reply.send({ configs, instances: instanceSummaries });
 		} catch (error) {
-			request.log.error({ err: error }, "Failed to fetch queue cleaner configs");
+			request.log.error({ err: error, userId: request.currentUser?.id }, "Failed to fetch queue cleaner configs");
 			return reply.status(500).send({ error: "Failed to fetch queue cleaner configs" });
 		}
 	});
@@ -371,7 +377,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 				updatedAt: config.updatedAt.toISOString(),
 			});
 		} catch (error) {
-			request.log.error({ err: error }, "Failed to create queue cleaner config");
+			request.log.error({ err: error, userId: request.currentUser?.id }, "Failed to create queue cleaner config");
 			return reply.status(500).send({ error: "Failed to create queue cleaner config" });
 		}
 	});
@@ -422,7 +428,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 				// Foreign key constraint - instance was deleted between auth check and update
 				return reply.status(400).send({ error: "Instance no longer exists" });
 			}
-			request.log.error({ err: error }, "Failed to update queue cleaner config");
+			request.log.error({ err: error, userId: request.currentUser?.id }, "Failed to update queue cleaner config");
 			return reply.status(500).send({ error: "Failed to update queue cleaner config" });
 		}
 	});
@@ -449,7 +455,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 			return reply.send({ message: "Queue cleaner config deleted" });
 		} catch (error) {
-			request.log.error({ err: error }, "Failed to delete queue cleaner config");
+			request.log.error({ err: error, userId: request.currentUser?.id }, "Failed to delete queue cleaner config");
 			return reply.status(500).send({ error: "Failed to delete queue cleaner config" });
 		}
 	});
@@ -550,7 +556,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 					: undefined,
 			});
 		} catch (error) {
-			request.log.error({ err: error }, "Failed to fetch queue cleaner logs");
+			request.log.error({ err: error, userId: request.currentUser?.id }, "Failed to fetch queue cleaner logs");
 			return reply.status(500).send({ error: "Failed to fetch queue cleaner logs" });
 		}
 	});
@@ -588,7 +594,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 			if (error instanceof SchedulerNotInitializedError) {
 				return reply.status(503).send({ error: "Queue cleaner scheduler not ready" });
 			}
-			request.log.error({ err: error }, "Failed to trigger manual queue clean");
+			request.log.error({ err: error, userId: request.currentUser?.id }, "Failed to trigger manual queue clean");
 			return reply.status(500).send({ error: "Failed to trigger manual queue clean" });
 		}
 	});
@@ -616,7 +622,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 			if (error instanceof SchedulerNotInitializedError) {
 				return reply.status(503).send({ error: "Queue cleaner scheduler not ready" });
 			}
-			request.log.error({ err: error }, "Failed to run dry-run preview");
+			request.log.error({ err: error, userId: request.currentUser?.id }, "Failed to run dry-run preview");
 			return reply.status(500).send({ error: "Failed to run dry-run preview" });
 		}
 	});
@@ -644,7 +650,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 			if (error instanceof SchedulerNotInitializedError) {
 				return reply.status(503).send({ error: "Queue cleaner scheduler not ready" });
 			}
-			request.log.error({ err: error }, "Failed to run enhanced preview");
+			request.log.error({ err: error, userId: request.currentUser?.id }, "Failed to run enhanced preview");
 			return reply.status(500).send({ error: "Failed to run enhanced preview" });
 		}
 	});
@@ -683,7 +689,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 			return reply.send({ strikes: formattedStrikes });
 		} catch (error) {
-			request.log.error({ err: error }, "Failed to fetch strikes");
+			request.log.error({ err: error, userId: request.currentUser?.id }, "Failed to fetch strikes");
 			return reply.status(500).send({ error: "Failed to fetch strikes" });
 		}
 	});
@@ -713,7 +719,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 				message: `Cleared ${result.count} strike(s) for ${instance.label}`,
 			});
 		} catch (error) {
-			request.log.error({ err: error }, "Failed to clear strikes");
+			request.log.error({ err: error, userId: request.currentUser?.id }, "Failed to clear strikes");
 			return reply.status(500).send({ error: "Failed to clear strikes" });
 		}
 	});
@@ -882,7 +888,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 					: undefined,
 			});
 		} catch (error) {
-			request.log.error({ err: error }, "Failed to fetch queue cleaner statistics");
+			request.log.error({ err: error, userId: request.currentUser?.id }, "Failed to fetch queue cleaner statistics");
 			return reply.status(500).send({ error: "Failed to fetch queue cleaner statistics" });
 		}
 	});
@@ -902,7 +908,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 			return reply.send({ running: !wasRunning });
 		} catch (error) {
-			request.log.error({ err: error }, "Failed to toggle queue cleaner scheduler");
+			request.log.error({ err: error, userId: request.currentUser?.id }, "Failed to toggle queue cleaner scheduler");
 			return reply.status(500).send({ error: "Failed to toggle queue cleaner scheduler" });
 		}
 	});

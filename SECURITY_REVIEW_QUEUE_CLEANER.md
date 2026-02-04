@@ -330,7 +330,7 @@ function matchesCustomImportBlockPatterns(
 
 ### Performance Analysis
 
-```
+```text
 Given:
 - MAX_PATTERN_COUNT = 50
 - MAX_PATTERN_ITEM_LENGTH = 200 chars

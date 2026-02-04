@@ -51,6 +51,8 @@ export type WhitelistType = z.infer<typeof whitelistTypeSchema>;
 export const whitelistPatternSchema = z.object({
 	type: whitelistTypeSchema,
 	pattern: z.string().min(1),
+	/** Optional unique ID for stable React keys (UI only, not used in backend logic) */
+	id: z.string().optional(),
 });
 
 export type WhitelistPattern = z.infer<typeof whitelistPatternSchema>;
@@ -67,6 +69,8 @@ export const cleanerResultItemSchema = z.object({
 	rule: cleanerRuleSchema,
 	strikeCount: z.number().optional(),
 	maxStrikes: z.number().optional(),
+	/** Protocol type (torrent/usenet) - used for protocol-aware removal options */
+	protocol: z.string().optional(),
 });
 
 export type CleanerResultItem = z.infer<typeof cleanerResultItemSchema>;

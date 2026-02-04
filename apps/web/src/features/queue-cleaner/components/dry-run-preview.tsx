@@ -99,7 +99,7 @@ const DEFAULT_ACTION_COLOR: ColorStyle = {
 
 const ACTION_COLORS: Record<string, ColorStyle> = {
 	remove: SEMANTIC_COLORS.error,
-	warn: { bg: "rgba(245, 158, 11, 0.1)", text: "#f59e0b", border: "rgba(245, 158, 11, 0.2)" },
+	warn: SEMANTIC_COLORS.warning,
 	skip: { bg: "rgba(148, 163, 184, 0.1)", text: "#94a3b8", border: "rgba(148, 163, 184, 0.2)" },
 	whitelist: SEMANTIC_COLORS.success,
 };
@@ -337,11 +337,11 @@ export const EnhancedDryRunPreview = ({
 						<div
 							className="rounded-lg p-3 text-center"
 							style={{
-								backgroundColor: "rgba(245, 158, 11, 0.1)",
-								border: "1px solid rgba(245, 158, 11, 0.2)",
+								backgroundColor: SEMANTIC_COLORS.warning.bg,
+								border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
 							}}
 						>
-							<div className="text-2xl font-bold" style={{ color: "#f59e0b" }}>
+							<div className="text-2xl font-bold" style={{ color: SEMANTIC_COLORS.warning.text }}>
 								{result.wouldWarn}
 							</div>
 							<div className="text-xs text-muted-foreground">Would Warn</div>
@@ -590,9 +590,9 @@ const PreviewItemRow = ({
 								<span
 									className="inline-flex shrink-0 items-center rounded-full px-1.5 py-0.5 text-[9px] font-medium"
 									style={{
-										backgroundColor: "rgba(245, 158, 11, 0.1)",
-										color: "#f59e0b",
-										border: "1px solid rgba(245, 158, 11, 0.2)",
+										backgroundColor: SEMANTIC_COLORS.warning.bg,
+										color: SEMANTIC_COLORS.warning.text,
+										border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
 									}}
 								>
 									Strike {item.strikeInfo.currentStrikes}/{item.strikeInfo.maxStrikes}

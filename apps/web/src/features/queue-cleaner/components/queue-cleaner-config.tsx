@@ -294,6 +294,9 @@ const InstanceConfigCard = ({
 		removeFromClient: config.removeFromClient,
 		addToBlocklist: config.addToBlocklist,
 		searchAfterRemoval: config.searchAfterRemoval,
+		// Change category (torrent-only)
+		changeCategoryEnabled: config.changeCategoryEnabled,
+		// Safety settings
 		dryRunMode: config.dryRunMode,
 		maxRemovalsPerRun: config.maxRemovalsPerRun,
 		minQueueAgeMins: config.minQueueAgeMins,
@@ -360,6 +363,9 @@ const InstanceConfigCard = ({
 			removeFromClient: config.removeFromClient,
 			addToBlocklist: config.addToBlocklist,
 			searchAfterRemoval: config.searchAfterRemoval,
+			// Change category (torrent-only)
+			changeCategoryEnabled: config.changeCategoryEnabled,
+			// Safety settings
 			dryRunMode: config.dryRunMode,
 			maxRemovalsPerRun: config.maxRemovalsPerRun,
 			minQueueAgeMins: config.minQueueAgeMins,
@@ -557,10 +563,11 @@ const InstanceConfigCard = ({
 						onToggle={(v) => updateField("errorPatternsEnabled", v)}
 					>
 						<div>
-							<label className="text-xs font-medium text-foreground block mb-1.5">
+							<label htmlFor="error-patterns-textarea" className="text-xs font-medium text-foreground block mb-1.5">
 								Patterns (one per line)
 							</label>
 							<textarea
+								id="error-patterns-textarea"
 								className="w-full rounded-lg border border-border/50 bg-card/50 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 min-h-[80px] resize-y"
 								style={{ focusRingColor: themeGradient.from } as React.CSSProperties}
 								placeholder="disk space&#10;permission denied&#10;custom pattern"
@@ -652,8 +659,9 @@ const InstanceConfigCard = ({
 							suffix="mins"
 						/>
 						<div className="space-y-2">
-							<label className="text-xs font-medium text-foreground">Cleanup Aggressiveness</label>
+							<label htmlFor="cleanup-aggressiveness-select" className="text-xs font-medium text-foreground">Cleanup Aggressiveness</label>
 							<select
+								id="cleanup-aggressiveness-select"
 								value={formData.importBlockCleanupLevel ?? "safe"}
 								onChange={(e) =>
 									updateField(
@@ -676,8 +684,9 @@ const InstanceConfigCard = ({
 
 						{/* Pattern Matching Mode */}
 						<div className="space-y-2 pt-3 border-t border-border/30">
-							<label className="text-xs font-medium text-foreground">Pattern Matching Mode</label>
+							<label htmlFor="pattern-matching-mode-select" className="text-xs font-medium text-foreground">Pattern Matching Mode</label>
 							<select
+								id="pattern-matching-mode-select"
 								value={formData.importBlockPatternMode ?? "defaults"}
 								onChange={(e) =>
 									updateField(
@@ -702,12 +711,13 @@ const InstanceConfigCard = ({
 						{(formData.importBlockPatternMode === "include" ||
 							formData.importBlockPatternMode === "exclude") && (
 							<div className="space-y-2">
-								<label className="text-xs font-medium text-foreground">
+								<label htmlFor="import-block-patterns-textarea" className="text-xs font-medium text-foreground">
 									{formData.importBlockPatternMode === "include"
 										? "Clean Items Matching These Patterns"
 										: "Protect Items Matching These Patterns"}
 								</label>
 								<textarea
+									id="import-block-patterns-textarea"
 									value={(() => {
 										try {
 											const patterns = formData.importBlockPatterns
@@ -763,6 +773,16 @@ const InstanceConfigCard = ({
 							checked={formData.searchAfterRemoval ?? false}
 							onChange={(v) => updateField("searchAfterRemoval", v)}
 						/>
+
+						{/* Change Category - Torrent only */}
+						<div className="pt-2 border-t border-border/20">
+							<ToggleRow
+								label="Change category instead of delete"
+								description="Move torrents to Post-Import Category (set in Sonarr/Radarr download client settings)"
+								checked={formData.changeCategoryEnabled ?? false}
+								onChange={(v) => updateField("changeCategoryEnabled", v)}
+							/>
+						</div>
 					</div>
 
 					{/* Safety Settings */}
@@ -918,6 +938,7 @@ const ConfigInput = ({
 	min,
 	max,
 	suffix,
+	id,
 }: {
 	label: string;
 	description: string;
@@ -926,30 +947,38 @@ const ConfigInput = ({
 	min: number;
 	max: number;
 	suffix: string;
-}) => (
-	<div>
-		<label className="text-xs font-medium text-foreground block mb-1">
-			{label}
-		</label>
-		<div className="flex items-center gap-2">
-			<input
-				type="number"
-				className="w-24 rounded-lg border border-border/50 bg-card/50 px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1"
-				value={value}
-				onChange={(e) => {
-					const parsed = Number.parseInt(e.target.value, 10);
-					if (!Number.isNaN(parsed)) {
-						onChange(Math.max(min, Math.min(max, parsed)));
-					}
-				}}
-				min={min}
-				max={max}
-			/>
-			<span className="text-xs text-muted-foreground">{suffix}</span>
+	id?: string;
+}) => {
+	// Generate stable ID for label-input association (accessibility)
+	const generatedId = `config-input-${label.toLowerCase().replace(/\s+/g, "-")}`;
+	const inputId = id ?? generatedId;
+
+	return (
+		<div>
+			<label htmlFor={inputId} className="text-xs font-medium text-foreground block mb-1">
+				{label}
+			</label>
+			<div className="flex items-center gap-2">
+				<input
+					id={inputId}
+					type="number"
+					className="w-24 rounded-lg border border-border/50 bg-card/50 px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1"
+					value={value}
+					onChange={(e) => {
+						const parsed = Number.parseInt(e.target.value, 10);
+						if (!Number.isNaN(parsed)) {
+							onChange(Math.max(min, Math.min(max, parsed)));
+						}
+					}}
+					min={min}
+					max={max}
+				/>
+				<span className="text-xs text-muted-foreground">{suffix}</span>
+			</div>
+			<p className="text-[10px] text-muted-foreground mt-0.5">{description}</p>
 		</div>
-		<p className="text-[10px] text-muted-foreground mt-0.5">{description}</p>
-	</div>
-);
+	);
+};
 
 const WhitelistEditor = ({
 	patterns,
@@ -969,9 +998,11 @@ const WhitelistEditor = ({
 	})();
 
 	const addPattern = () => {
-		const newPatterns: WhitelistPattern[] = [
+		// Generate unique ID for stable React key (prevents reconciliation issues)
+		const id = `wp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+		const newPatterns = [
 			...parsedPatterns,
-			{ type: "tracker", pattern: "" },
+			{ type: "tracker" as const, pattern: "", id },
 		];
 		onChange(JSON.stringify(newPatterns));
 	};
@@ -997,7 +1028,8 @@ const WhitelistEditor = ({
 	return (
 		<div className="space-y-2">
 			{parsedPatterns.map((p, index) => (
-				<div key={index} className="flex items-center gap-2">
+				// Use pattern's id if available, fallback to content-based key
+				<div key={p.id ?? `${p.type}-${p.pattern}-${index}`} className="flex items-center gap-2">
 					<select
 						className="rounded-lg border border-border/50 bg-card/50 px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1"
 						value={p.type}

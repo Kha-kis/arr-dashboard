@@ -67,6 +67,8 @@ class QueueCleanerScheduler {
 	private lastDecayError: string | null = null;
 	private stuckLogsCleanupFailed = false;
 	private orphanCleanAttempts: Array<{ instanceId: string; timestamp: Date }> = [];
+	// Track failures where we couldn't even create an error log entry
+	private failedLogAttempts: Array<{ instanceId: string; timestamp: Date; error: string }> = [];
 
 	/**
 	 * Initialize the scheduler with the app instance.
@@ -195,12 +197,21 @@ class QueueCleanerScheduler {
 		}
 
 		// Check for orphan clean attempts (Issue 6: invisible skipped cleans)
-		// Keep only recent orphans (last hour) to avoid memory growth
+		// Filter locally without mutating state (cleanup happens in tick())
 		const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-		this.orphanCleanAttempts = this.orphanCleanAttempts.filter((o) => o.timestamp > oneHourAgo);
-		if (this.orphanCleanAttempts.length > 0) {
+		const recentOrphanAttempts = this.orphanCleanAttempts.filter((o) => o.timestamp > oneHourAgo);
+		if (recentOrphanAttempts.length > 0) {
 			warnings.push(
-				`${this.orphanCleanAttempts.length} scheduled clean(s) skipped - config not found for instance(s): ${this.orphanCleanAttempts.map((o) => o.instanceId).join(", ")}`,
+				`${recentOrphanAttempts.length} scheduled clean(s) skipped - config not found for instance(s): ${recentOrphanAttempts.map((o) => o.instanceId).join(", ")}`,
+			);
+		}
+
+		// Check for failed log attempts (Issue 1: fire-and-forget failures not visible)
+		// Filter locally without mutating state (cleanup happens in tick())
+		const recentFailedLogAttempts = this.failedLogAttempts.filter((f) => f.timestamp > oneHourAgo);
+		if (recentFailedLogAttempts.length > 0) {
+			warnings.push(
+				`${recentFailedLogAttempts.length} clean failure(s) could not be logged to Activity tab - check server logs. Errors: ${recentFailedLogAttempts.map((f) => f.error).join("; ")}`,
 			);
 		}
 
@@ -268,9 +279,15 @@ class QueueCleanerScheduler {
 					});
 				}
 			} catch (logError) {
+				// Track this failure so it's visible in health status
+				this.failedLogAttempts.push({
+					instanceId,
+					timestamp: new Date(),
+					error: message,
+				});
 				log.error(
 					{ err: logError, instanceId, originalError: message },
-					"Failed to create error log entry for failed manual clean",
+					"Failed to create error log entry for failed manual clean - check health status",
 				);
 			}
 		});
@@ -398,6 +415,11 @@ class QueueCleanerScheduler {
 	private async tick(): Promise<void> {
 		if (!this.app) return;
 
+		// Clean up old entries to prevent memory growth (moved from getHealth to avoid mutation in getter)
+		const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+		this.orphanCleanAttempts = this.orphanCleanAttempts.filter((o) => o.timestamp > oneHourAgo);
+		this.failedLogAttempts = this.failedLogAttempts.filter((f) => f.timestamp > oneHourAgo);
+
 		try {
 			// Run strike decay first
 			await this.decayStrikes();
@@ -524,6 +546,22 @@ class QueueCleanerScheduler {
 			log.error({ instanceId }, "No queue cleaner config found for instance - clean skipped");
 			// Track orphan attempts so they're visible in health status
 			this.orphanCleanAttempts.push({ instanceId, timestamp: new Date() });
+
+			// Create a skipped log entry so it appears in the Activity tab
+			// This makes the failure visible to users, not just in server logs
+			try {
+				await this.app.prisma.queueCleanerLog.create({
+					data: {
+						instanceId,
+						status: "skipped",
+						message: "Clean skipped - no configuration found for instance (config may have been deleted)",
+						completedAt: new Date(),
+						isDryRun: false,
+					},
+				});
+			} catch (logErr) {
+				log.warn({ err: logErr, instanceId }, "Failed to create skipped log entry for orphan config");
+			}
 			return;
 		}
 

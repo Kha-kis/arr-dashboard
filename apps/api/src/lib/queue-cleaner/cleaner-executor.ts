@@ -175,6 +175,7 @@ function checkWhitelist(
 
 /**
  * Check if a queue item should be removed due to seeding timeout.
+ * Note: Only applies to torrents - usenet downloads don't seed.
  */
 function evaluateSeedingTimeout(
 	item: RawQueueItem,
@@ -182,6 +183,10 @@ function evaluateSeedingTimeout(
 	now: Date,
 ): { rule: "seeding_timeout"; reason: string } | null {
 	if (!config.seedingTimeoutEnabled) return null;
+
+	// Seeding timeout only applies to torrents - usenet doesn't seed
+	const protocol = typeof item.protocol === "string" ? item.protocol.toLowerCase() : "";
+	if (protocol === "usenet") return null;
 
 	const status =
 		typeof item.trackedDownloadStatus === "string" ? item.trackedDownloadStatus.toLowerCase() : "";
@@ -649,14 +654,16 @@ export async function executeQueueCleaner(
 
 	const matched: CleanerResultItem[] = [];
 	const skipped: CleanerResultItem[] = [];
-	const queueItemIds = new Set<number>();
+	// Use string IDs for consistency with database schema (downloadId is String)
+	const queueItemIds = new Set<string>();
 
 	for (const item of queueRecords) {
 		const id = typeof item.id === "number" ? item.id : 0;
+		const idStr = String(id); // String version for database operations
 		const title = typeof item.title === "string" ? item.title : "Unknown";
 		const added = parseDate(item.added);
 
-		queueItemIds.add(id);
+		queueItemIds.add(idStr);
 
 		// Age guard: skip items younger than minQueueAgeMins
 		if (added) {
@@ -682,7 +689,8 @@ export async function executeQueueCleaner(
 
 		const evaluation = evaluateQueueItem(item, config, now);
 		if (evaluation) {
-			matched.push({ id, title, reason: evaluation.reason, rule: evaluation.rule });
+			const protocol = typeof item.protocol === "string" ? item.protocol.toLowerCase() : undefined;
+			matched.push({ id, title, reason: evaluation.reason, rule: evaluation.rule, protocol });
 		}
 		// Items that don't match any rules are silently ignored (not added to skipped)
 	}
@@ -691,84 +699,104 @@ export async function executeQueueCleaner(
 	let toRemove: CleanerResultItem[] = [];
 	const warned: CleanerResultItem[] = [];
 
+	// Track strike IDs that should be deleted AFTER successful removal
+	// This prevents data loss if the ARR API removal call fails
+	// Key is downloadId (string), value is strike record id (string)
+	const strikesToDeleteAfterRemoval: Map<string, string> = new Map();
+
 	if (config.strikeSystemEnabled && !config.dryRunMode) {
 		try {
 			// Wrap all strike operations in a transaction for data consistency
-			const { toRemoveItems, warnedItems } = await app.prisma.$transaction(async (tx) => {
-				// Get existing strikes for this instance
-				const existingStrikes = await tx.queueCleanerStrike.findMany({
-					where: { instanceId: instance.id },
-				});
-				const strikeMap = new Map(existingStrikes.map((s) => [s.downloadId, s]));
+			// NOTE: We DON'T delete strikes for items being removed here - that happens
+			// AFTER the removal succeeds (see strikesToDeleteAfterRemoval)
+			const { toRemoveItems, warnedItems, pendingStrikeDeletions } = await app.prisma.$transaction(
+				async (tx) => {
+					// Get existing strikes for this instance
+					const existingStrikes = await tx.queueCleanerStrike.findMany({
+						where: { instanceId: instance.id },
+					});
+					const strikeMap = new Map(existingStrikes.map((s) => [s.downloadId, s]));
 
-				const txToRemove: CleanerResultItem[] = [];
-				const txWarned: CleanerResultItem[] = [];
+					const txToRemove: CleanerResultItem[] = [];
+					const txWarned: CleanerResultItem[] = [];
+					// Track strikes to delete ONLY AFTER removal succeeds
+					const txPendingStrikeDeletions: Map<string, string> = new Map();
 
-				for (const item of matched) {
-					const existingStrike = strikeMap.get(item.id);
-					const newStrikeCount = (existingStrike?.strikeCount ?? 0) + 1;
+					for (const item of matched) {
+						// Convert item.id (number from ARR API) to string for database operations
+						const itemIdStr = String(item.id);
+						const existingStrike = strikeMap.get(itemIdStr);
+						const newStrikeCount = (existingStrike?.strikeCount ?? 0) + 1;
 
-					if (newStrikeCount >= config.maxStrikes) {
-						// Reached max strikes, remove
-						txToRemove.push({
-							...item,
-							reason: `${item.reason} (strike ${newStrikeCount}/${config.maxStrikes})`,
-							strikeCount: newStrikeCount,
-							maxStrikes: config.maxStrikes,
-						});
-
-						// Delete the strike record since item will be removed
-						if (existingStrike) {
-							await tx.queueCleanerStrike.delete({
-								where: { id: existingStrike.id },
+						if (newStrikeCount >= config.maxStrikes) {
+							// Reached max strikes, mark for removal
+							txToRemove.push({
+								...item,
+								reason: `${item.reason} (strike ${newStrikeCount}/${config.maxStrikes})`,
+								strikeCount: newStrikeCount,
+								maxStrikes: config.maxStrikes,
 							});
-						}
-					} else {
-						// Add/update strike
-						if (existingStrike) {
-							await tx.queueCleanerStrike.update({
-								where: { id: existingStrike.id },
-								data: {
-									strikeCount: newStrikeCount,
-									lastRule: item.rule,
-									lastReason: item.reason,
-								},
-							});
+
+							// Track strike for deletion AFTER removal succeeds (not now!)
+							// This prevents losing strike data if the ARR API call fails
+							if (existingStrike) {
+								txPendingStrikeDeletions.set(itemIdStr, existingStrike.id);
+							}
 						} else {
-							await tx.queueCleanerStrike.create({
-								data: {
-									instanceId: instance.id,
-									downloadId: item.id,
-									downloadTitle: item.title,
-									strikeCount: 1,
-									lastRule: item.rule,
-									lastReason: item.reason,
-								},
+							// Add/update strike
+							if (existingStrike) {
+								await tx.queueCleanerStrike.update({
+									where: { id: existingStrike.id },
+									data: {
+										strikeCount: newStrikeCount,
+										lastRule: item.rule,
+										lastReason: item.reason,
+									},
+								});
+							} else {
+								await tx.queueCleanerStrike.create({
+									data: {
+										instanceId: instance.id,
+										downloadId: itemIdStr,
+										downloadTitle: item.title,
+										strikeCount: 1,
+										lastRule: item.rule,
+										lastReason: item.reason,
+									},
+								});
+							}
+
+							txWarned.push({
+								...item,
+								reason: `${item.reason} (strike ${newStrikeCount}/${config.maxStrikes})`,
+								strikeCount: newStrikeCount,
+								maxStrikes: config.maxStrikes,
 							});
 						}
+					}
 
-						txWarned.push({
-							...item,
-							reason: `${item.reason} (strike ${newStrikeCount}/${config.maxStrikes})`,
-							strikeCount: newStrikeCount,
-							maxStrikes: config.maxStrikes,
+					// Clean up strikes for items no longer in queue (safe to delete immediately)
+					const strikesToDelete = existingStrikes.filter((s) => !queueItemIds.has(s.downloadId));
+					if (strikesToDelete.length > 0) {
+						await tx.queueCleanerStrike.deleteMany({
+							where: { id: { in: strikesToDelete.map((s) => s.id) } },
 						});
 					}
-				}
 
-				// Clean up strikes for items no longer in queue
-				const strikesToDelete = existingStrikes.filter((s) => !queueItemIds.has(s.downloadId));
-				if (strikesToDelete.length > 0) {
-					await tx.queueCleanerStrike.deleteMany({
-						where: { id: { in: strikesToDelete.map((s) => s.id) } },
-					});
-				}
-
-				return { toRemoveItems: txToRemove, warnedItems: txWarned };
-			});
+					return {
+						toRemoveItems: txToRemove,
+						warnedItems: txWarned,
+						pendingStrikeDeletions: txPendingStrikeDeletions,
+					};
+				},
+			);
 
 			toRemove = toRemoveItems;
 			warned.push(...warnedItems);
+			// Store pending deletions for after removal succeeds
+			for (const [downloadId, strikeId] of pendingStrikeDeletions) {
+				strikesToDeleteAfterRemoval.set(downloadId, strikeId);
+			}
 		} catch (error) {
 			// Distinguish between database errors (Prisma) and programming bugs
 			// Prisma errors have a 'code' property (P2002, P2025, etc.)
@@ -839,7 +867,7 @@ export async function executeQueueCleaner(
 			const strikeMap = new Map(existingStrikes.map((s) => [s.downloadId, s]));
 
 			for (const item of matched) {
-				const existingStrike = strikeMap.get(item.id);
+				const existingStrike = strikeMap.get(String(item.id));
 				const simulatedStrikeCount = (existingStrike?.strikeCount ?? 0) + 1;
 
 				if (simulatedStrikeCount >= config.maxStrikes) {
@@ -895,10 +923,16 @@ export async function executeQueueCleaner(
 
 	for (const item of cappedToRemove) {
 		try {
+			// Determine if we should use changeCategory (torrent-only feature)
+			// Only apply changeCategory for torrents when enabled
+			const isTorrent = item.protocol === "torrent";
+			const useChangeCategory = config.changeCategoryEnabled && isTorrent;
+
 			await client.queue.delete(item.id, {
 				removeFromClient: config.removeFromClient,
 				blocklist: config.addToBlocklist,
 				skipRedownload: !config.searchAfterRemoval,
+				changeCategory: useChangeCategory,
 			});
 			cleaned.push(item);
 		} catch (error) {
@@ -910,6 +944,35 @@ export async function executeQueueCleaner(
 				removeErrors++;
 				skipped.push({ ...item, reason: `Remove failed: ${errMsg}` });
 				log.warn({ err: error, itemId: item.id, title: item.title }, "Failed to remove queue item");
+			}
+		}
+	}
+
+	// Clean up strike records ONLY for items that were successfully removed
+	// This ensures we don't lose strike data if the ARR API call failed
+	if (strikesToDeleteAfterRemoval.size > 0 && cleaned.length > 0) {
+		// Convert item.id (number) to string for comparison with Map keys
+		const successfullyRemovedIds = new Set(cleaned.map((item) => String(item.id)));
+		const strikeIdsToDelete: string[] = [];
+
+		for (const [downloadId, strikeId] of strikesToDeleteAfterRemoval) {
+			if (successfullyRemovedIds.has(downloadId)) {
+				strikeIdsToDelete.push(strikeId);
+			}
+		}
+
+		if (strikeIdsToDelete.length > 0) {
+			try {
+				await app.prisma.queueCleanerStrike.deleteMany({
+					where: { id: { in: strikeIdsToDelete } },
+				});
+			} catch (error) {
+				// Log but don't fail the whole operation - items were already removed
+				// Orphan strike records will be cleaned up on next run when item is no longer in queue
+				log.warn(
+					{ err: error, strikeCount: strikeIdsToDelete.length },
+					"Failed to clean up strike records after removal - will be cleaned on next run",
+				);
 			}
 		}
 	}
@@ -1272,8 +1335,8 @@ export async function executeEnhancedPreview(
 		if (evaluation) {
 			ruleSummary[evaluation.rule] = (ruleSummary[evaluation.rule] ?? 0) + 1;
 
-			// Check strike system
-			const existingStrike = strikeMap.get(id);
+			// Check strike system (convert id to string for database lookup)
+			const existingStrike = strikeMap.get(String(id));
 			const simulatedStrikeCount = (existingStrike?.strikeCount ?? 0) + 1;
 			const wouldTriggerRemoval =
 				!config.strikeSystemEnabled || simulatedStrikeCount >= config.maxStrikes;

@@ -7,7 +7,19 @@ async function fetchStatus(): Promise<QueueCleanerStatus> {
 	return apiRequest<QueueCleanerStatus>("/api/queue-cleaner/status");
 }
 
-export function useQueueCleanerStatus() {
+/** Hook return type for useQueueCleanerStatus */
+interface UseQueueCleanerStatusResult {
+	status: QueueCleanerStatus | null;
+	isLoading: boolean;
+	error: Error | null;
+	refetch: () => Promise<unknown>;
+}
+
+/**
+ * Hook to fetch and manage queue cleaner status.
+ * Automatically refreshes at the configured interval.
+ */
+export function useQueueCleanerStatus(): UseQueueCleanerStatusResult {
 	const query = useQuery({
 		queryKey: ["queue-cleaner", "status"],
 		queryFn: fetchStatus,

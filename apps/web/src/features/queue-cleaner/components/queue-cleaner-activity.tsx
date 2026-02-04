@@ -93,6 +93,7 @@ export const QueueCleanerActivity = () => {
 			{totalPages > 1 && (
 				<div className="flex items-center justify-center gap-2 mt-4">
 					<button
+						type="button"
 						className="px-3 py-1.5 text-xs rounded-lg border border-border/50 bg-card/50 text-muted-foreground hover:bg-card/80 disabled:opacity-50"
 						onClick={() => setPage((p) => Math.max(1, p - 1))}
 						disabled={page <= 1}
@@ -103,6 +104,7 @@ export const QueueCleanerActivity = () => {
 						Page {page} of {totalPages}
 					</span>
 					<button
+						type="button"
 						className="px-3 py-1.5 text-xs rounded-lg border border-border/50 bg-card/50 text-muted-foreground hover:bg-card/80 disabled:opacity-50"
 						onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
 						disabled={page >= totalPages}
@@ -199,7 +201,7 @@ const LogEntryRow = ({ log, isExpanded, onToggle, animationDelay }: LogEntryRowP
 						{(log.itemsWarned ?? 0) > 0 && (
 							<div className="text-center">
 								<div className="flex items-center gap-1 text-xs">
-									<AlertTriangle className="h-3 w-3" style={{ color: "#f59e0b" }} />
+									<AlertTriangle className="h-3 w-3" style={{ color: SEMANTIC_COLORS.warning.text }} />
 									<span className="font-medium">{log.itemsWarned}</span>
 								</div>
 							</div>
@@ -267,7 +269,7 @@ const LogEntryRow = ({ log, isExpanded, onToggle, animationDelay }: LogEntryRowP
 							{log.warnedItems && log.warnedItems.length > 0 && (
 								<div>
 									<h5 className="flex items-center gap-1.5 text-xs font-medium mb-2">
-										<AlertTriangle className="h-3 w-3" style={{ color: "#f59e0b" }} />
+										<AlertTriangle className="h-3 w-3" style={{ color: SEMANTIC_COLORS.warning.text }} />
 										Warned ({log.warnedItems.length})
 									</h5>
 									<div className="space-y-1">
@@ -275,7 +277,7 @@ const LogEntryRow = ({ log, isExpanded, onToggle, animationDelay }: LogEntryRowP
 											<div
 												key={item.id}
 												className="flex items-center justify-between rounded px-2.5 py-1.5"
-												style={{ backgroundColor: "rgba(245, 158, 11, 0.1)" }}
+												style={{ backgroundColor: SEMANTIC_COLORS.warning.bg }}
 											>
 												<span className="text-xs text-foreground truncate flex-1">
 													{item.title}

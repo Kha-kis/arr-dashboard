@@ -77,7 +77,7 @@ export interface QueueCleanerConfig {
 	strikeSystemEnabled: boolean;
 	maxStrikes: number;
 	strikeDecayHours: number;
-	// Seeding timeout
+	// Seeding timeout (torrent-only)
 	seedingTimeoutEnabled: boolean;
 	seedingTimeoutHours: number;
 	// Estimated completion
@@ -98,6 +98,9 @@ export interface QueueCleanerConfig {
 	removeFromClient: boolean;
 	addToBlocklist: boolean;
 	searchAfterRemoval: boolean;
+	// Change category (torrent-only)
+	// Instead of deleting, move torrent to a different category in the client
+	changeCategoryEnabled: boolean;
 	// Safety settings
 	dryRunMode: boolean;
 	maxRemovalsPerRun: number;
@@ -130,7 +133,7 @@ export interface QueueCleanerConfigUpdate {
 	strikeSystemEnabled?: boolean;
 	maxStrikes?: number;
 	strikeDecayHours?: number;
-	// Seeding timeout
+	// Seeding timeout (torrent-only)
 	seedingTimeoutEnabled?: boolean;
 	seedingTimeoutHours?: number;
 	// Estimated completion
@@ -151,6 +154,9 @@ export interface QueueCleanerConfigUpdate {
 	removeFromClient?: boolean;
 	addToBlocklist?: boolean;
 	searchAfterRemoval?: boolean;
+	// Change category (torrent-only)
+	changeCategoryEnabled?: boolean;
+	// Safety settings
 	dryRunMode?: boolean;
 	maxRemovalsPerRun?: number;
 	minQueueAgeMins?: number;
@@ -199,7 +205,7 @@ export interface InstanceSummary {
 export interface QueueCleanerStrike {
 	id: string;
 	instanceId: string;
-	downloadId: number;
+	downloadId: string; // String for consistency with database schema
 	downloadTitle: string;
 	strikeCount: number;
 	lastRule: string;

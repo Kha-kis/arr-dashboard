@@ -29,7 +29,21 @@ async function fetchLogs(params: UseLogsParams): Promise<LogsResponse> {
 	);
 }
 
-export function useQueueCleanerLogs(params: UseLogsParams = {}) {
+/** Hook return type for useQueueCleanerLogs */
+interface UseQueueCleanerLogsResult {
+	logs: QueueCleanerLog[];
+	totalCount: number;
+	isLoading: boolean;
+	error: Error | null;
+	refetch: () => Promise<unknown>;
+	hasRunningCleans: boolean;
+}
+
+/**
+ * Hook to fetch and manage queue cleaner activity logs.
+ * Supports pagination, status filtering, and auto-refresh when cleans are running.
+ */
+export function useQueueCleanerLogs(params: UseLogsParams = {}): UseQueueCleanerLogsResult {
 	const { hasRunningCleans, ...queryParams } = params;
 
 	const query = useQuery({

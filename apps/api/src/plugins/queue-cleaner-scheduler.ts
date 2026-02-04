@@ -7,6 +7,8 @@ declare module "fastify" {
 		queueCleanerScheduler: ReturnType<typeof getQueueCleanerScheduler>;
 		/** Whether the queue cleaner feature initialized successfully */
 		queueCleanerEnabled: boolean;
+		/** Error message if queue cleaner failed to initialize (for user diagnostics) */
+		queueCleanerInitError?: string;
 	}
 }
 
@@ -33,7 +35,10 @@ const queueCleanerSchedulerPlugin = fastifyPlugin(
 				app.queueCleanerEnabled = true;
 				app.log.info("Queue cleaner scheduler started successfully");
 			} catch (error) {
+				const errorMsg = error instanceof Error ? error.message : "Unknown initialization error";
 				app.log.error({ err: error }, "Failed to initialize queue cleaner scheduler - feature disabled");
+				// Store error for user visibility in 503 responses
+				app.decorate("queueCleanerInitError", errorMsg);
 				// queueCleanerEnabled remains false - routes will return 503
 			}
 		});

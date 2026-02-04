@@ -8,7 +8,19 @@ async function fetchStatistics(): Promise<QueueCleanerStatistics> {
 	return apiRequest<QueueCleanerStatistics>("/api/queue-cleaner/statistics");
 }
 
-export function useQueueCleanerStatistics() {
+/** Hook return type for useQueueCleanerStatistics */
+interface UseQueueCleanerStatisticsResult {
+	statistics: QueueCleanerStatistics | null;
+	isLoading: boolean;
+	error: Error | null;
+	refetch: () => Promise<unknown>;
+}
+
+/**
+ * Hook to fetch and manage queue cleaner statistics.
+ * Includes daily/weekly trends, rule breakdowns, and instance summaries.
+ */
+export function useQueueCleanerStatistics(): UseQueueCleanerStatisticsResult {
 	const query = useQuery({
 		queryKey: ["queue-cleaner", "statistics"],
 		queryFn: fetchStatistics,

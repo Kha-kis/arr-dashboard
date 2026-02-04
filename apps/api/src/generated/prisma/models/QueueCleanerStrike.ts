@@ -27,19 +27,17 @@ export type AggregateQueueCleanerStrike = {
 }
 
 export type QueueCleanerStrikeAvgAggregateOutputType = {
-  downloadId: number | null
   strikeCount: number | null
 }
 
 export type QueueCleanerStrikeSumAggregateOutputType = {
-  downloadId: number | null
   strikeCount: number | null
 }
 
 export type QueueCleanerStrikeMinAggregateOutputType = {
   id: string | null
   instanceId: string | null
-  downloadId: number | null
+  downloadId: string | null
   downloadTitle: string | null
   downloadHash: string | null
   strikeCount: number | null
@@ -52,7 +50,7 @@ export type QueueCleanerStrikeMinAggregateOutputType = {
 export type QueueCleanerStrikeMaxAggregateOutputType = {
   id: string | null
   instanceId: string | null
-  downloadId: number | null
+  downloadId: string | null
   downloadTitle: string | null
   downloadHash: string | null
   strikeCount: number | null
@@ -78,12 +76,10 @@ export type QueueCleanerStrikeCountAggregateOutputType = {
 
 
 export type QueueCleanerStrikeAvgAggregateInputType = {
-  downloadId?: true
   strikeCount?: true
 }
 
 export type QueueCleanerStrikeSumAggregateInputType = {
-  downloadId?: true
   strikeCount?: true
 }
 
@@ -216,7 +212,7 @@ export type QueueCleanerStrikeGroupByArgs<ExtArgs extends runtime.Types.Extensio
 export type QueueCleanerStrikeGroupByOutputType = {
   id: string
   instanceId: string
-  downloadId: number
+  downloadId: string
   downloadTitle: string
   downloadHash: string | null
   strikeCount: number
@@ -252,7 +248,7 @@ export type QueueCleanerStrikeWhereInput = {
   NOT?: Prisma.QueueCleanerStrikeWhereInput | Prisma.QueueCleanerStrikeWhereInput[]
   id?: Prisma.StringFilter<"QueueCleanerStrike"> | string
   instanceId?: Prisma.StringFilter<"QueueCleanerStrike"> | string
-  downloadId?: Prisma.IntFilter<"QueueCleanerStrike"> | number
+  downloadId?: Prisma.StringFilter<"QueueCleanerStrike"> | string
   downloadTitle?: Prisma.StringFilter<"QueueCleanerStrike"> | string
   downloadHash?: Prisma.StringNullableFilter<"QueueCleanerStrike"> | string | null
   strikeCount?: Prisma.IntFilter<"QueueCleanerStrike"> | number
@@ -284,7 +280,7 @@ export type QueueCleanerStrikeWhereUniqueInput = Prisma.AtLeast<{
   OR?: Prisma.QueueCleanerStrikeWhereInput[]
   NOT?: Prisma.QueueCleanerStrikeWhereInput | Prisma.QueueCleanerStrikeWhereInput[]
   instanceId?: Prisma.StringFilter<"QueueCleanerStrike"> | string
-  downloadId?: Prisma.IntFilter<"QueueCleanerStrike"> | number
+  downloadId?: Prisma.StringFilter<"QueueCleanerStrike"> | string
   downloadTitle?: Prisma.StringFilter<"QueueCleanerStrike"> | string
   downloadHash?: Prisma.StringNullableFilter<"QueueCleanerStrike"> | string | null
   strikeCount?: Prisma.IntFilter<"QueueCleanerStrike"> | number
@@ -319,7 +315,7 @@ export type QueueCleanerStrikeScalarWhereWithAggregatesInput = {
   NOT?: Prisma.QueueCleanerStrikeScalarWhereWithAggregatesInput | Prisma.QueueCleanerStrikeScalarWhereWithAggregatesInput[]
   id?: Prisma.StringWithAggregatesFilter<"QueueCleanerStrike"> | string
   instanceId?: Prisma.StringWithAggregatesFilter<"QueueCleanerStrike"> | string
-  downloadId?: Prisma.IntWithAggregatesFilter<"QueueCleanerStrike"> | number
+  downloadId?: Prisma.StringWithAggregatesFilter<"QueueCleanerStrike"> | string
   downloadTitle?: Prisma.StringWithAggregatesFilter<"QueueCleanerStrike"> | string
   downloadHash?: Prisma.StringNullableWithAggregatesFilter<"QueueCleanerStrike"> | string | null
   strikeCount?: Prisma.IntWithAggregatesFilter<"QueueCleanerStrike"> | number
@@ -331,7 +327,7 @@ export type QueueCleanerStrikeScalarWhereWithAggregatesInput = {
 
 export type QueueCleanerStrikeCreateInput = {
   id?: string
-  downloadId: number
+  downloadId: string
   downloadTitle: string
   downloadHash?: string | null
   strikeCount?: number
@@ -345,7 +341,7 @@ export type QueueCleanerStrikeCreateInput = {
 export type QueueCleanerStrikeUncheckedCreateInput = {
   id?: string
   instanceId: string
-  downloadId: number
+  downloadId: string
   downloadTitle: string
   downloadHash?: string | null
   strikeCount?: number
@@ -357,7 +353,7 @@ export type QueueCleanerStrikeUncheckedCreateInput = {
 
 export type QueueCleanerStrikeUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
-  downloadId?: Prisma.IntFieldUpdateOperationsInput | number
+  downloadId?: Prisma.StringFieldUpdateOperationsInput | string
   downloadTitle?: Prisma.StringFieldUpdateOperationsInput | string
   downloadHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   strikeCount?: Prisma.IntFieldUpdateOperationsInput | number
@@ -371,7 +367,7 @@ export type QueueCleanerStrikeUpdateInput = {
 export type QueueCleanerStrikeUncheckedUpdateInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   instanceId?: Prisma.StringFieldUpdateOperationsInput | string
-  downloadId?: Prisma.IntFieldUpdateOperationsInput | number
+  downloadId?: Prisma.StringFieldUpdateOperationsInput | string
   downloadTitle?: Prisma.StringFieldUpdateOperationsInput | string
   downloadHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   strikeCount?: Prisma.IntFieldUpdateOperationsInput | number
@@ -384,7 +380,7 @@ export type QueueCleanerStrikeUncheckedUpdateInput = {
 export type QueueCleanerStrikeCreateManyInput = {
   id?: string
   instanceId: string
-  downloadId: number
+  downloadId: string
   downloadTitle: string
   downloadHash?: string | null
   strikeCount?: number
@@ -396,7 +392,7 @@ export type QueueCleanerStrikeCreateManyInput = {
 
 export type QueueCleanerStrikeUpdateManyMutationInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
-  downloadId?: Prisma.IntFieldUpdateOperationsInput | number
+  downloadId?: Prisma.StringFieldUpdateOperationsInput | string
   downloadTitle?: Prisma.StringFieldUpdateOperationsInput | string
   downloadHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   strikeCount?: Prisma.IntFieldUpdateOperationsInput | number
@@ -409,7 +405,7 @@ export type QueueCleanerStrikeUpdateManyMutationInput = {
 export type QueueCleanerStrikeUncheckedUpdateManyInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
   instanceId?: Prisma.StringFieldUpdateOperationsInput | string
-  downloadId?: Prisma.IntFieldUpdateOperationsInput | number
+  downloadId?: Prisma.StringFieldUpdateOperationsInput | string
   downloadTitle?: Prisma.StringFieldUpdateOperationsInput | string
   downloadHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   strikeCount?: Prisma.IntFieldUpdateOperationsInput | number
@@ -431,7 +427,7 @@ export type QueueCleanerStrikeOrderByRelationAggregateInput = {
 
 export type QueueCleanerStrikeInstanceIdDownloadIdCompoundUniqueInput = {
   instanceId: string
-  downloadId: number
+  downloadId: string
 }
 
 export type QueueCleanerStrikeCountOrderByAggregateInput = {
@@ -448,7 +444,6 @@ export type QueueCleanerStrikeCountOrderByAggregateInput = {
 }
 
 export type QueueCleanerStrikeAvgOrderByAggregateInput = {
-  downloadId?: Prisma.SortOrder
   strikeCount?: Prisma.SortOrder
 }
 
@@ -479,7 +474,6 @@ export type QueueCleanerStrikeMinOrderByAggregateInput = {
 }
 
 export type QueueCleanerStrikeSumOrderByAggregateInput = {
-  downloadId?: Prisma.SortOrder
   strikeCount?: Prisma.SortOrder
 }
 
@@ -527,7 +521,7 @@ export type QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceNestedInput = {
 
 export type QueueCleanerStrikeCreateWithoutInstanceInput = {
   id?: string
-  downloadId: number
+  downloadId: string
   downloadTitle: string
   downloadHash?: string | null
   strikeCount?: number
@@ -539,7 +533,7 @@ export type QueueCleanerStrikeCreateWithoutInstanceInput = {
 
 export type QueueCleanerStrikeUncheckedCreateWithoutInstanceInput = {
   id?: string
-  downloadId: number
+  downloadId: string
   downloadTitle: string
   downloadHash?: string | null
   strikeCount?: number
@@ -580,7 +574,7 @@ export type QueueCleanerStrikeScalarWhereInput = {
   NOT?: Prisma.QueueCleanerStrikeScalarWhereInput | Prisma.QueueCleanerStrikeScalarWhereInput[]
   id?: Prisma.StringFilter<"QueueCleanerStrike"> | string
   instanceId?: Prisma.StringFilter<"QueueCleanerStrike"> | string
-  downloadId?: Prisma.IntFilter<"QueueCleanerStrike"> | number
+  downloadId?: Prisma.StringFilter<"QueueCleanerStrike"> | string
   downloadTitle?: Prisma.StringFilter<"QueueCleanerStrike"> | string
   downloadHash?: Prisma.StringNullableFilter<"QueueCleanerStrike"> | string | null
   strikeCount?: Prisma.IntFilter<"QueueCleanerStrike"> | number
@@ -592,7 +586,7 @@ export type QueueCleanerStrikeScalarWhereInput = {
 
 export type QueueCleanerStrikeCreateManyInstanceInput = {
   id?: string
-  downloadId: number
+  downloadId: string
   downloadTitle: string
   downloadHash?: string | null
   strikeCount?: number
@@ -604,7 +598,7 @@ export type QueueCleanerStrikeCreateManyInstanceInput = {
 
 export type QueueCleanerStrikeUpdateWithoutInstanceInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
-  downloadId?: Prisma.IntFieldUpdateOperationsInput | number
+  downloadId?: Prisma.StringFieldUpdateOperationsInput | string
   downloadTitle?: Prisma.StringFieldUpdateOperationsInput | string
   downloadHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   strikeCount?: Prisma.IntFieldUpdateOperationsInput | number
@@ -616,7 +610,7 @@ export type QueueCleanerStrikeUpdateWithoutInstanceInput = {
 
 export type QueueCleanerStrikeUncheckedUpdateWithoutInstanceInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
-  downloadId?: Prisma.IntFieldUpdateOperationsInput | number
+  downloadId?: Prisma.StringFieldUpdateOperationsInput | string
   downloadTitle?: Prisma.StringFieldUpdateOperationsInput | string
   downloadHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   strikeCount?: Prisma.IntFieldUpdateOperationsInput | number
@@ -628,7 +622,7 @@ export type QueueCleanerStrikeUncheckedUpdateWithoutInstanceInput = {
 
 export type QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceInput = {
   id?: Prisma.StringFieldUpdateOperationsInput | string
-  downloadId?: Prisma.IntFieldUpdateOperationsInput | number
+  downloadId?: Prisma.StringFieldUpdateOperationsInput | string
   downloadTitle?: Prisma.StringFieldUpdateOperationsInput | string
   downloadHash?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   strikeCount?: Prisma.IntFieldUpdateOperationsInput | number
@@ -714,7 +708,7 @@ export type $QueueCleanerStrikePayload<ExtArgs extends runtime.Types.Extensions.
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
     instanceId: string
-    downloadId: number
+    downloadId: string
     downloadTitle: string
     downloadHash: string | null
     strikeCount: number
@@ -1148,7 +1142,7 @@ export interface Prisma__QueueCleanerStrikeClient<T, Null = never, ExtArgs exten
 export interface QueueCleanerStrikeFieldRefs {
   readonly id: Prisma.FieldRef<"QueueCleanerStrike", 'String'>
   readonly instanceId: Prisma.FieldRef<"QueueCleanerStrike", 'String'>
-  readonly downloadId: Prisma.FieldRef<"QueueCleanerStrike", 'Int'>
+  readonly downloadId: Prisma.FieldRef<"QueueCleanerStrike", 'String'>
   readonly downloadTitle: Prisma.FieldRef<"QueueCleanerStrike", 'String'>
   readonly downloadHash: Prisma.FieldRef<"QueueCleanerStrike", 'String'>
   readonly strikeCount: Prisma.FieldRef<"QueueCleanerStrike", 'Int'>
