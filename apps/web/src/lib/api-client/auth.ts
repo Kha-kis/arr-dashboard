@@ -2,8 +2,12 @@ import type {
 	CurrentUser,
 	CurrentUserResponse,
 	OIDCProvider as SharedOIDCProvider,
+	PasswordPolicy,
 } from "@arr/shared";
 import { ApiError, NetworkError, UnauthorizedError, apiRequest } from "./base";
+
+// Re-export PasswordPolicy from shared package for convenience
+export type { PasswordPolicy };
 
 export async function fetchCurrentUser(): Promise<CurrentUser | null> {
 	try {
@@ -70,14 +74,15 @@ export async function removePassword(
 	});
 }
 
-interface SetupRequiredResponse {
+export interface SetupRequiredResponse {
 	required: boolean;
+	passwordPolicy: PasswordPolicy;
 }
 
-export async function checkSetupRequired(): Promise<boolean> {
+export async function checkSetupRequired(): Promise<SetupRequiredResponse> {
 	try {
 		const data = await apiRequest<SetupRequiredResponse>("/auth/setup-required");
-		return data.required;
+		return data;
 	} catch (error) {
 		// Propagate network errors so the UI can show a helpful message
 		if (error instanceof NetworkError) {
@@ -87,8 +92,8 @@ export async function checkSetupRequired(): Promise<boolean> {
 		if (error instanceof ApiError && error.status >= 500) {
 			throw new NetworkError(`API server error: ${error.message}`);
 		}
-		// For client errors (4xx), assume setup is not required
-		return false;
+		// For client errors (4xx), surface the error to the UI
+		throw error;
 	}
 }
 

@@ -15,12 +15,15 @@ import { PasswordSetup } from "./password-setup";
 import { OIDCSetup } from "./oidc-setup";
 import { PasskeySetup } from "./passkey-setup";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { useSetupRequired } from "../../../hooks/api/useAuth";
 
 type SetupMethod = "password" | "oidc" | "passkey";
 
 export const SetupClient = () => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const { data: setupData } = useSetupRequired();
 	const [activeMethod, setActiveMethod] = useState<SetupMethod>("passkey");
+	const passwordPolicy = setupData?.passwordPolicy ?? "strict";
 
 	const methods = [
 		{ id: "passkey" as const, label: "Passkey", icon: KeyRound },
@@ -96,7 +99,7 @@ export const SetupClient = () => {
 
 					{/* Method-specific forms */}
 					{activeMethod === "passkey" && <PasskeySetup />}
-					{activeMethod === "password" && <PasswordSetup />}
+					{activeMethod === "password" && <PasswordSetup passwordPolicy={passwordPolicy} />}
 					{activeMethod === "oidc" && <OIDCSetup />}
 				</CardContent>
 			</Card>

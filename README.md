@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.7.3** - Queue Cleaner, Prefer Season Packs & improved error handling
+> **Version 2.7.4** - Configurable password policy for passphrase support
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -141,6 +141,7 @@ docker-compose up -d
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.7.4` | Configurable password policy for passphrase support |
 | `2.7.3` | Queue Cleaner, Prefer Season Packs & improved error handling |
 | `2.7.2` | Custom upstream repos, user custom formats & bug fixes |
 | `2.7.1` | TRaSH template persistence fix + Next.js security patch |
@@ -186,6 +187,7 @@ The `/config` volume contains critical data that must be preserved:
 | `DATABASE_URL` | `file:/config/prod.db` | Database connection string (SQLite or PostgreSQL) |
 | `SESSION_TTL_HOURS` | `24` | Session expiration time in hours |
 | `SESSION_COOKIE_NAME` | `arr_session` | Name of the session cookie |
+| `PASSWORD_POLICY` | `strict` | Password requirements: `strict` (uppercase, lowercase, number, special char) or `relaxed` (8+ chars only, passphrase-friendly) |
 | `API_RATE_LIMIT_MAX` | `200` | Max requests per minute |
 | `API_RATE_LIMIT_WINDOW` | `1 minute` | Rate limit time window |
 | `API_CORS_ORIGIN` | `localhost:3000,3001` | Allowed CORS origins (comma-separated) |

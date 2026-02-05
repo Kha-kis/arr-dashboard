@@ -5,6 +5,19 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.4] - 2026-02-05
+
+### Added
+
+- **Configurable Password Policy** - New `PASSWORD_POLICY` environment variable allows choosing between `strict` (default, requires uppercase/lowercase/number/special character) and `relaxed` (8+ characters only, passphrase-friendly) password requirements. Enables secure passphrases like "correct horse battery staple" ([#83](https://github.com/Kha-kis/arr-dashboard/issues/83), [#84](https://github.com/Kha-kis/arr-dashboard/pull/84))
+
+### Changed
+
+- **Password validation** - Frontend validation now matches backend 128-character maximum limit for consistent user experience
+- **Type imports** - `PasswordPolicy` type now imported from `@arr/shared` package for single source of truth
+
+---
+
 ## [2.7.3] - 2026-02-04
 
 ### Added

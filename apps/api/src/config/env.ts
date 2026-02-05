@@ -29,6 +29,7 @@ export const envSchema = z
 			.min(1)
 			.max(24 * 30)
 			.default(24),
+		PASSWORD_POLICY: z.enum(["strict", "relaxed"]).default("strict"),
 		APP_URL: z.string().url().default("http://localhost:3000"),
 		TMDB_BASE_URL: z.string().url().default("https://api.themoviedb.org/3"),
 		TMDB_IMAGE_BASE_URL: z.string().url().default("https://image.tmdb.org/t/p"),
