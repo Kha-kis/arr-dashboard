@@ -103,6 +103,10 @@ export const validatePassword = (
 		return { valid: false, message: "Password must be at least 8 characters" };
 	}
 
+	if (password.length > 128) {
+		return { valid: false, message: "Password must not exceed 128 characters" };
+	}
+
 	// Relaxed policy only requires minimum length
 	if (policy === "relaxed") {
 		return { valid: true };

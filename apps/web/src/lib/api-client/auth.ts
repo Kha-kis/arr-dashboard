@@ -2,8 +2,12 @@ import type {
 	CurrentUser,
 	CurrentUserResponse,
 	OIDCProvider as SharedOIDCProvider,
+	PasswordPolicy,
 } from "@arr/shared";
 import { ApiError, NetworkError, UnauthorizedError, apiRequest } from "./base";
+
+// Re-export PasswordPolicy from shared package for convenience
+export type { PasswordPolicy };
 
 export async function fetchCurrentUser(): Promise<CurrentUser | null> {
 	try {
@@ -69,8 +73,6 @@ export async function removePassword(
 		json: payload,
 	});
 }
-
-export type PasswordPolicy = "strict" | "relaxed";
 
 export interface SetupRequiredResponse {
 	required: boolean;

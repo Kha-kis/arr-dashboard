@@ -11,6 +11,7 @@ import { PasswordInput } from "../../../components/ui/password-input";
 import { Alert, AlertDescription } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { PasswordPolicy } from "../../../lib/api-client/auth";
+import { validatePassword } from "../../settings/lib/settings-utils";
 
 interface RegisterResponse {
 	user: CurrentUser;
@@ -19,38 +20,6 @@ interface RegisterResponse {
 interface PasswordSetupProps {
 	passwordPolicy?: PasswordPolicy;
 }
-
-/**
- * Validates password based on configured policy
- */
-const validatePassword = (
-	password: string,
-	policy: PasswordPolicy = "strict",
-): { valid: boolean; message?: string } => {
-	if (password.length < 8) {
-		return { valid: false, message: "Password must be at least 8 characters" };
-	}
-
-	// Relaxed policy only requires minimum length
-	if (policy === "relaxed") {
-		return { valid: true };
-	}
-
-	// Strict policy requires complexity
-	if (!/[a-z]/.test(password)) {
-		return { valid: false, message: "Password must contain at least one lowercase letter" };
-	}
-	if (!/[A-Z]/.test(password)) {
-		return { valid: false, message: "Password must contain at least one uppercase letter" };
-	}
-	if (!/[0-9]/.test(password)) {
-		return { valid: false, message: "Password must contain at least one number" };
-	}
-	if (!/[^a-zA-Z0-9]/.test(password)) {
-		return { valid: false, message: "Password must contain at least one special character" };
-	}
-	return { valid: true };
-};
 
 export const PasswordSetup = ({ passwordPolicy = "strict" }: PasswordSetupProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
