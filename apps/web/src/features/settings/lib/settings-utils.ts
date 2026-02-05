@@ -2,6 +2,7 @@
  * Utility functions for settings feature
  */
 
+import type { PasswordPolicy } from "@arr/shared";
 import type { ServiceType } from "./settings-constants";
 
 export type ServiceFormState = {
@@ -97,7 +98,7 @@ export const getServicePlaceholders = (service: ServiceType) => {
  */
 export const validatePassword = (
 	password: string,
-	policy: "strict" | "relaxed" = "strict",
+	policy: PasswordPolicy = "strict",
 ): { valid: boolean; message?: string } => {
 	if (password.length < 8) {
 		return { valid: false, message: "Password must be at least 8 characters" };

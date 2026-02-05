@@ -92,8 +92,8 @@ export async function checkSetupRequired(): Promise<SetupRequiredResponse> {
 		if (error instanceof ApiError && error.status >= 500) {
 			throw new NetworkError(`API server error: ${error.message}`);
 		}
-		// For client errors (4xx), assume setup is not required with strict policy
-		return { required: false, passwordPolicy: "strict" };
+		// For client errors (4xx), surface the error to the UI
+		throw error;
 	}
 }
 
