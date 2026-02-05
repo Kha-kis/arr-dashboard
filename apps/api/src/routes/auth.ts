@@ -1,17 +1,11 @@
 import { createHash } from "node:crypto";
-import { passwordSchema } from "@arr/shared";
+import { getPasswordSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
 import { hashPassword, verifyPassword } from "../lib/auth/password.js";
 import { getSessionMetadata } from "../lib/auth/session-metadata.js";
 import { parseUserAgent } from "../lib/auth/user-agent-parser.js";
-
-const registerSchema = z.object({
-	username: z.string().min(3).max(50),
-	password: passwordSchema, // Required during initial setup to prevent permanent lockout
-	rememberMe: z.boolean().optional().default(false),
-});
 
 const loginSchema = z.object({
 	username: z.string().min(3).max(50),
@@ -23,9 +17,30 @@ const REGISTER_RATE_LIMIT = { max: 5, timeWindow: "1 minute" };
 const LOGIN_RATE_LIMIT = { max: 10, timeWindow: "1 minute" };
 
 const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
+	// Get password schema based on configured policy
+	const passwordSchema = getPasswordSchema(app.config.PASSWORD_POLICY);
+
+	// Registration schema uses configured password policy
+	const registerSchema = z.object({
+		username: z.string().min(3).max(50),
+		password: passwordSchema,
+		rememberMe: z.boolean().optional().default(false),
+	});
+
+	// Account update schema also uses configured password policy
+	const updateAccountSchema = z.object({
+		username: z.string().min(3).max(50).optional(),
+		currentPassword: z.string().min(8).max(128).optional(),
+		newPassword: passwordSchema.optional(),
+		tmdbApiKey: z.string().max(255).optional(),
+	});
+
 	app.get("/setup-required", async (request, reply) => {
 		const userCount = await app.prisma.user.count();
-		return reply.send({ required: userCount === 0 });
+		return reply.send({
+			required: userCount === 0,
+			passwordPolicy: app.config.PASSWORD_POLICY,
+		});
 	});
 
 	app.post("/register", { config: { rateLimit: REGISTER_RATE_LIMIT } }, async (request, reply) => {
@@ -359,13 +374,6 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		);
 
 		return reply.send({ success: true, message: "Session revoked successfully" });
-	});
-
-	const updateAccountSchema = z.object({
-		username: z.string().min(3).max(50).optional(),
-		currentPassword: z.string().min(8).max(128).optional(),
-		newPassword: passwordSchema.optional(),
-		tmdbApiKey: z.string().max(255).optional(),
 	});
 
 	app.patch("/account", async (request, reply) => {

@@ -8,7 +8,7 @@ import { PasswordInput } from "../../../components/ui/password-input";
 import { PremiumSection, GlassmorphicCard } from "../../../components/layout";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { useUpdateAccountMutation, useRemovePasswordMutation } from "../../../hooks/api/useAuth";
+import { useUpdateAccountMutation, useRemovePasswordMutation, useSetupRequired } from "../../../hooks/api/useAuth";
 import { useOIDCProviders } from "../../../hooks/api/useOIDCProviders";
 import { useQuery } from "@tanstack/react-query";
 import { getPasskeyCredentials } from "../../../lib/api-client/auth";
@@ -47,6 +47,8 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 	const updateAccountMutation = useUpdateAccountMutation();
 	const removePasswordMutation = useRemovePasswordMutation();
 	const { data: oidcProviderData } = useOIDCProviders();
+	const { data: setupData } = useSetupRequired();
+	const passwordPolicy = setupData?.passwordPolicy ?? "strict";
 	const { data: passkeys = [] } = useQuery({
 		queryKey: ["passkey-credentials"],
 		queryFn: getPasskeyCredentials,
@@ -83,7 +85,7 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 				return;
 			}
 
-			const passwordValidation = validatePassword(newPassword);
+			const passwordValidation = validatePassword(newPassword, passwordPolicy);
 			if (!passwordValidation.valid) {
 				setUpdateResult({
 					success: false,
@@ -212,7 +214,9 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 									className="bg-card/30 border-border/50"
 								/>
 								<p className="text-xs text-muted-foreground">
-									Must include uppercase, lowercase, number, and special character
+									{passwordPolicy === "relaxed"
+										? "At least 8 characters"
+										: "Must include uppercase, lowercase, number, and special character"}
 								</p>
 							</div>
 

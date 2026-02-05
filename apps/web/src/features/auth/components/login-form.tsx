@@ -83,7 +83,7 @@ export const LoginForm = () => {
 
 	// Redirect to setup if no users exist
 	useEffect(() => {
-		if (!setupLoading && setupRequired === true) {
+		if (!setupLoading && setupRequired?.required === true) {
 			router.replace("/setup");
 		}
 	}, [setupLoading, setupRequired, router]);
@@ -238,7 +238,7 @@ export const LoginForm = () => {
 	}
 
 	// Don't render if setup is required (will redirect)
-	if (setupRequired === true) {
+	if (setupRequired?.required === true) {
 		return null;
 	}
 

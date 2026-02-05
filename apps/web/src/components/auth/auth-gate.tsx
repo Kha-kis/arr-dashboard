@@ -19,7 +19,7 @@ export const AuthGate = ({ children }: AuthGateProps) => {
 	const isSetupRoute = pathname === "/setup";
 
 	// Only fetch user if setup is complete AND not on a public route
-	const shouldFetchUser = setupRequired === false && !isSetupRoute && !isPublicRoute;
+	const shouldFetchUser = setupRequired?.required === false && !isSetupRoute && !isPublicRoute;
 	const { data: user, isLoading: userLoading, isFetching: userFetching } = useCurrentUser(shouldFetchUser);
 
 	// Handle auth redirects (but NOT setup redirects - home page handles that)
@@ -28,7 +28,7 @@ export const AuthGate = ({ children }: AuthGateProps) => {
 		if (isPublicRoute) return;
 
 		// Only handle redirects if setup is complete
-		if (setupRequired !== false) return;
+		if (setupRequired?.required !== false) return;
 
 		// Don't redirect if user query is disabled, still loading, or actively fetching
 		if (!shouldFetchUser || userLoading || userFetching) return;

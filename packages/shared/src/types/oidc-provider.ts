@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { passwordSchema } from "./password.js";
+// Use strict schema for OIDC disable - security-critical operation
+import { passwordSchemaStrict } from "./password.js";
 
 /**
  * Public OIDC Provider shape (without client secret)
@@ -59,7 +60,7 @@ export type OIDCProviderResponse = z.infer<typeof oidcProviderResponseSchema>;
  * Requires replacement password to prevent lockout
  */
 export const deleteOidcProviderSchema = z.object({
-	replacementPassword: passwordSchema,
+	replacementPassword: passwordSchemaStrict,
 });
 
 export type DeleteOIDCProvider = z.infer<typeof deleteOidcProviderSchema>;

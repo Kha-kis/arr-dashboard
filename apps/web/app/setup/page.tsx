@@ -12,7 +12,7 @@ const SetupPage = () => {
 
 	useEffect(() => {
 		// If setup is complete, redirect to login
-		if (!isLoading && setupRequired === false) {
+		if (!isLoading && setupRequired?.required === false) {
 			router.replace("/login");
 		}
 	}, [isLoading, setupRequired, router]);
@@ -27,7 +27,7 @@ const SetupPage = () => {
 	}
 
 	// If setup is complete, don't render (will redirect)
-	if (setupRequired === false) {
+	if (setupRequired?.required === false) {
 		return null;
 	}
 

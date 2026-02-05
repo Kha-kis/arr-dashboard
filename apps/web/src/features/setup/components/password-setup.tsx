@@ -10,12 +10,18 @@ import { Input } from "../../../components/ui/input";
 import { PasswordInput } from "../../../components/ui/password-input";
 import { Alert, AlertDescription } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import type { PasswordPolicy } from "../../../lib/api-client/auth";
+import { validatePassword } from "../../settings/lib/settings-utils";
 
 interface RegisterResponse {
 	user: CurrentUser;
 }
 
-export const PasswordSetup = () => {
+interface PasswordSetupProps {
+	passwordPolicy?: PasswordPolicy;
+}
+
+export const PasswordSetup = ({ passwordPolicy = "strict" }: PasswordSetupProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 
 	const router = useRouter();
@@ -36,26 +42,13 @@ export const PasswordSetup = () => {
 			setError("All fields are required");
 			return;
 		}
-		if (formState.password.length < 8) {
-			setError("Password must be at least 8 characters");
+
+		const passwordValidation = validatePassword(formState.password, passwordPolicy);
+		if (!passwordValidation.valid) {
+			setError(passwordValidation.message ?? "Password validation failed");
 			return;
 		}
-		if (!/[a-z]/.test(formState.password)) {
-			setError("Password must contain at least one lowercase letter");
-			return;
-		}
-		if (!/[A-Z]/.test(formState.password)) {
-			setError("Password must contain at least one uppercase letter");
-			return;
-		}
-		if (!/[0-9]/.test(formState.password)) {
-			setError("Password must contain at least one number");
-			return;
-		}
-		if (!/[^a-zA-Z0-9]/.test(formState.password)) {
-			setError("Password must contain at least one special character");
-			return;
-		}
+
 		if (formState.password !== formState.confirmPassword) {
 			setError("Passwords do not match");
 			return;
@@ -79,6 +72,11 @@ export const PasswordSetup = () => {
 			setIsSubmitting(false);
 		}
 	};
+
+	const passwordHint =
+		passwordPolicy === "relaxed"
+			? "At least 8 characters"
+			: "Must include uppercase, lowercase, number, and special character";
 
 	return (
 		<form className="space-y-4" onSubmit={handleSubmit}>
@@ -105,9 +103,7 @@ export const PasswordSetup = () => {
 					minLength={8}
 					className="rounded-xl"
 				/>
-				<p className="text-xs text-muted-foreground">
-					Must include uppercase, lowercase, number, and special character
-				</p>
+				<p className="text-xs text-muted-foreground">{passwordHint}</p>
 			</div>
 			<div className="space-y-2">
 				<label className="text-xs uppercase text-muted-foreground font-medium">Confirm Password</label>
