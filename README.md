@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.7.3** - Queue Cleaner, Prefer Season Packs & improved error handling
+> **Version 2.7.4** - Configurable password policy for passphrase support
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -141,6 +141,7 @@ docker-compose up -d
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.7.4` | Configurable password policy for passphrase support |
 | `2.7.3` | Queue Cleaner, Prefer Season Packs & improved error handling |
 | `2.7.2` | Custom upstream repos, user custom formats & bug fixes |
 | `2.7.1` | TRaSH template persistence fix + Next.js security patch |
