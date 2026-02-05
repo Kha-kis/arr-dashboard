@@ -8,19 +8,19 @@ import { Skeleton } from "../src/components/ui";
 const HomePage = () => {
 	const router = useRouter();
 	const { data: setupRequired, isLoading: setupLoading } = useSetupRequired();
-	const { data: user, isLoading: userLoading } = useCurrentUser(setupRequired === false);
+	const { data: user, isLoading: userLoading } = useCurrentUser(setupRequired?.required === false);
 
 	useEffect(() => {
 		if (setupLoading) return;
 
 		// Setup is required, go to setup page
-		if (setupRequired === true) {
+		if (setupRequired?.required === true) {
 			window.location.href = "/setup";
 			return;
 		}
 
 		// Setup is complete, check auth
-		if (setupRequired === false) {
+		if (setupRequired?.required === false) {
 			if (userLoading) return;
 
 			// User is logged in, go to dashboard

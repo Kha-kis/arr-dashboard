@@ -13,6 +13,7 @@ import {
 	getPasskeyCredentials,
 	initiateOIDCLogin,
 	type PasskeyCredential,
+	type SetupRequiredResponse,
 } from "../../lib/api-client/auth";
 
 // Login
@@ -118,9 +119,9 @@ export const useRemovePasswordMutation = () => {
 	});
 };
 
-// Setup Required
+// Setup Required (also returns password policy for frontend validation)
 export const useSetupRequired = () =>
-	useQuery<boolean>({
+	useQuery<SetupRequiredResponse>({
 		queryKey: ["setup-required"],
 		queryFn: checkSetupRequired,
 		staleTime: 5 * 60 * 1000,

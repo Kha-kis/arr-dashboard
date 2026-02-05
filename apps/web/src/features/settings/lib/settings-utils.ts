@@ -91,12 +91,24 @@ export const getServicePlaceholders = (service: ServiceType) => {
 };
 
 /**
- * Validates password strength
+ * Validates password strength based on configured policy
+ * @param password - The password to validate
+ * @param policy - "strict" requires complexity, "relaxed" only requires length
  */
-export const validatePassword = (password: string): { valid: boolean; message?: string } => {
+export const validatePassword = (
+	password: string,
+	policy: "strict" | "relaxed" = "strict",
+): { valid: boolean; message?: string } => {
 	if (password.length < 8) {
 		return { valid: false, message: "Password must be at least 8 characters" };
 	}
+
+	// Relaxed policy only requires minimum length
+	if (policy === "relaxed") {
+		return { valid: true };
+	}
+
+	// Strict policy requires complexity
 	if (!/[a-z]/.test(password)) {
 		return {
 			valid: false,
