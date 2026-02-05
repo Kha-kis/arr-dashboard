@@ -186,6 +186,7 @@ The `/config` volume contains critical data that must be preserved:
 | `DATABASE_URL` | `file:/config/prod.db` | Database connection string (SQLite or PostgreSQL) |
 | `SESSION_TTL_HOURS` | `24` | Session expiration time in hours |
 | `SESSION_COOKIE_NAME` | `arr_session` | Name of the session cookie |
+| `PASSWORD_POLICY` | `strict` | Password requirements: `strict` (uppercase, lowercase, number, special char) or `relaxed` (8+ chars only, passphrase-friendly) |
 | `API_RATE_LIMIT_MAX` | `200` | Max requests per minute |
 | `API_RATE_LIMIT_WINDOW` | `1 minute` | Rate limit time window |
 | `API_CORS_ORIGIN` | `localhost:3000,3001` | Allowed CORS origins (comma-separated) |
