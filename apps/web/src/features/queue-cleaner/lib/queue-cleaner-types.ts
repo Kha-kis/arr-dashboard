@@ -92,6 +92,13 @@ export interface QueueCleanerConfig {
 	importBlockPatternMode: ImportBlockPatternMode;
 	// Custom import block patterns (JSON array of strings)
 	importBlockPatterns: string | null;
+	// Auto-import settings (try importing before removing)
+	autoImportEnabled: boolean;
+	autoImportMaxAttempts: number;
+	autoImportCooldownMins: number;
+	autoImportSafeOnly: boolean;
+	autoImportCustomPatterns: string | null; // JSON array of custom safe patterns
+	autoImportNeverPatterns: string | null; // JSON array of custom never-import patterns
 	// Whitelist
 	whitelistEnabled: boolean;
 	whitelistPatterns: string | null;
@@ -149,6 +156,13 @@ export interface QueueCleanerConfigUpdate {
 	importBlockPatternMode?: ImportBlockPatternMode;
 	// Custom import block patterns (JSON array of strings)
 	importBlockPatterns?: string | null;
+	// Auto-import settings
+	autoImportEnabled?: boolean;
+	autoImportMaxAttempts?: number;
+	autoImportCooldownMins?: number;
+	autoImportSafeOnly?: boolean;
+	autoImportCustomPatterns?: string | null;
+	autoImportNeverPatterns?: string | null;
 	// Whitelist
 	whitelistEnabled?: boolean;
 	whitelistPatterns?: string | null;

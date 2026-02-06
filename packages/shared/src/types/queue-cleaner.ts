@@ -84,6 +84,16 @@ export const strikeInfoSchema = z.object({
 
 export type StrikeInfo = z.infer<typeof strikeInfoSchema>;
 
+/** Result of an auto-import attempt */
+export const autoImportResultSchema = z.object({
+	attempted: z.boolean(),
+	success: z.boolean(),
+	error: z.string().optional(),
+	skippedReason: z.string().optional(),
+});
+
+export type AutoImportResult = z.infer<typeof autoImportResultSchema>;
+
 /** Enhanced preview item with detailed context for the preview modal */
 export const enhancedPreviewItemSchema = z.object({
 	id: z.number(),
@@ -102,6 +112,9 @@ export const enhancedPreviewItemSchema = z.object({
 	status: z.string().optional(),
 	downloadId: z.string().optional(),
 	strikeInfo: strikeInfoSchema.optional(),
+	// Auto-import eligibility (for import_pending/blocked items)
+	autoImportEligible: z.boolean().optional(),
+	autoImportReason: z.string().optional(),
 });
 
 export type EnhancedPreviewItem = z.infer<typeof enhancedPreviewItemSchema>;
@@ -230,3 +243,12 @@ export const DEFAULT_IMPORT_PENDING_MINS = 60;
 // Import block cleanup defaults
 export const DEFAULT_IMPORT_BLOCK_CLEANUP_LEVEL: ImportBlockCleanupLevel = "safe";
 export const DEFAULT_IMPORT_BLOCK_PATTERN_MODE: ImportBlockPatternMode = "defaults";
+
+// Auto-import limits
+export const MIN_AUTO_IMPORT_ATTEMPTS = 1;
+export const MAX_AUTO_IMPORT_ATTEMPTS = 5;
+export const DEFAULT_AUTO_IMPORT_ATTEMPTS = 2;
+
+export const MIN_AUTO_IMPORT_COOLDOWN_MINS = 5;
+export const MAX_AUTO_IMPORT_COOLDOWN_MINS = 240; // 4 hours
+export const DEFAULT_AUTO_IMPORT_COOLDOWN_MINS = 30;
