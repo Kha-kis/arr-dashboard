@@ -594,6 +594,8 @@ export const QueueCleanerConfigScalarFieldEnum = {
   autoImportMaxAttempts: 'autoImportMaxAttempts',
   autoImportCooldownMins: 'autoImportCooldownMins',
   autoImportSafeOnly: 'autoImportSafeOnly',
+  autoImportCustomPatterns: 'autoImportCustomPatterns',
+  autoImportNeverPatterns: 'autoImportNeverPatterns',
   whitelistEnabled: 'whitelistEnabled',
   whitelistPatterns: 'whitelistPatterns',
   lastRunAt: 'lastRunAt',

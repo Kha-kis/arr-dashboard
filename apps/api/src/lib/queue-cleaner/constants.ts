@@ -96,6 +96,12 @@ export const MAX_CLEAN_DURATION_MS = 5 * 60 * 1000;
 /** Scheduler tick interval (60 seconds) */
 export const SCHEDULER_TICK_MS = 60 * 1000;
 
+/** Delay between auto-import attempts to avoid overwhelming ARR (200ms) */
+export const AUTO_IMPORT_DELAY_MS = 200;
+
+/** Maximum auto-import attempts per cleaner run to prevent runaway imports */
+export const MAX_AUTO_IMPORTS_PER_RUN = 10;
+
 // ============================================================================
 // Detection Keyword Arrays (Backend-Only)
 // ============================================================================

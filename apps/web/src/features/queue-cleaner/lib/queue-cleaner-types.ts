@@ -97,6 +97,8 @@ export interface QueueCleanerConfig {
 	autoImportMaxAttempts: number;
 	autoImportCooldownMins: number;
 	autoImportSafeOnly: boolean;
+	autoImportCustomPatterns: string | null; // JSON array of custom safe patterns
+	autoImportNeverPatterns: string | null; // JSON array of custom never-import patterns
 	// Whitelist
 	whitelistEnabled: boolean;
 	whitelistPatterns: string | null;
@@ -159,6 +161,8 @@ export interface QueueCleanerConfigUpdate {
 	autoImportMaxAttempts?: number;
 	autoImportCooldownMins?: number;
 	autoImportSafeOnly?: boolean;
+	autoImportCustomPatterns?: string | null;
+	autoImportNeverPatterns?: string | null;
 	// Whitelist
 	whitelistEnabled?: boolean;
 	whitelistPatterns?: string | null;

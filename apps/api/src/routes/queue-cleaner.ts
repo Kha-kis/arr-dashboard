@@ -197,6 +197,8 @@ const configUpdateSchema = z.object({
 	autoImportMaxAttempts: z.number().int().min(MIN_AUTO_IMPORT_ATTEMPTS).max(MAX_AUTO_IMPORT_ATTEMPTS).optional(),
 	autoImportCooldownMins: z.number().int().min(MIN_AUTO_IMPORT_COOLDOWN_MINS).max(MAX_AUTO_IMPORT_COOLDOWN_MINS).optional(),
 	autoImportSafeOnly: z.boolean().optional(),
+	autoImportCustomPatterns: patternJsonSchema,
+	autoImportNeverPatterns: patternJsonSchema,
 
 	// Whitelist
 	whitelistEnabled: z.boolean().optional(),

@@ -21,6 +21,13 @@ import {
 	Clock,
 	TrendingUp,
 	Sparkles,
+	ChevronDown,
+	ChevronUp,
+	CheckCircle2,
+	Ban,
+	FileText,
+	HelpCircle,
+	ArrowRight,
 } from "lucide-react";
 import { Button, toast } from "../../../components/ui";
 import {
@@ -70,6 +77,8 @@ import {
 	MIN_AUTO_IMPORT_COOLDOWN_MINS,
 	MAX_AUTO_IMPORT_COOLDOWN_MINS,
 	WHITELIST_TYPES,
+	AUTO_IMPORT_SAFE_PATTERNS,
+	AUTO_IMPORT_NEVER_PATTERNS,
 } from "../lib/constants";
 
 export const QueueCleanerConfig = () => {
@@ -574,20 +583,26 @@ const InstanceConfigCard = ({
 					{/* Rule: Error Patterns */}
 					<RuleSection
 						icon={AlertTriangle}
-						title="Error Patterns"
-						description="Remove downloads matching custom error patterns"
+						title="Download Errors"
+						description="Remove downloads that FAILED during transfer"
 						enabled={formData.errorPatternsEnabled ?? false}
 						onToggle={(v) => updateField("errorPatternsEnabled", v)}
 					>
+						<div className="text-xs p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 mb-3">
+							<p className="text-muted-foreground">
+								<span className="font-medium text-red-400">For broken downloads</span> — matches error messages like "disk space", "permission denied", "connection failed".
+								<span className="text-muted-foreground/70"> (Different from Import Blocked which handles completed downloads that ARR won't import)</span>
+							</p>
+						</div>
 						<div>
 							<label htmlFor="error-patterns-textarea" className="text-xs font-medium text-foreground block mb-1.5">
-								Patterns (one per line)
+								Custom error patterns (one per line)
 							</label>
 							<textarea
 								id="error-patterns-textarea"
 								className="w-full rounded-lg border border-border/50 bg-card/50 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 min-h-[80px] resize-y"
 								style={{ focusRingColor: themeGradient.from } as React.CSSProperties}
-								placeholder="disk space&#10;permission denied&#10;custom pattern"
+								placeholder="disk space&#10;permission denied&#10;tracker error"
 								value={(() => {
 									try {
 										return formData.errorPatterns
@@ -608,7 +623,7 @@ const InstanceConfigCard = ({
 								}}
 							/>
 							<p className="text-[10px] text-muted-foreground mt-1">
-								Case-insensitive substring matching against error messages
+								Case-insensitive matching against download client error messages
 							</p>
 						</div>
 					</RuleSection>
@@ -662,160 +677,182 @@ const InstanceConfigCard = ({
 					<RuleSection
 						icon={Clock}
 						title="Import Pending / Blocked"
-						description="Handle downloads stuck in import pending or blocked state"
+						description="Handle completed downloads that ARR won't import"
 						enabled={formData.importPendingEnabled ?? true}
 						onToggle={(v) => updateField("importPendingEnabled", v)}
 					>
-						<ConfigInput
-							label="Timeout Threshold"
-							description="Flag after pending for this long without status info"
-							value={formData.importPendingThresholdMins ?? 60}
-							onChange={(v) => updateField("importPendingThresholdMins", v)}
-							min={MIN_IMPORT_PENDING_MINS}
-							max={MAX_IMPORT_PENDING_MINS}
-							suffix="mins"
-						/>
-						<div className="space-y-2">
-							<label htmlFor="cleanup-aggressiveness-select" className="text-xs font-medium text-foreground">Cleanup Aggressiveness</label>
-							<select
-								id="cleanup-aggressiveness-select"
-								value={formData.importBlockCleanupLevel ?? "safe"}
-								onChange={(e) =>
-									updateField(
-										"importBlockCleanupLevel",
-										e.target.value as "safe" | "moderate" | "aggressive",
-									)
-								}
-								className="w-full h-9 rounded-md border border-border/50 bg-card/50 px-3 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
-							>
-								<option value="safe">Safe - Redundant & quality mismatches only</option>
-								<option value="moderate">Moderate - Also items needing manual review</option>
-								<option value="aggressive">Aggressive - Include technical issues</option>
-							</select>
-							<div className="text-xs text-muted-foreground space-y-1 p-2 rounded-md bg-card/30 border border-border/30">
-								<p><strong>Safe:</strong> Already exists, duplicate, quality not wanted, cutoff met, sample files, no video files</p>
-								<p><strong>Moderate:</strong> + Manual import required, missing expected files</p>
-								<p><strong>Aggressive:</strong> + Password protected, unpack required, RAR issues</p>
+						{/* Explanation */}
+						<div className="text-xs p-3 rounded-lg bg-gradient-to-r from-blue-500/10 to-purple-500/10 border border-blue-500/20 space-y-2">
+							<div className="flex items-center gap-2 text-foreground font-medium">
+								<FileText className="h-3.5 w-3.5 text-blue-400" />
+								What this handles:
+							</div>
+							<p className="text-muted-foreground">
+								Downloads that <span className="text-emerald-400 font-medium">finished successfully</span> but are stuck because ARR won't import them — duplicates, wrong quality, sample files, etc.
+								<span className="text-muted-foreground/70"> (Different from Download Errors which handles broken/failed transfers)</span>
+							</p>
+							<div className="flex items-center gap-1.5 text-muted-foreground flex-wrap pt-1">
+								<span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/30 text-emerald-400">Download complete</span>
+								<ArrowRight className="h-3 w-3 text-muted-foreground/50" />
+								<span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-500/30 text-amber-400">ARR blocks import</span>
+								<ArrowRight className="h-3 w-3 text-muted-foreground/50" />
+								<span className="px-2 py-0.5 rounded bg-card/50 border border-border/30">Wait timeout</span>
+								<ArrowRight className="h-3 w-3 text-muted-foreground/50" />
+								<span className="px-2 py-0.5 rounded bg-blue-500/20 border border-blue-500/30 text-blue-400">Try import?</span>
+								<ArrowRight className="h-3 w-3 text-muted-foreground/50" />
+								<span className="px-2 py-0.5 rounded bg-red-500/20 border border-red-500/30 text-red-400">Remove</span>
 							</div>
 						</div>
 
-						{/* Pattern Matching Mode */}
-						<div className="space-y-2 pt-3 border-t border-border/30">
-							<label htmlFor="pattern-matching-mode-select" className="text-xs font-medium text-foreground">Pattern Matching Mode</label>
-							<select
-								id="pattern-matching-mode-select"
-								value={formData.importBlockPatternMode ?? "defaults"}
-								onChange={(e) =>
-									updateField(
-										"importBlockPatternMode",
-										e.target.value as "defaults" | "include" | "exclude",
-									)
-								}
-								className="w-full h-9 rounded-md border border-border/50 bg-card/50 px-3 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
-							>
-								<option value="defaults">Use Categorized Defaults</option>
-								<option value="include">Include Only (custom patterns)</option>
-								<option value="exclude">Exclude Patterns (protect items)</option>
-							</select>
-							<div className="text-xs text-muted-foreground space-y-1 p-2 rounded-md bg-card/30 border border-border/30">
-								<p><strong>Defaults:</strong> Use built-in keyword categories based on cleanup level</p>
-								<p><strong>Include Only:</strong> Only clean items matching YOUR custom patterns</p>
-								<p><strong>Exclude:</strong> Use defaults BUT skip items matching your patterns</p>
+						{/* Step 1: Timeout */}
+						<div className="space-y-2 pt-2">
+							<div className="flex items-center gap-2">
+								<span className="flex items-center justify-center h-5 w-5 rounded-full bg-blue-500/20 text-blue-400 text-[10px] font-bold">1</span>
+								<span className="text-xs font-medium text-foreground">Wait Period</span>
+								<Tooltip text="How long to wait before taking action. Gives time for temporary issues to resolve (e.g., files still being extracted)." />
 							</div>
+							<ConfigInput
+								label=""
+								description="Only act on items stuck for at least this long"
+								value={formData.importPendingThresholdMins ?? 60}
+								onChange={(v) => updateField("importPendingThresholdMins", v)}
+								min={MIN_IMPORT_PENDING_MINS}
+								max={MAX_IMPORT_PENDING_MINS}
+								suffix="mins"
+							/>
 						</div>
 
-						{/* Custom Patterns - shown when mode is include or exclude */}
-						{(formData.importBlockPatternMode === "include" ||
-							formData.importBlockPatternMode === "exclude") && (
-							<div className="space-y-2">
-								<label htmlFor="import-block-patterns-textarea" className="text-xs font-medium text-foreground">
-									{formData.importBlockPatternMode === "include"
-										? "Clean Items Matching These Patterns"
-										: "Protect Items Matching These Patterns"}
-								</label>
-								<textarea
-									id="import-block-patterns-textarea"
-									value={(() => {
-										try {
-											const patterns = formData.importBlockPatterns
-												? JSON.parse(formData.importBlockPatterns)
-												: [];
-											return Array.isArray(patterns) ? patterns.join("\n") : "";
-										} catch {
-											return "";
-										}
-									})()}
-									onChange={(e) => {
-										const lines = e.target.value.split("\n").filter((l) => l.trim());
-										updateField(
-											"importBlockPatterns",
-											lines.length > 0 ? JSON.stringify(lines) : null,
-										);
-									}}
-									placeholder={
-										formData.importBlockPatternMode === "include"
-											? "quality not wanted\nalready exists\nduplicate"
-											: "unpacking\nextracting"
-									}
-									rows={4}
-									className="w-full rounded-md border border-border/50 bg-card/50 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30 resize-none font-mono"
-								/>
-								<p className="text-xs text-muted-foreground">
-									One pattern per line. Matches are case-insensitive and checked against status messages.
-								</p>
-							</div>
-						)}
-
-						{/* Auto-Import Sub-Feature */}
+						{/* Step 2: Pattern Matching */}
 						<div className="space-y-3 pt-3 border-t border-border/30">
 							<div className="flex items-center gap-2">
-								<Sparkles className="h-4 w-4 text-amber-500" />
-								<h6 className="text-xs font-semibold text-foreground">Auto-Import (Experimental)</h6>
+								<span className="flex items-center justify-center h-5 w-5 rounded-full bg-blue-500/20 text-blue-400 text-[10px] font-bold">2</span>
+								<span className="text-xs font-medium text-foreground">Decide What to Clean</span>
+								<Tooltip text="Controls which blocked items get removed. Items not matching the criteria are left alone." />
 							</div>
-							<ToggleRow
-								label="Try auto-import before removal"
-								description="Attempt to import completed downloads before falling back to removal"
-								checked={formData.autoImportEnabled ?? false}
-								onChange={(v) => updateField("autoImportEnabled", v)}
-							/>
-							{formData.autoImportEnabled && (
-								<>
-									<ToggleRow
-										label="Safe patterns only"
-										description="Only import items with known-safe status messages (e.g., 'waiting for import')"
-										checked={formData.autoImportSafeOnly ?? true}
-										onChange={(v) => updateField("autoImportSafeOnly", v)}
-									/>
-									<ConfigInput
-										label="Max Import Attempts"
-										description="Stop trying after this many failed attempts"
-										value={formData.autoImportMaxAttempts ?? 2}
-										onChange={(v) => updateField("autoImportMaxAttempts", v)}
-										min={MIN_AUTO_IMPORT_ATTEMPTS}
-										max={MAX_AUTO_IMPORT_ATTEMPTS}
-										suffix="attempts"
-									/>
-									<ConfigInput
-										label="Retry Cooldown"
-										description="Wait this long between import attempts on the same item"
-										value={formData.autoImportCooldownMins ?? 30}
-										onChange={(v) => updateField("autoImportCooldownMins", v)}
-										min={MIN_AUTO_IMPORT_COOLDOWN_MINS}
-										max={MAX_AUTO_IMPORT_COOLDOWN_MINS}
-										suffix="mins"
-									/>
-									<div className="text-xs text-muted-foreground p-2 rounded-md bg-card/30 border border-border/30 space-y-1">
-										<p className="font-medium">How it works:</p>
-										<ol className="list-decimal list-inside space-y-0.5 ml-1">
-											<li>Detect import pending/blocked items</li>
-											<li>Check eligibility (cooldown, max attempts, patterns)</li>
-											<li>Trigger import via ARR API</li>
-											<li>If import fails, fall back to normal removal</li>
-										</ol>
+
+							<div className="space-y-2">
+								<label htmlFor="cleanup-aggressiveness-select" className="text-xs text-muted-foreground">Cleanup Level</label>
+								<select
+									id="cleanup-aggressiveness-select"
+									value={formData.importBlockCleanupLevel ?? "safe"}
+									onChange={(e) =>
+										updateField(
+											"importBlockCleanupLevel",
+											e.target.value as "safe" | "moderate" | "aggressive",
+										)
+									}
+									className="w-full h-9 rounded-md border border-border/50 bg-card/50 px-3 text-sm text-foreground focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
+								>
+									<option value="safe">Safe - Only obvious failures</option>
+									<option value="moderate">Moderate - Include items needing manual action</option>
+									<option value="aggressive">Aggressive - Clean anything stuck</option>
+								</select>
+								<details className="text-xs text-muted-foreground">
+									<summary className="cursor-pointer hover:text-foreground transition-colors py-1">
+										What does each level clean? (click to expand)
+									</summary>
+									<div className="mt-2 p-2.5 rounded-md bg-card/30 border border-border/30 space-y-1.5">
+										<p>
+											<span className="inline-block w-20 font-medium text-emerald-400">Safe:</span>
+											Duplicates, already exists, quality rejected, sample files, no video files
+										</p>
+										<p>
+											<span className="inline-block w-20 font-medium text-amber-400">Moderate:</span>
+											+ manual import required, missing expected files
+										</p>
+										<p>
+											<span className="inline-block w-20 font-medium text-red-400">Aggressive:</span>
+											+ password protected, unpack/RAR issues
+										</p>
 									</div>
-								</>
-							)}
+								</details>
+							</div>
+
+							{/* Advanced: Pattern Mode */}
+							<details className="text-xs">
+								<summary className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors py-1 flex items-center gap-1">
+									<Settings className="h-3 w-3" />
+									Advanced: Custom pattern rules
+								</summary>
+								<div className="mt-2 space-y-2 p-2.5 rounded-md bg-card/30 border border-border/30">
+									<select
+										id="pattern-matching-mode-select"
+										value={formData.importBlockPatternMode ?? "defaults"}
+										onChange={(e) =>
+											updateField(
+												"importBlockPatternMode",
+												e.target.value as "defaults" | "include" | "exclude",
+											)
+										}
+										className="w-full h-8 rounded-md border border-border/50 bg-card/50 px-2 text-xs text-foreground focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
+									>
+										<option value="defaults">Use cleanup level defaults</option>
+										<option value="include">Custom: Only clean items matching my patterns</option>
+										<option value="exclude">Custom: Protect items matching my patterns</option>
+									</select>
+
+									{(formData.importBlockPatternMode === "include" ||
+										formData.importBlockPatternMode === "exclude") && (
+										<div className="space-y-1.5 pt-2">
+											<label htmlFor="import-block-patterns-textarea" className="text-muted-foreground">
+												{formData.importBlockPatternMode === "include"
+													? "Only clean items with these status messages:"
+													: "Never clean items with these status messages:"}
+											</label>
+											<textarea
+												id="import-block-patterns-textarea"
+												value={(() => {
+													try {
+														const patterns = formData.importBlockPatterns
+															? JSON.parse(formData.importBlockPatterns)
+															: [];
+														return Array.isArray(patterns) ? patterns.join("\n") : "";
+													} catch {
+														return "";
+													}
+												})()}
+												onChange={(e) => {
+													const lines = e.target.value.split("\n").filter((l) => l.trim());
+													updateField(
+														"importBlockPatterns",
+														lines.length > 0 ? JSON.stringify(lines) : null,
+													);
+												}}
+												placeholder={
+													formData.importBlockPatternMode === "include"
+														? "quality not wanted\nalready exists\nduplicate"
+														: "unpacking\nextracting"
+												}
+												rows={3}
+												className="w-full rounded-md border border-border/50 bg-card/50 px-2 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/50 focus:border-primary/50 focus:outline-none focus:ring-1 focus:ring-primary/30 resize-none font-mono"
+											/>
+											<p className="text-[10px] text-muted-foreground/70">
+												One pattern per line, case-insensitive.
+											</p>
+										</div>
+									)}
+								</div>
+							</details>
 						</div>
+
+						{/* Step 3: Auto-Import (Optional) */}
+						<div className="space-y-2 pt-3 border-t border-border/30">
+							<div className="flex items-center gap-2">
+								<span className="flex items-center justify-center h-5 w-5 rounded-full bg-amber-500/20 text-amber-400 text-[10px] font-bold">3</span>
+								<span className="text-xs font-medium text-foreground">Before Removing: Try Import?</span>
+								<span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">Optional</span>
+							</div>
+							<p className="text-[11px] text-muted-foreground pl-7">
+								When enabled, attempts to import stuck downloads via ARR's API before removing them.
+								If import succeeds, the item is saved. If it fails, removal continues as normal.
+							</p>
+						</div>
+
+						{/* Auto-Import Sub-Feature */}
+						<AutoImportSection
+							formData={formData}
+							updateField={updateField}
+						/>
 					</RuleSection>
 
 					{/* Removal Options */}
@@ -826,7 +863,7 @@ const InstanceConfigCard = ({
 						<ToggleRow
 							label="Remove from download client"
 							description="Also remove the download from qBittorrent/SABnzbd etc."
-							checked={formData.removeFromClient ?? true}
+							checked={formData.removeFromClient ?? false}
 							onChange={(v) => updateField("removeFromClient", v)}
 						/>
 						<ToggleRow
@@ -915,7 +952,362 @@ const InstanceConfigCard = ({
 	);
 };
 
+// === Auto-Import Section Component ===
+
+/**
+ * Enhanced auto-import configuration section with pattern visibility.
+ * Shows safe patterns (built-in + custom) and never-import patterns (read-only).
+ */
+const AutoImportSection = ({
+	formData,
+	updateField,
+}: {
+	formData: QueueCleanerConfigUpdate;
+	updateField: <K extends keyof QueueCleanerConfigUpdate>(key: K, value: QueueCleanerConfigUpdate[K]) => void;
+}) => {
+	const [showSafePatterns, setShowSafePatterns] = useState(false);
+	const [showNeverPatterns, setShowNeverPatterns] = useState(false);
+
+	// Parse custom safe patterns from JSON
+	const customSafePatterns: string[] = (() => {
+		const json = formData.autoImportCustomPatterns;
+		if (!json) return [];
+		try {
+			const parsed = JSON.parse(json);
+			return Array.isArray(parsed) ? parsed : [];
+		} catch {
+			return [];
+		}
+	})();
+
+	// Parse custom never patterns from JSON
+	const customNeverPatterns: string[] = (() => {
+		const json = formData.autoImportNeverPatterns;
+		if (!json) return [];
+		try {
+			const parsed = JSON.parse(json);
+			return Array.isArray(parsed) ? parsed : [];
+		} catch {
+			return [];
+		}
+	})();
+
+	const updateCustomSafePatterns = (patterns: string[]) => {
+		updateField("autoImportCustomPatterns", patterns.length > 0 ? JSON.stringify(patterns) : null);
+	};
+
+	const updateCustomNeverPatterns = (patterns: string[]) => {
+		updateField("autoImportNeverPatterns", patterns.length > 0 ? JSON.stringify(patterns) : null);
+	};
+
+	const addCustomSafePattern = (pattern: string) => {
+		const trimmed = pattern.trim().toLowerCase();
+		if (trimmed && !customSafePatterns.includes(trimmed) && !AUTO_IMPORT_SAFE_PATTERNS.includes(trimmed as typeof AUTO_IMPORT_SAFE_PATTERNS[number])) {
+			updateCustomSafePatterns([...customSafePatterns, trimmed]);
+		}
+	};
+
+	const removeCustomSafePattern = (index: number) => {
+		updateCustomSafePatterns(customSafePatterns.filter((_, i) => i !== index));
+	};
+
+	const addCustomNeverPattern = (pattern: string) => {
+		const trimmed = pattern.trim().toLowerCase();
+		if (trimmed && !customNeverPatterns.includes(trimmed) && !AUTO_IMPORT_NEVER_PATTERNS.includes(trimmed as typeof AUTO_IMPORT_NEVER_PATTERNS[number])) {
+			updateCustomNeverPatterns([...customNeverPatterns, trimmed]);
+		}
+	};
+
+	const removeCustomNeverPattern = (index: number) => {
+		updateCustomNeverPatterns(customNeverPatterns.filter((_, i) => i !== index));
+	};
+
+	return (
+		<div className="space-y-3 pt-3 border-t border-border/30">
+			{/* Header */}
+			<div className="flex items-center gap-2">
+				<Sparkles className="h-4 w-4 text-amber-500" />
+				<h6 className="text-xs font-semibold text-foreground">Auto-Import (Experimental)</h6>
+			</div>
+
+			{/* Main toggle */}
+			<ToggleRow
+				label="Try auto-import before removal"
+				description="Attempt to import completed downloads via ARR API before falling back to removal"
+				checked={formData.autoImportEnabled ?? false}
+				onChange={(v) => updateField("autoImportEnabled", v)}
+			/>
+
+			{formData.autoImportEnabled && (
+				<div className="space-y-4 pl-1">
+					{/* Safe patterns mode toggle with enhanced description */}
+					<div className="space-y-2">
+						<ToggleRow
+							label="Safe patterns only"
+							description={
+								formData.autoImportSafeOnly ?? true
+									? "ON: Only imports items matching safe patterns below (recommended)"
+									: "OFF: Attempts import on ANY pending/blocked item (use with caution)"
+							}
+							checked={formData.autoImportSafeOnly ?? true}
+							onChange={(v) => updateField("autoImportSafeOnly", v)}
+						/>
+					</div>
+
+					{/* Safe Patterns Section (Collapsible) */}
+					<div className="border border-border/30 rounded-lg overflow-hidden">
+						<button
+							type="button"
+							className="w-full flex items-center justify-between p-2.5 bg-card/30 hover:bg-card/50 transition-colors"
+							onClick={() => setShowSafePatterns(!showSafePatterns)}
+						>
+							<div className="flex items-center gap-2">
+								<CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+								<span className="text-xs font-medium text-foreground">
+									Safe Patterns ({AUTO_IMPORT_SAFE_PATTERNS.length + customSafePatterns.length})
+								</span>
+							</div>
+							{showSafePatterns ? (
+								<ChevronUp className="h-4 w-4 text-muted-foreground" />
+							) : (
+								<ChevronDown className="h-4 w-4 text-muted-foreground" />
+							)}
+						</button>
+
+						{showSafePatterns && (
+							<div className="p-2.5 space-y-3 border-t border-border/20 bg-card/20">
+								<p className="text-[10px] text-muted-foreground">
+									Items matching these patterns CAN be auto-imported. Built-in patterns are based on common ARR status messages.
+								</p>
+
+								{/* Built-in patterns */}
+								<div className="space-y-1">
+									<span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Built-in</span>
+									<div className="flex flex-wrap gap-1">
+										{AUTO_IMPORT_SAFE_PATTERNS.map((pattern) => (
+											<span
+												key={pattern}
+												className="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+											>
+												{pattern}
+											</span>
+										))}
+									</div>
+								</div>
+
+								{/* Custom patterns */}
+								<div className="space-y-1.5">
+									<span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Custom</span>
+									{customSafePatterns.length > 0 ? (
+										<div className="flex flex-wrap gap-1">
+											{customSafePatterns.map((pattern, index) => (
+												<span
+													key={pattern}
+													className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20"
+												>
+													{pattern}
+													<button
+														type="button"
+														onClick={() => removeCustomSafePattern(index)}
+														className="hover:text-red-400 transition-colors"
+													>
+														<X className="h-2.5 w-2.5" />
+													</button>
+												</span>
+											))}
+										</div>
+									) : (
+										<p className="text-[10px] text-muted-foreground/50 italic">No custom patterns added</p>
+									)}
+
+									{/* Add custom pattern input */}
+									<div className="flex gap-1.5 mt-2">
+										<input
+											type="text"
+											placeholder="Add custom pattern..."
+											className="flex-1 rounded-md border border-border/50 bg-card/50 px-2 py-1 text-[11px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
+											onKeyDown={(e) => {
+												if (e.key === "Enter") {
+													e.preventDefault();
+													const input = e.currentTarget;
+													addCustomSafePattern(input.value);
+													input.value = "";
+												}
+											}}
+										/>
+										<Button
+											variant="secondary"
+											size="sm"
+											className="h-6 px-2 text-[10px]"
+											onClick={(e) => {
+												const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+												if (input?.value) {
+													addCustomSafePattern(input.value);
+													input.value = "";
+												}
+											}}
+										>
+											<Plus className="h-3 w-3" />
+										</Button>
+									</div>
+								</div>
+							</div>
+						)}
+					</div>
+
+					{/* Never-Import Patterns Section (Collapsible) */}
+					<div className="border border-border/30 rounded-lg overflow-hidden">
+						<button
+							type="button"
+							className="w-full flex items-center justify-between p-2.5 bg-card/30 hover:bg-card/50 transition-colors"
+							onClick={() => setShowNeverPatterns(!showNeverPatterns)}
+						>
+							<div className="flex items-center gap-2">
+								<Ban className="h-3.5 w-3.5 text-red-500" />
+								<span className="text-xs font-medium text-foreground">
+									Never Import ({AUTO_IMPORT_NEVER_PATTERNS.length + customNeverPatterns.length})
+								</span>
+							</div>
+							{showNeverPatterns ? (
+								<ChevronUp className="h-4 w-4 text-muted-foreground" />
+							) : (
+								<ChevronDown className="h-4 w-4 text-muted-foreground" />
+							)}
+						</button>
+
+						{showNeverPatterns && (
+							<div className="p-2.5 space-y-3 border-t border-border/20 bg-card/20">
+								<p className="text-[10px] text-muted-foreground">
+									Items matching these patterns are BLOCKED from auto-import. These will never be attempted.
+								</p>
+
+								{/* Built-in never patterns */}
+								<div className="space-y-1">
+									<span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Built-in</span>
+									<div className="flex flex-wrap gap-1">
+										{AUTO_IMPORT_NEVER_PATTERNS.map((pattern) => (
+											<span
+												key={pattern}
+												className="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-red-500/10 text-red-400 border border-red-500/20"
+											>
+												{pattern}
+											</span>
+										))}
+									</div>
+								</div>
+
+								{/* Custom never patterns */}
+								<div className="space-y-1.5">
+									<span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Custom</span>
+									{customNeverPatterns.length > 0 ? (
+										<div className="flex flex-wrap gap-1">
+											{customNeverPatterns.map((pattern, index) => (
+												<span
+													key={pattern}
+													className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-orange-500/10 text-orange-400 border border-orange-500/20"
+												>
+													{pattern}
+													<button
+														type="button"
+														onClick={() => removeCustomNeverPattern(index)}
+														className="hover:text-red-400 transition-colors"
+													>
+														<X className="h-2.5 w-2.5" />
+													</button>
+												</span>
+											))}
+										</div>
+									) : (
+										<p className="text-[10px] text-muted-foreground/50 italic">No custom patterns added</p>
+									)}
+
+									{/* Add custom never pattern input */}
+									<div className="flex gap-1.5 mt-2">
+										<input
+											type="text"
+											placeholder="Add pattern to block..."
+											className="flex-1 rounded-md border border-border/50 bg-card/50 px-2 py-1 text-[11px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
+											onKeyDown={(e) => {
+												if (e.key === "Enter") {
+													e.preventDefault();
+													const input = e.currentTarget;
+													addCustomNeverPattern(input.value);
+													input.value = "";
+												}
+											}}
+										/>
+										<Button
+											variant="secondary"
+											size="sm"
+											className="h-6 px-2 text-[10px]"
+											onClick={(e) => {
+												const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+												if (input?.value) {
+													addCustomNeverPattern(input.value);
+													input.value = "";
+												}
+											}}
+										>
+											<Plus className="h-3 w-3" />
+										</Button>
+									</div>
+								</div>
+							</div>
+						)}
+					</div>
+
+					{/* Settings */}
+					<div className="space-y-3 pt-2">
+						<ConfigInput
+							label="Max Import Attempts"
+							description="Stop trying after this many failed attempts per item"
+							value={formData.autoImportMaxAttempts ?? 2}
+							onChange={(v) => updateField("autoImportMaxAttempts", v)}
+							min={MIN_AUTO_IMPORT_ATTEMPTS}
+							max={MAX_AUTO_IMPORT_ATTEMPTS}
+							suffix="attempts"
+						/>
+						<ConfigInput
+							label="Retry Cooldown"
+							description="Wait this long between import attempts on the same item"
+							value={formData.autoImportCooldownMins ?? 30}
+							onChange={(v) => updateField("autoImportCooldownMins", v)}
+							min={MIN_AUTO_IMPORT_COOLDOWN_MINS}
+							max={MAX_AUTO_IMPORT_COOLDOWN_MINS}
+							suffix="mins"
+						/>
+					</div>
+
+					{/* How it works info box */}
+					<div className="text-xs text-muted-foreground p-2.5 rounded-lg bg-card/30 border border-border/30 space-y-1.5">
+						<div className="flex items-center gap-1.5">
+							<FileText className="h-3.5 w-3.5" />
+							<span className="font-medium">How auto-import works:</span>
+						</div>
+						<ol className="list-decimal list-inside space-y-0.5 ml-1 text-[11px]">
+							<li>Detects items stuck in import pending/blocked state</li>
+							<li>Checks eligibility (safe patterns, cooldown, max attempts)</li>
+							<li>Triggers import via ARR's manual import API</li>
+							<li>If import fails, falls back to normal removal behavior</li>
+						</ol>
+					</div>
+				</div>
+			)}
+		</div>
+	);
+};
+
 // === Shared UI Components ===
+
+const Tooltip = ({ text }: { text: string }) => (
+	<div className="group relative inline-flex">
+		<HelpCircle className="h-3.5 w-3.5 text-muted-foreground/50 hover:text-muted-foreground cursor-help" />
+		<div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 text-xs text-foreground bg-popover border border-border rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 w-64 z-50 pointer-events-none">
+			{text}
+			<div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-border" />
+		</div>
+	</div>
+);
 
 const ToggleSwitch = ({
 	checked,

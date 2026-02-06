@@ -200,7 +200,7 @@ async function main() {
 		// Poll for completion
 		console.log("\n⏳ Waiting for import to complete...");
 
-		let status = { status: "queued", message: "" };
+		let status: { status: string; message?: string } = { status: "queued" };
 		let attempts = 0;
 		const maxAttempts = 30; // 30 seconds max
 

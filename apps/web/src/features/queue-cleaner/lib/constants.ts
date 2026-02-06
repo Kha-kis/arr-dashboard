@@ -81,6 +81,63 @@ export {
 // ============================================================================
 
 /**
+ * Status patterns that are SAFE for auto-import.
+ * These patterns indicate the item is ready and likely to import successfully.
+ *
+ * Common scenarios:
+ * - Radarr: "Found matching movie via grab history, but release was matched to movie by ID"
+ * - Sonarr: "Found matching series via grab history, but release was matched to series by ID"
+ * - General: Items waiting for user confirmation but file is correctly identified
+ */
+export const AUTO_IMPORT_SAFE_PATTERNS = [
+	// Direct import requests
+	"waiting for import",
+	"import pending",
+	"manual import required",
+	"manual import",
+	"waiting for manual",
+	// ID-matched items (file correctly identified via grab history)
+	"matched to series by id",
+	"matched to movie by id",
+	"matched to artist by id",
+	"matched to album by id",
+	"matched to book by id",
+	// Grab history match (indicates proper tracking)
+	"via grab history",
+] as const;
+
+/**
+ * Status patterns that should NEVER be auto-imported.
+ * These will always fail or cause problems if imported.
+ */
+export const AUTO_IMPORT_NEVER_PATTERNS = [
+	// Content doesn't exist or is unusable
+	"no video files",
+	"no files found",
+	"no files",
+	"sample only",
+	"sample file",
+	// Extraction/unpacking issues - can't import until resolved
+	"password protected",
+	"unpack required",
+	"rar required",
+	"unpacking failed",
+	"extraction failed",
+	// Quality rejection - ARR explicitly doesn't want this content
+	"quality not wanted",
+	"not an upgrade",
+	"cutoff already met",
+	"not wanted in",
+	// Already exists - import would fail anyway
+	"already exists",
+	"already in library",
+	"duplicate",
+	// Path issues
+	"path does not exist",
+	"file not found",
+] as const;
+
+/**
  * Whitelist types with UI labels for dropdowns/selects
  */
 export const WHITELIST_TYPES = [

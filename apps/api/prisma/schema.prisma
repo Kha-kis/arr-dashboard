@@ -805,7 +805,7 @@ model QueueCleanerConfig {
   errorPatterns         String?                           // JSON array of pattern strings
 
   // Removal options
-  removeFromClient      Boolean         @default(true)
+  removeFromClient      Boolean         @default(false)
   addToBlocklist        Boolean         @default(true)
   searchAfterRemoval    Boolean         @default(false)
 
@@ -855,6 +855,8 @@ model QueueCleanerConfig {
   autoImportMaxAttempts         Int     @default(2)      // Give up after N failed attempts
   autoImportCooldownMins        Int     @default(30)     // Min time between attempts on same item
   autoImportSafeOnly            Boolean @default(true)   // Only import "safe" patterns
+  autoImportCustomPatterns      String?                   // JSON array of custom safe patterns
+  autoImportNeverPatterns       String?                   // JSON array of custom never-import patterns
 
   // Whitelist/Ignore patterns
   whitelistEnabled      Boolean         @default(false)

@@ -10,6 +10,8 @@ import {
 	STALL_KEYWORDS,
 	AUTO_IMPORT_SAFE_KEYWORDS,
 	AUTO_IMPORT_NEVER_KEYWORDS,
+	AUTO_IMPORT_DELAY_MS,
+	MAX_AUTO_IMPORTS_PER_RUN,
 	type ImportBlockCleanupLevel,
 	type ImportBlockPatternMode,
 	type WhitelistPattern,
@@ -576,23 +578,22 @@ function evaluateAutoImportEligibility(
 	existingStrike: QueueCleanerStrike | null,
 	now: Date,
 ): { eligible: boolean; reason: string } {
-	// Check master toggle (with backwards compatibility)
-	const autoImportEnabled = (config as Record<string, unknown>).autoImportEnabled ?? false;
-	if (!autoImportEnabled) {
+	// Check master toggle
+	if (!config.autoImportEnabled) {
 		return { eligible: false, reason: "Auto-import disabled" };
 	}
 
 	// Check max attempts
-	const maxAttempts = (config as Record<string, unknown>).autoImportMaxAttempts ?? 2;
+	const maxAttempts = config.autoImportMaxAttempts;
 	const attempts = existingStrike?.importAttempts ?? 0;
-	if (attempts >= (maxAttempts as number)) {
+	if (attempts >= maxAttempts) {
 		return { eligible: false, reason: `Max attempts reached (${attempts}/${maxAttempts})` };
 	}
 
 	// Check cooldown period
-	const cooldownMins = (config as Record<string, unknown>).autoImportCooldownMins ?? 30;
+	const cooldownMins = config.autoImportCooldownMins;
 	if (existingStrike?.lastImportAttempt) {
-		const cooldownMs = (cooldownMins as number) * 60 * 1000;
+		const cooldownMs = cooldownMins * 60 * 1000;
 		const timeSinceLastAttempt = now.getTime() - existingStrike.lastImportAttempt.getTime();
 		if (timeSinceLastAttempt < cooldownMs) {
 			const remainingMins = Math.ceil((cooldownMs - timeSinceLastAttempt) / 60000);
@@ -600,17 +601,60 @@ function evaluateAutoImportEligibility(
 		}
 	}
 
-	// Check for patterns that should NEVER be auto-imported
+	// Check for patterns that should NEVER be auto-imported (built-in)
 	const neverMatch = matchesKeywords(statusTexts, AUTO_IMPORT_NEVER_KEYWORDS);
 	if (neverMatch) {
 		return { eligible: false, reason: `Cannot auto-import: ${neverMatch}` };
 	}
 
-	// If "safe only" mode, check for safe patterns
-	const safeOnly = (config as Record<string, unknown>).autoImportSafeOnly ?? true;
-	if (safeOnly) {
+	// Check for custom never patterns
+	const customNeverJson = config.autoImportNeverPatterns;
+	if (customNeverJson) {
+		try {
+			const parsed = JSON.parse(customNeverJson);
+			if (Array.isArray(parsed)) {
+				// Filter to only string elements for type safety
+				const customNeverPatterns = parsed.filter((p): p is string => typeof p === "string");
+				if (customNeverPatterns.length > 0) {
+					const customNeverMatch = matchesKeywords(statusTexts, customNeverPatterns);
+					if (customNeverMatch) {
+						return { eligible: false, reason: `Blocked by custom pattern: ${customNeverMatch}` };
+					}
+				}
+			}
+		} catch (err) {
+			// Log warning so user knows their patterns aren't being applied
+			log.warn({ err, configId: config.id }, "Invalid autoImportNeverPatterns JSON - custom never patterns ignored");
+		}
+	}
+
+	// If "safe only" mode, check for safe patterns (built-in + custom)
+	if (config.autoImportSafeOnly) {
+		// Check built-in safe patterns
 		const safeMatch = matchesKeywords(statusTexts, AUTO_IMPORT_SAFE_KEYWORDS);
+
+		// Check custom safe patterns if no built-in match
+		let customMatch: string | null = null;
 		if (!safeMatch) {
+			const customPatternsJson = config.autoImportCustomPatterns;
+			if (customPatternsJson) {
+				try {
+					const parsed = JSON.parse(customPatternsJson);
+					if (Array.isArray(parsed)) {
+						// Filter to only string elements for type safety
+						const customPatterns = parsed.filter((p): p is string => typeof p === "string");
+						if (customPatterns.length > 0) {
+							customMatch = matchesKeywords(statusTexts, customPatterns);
+						}
+					}
+				} catch (err) {
+					// Log warning so user knows their patterns aren't being applied
+					log.warn({ err, configId: config.id }, "Invalid autoImportCustomPatterns JSON - custom safe patterns ignored");
+				}
+			}
+		}
+
+		if (!safeMatch && !customMatch) {
 			return { eligible: false, reason: "No safe pattern matched (safeOnly mode)" };
 		}
 	}
@@ -633,8 +677,19 @@ async function attemptAutoImport(
 	downloadId: string,
 	itemTitle: string,
 ): Promise<AutoImportResult> {
+	// Validate service type before attempting import
+	const serviceLower = instance.service.toLowerCase();
+	const validServices = ["sonarr", "radarr", "lidarr", "readarr"] as const;
+	if (!validServices.includes(serviceLower as typeof validServices[number])) {
+		log.warn(
+			{ instanceId: instance.id, service: instance.service },
+			"Auto-import not supported for this service type",
+		);
+		return { attempted: false, success: false, skippedReason: `Unsupported service: ${instance.service}` };
+	}
+	const service = serviceLower as "sonarr" | "radarr" | "lidarr" | "readarr";
+
 	const client = app.arrClientFactory.create(instance);
-	const service = instance.service.toLowerCase() as "sonarr" | "radarr" | "lidarr" | "readarr";
 
 	try {
 		await autoImportByDownloadIdWithSdk(client, service, downloadId);
@@ -1037,13 +1092,19 @@ export async function executeQueueCleaner(
 	const cleaned: CleanerResultItem[] = [];
 	const autoImported: CleanerResultItem[] = [];
 
-	// Create a lookup map from queue item ID to downloadId (needed for auto-import API calls)
+	// Create lookup maps for auto-import:
+	// 1. Queue item ID -> downloadId (for API calls)
+	// 2. Queue item ID -> full queue item (for status text collection)
 	const downloadIdMap = new Map<number, string>();
+	const queueItemMap = new Map<number, RawQueueItem>();
 	for (const queueItem of queueRecords) {
 		const queueId = typeof queueItem.id === "number" ? queueItem.id : 0;
 		const downloadId = typeof queueItem.downloadId === "string" ? queueItem.downloadId : null;
-		if (queueId > 0 && downloadId) {
-			downloadIdMap.set(queueId, downloadId);
+		if (queueId > 0) {
+			queueItemMap.set(queueId, queueItem);
+			if (downloadId) {
+				downloadIdMap.set(queueId, downloadId);
+			}
 		}
 	}
 
@@ -1053,20 +1114,26 @@ export async function executeQueueCleaner(
 	});
 	const strikeMapForAutoImport = new Map(strikesForAutoImport.map((s) => [s.downloadId, s]));
 
+	// Track auto-import attempts this run to prevent overwhelming ARR
+	let autoImportAttemptsThisRun = 0;
+
 	for (const item of cappedToRemove) {
 		// Check if this is an import_pending/import_blocked item eligible for auto-import
 		const isImportItem = item.rule === "import_pending" || item.rule === "import_blocked";
 		const downloadId = downloadIdMap.get(item.id) ?? null;
 
-		if (isImportItem && downloadId) {
+		if (isImportItem && downloadId && autoImportAttemptsThisRun < MAX_AUTO_IMPORTS_PER_RUN) {
+			// Strike system uses queue item ID (as string) for the downloadId field
+			// This is consistent with the existing strike system (see lines 873, 906)
 			const itemIdStr = String(item.id);
 			const existingStrike = strikeMapForAutoImport.get(itemIdStr);
 
-			// Collect status texts for eligibility check
-			// We need to refetch the item to get full status texts for pattern matching
-			// Note: For performance, we could cache this during evaluation, but this is cleaner
+			// Collect status texts from the full queue item for pattern matching
+			const fullQueueItem = queueItemMap.get(item.id);
+			const statusTexts = fullQueueItem ? collectStatusTexts(fullQueueItem) : [];
+
 			const eligibility = evaluateAutoImportEligibility(
-				[], // Empty for now - eligibility is checked against config settings, not patterns
+				statusTexts,
 				config,
 				existingStrike ?? null,
 				now,
@@ -1078,7 +1145,13 @@ export async function executeQueueCleaner(
 					"Attempting auto-import before removal",
 				);
 
+				autoImportAttemptsThisRun++;
 				const importResult = await attemptAutoImport(app, instance, downloadId, item.title);
+
+				// Rate limit: add delay between auto-import attempts to avoid overwhelming ARR
+				if (AUTO_IMPORT_DELAY_MS > 0) {
+					await new Promise((resolve) => setTimeout(resolve, AUTO_IMPORT_DELAY_MS));
+				}
 
 				// Update strike record with import attempt info
 				try {
@@ -1093,6 +1166,7 @@ export async function executeQueueCleaner(
 						});
 					} else {
 						// Create a strike record to track import attempts
+						// Use itemIdStr (queue item ID) for consistency with existing strike system
 						await app.prisma.queueCleanerStrike.create({
 							data: {
 								instanceId: instance.id,
