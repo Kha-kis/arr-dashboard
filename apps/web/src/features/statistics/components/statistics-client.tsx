@@ -30,6 +30,8 @@ import {
 	ExternalLink,
 	TrendingUp,
 	Activity,
+	Music,
+	BookOpen,
 } from "lucide-react";
 
 const integer = new Intl.NumberFormat();
@@ -37,7 +39,7 @@ const percentFormatter = new Intl.NumberFormat(undefined, {
 	maximumFractionDigits: 1,
 });
 
-type StatisticsTab = "overview" | "sonarr" | "radarr" | "prowlarr";
+type StatisticsTab = "overview" | "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr";
 
 export const StatisticsClient = () => {
 	const [mounted, setMounted] = useState(false);
@@ -57,9 +59,13 @@ export const StatisticsClient = () => {
 		sonarrRows,
 		radarrRows,
 		prowlarrRows,
+		lidarrRows,
+		readarrRows,
 		sonarrTotals,
 		radarrTotals,
 		prowlarrTotals,
+		lidarrTotals,
+		readarrTotals,
 		combinedDisk,
 		allHealthIssues,
 	} = useStatisticsData();
@@ -76,6 +82,8 @@ export const StatisticsClient = () => {
 		{ id: "overview", label: "Overview", icon: BarChart3 },
 		{ id: "sonarr", label: "Sonarr", icon: Tv, count: sonarrRows.length, gradient: SERVICE_GRADIENTS.sonarr },
 		{ id: "radarr", label: "Radarr", icon: Film, count: radarrRows.length, gradient: SERVICE_GRADIENTS.radarr },
+		{ id: "lidarr", label: "Lidarr", icon: Music, count: lidarrRows.length, gradient: SERVICE_GRADIENTS.lidarr },
+		{ id: "readarr", label: "Readarr", icon: BookOpen, count: readarrRows.length, gradient: SERVICE_GRADIENTS.readarr },
 		{ id: "prowlarr", label: "Prowlarr", icon: Globe, count: prowlarrRows.length, gradient: SERVICE_GRADIENTS.prowlarr },
 	];
 
@@ -312,7 +320,7 @@ export const StatisticsClient = () => {
 
 					{/* Summary Stats Grid */}
 					<div
-						className="grid gap-4 md:grid-cols-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
+						className="grid gap-4 md:grid-cols-3 lg:grid-cols-6 animate-in fade-in slide-in-from-bottom-4 duration-500"
 						style={{ animationDelay: "300ms", animationFillMode: "backwards" }}
 					>
 						<StatCard
@@ -331,7 +339,25 @@ export const StatisticsClient = () => {
 							icon={Film}
 							gradient={SERVICE_GRADIENTS.radarr}
 							onClick={() => setActiveTab("radarr")}
+							animationDelay={350}
+						/>
+						<StatCard
+							value={lidarrRows.length}
+							label="Lidarr"
+							description={`${lidarrTotals.totalArtists} artists total`}
+							icon={Music}
+							gradient={SERVICE_GRADIENTS.lidarr}
+							onClick={() => setActiveTab("lidarr")}
 							animationDelay={400}
+						/>
+						<StatCard
+							value={readarrRows.length}
+							label="Readarr"
+							description={`${readarrTotals.totalAuthors} authors total`}
+							icon={BookOpen}
+							gradient={SERVICE_GRADIENTS.readarr}
+							onClick={() => setActiveTab("readarr")}
+							animationDelay={450}
 						/>
 						<StatCard
 							value={prowlarrRows.length}
@@ -347,13 +373,13 @@ export const StatisticsClient = () => {
 							label="Storage"
 							description={`of ${formatBytes(combinedDisk.diskTotal)} available`}
 							icon={HardDrive}
-							animationDelay={600}
+							animationDelay={550}
 						/>
 					</div>
 
 					{/* Service Quick Stats */}
 					<div
-						className="grid gap-6 lg:grid-cols-3 animate-in fade-in slide-in-from-bottom-4 duration-500"
+						className="grid gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 animate-in fade-in slide-in-from-bottom-4 duration-500"
 						style={{ animationDelay: "400ms", animationFillMode: "backwards" }}
 					>
 						{/* Sonarr Card */}
@@ -450,6 +476,106 @@ export const StatisticsClient = () => {
 									size="sm"
 									className="w-full mt-4 border border-border/50"
 									onClick={() => setActiveTab("radarr")}
+								>
+									View Details
+								</Button>
+							</div>
+						</div>
+
+						{/* Lidarr Card */}
+						<div className="group relative rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6 overflow-hidden transition-all duration-300 hover:border-border">
+							<div
+								className="absolute inset-0 opacity-0 group-hover:opacity-20 transition-opacity duration-500"
+								style={{ background: `radial-gradient(circle at 50% 0%, ${SERVICE_GRADIENTS.lidarr.glow}, transparent 70%)` }}
+							/>
+							<div className="relative">
+								<div className="flex items-center gap-3 mb-4">
+									<div
+										className="flex h-10 w-10 items-center justify-center rounded-xl"
+										style={{
+											background: `linear-gradient(135deg, ${SERVICE_GRADIENTS.lidarr.from}, ${SERVICE_GRADIENTS.lidarr.to})`,
+											boxShadow: `0 4px 12px -4px ${SERVICE_GRADIENTS.lidarr.glow}`,
+										}}
+									>
+										<Music className="h-5 w-5 text-white" />
+									</div>
+									<h3 className="text-lg font-semibold">Lidarr</h3>
+								</div>
+								<div className="space-y-3">
+									<div className="flex justify-between text-sm">
+										<span className="text-muted-foreground">Artists</span>
+										<span className="font-medium">{integer.format(lidarrTotals.totalArtists)}</span>
+									</div>
+									<div className="flex justify-between text-sm">
+										<span className="text-muted-foreground">Downloaded</span>
+										<span className="font-medium" style={{ color: SERVICE_GRADIENTS.lidarr.from }}>
+											{formatPercent(lidarrTotals.downloadPercent)}
+										</span>
+									</div>
+									<div className="flex justify-between text-sm">
+										<span className="text-muted-foreground">Missing</span>
+										<span className="font-medium">{integer.format(lidarrTotals.missingTracks)}</span>
+									</div>
+									<div className="flex justify-between text-sm">
+										<span className="text-muted-foreground">Disk Usage</span>
+										<span className="font-medium">{formatPercent(lidarrTotals.diskPercent)}</span>
+									</div>
+								</div>
+								<Button
+									variant="ghost"
+									size="sm"
+									className="w-full mt-4 border border-border/50"
+									onClick={() => setActiveTab("lidarr")}
+								>
+									View Details
+								</Button>
+							</div>
+						</div>
+
+						{/* Readarr Card */}
+						<div className="group relative rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6 overflow-hidden transition-all duration-300 hover:border-border">
+							<div
+								className="absolute inset-0 opacity-0 group-hover:opacity-20 transition-opacity duration-500"
+								style={{ background: `radial-gradient(circle at 50% 0%, ${SERVICE_GRADIENTS.readarr.glow}, transparent 70%)` }}
+							/>
+							<div className="relative">
+								<div className="flex items-center gap-3 mb-4">
+									<div
+										className="flex h-10 w-10 items-center justify-center rounded-xl"
+										style={{
+											background: `linear-gradient(135deg, ${SERVICE_GRADIENTS.readarr.from}, ${SERVICE_GRADIENTS.readarr.to})`,
+											boxShadow: `0 4px 12px -4px ${SERVICE_GRADIENTS.readarr.glow}`,
+										}}
+									>
+										<BookOpen className="h-5 w-5 text-white" />
+									</div>
+									<h3 className="text-lg font-semibold">Readarr</h3>
+								</div>
+								<div className="space-y-3">
+									<div className="flex justify-between text-sm">
+										<span className="text-muted-foreground">Authors</span>
+										<span className="font-medium">{integer.format(readarrTotals.totalAuthors)}</span>
+									</div>
+									<div className="flex justify-between text-sm">
+										<span className="text-muted-foreground">Downloaded</span>
+										<span className="font-medium" style={{ color: SERVICE_GRADIENTS.readarr.from }}>
+											{formatPercent(readarrTotals.downloadPercent)}
+										</span>
+									</div>
+									<div className="flex justify-between text-sm">
+										<span className="text-muted-foreground">Missing</span>
+										<span className="font-medium">{integer.format(readarrTotals.missingBooks)}</span>
+									</div>
+									<div className="flex justify-between text-sm">
+										<span className="text-muted-foreground">Disk Usage</span>
+										<span className="font-medium">{formatPercent(readarrTotals.diskPercent)}</span>
+									</div>
+								</div>
+								<Button
+									variant="ghost"
+									size="sm"
+									className="w-full mt-4 border border-border/50"
+									onClick={() => setActiveTab("readarr")}
 								>
 									View Details
 								</Button>
@@ -670,6 +796,180 @@ export const StatisticsClient = () => {
 												<td className="py-3 px-4 text-right">{integer.format(row.missingMovies)}</td>
 												<td className="py-3 px-4 text-right">
 													<span style={{ color: SERVICE_GRADIENTS.radarr.from }}>
+														{formatPercent(row.downloadedPercentage)}
+													</span>
+												</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							</div>
+						)}
+					</PremiumCard>
+				</div>
+			)}
+
+			{/* Lidarr Tab */}
+			{activeTab === "lidarr" && (
+				<div className="flex flex-col gap-6">
+					{/* Stats Grid */}
+					<div
+						className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
+						style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
+					>
+						<StatCard value={lidarrTotals.totalArtists} label="Artists" icon={Music} gradient={SERVICE_GRADIENTS.lidarr} animationDelay={200} />
+						<StatCard value={lidarrTotals.monitoredArtists} label="Monitored" icon={Activity} gradient={SERVICE_GRADIENTS.lidarr} animationDelay={250} />
+						<StatCard value={lidarrTotals.totalAlbums} label="Albums" icon={Music} gradient={SERVICE_GRADIENTS.lidarr} animationDelay={300} />
+						<StatCard value={lidarrTotals.monitoredAlbums} label="Monitored Albums" icon={Activity} gradient={SERVICE_GRADIENTS.lidarr} animationDelay={350} />
+					</div>
+
+					<div
+						className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
+						style={{ animationDelay: "300ms", animationFillMode: "backwards" }}
+					>
+						<StatCard value={lidarrTotals.downloadedTracks} label="Downloaded" description="Tracks" animationDelay={400} />
+						<StatCard value={lidarrTotals.missingTracks} label="Missing" description="Tracks" animationDelay={450} />
+						<StatCard value={formatPercent(lidarrTotals.downloadPercent)} label="Complete" description="Download progress" animationDelay={500} />
+						<StatCard value={lidarrTotals.cutoffUnmetCount ?? 0} label="Cutoff Unmet" description="Eligible for upgrade" animationDelay={550} />
+					</div>
+
+					{/* Quality & Tags */}
+					<div
+						className="grid gap-6 lg:grid-cols-2 animate-in fade-in slide-in-from-bottom-4 duration-500"
+						style={{ animationDelay: "400ms", animationFillMode: "backwards" }}
+					>
+						<PremiumCard title="Quality Distribution" icon={BarChart3} gradientIcon={false} showHeader>
+							<QualityBreakdown breakdown={lidarrTotals.qualityBreakdown} />
+						</PremiumCard>
+						{lidarrTotals.tagBreakdown && Object.keys(lidarrTotals.tagBreakdown).length > 0 && (
+							<PremiumCard title="Tag Distribution" icon={BarChart3} gradientIcon={false} showHeader>
+								<QualityBreakdown breakdown={lidarrTotals.tagBreakdown} />
+							</PremiumCard>
+						)}
+					</div>
+
+					{/* Instance Table */}
+					<PremiumCard
+						title="Instance Details"
+						description="Per-instance breakdown of your Lidarr servers"
+						icon={Music}
+						gradientIcon={false}
+						animationDelay={500}
+					>
+						{lidarrRows.length === 0 ? (
+							<p className="text-muted-foreground text-center py-8">No Lidarr instances configured.</p>
+						) : (
+							<div className="overflow-x-auto">
+								<table className="w-full text-sm">
+									<thead>
+										<tr className="border-b border-border/50">
+											<th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Instance</th>
+											<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Artists</th>
+											<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Albums</th>
+											<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Downloaded</th>
+											<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Missing</th>
+											<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Progress</th>
+										</tr>
+									</thead>
+									<tbody className="divide-y divide-border/30">
+										{lidarrRows.map((row: any) => (
+											<tr key={row.instanceId} className="hover:bg-muted/20 transition-colors">
+												<td className="py-3 px-4 font-medium">
+													{incognitoMode ? getLinuxInstanceName(row.instanceName) : row.instanceName}
+												</td>
+												<td className="py-3 px-4 text-right">{integer.format(row.totalArtists)}</td>
+												<td className="py-3 px-4 text-right">{integer.format(row.totalAlbums)}</td>
+												<td className="py-3 px-4 text-right">{integer.format(row.downloadedTracks)}</td>
+												<td className="py-3 px-4 text-right">{integer.format(row.missingTracks)}</td>
+												<td className="py-3 px-4 text-right">
+													<span style={{ color: SERVICE_GRADIENTS.lidarr.from }}>
+														{formatPercent(row.downloadedPercentage)}
+													</span>
+												</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							</div>
+						)}
+					</PremiumCard>
+				</div>
+			)}
+
+			{/* Readarr Tab */}
+			{activeTab === "readarr" && (
+				<div className="flex flex-col gap-6">
+					{/* Stats Grid */}
+					<div
+						className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
+						style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
+					>
+						<StatCard value={readarrTotals.totalAuthors} label="Authors" icon={BookOpen} gradient={SERVICE_GRADIENTS.readarr} animationDelay={200} />
+						<StatCard value={readarrTotals.monitoredAuthors} label="Monitored" icon={Activity} gradient={SERVICE_GRADIENTS.readarr} animationDelay={250} />
+						<StatCard value={readarrTotals.totalBooks} label="Books" icon={BookOpen} gradient={SERVICE_GRADIENTS.readarr} animationDelay={300} />
+						<StatCard value={readarrTotals.monitoredBooks} label="Monitored Books" icon={Activity} gradient={SERVICE_GRADIENTS.readarr} animationDelay={350} />
+					</div>
+
+					<div
+						className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
+						style={{ animationDelay: "300ms", animationFillMode: "backwards" }}
+					>
+						<StatCard value={readarrTotals.downloadedBooks} label="Downloaded" description="Books" animationDelay={400} />
+						<StatCard value={readarrTotals.missingBooks} label="Missing" description="Books" animationDelay={450} />
+						<StatCard value={formatPercent(readarrTotals.downloadPercent)} label="Complete" description="Download progress" animationDelay={500} />
+						<StatCard value={readarrTotals.cutoffUnmetCount ?? 0} label="Cutoff Unmet" description="Eligible for upgrade" animationDelay={550} />
+					</div>
+
+					{/* Quality & Tags */}
+					<div
+						className="grid gap-6 lg:grid-cols-2 animate-in fade-in slide-in-from-bottom-4 duration-500"
+						style={{ animationDelay: "400ms", animationFillMode: "backwards" }}
+					>
+						<PremiumCard title="Quality Distribution" icon={BarChart3} gradientIcon={false} showHeader>
+							<QualityBreakdown breakdown={readarrTotals.qualityBreakdown} />
+						</PremiumCard>
+						{readarrTotals.tagBreakdown && Object.keys(readarrTotals.tagBreakdown).length > 0 && (
+							<PremiumCard title="Tag Distribution" icon={BarChart3} gradientIcon={false} showHeader>
+								<QualityBreakdown breakdown={readarrTotals.tagBreakdown} />
+							</PremiumCard>
+						)}
+					</div>
+
+					{/* Instance Table */}
+					<PremiumCard
+						title="Instance Details"
+						description="Per-instance breakdown of your Readarr servers"
+						icon={BookOpen}
+						gradientIcon={false}
+						animationDelay={500}
+					>
+						{readarrRows.length === 0 ? (
+							<p className="text-muted-foreground text-center py-8">No Readarr instances configured.</p>
+						) : (
+							<div className="overflow-x-auto">
+								<table className="w-full text-sm">
+									<thead>
+										<tr className="border-b border-border/50">
+											<th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Instance</th>
+											<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Authors</th>
+											<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Books</th>
+											<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Downloaded</th>
+											<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Missing</th>
+											<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Progress</th>
+										</tr>
+									</thead>
+									<tbody className="divide-y divide-border/30">
+										{readarrRows.map((row: any) => (
+											<tr key={row.instanceId} className="hover:bg-muted/20 transition-colors">
+												<td className="py-3 px-4 font-medium">
+													{incognitoMode ? getLinuxInstanceName(row.instanceName) : row.instanceName}
+												</td>
+												<td className="py-3 px-4 text-right">{integer.format(row.totalAuthors)}</td>
+												<td className="py-3 px-4 text-right">{integer.format(row.totalBooks)}</td>
+												<td className="py-3 px-4 text-right">{integer.format(row.downloadedBooks)}</td>
+												<td className="py-3 px-4 text-right">{integer.format(row.missingBooks)}</td>
+												<td className="py-3 px-4 text-right">
+													<span style={{ color: SERVICE_GRADIENTS.readarr.from }}>
 														{formatPercent(row.downloadedPercentage)}
 													</span>
 												</td>

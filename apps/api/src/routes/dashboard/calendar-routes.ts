@@ -1,16 +1,18 @@
 import { calendarItemSchema } from "@arr/shared";
-import type { CalendarItem } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import {
 	executeOnInstances,
 	isSonarrClient,
 	isRadarrClient,
+	isLidarrClient,
+	isReadarrClient,
 } from "../../lib/arr/client-helpers.js";
 import {
 	formatDateOnly,
 	normalizeCalendarItem,
 	compareCalendarItems,
+	type CalendarService,
 } from "../../lib/dashboard/calendar-utils.js";
 
 const calendarQuerySchema = z.object({
@@ -35,7 +37,7 @@ export const calendarRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 	/**
 	 * GET /dashboard/calendar
-	 * Fetches upcoming releases from all enabled Sonarr and Radarr instances
+	 * Fetches upcoming releases from all enabled Sonarr, Radarr, Lidarr, and Readarr instances
 	 */
 	app.get("/dashboard/calendar", async (request, reply) => {
 		const { start, end, unmonitored } = calendarQuerySchema.parse(request.query ?? {});
@@ -66,9 +68,9 @@ export const calendarRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const response = await executeOnInstances(
 			app,
 			request.currentUser!.id,
-			{ serviceTypes: ["SONARR", "RADARR"] },
+			{ serviceTypes: ["SONARR", "RADARR", "LIDARR", "READARR"] },
 			async (client, instance) => {
-				const service = instance.service.toLowerCase() as "sonarr" | "radarr";
+				const service = instance.service.toLowerCase() as CalendarService;
 
 				let rawItems: unknown[] = [];
 
@@ -85,6 +87,20 @@ export const calendarRoutes: FastifyPluginCallback = (app, _opts, done) => {
 						start: startIso,
 						end: endIso,
 						unmonitored: includeUnmonitored,
+					});
+				} else if (isLidarrClient(client)) {
+					rawItems = await client.calendar.get({
+						start: startIso,
+						end: endIso,
+						unmonitored: includeUnmonitored,
+						includeArtist: true,
+					});
+				} else if (isReadarrClient(client)) {
+					rawItems = await client.calendar.get({
+						start: startIso,
+						end: endIso,
+						unmonitored: includeUnmonitored,
+						includeAuthor: true,
 					});
 				}
 
@@ -109,7 +125,7 @@ export const calendarRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const results = response.instances.map((result) => ({
 			instanceId: result.instanceId,
 			instanceName: result.instanceName,
-			service: result.service as "sonarr" | "radarr",
+			service: result.service as CalendarService,
 			data: result.success ? result.data : [],
 		}));
 

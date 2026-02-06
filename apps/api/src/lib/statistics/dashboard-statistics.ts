@@ -3,14 +3,20 @@ import {
 	type ProwlarrStatistics,
 	type RadarrStatistics,
 	type SonarrStatistics,
+	type LidarrStatistics,
+	type ReadarrStatistics,
 	prowlarrIndexerStatSchema,
 	prowlarrStatisticsSchema,
 	radarrStatisticsSchema,
 	sonarrStatisticsSchema,
+	lidarrStatisticsSchema,
+	readarrStatisticsSchema,
 } from "@arr/shared";
 import type { SonarrClient } from "arr-sdk/sonarr";
 import type { RadarrClient } from "arr-sdk/radarr";
 import type { ProwlarrClient } from "arr-sdk/prowlarr";
+import type { LidarrClient } from "arr-sdk/lidarr";
+import type { ReadarrClient } from "arr-sdk/readarr";
 
 /**
  * Interface for API response from cutoff/wanted endpoints
@@ -213,6 +219,51 @@ export const emptyProwlarrStatistics: ProwlarrStatistics = prowlarrStatisticsSch
 	healthIssues: 0,
 	healthIssuesList: [],
 	indexers: [],
+});
+
+export const emptyLidarrStatistics: LidarrStatistics = lidarrStatisticsSchema.parse({
+	totalArtists: 0,
+	monitoredArtists: 0,
+	totalAlbums: 0,
+	monitoredAlbums: 0,
+	totalTracks: 0,
+	downloadedTracks: 0,
+	missingTracks: 0,
+	downloadedPercentage: 0,
+	cutoffUnmetCount: 0,
+	qualityBreakdown: {},
+	tagBreakdown: {},
+	recentlyAdded7Days: 0,
+	recentlyAdded30Days: 0,
+	averageTrackSize: 0,
+	diskTotal: 0,
+	diskFree: 0,
+	diskUsed: 0,
+	diskUsagePercent: 0,
+	healthIssues: 0,
+	healthIssuesList: [],
+});
+
+export const emptyReadarrStatistics: ReadarrStatistics = readarrStatisticsSchema.parse({
+	totalAuthors: 0,
+	monitoredAuthors: 0,
+	totalBooks: 0,
+	monitoredBooks: 0,
+	downloadedBooks: 0,
+	missingBooks: 0,
+	downloadedPercentage: 0,
+	cutoffUnmetCount: 0,
+	qualityBreakdown: {},
+	tagBreakdown: {},
+	recentlyAdded7Days: 0,
+	recentlyAdded30Days: 0,
+	averageBookSize: 0,
+	diskTotal: 0,
+	diskFree: 0,
+	diskUsed: 0,
+	diskUsagePercent: 0,
+	healthIssues: 0,
+	healthIssuesList: [],
 });
 
 export const fetchSonarrStatistics = async (
@@ -1258,6 +1309,363 @@ export const fetchProwlarrStatisticsWithSdk = async (
 	});
 };
 
+/**
+ * Fetches Lidarr statistics using the SDK
+ */
+export const fetchLidarrStatisticsWithSdk = async (
+	client: LidarrClient,
+	instanceId: string,
+	instanceName: string,
+	instanceBaseUrl: string,
+): Promise<LidarrStatistics> => {
+	// Fetch all API endpoints in parallel for better performance
+	// Note: Lidarr SDK uses get() instead of getAll() for some resources
+	const [artists, diskspace, health, cutoffUnmetResult, qualityProfiles, tags] = await Promise.all([
+		safeRequest(() => client.artist.getAll()).then((r) => r ?? []),
+		safeRequest(() => client.diskSpace.get()).then((r) => r ?? []),
+		safeRequest(() => client.health.get()).then((r) => r ?? []),
+		safeRequest(() => client.wanted.getCutoffUnmet({ page: 1, pageSize: 1 })),
+		safeRequest(() => client.qualityProfile.getAll()).then((r) => r ?? []),
+		safeRequest(() => client.tag.getAll()).then((r) => r ?? []),
+	]);
+	const cutoffUnmet = cutoffUnmetResult ?? { totalRecords: 0 };
+
+	// Build a map of profile ID to profile name
+	const profileIdToName = new Map<number, string>();
+	for (const profile of qualityProfiles) {
+		if (profile?.id !== undefined && profile?.name) {
+			profileIdToName.set(profile.id, profile.name);
+		}
+	}
+
+	// Build a map of tag ID to tag label
+	const tagIdToLabel = new Map<number, string>();
+	for (const tag of tags) {
+		if (tag?.id !== undefined && tag?.label) {
+			tagIdToLabel.set(tag.id, tag.label);
+		}
+	}
+
+	// Calculate time thresholds for recently added
+	const now = Date.now();
+	const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+	const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
+
+	let totalArtists = 0;
+	let monitoredArtists = 0;
+	let totalAlbums = 0;
+	let monitoredAlbums = 0;
+	let totalTracks = 0;
+	let downloadedTracks = 0;
+	let missingTracks = 0;
+	let totalFileSize = 0;
+	let recentlyAdded7Days = 0;
+	let recentlyAdded30Days = 0;
+
+	// Track quality distribution based on quality profiles
+	const qualityBreakdown: Record<string, number> = {};
+	// Track tag distribution
+	const tagBreakdown: Record<string, number> = {};
+
+	for (const artist of artists) {
+		if (!artist) continue;
+		totalArtists += 1;
+		if (artist.monitored !== false) {
+			monitoredArtists += 1;
+		}
+
+		// Check added date for recently added
+		const addedStr = artist.added;
+		if (addedStr) {
+			const addedTime = new Date(addedStr).getTime();
+			if (!Number.isNaN(addedTime)) {
+				if (addedTime >= sevenDaysAgo) {
+					recentlyAdded7Days += 1;
+				}
+				if (addedTime >= thirtyDaysAgo) {
+					recentlyAdded30Days += 1;
+				}
+			}
+		}
+
+		// Process tags
+		const artistTags = artist.tags;
+		if (Array.isArray(artistTags)) {
+			for (const tagId of artistTags) {
+				if (typeof tagId === "number" && tagIdToLabel.has(tagId)) {
+					const tagLabel = tagIdToLabel.get(tagId);
+					if (tagLabel !== undefined) {
+						tagBreakdown[tagLabel] = (tagBreakdown[tagLabel] ?? 0) + 1;
+					}
+				}
+			}
+		}
+
+		// Get artist statistics
+		const stats = artist.statistics;
+		const albumCount = stats?.albumCount ?? 0;
+		const trackCount = stats?.totalTrackCount ?? 0;
+		const trackFileCount = stats?.trackFileCount ?? 0;
+		const sizeOnDisk = stats?.sizeOnDisk ?? 0;
+
+		totalAlbums += albumCount;
+		totalTracks += trackCount;
+		downloadedTracks += trackFileCount;
+		missingTracks += Math.max(0, trackCount - trackFileCount);
+		totalFileSize += sizeOnDisk;
+
+		// Count by quality profile
+		if (trackFileCount > 0) {
+			const qualityProfileId = artist.qualityProfileId;
+			if (qualityProfileId !== undefined && profileIdToName.has(qualityProfileId)) {
+				const profileName = profileIdToName.get(qualityProfileId);
+				if (profileName !== undefined) {
+					qualityBreakdown[profileName] = (qualityBreakdown[profileName] ?? 0) + trackFileCount;
+				}
+			} else {
+				qualityBreakdown.Unknown = (qualityBreakdown.Unknown ?? 0) + trackFileCount;
+			}
+		}
+	}
+
+	// Calculate monitored albums (approximate from artist monitored status)
+	monitoredAlbums = Math.round(totalAlbums * (monitoredArtists / Math.max(totalArtists, 1)));
+
+	const cutoffUnmetCount = toNumber(cutoffUnmet?.totalRecords) ?? 0;
+	const averageTrackSize = downloadedTracks > 0 ? totalFileSize / downloadedTracks : undefined;
+
+	const diskTotals = diskspace.reduce(
+		(acc: { total: number; free: number }, entry) => {
+			acc.total += entry?.totalSpace ?? 0;
+			acc.free += entry?.freeSpace ?? 0;
+			return acc;
+		},
+		{ total: 0, free: 0 },
+	);
+
+	const diskUsed = Math.max(0, diskTotals.total - diskTotals.free);
+	const diskUsagePercent =
+		diskTotals.total > 0 ? clampPercentage((diskUsed / diskTotals.total) * 100) : 0;
+
+	const healthIssuesList = health
+		.filter((item) => {
+			const type = item?.type;
+			return type === "error" || type === "warning";
+		})
+		.map((item) => ({
+			type: item.type as "error" | "warning",
+			message: item.message ?? "Unknown health issue",
+			source: item.source,
+			wikiUrl: item.wikiUrl,
+			instanceId,
+			instanceName,
+			instanceBaseUrl,
+			service: "lidarr" as const,
+		}));
+	const healthIssues = healthIssuesList.length;
+
+	return lidarrStatisticsSchema.parse({
+		totalArtists,
+		monitoredArtists,
+		totalAlbums,
+		monitoredAlbums,
+		totalTracks,
+		downloadedTracks,
+		missingTracks,
+		downloadedPercentage:
+			totalTracks > 0 ? clampPercentage((downloadedTracks / totalTracks) * 100) : 0,
+		cutoffUnmetCount,
+		qualityBreakdown,
+		tagBreakdown: Object.keys(tagBreakdown).length > 0 ? tagBreakdown : undefined,
+		recentlyAdded7Days,
+		recentlyAdded30Days,
+		averageTrackSize,
+		diskTotal: diskTotals.total || undefined,
+		diskFree: diskTotals.free || undefined,
+		diskUsed: diskUsed || undefined,
+		diskUsagePercent,
+		healthIssues,
+		healthIssuesList,
+	});
+};
+
+/**
+ * Fetches Readarr statistics using the SDK
+ */
+export const fetchReadarrStatisticsWithSdk = async (
+	client: ReadarrClient,
+	instanceId: string,
+	instanceName: string,
+	instanceBaseUrl: string,
+): Promise<ReadarrStatistics> => {
+	// Fetch all API endpoints in parallel for better performance
+	const [authors, diskspace, health, cutoffUnmetResult, qualityProfiles, tags] = await Promise.all([
+		safeRequest(() => client.author.getAll()).then((r) => r ?? []),
+		safeRequest(() => client.diskSpace.getAll()).then((r) => r ?? []),
+		safeRequest(() => client.health.getAll()).then((r) => r ?? []),
+		safeRequest(() => client.wanted.getCutoffUnmet({ page: 1, pageSize: 1 })),
+		safeRequest(() => client.qualityProfile.getAll()).then((r) => r ?? []),
+		safeRequest(() => client.tag.getAll()).then((r) => r ?? []),
+	]);
+	const cutoffUnmet = cutoffUnmetResult ?? { totalRecords: 0 };
+
+	// Build a map of profile ID to profile name
+	const profileIdToName = new Map<number, string>();
+	for (const profile of qualityProfiles) {
+		if (profile?.id !== undefined && profile?.name) {
+			profileIdToName.set(profile.id, profile.name);
+		}
+	}
+
+	// Build a map of tag ID to tag label
+	const tagIdToLabel = new Map<number, string>();
+	for (const tag of tags) {
+		if (tag?.id !== undefined && tag?.label) {
+			tagIdToLabel.set(tag.id, tag.label);
+		}
+	}
+
+	// Calculate time thresholds for recently added
+	const now = Date.now();
+	const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+	const thirtyDaysAgo = now - 30 * 24 * 60 * 60 * 1000;
+
+	let totalAuthors = 0;
+	let monitoredAuthors = 0;
+	let totalBooks = 0;
+	let monitoredBooks = 0;
+	let downloadedBooks = 0;
+	let missingBooks = 0;
+	let totalFileSize = 0;
+	let recentlyAdded7Days = 0;
+	let recentlyAdded30Days = 0;
+
+	// Track quality distribution based on quality profiles
+	const qualityBreakdown: Record<string, number> = {};
+	// Track tag distribution
+	const tagBreakdown: Record<string, number> = {};
+
+	for (const author of authors) {
+		if (!author) continue;
+		totalAuthors += 1;
+		if (author.monitored !== false) {
+			monitoredAuthors += 1;
+		}
+
+		// Check added date for recently added
+		const addedStr = author.added;
+		if (addedStr) {
+			const addedTime = new Date(addedStr).getTime();
+			if (!Number.isNaN(addedTime)) {
+				if (addedTime >= sevenDaysAgo) {
+					recentlyAdded7Days += 1;
+				}
+				if (addedTime >= thirtyDaysAgo) {
+					recentlyAdded30Days += 1;
+				}
+			}
+		}
+
+		// Process tags
+		const authorTags = author.tags;
+		if (Array.isArray(authorTags)) {
+			for (const tagId of authorTags) {
+				if (typeof tagId === "number" && tagIdToLabel.has(tagId)) {
+					const tagLabel = tagIdToLabel.get(tagId);
+					if (tagLabel !== undefined) {
+						tagBreakdown[tagLabel] = (tagBreakdown[tagLabel] ?? 0) + 1;
+					}
+				}
+			}
+		}
+
+		// Get author statistics
+		const stats = author.statistics;
+		const bookCount = stats?.bookCount ?? 0;
+		const bookFileCount = stats?.bookFileCount ?? 0;
+		const sizeOnDisk = stats?.sizeOnDisk ?? 0;
+
+		totalBooks += bookCount;
+		downloadedBooks += bookFileCount;
+		missingBooks += Math.max(0, bookCount - bookFileCount);
+		totalFileSize += sizeOnDisk;
+
+		// Track monitored books (approximate based on author monitored status)
+		if (author.monitored !== false) {
+			monitoredBooks += bookCount;
+		}
+
+		// Count by quality profile
+		if (bookFileCount > 0) {
+			const qualityProfileId = author.qualityProfileId;
+			if (qualityProfileId !== undefined && profileIdToName.has(qualityProfileId)) {
+				const profileName = profileIdToName.get(qualityProfileId);
+				if (profileName !== undefined) {
+					qualityBreakdown[profileName] = (qualityBreakdown[profileName] ?? 0) + bookFileCount;
+				}
+			} else {
+				qualityBreakdown.Unknown = (qualityBreakdown.Unknown ?? 0) + bookFileCount;
+			}
+		}
+	}
+
+	const cutoffUnmetCount = toNumber(cutoffUnmet?.totalRecords) ?? 0;
+	const averageBookSize = downloadedBooks > 0 ? totalFileSize / downloadedBooks : undefined;
+
+	const diskTotals = diskspace.reduce(
+		(acc: { total: number; free: number }, entry) => {
+			acc.total += entry?.totalSpace ?? 0;
+			acc.free += entry?.freeSpace ?? 0;
+			return acc;
+		},
+		{ total: 0, free: 0 },
+	);
+
+	const diskUsed = Math.max(0, diskTotals.total - diskTotals.free);
+	const diskUsagePercent =
+		diskTotals.total > 0 ? clampPercentage((diskUsed / diskTotals.total) * 100) : 0;
+
+	const healthIssuesList = health
+		.filter((item) => {
+			const type = item?.type;
+			return type === "error" || type === "warning";
+		})
+		.map((item) => ({
+			type: item.type as "error" | "warning",
+			message: item.message ?? "Unknown health issue",
+			source: item.source,
+			wikiUrl: item.wikiUrl,
+			instanceId,
+			instanceName,
+			instanceBaseUrl,
+			service: "readarr" as const,
+		}));
+	const healthIssues = healthIssuesList.length;
+
+	return readarrStatisticsSchema.parse({
+		totalAuthors,
+		monitoredAuthors,
+		totalBooks,
+		monitoredBooks,
+		downloadedBooks,
+		missingBooks,
+		downloadedPercentage:
+			monitoredBooks > 0 ? clampPercentage((downloadedBooks / monitoredBooks) * 100) : 0,
+		cutoffUnmetCount,
+		qualityBreakdown,
+		tagBreakdown: Object.keys(tagBreakdown).length > 0 ? tagBreakdown : undefined,
+		recentlyAdded7Days,
+		recentlyAdded30Days,
+		averageBookSize,
+		diskTotal: diskTotals.total || undefined,
+		diskFree: diskTotals.free || undefined,
+		diskUsed: diskUsed || undefined,
+		diskUsagePercent,
+		healthIssues,
+		healthIssuesList,
+	});
+};
+
 export const aggregateSonarrStatistics = (
 	instances: Array<{
 		storageGroupId?: string | null;
@@ -1603,5 +2011,222 @@ export const aggregateProwlarrStatistics = (
 		healthIssues: totals.healthIssues,
 		healthIssuesList: totals.healthIssuesList,
 		indexers,
+	});
+};
+
+export const aggregateLidarrStatistics = (
+	instances: Array<{
+		storageGroupId?: string | null;
+		shouldCountDisk?: boolean;
+		data: LidarrStatistics;
+	}>,
+): LidarrStatistics | undefined => {
+	if (instances.length === 0) {
+		return undefined;
+	}
+
+	const totals = instances.reduce(
+		(acc, entry) => {
+			const data = entry.data;
+			acc.totalArtists += data.totalArtists;
+			acc.monitoredArtists += data.monitoredArtists;
+			acc.totalAlbums += data.totalAlbums;
+			acc.monitoredAlbums += data.monitoredAlbums;
+			acc.totalTracks += data.totalTracks;
+			acc.downloadedTracks += data.downloadedTracks;
+			acc.missingTracks += data.missingTracks;
+			acc.cutoffUnmetCount += data.cutoffUnmetCount ?? 0;
+			acc.recentlyAdded7Days += data.recentlyAdded7Days ?? 0;
+			acc.recentlyAdded30Days += data.recentlyAdded30Days ?? 0;
+
+			// Use pre-computed shouldCountDisk flag for cross-service deduplication
+			const shouldCountDisk = entry.shouldCountDisk ?? true;
+
+			if (shouldCountDisk) {
+				acc.diskTotal += data.diskTotal ?? 0;
+				acc.diskFree += data.diskFree ?? 0;
+				acc.diskUsed += data.diskUsed ?? 0;
+			}
+
+			acc.healthIssues += data.healthIssues ?? 0;
+			if (data.healthIssuesList) {
+				acc.healthIssuesList?.push(...data.healthIssuesList);
+			}
+			if (data.qualityBreakdown) {
+				for (const [profileName, count] of Object.entries(data.qualityBreakdown)) {
+					acc.qualityBreakdown[profileName] = (acc.qualityBreakdown[profileName] ?? 0) + count;
+				}
+			}
+			if (data.tagBreakdown) {
+				for (const [tagName, count] of Object.entries(data.tagBreakdown)) {
+					acc.tagBreakdown[tagName] = (acc.tagBreakdown[tagName] ?? 0) + count;
+				}
+			}
+			if (data.averageTrackSize) {
+				acc.totalFileSize += data.averageTrackSize * data.downloadedTracks;
+				acc.totalFiles += data.downloadedTracks;
+			}
+			return acc;
+		},
+		{
+			totalArtists: 0,
+			monitoredArtists: 0,
+			totalAlbums: 0,
+			monitoredAlbums: 0,
+			totalTracks: 0,
+			downloadedTracks: 0,
+			missingTracks: 0,
+			cutoffUnmetCount: 0,
+			recentlyAdded7Days: 0,
+			recentlyAdded30Days: 0,
+			diskTotal: 0,
+			diskFree: 0,
+			diskUsed: 0,
+			healthIssues: 0,
+			healthIssuesList: [] as LidarrStatistics["healthIssuesList"],
+			qualityBreakdown: {} as Record<string, number>,
+			tagBreakdown: {} as Record<string, number>,
+			totalFileSize: 0,
+			totalFiles: 0,
+		},
+	);
+
+	const downloadedPercentage =
+		totals.totalTracks > 0
+			? clampPercentage((totals.downloadedTracks / totals.totalTracks) * 100)
+			: 0;
+	const diskUsagePercent =
+		totals.diskTotal > 0 ? clampPercentage((totals.diskUsed / totals.diskTotal) * 100) : 0;
+	const averageTrackSize =
+		totals.totalFiles > 0 ? totals.totalFileSize / totals.totalFiles : undefined;
+
+	return lidarrStatisticsSchema.parse({
+		totalArtists: totals.totalArtists,
+		monitoredArtists: totals.monitoredArtists,
+		totalAlbums: totals.totalAlbums,
+		monitoredAlbums: totals.monitoredAlbums,
+		totalTracks: totals.totalTracks,
+		downloadedTracks: totals.downloadedTracks,
+		missingTracks: totals.missingTracks,
+		downloadedPercentage,
+		cutoffUnmetCount: totals.cutoffUnmetCount,
+		qualityBreakdown: totals.qualityBreakdown,
+		tagBreakdown: Object.keys(totals.tagBreakdown).length > 0 ? totals.tagBreakdown : undefined,
+		recentlyAdded7Days: totals.recentlyAdded7Days,
+		recentlyAdded30Days: totals.recentlyAdded30Days,
+		averageTrackSize,
+		diskTotal: totals.diskTotal || undefined,
+		diskFree: totals.diskFree || undefined,
+		diskUsed: totals.diskUsed || undefined,
+		diskUsagePercent,
+		healthIssues: totals.healthIssues,
+		healthIssuesList: totals.healthIssuesList,
+	});
+};
+
+export const aggregateReadarrStatistics = (
+	instances: Array<{
+		storageGroupId?: string | null;
+		shouldCountDisk?: boolean;
+		data: ReadarrStatistics;
+	}>,
+): ReadarrStatistics | undefined => {
+	if (instances.length === 0) {
+		return undefined;
+	}
+
+	const totals = instances.reduce(
+		(acc, entry) => {
+			const data = entry.data;
+			acc.totalAuthors += data.totalAuthors;
+			acc.monitoredAuthors += data.monitoredAuthors;
+			acc.totalBooks += data.totalBooks;
+			acc.monitoredBooks += data.monitoredBooks;
+			acc.downloadedBooks += data.downloadedBooks;
+			acc.missingBooks += data.missingBooks;
+			acc.cutoffUnmetCount += data.cutoffUnmetCount ?? 0;
+			acc.recentlyAdded7Days += data.recentlyAdded7Days ?? 0;
+			acc.recentlyAdded30Days += data.recentlyAdded30Days ?? 0;
+
+			// Use pre-computed shouldCountDisk flag for cross-service deduplication
+			const shouldCountDisk = entry.shouldCountDisk ?? true;
+
+			if (shouldCountDisk) {
+				acc.diskTotal += data.diskTotal ?? 0;
+				acc.diskFree += data.diskFree ?? 0;
+				acc.diskUsed += data.diskUsed ?? 0;
+			}
+
+			acc.healthIssues += data.healthIssues ?? 0;
+			if (data.healthIssuesList) {
+				acc.healthIssuesList?.push(...data.healthIssuesList);
+			}
+			if (data.qualityBreakdown) {
+				for (const [profileName, count] of Object.entries(data.qualityBreakdown)) {
+					acc.qualityBreakdown[profileName] = (acc.qualityBreakdown[profileName] ?? 0) + count;
+				}
+			}
+			if (data.tagBreakdown) {
+				for (const [tagName, count] of Object.entries(data.tagBreakdown)) {
+					acc.tagBreakdown[tagName] = (acc.tagBreakdown[tagName] ?? 0) + count;
+				}
+			}
+			if (data.averageBookSize) {
+				acc.totalFileSize += data.averageBookSize * data.downloadedBooks;
+				acc.totalFiles += data.downloadedBooks;
+			}
+			return acc;
+		},
+		{
+			totalAuthors: 0,
+			monitoredAuthors: 0,
+			totalBooks: 0,
+			monitoredBooks: 0,
+			downloadedBooks: 0,
+			missingBooks: 0,
+			cutoffUnmetCount: 0,
+			recentlyAdded7Days: 0,
+			recentlyAdded30Days: 0,
+			diskTotal: 0,
+			diskFree: 0,
+			diskUsed: 0,
+			healthIssues: 0,
+			healthIssuesList: [] as ReadarrStatistics["healthIssuesList"],
+			qualityBreakdown: {} as Record<string, number>,
+			tagBreakdown: {} as Record<string, number>,
+			totalFileSize: 0,
+			totalFiles: 0,
+		},
+	);
+
+	const downloadedPercentage =
+		totals.monitoredBooks > 0
+			? clampPercentage((totals.downloadedBooks / totals.monitoredBooks) * 100)
+			: 0;
+	const diskUsagePercent =
+		totals.diskTotal > 0 ? clampPercentage((totals.diskUsed / totals.diskTotal) * 100) : 0;
+	const averageBookSize =
+		totals.totalFiles > 0 ? totals.totalFileSize / totals.totalFiles : undefined;
+
+	return readarrStatisticsSchema.parse({
+		totalAuthors: totals.totalAuthors,
+		monitoredAuthors: totals.monitoredAuthors,
+		totalBooks: totals.totalBooks,
+		monitoredBooks: totals.monitoredBooks,
+		downloadedBooks: totals.downloadedBooks,
+		missingBooks: totals.missingBooks,
+		downloadedPercentage,
+		cutoffUnmetCount: totals.cutoffUnmetCount,
+		qualityBreakdown: totals.qualityBreakdown,
+		tagBreakdown: Object.keys(totals.tagBreakdown).length > 0 ? totals.tagBreakdown : undefined,
+		recentlyAdded7Days: totals.recentlyAdded7Days,
+		recentlyAdded30Days: totals.recentlyAdded30Days,
+		averageBookSize,
+		diskTotal: totals.diskTotal || undefined,
+		diskFree: totals.diskFree || undefined,
+		diskUsed: totals.diskUsed || undefined,
+		diskUsagePercent,
+		healthIssues: totals.healthIssues,
+		healthIssuesList: totals.healthIssuesList,
 	});
 };

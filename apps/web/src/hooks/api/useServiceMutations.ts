@@ -89,7 +89,7 @@ export const useTestConnectionBeforeAdd = () => {
 	return useMutation<
 		TestConnectionResponse,
 		Error,
-		{ baseUrl: string; apiKey: string; service: "sonarr" | "radarr" | "prowlarr" }
+		{ baseUrl: string; apiKey: string; service: "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr" }
 	>({
 		mutationFn: ({ baseUrl, apiKey, service }) => testConnectionBeforeAdd(baseUrl, apiKey, service),
 	});

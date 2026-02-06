@@ -1,6 +1,6 @@
 "use client";
 
-export type StatisticsTab = "overview" | "sonarr" | "radarr" | "prowlarr";
+export type StatisticsTab = "overview" | "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr";
 
 interface StatisticsTabsProps {
 	activeTab: StatisticsTab;
@@ -8,6 +8,8 @@ interface StatisticsTabsProps {
 	sonarrCount: number;
 	radarrCount: number;
 	prowlarrCount: number;
+	lidarrCount: number;
+	readarrCount: number;
 	healthIssueCount: number;
 }
 
@@ -20,12 +22,16 @@ export const StatisticsTabs = ({
 	sonarrCount,
 	radarrCount,
 	prowlarrCount,
+	lidarrCount,
+	readarrCount,
 	healthIssueCount,
 }: StatisticsTabsProps) => {
 	const tabs: Array<{ id: StatisticsTab; label: string; badge?: number; badgeVariant?: "default" | "warning" }> = [
 		{ id: "overview", label: "Overview", badge: healthIssueCount > 0 ? healthIssueCount : undefined, badgeVariant: "warning" },
 		{ id: "sonarr", label: "Sonarr", badge: sonarrCount },
 		{ id: "radarr", label: "Radarr", badge: radarrCount },
+		{ id: "lidarr", label: "Lidarr", badge: lidarrCount },
+		{ id: "readarr", label: "Readarr", badge: readarrCount },
 		{ id: "prowlarr", label: "Prowlarr", badge: prowlarrCount },
 	];
 

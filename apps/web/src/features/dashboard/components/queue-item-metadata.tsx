@@ -5,7 +5,7 @@
  */
 
 import type { QueueItem } from "@arr/shared";
-import { ExternalLink, Tv, Film, HardDrive, Globe, Database } from "lucide-react";
+import { ExternalLink, Tv, Film, HardDrive, Globe, Database, Music, BookOpen } from "lucide-react";
 import { formatSizeGB } from "../lib/queue-utils";
 import {
 	useIncognitoMode,
@@ -37,6 +37,18 @@ const SERVICE_COLORS = {
 		border: "border-orange-500/30",
 		text: "text-orange-400",
 		icon: Film,
+	},
+	lidarr: {
+		bg: "bg-green-500/10",
+		border: "border-green-500/30",
+		text: "text-green-400",
+		icon: Music,
+	},
+	readarr: {
+		bg: "bg-violet-500/10",
+		border: "border-violet-500/30",
+		text: "text-violet-400",
+		icon: BookOpen,
 	},
 } as const;
 

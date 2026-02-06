@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CalendarItem } from "@arr/shared";
 import { createMonthDate, formatDateOnly } from "../lib/calendar-formatters";
 
-export type ServiceFilterValue = "all" | "sonarr" | "radarr";
+export type ServiceFilterValue = "all" | "sonarr" | "radarr" | "lidarr" | "readarr";
 
 export interface CalendarFilters {
 	serviceFilter: ServiceFilterValue;

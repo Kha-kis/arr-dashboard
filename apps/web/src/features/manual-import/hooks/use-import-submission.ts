@@ -5,7 +5,7 @@ import { useManualImportMutation } from "../../../hooks/api/useManualImport";
 
 interface UseImportSubmissionParams {
 	instanceId: string;
-	service: "sonarr" | "radarr";
+	service: "sonarr" | "radarr" | "lidarr" | "readarr";
 	importMode: "auto" | "copy" | "move";
 	onSuccess: (importedCount: number) => void;
 }

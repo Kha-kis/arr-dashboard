@@ -27,10 +27,12 @@ const importModeOptions = [
 type ImportMode = (typeof importModeOptions)[number]["value"];
 
 // Use centralized service colors
-const SERVICE_COLORS = {
+const SERVICE_COLORS: Record<"sonarr" | "radarr" | "lidarr" | "readarr", string> = {
 	sonarr: SERVICE_GRADIENTS.sonarr.from,
 	radarr: SERVICE_GRADIENTS.radarr.from,
-} as const;
+	lidarr: SERVICE_GRADIENTS.lidarr.from,
+	readarr: SERVICE_GRADIENTS.readarr.from,
+};
 
 /**
  * Premium Manual Import Modal

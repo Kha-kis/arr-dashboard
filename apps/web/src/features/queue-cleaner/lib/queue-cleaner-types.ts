@@ -45,7 +45,7 @@ export interface QueueCleanerStatus {
 export interface InstanceCleanerStatus {
 	instanceId: string;
 	instanceName: string;
-	service: "sonarr" | "radarr";
+	service: "sonarr" | "radarr" | "lidarr" | "readarr";
 	enabled: boolean;
 	dryRunMode: boolean;
 	lastRunAt: string | null;
@@ -115,7 +115,7 @@ export interface QueueCleanerConfig {
 
 export interface QueueCleanerConfigWithInstance extends QueueCleanerConfig {
 	instanceName: string;
-	service: "sonarr" | "radarr";
+	service: "sonarr" | "radarr" | "lidarr" | "readarr";
 }
 
 export interface QueueCleanerConfigUpdate {
@@ -170,7 +170,7 @@ export interface QueueCleanerLog {
 	id: string;
 	instanceId: string;
 	instanceName: string;
-	service: "sonarr" | "radarr";
+	service: "sonarr" | "radarr" | "lidarr" | "readarr";
 	itemsCleaned: number;
 	itemsSkipped: number;
 	itemsWarned: number;
@@ -195,7 +195,7 @@ export interface DataQuality {
 export interface InstanceSummary {
 	id: string;
 	label: string;
-	service: "sonarr" | "radarr";
+	service: "sonarr" | "radarr" | "lidarr" | "readarr";
 }
 
 // ============================================================================
@@ -241,7 +241,7 @@ export interface StatisticsTotals {
 export interface InstanceBreakdown {
 	instanceId: string;
 	instanceName: string;
-	service: "sonarr" | "radarr";
+	service: "sonarr" | "radarr" | "lidarr" | "readarr";
 	itemsCleaned: number;
 	totalRuns: number;
 	lastRunAt: string | null;
@@ -250,7 +250,7 @@ export interface InstanceBreakdown {
 export interface RecentActivity {
 	id: string;
 	instanceName: string;
-	service: "sonarr" | "radarr";
+	service: "sonarr" | "radarr" | "lidarr" | "readarr";
 	itemsCleaned: number;
 	itemsSkipped: number;
 	status: string;

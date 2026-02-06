@@ -12,6 +12,8 @@ import {
 	SonarrClient,
 	RadarrClient,
 	ProwlarrClient,
+	LidarrClient,
+	ReadarrClient,
 	type ClientConfig,
 	ArrError,
 	NotFoundError,
@@ -33,7 +35,7 @@ export { ArrError, NotFoundError, UnauthorizedError, ValidationError, TimeoutErr
 /**
  * Union type of all ARR SDK clients
  */
-export type ArrClient = SonarrClient | RadarrClient | ProwlarrClient;
+export type ArrClient = SonarrClient | RadarrClient | ProwlarrClient | LidarrClient | ReadarrClient;
 
 /**
  * Map service type to its corresponding SDK client type
@@ -44,7 +46,11 @@ export type ClientForService<T extends ServiceType> = T extends "SONARR"
 		? RadarrClient
 		: T extends "PROWLARR"
 			? ProwlarrClient
-			: never;
+			: T extends "LIDARR"
+				? LidarrClient
+				: T extends "READARR"
+					? ReadarrClient
+					: never;
 
 /**
  * Options for client creation
@@ -117,6 +123,10 @@ export class ArrClientFactory {
 				return new RadarrClient(config) as ClientForService<T>;
 			case "PROWLARR":
 				return new ProwlarrClient(config) as ClientForService<T>;
+			case "LIDARR":
+				return new LidarrClient(config) as ClientForService<T>;
+			case "READARR":
+				return new ReadarrClient(config) as ClientForService<T>;
 			default: {
 				const exhaustiveCheck: never = instance.service;
 				throw new Error(`Unknown service type: ${exhaustiveCheck}`);
@@ -155,6 +165,26 @@ export class ArrClientFactory {
 			throw new Error(`Expected PROWLARR instance, got ${instance.service}`);
 		}
 		return new ProwlarrClient(this.buildConfig(instance, options));
+	}
+
+	/**
+	 * Create a Lidarr client (explicit typing)
+	 */
+	createLidarrClient(instance: ClientInstanceData, options?: ClientFactoryOptions): LidarrClient {
+		if (instance.service !== "LIDARR") {
+			throw new Error(`Expected LIDARR instance, got ${instance.service}`);
+		}
+		return new LidarrClient(this.buildConfig(instance, options));
+	}
+
+	/**
+	 * Create a Readarr client (explicit typing)
+	 */
+	createReadarrClient(instance: ClientInstanceData, options?: ClientFactoryOptions): ReadarrClient {
+		if (instance.service !== "READARR") {
+			throw new Error(`Expected READARR instance, got ${instance.service}`);
+		}
+		return new ReadarrClient(this.buildConfig(instance, options));
 	}
 
 	/**
