@@ -280,7 +280,8 @@ const InstanceConfigCard = ({
 		// Estimated completion
 		estimatedCompletionEnabled: config.estimatedCompletionEnabled,
 		estimatedCompletionMultiplier: config.estimatedCompletionMultiplier,
-		// Import pending timeout
+		// Import pending/blocked cleanup
+		importPendingEnabled: config.importPendingEnabled,
 		importPendingThresholdMins: config.importPendingThresholdMins,
 		// Import block cleanup level
 		importBlockCleanupLevel: config.importBlockCleanupLevel ?? "safe",
@@ -349,7 +350,8 @@ const InstanceConfigCard = ({
 			// Estimated completion
 			estimatedCompletionEnabled: config.estimatedCompletionEnabled,
 			estimatedCompletionMultiplier: config.estimatedCompletionMultiplier,
-			// Import pending timeout
+			// Import pending/blocked cleanup
+			importPendingEnabled: config.importPendingEnabled,
 			importPendingThresholdMins: config.importPendingThresholdMins,
 			// Import block cleanup level
 			importBlockCleanupLevel: config.importBlockCleanupLevel ?? "safe",
@@ -646,8 +648,8 @@ const InstanceConfigCard = ({
 						icon={Clock}
 						title="Import Pending / Blocked"
 						description="Handle downloads stuck in import pending or blocked state"
-						enabled
-						onToggle={() => {}}
+						enabled={formData.importPendingEnabled ?? true}
+						onToggle={(v) => updateField("importPendingEnabled", v)}
 					>
 						<ConfigInput
 							label="Timeout Threshold"

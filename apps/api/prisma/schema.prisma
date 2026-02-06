@@ -832,7 +832,8 @@ model QueueCleanerConfig {
   estimatedCompletionEnabled    Boolean @default(false)
   estimatedCompletionMultiplier Float   @default(2.0)
 
-  // Rule: Import pending timeout
+  // Rule: Import pending/blocked cleanup
+  importPendingEnabled          Boolean @default(true)  // Can be disabled by user
   importPendingThresholdMins    Int     @default(60)
 
   // Import block cleanup aggressiveness: "safe" | "moderate" | "aggressive"

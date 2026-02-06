@@ -475,7 +475,9 @@ function evaluateQueueItem(
 	}
 
 	// Rule 5: Import blocked detection with combined pattern matching
-	if (config.failedEnabled && trackedState === "importblocked") {
+	// Uses importPendingEnabled flag (same toggle controls both pending and blocked)
+	const importBlockEnabled = (config as Record<string, unknown>).importPendingEnabled ?? true;
+	if (importBlockEnabled && trackedState === "importblocked") {
 		const importBlockResult = evaluateImportBlockState(statusTexts, config, "blocked");
 		if (importBlockResult) {
 			return importBlockResult;
@@ -506,7 +508,9 @@ function evaluateQueueItem(
 	}
 
 	// Rule 7: Import pending analysis with combined pattern matching
-	if (trackedState === "importpending") {
+	// Check importPendingEnabled flag (defaults to true for backwards compatibility)
+	const importPendingEnabled = (config as Record<string, unknown>).importPendingEnabled ?? true;
+	if (importPendingEnabled && trackedState === "importpending") {
 		// Check if it's actively being processed (recoverable) - always skip these
 		const recoverableMatch = matchesKeywords(statusTexts, IMPORT_PENDING_RECOVERABLE_KEYWORDS);
 		if (recoverableMatch) {
