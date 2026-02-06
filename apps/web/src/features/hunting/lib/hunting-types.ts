@@ -11,7 +11,7 @@ export interface HuntingStatus {
 export interface InstanceHuntStatus {
 	instanceId: string;
 	instanceName: string;
-	service: "sonarr" | "radarr";
+	service: "sonarr" | "radarr" | "lidarr" | "readarr";
 	huntMissingEnabled: boolean;
 	huntUpgradesEnabled: boolean;
 	lastMissingHunt: string | null;
@@ -62,7 +62,7 @@ export interface HuntConfig {
 
 export interface HuntConfigWithInstance extends HuntConfig {
 	instanceName: string;
-	service: "sonarr" | "radarr";
+	service: "sonarr" | "radarr" | "lidarr" | "readarr";
 }
 
 export interface HuntConfigUpdate {
@@ -105,7 +105,7 @@ export interface HuntLog {
 	id: string;
 	instanceId: string;
 	instanceName: string;
-	service: "sonarr" | "radarr";
+	service: "sonarr" | "radarr" | "lidarr" | "readarr";
 	huntType: "missing" | "upgrade";
 	itemsSearched: number;
 	itemsGrabbed: number;
@@ -121,7 +121,7 @@ export interface HuntLog {
 export interface InstanceSummary {
 	id: string;
 	label: string;
-	service: "sonarr" | "radarr";
+	service: "sonarr" | "radarr" | "lidarr" | "readarr";
 }
 
 // Filter options fetched from instances
@@ -141,7 +141,7 @@ export interface FilterStatus {
 }
 
 export interface FilterOptions {
-	service: "sonarr" | "radarr";
+	service: "sonarr" | "radarr" | "lidarr" | "readarr";
 	tags: FilterTag[];
 	qualityProfiles: FilterQualityProfile[];
 	statuses: FilterStatus[];

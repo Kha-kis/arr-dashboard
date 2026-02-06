@@ -25,8 +25,16 @@ export const CalendarEventCard = ({
 	const externalLink = buildExternalLink(event, instance);
 	const details = extractEventDetails(event);
 	const title = formatEventTitle(event);
-	const serviceLabel = event.service === "sonarr" ? "Sonarr" : "Radarr";
-	const actionLabel = event.service === "sonarr" ? "Open in Sonarr" : "Open in Radarr";
+
+	// Service label and action label lookup
+	const serviceLabelMap: Record<string, string> = {
+		sonarr: "Sonarr",
+		radarr: "Radarr",
+		lidarr: "Lidarr",
+		readarr: "Readarr",
+	};
+	const serviceLabel = serviceLabelMap[event.service] ?? event.service;
+	const actionLabel = `Open in ${serviceLabel}`;
 
 	// Build detail rows with JSX
 	const detailRows: Array<{ label: string; value: React.ReactNode }> = [];
@@ -41,8 +49,15 @@ export const CalendarEventCard = ({
 		detailRows.push({ label: "Runtime", value: `${details.runtime} min` });
 	}
 	if (details.network) {
+		// Network label varies by service type
+		const networkLabelMap: Record<string, string> = {
+			sonarr: "Network",
+			radarr: "Studio",
+			lidarr: "Label",
+			readarr: "Publisher",
+		};
 		detailRows.push({
-			label: details.serviceType === "sonarr" ? "Network" : "Studio",
+			label: networkLabelMap[details.serviceType] ?? "Network",
 			value: details.network,
 		});
 	}
@@ -89,6 +104,52 @@ export const CalendarEventCard = ({
 				</a>
 			),
 		});
+	}
+	// Lidarr-specific: MusicBrainz link
+	if (details.musicBrainzLink && details.musicBrainzId) {
+		detailRows.push({
+			label: "MusicBrainz",
+			value: (
+				<a
+					href={details.musicBrainzLink}
+					target="_blank"
+					rel="noopener noreferrer"
+					className="transition-opacity hover:opacity-80"
+					style={{ color: themeGradient.from }}
+				>
+					{details.musicBrainzId.slice(0, 8)}...
+				</a>
+			),
+		});
+	}
+	// Readarr-specific: Goodreads link
+	if (details.goodreadsLink && details.goodreadsId) {
+		detailRows.push({
+			label: "Goodreads",
+			value: (
+				<a
+					href={details.goodreadsLink}
+					target="_blank"
+					rel="noopener noreferrer"
+					className="transition-opacity hover:opacity-80"
+					style={{ color: themeGradient.from }}
+				>
+					#{details.goodreadsId}
+				</a>
+			),
+		});
+	}
+	// Album type (for Lidarr)
+	if (details.albumType) {
+		detailRows.push({ label: "Album Type", value: details.albumType });
+	}
+	// Record label (for Lidarr)
+	if (details.label) {
+		detailRows.push({ label: "Label", value: details.label });
+	}
+	// Publisher (for Readarr)
+	if (details.publisher) {
+		detailRows.push({ label: "Publisher", value: details.publisher });
 	}
 
 	// Check if content appears in multiple instances

@@ -25,7 +25,9 @@ import {
 	Activity,
 	Zap,
 	Server,
-	ChevronRight
+	ChevronRight,
+	Music,
+	BookOpen,
 } from "lucide-react";
 import { springs } from "../../../components/motion";
 import { QueueTable } from "./queue-table";
@@ -55,6 +57,8 @@ const SERVICE_CONFIG = {
 	sonarr: { ...SERVICE_GRADIENTS.sonarr, icon: Tv, label: "Sonarr" },
 	radarr: { ...SERVICE_GRADIENTS.radarr, icon: Film, label: "Radarr" },
 	prowlarr: { ...SERVICE_GRADIENTS.prowlarr, icon: Search, label: "Prowlarr" },
+	lidarr: { ...SERVICE_GRADIENTS.lidarr, icon: Music, label: "Lidarr" },
+	readarr: { ...SERVICE_GRADIENTS.readarr, icon: BookOpen, label: "Readarr" },
 } as const;
 
 /**
@@ -407,7 +411,7 @@ export const DashboardClient = () => {
 	}
 
 	// Calculate total instances
-	const totalInstances = (groupedByService.sonarr ?? 0) + (groupedByService.radarr ?? 0) + (groupedByService.prowlarr ?? 0);
+	const totalInstances = (groupedByService.sonarr ?? 0) + (groupedByService.radarr ?? 0) + (groupedByService.prowlarr ?? 0) + (groupedByService.lidarr ?? 0) + (groupedByService.readarr ?? 0);
 
 	return (
 		<>
@@ -488,7 +492,7 @@ export const DashboardClient = () => {
 				{activeTab === "overview" && (
 					<div className="flex flex-col gap-10 animate-in fade-in duration-300">
 						{/* Service Stats Grid */}
-						<div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+						<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-7">
 							<ServiceStatCard
 								service="sonarr"
 								value={groupedByService.sonarr ?? 0}
@@ -507,7 +511,27 @@ export const DashboardClient = () => {
 										? "No instances configured yet"
 										: "Active movie instances"
 								}
+								animationDelay={150}
+							/>
+							<ServiceStatCard
+								service="lidarr"
+								value={groupedByService.lidarr ?? 0}
+								description={
+									(groupedByService.lidarr ?? 0) === 0
+										? "No instances configured yet"
+										: "Active music instances"
+								}
 								animationDelay={200}
+							/>
+							<ServiceStatCard
+								service="readarr"
+								value={groupedByService.readarr ?? 0}
+								description={
+									(groupedByService.readarr ?? 0) === 0
+										? "No instances configured yet"
+										: "Active book instances"
+								}
+								animationDelay={250}
 							/>
 							<ServiceStatCard
 								service="prowlarr"
@@ -525,7 +549,7 @@ export const DashboardClient = () => {
 								description="Items across all queues"
 								onClick={() => setActiveTab("queue")}
 								isQueue
-								animationDelay={400}
+								animationDelay={350}
 								themeGradient={themeGradient}
 							/>
 						</div>
@@ -570,7 +594,7 @@ export const DashboardClient = () => {
 											</div>
 											<h3 className="text-lg font-medium mb-1">No instances configured</h3>
 											<p className="text-sm text-muted-foreground max-w-sm mx-auto">
-												Add a Sonarr, Radarr, or Prowlarr instance from the Settings page to begin monitoring.
+												Add a Sonarr, Radarr, Lidarr, Readarr, or Prowlarr instance from the Settings page to begin monitoring.
 											</p>
 										</div>
 									) : (

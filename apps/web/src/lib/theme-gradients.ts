@@ -325,7 +325,7 @@ export interface ServiceGradient {
 }
 
 /** Valid service types for gradient lookup */
-export type ServiceType = "sonarr" | "radarr" | "prowlarr";
+export type ServiceType = "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr";
 
 /**
  * Service-specific gradients for visual distinction
@@ -334,6 +334,8 @@ export type ServiceType = "sonarr" | "radarr" | "prowlarr";
  * - Sonarr (TV): Cyan-Blue gradient
  * - Radarr (Movies): Orange-Yellow gradient
  * - Prowlarr (Indexers): Purple-Pink gradient
+ * - Lidarr (Music): Green-Teal gradient
+ * - Readarr (Books): Violet-Indigo gradient
  */
 export const SERVICE_GRADIENTS: Record<ServiceType, ServiceGradient> = {
 	sonarr: {
@@ -350,6 +352,16 @@ export const SERVICE_GRADIENTS: Record<ServiceType, ServiceGradient> = {
 		from: "#a855f7",      // purple-500
 		to: "#ec4899",        // pink-500
 		glow: "rgba(168, 85, 247, 0.4)",
+	},
+	lidarr: {
+		from: "#22c55e",      // green-500 (music/harmony)
+		to: "#14b8a6",        // teal-500
+		glow: "rgba(34, 197, 94, 0.4)",
+	},
+	readarr: {
+		from: "#8b5cf6",      // violet-500 (books/wisdom)
+		to: "#6366f1",        // indigo-500
+		glow: "rgba(139, 92, 246, 0.4)",
 	},
 };
 
@@ -386,7 +398,13 @@ export function getServiceGradient(service: string): ServiceGradient {
  */
 export function isValidServiceType(service: string): service is ServiceType {
 	const normalized = service.toLowerCase();
-	return normalized === "sonarr" || normalized === "radarr" || normalized === "prowlarr";
+	return (
+		normalized === "sonarr" ||
+		normalized === "radarr" ||
+		normalized === "prowlarr" ||
+		normalized === "lidarr" ||
+		normalized === "readarr"
+	);
 }
 
 /**

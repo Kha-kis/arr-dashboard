@@ -3,32 +3,40 @@ import {
 	queueBulkActionRequestSchema,
 	queueItemSchema,
 } from "@arr/shared";
-import type { QueueItem } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
-import type { SonarrClient, RadarrClient } from "arr-sdk";
+import type { SonarrClient, RadarrClient, LidarrClient, ReadarrClient } from "arr-sdk";
 import {
 	executeOnInstances,
 	getClientForInstance,
 	isSonarrClient,
 	isRadarrClient,
+	isLidarrClient,
+	isReadarrClient,
 } from "../../lib/arr/client-helpers.js";
 import { ArrError, arrErrorToHttpStatus } from "../../lib/arr/client-factory.js";
 import {
 	normalizeQueueItem,
 	parseQueueId,
 	triggerQueueSearchWithSdk,
+	type QueueService,
+	type QueueClient,
 } from "../../lib/dashboard/queue-utils.js";
-import { ManualImportError, autoImportByDownloadIdWithSdk } from "../manual-import-utils.js";
+import { ManualImportError, autoImportByDownloadIdWithSdk, setManualImportLogger } from "../manual-import-utils.js";
 
 /**
  * Queue-related routes for the dashboard
  */
 export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
+	// Initialize the logger for manual import utilities (used by auto-import feature)
+	setManualImportLogger({
+		warn: (msg, ...args) => app.log.warn({ ...args[0] as object }, msg),
+		debug: (msg, ...args) => app.log.debug({ ...args[0] as object }, msg),
+	});
+
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
 		if (!request.currentUser?.id) {
 			return reply.status(401).send({
-				success: false,
 				error: "Authentication required",
 			});
 		}
@@ -36,17 +44,17 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 	/**
 	 * GET /dashboard/queue
-	 * Fetches the download queue from all enabled Sonarr and Radarr instances
+	 * Fetches the download queue from all enabled Sonarr, Radarr, Lidarr, and Readarr instances
 	 */
 	app.get("/dashboard/queue", async (request, reply) => {
 		const response = await executeOnInstances(
 			app,
 			request.currentUser!.id,
-			{ serviceTypes: ["SONARR", "RADARR"] },
+			{ serviceTypes: ["SONARR", "RADARR", "LIDARR", "READARR"] },
 			async (client, instance) => {
-				const service = instance.service.toLowerCase() as "sonarr" | "radarr";
+				const service = instance.service.toLowerCase() as QueueService;
 
-				// Use SDK to fetch queue items
+				// Use SDK to fetch queue items based on service type
 				let rawItems: unknown[];
 				if (isSonarrClient(client)) {
 					const result = await client.queue.get({
@@ -57,6 +65,18 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				} else if (isRadarrClient(client)) {
 					const result = await client.queue.get({
 						pageSize: 1000,
+					});
+					rawItems = result.records ?? [];
+				} else if (isLidarrClient(client)) {
+					const result = await client.queue.get({
+						pageSize: 1000,
+						includeUnknownArtistItems: true,
+					});
+					rawItems = result.records ?? [];
+				} else if (isReadarrClient(client)) {
+					const result = await client.queue.get({
+						pageSize: 1000,
+						includeUnknownAuthorItems: true,
 					});
 					rawItems = result.records ?? [];
 				} else {
@@ -79,7 +99,7 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const results = response.instances.map((result) => ({
 			instanceId: result.instanceId,
 			instanceName: result.instanceName,
-			service: result.service as "sonarr" | "radarr",
+			service: result.service as QueueService,
 			data: result.success ? result.data : [],
 		}));
 
@@ -106,7 +126,7 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		const { client, instance } = clientResult;
-		const service = instance.service.toLowerCase() as "sonarr" | "radarr";
+		const service = instance.service.toLowerCase() as QueueService;
 
 		if (service !== body.service) {
 			return reply.status(400).send({
@@ -134,47 +154,52 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					});
 				}
 
+				// Manual import supported for all *arr services with download queues
 				await autoImportByDownloadIdWithSdk(
-					client as SonarrClient | RadarrClient,
+					client as SonarrClient | RadarrClient | LidarrClient | ReadarrClient,
 					service,
 					downloadId,
 				);
 			} else if (body.action === "retry") {
 				// Retry by removing from queue without blocklisting
+				const deleteOptions = {
+					removeFromClient: body.removeFromClient ?? true,
+					blocklist: false,
+					changeCategory: false,
+				};
+
 				if (isSonarrClient(client)) {
-					await client.queue.delete(queueId, {
-						removeFromClient: body.removeFromClient ?? true,
-						blocklist: false,
-						changeCategory: false,
-					});
+					await client.queue.delete(queueId, deleteOptions);
 				} else if (isRadarrClient(client)) {
-					await client.queue.delete(queueId, {
-						removeFromClient: body.removeFromClient ?? true,
-						blocklist: false,
-						changeCategory: false,
-					});
+					await client.queue.delete(queueId, deleteOptions);
+				} else if (isLidarrClient(client)) {
+					await client.queue.delete(queueId, deleteOptions);
+				} else if (isReadarrClient(client)) {
+					await client.queue.delete(queueId, deleteOptions);
 				}
 			} else {
 				// Remove action
+				const deleteOptions = {
+					removeFromClient: body.removeFromClient,
+					blocklist: body.blocklist,
+					changeCategory: body.changeCategory,
+				};
+
 				if (isSonarrClient(client)) {
-					await client.queue.delete(queueId, {
-						removeFromClient: body.removeFromClient,
-						blocklist: body.blocklist,
-						changeCategory: body.changeCategory,
-					});
+					await client.queue.delete(queueId, deleteOptions);
 				} else if (isRadarrClient(client)) {
-					await client.queue.delete(queueId, {
-						removeFromClient: body.removeFromClient,
-						blocklist: body.blocklist,
-						changeCategory: body.changeCategory,
-					});
+					await client.queue.delete(queueId, deleteOptions);
+				} else if (isLidarrClient(client)) {
+					await client.queue.delete(queueId, deleteOptions);
+				} else if (isReadarrClient(client)) {
+					await client.queue.delete(queueId, deleteOptions);
 				}
 
 				// Trigger search if requested
 				if (body.search) {
 					try {
 						await triggerQueueSearchWithSdk(
-							client as SonarrClient | RadarrClient,
+							client as QueueClient,
 							service,
 							body.searchPayload,
 						);
@@ -220,7 +245,7 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		const { client, instance } = clientResult;
-		const service = instance.service.toLowerCase() as "sonarr" | "radarr";
+		const service = instance.service.toLowerCase() as QueueService;
 
 		if (service !== body.service) {
 			return reply.status(400).send({
@@ -265,6 +290,11 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			if (isSonarrClient(client)) {
 				await client.queue.bulkDelete(queueIds, deleteOptions);
 			} else if (isRadarrClient(client)) {
+				await client.queue.bulkDelete(queueIds, deleteOptions);
+			} else if (isLidarrClient(client)) {
+				// Lidarr's bulkDelete takes a combined object with ids and options
+				await client.queue.bulkDelete({ ids: queueIds, ...deleteOptions });
+			} else if (isReadarrClient(client)) {
 				await client.queue.bulkDelete(queueIds, deleteOptions);
 			}
 

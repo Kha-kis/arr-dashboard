@@ -93,6 +93,8 @@ export async function fetchDashboardStatistics(): Promise<DashboardStatisticsRes
 				sonarr: { instances: [] },
 				radarr: { instances: [] },
 				prowlarr: { instances: [] },
+				lidarr: { instances: [] },
+				readarr: { instances: [] },
 			};
 		}
 		throw error;
@@ -115,7 +117,7 @@ export async function performQueueBulkAction(payload: QueueBulkActionRequest): P
 
 export async function fetchManualImportCandidates(params: {
 	instanceId: string;
-	service: "sonarr" | "radarr";
+	service: "sonarr" | "radarr" | "lidarr" | "readarr";
 	downloadId?: string;
 	folder?: string;
 	seriesId?: number;
