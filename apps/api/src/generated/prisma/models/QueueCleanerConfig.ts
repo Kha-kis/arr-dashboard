@@ -38,6 +38,8 @@ export type QueueCleanerConfigAvgAggregateOutputType = {
   seedingTimeoutHours: number | null
   estimatedCompletionMultiplier: number | null
   importPendingThresholdMins: number | null
+  autoImportMaxAttempts: number | null
+  autoImportCooldownMins: number | null
   lastRunItemsCleaned: number | null
   lastRunItemsSkipped: number | null
 }
@@ -54,6 +56,8 @@ export type QueueCleanerConfigSumAggregateOutputType = {
   seedingTimeoutHours: number | null
   estimatedCompletionMultiplier: number | null
   importPendingThresholdMins: number | null
+  autoImportMaxAttempts: number | null
+  autoImportCooldownMins: number | null
   lastRunItemsCleaned: number | null
   lastRunItemsSkipped: number | null
 }
@@ -85,10 +89,17 @@ export type QueueCleanerConfigMinAggregateOutputType = {
   seedingTimeoutHours: number | null
   estimatedCompletionEnabled: boolean | null
   estimatedCompletionMultiplier: number | null
+  importPendingEnabled: boolean | null
   importPendingThresholdMins: number | null
   importBlockCleanupLevel: string | null
   importBlockPatternMode: string | null
   importBlockPatterns: string | null
+  autoImportEnabled: boolean | null
+  autoImportMaxAttempts: number | null
+  autoImportCooldownMins: number | null
+  autoImportSafeOnly: boolean | null
+  autoImportCustomPatterns: string | null
+  autoImportNeverPatterns: string | null
   whitelistEnabled: boolean | null
   whitelistPatterns: string | null
   lastRunAt: Date | null
@@ -125,10 +136,17 @@ export type QueueCleanerConfigMaxAggregateOutputType = {
   seedingTimeoutHours: number | null
   estimatedCompletionEnabled: boolean | null
   estimatedCompletionMultiplier: number | null
+  importPendingEnabled: boolean | null
   importPendingThresholdMins: number | null
   importBlockCleanupLevel: string | null
   importBlockPatternMode: string | null
   importBlockPatterns: string | null
+  autoImportEnabled: boolean | null
+  autoImportMaxAttempts: number | null
+  autoImportCooldownMins: number | null
+  autoImportSafeOnly: boolean | null
+  autoImportCustomPatterns: string | null
+  autoImportNeverPatterns: string | null
   whitelistEnabled: boolean | null
   whitelistPatterns: string | null
   lastRunAt: Date | null
@@ -165,10 +183,17 @@ export type QueueCleanerConfigCountAggregateOutputType = {
   seedingTimeoutHours: number
   estimatedCompletionEnabled: number
   estimatedCompletionMultiplier: number
+  importPendingEnabled: number
   importPendingThresholdMins: number
   importBlockCleanupLevel: number
   importBlockPatternMode: number
   importBlockPatterns: number
+  autoImportEnabled: number
+  autoImportMaxAttempts: number
+  autoImportCooldownMins: number
+  autoImportSafeOnly: number
+  autoImportCustomPatterns: number
+  autoImportNeverPatterns: number
   whitelistEnabled: number
   whitelistPatterns: number
   lastRunAt: number
@@ -192,6 +217,8 @@ export type QueueCleanerConfigAvgAggregateInputType = {
   seedingTimeoutHours?: true
   estimatedCompletionMultiplier?: true
   importPendingThresholdMins?: true
+  autoImportMaxAttempts?: true
+  autoImportCooldownMins?: true
   lastRunItemsCleaned?: true
   lastRunItemsSkipped?: true
 }
@@ -208,6 +235,8 @@ export type QueueCleanerConfigSumAggregateInputType = {
   seedingTimeoutHours?: true
   estimatedCompletionMultiplier?: true
   importPendingThresholdMins?: true
+  autoImportMaxAttempts?: true
+  autoImportCooldownMins?: true
   lastRunItemsCleaned?: true
   lastRunItemsSkipped?: true
 }
@@ -239,10 +268,17 @@ export type QueueCleanerConfigMinAggregateInputType = {
   seedingTimeoutHours?: true
   estimatedCompletionEnabled?: true
   estimatedCompletionMultiplier?: true
+  importPendingEnabled?: true
   importPendingThresholdMins?: true
   importBlockCleanupLevel?: true
   importBlockPatternMode?: true
   importBlockPatterns?: true
+  autoImportEnabled?: true
+  autoImportMaxAttempts?: true
+  autoImportCooldownMins?: true
+  autoImportSafeOnly?: true
+  autoImportCustomPatterns?: true
+  autoImportNeverPatterns?: true
   whitelistEnabled?: true
   whitelistPatterns?: true
   lastRunAt?: true
@@ -279,10 +315,17 @@ export type QueueCleanerConfigMaxAggregateInputType = {
   seedingTimeoutHours?: true
   estimatedCompletionEnabled?: true
   estimatedCompletionMultiplier?: true
+  importPendingEnabled?: true
   importPendingThresholdMins?: true
   importBlockCleanupLevel?: true
   importBlockPatternMode?: true
   importBlockPatterns?: true
+  autoImportEnabled?: true
+  autoImportMaxAttempts?: true
+  autoImportCooldownMins?: true
+  autoImportSafeOnly?: true
+  autoImportCustomPatterns?: true
+  autoImportNeverPatterns?: true
   whitelistEnabled?: true
   whitelistPatterns?: true
   lastRunAt?: true
@@ -319,10 +362,17 @@ export type QueueCleanerConfigCountAggregateInputType = {
   seedingTimeoutHours?: true
   estimatedCompletionEnabled?: true
   estimatedCompletionMultiplier?: true
+  importPendingEnabled?: true
   importPendingThresholdMins?: true
   importBlockCleanupLevel?: true
   importBlockPatternMode?: true
   importBlockPatterns?: true
+  autoImportEnabled?: true
+  autoImportMaxAttempts?: true
+  autoImportCooldownMins?: true
+  autoImportSafeOnly?: true
+  autoImportCustomPatterns?: true
+  autoImportNeverPatterns?: true
   whitelistEnabled?: true
   whitelistPatterns?: true
   lastRunAt?: true
@@ -446,10 +496,17 @@ export type QueueCleanerConfigGroupByOutputType = {
   seedingTimeoutHours: number
   estimatedCompletionEnabled: boolean
   estimatedCompletionMultiplier: number
+  importPendingEnabled: boolean
   importPendingThresholdMins: number
   importBlockCleanupLevel: string
   importBlockPatternMode: string
   importBlockPatterns: string | null
+  autoImportEnabled: boolean
+  autoImportMaxAttempts: number
+  autoImportCooldownMins: number
+  autoImportSafeOnly: boolean
+  autoImportCustomPatterns: string | null
+  autoImportNeverPatterns: string | null
   whitelistEnabled: boolean
   whitelistPatterns: string | null
   lastRunAt: Date | null
@@ -509,10 +566,17 @@ export type QueueCleanerConfigWhereInput = {
   seedingTimeoutHours?: Prisma.IntFilter<"QueueCleanerConfig"> | number
   estimatedCompletionEnabled?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   estimatedCompletionMultiplier?: Prisma.FloatFilter<"QueueCleanerConfig"> | number
+  importPendingEnabled?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   importPendingThresholdMins?: Prisma.IntFilter<"QueueCleanerConfig"> | number
   importBlockCleanupLevel?: Prisma.StringFilter<"QueueCleanerConfig"> | string
   importBlockPatternMode?: Prisma.StringFilter<"QueueCleanerConfig"> | string
   importBlockPatterns?: Prisma.StringNullableFilter<"QueueCleanerConfig"> | string | null
+  autoImportEnabled?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
+  autoImportMaxAttempts?: Prisma.IntFilter<"QueueCleanerConfig"> | number
+  autoImportCooldownMins?: Prisma.IntFilter<"QueueCleanerConfig"> | number
+  autoImportSafeOnly?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
+  autoImportCustomPatterns?: Prisma.StringNullableFilter<"QueueCleanerConfig"> | string | null
+  autoImportNeverPatterns?: Prisma.StringNullableFilter<"QueueCleanerConfig"> | string | null
   whitelistEnabled?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   whitelistPatterns?: Prisma.StringNullableFilter<"QueueCleanerConfig"> | string | null
   lastRunAt?: Prisma.DateTimeNullableFilter<"QueueCleanerConfig"> | Date | string | null
@@ -550,10 +614,17 @@ export type QueueCleanerConfigOrderByWithRelationInput = {
   seedingTimeoutHours?: Prisma.SortOrder
   estimatedCompletionEnabled?: Prisma.SortOrder
   estimatedCompletionMultiplier?: Prisma.SortOrder
+  importPendingEnabled?: Prisma.SortOrder
   importPendingThresholdMins?: Prisma.SortOrder
   importBlockCleanupLevel?: Prisma.SortOrder
   importBlockPatternMode?: Prisma.SortOrder
   importBlockPatterns?: Prisma.SortOrderInput | Prisma.SortOrder
+  autoImportEnabled?: Prisma.SortOrder
+  autoImportMaxAttempts?: Prisma.SortOrder
+  autoImportCooldownMins?: Prisma.SortOrder
+  autoImportSafeOnly?: Prisma.SortOrder
+  autoImportCustomPatterns?: Prisma.SortOrderInput | Prisma.SortOrder
+  autoImportNeverPatterns?: Prisma.SortOrderInput | Prisma.SortOrder
   whitelistEnabled?: Prisma.SortOrder
   whitelistPatterns?: Prisma.SortOrderInput | Prisma.SortOrder
   lastRunAt?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -594,10 +665,17 @@ export type QueueCleanerConfigWhereUniqueInput = Prisma.AtLeast<{
   seedingTimeoutHours?: Prisma.IntFilter<"QueueCleanerConfig"> | number
   estimatedCompletionEnabled?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   estimatedCompletionMultiplier?: Prisma.FloatFilter<"QueueCleanerConfig"> | number
+  importPendingEnabled?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   importPendingThresholdMins?: Prisma.IntFilter<"QueueCleanerConfig"> | number
   importBlockCleanupLevel?: Prisma.StringFilter<"QueueCleanerConfig"> | string
   importBlockPatternMode?: Prisma.StringFilter<"QueueCleanerConfig"> | string
   importBlockPatterns?: Prisma.StringNullableFilter<"QueueCleanerConfig"> | string | null
+  autoImportEnabled?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
+  autoImportMaxAttempts?: Prisma.IntFilter<"QueueCleanerConfig"> | number
+  autoImportCooldownMins?: Prisma.IntFilter<"QueueCleanerConfig"> | number
+  autoImportSafeOnly?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
+  autoImportCustomPatterns?: Prisma.StringNullableFilter<"QueueCleanerConfig"> | string | null
+  autoImportNeverPatterns?: Prisma.StringNullableFilter<"QueueCleanerConfig"> | string | null
   whitelistEnabled?: Prisma.BoolFilter<"QueueCleanerConfig"> | boolean
   whitelistPatterns?: Prisma.StringNullableFilter<"QueueCleanerConfig"> | string | null
   lastRunAt?: Prisma.DateTimeNullableFilter<"QueueCleanerConfig"> | Date | string | null
@@ -635,10 +713,17 @@ export type QueueCleanerConfigOrderByWithAggregationInput = {
   seedingTimeoutHours?: Prisma.SortOrder
   estimatedCompletionEnabled?: Prisma.SortOrder
   estimatedCompletionMultiplier?: Prisma.SortOrder
+  importPendingEnabled?: Prisma.SortOrder
   importPendingThresholdMins?: Prisma.SortOrder
   importBlockCleanupLevel?: Prisma.SortOrder
   importBlockPatternMode?: Prisma.SortOrder
   importBlockPatterns?: Prisma.SortOrderInput | Prisma.SortOrder
+  autoImportEnabled?: Prisma.SortOrder
+  autoImportMaxAttempts?: Prisma.SortOrder
+  autoImportCooldownMins?: Prisma.SortOrder
+  autoImportSafeOnly?: Prisma.SortOrder
+  autoImportCustomPatterns?: Prisma.SortOrderInput | Prisma.SortOrder
+  autoImportNeverPatterns?: Prisma.SortOrderInput | Prisma.SortOrder
   whitelistEnabled?: Prisma.SortOrder
   whitelistPatterns?: Prisma.SortOrderInput | Prisma.SortOrder
   lastRunAt?: Prisma.SortOrderInput | Prisma.SortOrder
@@ -683,10 +768,17 @@ export type QueueCleanerConfigScalarWhereWithAggregatesInput = {
   seedingTimeoutHours?: Prisma.IntWithAggregatesFilter<"QueueCleanerConfig"> | number
   estimatedCompletionEnabled?: Prisma.BoolWithAggregatesFilter<"QueueCleanerConfig"> | boolean
   estimatedCompletionMultiplier?: Prisma.FloatWithAggregatesFilter<"QueueCleanerConfig"> | number
+  importPendingEnabled?: Prisma.BoolWithAggregatesFilter<"QueueCleanerConfig"> | boolean
   importPendingThresholdMins?: Prisma.IntWithAggregatesFilter<"QueueCleanerConfig"> | number
   importBlockCleanupLevel?: Prisma.StringWithAggregatesFilter<"QueueCleanerConfig"> | string
   importBlockPatternMode?: Prisma.StringWithAggregatesFilter<"QueueCleanerConfig"> | string
   importBlockPatterns?: Prisma.StringNullableWithAggregatesFilter<"QueueCleanerConfig"> | string | null
+  autoImportEnabled?: Prisma.BoolWithAggregatesFilter<"QueueCleanerConfig"> | boolean
+  autoImportMaxAttempts?: Prisma.IntWithAggregatesFilter<"QueueCleanerConfig"> | number
+  autoImportCooldownMins?: Prisma.IntWithAggregatesFilter<"QueueCleanerConfig"> | number
+  autoImportSafeOnly?: Prisma.BoolWithAggregatesFilter<"QueueCleanerConfig"> | boolean
+  autoImportCustomPatterns?: Prisma.StringNullableWithAggregatesFilter<"QueueCleanerConfig"> | string | null
+  autoImportNeverPatterns?: Prisma.StringNullableWithAggregatesFilter<"QueueCleanerConfig"> | string | null
   whitelistEnabled?: Prisma.BoolWithAggregatesFilter<"QueueCleanerConfig"> | boolean
   whitelistPatterns?: Prisma.StringNullableWithAggregatesFilter<"QueueCleanerConfig"> | string | null
   lastRunAt?: Prisma.DateTimeNullableWithAggregatesFilter<"QueueCleanerConfig"> | Date | string | null
@@ -722,10 +814,17 @@ export type QueueCleanerConfigCreateInput = {
   seedingTimeoutHours?: number
   estimatedCompletionEnabled?: boolean
   estimatedCompletionMultiplier?: number
+  importPendingEnabled?: boolean
   importPendingThresholdMins?: number
   importBlockCleanupLevel?: string
   importBlockPatternMode?: string
   importBlockPatterns?: string | null
+  autoImportEnabled?: boolean
+  autoImportMaxAttempts?: number
+  autoImportCooldownMins?: number
+  autoImportSafeOnly?: boolean
+  autoImportCustomPatterns?: string | null
+  autoImportNeverPatterns?: string | null
   whitelistEnabled?: boolean
   whitelistPatterns?: string | null
   lastRunAt?: Date | string | null
@@ -763,10 +862,17 @@ export type QueueCleanerConfigUncheckedCreateInput = {
   seedingTimeoutHours?: number
   estimatedCompletionEnabled?: boolean
   estimatedCompletionMultiplier?: number
+  importPendingEnabled?: boolean
   importPendingThresholdMins?: number
   importBlockCleanupLevel?: string
   importBlockPatternMode?: string
   importBlockPatterns?: string | null
+  autoImportEnabled?: boolean
+  autoImportMaxAttempts?: number
+  autoImportCooldownMins?: number
+  autoImportSafeOnly?: boolean
+  autoImportCustomPatterns?: string | null
+  autoImportNeverPatterns?: string | null
   whitelistEnabled?: boolean
   whitelistPatterns?: string | null
   lastRunAt?: Date | string | null
@@ -802,10 +908,17 @@ export type QueueCleanerConfigUpdateInput = {
   seedingTimeoutHours?: Prisma.IntFieldUpdateOperationsInput | number
   estimatedCompletionEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   estimatedCompletionMultiplier?: Prisma.FloatFieldUpdateOperationsInput | number
+  importPendingEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   importPendingThresholdMins?: Prisma.IntFieldUpdateOperationsInput | number
   importBlockCleanupLevel?: Prisma.StringFieldUpdateOperationsInput | string
   importBlockPatternMode?: Prisma.StringFieldUpdateOperationsInput | string
   importBlockPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  autoImportEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  autoImportMaxAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  autoImportCooldownMins?: Prisma.IntFieldUpdateOperationsInput | number
+  autoImportSafeOnly?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  autoImportCustomPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  autoImportNeverPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   whitelistEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   whitelistPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastRunAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -843,10 +956,17 @@ export type QueueCleanerConfigUncheckedUpdateInput = {
   seedingTimeoutHours?: Prisma.IntFieldUpdateOperationsInput | number
   estimatedCompletionEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   estimatedCompletionMultiplier?: Prisma.FloatFieldUpdateOperationsInput | number
+  importPendingEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   importPendingThresholdMins?: Prisma.IntFieldUpdateOperationsInput | number
   importBlockCleanupLevel?: Prisma.StringFieldUpdateOperationsInput | string
   importBlockPatternMode?: Prisma.StringFieldUpdateOperationsInput | string
   importBlockPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  autoImportEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  autoImportMaxAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  autoImportCooldownMins?: Prisma.IntFieldUpdateOperationsInput | number
+  autoImportSafeOnly?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  autoImportCustomPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  autoImportNeverPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   whitelistEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   whitelistPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastRunAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -883,10 +1003,17 @@ export type QueueCleanerConfigCreateManyInput = {
   seedingTimeoutHours?: number
   estimatedCompletionEnabled?: boolean
   estimatedCompletionMultiplier?: number
+  importPendingEnabled?: boolean
   importPendingThresholdMins?: number
   importBlockCleanupLevel?: string
   importBlockPatternMode?: string
   importBlockPatterns?: string | null
+  autoImportEnabled?: boolean
+  autoImportMaxAttempts?: number
+  autoImportCooldownMins?: number
+  autoImportSafeOnly?: boolean
+  autoImportCustomPatterns?: string | null
+  autoImportNeverPatterns?: string | null
   whitelistEnabled?: boolean
   whitelistPatterns?: string | null
   lastRunAt?: Date | string | null
@@ -922,10 +1049,17 @@ export type QueueCleanerConfigUpdateManyMutationInput = {
   seedingTimeoutHours?: Prisma.IntFieldUpdateOperationsInput | number
   estimatedCompletionEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   estimatedCompletionMultiplier?: Prisma.FloatFieldUpdateOperationsInput | number
+  importPendingEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   importPendingThresholdMins?: Prisma.IntFieldUpdateOperationsInput | number
   importBlockCleanupLevel?: Prisma.StringFieldUpdateOperationsInput | string
   importBlockPatternMode?: Prisma.StringFieldUpdateOperationsInput | string
   importBlockPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  autoImportEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  autoImportMaxAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  autoImportCooldownMins?: Prisma.IntFieldUpdateOperationsInput | number
+  autoImportSafeOnly?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  autoImportCustomPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  autoImportNeverPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   whitelistEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   whitelistPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastRunAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -962,10 +1096,17 @@ export type QueueCleanerConfigUncheckedUpdateManyInput = {
   seedingTimeoutHours?: Prisma.IntFieldUpdateOperationsInput | number
   estimatedCompletionEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   estimatedCompletionMultiplier?: Prisma.FloatFieldUpdateOperationsInput | number
+  importPendingEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   importPendingThresholdMins?: Prisma.IntFieldUpdateOperationsInput | number
   importBlockCleanupLevel?: Prisma.StringFieldUpdateOperationsInput | string
   importBlockPatternMode?: Prisma.StringFieldUpdateOperationsInput | string
   importBlockPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  autoImportEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  autoImportMaxAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  autoImportCooldownMins?: Prisma.IntFieldUpdateOperationsInput | number
+  autoImportSafeOnly?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  autoImportCustomPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  autoImportNeverPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   whitelistEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   whitelistPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastRunAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1007,10 +1148,17 @@ export type QueueCleanerConfigCountOrderByAggregateInput = {
   seedingTimeoutHours?: Prisma.SortOrder
   estimatedCompletionEnabled?: Prisma.SortOrder
   estimatedCompletionMultiplier?: Prisma.SortOrder
+  importPendingEnabled?: Prisma.SortOrder
   importPendingThresholdMins?: Prisma.SortOrder
   importBlockCleanupLevel?: Prisma.SortOrder
   importBlockPatternMode?: Prisma.SortOrder
   importBlockPatterns?: Prisma.SortOrder
+  autoImportEnabled?: Prisma.SortOrder
+  autoImportMaxAttempts?: Prisma.SortOrder
+  autoImportCooldownMins?: Prisma.SortOrder
+  autoImportSafeOnly?: Prisma.SortOrder
+  autoImportCustomPatterns?: Prisma.SortOrder
+  autoImportNeverPatterns?: Prisma.SortOrder
   whitelistEnabled?: Prisma.SortOrder
   whitelistPatterns?: Prisma.SortOrder
   lastRunAt?: Prisma.SortOrder
@@ -1032,6 +1180,8 @@ export type QueueCleanerConfigAvgOrderByAggregateInput = {
   seedingTimeoutHours?: Prisma.SortOrder
   estimatedCompletionMultiplier?: Prisma.SortOrder
   importPendingThresholdMins?: Prisma.SortOrder
+  autoImportMaxAttempts?: Prisma.SortOrder
+  autoImportCooldownMins?: Prisma.SortOrder
   lastRunItemsCleaned?: Prisma.SortOrder
   lastRunItemsSkipped?: Prisma.SortOrder
 }
@@ -1063,10 +1213,17 @@ export type QueueCleanerConfigMaxOrderByAggregateInput = {
   seedingTimeoutHours?: Prisma.SortOrder
   estimatedCompletionEnabled?: Prisma.SortOrder
   estimatedCompletionMultiplier?: Prisma.SortOrder
+  importPendingEnabled?: Prisma.SortOrder
   importPendingThresholdMins?: Prisma.SortOrder
   importBlockCleanupLevel?: Prisma.SortOrder
   importBlockPatternMode?: Prisma.SortOrder
   importBlockPatterns?: Prisma.SortOrder
+  autoImportEnabled?: Prisma.SortOrder
+  autoImportMaxAttempts?: Prisma.SortOrder
+  autoImportCooldownMins?: Prisma.SortOrder
+  autoImportSafeOnly?: Prisma.SortOrder
+  autoImportCustomPatterns?: Prisma.SortOrder
+  autoImportNeverPatterns?: Prisma.SortOrder
   whitelistEnabled?: Prisma.SortOrder
   whitelistPatterns?: Prisma.SortOrder
   lastRunAt?: Prisma.SortOrder
@@ -1103,10 +1260,17 @@ export type QueueCleanerConfigMinOrderByAggregateInput = {
   seedingTimeoutHours?: Prisma.SortOrder
   estimatedCompletionEnabled?: Prisma.SortOrder
   estimatedCompletionMultiplier?: Prisma.SortOrder
+  importPendingEnabled?: Prisma.SortOrder
   importPendingThresholdMins?: Prisma.SortOrder
   importBlockCleanupLevel?: Prisma.SortOrder
   importBlockPatternMode?: Prisma.SortOrder
   importBlockPatterns?: Prisma.SortOrder
+  autoImportEnabled?: Prisma.SortOrder
+  autoImportMaxAttempts?: Prisma.SortOrder
+  autoImportCooldownMins?: Prisma.SortOrder
+  autoImportSafeOnly?: Prisma.SortOrder
+  autoImportCustomPatterns?: Prisma.SortOrder
+  autoImportNeverPatterns?: Prisma.SortOrder
   whitelistEnabled?: Prisma.SortOrder
   whitelistPatterns?: Prisma.SortOrder
   lastRunAt?: Prisma.SortOrder
@@ -1128,6 +1292,8 @@ export type QueueCleanerConfigSumOrderByAggregateInput = {
   seedingTimeoutHours?: Prisma.SortOrder
   estimatedCompletionMultiplier?: Prisma.SortOrder
   importPendingThresholdMins?: Prisma.SortOrder
+  autoImportMaxAttempts?: Prisma.SortOrder
+  autoImportCooldownMins?: Prisma.SortOrder
   lastRunItemsCleaned?: Prisma.SortOrder
   lastRunItemsSkipped?: Prisma.SortOrder
 }
@@ -1198,10 +1364,17 @@ export type QueueCleanerConfigCreateWithoutInstanceInput = {
   seedingTimeoutHours?: number
   estimatedCompletionEnabled?: boolean
   estimatedCompletionMultiplier?: number
+  importPendingEnabled?: boolean
   importPendingThresholdMins?: number
   importBlockCleanupLevel?: string
   importBlockPatternMode?: string
   importBlockPatterns?: string | null
+  autoImportEnabled?: boolean
+  autoImportMaxAttempts?: number
+  autoImportCooldownMins?: number
+  autoImportSafeOnly?: boolean
+  autoImportCustomPatterns?: string | null
+  autoImportNeverPatterns?: string | null
   whitelistEnabled?: boolean
   whitelistPatterns?: string | null
   lastRunAt?: Date | string | null
@@ -1237,10 +1410,17 @@ export type QueueCleanerConfigUncheckedCreateWithoutInstanceInput = {
   seedingTimeoutHours?: number
   estimatedCompletionEnabled?: boolean
   estimatedCompletionMultiplier?: number
+  importPendingEnabled?: boolean
   importPendingThresholdMins?: number
   importBlockCleanupLevel?: string
   importBlockPatternMode?: string
   importBlockPatterns?: string | null
+  autoImportEnabled?: boolean
+  autoImportMaxAttempts?: number
+  autoImportCooldownMins?: number
+  autoImportSafeOnly?: boolean
+  autoImportCustomPatterns?: string | null
+  autoImportNeverPatterns?: string | null
   whitelistEnabled?: boolean
   whitelistPatterns?: string | null
   lastRunAt?: Date | string | null
@@ -1292,10 +1472,17 @@ export type QueueCleanerConfigUpdateWithoutInstanceInput = {
   seedingTimeoutHours?: Prisma.IntFieldUpdateOperationsInput | number
   estimatedCompletionEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   estimatedCompletionMultiplier?: Prisma.FloatFieldUpdateOperationsInput | number
+  importPendingEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   importPendingThresholdMins?: Prisma.IntFieldUpdateOperationsInput | number
   importBlockCleanupLevel?: Prisma.StringFieldUpdateOperationsInput | string
   importBlockPatternMode?: Prisma.StringFieldUpdateOperationsInput | string
   importBlockPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  autoImportEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  autoImportMaxAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  autoImportCooldownMins?: Prisma.IntFieldUpdateOperationsInput | number
+  autoImportSafeOnly?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  autoImportCustomPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  autoImportNeverPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   whitelistEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   whitelistPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastRunAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1331,10 +1518,17 @@ export type QueueCleanerConfigUncheckedUpdateWithoutInstanceInput = {
   seedingTimeoutHours?: Prisma.IntFieldUpdateOperationsInput | number
   estimatedCompletionEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   estimatedCompletionMultiplier?: Prisma.FloatFieldUpdateOperationsInput | number
+  importPendingEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   importPendingThresholdMins?: Prisma.IntFieldUpdateOperationsInput | number
   importBlockCleanupLevel?: Prisma.StringFieldUpdateOperationsInput | string
   importBlockPatternMode?: Prisma.StringFieldUpdateOperationsInput | string
   importBlockPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  autoImportEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  autoImportMaxAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  autoImportCooldownMins?: Prisma.IntFieldUpdateOperationsInput | number
+  autoImportSafeOnly?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  autoImportCustomPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  autoImportNeverPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   whitelistEnabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
   whitelistPatterns?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   lastRunAt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
@@ -1373,10 +1567,17 @@ export type QueueCleanerConfigSelect<ExtArgs extends runtime.Types.Extensions.In
   seedingTimeoutHours?: boolean
   estimatedCompletionEnabled?: boolean
   estimatedCompletionMultiplier?: boolean
+  importPendingEnabled?: boolean
   importPendingThresholdMins?: boolean
   importBlockCleanupLevel?: boolean
   importBlockPatternMode?: boolean
   importBlockPatterns?: boolean
+  autoImportEnabled?: boolean
+  autoImportMaxAttempts?: boolean
+  autoImportCooldownMins?: boolean
+  autoImportSafeOnly?: boolean
+  autoImportCustomPatterns?: boolean
+  autoImportNeverPatterns?: boolean
   whitelistEnabled?: boolean
   whitelistPatterns?: boolean
   lastRunAt?: boolean
@@ -1414,10 +1615,17 @@ export type QueueCleanerConfigSelectCreateManyAndReturn<ExtArgs extends runtime.
   seedingTimeoutHours?: boolean
   estimatedCompletionEnabled?: boolean
   estimatedCompletionMultiplier?: boolean
+  importPendingEnabled?: boolean
   importPendingThresholdMins?: boolean
   importBlockCleanupLevel?: boolean
   importBlockPatternMode?: boolean
   importBlockPatterns?: boolean
+  autoImportEnabled?: boolean
+  autoImportMaxAttempts?: boolean
+  autoImportCooldownMins?: boolean
+  autoImportSafeOnly?: boolean
+  autoImportCustomPatterns?: boolean
+  autoImportNeverPatterns?: boolean
   whitelistEnabled?: boolean
   whitelistPatterns?: boolean
   lastRunAt?: boolean
@@ -1455,10 +1663,17 @@ export type QueueCleanerConfigSelectUpdateManyAndReturn<ExtArgs extends runtime.
   seedingTimeoutHours?: boolean
   estimatedCompletionEnabled?: boolean
   estimatedCompletionMultiplier?: boolean
+  importPendingEnabled?: boolean
   importPendingThresholdMins?: boolean
   importBlockCleanupLevel?: boolean
   importBlockPatternMode?: boolean
   importBlockPatterns?: boolean
+  autoImportEnabled?: boolean
+  autoImportMaxAttempts?: boolean
+  autoImportCooldownMins?: boolean
+  autoImportSafeOnly?: boolean
+  autoImportCustomPatterns?: boolean
+  autoImportNeverPatterns?: boolean
   whitelistEnabled?: boolean
   whitelistPatterns?: boolean
   lastRunAt?: boolean
@@ -1496,10 +1711,17 @@ export type QueueCleanerConfigSelectScalar = {
   seedingTimeoutHours?: boolean
   estimatedCompletionEnabled?: boolean
   estimatedCompletionMultiplier?: boolean
+  importPendingEnabled?: boolean
   importPendingThresholdMins?: boolean
   importBlockCleanupLevel?: boolean
   importBlockPatternMode?: boolean
   importBlockPatterns?: boolean
+  autoImportEnabled?: boolean
+  autoImportMaxAttempts?: boolean
+  autoImportCooldownMins?: boolean
+  autoImportSafeOnly?: boolean
+  autoImportCustomPatterns?: boolean
+  autoImportNeverPatterns?: boolean
   whitelistEnabled?: boolean
   whitelistPatterns?: boolean
   lastRunAt?: boolean
@@ -1509,7 +1731,7 @@ export type QueueCleanerConfigSelectScalar = {
   updatedAt?: boolean
 }
 
-export type QueueCleanerConfigOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "enabled" | "intervalMins" | "stalledEnabled" | "stalledThresholdMins" | "failedEnabled" | "slowEnabled" | "slowSpeedThreshold" | "slowGracePeriodMins" | "errorPatternsEnabled" | "errorPatterns" | "removeFromClient" | "addToBlocklist" | "searchAfterRemoval" | "changeCategoryEnabled" | "dryRunMode" | "maxRemovalsPerRun" | "minQueueAgeMins" | "strikeSystemEnabled" | "maxStrikes" | "strikeDecayHours" | "seedingTimeoutEnabled" | "seedingTimeoutHours" | "estimatedCompletionEnabled" | "estimatedCompletionMultiplier" | "importPendingThresholdMins" | "importBlockCleanupLevel" | "importBlockPatternMode" | "importBlockPatterns" | "whitelistEnabled" | "whitelistPatterns" | "lastRunAt" | "lastRunItemsCleaned" | "lastRunItemsSkipped" | "createdAt" | "updatedAt", ExtArgs["result"]["queueCleanerConfig"]>
+export type QueueCleanerConfigOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "enabled" | "intervalMins" | "stalledEnabled" | "stalledThresholdMins" | "failedEnabled" | "slowEnabled" | "slowSpeedThreshold" | "slowGracePeriodMins" | "errorPatternsEnabled" | "errorPatterns" | "removeFromClient" | "addToBlocklist" | "searchAfterRemoval" | "changeCategoryEnabled" | "dryRunMode" | "maxRemovalsPerRun" | "minQueueAgeMins" | "strikeSystemEnabled" | "maxStrikes" | "strikeDecayHours" | "seedingTimeoutEnabled" | "seedingTimeoutHours" | "estimatedCompletionEnabled" | "estimatedCompletionMultiplier" | "importPendingEnabled" | "importPendingThresholdMins" | "importBlockCleanupLevel" | "importBlockPatternMode" | "importBlockPatterns" | "autoImportEnabled" | "autoImportMaxAttempts" | "autoImportCooldownMins" | "autoImportSafeOnly" | "autoImportCustomPatterns" | "autoImportNeverPatterns" | "whitelistEnabled" | "whitelistPatterns" | "lastRunAt" | "lastRunItemsCleaned" | "lastRunItemsSkipped" | "createdAt" | "updatedAt", ExtArgs["result"]["queueCleanerConfig"]>
 export type QueueCleanerConfigInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }
@@ -1552,10 +1774,17 @@ export type $QueueCleanerConfigPayload<ExtArgs extends runtime.Types.Extensions.
     seedingTimeoutHours: number
     estimatedCompletionEnabled: boolean
     estimatedCompletionMultiplier: number
+    importPendingEnabled: boolean
     importPendingThresholdMins: number
     importBlockCleanupLevel: string
     importBlockPatternMode: string
     importBlockPatterns: string | null
+    autoImportEnabled: boolean
+    autoImportMaxAttempts: number
+    autoImportCooldownMins: number
+    autoImportSafeOnly: boolean
+    autoImportCustomPatterns: string | null
+    autoImportNeverPatterns: string | null
     whitelistEnabled: boolean
     whitelistPatterns: string | null
     lastRunAt: Date | null
@@ -2013,10 +2242,17 @@ export interface QueueCleanerConfigFieldRefs {
   readonly seedingTimeoutHours: Prisma.FieldRef<"QueueCleanerConfig", 'Int'>
   readonly estimatedCompletionEnabled: Prisma.FieldRef<"QueueCleanerConfig", 'Boolean'>
   readonly estimatedCompletionMultiplier: Prisma.FieldRef<"QueueCleanerConfig", 'Float'>
+  readonly importPendingEnabled: Prisma.FieldRef<"QueueCleanerConfig", 'Boolean'>
   readonly importPendingThresholdMins: Prisma.FieldRef<"QueueCleanerConfig", 'Int'>
   readonly importBlockCleanupLevel: Prisma.FieldRef<"QueueCleanerConfig", 'String'>
   readonly importBlockPatternMode: Prisma.FieldRef<"QueueCleanerConfig", 'String'>
   readonly importBlockPatterns: Prisma.FieldRef<"QueueCleanerConfig", 'String'>
+  readonly autoImportEnabled: Prisma.FieldRef<"QueueCleanerConfig", 'Boolean'>
+  readonly autoImportMaxAttempts: Prisma.FieldRef<"QueueCleanerConfig", 'Int'>
+  readonly autoImportCooldownMins: Prisma.FieldRef<"QueueCleanerConfig", 'Int'>
+  readonly autoImportSafeOnly: Prisma.FieldRef<"QueueCleanerConfig", 'Boolean'>
+  readonly autoImportCustomPatterns: Prisma.FieldRef<"QueueCleanerConfig", 'String'>
+  readonly autoImportNeverPatterns: Prisma.FieldRef<"QueueCleanerConfig", 'String'>
   readonly whitelistEnabled: Prisma.FieldRef<"QueueCleanerConfig", 'Boolean'>
   readonly whitelistPatterns: Prisma.FieldRef<"QueueCleanerConfig", 'String'>
   readonly lastRunAt: Prisma.FieldRef<"QueueCleanerConfig", 'DateTime'>

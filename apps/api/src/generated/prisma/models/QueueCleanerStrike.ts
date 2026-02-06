@@ -28,10 +28,12 @@ export type AggregateQueueCleanerStrike = {
 
 export type QueueCleanerStrikeAvgAggregateOutputType = {
   strikeCount: number | null
+  importAttempts: number | null
 }
 
 export type QueueCleanerStrikeSumAggregateOutputType = {
   strikeCount: number | null
+  importAttempts: number | null
 }
 
 export type QueueCleanerStrikeMinAggregateOutputType = {
@@ -43,6 +45,9 @@ export type QueueCleanerStrikeMinAggregateOutputType = {
   strikeCount: number | null
   lastRule: string | null
   lastReason: string | null
+  importAttempts: number | null
+  lastImportAttempt: Date | null
+  lastImportError: string | null
   firstStrikeAt: Date | null
   lastStrikeAt: Date | null
 }
@@ -56,6 +61,9 @@ export type QueueCleanerStrikeMaxAggregateOutputType = {
   strikeCount: number | null
   lastRule: string | null
   lastReason: string | null
+  importAttempts: number | null
+  lastImportAttempt: Date | null
+  lastImportError: string | null
   firstStrikeAt: Date | null
   lastStrikeAt: Date | null
 }
@@ -69,6 +77,9 @@ export type QueueCleanerStrikeCountAggregateOutputType = {
   strikeCount: number
   lastRule: number
   lastReason: number
+  importAttempts: number
+  lastImportAttempt: number
+  lastImportError: number
   firstStrikeAt: number
   lastStrikeAt: number
   _all: number
@@ -77,10 +88,12 @@ export type QueueCleanerStrikeCountAggregateOutputType = {
 
 export type QueueCleanerStrikeAvgAggregateInputType = {
   strikeCount?: true
+  importAttempts?: true
 }
 
 export type QueueCleanerStrikeSumAggregateInputType = {
   strikeCount?: true
+  importAttempts?: true
 }
 
 export type QueueCleanerStrikeMinAggregateInputType = {
@@ -92,6 +105,9 @@ export type QueueCleanerStrikeMinAggregateInputType = {
   strikeCount?: true
   lastRule?: true
   lastReason?: true
+  importAttempts?: true
+  lastImportAttempt?: true
+  lastImportError?: true
   firstStrikeAt?: true
   lastStrikeAt?: true
 }
@@ -105,6 +121,9 @@ export type QueueCleanerStrikeMaxAggregateInputType = {
   strikeCount?: true
   lastRule?: true
   lastReason?: true
+  importAttempts?: true
+  lastImportAttempt?: true
+  lastImportError?: true
   firstStrikeAt?: true
   lastStrikeAt?: true
 }
@@ -118,6 +137,9 @@ export type QueueCleanerStrikeCountAggregateInputType = {
   strikeCount?: true
   lastRule?: true
   lastReason?: true
+  importAttempts?: true
+  lastImportAttempt?: true
+  lastImportError?: true
   firstStrikeAt?: true
   lastStrikeAt?: true
   _all?: true
@@ -218,6 +240,9 @@ export type QueueCleanerStrikeGroupByOutputType = {
   strikeCount: number
   lastRule: string
   lastReason: string
+  importAttempts: number
+  lastImportAttempt: Date | null
+  lastImportError: string | null
   firstStrikeAt: Date
   lastStrikeAt: Date
   _count: QueueCleanerStrikeCountAggregateOutputType | null
@@ -254,6 +279,9 @@ export type QueueCleanerStrikeWhereInput = {
   strikeCount?: Prisma.IntFilter<"QueueCleanerStrike"> | number
   lastRule?: Prisma.StringFilter<"QueueCleanerStrike"> | string
   lastReason?: Prisma.StringFilter<"QueueCleanerStrike"> | string
+  importAttempts?: Prisma.IntFilter<"QueueCleanerStrike"> | number
+  lastImportAttempt?: Prisma.DateTimeNullableFilter<"QueueCleanerStrike"> | Date | string | null
+  lastImportError?: Prisma.StringNullableFilter<"QueueCleanerStrike"> | string | null
   firstStrikeAt?: Prisma.DateTimeFilter<"QueueCleanerStrike"> | Date | string
   lastStrikeAt?: Prisma.DateTimeFilter<"QueueCleanerStrike"> | Date | string
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
@@ -268,6 +296,9 @@ export type QueueCleanerStrikeOrderByWithRelationInput = {
   strikeCount?: Prisma.SortOrder
   lastRule?: Prisma.SortOrder
   lastReason?: Prisma.SortOrder
+  importAttempts?: Prisma.SortOrder
+  lastImportAttempt?: Prisma.SortOrderInput | Prisma.SortOrder
+  lastImportError?: Prisma.SortOrderInput | Prisma.SortOrder
   firstStrikeAt?: Prisma.SortOrder
   lastStrikeAt?: Prisma.SortOrder
   instance?: Prisma.ServiceInstanceOrderByWithRelationInput
@@ -286,6 +317,9 @@ export type QueueCleanerStrikeWhereUniqueInput = Prisma.AtLeast<{
   strikeCount?: Prisma.IntFilter<"QueueCleanerStrike"> | number
   lastRule?: Prisma.StringFilter<"QueueCleanerStrike"> | string
   lastReason?: Prisma.StringFilter<"QueueCleanerStrike"> | string
+  importAttempts?: Prisma.IntFilter<"QueueCleanerStrike"> | number
+  lastImportAttempt?: Prisma.DateTimeNullableFilter<"QueueCleanerStrike"> | Date | string | null
+  lastImportError?: Prisma.StringNullableFilter<"QueueCleanerStrike"> | string | null
   firstStrikeAt?: Prisma.DateTimeFilter<"QueueCleanerStrike"> | Date | string
   lastStrikeAt?: Prisma.DateTimeFilter<"QueueCleanerStrike"> | Date | string
   instance?: Prisma.XOR<Prisma.ServiceInstanceScalarRelationFilter, Prisma.ServiceInstanceWhereInput>
@@ -300,6 +334,9 @@ export type QueueCleanerStrikeOrderByWithAggregationInput = {
   strikeCount?: Prisma.SortOrder
   lastRule?: Prisma.SortOrder
   lastReason?: Prisma.SortOrder
+  importAttempts?: Prisma.SortOrder
+  lastImportAttempt?: Prisma.SortOrderInput | Prisma.SortOrder
+  lastImportError?: Prisma.SortOrderInput | Prisma.SortOrder
   firstStrikeAt?: Prisma.SortOrder
   lastStrikeAt?: Prisma.SortOrder
   _count?: Prisma.QueueCleanerStrikeCountOrderByAggregateInput
@@ -321,6 +358,9 @@ export type QueueCleanerStrikeScalarWhereWithAggregatesInput = {
   strikeCount?: Prisma.IntWithAggregatesFilter<"QueueCleanerStrike"> | number
   lastRule?: Prisma.StringWithAggregatesFilter<"QueueCleanerStrike"> | string
   lastReason?: Prisma.StringWithAggregatesFilter<"QueueCleanerStrike"> | string
+  importAttempts?: Prisma.IntWithAggregatesFilter<"QueueCleanerStrike"> | number
+  lastImportAttempt?: Prisma.DateTimeNullableWithAggregatesFilter<"QueueCleanerStrike"> | Date | string | null
+  lastImportError?: Prisma.StringNullableWithAggregatesFilter<"QueueCleanerStrike"> | string | null
   firstStrikeAt?: Prisma.DateTimeWithAggregatesFilter<"QueueCleanerStrike"> | Date | string
   lastStrikeAt?: Prisma.DateTimeWithAggregatesFilter<"QueueCleanerStrike"> | Date | string
 }
@@ -333,6 +373,9 @@ export type QueueCleanerStrikeCreateInput = {
   strikeCount?: number
   lastRule: string
   lastReason: string
+  importAttempts?: number
+  lastImportAttempt?: Date | string | null
+  lastImportError?: string | null
   firstStrikeAt?: Date | string
   lastStrikeAt?: Date | string
   instance: Prisma.ServiceInstanceCreateNestedOneWithoutQueueCleanerStrikesInput
@@ -347,6 +390,9 @@ export type QueueCleanerStrikeUncheckedCreateInput = {
   strikeCount?: number
   lastRule: string
   lastReason: string
+  importAttempts?: number
+  lastImportAttempt?: Date | string | null
+  lastImportError?: string | null
   firstStrikeAt?: Date | string
   lastStrikeAt?: Date | string
 }
@@ -359,6 +405,9 @@ export type QueueCleanerStrikeUpdateInput = {
   strikeCount?: Prisma.IntFieldUpdateOperationsInput | number
   lastRule?: Prisma.StringFieldUpdateOperationsInput | string
   lastReason?: Prisma.StringFieldUpdateOperationsInput | string
+  importAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lastImportAttempt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastImportError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   firstStrikeAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lastStrikeAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   instance?: Prisma.ServiceInstanceUpdateOneRequiredWithoutQueueCleanerStrikesNestedInput
@@ -373,6 +422,9 @@ export type QueueCleanerStrikeUncheckedUpdateInput = {
   strikeCount?: Prisma.IntFieldUpdateOperationsInput | number
   lastRule?: Prisma.StringFieldUpdateOperationsInput | string
   lastReason?: Prisma.StringFieldUpdateOperationsInput | string
+  importAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lastImportAttempt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastImportError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   firstStrikeAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lastStrikeAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -386,6 +438,9 @@ export type QueueCleanerStrikeCreateManyInput = {
   strikeCount?: number
   lastRule: string
   lastReason: string
+  importAttempts?: number
+  lastImportAttempt?: Date | string | null
+  lastImportError?: string | null
   firstStrikeAt?: Date | string
   lastStrikeAt?: Date | string
 }
@@ -398,6 +453,9 @@ export type QueueCleanerStrikeUpdateManyMutationInput = {
   strikeCount?: Prisma.IntFieldUpdateOperationsInput | number
   lastRule?: Prisma.StringFieldUpdateOperationsInput | string
   lastReason?: Prisma.StringFieldUpdateOperationsInput | string
+  importAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lastImportAttempt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastImportError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   firstStrikeAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lastStrikeAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -411,6 +469,9 @@ export type QueueCleanerStrikeUncheckedUpdateManyInput = {
   strikeCount?: Prisma.IntFieldUpdateOperationsInput | number
   lastRule?: Prisma.StringFieldUpdateOperationsInput | string
   lastReason?: Prisma.StringFieldUpdateOperationsInput | string
+  importAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lastImportAttempt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastImportError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   firstStrikeAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lastStrikeAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -439,12 +500,16 @@ export type QueueCleanerStrikeCountOrderByAggregateInput = {
   strikeCount?: Prisma.SortOrder
   lastRule?: Prisma.SortOrder
   lastReason?: Prisma.SortOrder
+  importAttempts?: Prisma.SortOrder
+  lastImportAttempt?: Prisma.SortOrder
+  lastImportError?: Prisma.SortOrder
   firstStrikeAt?: Prisma.SortOrder
   lastStrikeAt?: Prisma.SortOrder
 }
 
 export type QueueCleanerStrikeAvgOrderByAggregateInput = {
   strikeCount?: Prisma.SortOrder
+  importAttempts?: Prisma.SortOrder
 }
 
 export type QueueCleanerStrikeMaxOrderByAggregateInput = {
@@ -456,6 +521,9 @@ export type QueueCleanerStrikeMaxOrderByAggregateInput = {
   strikeCount?: Prisma.SortOrder
   lastRule?: Prisma.SortOrder
   lastReason?: Prisma.SortOrder
+  importAttempts?: Prisma.SortOrder
+  lastImportAttempt?: Prisma.SortOrder
+  lastImportError?: Prisma.SortOrder
   firstStrikeAt?: Prisma.SortOrder
   lastStrikeAt?: Prisma.SortOrder
 }
@@ -469,12 +537,16 @@ export type QueueCleanerStrikeMinOrderByAggregateInput = {
   strikeCount?: Prisma.SortOrder
   lastRule?: Prisma.SortOrder
   lastReason?: Prisma.SortOrder
+  importAttempts?: Prisma.SortOrder
+  lastImportAttempt?: Prisma.SortOrder
+  lastImportError?: Prisma.SortOrder
   firstStrikeAt?: Prisma.SortOrder
   lastStrikeAt?: Prisma.SortOrder
 }
 
 export type QueueCleanerStrikeSumOrderByAggregateInput = {
   strikeCount?: Prisma.SortOrder
+  importAttempts?: Prisma.SortOrder
 }
 
 export type QueueCleanerStrikeCreateNestedManyWithoutInstanceInput = {
@@ -527,6 +599,9 @@ export type QueueCleanerStrikeCreateWithoutInstanceInput = {
   strikeCount?: number
   lastRule: string
   lastReason: string
+  importAttempts?: number
+  lastImportAttempt?: Date | string | null
+  lastImportError?: string | null
   firstStrikeAt?: Date | string
   lastStrikeAt?: Date | string
 }
@@ -539,6 +614,9 @@ export type QueueCleanerStrikeUncheckedCreateWithoutInstanceInput = {
   strikeCount?: number
   lastRule: string
   lastReason: string
+  importAttempts?: number
+  lastImportAttempt?: Date | string | null
+  lastImportError?: string | null
   firstStrikeAt?: Date | string
   lastStrikeAt?: Date | string
 }
@@ -580,6 +658,9 @@ export type QueueCleanerStrikeScalarWhereInput = {
   strikeCount?: Prisma.IntFilter<"QueueCleanerStrike"> | number
   lastRule?: Prisma.StringFilter<"QueueCleanerStrike"> | string
   lastReason?: Prisma.StringFilter<"QueueCleanerStrike"> | string
+  importAttempts?: Prisma.IntFilter<"QueueCleanerStrike"> | number
+  lastImportAttempt?: Prisma.DateTimeNullableFilter<"QueueCleanerStrike"> | Date | string | null
+  lastImportError?: Prisma.StringNullableFilter<"QueueCleanerStrike"> | string | null
   firstStrikeAt?: Prisma.DateTimeFilter<"QueueCleanerStrike"> | Date | string
   lastStrikeAt?: Prisma.DateTimeFilter<"QueueCleanerStrike"> | Date | string
 }
@@ -592,6 +673,9 @@ export type QueueCleanerStrikeCreateManyInstanceInput = {
   strikeCount?: number
   lastRule: string
   lastReason: string
+  importAttempts?: number
+  lastImportAttempt?: Date | string | null
+  lastImportError?: string | null
   firstStrikeAt?: Date | string
   lastStrikeAt?: Date | string
 }
@@ -604,6 +688,9 @@ export type QueueCleanerStrikeUpdateWithoutInstanceInput = {
   strikeCount?: Prisma.IntFieldUpdateOperationsInput | number
   lastRule?: Prisma.StringFieldUpdateOperationsInput | string
   lastReason?: Prisma.StringFieldUpdateOperationsInput | string
+  importAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lastImportAttempt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastImportError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   firstStrikeAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lastStrikeAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -616,6 +703,9 @@ export type QueueCleanerStrikeUncheckedUpdateWithoutInstanceInput = {
   strikeCount?: Prisma.IntFieldUpdateOperationsInput | number
   lastRule?: Prisma.StringFieldUpdateOperationsInput | string
   lastReason?: Prisma.StringFieldUpdateOperationsInput | string
+  importAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lastImportAttempt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastImportError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   firstStrikeAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lastStrikeAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -628,6 +718,9 @@ export type QueueCleanerStrikeUncheckedUpdateManyWithoutInstanceInput = {
   strikeCount?: Prisma.IntFieldUpdateOperationsInput | number
   lastRule?: Prisma.StringFieldUpdateOperationsInput | string
   lastReason?: Prisma.StringFieldUpdateOperationsInput | string
+  importAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lastImportAttempt?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  lastImportError?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   firstStrikeAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   lastStrikeAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -643,6 +736,9 @@ export type QueueCleanerStrikeSelect<ExtArgs extends runtime.Types.Extensions.In
   strikeCount?: boolean
   lastRule?: boolean
   lastReason?: boolean
+  importAttempts?: boolean
+  lastImportAttempt?: boolean
+  lastImportError?: boolean
   firstStrikeAt?: boolean
   lastStrikeAt?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
@@ -657,6 +753,9 @@ export type QueueCleanerStrikeSelectCreateManyAndReturn<ExtArgs extends runtime.
   strikeCount?: boolean
   lastRule?: boolean
   lastReason?: boolean
+  importAttempts?: boolean
+  lastImportAttempt?: boolean
+  lastImportError?: boolean
   firstStrikeAt?: boolean
   lastStrikeAt?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
@@ -671,6 +770,9 @@ export type QueueCleanerStrikeSelectUpdateManyAndReturn<ExtArgs extends runtime.
   strikeCount?: boolean
   lastRule?: boolean
   lastReason?: boolean
+  importAttempts?: boolean
+  lastImportAttempt?: boolean
+  lastImportError?: boolean
   firstStrikeAt?: boolean
   lastStrikeAt?: boolean
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
@@ -685,11 +787,14 @@ export type QueueCleanerStrikeSelectScalar = {
   strikeCount?: boolean
   lastRule?: boolean
   lastReason?: boolean
+  importAttempts?: boolean
+  lastImportAttempt?: boolean
+  lastImportError?: boolean
   firstStrikeAt?: boolean
   lastStrikeAt?: boolean
 }
 
-export type QueueCleanerStrikeOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "downloadId" | "downloadTitle" | "downloadHash" | "strikeCount" | "lastRule" | "lastReason" | "firstStrikeAt" | "lastStrikeAt", ExtArgs["result"]["queueCleanerStrike"]>
+export type QueueCleanerStrikeOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "instanceId" | "downloadId" | "downloadTitle" | "downloadHash" | "strikeCount" | "lastRule" | "lastReason" | "importAttempts" | "lastImportAttempt" | "lastImportError" | "firstStrikeAt" | "lastStrikeAt", ExtArgs["result"]["queueCleanerStrike"]>
 export type QueueCleanerStrikeInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   instance?: boolean | Prisma.ServiceInstanceDefaultArgs<ExtArgs>
 }
@@ -714,6 +819,9 @@ export type $QueueCleanerStrikePayload<ExtArgs extends runtime.Types.Extensions.
     strikeCount: number
     lastRule: string
     lastReason: string
+    importAttempts: number
+    lastImportAttempt: Date | null
+    lastImportError: string | null
     firstStrikeAt: Date
     lastStrikeAt: Date
   }, ExtArgs["result"]["queueCleanerStrike"]>
@@ -1148,6 +1256,9 @@ export interface QueueCleanerStrikeFieldRefs {
   readonly strikeCount: Prisma.FieldRef<"QueueCleanerStrike", 'Int'>
   readonly lastRule: Prisma.FieldRef<"QueueCleanerStrike", 'String'>
   readonly lastReason: Prisma.FieldRef<"QueueCleanerStrike", 'String'>
+  readonly importAttempts: Prisma.FieldRef<"QueueCleanerStrike", 'Int'>
+  readonly lastImportAttempt: Prisma.FieldRef<"QueueCleanerStrike", 'DateTime'>
+  readonly lastImportError: Prisma.FieldRef<"QueueCleanerStrike", 'String'>
   readonly firstStrikeAt: Prisma.FieldRef<"QueueCleanerStrike", 'DateTime'>
   readonly lastStrikeAt: Prisma.FieldRef<"QueueCleanerStrike", 'DateTime'>
 }

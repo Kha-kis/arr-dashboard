@@ -96,6 +96,12 @@ export const MAX_CLEAN_DURATION_MS = 5 * 60 * 1000;
 /** Scheduler tick interval (60 seconds) */
 export const SCHEDULER_TICK_MS = 60 * 1000;
 
+/** Delay between auto-import attempts to avoid overwhelming ARR (200ms) */
+export const AUTO_IMPORT_DELAY_MS = 200;
+
+/** Maximum auto-import attempts per cleaner run to prevent runaway imports */
+export const MAX_AUTO_IMPORTS_PER_RUN = 10;
+
 // ============================================================================
 // Detection Keyword Arrays (Backend-Only)
 // ============================================================================
@@ -195,3 +201,82 @@ export const IMPORT_PENDING_RECOVERABLE_KEYWORDS = [
 
 /** Supported whitelist pattern types */
 export const WHITELIST_TYPES = ["tracker", "tag", "category", "title"] as const;
+
+// ============================================================================
+// Auto-Import Constants (Backend-Only)
+// ============================================================================
+
+/** Minimum number of auto-import attempts before giving up */
+export const MIN_AUTO_IMPORT_ATTEMPTS = 1;
+
+/** Maximum number of auto-import attempts before giving up */
+export const MAX_AUTO_IMPORT_ATTEMPTS = 5;
+
+/** Default number of auto-import attempts */
+export const DEFAULT_AUTO_IMPORT_ATTEMPTS = 2;
+
+/** Minimum cooldown between auto-import attempts on same item (minutes) */
+export const MIN_AUTO_IMPORT_COOLDOWN_MINS = 5;
+
+/** Maximum cooldown between auto-import attempts on same item (minutes) */
+export const MAX_AUTO_IMPORT_COOLDOWN_MINS = 240;
+
+/** Default cooldown between auto-import attempts (minutes) */
+export const DEFAULT_AUTO_IMPORT_COOLDOWN_MINS = 30;
+
+/**
+ * Status patterns that are SAFE for auto-import.
+ * These patterns indicate the item is ready and likely to import successfully.
+ *
+ * Common scenarios:
+ * - Radarr: "Found matching movie via grab history, but release was matched to movie by ID. Manual Import required."
+ * - Sonarr: "Found matching series via grab history, but release was matched to series by ID. Automatic import is not possible."
+ * - General: Items waiting for user confirmation but file is correctly identified
+ */
+export const AUTO_IMPORT_SAFE_KEYWORDS = [
+	// Direct import requests
+	"waiting for import",
+	"import pending",
+	"manual import required",
+	"manual import",
+	"waiting for manual",
+	// ID-matched items (file correctly identified via grab history)
+	"matched to series by id",
+	"matched to movie by id",
+	"matched to artist by id",
+	"matched to album by id",
+	"matched to book by id",
+	// Grab history match (indicates proper tracking)
+	"via grab history",
+] as const;
+
+/**
+ * Status patterns that should NEVER be auto-imported.
+ * These will always fail or cause problems if imported.
+ */
+export const AUTO_IMPORT_NEVER_KEYWORDS = [
+	// Content doesn't exist or is unusable
+	"no video files",
+	"no files found",
+	"no files",
+	"sample only",
+	"sample file",
+	// Extraction/unpacking issues - can't import until resolved
+	"password protected",
+	"unpack required",
+	"rar required",
+	"unpacking failed",
+	"extraction failed",
+	// Quality rejection - ARR explicitly doesn't want this content
+	"quality not wanted",
+	"not an upgrade",
+	"cutoff already met",
+	"not wanted in",
+	// Already exists - import would fail anyway
+	"already exists",
+	"already in library",
+	"duplicate",
+	// Path issues
+	"path does not exist",
+	"file not found",
+] as const;
