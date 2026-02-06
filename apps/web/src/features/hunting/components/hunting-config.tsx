@@ -18,6 +18,14 @@ import {
 } from "lucide-react";
 import { Button, Input, Switch, Alert, AlertDescription } from "../../../components/ui";
 import {
+	Dialog,
+	DialogContent,
+	DialogHeader,
+	DialogTitle,
+	DialogDescription,
+	DialogFooter,
+} from "../../../components/ui/dialog";
+import {
 	PremiumSection,
 	PremiumEmptyState,
 	PremiumCard,
@@ -272,6 +280,9 @@ interface InstanceConfigCardProps {
 const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceConfigCardProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 
+	// Confirmation dialog state
+	const [showResetConfirm, setShowResetConfirm] = useState(false);
+
 	const [formState, setFormState] = useState<HuntConfigUpdate>({
 		huntMissingEnabled: config.huntMissingEnabled,
 		huntUpgradesEnabled: config.huntUpgradesEnabled,
@@ -329,11 +340,13 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 	const handleResetHistory = async () => {
 		try {
 			const result = await clearHistory(config.instanceId);
+			setShowResetConfirm(false);
 			toast.success("Search history cleared", {
 				description: `${result.deleted} records removed. Next hunt will start from page 1.`,
 			});
 			onSaved();
 		} catch (err) {
+			setShowResetConfirm(false);
 			const message = err instanceof Error ? err.message : "An unexpected error occurred";
 			toast.error("Failed to clear search history", { description: message });
 		}
@@ -594,7 +607,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 						<Button
 							variant="ghost"
 							size="sm"
-							onClick={() => void handleResetHistory()}
+							onClick={() => setShowResetConfirm(true)}
 							disabled={isClearing}
 							className="gap-2 text-muted-foreground hover:text-foreground"
 							title="Reset search history to start from page 1"
@@ -607,6 +620,53 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 							Reset History
 						</Button>
 					</div>
+
+					{/* Reset History Confirmation Dialog */}
+					<Dialog open={showResetConfirm} onOpenChange={setShowResetConfirm}>
+						<DialogContent className="max-w-md">
+							<DialogHeader>
+								<DialogTitle className="flex items-center gap-2">
+									<Trash2 className="h-5 w-5 text-amber-500" />
+									Reset Search History
+								</DialogTitle>
+								<DialogDescription>
+									Are you sure you want to clear the search history for{" "}
+									<span className="font-medium text-foreground">{config.instanceName}</span>?
+								</DialogDescription>
+							</DialogHeader>
+							<div className="rounded-lg border border-border/50 bg-muted/30 p-3 text-sm text-muted-foreground">
+								This will delete all search timestamps, allowing the hunting system to re-search
+								previously searched items. The next hunt will start from page 1.
+							</div>
+							<DialogFooter>
+								<Button
+									variant="secondary"
+									onClick={() => setShowResetConfirm(false)}
+									disabled={isClearing}
+								>
+									Cancel
+								</Button>
+								<Button
+									variant="danger"
+									onClick={() => void handleResetHistory()}
+									disabled={isClearing}
+									className="gap-2"
+								>
+									{isClearing ? (
+										<>
+											<RotateCcw className="h-4 w-4 animate-spin" />
+											Clearing...
+										</>
+									) : (
+										<>
+											<Trash2 className="h-4 w-4" />
+											Reset History
+										</>
+									)}
+								</Button>
+							</DialogFooter>
+						</DialogContent>
+					</Dialog>
 					<GradientButton
 						onClick={() => void handleSave()}
 						disabled={isUpdating || !hasChanges}
