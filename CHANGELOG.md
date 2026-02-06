@@ -5,6 +5,25 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.0] - 2026-02-06
+
+### Added
+
+- **Full Lidarr & Readarr Support** - Complete integration for music (Lidarr) and book (Readarr) management. All features now work across Sonarr, Radarr, Lidarr, and Readarr including queue management, library sync, manual import, and queue cleaner ([#87](https://github.com/Kha-kis/arr-dashboard/pull/87))
+- **Queue Cleaner Auto-Import** - New experimental feature that attempts to automatically import stuck downloads before removing them. Configurable safe/never patterns, max attempts, cooldown periods, and rate limiting. Live tested with 87% Sonarr and 100% Radarr success rates ([#88](https://github.com/Kha-kis/arr-dashboard/pull/88), [#80](https://github.com/Kha-kis/arr-dashboard/issues/80))
+- **Import Pending/Blocked Toggle** - Queue Cleaner now has a dedicated toggle to enable/disable import pending/blocked cleanup separately from other rules
+
+### Fixed
+
+- **TRaSH Guides Quality Format Reversal** - Temporarily disabled quality format reversal feature pending upstream TRaSH PR #2590 merge to prevent incorrect format application
+
+### Security
+
+- **Auto-import rate limiting** - 200ms delay between import attempts and max 10 imports per cleaner run to prevent overwhelming ARR instances
+- **Pattern validation** - Custom auto-import patterns validated with size limits (10KB max, 50 patterns max, 200 chars per pattern)
+
+---
+
 ## [2.7.4] - 2026-02-05
 
 ### Added
@@ -486,6 +505,8 @@ Major dependency updates:
 
 ---
 
+[2.8.0]: https://github.com/Kha-kis/arr-dashboard/compare/v2.7.4...v2.8.0
+[2.7.4]: https://github.com/Kha-kis/arr-dashboard/compare/v2.7.3...v2.7.4
 [2.7.3]: https://github.com/Kha-kis/arr-dashboard/compare/v2.7.2...v2.7.3
 [2.7.2]: https://github.com/Kha-kis/arr-dashboard/compare/v2.7.1...v2.7.2
 [2.7.1]: https://github.com/Kha-kis/arr-dashboard/compare/v2.7.0...v2.7.1
