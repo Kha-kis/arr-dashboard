@@ -1,19 +1,32 @@
 import { z } from "zod";
 
-export const libraryServiceSchema = z.enum(["sonarr", "radarr"]);
+export const libraryServiceSchema = z.enum(["sonarr", "radarr", "lidarr", "readarr"]);
 export type LibraryService = z.infer<typeof libraryServiceSchema>;
 
-export const libraryItemTypeSchema = z.enum(["movie", "series"]);
+export const libraryItemTypeSchema = z.enum(["movie", "series", "artist", "author"]);
 export type LibraryItemType = z.infer<typeof libraryItemTypeSchema>;
 
 export const libraryItemStatisticsSchema = z.object({
+  // Sonarr-specific
   seasonCount: z.number().optional(),
   episodeCount: z.number().optional(),
   episodeFileCount: z.number().optional(),
   totalEpisodeCount: z.number().optional(),
   monitoredSeasons: z.number().optional(),
+  // Radarr-specific
   movieFileQuality: z.string().optional(),
   runtime: z.number().optional(),
+  // Lidarr-specific (artist/album stats)
+  albumCount: z.number().optional(),
+  trackCount: z.number().optional(),
+  trackFileCount: z.number().optional(),
+  totalTrackCount: z.number().optional(),
+  missingTrackCount: z.number().optional(),
+  // Readarr-specific (author/book stats)
+  bookCount: z.number().optional(),
+  bookFileCount: z.number().optional(),
+  totalBookCount: z.number().optional(),
+  missingBookCount: z.number().optional(),
 });
 
 export type LibraryItemStatistics = z.infer<typeof libraryItemStatisticsSchema>;
@@ -74,6 +87,11 @@ export const libraryItemSchema = z.object({
       tmdbId: z.number().optional(),
       imdbId: z.string().optional(),
       tvdbId: z.number().optional(),
+      // Lidarr identifiers
+      musicBrainzId: z.string().optional(),
+      // Readarr identifiers
+      goodreadsId: z.string().optional(),
+      asin: z.string().optional(),
     })
     .optional(),
   statistics: libraryItemStatisticsSchema.optional(),
@@ -254,3 +272,137 @@ export const libraryEpisodeMonitorRequestSchema = z.object({
 export type LibraryEpisodeMonitorRequest = z.infer<
   typeof libraryEpisodeMonitorRequestSchema
 >;
+
+// ============================================================================
+// Lidarr Album Types (children of artists)
+// ============================================================================
+
+export const libraryAlbumSchema = z.object({
+  id: z.number(),
+  artistId: z.number(),
+  title: z.string(),
+  releaseDate: z.string().optional(),
+  albumType: z.string().optional(),
+  genres: z.array(z.string()).optional(),
+  hasFile: z.boolean().optional(),
+  monitored: z.boolean().optional(),
+  statistics: z.object({
+    trackCount: z.number().optional(),
+    trackFileCount: z.number().optional(),
+    totalTrackCount: z.number().optional(),
+    sizeOnDisk: z.number().optional(),
+    percentOfTracks: z.number().min(0).max(100).optional(),
+  }).optional(),
+  overview: z.string().optional(),
+  images: z.array(z.object({
+    coverType: z.string().optional(),
+    url: z.string().optional(),
+  })).optional(),
+  foreignAlbumId: z.string().optional(),
+});
+
+export type LibraryAlbum = z.infer<typeof libraryAlbumSchema>;
+
+export const libraryAlbumsRequestSchema = z.object({
+  instanceId: z.string(),
+  artistId: z.union([z.number(), z.string()]),
+});
+
+export type LibraryAlbumsRequest = z.infer<typeof libraryAlbumsRequestSchema>;
+
+export const libraryAlbumsResponseSchema = z.object({
+  albums: z.array(libraryAlbumSchema),
+});
+
+export type LibraryAlbumsResponse = z.infer<typeof libraryAlbumsResponseSchema>;
+
+export const libraryAlbumSearchRequestSchema = z.object({
+  instanceId: z.string(),
+  albumIds: z.array(z.number()),
+});
+
+export type LibraryAlbumSearchRequest = z.infer<typeof libraryAlbumSearchRequestSchema>;
+
+export const libraryAlbumMonitorRequestSchema = z.object({
+  instanceId: z.string(),
+  artistId: z.union([z.number(), z.string()]),
+  albumIds: z.array(z.number()),
+  monitored: z.boolean(),
+});
+
+export type LibraryAlbumMonitorRequest = z.infer<typeof libraryAlbumMonitorRequestSchema>;
+
+// ============================================================================
+// Readarr Book Types (children of authors)
+// ============================================================================
+
+export const libraryBookSchema = z.object({
+  id: z.number(),
+  authorId: z.number(),
+  title: z.string(),
+  releaseDate: z.string().optional(),
+  genres: z.array(z.string()).optional(),
+  hasFile: z.boolean().optional(),
+  monitored: z.boolean().optional(),
+  statistics: z.object({
+    bookFileCount: z.number().optional(),
+    sizeOnDisk: z.number().optional(),
+  }).optional(),
+  overview: z.string().optional(),
+  images: z.array(z.object({
+    coverType: z.string().optional(),
+    url: z.string().optional(),
+  })).optional(),
+  foreignBookId: z.string().optional(),
+  asin: z.string().optional(),
+  pageCount: z.number().nonnegative().optional(),
+});
+
+export type LibraryBook = z.infer<typeof libraryBookSchema>;
+
+export const libraryBooksRequestSchema = z.object({
+  instanceId: z.string(),
+  authorId: z.union([z.number(), z.string()]),
+});
+
+export type LibraryBooksRequest = z.infer<typeof libraryBooksRequestSchema>;
+
+export const libraryBooksResponseSchema = z.object({
+  books: z.array(libraryBookSchema),
+});
+
+export type LibraryBooksResponse = z.infer<typeof libraryBooksResponseSchema>;
+
+export const libraryBookSearchRequestSchema = z.object({
+  instanceId: z.string(),
+  bookIds: z.array(z.number()),
+});
+
+export type LibraryBookSearchRequest = z.infer<typeof libraryBookSearchRequestSchema>;
+
+export const libraryBookMonitorRequestSchema = z.object({
+  instanceId: z.string(),
+  authorId: z.union([z.number(), z.string()]),
+  bookIds: z.array(z.number()),
+  monitored: z.boolean(),
+});
+
+export type LibraryBookMonitorRequest = z.infer<typeof libraryBookMonitorRequestSchema>;
+
+// Lidarr artist search request
+export const libraryArtistSearchRequestSchema = z.object({
+  instanceId: z.string(),
+  service: z.literal("lidarr"),
+  artistId: z.union([z.number(), z.string()]),
+});
+
+export type LibraryArtistSearchRequest = z.infer<typeof libraryArtistSearchRequestSchema>;
+
+// Readarr author search request
+export const libraryAuthorSearchRequestSchema = z.object({
+  instanceId: z.string(),
+  service: z.literal("readarr"),
+  authorId: z.union([z.number(), z.string()]),
+});
+
+export type LibraryAuthorSearchRequest = z.infer<typeof libraryAuthorSearchRequestSchema>;

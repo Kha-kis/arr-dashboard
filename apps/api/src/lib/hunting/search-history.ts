@@ -9,9 +9,9 @@
 import { Prisma, type PrismaClient } from "../../lib/prisma.js";
 
 export interface SearchedItem {
-	mediaType: "movie" | "series" | "season" | "episode";
+	mediaType: "movie" | "series" | "season" | "episode" | "album" | "book";
 	mediaId: number;
-	seasonNumber?: number | null; // null for non-season items (movies, series, episodes)
+	seasonNumber?: number | null; // null for non-season items (movies, series, episodes, albums, books)
 	title: string;
 }
 

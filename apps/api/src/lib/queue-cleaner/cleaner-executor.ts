@@ -1125,7 +1125,7 @@ export async function executeEnhancedPreview(
 ): Promise<EnhancedPreviewResult> {
 	const client = app.arrClientFactory.create(instance);
 	const now = new Date();
-	const instanceService = instance.service.toLowerCase() as "sonarr" | "radarr";
+	const instanceService = instance.service.toLowerCase() as "sonarr" | "radarr" | "lidarr" | "readarr";
 
 	// Parse whitelist patterns
 	// SAFETY: If whitelist is enabled but patterns are invalid, return error preview

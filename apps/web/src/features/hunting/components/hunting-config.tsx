@@ -251,7 +251,7 @@ export const HuntingConfig = () => {
 				<PremiumEmptyState
 					icon={Settings}
 					title="No instances available"
-					description="Add Sonarr or Radarr instances in Settings first."
+					description="Add Sonarr, Radarr, Lidarr, or Readarr instances in Settings first."
 				/>
 			)}
 		</div>

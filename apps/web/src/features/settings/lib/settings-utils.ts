@@ -83,6 +83,16 @@ export const getServicePlaceholders = (service: ServiceType) => {
 				label: "Primary Prowlarr",
 				baseUrl: "http://localhost:9696",
 			};
+		case "lidarr":
+			return {
+				label: "Primary Lidarr",
+				baseUrl: "http://localhost:8686",
+			};
+		case "readarr":
+			return {
+				label: "Primary Readarr",
+				baseUrl: "http://localhost:8787",
+			};
 		default:
 			return {
 				label: "Primary Instance",

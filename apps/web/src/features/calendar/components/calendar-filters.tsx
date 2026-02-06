@@ -10,6 +10,8 @@ const SERVICE_FILTERS = [
 	{ value: "all" as const, label: "All" },
 	{ value: "sonarr" as const, label: "Sonarr" },
 	{ value: "radarr" as const, label: "Radarr" },
+	{ value: "lidarr" as const, label: "Lidarr" },
+	{ value: "readarr" as const, label: "Readarr" },
 ];
 
 interface CalendarFiltersProps {

@@ -1,16 +1,29 @@
 import {
+	type LibraryAlbum,
+	type LibraryBook,
 	type LibraryEpisode,
 	type LibraryItem,
 	type LibraryService,
 	type PaginatedLibraryResponse,
+	libraryAlbumsRequestSchema,
+	libraryAlbumsResponseSchema,
+	libraryBooksRequestSchema,
+	libraryBooksResponseSchema,
 	libraryEpisodesRequestSchema,
 	libraryEpisodesResponseSchema,
 	paginatedLibraryResponseSchema,
 } from "@arr/shared";
-import type { Prisma, ServiceType } from "../../lib/prisma.js";
+import type { Prisma, LibraryItemType as PrismaLibraryItemType } from "../../lib/prisma.js";
 import type { FastifyPluginCallback } from "fastify";
-import { getClientForInstance, isSonarrClient } from "../../lib/arr/client-helpers.js";
+import {
+	getClientForInstance,
+	isLidarrClient,
+	isReadarrClient,
+	isSonarrClient,
+} from "../../lib/arr/client-helpers.js";
 import { ArrError, arrErrorToHttpStatus } from "../../lib/arr/client-factory.js";
+import { normalizeAlbum } from "../../lib/library/album-normalizer.js";
+import { normalizeBook } from "../../lib/library/book-normalizer.js";
 import { normalizeEpisode } from "../../lib/library/episode-normalizer.js";
 import { libraryQuerySchema } from "../../lib/library/validation-schemas.js";
 import { getLibrarySyncScheduler } from "../../lib/library-sync/index.js";
@@ -25,7 +38,6 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 	app.addHook("preHandler", async (request, reply) => {
 		if (!request.currentUser?.id) {
 			return reply.status(401).send({
-				success: false,
 				error: "Authentication required",
 			});
 		}
@@ -44,7 +56,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			where: {
 				userId,
 				enabled: true,
-				service: { in: ["SONARR", "RADARR"] },
+				service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
 			},
 			select: { id: true },
 		});
@@ -137,9 +149,15 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			where.instanceId = parsed.instanceId;
 		}
 
-		// Service filter (sonarr = series, radarr = movie)
+		// Service filter (sonarr = series, radarr = movie, lidarr = artist, readarr = author)
 		if (parsed.service) {
-			where.itemType = parsed.service === "sonarr" ? "series" : "movie";
+			const serviceToItemType: Record<LibraryService, PrismaLibraryItemType> = {
+				sonarr: "series",
+				radarr: "movie",
+				lidarr: "artist",
+				readarr: "author",
+			};
+			where.itemType = serviceToItemType[parsed.service];
 		}
 
 		// Search filter (case-insensitive title search)
@@ -226,12 +244,18 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 					"Failed to parse cached library item - returning minimal fallback",
 				);
 				// Fallback if JSON parsing fails
+				const itemTypeToService: Record<string, LibraryService> = {
+					series: "sonarr",
+					movie: "radarr",
+					artist: "lidarr",
+					author: "readarr",
+				};
 				return {
 					id: item.arrItemId,
 					instanceId: item.instanceId,
 					instanceName: "",
-					service: item.itemType === "movie" ? "radarr" : "sonarr",
-					type: item.itemType as "movie" | "series",
+					service: itemTypeToService[item.itemType] ?? "sonarr",
+					type: item.itemType as "movie" | "series" | "artist" | "author",
 					title: item.title,
 					titleSlug: item.titleSlug ?? undefined,
 					sortTitle: item.sortTitle ?? undefined,
@@ -306,7 +330,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 		const clientResult = await getClientForInstance(app, request, parsed.instanceId);
 		if (!clientResult.success) {
 			return reply.status(clientResult.statusCode).send({
-				message: clientResult.error,
+				error: clientResult.error,
 			});
 		}
 
@@ -315,14 +339,14 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 
 		if (service !== "sonarr" || !isSonarrClient(client)) {
 			return reply.status(400).send({
-				message: "Episodes are only available for Sonarr instances",
+				error: "Episodes are only available for Sonarr instances",
 			});
 		}
 
 		const seriesId = Number(parsed.seriesId);
 		if (!Number.isFinite(seriesId)) {
 			return reply.status(400).send({
-				message: "Invalid series identifier",
+				error: "Invalid series identifier",
 			});
 		}
 
@@ -345,12 +369,128 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 
 			if (error instanceof ArrError) {
 				return reply.status(arrErrorToHttpStatus(error)).send({
-					message: error.message,
+					error: error.message,
 				});
 			}
 
 			return reply.status(502).send({
-				message: "Failed to fetch episodes",
+				error: "Failed to fetch episodes",
+			});
+		}
+	});
+
+	/**
+	 * GET /library/albums
+	 * Fetches albums for a specific artist from a Lidarr instance
+	 * Note: Albums are NOT cached - fetched directly from ARR
+	 */
+	app.get("/library/albums", async (request, reply) => {
+		const parsed = libraryAlbumsRequestSchema.parse(request.query ?? {});
+
+		const clientResult = await getClientForInstance(app, request, parsed.instanceId);
+		if (!clientResult.success) {
+			return reply.status(clientResult.statusCode).send({
+				error: clientResult.error,
+			});
+		}
+
+		const { client, instance } = clientResult;
+		const service = instance.service.toLowerCase() as LibraryService;
+
+		if (service !== "lidarr" || !isLidarrClient(client)) {
+			return reply.status(400).send({
+				error: "Albums are only available for Lidarr instances",
+			});
+		}
+
+		const artistId = Number(parsed.artistId);
+		if (!Number.isFinite(artistId)) {
+			return reply.status(400).send({
+				error: "Invalid artist identifier",
+			});
+		}
+
+		try {
+			// Lidarr album endpoint: /api/v1/album?artistId=X
+			const rawAlbums = await client.album.getAll({ artistId });
+
+			const albums: LibraryAlbum[] = rawAlbums.map((raw) =>
+				normalizeAlbum(raw as Record<string, unknown>, artistId, instance.baseUrl),
+			);
+
+			return libraryAlbumsResponseSchema.parse({ albums });
+		} catch (error) {
+			request.log.error(
+				{ err: error, instance: instance.id, artistId },
+				"failed to fetch albums",
+			);
+
+			if (error instanceof ArrError) {
+				return reply.status(arrErrorToHttpStatus(error)).send({
+					error: error.message,
+				});
+			}
+
+			return reply.status(502).send({
+				error: "Failed to fetch albums",
+			});
+		}
+	});
+
+	/**
+	 * GET /library/books
+	 * Fetches books for a specific author from a Readarr instance
+	 * Note: Books are NOT cached - fetched directly from ARR
+	 */
+	app.get("/library/books", async (request, reply) => {
+		const parsed = libraryBooksRequestSchema.parse(request.query ?? {});
+
+		const clientResult = await getClientForInstance(app, request, parsed.instanceId);
+		if (!clientResult.success) {
+			return reply.status(clientResult.statusCode).send({
+				error: clientResult.error,
+			});
+		}
+
+		const { client, instance } = clientResult;
+		const service = instance.service.toLowerCase() as LibraryService;
+
+		if (service !== "readarr" || !isReadarrClient(client)) {
+			return reply.status(400).send({
+				error: "Books are only available for Readarr instances",
+			});
+		}
+
+		const authorId = Number(parsed.authorId);
+		if (!Number.isFinite(authorId)) {
+			return reply.status(400).send({
+				error: "Invalid author identifier",
+			});
+		}
+
+		try {
+			// Readarr book endpoint: /api/v1/book?authorId=X
+			const rawBooks = await client.book.getAll({ authorId });
+
+			const books: LibraryBook[] = rawBooks.map((raw) =>
+				normalizeBook(raw as Record<string, unknown>, authorId, instance.baseUrl),
+			);
+
+			return libraryBooksResponseSchema.parse({ books });
+		} catch (error) {
+			request.log.error(
+				{ err: error, instance: instance.id, authorId },
+				"failed to fetch books",
+			);
+
+			if (error instanceof ArrError) {
+				return reply.status(arrErrorToHttpStatus(error)).send({
+					error: error.message,
+				});
+			}
+
+			return reply.status(502).send({
+				error: "Failed to fetch books",
 			});
 		}
 	});

@@ -228,7 +228,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 			const instances = await app.prisma.serviceInstance.findMany({
 				where: {
 					userId,
-					service: { in: ["SONARR", "RADARR"] },
+					service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
 				},
 				include: {
 					queueCleanerConfig: true,
@@ -296,7 +296,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 			const instances = await app.prisma.serviceInstance.findMany({
 				where: {
 					userId,
-					service: { in: ["SONARR", "RADARR"] },
+					service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
 				},
 				include: {
 					queueCleanerConfig: true,
@@ -742,7 +742,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 			const instances = await app.prisma.serviceInstance.findMany({
 				where: {
 					userId,
-					service: { in: ["SONARR", "RADARR"] },
+					service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
 				},
 				include: { queueCleanerConfig: true },
 			});

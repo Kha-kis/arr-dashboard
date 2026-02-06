@@ -1,6 +1,9 @@
 import type { HistoryItem } from "@arr/shared";
 import { toNumber, toStringValue } from "../data/values.js";
 
+/** Service types that support history functionality */
+export type HistoryService = "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr";
+
 /**
  * Type alias for dynamic API responses. Uses `any` to allow flexible property access
  * while safety is enforced through helper functions (toStringValue, toNumber, etc.)
@@ -10,16 +13,18 @@ type UnknownRecord = Record<string, any>;
 
 /**
  * Returns the API path for history endpoints
+ * Note: Prowlarr, Lidarr, and Readarr use v1 API; Sonarr/Radarr use v3
  */
-export const historyApiPath = (service: "sonarr" | "radarr" | "prowlarr") =>
-	service === "prowlarr" ? "/api/v1/history" : "/api/v3/history";
+export const historyApiPath = (service: HistoryService) =>
+	["prowlarr", "lidarr", "readarr"].includes(service) ? "/api/v1/history" : "/api/v3/history";
 
 /**
  * Normalizes a raw history item from the ARR API into a consistent format
+ * Supports Sonarr (episodes), Radarr (movies), Prowlarr (indexer), Lidarr (albums/tracks), and Readarr (books)
  */
 export const normalizeHistoryItem = (
 	item: unknown,
-	service: "sonarr" | "radarr" | "prowlarr",
+	service: HistoryService,
 ): HistoryItem => {
 	const anyItem = item as UnknownRecord;
 	const rawId =
@@ -64,16 +69,23 @@ export const normalizeHistoryItem = (
 			toStringValue(dataObj.host))
 		: undefined;
 
+	// Extract title based on service type
+	const extractedTitle =
+		prowlarrTitle ??
+		toStringValue(anyItem.title) ??
+		toStringValue(anyItem.sourceTitle) ??
+		toStringValue(anyItem.series?.title) ??
+		toStringValue(anyItem.movie?.title) ??
+		toStringValue(anyItem.artist?.artistName) ??
+		toStringValue(anyItem.album?.title) ??
+		toStringValue(anyItem.author?.authorName) ??
+		toStringValue(anyItem.book?.title) ??
+		"Untitled";
+
 	return {
 		id: normalizedId,
 		downloadId,
-		title:
-			prowlarrTitle ??
-			toStringValue(anyItem.title) ??
-			toStringValue(anyItem.sourceTitle) ??
-			toStringValue(anyItem.series?.title) ??
-			toStringValue(anyItem.movie?.title) ??
-			"Untitled",
+		title: extractedTitle,
 		size: toNumber(anyItem.size ?? dataObj.size),
 		quality: anyItem.quality ?? dataObj.quality,
 		status: toStringValue(anyItem.status ?? anyItem.eventType ?? anyItem.event),
@@ -95,11 +107,20 @@ export const normalizeHistoryItem = (
 		),
 		eventType: toStringValue(anyItem.eventType ?? anyItem.event),
 		sourceTitle: toStringValue(anyItem.sourceTitle ?? dataObj.source),
+		// Sonarr fields
 		seriesId: toNumber(anyItem.seriesId ?? anyItem.series?.id),
 		seriesSlug: toStringValue(anyItem.series?.titleSlug ?? anyItem.seriesSlug),
 		episodeId: toNumber(anyItem.episodeId ?? anyItem.episode?.id),
+		// Radarr fields
 		movieId: toNumber(anyItem.movieId ?? anyItem.movie?.id),
 		movieSlug: toStringValue(anyItem.movie?.titleSlug ?? anyItem.movieSlug),
+		// Lidarr fields
+		artistId: toNumber(anyItem.artistId ?? anyItem.artist?.id),
+		albumId: toNumber(anyItem.albumId ?? anyItem.album?.id),
+		trackId: toNumber(anyItem.trackId ?? anyItem.track?.id),
+		// Readarr fields
+		authorId: toNumber(anyItem.authorId ?? anyItem.author?.id),
+		bookId: toNumber(anyItem.bookId ?? anyItem.book?.id),
 		data: typeof anyItem.data === "object" ? anyItem.data : undefined,
 		instanceId: "",
 		instanceName: "",

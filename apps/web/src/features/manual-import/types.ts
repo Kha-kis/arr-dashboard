@@ -6,7 +6,7 @@ import type {
 	ManualImportSubmissionFile,
 } from "@arr/shared";
 
-export type ManualImportService = "sonarr" | "radarr";
+export type ManualImportService = "sonarr" | "radarr" | "lidarr" | "readarr";
 
 export type ManualImportCandidateUnion = ManualImportCandidate;
 export type ManualImportSonarrCandidate = ManualImportCandidateSonarr;

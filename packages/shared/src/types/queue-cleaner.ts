@@ -149,7 +149,7 @@ export const enhancedPreviewResultSchema = z.object({
 	// Instance metadata
 	instanceId: z.string(),
 	instanceLabel: z.string(),
-	instanceService: z.enum(["sonarr", "radarr"]),
+	instanceService: z.enum(["sonarr", "radarr", "lidarr", "readarr"]),
 	instanceReachable: z.boolean(),
 	/** Error message when instance is unreachable (for user diagnostics) */
 	errorMessage: z.string().optional(),

@@ -2,6 +2,8 @@ import type { HuntConfig, ServiceInstance } from "../../lib/prisma.js";
 import type { FastifyInstance, FastifyBaseLogger } from "fastify";
 import type { SonarrClient } from "arr-sdk/sonarr";
 import type { RadarrClient } from "arr-sdk/radarr";
+import type { LidarrClient } from "arr-sdk/lidarr";
+import type { ReadarrClient } from "arr-sdk/readarr";
 import { SEASON_SEARCH_THRESHOLD, SEARCH_DELAY_MS, GRAB_CHECK_DELAY_MS } from "./constants.js";
 import {
 	createSearchHistoryManager,
@@ -219,16 +221,19 @@ const SONARR_STATUS_HIERARCHY: Record<string, string[]> = {
 	ended: ["ended"],
 };
 
+/** Hunt service types */
+type HuntService = "sonarr" | "radarr" | "lidarr" | "readarr";
+
 /**
  * Expand a list of status keys to include lifecycle-related statuses for the specified service.
  *
  * Unknown statuses are preserved (converted to lowercase) so they can still be matched.
  *
  * @param statuses - Status keys selected by the user
- * @param service - Either `"sonarr"` or `"radarr"`, which determines the expansion hierarchy
+ * @param service - The service type which determines the expansion hierarchy
  * @returns A `Set` of lowercased statuses containing the original statuses and any hierarchically related statuses
  */
-function expandStatusFilters(statuses: string[], service: "sonarr" | "radarr"): Set<string> {
+function expandStatusFilters(statuses: string[], service: HuntService): Set<string> {
 	const hierarchy = service === "sonarr" ? SONARR_STATUS_HIERARCHY : RADARR_STATUS_HIERARCHY;
 	const expanded = new Set<string>();
 
@@ -251,13 +256,13 @@ function expandStatusFilters(statuses: string[], service: "sonarr" | "radarr"): 
  * Create a ParsedFilters object from a HuntConfig by parsing JSON-encoded arrays and expanding statuses for the target service.
  *
  * @param config - Hunt configuration containing raw filter values (JSON arrays encoded as strings and scalar filter settings)
- * @param service - Target service ("sonarr" or "radarr") used to expand provided statuses into the service-specific status hierarchy
+ * @param service - Target service used to expand provided statuses into the service-specific status hierarchy
  * @param logger - Fastify logger for structured logging
  * @returns A ParsedFilters object with parsed include/exclude tag and quality profile arrays, includeStatuses, expandedStatuses, year range, ageThresholdDays, filterLogic, and monitoredOnly flag
  */
 function parseFilters(
 	config: HuntConfig,
-	service: "sonarr" | "radarr",
+	service: HuntService,
 	logger: HuntLogger,
 ): ParsedFilters {
 	const parseJsonArray = (
@@ -483,7 +488,7 @@ export async function executeHuntWithSdk(
 	const client = app.arrClientFactory.create(instance);
 	const apiCallCounter: ApiCallCounter = { count: 0 };
 
-	const service = instance.service.toLowerCase() as "sonarr" | "radarr";
+	const service = instance.service.toLowerCase() as HuntService;
 	const filters = parseFilters(config, service, logger);
 
 	// Check queue threshold first
@@ -531,6 +536,30 @@ export async function executeHuntWithSdk(
 	if (service === "radarr") {
 		const result = await executeRadarrHuntWithSdk(
 			client as RadarrClient,
+			type,
+			batchSize,
+			filters,
+			historyManager,
+			apiCallCounter,
+			logger,
+		);
+		return { ...result, apiCallsMade: apiCallCounter.count };
+	}
+	if (service === "lidarr") {
+		const result = await executeLidarrHuntWithSdk(
+			client as LidarrClient,
+			type,
+			batchSize,
+			filters,
+			historyManager,
+			apiCallCounter,
+			logger,
+		);
+		return { ...result, apiCallsMade: apiCallCounter.count };
+	}
+	if (service === "readarr") {
+		const result = await executeReadarrHuntWithSdk(
+			client as ReadarrClient,
 			type,
 			batchSize,
 			filters,
@@ -1259,6 +1288,438 @@ async function executeRadarrHuntWithSdk(
 			searchedItems: [],
 			grabbedItems: [],
 			message: `Radarr hunt failed: ${message}`,
+			status: "error",
+		};
+	}
+}
+
+/**
+ * Execute Lidarr hunt using SDK
+ * Searches for missing albums or albums needing quality upgrades
+ */
+async function executeLidarrHuntWithSdk(
+	client: LidarrClient,
+	type: "missing" | "upgrade",
+	batchSize: number,
+	filters: ParsedFilters,
+	historyManager: SearchHistoryManager,
+	counter: ApiCallCounter,
+	logger: HuntLogger,
+): Promise<HuntResultWithoutApiCount> {
+	try {
+		// First, get all artists to have filter data available
+		counter.count++;
+		const allArtists = await client.artist.getAll();
+		const artistMap = new Map(allArtists.map((a) => [(a as { id?: number }).id ?? 0, a]));
+
+		const fetchSize = Math.max(batchSize * 5, 50);
+
+		// Calculate page offset based on recently searched items
+		const recentSearchCount = historyManager.getRecentSearchCount();
+		let pageOffset = Math.floor(recentSearchCount / fetchSize) + 1;
+
+		counter.count++;
+		let wantedData =
+			type === "missing"
+				? await client.wanted.getMissing({
+						page: pageOffset,
+						pageSize: fetchSize,
+						sortKey: "releaseDate",
+						sortDirection: "descending",
+					})
+				: await client.wanted.getCutoffUnmet({
+						page: pageOffset,
+						pageSize: fetchSize,
+						sortKey: "releaseDate",
+						sortDirection: "descending",
+					});
+
+		let albums = wantedData.records ?? [];
+
+		// Wrap around to page 1 if needed
+		if (albums.length === 0 && pageOffset > 1) {
+			logger.debug(
+				{ pageOffset, recentSearchCount, fetchSize },
+				"No records on calculated page, wrapping to page 1",
+			);
+			pageOffset = 1;
+			counter.count++;
+			wantedData =
+				type === "missing"
+					? await client.wanted.getMissing({
+							page: 1,
+							pageSize: fetchSize,
+							sortKey: "releaseDate",
+							sortDirection: "descending",
+						})
+					: await client.wanted.getCutoffUnmet({
+							page: 1,
+							pageSize: fetchSize,
+							sortKey: "releaseDate",
+							sortDirection: "descending",
+						});
+			albums = wantedData.records ?? [];
+		}
+
+		if (albums.length === 0) {
+			return {
+				itemsSearched: 0,
+				itemsGrabbed: 0,
+				searchedItems: [],
+				grabbedItems: [],
+				message: `No ${type === "missing" ? "missing" : "upgradeable"} albums found`,
+				status: "completed",
+			};
+		}
+
+		// Apply filters
+		const filteredAlbums = albums.filter((album) => {
+			const albumAny = album as Record<string, unknown>;
+			const releaseDate = albumAny.releaseDate as string | undefined;
+			if (!isContentReleased(releaseDate)) return false;
+
+			const artist = artistMap.get((albumAny.artistId as number) ?? 0);
+			if (!artist) return false;
+
+			const artistAny = artist as Record<string, unknown>;
+			return passesFilters(
+				{
+					tags: (artistAny.tags as number[]) ?? [],
+					qualityProfileId: (artistAny.qualityProfileId as number) ?? 0,
+					status: (artistAny.status as string) ?? "",
+					year: Number((releaseDate ?? "").slice(0, 4)) || 0,
+					monitored: Boolean(albumAny.monitored) && Boolean(artistAny.monitored),
+					releaseDate,
+				},
+				filters,
+			);
+		});
+
+		const validAlbums = filteredAlbums.filter(
+			(album): album is typeof album & { id: number; title: string } => {
+				const a = album as Record<string, unknown>;
+				return a.id !== undefined && a.title !== undefined;
+			},
+		);
+
+		const eligibleAlbums = shuffleArray(validAlbums);
+
+		if (eligibleAlbums.length === 0) {
+			return {
+				itemsSearched: 0,
+				itemsGrabbed: 0,
+				searchedItems: [],
+				grabbedItems: [],
+				message: "No albums match the current filters",
+				status: "completed",
+			};
+		}
+
+		const notRecentlySearched = historyManager.filterRecentlySearched(eligibleAlbums, (album) => {
+			const albumAny = album as Record<string, unknown>;
+			const artist = artistMap.get((albumAny.artistId as number) ?? 0) as Record<string, unknown> | undefined;
+			const artistName = (artist?.artistName as string) ?? "Unknown Artist";
+			return {
+				mediaType: "album",
+				mediaId: album.id,
+				title: `${artistName} - ${album.title}`,
+			};
+		});
+
+		if (notRecentlySearched.length === 0) {
+			const skippedCount = historyManager.getFilteredCount();
+			return {
+				itemsSearched: 0,
+				itemsGrabbed: 0,
+				searchedItems: [],
+				grabbedItems: [],
+				message:
+					skippedCount > 0
+						? `All ${skippedCount} eligible albums were recently searched`
+						: "No albums match the current filters",
+				status: "completed",
+			};
+		}
+
+		const albumsToSearch = notRecentlySearched.slice(0, batchSize);
+		const searchedItemNames = albumsToSearch.map((album) => {
+			const albumAny = album as Record<string, unknown>;
+			const artist = artistMap.get((albumAny.artistId as number) ?? 0) as Record<string, unknown> | undefined;
+			const artistName = (artist?.artistName as string) ?? "Unknown Artist";
+			return `${artistName} - ${album.title}`;
+		});
+
+		let searchErrors = 0;
+		for (let i = 0; i < albumsToSearch.length; i++) {
+			const album = albumsToSearch[i];
+			if (!album) continue;
+
+			if (i > 0) {
+				await delay(SEARCH_DELAY_MS);
+			}
+
+			try {
+				counter.count++;
+				await client.command.execute({
+					name: "AlbumSearch",
+					albumIds: [album.id],
+				});
+			} catch (error) {
+				searchErrors++;
+				logger.error(
+					{ err: error, title: album.title },
+					"Failed to execute album search",
+				);
+			}
+		}
+
+		await historyManager.recordSearches(
+			albumsToSearch.map((album) => {
+				const albumAny = album as Record<string, unknown>;
+				const artist = artistMap.get((albumAny.artistId as number) ?? 0) as Record<string, unknown> | undefined;
+				const artistName = (artist?.artistName as string) ?? "Unknown Artist";
+				return {
+					mediaType: "album" as const,
+					mediaId: album.id,
+					title: `${artistName} - ${album.title}`,
+				};
+			}),
+		);
+
+		const errorSummary = searchErrors > 0 ? ` (${searchErrors} search errors)` : "";
+
+		return {
+			itemsSearched: albumsToSearch.length - searchErrors,
+			itemsGrabbed: 0, // Grab detection not implemented for Lidarr yet
+			searchedItems: searchedItemNames,
+			grabbedItems: [],
+			message: `Triggered search for ${albumsToSearch.length} albums${errorSummary}`,
+			status: searchErrors > 0 ? "partial" : "completed",
+		};
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		return {
+			itemsSearched: 0,
+			itemsGrabbed: 0,
+			searchedItems: [],
+			grabbedItems: [],
+			message: `Lidarr hunt failed: ${message}`,
+			status: "error",
+		};
+	}
+}
+
+/**
+ * Execute Readarr hunt using SDK
+ * Searches for missing books or books needing quality upgrades
+ */
+async function executeReadarrHuntWithSdk(
+	client: ReadarrClient,
+	type: "missing" | "upgrade",
+	batchSize: number,
+	filters: ParsedFilters,
+	historyManager: SearchHistoryManager,
+	counter: ApiCallCounter,
+	logger: HuntLogger,
+): Promise<HuntResultWithoutApiCount> {
+	try {
+		// First, get all authors to have filter data available
+		counter.count++;
+		const allAuthors = await client.author.getAll();
+		const authorMap = new Map(allAuthors.map((a) => [(a as { id?: number }).id ?? 0, a]));
+
+		const fetchSize = Math.max(batchSize * 5, 50);
+
+		// Calculate page offset based on recently searched items
+		const recentSearchCount = historyManager.getRecentSearchCount();
+		let pageOffset = Math.floor(recentSearchCount / fetchSize) + 1;
+
+		counter.count++;
+		let wantedData =
+			type === "missing"
+				? await client.wanted.getMissing({
+						page: pageOffset,
+						pageSize: fetchSize,
+						sortKey: "releaseDate",
+						sortDirection: "descending",
+					})
+				: await client.wanted.getCutoffUnmet({
+						page: pageOffset,
+						pageSize: fetchSize,
+						sortKey: "releaseDate",
+						sortDirection: "descending",
+					});
+
+		let books = wantedData.records ?? [];
+
+		// Wrap around to page 1 if needed
+		if (books.length === 0 && pageOffset > 1) {
+			logger.debug(
+				{ pageOffset, recentSearchCount, fetchSize },
+				"No records on calculated page, wrapping to page 1",
+			);
+			pageOffset = 1;
+			counter.count++;
+			wantedData =
+				type === "missing"
+					? await client.wanted.getMissing({
+							page: 1,
+							pageSize: fetchSize,
+							sortKey: "releaseDate",
+							sortDirection: "descending",
+						})
+					: await client.wanted.getCutoffUnmet({
+							page: 1,
+							pageSize: fetchSize,
+							sortKey: "releaseDate",
+							sortDirection: "descending",
+						});
+			books = wantedData.records ?? [];
+		}
+
+		if (books.length === 0) {
+			return {
+				itemsSearched: 0,
+				itemsGrabbed: 0,
+				searchedItems: [],
+				grabbedItems: [],
+				message: `No ${type === "missing" ? "missing" : "upgradeable"} books found`,
+				status: "completed",
+			};
+		}
+
+		// Apply filters
+		const filteredBooks = books.filter((book) => {
+			const bookAny = book as Record<string, unknown>;
+			const releaseDate = bookAny.releaseDate as string | undefined;
+			if (!isContentReleased(releaseDate)) return false;
+
+			const author = authorMap.get((bookAny.authorId as number) ?? 0);
+			if (!author) return false;
+
+			const authorAny = author as Record<string, unknown>;
+			return passesFilters(
+				{
+					tags: (authorAny.tags as number[]) ?? [],
+					qualityProfileId: (authorAny.qualityProfileId as number) ?? 0,
+					status: (authorAny.status as string) ?? "",
+					year: Number((releaseDate ?? "").slice(0, 4)) || 0,
+					monitored: Boolean(bookAny.monitored) && Boolean(authorAny.monitored),
+					releaseDate,
+				},
+				filters,
+			);
+		});
+
+		const validBooks = filteredBooks.filter(
+			(book): book is typeof book & { id: number; title: string } => {
+				const b = book as Record<string, unknown>;
+				return b.id !== undefined && b.title !== undefined;
+			},
+		);
+
+		const eligibleBooks = shuffleArray(validBooks);
+
+		if (eligibleBooks.length === 0) {
+			return {
+				itemsSearched: 0,
+				itemsGrabbed: 0,
+				searchedItems: [],
+				grabbedItems: [],
+				message: "No books match the current filters",
+				status: "completed",
+			};
+		}
+
+		const notRecentlySearched = historyManager.filterRecentlySearched(eligibleBooks, (book) => {
+			const bookAny = book as Record<string, unknown>;
+			const author = authorMap.get((bookAny.authorId as number) ?? 0) as Record<string, unknown> | undefined;
+			const authorName = (author?.authorName as string) ?? "Unknown Author";
+			return {
+				mediaType: "book",
+				mediaId: book.id,
+				title: `${authorName} - ${book.title}`,
+			};
+		});
+
+		if (notRecentlySearched.length === 0) {
+			const skippedCount = historyManager.getFilteredCount();
+			return {
+				itemsSearched: 0,
+				itemsGrabbed: 0,
+				searchedItems: [],
+				grabbedItems: [],
+				message:
+					skippedCount > 0
+						? `All ${skippedCount} eligible books were recently searched`
+						: "No books match the current filters",
+				status: "completed",
+			};
+		}
+
+		const booksToSearch = notRecentlySearched.slice(0, batchSize);
+		const searchedItemNames = booksToSearch.map((book) => {
+			const bookAny = book as Record<string, unknown>;
+			const author = authorMap.get((bookAny.authorId as number) ?? 0) as Record<string, unknown> | undefined;
+			const authorName = (author?.authorName as string) ?? "Unknown Author";
+			return `${authorName} - ${book.title}`;
+		});
+
+		let searchErrors = 0;
+		for (let i = 0; i < booksToSearch.length; i++) {
+			const book = booksToSearch[i];
+			if (!book) continue;
+
+			if (i > 0) {
+				await delay(SEARCH_DELAY_MS);
+			}
+
+			try {
+				counter.count++;
+				await client.command.execute({
+					name: "BookSearch",
+					bookIds: [book.id],
+				});
+			} catch (error) {
+				searchErrors++;
+				logger.error(
+					{ err: error, title: book.title },
+					"Failed to execute book search",
+				);
+			}
+		}
+
+		await historyManager.recordSearches(
+			booksToSearch.map((book) => {
+				const bookAny = book as Record<string, unknown>;
+				const author = authorMap.get((bookAny.authorId as number) ?? 0) as Record<string, unknown> | undefined;
+				const authorName = (author?.authorName as string) ?? "Unknown Author";
+				return {
+					mediaType: "book" as const,
+					mediaId: book.id,
+					title: `${authorName} - ${book.title}`,
+				};
+			}),
+		);
+
+		const errorSummary = searchErrors > 0 ? ` (${searchErrors} search errors)` : "";
+
+		return {
+			itemsSearched: booksToSearch.length - searchErrors,
+			itemsGrabbed: 0, // Grab detection not implemented for Readarr yet
+			searchedItems: searchedItemNames,
+			grabbedItems: [],
+			message: `Triggered search for ${booksToSearch.length} books${errorSummary}`,
+			status: searchErrors > 0 ? "partial" : "completed",
+		};
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "Unknown error";
+		return {
+			itemsSearched: 0,
+			itemsGrabbed: 0,
+			searchedItems: [],
+			grabbedItems: [],
+			message: `Readarr hunt failed: ${message}`,
 			status: "error",
 		};
 	}

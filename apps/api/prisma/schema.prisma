@@ -11,12 +11,16 @@ enum ServiceType {
   SONARR
   RADARR
   PROWLARR
+  LIDARR
+  READARR
 }
 
 // Library item type enum - uses lowercase to match Zod schema in shared package
 enum LibraryItemType {
   movie
   series
+  artist
+  author
 }
 
 model User {

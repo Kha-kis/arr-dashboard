@@ -90,7 +90,13 @@ export const LibraryCard = ({
 	const sizeLabel = formatBytes(item.sizeOnDisk);
 	const runtimeLabel = formatRuntime(item.runtime);
 	const serviceType = item.service || "radarr";
-	const serviceLabel = item.service === "sonarr" ? "Sonarr" : "Radarr";
+	const serviceLabels: Record<string, string> = {
+		sonarr: "Sonarr",
+		radarr: "Radarr",
+		lidarr: "Lidarr",
+		readarr: "Readarr",
+	};
+	const serviceLabel = serviceLabels[item.service ?? "radarr"] ?? "Radarr";
 	const rawMovieFileName =
 		item.type === "movie"
 			? (item.movieFile?.relativePath ?? item.path)?.split(/[\\/]/g).pop()
@@ -167,6 +173,34 @@ export const LibraryCard = ({
 		}
 	}
 
+	if (item.type === "artist") {
+		const missingTracks = item.statistics?.missingTrackCount ?? 0;
+		statusBadges.push({
+			tone: hasFile ? "green" : "blue",
+			label: hasFile ? "Tracks on disk" : "Awaiting tracks",
+		});
+		if (missingTracks > 0) {
+			statusBadges.push({
+				tone: "red",
+				label: `${missingTracks} missing`,
+			});
+		}
+	}
+
+	if (item.type === "author") {
+		const missingBooks = (item.statistics?.totalBookCount ?? 0) - (item.statistics?.bookFileCount ?? 0);
+		statusBadges.push({
+			tone: hasFile ? "green" : "blue",
+			label: hasFile ? "Books on disk" : "Awaiting books",
+		});
+		if (missingBooks > 0) {
+			statusBadges.push({
+				tone: "red",
+				label: `${missingBooks} missing`,
+			});
+		}
+	}
+
 	if (item.status) {
 		statusBadges.push({ tone: "blue", label: item.status });
 	}
@@ -190,7 +224,7 @@ export const LibraryCard = ({
 		if (runtimeLabel) {
 			metadata.push({ label: "Runtime", value: runtimeLabel });
 		}
-	} else {
+	} else if (item.type === "series") {
 		if (seasonCount) {
 			metadata.push({ label: "Seasons", value: seasonCount });
 		}
@@ -208,6 +242,38 @@ export const LibraryCard = ({
 		}
 		if (episodeRuntimeLabel) {
 			metadata.push({ label: "Episode length", value: episodeRuntimeLabel });
+		}
+		if (sizeLabel) {
+			metadata.push({ label: "On disk", value: sizeLabel });
+		}
+	} else if (item.type === "artist") {
+		const albumCount = item.statistics?.albumCount ?? 0;
+		const trackFileCount = item.statistics?.trackFileCount ?? 0;
+		const totalTrackCount = item.statistics?.totalTrackCount ?? 0;
+		if (albumCount > 0) {
+			metadata.push({ label: "Albums", value: albumCount });
+		}
+		if (totalTrackCount > 0) {
+			metadata.push({
+				label: "Tracks",
+				value: `${trackFileCount}/${totalTrackCount}`,
+			});
+		}
+		if (sizeLabel) {
+			metadata.push({ label: "On disk", value: sizeLabel });
+		}
+	} else if (item.type === "author") {
+		const bookCount = item.statistics?.bookCount ?? 0;
+		const bookFileCount = item.statistics?.bookFileCount ?? 0;
+		const totalBookCount = item.statistics?.totalBookCount ?? 0;
+		if (bookCount > 0) {
+			metadata.push({ label: "Books", value: bookCount });
+		}
+		if (totalBookCount > 0) {
+			metadata.push({
+				label: "Downloaded",
+				value: `${bookFileCount}/${totalBookCount}`,
+			});
 		}
 		if (sizeLabel) {
 			metadata.push({ label: "On disk", value: sizeLabel });
@@ -410,6 +476,30 @@ export const LibraryCard = ({
 								onClick={() => safeOpenUrl(`https://www.thetvdb.com/dereferrer/series/${item.remoteIds?.tvdbId}`)}
 							>
 								<span>TVDB</span>
+							</Button>
+						) : null}
+
+						{item.remoteIds?.musicBrainzId ? (
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
+								onClick={() => safeOpenUrl(`https://musicbrainz.org/artist/${item.remoteIds?.musicBrainzId}`)}
+							>
+								<span>MusicBrainz</span>
+							</Button>
+						) : null}
+
+						{item.remoteIds?.goodreadsId ? (
+							<Button
+								type="button"
+								variant="ghost"
+								size="sm"
+								className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
+								onClick={() => safeOpenUrl(`https://www.goodreads.com/author/show/${item.remoteIds?.goodreadsId}`)}
+							>
+								<span>Goodreads</span>
 							</Button>
 						) : null}
 

@@ -1,6 +1,9 @@
 import type { QueueActionCapabilities, QueueItem } from "@arr/shared";
-import type { SonarrClient, RadarrClient } from "arr-sdk";
+import type { SonarrClient, RadarrClient, LidarrClient, ReadarrClient } from "arr-sdk";
 import { toNumber, toStringValue } from "../data/values.js";
+
+/** Service types that support queue functionality */
+export type QueueService = "sonarr" | "radarr" | "lidarr" | "readarr";
 
 /**
  * Type alias for dynamic API responses. Uses `any` to allow flexible property access
@@ -11,8 +14,11 @@ type UnknownRecord = Record<string, any>;
 
 /**
  * Returns the API path for queue endpoints
+ * Note: Sonarr/Radarr use v3, Lidarr/Readarr use v1
  */
-export const queueApiPath = (service: "sonarr" | "radarr") => "/api/v3/queue";
+export const queueApiPath = (service: QueueService) => {
+	return ["lidarr", "readarr"].includes(service) ? "/api/v1/queue" : "/api/v3/queue";
+};
 
 /**
  * Keywords that indicate manual import is required
@@ -193,11 +199,35 @@ export const parseQueueId = (value: string | number): number | null => {
 };
 
 /**
+ * Extracts the display title from a queue item based on the service type
+ */
+const extractQueueItemTitle = (anyItem: UnknownRecord, service: QueueService): string => {
+	// Try generic title first
+	const genericTitle = toStringValue(anyItem.title);
+	if (genericTitle) return genericTitle;
+
+	// Service-specific fallbacks
+	switch (service) {
+		case "sonarr":
+			return toStringValue(anyItem.series?.title) ?? "Untitled";
+		case "radarr":
+			return toStringValue(anyItem.movie?.title) ?? "Untitled";
+		case "lidarr":
+			return toStringValue(anyItem.artist?.artistName) ?? toStringValue(anyItem.album?.title) ?? "Untitled";
+		case "readarr":
+			return toStringValue(anyItem.author?.authorName) ?? toStringValue(anyItem.book?.title) ?? "Untitled";
+		default:
+			return "Untitled";
+	}
+};
+
+/**
  * Normalizes a raw queue item from the ARR API into a consistent format
+ * Supports Sonarr (series/episodes), Radarr (movies), Lidarr (artists/albums), and Readarr (authors/books)
  */
 export const normalizeQueueItem = (
 	item: unknown,
-	service: "sonarr" | "radarr",
+	service: QueueService,
 ): Omit<QueueItem, "instanceId" | "instanceName"> => {
 	const anyItem = item as UnknownRecord;
 	const rawId =
@@ -210,20 +240,16 @@ export const normalizeQueueItem = (
 		typeof rawId === "number" || typeof rawId === "string" ? rawId : Math.random().toString(36);
 
 	const downloadId = toStringValue(anyItem.downloadId ?? anyItem.guid ?? anyItem.sourceId);
-	const title =
-		toStringValue(anyItem.title) ??
-		toStringValue(anyItem.series?.title) ??
-		toStringValue(anyItem.movie?.title) ??
-		"Untitled";
+	const title = extractQueueItemTitle(anyItem, service);
 
 	const normalized: Omit<QueueItem, "instanceId" | "instanceName"> = {
 		id,
 		queueItemId: toStringValue(anyItem.queueItemId ?? anyItem.queueId ?? anyItem.id),
 		downloadId,
 		title,
+		// Sonarr fields
 		seriesId: toNumber(anyItem.seriesId ?? anyItem.series?.id),
 		episodeId: toNumber(anyItem.episodeId ?? anyItem.episode?.id),
-		movieId: toNumber(anyItem.movieId ?? anyItem.movie?.id),
 		series:
 			anyItem.series && typeof anyItem.series === "object"
 				? {
@@ -231,6 +257,8 @@ export const normalizeQueueItem = (
 						title: toStringValue(anyItem.series.title) ?? undefined,
 					}
 				: undefined,
+		// Radarr fields
+		movieId: toNumber(anyItem.movieId ?? anyItem.movie?.id),
 		movie:
 			anyItem.movie && typeof anyItem.movie === "object"
 				? {
@@ -238,6 +266,41 @@ export const normalizeQueueItem = (
 						title: toStringValue(anyItem.movie.title) ?? undefined,
 					}
 				: undefined,
+		// Lidarr fields
+		artistId: toNumber(anyItem.artistId ?? anyItem.artist?.id),
+		albumId: toNumber(anyItem.albumId ?? anyItem.album?.id),
+		artist:
+			anyItem.artist && typeof anyItem.artist === "object"
+				? {
+						id: toNumber(anyItem.artist.id),
+						name: toStringValue(anyItem.artist.artistName) ?? undefined,
+					}
+				: undefined,
+		album:
+			anyItem.album && typeof anyItem.album === "object"
+				? {
+						id: toNumber(anyItem.album.id),
+						title: toStringValue(anyItem.album.title) ?? undefined,
+					}
+				: undefined,
+		// Readarr fields
+		authorId: toNumber(anyItem.authorId ?? anyItem.author?.id),
+		bookId: toNumber(anyItem.bookId ?? anyItem.book?.id),
+		author:
+			anyItem.author && typeof anyItem.author === "object"
+				? {
+						id: toNumber(anyItem.author.id),
+						name: toStringValue(anyItem.author.authorName) ?? undefined,
+					}
+				: undefined,
+		book:
+			anyItem.book && typeof anyItem.book === "object"
+				? {
+						id: toNumber(anyItem.book.id),
+						title: toStringValue(anyItem.book.title) ?? undefined,
+					}
+				: undefined,
+		// Common fields
 		size: toNumber(anyItem.size ?? anyItem.sizebytes),
 		sizeleft: toNumber(anyItem.sizeleft ?? anyItem.sizeLeft ?? anyItem.sizeRemaining),
 		status: toStringValue(anyItem.status),
@@ -282,17 +345,36 @@ export const normalizeQueueItem = (
 	return normalized;
 };
 
+/** Payload type for queue search operations across all services */
+export type QueueSearchPayload = {
+	// Sonarr
+	seriesId?: number;
+	episodeIds?: number[];
+	// Radarr
+	movieId?: number;
+	// Lidarr
+	artistId?: number;
+	albumIds?: number[];
+	// Readarr
+	authorId?: number;
+	bookIds?: number[];
+};
+
 /**
- * Triggers a search command in Sonarr or Radarr for the specified content
+ * Triggers a search command for the specified content using raw fetcher
+ * Supports Sonarr, Radarr, Lidarr, and Readarr
  */
 export const triggerQueueSearch = async (
 	fetcher: (path: string, init?: RequestInit) => Promise<Response>,
-	service: "sonarr" | "radarr",
-	payload?: { seriesId?: number; episodeIds?: number[]; movieId?: number },
+	service: QueueService,
+	payload?: QueueSearchPayload,
 ) => {
 	if (!payload) {
 		return;
 	}
+
+	// Determine API version path based on service
+	const apiPath = ["lidarr", "readarr"].includes(service) ? "/api/v1/command" : "/api/v3/command";
 
 	if (service === "sonarr") {
 		const commandPayload: Record<string, unknown> = {};
@@ -306,11 +388,9 @@ export const triggerQueueSearch = async (
 			return;
 		}
 
-		const response = await fetcher("/api/v3/command", {
+		const response = await fetcher(apiPath, {
 			method: "POST",
-			headers: {
-				"Content-Type": "application/json",
-			},
+			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify(commandPayload),
 		});
 		if (!response.ok) {
@@ -320,30 +400,82 @@ export const triggerQueueSearch = async (
 		return;
 	}
 
-	if (typeof payload.movieId !== "number") {
+	if (service === "radarr") {
+		if (typeof payload.movieId !== "number") {
+			return;
+		}
+
+		const response = await fetcher(apiPath, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ name: "MoviesSearch", movieIds: [payload.movieId] }),
+		});
+		if (!response.ok) {
+			const message = await response.text().catch(() => response.statusText);
+			throw new Error(`Radarr search command failed: ${message}`);
+		}
 		return;
 	}
 
-	const response = await fetcher("/api/v3/command", {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-		},
-		body: JSON.stringify({ name: "MoviesSearch", movieIds: [payload.movieId] }),
-	});
-	if (!response.ok) {
-		const message = await response.text().catch(() => response.statusText);
-		throw new Error(`Radarr search command failed: ${message}`);
+	if (service === "lidarr") {
+		const commandPayload: Record<string, unknown> = {};
+		if (Array.isArray(payload.albumIds) && payload.albumIds.length > 0) {
+			commandPayload.name = "AlbumSearch";
+			commandPayload.albumIds = Array.from(new Set(payload.albumIds));
+		} else if (typeof payload.artistId === "number") {
+			commandPayload.name = "ArtistSearch";
+			commandPayload.artistId = payload.artistId;
+		} else {
+			return;
+		}
+
+		const response = await fetcher(apiPath, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(commandPayload),
+		});
+		if (!response.ok) {
+			const message = await response.text().catch(() => response.statusText);
+			throw new Error(`Lidarr search command failed: ${message}`);
+		}
+		return;
+	}
+
+	if (service === "readarr") {
+		const commandPayload: Record<string, unknown> = {};
+		if (Array.isArray(payload.bookIds) && payload.bookIds.length > 0) {
+			commandPayload.name = "BookSearch";
+			commandPayload.bookIds = Array.from(new Set(payload.bookIds));
+		} else if (typeof payload.authorId === "number") {
+			commandPayload.name = "AuthorSearch";
+			commandPayload.authorId = payload.authorId;
+		} else {
+			return;
+		}
+
+		const response = await fetcher(apiPath, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify(commandPayload),
+		});
+		if (!response.ok) {
+			const message = await response.text().catch(() => response.statusText);
+			throw new Error(`Readarr search command failed: ${message}`);
+		}
 	}
 };
 
+/** Union type for all ARR clients that support queue operations */
+export type QueueClient = SonarrClient | RadarrClient | LidarrClient | ReadarrClient;
+
 /**
  * Triggers a search command using the arr-sdk client
+ * Supports Sonarr, Radarr, Lidarr, and Readarr
  */
 export const triggerQueueSearchWithSdk = async (
-	client: SonarrClient | RadarrClient,
-	service: "sonarr" | "radarr",
-	payload?: { seriesId?: number; episodeIds?: number[]; movieId?: number },
+	client: QueueClient,
+	service: QueueService,
+	payload?: QueueSearchPayload,
 ) => {
 	if (!payload) {
 		return;
@@ -365,13 +497,46 @@ export const triggerQueueSearchWithSdk = async (
 		return;
 	}
 
-	if (typeof payload.movieId !== "number") {
+	if (service === "radarr") {
+		if (typeof payload.movieId !== "number") {
+			return;
+		}
+		const radarrClient = client as RadarrClient;
+		await radarrClient.command.execute({
+			name: "MoviesSearch",
+			movieIds: [payload.movieId],
+		});
 		return;
 	}
 
-	const radarrClient = client as RadarrClient;
-	await radarrClient.command.execute({
-		name: "MoviesSearch",
-		movieIds: [payload.movieId],
-	});
+	if (service === "lidarr") {
+		const lidarrClient = client as LidarrClient;
+		if (Array.isArray(payload.albumIds) && payload.albumIds.length > 0) {
+			await lidarrClient.command.execute({
+				name: "AlbumSearch",
+				albumIds: Array.from(new Set(payload.albumIds)),
+			});
+		} else if (typeof payload.artistId === "number") {
+			await lidarrClient.command.execute({
+				name: "ArtistSearch",
+				artistId: payload.artistId,
+			});
+		}
+		return;
+	}
+
+	if (service === "readarr") {
+		const readarrClient = client as ReadarrClient;
+		if (Array.isArray(payload.bookIds) && payload.bookIds.length > 0) {
+			await readarrClient.command.execute({
+				name: "BookSearch",
+				bookIds: Array.from(new Set(payload.bookIds)),
+			});
+		} else if (typeof payload.authorId === "number") {
+			await readarrClient.command.execute({
+				name: "AuthorSearch",
+				authorId: payload.authorId,
+			});
+		}
+	}
 };

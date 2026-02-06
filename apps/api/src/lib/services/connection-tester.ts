@@ -20,7 +20,10 @@ export async function testServiceConnection(
 	service: string,
 ): Promise<ConnectionTestResult> {
 	try {
-		const apiPath = service === "prowlarr" ? "/api/v1/system/status" : "/api/v3/system/status";
+		// Prowlarr, Lidarr, and Readarr use v1 API; Sonarr and Radarr use v3
+		const apiPath = ["prowlarr", "lidarr", "readarr"].includes(service)
+			? "/api/v1/system/status"
+			: "/api/v3/system/status";
 		const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
 		const testUrl = `${normalizedBaseUrl}${apiPath}`;
 

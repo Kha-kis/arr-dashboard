@@ -210,7 +210,16 @@ export class SyncEngine {
 
 		if (this.arrClientFactory) {
 			try {
-				const client = this.arrClientFactory.create(instance);
+				// TRaSH Guides only supports Sonarr/Radarr - check service type before creating client
+				const serviceType = instance.service.toUpperCase();
+				if (serviceType !== "SONARR" && serviceType !== "RADARR") {
+					errors.push(
+						`TRaSH Guides sync is only supported for Sonarr and Radarr instances. ` +
+							`Instance "${instance.label}" is a ${instance.service} instance.`,
+					);
+					return { valid: false, conflicts, errors, warnings };
+				}
+				const client = this.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
 				const status = await client.system.get();
 				instanceVersion = status.version ?? undefined;
 

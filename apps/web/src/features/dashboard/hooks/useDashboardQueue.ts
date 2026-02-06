@@ -15,7 +15,7 @@ import { fetchManualImportCandidates } from "../../../lib/api-client/dashboard";
 interface ManualImportContext {
 	instanceId: string;
 	instanceName: string;
-	service: "sonarr" | "radarr";
+	service: "sonarr" | "radarr" | "lidarr" | "readarr";
 	downloadId?: string;
 	open: boolean;
 }

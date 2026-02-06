@@ -13,7 +13,7 @@ import {
 	ArrError,
 	arrErrorToHttpStatus,
 } from "./client-factory.js";
-import { SonarrClient, RadarrClient, ProwlarrClient } from "arr-sdk";
+import { SonarrClient, RadarrClient, ProwlarrClient, LidarrClient, ReadarrClient } from "arr-sdk";
 
 // ============================================================================
 // Types
@@ -242,6 +242,40 @@ export async function executeOnProwlarrInstances<T>(
 	);
 }
 
+/**
+ * Execute an operation on Lidarr instances only
+ */
+export async function executeOnLidarrInstances<T>(
+	app: FastifyInstance,
+	userId: string,
+	operation: (client: LidarrClient, instance: ServiceInstance) => Promise<T>,
+	options?: Omit<MultiInstanceOptions, "serviceTypes">,
+): Promise<MultiInstanceResponse<T>> {
+	return executeOnInstances(
+		app,
+		userId,
+		{ ...options, serviceTypes: ["LIDARR"] },
+		(client, instance) => operation(client as LidarrClient, instance),
+	);
+}
+
+/**
+ * Execute an operation on Readarr instances only
+ */
+export async function executeOnReadarrInstances<T>(
+	app: FastifyInstance,
+	userId: string,
+	operation: (client: ReadarrClient, instance: ServiceInstance) => Promise<T>,
+	options?: Omit<MultiInstanceOptions, "serviceTypes">,
+): Promise<MultiInstanceResponse<T>> {
+	return executeOnInstances(
+		app,
+		userId,
+		{ ...options, serviceTypes: ["READARR"] },
+		(client, instance) => operation(client as ReadarrClient, instance),
+	);
+}
+
 // ============================================================================
 // Single Instance Operations
 // ============================================================================
@@ -395,6 +429,70 @@ export async function getProwlarrClientForInstance(
 	};
 }
 
+/**
+ * Get a typed Lidarr client for a specific instance
+ */
+export async function getLidarrClientForInstance(
+	app: FastifyInstance,
+	request: FastifyRequest,
+	instanceId: string,
+): Promise<
+	| { success: true; client: LidarrClient; instance: ServiceInstance }
+	| { success: false; error: string; statusCode: number }
+> {
+	const result = await getClientForInstance(app, request, instanceId);
+
+	if (!result.success) {
+		return result;
+	}
+
+	if (result.instance.service !== "LIDARR") {
+		return {
+			success: false,
+			error: "Instance is not a Lidarr instance",
+			statusCode: 400,
+		};
+	}
+
+	return {
+		success: true,
+		client: result.client as LidarrClient,
+		instance: result.instance,
+	};
+}
+
+/**
+ * Get a typed Readarr client for a specific instance
+ */
+export async function getReadarrClientForInstance(
+	app: FastifyInstance,
+	request: FastifyRequest,
+	instanceId: string,
+): Promise<
+	| { success: true; client: ReadarrClient; instance: ServiceInstance }
+	| { success: false; error: string; statusCode: number }
+> {
+	const result = await getClientForInstance(app, request, instanceId);
+
+	if (!result.success) {
+		return result;
+	}
+
+	if (result.instance.service !== "READARR") {
+		return {
+			success: false,
+			error: "Instance is not a Readarr instance",
+			statusCode: 400,
+		};
+	}
+
+	return {
+		success: true,
+		client: result.client as ReadarrClient,
+		instance: result.instance,
+	};
+}
+
 // ============================================================================
 // Type Guards for Clients
 // ============================================================================
@@ -418,4 +516,18 @@ export function isRadarrClient(client: ArrClient): client is RadarrClient {
  */
 export function isProwlarrClient(client: ArrClient): client is ProwlarrClient {
 	return client instanceof ProwlarrClient;
+}
+
+/**
+ * Type guard to check if a client is a LidarrClient
+ */
+export function isLidarrClient(client: ArrClient): client is LidarrClient {
+	return client instanceof LidarrClient;
+}
+
+/**
+ * Type guard to check if a client is a ReadarrClient
+ */
+export function isReadarrClient(client: ArrClient): client is ReadarrClient {
+	return client instanceof ReadarrClient;
 }

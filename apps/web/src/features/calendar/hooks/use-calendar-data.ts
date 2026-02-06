@@ -1,6 +1,5 @@
 import { useMemo } from "react";
 import type { CalendarItem, ServiceInstanceSummary } from "@arr/shared";
-import { formatDateOnly } from "../lib/calendar-formatters";
 import type { CalendarFilters } from "./use-calendar-state";
 
 /**
@@ -15,6 +14,8 @@ export interface DeduplicatedCalendarItem extends CalendarItem {
  * Generate a unique content key for deduplication.
  * Movies: tmdbId > imdbId > movieTitle+airDate
  * Episodes: (tmdbId|imdbId|seriesTitle) + seasonNumber + episodeNumber
+ * Albums: musicBrainzId > artistName+albumTitle+releaseDate
+ * Books: goodreadsId > authorName+bookTitle+airDate
  */
 const getContentKey = (item: CalendarItem): string => {
 	if (item.type === "movie") {
@@ -30,17 +31,45 @@ const getContentKey = (item: CalendarItem): string => {
 		const date = item.airDate ?? item.airDateUtc ?? "";
 		return `movie:title:${title.toLowerCase()}:${date.split("T")[0]}`;
 	}
-	// For episodes, need series identifier + season + episode
-	const seasonEp = `S${String(item.seasonNumber ?? 0).padStart(2, "0")}E${String(item.episodeNumber ?? 0).padStart(2, "0")}`;
-	if (item.tmdbId) {
-		return `episode:tmdb:${item.tmdbId}:${seasonEp}`;
+
+	if (item.type === "episode") {
+		// For episodes, need series identifier + season + episode
+		const seasonEp = `S${String(item.seasonNumber ?? 0).padStart(2, "0")}E${String(item.episodeNumber ?? 0).padStart(2, "0")}`;
+		if (item.tmdbId) {
+			return `episode:tmdb:${item.tmdbId}:${seasonEp}`;
+		}
+		if (item.imdbId) {
+			return `episode:imdb:${item.imdbId}:${seasonEp}`;
+		}
+		// Fallback to series title
+		const seriesTitle = item.seriesTitle ?? item.title ?? "";
+		return `episode:title:${seriesTitle.toLowerCase()}:${seasonEp}`;
 	}
-	if (item.imdbId) {
-		return `episode:imdb:${item.imdbId}:${seasonEp}`;
+
+	if (item.type === "album") {
+		// For albums, prefer musicBrainzId, then artist+album+date
+		if (item.musicBrainzId) {
+			return `album:mb:${item.musicBrainzId}`;
+		}
+		const artist = item.artistName ?? "";
+		const album = item.albumTitle ?? item.title ?? "";
+		const date = item.releaseDate ?? item.airDate ?? item.airDateUtc ?? "";
+		return `album:title:${artist.toLowerCase()}:${album.toLowerCase()}:${date.split("T")[0]}`;
 	}
-	// Fallback to series title
-	const seriesTitle = item.seriesTitle ?? item.title ?? "";
-	return `episode:title:${seriesTitle.toLowerCase()}:${seasonEp}`;
+
+	if (item.type === "book") {
+		// For books, prefer goodreadsId, then author+book+date
+		if (item.goodreadsId) {
+			return `book:gr:${item.goodreadsId}`;
+		}
+		const author = item.authorName ?? "";
+		const book = item.bookTitle ?? item.title ?? "";
+		const date = item.airDate ?? item.airDateUtc ?? "";
+		return `book:title:${author.toLowerCase()}:${book.toLowerCase()}:${date.split("T")[0]}`;
+	}
+
+	// Fallback for unknown types
+	return `unknown:${item.id}:${item.instanceId}`;
 };
 
 /**
@@ -77,7 +106,7 @@ export interface CalendarDataHookResult {
 	instances: Array<{
 		instanceId: string;
 		instanceName: string;
-		service: "sonarr" | "radarr";
+		service: "sonarr" | "radarr" | "lidarr" | "readarr";
 		data: CalendarItem[];
 	}>;
 	instanceOptions: Array<{ value: string; label: string }>;
@@ -93,7 +122,7 @@ export const useCalendarData = (
 				instances?: Array<{
 					instanceId: string;
 					instanceName: string;
-					service: "sonarr" | "radarr";
+					service: "sonarr" | "radarr" | "lidarr" | "readarr";
 					data: CalendarItem[];
 				}>;
 		  }
@@ -138,6 +167,12 @@ export const useCalendarData = (
 					item.seriesTitle,
 					item.episodeTitle,
 					item.movieTitle,
+					// Lidarr fields
+					item.artistName,
+					item.albumTitle,
+					// Readarr fields
+					item.authorName,
+					item.bookTitle,
 					item.overview,
 				]
 					.filter(Boolean)
@@ -155,7 +190,8 @@ export const useCalendarData = (
 	const eventsByDate = useMemo(() => {
 		const map = new Map<string, DeduplicatedCalendarItem[]>();
 		for (const item of filteredEvents) {
-			const iso = item.airDateUtc ?? item.airDate;
+			// Use releaseDate for albums, otherwise airDateUtc/airDate
+			const iso = item.releaseDate ?? item.airDateUtc ?? item.airDate;
 			if (!iso) {
 				continue;
 			}
@@ -171,8 +207,8 @@ export const useCalendarData = (
 		// Sort events within each date
 		for (const value of map.values()) {
 			value.sort((a, b) => {
-				const timeA = new Date(a.airDateUtc ?? a.airDate ?? 0).getTime();
-				const timeB = new Date(b.airDateUtc ?? b.airDate ?? 0).getTime();
+				const timeA = new Date(a.releaseDate ?? a.airDateUtc ?? a.airDate ?? 0).getTime();
+				const timeB = new Date(b.releaseDate ?? b.airDateUtc ?? b.airDate ?? 0).getTime();
 				if (timeA !== timeB) {
 					return timeA - timeB;
 				}

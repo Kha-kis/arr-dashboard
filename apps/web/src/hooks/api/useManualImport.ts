@@ -7,7 +7,7 @@ import { fetchManualImportCandidates, submitManualImport } from "../../lib/api-c
 
 const manualImportKey = (params: {
 	instanceId: string;
-	service: "sonarr" | "radarr";
+	service: "sonarr" | "radarr" | "lidarr" | "readarr";
 	downloadId?: string;
 	folder?: string;
 	seriesId?: number;
@@ -26,7 +26,7 @@ const manualImportKey = (params: {
 
 export const useManualImportQuery = (params: {
 	instanceId: string;
-	service: "sonarr" | "radarr";
+	service: "sonarr" | "radarr" | "lidarr" | "readarr";
 	downloadId?: string;
 	folder?: string;
 	enabled?: boolean;

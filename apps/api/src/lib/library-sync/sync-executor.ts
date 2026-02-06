@@ -9,7 +9,7 @@ import type { LibraryItem, LibraryService } from "@arr/shared";
 import type { Prisma, PrismaClient, ServiceInstance } from "../../lib/prisma.js";
 import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
-import { SonarrClient, RadarrClient } from "arr-sdk";
+import { SonarrClient, RadarrClient, LidarrClient, ReadarrClient } from "arr-sdk";
 import { buildLibraryItem } from "../library/library-item-builder.js";
 
 // ============================================================================
@@ -136,6 +136,10 @@ export async function syncInstance(
 			rawItems = await client.series.getAll();
 		} else if (client instanceof RadarrClient) {
 			rawItems = await client.movie.getAll();
+		} else if (client instanceof LidarrClient) {
+			rawItems = await client.artist.getAll();
+		} else if (client instanceof ReadarrClient) {
+			rawItems = await client.author.getAll();
 		} else {
 			throw new Error(`Unsupported service type: ${instance.service}`);
 		}
@@ -315,7 +319,7 @@ export async function removeCachedItem(
 	deps: Pick<SyncExecutorDeps, "prisma" | "log">,
 	instanceId: string,
 	arrItemId: number,
-	itemType: "movie" | "series",
+	itemType: "movie" | "series" | "artist" | "author",
 ): Promise<void> {
 	const { prisma, log } = deps;
 

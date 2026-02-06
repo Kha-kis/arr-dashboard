@@ -26,9 +26,11 @@ export interface ItemDetailsModalProps {
 }
 
 // Use centralized service colors
-const SERVICE_COLORS = {
+const SERVICE_COLORS: Record<"sonarr" | "radarr" | "lidarr" | "readarr", string> = {
 	sonarr: SERVICE_GRADIENTS.sonarr.from,
 	radarr: SERVICE_GRADIENTS.radarr.from,
+	lidarr: SERVICE_GRADIENTS.lidarr.from,
+	readarr: SERVICE_GRADIENTS.readarr.from,
 };
 
 /**
@@ -70,7 +72,13 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 
 	const sizeLabel = formatBytes(item.sizeOnDisk);
 	const runtimeLabel = formatRuntime(item.runtime);
-	const serviceLabel = item.service === "sonarr" ? "Sonarr" : "Radarr";
+	const serviceLabels: Record<"sonarr" | "radarr" | "lidarr" | "readarr", string> = {
+		sonarr: "Sonarr",
+		radarr: "Radarr",
+		lidarr: "Lidarr",
+		readarr: "Readarr",
+	};
+	const serviceLabel = serviceLabels[item.service];
 	const serviceColor = SERVICE_COLORS[item.service];
 	const movieFileName =
 		item.type === "movie"

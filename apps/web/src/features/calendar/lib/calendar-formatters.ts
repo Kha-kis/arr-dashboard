@@ -128,7 +128,7 @@ export const humanizeLabel = (value: string): string =>
 export const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/, "");
 
 /**
- * Builds external link to Sonarr/Radarr for a calendar item
+ * Builds external link to Sonarr/Radarr/Lidarr/Readarr for a calendar item
  */
 export const buildExternalLink = (
 	event: CalendarItem,
@@ -150,6 +150,14 @@ export const buildExternalLink = (
 		return `${baseUrl}/movie/${movieSegment}`;
 	}
 
+	if (event.service === "lidarr" && event.artistId) {
+		return `${baseUrl}/artist/${event.artistId}`;
+	}
+
+	if (event.service === "readarr" && event.authorId) {
+		return `${baseUrl}/author/${event.authorId}`;
+	}
+
 	return null;
 };
 
@@ -166,31 +174,51 @@ export interface EventDetailData {
 	tmdbLink?: string;
 	imdbId?: string;
 	imdbLink?: string;
-	serviceType: "sonarr" | "radarr";
+	musicBrainzId?: string;
+	musicBrainzLink?: string;
+	goodreadsId?: string;
+	goodreadsLink?: string;
+	albumType?: string;
+	label?: string;
+	publisher?: string;
+	serviceType: "sonarr" | "radarr" | "lidarr" | "readarr";
 }
 
 /**
  * Extracts all detail data for an event (without JSX)
  */
 export const extractEventDetails = (event: CalendarItem): EventDetailData => {
-	const airDate = formatAirDateTime(event.airDateUtc ?? event.airDate);
+	const airDate = formatAirDateTime(event.airDateUtc ?? event.airDate ?? event.releaseDate);
 	const episodeCode =
 		event.type === "episode"
 			? formatEpisodeCode(event.seasonNumber, event.episodeNumber)
 			: undefined;
-	const networkLabel = event.network ?? event.studio;
+
+	// Network/Studio/Label/Publisher depending on service
+	const networkLabel = event.network ?? event.studio ?? event.label ?? event.publisher;
 	const statusSource = event.status ?? event.seriesStatus;
 	const statusValue = statusSource ? humanizeLabel(statusSource) : undefined;
 	const monitoringLabel = formatMonitoringLabel(event.monitored);
 	const libraryLabel = formatLibraryLabel(event.hasFile);
 	const genresLabel = joinGenres(event.genres);
 
+	// TMDB link (only for sonarr/radarr)
 	const tmdbLink =
-		event.tmdbId != null
+		event.tmdbId != null && (event.service === "sonarr" || event.service === "radarr")
 			? `https://www.themoviedb.org/${event.service === "radarr" ? "movie" : "tv"}/${event.tmdbId}`
 			: undefined;
 
 	const imdbLink = event.imdbId ? `https://www.imdb.com/title/${event.imdbId}` : undefined;
+
+	// MusicBrainz link (for Lidarr)
+	const musicBrainzLink = event.musicBrainzId
+		? `https://musicbrainz.org/release/${event.musicBrainzId}`
+		: undefined;
+
+	// Goodreads link (for Readarr)
+	const goodreadsLink = event.goodreadsId
+		? `https://www.goodreads.com/book/show/${event.goodreadsId}`
+		: undefined;
 
 	return {
 		airDate,
@@ -205,16 +233,31 @@ export const extractEventDetails = (event: CalendarItem): EventDetailData => {
 		tmdbLink,
 		imdbId: event.imdbId,
 		imdbLink,
+		musicBrainzId: event.musicBrainzId,
+		musicBrainzLink,
+		goodreadsId: event.goodreadsId,
+		goodreadsLink,
+		albumType: event.albumType,
+		label: event.label,
+		publisher: event.publisher,
 		serviceType: event.service,
 	};
 };
 
 /**
- * Formats event title based on type (episode vs movie)
+ * Formats event title based on type (episode, movie, album, book)
  */
 export const formatEventTitle = (event: CalendarItem): string => {
-	if (event.type === "episode") {
-		return `${event.seriesTitle ?? "Unknown Series"}${event.episodeTitle ? " - " + event.episodeTitle : ""}`;
+	switch (event.type) {
+		case "episode":
+			return `${event.seriesTitle ?? "Unknown Series"}${event.episodeTitle ? " - " + event.episodeTitle : ""}`;
+		case "movie":
+			return event.movieTitle ?? event.title ?? "Untitled";
+		case "album":
+			return `${event.artistName ?? "Unknown Artist"} - ${event.albumTitle ?? "Untitled Album"}`;
+		case "book":
+			return `${event.authorName ?? "Unknown Author"} - ${event.bookTitle ?? "Untitled Book"}`;
+		default:
+			return event.title ?? "Untitled";
 	}
-	return event.movieTitle ?? event.title ?? "Untitled";
 };

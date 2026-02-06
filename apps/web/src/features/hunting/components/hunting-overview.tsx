@@ -53,7 +53,7 @@ export const HuntingOverview = ({ status, onRefresh }: HuntingOverviewProps) => 
 			<PremiumEmptyState
 				icon={Search}
 				title="No instances configured for hunting"
-				description="Configure hunting for your Sonarr and Radarr instances in the Configuration tab."
+				description="Configure hunting for your Sonarr, Radarr, Lidarr, and Readarr instances in the Configuration tab."
 			/>
 		);
 	}

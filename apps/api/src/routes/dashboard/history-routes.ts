@@ -7,8 +7,10 @@ import {
 	isSonarrClient,
 	isRadarrClient,
 	isProwlarrClient,
+	isLidarrClient,
+	isReadarrClient,
 } from "../../lib/arr/client-helpers.js";
-import { normalizeHistoryItem } from "../../lib/dashboard/history-utils.js";
+import { normalizeHistoryItem, type HistoryService } from "../../lib/dashboard/history-utils.js";
 
 /**
  * Query schema for history endpoint.
@@ -36,7 +38,7 @@ export const historyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 	/**
 	 * GET /dashboard/history
-	 * Fetches download history from all enabled Sonarr, Radarr, and Prowlarr instances
+	 * Fetches download history from all enabled Sonarr, Radarr, Prowlarr, Lidarr, and Readarr instances
 	 */
 	app.get("/dashboard/history", async (request, reply) => {
 		const { startDate, endDate } = historyQuerySchema.parse(request.query ?? {});
@@ -44,9 +46,9 @@ export const historyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const response = await executeOnInstances(
 			app,
 			request.currentUser!.id,
-			{ serviceTypes: ["SONARR", "RADARR", "PROWLARR"] },
+			{ serviceTypes: ["SONARR", "RADARR", "PROWLARR", "LIDARR", "READARR"] },
 			async (client, instance) => {
-				const service = instance.service.toLowerCase() as "sonarr" | "radarr" | "prowlarr";
+				const service = instance.service.toLowerCase() as HistoryService;
 				const recordLimit = 2500;
 
 				// Fetch history using SDK with pagination params
@@ -84,6 +86,28 @@ export const historyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					});
 					rawRecords = result.records ?? [];
 					totalRecords = result.totalRecords ?? rawRecords.length;
+				} else if (isLidarrClient(client)) {
+					const result = await client.history.get({
+						page: 1,
+						pageSize: recordLimit,
+						sortKey: "date",
+						sortDirection: "descending",
+						...(startDate && { since: startDate }),
+						...(endDate && { until: endDate }),
+					});
+					rawRecords = result.records ?? [];
+					totalRecords = result.totalRecords ?? rawRecords.length;
+				} else if (isReadarrClient(client)) {
+					const result = await client.history.get({
+						page: 1,
+						pageSize: recordLimit,
+						sortKey: "date",
+						sortDirection: "descending",
+						...(startDate && { since: startDate }),
+						...(endDate && { until: endDate }),
+					});
+					rawRecords = result.records ?? [];
+					totalRecords = result.totalRecords ?? rawRecords.length;
 				}
 
 				// Normalize and enrich items
@@ -107,7 +131,7 @@ export const historyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const results = response.instances.map((result) => ({
 			instanceId: result.instanceId,
 			instanceName: result.instanceName,
-			service: result.service as "sonarr" | "radarr" | "prowlarr",
+			service: result.service as HistoryService,
 			data: result.success ? result.data.items : [],
 			totalRecords: result.success ? result.data.totalRecords : 0,
 		}));

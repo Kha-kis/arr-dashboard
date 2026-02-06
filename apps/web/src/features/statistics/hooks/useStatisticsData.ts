@@ -10,6 +10,8 @@ import type {
 	SonarrStatistics,
 	RadarrStatistics,
 	ProwlarrStatistics,
+	LidarrStatistics,
+	ReadarrStatistics,
 	HealthIssue,
 	CombinedDiskStats,
 } from "@arr/shared";
@@ -76,6 +78,38 @@ const buildProwlarrRows = (
 	}));
 
 /**
+ * Build Lidarr table rows from instance data
+ */
+const buildLidarrRows = (
+	instances: Array<{
+		instanceId: string;
+		instanceName: string;
+		data: LidarrStatistics;
+	}>,
+) =>
+	instances.map((entry) => ({
+		instanceId: entry.instanceId,
+		instanceName: entry.instanceName,
+		...entry.data,
+	}));
+
+/**
+ * Build Readarr table rows from instance data
+ */
+const buildReadarrRows = (
+	instances: Array<{
+		instanceId: string;
+		instanceName: string;
+		data: ReadarrStatistics;
+	}>,
+) =>
+	instances.map((entry) => ({
+		instanceId: entry.instanceId,
+		instanceName: entry.instanceName,
+		...entry.data,
+	}));
+
+/**
  * Hook for statistics data aggregation and transformation
  *
  * @returns Aggregated statistics and table rows for all service types
@@ -87,14 +121,20 @@ export const useStatisticsData = () => {
 	const sonarrInstances = useMemo(() => data?.sonarr.instances ?? [], [data?.sonarr.instances]);
 	const radarrInstances = useMemo(() => data?.radarr.instances ?? [], [data?.radarr.instances]);
 	const prowlarrInstances = useMemo(() => data?.prowlarr.instances ?? [], [data?.prowlarr.instances]);
+	const lidarrInstances = useMemo(() => data?.lidarr?.instances ?? [], [data?.lidarr?.instances]);
+	const readarrInstances = useMemo(() => data?.readarr?.instances ?? [], [data?.readarr?.instances]);
 
 	const sonarrRows = useMemo(() => buildSonarrRows(sonarrInstances), [sonarrInstances]);
 	const radarrRows = useMemo(() => buildRadarrRows(radarrInstances), [radarrInstances]);
 	const prowlarrRows = useMemo(() => buildProwlarrRows(prowlarrInstances), [prowlarrInstances]);
+	const lidarrRows = useMemo(() => buildLidarrRows(lidarrInstances), [lidarrInstances]);
+	const readarrRows = useMemo(() => buildReadarrRows(readarrInstances), [readarrInstances]);
 
 	const sonarrAggregate = data?.sonarr.aggregate;
 	const radarrAggregate = data?.radarr.aggregate;
 	const prowlarrAggregate = data?.prowlarr.aggregate;
+	const lidarrAggregate = data?.lidarr?.aggregate;
+	const readarrAggregate = data?.readarr?.aggregate;
 
 	// Sonarr totals with fallback aggregation
 	const sonarrTotals = useMemo(
@@ -211,6 +251,96 @@ export const useStatisticsData = () => {
 		[prowlarrAggregate, prowlarrInstances],
 	);
 
+	// Lidarr totals with fallback aggregation
+	const lidarrTotals = useMemo(
+		() => ({
+			totalArtists:
+				lidarrAggregate?.totalArtists ?? sum(lidarrInstances, (stats) => stats.totalArtists),
+			monitoredArtists:
+				lidarrAggregate?.monitoredArtists ?? sum(lidarrInstances, (stats) => stats.monitoredArtists),
+			totalAlbums:
+				lidarrAggregate?.totalAlbums ?? sum(lidarrInstances, (stats) => stats.totalAlbums),
+			monitoredAlbums:
+				lidarrAggregate?.monitoredAlbums ?? sum(lidarrInstances, (stats) => stats.monitoredAlbums),
+			totalTracks:
+				lidarrAggregate?.totalTracks ?? sum(lidarrInstances, (stats) => stats.totalTracks),
+			downloadedTracks:
+				lidarrAggregate?.downloadedTracks ?? sum(lidarrInstances, (stats) => stats.downloadedTracks),
+			missingTracks:
+				lidarrAggregate?.missingTracks ?? sum(lidarrInstances, (stats) => stats.missingTracks),
+			downloadPercent:
+				lidarrAggregate?.downloadedPercentage ??
+				calculatePercent(
+					sum(lidarrInstances, (stats) => stats.downloadedTracks),
+					Math.max(sum(lidarrInstances, (stats) => stats.totalTracks), 1),
+				),
+			diskUsed: lidarrAggregate?.diskUsed ?? sum(lidarrInstances, (stats) => stats.diskUsed),
+			diskTotal: lidarrAggregate?.diskTotal ?? sum(lidarrInstances, (stats) => stats.diskTotal),
+			diskPercent:
+				lidarrAggregate?.diskUsagePercent ??
+				calculatePercent(
+					sum(lidarrInstances, (stats) => stats.diskUsed),
+					Math.max(sum(lidarrInstances, (stats) => stats.diskTotal), 1),
+				),
+			healthIssues:
+				lidarrAggregate?.healthIssues ?? sum(lidarrInstances, (stats) => stats.healthIssues),
+			cutoffUnmetCount:
+				lidarrAggregate?.cutoffUnmetCount ?? sum(lidarrInstances, (stats) => stats.cutoffUnmetCount),
+			averageTrackSize: lidarrAggregate?.averageTrackSize,
+			qualityBreakdown: lidarrAggregate?.qualityBreakdown,
+			tagBreakdown: lidarrAggregate?.tagBreakdown,
+			recentlyAdded7Days:
+				lidarrAggregate?.recentlyAdded7Days ?? sum(lidarrInstances, (stats) => stats.recentlyAdded7Days),
+			recentlyAdded30Days:
+				lidarrAggregate?.recentlyAdded30Days ?? sum(lidarrInstances, (stats) => stats.recentlyAdded30Days),
+		}),
+		[lidarrAggregate, lidarrInstances],
+	);
+
+	// Readarr totals with fallback aggregation
+	const readarrTotals = useMemo(
+		() => ({
+			totalAuthors:
+				readarrAggregate?.totalAuthors ?? sum(readarrInstances, (stats) => stats.totalAuthors),
+			monitoredAuthors:
+				readarrAggregate?.monitoredAuthors ?? sum(readarrInstances, (stats) => stats.monitoredAuthors),
+			totalBooks:
+				readarrAggregate?.totalBooks ?? sum(readarrInstances, (stats) => stats.totalBooks),
+			monitoredBooks:
+				readarrAggregate?.monitoredBooks ?? sum(readarrInstances, (stats) => stats.monitoredBooks),
+			downloadedBooks:
+				readarrAggregate?.downloadedBooks ?? sum(readarrInstances, (stats) => stats.downloadedBooks),
+			missingBooks:
+				readarrAggregate?.missingBooks ?? sum(readarrInstances, (stats) => stats.missingBooks),
+			downloadPercent:
+				readarrAggregate?.downloadedPercentage ??
+				calculatePercent(
+					sum(readarrInstances, (stats) => stats.downloadedBooks),
+					Math.max(sum(readarrInstances, (stats) => stats.totalBooks), 1),
+				),
+			diskUsed: readarrAggregate?.diskUsed ?? sum(readarrInstances, (stats) => stats.diskUsed),
+			diskTotal: readarrAggregate?.diskTotal ?? sum(readarrInstances, (stats) => stats.diskTotal),
+			diskPercent:
+				readarrAggregate?.diskUsagePercent ??
+				calculatePercent(
+					sum(readarrInstances, (stats) => stats.diskUsed),
+					Math.max(sum(readarrInstances, (stats) => stats.diskTotal), 1),
+				),
+			healthIssues:
+				readarrAggregate?.healthIssues ?? sum(readarrInstances, (stats) => stats.healthIssues),
+			cutoffUnmetCount:
+				readarrAggregate?.cutoffUnmetCount ?? sum(readarrInstances, (stats) => stats.cutoffUnmetCount),
+			averageBookSize: readarrAggregate?.averageBookSize,
+			qualityBreakdown: readarrAggregate?.qualityBreakdown,
+			tagBreakdown: readarrAggregate?.tagBreakdown,
+			recentlyAdded7Days:
+				readarrAggregate?.recentlyAdded7Days ?? sum(readarrInstances, (stats) => stats.recentlyAdded7Days),
+			recentlyAdded30Days:
+				readarrAggregate?.recentlyAdded30Days ?? sum(readarrInstances, (stats) => stats.recentlyAdded30Days),
+		}),
+		[readarrAggregate, readarrInstances],
+	);
+
 	// Collect all health issues across services
 	const allHealthIssues: HealthIssue[] = useMemo(() => {
 		const issues: HealthIssue[] = [];
@@ -223,15 +353,24 @@ export const useStatisticsData = () => {
 		if (prowlarrAggregate?.healthIssuesList) {
 			issues.push(...prowlarrAggregate.healthIssuesList);
 		}
+		if (lidarrAggregate?.healthIssuesList) {
+			issues.push(...lidarrAggregate.healthIssuesList);
+		}
+		if (readarrAggregate?.healthIssuesList) {
+			issues.push(...readarrAggregate.healthIssuesList);
+		}
 		return issues;
 	}, [
 		sonarrAggregate?.healthIssuesList,
 		radarrAggregate?.healthIssuesList,
 		prowlarrAggregate?.healthIssuesList,
+		lidarrAggregate?.healthIssuesList,
+		readarrAggregate?.healthIssuesList,
 	]);
 
 	const totalHealthIssues =
-		sonarrTotals.healthIssues + radarrTotals.healthIssues + prowlarrTotals.healthIssues;
+		sonarrTotals.healthIssues + radarrTotals.healthIssues + prowlarrTotals.healthIssues +
+		lidarrTotals.healthIssues + readarrTotals.healthIssues;
 
 	// Combined disk stats with proper cross-service deduplication
 	// Falls back to summing aggregates if combinedDisk is not available (backward compatibility)
@@ -240,16 +379,19 @@ export const useStatisticsData = () => {
 			return data.combinedDisk;
 		}
 		// Fallback for backward compatibility (shouldn't happen with updated API)
-		const diskTotal = (sonarrAggregate?.diskTotal ?? 0) + (radarrAggregate?.diskTotal ?? 0);
-		const diskUsed = (sonarrAggregate?.diskUsed ?? 0) + (radarrAggregate?.diskUsed ?? 0);
-		const diskFree = (sonarrAggregate?.diskFree ?? 0) + (radarrAggregate?.diskFree ?? 0);
+		const diskTotal = (sonarrAggregate?.diskTotal ?? 0) + (radarrAggregate?.diskTotal ?? 0) +
+			(lidarrAggregate?.diskTotal ?? 0) + (readarrAggregate?.diskTotal ?? 0);
+		const diskUsed = (sonarrAggregate?.diskUsed ?? 0) + (radarrAggregate?.diskUsed ?? 0) +
+			(lidarrAggregate?.diskUsed ?? 0) + (readarrAggregate?.diskUsed ?? 0);
+		const diskFree = (sonarrAggregate?.diskFree ?? 0) + (radarrAggregate?.diskFree ?? 0) +
+			(lidarrAggregate?.diskFree ?? 0) + (readarrAggregate?.diskFree ?? 0);
 		return {
 			diskTotal,
 			diskFree,
 			diskUsed,
 			diskUsagePercent: diskTotal > 0 ? (diskUsed / diskTotal) * 100 : 0,
 		};
-	}, [data?.combinedDisk, sonarrAggregate, radarrAggregate]);
+	}, [data?.combinedDisk, sonarrAggregate, radarrAggregate, lidarrAggregate, readarrAggregate]);
 
 	return {
 		// Query state
@@ -262,11 +404,15 @@ export const useStatisticsData = () => {
 		sonarrRows,
 		radarrRows,
 		prowlarrRows,
+		lidarrRows,
+		readarrRows,
 
 		// Aggregated totals
 		sonarrTotals,
 		radarrTotals,
 		prowlarrTotals,
+		lidarrTotals,
+		readarrTotals,
 
 		// Combined disk (properly deduplicated across all services)
 		combinedDisk,

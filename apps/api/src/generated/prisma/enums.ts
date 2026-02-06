@@ -12,7 +12,9 @@
 export const ServiceType = {
   SONARR: 'SONARR',
   RADARR: 'RADARR',
-  PROWLARR: 'PROWLARR'
+  PROWLARR: 'PROWLARR',
+  LIDARR: 'LIDARR',
+  READARR: 'READARR'
 } as const
 
 export type ServiceType = (typeof ServiceType)[keyof typeof ServiceType]
@@ -20,7 +22,9 @@ export type ServiceType = (typeof ServiceType)[keyof typeof ServiceType]
 
 export const LibraryItemType = {
   movie: 'movie',
-  series: 'series'
+  series: 'series',
+  artist: 'artist',
+  author: 'author'
 } as const
 
 export type LibraryItemType = (typeof LibraryItemType)[keyof typeof LibraryItemType]

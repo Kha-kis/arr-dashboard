@@ -1,4 +1,12 @@
 import type {
+	LibraryAlbumMonitorRequest,
+	LibraryAlbumSearchRequest,
+	LibraryAlbumsResponse,
+	LibraryArtistSearchRequest,
+	LibraryAuthorSearchRequest,
+	LibraryBookMonitorRequest,
+	LibraryBookSearchRequest,
+	LibraryBooksResponse,
 	LibraryEpisodeMonitorRequest,
 	LibraryEpisodeSearchRequest,
 	LibraryEpisodesResponse,
@@ -128,6 +136,88 @@ export async function toggleEpisodeMonitoring(
 	payload: LibraryEpisodeMonitorRequest,
 ): Promise<void> {
 	await apiRequest<void>("/api/library/episode/monitor", {
+		method: "POST",
+		json: payload,
+	});
+}
+
+// ============================================================================
+// Lidarr Album API (child items of artists)
+// ============================================================================
+
+export interface FetchAlbumsParams {
+	instanceId: string;
+	artistId: number | string;
+}
+
+export async function fetchAlbums(params: FetchAlbumsParams): Promise<LibraryAlbumsResponse> {
+	const search = new URLSearchParams({
+		instanceId: params.instanceId,
+		artistId: String(params.artistId),
+	});
+
+	return await apiRequest<LibraryAlbumsResponse>(`/api/library/albums?${search.toString()}`);
+}
+
+export async function searchLibraryArtist(payload: LibraryArtistSearchRequest): Promise<void> {
+	await apiRequest<void>("/api/library/artist/search", {
+		method: "POST",
+		json: payload,
+	});
+}
+
+export async function searchLibraryAlbum(payload: LibraryAlbumSearchRequest): Promise<void> {
+	await apiRequest<void>("/api/library/album/search", {
+		method: "POST",
+		json: payload,
+	});
+}
+
+export async function toggleAlbumMonitoring(
+	payload: LibraryAlbumMonitorRequest,
+): Promise<void> {
+	await apiRequest<void>("/api/library/album/monitor", {
+		method: "POST",
+		json: payload,
+	});
+}
+
+// ============================================================================
+// Readarr Book API (child items of authors)
+// ============================================================================
+
+export interface FetchBooksParams {
+	instanceId: string;
+	authorId: number | string;
+}
+
+export async function fetchBooks(params: FetchBooksParams): Promise<LibraryBooksResponse> {
+	const search = new URLSearchParams({
+		instanceId: params.instanceId,
+		authorId: String(params.authorId),
+	});
+
+	return await apiRequest<LibraryBooksResponse>(`/api/library/books?${search.toString()}`);
+}
+
+export async function searchLibraryAuthor(payload: LibraryAuthorSearchRequest): Promise<void> {
+	await apiRequest<void>("/api/library/author/search", {
+		method: "POST",
+		json: payload,
+	});
+}
+
+export async function searchLibraryBook(payload: LibraryBookSearchRequest): Promise<void> {
+	await apiRequest<void>("/api/library/book/search", {
+		method: "POST",
+		json: payload,
+	});
+}
+
+export async function toggleBookMonitoring(
+	payload: LibraryBookMonitorRequest,
+): Promise<void> {
+	await apiRequest<void>("/api/library/book/monitor", {
 		method: "POST",
 		json: payload,
 	});

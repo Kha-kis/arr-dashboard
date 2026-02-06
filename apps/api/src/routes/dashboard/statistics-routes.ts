@@ -1,17 +1,23 @@
 import { dashboardStatisticsResponseSchema } from "@arr/shared";
 import type { DashboardStatisticsResponse } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
-import { SonarrClient, RadarrClient, ProwlarrClient } from "arr-sdk";
+import { SonarrClient, RadarrClient, ProwlarrClient, LidarrClient, ReadarrClient } from "arr-sdk";
 import {
 	aggregateProwlarrStatistics,
 	aggregateRadarrStatistics,
 	aggregateSonarrStatistics,
+	aggregateLidarrStatistics,
+	aggregateReadarrStatistics,
 	emptyProwlarrStatistics,
 	emptyRadarrStatistics,
 	emptySonarrStatistics,
+	emptyLidarrStatistics,
+	emptyReadarrStatistics,
 	fetchSonarrStatisticsWithSdk,
 	fetchRadarrStatisticsWithSdk,
 	fetchProwlarrStatisticsWithSdk,
+	fetchLidarrStatisticsWithSdk,
+	fetchReadarrStatisticsWithSdk,
 } from "../../lib/statistics/dashboard-statistics.js";
 
 /**
@@ -137,6 +143,70 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					}
 				}
 
+				if (service === "lidarr" && client instanceof LidarrClient) {
+					try {
+						const data = await fetchLidarrStatisticsWithSdk(
+							client,
+							instance.id,
+							instance.label,
+							instance.baseUrl,
+						);
+						return {
+							service: "lidarr" as const,
+							instanceId: instance.id,
+							instanceName: instance.label,
+							storageGroupId: instance.storageGroupId,
+							data,
+							error: false,
+						};
+					} catch (error) {
+						request.log.error(
+							{ err: error, instance: instance.id },
+							"lidarr statistics fetch failed",
+						);
+						return {
+							service: "lidarr" as const,
+							instanceId: instance.id,
+							instanceName: instance.label,
+							storageGroupId: instance.storageGroupId,
+							data: emptyLidarrStatistics,
+							error: true,
+						};
+					}
+				}
+
+				if (service === "readarr" && client instanceof ReadarrClient) {
+					try {
+						const data = await fetchReadarrStatisticsWithSdk(
+							client,
+							instance.id,
+							instance.label,
+							instance.baseUrl,
+						);
+						return {
+							service: "readarr" as const,
+							instanceId: instance.id,
+							instanceName: instance.label,
+							storageGroupId: instance.storageGroupId,
+							data,
+							error: false,
+						};
+					} catch (error) {
+						request.log.error(
+							{ err: error, instance: instance.id },
+							"readarr statistics fetch failed",
+						);
+						return {
+							service: "readarr" as const,
+							instanceId: instance.id,
+							instanceName: instance.label,
+							storageGroupId: instance.storageGroupId,
+							data: emptyReadarrStatistics,
+							error: true,
+						};
+					}
+				}
+
 				request.log.warn(
 					{ service: instance.service, instanceId: instance.id },
 					"unknown service type for statistics",
@@ -171,6 +241,22 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			instanceId: string;
 			instanceName: string;
 			data: DashboardStatisticsResponse["prowlarr"]["instances"][number]["data"];
+			error?: boolean;
+		}> = [];
+		const lidarrInstances: Array<{
+			instanceId: string;
+			instanceName: string;
+			storageGroupId: string | null;
+			shouldCountDisk: boolean;
+			data: DashboardStatisticsResponse["lidarr"]["instances"][number]["data"];
+			error?: boolean;
+		}> = [];
+		const readarrInstances: Array<{
+			instanceId: string;
+			instanceName: string;
+			storageGroupId: string | null;
+			shouldCountDisk: boolean;
+			data: DashboardStatisticsResponse["readarr"]["instances"][number]["data"];
 			error?: boolean;
 		}> = [];
 
@@ -235,6 +321,52 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					data: result.data,
 					error: result.error,
 				});
+			} else if (result.service === "lidarr") {
+				// Determine if this instance should count disk stats
+				const storageGroupId = result.storageGroupId;
+				const shouldCountDisk = !storageGroupId || !globalSeenStorageGroups.has(storageGroupId);
+				if (storageGroupId) {
+					globalSeenStorageGroups.add(storageGroupId);
+				}
+
+				// Add to combined disk stats if this instance should count
+				if (shouldCountDisk) {
+					combinedDiskTotal += result.data.diskTotal ?? 0;
+					combinedDiskFree += result.data.diskFree ?? 0;
+					combinedDiskUsed += result.data.diskUsed ?? 0;
+				}
+
+				lidarrInstances.push({
+					instanceId: result.instanceId,
+					instanceName: result.instanceName,
+					storageGroupId: result.storageGroupId,
+					shouldCountDisk,
+					data: result.data,
+					error: result.error,
+				});
+			} else if (result.service === "readarr") {
+				// Determine if this instance should count disk stats
+				const storageGroupId = result.storageGroupId;
+				const shouldCountDisk = !storageGroupId || !globalSeenStorageGroups.has(storageGroupId);
+				if (storageGroupId) {
+					globalSeenStorageGroups.add(storageGroupId);
+				}
+
+				// Add to combined disk stats if this instance should count
+				if (shouldCountDisk) {
+					combinedDiskTotal += result.data.diskTotal ?? 0;
+					combinedDiskFree += result.data.diskFree ?? 0;
+					combinedDiskUsed += result.data.diskUsed ?? 0;
+				}
+
+				readarrInstances.push({
+					instanceId: result.instanceId,
+					instanceName: result.instanceName,
+					storageGroupId: result.storageGroupId,
+					shouldCountDisk,
+					data: result.data,
+					error: result.error,
+				});
 			}
 		}
 
@@ -244,7 +376,7 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				? Math.min(100, Math.max(0, (combinedDiskUsed / combinedDiskTotal) * 100))
 				: 0;
 
-		const payload: DashboardStatisticsResponse = {
+		const payload = {
 			sonarr: {
 				instances: sonarrInstances,
 				aggregate: aggregateSonarrStatistics(sonarrInstances),
@@ -256,6 +388,14 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			prowlarr: {
 				instances: prowlarrInstances,
 				aggregate: aggregateProwlarrStatistics(prowlarrInstances),
+			},
+			lidarr: {
+				instances: lidarrInstances,
+				aggregate: aggregateLidarrStatistics(lidarrInstances),
+			},
+			readarr: {
+				instances: readarrInstances,
+				aggregate: aggregateReadarrStatistics(readarrInstances),
 			},
 			// Combined disk stats with proper cross-service storage group deduplication
 			combinedDisk:
