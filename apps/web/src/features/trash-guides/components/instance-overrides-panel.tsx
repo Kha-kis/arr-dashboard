@@ -10,7 +10,6 @@ import {
 	ChevronUp,
 	Settings2,
 	Check,
-	RotateCcw,
 	AlertTriangle,
 	Target,
 	Layers,

@@ -68,7 +68,7 @@ interface SonarrSeries {
 	qualityProfileId: number;
 }
 
-interface SonarrEpisode {
+interface _SonarrEpisode {
 	id: number;
 	seriesId: number;
 	episodeNumber: number;
@@ -80,7 +80,7 @@ interface SonarrEpisode {
 }
 
 // Radarr types
-interface RadarrMovie {
+interface _RadarrMovie {
 	id: number;
 	title: string;
 	year: number;
@@ -94,14 +94,14 @@ interface RadarrMovie {
 	inCinemas?: string;
 }
 
-interface WantedResponse<T> {
+interface _WantedResponse<T> {
 	page: number;
 	pageSize: number;
 	totalRecords: number;
 	records: T[];
 }
 
-interface QueueResponse {
+interface _QueueResponse {
 	totalRecords: number;
 }
 
@@ -120,7 +120,7 @@ interface QueueItem {
 	movieId?: number;
 }
 
-interface FullQueueResponse {
+interface _FullQueueResponse {
 	totalRecords: number;
 	records: QueueItem[];
 }
@@ -146,7 +146,7 @@ interface HistoryRecord {
 	movieId?: number;
 }
 
-interface HistoryResponse {
+interface _HistoryResponse {
 	page: number;
 	pageSize: number;
 	totalRecords: number;
@@ -409,7 +409,7 @@ function passesFilters(
 		"ageThreshold",
 	];
 
-	const results = conditions.map((condition) => checkFilterCondition(item, filters, condition));
+	const _results = conditions.map((condition) => checkFilterCondition(item, filters, condition));
 
 	// Exclude conditions always use AND logic (they're blockers)
 	const excludeResults = [

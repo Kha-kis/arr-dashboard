@@ -74,10 +74,10 @@ interface TrashCustomFormatWithScores extends TrashCustomFormat {
 // Routes
 // ============================================================================
 
-const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
+const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
+		if (!request.currentUser!.id) {
 			return reply.status(401).send({
 				success: false,
 				error: "Authentication required",
@@ -301,7 +301,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 			const instance = await app.prisma.serviceInstance.findFirst({
 				where: {
 					id: instanceId,
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id,
 				},
 			});
 
@@ -416,7 +416,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 			const instance = await app.prisma.serviceInstance.findFirst({
 				where: {
 					id: instanceId,
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id,
 				},
 			});
 
@@ -667,7 +667,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 			const getScoreForCF = (cf: TrashCustomFormat): number => {
 				const cfWithScores = cf as TrashCustomFormat & { trash_scores?: Record<string, number> };
 				if (!cfWithScores.trash_scores) return cf.score ?? 0;
-				const scoreSet = matchedProfile!.trash_score_set;
+				const scoreSet = matchedProfile?.trash_score_set;
 				if (scoreSet && cfWithScores.trash_scores[scoreSet] !== undefined) {
 					return cfWithScores.trash_scores[scoreSet];
 				}
@@ -709,7 +709,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 						for (const groupCF of group.custom_formats) {
 							const cfTrashId = typeof groupCF === "string" ? groupCF : groupCF.trash_id;
 							const cfRequired = typeof groupCF === "object" ? groupCF.required === true : false;
-							const cfDefault =
+							const _cfDefault =
 								typeof groupCF === "object"
 									? groupCF.default === true || groupCF.default === "true"
 									: false;
@@ -823,7 +823,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, opts, done) => {
 			const instance = await app.prisma.serviceInstance.findFirst({
 				where: {
 					id: sourceInstanceId,
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id,
 				},
 			});
 

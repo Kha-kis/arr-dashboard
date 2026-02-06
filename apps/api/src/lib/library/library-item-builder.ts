@@ -24,7 +24,6 @@ export const buildLibraryItem = (
 			return buildArtistItem(instance, service, raw);
 		case "readarr":
 			return buildAuthorItem(instance, service, raw);
-		case "sonarr":
 		default:
 			return buildSeriesItem(instance, service, raw);
 	}

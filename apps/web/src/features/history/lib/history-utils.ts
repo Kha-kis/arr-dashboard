@@ -173,7 +173,7 @@ export const groupHistoryItems = (
 		let addedToGroup = false;
 
 		// Find a matching group for this delete event (same episode/movie, within time window)
-		for (const [key, groupItems] of groups.entries()) {
+		for (const [_key, groupItems] of groups.entries()) {
 			const firstInGroup = groupItems[0];
 			if (!firstInGroup) continue;
 

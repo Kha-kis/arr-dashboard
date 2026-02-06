@@ -35,7 +35,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		tmdbApiKey: z.string().max(255).optional(),
 	});
 
-	app.get("/setup-required", async (request, reply) => {
+	app.get("/setup-required", async (_request, reply) => {
 		const userCount = await app.prisma.user.count();
 		return reply.send({
 			required: userCount === 0,

@@ -49,7 +49,7 @@ export const QualityProfileBrowser = ({
 			setTemplateName("");
 			setTemplateDescription("");
 			onClose();
-		} catch (error) {
+		} catch {
 			// Error will be displayed through mutation state
 		}
 	};

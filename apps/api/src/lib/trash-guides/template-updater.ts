@@ -5,22 +5,21 @@
  * Detects when new versions are available and handles update logic based on user preferences.
  */
 
-import {
-	isCFGroupApplicableToProfile,
-	type AutoSyncChangeLogEntry,
-	type CustomFormatDiff,
-	type CustomFormatGroupDiff,
-	type GroupCustomFormat,
-	type SuggestedCFAddition,
-	type SuggestedScoreChange,
-	type TemplateConfig,
-	type TemplateCustomFormat,
-	type TemplateCustomFormatGroup,
-	type TemplateDiffResult,
-	type TrashConfigType,
-	type TrashCustomFormat,
-	type TrashCustomFormatGroup,
-	type TrashQualityProfile,
+import type {
+	AutoSyncChangeLogEntry,
+	CustomFormatDiff,
+	CustomFormatGroupDiff,
+	GroupCustomFormat,
+	SuggestedCFAddition,
+	SuggestedScoreChange,
+	TemplateConfig,
+	TemplateCustomFormat,
+	TemplateCustomFormatGroup,
+	TemplateDiffResult,
+	TrashConfigType,
+	TrashCustomFormat,
+	TrashCustomFormatGroup,
+	TrashQualityProfile,
 } from "@arr/shared";
 import type { PrismaClient } from "../../lib/prisma.js";
 import { dequal as deepEqual } from "dequal";
@@ -790,77 +789,6 @@ export class TemplateUpdater {
 	}
 
 	/**
-	 * Get the set of CF trash_ids that are relevant to a specific quality profile.
-	 * This includes:
-	 * - CFs directly referenced in the profile's formatItems (mandatory)
-	 * - CFs from CF Groups that apply to this profile (not excluded)
-	 *
-	 * @private
-	 */
-	private async getProfileRelevantCFIds(
-		serviceType: "RADARR" | "SONARR",
-		profileTrashId: string | null,
-	): Promise<Set<string> | null> {
-		// If no profile trash_id, we can't filter - return null to indicate no filtering
-		if (!profileTrashId) {
-			return null;
-		}
-
-		try {
-			// Get quality profiles from cache
-			const profiles = await this.cacheManager.get<TrashQualityProfile[]>(
-				serviceType,
-				"QUALITY_PROFILES",
-			);
-
-			if (!profiles) {
-				return null;
-			}
-
-			const profile = profiles.find((p) => p.trash_id === profileTrashId);
-			if (!profile) {
-				return null;
-			}
-
-			const relevantCFIds = new Set<string>();
-
-			// Add CFs from profile's formatItems (mandatory CFs)
-			if (profile.formatItems) {
-				for (const cfTrashId of Object.values(profile.formatItems)) {
-					relevantCFIds.add(cfTrashId);
-				}
-			}
-
-			// Get CF Groups from cache to find applicable groups
-			const cfGroups = await this.cacheManager.get<TrashCustomFormatGroup[]>(
-				serviceType,
-				"CF_GROUPS",
-			);
-
-			if (cfGroups) {
-				// Add CFs from CF Groups that apply to this profile
-				// Supports both new `include` semantics (TRaSH Guides PR #2590) and legacy `exclude` semantics
-				for (const group of cfGroups) {
-					if (isCFGroupApplicableToProfile(group, profileTrashId) && group.custom_formats) {
-						// Add all CFs from this applicable group
-						for (const cf of group.custom_formats) {
-							const cfTrashId = typeof cf === "string" ? cf : (cf as GroupCustomFormat).trash_id;
-							relevantCFIds.add(cfTrashId);
-						}
-					}
-				}
-			}
-
-			return relevantCFIds;
-		} catch (error) {
-			console.error(
-				`[TemplateUpdater] Failed to get profile-relevant CFs: ${error instanceof Error ? error.message : String(error)}`,
-			);
-			return null;
-		}
-	}
-
-	/**
 	 * Merge current template config with latest TRaSH data.
 	 *
 	 * Merge strategy:
@@ -975,7 +903,7 @@ export class TemplateUpdater {
 				);
 
 				// Determine final score based on applyScoreUpdates option
-				let finalScore: number;
+				let _finalScore: number;
 				const finalScoreOverride: number | undefined = currentCF.scoreOverride;
 				const userOverrideScore = currentCF.scoreOverride; // Capture for type narrowing
 
@@ -983,7 +911,7 @@ export class TemplateUpdater {
 					// Auto-sync mode: apply recommended scores unless user has an override
 					if (hasScoreOverride && userOverrideScore !== undefined) {
 						// User has set a custom score - respect it but track as conflict if different
-						finalScore = userOverrideScore;
+						_finalScore = userOverrideScore;
 						if (userOverrideScore !== recommendedScore) {
 							stats.scoresSkippedDueToOverride++;
 							scoreConflicts.push({
@@ -1005,11 +933,11 @@ export class TemplateUpdater {
 								newScore: recommendedScore,
 							});
 						}
-						finalScore = recommendedScore;
+						_finalScore = recommendedScore;
 					}
 				} else {
 					// Manual/notify mode: preserve existing scores
-					finalScore = currentScore;
+					_finalScore = currentScore;
 				}
 
 				if (hasScoreOverride) {
@@ -1781,7 +1709,7 @@ export class TemplateUpdater {
 
 		// 1. Suggested additions from CF Groups
 		// Find CFs that are in template's CF Groups but not in template's customFormats
-		for (const [groupTrashId, templateGroup] of currentGroups) {
+		for (const [groupTrashId, _templateGroup] of currentGroups) {
 			const latestGroup = latestGroups.get(groupTrashId);
 			if (!latestGroup?.custom_formats) continue;
 
@@ -1819,7 +1747,7 @@ export class TemplateUpdater {
 
 			if (linkedProfile?.formatItems) {
 				// formatItems maps CF name to trash_id
-				for (const [cfName, cfTrashId] of Object.entries(linkedProfile.formatItems)) {
+				for (const [_cfName, cfTrashId] of Object.entries(linkedProfile.formatItems)) {
 					// Skip if CF is already in template
 					if (currentCFs.has(cfTrashId)) continue;
 

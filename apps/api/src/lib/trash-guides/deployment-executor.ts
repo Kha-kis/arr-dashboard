@@ -8,7 +8,7 @@
 import type { PrismaClient, ServiceType } from "../../lib/prisma.js";
 import type { SonarrClient, RadarrClient } from "arr-sdk";
 import type { ArrClientFactory } from "../arr/client-factory.js";
-import type { CustomQualityConfig, TemplateQualityEntry } from "@arr/shared";
+import type { CustomQualityConfig, } from "@arr/shared";
 import { getSyncMetrics } from "./sync-metrics.js";
 
 // SDK CustomFormat type for internal use
@@ -539,7 +539,7 @@ export class DeploymentExecutorService {
 		templateCFs: TemplateCF[],
 		templateId: string,
 		instanceId: string,
-		userId: string,
+		_userId: string,
 		syncStrategy: "auto" | "manual" | "notify" | undefined,
 		conflictResolutions: Record<string, "use_template" | "keep_existing"> | undefined,
 		profileName: string,

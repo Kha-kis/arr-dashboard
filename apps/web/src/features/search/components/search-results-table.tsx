@@ -35,7 +35,7 @@ const formatBytes = (value?: number): string => {
 	return `${current.toFixed(precision)} ${units[unitIndex]}`;
 };
 
-const formatDate = (value?: string): string => {
+const _formatDate = (value?: string): string => {
 	if (!value) {
 		return "-";
 	}

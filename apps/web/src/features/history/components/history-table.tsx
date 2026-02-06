@@ -153,7 +153,7 @@ const getDisplayTitle = (item: HistoryItem): string => {
 	return item.sourceTitle ?? item.title ?? "Unknown";
 };
 
-const getProwlarrDetails = (item: HistoryItem): string => {
+const _getProwlarrDetails = (item: HistoryItem): string => {
 	if (item.service !== "prowlarr") return "";
 
 	const data = item.data as any;

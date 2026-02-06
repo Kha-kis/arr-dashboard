@@ -6,7 +6,6 @@ import {
 	useUndeployDeployment,
 	useDeleteDeploymentHistory,
 } from "../../../hooks/api/useDeploymentHistory";
-import type { DeploymentHistoryEntry } from "../../../lib/api-client/trash-guides";
 import { format } from "date-fns";
 import { DeploymentHistoryDetailsModal } from "./deployment-history-details-modal";
 import {

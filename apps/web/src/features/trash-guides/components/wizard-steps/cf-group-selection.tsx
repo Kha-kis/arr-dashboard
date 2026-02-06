@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Alert, AlertDescription } from "../../../../components/ui";
 import { PremiumSkeleton } from "../../../../components/layout/premium-components";
-import { ChevronRight, ChevronLeft, ChevronDown, Info, CheckCircle2, Star } from "lucide-react";
+import { ChevronRight, ChevronLeft, ChevronDown, Info, Star } from "lucide-react";
 import { useThemeGradient } from "../../../../hooks/useThemeGradient";
 import { createSanitizedHtml } from "../../../../lib/sanitize-html";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";

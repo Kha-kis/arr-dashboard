@@ -80,9 +80,9 @@ export const HistoryClient = () => {
 	} = historyData;
 
 	const totalRecords = groupedItems.length;
-	const totalPages = Math.ceil(totalRecords / pageSize);
-	const showingFrom = totalRecords > 0 ? (page - 1) * pageSize + 1 : 0;
-	const showingTo = Math.min(page * pageSize, totalRecords);
+	const _totalPages = Math.ceil(totalRecords / pageSize);
+	const _showingFrom = totalRecords > 0 ? (page - 1) * pageSize + 1 : 0;
+	const _showingTo = Math.min(page * pageSize, totalRecords);
 
 	const paginatedGroups = useMemo(() => {
 		const startIndex = (page - 1) * pageSize;

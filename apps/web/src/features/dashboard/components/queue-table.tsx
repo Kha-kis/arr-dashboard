@@ -3,7 +3,6 @@
 import { useMemo } from "react";
 import type { QueueItem } from "@arr/shared";
 import { Inbox, Loader2 } from "lucide-react";
-import { cn } from "../../../lib/utils";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
 import type { InstanceUrlMap } from "./dashboard-client";

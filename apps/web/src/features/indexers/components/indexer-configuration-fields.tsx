@@ -15,7 +15,7 @@ const FieldCard = ({
 	field: ProwlarrIndexerField;
 	index: number;
 }) => {
-	const { gradient: themeGradient } = useThemeGradient();
+	const { gradient: _themeGradient } = useThemeGradient();
 
 	return (
 		<div

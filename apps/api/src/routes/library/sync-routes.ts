@@ -31,7 +31,7 @@ const updateSyncSettingsSchema = z.object({
 export const registerSyncRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	// Add authentication preHandler for all routes
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
+		if (!request.currentUser!.id) {
 			return reply.status(401).send({ error: "Authentication required" });
 		}
 	});

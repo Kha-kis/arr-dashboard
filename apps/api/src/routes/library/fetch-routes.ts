@@ -36,7 +36,7 @@ import { getLibrarySyncScheduler } from "../../lib/library-sync/index.js";
 export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
+		if (!request.currentUser!.id) {
 			return reply.status(401).send({
 				error: "Authentication required",
 			});

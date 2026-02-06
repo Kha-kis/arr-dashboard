@@ -1,5 +1,4 @@
 import type { FastifyPluginCallback } from "fastify";
-import type { SearchRequest, SearchResult } from "@arr/shared";
 import { multiInstanceSearchResponseSchema, searchRequestSchema } from "@arr/shared";
 import { executeOnInstances, isProwlarrClient } from "../../lib/arr/client-helpers.js";
 import { performProwlarrSearchWithSdk } from "../../lib/search/prowlarr-api.js";
@@ -13,7 +12,7 @@ import { performProwlarrSearchWithSdk } from "../../lib/search/prowlarr-api.js";
 export const registerQueryRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
+		if (!request.currentUser!.id) {
 			return reply.status(401).send({
 				success: false,
 				error: "Authentication required",
@@ -26,7 +25,7 @@ export const registerQueryRoutes: FastifyPluginCallback = (app, _opts, done) => 
 	 * Performs a manual search query across one or more Prowlarr instances.
 	 * Supports filtering by indexer IDs and categories per instance.
 	 */
-	app.post("/search/query", async (request, reply) => {
+	app.post("/search/query", async (request, _reply) => {
 		const payload = searchRequestSchema.parse(request.body ?? {});
 
 		// Build a map of instance-specific filters

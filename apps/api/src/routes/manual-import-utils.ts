@@ -330,7 +330,7 @@ export const fetchManualImportCandidates = async (
 	let payload: unknown;
 	try {
 		payload = await response.json();
-	} catch (error) {
+	} catch (_error) {
 		throw new ManualImportError("ARR returned an invalid manual import payload.");
 	}
 

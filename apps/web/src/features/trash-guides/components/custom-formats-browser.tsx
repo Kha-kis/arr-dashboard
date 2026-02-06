@@ -35,8 +35,8 @@ import {
 	useDeployUserCustomFormats,
 } from "../hooks/use-custom-formats";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
-import type { CustomFormat, UserCustomFormat } from "../../../lib/api-client/custom-formats";
-import { cleanDescription, markdownToFormattedHtml, resolveIncludes, buildIncludesMap } from "../lib/description-utils";
+import type { CustomFormat } from "../../../lib/api-client/custom-formats";
+import { cleanDescription, buildIncludesMap } from "../lib/description-utils";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { UserCFImportDialog } from "./user-cf-import-dialog";
@@ -265,7 +265,7 @@ export const CustomFormatsBrowser = () => {
 	const { data: cfIncludesData } = useCFIncludes();
 
 	// Build includes map for efficient lookup
-	const includesMap = useMemo(() => {
+	const _includesMap = useMemo(() => {
 		if (!cfIncludesData || cfIncludesData.length === 0) return new Map();
 		return buildIncludesMap(cfIncludesData);
 	}, [cfIncludesData]);

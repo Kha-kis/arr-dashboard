@@ -6,7 +6,7 @@
 
 import { TRASH_CONFIG_TYPES } from "@arr/shared";
 import type { TrashConfigType } from "@arr/shared";
-import type { FastifyInstance, FastifyPluginOptions, FastifyRequest } from "fastify";
+import type { FastifyInstance, FastifyPluginOptions, } from "fastify";
 import { z } from "zod";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher, getRateLimitState } from "../../lib/trash-guides/github-fetcher.js";
@@ -60,7 +60,7 @@ const getEntriesQuerySchema = z.object({
 export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
+		if (!request.currentUser!.id) {
 			return reply.status(401).send({
 				success: false,
 				error: "Authentication required",

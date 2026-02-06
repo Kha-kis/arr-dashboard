@@ -590,8 +590,8 @@ const InstanceConfigCard = ({
 					>
 						<div className="text-xs p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 mb-3">
 							<p className="text-muted-foreground">
-								<span className="font-medium text-red-400">For broken downloads</span> — matches error messages like "disk space", "permission denied", "connection failed".
-								<span className="text-muted-foreground/70"> (Different from Import Blocked which handles completed downloads that ARR won't import)</span>
+								<span className="font-medium text-red-400">For broken downloads</span> — matches error messages like &quot;disk space&quot;, &quot;permission denied&quot;, &quot;connection failed&quot;.
+								<span className="text-muted-foreground/70"> (Different from Import Blocked which handles completed downloads that ARR won&apos;t import)</span>
 							</p>
 						</div>
 						<div>
@@ -688,7 +688,7 @@ const InstanceConfigCard = ({
 								What this handles:
 							</div>
 							<p className="text-muted-foreground">
-								Downloads that <span className="text-emerald-400 font-medium">finished successfully</span> but are stuck because ARR won't import them — duplicates, wrong quality, sample files, etc.
+								Downloads that <span className="text-emerald-400 font-medium">finished successfully</span> but are stuck because ARR won&apos;t import them — duplicates, wrong quality, sample files, etc.
 								<span className="text-muted-foreground/70"> (Different from Download Errors which handles broken/failed transfers)</span>
 							</p>
 							<div className="flex items-center gap-1.5 text-muted-foreground flex-wrap pt-1">
@@ -843,7 +843,7 @@ const InstanceConfigCard = ({
 								<span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">Optional</span>
 							</div>
 							<p className="text-[11px] text-muted-foreground pl-7">
-								When enabled, attempts to import stuck downloads via ARR's API before removing them.
+								When enabled, attempts to import stuck downloads via ARR&apos;s API before removing them.
 								If import succeeds, the item is saved. If it fails, removal continues as normal.
 							</p>
 						</div>
@@ -1287,7 +1287,7 @@ const AutoImportSection = ({
 						<ol className="list-decimal list-inside space-y-0.5 ml-1 text-[11px]">
 							<li>Detects items stuck in import pending/blocked state</li>
 							<li>Checks eligibility (safe patterns, cooldown, max attempts)</li>
-							<li>Triggers import via ARR's manual import API</li>
+							<li>Triggers import via ARR&apos;s manual import API</li>
 							<li>If import fails, falls back to normal removal behavior</li>
 						</ol>
 					</div>

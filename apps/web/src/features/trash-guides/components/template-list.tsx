@@ -17,7 +17,6 @@ import {
 	Trash2,
 	Edit,
 	FileText,
-	RefreshCw,
 	Star,
 	Rocket,
 	Layers,
@@ -61,7 +60,7 @@ interface TemplateListProps {
  * - Staggered animations
  * - Premium action buttons
  */
-export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBrowseQualityProfiles }: TemplateListProps) => {
+export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onImport, onBrowseQualityProfiles }: TemplateListProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 
 	// Search, filter, and sort state

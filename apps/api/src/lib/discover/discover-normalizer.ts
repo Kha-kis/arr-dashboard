@@ -276,7 +276,7 @@ export const loadRadarrRemote = async (
 			if (results.length > 0) {
 				return results[0] ?? null;
 			}
-		} catch (error) {
+		} catch (_error) {
 			// try next term
 		}
 	}
@@ -305,7 +305,7 @@ export const loadSonarrRemote = async (
 			if (results.length > 0) {
 				return results[0] ?? null;
 			}
-		} catch (error) {
+		} catch (_error) {
 			// try next
 		}
 	}

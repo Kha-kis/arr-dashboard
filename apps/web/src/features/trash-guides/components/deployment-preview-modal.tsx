@@ -27,7 +27,6 @@ import {
 	ChevronUp,
 } from "lucide-react";
 import { useDeploymentPreview, useExecuteDeployment } from "../../../hooks/api/useDeploymentPreview";
-import { cn } from "../../../lib/utils";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { DeploymentAction, ConflictResolution } from "../../../lib/api-client/trash-guides";

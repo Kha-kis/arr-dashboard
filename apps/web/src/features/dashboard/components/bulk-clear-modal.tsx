@@ -31,7 +31,6 @@ import {
 	DialogHeader,
 	DialogTitle,
 	DialogDescription,
-	DialogFooter,
 } from "../../../components/ui/dialog";
 import { Button } from "../../../components/ui/button";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -548,8 +547,8 @@ export const BulkClearModal = ({
 	};
 
 	const hasActions = totals.toRemove > 0 || totals.toRetry > 0;
-	const allSelected = filteredItems.length > 0 && selectedItems.size === filteredItems.length;
-	const someSelected = selectedItems.size > 0 && selectedItems.size < filteredItems.length;
+	const _allSelected = filteredItems.length > 0 && selectedItems.size === filteredItems.length;
+	const _someSelected = selectedItems.size > 0 && selectedItems.size < filteredItems.length;
 
 	return (
 		<Dialog open={open} onOpenChange={onOpenChange}>
@@ -570,7 +569,7 @@ export const BulkClearModal = ({
 						</span>
 					</DialogTitle>
 					<DialogDescription>
-						Review each item's issue and select what action to take. Select items to apply bulk actions.
+						Review each item&apos;s issue and select what action to take. Select items to apply bulk actions.
 					</DialogDescription>
 				</DialogHeader>
 
@@ -788,7 +787,7 @@ export const BulkClearModal = ({
 														<div className="mt-3 pt-3 border-t border-border/30">
 															<h5 className="text-xs font-medium text-foreground mb-2">All Status Messages</h5>
 															<div className="space-y-1">
-																{collectStatusLines(pi.item).map((line, idx) => (
+																{collectStatusLines(pi.item).map((line, _idx) => (
 																	<div
 																		key={line.key}
 																		className={cn(

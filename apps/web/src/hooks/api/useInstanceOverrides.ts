@@ -5,7 +5,6 @@ import {
 	deleteInstanceOverrides,
 	type InstanceOverridesResponse,
 	type UpdateInstanceOverridesPayload,
-	type UpdateInstanceOverridesResponse,
 } from "../../lib/api-client/trash-guides";
 
 /**

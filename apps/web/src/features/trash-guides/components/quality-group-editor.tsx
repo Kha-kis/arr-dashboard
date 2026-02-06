@@ -53,8 +53,8 @@ const generateId = () => `q-${Date.now()}-${Math.random().toString(36).slice(2, 
 export const QualityGroupEditor = ({
 	config,
 	onChange,
-	showToggle = true,
-	serviceType,
+	showToggle: _showToggle = true,
+	serviceType: _serviceType,
 }: QualityGroupEditorProps) => {
 	const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 	const [draggedItemId, setDraggedItemId] = useState<string | null>(null);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useTheme } from "next-themes";
-import { useColorTheme, STANDARD_THEMES, IMMERSIVE_THEMES, THEME_INFO, isImmersiveTheme, isPremiumUnlocked, isPremiumTheme, PREMIUM_THEME_IDS, type ColorTheme, type PremiumThemeId } from "../../../providers/color-theme-provider";
+import { useColorTheme, STANDARD_THEMES, IMMERSIVE_THEMES, THEME_INFO, isImmersiveTheme, isPremiumUnlocked, isPremiumTheme, PREMIUM_THEME_IDS, type ColorTheme } from "../../../providers/color-theme-provider";
 import { THEME_GRADIENT_VALUES } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useOLEDMode } from "../../../hooks/useOLEDMode";

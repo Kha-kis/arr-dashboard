@@ -68,7 +68,7 @@ export const PasskeySetup = () => {
 
 		try {
 			// Step 1: Create user account with password (required for initial setup)
-			const registerResponse = await apiRequest<RegisterResponse>("/auth/register", {
+			const _registerResponse = await apiRequest<RegisterResponse>("/auth/register", {
 				method: "POST",
 				json: {
 					username: formState.username.trim(),
@@ -107,7 +107,7 @@ export const PasskeySetup = () => {
 					setError(
 						"Passkey registration failed. The incomplete account has been deleted. Please try again. Make sure your browser supports passkeys and you approve the biometric prompt.",
 					);
-				} catch (cleanupErr) {
+				} catch {
 					// If cleanup fails, just log out to clear the session
 					try {
 						await apiRequest("/auth/logout", { method: "POST" });

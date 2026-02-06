@@ -388,7 +388,7 @@ interface InstanceCardProps {
 export const InstanceCard = ({
 	instanceName,
 	service,
-	isActive = true,
+	isActive: _isActive = true,
 	status,
 	stats,
 	actions,
@@ -592,7 +592,7 @@ export const FilterSelect = ({
 	label,
 	className,
 }: FilterSelectProps) => {
-	const { gradient: themeGradient } = useThemeGradient();
+	const { gradient: _themeGradient } = useThemeGradient();
 
 	return (
 		<div className={cn("flex flex-col gap-1.5", className)}>

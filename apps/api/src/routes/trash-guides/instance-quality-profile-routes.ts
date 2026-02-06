@@ -49,10 +49,10 @@ const updateScoresSchema = z.object({
 // Route Handlers
 // ============================================================================
 
-const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, done) => {
+const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
+		if (!request.currentUser!.id) {
 			return reply.status(401).send({
 				success: false,
 				error: "Authentication required",
@@ -71,7 +71,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		// userId is guaranteed by preHandler authentication check
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { instanceId, profileId } = request.params;
-		const profileIdNum = Number.parseInt(profileId);
+		const profileIdNum = Number.parseInt(profileId, 10);
 
 		if (Number.isNaN(profileIdNum)) {
 			return reply.status(400).send({
@@ -250,7 +250,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		// userId is guaranteed by preHandler authentication check
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { instanceId, profileId } = request.params;
-		const profileIdNum = Number.parseInt(profileId);
+		const profileIdNum = Number.parseInt(profileId, 10);
 
 		if (Number.isNaN(profileIdNum)) {
 			return reply.status(400).send({
@@ -314,7 +314,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		// userId is guaranteed by preHandler authentication check
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { instanceId, profileId } = request.params;
-		const profileIdNum = Number.parseInt(profileId);
+		const profileIdNum = Number.parseInt(profileId, 10);
 		const { customFormatId, templateId } = request.body;
 
 		if (Number.isNaN(profileIdNum)) {
@@ -587,8 +587,8 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 			// userId is guaranteed by preHandler authentication check
 			const userId = request.currentUser!.id; // preHandler guarantees auth
 			const { instanceId, profileId, customFormatId } = request.params;
-			const profileIdNum = Number.parseInt(profileId);
-			const customFormatIdNum = Number.parseInt(customFormatId);
+			const profileIdNum = Number.parseInt(profileId, 10);
+			const customFormatIdNum = Number.parseInt(customFormatId, 10);
 
 			if (Number.isNaN(profileIdNum) || Number.isNaN(customFormatIdNum)) {
 				return reply.status(400).send({
@@ -794,7 +794,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		// userId is guaranteed by preHandler authentication check
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { instanceId, profileId } = request.params;
-		const profileIdNum = Number.parseInt(profileId);
+		const profileIdNum = Number.parseInt(profileId, 10);
 		const { customFormatIds } = request.body;
 
 		if (Number.isNaN(profileIdNum)) {

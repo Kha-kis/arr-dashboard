@@ -15,8 +15,6 @@ import {
 	type ImportBlockCleanupLevel,
 	type ImportBlockPatternMode,
 	type WhitelistPattern,
-	type CleanerRule,
-	type PreviewRule,
 	type CleanerResultItem,
 	type EnhancedPreviewItem,
 	type QueueStateSummary,
@@ -1196,12 +1194,11 @@ export async function executeQueueCleaner(
 						reason: `Auto-imported successfully (was: ${item.reason})`,
 					});
 					continue; // Skip removal
-				} else {
+				}
 					log.info(
 						{ instanceId: instance.id, downloadId, error: importResult.error },
 						"Auto-import failed, falling back to removal",
 					);
-				}
 			} else {
 				log.debug(
 					{ instanceId: instance.id, downloadId, reason: eligibility.reason },
@@ -1509,7 +1506,7 @@ export async function executeEnhancedPreview(
 
 	// Try to fetch queue
 	let queueRecords: RawQueueItem[];
-	let instanceReachable = true;
+	const instanceReachable = true;
 
 	try {
 		const queue = await client.queue.get({ pageSize: 1000 });
@@ -1636,8 +1633,8 @@ export async function executeEnhancedPreview(
 				!config.strikeSystemEnabled || simulatedStrikeCount >= config.maxStrikes;
 
 			// Check auto-import eligibility for import_pending/import_blocked items
-			let autoImportEligible: boolean | undefined = undefined;
-			let autoImportReason: string | undefined = undefined;
+			let autoImportEligible: boolean | undefined ;
+			let autoImportReason: string | undefined ;
 
 			if (evaluation.rule === "import_pending" || evaluation.rule === "import_blocked") {
 				const statusTexts = collectStatusTexts(item);

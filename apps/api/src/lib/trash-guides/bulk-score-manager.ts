@@ -15,7 +15,6 @@ import type {
 	BulkScoreImport,
 	BulkScoreManagementResponse,
 	TemplateConfig,
-	TemplateCustomFormat,
 	TemplateScore,
 } from "@arr/shared";
 import type { SonarrClient, RadarrClient } from "arr-sdk";

@@ -9,7 +9,6 @@ import type { ServiceInstance, ServiceType } from "../../lib/prisma.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import {
 	type ArrClient,
-	type ArrClientFactory,
 	ArrError,
 	arrErrorToHttpStatus,
 } from "./client-factory.js";

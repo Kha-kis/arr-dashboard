@@ -98,7 +98,7 @@ async function getTMDBClient(
 const tmdbRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	// Add authentication preHandler for all routes
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
+		if (!request.currentUser!.id) {
 			return reply.status(401).send({
 				success: false,
 				error: "Authentication required",

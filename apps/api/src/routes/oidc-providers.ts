@@ -260,12 +260,12 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 					if (request.sessionToken) {
 						// Preserve current session while invalidating all others
 						await app.sessionService.invalidateAllUserSessions(
-							request.currentUser?.id,
+							request.currentUser!.id,
 							request.sessionToken,
 						);
 						// Also invalidate sessions for other users (single-admin architecture)
 						await app.prisma.session.deleteMany({
-							where: { userId: { not: request.currentUser?.id } },
+							where: { userId: { not: request.currentUser!.id } },
 						});
 					} else {
 						await app.prisma.session.deleteMany({});
@@ -348,7 +348,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 								where: { id: user.id },
 								data: {
 									hashedPassword,
-									mustChangePassword: user.id !== request.currentUser?.id, // Force password change for other users
+									mustChangePassword: user.id !== request.currentUser!.id, // Force password change for other users
 								},
 							}),
 						),
@@ -372,12 +372,12 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 				if (request.sessionToken) {
 					// Preserve current session while invalidating all others
 					await app.sessionService.invalidateAllUserSessions(
-						request.currentUser?.id,
+						request.currentUser!.id,
 						request.sessionToken,
 					);
 					// Also invalidate sessions for other users (single-admin architecture)
 					await app.prisma.session.deleteMany({
-						where: { userId: { not: request.currentUser?.id } },
+						where: { userId: { not: request.currentUser!.id } },
 					});
 				} else {
 					await app.prisma.session.deleteMany({});

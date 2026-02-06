@@ -5,7 +5,6 @@ import type {
 	LibraryEpisodeMonitorRequest,
 	LibraryEpisodeSearchRequest,
 	LibraryEpisodesResponse,
-	LibraryService,
 	LibraryToggleMonitorRequest,
 	LibrarySeasonSearchRequest,
 	LibraryMovieSearchRequest,

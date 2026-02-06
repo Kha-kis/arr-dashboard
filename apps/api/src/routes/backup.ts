@@ -22,7 +22,7 @@ const DELETE_RATE_LIMIT = { max: 5, timeWindow: "5 minutes" };
 const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
+		if (!request.currentUser!.id) {
 			return reply.status(401).send({
 				success: false,
 				error: "Authentication required",
@@ -83,7 +83,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			request.log.info(
 				{
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id,
 					backupId: backupInfo.id,
 					backupSize: backupInfo.size,
 					timestamp: backupInfo.timestamp,
@@ -140,7 +140,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			request.log.info(
 				{
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id,
 					backupTimestamp: metadata.timestamp,
 					backupVersion: metadata.version,
 					backupAppVersion: metadata.appVersion,
@@ -199,7 +199,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 				request.log.info(
 					{
-						userId: request.currentUser?.id,
+						userId: request.currentUser!.id,
 						backupId: parsed.data.id,
 						backupTimestamp: metadata.timestamp,
 						backupVersion: metadata.version,
@@ -258,7 +258,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			request.log.info(
 				{
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id,
 					backupId: params.id,
 					filename: backup.filename,
 				},
@@ -296,7 +296,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			request.log.info(
 				{
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id,
 					backupId: parsed.data.id,
 				},
 				"Backup deleted successfully",
@@ -403,7 +403,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			request.log.info(
 				{
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id,
 					settings: parsed.data,
 				},
 				"Backup settings updated",
@@ -466,7 +466,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			const backupService = getBackupService();
 			await backupService.setPassword(password);
 
-			request.log.info({ userId: request.currentUser?.id }, "Backup password updated");
+			request.log.info({ userId: request.currentUser!.id }, "Backup password updated");
 
 			return reply.send({ success: true, message: "Backup password updated successfully" });
 		} catch (error) {
@@ -491,7 +491,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			await backupService.removePassword();
 
 			request.log.info(
-				{ userId: request.currentUser?.id },
+				{ userId: request.currentUser!.id },
 				"Backup password removed from database",
 			);
 

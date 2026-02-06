@@ -12,7 +12,7 @@ import { CFConfiguration } from "./wizard-steps/cf-configuration";
 import { CFResolution, type ResolvedCF } from "./wizard-steps/cf-resolution";
 import { TemplateCreation } from "./wizard-steps/template-creation";
 import { htmlToPlainText } from "../lib/description-utils";
-import { convertQualityProfileToConfig, getEffectiveQualityConfig } from "../lib/quality-config-utils";
+import { getEffectiveQualityConfig } from "../lib/quality-config-utils";
 
 /**
  * Check if a trashId indicates a cloned profile from an instance
@@ -50,11 +50,11 @@ function parseClonedProfileId(trashId: string): { instanceId: string; profileId:
 	const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 	
 	let profileIdIndex: number;
-	let idSegmentLength: number;
+	let _idSegmentLength: number;
 	
 	if (uuidRegex.test(uuidCandidate5) && parts.length >= 7) {
 		// Standard 5-part UUID format detected
-		idSegmentLength = 5;
+		_idSegmentLength = 5;
 		profileIdIndex = parts.length - 6; // profileId is second-to-last before UUID
 	} else {
 		// Try fallback 2-part format (timestamp-random)
@@ -67,7 +67,7 @@ function parseClonedProfileId(trashId: string): { instanceId: string; profileId:
 		
 		if (timestampPart && randomPart && /^\d+$/.test(timestampPart) && /^[a-z0-9]+$/i.test(randomPart)) {
 			// Fallback 2-part format detected
-			idSegmentLength = 2;
+			__idSegmentLength = 2;
 			profileIdIndex = parts.length - 3; // profileId is third-to-last before 2-part ID
 		} else {
 			// Neither format matches
@@ -130,7 +130,7 @@ const STANDARD_STEP_ORDER: WizardStep[] = ["profile", "quality", "customize", "s
 // Step order for cloned profiles: resolution BEFORE quality and configuration
 const CLONED_STEP_ORDER: WizardStep[] = ["profile", "cf-resolution", "quality", "customize", "summary"];
 
-const getStepTitles = (isEditMode: boolean, isClonedProfile: boolean): Record<WizardStep, string> => ({
+const getStepTitles = (isEditMode: boolean, _isClonedProfile: boolean): Record<WizardStep, string> => ({
 	profile: "Select Quality Profile",
 	quality: "Configure Qualities",
 	customize: isEditMode ? "Edit Custom Formats" : "Configure Custom Formats",
@@ -194,7 +194,7 @@ export const QualityProfileWizard = ({
 	);
 
 	const currentStepIndex = stepOrder.indexOf(wizardState.currentStep);
-	const totalSteps = stepOrder.length;
+	const _totalSteps = stepOrder.length;
 
 	// Initialize wizard state from editing template
 	useEffect(() => {

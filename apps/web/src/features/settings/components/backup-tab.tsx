@@ -61,7 +61,7 @@ export const BackupTab = () => {
 
 	// Restore backup state
 	const [restoreFile, setRestoreFile] = useState<File | null>(null);
-	const [restoreSuccess, setRestoreSuccess] = useState(false);
+	const [_restoreSuccess, setRestoreSuccess] = useState(false);
 	const [showRestoreWarning, setShowRestoreWarning] = useState(false);
 	const [isRestarting, setIsRestarting] = useState(false);
 
@@ -80,7 +80,7 @@ export const BackupTab = () => {
 	const [showPasswordForm, setShowPasswordForm] = useState(false);
 	const [newPassword, setNewPassword] = useState("");
 	const [confirmPassword, setConfirmPassword] = useState("");
-	const [passwordSuccess, setPasswordSuccess] = useState(false);
+	const [_passwordSuccess, setPasswordSuccess] = useState(false);
 
 	// Queries and mutations
 	const { data: backupsData, isLoading: backupsLoading, error: backupsError } = useBackups();

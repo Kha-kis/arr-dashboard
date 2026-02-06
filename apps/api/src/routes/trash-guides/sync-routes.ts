@@ -78,7 +78,7 @@ function scheduleProgressCleanup(syncId: string, ttlMs: number = PROGRESS_TTL_MS
 /**
  * Immediately remove a progress entry and cancel its cleanup timer.
  */
-function removeProgress(syncId: string): void {
+function _removeProgress(syncId: string): void {
 	const timer = cleanupTimers.get(syncId);
 	if (timer) {
 		clearTimeout(timer);
@@ -91,10 +91,10 @@ function removeProgress(syncId: string): void {
 // Routes
 // ============================================================================
 
-export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPluginOptions) {
+export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
+		if (!request.currentUser!.id) {
 			return reply.status(401).send({
 				success: false,
 				error: "Authentication required",
@@ -288,7 +288,7 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 	}>("/history/:instanceId", async (request, reply) => {
 		const { instanceId } = request.params;
 		const query = syncHistoryQuerySchema.parse(request.query);
-		const userId = request.currentUser?.id; // preHandler guarantees authentication
+		const userId = request.currentUser!.id; // preHandler guarantees authentication
 
 		// Verify instance exists and is owned by the current user.
 		// Including userId in the where clause ensures non-owned instances return null,
@@ -355,7 +355,7 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 		Params: { syncId: string };
 	}>("/:syncId", async (request, reply) => {
 		const { syncId } = request.params;
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 
 		const sync = await app.prisma.trashSyncHistory.findFirst({
 			where: {
@@ -412,7 +412,7 @@ export async function registerSyncRoutes(app: FastifyInstance, opts: FastifyPlug
 		Params: { syncId: string };
 	}>("/:syncId/rollback", async (request, reply) => {
 		const { syncId } = request.params;
-		const userId = request.currentUser?.id;
+		const userId = request.currentUser!.id;
 
 		// Get sync record with backup (narrowed to current user for ownership check)
 		const sync = await app.prisma.trashSyncHistory.findFirst({

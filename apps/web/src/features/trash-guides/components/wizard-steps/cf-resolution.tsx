@@ -28,7 +28,6 @@ import {
 import type {
 	CFMatchResult,
 	MatchConfidence,
-	ProfileMatchResult,
 } from "../../../../lib/api-client/trash-guides";
 import { useThemeGradient } from "../../../../hooks/useThemeGradient";
 
@@ -1394,8 +1393,8 @@ const ExcludedCFItem = ({
 	result,
 	exclusionReason,
 	onToggleInclude,
-	decision,
-	onDecisionChange,
+	decision: _decision,
+	onDecisionChange: _onDecisionChange,
 }: ExcludedCFItemProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const [isExpanded, setIsExpanded] = useState(false);

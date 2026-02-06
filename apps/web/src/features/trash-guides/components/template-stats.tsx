@@ -2,8 +2,7 @@
 
 import { useState } from "react";
 import { useTemplateStats, useTemplate } from "../../../hooks/api/useTemplates";
-import type { TemplateStatsResponse } from "../../../lib/api-client/templates";
-import { ChevronDown, ChevronUp, Calendar, Package, Activity, Rocket, Layers, History, SlidersHorizontal, Unlink2, RefreshCw, Bell, Hand, X, Sliders } from "lucide-react";
+import { ChevronDown, ChevronUp, Calendar, Package, Activity, Rocket, Layers, History, SlidersHorizontal, Unlink2, RefreshCw, Bell, Hand, Sliders } from "lucide-react";
 import { BulkDeploymentModal } from "./bulk-deployment-modal";
 import { DeploymentHistoryTable } from "./deployment-history-table";
 import { InstanceOverrideEditor } from "./instance-override-editor";

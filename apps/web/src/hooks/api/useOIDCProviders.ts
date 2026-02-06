@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { CreateOIDCProvider, OIDCProvider, UpdateOIDCProvider } from "@arr/shared";
+import type { CreateOIDCProvider, UpdateOIDCProvider } from "@arr/shared";
 import {
 	createOIDCProvider,
 	deleteOIDCProvider,

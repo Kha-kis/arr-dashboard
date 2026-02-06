@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import type { ServiceInstanceSummary, QueueItem } from "@arr/shared";
+import type { QueueItem } from "@arr/shared";
 import {
 	Button,
 	Alert,
@@ -12,7 +12,6 @@ import {
 	Pagination,
 	Typography,
 } from "../../../components/ui";
-import { Section } from "../../../components/layout";
 import { PremiumSkeleton } from "../../../components/layout/premium-components";
 import {
 	AlertCircle,
@@ -252,7 +251,7 @@ export const DashboardClient = () => {
 	// Data hooks
 	const {
 		currentUser,
-		userLoading,
+		userLoading: _userLoading,
 		userError,
 		services,
 		servicesRefetch,

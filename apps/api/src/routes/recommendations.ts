@@ -9,7 +9,7 @@ import { TMDBClient, type TMDBMovie, type TMDBTVShow } from "../lib/tmdb/index.j
 const recommendationsRoute: FastifyPluginCallback = (app, _opts, done) => {
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
+		if (!request.currentUser!.id) {
 			return reply.status(401).send({
 				success: false,
 				error: "Authentication required",
@@ -20,13 +20,13 @@ const recommendationsRoute: FastifyPluginCallback = (app, _opts, done) => {
 	app.get("/recommendations", async (request, reply) => {
 		// Get user with TMDB API key
 		const user = await app.prisma.user.findUnique({
-			where: { id: request.currentUser?.id },
+			where: { id: request.currentUser!.id },
 			select: { encryptedTmdbApiKey: true, tmdbEncryptionIv: true },
 		});
 
 		request.log.info(
 			{
-				userId: request.currentUser?.id,
+				userId: request.currentUser!.id,
 				hasKey: !!user?.encryptedTmdbApiKey,
 				hasIv: !!user?.tmdbEncryptionIv,
 			},

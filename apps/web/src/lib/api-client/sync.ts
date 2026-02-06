@@ -228,7 +228,7 @@ export function createSyncProgressStream(
 		}
 	};
 
-	eventSource.onerror = (error) => {
+	eventSource.onerror = (_error) => {
 		onError?.(new Error("Stream connection failed"));
 		eventSource.close();
 	};

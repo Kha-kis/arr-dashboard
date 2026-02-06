@@ -1,8 +1,5 @@
 import type { FastifyPluginCallback } from "fastify";
 import type {
-	ProwlarrIndexer,
-	SearchIndexerTestRequest,
-	SearchIndexerTestResponse,
 	SearchIndexerUpdateRequest,
 } from "@arr/shared";
 import {
@@ -38,7 +35,7 @@ import {
 export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
+		if (!request.currentUser!.id) {
 			return reply.status(401).send({
 				success: false,
 				error: "Authentication required",
@@ -50,7 +47,7 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 	 * GET /search/indexers
 	 * Retrieves all indexers from all enabled Prowlarr instances for the current user.
 	 */
-	app.get("/search/indexers", async (request, reply) => {
+	app.get("/search/indexers", async (request, _reply) => {
 		const response = await executeOnInstances(
 			app,
 			request.currentUser!.id,

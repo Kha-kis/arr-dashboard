@@ -48,7 +48,7 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 			await importMutation.mutateAsync(jsonData);
 			setJsonData("");
 			onClose();
-		} catch (error) {
+		} catch {
 			// Error will be displayed through mutation state
 		}
 	};

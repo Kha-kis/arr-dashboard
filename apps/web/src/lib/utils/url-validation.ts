@@ -42,7 +42,7 @@ export function isSafeUrl(url: string): boolean {
 		}
 
 		return true;
-	} catch (error) {
+	} catch {
 		// If URL parsing fails, it's not a valid URL
 		return false;
 	}

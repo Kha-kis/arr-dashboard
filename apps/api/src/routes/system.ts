@@ -33,7 +33,7 @@ console.log(`[system] App version detected: ${APP_VERSION}`);
 const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	// Add authentication preHandler for all routes in this plugin
 	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
+		if (!request.currentUser!.id) {
 			return reply.status(401).send({
 				success: false,
 				error: "Authentication required",
@@ -209,7 +209,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			request.log.info(
 				{
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id,
 					apiPort: settings.apiPort,
 					webPort: settings.webPort,
 					listenAddress: settings.listenAddress,
@@ -292,7 +292,7 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	app.post("/restart", { config: { rateLimit: RESTART_RATE_LIMIT } }, async (request, reply) => {
 		try {
 			request.log.info(
-				{ userId: request.currentUser?.id, username: request.currentUser?.username },
+				{ userId: request.currentUser!.id, username: request.currentUser?.username },
 				"Manual restart requested",
 			);
 

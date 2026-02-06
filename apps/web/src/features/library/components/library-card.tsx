@@ -16,7 +16,6 @@ import {
 	ServiceBadge,
 	StatusBadge,
 } from "../../../components/layout";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
 import { LibraryBadge } from "./library-badge";
 import { formatBytes, formatRuntime } from "../lib/library-utils";
@@ -293,7 +292,7 @@ export const LibraryCard = ({
 		locationEntries.push({ label: "Root", value: displayRoot });
 	}
 
-	const tagEntries = (item.tags ?? []).filter(Boolean);
+	const _tagEntries = (item.tags ?? []).filter(Boolean);
 	const genreEntries = (item.genres ?? []).filter(Boolean);
 
 	return (

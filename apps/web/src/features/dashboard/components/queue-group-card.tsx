@@ -53,10 +53,10 @@ interface QueueGroupCardProps {
  * Features glassmorphism styling with theme-aware accents
  */
 export const QueueGroupCard = ({
-	groupKey,
+	groupKey: _groupKey,
 	title,
-	service,
-	instanceName,
+	service: _service,
+	instanceName: _instanceName,
 	instanceUrl,
 	instanceUrlMap,
 	items,

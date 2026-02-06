@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { ChevronDown, ChevronUp, Filter, X, Check } from "lucide-react";
 import { Button, Input, Switch, Badge } from "../../../components/ui";
 import { PremiumSkeleton } from "../../../components/layout";

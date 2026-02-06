@@ -158,7 +158,7 @@ export const CFConfiguration = ({
 		setSelections(newSelections);
 	}, [isClonedProfileMode, data]);
 
-	const toggleCF = (cfTrashId: string, isRequired: boolean = false) => {
+	const toggleCF = (cfTrashId: string, _isRequired: boolean = false) => {
 		// Allow toggling all CFs, including required ones
 		// "Required" is just a TRaSH recommendation, users have final control
 		setSelections((prev) => ({

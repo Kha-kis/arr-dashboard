@@ -12,7 +12,7 @@ import type { SearchStateActions } from "./use-search-state";
 /**
  * Feedback message for user actions.
  */
-interface FeedbackMessage {
+interface _FeedbackMessage {
 	type: "success" | "error";
 	message: string;
 }

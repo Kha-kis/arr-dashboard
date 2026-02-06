@@ -38,7 +38,7 @@ interface SeriesStatistics {
 /**
  * Interface for movie statistics from Radarr API (reuses similar fields)
  */
-interface MovieStatistics {
+interface _MovieStatistics {
 	sizeOnDisk?: unknown;
 }
 
@@ -60,7 +60,7 @@ interface HealthEntry {
 /**
  * Interface for history pagination response
  */
-interface HistoryResponse {
+interface _HistoryResponse {
 	records?: unknown;
 	totalRecords?: unknown;
 }
@@ -99,7 +99,7 @@ interface IndexerStatEntry {
 	numberOfFailedAuthQueries?: unknown;
 }
 
-const sumNumbers = (values: Array<number | undefined>): number => {
+const _sumNumbers = (values: Array<number | undefined>): number => {
 	let total = 0;
 	for (const value of values) {
 		if (typeof value === "number" && Number.isFinite(value)) {

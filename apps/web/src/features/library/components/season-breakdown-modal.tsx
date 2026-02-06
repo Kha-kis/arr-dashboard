@@ -9,14 +9,12 @@ import {
 	Loader2,
 	Search,
 	Tv,
-	Film,
 	Layers,
 	X,
 	AlertTriangle,
 	CheckCircle2,
 } from "lucide-react";
 import { Button } from "../../../components/ui";
-import { cn } from "../../../lib/utils";
 import { SeasonEpisodeList } from "./season-episode-list";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";

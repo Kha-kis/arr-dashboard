@@ -546,7 +546,7 @@ export class TemplateService {
 		const groupCount = config.customFormatGroups.length;
 
 		// Get unique instances from mappings (actively managed instances)
-		const mappedInstanceIds = new Set(template.qualityProfileMappings.map((m) => m.instanceId));
+		const _mappedInstanceIds = new Set(template.qualityProfileMappings.map((m) => m.instanceId));
 
 		// Get unique instances and their info
 		const instanceMap = new Map<string, TemplateInstanceInfo>();

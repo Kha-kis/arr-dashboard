@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import type { ProwlarrIndexerStat } from "@arr/shared";
 import { Button } from "../../../components/ui/button";
-import { Alert, AlertDescription, AlertTitle } from "../../../components/ui";
+import { Alert, AlertDescription } from "../../../components/ui";
 import { PremiumCard, StatCard, PremiumSkeleton } from "../../../components/layout";
 import {
 	useIncognitoMode,
