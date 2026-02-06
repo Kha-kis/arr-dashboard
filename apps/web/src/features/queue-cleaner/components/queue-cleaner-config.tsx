@@ -20,6 +20,7 @@ import {
 	X,
 	Clock,
 	TrendingUp,
+	Sparkles,
 } from "lucide-react";
 import { Button, toast } from "../../../components/ui";
 import {
@@ -64,6 +65,10 @@ import {
 	MAX_ESTIMATED_MULTIPLIER,
 	MIN_IMPORT_PENDING_MINS,
 	MAX_IMPORT_PENDING_MINS,
+	MIN_AUTO_IMPORT_ATTEMPTS,
+	MAX_AUTO_IMPORT_ATTEMPTS,
+	MIN_AUTO_IMPORT_COOLDOWN_MINS,
+	MAX_AUTO_IMPORT_COOLDOWN_MINS,
 	WHITELIST_TYPES,
 } from "../lib/constants";
 
@@ -288,6 +293,11 @@ const InstanceConfigCard = ({
 		// Import block pattern mode and custom patterns
 		importBlockPatternMode: config.importBlockPatternMode ?? "defaults",
 		importBlockPatterns: config.importBlockPatterns,
+		// Auto-import settings
+		autoImportEnabled: config.autoImportEnabled,
+		autoImportMaxAttempts: config.autoImportMaxAttempts,
+		autoImportCooldownMins: config.autoImportCooldownMins,
+		autoImportSafeOnly: config.autoImportSafeOnly,
 		// Whitelist
 		whitelistEnabled: config.whitelistEnabled,
 		whitelistPatterns: config.whitelistPatterns,
@@ -358,6 +368,11 @@ const InstanceConfigCard = ({
 			// Import block pattern mode and custom patterns
 			importBlockPatternMode: config.importBlockPatternMode ?? "defaults",
 			importBlockPatterns: config.importBlockPatterns,
+			// Auto-import settings
+			autoImportEnabled: config.autoImportEnabled,
+			autoImportMaxAttempts: config.autoImportMaxAttempts,
+			autoImportCooldownMins: config.autoImportCooldownMins,
+			autoImportSafeOnly: config.autoImportSafeOnly,
 			// Whitelist
 			whitelistEnabled: config.whitelistEnabled,
 			whitelistPatterns: config.whitelistPatterns,
@@ -750,6 +765,57 @@ const InstanceConfigCard = ({
 								</p>
 							</div>
 						)}
+
+						{/* Auto-Import Sub-Feature */}
+						<div className="space-y-3 pt-3 border-t border-border/30">
+							<div className="flex items-center gap-2">
+								<Sparkles className="h-4 w-4 text-amber-500" />
+								<h6 className="text-xs font-semibold text-foreground">Auto-Import (Experimental)</h6>
+							</div>
+							<ToggleRow
+								label="Try auto-import before removal"
+								description="Attempt to import completed downloads before falling back to removal"
+								checked={formData.autoImportEnabled ?? false}
+								onChange={(v) => updateField("autoImportEnabled", v)}
+							/>
+							{formData.autoImportEnabled && (
+								<>
+									<ToggleRow
+										label="Safe patterns only"
+										description="Only import items with known-safe status messages (e.g., 'waiting for import')"
+										checked={formData.autoImportSafeOnly ?? true}
+										onChange={(v) => updateField("autoImportSafeOnly", v)}
+									/>
+									<ConfigInput
+										label="Max Import Attempts"
+										description="Stop trying after this many failed attempts"
+										value={formData.autoImportMaxAttempts ?? 2}
+										onChange={(v) => updateField("autoImportMaxAttempts", v)}
+										min={MIN_AUTO_IMPORT_ATTEMPTS}
+										max={MAX_AUTO_IMPORT_ATTEMPTS}
+										suffix="attempts"
+									/>
+									<ConfigInput
+										label="Retry Cooldown"
+										description="Wait this long between import attempts on the same item"
+										value={formData.autoImportCooldownMins ?? 30}
+										onChange={(v) => updateField("autoImportCooldownMins", v)}
+										min={MIN_AUTO_IMPORT_COOLDOWN_MINS}
+										max={MAX_AUTO_IMPORT_COOLDOWN_MINS}
+										suffix="mins"
+									/>
+									<div className="text-xs text-muted-foreground p-2 rounded-md bg-card/30 border border-border/30 space-y-1">
+										<p className="font-medium">How it works:</p>
+										<ol className="list-decimal list-inside space-y-0.5 ml-1">
+											<li>Detect import pending/blocked items</li>
+											<li>Check eligibility (cooldown, max attempts, patterns)</li>
+											<li>Trigger import via ARR API</li>
+											<li>If import fails, fall back to normal removal</li>
+										</ol>
+									</div>
+								</>
+							)}
+						</div>
 					</RuleSection>
 
 					{/* Removal Options */}

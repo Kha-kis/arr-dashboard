@@ -195,3 +195,68 @@ export const IMPORT_PENDING_RECOVERABLE_KEYWORDS = [
 
 /** Supported whitelist pattern types */
 export const WHITELIST_TYPES = ["tracker", "tag", "category", "title"] as const;
+
+// ============================================================================
+// Auto-Import Constants (Backend-Only)
+// ============================================================================
+
+/** Minimum number of auto-import attempts before giving up */
+export const MIN_AUTO_IMPORT_ATTEMPTS = 1;
+
+/** Maximum number of auto-import attempts before giving up */
+export const MAX_AUTO_IMPORT_ATTEMPTS = 5;
+
+/** Default number of auto-import attempts */
+export const DEFAULT_AUTO_IMPORT_ATTEMPTS = 2;
+
+/** Minimum cooldown between auto-import attempts on same item (minutes) */
+export const MIN_AUTO_IMPORT_COOLDOWN_MINS = 5;
+
+/** Maximum cooldown between auto-import attempts on same item (minutes) */
+export const MAX_AUTO_IMPORT_COOLDOWN_MINS = 240;
+
+/** Default cooldown between auto-import attempts (minutes) */
+export const DEFAULT_AUTO_IMPORT_COOLDOWN_MINS = 30;
+
+/**
+ * Status patterns that are SAFE for auto-import.
+ * These patterns indicate the item is ready and likely to import successfully.
+ */
+export const AUTO_IMPORT_SAFE_KEYWORDS = [
+	"waiting for import",
+	"import pending",
+	"manual import required",
+	"manual import",
+	"waiting for manual",
+] as const;
+
+/**
+ * Status patterns that should NEVER be auto-imported.
+ * These will always fail or cause problems if imported.
+ */
+export const AUTO_IMPORT_NEVER_KEYWORDS = [
+	// Content doesn't exist or is unusable
+	"no video files",
+	"no files found",
+	"no files",
+	"sample only",
+	"sample file",
+	// Extraction/unpacking issues - can't import until resolved
+	"password protected",
+	"unpack required",
+	"rar required",
+	"unpacking failed",
+	"extraction failed",
+	// Quality rejection - ARR explicitly doesn't want this content
+	"quality not wanted",
+	"not an upgrade",
+	"cutoff already met",
+	"not wanted in",
+	// Already exists - import would fail anyway
+	"already exists",
+	"already in library",
+	"duplicate",
+	// Path issues
+	"path does not exist",
+	"file not found",
+] as const;

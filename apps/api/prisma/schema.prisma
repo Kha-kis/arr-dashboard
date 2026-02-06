@@ -850,6 +850,12 @@ model QueueCleanerConfig {
   // Used when patternMode is "include" or "exclude"
   importBlockPatterns           String?
 
+  // Auto-import settings (try importing before removing)
+  autoImportEnabled             Boolean @default(false)  // Master toggle
+  autoImportMaxAttempts         Int     @default(2)      // Give up after N failed attempts
+  autoImportCooldownMins        Int     @default(30)     // Min time between attempts on same item
+  autoImportSafeOnly            Boolean @default(true)   // Only import "safe" patterns
+
   // Whitelist/Ignore patterns
   whitelistEnabled      Boolean         @default(false)
   whitelistPatterns     String?                           // JSON: [{ type, pattern }]
@@ -907,6 +913,11 @@ model QueueCleanerStrike {
   strikeCount     Int             @default(1)
   lastRule        String                                // Which rule triggered: stalled, failed, slow, error_pattern, seeding_timeout
   lastReason      String                                // Human-readable reason
+
+  // Auto-import attempt tracking
+  importAttempts      Int       @default(0)             // Number of auto-import attempts
+  lastImportAttempt   DateTime?                         // Last import attempt timestamp
+  lastImportError     String?                           // Last error message from import
 
   firstStrikeAt   DateTime        @default(now())
   lastStrikeAt    DateTime        @updatedAt

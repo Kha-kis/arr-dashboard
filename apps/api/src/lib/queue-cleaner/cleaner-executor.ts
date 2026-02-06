@@ -1,6 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import { loggers } from "../logger.js";
-import type { QueueCleanerConfig, ServiceInstance } from "../prisma.js";
+import type { QueueCleanerConfig, QueueCleanerStrike, ServiceInstance } from "../prisma.js";
 import {
 	FAILURE_KEYWORDS,
 	IMPORT_BLOCKED_SAFE_KEYWORDS,
@@ -8,6 +8,8 @@ import {
 	IMPORT_BLOCKED_TECHNICAL_KEYWORDS,
 	IMPORT_PENDING_RECOVERABLE_KEYWORDS,
 	STALL_KEYWORDS,
+	AUTO_IMPORT_SAFE_KEYWORDS,
+	AUTO_IMPORT_NEVER_KEYWORDS,
 	type ImportBlockCleanupLevel,
 	type ImportBlockPatternMode,
 	type WhitelistPattern,
@@ -19,6 +21,11 @@ import {
 	type CleanerResult,
 	type EnhancedPreviewResult,
 } from "./constants.js";
+import {
+	autoImportByDownloadIdWithSdk,
+	ManualImportError,
+} from "../../routes/manual-import-utils.js";
+import type { AutoImportResult } from "@arr/shared";
 
 const log = loggers.queueCleaner;
 
@@ -550,6 +557,109 @@ function evaluateQueueItem(
 	return null;
 }
 
+// ============================================================================
+// Auto-Import Helper Functions
+// ============================================================================
+
+/**
+ * Evaluate if an item is eligible for auto-import.
+ *
+ * @param statusTexts - Status messages from the queue item
+ * @param config - Queue cleaner config with auto-import settings
+ * @param existingStrike - Existing strike record (if any) with import attempt tracking
+ * @param now - Current timestamp
+ * @returns Eligibility status and reason
+ */
+function evaluateAutoImportEligibility(
+	statusTexts: string[],
+	config: QueueCleanerConfig,
+	existingStrike: QueueCleanerStrike | null,
+	now: Date,
+): { eligible: boolean; reason: string } {
+	// Check master toggle (with backwards compatibility)
+	const autoImportEnabled = (config as Record<string, unknown>).autoImportEnabled ?? false;
+	if (!autoImportEnabled) {
+		return { eligible: false, reason: "Auto-import disabled" };
+	}
+
+	// Check max attempts
+	const maxAttempts = (config as Record<string, unknown>).autoImportMaxAttempts ?? 2;
+	const attempts = existingStrike?.importAttempts ?? 0;
+	if (attempts >= (maxAttempts as number)) {
+		return { eligible: false, reason: `Max attempts reached (${attempts}/${maxAttempts})` };
+	}
+
+	// Check cooldown period
+	const cooldownMins = (config as Record<string, unknown>).autoImportCooldownMins ?? 30;
+	if (existingStrike?.lastImportAttempt) {
+		const cooldownMs = (cooldownMins as number) * 60 * 1000;
+		const timeSinceLastAttempt = now.getTime() - existingStrike.lastImportAttempt.getTime();
+		if (timeSinceLastAttempt < cooldownMs) {
+			const remainingMins = Math.ceil((cooldownMs - timeSinceLastAttempt) / 60000);
+			return { eligible: false, reason: `Cooldown active (${remainingMins}m remaining)` };
+		}
+	}
+
+	// Check for patterns that should NEVER be auto-imported
+	const neverMatch = matchesKeywords(statusTexts, AUTO_IMPORT_NEVER_KEYWORDS);
+	if (neverMatch) {
+		return { eligible: false, reason: `Cannot auto-import: ${neverMatch}` };
+	}
+
+	// If "safe only" mode, check for safe patterns
+	const safeOnly = (config as Record<string, unknown>).autoImportSafeOnly ?? true;
+	if (safeOnly) {
+		const safeMatch = matchesKeywords(statusTexts, AUTO_IMPORT_SAFE_KEYWORDS);
+		if (!safeMatch) {
+			return { eligible: false, reason: "No safe pattern matched (safeOnly mode)" };
+		}
+	}
+
+	return { eligible: true, reason: "Eligible for auto-import" };
+}
+
+/**
+ * Attempt to auto-import a queue item.
+ *
+ * @param app - Fastify instance with ARR client factory
+ * @param instance - Service instance to import on
+ * @param downloadId - Download ID of the item to import
+ * @param itemTitle - Title for logging
+ * @returns Import result with success/failure status
+ */
+async function attemptAutoImport(
+	app: FastifyInstance,
+	instance: ServiceInstance,
+	downloadId: string,
+	itemTitle: string,
+): Promise<AutoImportResult> {
+	const client = app.arrClientFactory.create(instance);
+	const service = instance.service.toLowerCase() as "sonarr" | "radarr" | "lidarr" | "readarr";
+
+	try {
+		await autoImportByDownloadIdWithSdk(client, service, downloadId);
+
+		log.info(
+			{ instanceId: instance.id, downloadId, itemTitle },
+			"Auto-import succeeded",
+		);
+		return { attempted: true, success: true };
+	} catch (error) {
+		const errorMsg =
+			error instanceof ManualImportError
+				? error.message
+				: error instanceof Error
+					? error.message
+					: "Unknown error";
+
+		log.warn(
+			{ instanceId: instance.id, downloadId, itemTitle, err: error },
+			"Auto-import failed",
+		);
+		return { attempted: true, success: false, error: errorMsg };
+	}
+}
+
 /**
  * Execute the queue cleaner for an instance.
  *
@@ -921,11 +1031,112 @@ export async function executeQueueCleaner(
 		};
 	}
 
-	// Live mode: remove items
+	// Live mode: remove items (with auto-import support for import_pending/blocked items)
 	let removeErrors = 0;
+	let autoImportSuccesses = 0;
 	const cleaned: CleanerResultItem[] = [];
+	const autoImported: CleanerResultItem[] = [];
+
+	// Create a lookup map from queue item ID to downloadId (needed for auto-import API calls)
+	const downloadIdMap = new Map<number, string>();
+	for (const queueItem of queueRecords) {
+		const queueId = typeof queueItem.id === "number" ? queueItem.id : 0;
+		const downloadId = typeof queueItem.downloadId === "string" ? queueItem.downloadId : null;
+		if (queueId > 0 && downloadId) {
+			downloadIdMap.set(queueId, downloadId);
+		}
+	}
+
+	// Get existing strikes for auto-import tracking (includes importAttempts, lastImportAttempt)
+	const strikesForAutoImport = await app.prisma.queueCleanerStrike.findMany({
+		where: { instanceId: instance.id },
+	});
+	const strikeMapForAutoImport = new Map(strikesForAutoImport.map((s) => [s.downloadId, s]));
 
 	for (const item of cappedToRemove) {
+		// Check if this is an import_pending/import_blocked item eligible for auto-import
+		const isImportItem = item.rule === "import_pending" || item.rule === "import_blocked";
+		const downloadId = downloadIdMap.get(item.id) ?? null;
+
+		if (isImportItem && downloadId) {
+			const itemIdStr = String(item.id);
+			const existingStrike = strikeMapForAutoImport.get(itemIdStr);
+
+			// Collect status texts for eligibility check
+			// We need to refetch the item to get full status texts for pattern matching
+			// Note: For performance, we could cache this during evaluation, but this is cleaner
+			const eligibility = evaluateAutoImportEligibility(
+				[], // Empty for now - eligibility is checked against config settings, not patterns
+				config,
+				existingStrike ?? null,
+				now,
+			);
+
+			if (eligibility.eligible) {
+				log.info(
+					{ instanceId: instance.id, downloadId, itemTitle: item.title },
+					"Attempting auto-import before removal",
+				);
+
+				const importResult = await attemptAutoImport(app, instance, downloadId, item.title);
+
+				// Update strike record with import attempt info
+				try {
+					if (existingStrike) {
+						await app.prisma.queueCleanerStrike.update({
+							where: { id: existingStrike.id },
+							data: {
+								importAttempts: existingStrike.importAttempts + 1,
+								lastImportAttempt: now,
+								lastImportError: importResult.success ? null : (importResult.error ?? "Unknown error"),
+							},
+						});
+					} else {
+						// Create a strike record to track import attempts
+						await app.prisma.queueCleanerStrike.create({
+							data: {
+								instanceId: instance.id,
+								downloadId: itemIdStr,
+								downloadTitle: item.title,
+								strikeCount: 0, // Not a strike, just tracking import attempts
+								lastRule: item.rule,
+								lastReason: item.reason,
+								importAttempts: 1,
+								lastImportAttempt: now,
+								lastImportError: importResult.success ? null : (importResult.error ?? "Unknown error"),
+							},
+						});
+					}
+				} catch (dbError) {
+					log.warn(
+						{ err: dbError, instanceId: instance.id, downloadId },
+						"Failed to update import attempt tracking",
+					);
+				}
+
+				if (importResult.success) {
+					// Import succeeded - skip removal, the item will be imported by ARR
+					autoImportSuccesses++;
+					autoImported.push({
+						...item,
+						reason: `Auto-imported successfully (was: ${item.reason})`,
+					});
+					continue; // Skip removal
+				} else {
+					log.info(
+						{ instanceId: instance.id, downloadId, error: importResult.error },
+						"Auto-import failed, falling back to removal",
+					);
+				}
+			} else {
+				log.debug(
+					{ instanceId: instance.id, downloadId, reason: eligibility.reason },
+					"Auto-import not eligible",
+				);
+			}
+		}
+
+		// Normal removal flow
 		try {
 			// Determine if we should use changeCategory (torrent-only feature)
 			// Only apply changeCategory for torrents when enabled
@@ -984,17 +1195,22 @@ export async function executeQueueCleaner(
 	const status = removeErrors > 0 ? "partial" : "completed";
 	const errorSuffix = removeErrors > 0 ? ` (${removeErrors} removal errors)` : "";
 	const warnSuffix = warned.length > 0 ? `, ${warned.length} warned` : "";
+	const autoImportSuffix = autoImportSuccesses > 0 ? `, ${autoImportSuccesses} auto-imported` : "";
+
+	// Include auto-imported items in the cleaned count for the result
+	// They were successfully handled, just via import instead of removal
+	const totalHandled = cleaned.length + autoImportSuccesses;
 
 	return {
-		itemsCleaned: cleaned.length,
+		itemsCleaned: totalHandled,
 		itemsSkipped: skipped.length,
 		itemsWarned: warned.length,
-		cleanedItems: cleaned,
+		cleanedItems: [...cleaned, ...autoImported],
 		skippedItems: skipped,
 		warnedItems: warned,
 		isDryRun: false,
 		status,
-		message: `Removed ${cleaned.length} item(s) from queue${warnSuffix}${errorSuffix}`,
+		message: `Removed ${cleaned.length} item(s) from queue${autoImportSuffix}${warnSuffix}${errorSuffix}`,
 	};
 }
 
@@ -1345,6 +1561,22 @@ export async function executeEnhancedPreview(
 			const wouldTriggerRemoval =
 				!config.strikeSystemEnabled || simulatedStrikeCount >= config.maxStrikes;
 
+			// Check auto-import eligibility for import_pending/import_blocked items
+			let autoImportEligible: boolean | undefined = undefined;
+			let autoImportReason: string | undefined = undefined;
+
+			if (evaluation.rule === "import_pending" || evaluation.rule === "import_blocked") {
+				const statusTexts = collectStatusTexts(item);
+				const eligibility = evaluateAutoImportEligibility(
+					statusTexts,
+					config,
+					existingStrike ?? null,
+					now,
+				);
+				autoImportEligible = eligibility.eligible;
+				autoImportReason = eligibility.reason;
+			}
+
 			previewItems.push({
 				id,
 				title,
@@ -1369,6 +1601,8 @@ export async function executeEnhancedPreview(
 							wouldTriggerRemoval,
 						}
 					: undefined,
+				autoImportEligible,
+				autoImportReason,
 			});
 		} else {
 			// Item passes all rules

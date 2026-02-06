@@ -25,6 +25,10 @@ import {
 	MAX_ESTIMATED_MULTIPLIER,
 	MIN_IMPORT_PENDING_MINS,
 	MAX_IMPORT_PENDING_MINS,
+	MIN_AUTO_IMPORT_ATTEMPTS,
+	MAX_AUTO_IMPORT_ATTEMPTS,
+	MIN_AUTO_IMPORT_COOLDOWN_MINS,
+	MAX_AUTO_IMPORT_COOLDOWN_MINS,
 } from "../lib/queue-cleaner/constants.js";
 
 const log = loggers.queueCleaner;
@@ -175,7 +179,8 @@ const configUpdateSchema = z.object({
 	estimatedCompletionEnabled: z.boolean().optional(),
 	estimatedCompletionMultiplier: z.number().min(MIN_ESTIMATED_MULTIPLIER).max(MAX_ESTIMATED_MULTIPLIER).optional(),
 
-	// Import pending timeout
+	// Import pending/blocked rule
+	importPendingEnabled: z.boolean().optional(),
 	importPendingThresholdMins: z.number().int().min(MIN_IMPORT_PENDING_MINS).max(MAX_IMPORT_PENDING_MINS).optional(),
 
 	// Import block cleanup level
@@ -186,6 +191,12 @@ const configUpdateSchema = z.object({
 
 	// Custom import block patterns (JSON array of strings)
 	importBlockPatterns: patternJsonSchema,
+
+	// Auto-import settings (try importing before removing)
+	autoImportEnabled: z.boolean().optional(),
+	autoImportMaxAttempts: z.number().int().min(MIN_AUTO_IMPORT_ATTEMPTS).max(MAX_AUTO_IMPORT_ATTEMPTS).optional(),
+	autoImportCooldownMins: z.number().int().min(MIN_AUTO_IMPORT_COOLDOWN_MINS).max(MAX_AUTO_IMPORT_COOLDOWN_MINS).optional(),
+	autoImportSafeOnly: z.boolean().optional(),
 
 	// Whitelist
 	whitelistEnabled: z.boolean().optional(),
