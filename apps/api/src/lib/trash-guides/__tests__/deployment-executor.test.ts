@@ -229,196 +229,62 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 });
 
 // ============================================================================
-// TRaSH Guides PR #2590 - Quality Format Detection Tests
+// TRaSH Guides PR #2590 - Quality Format Reversal Tests
 // ============================================================================
 
-// Helper to access private format detection functions
-// These are module-level functions, so we need to test them via their effects
-// on the public API or by re-implementing the logic
+/**
+ * Feature flag for TRaSH Guides quality format change.
+ * This mirrors the production flag in deployment-executor.ts.
+ *
+ * Current state: false (TRaSH Guides uses OLD format - high quality first)
+ * After PR #2590 merges: Change to true (TRaSH will use NEW format - low quality first)
+ *
+ * See: https://github.com/TRaSH-Guides/Guides/pull/2590
+ * See: https://github.com/Kha-kis/arr-dashboard/issues/85
+ */
+const TRASH_GUIDES_NEW_QUALITY_FORMAT_MERGED = false;
 
 /**
- * Reimplementation of format detection for testing purposes.
- * This mirrors the logic in deployment-executor.ts for verification.
+ * Test implementation of reverseQualityItemsIfNeeded.
+ * Mirrors the production logic for verification.
  */
-// Indicators should be normalized (no hyphens/spaces)
-const LOW_QUALITY_INDICATORS = new Set([
-	"unknown", "workprint", "cam", "telesync", "ts", "telecine",
-	"tc", "dvdscr", "regional", "sdtv", "dvd", "rawhd",
-]);
-
-// Indicators should be normalized (no hyphens/spaces)
-const HIGH_QUALITY_INDICATORS = new Set([
-	"remux", "bluray", "br", "uhd", "2160p", "4k", "webdl", "hdtv",
-]);
-
-const getQualityItemName = (item: { name?: string; quality?: { name?: string } }): string => {
-	return (item.name || item.quality?.name || "").toLowerCase().replace(/[\s-]/g, "");
-};
-
-const isLowQualityName = (name: string): boolean => {
-	const normalized = name.toLowerCase().replace(/[\s-]/g, "");
-	return [...LOW_QUALITY_INDICATORS].some(
-		(indicator) => normalized.includes(indicator) || indicator.includes(normalized),
-	);
-};
-
-const isHighQualityName = (name: string): boolean => {
-	const normalized = name.toLowerCase().replace(/[\s-]/g, "");
-	return [...HIGH_QUALITY_INDICATORS].some(
-		(indicator) => normalized.includes(indicator) || indicator.includes(normalized),
-	);
-};
-
-const isNewTrashQualityFormat = (
-	items: Array<{ name?: string; quality?: { name?: string } }>,
-): boolean => {
-	if (!items || items.length < 2) return false;
-	const firstItem = items[0];
-	const lastItem = items[items.length - 1];
-	if (!firstItem || !lastItem) return false;
-
-	const firstName = getQualityItemName(firstItem);
-	const lastName = getQualityItemName(lastItem);
-
-	const firstIsLowQuality = isLowQualityName(firstName);
-	const lastIsHighQuality = isHighQualityName(lastName);
-
-	if (firstIsLowQuality && lastIsHighQuality) return true;
-	if (isHighQualityName(firstName) || isLowQualityName(lastName)) return false;
-
-	return false;
-};
-
 const reverseQualityItemsIfNeeded = <T>(items: T[]): T[] => {
 	if (!items || items.length === 0) return items;
-	const typedItems = items as Array<{ name?: string; quality?: { name?: string } }>;
-	if (isNewTrashQualityFormat(typedItems)) {
+	if (TRASH_GUIDES_NEW_QUALITY_FORMAT_MERGED) {
 		return [...items].reverse();
 	}
 	return items;
 };
 
-describe("Quality Format Detection (TRaSH Guides PR #2590)", () => {
-	describe("isLowQualityName", () => {
-		it("should identify low quality names", () => {
-			expect(isLowQualityName("Unknown")).toBe(true);
-			expect(isLowQualityName("Workprint")).toBe(true);
-			expect(isLowQualityName("CAM")).toBe(true);
-			expect(isLowQualityName("SDTV")).toBe(true);
-			expect(isLowQualityName("DVD")).toBe(true);
-			expect(isLowQualityName("Raw-HD")).toBe(true);
-		});
-
-		it("should not identify high quality names as low quality", () => {
-			expect(isLowQualityName("Remux")).toBe(false);
-			expect(isLowQualityName("Bluray")).toBe(false);
-			expect(isLowQualityName("WEB-DL")).toBe(false);
-			expect(isLowQualityName("HDTV")).toBe(false);
-		});
-	});
-
-	describe("isHighQualityName", () => {
-		it("should identify high quality names", () => {
-			expect(isHighQualityName("Remux")).toBe(true);
-			expect(isHighQualityName("Bluray")).toBe(true);
-			expect(isHighQualityName("BR")).toBe(true);
-			expect(isHighQualityName("UHD")).toBe(true);
-			expect(isHighQualityName("2160p")).toBe(true);
-			expect(isHighQualityName("4K")).toBe(true);
-			expect(isHighQualityName("WEB-DL")).toBe(true);
-			expect(isHighQualityName("HDTV")).toBe(true);
-		});
-
-		it("should not identify low quality names as high quality", () => {
-			expect(isHighQualityName("Unknown")).toBe(false);
-			expect(isHighQualityName("CAM")).toBe(false);
-			expect(isHighQualityName("SDTV")).toBe(false);
-		});
-	});
-
-	describe("isNewTrashQualityFormat", () => {
-		it("should detect NEW format (low quality first, high quality last)", () => {
-			// NEW format: Unknown → ... → Remux (low to high)
-			const newFormatItems = [
-				{ name: "Unknown" },
-				{ name: "SDTV" },
-				{ name: "DVD" },
-				{ name: "HDTV-720p" },
-				{ name: "WEB-DL 1080p" },
-				{ name: "Bluray-2160p Remux" },
-			];
-			expect(isNewTrashQualityFormat(newFormatItems)).toBe(true);
-		});
-
-		it("should detect OLD format (high quality first, low quality last)", () => {
-			// OLD format: Remux → ... → Unknown (high to low)
-			const oldFormatItems = [
-				{ name: "Bluray-2160p Remux" },
-				{ name: "WEB-DL 1080p" },
-				{ name: "HDTV-720p" },
-				{ name: "DVD" },
-				{ name: "SDTV" },
-				{ name: "Unknown" },
-			];
-			expect(isNewTrashQualityFormat(oldFormatItems)).toBe(false);
-		});
-
-		it("should handle quality wrapper objects", () => {
-			const newFormatWithQualityWrapper = [
-				{ quality: { name: "Unknown" } },
-				{ quality: { name: "SDTV" } },
-				{ quality: { name: "Remux" } },
-			];
-			expect(isNewTrashQualityFormat(newFormatWithQualityWrapper)).toBe(true);
-
-			const oldFormatWithQualityWrapper = [
-				{ quality: { name: "Remux" } },
-				{ quality: { name: "SDTV" } },
-				{ quality: { name: "Unknown" } },
-			];
-			expect(isNewTrashQualityFormat(oldFormatWithQualityWrapper)).toBe(false);
-		});
-
-		it("should return false for inconclusive format", () => {
-			// Neither clear low nor high quality at edges
-			const inconclusiveItems = [
-				{ name: "HDTV-720p" },
-				{ name: "WEB-DL 720p" },
-				{ name: "HDTV-1080p" },
-			];
-			expect(isNewTrashQualityFormat(inconclusiveItems)).toBe(false);
-		});
-
-		it("should return false for less than 2 items", () => {
-			expect(isNewTrashQualityFormat([])).toBe(false);
-			expect(isNewTrashQualityFormat([{ name: "Unknown" }])).toBe(false);
-		});
-
-		it("should return false for empty or undefined items", () => {
-			expect(isNewTrashQualityFormat(null as unknown as any[])).toBe(false);
-			expect(isNewTrashQualityFormat(undefined as unknown as any[])).toBe(false);
-		});
-	});
-
+describe("Quality Format Reversal (TRaSH Guides PR #2590)", () => {
 	describe("reverseQualityItemsIfNeeded", () => {
-		it("should reverse items when in NEW format", () => {
-			const newFormatItems = [
+		// NOTE: Reversal is DISABLED until TRaSH Guides PR #2590 is merged.
+		// When PR #2590 is merged:
+		// 1. Change TRASH_GUIDES_NEW_QUALITY_FORMAT_MERGED to true
+		// 2. Update tests to expect reversal
+		// See: https://github.com/TRaSH-Guides/Guides/pull/2590
+		// See: https://github.com/Kha-kis/arr-dashboard/issues/85
+
+		it("should NOT reverse items (flag disabled until PR #2590)", () => {
+			// TRaSH currently uses OLD format (high→low), matching API order
+			const items = [
 				{ name: "Unknown" },
 				{ name: "DVD" },
 				{ name: "Remux" },
 			];
-			const result = reverseQualityItemsIfNeeded(newFormatItems);
+			const result = reverseQualityItemsIfNeeded(items);
 
+			// No reversal - items returned unchanged
+			expect(result).toBe(items);
 			expect(result).toEqual([
-				{ name: "Remux" },
-				{ name: "DVD" },
 				{ name: "Unknown" },
+				{ name: "DVD" },
+				{ name: "Remux" },
 			]);
-			// Should not mutate original
-			expect(newFormatItems[0]?.name).toBe("Unknown");
 		});
 
-		it("should NOT reverse items when in OLD format", () => {
+		it("should pass through OLD format items unchanged", () => {
+			// This is the current TRaSH format: high quality first (Remux → Unknown)
 			const oldFormatItems = [
 				{ name: "Remux" },
 				{ name: "DVD" },
@@ -431,7 +297,7 @@ describe("Quality Format Detection (TRaSH Guides PR #2590)", () => {
 				{ name: "DVD" },
 				{ name: "Unknown" },
 			]);
-			// Should be the same reference (no copy needed)
+			// Same reference - no copy made
 			expect(result).toBe(oldFormatItems);
 		});
 
@@ -440,24 +306,49 @@ describe("Quality Format Detection (TRaSH Guides PR #2590)", () => {
 			expect(result).toEqual([]);
 		});
 
-		it("should handle undefined/null", () => {
+		it("should handle undefined/null gracefully", () => {
 			expect(reverseQualityItemsIfNeeded(null as unknown as any[])).toBe(null);
 			expect(reverseQualityItemsIfNeeded(undefined as unknown as any[])).toBe(undefined);
 		});
 
-		it("should preserve all item properties during reversal", () => {
-			const newFormatItems = [
+		it("should preserve item properties when not reversing", () => {
+			const items = [
 				{ name: "Unknown", allowed: false, id: 1 },
 				{ name: "DVD", allowed: true, id: 2 },
 				{ name: "Remux", allowed: true, id: 3 },
 			];
-			const result = reverseQualityItemsIfNeeded(newFormatItems);
+			const result = reverseQualityItemsIfNeeded(items);
 
-			expect(result).toEqual([
-				{ name: "Remux", allowed: true, id: 3 },
-				{ name: "DVD", allowed: true, id: 2 },
-				{ name: "Unknown", allowed: false, id: 1 },
-			]);
+			// Same reference returned
+			expect(result).toBe(items);
+			// All properties intact
+			expect(result[0]).toEqual({ name: "Unknown", allowed: false, id: 1 });
+			expect(result[2]).toEqual({ name: "Remux", allowed: true, id: 3 });
+		});
+	});
+
+	describe("when TRASH_GUIDES_NEW_QUALITY_FORMAT_MERGED is true (future state)", () => {
+		// These tests document expected behavior AFTER PR #2590 merges.
+		// Currently skipped because the flag is false.
+		// When PR #2590 merges, change the flag and unskip these tests.
+
+		it.skip("should reverse items when flag is enabled", () => {
+			// After PR #2590, TRaSH will use NEW format (low→high)
+			// We need to reverse for API compatibility (high→low)
+			const newFormatItems = [
+				{ name: "Unknown" },
+				{ name: "DVD" },
+				{ name: "Remux" },
+			];
+
+			// When flag is true, this should reverse
+			// const result = reverseQualityItemsIfNeeded(newFormatItems);
+			// expect(result).toEqual([
+			// 	{ name: "Remux" },
+			// 	{ name: "DVD" },
+			// 	{ name: "Unknown" },
+			// ]);
+			// expect(result).not.toBe(newFormatItems); // New array created
 		});
 	});
 });
