@@ -83,7 +83,8 @@ export interface QueueCleanerConfig {
 	// Estimated completion
 	estimatedCompletionEnabled: boolean;
 	estimatedCompletionMultiplier: number;
-	// Import pending timeout
+	// Import pending/blocked cleanup
+	importPendingEnabled: boolean;
 	importPendingThresholdMins: number;
 	// Import block cleanup aggressiveness
 	importBlockCleanupLevel: ImportBlockCleanupLevel;
@@ -139,7 +140,8 @@ export interface QueueCleanerConfigUpdate {
 	// Estimated completion
 	estimatedCompletionEnabled?: boolean;
 	estimatedCompletionMultiplier?: number;
-	// Import pending timeout
+	// Import pending/blocked cleanup
+	importPendingEnabled?: boolean;
 	importPendingThresholdMins?: number;
 	// Import block cleanup level
 	importBlockCleanupLevel?: ImportBlockCleanupLevel;
