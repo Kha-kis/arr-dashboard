@@ -9,6 +9,12 @@
  * - Password-based encryption with configurable password
  * - Restore with validation and rollback capability
  * - Size limits to prevent memory exhaustion
+ *
+ * Implementation is decomposed into focused modules:
+ * - backup-crypto.ts: PBKDF2 + AES-256-GCM encrypt/decrypt
+ * - backup-validation.ts: Type guards and structural validation
+ * - backup-file-utils.ts: File system operations (secrets, directories)
+ * - backup-database.ts: Prisma export/restore operations
  */
 
 import crypto from "node:crypto";
@@ -20,15 +26,26 @@ import type {
 	BackupFileInfoInternal,
 	BackupMetadata,
 } from "@arr/shared";
-import type { Prisma, PrismaClient } from "../../lib/prisma.js";
+import type { PrismaClient } from "../../lib/prisma.js";
 import type { Encryptor } from "../auth/encryption.js";
 import { loggers } from "../logger.js";
+import { encryptBackupData, decryptBackupData } from "./backup-crypto.js";
+import { exportDatabase, restoreDatabase } from "./backup-database.js";
+import {
+	readSecrets,
+	writeSecrets,
+	ensureBackupsDirectory,
+	generateBackupId,
+	parseTimestampFromFilename,
+} from "./backup-file-utils.js";
+import {
+	BACKUP_VERSION,
+	isEncryptedBackupEnvelope,
+	isPlaintextBackup,
+	validateBackup,
+} from "./backup-validation.js";
 
 const log = loggers.backup;
-
-const BACKUP_VERSION = "1.0";
-const PBKDF2_ITERATIONS = 600000; // OWASP recommendation for PBKDF2-SHA256
-const KEY_LENGTH = 32; // 256 bits for AES-256
 
 // Size limits for backup operations
 // These limits help prevent out-of-memory errors during JSON stringification and encryption
@@ -37,21 +54,6 @@ const WARNING_BACKUP_SIZE_MB = 50; // Log warning when backup exceeds this size
 const MAX_RESTORE_SIZE_MB = 200; // Maximum size for restore operations (defense against malicious files)
 
 type BackupType = "manual" | "scheduled" | "update";
-
-// Encrypted backup envelope structure
-interface EncryptedBackupEnvelope {
-	version: string; // Envelope format version
-	kdfParams: {
-		algorithm: "pbkdf2";
-		hash: "sha256";
-		iterations: number;
-		saltLength: number;
-	};
-	salt: string; // Base64-encoded salt
-	iv: string; // Base64-encoded initialization vector
-	tag: string; // Base64-encoded GCM authentication tag
-	cipherText: string; // Base64-encoded encrypted backup data
-}
 
 /**
  * Service for creating and restoring encrypted database backups.
@@ -275,116 +277,6 @@ export class BackupService {
 	}
 
 	/**
-	 * Encrypt backup data using password-based encryption
-	 * Uses PBKDF2 for key derivation and AES-256-GCM for encryption
-	 */
-	private async encryptBackup(backupJson: string): Promise<EncryptedBackupEnvelope> {
-		const password = await this.getBackupPassword();
-
-		// Generate random salt for PBKDF2
-		const salt = crypto.randomBytes(32);
-
-		// Derive encryption key from password using PBKDF2 (async to avoid blocking event loop)
-		const key = await this.deriveKey(password, salt, PBKDF2_ITERATIONS);
-
-		// Generate random IV for AES-GCM (12 bytes is optimal for GCM per NIST recommendation)
-		const iv = crypto.randomBytes(12);
-
-		// Create cipher
-		const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
-
-		// Encrypt the backup data
-		const encrypted = Buffer.concat([cipher.update(backupJson, "utf8"), cipher.final()]);
-
-		// Get authentication tag
-		const tag = cipher.getAuthTag();
-
-		// Return encrypted envelope
-		return {
-			version: "1.0",
-			kdfParams: {
-				algorithm: "pbkdf2",
-				hash: "sha256",
-				iterations: PBKDF2_ITERATIONS,
-				saltLength: salt.length,
-			},
-			salt: salt.toString("base64"),
-			iv: iv.toString("base64"),
-			tag: tag.toString("base64"),
-			cipherText: encrypted.toString("base64"),
-		};
-	}
-
-	/**
-	 * Derive encryption key from password using PBKDF2
-	 * Uses async crypto.pbkdf2 to avoid blocking the event loop
-	 */
-	private async deriveKey(password: string, salt: Buffer, iterations: number): Promise<Buffer> {
-		return new Promise((resolve, reject) => {
-			crypto.pbkdf2(password, salt, iterations, KEY_LENGTH, "sha256", (err, derivedKey) => {
-				if (err) {
-					reject(err);
-				} else {
-					resolve(derivedKey);
-				}
-			});
-		});
-	}
-
-	/**
-	 * Decrypt backup data using password-based encryption
-	 * Verifies authentication tag to ensure data integrity
-	 */
-	private async decryptBackup(envelope: EncryptedBackupEnvelope): Promise<string> {
-		const password = await this.getBackupPassword();
-
-		// Validate envelope version
-		if (envelope.version !== "1.0") {
-			throw new Error(`Unsupported encrypted backup version: ${envelope.version}`);
-		}
-
-		// Validate KDF parameters
-		if (envelope.kdfParams.algorithm !== "pbkdf2" || envelope.kdfParams.hash !== "sha256") {
-			throw new Error("Unsupported KDF algorithm or hash");
-		}
-
-		// Decode base64 values
-		const salt = Buffer.from(envelope.salt, "base64");
-		const iv = Buffer.from(envelope.iv, "base64");
-		const tag = Buffer.from(envelope.tag, "base64");
-		const cipherText = Buffer.from(envelope.cipherText, "base64");
-
-		// Sanity check decoded buffer lengths to fail fast on malformed input
-		if (salt.length !== 32) {
-			throw new Error(`Invalid salt length: expected 32 bytes, got ${salt.length}`);
-		}
-		if (iv.length !== 12) {
-			throw new Error(`Invalid IV length: expected 12 bytes, got ${iv.length}`);
-		}
-		if (tag.length !== 16) {
-			throw new Error(`Invalid auth tag length: expected 16 bytes, got ${tag.length}`);
-		}
-		if (cipherText.length === 0) {
-			throw new Error("Invalid ciphertext: empty buffer");
-		}
-
-		// Derive decryption key using stored KDF parameters (async to avoid blocking event loop)
-		const key = await this.deriveKey(password, salt, envelope.kdfParams.iterations);
-
-		// Create decipher
-		const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
-		decipher.setAuthTag(tag);
-
-		try {
-			// Decrypt and verify authentication tag
-			const decrypted = Buffer.concat([decipher.update(cipherText), decipher.final()]);
-			return decrypted.toString("utf8");
-		} catch (_error) {
-			throw new Error("Failed to decrypt backup: invalid password or corrupted data");
-		}
-	}
-
-	/**
 	 * Create a backup and save it to filesystem (encrypted)
 	 *
 	 * @param appVersion - Application version string
@@ -397,13 +289,13 @@ export class BackupService {
 		options: { includeTrashBackups?: boolean } = {},
 	): Promise<BackupFileInfo> {
 		// 1. Ensure backups directory exists
-		await this.ensureBackupsDirectory();
+		await ensureBackupsDirectory(this.backupsDir);
 
 		// 2. Export all database data
-		const data = await this.exportDatabase({ includeTrashBackups: options.includeTrashBackups });
+		const data = await exportDatabase(this.prisma, { includeTrashBackups: options.includeTrashBackups });
 
 		// 3. Read secrets file
-		const secrets = await this.readSecrets();
+		const secrets = await readSecrets(this.secretsPath);
 
 		// 4. Create backup structure
 		const backup: BackupData = {
@@ -459,7 +351,8 @@ export class BackupService {
 		const backupJson = JSON.stringify(backup);
 
 		// 7. Encrypt the backup data
-		const encryptedEnvelope = await this.encryptBackup(backupJson);
+		const password = await this.getBackupPassword();
+		const encryptedEnvelope = await encryptBackupData(backupJson, password);
 
 		// 8. Convert encrypted envelope to JSON (pretty-printed for storage)
 		const envelopeJson = JSON.stringify(encryptedEnvelope, null, 2);
@@ -510,7 +403,7 @@ export class BackupService {
 
 		// 13. Create backup info (excluding internal path from public response)
 		const backupInfo: BackupFileInfo = {
-			id: this.generateBackupId(backupPath),
+			id: generateBackupId(backupPath),
 			filename,
 			type,
 			timestamp: backup.timestamp,
@@ -535,7 +428,7 @@ export class BackupService {
 	 * List all backups with internal path information (server-side only)
 	 */
 	private async listBackupsInternal(): Promise<BackupFileInfoInternal[]> {
-		await this.ensureBackupsDirectory();
+		await ensureBackupsDirectory(this.backupsDir);
 
 		const backups: BackupFileInfoInternal[] = [];
 		const types: BackupType[] = ["manual", "scheduled", "update"];
@@ -553,12 +446,10 @@ export class BackupService {
 					const stats = await fs.stat(backupPath);
 
 					// Parse timestamp from filename instead of decrypting the file
-					// Filename format: arr-dashboard-backup-2025-10-15T13-27-36-897Z.json
-					// Timestamp format: 2025-10-15T13:27:36.897Z (ISO 8601)
-					const timestamp = this.parseTimestampFromFilename(filename, stats.mtime);
+					const timestamp = parseTimestampFromFilename(filename, stats.mtime);
 
 					backups.push({
-						id: this.generateBackupId(backupPath),
+						id: generateBackupId(backupPath),
 						filename,
 						type,
 						timestamp,
@@ -706,58 +597,6 @@ export class BackupService {
 	}
 
 	/**
-	 * Validate that an object is a valid encrypted backup envelope
-	 * Performs strict type checking on all required fields to prevent misclassification
-	 */
-	private isEncryptedBackupEnvelope(obj: unknown): obj is EncryptedBackupEnvelope {
-		if (typeof obj !== "object" || obj === null) {
-			return false;
-		}
-
-		const envelope = obj as Record<string, unknown>;
-
-		// Validate all required fields with correct types
-		return (
-			typeof envelope.version === "string" &&
-			typeof envelope.salt === "string" &&
-			typeof envelope.iv === "string" &&
-			typeof envelope.tag === "string" &&
-			typeof envelope.cipherText === "string" &&
-			typeof envelope.kdfParams === "object" &&
-			envelope.kdfParams !== null &&
-			typeof (envelope.kdfParams as Record<string, unknown>).algorithm === "string" &&
-			typeof (envelope.kdfParams as Record<string, unknown>).hash === "string" &&
-			typeof (envelope.kdfParams as Record<string, unknown>).iterations === "number" &&
-			typeof (envelope.kdfParams as Record<string, unknown>).saltLength === "number"
-		);
-	}
-
-	/**
-	 * Validate that an object is a valid plaintext backup (legacy format)
-	 * Performs strict type checking on all required fields to prevent misclassification
-	 */
-	private isPlaintextBackup(obj: unknown): obj is BackupData {
-		if (typeof obj !== "object" || obj === null) {
-			return false;
-		}
-
-		const backup = obj as Record<string, unknown>;
-
-		// Validate all required top-level fields with correct types
-		return (
-			typeof backup.version === "string" &&
-			typeof backup.appVersion === "string" &&
-			typeof backup.timestamp === "string" &&
-			typeof backup.data === "object" &&
-			backup.data !== null &&
-			typeof backup.secrets === "object" &&
-			backup.secrets !== null &&
-			// Ensure this isn't an encrypted envelope (no cipherText field)
-			!("cipherText" in backup)
-		);
-	}
-
-	/**
 	 * Restore from a backup (accepts both encrypted envelope or plaintext JSON)
 	 * For uploaded backups, this receives the base64-decoded backup data
 	 */
@@ -769,12 +608,13 @@ export class BackupService {
 			parsed = JSON.parse(backupData);
 
 			// Strictly validate format with type checks to avoid misclassification
-			if (this.isEncryptedBackupEnvelope(parsed)) {
+			if (isEncryptedBackupEnvelope(parsed)) {
 				// It's an encrypted backup - decrypt it
-				const decryptedBackupJson = await this.decryptBackup(parsed);
+				const password = await this.getBackupPassword();
+				const decryptedBackupJson = await decryptBackupData(parsed, password);
 				// Re-parse after decryption
 				parsed = JSON.parse(decryptedBackupJson);
-			} else if (this.isPlaintextBackup(parsed)) {
+			} else if (isPlaintextBackup(parsed)) {
 				// It's a plaintext backup (legacy format) - parsed already contains the backup data
 				// No need to parse again
 			} else {
@@ -788,7 +628,7 @@ export class BackupService {
 
 		// 1. Validate backup structure (parsed now contains the backup object)
 		const backup = parsed as BackupData;
-		this.validateBackup(backup);
+		validateBackup(backup);
 
 		// 2. Perform atomic restore with two-phase commit pattern to prevent partial restore
 		const secretsBackupPath = `${this.secretsPath}.restore-backup`;
@@ -808,11 +648,11 @@ export class BackupService {
 			}
 
 			// Phase 2: Write new secrets
-			await this.writeSecrets(backup.secrets);
+			await writeSecrets(this.secretsPath, backup.secrets);
 
 			// Phase 3: Restore database (in a transaction for atomicity)
 			// If this fails, we need to restore the backed-up secrets
-			await this.restoreDatabase(backup.data);
+			await restoreDatabase(this.prisma, backup.data);
 
 			// Phase 4: Success - clean up backup
 			if (secretsBackedUp) {
@@ -846,640 +686,6 @@ export class BackupService {
 
 			// Re-throw the original error
 			throw error;
-		}
-	}
-
-	/**
-	 * Export all database tables
-	 *
-	 * CURRENT IMPLEMENTATION: In-memory bulk export
-	 * - Loads all table data into memory at once using findMany()
-	 * - Efficient for typical installations (< 50 MB of data)
-	 * - Size checks in createBackup() prevent excessive memory usage
-	 *
-	 * SCALABILITY CONSIDERATIONS:
-	 * For installations with very large datasets (100+ MB or 100,000+ records):
-	 * - This approach may cause out-of-memory errors during export
-	 * - Consider implementing streaming with cursor-based pagination:
-	 *   - Use Prisma's cursor pagination: findMany({ take: 1000, cursor: ... })
-	 *   - Export in batches and stream to file system
-	 *   - Add progress tracking and timeout handling
-	 * - Consider adding per-table size estimates before exporting
-	 *
-	 * Current size limits are enforced at ~100 MB in createBackup()
-	 *
-	 * @param options.includeTrashBackups - Include TRaSH ARR config snapshots (can be large)
-	 */
-	private async exportDatabase(options: { includeTrashBackups?: boolean } = {}) {
-		// Export all core tables in parallel
-		// NOTE: This loads all data into memory - see method documentation for scalability notes
-		const [
-			// Core authentication & services
-			users,
-			sessions,
-			serviceInstances,
-			serviceTags,
-			serviceInstanceTags,
-			oidcProviders,
-			oidcAccounts,
-			webAuthnCredentials,
-			// System settings
-			systemSettings,
-			// TRaSH Guides configuration
-			trashTemplates,
-			trashSettings,
-			trashSyncSchedules,
-			templateQualityProfileMappings,
-			instanceQualityProfileOverrides,
-			standaloneCFDeployments,
-			// TRaSH Guides history/audit
-			trashSyncHistory,
-			templateDeploymentHistory,
-			// Hunting feature
-			huntConfigs,
-			huntLogs,
-			huntSearchHistory,
-		] = await Promise.all([
-			// Core authentication & services
-			this.prisma.user.findMany(),
-			this.prisma.session.findMany(),
-			this.prisma.serviceInstance.findMany(),
-			this.prisma.serviceTag.findMany(),
-			this.prisma.serviceInstanceTag.findMany(),
-			this.prisma.oIDCProvider.findMany(),
-			this.prisma.oIDCAccount.findMany(),
-			this.prisma.webAuthnCredential.findMany(),
-			// System settings
-			this.prisma.systemSettings.findMany(),
-			// TRaSH Guides configuration
-			this.prisma.trashTemplate.findMany(),
-			this.prisma.trashSettings.findMany(),
-			this.prisma.trashSyncSchedule.findMany(),
-			this.prisma.templateQualityProfileMapping.findMany(),
-			this.prisma.instanceQualityProfileOverride.findMany(),
-			this.prisma.standaloneCFDeployment.findMany(),
-			// TRaSH Guides history/audit
-			this.prisma.trashSyncHistory.findMany(),
-			this.prisma.templateDeploymentHistory.findMany(),
-			// Hunting feature
-			this.prisma.huntConfig.findMany(),
-			this.prisma.huntLog.findMany(),
-			this.prisma.huntSearchHistory.findMany(),
-		]);
-
-		// Optionally include TRaSH instance backups (ARR config snapshots)
-		// Limited to non-expired backups from the last 7 days to control size
-		let trashBackups: unknown[] = [];
-		if (options.includeTrashBackups) {
-			const sevenDaysAgo = new Date();
-			sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-
-			trashBackups = await this.prisma.trashBackup.findMany({
-				where: {
-					// Only include backups from the last 7 days
-					createdAt: { gte: sevenDaysAgo },
-					// Only include non-expired backups (expiresAt is null OR in the future)
-					OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-				},
-			});
-		}
-
-		return {
-			// Core authentication & services
-			users,
-			sessions,
-			serviceInstances,
-			serviceTags,
-			serviceInstanceTags,
-			oidcProviders,
-			oidcAccounts,
-			webAuthnCredentials,
-			// System settings
-			systemSettings,
-			// TRaSH Guides configuration
-			trashTemplates,
-			trashSettings,
-			trashSyncSchedules,
-			templateQualityProfileMappings,
-			instanceQualityProfileOverrides,
-			standaloneCFDeployments,
-			// TRaSH Guides history/audit
-			trashSyncHistory,
-			templateDeploymentHistory,
-			// TRaSH instance backups (optional)
-			trashBackups,
-			// Hunting feature
-			huntConfigs,
-			huntLogs,
-			huntSearchHistory,
-		};
-	}
-
-	/**
-	 * Restore database from backup data
-	 * Uses bulk inserts for better performance and validates data before restoration
-	 *
-	 * CURRENT IMPLEMENTATION: In-memory bulk restore
-	 * - Performs bulk createMany() operations for all records in a single transaction
-	 * - Efficient for typical installations (< 50 MB of data)
-	 * - Transaction ensures atomicity but can be long-running for large datasets
-	 *
-	 * SCALABILITY CONSIDERATIONS:
-	 * For installations with very large datasets (100+ MB or 100,000+ records):
-	 * - Long-running transactions can block other database operations
-	 * - May cause timeouts or excessive memory usage during restoration
-	 * - Consider implementing batched restore:
-	 *   - Process N records at a time (e.g., 1000 records per batch)
-	 *   - Use multiple smaller transactions or chunk processing
-	 *   - Add progress tracking and incremental commits
-	 *   - Handle partial restore failures with rollback mechanisms
-	 * - Consider using COPY operations for bulk data insertion (PostgreSQL)
-	 *
-	 * Current implementation assumes datasets within size limits enforced by createBackup()
-	 */
-	private async restoreDatabase(data: BackupData["data"]) {
-		// Use a transaction to ensure atomicity
-		// NOTE: This processes all data in a single transaction - see method documentation for scalability notes
-		await this.prisma.$transaction(async (tx) => {
-			// =================================================================
-			// DELETE all existing data (in reverse order of dependencies)
-			// =================================================================
-
-			// Hunting feature (HuntSearchHistory → HuntLog → HuntConfig)
-			await tx.huntSearchHistory.deleteMany();
-			await tx.huntLog.deleteMany();
-			await tx.huntConfig.deleteMany();
-
-			// TRaSH history/audit (depends on templates, instances, backups)
-			await tx.templateDeploymentHistory.deleteMany();
-			await tx.trashSyncHistory.deleteMany();
-
-			// TRaSH configuration (depends on templates, instances)
-			await tx.templateQualityProfileMapping.deleteMany();
-			await tx.instanceQualityProfileOverride.deleteMany();
-			await tx.standaloneCFDeployment.deleteMany();
-			await tx.trashBackup.deleteMany();
-			await tx.trashSyncSchedule.deleteMany();
-			await tx.trashTemplate.deleteMany();
-			await tx.trashSettings.deleteMany();
-
-			// System settings (singleton)
-			await tx.systemSettings.deleteMany();
-
-			// Core tables (existing)
-			await tx.serviceInstanceTag.deleteMany();
-			await tx.serviceTag.deleteMany();
-			await tx.serviceInstance.deleteMany();
-			await tx.webAuthnCredential.deleteMany();
-			await tx.oIDCAccount.deleteMany();
-			await tx.oIDCProvider.deleteMany();
-			await tx.session.deleteMany();
-			await tx.user.deleteMany();
-
-			// =================================================================
-			// RESTORE data (in order of dependencies)
-			// =================================================================
-
-			// --- Core authentication (no dependencies) ---
-
-			// Users first (no dependencies)
-			if (data.users.length > 0) {
-				this.validateRecords(data.users, "user", ["id", "username"]);
-				await tx.user.createMany({
-					data: data.users as Prisma.UserCreateManyInput[],
-				});
-			}
-
-			// Sessions (depend on users)
-			if (data.sessions.length > 0) {
-				this.validateRecords(data.sessions, "session", ["id", "userId", "expiresAt"]);
-				await tx.session.createMany({
-					data: data.sessions as Prisma.SessionCreateManyInput[],
-				});
-			}
-
-			// OIDC provider (singleton, no dependencies) - optional for backward compatibility
-			if (data.oidcProviders && data.oidcProviders.length > 0) {
-				this.validateRecords(data.oidcProviders, "oidcProvider", ["id", "clientId", "issuer"]);
-				const providerData = data.oidcProviders[0] as Prisma.OIDCProviderCreateInput;
-				await tx.oIDCProvider.create({
-					data: { ...providerData, id: 1 },
-				});
-			}
-
-			// OIDC accounts (depend on users)
-			if (data.oidcAccounts.length > 0) {
-				this.validateRecords(data.oidcAccounts, "oidcAccount", ["id", "userId", "providerUserId"]);
-				await tx.oIDCAccount.createMany({
-					data: data.oidcAccounts as Prisma.OIDCAccountCreateManyInput[],
-				});
-			}
-
-			// WebAuthn credentials (depend on users)
-			if (data.webAuthnCredentials.length > 0) {
-				this.validateRecords(data.webAuthnCredentials, "webAuthnCredential", [
-					"id",
-					"userId",
-					"publicKey",
-				]);
-				await tx.webAuthnCredential.createMany({
-					data: data.webAuthnCredentials as Prisma.WebAuthnCredentialCreateManyInput[],
-				});
-			}
-
-			// --- Service instances & tags ---
-
-			// Service instances (depend on users)
-			if (data.serviceInstances.length > 0) {
-				this.validateRecords(data.serviceInstances, "serviceInstance", [
-					"id",
-					"service",
-					"baseUrl",
-				]);
-				await tx.serviceInstance.createMany({
-					data: data.serviceInstances as Prisma.ServiceInstanceCreateManyInput[],
-				});
-			}
-
-			// Service tags (no dependencies)
-			if (data.serviceTags.length > 0) {
-				this.validateRecords(data.serviceTags, "serviceTag", ["id", "name"]);
-				await tx.serviceTag.createMany({
-					data: data.serviceTags as Prisma.ServiceTagCreateManyInput[],
-				});
-			}
-
-			// Service instance tags (depend on instances and tags)
-			if (data.serviceInstanceTags.length > 0) {
-				this.validateRecords(data.serviceInstanceTags, "serviceInstanceTag", [
-					"instanceId",
-					"tagId",
-				]);
-				await tx.serviceInstanceTag.createMany({
-					data: data.serviceInstanceTags as Prisma.ServiceInstanceTagCreateManyInput[],
-				});
-			}
-
-			// --- System settings (singleton) ---
-
-			if (data.systemSettings && data.systemSettings.length > 0) {
-				this.validateRecords(data.systemSettings, "systemSettings", ["id"]);
-				const settingsData = data.systemSettings[0] as Prisma.SystemSettingsCreateInput;
-				await tx.systemSettings.create({
-					data: { ...settingsData, id: 1 },
-				});
-			}
-
-			// --- TRaSH Guides configuration ---
-
-			// TRaSH settings (depend on users)
-			if (data.trashSettings && data.trashSettings.length > 0) {
-				this.validateRecords(data.trashSettings, "trashSettings", ["id", "userId"]);
-				await tx.trashSettings.createMany({
-					data: data.trashSettings as Prisma.TrashSettingsCreateManyInput[],
-				});
-			}
-
-			// TRaSH templates (no FK dependencies for restore)
-			if (data.trashTemplates && data.trashTemplates.length > 0) {
-				this.validateRecords(data.trashTemplates, "trashTemplate", ["id", "name", "serviceType"]);
-				await tx.trashTemplate.createMany({
-					data: data.trashTemplates as Prisma.TrashTemplateCreateManyInput[],
-				});
-			}
-
-			// TRaSH sync schedules (depend on instances, templates - optional FKs)
-			if (data.trashSyncSchedules && data.trashSyncSchedules.length > 0) {
-				this.validateRecords(data.trashSyncSchedules, "trashSyncSchedule", ["id", "userId"]);
-				await tx.trashSyncSchedule.createMany({
-					data: data.trashSyncSchedules as Prisma.TrashSyncScheduleCreateManyInput[],
-				});
-			}
-
-			// TRaSH backups (depend on instances) - optional, can be large
-			if (data.trashBackups && data.trashBackups.length > 0) {
-				this.validateRecords(data.trashBackups, "trashBackup", ["id", "instanceId", "userId"]);
-				await tx.trashBackup.createMany({
-					data: data.trashBackups as Prisma.TrashBackupCreateManyInput[],
-				});
-			}
-
-			// Template quality profile mappings (depend on templates, instances)
-			if (data.templateQualityProfileMappings && data.templateQualityProfileMappings.length > 0) {
-				this.validateRecords(data.templateQualityProfileMappings, "templateQualityProfileMapping", [
-					"id",
-					"templateId",
-					"instanceId",
-				]);
-				await tx.templateQualityProfileMapping.createMany({
-					data: data.templateQualityProfileMappings as Prisma.TemplateQualityProfileMappingCreateManyInput[],
-				});
-			}
-
-			// Instance quality profile overrides (depend on instances)
-			if (data.instanceQualityProfileOverrides && data.instanceQualityProfileOverrides.length > 0) {
-				this.validateRecords(
-					data.instanceQualityProfileOverrides,
-					"instanceQualityProfileOverride",
-					["id", "instanceId"],
-				);
-				await tx.instanceQualityProfileOverride.createMany({
-					data: data.instanceQualityProfileOverrides as Prisma.InstanceQualityProfileOverrideCreateManyInput[],
-				});
-			}
-
-			// Standalone CF deployments (depend on instances)
-			if (data.standaloneCFDeployments && data.standaloneCFDeployments.length > 0) {
-				this.validateRecords(data.standaloneCFDeployments, "standaloneCFDeployment", [
-					"id",
-					"instanceId",
-					"cfTrashId",
-				]);
-				await tx.standaloneCFDeployment.createMany({
-					data: data.standaloneCFDeployments as Prisma.StandaloneCFDeploymentCreateManyInput[],
-				});
-			}
-
-			// --- TRaSH Guides history/audit ---
-
-			// TRaSH sync history (depend on instances, templates, backups - optional FKs)
-			if (data.trashSyncHistory && data.trashSyncHistory.length > 0) {
-				this.validateRecords(data.trashSyncHistory, "trashSyncHistory", [
-					"id",
-					"instanceId",
-					"userId",
-				]);
-				await tx.trashSyncHistory.createMany({
-					data: data.trashSyncHistory as Prisma.TrashSyncHistoryCreateManyInput[],
-				});
-			}
-
-			// Template deployment history (depend on templates, instances, backups - optional FKs)
-			if (data.templateDeploymentHistory && data.templateDeploymentHistory.length > 0) {
-				this.validateRecords(data.templateDeploymentHistory, "templateDeploymentHistory", [
-					"id",
-					"templateId",
-					"instanceId",
-				]);
-				await tx.templateDeploymentHistory.createMany({
-					data: data.templateDeploymentHistory as Prisma.TemplateDeploymentHistoryCreateManyInput[],
-				});
-			}
-
-			// --- Hunting feature ---
-
-			// Hunt configs (depend on instances)
-			if (data.huntConfigs && data.huntConfigs.length > 0) {
-				this.validateRecords(data.huntConfigs, "huntConfig", ["id", "instanceId"]);
-				await tx.huntConfig.createMany({
-					data: data.huntConfigs as Prisma.HuntConfigCreateManyInput[],
-				});
-			}
-
-			// Hunt logs (depend on instances)
-			if (data.huntLogs && data.huntLogs.length > 0) {
-				this.validateRecords(data.huntLogs, "huntLog", ["id", "instanceId"]);
-				await tx.huntLog.createMany({
-					data: data.huntLogs as Prisma.HuntLogCreateManyInput[],
-				});
-			}
-
-			// Hunt search history (depend on hunt configs)
-			if (data.huntSearchHistory && data.huntSearchHistory.length > 0) {
-				this.validateRecords(data.huntSearchHistory, "huntSearchHistory", ["id", "configId"]);
-				await tx.huntSearchHistory.createMany({
-					data: data.huntSearchHistory as Prisma.HuntSearchHistoryCreateManyInput[],
-				});
-			}
-		});
-	}
-
-	/**
-	 * Validate that records have the expected shape before inserting
-	 * Prevents runtime errors from corrupted or incompatible backup data
-	 */
-	private validateRecords(records: unknown[], entityType: string, requiredFields: string[]): void {
-		for (let i = 0; i < records.length; i++) {
-			const record = records[i];
-
-			if (!record || typeof record !== "object") {
-				throw new Error(`Invalid ${entityType} record at index ${i}: not an object`);
-			}
-
-			const recordObj = record as Record<string, unknown>;
-			for (const field of requiredFields) {
-				if (!(field in recordObj) || recordObj[field] === undefined) {
-					throw new Error(
-						`Invalid ${entityType} record at index ${i}: missing required field '${field}'`,
-					);
-				}
-
-				// Basic type check: ensure field is a primitive (string, number, boolean) or Date
-				// Complex objects likely indicate corrupted or incompatible backup data
-				const value = recordObj[field];
-				if (value !== null && typeof value === "object" && !(value instanceof Date)) {
-					throw new Error(
-						`Invalid ${entityType} record at index ${i}: field '${field}' has unexpected type (expected primitive, got object)`,
-					);
-				}
-			}
-		}
-	}
-
-	/**
-	 * Read secrets from secrets.json
-	 */
-	private async readSecrets(): Promise<BackupData["secrets"]> {
-		try {
-			const secretsContent = await fs.readFile(this.secretsPath, "utf-8");
-			const secrets = JSON.parse(secretsContent);
-			return {
-				encryptionKey: secrets.encryptionKey,
-				sessionCookieSecret: secrets.sessionCookieSecret,
-			};
-		} catch (error) {
-			throw new Error(`Failed to read secrets file: ${error}`);
-		}
-	}
-
-	/**
-	 * Write secrets to secrets.json with restrictive permissions (0o600)
-	 * Merges with existing secrets to preserve additional fields like backupPassword
-	 * Only the owner can read/write the secrets file for enhanced security
-	 */
-	private async writeSecrets(secrets: BackupData["secrets"]): Promise<void> {
-		try {
-			// Read existing secrets to preserve fields not in backup (e.g., backupPassword)
-			let existingSecrets: Record<string, unknown> = {};
-			try {
-				const existingContent = await fs.readFile(this.secretsPath, "utf-8");
-				existingSecrets = JSON.parse(existingContent);
-			} catch (error) {
-				if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") {
-					// File doesn't exist, start with empty object
-				} else if (error instanceof SyntaxError) {
-					// Invalid JSON, start with empty object (log warning)
-					log.warn({ file: this.secretsPath }, "Existing secrets file has invalid JSON, will overwrite");
-				} else {
-					// Unexpected error (e.g., EACCES), log but continue to allow restore to proceed
-					log.warn({ err: error, file: this.secretsPath }, "Failed to read existing secrets, some fields may be lost");
-				}
-			}
-
-			// Merge backup secrets with existing ones
-			// Backup secrets take precedence, but existing fields are preserved
-			const mergedSecrets = { ...existingSecrets, ...secrets };
-
-			const secretsContent = JSON.stringify(mergedSecrets, null, 2);
-			// Write with restrictive permissions (owner read/write only)
-			await fs.writeFile(this.secretsPath, secretsContent, { encoding: "utf-8", mode: 0o600 });
-
-			// Fallback: explicitly set permissions to ensure they're enforced
-			// This handles cases where the file existed with different permissions
-			await fs.chmod(this.secretsPath, 0o600);
-		} catch (error) {
-			throw new Error(`Failed to write secrets file: ${error}`);
-		}
-	}
-
-	/**
-	 * Ensure backups directory exists
-	 */
-	private async ensureBackupsDirectory(): Promise<void> {
-		await fs.mkdir(this.backupsDir, { recursive: true });
-	}
-
-	/**
-	 * Generate a unique ID for a backup based on its path
-	 */
-	private generateBackupId(backupPath: string): string {
-		// Use SHA-256 hash of the path as the ID (24 hex chars = 96 bits for collision resistance)
-		return crypto.createHash("sha256").update(backupPath).digest("hex").substring(0, 24);
-	}
-
-	/**
-	 * Parse timestamp from backup filename without decrypting the file
-	 * Filename format: arr-dashboard-backup-2025-10-15T13-27-36-897Z.json
-	 * Returns ISO 8601 timestamp: 2025-10-15T13:27:36.897Z
-	 * Falls back to file modification time if parsing fails
-	 */
-	private parseTimestampFromFilename(filename: string, fallbackMtime: Date): string {
-		// Pattern to extract timestamp: backup-YYYY-MM-DDTHH-MM-SS-MMMZ
-		const timestampPattern = /backup-(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z)/;
-		const match = filename.match(timestampPattern);
-
-		if (!match) {
-			// Filename doesn't match expected format, use file modification time
-			return fallbackMtime.toISOString();
-		}
-
-		// Extract timestamp string and convert hyphens to colons in the time portion
-		// Input:  2025-10-15T13-27-36-897Z
-		// Output: 2025-10-15T13:27:36.897Z
-		const rawTimestamp = match[1];
-		if (!rawTimestamp) {
-			return fallbackMtime.toISOString();
-		}
-		const [datePart, timePart] = rawTimestamp.split("T");
-		if (!timePart) {
-			return fallbackMtime.toISOString();
-		}
-
-		// Convert time portion: 13-27-36-897Z -> 13:27:36.897Z
-		const timeConverted = timePart.replace(/-(\d{2})-(\d{2})-(\d{3}Z)/, ":$1:$2.$3"); // HH-MM-SS-MMMZ -> HH:MM:SS.MMMZ
-
-		const isoTimestamp = `${datePart}T${timeConverted}`;
-
-		// Validate the parsed timestamp is valid ISO 8601
-		const date = new Date(isoTimestamp);
-		if (Number.isNaN(date.getTime())) {
-			// Invalid date, use fallback
-			return fallbackMtime.toISOString();
-		}
-
-		return isoTimestamp;
-	}
-
-	/**
-	 * Validate backup structure
-	 */
-	private validateBackup(backup: unknown): asserts backup is BackupData {
-		if (typeof backup !== "object" || backup === null) {
-			throw new Error("Invalid backup format: not an object");
-		}
-
-		const b = backup as Partial<BackupData>;
-
-		if (!b.version || typeof b.version !== "string") {
-			throw new Error("Invalid backup format: missing or invalid version");
-		}
-
-		if (b.version !== BACKUP_VERSION) {
-			throw new Error(`Unsupported backup version: ${b.version} (expected ${BACKUP_VERSION})`);
-		}
-
-		if (!b.data || typeof b.data !== "object") {
-			throw new Error("Invalid backup format: missing or invalid data");
-		}
-
-		if (!b.secrets || typeof b.secrets !== "object") {
-			throw new Error("Invalid backup format: missing or invalid secrets");
-		}
-
-		// Validate required data fields
-		const requiredFields = [
-			"users",
-			"sessions",
-			"serviceInstances",
-			"serviceTags",
-			"serviceInstanceTags",
-			"oidcAccounts",
-			"webAuthnCredentials",
-		];
-
-		const dataRecord = b.data as Record<string, unknown>;
-		for (const field of requiredFields) {
-			if (!Array.isArray(dataRecord[field])) {
-				throw new Error(`Invalid backup format: missing or invalid data.${field}`);
-			}
-		}
-
-		// Optional fields for backward compatibility
-		// These fields were added in later versions, so old backups may not have them
-		const optionalArrayFields = [
-			"oidcProviders",
-			// System settings
-			"systemSettings",
-			// TRaSH Guides configuration
-			"trashTemplates",
-			"trashSettings",
-			"trashSyncSchedules",
-			"templateQualityProfileMappings",
-			"instanceQualityProfileOverrides",
-			"standaloneCFDeployments",
-			// TRaSH Guides history/audit
-			"trashSyncHistory",
-			"templateDeploymentHistory",
-			// TRaSH instance backups (optional, can be large)
-			"trashBackups",
-			// Hunting feature
-			"huntConfigs",
-			"huntLogs",
-			"huntSearchHistory",
-		];
-
-		for (const field of optionalArrayFields) {
-			if (dataRecord[field] !== undefined && !Array.isArray(dataRecord[field])) {
-				throw new Error(`Invalid backup format: ${field} must be an array`);
-			}
-		}
-
-		// Validate required secret fields
-		if (
-			typeof b.secrets.encryptionKey !== "string" ||
-			typeof b.secrets.sessionCookieSecret !== "string"
-		) {
-			throw new Error("Invalid backup format: missing or invalid secrets");
 		}
 	}
 }
