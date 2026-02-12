@@ -24,38 +24,30 @@ const templateSharingRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			options?: TemplateExportOptions;
 		};
 
+		const service = createEnhancedTemplateService(app.prisma);
+		const jsonData = await service.exportTemplateEnhanced(templateId, userId, options || {});
+
+		// Parse to get template name for filename
+		let data: { template: { name?: string } };
 		try {
-			const service = createEnhancedTemplateService(app.prisma);
-			const jsonData = await service.exportTemplateEnhanced(templateId, userId, options || {});
-
-			// Parse to get template name for filename
-			let data: { template: { name?: string } };
-			try {
-				data = JSON.parse(jsonData);
-			} catch (parseError) {
-				return reply.status(400).send({
-					success: false,
-					error: `Template export returned invalid JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
-				});
-			}
-			// Guard against missing or empty template name
-			const templateName =
-				data.template?.name && typeof data.template.name === "string" && data.template.name.trim()
-					? data.template.name
-					: "template";
-			const filename = `${templateName.replace(/[^a-z0-9]/gi, "-").toLowerCase()}.json`;
-
-			reply.header("Content-Type", "application/json");
-			reply.header("Content-Disposition", `attachment; filename="${filename}"`);
-
-			return reply.send(jsonData);
-		} catch (error) {
-			app.log.error(`Failed to export template: ${error}`);
-			return reply.status(500).send({
+			data = JSON.parse(jsonData);
+		} catch (parseError) {
+			return reply.status(400).send({
 				success: false,
-				error: error instanceof Error ? error.message : "Failed to export template",
+				error: `Template export returned invalid JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
 			});
 		}
+		// Guard against missing or empty template name
+		const templateName =
+			data.template?.name && typeof data.template.name === "string" && data.template.name.trim()
+				? data.template.name
+				: "template";
+		const filename = `${templateName.replace(/[^a-z0-9]/gi, "-").toLowerCase()}.json`;
+
+		reply.header("Content-Type", "application/json");
+		reply.header("Content-Disposition", `attachment; filename="${filename}"`);
+
+		return reply.send(jsonData);
 	});
 
 	/**
@@ -66,21 +58,13 @@ const templateSharingRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { jsonData } = request.body as { jsonData: string };
 
-		try {
-			const service = createEnhancedTemplateService(app.prisma);
-			const result = await service.validateTemplateImport(userId, jsonData);
+		const service = createEnhancedTemplateService(app.prisma);
+		const result = await service.validateTemplateImport(userId, jsonData);
 
-			return reply.status(200).send({
-				success: true,
-				data: result,
-			});
-		} catch (error) {
-			app.log.error(`Failed to validate template: ${error}`);
-			return reply.status(400).send({
-				success: false,
-				error: error instanceof Error ? error.message : "Failed to validate template",
-			});
-		}
+		return reply.status(200).send({
+			success: true,
+			data: result,
+		});
 	});
 
 	/**
@@ -94,32 +78,24 @@ const templateSharingRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			options?: TemplateImportOptions;
 		};
 
-		try {
-			const service = createEnhancedTemplateService(app.prisma);
-			const result = await service.importTemplateEnhanced(userId, jsonData, options || {});
+		const service = createEnhancedTemplateService(app.prisma);
+		const result = await service.importTemplateEnhanced(userId, jsonData, options || {});
 
-			if (!result.success) {
-				return reply.status(400).send({
-					success: false,
-					error: result.error,
-					validation: result.validation,
-				});
-			}
-
-			return reply.status(201).send({
-				success: true,
-				data: {
-					template: result.template,
-					validation: result.validation,
-				},
-			});
-		} catch (error) {
-			app.log.error(`Failed to import template: ${error}`);
-			return reply.status(500).send({
+		if (!result.success) {
+			return reply.status(400).send({
 				success: false,
-				error: error instanceof Error ? error.message : "Failed to import template",
+				error: result.error,
+				validation: result.validation,
 			});
 		}
+
+		return reply.status(201).send({
+			success: true,
+			data: {
+				template: result.template,
+				validation: result.validation,
+			},
+		});
 	});
 
 	/**
@@ -130,51 +106,43 @@ const templateSharingRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { jsonData } = request.body as { jsonData: string };
 
+		// Parse JSON data
+		let data: unknown;
 		try {
-			// Parse JSON data
-			let data: unknown;
-			try {
-				data = JSON.parse(jsonData);
-			} catch (parseError) {
-				return reply.status(400).send({
-					success: false,
-					error: `Invalid JSON format: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
-				});
-			}
-
-			// Validate required structure
-			if (
-				typeof data !== "object" ||
-				data === null ||
-				!("template" in data) ||
-				typeof (data as { template: unknown }).template !== "object" ||
-				(data as { template: unknown }).template === null
-			) {
-				return reply.status(400).send({
-					success: false,
-					error: "Invalid template format: missing or invalid 'template' property",
-				});
-			}
-
-			const templateData = data as { template: Record<string, unknown> };
-			const service = createEnhancedTemplateService(app.prisma);
-			const validation = await service.validateTemplateImport(userId, jsonData);
-
-			return reply.status(200).send({
-				success: true,
-				data: {
-					template: templateData.template,
-					validation: validation.validation,
-					compatibility: validation.compatibility,
-				},
-			});
-		} catch (error) {
-			app.log.error(`Failed to preview template import: ${error}`);
+			data = JSON.parse(jsonData);
+		} catch (parseError) {
 			return reply.status(400).send({
 				success: false,
-				error: error instanceof Error ? error.message : "Failed to preview template",
+				error: `Invalid JSON format: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
 			});
 		}
+
+		// Validate required structure
+		if (
+			typeof data !== "object" ||
+			data === null ||
+			!("template" in data) ||
+			typeof (data as { template: unknown }).template !== "object" ||
+			(data as { template: unknown }).template === null
+		) {
+			return reply.status(400).send({
+				success: false,
+				error: "Invalid template format: missing or invalid 'template' property",
+			});
+		}
+
+		const templateData = data as { template: Record<string, unknown> };
+		const service = createEnhancedTemplateService(app.prisma);
+		const validation = await service.validateTemplateImport(userId, jsonData);
+
+		return reply.status(200).send({
+			success: true,
+			data: {
+				template: templateData.template,
+				validation: validation.validation,
+				compatibility: validation.compatibility,
+			},
+		});
 	});
 
 	done();

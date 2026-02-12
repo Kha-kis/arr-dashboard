@@ -7,6 +7,7 @@
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import type { SonarrClient, RadarrClient } from "arr-sdk";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 // ============================================================================
 // Type Definitions
@@ -71,163 +72,141 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 			});
 		}
 
-		try {
-			// Validate request body
-			const { scoreUpdates } = updateScoresSchema.parse(request.body);
+		// Validate request body
+		const { scoreUpdates } = validateRequest(updateScoresSchema, request.body);
 
-			// Get the instance from database with ownership verification
-			const instance = await request.server.prisma.serviceInstance.findFirst({
-				where: {
-					id: instanceId,
-					userId,
-					service: {
-						in: ["RADARR", "SONARR"],
-					},
+		// Get the instance from database with ownership verification
+		const instance = await request.server.prisma.serviceInstance.findFirst({
+			where: {
+				id: instanceId,
+				userId,
+				service: {
+					in: ["RADARR", "SONARR"],
 				},
-				select: {
-					id: true,
-					baseUrl: true,
-					service: true,
-					encryptedApiKey: true,
-					encryptionIv: true,
-				},
+			},
+			select: {
+				id: true,
+				baseUrl: true,
+				service: true,
+				encryptedApiKey: true,
+				encryptionIv: true,
+			},
+		});
+
+		if (!instance) {
+			return reply.status(404).send({
+				statusCode: 404,
+				error: "NotFound",
+				message: "Instance not found or access denied",
 			});
+		}
 
-			if (!instance) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: "Instance not found or access denied",
+		// Create SDK client using factory
+		const client = request.server.arrClientFactory.create(instance) as
+			| SonarrClient
+			| RadarrClient;
+
+		// Fetch current quality profile
+		const profile = await client.qualityProfile.getById(profileIdNum);
+
+		// Update the formatItems with new scores
+		const formatItems = profile.formatItems ?? [];
+		const updatedFormatItems = formatItems.map((item) => {
+			const update = scoreUpdates.find((u) => u.customFormatId === item.format);
+			if (update) {
+				return {
+					...item,
+					score: update.score,
+				};
+			}
+			return item;
+		});
+
+		// Add new format items for custom formats that don't exist yet
+		for (const update of scoreUpdates) {
+			const exists = formatItems.some((item) => item.format === update.customFormatId);
+			if (!exists) {
+				updatedFormatItems.push({
+					format: update.customFormatId,
+					score: update.score,
 				});
 			}
+		}
 
-			// Create SDK client using factory
-			const client = request.server.arrClientFactory.create(instance) as
-				| SonarrClient
-				| RadarrClient;
+		// Update the quality profile
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Radarr/Sonarr have different quality source enums
+		const updatedProfile: any = {
+			...profile,
+			formatItems: updatedFormatItems,
+		};
 
-			// Fetch current quality profile
-			const profile = await client.qualityProfile.getById(profileIdNum);
+		await client.qualityProfile.update(profileIdNum, updatedProfile);
 
-			// Update the formatItems with new scores
-			const formatItems = profile.formatItems ?? [];
-			const updatedFormatItems = formatItems.map((item) => {
-				const update = scoreUpdates.find((u) => u.customFormatId === item.format);
-				if (update) {
-					return {
-						...item,
-						score: update.score,
-					};
-				}
-				return item;
-			});
-
-			// Add new format items for custom formats that don't exist yet
-			for (const update of scoreUpdates) {
-				const exists = formatItems.some((item) => item.format === update.customFormatId);
-				if (!exists) {
-					updatedFormatItems.push({
-						format: update.customFormatId,
-						score: update.score,
-					});
-				}
-			}
-
-			// Update the quality profile
-			// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Radarr/Sonarr have different quality source enums
-			const updatedProfile: any = {
-				...profile,
-				formatItems: updatedFormatItems,
-			};
-
-			await client.qualityProfile.update(profileIdNum, updatedProfile);
-
-			// Check if this quality profile is managed by a template
-			const templateMapping = await request.server.prisma.templateQualityProfileMapping.findUnique({
-				where: {
-					instanceId_qualityProfileId: {
-						instanceId,
-						qualityProfileId: profileIdNum,
-					},
+		// Check if this quality profile is managed by a template
+		const templateMapping = await request.server.prisma.templateQualityProfileMapping.findUnique({
+			where: {
+				instanceId_qualityProfileId: {
+					instanceId,
+					qualityProfileId: profileIdNum,
 				},
-			});
+			},
+		});
 
-			// Only save instance-level overrides for template-managed profiles
-			// Non-template profiles don't need override tracking since they have no template to sync from
-			if (templateMapping) {
-				for (const update of scoreUpdates) {
-					await request.server.prisma.instanceQualityProfileOverride.upsert({
-						where: {
-							instanceId_qualityProfileId_customFormatId: {
-								instanceId,
-								qualityProfileId: profileIdNum,
-								customFormatId: update.customFormatId,
-							},
-						},
-						create: {
+		// Only save instance-level overrides for template-managed profiles
+		// Non-template profiles don't need override tracking since they have no template to sync from
+		if (templateMapping) {
+			for (const update of scoreUpdates) {
+				await request.server.prisma.instanceQualityProfileOverride.upsert({
+					where: {
+						instanceId_qualityProfileId_customFormatId: {
 							instanceId,
 							qualityProfileId: profileIdNum,
 							customFormatId: update.customFormatId,
-							score: update.score,
-							userId,
 						},
-						update: {
-							score: update.score,
-							userId,
-							updatedAt: new Date(),
-						},
-					});
-				}
-
-				request.server.log.info(
-					{
-						instanceId,
-						profileId: profileIdNum,
-						scoreUpdates: scoreUpdates.length,
-						templateId: templateMapping.templateId,
 					},
-					"Saved instance-level score overrides for template-managed profile",
-				);
-			} else {
-				request.server.log.info(
-					{ instanceId, profileId: profileIdNum, scoreUpdates: scoreUpdates.length },
-					"Skipped override tracking for non-template profile (scores updated in Radarr/Sonarr only)",
-				);
-			}
-
-			const message = templateMapping
-				? `Updated ${scoreUpdates.length} custom format score(s) in quality profile "${profile.name}". Override will persist across template syncs.`
-				: `Updated ${scoreUpdates.length} custom format score(s) in quality profile "${profile.name}".`;
-
-			return reply.status(200).send({
-				success: true,
-				message,
-				profileId: profileIdNum,
-				profileName: profile.name,
-				updatedCount: scoreUpdates.length,
-				isTemplateManaged: !!templateMapping,
-			});
-		} catch (error) {
-			request.server.log.error(
-				{ err: error, instanceId, profileId },
-				"Failed to update quality profile scores",
-			);
-
-			if (error instanceof z.ZodError) {
-				return reply.status(400).send({
-					statusCode: 400,
-					error: "BadRequest",
-					message: "Invalid request data",
-					errors: error.issues,
+					create: {
+						instanceId,
+						qualityProfileId: profileIdNum,
+						customFormatId: update.customFormatId,
+						score: update.score,
+						userId,
+					},
+					update: {
+						score: update.score,
+						userId,
+						updatedAt: new Date(),
+					},
 				});
 			}
 
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: "Failed to update quality profile scores",
-			});
+			request.server.log.info(
+				{
+					instanceId,
+					profileId: profileIdNum,
+					scoreUpdates: scoreUpdates.length,
+					templateId: templateMapping.templateId,
+				},
+				"Saved instance-level score overrides for template-managed profile",
+			);
+		} else {
+			request.server.log.info(
+				{ instanceId, profileId: profileIdNum, scoreUpdates: scoreUpdates.length },
+				"Skipped override tracking for non-template profile (scores updated in Radarr/Sonarr only)",
+			);
 		}
+
+		const message = templateMapping
+			? `Updated ${scoreUpdates.length} custom format score(s) in quality profile "${profile.name}". Override will persist across template syncs.`
+			: `Updated ${scoreUpdates.length} custom format score(s) in quality profile "${profile.name}".`;
+
+		return reply.status(200).send({
+			success: true,
+			message,
+			profileId: profileIdNum,
+			profileName: profile.name,
+			updatedCount: scoreUpdates.length,
+			isTemplateManaged: !!templateMapping,
+		});
 	});
 
 	/**
@@ -250,47 +229,38 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 			});
 		}
 
-		try {
-			// Verify the user owns this instance before returning overrides
-			const instance = await request.server.prisma.serviceInstance.findFirst({
-				where: {
-					id: instanceId,
-					userId,
-				},
-				select: { id: true },
-			});
+		// Verify the user owns this instance before returning overrides
+		const instance = await request.server.prisma.serviceInstance.findFirst({
+			where: {
+				id: instanceId,
+				userId,
+			},
+			select: { id: true },
+		});
 
-			if (!instance) {
-				return reply.status(403).send({
-					statusCode: 403,
-					error: "Forbidden",
-					message: "You do not have access to this instance",
-				});
-			}
-
-			// Get all overrides for this quality profile
-			const overrides = await request.server.prisma.instanceQualityProfileOverride.findMany({
-				where: {
-					instanceId,
-					qualityProfileId: profileIdNum,
-				},
-				orderBy: {
-					updatedAt: "desc",
-				},
-			});
-
-			return reply.status(200).send({
-				success: true,
-				overrides,
-			});
-		} catch (error) {
-			request.server.log.error({ err: error, instanceId, profileId }, "Failed to get overrides");
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to get overrides",
+		if (!instance) {
+			return reply.status(403).send({
+				statusCode: 403,
+				error: "Forbidden",
+				message: "You do not have access to this instance",
 			});
 		}
+
+		// Get all overrides for this quality profile
+		const overrides = await request.server.prisma.instanceQualityProfileOverride.findMany({
+			where: {
+				instanceId,
+				qualityProfileId: profileIdNum,
+			},
+			orderBy: {
+				updatedAt: "desc",
+			},
+		});
+
+		return reply.status(200).send({
+			success: true,
+			overrides,
+		});
 	});
 
 	/**
@@ -315,151 +285,139 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 			});
 		}
 
+		// Verify the user owns this instance first
+		const instance = await request.server.prisma.serviceInstance.findFirst({
+			where: {
+				id: instanceId,
+				userId,
+			},
+			select: { id: true },
+		});
+
+		if (!instance) {
+			return reply.status(403).send({
+				statusCode: 403,
+				error: "Forbidden",
+				message: "You do not have access to this instance",
+			});
+		}
+
+		// Get the instance override
+		const override = await request.server.prisma.instanceQualityProfileOverride.findUnique({
+			where: {
+				instanceId_qualityProfileId_customFormatId: {
+					instanceId,
+					qualityProfileId: profileIdNum,
+					customFormatId,
+				},
+			},
+		});
+
+		if (!override) {
+			return reply.status(404).send({
+				statusCode: 404,
+				error: "NotFound",
+				message: "Override not found",
+			});
+		}
+
+		// Ensure this profile is actually mapped to the requested template
+		const templateMapping = await request.server.prisma.templateQualityProfileMapping.findUnique({
+			where: {
+				instanceId_qualityProfileId: {
+					instanceId,
+					qualityProfileId: profileIdNum,
+				},
+			},
+			include: { template: true },
+		});
+
+		if (!templateMapping || templateMapping.templateId !== templateId) {
+			return reply.status(400).send({
+				statusCode: 400,
+				error: "BadRequest",
+				message: "Quality profile is not mapped to the specified template",
+			});
+		}
+
+		// Verify the user owns this template
+		if (templateMapping.template.userId !== userId) {
+			return reply.status(403).send({
+				statusCode: 403,
+				error: "Forbidden",
+				message: "You do not have access to this template",
+			});
+		}
+
+		const template = templateMapping.template;
+
+		// Parse template config
+		let configData: Record<string, any>;
 		try {
-			// Verify the user owns this instance first
-			const instance = await request.server.prisma.serviceInstance.findFirst({
-				where: {
-					id: instanceId,
-					userId,
-				},
-				select: { id: true },
-			});
-
-			if (!instance) {
-				return reply.status(403).send({
-					statusCode: 403,
-					error: "Forbidden",
-					message: "You do not have access to this instance",
-				});
-			}
-
-			// Get the instance override
-			const override = await request.server.prisma.instanceQualityProfileOverride.findUnique({
-				where: {
-					instanceId_qualityProfileId_customFormatId: {
-						instanceId,
-						qualityProfileId: profileIdNum,
-						customFormatId,
-					},
-				},
-			});
-
-			if (!override) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: "Override not found",
-				});
-			}
-
-			// Ensure this profile is actually mapped to the requested template
-			const templateMapping = await request.server.prisma.templateQualityProfileMapping.findUnique({
-				where: {
-					instanceId_qualityProfileId: {
-						instanceId,
-						qualityProfileId: profileIdNum,
-					},
-				},
-				include: { template: true },
-			});
-
-			if (!templateMapping || templateMapping.templateId !== templateId) {
-				return reply.status(400).send({
-					statusCode: 400,
-					error: "BadRequest",
-					message: "Quality profile is not mapped to the specified template",
-				});
-			}
-
-			// Verify the user owns this template
-			if (templateMapping.template.userId !== userId) {
-				return reply.status(403).send({
-					statusCode: 403,
-					error: "Forbidden",
-					message: "You do not have access to this template",
-				});
-			}
-
-			const template = templateMapping.template;
-
-			// Parse template config
-			let configData: Record<string, any>;
-			try {
-				configData = JSON.parse(template.configData);
-			} catch (parseError) {
-				return reply.status(500).send({
-					statusCode: 500,
-					error: "InternalServerError",
-					message: `Template configData is invalid JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
-				});
-			}
-
-			// Find and update the CF's scoreOverride in the template
-			const customFormats = configData.customFormats || [];
-			let cfUpdated = false;
-
-			for (const cf of customFormats) {
-				// Match by instance custom format ID (stored in originalConfig._instanceCFId)
-				if (cf.originalConfig?._instanceCFId === customFormatId) {
-					cf.scoreOverride = override.score;
-					cfUpdated = true;
-					request.server.log.info(
-						{ cfName: cf.name, instanceCFId: customFormatId, newScore: override.score },
-						"Updated CF scoreOverride in template",
-					);
-					break;
-				}
-			}
-
-			if (!cfUpdated) {
-				return reply.status(400).send({
-					statusCode: 400,
-					error: "BadRequest",
-					message: "Custom Format not found in template",
-				});
-			}
-
-			// Update template with new scoreOverride
-			await request.server.prisma.trashTemplate.update({
-				where: { id: templateId },
-				data: {
-					configData: JSON.stringify(configData),
-					hasUserModifications: true,
-					lastModifiedAt: new Date(),
-					lastModifiedBy: userId,
-				},
-			});
-
-			// Delete the instance override (now it's in the template)
-			await request.server.prisma.instanceQualityProfileOverride.delete({
-				where: {
-					instanceId_qualityProfileId_customFormatId: {
-						instanceId,
-						qualityProfileId: profileIdNum,
-						customFormatId,
-					},
-				},
-			});
-
-			return reply.status(200).send({
-				success: true,
-				message:
-					"Override promoted to template. All instances using this template will receive the updated score on next sync.",
-				templateId,
-				customFormatId,
-				newScore: override.score,
-			});
-		} catch (error) {
-			request.server.log.error(
-				{ err: error, instanceId, profileId, customFormatId },
-				"Failed to promote override",
-			);
+			configData = JSON.parse(template.configData);
+		} catch (parseError) {
 			return reply.status(500).send({
 				statusCode: 500,
 				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to promote override",
+				message: `Template configData is invalid JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
 			});
 		}
+
+		// Find and update the CF's scoreOverride in the template
+		const customFormats = configData.customFormats || [];
+		let cfUpdated = false;
+
+		for (const cf of customFormats) {
+			// Match by instance custom format ID (stored in originalConfig._instanceCFId)
+			if (cf.originalConfig?._instanceCFId === customFormatId) {
+				cf.scoreOverride = override.score;
+				cfUpdated = true;
+				request.server.log.info(
+					{ cfName: cf.name, instanceCFId: customFormatId, newScore: override.score },
+					"Updated CF scoreOverride in template",
+				);
+				break;
+			}
+		}
+
+		if (!cfUpdated) {
+			return reply.status(400).send({
+				statusCode: 400,
+				error: "BadRequest",
+				message: "Custom Format not found in template",
+			});
+		}
+
+		// Update template with new scoreOverride
+		await request.server.prisma.trashTemplate.update({
+			where: { id: templateId },
+			data: {
+				configData: JSON.stringify(configData),
+				hasUserModifications: true,
+				lastModifiedAt: new Date(),
+				lastModifiedBy: userId,
+			},
+		});
+
+		// Delete the instance override (now it's in the template)
+		await request.server.prisma.instanceQualityProfileOverride.delete({
+			where: {
+				instanceId_qualityProfileId_customFormatId: {
+					instanceId,
+					qualityProfileId: profileIdNum,
+					customFormatId,
+				},
+			},
+		});
+
+		return reply.status(200).send({
+			success: true,
+			message:
+				"Override promoted to template. All instances using this template will receive the updated score on next sync.",
+			templateId,
+			customFormatId,
+			newScore: override.score,
+		});
 	});
 
 	/**
@@ -494,75 +452,63 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 			});
 		}
 
-		try {
-			// Verify the user owns this instance before returning overrides
-			const instance = await request.server.prisma.serviceInstance.findFirst({
-				where: {
-					id: instanceId,
-					userId,
-				},
-				select: { id: true },
-			});
+		// Verify the user owns this instance before returning overrides
+		const instance = await request.server.prisma.serviceInstance.findFirst({
+			where: {
+				id: instanceId,
+				userId,
+			},
+			select: { id: true },
+		});
 
-			if (!instance) {
-				return reply.status(403).send({
-					statusCode: 403,
-					error: "Forbidden",
-					message: "You do not have access to this instance",
-				});
-			}
-
-			// Fetch all overrides for the specified profiles in a single query
-			const overrides = await request.server.prisma.instanceQualityProfileOverride.findMany({
-				where: {
-					instanceId,
-					qualityProfileId: {
-						in: profileIds,
-					},
-				},
-				orderBy: {
-					qualityProfileId: "asc",
-				},
-			});
-
-			// Group overrides by profile ID for easier frontend consumption
-			const overridesByProfile: Record<
-				number,
-				Array<{
-					customFormatId: number;
-					score: number;
-					updatedAt: Date;
-				}>
-			> = {};
-
-			for (const override of overrides) {
-				const profileId = override.qualityProfileId;
-				if (!overridesByProfile[profileId]) {
-					overridesByProfile[profileId] = [];
-				}
-				overridesByProfile[profileId]?.push({
-					customFormatId: override.customFormatId,
-					score: override.score,
-					updatedAt: override.updatedAt,
-				});
-			}
-
-			return reply.status(200).send({
-				success: true,
-				overridesByProfile,
-				totalOverrides: overrides.length,
-			});
-		} catch (error) {
-			request.server.log.error(
-				{ err: error, instanceId, profileIds },
-				"Failed to get bulk overrides",
-			);
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to get bulk overrides",
+		if (!instance) {
+			return reply.status(403).send({
+				statusCode: 403,
+				error: "Forbidden",
+				message: "You do not have access to this instance",
 			});
 		}
+
+		// Fetch all overrides for the specified profiles in a single query
+		const overrides = await request.server.prisma.instanceQualityProfileOverride.findMany({
+			where: {
+				instanceId,
+				qualityProfileId: {
+					in: profileIds,
+				},
+			},
+			orderBy: {
+				qualityProfileId: "asc",
+			},
+		});
+
+		// Group overrides by profile ID for easier frontend consumption
+		const overridesByProfile: Record<
+			number,
+			Array<{
+				customFormatId: number;
+				score: number;
+				updatedAt: Date;
+			}>
+		> = {};
+
+		for (const override of overrides) {
+			const profileId = override.qualityProfileId;
+			if (!overridesByProfile[profileId]) {
+				overridesByProfile[profileId] = [];
+			}
+			overridesByProfile[profileId]?.push({
+				customFormatId: override.customFormatId,
+				score: override.score,
+				updatedAt: override.updatedAt,
+			});
+		}
+
+		return reply.status(200).send({
+			success: true,
+			overridesByProfile,
+			totalOverrides: overrides.length,
+		});
 	});
 
 	/**
@@ -588,234 +534,38 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 				});
 			}
 
-			try {
-				// Check if override exists
-				const override = await request.server.prisma.instanceQualityProfileOverride.findUnique({
-					where: {
-						instanceId_qualityProfileId_customFormatId: {
-							instanceId,
-							qualityProfileId: profileIdNum,
-							customFormatId: customFormatIdNum,
-						},
-					},
-				});
-
-				if (!override) {
-					return reply.status(404).send({
-						statusCode: 404,
-						error: "NotFound",
-						message: "Override not found",
-					});
-				}
-
-				// Get the template mapping to find the template score
-				const templateMapping =
-					await request.server.prisma.templateQualityProfileMapping.findUnique({
-						where: {
-							instanceId_qualityProfileId: {
-								instanceId,
-								qualityProfileId: profileIdNum,
-							},
-						},
-						include: {
-							template: true,
-						},
-					});
-
-				if (!templateMapping) {
-					return reply.status(400).send({
-						statusCode: 400,
-						error: "BadRequest",
-						message: "Quality profile is not managed by a template",
-					});
-				}
-
-				// Parse template config to get the template score for this custom format
-				let templateConfigReset: ParsedTemplateConfig;
-				try {
-					templateConfigReset = JSON.parse(
-						templateMapping.template.configData,
-					) as ParsedTemplateConfig;
-				} catch (parseError) {
-					return reply.status(500).send({
-						statusCode: 500,
-						error: "InternalServerError",
-						message: `Template configData is invalid JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
-					});
-				}
-				const templateCf = templateConfigReset.customFormats?.find(
-					(cf: ParsedTemplateCustomFormat) =>
-						cf.originalConfig?._instanceCFId === customFormatIdNum,
-				);
-
-				// Calculate the template score (if CF not in template, default to 0)
-				// This can happen if the CF was manually added or the template was updated
-				let templateScore = 0;
-				if (templateCf) {
-					// Priority 1: User's score override from wizard
-					if (templateCf.scoreOverride !== undefined) {
-						templateScore = templateCf.scoreOverride;
-					}
-					// Priority 2: TRaSH Guides score from template's score set
-					else if (
-						templateConfigReset.scoreSet != null &&
-						templateConfigReset.scoreSet !== "" &&
-						templateCf.originalConfig?.trash_scores?.[templateConfigReset.scoreSet] !== undefined
-					) {
-						templateScore = templateCf.originalConfig.trash_scores[templateConfigReset.scoreSet]!;
-					}
-					// Priority 3: TRaSH Guides default score
-					else if (templateCf.originalConfig?.trash_scores?.default !== undefined) {
-						templateScore = templateCf.originalConfig.trash_scores.default;
-					}
-					// Priority 4: Explicit zero (CF exists in template but has no score)
-					// remains 0
-				}
-
-				// Get the instance from database
-				const instance = await request.server.prisma.serviceInstance.findFirst({
-					where: {
-						id: instanceId,
-						userId,
-						service: {
-							in: ["RADARR", "SONARR"],
-						},
-					},
-					select: {
-						id: true,
-						baseUrl: true,
-						service: true,
-						encryptedApiKey: true,
-						encryptionIv: true,
-					},
-				});
-
-				if (!instance) {
-					return reply.status(404).send({
-						statusCode: 404,
-						error: "NotFound",
-						message: "Instance not found or access denied",
-					});
-				}
-
-				// Create SDK client using factory
-				const client = request.server.arrClientFactory.create(instance) as
-					| SonarrClient
-					| RadarrClient;
-
-				// Fetch current quality profile
-				const profile = await client.qualityProfile.getById(profileIdNum);
-
-				// Update the formatItems with the template score
-				const profileFormatItems = profile.formatItems ?? [];
-				const updatedFormatItems = profileFormatItems.map((item) => {
-					if (item.format === customFormatIdNum) {
-						return {
-							...item,
-							score: templateScore,
-						};
-					}
-					return item;
-				});
-
-				// Update the quality profile in Radarr/Sonarr
-				// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Radarr/Sonarr have different quality source enums
-				const updatedProfile: any = {
-					...profile,
-					formatItems: updatedFormatItems,
-				};
-
-				await client.qualityProfile.update(profileIdNum, updatedProfile);
-
-				// Delete the override from database
-				await request.server.prisma.instanceQualityProfileOverride.delete({
-					where: {
-						instanceId_qualityProfileId_customFormatId: {
-							instanceId,
-							qualityProfileId: profileIdNum,
-							customFormatId: customFormatIdNum,
-						},
-					},
-				});
-
-				request.server.log.info(
-					{
-						instanceId,
-						profileId: profileIdNum,
-						customFormatId: customFormatIdNum,
-						templateScore,
-						cfInTemplate: !!templateCf,
-					},
-					"Deleted instance-level score override and reverted to template score",
-				);
-
-				const message = templateCf
-					? `Override removed. Score reverted to template value (${templateScore}).`
-					: "Override removed. Score set to 0 (custom format not in template).";
-
-				return reply.status(200).send({
-					success: true,
-					message,
-					customFormatId: customFormatIdNum,
-					revertedScore: templateScore,
-				});
-			} catch (error) {
-				request.server.log.error(
-					{ err: error, instanceId, profileId, customFormatId },
-					"Failed to delete override",
-				);
-				return reply.status(500).send({
-					statusCode: 500,
-					error: "InternalServerError",
-					message: error instanceof Error ? error.message : "Failed to delete override",
-				});
-			}
-		},
-	);
-
-	/**
-	 * POST /api/trash-guides/instances/:instanceId/quality-profiles/:profileId/overrides/bulk-delete
-	 * Delete multiple instance-level overrides in one operation
-	 */
-	app.post<{
-		Params: { instanceId: string; profileId: string };
-		Body: { customFormatIds: number[] };
-	}>("/:instanceId/quality-profiles/:profileId/overrides/bulk-delete", async (request, reply) => {
-		// userId is guaranteed by preHandler authentication check
-		const userId = request.currentUser!.id; // preHandler guarantees auth
-		const { instanceId, profileId } = request.params;
-		const profileIdNum = Number.parseInt(profileId, 10);
-		const { customFormatIds } = request.body;
-
-		if (Number.isNaN(profileIdNum)) {
-			return reply.status(400).send({
-				statusCode: 400,
-				error: "BadRequest",
-				message: "profileId must be a valid number",
-			});
-		}
-
-		if (!Array.isArray(customFormatIds) || customFormatIds.length === 0) {
-			return reply.status(400).send({
-				statusCode: 400,
-				error: "BadRequest",
-				message: "customFormatIds must be a non-empty array",
-			});
-		}
-
-		try {
-			// Get the template mapping to find template scores
-			const templateMapping = await request.server.prisma.templateQualityProfileMapping.findUnique({
+			// Check if override exists
+			const override = await request.server.prisma.instanceQualityProfileOverride.findUnique({
 				where: {
-					instanceId_qualityProfileId: {
+					instanceId_qualityProfileId_customFormatId: {
 						instanceId,
 						qualityProfileId: profileIdNum,
+						customFormatId: customFormatIdNum,
 					},
 				},
-				include: {
-					template: true,
-				},
 			});
+
+			if (!override) {
+				return reply.status(404).send({
+					statusCode: 404,
+					error: "NotFound",
+					message: "Override not found",
+				});
+			}
+
+			// Get the template mapping to find the template score
+			const templateMapping =
+				await request.server.prisma.templateQualityProfileMapping.findUnique({
+					where: {
+						instanceId_qualityProfileId: {
+							instanceId,
+							qualityProfileId: profileIdNum,
+						},
+					},
+					include: {
+						template: true,
+					},
+				});
 
 			if (!templateMapping) {
 				return reply.status(400).send({
@@ -825,10 +575,12 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 				});
 			}
 
-			// Parse template config
-			let templateConfigParsed: Record<string, any>;
+			// Parse template config to get the template score for this custom format
+			let templateConfigReset: ParsedTemplateConfig;
 			try {
-				templateConfigParsed = JSON.parse(templateMapping.template.configData);
+				templateConfigReset = JSON.parse(
+					templateMapping.template.configData,
+				) as ParsedTemplateConfig;
 			} catch (parseError) {
 				return reply.status(500).send({
 					statusCode: 500,
@@ -836,8 +588,36 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 					message: `Template configData is invalid JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
 				});
 			}
+			const templateCf = templateConfigReset.customFormats?.find(
+				(cf: ParsedTemplateCustomFormat) =>
+					cf.originalConfig?._instanceCFId === customFormatIdNum,
+			);
 
-			// Get the instance from database with ownership verification
+			// Calculate the template score (if CF not in template, default to 0)
+			// This can happen if the CF was manually added or the template was updated
+			let templateScore = 0;
+			if (templateCf) {
+				// Priority 1: User's score override from wizard
+				if (templateCf.scoreOverride !== undefined) {
+					templateScore = templateCf.scoreOverride;
+				}
+				// Priority 2: TRaSH Guides score from template's score set
+				else if (
+					templateConfigReset.scoreSet != null &&
+					templateConfigReset.scoreSet !== "" &&
+					templateCf.originalConfig?.trash_scores?.[templateConfigReset.scoreSet] !== undefined
+				) {
+					templateScore = templateCf.originalConfig.trash_scores[templateConfigReset.scoreSet]!;
+				}
+				// Priority 3: TRaSH Guides default score
+				else if (templateCf.originalConfig?.trash_scores?.default !== undefined) {
+					templateScore = templateCf.originalConfig.trash_scores.default;
+				}
+				// Priority 4: Explicit zero (CF exists in template but has no score)
+				// remains 0
+			}
+
+			// Get the instance from database
 			const instance = await request.server.prisma.serviceInstance.findFirst({
 				where: {
 					id: instanceId,
@@ -871,46 +651,10 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 			// Fetch current quality profile
 			const profile = await client.qualityProfile.getById(profileIdNum);
 
-			// Build a map of customFormatId -> template score
-			const templateScores = new Map<number, number>();
-			for (const cfId of customFormatIds) {
-				const templateCf = templateConfigParsed.customFormats?.find(
-					(cf: ParsedTemplateCustomFormat) => cf.originalConfig?._instanceCFId === cfId,
-				);
-				if (templateCf) {
-					// Priority 1: User's score override from wizard
-					let score = 0;
-					if (templateCf.scoreOverride !== undefined) {
-						score = templateCf.scoreOverride;
-					}
-					// Priority 2: TRaSH Guides score from template's score set
-					else if (
-						templateConfigParsed.scoreSet != null &&
-						templateConfigParsed.scoreSet !== "" &&
-						templateCf.originalConfig?.trash_scores?.[templateConfigParsed.scoreSet] !== undefined
-					) {
-						score = templateCf.originalConfig.trash_scores[templateConfigParsed.scoreSet];
-					}
-					// Priority 3: TRaSH Guides default score
-					else if (templateCf.originalConfig?.trash_scores?.default !== undefined) {
-						score = templateCf.originalConfig.trash_scores.default;
-					}
-					// Priority 4: Explicit zero (remains 0)
-
-					templateScores.set(cfId, score);
-				} else {
-					// CF not found in template - set to 0 to neutralize the override in ARR
-					// This matches single-DELETE behavior and ensures ARR doesn't retain hidden overrides
-					templateScores.set(cfId, 0);
-				}
-			}
-
-			// Update the formatItems with template scores for the specified CFs
+			// Update the formatItems with the template score
 			const profileFormatItems = profile.formatItems ?? [];
 			const updatedFormatItems = profileFormatItems.map((item) => {
-				const templateScore =
-					item.format !== undefined ? templateScores.get(item.format) : undefined;
-				if (templateScore !== undefined) {
+				if (item.format === customFormatIdNum) {
 					return {
 						...item,
 						score: templateScore,
@@ -928,38 +672,216 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 
 			await client.qualityProfile.update(profileIdNum, updatedProfile);
 
-			// Delete all specified overrides from database
-			const result = await request.server.prisma.instanceQualityProfileOverride.deleteMany({
+			// Delete the override from database
+			await request.server.prisma.instanceQualityProfileOverride.delete({
 				where: {
-					instanceId,
-					qualityProfileId: profileIdNum,
-					customFormatId: {
-						in: customFormatIds,
+					instanceId_qualityProfileId_customFormatId: {
+						instanceId,
+						qualityProfileId: profileIdNum,
+						customFormatId: customFormatIdNum,
 					},
 				},
 			});
 
 			request.server.log.info(
-				{ instanceId, profileId: profileIdNum, count: result.count },
-				"Bulk deleted instance-level score overrides and reverted to template scores",
+				{
+					instanceId,
+					profileId: profileIdNum,
+					customFormatId: customFormatIdNum,
+					templateScore,
+					cfInTemplate: !!templateCf,
+				},
+				"Deleted instance-level score override and reverted to template score",
 			);
+
+			const message = templateCf
+				? `Override removed. Score reverted to template value (${templateScore}).`
+				: "Override removed. Score set to 0 (custom format not in template).";
 
 			return reply.status(200).send({
 				success: true,
-				message: `Removed ${result.count} override(s). Scores reverted to template values.`,
-				deletedCount: result.count,
+				message,
+				customFormatId: customFormatIdNum,
+				revertedScore: templateScore,
 			});
-		} catch (error) {
-			request.server.log.error(
-				{ err: error, instanceId, profileId },
-				"Failed to bulk delete overrides",
-			);
+		},
+	);
+
+	/**
+	 * POST /api/trash-guides/instances/:instanceId/quality-profiles/:profileId/overrides/bulk-delete
+	 * Delete multiple instance-level overrides in one operation
+	 */
+	app.post<{
+		Params: { instanceId: string; profileId: string };
+		Body: { customFormatIds: number[] };
+	}>("/:instanceId/quality-profiles/:profileId/overrides/bulk-delete", async (request, reply) => {
+		// userId is guaranteed by preHandler authentication check
+		const userId = request.currentUser!.id; // preHandler guarantees auth
+		const { instanceId, profileId } = request.params;
+		const profileIdNum = Number.parseInt(profileId, 10);
+		const { customFormatIds } = request.body;
+
+		if (Number.isNaN(profileIdNum)) {
+			return reply.status(400).send({
+				statusCode: 400,
+				error: "BadRequest",
+				message: "profileId must be a valid number",
+			});
+		}
+
+		if (!Array.isArray(customFormatIds) || customFormatIds.length === 0) {
+			return reply.status(400).send({
+				statusCode: 400,
+				error: "BadRequest",
+				message: "customFormatIds must be a non-empty array",
+			});
+		}
+
+		// Get the template mapping to find template scores
+		const templateMapping = await request.server.prisma.templateQualityProfileMapping.findUnique({
+			where: {
+				instanceId_qualityProfileId: {
+					instanceId,
+					qualityProfileId: profileIdNum,
+				},
+			},
+			include: {
+				template: true,
+			},
+		});
+
+		if (!templateMapping) {
+			return reply.status(400).send({
+				statusCode: 400,
+				error: "BadRequest",
+				message: "Quality profile is not managed by a template",
+			});
+		}
+
+		// Parse template config
+		let templateConfigParsed: Record<string, any>;
+		try {
+			templateConfigParsed = JSON.parse(templateMapping.template.configData);
+		} catch (parseError) {
 			return reply.status(500).send({
 				statusCode: 500,
 				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to bulk delete overrides",
+				message: `Template configData is invalid JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
 			});
 		}
+
+		// Get the instance from database with ownership verification
+		const instance = await request.server.prisma.serviceInstance.findFirst({
+			where: {
+				id: instanceId,
+				userId,
+				service: {
+					in: ["RADARR", "SONARR"],
+				},
+			},
+			select: {
+				id: true,
+				baseUrl: true,
+				service: true,
+				encryptedApiKey: true,
+				encryptionIv: true,
+			},
+		});
+
+		if (!instance) {
+			return reply.status(404).send({
+				statusCode: 404,
+				error: "NotFound",
+				message: "Instance not found or access denied",
+			});
+		}
+
+		// Create SDK client using factory
+		const client = request.server.arrClientFactory.create(instance) as
+			| SonarrClient
+			| RadarrClient;
+
+		// Fetch current quality profile
+		const profile = await client.qualityProfile.getById(profileIdNum);
+
+		// Build a map of customFormatId -> template score
+		const templateScores = new Map<number, number>();
+		for (const cfId of customFormatIds) {
+			const templateCf = templateConfigParsed.customFormats?.find(
+				(cf: ParsedTemplateCustomFormat) => cf.originalConfig?._instanceCFId === cfId,
+			);
+			if (templateCf) {
+				// Priority 1: User's score override from wizard
+				let score = 0;
+				if (templateCf.scoreOverride !== undefined) {
+					score = templateCf.scoreOverride;
+				}
+				// Priority 2: TRaSH Guides score from template's score set
+				else if (
+					templateConfigParsed.scoreSet != null &&
+					templateConfigParsed.scoreSet !== "" &&
+					templateCf.originalConfig?.trash_scores?.[templateConfigParsed.scoreSet] !== undefined
+				) {
+					score = templateCf.originalConfig.trash_scores[templateConfigParsed.scoreSet];
+				}
+				// Priority 3: TRaSH Guides default score
+				else if (templateCf.originalConfig?.trash_scores?.default !== undefined) {
+					score = templateCf.originalConfig.trash_scores.default;
+				}
+				// Priority 4: Explicit zero (remains 0)
+
+				templateScores.set(cfId, score);
+			} else {
+				// CF not found in template - set to 0 to neutralize the override in ARR
+				// This matches single-DELETE behavior and ensures ARR doesn't retain hidden overrides
+				templateScores.set(cfId, 0);
+			}
+		}
+
+		// Update the formatItems with template scores for the specified CFs
+		const profileFormatItems = profile.formatItems ?? [];
+		const updatedFormatItems = profileFormatItems.map((item) => {
+			const templateScore =
+				item.format !== undefined ? templateScores.get(item.format) : undefined;
+			if (templateScore !== undefined) {
+				return {
+					...item,
+					score: templateScore,
+				};
+			}
+			return item;
+		});
+
+		// Update the quality profile in Radarr/Sonarr
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Radarr/Sonarr have different quality source enums
+		const updatedProfile: any = {
+			...profile,
+			formatItems: updatedFormatItems,
+		};
+
+		await client.qualityProfile.update(profileIdNum, updatedProfile);
+
+		// Delete all specified overrides from database
+		const result = await request.server.prisma.instanceQualityProfileOverride.deleteMany({
+			where: {
+				instanceId,
+				qualityProfileId: profileIdNum,
+				customFormatId: {
+					in: customFormatIds,
+				},
+			},
+		});
+
+		request.server.log.info(
+			{ instanceId, profileId: profileIdNum, count: result.count },
+			"Bulk deleted instance-level score overrides and reverted to template scores",
+		);
+
+		return reply.status(200).send({
+			success: true,
+			message: `Removed ${result.count} override(s). Scores reverted to template values.`,
+			deletedCount: result.count,
+		});
 	});
 
 	done();

@@ -5,7 +5,6 @@
  */
 
 import type { FastifyInstance, FastifyPluginOptions, FastifyRequest } from "fastify";
-import { z } from "zod";
 import type { SonarrClient, RadarrClient } from "arr-sdk";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createDeploymentExecutorService } from "../../lib/trash-guides/deployment-executor.js";
@@ -16,8 +15,10 @@ import type { SyncProgress } from "../../lib/trash-guides/sync-engine.js";
 import { getSyncMetrics } from "../../lib/trash-guides/sync-metrics.js";
 import { createTemplateUpdater } from "../../lib/trash-guides/template-updater.js";
 import { safeJsonParse } from "../../lib/utils/json.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
+import { z } from "zod";
 
 // ============================================================================
 // Request Schemas
@@ -123,7 +124,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 	 * POST /api/trash-guides/sync/validate
 	 */
 	app.post("/validate", async (request: FastifyRequest, reply) => {
-		const body = validateSyncSchema.parse(request.body);
+		const body = validateRequest(validateSyncSchema, request.body);
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 
 		const { syncEngine } = await getServices(userId);
@@ -142,7 +143,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 	 * POST /api/trash-guides/sync/execute
 	 */
 	app.post("/execute", async (request: FastifyRequest, reply) => {
-		const body = executeSyncSchema.parse(request.body);
+		const body = validateRequest(executeSyncSchema, request.body);
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 
 		// Convert conflictResolutions object to Map
@@ -278,7 +279,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 		Params: { instanceId: string };
 	}>("/history/:instanceId", async (request, reply) => {
 		const { instanceId } = request.params;
-		const query = syncHistoryQuerySchema.parse(request.query);
+		const query = validateRequest(syncHistoryQuerySchema, request.query);
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
 
 		// Verify instance exists and is owned by the current user.
@@ -384,6 +385,8 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 	/**
 	 * Rollback to backup
 	 * POST /api/trash-guides/sync/:syncId/rollback
+	 *
+	 * NOTE: Specialized catch block KEPT — records sync metrics on failure
 	 */
 	app.post<{
 		Params: { syncId: string };
@@ -597,7 +600,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 						: `Rollback completed with errors: ${restoredCount} restored, ${deletedCount} deleted, ${failedCount} failed`,
 			});
 		} catch (error) {
-			// Record failure metrics
+			// Specialized catch: records failure metrics before propagating
 			const errorMessage = error instanceof Error ? error.message : "Rollback failed";
 			const metricsResult = completeMetrics();
 			metricsResult.recordFailure(errorMessage);

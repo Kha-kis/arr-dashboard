@@ -67,23 +67,15 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 			});
 		}
 
-		try {
-			await client.command.execute({
-				name: "SeasonSearch",
-				seriesId,
-				seasonNumber,
-			});
+		await client.command.execute({
+			name: "SeasonSearch",
+			seriesId,
+			seasonNumber,
+		});
 
-			return reply.status(202).send({
-				message: "Season search queued",
-			});
-		} catch (error) {
-			request.log.error(
-				{ err: error, instance: instance.id, seriesId, seasonNumber },
-				"failed to queue season search",
-			);
-			throw error;
-		}
+		return reply.status(202).send({
+			message: "Season search queued",
+		});
 	});
 
 	/**
@@ -116,22 +108,14 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 			});
 		}
 
-		try {
-			await client.command.execute({
-				name: "SeriesSearch",
-				seriesId,
-			});
+		await client.command.execute({
+			name: "SeriesSearch",
+			seriesId,
+		});
 
-			return reply.status(202).send({
-				message: "Series search queued",
-			});
-		} catch (error) {
-			request.log.error(
-				{ err: error, instance: instance.id, seriesId },
-				"failed to queue series search",
-			);
-			throw error;
-		}
+		return reply.status(202).send({
+			message: "Series search queued",
+		});
 	});
 
 	/**
@@ -164,22 +148,14 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 			});
 		}
 
-		try {
-			await client.command.execute({
-				name: "MoviesSearch",
-				movieIds: [movieId],
-			});
+		await client.command.execute({
+			name: "MoviesSearch",
+			movieIds: [movieId],
+		});
 
-			return reply.status(202).send({
-				message: "Movie search queued",
-			});
-		} catch (error) {
-			request.log.error(
-				{ err: error, instance: instance.id, movieId },
-				"failed to queue movie search",
-			);
-			throw error;
-		}
+		return reply.status(202).send({
+			message: "Movie search queued",
+		});
 	});
 
 	/**
@@ -211,22 +187,14 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 			});
 		}
 
-		try {
-			await client.command.execute({
-				name: "EpisodeSearch",
-				episodeIds: payload.episodeIds,
-			});
+		await client.command.execute({
+			name: "EpisodeSearch",
+			episodeIds: payload.episodeIds,
+		});
 
-			return reply.status(202).send({
-				message: "Episode search queued",
-			});
-		} catch (error) {
-			request.log.error(
-				{ err: error, instance: instance.id, episodeIds: payload.episodeIds },
-				"failed to queue episode search",
-			);
-			throw error;
-		}
+		return reply.status(202).send({
+			message: "Episode search queued",
+		});
 	});
 
 	/**
@@ -259,22 +227,14 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 			});
 		}
 
-		try {
-			await client.command.execute({
-				name: "ArtistSearch",
-				artistId,
-			});
+		await client.command.execute({
+			name: "ArtistSearch",
+			artistId,
+		});
 
-			return reply.status(202).send({
-				message: "Artist search queued",
-			});
-		} catch (error) {
-			request.log.error(
-				{ err: error, instance: instance.id, artistId },
-				"failed to queue artist search",
-			);
-			throw error;
-		}
+		return reply.status(202).send({
+			message: "Artist search queued",
+		});
 	});
 
 	/**
@@ -306,22 +266,14 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 			});
 		}
 
-		try {
-			await client.command.execute({
-				name: "AlbumSearch",
-				albumIds: payload.albumIds,
-			});
+		await client.command.execute({
+			name: "AlbumSearch",
+			albumIds: payload.albumIds,
+		});
 
-			return reply.status(202).send({
-				message: "Album search queued",
-			});
-		} catch (error) {
-			request.log.error(
-				{ err: error, instance: instance.id, albumIds: payload.albumIds },
-				"failed to queue album search",
-			);
-			throw error;
-		}
+		return reply.status(202).send({
+			message: "Album search queued",
+		});
 	});
 
 	/**
@@ -354,22 +306,14 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 			});
 		}
 
-		try {
-			await client.command.execute({
-				name: "AuthorSearch",
-				authorId,
-			});
+		await client.command.execute({
+			name: "AuthorSearch",
+			authorId,
+		});
 
-			return reply.status(202).send({
-				message: "Author search queued",
-			});
-		} catch (error) {
-			request.log.error(
-				{ err: error, instance: instance.id, authorId },
-				"failed to queue author search",
-			);
-			throw error;
-		}
+		return reply.status(202).send({
+			message: "Author search queued",
+		});
 	});
 
 	/**
@@ -401,22 +345,14 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 			});
 		}
 
-		try {
-			await client.command.execute({
-				name: "BookSearch",
-				bookIds: payload.bookIds,
-			});
+		await client.command.execute({
+			name: "BookSearch",
+			bookIds: payload.bookIds,
+		});
 
-			return reply.status(202).send({
-				message: "Book search queued",
-			});
-		} catch (error) {
-			request.log.error(
-				{ err: error, instance: instance.id, bookIds: payload.bookIds },
-				"failed to queue book search",
-			);
-			throw error;
-		}
+		return reply.status(202).send({
+			message: "Book search queued",
+		});
 	});
 
 	done();

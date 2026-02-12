@@ -33,17 +33,12 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * GET /backup
 	 * List all backups from filesystem
 	 */
-	app.get("/", async (request, reply) => {
-		try {
-			const backupService = getBackupService();
-			const backups = await backupService.listBackups();
+	app.get("/", async (_request, reply) => {
+		const backupService = getBackupService();
+		const backups = await backupService.listBackups();
 
-			const response: ListBackupsResponse = { backups };
-			return reply.send(response);
-		} catch (error) {
-			request.log.error({ err: error }, "Failed to list backups");
-			return reply.status(500).send({ error: "Failed to list backups" });
-		}
+		const response: ListBackupsResponse = { backups };
+		return reply.send(response);
 	});
 
 	/**
@@ -228,33 +223,28 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	app.get("/:id/download", async (request, reply) => {
 		const params = request.params as { id: string };
 
-		try {
-			const backupService = getBackupService();
-			const backup = await backupService.getBackupByIdInternal(params.id);
+		const backupService = getBackupService();
+		const backup = await backupService.getBackupByIdInternal(params.id);
 
-			if (!backup) {
-				return reply.status(404).send({ error: "Backup not found" });
-			}
-
-			request.log.info(
-				{
-					userId: request.currentUser!.id,
-					backupId: params.id,
-					filename: backup.filename,
-				},
-				"Backup downloaded",
-			);
-
-			// Read the file and send it
-			const fileBuffer = await fs.readFile(backup.path);
-			return reply
-				.header("Content-Type", "application/octet-stream")
-				.header("Content-Disposition", `attachment; filename="${backup.filename}"`)
-				.send(fileBuffer);
-		} catch (error) {
-			request.log.error({ err: error }, "Failed to download backup");
-			return reply.status(500).send({ error: "Failed to download backup" });
+		if (!backup) {
+			return reply.status(404).send({ error: "Backup not found" });
 		}
+
+		request.log.info(
+			{
+				userId: request.currentUser!.id,
+				backupId: params.id,
+				filename: backup.filename,
+			},
+			"Backup downloaded",
+		);
+
+		// Read the file and send it
+		const fileBuffer = await fs.readFile(backup.path);
+		return reply
+			.header("Content-Type", "application/octet-stream")
+			.header("Content-Disposition", `attachment; filename="${backup.filename}"`)
+			.send(fileBuffer);
 	});
 
 	/**
@@ -297,33 +287,28 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * GET /backup/settings
 	 * Get backup settings
 	 */
-	app.get("/settings", async (request, reply) => {
-		try {
-			// Get or create settings atomically
-			const settings = await app.prisma.backupSettings.upsert({
-				where: { id: 1 },
-				create: { id: 1 },
-				update: {},
-			});
+	app.get("/settings", async (_request, reply) => {
+		// Get or create settings atomically
+		const settings = await app.prisma.backupSettings.upsert({
+			where: { id: 1 },
+			create: { id: 1 },
+			update: {},
+		});
 
-			const response: BackupSettings = {
-				id: settings.id,
-				enabled: settings.enabled,
-				intervalType: settings.intervalType,
-				intervalValue: settings.intervalValue,
-				retentionCount: settings.retentionCount,
-				includeTrashBackups: settings.includeTrashBackups,
-				lastRunAt: settings.lastRunAt?.toISOString() || null,
-				nextRunAt: settings.nextRunAt?.toISOString() || null,
-				createdAt: settings.createdAt.toISOString(),
-				updatedAt: settings.updatedAt.toISOString(),
-			};
+		const response: BackupSettings = {
+			id: settings.id,
+			enabled: settings.enabled,
+			intervalType: settings.intervalType,
+			intervalValue: settings.intervalValue,
+			retentionCount: settings.retentionCount,
+			includeTrashBackups: settings.includeTrashBackups,
+			lastRunAt: settings.lastRunAt?.toISOString() || null,
+			nextRunAt: settings.nextRunAt?.toISOString() || null,
+			createdAt: settings.createdAt.toISOString(),
+			updatedAt: settings.updatedAt.toISOString(),
+		};
 
-			return reply.send(response);
-		} catch (error) {
-			request.log.error({ err: error }, "Failed to get backup settings");
-			return reply.status(500).send({ error: "Failed to get backup settings" });
-		}
+		return reply.send(response);
 	});
 
 	/**
@@ -333,90 +318,80 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	app.put("/settings", async (request, reply) => {
 		const parsed = validateRequest(updateBackupSettingsRequestSchema, request.body);
 
-		try {
-			// Get or create settings atomically
-			const settings = await app.prisma.backupSettings.upsert({
-				where: { id: 1 },
-				create: { id: 1 },
-				update: {},
-			});
+		// Get or create settings atomically
+		const settings = await app.prisma.backupSettings.upsert({
+			where: { id: 1 },
+			create: { id: 1 },
+			update: {},
+		});
 
-			// Calculate next run time if interval settings changed
-			let nextRunAt = settings.nextRunAt;
-			if (parsed.intervalType || parsed.intervalValue) {
-				const intervalType = parsed.intervalType || settings.intervalType;
-				const intervalValue = parsed.intervalValue || settings.intervalValue;
+		// Calculate next run time if interval settings changed
+		let nextRunAt = settings.nextRunAt;
+		if (parsed.intervalType || parsed.intervalValue) {
+			const intervalType = parsed.intervalType || settings.intervalType;
+			const intervalValue = parsed.intervalValue || settings.intervalValue;
 
-				if (intervalType !== "DISABLED") {
-					const now = new Date();
-					switch (intervalType) {
-						case "HOURLY":
-							nextRunAt = new Date(now.getTime() + intervalValue * 60 * 60 * 1000);
-							break;
-						case "DAILY":
-							nextRunAt = new Date(now.getTime() + intervalValue * 24 * 60 * 60 * 1000);
-							break;
-						case "WEEKLY":
-							nextRunAt = new Date(now.getTime() + intervalValue * 7 * 24 * 60 * 60 * 1000);
-							break;
-					}
-				} else {
-					// When DISABLED, clear any scheduled run
-					nextRunAt = null;
+			if (intervalType !== "DISABLED") {
+				const now = new Date();
+				switch (intervalType) {
+					case "HOURLY":
+						nextRunAt = new Date(now.getTime() + intervalValue * 60 * 60 * 1000);
+						break;
+					case "DAILY":
+						nextRunAt = new Date(now.getTime() + intervalValue * 24 * 60 * 60 * 1000);
+						break;
+					case "WEEKLY":
+						nextRunAt = new Date(now.getTime() + intervalValue * 7 * 24 * 60 * 60 * 1000);
+						break;
 				}
+			} else {
+				// When DISABLED, clear any scheduled run
+				nextRunAt = null;
 			}
-
-			// Update settings
-			const updated = await app.prisma.backupSettings.update({
-				where: { id: 1 },
-				data: {
-					...parsed,
-					nextRunAt,
-				},
-			});
-
-			request.log.info(
-				{
-					userId: request.currentUser!.id,
-					settings: parsed,
-				},
-				"Backup settings updated",
-			);
-
-			const response: BackupSettings = {
-				id: updated.id,
-				enabled: updated.enabled,
-				intervalType: updated.intervalType,
-				intervalValue: updated.intervalValue,
-				retentionCount: updated.retentionCount,
-				includeTrashBackups: updated.includeTrashBackups,
-				lastRunAt: updated.lastRunAt?.toISOString() || null,
-				nextRunAt: updated.nextRunAt?.toISOString() || null,
-				createdAt: updated.createdAt.toISOString(),
-				updatedAt: updated.updatedAt.toISOString(),
-			};
-
-			return reply.send(response);
-		} catch (error) {
-			request.log.error({ err: error }, "Failed to update backup settings");
-			return reply.status(500).send({ error: "Failed to update backup settings" });
 		}
+
+		// Update settings
+		const updated = await app.prisma.backupSettings.update({
+			where: { id: 1 },
+			data: {
+				...parsed,
+				nextRunAt,
+			},
+		});
+
+		request.log.info(
+			{
+				userId: request.currentUser!.id,
+				settings: parsed,
+			},
+			"Backup settings updated",
+		);
+
+		const response: BackupSettings = {
+			id: updated.id,
+			enabled: updated.enabled,
+			intervalType: updated.intervalType,
+			intervalValue: updated.intervalValue,
+			retentionCount: updated.retentionCount,
+			includeTrashBackups: updated.includeTrashBackups,
+			lastRunAt: updated.lastRunAt?.toISOString() || null,
+			nextRunAt: updated.nextRunAt?.toISOString() || null,
+			createdAt: updated.createdAt.toISOString(),
+			updatedAt: updated.updatedAt.toISOString(),
+		};
+
+		return reply.send(response);
 	});
 
 	/**
 	 * GET /backup/password/status
 	 * Get backup password configuration status
 	 */
-	app.get("/password/status", async (request, reply) => {
-		try {
-			const backupService = getBackupService();
-			const status = await backupService.getPasswordStatus();
+	app.get("/password/status", async (_request, reply) => {
+		const backupService = getBackupService();
+		const status = await backupService.getPasswordStatus();
 
-			return reply.send(status);
-		} catch (error) {
-			request.log.error({ err: error }, "Failed to get backup password status");
-			return reply.status(500).send({ error: "Failed to get backup password status" });
-		}
+		return reply.send(status);
 	});
 
 	/**
@@ -426,17 +401,17 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	app.put<{
 		Body: { password: string };
 	}>("/password", async (request, reply) => {
+		const { password } = request.body;
+
+		if (!password || typeof password !== "string") {
+			return reply.status(400).send({ error: "Password is required" });
+		}
+
+		if (password.length < 8) {
+			return reply.status(400).send({ error: "Password must be at least 8 characters" });
+		}
+
 		try {
-			const { password } = request.body;
-
-			if (!password || typeof password !== "string") {
-				return reply.status(400).send({ error: "Password is required" });
-			}
-
-			if (password.length < 8) {
-				return reply.status(400).send({ error: "Password must be at least 8 characters" });
-			}
-
 			const backupService = getBackupService();
 			await backupService.setPassword(password);
 
@@ -460,20 +435,15 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Remove the backup password from database (will fall back to env var if set)
 	 */
 	app.delete("/password", async (request, reply) => {
-		try {
-			const backupService = getBackupService();
-			await backupService.removePassword();
+		const backupService = getBackupService();
+		await backupService.removePassword();
 
-			request.log.info(
-				{ userId: request.currentUser!.id },
-				"Backup password removed from database",
-			);
+		request.log.info(
+			{ userId: request.currentUser!.id },
+			"Backup password removed from database",
+		);
 
-			return reply.send({ success: true, message: "Backup password removed from database" });
-		} catch (error) {
-			request.log.error({ err: error }, "Failed to remove backup password");
-			return reply.status(500).send({ error: "Failed to remove backup password" });
-		}
+		return reply.send({ success: true, message: "Backup password removed from database" });
 	});
 
 	done();

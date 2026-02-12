@@ -128,21 +128,16 @@ export const registerOptionsRoutes: FastifyPluginCallback = (app, _opts, done) =
 			return reply.send({ message: "Instance is not a Sonarr instance" });
 		}
 
-		try {
-			// biome-ignore lint/suspicious/noExplicitAny: Type already validated by isSonarrClient/isRadarrClient guards above
-			const options = await getInstanceOptionsWithSdk(client as any, service);
+		// biome-ignore lint/suspicious/noExplicitAny: Type already validated by isSonarrClient/isRadarrClient guards above
+		const options = await getInstanceOptionsWithSdk(client as any, service);
 
-			return discoverInstanceOptionsResponseSchema.parse({
-				instanceId: instance.id,
-				service,
-				qualityProfiles: options.qualityProfiles,
-				rootFolders: options.rootFolders,
-				languageProfiles: options.languageProfiles,
-			});
-		} catch (error) {
-			request.log.error({ err: error, instance: instance.id }, "failed to load discover options");
-			throw error;
-		}
+		return discoverInstanceOptionsResponseSchema.parse({
+			instanceId: instance.id,
+			service,
+			qualityProfiles: options.qualityProfiles,
+			rootFolders: options.rootFolders,
+			languageProfiles: options.languageProfiles,
+		});
 	});
 
 	/**

@@ -102,27 +102,19 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 			});
 		}
 
-		try {
-			const details = await fetchProwlarrIndexerDetailsWithSdk(client, instance, indexerId);
-			if (!details) {
-				reply.status(502);
-				return searchIndexerDetailsResponseSchema.parse({
-					indexer: buildIndexerDetailsFallback(
-						instance.id,
-						instance.label,
-						instance.baseUrl,
-						indexerId,
-					),
-				});
-			}
-			return searchIndexerDetailsResponseSchema.parse({ indexer: details });
-		} catch (error) {
-			request.log.error(
-				{ err: error, instance: instance.id, indexerId },
-				"prowlarr indexer details failed",
-			);
-			throw error;
+		const details = await fetchProwlarrIndexerDetailsWithSdk(client, instance, indexerId);
+		if (!details) {
+			reply.status(502);
+			return searchIndexerDetailsResponseSchema.parse({
+				indexer: buildIndexerDetailsFallback(
+					instance.id,
+					instance.label,
+					instance.baseUrl,
+					indexerId,
+				),
+			});
 		}
+		return searchIndexerDetailsResponseSchema.parse({ indexer: details });
 	});
 
 	/**
@@ -175,15 +167,7 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 			instanceUrl: originalIndexer.instanceUrl ?? instance.baseUrl,
 		};
 
-		try {
-			await updateProwlarrIndexerWithSdk(client, indexerIdValue, bodyIndexer);
-		} catch (error) {
-			request.log.error(
-				{ err: error, instance: instance.id, indexerId: indexerIdValue },
-				"prowlarr indexer update failed",
-			);
-			throw error;
-		}
+		await updateProwlarrIndexerWithSdk(client, indexerIdValue, bodyIndexer);
 
 		try {
 			const updated = await fetchProwlarrIndexerDetailsWithSdk(client, instance, indexerIdValue);

@@ -347,24 +347,16 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			});
 		}
 
-		try {
-			const rawEpisodes = await client.episode.getAll({
-				seriesId,
-				seasonNumber: parsed.seasonNumber,
-			});
+		const rawEpisodes = await client.episode.getAll({
+			seriesId,
+			seasonNumber: parsed.seasonNumber,
+		});
 
-			const episodes: LibraryEpisode[] = rawEpisodes.map((raw) =>
-				normalizeEpisode(raw as Record<string, unknown>, seriesId),
-			);
+		const episodes: LibraryEpisode[] = rawEpisodes.map((raw) =>
+			normalizeEpisode(raw as Record<string, unknown>, seriesId),
+		);
 
-			return libraryEpisodesResponseSchema.parse({ episodes });
-		} catch (error) {
-			request.log.error(
-				{ err: error, instance: instance.id, seriesId },
-				"failed to fetch episodes",
-			);
-			throw error;
-		}
+		return libraryEpisodesResponseSchema.parse({ episodes });
 	});
 
 	/**
@@ -398,22 +390,14 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			});
 		}
 
-		try {
-			// Lidarr album endpoint: /api/v1/album?artistId=X
-			const rawAlbums = await client.album.getAll({ artistId });
+		// Lidarr album endpoint: /api/v1/album?artistId=X
+		const rawAlbums = await client.album.getAll({ artistId });
 
-			const albums: LibraryAlbum[] = rawAlbums.map((raw) =>
-				normalizeAlbum(raw as Record<string, unknown>, artistId, instance.baseUrl),
-			);
+		const albums: LibraryAlbum[] = rawAlbums.map((raw) =>
+			normalizeAlbum(raw as Record<string, unknown>, artistId, instance.baseUrl),
+		);
 
-			return libraryAlbumsResponseSchema.parse({ albums });
-		} catch (error) {
-			request.log.error(
-				{ err: error, instance: instance.id, artistId },
-				"failed to fetch albums",
-			);
-			throw error;
-		}
+		return libraryAlbumsResponseSchema.parse({ albums });
 	});
 
 	/**
@@ -447,22 +431,14 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			});
 		}
 
-		try {
-			// Readarr book endpoint: /api/v1/book?authorId=X
-			const rawBooks = await client.book.getAll({ authorId });
+		// Readarr book endpoint: /api/v1/book?authorId=X
+		const rawBooks = await client.book.getAll({ authorId });
 
-			const books: LibraryBook[] = rawBooks.map((raw) =>
-				normalizeBook(raw as Record<string, unknown>, authorId, instance.baseUrl),
-			);
+		const books: LibraryBook[] = rawBooks.map((raw) =>
+			normalizeBook(raw as Record<string, unknown>, authorId, instance.baseUrl),
+		);
 
-			return libraryBooksResponseSchema.parse({ books });
-		} catch (error) {
-			request.log.error(
-				{ err: error, instance: instance.id, authorId },
-				"failed to fetch books",
-			);
-			throw error;
-		}
+		return libraryBooksResponseSchema.parse({ books });
 	});
 
 	/**
@@ -496,22 +472,14 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			});
 		}
 
-		try {
-			// Lidarr track endpoint: /api/v1/track?albumId=X
-			const rawTracks = await client.track.getAll({ albumId });
+		// Lidarr track endpoint: /api/v1/track?albumId=X
+		const rawTracks = await client.track.getAll({ albumId });
 
-			const tracks: LibraryTrack[] = rawTracks.map((raw) =>
-				normalizeTrack(raw as Record<string, unknown>, albumId),
-			);
+		const tracks: LibraryTrack[] = rawTracks.map((raw) =>
+			normalizeTrack(raw as Record<string, unknown>, albumId),
+		);
 
-			return libraryTracksResponseSchema.parse({ tracks });
-		} catch (error) {
-			request.log.error(
-				{ err: error, instance: instance.id, albumId },
-				"failed to fetch tracks",
-			);
-			throw error;
-		}
+		return libraryTracksResponseSchema.parse({ tracks });
 	});
 
 	done();
