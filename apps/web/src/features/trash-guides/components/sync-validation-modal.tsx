@@ -6,60 +6,30 @@
  * Premium modal for validating sync operations with:
  * - Glassmorphic backdrop and container
  * - Theme-aware styling using THEME_GRADIENTS
- * - SEMANTIC_COLORS for success/error/warning states
  * - Animated entrance and focus trap
+ *
+ * Validation result panels are in sync-validation-panels.tsx.
+ * Dev-only debug panel is in sync-debug-panel.tsx.
  */
 
-import {
-	AlertCircle,
-	Bug,
-	CheckCircle2,
-	ChevronDown,
-	ChevronUp,
-	Eye,
-	HelpCircle,
-	Info,
-	Loader2,
-	Plug,
-	RefreshCw,
-	Upload,
-	X,
-	XCircle,
-} from "lucide-react";
+import { Info, Loader2, RefreshCw, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "../../../components/ui";
-import { useValidateSync, MAX_RETRY_ATTEMPTS } from "../../../hooks/api/useSync";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useValidateSync } from "../../../hooks/api/useSync";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { ValidationResult } from "../../../lib/api-client/trash-guides";
+import { detectErrorTypes, type ErrorType, type ValidationTiming, type RetryProgress } from "../lib/sync-validation-utils";
+import { SyncDebugPanel } from "./sync-debug-panel";
+import {
+	MutationErrorPanel,
+	SilentFailurePanel,
+	ValidationErrorPanel,
+	ValidationSuccessPanel,
+	ValidationWarningsPanel,
+} from "./sync-validation-panels";
 
 // Check if we're in development mode
 const isDevelopment = process.env.NODE_ENV === "development";
-
-// Error type detection patterns
-const ERROR_PATTERNS = {
-	MISSING_MAPPING: /no quality profile mappings found|deploy this template/i,
-	UNREACHABLE_INSTANCE: /unable to connect|unreachable|connection refused|timeout/i,
-	USER_MODIFICATIONS: /auto-sync is blocked|local modifications|user modifications/i,
-	DELETED_PROFILES: /quality profiles no longer exist|mapped.*deleted/i,
-	CORRUPTED_TEMPLATE: /corrupted|cannot be parsed|missing custom formats/i,
-	CACHE_ISSUE: /cache is empty|cache.*corrupted|cache needs refreshing/i,
-} as const;
-
-type ErrorType = keyof typeof ERROR_PATTERNS;
-
-/** Detect error types from error messages */
-function detectErrorTypes(errors: string[]): Set<ErrorType> {
-	const detected = new Set<ErrorType>();
-	for (const error of errors) {
-		for (const [type, pattern] of Object.entries(ERROR_PATTERNS)) {
-			if (pattern.test(error)) {
-				detected.add(type as ErrorType);
-			}
-		}
-	}
-	return detected;
-}
 
 interface SyncValidationModalProps {
 	templateId: string;
@@ -76,19 +46,6 @@ interface SyncValidationModalProps {
 	onViewChanges?: () => void;
 	/** Optional callback to switch to manual sync mode */
 	onSwitchToManualSync?: () => void;
-}
-
-interface ValidationTiming {
-	startTime: number;
-	endTime: number | null;
-	duration: number | null;
-}
-
-interface RetryProgress {
-	attempt: number;
-	maxAttempts: number;
-	delayMs: number;
-	isWaiting: boolean;
 }
 
 export const SyncValidationModal = ({
@@ -108,7 +65,6 @@ export const SyncValidationModal = ({
 	const [validation, setValidation] = useState<ValidationResult | null>(null);
 	const [retryCount, setRetryCount] = useState(0);
 	const [localError, setLocalError] = useState<Error | null>(null);
-	const [showDebugPanel, setShowDebugPanel] = useState(false);
 	const [timing, setTiming] = useState<ValidationTiming>({
 		startTime: 0,
 		endTime: null,
@@ -323,6 +279,16 @@ export const SyncValidationModal = ({
 
 	const _isAutoRetrying = retryProgress !== null && retryProgress.isWaiting;
 
+	const displayError = localError ?? validateMutation.error ?? null;
+
+	// Shared retry props for extracted panels
+	const retryProps = {
+		handleRetry,
+		isValidating,
+		retryCount,
+		maxManualRetries: MAX_MANUAL_RETRIES,
+	};
+
 	return (
 		<div
 			className="fixed inset-0 z-modal-backdrop flex items-center justify-center p-4 animate-in fade-in duration-200"
@@ -418,190 +384,23 @@ export const SyncValidationModal = ({
 
 					{!isValidating && validation && (
 						<div className="space-y-4">
-							{/* Silent Failure Fallback */}
-							{hasSilentFailure && (
-								<div
-									className="rounded-xl p-4"
-									style={{
-										backgroundColor: SEMANTIC_COLORS.warning.bg,
-										border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
-									}}
-								>
-									<div className="flex items-start gap-3">
-										<HelpCircle className="h-5 w-5 shrink-0" style={{ color: SEMANTIC_COLORS.warning.from }} />
-										<div className="flex-1">
-											<h3 className="font-medium" style={{ color: SEMANTIC_COLORS.warning.text }}>
-												Validation Failed
-											</h3>
-											<p className="mt-1 text-sm" style={{ color: SEMANTIC_COLORS.warning.text }}>
-												Validation could not be completed, but no specific errors were reported.
-												This may be a temporary issue.
-											</p>
-											<div className="mt-3 flex items-center gap-3">
-												<Button
-													variant="outline"
-													size="sm"
-													onClick={handleRetry}
-													disabled={isValidating}
-													className="gap-2 rounded-xl"
-												>
-													<RefreshCw className={`h-3 w-3 ${isValidating ? "animate-spin" : ""}`} />
-													{retryCount > 0
-														? `Retry (${retryCount}/${MAX_MANUAL_RETRIES})`
-														: "Retry Validation"}
-												</Button>
-												<span className="text-xs" style={{ color: SEMANTIC_COLORS.warning.text }}>
-													Try again or check your instance connectivity
-												</span>
-											</div>
-										</div>
-									</div>
-								</div>
-							)}
+							{hasSilentFailure && <SilentFailurePanel {...retryProps} />}
 
-							{/* Validation Errors */}
 							{hasErrors && (
-								<div
-									className="rounded-xl p-4"
-									style={{
-										backgroundColor: SEMANTIC_COLORS.error.bg,
-										border: `1px solid ${SEMANTIC_COLORS.error.border}`,
-									}}
-								>
-									<div className="flex items-start gap-3">
-										<XCircle className="h-5 w-5 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
-										<div className="flex-1">
-											<h3 className="font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
-												Validation Failed
-											</h3>
-											<ul className="mt-2 space-y-1 text-sm" style={{ color: SEMANTIC_COLORS.error.text }}>
-												{validation.errors.map((error, index) => (
-													<li key={index}>• {error}</li>
-												))}
-											</ul>
-
-											{/* Contextual action buttons */}
-											<div className="mt-4 flex flex-wrap gap-2">
-												{errorTypes.has("MISSING_MAPPING") && onNavigateToDeploy && (
-													<Button
-														size="sm"
-														onClick={() => {
-															onCancel();
-															onNavigateToDeploy();
-														}}
-														className="gap-2 rounded-xl font-medium"
-														style={{
-															background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-														}}
-													>
-														<Upload className="h-3 w-3" />
-														Deploy Template
-													</Button>
-												)}
-
-												{errorTypes.has("UNREACHABLE_INSTANCE") && onTestConnection && (
-													<Button
-														variant="outline"
-														size="sm"
-														onClick={onTestConnection}
-														className="gap-2 rounded-xl"
-													>
-														<Plug className="h-3 w-3" />
-														Test Connection
-													</Button>
-												)}
-
-												{errorTypes.has("USER_MODIFICATIONS") && (
-													<>
-														{onSwitchToManualSync && (
-															<Button
-																size="sm"
-																onClick={() => {
-																	onCancel();
-																	onSwitchToManualSync();
-																}}
-																className="gap-2 rounded-xl font-medium"
-																style={{
-																	background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-																}}
-															>
-																<RefreshCw className="h-3 w-3" />
-																Switch to Manual Sync
-															</Button>
-														)}
-														{onViewChanges && (
-															<Button
-																variant="outline"
-																size="sm"
-																onClick={onViewChanges}
-																className="gap-2 rounded-xl"
-															>
-																<Eye className="h-3 w-3" />
-																View Changes
-															</Button>
-														)}
-													</>
-												)}
-
-												<Button
-													variant="outline"
-													size="sm"
-													onClick={handleRetry}
-													disabled={isValidating}
-													className="gap-2 rounded-xl"
-												>
-													<RefreshCw className={`h-3 w-3 ${isValidating ? "animate-spin" : ""}`} />
-													{retryCount > 0
-														? `Retry (${retryCount}/${MAX_MANUAL_RETRIES})`
-														: "Retry Validation"}
-												</Button>
-											</div>
-
-											{/* Helpful hints */}
-											{errorTypes.has("MISSING_MAPPING") && (
-												<p className="mt-3 text-xs opacity-80" style={{ color: SEMANTIC_COLORS.error.text }}>
-													This template needs to be deployed to the instance before syncing.
-												</p>
-											)}
-											{errorTypes.has("USER_MODIFICATIONS") && (
-												<p className="mt-3 text-xs opacity-80" style={{ color: SEMANTIC_COLORS.error.text }}>
-													Auto-sync is disabled for templates with local modifications to protect your changes.
-												</p>
-											)}
-											{errorTypes.has("UNREACHABLE_INSTANCE") && (
-												<p className="mt-3 text-xs opacity-80" style={{ color: SEMANTIC_COLORS.error.text }}>
-													Check that the instance is running and the URL/API key are correct.
-												</p>
-											)}
-										</div>
-									</div>
-								</div>
+								<ValidationErrorPanel
+									errors={validation.errors}
+									errorTypes={errorTypes}
+									themeGradient={themeGradient}
+									onCancel={onCancel}
+									onNavigateToDeploy={onNavigateToDeploy}
+									onTestConnection={onTestConnection}
+									onViewChanges={onViewChanges}
+									onSwitchToManualSync={onSwitchToManualSync}
+									{...retryProps}
+								/>
 							)}
 
-							{/* Actual Warnings */}
-							{hasActualWarnings && (
-								<div
-									className="rounded-xl p-4"
-									style={{
-										backgroundColor: SEMANTIC_COLORS.warning.bg,
-										border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
-									}}
-								>
-									<div className="flex items-start gap-3">
-										<AlertCircle className="h-5 w-5 shrink-0" style={{ color: SEMANTIC_COLORS.warning.from }} />
-										<div className="flex-1">
-											<h3 className="font-medium" style={{ color: SEMANTIC_COLORS.warning.text }}>
-												Warnings
-											</h3>
-											<ul className="mt-2 space-y-1 text-sm" style={{ color: SEMANTIC_COLORS.warning.text }}>
-												{actualWarnings.map((warning, index) => (
-													<li key={index}>• {warning}</li>
-												))}
-											</ul>
-										</div>
-									</div>
-								</div>
-							)}
+							{hasActualWarnings && <ValidationWarningsPanel warnings={actualWarnings} />}
 
 							{/* Informational messages */}
 							{informationalWarnings.length > 0 && canProceed && (
@@ -692,194 +491,35 @@ export const SyncValidationModal = ({
 								</div>
 							)}
 
-							{/* Success */}
-							{canProceed && !hasConflicts && (
-								<div
-									className="rounded-xl p-4"
-									style={{
-										backgroundColor: SEMANTIC_COLORS.success.bg,
-										border: `1px solid ${SEMANTIC_COLORS.success.border}`,
-									}}
-								>
-									<div className="flex items-center gap-3">
-										<CheckCircle2 className="h-5 w-5" style={{ color: SEMANTIC_COLORS.success.from }} />
-										<div>
-											<h3 className="font-medium" style={{ color: SEMANTIC_COLORS.success.text }}>
-												Validation Passed
-											</h3>
-											<p className="mt-0.5 text-sm" style={{ color: SEMANTIC_COLORS.success.text }}>
-												Ready to sync
-											</p>
-										</div>
-									</div>
-								</div>
-							)}
+							{canProceed && !hasConflicts && <ValidationSuccessPanel />}
 						</div>
 					)}
 
-					{/* Mutation Error or Local Error */}
-					{(validateMutation.error || localError) && (
-						<div
-							className="rounded-xl p-4"
-							style={{
-								backgroundColor: SEMANTIC_COLORS.error.bg,
-								border: `1px solid ${SEMANTIC_COLORS.error.border}`,
-							}}
-						>
-							<div className="flex items-start gap-3">
-								<XCircle className="h-5 w-5 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
-								<div className="flex-1">
-									<h3 className="font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
-										Validation Error
-									</h3>
-									<p className="mt-1 text-sm" style={{ color: SEMANTIC_COLORS.error.text }}>
-										{(localError ?? validateMutation.error)?.message ??
-											"An unknown error occurred while validating the sync request."}
-									</p>
-									<div className="mt-3 flex items-center gap-3">
-										<Button
-											variant="outline"
-											size="sm"
-											onClick={handleRetry}
-											disabled={isValidating}
-											className="gap-2 rounded-xl"
-										>
-											<RefreshCw className={`h-3 w-3 ${isValidating ? "animate-spin" : ""}`} />
-											{retryCount > 0 ? `Retry (${retryCount}/${MAX_MANUAL_RETRIES})` : "Retry Validation"}
-										</Button>
-										{retryCount >= MAX_MANUAL_RETRIES && (
-											<span className="text-xs" style={{ color: SEMANTIC_COLORS.error.text }}>
-												Max retries reached. Check instance connectivity.
-											</span>
-										)}
-									</div>
-								</div>
-							</div>
-						</div>
-					)}
+					{/* Mutation Error */}
+					{displayError && <MutationErrorPanel error={displayError} {...retryProps} />}
 
 					{/* Development Debug Panel */}
 					{isDevelopment && (
-						<div className="mt-4 rounded-xl border border-purple-500/30 bg-purple-500/10">
-							<button
-								type="button"
-								onClick={() => setShowDebugPanel(!showDebugPanel)}
-								className="flex w-full items-center justify-between p-3 text-left text-sm font-medium text-purple-300 hover:bg-purple-500/10 rounded-xl"
-							>
-								<span className="flex items-center gap-2">
-									<Bug className="h-4 w-4" />
-									Debug Panel (Development Only)
-								</span>
-								{showDebugPanel ? (
-									<ChevronUp className="h-4 w-4" />
-								) : (
-									<ChevronDown className="h-4 w-4" />
-								)}
-							</button>
-							{showDebugPanel && (
-								<div className="border-t border-purple-500/20 p-3">
-									<div className="space-y-2 font-mono text-xs">
-										<div className="grid grid-cols-2 gap-2">
-											<span className="text-purple-400">Template ID:</span>
-											<span className="text-purple-200 break-all">{templateId}</span>
-										</div>
-										<div className="grid grid-cols-2 gap-2">
-											<span className="text-purple-400">Instance ID:</span>
-											<span className="text-purple-200 break-all">{instanceId}</span>
-										</div>
-										<div className="grid grid-cols-2 gap-2">
-											<span className="text-purple-400">Mutation Status:</span>
-											<span className="text-purple-200">
-												{validateMutation.isPending
-													? "pending"
-													: validateMutation.isError
-														? "error"
-														: validateMutation.isSuccess
-															? "success"
-															: "idle"}
-											</span>
-										</div>
-										<div className="grid grid-cols-2 gap-2">
-											<span className="text-purple-400">Manual Retry Count:</span>
-											<span className="text-purple-200">{retryCount} / {MAX_MANUAL_RETRIES}</span>
-										</div>
-										<div className="grid grid-cols-2 gap-2">
-											<span className="text-purple-400">Auto Retry Max:</span>
-											<span className="text-purple-200">{MAX_RETRY_ATTEMPTS}</span>
-										</div>
-										{retryProgress && (
-											<div className="grid grid-cols-2 gap-2">
-												<span className="text-purple-400">Auto Retry Progress:</span>
-												<span className="text-purple-200">
-													Attempt {retryProgress.attempt}/{retryProgress.maxAttempts}
-													{retryProgress.isWaiting ? ` (waiting ${retryProgress.delayMs}ms)` : ""}
-												</span>
-											</div>
-										)}
-										{timing.startTime > 0 && (
-											<>
-												<div className="grid grid-cols-2 gap-2">
-													<span className="text-purple-400">Start Time:</span>
-													<span className="text-purple-200">
-														{new Date(timing.startTime).toISOString()}
-													</span>
-												</div>
-												{timing.duration !== null && (
-													<div className="grid grid-cols-2 gap-2">
-														<span className="text-purple-400">Duration:</span>
-														<span className="text-purple-200">{timing.duration}ms</span>
-													</div>
-												)}
-											</>
-										)}
-										{validation && (
-											<>
-												<div className="mt-2 border-t border-purple-500/20 pt-2">
-													<span className="text-purple-400">Validation Response:</span>
-												</div>
-												<div className="grid grid-cols-2 gap-2">
-													<span className="text-purple-400">Valid:</span>
-													<span className={validation.valid ? "text-green-400" : "text-red-400"}>
-														{String(validation.valid)}
-													</span>
-												</div>
-												<div className="grid grid-cols-2 gap-2">
-													<span className="text-purple-400">Errors:</span>
-													<span className="text-purple-200">{validation.errors?.length ?? 0}</span>
-												</div>
-												<div className="grid grid-cols-2 gap-2">
-													<span className="text-purple-400">Warnings:</span>
-													<span className="text-purple-200">{validation.warnings?.length ?? 0}</span>
-												</div>
-												<div className="grid grid-cols-2 gap-2">
-													<span className="text-purple-400">Conflicts:</span>
-													<span className="text-purple-200">{validation.conflicts?.length ?? 0}</span>
-												</div>
-												{hasSilentFailure && (
-													<div
-														className="mt-2 rounded-lg p-2"
-														style={{
-															backgroundColor: SEMANTIC_COLORS.warning.bg,
-															color: SEMANTIC_COLORS.warning.text,
-														}}
-													>
-														Silent Failure Detected: valid=false with 0 errors
-													</div>
-												)}
-											</>
-										)}
-										{(localError || validateMutation.error) && (
-											<div className="mt-2 border-t border-purple-500/20 pt-2">
-												<span className="text-purple-400">Error Details:</span>
-												<pre className="mt-1 overflow-auto rounded-lg bg-black/30 p-2 text-red-300">
-													{(localError || validateMutation.error)?.message}
-												</pre>
-											</div>
-										)}
-									</div>
-								</div>
-							)}
-						</div>
+						<SyncDebugPanel
+							templateId={templateId}
+							instanceId={instanceId}
+							mutationStatus={
+								validateMutation.isPending
+									? "pending"
+									: validateMutation.isError
+										? "error"
+										: validateMutation.isSuccess
+											? "success"
+											: "idle"
+							}
+							retryCount={retryCount}
+							maxManualRetries={MAX_MANUAL_RETRIES}
+							retryProgress={retryProgress}
+							timing={timing}
+							validation={validation}
+							hasSilentFailure={!!hasSilentFailure}
+							error={displayError}
+						/>
 					)}
 				</div>
 
