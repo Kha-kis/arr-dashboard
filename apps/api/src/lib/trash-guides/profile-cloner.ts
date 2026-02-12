@@ -10,6 +10,7 @@ import type { CompleteQualityProfile } from "@arr/shared";
 import type { SonarrClient, RadarrClient } from "arr-sdk";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import { loggers } from "../logger.js";
+import { getErrorMessage } from "../utils/error-message.js";
 
 const log = loggers.trashGuides;
 
@@ -151,7 +152,7 @@ export class ProfileCloner {
 			log.error({ err: error, instanceId: options.instanceId, profileId: options.profileId }, "Failed to import quality profile");
 			return {
 				success: false,
-				error: error instanceof Error ? error.message : "Unknown error",
+				error: getErrorMessage(error, "Unknown error"),
 			};
 		}
 	}
@@ -233,7 +234,7 @@ export class ProfileCloner {
 			log.error({ err: error, instanceId, profileName: options.profileName }, "Failed to deploy complete profile");
 			return {
 				success: false,
-				error: error instanceof Error ? error.message : "Unknown error",
+				error: getErrorMessage(error, "Unknown error"),
 			};
 		}
 	}
@@ -347,7 +348,7 @@ export class ProfileCloner {
 		} catch (error) {
 			return {
 				success: false,
-				error: error instanceof Error ? error.message : "Unknown error",
+				error: getErrorMessage(error, "Unknown error"),
 			};
 		}
 	}

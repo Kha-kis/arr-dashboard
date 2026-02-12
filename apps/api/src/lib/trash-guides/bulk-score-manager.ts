@@ -21,6 +21,7 @@ import type { SonarrClient, RadarrClient } from "arr-sdk";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import { safeJsonParse } from "../utils/json.js";
 import { loggers } from "../logger.js";
+import { getErrorMessage } from "../utils/error-message.js";
 
 const log = loggers.trashGuides;
 
@@ -433,7 +434,7 @@ export class BulkScoreManager {
 				}
 			} catch (error) {
 				errors.push(
-					`Failed to update template ${template.id}: ${error instanceof Error ? error.message : "Unknown error"}`,
+					`Failed to update template ${template.id}: ${getErrorMessage(error, "Unknown error")}`,
 				);
 			}
 		}
@@ -549,7 +550,7 @@ export class BulkScoreManager {
 				}
 			} catch (error) {
 				errors.push(
-					`Failed to copy to template ${template.id}: ${error instanceof Error ? error.message : "Unknown error"}`,
+					`Failed to copy to template ${template.id}: ${getErrorMessage(error, "Unknown error")}`,
 				);
 			}
 		}
@@ -619,7 +620,7 @@ export class BulkScoreManager {
 				}
 			} catch (error) {
 				errors.push(
-					`Failed to reset template ${template.id}: ${error instanceof Error ? error.message : "Unknown error"}`,
+					`Failed to reset template ${template.id}: ${getErrorMessage(error, "Unknown error")}`,
 				);
 			}
 		}
@@ -786,7 +787,7 @@ export class BulkScoreManager {
 				}
 			} catch (error) {
 				errors.push(
-					`Failed to import scores for "${importTemplate.templateName}": ${error instanceof Error ? error.message : "Unknown error"}`,
+					`Failed to import scores for "${importTemplate.templateName}": ${getErrorMessage(error, "Unknown error")}`,
 				);
 			}
 		}

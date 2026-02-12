@@ -11,6 +11,7 @@ import type { FastifyBaseLogger } from "fastify";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import { SonarrClient, RadarrClient, LidarrClient, ReadarrClient } from "arr-sdk";
 import { buildLibraryItem } from "../library/library-item-builder.js";
+import { getErrorMessage } from "../utils/error-message.js";
 
 // ============================================================================
 // Types
@@ -249,7 +250,7 @@ export async function syncInstance(
 		);
 	} catch (error) {
 		const durationMs = Date.now() - startTime;
-		const errorMessage = error instanceof Error ? error.message : "Unknown error";
+		const errorMessage = getErrorMessage(error, "Unknown error");
 
 		result.durationMs = durationMs;
 		result.error = errorMessage;

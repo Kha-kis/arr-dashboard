@@ -17,6 +17,7 @@ import type { ResolvedCF } from "./cf-resolution";
 import { CFConfigurationCloned } from "./cf-configuration-cloned";
 import { CFConfigurationEdit } from "./cf-configuration-edit";
 import { AdditionalCFSection, BrowseCFCatalog } from "./cf-configuration-catalog";
+import { getErrorMessage } from "../../../../lib/error-utils";
 
 interface CustomFormatItem {
 	displayName?: string;
@@ -306,9 +307,7 @@ export const CFConfiguration = ({
 				<Alert variant="danger">
 					<AlertCircle className="h-4 w-4" />
 					<AlertDescription>
-						{error instanceof Error
-							? error.message
-							: "Failed to load quality profile details"}
+						{getErrorMessage(error, "Failed to load quality profile details")}
 					</AlertDescription>
 				</Alert>
 			</div>

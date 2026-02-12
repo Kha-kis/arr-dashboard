@@ -21,6 +21,7 @@ import {
 	updateProwlarrIndexerWithSdk,
 	testProwlarrIndexerWithSdk,
 } from "../../lib/search/prowlarr-api.js";
+import { getErrorMessage } from "../../lib/utils/error-message.js";
 
 /**
  * Registers indexer-related routes for Prowlarr.
@@ -220,7 +221,7 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 			);
 			return searchIndexerTestResponseSchema.parse({
 				success: false,
-				message: error instanceof Error ? error.message : "Failed to test indexer",
+				message: getErrorMessage(error, "Failed to test indexer"),
 			});
 		}
 	});

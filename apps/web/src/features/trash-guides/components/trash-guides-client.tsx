@@ -22,6 +22,7 @@ import { CONFIG_TYPE_LABELS } from "../lib/constants";
 import { useCurrentUser } from "../../../hooks/api/useAuth";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 function PremiumSkeleton() {
 	const { gradient: themeGradient } = useThemeGradient();
@@ -231,7 +232,7 @@ export function TrashGuidesClient() {
 					<div>
 						<h3 className="font-semibold text-foreground mb-1">Failed to load cache status</h3>
 						<p className="text-sm text-muted-foreground">
-							{error instanceof Error ? error.message : "Please refresh the page and try again."}
+							{getErrorMessage(error, "Please refresh the page and try again.")}
 						</p>
 					</div>
 				</div>
@@ -338,9 +339,7 @@ export function TrashGuidesClient() {
 							<div>
 								<p className="font-medium text-foreground">Refresh failed</p>
 								<p className="text-sm text-muted-foreground">
-									{refreshMutation.error instanceof Error
-										? refreshMutation.error.message
-										: "Failed to refresh cache. Please try again."}
+									{getErrorMessage(refreshMutation.error, "Failed to refresh cache. Please try again.")}
 								</p>
 							</div>
 						</div>

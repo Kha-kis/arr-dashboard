@@ -27,6 +27,7 @@ import {
 	useUpdateOIDCProvider,
 	useDeleteOIDCProvider,
 } from "../../../hooks/api/useOIDCProviders";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 /**
  * Premium OIDC Provider Section
@@ -98,7 +99,7 @@ export const OIDCProviderSection = () => {
 				enabled: true,
 			});
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to create OIDC provider");
+			setError(getErrorMessage(err, "Failed to create OIDC provider"));
 		}
 	};
 
@@ -122,7 +123,7 @@ export const OIDCProviderSection = () => {
 			setSuccess("OIDC provider updated successfully!");
 			setIsEditing(false);
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to update OIDC provider");
+			setError(getErrorMessage(err, "Failed to update OIDC provider"));
 		}
 	};
 
@@ -140,7 +141,7 @@ export const OIDCProviderSection = () => {
 			await deleteMutation.mutateAsync();
 			setSuccess("OIDC provider deleted successfully!");
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to delete OIDC provider");
+			setError(getErrorMessage(err, "Failed to delete OIDC provider"));
 		}
 	};
 

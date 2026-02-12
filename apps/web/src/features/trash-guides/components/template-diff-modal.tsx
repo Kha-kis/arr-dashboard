@@ -43,6 +43,7 @@ import { cn } from "../../../lib/utils";
 import { toast } from "sonner";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 /**
  * Helper component to display specifications in a more navigable format
@@ -217,7 +218,7 @@ export const TemplateDiffModal = ({
 		} catch (err) {
 			console.error("Sync failed:", err);
 			toast.error("Sync failed", {
-				description: err instanceof Error ? err.message : "An unexpected error occurred",
+				description: getErrorMessage(err, "An unexpected error occurred"),
 			});
 		}
 	};
@@ -367,7 +368,7 @@ export const TemplateDiffModal = ({
 									Failed to load diff
 								</p>
 								<p className="text-sm mt-1 opacity-80" style={{ color: SEMANTIC_COLORS.error.text }}>
-									{error instanceof Error ? error.message : "Please try again"}
+									{getErrorMessage(error, "Please try again")}
 								</p>
 							</div>
 						</div>

@@ -39,6 +39,7 @@ const BulkDeploymentModal = lazy(() => import("./bulk-deployment-modal").then(m 
 const EnhancedTemplateExportModal = lazy(() => import("./enhanced-template-export-modal").then(m => ({ default: m.EnhancedTemplateExportModal })));
 const EnhancedTemplateImportModal = lazy(() => import("./enhanced-template-import-modal").then(m => ({ default: m.EnhancedTemplateImportModal })));
 import { getEffectiveQualityConfig } from "../lib/quality-config-utils";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface TemplateListProps {
 	serviceType?: "RADARR" | "SONARR";
@@ -97,7 +98,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onIm
 			dispatch({ type: "CLOSE_DELETE" });
 		} catch (error) {
 			console.error("Delete failed:", error);
-			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+			const errorMessage = getErrorMessage(error, "Unknown error occurred");
 			toast.error("Failed to delete template", { description: errorMessage });
 		}
 	};
@@ -116,7 +117,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onIm
 			dispatch({ type: "CLOSE_DUPLICATE" });
 		} catch (error) {
 			console.error("Duplicate failed:", error);
-			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+			const errorMessage = getErrorMessage(error, "Unknown error occurred");
 			toast.error("Failed to duplicate template", { description: errorMessage });
 		}
 	};
@@ -142,7 +143,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onIm
 			});
 		} catch (error) {
 			console.error("Sync execution failed:", error);
-			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+			const errorMessage = getErrorMessage(error, "Unknown error occurred");
 			toast.error("Failed to start sync operation", { description: errorMessage });
 		}
 	};
@@ -211,7 +212,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onIm
 					<div>
 						<h3 className="font-semibold text-foreground mb-1">Failed to load templates</h3>
 						<p className="text-sm text-muted-foreground">
-							{error instanceof Error ? error.message : "Please try again"}
+							{getErrorMessage(error, "Please try again")}
 						</p>
 					</div>
 				</div>

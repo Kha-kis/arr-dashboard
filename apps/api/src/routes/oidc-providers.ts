@@ -11,6 +11,7 @@ import type { FastifyInstance } from "fastify";
 import { hashPassword } from "../lib/auth/password.js";
 import { normalizeIssuerUrl } from "../lib/auth/oidc-utils.js";
 import { validateRequest } from "../lib/utils/validate.js";
+import { getErrorMessage } from "../lib/utils/error-message.js";
 
 /**
  * Transform a Prisma OIDCProvider model to the public DTO shape
@@ -73,7 +74,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 			} catch (error) {
 				return reply.status(400).send({
 					error: "Invalid issuer URL",
-					details: error instanceof Error ? error.message : "Could not parse issuer URL",
+					details: getErrorMessage(error, "Could not parse issuer URL"),
 				});
 			}
 
@@ -147,7 +148,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 				} catch (error) {
 					return reply.status(400).send({
 						error: "Invalid issuer URL",
-						details: error instanceof Error ? error.message : "Could not parse issuer URL",
+						details: getErrorMessage(error, "Could not parse issuer URL"),
 					});
 				}
 			}

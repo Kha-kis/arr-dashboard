@@ -12,6 +12,7 @@ import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher, getRateLimitState } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { validateRequest } from "../../lib/utils/validate.js";
+import { getErrorMessage } from "../../lib/utils/error-message.js";
 
 // ============================================================================
 // Request Schemas
@@ -194,7 +195,7 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 				app.log.error({ err: error, configType: type }, "Failed to refresh config type");
 				results[type] = {
 					success: false,
-					error: error instanceof Error ? error.message : "Unknown error",
+					error: getErrorMessage(error, "Unknown error"),
 				};
 			}
 		}

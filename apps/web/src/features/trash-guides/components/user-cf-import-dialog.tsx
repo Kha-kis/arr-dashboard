@@ -28,6 +28,7 @@ import {
 } from "../hooks/use-custom-formats";
 import { SpecificationBuilder, type SpecificationData } from "./specification-builder";
 import { apiRequest } from "../../../lib/api-client/base";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface UserCFImportDialogProps {
 	open: boolean;
@@ -207,9 +208,7 @@ function CreateTab({
 			{createMutation.isError && (
 				<div className="flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
 					<AlertCircle className="h-4 w-4 shrink-0" />
-					{createMutation.error instanceof Error
-						? createMutation.error.message
-						: "Failed to create custom format"}
+					{getErrorMessage(createMutation.error, "Failed to create custom format")}
 				</div>
 			)}
 
@@ -422,9 +421,7 @@ function JsonImportTab({
 			{importMutation.isError && (
 				<div className="flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
 					<AlertCircle className="h-4 w-4 shrink-0" />
-					{importMutation.error instanceof Error
-						? importMutation.error.message
-						: "Import failed"}
+					{getErrorMessage(importMutation.error, "Import failed")}
 				</div>
 			)}
 
@@ -506,7 +503,7 @@ function InstanceImportTab({
 			);
 		} catch (error) {
 			setLoadError(
-				error instanceof Error ? error.message : "Failed to load custom formats",
+				getErrorMessage(error, "Failed to load custom formats"),
 			);
 		} finally {
 			setLoading(false);
@@ -658,9 +655,7 @@ function InstanceImportTab({
 			{importMutation.isError && (
 				<div className="flex items-center gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
 					<AlertCircle className="h-4 w-4 shrink-0" />
-					{importMutation.error instanceof Error
-						? importMutation.error.message
-						: "Import failed"}
+					{getErrorMessage(importMutation.error, "Import failed")}
 				</div>
 			)}
 

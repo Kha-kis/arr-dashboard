@@ -6,6 +6,7 @@ import { Button, Input, toast } from "../../../components/ui";
 import { GlassmorphicCard } from "../../../components/layout";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useRestoreBackup, useReadBackupFile } from "../../../hooks/api/useBackup";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface BackupRestoreCardProps {
 	onRestoreComplete: (willRestart: boolean) => void;
@@ -38,7 +39,7 @@ export const BackupRestoreCard = ({ onRestoreComplete }: BackupRestoreCardProps)
 				onRestoreComplete(false);
 			}
 		} catch (error: unknown) {
-			const errorMessage = error instanceof Error ? error.message : "Unknown error";
+			const errorMessage = getErrorMessage(error, "Unknown error");
 			toast.error(`Failed to restore backup: ${errorMessage}`);
 		}
 	};

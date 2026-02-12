@@ -44,6 +44,7 @@ import {
 	isPlaintextBackup,
 	validateBackup,
 } from "./backup-validation.js";
+import { getErrorMessage } from "../utils/error-message.js";
 
 const log = loggers.backup;
 
@@ -622,7 +623,7 @@ export class BackupService {
 			}
 		} catch (error) {
 			// Properly extract error message instead of stringifying which becomes "[object Object]"
-			const errorMessage = error instanceof Error ? error.message : String(error);
+			const errorMessage = getErrorMessage(error);
 			throw new Error(`Failed to parse backup data: ${errorMessage}`);
 		}
 

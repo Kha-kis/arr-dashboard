@@ -29,6 +29,7 @@ import {
 } from "../../../hooks/api/useBackup";
 import type { BackupFileInfo } from "@arr/shared";
 import { formatBytes } from "../../../lib/format-utils";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface BackupListSectionProps {
 	onRestoreComplete: (willRestart: boolean) => void;
@@ -62,7 +63,7 @@ export const BackupListSection = ({ onRestoreComplete }: BackupListSectionProps)
 		try {
 			await downloadBackupMutation.mutateAsync({ id: backup.id, filename: backup.filename });
 		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : "Unknown error";
+			const errorMessage = getErrorMessage(error, "Unknown error");
 			toast.error("Failed to download backup", { description: errorMessage });
 		}
 	};
@@ -74,7 +75,7 @@ export const BackupListSection = ({ onRestoreComplete }: BackupListSectionProps)
 		try {
 			await deleteBackupMutation.mutateAsync(backup.id);
 		} catch (error: unknown) {
-			const message = error instanceof Error ? error.message : "Unknown error";
+			const message = getErrorMessage(error, "Unknown error");
 			toast.error(`Failed to delete backup: ${message}`);
 		}
 	};
@@ -102,7 +103,7 @@ export const BackupListSection = ({ onRestoreComplete }: BackupListSectionProps)
 				onRestoreComplete(false);
 			}
 		} catch (error: unknown) {
-			const errorMessage = error instanceof Error ? error.message : "Unknown error";
+			const errorMessage = getErrorMessage(error, "Unknown error");
 			toast.error(`Failed to restore backup: ${errorMessage}`);
 		}
 	};

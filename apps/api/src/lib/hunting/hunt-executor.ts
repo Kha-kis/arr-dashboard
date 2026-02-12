@@ -37,6 +37,7 @@ import {
 	type GrabbedItem,
 	detectGrabbedItemsFromHistoryWithSdk,
 } from "./grab-detector.js";
+import { getErrorMessage } from "../utils/error-message.js";
 
 // Re-export for external consumers
 export type { GrabbedItem } from "./grab-detector.js";
@@ -204,7 +205,7 @@ async function checkQueueThresholdWithSdk(
 		);
 		return {
 			ok: false,
-			message: `Queue check failed: ${error instanceof Error ? error.message : "Unknown error"}. Please verify instance connectivity.`,
+			message: `Queue check failed: ${getErrorMessage(error, "Unknown error")}. Please verify instance connectivity.`,
 		};
 	}
 }
@@ -488,7 +489,7 @@ async function executeSonarrHuntWithSdk(
 			status: searchErrors > 0 ? "partial" : "completed",
 		};
 	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
+		const message = getErrorMessage(error, "Unknown error");
 		return {
 			itemsSearched: 0,
 			itemsGrabbed: 0,
@@ -653,7 +654,7 @@ async function executeRadarrHuntWithSdk(
 			status: searchErrors > 0 ? "partial" : "completed",
 		};
 	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
+		const message = getErrorMessage(error, "Unknown error");
 		return {
 			itemsSearched: 0,
 			itemsGrabbed: 0,
@@ -832,7 +833,7 @@ async function executeLidarrHuntWithSdk(
 			status: searchErrors > 0 ? "partial" : "completed",
 		};
 	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
+		const message = getErrorMessage(error, "Unknown error");
 		return {
 			itemsSearched: 0,
 			itemsGrabbed: 0,
@@ -1011,7 +1012,7 @@ async function executeReadarrHuntWithSdk(
 			status: searchErrors > 0 ? "partial" : "completed",
 		};
 	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
+		const message = getErrorMessage(error, "Unknown error");
 		return {
 			itemsSearched: 0,
 			itemsGrabbed: 0,

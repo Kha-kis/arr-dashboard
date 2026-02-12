@@ -25,6 +25,7 @@ import {
 } from "../../../hooks/api/useInstanceOverrides";
 import { cn } from "../../../lib/utils";
 import { toast } from "sonner";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface CustomFormatOverrideRow {
 	trashId: string;
@@ -247,7 +248,7 @@ export const InstanceOverrideEditor = ({
 									Failed to load instance overrides
 								</p>
 								<p className="text-sm text-muted-foreground mt-1">
-									{error instanceof Error ? error.message : "Please try again"}
+									{getErrorMessage(error, "Please try again")}
 								</p>
 							</div>
 						</div>

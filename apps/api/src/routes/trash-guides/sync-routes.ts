@@ -19,6 +19,7 @@ import { validateRequest } from "../../lib/utils/validate.js";
 import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
 import { z } from "zod";
+import { getErrorMessage } from "../../lib/utils/error-message.js";
 
 // ============================================================================
 // Request Schemas
@@ -538,7 +539,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 					}
 				} catch (error) {
 					errors.push(
-						`Failed to restore "${name}": ${error instanceof Error ? error.message : "Unknown error"}`,
+						`Failed to restore "${name}": ${getErrorMessage(error, "Unknown error")}`,
 					);
 					failedCount++;
 				}
@@ -553,7 +554,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 						deletedCount++;
 					} catch (error) {
 						errors.push(
-							`Failed to delete "${name}": ${error instanceof Error ? error.message : "Unknown error"}`,
+							`Failed to delete "${name}": ${getErrorMessage(error, "Unknown error")}`,
 						);
 						failedCount++;
 					}
@@ -601,7 +602,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 			});
 		} catch (error) {
 			// Specialized catch: records failure metrics before propagating
-			const errorMessage = error instanceof Error ? error.message : "Rollback failed";
+			const errorMessage = getErrorMessage(error, "Rollback failed");
 			const metricsResult = completeMetrics();
 			metricsResult.recordFailure(errorMessage);
 

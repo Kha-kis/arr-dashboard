@@ -53,6 +53,8 @@ import type {
 	UpdateCheckResult,
 } from "./template-updater-types.js";
 
+import { getErrorMessage } from "../utils/error-message.js";
+
 // ============================================================================
 // Template Updater Class
 // ============================================================================
@@ -383,7 +385,7 @@ export class TemplateUpdater {
 				? await this.versionTracker.getCommitInfo(targetCommitHash)
 				: await this.versionTracker.getLatestCommit();
 		} catch (error) {
-			const errorMsg = `Failed to get commit info from GitHub: ${error instanceof Error ? error.message : String(error)}`;
+			const errorMsg = `Failed to get commit info from GitHub: ${getErrorMessage(error)}`;
 			completeMetrics().recordFailure(errorMsg);
 			return {
 				success: false,
@@ -601,7 +603,7 @@ export class TemplateUpdater {
 					mergeResult.scoreConflicts.length > 0 ? mergeResult.scoreConflicts : undefined,
 			};
 		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : String(error);
+			const errorMessage = getErrorMessage(error);
 			const metricsResult = completeMetrics();
 			metricsResult.recordFailure(errorMessage);
 
@@ -655,7 +657,7 @@ export class TemplateUpdater {
 				customFormats: [],
 				customFormatGroups: [],
 				cacheCommitHash: null,
-				error: error instanceof Error ? error.message : String(error),
+				error: getErrorMessage(error),
 			};
 		}
 	}
@@ -714,7 +716,7 @@ export class TemplateUpdater {
 						result.errors = [];
 					}
 					result.errors.push(
-						`Auto-deploy failed: ${error instanceof Error ? error.message : String(error)}`,
+						`Auto-deploy failed: ${getErrorMessage(error)}`,
 					);
 				}
 			} else {
@@ -836,7 +838,7 @@ export class TemplateUpdater {
 				: await this.versionTracker.getLatestCommit();
 		} catch (error) {
 			const context = targetCommitHash ? `commit ${targetCommitHash}` : "latest commit";
-			const errorMsg = error instanceof Error ? error.message : String(error);
+			const errorMsg = getErrorMessage(error);
 			log.error({ err: error, context }, "Failed to fetch version info for template diff");
 			throw new Error(`Failed to fetch version info for ${context}: ${errorMsg}`);
 		}
@@ -875,7 +877,7 @@ export class TemplateUpdater {
 		} catch (error) {
 			return {
 				needsUpdate: false,
-				error: error instanceof Error ? error.message : String(error),
+				error: getErrorMessage(error),
 			};
 		}
 	}
@@ -906,7 +908,7 @@ export class TemplateUpdater {
 		try {
 			latestCommit = await this.versionTracker.getLatestCommit();
 		} catch (error) {
-			const errorMsg = `[TemplateUpdater] Failed to fetch latest commit: ${error instanceof Error ? error.message : String(error)}`;
+			const errorMsg = `[TemplateUpdater] Failed to fetch latest commit: ${getErrorMessage(error)}`;
 			errors.push(errorMsg);
 			return { refreshed: 0, failed: configTypes.length, errors };
 		}
@@ -926,7 +928,7 @@ export class TemplateUpdater {
 				refreshed++;
 			} catch (error) {
 				failed++;
-				errors.push(`${configType}: ${error instanceof Error ? error.message : String(error)}`);
+				errors.push(`${configType}: ${getErrorMessage(error)}`);
 			}
 		}
 

@@ -15,6 +15,7 @@ import {
 import type { SonarrClient, RadarrClient } from "arr-sdk";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
 import { validateRequest } from "../../lib/utils/validate.js";
+import { getErrorMessage } from "../../lib/utils/error-message.js";
 
 // ============================================================================
 // Helper Functions
@@ -264,7 +265,7 @@ export async function registerUserCustomFormatRoutes(
 			} catch (error) {
 				results.failed.push({
 					name: cf.name,
-					error: error instanceof Error ? error.message : "Unknown error",
+					error: getErrorMessage(error, "Unknown error"),
 				});
 			}
 		}
@@ -348,7 +349,7 @@ export async function registerUserCustomFormatRoutes(
 			} catch (error) {
 				results.failed.push({
 					name: cfName,
-					error: error instanceof Error ? error.message : "Unknown error",
+					error: getErrorMessage(error, "Unknown error"),
 				});
 			}
 		}
@@ -450,7 +451,7 @@ export async function registerUserCustomFormatRoutes(
 			} catch (error) {
 				results.failed.push({
 					name: userCF.name,
-					error: error instanceof Error ? error.message : "Unknown error",
+					error: getErrorMessage(error, "Unknown error"),
 				});
 			}
 		}

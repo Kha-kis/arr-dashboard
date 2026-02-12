@@ -19,6 +19,7 @@ import {
 	type TemplateCF,
 } from "./quality-profile-helpers.js";
 import { loggers } from "../logger.js";
+import { getErrorMessage } from "../utils/error-message.js";
 
 const log = loggers.deployment;
 
@@ -194,7 +195,7 @@ export async function createQualityProfileFromSchema(
 	} catch (createError) {
 		log.error({ err: createError }, "Failed to create quality profile");
 		throw new Error(
-			`Failed to create quality profile: ${createError instanceof Error ? createError.message : "Unknown error"}`,
+			`Failed to create quality profile: ${getErrorMessage(createError, "Unknown error")}`,
 		);
 	}
 }

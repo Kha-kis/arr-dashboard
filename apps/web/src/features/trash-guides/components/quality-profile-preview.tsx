@@ -16,6 +16,7 @@ import { useEffect } from "react";
 import { Alert, AlertDescription } from "../../../components/ui/alert";
 import { usePreviewProfileDeployment } from "../../../hooks/api/useProfileClone";
 import { useDeepCompareEffect } from "../../../hooks/useDeepCompareEffect";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface QualityProfilePreviewProps {
 	instanceId: string;
@@ -62,9 +63,7 @@ export function QualityProfilePreview({
 			<Alert variant="danger">
 				<AlertCircle className="h-4 w-4" />
 				<AlertDescription className="text-xs">
-					{previewMutation.error instanceof Error
-						? previewMutation.error.message
-						: "Failed to generate preview"}
+					{getErrorMessage(previewMutation.error, "Failed to generate preview")}
 				</AlertDescription>
 			</Alert>
 		);

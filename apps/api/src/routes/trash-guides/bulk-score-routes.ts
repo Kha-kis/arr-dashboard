@@ -15,6 +15,7 @@ import type {
 	BulkScoreReset,
 	BulkScoreImport,
 } from "@arr/shared";
+import { getErrorMessage } from "../../lib/utils/error-message.js";
 
 // ============================================================================
 // Validation Schemas
@@ -104,7 +105,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				},
 			});
 		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : "Failed to get scores";
+			const errorMessage = getErrorMessage(error, "Failed to get scores");
 
 			// Return 404 for "not found" errors, let others propagate to global handler
 			if (errorMessage.includes("not found") || errorMessage.includes("access denied")) {

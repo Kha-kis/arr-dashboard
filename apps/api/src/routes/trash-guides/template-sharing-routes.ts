@@ -7,6 +7,7 @@
 import type { TemplateExportOptions, TemplateImportOptions } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { createEnhancedTemplateService } from "../../lib/trash-guides/enhanced-template-service.js";
+import { getErrorMessage } from "../../lib/utils/error-message.js";
 
 // ============================================================================
 // Routes
@@ -34,7 +35,7 @@ const templateSharingRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		} catch (parseError) {
 			return reply.status(400).send({
 				success: false,
-				error: `Template export returned invalid JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+				error: `Template export returned invalid JSON: ${getErrorMessage(parseError)}`,
 			});
 		}
 		// Guard against missing or empty template name
@@ -113,7 +114,7 @@ const templateSharingRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		} catch (parseError) {
 			return reply.status(400).send({
 				success: false,
-				error: `Invalid JSON format: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+				error: `Invalid JSON format: ${getErrorMessage(parseError)}`,
 			});
 		}
 

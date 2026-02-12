@@ -6,6 +6,7 @@
 
 import type { PrismaClient } from "../../lib/prisma.js";
 import { loggers } from "../logger.js";
+import { getErrorMessage } from "../utils/error-message.js";
 
 const log = loggers.trashGuides;
 
@@ -407,7 +408,7 @@ export class BackupManager {
 			return JSON.parse(backup.backupData) as BackupData;
 		} catch (parseError) {
 			throw new Error(
-				`Backup ${backupId} contains invalid JSON data: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+				`Backup ${backupId} contains invalid JSON data: ${getErrorMessage(parseError)}`,
 			);
 		}
 	}

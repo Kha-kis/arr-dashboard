@@ -15,6 +15,7 @@ import { BackupService } from "../lib/backup/backup-service.js";
 import { validateRequest } from "../lib/utils/validate.js";
 import { resolveSecretsPath } from "../lib/utils/secrets-path.js";
 import { getAppVersion } from "../lib/utils/version.js";
+import { getErrorMessage } from "../lib/utils/error-message.js";
 
 const BACKUP_RATE_LIMIT = { max: 3, timeWindow: "5 minutes" };
 const RESTORE_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };
@@ -80,7 +81,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		} catch (error) {
 			request.log.error({ err: error }, "Failed to create backup");
 
-			const errorMessage = error instanceof Error ? error.message : String(error);
+			const errorMessage = getErrorMessage(error);
 
 			// Check for specific configuration errors that the user can fix
 			if (errorMessage.includes("BACKUP_PASSWORD")) {
@@ -145,7 +146,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		} catch (error) {
 			request.log.error({ err: error }, "Failed to restore backup");
 
-			const errorMessage = error instanceof Error ? error.message : String(error);
+			const errorMessage = getErrorMessage(error);
 
 			// Check for specific error types
 			if (errorMessage.includes("Invalid backup format") || errorMessage.includes("version")) {
@@ -200,7 +201,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			} catch (error) {
 				request.log.error({ err: error }, "Failed to restore backup from file");
 
-				const errorMessage = error instanceof Error ? error.message : String(error);
+				const errorMessage = getErrorMessage(error);
 
 				// Check for specific error types
 				if (errorMessage.includes("not found")) {
@@ -273,7 +274,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		} catch (error) {
 			request.log.error({ err: error }, "Failed to delete backup");
 
-			const errorMessage = error instanceof Error ? error.message : String(error);
+			const errorMessage = getErrorMessage(error);
 
 			if (errorMessage.includes("not found")) {
 				return reply.status(404).send({ error: "Backup not found" });
@@ -421,7 +422,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		} catch (error) {
 			request.log.error({ err: error }, "Failed to set backup password");
 
-			const errorMessage = error instanceof Error ? error.message : String(error);
+			const errorMessage = getErrorMessage(error);
 			if (errorMessage.includes("Encryptor not available")) {
 				return reply.status(500).send({ error: "Encryption service not available" });
 			}

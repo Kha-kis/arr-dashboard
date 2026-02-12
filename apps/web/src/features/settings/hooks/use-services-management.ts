@@ -10,6 +10,7 @@ import {
 	useTestConnectionBeforeAdd,
 } from "../../../hooks/api/useServiceMutations";
 import { parseNumericValue, parseSeasonFolderValue } from "../lib/settings-utils";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 /**
  * Hook for managing service instances
@@ -155,7 +156,7 @@ export const useServicesManagement = () => {
 			setTestResult({
 				id: instance.id,
 				success: false,
-				message: error instanceof Error ? error.message : "Connection test failed",
+				message: getErrorMessage(error, "Connection test failed"),
 			});
 		} finally {
 			setTestingConnection(null);
@@ -195,7 +196,7 @@ export const useServicesManagement = () => {
 		} catch (error: unknown) {
 			setFormTestResult({
 				success: false,
-				message: error instanceof Error ? error.message : "Connection test failed",
+				message: getErrorMessage(error, "Connection test failed"),
 			});
 		} finally {
 			setTestingFormConnection(false);

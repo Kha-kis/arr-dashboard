@@ -34,6 +34,7 @@ import {
 } from "../lib/queue-cleaner/constants.js";
 import { parsePaginationQuery } from "../lib/utils/pagination.js";
 import { validateRequest } from "../lib/utils/validate.js";
+import { getErrorMessage } from "../lib/utils/error-message.js";
 
 const log = loggers.queueCleaner;
 
@@ -116,7 +117,7 @@ function parseJsonSafe(
 	try {
 		return { data: JSON.parse(json) as unknown[] };
 	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown parse error";
+		const message = getErrorMessage(error, "Unknown parse error");
 		log.warn({ recordId: context.recordId, field: context.field, err: error }, "Failed to parse JSON field in log record");
 		return { data: null, parseError: message };
 	}

@@ -6,6 +6,7 @@
 
 import type { FastifyBaseLogger } from "fastify";
 import { loggers } from "../logger.js";
+import { getErrorMessage } from "../utils/error-message.js";
 
 const log = loggers.trashGuides;
 
@@ -46,7 +47,7 @@ export function safeJsonParse<T>(
 		const message = `[${context.source}] Failed to parse JSON for ${context.identifier}${context.field ? `, field: ${context.field}` : ""}`;
 		const details = {
 			dataSize: value.length,
-			error: error instanceof Error ? error.message : String(error),
+			error: getErrorMessage(error),
 		};
 
 		if (logger) {

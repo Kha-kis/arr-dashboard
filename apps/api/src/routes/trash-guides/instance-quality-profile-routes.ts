@@ -8,6 +8,7 @@ import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import type { SonarrClient, RadarrClient } from "arr-sdk";
 import { validateRequest } from "../../lib/utils/validate.js";
+import { getErrorMessage } from "../../lib/utils/error-message.js";
 
 // ============================================================================
 // Type Definitions
@@ -359,7 +360,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 			return reply.status(500).send({
 				statusCode: 500,
 				error: "InternalServerError",
-				message: `Template configData is invalid JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+				message: `Template configData is invalid JSON: ${getErrorMessage(parseError)}`,
 			});
 		}
 
@@ -585,7 +586,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 				return reply.status(500).send({
 					statusCode: 500,
 					error: "InternalServerError",
-					message: `Template configData is invalid JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+					message: `Template configData is invalid JSON: ${getErrorMessage(parseError)}`,
 				});
 			}
 			const templateCf = templateConfigReset.customFormats?.find(
@@ -766,7 +767,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 			return reply.status(500).send({
 				statusCode: 500,
 				error: "InternalServerError",
-				message: `Template configData is invalid JSON: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+				message: `Template configData is invalid JSON: ${getErrorMessage(parseError)}`,
 			});
 		}
 

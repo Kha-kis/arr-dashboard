@@ -31,6 +31,7 @@ import {
 } from "./deployment-history-manager.js";
 import { transformFieldsToArray, extractTrashId } from "./cf-field-utils.js";
 import { loggers } from "../logger.js";
+import { getErrorMessage } from "../utils/error-message.js";
 
 const log = loggers.deployment;
 
@@ -178,7 +179,7 @@ export class DeploymentExecutorService {
 			templateConfig = JSON.parse(template.configData);
 		} catch (parseError) {
 			throw new Error(
-				`Failed to parse template configData for template ${template.id}: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+				`Failed to parse template configData for template ${template.id}: ${getErrorMessage(parseError)}`,
 			);
 		}
 
@@ -379,7 +380,7 @@ export class DeploymentExecutorService {
 					"Failed to deploy custom format",
 				);
 				errors.push(
-					`Failed to deploy "${templateCF.name}": ${error instanceof Error ? error.message : "Unknown error"}`,
+					`Failed to deploy "${templateCF.name}": ${getErrorMessage(error, "Unknown error")}`,
 				);
 				details.failed.push(templateCF.name);
 				skipped++;
@@ -651,7 +652,7 @@ export class DeploymentExecutorService {
 		} catch (error) {
 			log.error({ err: error }, "Failed to update quality profile");
 			errors.push(
-				`Failed to update quality profile: ${error instanceof Error ? error.message : "Unknown error"}`,
+				`Failed to update quality profile: ${getErrorMessage(error, "Unknown error")}`,
 			);
 		}
 
@@ -695,7 +696,7 @@ export class DeploymentExecutorService {
 				await client.system.get();
 			} catch (error) {
 				throw new Error(
-					`Instance unreachable: ${error instanceof Error ? error.message : "Unknown error"}`,
+					`Instance unreachable: ${getErrorMessage(error, "Unknown error")}`,
 				);
 			}
 
@@ -822,7 +823,7 @@ export class DeploymentExecutorService {
 				details: cfResult.details,
 			};
 		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : "Unknown error";
+			const errorMessage = getErrorMessage(error, "Unknown error");
 			const metricsResult = completeMetrics();
 			metricsResult.recordFailure(errorMessage);
 
@@ -873,7 +874,7 @@ export class DeploymentExecutorService {
 				return settled.value;
 			}
 			const errorMessage =
-				settled.reason instanceof Error ? settled.reason.message : "Deployment failed";
+				getErrorMessage(settled.reason, "Deployment failed");
 			return {
 				instanceId: instanceIds[index] ?? `unknown-${index}`,
 				instanceLabel: `Instance ${index + 1}`,

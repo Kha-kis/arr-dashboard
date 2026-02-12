@@ -15,6 +15,7 @@ import { z } from "zod";
 import { TemplateNotFoundError, ConflictError, AppValidationError } from "../errors.js";
 import { safeJsonParse } from "./utils.js";
 import { loggers } from "../logger.js";
+import { getErrorMessage } from "../utils/error-message.js";
 
 const log = loggers.trashGuides;
 
@@ -454,7 +455,7 @@ export class TemplateService {
 			rawData = JSON.parse(jsonData);
 		} catch (parseError) {
 			throw new AppValidationError(
-				`Invalid JSON format: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+				`Invalid JSON format: ${getErrorMessage(parseError)}`,
 			);
 		}
 

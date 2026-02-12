@@ -23,6 +23,7 @@ import { useUpdateSyncStrategy, useBulkUpdateSyncStrategy } from "../../../hooks
 import { cn } from "../../../lib/utils";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { toast } from "sonner";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 // Helper to get sync strategy display info - color is handled dynamically for notify
 const getSyncStrategyInfo = (strategy: "auto" | "manual" | "notify") => {
@@ -73,7 +74,7 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 					toast.success(`All instances set to ${strategyLabel}`);
 				},
 				onError: (error) => {
-					toast.error(`Failed to update sync strategy: ${error instanceof Error ? error.message : "Unknown error"}`);
+					toast.error(`Failed to update sync strategy: ${getErrorMessage(error, "Unknown error")}`);
 				},
 			}
 		);
@@ -89,7 +90,7 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 					toast.success(`Sync strategy updated to ${strategyLabel}`);
 				},
 				onError: (error) => {
-					toast.error(`Failed to update sync strategy: ${error instanceof Error ? error.message : "Unknown error"}`);
+					toast.error(`Failed to update sync strategy: ${getErrorMessage(error, "Unknown error")}`);
 				},
 				onSettled: () => setUpdatingStrategyInstanceId(null),
 			}

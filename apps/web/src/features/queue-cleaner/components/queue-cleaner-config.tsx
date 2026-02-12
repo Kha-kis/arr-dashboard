@@ -67,6 +67,7 @@ import {
 } from "../lib/constants";
 import { ToggleSwitch, ToggleRow, RuleSection, ConfigInput, WhitelistEditor, Tooltip } from "./queue-cleaner-config-ui";
 import { AutoImportSection } from "./auto-import-section";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 export const QueueCleanerConfig = () => {
 	const { gradient: themeGradient } = useThemeGradient();
@@ -91,7 +92,7 @@ export const QueueCleanerConfig = () => {
 			toast.success("Queue cleaner config created");
 		} catch (error) {
 			toast.error(
-				error instanceof Error ? error.message : "Failed to create config",
+				getErrorMessage(error, "Failed to create config"),
 			);
 		}
 	};
@@ -323,7 +324,7 @@ const InstanceConfigCard = ({
 			toast.success(`Config updated for ${config.instanceName}`);
 		} catch (error) {
 			toast.error(
-				error instanceof Error ? error.message : "Failed to update config",
+				getErrorMessage(error, "Failed to update config"),
 			);
 		}
 	};

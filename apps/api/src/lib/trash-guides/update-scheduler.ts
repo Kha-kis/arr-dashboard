@@ -13,6 +13,7 @@ import type {
 	TemplateUpdater,
 } from "./template-updater.js";
 import type { VersionTracker } from "./version-tracker.js";
+import { getErrorMessage } from "../utils/error-message.js";
 
 // ============================================================================
 // Types
@@ -342,7 +343,7 @@ export class UpdateScheduler {
 			);
 		} catch (error) {
 			this.logger.error("Update check failed:", error);
-			errors.push(error instanceof Error ? error.message : String(error));
+			errors.push(getErrorMessage(error));
 
 			this.stats.lastCheckAt = new Date();
 			this.stats.lastCheckResult = {
@@ -389,7 +390,7 @@ export class UpdateScheduler {
 					} catch (parseError) {
 						this.logger.warn(
 							`Failed to parse changeLog for template ${template.templateId}: ${
-								parseError instanceof Error ? parseError.message : String(parseError)
+								getErrorMessage(parseError)
 							}. Raw value: ${String(existingTemplate.changeLog).slice(0, 100)}`,
 						);
 					}

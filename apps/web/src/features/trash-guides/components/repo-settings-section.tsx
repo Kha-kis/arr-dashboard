@@ -21,6 +21,7 @@ import {
 } from "../../../hooks/api/useTrashSettings";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 // ============================================================================
 // URL Parsing Utilities
@@ -381,7 +382,7 @@ export const RepoSettingsSection = () => {
 						<div className="flex items-center gap-2">
 							<AlertCircle className="h-4 w-4 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
 							<p style={{ color: SEMANTIC_COLORS.error.from }}>
-								{testMutation.error instanceof Error ? testMutation.error.message : "Failed to test repository"}
+								{getErrorMessage(testMutation.error, "Failed to test repository")}
 							</p>
 						</div>
 					</div>
@@ -441,7 +442,7 @@ export const RepoSettingsSection = () => {
 						style={{ color: SEMANTIC_COLORS.error.from }}
 					>
 						<AlertCircle className="h-4 w-4" />
-						{updateMutation.error instanceof Error ? updateMutation.error.message : "Failed to save settings"}
+						{getErrorMessage(updateMutation.error, "Failed to save settings")}
 					</div>
 				)}
 			</div>
@@ -498,7 +499,7 @@ export const RepoSettingsSection = () => {
 							style={{ color: SEMANTIC_COLORS.error.from }}
 						>
 							<AlertCircle className="h-4 w-4" />
-							{resetMutation.error instanceof Error ? resetMutation.error.message : "Failed to reset repository"}
+							{getErrorMessage(resetMutation.error, "Failed to reset repository")}
 						</div>
 					)}
 				</div>

@@ -11,6 +11,7 @@ import type { DeploymentExecutorService } from "./deployment-executor.js";
 import { getSyncMetrics } from "./sync-metrics.js";
 import type { TemplateUpdater } from "./template-updater.js";
 import { loggers } from "../logger.js";
+import { getErrorMessage } from "../utils/error-message.js";
 
 const log = loggers.trashGuides;
 
@@ -251,7 +252,7 @@ export class SyncEngine {
 				}
 			} catch (connectError) {
 				const errorMessage =
-					connectError instanceof Error ? connectError.message : String(connectError);
+					getErrorMessage(connectError);
 				errors.push(
 					`Unable to connect to instance "${instance.label}" (${instance.baseUrl}). ` +
 						`Please verify the instance is running and accessible. Error: ${errorMessage}`,

@@ -6,6 +6,7 @@ import {
 	MAX_HUNT_DURATION_MS,
 } from "./constants.js";
 import { loggers } from "../logger.js";
+import { getErrorMessage } from "../utils/error-message.js";
 
 const log = loggers.hunting;
 
@@ -454,7 +455,7 @@ class HuntingScheduler {
 			}
 		} catch (error) {
 			const durationMs = Date.now() - startTime;
-			const message = error instanceof Error ? error.message : "Unknown error";
+			const message = getErrorMessage(error, "Unknown error");
 
 			await this.app.prisma.huntLog.update({
 				where: { id: huntLogEntry.id },

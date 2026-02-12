@@ -26,6 +26,7 @@ import { type RawQueueItem, parseDate, collectStatusTexts, checkWhitelist } from
 import { evaluateQueueItem } from "./rule-evaluators.js";
 import { evaluateAutoImportEligibility, attemptAutoImport } from "./auto-import-handler.js";
 import { generateDetailedReason, calculateQueueSummary } from "./cleaner-formatters.js";
+import { getErrorMessage } from "../utils/error-message.js";
 
 const log = loggers.queueCleaner;
 
@@ -114,7 +115,7 @@ export async function executeQueueCleaner(
 		const queue = await client.queue.get({ pageSize: 1000 });
 		queueRecords = (queue.records ?? []) as RawQueueItem[];
 	} catch (error) {
-		const message = error instanceof Error ? error.message : "Unknown error";
+		const message = getErrorMessage(error, "Unknown error");
 		return {
 			itemsCleaned: 0,
 			itemsSkipped: 0,
@@ -271,7 +272,7 @@ export async function executeQueueCleaner(
 			}
 		} catch (error) {
 			const isPrismaError = error && typeof error === "object" && "code" in error;
-			const errorMessage = error instanceof Error ? error.message : "Unknown error";
+			const errorMessage = getErrorMessage(error, "Unknown error");
 
 			if (isPrismaError) {
 				log.error(
@@ -504,7 +505,7 @@ export async function executeQueueCleaner(
 			});
 			cleaned.push(item);
 		} catch (error) {
-			const errMsg = error instanceof Error ? error.message : "Unknown error";
+			const errMsg = getErrorMessage(error, "Unknown error");
 			if (errMsg.includes("404") || errMsg.includes("Not Found")) {
 				cleaned.push({ ...item, reason: `${item.reason} (already removed)` });
 			} else {
@@ -648,7 +649,7 @@ export async function executeEnhancedPreview(
 		const queue = await client.queue.get({ pageSize: 1000 });
 		queueRecords = (queue.records ?? []) as RawQueueItem[];
 	} catch (error) {
-		const errorMessage = error instanceof Error ? error.message : "Unknown error";
+		const errorMessage = getErrorMessage(error, "Unknown error");
 		log.warn(
 			{ err: error, instanceId: instance.id, instanceLabel: instance.label },
 			"Failed to fetch queue for enhanced preview",

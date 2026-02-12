@@ -7,6 +7,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import type { SonarrClient, RadarrClient } from "arr-sdk";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
+import { getErrorMessage } from "../../lib/utils/error-message.js";
 
 // ============================================================================
 // Route Handlers
@@ -450,7 +451,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			return reply.status(503).send({
 				statusCode: 503,
 				error: "ServiceUnavailable",
-				message: `Instance unreachable: ${error instanceof Error ? error.message : "Unknown error"}`,
+				message: `Instance unreachable: ${getErrorMessage(error, "Unknown error")}`,
 			});
 		}
 
@@ -484,7 +485,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 				deletedCFs.push(cfName);
 			} catch (error) {
 				deletionErrors.push(
-					`Failed to delete CF "${cfName}": ${error instanceof Error ? error.message : "Unknown error"}`,
+					`Failed to delete CF "${cfName}": ${getErrorMessage(error, "Unknown error")}`,
 				);
 			}
 		}
@@ -535,7 +536,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			}
 			dbUpdateSucceeded = true;
 		} catch (error) {
-			dbUpdateError = error instanceof Error ? error.message : "Database update failed";
+			dbUpdateError = getErrorMessage(error, "Database update failed");
 			app.log.error(
 				{
 					err: error,

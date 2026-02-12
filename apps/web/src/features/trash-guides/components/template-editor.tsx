@@ -12,6 +12,7 @@ import { ConditionEditor } from "./condition-editor";
 import { InstanceOverridesPanel } from "./instance-overrides-panel";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { getEffectiveQualityConfig } from "../lib/quality-config-utils";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 /** Specification type from TrashCustomFormat with enabled flag for UI */
 type SpecificationWithEnabled = TrashCustomFormat["specifications"][number] & { enabled: boolean };
@@ -337,7 +338,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 				{mutation.isError && (
 					<Alert variant="danger" className="mb-4">
 						<AlertDescription>
-							{mutation.error instanceof Error ? mutation.error.message : "Failed to save template"}
+							{getErrorMessage(mutation.error, "Failed to save template")}
 						</AlertDescription>
 					</Alert>
 				)}

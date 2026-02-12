@@ -14,6 +14,7 @@ import type { SonarrClient, RadarrClient } from "arr-sdk";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 import { z } from "zod";
+import { getErrorMessage } from "../../lib/utils/error-message.js";
 
 // ============================================================================
 // Validation Schemas
@@ -198,7 +199,7 @@ export async function registerCustomFormatRoutes(
 			} catch (error) {
 				results.failed.push({
 					name: customFormat.name,
-					error: error instanceof Error ? error.message : "Unknown error",
+					error: getErrorMessage(error, "Unknown error"),
 				});
 			}
 		}

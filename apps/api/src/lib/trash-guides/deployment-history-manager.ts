@@ -6,6 +6,7 @@
  */
 
 import type { PrismaClient } from "../prisma.js";
+import { getErrorMessage } from "../utils/error-message.js";
 
 interface DeploymentDetails {
 	created: string[];
@@ -84,7 +85,7 @@ export async function finalizeDeploymentHistoryWithFailure(
 ): Promise<void> {
 	const endTime = new Date();
 	const duration = Math.floor((endTime.getTime() - startTime.getTime()) / 1000);
-	const errorMessage = error instanceof Error ? error.message : "Unknown error";
+	const errorMessage = getErrorMessage(error, "Unknown error");
 
 	if (historyId) {
 		await prisma.trashSyncHistory.update({

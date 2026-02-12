@@ -61,6 +61,7 @@ import {
 	MAX_RESEARCH_AFTER_DAYS,
 	DEFAULT_RESEARCH_AFTER_DAYS,
 } from "../lib/constants";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 /**
  * Premium Hunting Configuration
@@ -92,7 +93,7 @@ export const HuntingConfig = () => {
 				});
 			}
 		} catch (err) {
-			const message = err instanceof Error ? err.message : "An unexpected error occurred";
+			const message = getErrorMessage(err, "An unexpected error occurred");
 			toast.error("Failed to toggle automation", { description: message });
 		}
 	};
@@ -318,7 +319,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 			toast.success("Settings saved");
 			onSaved();
 		} catch (err) {
-			const message = err instanceof Error ? err.message : "An unexpected error occurred";
+			const message = getErrorMessage(err, "An unexpected error occurred");
 			toast.error("Failed to save settings", { description: message });
 		}
 	};
@@ -333,7 +334,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 					description: "Please wait before running another hunt",
 				});
 			} else {
-				const message = err instanceof Error ? err.message : "An unexpected error occurred";
+				const message = getErrorMessage(err, "An unexpected error occurred");
 				toast.error(`Failed to trigger ${type} hunt`, { description: message });
 			}
 		}
@@ -349,7 +350,7 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 			onSaved();
 		} catch (err) {
 			setShowResetConfirm(false);
-			const message = err instanceof Error ? err.message : "An unexpected error occurred";
+			const message = getErrorMessage(err, "An unexpected error occurred");
 			toast.error("Failed to clear search history", { description: message });
 		}
 	};
@@ -711,7 +712,7 @@ const UnconfiguredInstanceCard = ({
 			await createConfig(instanceId);
 			onConfigure();
 		} catch (err) {
-			const message = err instanceof Error ? err.message : "An unexpected error occurred";
+			const message = getErrorMessage(err, "An unexpected error occurred");
 			toast.error("Failed to enable hunting", { description: message });
 		}
 	};
