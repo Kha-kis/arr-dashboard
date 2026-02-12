@@ -16,7 +16,7 @@ import {
 	Trash2,
 	Package,
 } from "lucide-react";
-import { Button, Input, Switch, Alert, AlertDescription } from "../../../components/ui";
+import { Button, Switch, Alert, AlertDescription } from "../../../components/ui";
 import {
 	Dialog,
 	DialogContent,
@@ -34,6 +34,8 @@ import {
 	GlassmorphicCard,
 	GradientButton,
 	PremiumSkeleton,
+	ConfigSection,
+	ConfigInput,
 } from "../../../components/layout";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -680,116 +682,6 @@ const InstanceConfigCard = ({ config, onSaved, animationDelay = 0 }: InstanceCon
 	);
 };
 
-/* =============================================================================
-   CONFIG SECTION
-   Collapsible config section with toggle
-   ============================================================================= */
-
-interface ConfigSectionProps {
-	icon: React.ElementType;
-	title: string;
-	description: string;
-	enabled: boolean;
-	onToggle: (enabled: boolean) => void;
-	children: React.ReactNode;
-}
-
-const ConfigSection = ({
-	icon: Icon,
-	title,
-	description,
-	enabled,
-	onToggle,
-	children,
-}: ConfigSectionProps) => {
-	const { gradient: themeGradient } = useThemeGradient();
-
-	return (
-		<div className="space-y-4">
-			<div className="flex items-center justify-between">
-				<div className="flex items-center gap-3">
-					<div
-						className="flex h-8 w-8 items-center justify-center rounded-lg"
-						style={{
-							background: enabled
-								? `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`
-								: "rgba(100, 116, 139, 0.1)",
-							border: enabled
-								? `1px solid ${themeGradient.from}30`
-								: "1px solid rgba(100, 116, 139, 0.2)",
-						}}
-					>
-						<Icon
-							className="h-4 w-4"
-							style={{ color: enabled ? themeGradient.from : "rgb(148, 163, 184)" }}
-						/>
-					</div>
-					<div>
-						<h4 className="font-medium">{title}</h4>
-						<p className="text-sm text-muted-foreground">{description}</p>
-					</div>
-				</div>
-				<Switch checked={enabled} onCheckedChange={onToggle} />
-			</div>
-
-			{enabled && (
-				<div
-					className="pl-4 border-l-2 transition-colors"
-					style={{ borderColor: `${themeGradient.from}50` }}
-				>
-					{children}
-				</div>
-			)}
-		</div>
-	);
-};
-
-/* =============================================================================
-   CONFIG INPUT
-   Styled input for config values
-   ============================================================================= */
-
-interface ConfigInputProps {
-	label: string;
-	description?: string;
-	type?: "text" | "number";
-	min?: number;
-	max?: number;
-	value: number | string;
-	onChange: (value: number) => void;
-	suffix?: string;
-}
-
-const ConfigInput = ({
-	label,
-	description,
-	type = "number",
-	min,
-	max,
-	value,
-	onChange,
-	suffix,
-}: ConfigInputProps) => {
-	return (
-		<div className="space-y-1">
-			<label className="text-xs font-medium text-muted-foreground">{label}</label>
-			<div className="flex items-center gap-2">
-				<Input
-					type={type}
-					min={min}
-					max={max}
-					value={value}
-					onChange={(e) => onChange(Number.parseInt(e.target.value) || 0)}
-					className="bg-background/50 border-border/50"
-				/>
-				{suffix && (
-					<span className="text-sm text-muted-foreground whitespace-nowrap">{suffix}</span>
-				)}
-			</div>
-			{description && <p className="text-xs text-muted-foreground">{description}</p>}
-		</div>
-	);
-};
 
 /* =============================================================================
    UNCONFIGURED INSTANCE CARD
