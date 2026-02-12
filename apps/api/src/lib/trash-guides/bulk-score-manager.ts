@@ -20,6 +20,9 @@ import type {
 import type { SonarrClient, RadarrClient } from "arr-sdk";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import { safeJsonParse } from "../utils/json.js";
+import { loggers } from "../logger.js";
+
+const log = loggers.trashGuides;
 
 // SDK type aliases
 type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]>>[number];
@@ -95,7 +98,7 @@ export class BulkScoreManager {
 			try {
 				qualityProfiles = await client.qualityProfile.getAll();
 			} catch (error) {
-				console.error(`Failed to fetch quality profiles from ${instance.label}:`, error);
+				log.error({ err: error, instanceId: instance.id, instanceLabel: instance.label }, "Failed to fetch quality profiles from instance");
 				continue; // Skip this instance if it fails
 			}
 
@@ -193,7 +196,7 @@ export class BulkScoreManager {
 					}
 				}
 			} catch (error) {
-				console.error(`Failed to parse template ${template.id} config:`, error);
+				log.error({ err: error, templateId: template.id }, "Failed to parse template config");
 			}
 		}
 
@@ -225,7 +228,7 @@ export class BulkScoreManager {
 			try {
 				customFormats = await client.customFormat.getAll();
 			} catch (error) {
-				console.error(`Failed to fetch custom formats from ${instance.label}:`, error);
+				log.error({ err: error, instanceId: instance.id, instanceLabel: instance.label }, "Failed to fetch custom formats from instance");
 				continue;
 			}
 
@@ -235,7 +238,7 @@ export class BulkScoreManager {
 			try {
 				qualityProfiles = await client.qualityProfile.getAll();
 			} catch (error) {
-				console.error(`Failed to fetch quality profiles from ${instance.label}:`, error);
+				log.error({ err: error, instanceId: instance.id, instanceLabel: instance.label }, "Failed to fetch quality profiles from instance");
 				continue;
 			}
 

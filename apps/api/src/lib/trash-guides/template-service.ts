@@ -14,6 +14,9 @@ import type { Prisma, PrismaClient, TrashTemplate as PrismaTrashTemplate } from 
 import { z } from "zod";
 import { TemplateNotFoundError, ConflictError, AppValidationError } from "../errors.js";
 import { safeJsonParse } from "./utils.js";
+import { loggers } from "../logger.js";
+
+const log = loggers.trashGuides;
 
 /**
  * Zod schema for template import validation
@@ -338,8 +341,9 @@ export class TemplateService {
 					const parsed = JSON.parse(existing.changeLog);
 					existingChangeLog = Array.isArray(parsed) ? parsed : [];
 				} catch (parseError) {
-					console.warn(
-						`Failed to parse changeLog for template ${templateId}: ${parseError instanceof Error ? parseError.message : String(parseError)}. Resetting to empty array.`,
+					log.warn(
+						{ err: parseError, templateId },
+						"Failed to parse changeLog, resetting to empty array",
 					);
 					existingChangeLog = [];
 				}

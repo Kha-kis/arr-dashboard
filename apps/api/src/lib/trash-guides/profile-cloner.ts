@@ -9,6 +9,9 @@ import type { PrismaClient } from "../../lib/prisma.js";
 import type { CompleteQualityProfile } from "@arr/shared";
 import type { SonarrClient, RadarrClient } from "arr-sdk";
 import type { ArrClientFactory } from "../arr/client-factory.js";
+import { loggers } from "../logger.js";
+
+const log = loggers.trashGuides;
 
 // SDK type aliases
 type SdkQualityProfile = Awaited<ReturnType<SonarrClient["qualityProfile"]["getById"]>>;
@@ -145,7 +148,7 @@ export class ProfileCloner {
 				profile: completeProfile,
 			};
 		} catch (error) {
-			console.error("Failed to import quality profile:", error);
+			log.error({ err: error, instanceId: options.instanceId, profileId: options.profileId }, "Failed to import quality profile");
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : "Unknown error",
@@ -227,7 +230,7 @@ export class ProfileCloner {
 				profileId: deployedProfile.id,
 			};
 		} catch (error) {
-			console.error("Failed to deploy complete profile:", error);
+			log.error({ err: error, instanceId, profileName: options.profileName }, "Failed to deploy complete profile");
 			return {
 				success: false,
 				error: error instanceof Error ? error.message : "Unknown error",

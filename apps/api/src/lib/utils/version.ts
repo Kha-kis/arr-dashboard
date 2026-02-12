@@ -1,6 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { loggers } from "../logger.js";
+
+const log = loggers.api;
 
 let cachedVersion: string | null = null;
 
@@ -58,7 +61,7 @@ export function getAppVersion(): string {
 			}
 		}
 	} catch (error) {
-		console.warn("Failed to read version:", error);
+		log.warn({ err: error }, "Failed to read version");
 	}
 
 	// Fallback to environment variable or unknown

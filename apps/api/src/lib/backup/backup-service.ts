@@ -22,6 +22,9 @@ import type {
 } from "@arr/shared";
 import type { Prisma, PrismaClient } from "../../lib/prisma.js";
 import type { Encryptor } from "../auth/encryption.js";
+import { loggers } from "../logger.js";
+
+const log = loggers.backup;
 
 const BACKUP_VERSION = "1.0";
 const PBKDF2_ITERATIONS = 600000; // OWASP recommendation for PBKDF2-SHA256
@@ -99,10 +102,7 @@ export class BackupService {
 					});
 				} catch (error) {
 					// Log error but continue to fallback - decryption failure shouldn't block backups
-					console.error(
-						"Failed to decrypt backup password from database, falling back to env var:",
-						error,
-					);
+					log.error({ err: error }, "Failed to decrypt backup password from database, falling back to env var");
 				}
 			}
 		}
@@ -184,16 +184,14 @@ export class BackupService {
 					// File disappeared, proceed with write
 				} else if (error instanceof SyntaxError && recheckContent) {
 					// Invalid JSON - try to salvage backupPassword before overwriting
-					console.warn("secrets.json has invalid JSON; attempting to salvage backupPassword...");
+					log.warn({ file: "secrets.json" }, "secrets.json has invalid JSON, attempting to salvage backupPassword");
 					// Use the already-read recheckContent instead of re-reading the file
 					const backupPasswordMatch = recheckContent.match(/"backupPassword"\s*:\s*"([^"]+)"/);
 					if (backupPasswordMatch?.[1]) {
-						console.warn("Found existing backupPassword in invalid JSON, preserving it");
+						log.warn({ file: "secrets.json" }, "Found existing backupPassword in invalid JSON, preserving it");
 						return backupPasswordMatch[1];
 					}
-					console.warn(
-						"Could not salvage backupPassword; existing backups may become inaccessible",
-					);
+					log.warn({ file: "secrets.json" }, "Could not salvage backupPassword, existing backups may become inaccessible");
 					// Proceed with write
 				} else {
 					// Unexpected error (e.g., EACCES permission denied), re-throw
@@ -450,13 +448,11 @@ export class BackupService {
 
 		if (estimatedSizeMB > RECOMMENDED_MAX_BACKUP_SIZE_MB) {
 			const message = `Backup size estimate (${estimatedSizeMB.toFixed(2)} MB) exceeds recommended limit (${RECOMMENDED_MAX_BACKUP_SIZE_MB} MB). This may cause memory issues or timeouts. Consider implementing backup streaming or pruning old data.`;
-			console.error(message);
+			log.error({ estimatedSizeMB, limitMB: RECOMMENDED_MAX_BACKUP_SIZE_MB }, "Backup size estimate exceeds recommended limit");
 			throw new Error(message);
 		}
 		if (estimatedSizeMB > WARNING_BACKUP_SIZE_MB) {
-			console.warn(
-				`Backup size estimate (${estimatedSizeMB.toFixed(2)} MB) is large. Consider monitoring memory usage and implementing streaming for larger datasets.`,
-			);
+			log.warn({ estimatedSizeMB, warningThresholdMB: WARNING_BACKUP_SIZE_MB }, "Backup size estimate is large, consider monitoring memory usage");
 		}
 
 		// 6. Convert to JSON
@@ -844,10 +840,7 @@ export class BackupService {
 					});
 				} catch (rollbackError) {
 					// Log rollback failure but throw original error
-					console.error(
-						"CRITICAL: Failed to rollback secrets after restore failure:",
-						rollbackError,
-					);
+					log.error({ err: rollbackError }, "CRITICAL: Failed to rollback secrets after restore failure");
 				}
 			}
 
@@ -1326,10 +1319,10 @@ export class BackupService {
 					// File doesn't exist, start with empty object
 				} else if (error instanceof SyntaxError) {
 					// Invalid JSON, start with empty object (log warning)
-					console.warn("Existing secrets file has invalid JSON, will overwrite");
+					log.warn({ file: this.secretsPath }, "Existing secrets file has invalid JSON, will overwrite");
 				} else {
 					// Unexpected error (e.g., EACCES), log but continue to allow restore to proceed
-					console.warn("Warning: Failed to read existing secrets, some fields may be lost:", error);
+					log.warn({ err: error, file: this.secretsPath }, "Failed to read existing secrets, some fields may be lost");
 				}
 			}
 

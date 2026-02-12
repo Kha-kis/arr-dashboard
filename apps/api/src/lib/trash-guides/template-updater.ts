@@ -26,6 +26,9 @@ import type { TrashCacheManager } from "./cache-manager.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
 import type { TrashGitHubFetcher } from "./github-fetcher.js";
 import { TemplateNotFoundError } from "../errors.js";
+import { loggers } from "../logger.js";
+
+const log = loggers.trashGuides;
 import { getSyncMetrics } from "./sync-metrics.js";
 import { computeTemplateDiff } from "./template-differ.js";
 import { mergeTemplateConfig, validateMergedConfig } from "./template-merger.js";
@@ -85,9 +88,7 @@ export class TemplateUpdater {
 		try {
 			latestCommit = await this.versionTracker.getLatestCommit();
 		} catch (error) {
-			console.error(
-				`[TemplateUpdater] Failed to get latest commit from GitHub: ${error instanceof Error ? error.message : String(error)}`,
-			);
+			log.error({ err: error }, "Failed to get latest commit from GitHub");
 			return {
 				templatesWithUpdates: [],
 				latestCommit: { commitHash: "", commitDate: "", commitMessage: "", commitUrl: "" },
@@ -405,9 +406,7 @@ export class TemplateUpdater {
 			try {
 				currentConfig = JSON.parse(template.configData) as TemplateConfig;
 			} catch (parseError) {
-				console.warn(
-					`[TemplateUpdater] Failed to parse configData for template ${templateId}: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
-				);
+				log.warn({ err: parseError, templateId }, "Failed to parse configData for template");
 			}
 
 			const fetchResult = await this.fetchLatestTrashData(serviceType);
@@ -475,10 +474,7 @@ export class TemplateUpdater {
 					if (config.trash_id && config.name) {
 						filteredCustomFormats.push(config as TrashCustomFormat);
 					} else {
-						console.warn(
-							`[TemplateUpdater] Skipping CF "${cf.name}" (${cf.trashId}): ` +
-							`originalConfig is missing required fields (trash_id or name)`,
-						);
+						log.warn({ cfName: cf.name, trashId: cf.trashId }, "Skipping CF: originalConfig is missing required fields (trash_id or name)");
 					}
 				}
 			}
@@ -498,10 +494,7 @@ export class TemplateUpdater {
 					if (config.trash_id && config.name) {
 						filteredCFGroups.push(config as TrashCustomFormatGroup);
 					} else {
-						console.warn(
-							`[TemplateUpdater] Skipping CF group "${group.name}" (${group.trashId}): ` +
-							`originalConfig is missing required fields (trash_id or name)`,
-						);
+						log.warn({ groupName: group.name, trashId: group.trashId }, "Skipping CF group: originalConfig is missing required fields (trash_id or name)");
 					}
 				}
 			}
@@ -578,9 +571,7 @@ export class TemplateUpdater {
 					const parsed = JSON.parse(template.changeLog);
 					existingChangeLog = Array.isArray(parsed) ? parsed : [];
 				} catch (parseError) {
-					console.warn(
-						`[TemplateUpdater] Failed to parse changeLog for template ${templateId}: ${parseError instanceof Error ? parseError.message : String(parseError)}. Resetting to empty array.`,
-					);
+					log.warn({ err: parseError, templateId }, "Failed to parse changeLog for template, resetting to empty array");
 					existingChangeLog = [];
 				}
 			}
@@ -718,7 +709,7 @@ export class TemplateUpdater {
 				try {
 					await this.deployToMappedInstances(template.templateId);
 				} catch (error) {
-					console.error(`Auto-deploy failed for template ${template.templateId}:`, error);
+					log.error({ err: error, templateId: template.templateId }, "Auto-deploy failed for template");
 					if (!result.errors) {
 						result.errors = [];
 					}
@@ -756,7 +747,7 @@ export class TemplateUpdater {
 		});
 
 		if (!template) {
-			console.error(`[TemplateUpdater] Cannot auto-deploy: template ${templateId} not found`);
+			log.error({ templateId }, "Cannot auto-deploy: template not found");
 			return;
 		}
 
@@ -783,15 +774,15 @@ export class TemplateUpdater {
 				);
 
 				if (!result.success) {
-					console.error(
-						`[TemplateUpdater] Failed to auto-deploy template "${template.name}" (${templateId}) to instance ${mapping.instance.label}:`,
-						result.errors,
+					log.error(
+						{ templateId, templateName: template.name, instanceLabel: mapping.instance.label, errors: result.errors },
+						"Failed to auto-deploy template to instance",
 					);
 				}
 			} catch (error) {
-				console.error(
-					`[TemplateUpdater] Error auto-deploying template "${template.name}" (${templateId}) to instance ${mapping.instanceId}:`,
-					error instanceof Error ? error.message : error,
+				log.error(
+					{ err: error, templateId, templateName: template.name, instanceId: mapping.instanceId },
+					"Error auto-deploying template to instance",
 				);
 				throw error;
 			}
@@ -846,7 +837,7 @@ export class TemplateUpdater {
 		} catch (error) {
 			const context = targetCommitHash ? `commit ${targetCommitHash}` : "latest commit";
 			const errorMsg = error instanceof Error ? error.message : String(error);
-			console.error(`[TemplateUpdater] Failed to fetch ${context} for template diff: ${errorMsg}`);
+			log.error({ err: error, context }, "Failed to fetch version info for template diff");
 			throw new Error(`Failed to fetch version info for ${context}: ${errorMsg}`);
 		}
 

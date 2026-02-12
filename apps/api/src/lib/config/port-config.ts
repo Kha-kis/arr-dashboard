@@ -10,6 +10,9 @@ import { resolve } from "node:path";
  * settings are read via Prisma in docker/read-base-path.cjs at container startup.
  */
 import Database from "better-sqlite3";
+import { loggers } from "../logger.js";
+
+const log = loggers.api;
 
 interface PortConfig {
 	apiPort: number;
@@ -113,7 +116,7 @@ function readPortsFromDatabase(): DbSettings | null {
 		return null;
 	} catch (error) {
 		// Database might not exist yet or be corrupted
-		console.warn("[port-config] Could not read from database:", error);
+		log.warn({ err: error }, "Could not read port config from database");
 		return null;
 	}
 }
@@ -181,6 +184,5 @@ export function getPortConfig(): PortConfig {
  * Log the port configuration for debugging
  */
 export function logPortConfig(config: PortConfig): void {
-	console.log(`[port-config] API Port: ${config.apiPort} (source: ${config.source.apiPort})`);
-	console.log(`[port-config] Web Port: ${config.webPort} (source: ${config.source.webPort})`);
+	log.info({ apiPort: config.apiPort, apiSource: config.source.apiPort, webPort: config.webPort, webSource: config.source.webPort }, "Port configuration loaded");
 }

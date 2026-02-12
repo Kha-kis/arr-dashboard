@@ -5,6 +5,9 @@
  */
 
 import type { FastifyBaseLogger } from "fastify";
+import { loggers } from "../logger.js";
+
+const log = loggers.trashGuides;
 
 // ============================================================================
 // JSON Parsing
@@ -49,7 +52,7 @@ export function safeJsonParse<T>(
 		if (logger) {
 			logger.warn(details, message);
 		} else {
-			console.warn(message, details);
+			log.warn(details, message);
 		}
 
 		return undefined;
@@ -85,7 +88,7 @@ export function parseInstanceOverrides(
 		if (logger) {
 			logger.warn({ templateId: context.templateId, error }, message);
 		} else {
-			console.warn(message);
+			log.warn({ templateId: context.templateId, err: error }, message);
 		}
 		return {};
 	}

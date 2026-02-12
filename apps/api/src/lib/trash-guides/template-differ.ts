@@ -29,6 +29,9 @@ import {
 	getRecommendedScore,
 	type TrashCFWithScores,
 } from "./template-score-utils.js";
+import { loggers } from "../logger.js";
+
+const log = loggers.trashGuides;
 
 // ============================================================================
 // Types
@@ -423,8 +426,9 @@ function getRecentAutoSyncEntry(
 		const parsed = JSON.parse(changeLogJson);
 		changeLog = Array.isArray(parsed) ? parsed : [];
 	} catch (parseError) {
-		console.warn(
-			`[TemplateDiffer] Failed to parse changeLog in getRecentAutoSyncEntry: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+		log.warn(
+			{ err: parseError },
+			"Failed to parse changeLog in getRecentAutoSyncEntry",
 		);
 		return null;
 	}
