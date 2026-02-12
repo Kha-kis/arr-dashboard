@@ -1,11 +1,21 @@
+/**
+ * Hunt Executor
+ *
+ * Orchestrates hunts against Sonarr/Radarr/Lidarr/Readarr instances
+ * to find missing content and trigger quality upgrade searches.
+ *
+ * Filter evaluation, grab detection, and utility functions are
+ * extracted into separate modules for maintainability.
+ */
+
 import type { HuntConfig, ServiceInstance } from "../../lib/prisma.js";
-import type { FastifyInstance, FastifyBaseLogger } from "fastify";
+import type { FastifyInstance } from "fastify";
 import type { SonarrClient } from "arr-sdk/sonarr";
 import type { RadarrClient } from "arr-sdk/radarr";
 import type { LidarrClient } from "arr-sdk/lidarr";
 import type { ReadarrClient } from "arr-sdk/readarr";
 import type { QueueCapableClient } from "../arr/client-factory.js";
-import { SEASON_SEARCH_THRESHOLD, SEARCH_DELAY_MS, GRAB_CHECK_DELAY_MS } from "./constants.js";
+import { SEASON_SEARCH_THRESHOLD, SEARCH_DELAY_MS } from "./constants.js";
 import {
 	createSearchHistoryManager,
 	type SearchHistoryManager,
@@ -14,28 +24,22 @@ import {
 import { delay } from "../utils/delay.js";
 import { fetchWantedWithWrapAround, type ApiCallCounter } from "./pagination-helpers.js";
 
-/**
- * Logger type for hunt executor functions
- * Uses Fastify's base logger for structured logging
- */
-type HuntLogger = FastifyBaseLogger;
+// Extracted modules
+import { shuffleArray, isContentReleased } from "./hunt-utils.js";
+import {
+	type HuntLogger,
+	type HuntService,
+	type ParsedFilters,
+	parseFilters,
+	passesFilters,
+} from "./hunt-filters.js";
+import {
+	type GrabbedItem,
+	detectGrabbedItemsFromHistoryWithSdk,
+} from "./grab-detector.js";
 
-// delay and ApiCallCounter imported from shared utilities
-
-/**
- * Hunt Executor
- *
- * Executes hunts against Sonarr/Radarr instances to find missing content
- * and trigger quality upgrade searches. Supports filtering by tags,
- * quality profiles, status, year range, and age threshold.
- */
-
-export interface GrabbedItem {
-	title: string;
-	quality?: string;
-	indexer?: string;
-	size?: number;
-}
+// Re-export for external consumers
+export type { GrabbedItem } from "./grab-detector.js";
 
 export interface HuntResult {
 	itemsSearched: number;
@@ -49,419 +53,6 @@ export interface HuntResult {
 
 // Internal type for sub-functions (apiCallsMade added by executeHunt)
 type HuntResultWithoutApiCount = Omit<HuntResult, "apiCallsMade">;
-
-// Sonarr types
-interface SonarrSeries {
-	id: number;
-	title: string;
-	status: string; // "continuing", "ended", "upcoming", "deleted"
-	year: number;
-	monitored: boolean;
-	tags: number[];
-	qualityProfileId: number;
-}
-
-interface _SonarrEpisode {
-	id: number;
-	seriesId: number;
-	episodeNumber: number;
-	seasonNumber: number;
-	title: string;
-	airDateUtc?: string;
-	monitored: boolean;
-	series?: SonarrSeries;
-}
-
-// Radarr types
-interface _RadarrMovie {
-	id: number;
-	title: string;
-	year: number;
-	status: string; // "tba", "announced", "inCinemas", "released", "deleted"
-	monitored: boolean;
-	hasFile: boolean;
-	tags: number[];
-	qualityProfileId: number;
-	digitalRelease?: string;
-	physicalRelease?: string;
-	inCinemas?: string;
-}
-
-interface _WantedResponse<T> {
-	page: number;
-	pageSize: number;
-	totalRecords: number;
-	records: T[];
-}
-
-interface _QueueResponse {
-	totalRecords: number;
-}
-
-// Extended queue response for grab detection
-interface QueueItem {
-	id: number;
-	title: string;
-	size: number;
-	quality?: { quality?: { name?: string } };
-	indexer?: string;
-	// Sonarr fields
-	seriesId?: number;
-	episodeId?: number;
-	seasonNumber?: number;
-	// Radarr fields
-	movieId?: number;
-}
-
-interface _FullQueueResponse {
-	totalRecords: number;
-	records: QueueItem[];
-}
-
-// History response for grab detection (more reliable than queue)
-interface HistoryRecord {
-	id: number;
-	date: string;
-	eventType: string;
-	sourceTitle?: string;
-	quality?: { quality?: { name?: string } };
-	data?: {
-		indexer?: string;
-		size?: string;
-		nzbInfoUrl?: string;
-		downloadClient?: string;
-		releaseGroup?: string;
-	};
-	// Sonarr fields
-	seriesId?: number;
-	episodeId?: number;
-	// Radarr fields
-	movieId?: number;
-}
-
-interface _HistoryResponse {
-	page: number;
-	pageSize: number;
-	totalRecords: number;
-	records: HistoryRecord[];
-}
-
-// Filter configuration parsed from HuntConfig
-interface ParsedFilters {
-	filterLogic: "AND" | "OR";
-	monitoredOnly: boolean;
-	includeTags: number[];
-	excludeTags: number[];
-	includeQualityProfiles: number[];
-	excludeQualityProfiles: number[];
-	includeStatuses: string[];
-	expandedStatuses: Set<string>; // Pre-expanded for hierarchical matching
-	yearMin: number | null;
-	yearMax: number | null;
-	ageThresholdDays: number | null;
-}
-
-/**
- * Randomizes the order of elements in an array.
- *
- * @param array - The input array to shuffle
- * @returns A new array containing the elements of `array` in randomized order
- */
-function shuffleArray<T>(array: T[]): T[] {
-	const shuffled = [...array];
-	for (let i = shuffled.length - 1; i > 0; i--) {
-		const j = Math.floor(Math.random() * (i + 1));
-		const temp = shuffled[i];
-		shuffled[i] = shuffled[j] as T;
-		shuffled[j] = temp as T;
-	}
-	return shuffled;
-}
-
-/**
- * Determine whether a release date is in the past or present.
- *
- * @param releaseDate - The release or air date as an ISO date string, or `null`/`undefined` if unknown
- * @returns `true` if `releaseDate` is present and not in the future, `false` otherwise
- */
-function isContentReleased(releaseDate: string | undefined | null): boolean {
-	if (!releaseDate) return false; // No release date = treat as unreleased
-	const release = new Date(releaseDate);
-	const now = new Date();
-	return release <= now;
-}
-
-/**
- * Radarr status hierarchy for filtering
- * Selecting a status includes all statuses further in the release pipeline
- * Order: tba → announced → inCinemas → released
- */
-const RADARR_STATUS_HIERARCHY: Record<string, string[]> = {
-	tba: ["tba", "announced", "inCinemas", "released"],
-	announced: ["announced", "inCinemas", "released"],
-	inCinemas: ["inCinemas", "released"],
-	released: ["released"],
-};
-
-/**
- * Sonarr status hierarchy for filtering
- * Selecting a status includes all statuses further in the lifecycle
- * Order: upcoming → continuing → ended
- */
-const SONARR_STATUS_HIERARCHY: Record<string, string[]> = {
-	upcoming: ["upcoming", "continuing", "ended"],
-	continuing: ["continuing", "ended"],
-	ended: ["ended"],
-};
-
-/**
- * Lidarr/Readarr status hierarchy for filtering
- * Artists and authors use: continuing → ended
- */
-const LIDARR_STATUS_HIERARCHY: Record<string, string[]> = {
-	continuing: ["continuing", "ended"],
-	ended: ["ended"],
-};
-
-/** Hunt service types */
-type HuntService = "sonarr" | "radarr" | "lidarr" | "readarr";
-
-/** Maps each service to its status hierarchy for filter expansion */
-const STATUS_HIERARCHY_MAP: Record<HuntService, Record<string, string[]>> = {
-	sonarr: SONARR_STATUS_HIERARCHY,
-	radarr: RADARR_STATUS_HIERARCHY,
-	lidarr: LIDARR_STATUS_HIERARCHY,
-	readarr: LIDARR_STATUS_HIERARCHY,
-};
-
-/**
- * Expand a list of status keys to include lifecycle-related statuses for the specified service.
- *
- * Unknown statuses are preserved (converted to lowercase) so they can still be matched.
- *
- * @param statuses - Status keys selected by the user
- * @param service - The service type which determines the expansion hierarchy
- * @returns A `Set` of lowercased statuses containing the original statuses and any hierarchically related statuses
- */
-function expandStatusFilters(statuses: string[], service: HuntService): Set<string> {
-	const hierarchy = STATUS_HIERARCHY_MAP[service];
-	const expanded = new Set<string>();
-
-	for (const status of statuses) {
-		const related = hierarchy[status.toLowerCase()];
-		if (related) {
-			for (const s of related) {
-				expanded.add(s);
-			}
-		} else {
-			// Unknown status, include as-is
-			expanded.add(status.toLowerCase());
-		}
-	}
-
-	return expanded;
-}
-
-/**
- * Create a ParsedFilters object from a HuntConfig by parsing JSON-encoded arrays and expanding statuses for the target service.
- *
- * @param config - Hunt configuration containing raw filter values (JSON arrays encoded as strings and scalar filter settings)
- * @param service - Target service used to expand provided statuses into the service-specific status hierarchy
- * @param logger - Fastify logger for structured logging
- * @returns A ParsedFilters object with parsed include/exclude tag and quality profile arrays, includeStatuses, expandedStatuses, year range, ageThresholdDays, filterLogic, and monitoredOnly flag
- */
-function parseFilters(
-	config: HuntConfig,
-	service: HuntService,
-	logger: HuntLogger,
-): ParsedFilters {
-	const parseJsonArray = (
-		value: string | null | undefined,
-		fieldName: string,
-	): number[] | string[] => {
-		if (!value) return [];
-		try {
-			return JSON.parse(value);
-		} catch (error) {
-			logger.warn(
-				{ err: error, field: fieldName, value, configId: config.id },
-				"Failed to parse hunt filter JSON - filter will be ignored",
-			);
-			return [];
-		}
-	};
-
-	const includeStatuses = parseJsonArray(config.includeStatuses, "includeStatuses") as string[];
-
-	return {
-		filterLogic: (config.filterLogic as "AND" | "OR") || "AND",
-		monitoredOnly: config.monitoredOnly ?? true,
-		includeTags: parseJsonArray(config.includeTags, "includeTags") as number[],
-		excludeTags: parseJsonArray(config.excludeTags, "excludeTags") as number[],
-		includeQualityProfiles: parseJsonArray(
-			config.includeQualityProfiles,
-			"includeQualityProfiles",
-		) as number[],
-		excludeQualityProfiles: parseJsonArray(
-			config.excludeQualityProfiles,
-			"excludeQualityProfiles",
-		) as number[],
-		includeStatuses,
-		expandedStatuses: expandStatusFilters(includeStatuses, service),
-		yearMin: config.yearMin,
-		yearMax: config.yearMax,
-		ageThresholdDays: config.ageThresholdDays,
-	};
-}
-
-/**
- * Evaluate whether a single filter condition is satisfied for a candidate item.
- *
- * @param item - Candidate item's relevant fields: `tags`, `qualityProfileId`, `status`, `year`, `monitored`, and optional `releaseDate`
- * @param filters - ParsedFilters containing the filter criteria to evaluate against
- * @param conditionName - The filter condition to check. Accepted values:
- *   - "monitored"
- *   - "includeTags"
- *   - "excludeTags"
- *   - "includeQualityProfiles"
- *   - "excludeQualityProfiles"
- *   - "includeStatuses"
- *   - "yearMin"
- *   - "yearMax"
- *   - "ageThreshold"
- * @returns `true` if the item satisfies the specified condition, `false` otherwise.
- */
-function checkFilterCondition(
-	item: {
-		tags: number[];
-		qualityProfileId: number;
-		status: string;
-		year: number;
-		monitored: boolean;
-		releaseDate?: string;
-	},
-	filters: ParsedFilters,
-	conditionName: string,
-): boolean {
-	switch (conditionName) {
-		case "monitored":
-			return !filters.monitoredOnly || item.monitored;
-
-		case "includeTags":
-			if (filters.includeTags.length === 0) return true;
-			return filters.includeTags.some((tagId) => item.tags.includes(tagId));
-
-		case "excludeTags":
-			if (filters.excludeTags.length === 0) return true;
-			return !filters.excludeTags.some((tagId) => item.tags.includes(tagId));
-
-		case "includeQualityProfiles":
-			if (filters.includeQualityProfiles.length === 0) return true;
-			return filters.includeQualityProfiles.includes(item.qualityProfileId);
-
-		case "excludeQualityProfiles":
-			if (filters.excludeQualityProfiles.length === 0) return true;
-			return !filters.excludeQualityProfiles.includes(item.qualityProfileId);
-
-		case "includeStatuses":
-			if (filters.includeStatuses.length === 0) return true;
-			// Use expanded statuses for hierarchical matching
-			return filters.expandedStatuses.has(item.status.toLowerCase());
-
-		case "yearMin":
-			if (filters.yearMin === null) return true;
-			return item.year >= filters.yearMin;
-
-		case "yearMax":
-			if (filters.yearMax === null) return true;
-			return item.year <= filters.yearMax;
-
-		case "ageThreshold": {
-			if (filters.ageThresholdDays === null || !item.releaseDate) return true;
-			const releaseDate = new Date(item.releaseDate);
-			const thresholdDate = new Date();
-			thresholdDate.setDate(thresholdDate.getDate() - filters.ageThresholdDays);
-			return releaseDate <= thresholdDate; // Only hunt content older than threshold
-		}
-
-		default:
-			return true;
-	}
-}
-
-/**
- * Determine whether a media item satisfies the provided filters.
- *
- * @param item - Metadata for the media item used for filtering: `tags` (tag IDs), `qualityProfileId`, `status`, `year`, `monitored`, and optional `releaseDate` (ISO string).
- * @param filters - ParsedFilters that define inclusion/exclusion criteria and filter logic.
- * @returns `true` if the item passes the filters and is not excluded, `false` otherwise.
- */
-function passesFilters(
-	item: {
-		tags: number[];
-		qualityProfileId: number;
-		status: string;
-		year: number;
-		monitored: boolean;
-		releaseDate?: string;
-	},
-	filters: ParsedFilters,
-): boolean {
-	// Exclude conditions always use AND logic (they're blockers)
-	const excludeResults = [
-		checkFilterCondition(item, filters, "excludeTags"),
-		checkFilterCondition(item, filters, "excludeQualityProfiles"),
-	];
-
-	if (!excludeResults.every((r) => r)) {
-		return false; // Excluded items are always filtered out
-	}
-
-	// For include filters, apply the selected logic
-	const includeConditions = [
-		"monitored",
-		"includeTags",
-		"includeQualityProfiles",
-		"includeStatuses",
-		"yearMin",
-		"yearMax",
-		"ageThreshold",
-	];
-
-	const includeResults = includeConditions.map((condition) =>
-		checkFilterCondition(item, filters, condition),
-	);
-
-	if (filters.filterLogic === "OR") {
-		// At least one condition must pass (but skip conditions that have no filter set)
-		const activeConditions = includeConditions.filter((condition) => {
-			switch (condition) {
-				case "monitored":
-					return filters.monitoredOnly;
-				case "includeTags":
-					return filters.includeTags.length > 0;
-				case "includeQualityProfiles":
-					return filters.includeQualityProfiles.length > 0;
-				case "includeStatuses":
-					return filters.includeStatuses.length > 0;
-				case "yearMin":
-					return filters.yearMin !== null;
-				case "yearMax":
-					return filters.yearMax !== null;
-				case "ageThreshold":
-					return filters.ageThresholdDays !== null;
-				default:
-					return false;
-			}
-		});
-
-		if (activeConditions.length === 0) return true; // No active filters
-		return activeConditions.some((condition) => checkFilterCondition(item, filters, condition));
-	}
-
-	// AND logic: all conditions must pass
-	return includeResults.every((r) => r);
-}
 
 // ============================================================================
 // SDK-based implementations (arr-sdk 0.3.0)
@@ -579,8 +170,8 @@ export async function executeHuntWithSdk(
 }
 
 /**
- * Check queue threshold using SDK
- * Returns ok: false if check fails to prevent overloading queue on connectivity issues
+ * Check queue threshold using SDK.
+ * Returns ok: false if check fails to prevent overloading queue on connectivity issues.
  */
 async function checkQueueThresholdWithSdk(
 	client: QueueCapableClient,
@@ -615,144 +206,6 @@ async function checkQueueThresholdWithSdk(
 			ok: false,
 			message: `Queue check failed: ${error instanceof Error ? error.message : "Unknown error"}. Please verify instance connectivity.`,
 		};
-	}
-}
-
-/**
- * Detect grabbed items from history using SDK
- */
-async function detectGrabbedItemsFromHistoryWithSdk(
-	client: SonarrClient | RadarrClient,
-	searchStartTime: Date,
-	searchedMovieIds: number[],
-	searchedSeriesIds: number[],
-	searchedEpisodeIds: number[],
-	counter: ApiCallCounter,
-	logger: HuntLogger,
-): Promise<GrabbedItem[]> {
-	try {
-		await delay(GRAB_CHECK_DELAY_MS);
-
-		counter.count++;
-		const history = await client.history.get({
-			pageSize: 100,
-			sortKey: "date",
-			sortDirection: "descending",
-			eventType: "grabbed",
-		});
-
-		const grabbedItems: GrabbedItem[] = [];
-
-		for (const record of history.records ?? []) {
-			const eventDate = new Date(record.date ?? "");
-			if (eventDate < searchStartTime) continue;
-
-			const recordAny = record as Record<string, unknown>;
-			const isMatchingMovie =
-				recordAny.movieId && searchedMovieIds.includes(recordAny.movieId as number);
-			const isMatchingSeries =
-				recordAny.seriesId && searchedSeriesIds.includes(recordAny.seriesId as number);
-			const isMatchingEpisode =
-				recordAny.episodeId && searchedEpisodeIds.includes(recordAny.episodeId as number);
-
-			if (isMatchingMovie || isMatchingSeries || isMatchingEpisode) {
-				const dataObj = (recordAny.data ?? {}) as Record<string, unknown>;
-
-				let size: number | undefined;
-				const sizeValue = dataObj.size ?? recordAny.size;
-				if (typeof sizeValue === "number") {
-					size = sizeValue;
-				} else if (typeof sizeValue === "string") {
-					const parsed = Number.parseInt(sizeValue, 10);
-					if (!Number.isNaN(parsed)) {
-						size = parsed;
-					}
-				}
-
-				const qualityObj = recordAny.quality as Record<string, unknown> | undefined;
-				const qualityName =
-					((qualityObj?.quality as Record<string, unknown>)?.name as string | undefined) ??
-					(qualityObj?.name as string | undefined);
-
-				const indexer = (dataObj.indexer ?? recordAny.indexer) as string | undefined;
-				const title = (recordAny.sourceTitle ??
-					dataObj.releaseTitle ??
-					dataObj.title ??
-					"Unknown") as string;
-
-				grabbedItems.push({
-					title,
-					quality: qualityName,
-					indexer,
-					size,
-				});
-			}
-		}
-
-		return grabbedItems;
-	} catch (error) {
-		logger.warn(
-			{ err: error },
-			"History-based grab detection failed, falling back to queue detection",
-		);
-		return detectGrabbedItemsFromQueueWithSdk(
-			client,
-			searchedMovieIds,
-			searchedSeriesIds,
-			searchedEpisodeIds,
-			counter,
-			logger,
-		);
-	}
-}
-
-/**
- * Detect grabbed items from queue using SDK (fallback)
- * Note: Returns empty array on failure since the hunt searches were still triggered,
- * we just couldn't verify what was grabbed. The hunt result will still be accurate
- * for itemsSearched, just not for itemsGrabbed.
- */
-async function detectGrabbedItemsFromQueueWithSdk(
-	client: SonarrClient | RadarrClient,
-	searchedMovieIds: number[],
-	searchedSeriesIds: number[],
-	searchedEpisodeIds: number[],
-	counter: ApiCallCounter,
-	logger: HuntLogger,
-): Promise<GrabbedItem[]> {
-	try {
-		counter.count++;
-		const queue = await client.queue.get({ pageSize: 1000 });
-		const grabbedItems: GrabbedItem[] = [];
-
-		for (const item of queue.records ?? []) {
-			const itemAny = item as Record<string, unknown>;
-			const isMatchingMovie =
-				itemAny.movieId && searchedMovieIds.includes(itemAny.movieId as number);
-			const isMatchingSeries =
-				itemAny.seriesId && searchedSeriesIds.includes(itemAny.seriesId as number);
-			const isMatchingEpisode =
-				itemAny.episodeId && searchedEpisodeIds.includes(itemAny.episodeId as number);
-
-			if (isMatchingMovie || isMatchingSeries || isMatchingEpisode) {
-				const qualityObj = itemAny.quality as Record<string, unknown> | undefined;
-				grabbedItems.push({
-					title: itemAny.title as string,
-					quality: (qualityObj?.quality as Record<string, unknown>)?.name as string | undefined,
-					indexer: itemAny.indexer as string | undefined,
-					size: itemAny.size as number | undefined,
-				});
-			}
-		}
-
-		return grabbedItems;
-	} catch (error) {
-		// Both history and queue detection failed - log as error since this is unexpected
-		logger.error(
-			{ err: error },
-			"Grab detection failed completely (both history and queue methods) - grabbed items count will be inaccurate",
-		);
-		return [];
 	}
 }
 
@@ -1213,8 +666,8 @@ async function executeRadarrHuntWithSdk(
 }
 
 /**
- * Execute Lidarr hunt using SDK
- * Searches for missing albums or albums needing quality upgrades
+ * Execute Lidarr hunt using SDK.
+ * Searches for missing albums or albums needing quality upgrades.
  */
 async function executeLidarrHuntWithSdk(
 	client: LidarrClient,
@@ -1392,8 +845,8 @@ async function executeLidarrHuntWithSdk(
 }
 
 /**
- * Execute Readarr hunt using SDK
- * Searches for missing books or books needing quality upgrades
+ * Execute Readarr hunt using SDK.
+ * Searches for missing books or books needing quality upgrades.
  */
 async function executeReadarrHuntWithSdk(
 	client: ReadarrClient,
