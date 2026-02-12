@@ -99,9 +99,11 @@ export interface TemplateListOptions {
 
 export class TemplateService {
 	private prisma: PrismaClient;
+	private dbProvider: "sqlite" | "postgresql";
 
-	constructor(prisma: PrismaClient) {
+	constructor(prisma: PrismaClient, dbProvider: "sqlite" | "postgresql" = "sqlite") {
 		this.prisma = prisma;
+		this.dbProvider = dbProvider;
 	}
 
 	/**
@@ -187,14 +189,18 @@ export class TemplateService {
 		};
 
 		// Add search filter for name and description
-		// mode: "insensitive" generates LIKE on SQLite (already case-insensitive) and ILIKE on PostgreSQL.
-		// Type assertion needed because Prisma generates StringFilter without `mode` for SQLite schemas,
-		// but the field is accepted at runtime for both providers.
+		// SQLite LIKE is already case-insensitive; PostgreSQL needs explicit mode: "insensitive" for ILIKE.
 		if (options.search) {
-			whereClause.OR = [
-				{ name: { contains: options.search, mode: "insensitive" } as Prisma.StringFilter<"TrashTemplate"> },
-				{ description: { contains: options.search, mode: "insensitive" } as Prisma.StringNullableFilter<"TrashTemplate"> },
-			];
+			whereClause.OR =
+				this.dbProvider === "postgresql"
+					? [
+							{ name: { contains: options.search, mode: "insensitive" } as unknown as Prisma.StringFilter<"TrashTemplate"> },
+							{ description: { contains: options.search, mode: "insensitive" } as unknown as Prisma.StringNullableFilter<"TrashTemplate"> },
+						]
+					: [
+							{ name: { contains: options.search } },
+							{ description: { contains: options.search } },
+						];
 		}
 
 		// Determine if we need to include schedules (for active filter or sorting by usage)
@@ -722,6 +728,6 @@ export class TemplateService {
 /**
  * Create a template service instance
  */
-export function createTemplateService(prisma: PrismaClient): TemplateService {
-	return new TemplateService(prisma);
+export function createTemplateService(prisma: PrismaClient, dbProvider: "sqlite" | "postgresql" = "sqlite"): TemplateService {
+	return new TemplateService(prisma, dbProvider);
 }

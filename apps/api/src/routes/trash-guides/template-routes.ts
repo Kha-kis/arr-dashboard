@@ -257,7 +257,7 @@ const getTemplateParamsSchema = z.object({
 // ============================================================================
 
 export async function registerTemplateRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
-	const templateService = createTemplateService(app.prisma);
+	const templateService = createTemplateService(app.prisma, app.dbProvider);
 
 	/**
 	 * GET /api/trash-guides/templates

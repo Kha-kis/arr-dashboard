@@ -155,11 +155,12 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 		}
 
 		// Search filter (case-insensitive title search)
-		// mode: "insensitive" generates LIKE on SQLite (already case-insensitive) and ILIKE on PostgreSQL.
-		// Type assertion needed because Prisma generates StringFilter without `mode` for SQLite schemas,
-		// but the field is accepted at runtime for both providers.
+		// SQLite LIKE is already case-insensitive; PostgreSQL needs explicit mode: "insensitive" for ILIKE.
 		if (parsed.search) {
-			where.title = { contains: parsed.search, mode: "insensitive" } as Prisma.StringFilter<"LibraryCache">;
+			where.title =
+				app.dbProvider === "postgresql"
+					? ({ contains: parsed.search, mode: "insensitive" } as unknown as Prisma.StringFilter<"LibraryCache">)
+					: { contains: parsed.search };
 		}
 
 		// Monitored filter

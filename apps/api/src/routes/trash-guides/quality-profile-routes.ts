@@ -70,7 +70,7 @@ export async function registerQualityProfileRoutes(
 	_opts: FastifyPluginOptions,
 ) {
 	const cacheManager = createCacheManager(app.prisma);
-	const templateService = createTemplateService(app.prisma);
+	const templateService = createTemplateService(app.prisma, app.dbProvider);
 
 	/** Create repo-aware services configured for the current user's repo settings */
 	async function getServices(userId: string) {

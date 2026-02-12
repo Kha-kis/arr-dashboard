@@ -669,7 +669,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			};
 
 			// Create the template using the template service
-			const templateService = createTemplateService(app.prisma);
+			const templateService = createTemplateService(app.prisma, app.dbProvider);
 			const template = await templateService.createTemplate(userId, {
 				name: templateName,
 				description:
