@@ -100,6 +100,14 @@ export const hasValidSelections = (
 			return typeof selection.values.movieId === "number";
 		}
 
+		if (selection.service === "lidarr") {
+			return typeof selection.values.artistId === "number" && typeof selection.values.albumId === "number";
+		}
+
+		if (selection.service === "readarr") {
+			return typeof selection.values.authorId === "number" && typeof selection.values.bookId === "number";
+		}
+
 		return false;
 	});
 };

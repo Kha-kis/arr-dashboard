@@ -46,6 +46,35 @@ docker run -d \
 docker-compose up -d
 ```
 
+## Database Configuration
+
+### SQLite (Default)
+
+SQLite is the default database — no additional configuration needed. The database file is stored in the `/config` volume:
+
+```bash
+docker run -d \
+  --name arr-dashboard \
+  -p 3000:3000 \
+  -v /path/to/config:/config \
+  khak1s/arr-dashboard:latest
+```
+
+### PostgreSQL
+
+To use PostgreSQL, set the `DATABASE_URL` environment variable to a PostgreSQL connection string. The application automatically detects the database type from the URL — no other configuration is needed:
+
+```bash
+docker run -d \
+  --name arr-dashboard \
+  -p 3000:3000 \
+  -v /path/to/config:/config \
+  -e DATABASE_URL=postgresql://user:password@db-host:5432/arr_dashboard \
+  khak1s/arr-dashboard:latest
+```
+
+Both `postgresql://` and `postgres://` URL schemes are supported. On first startup with a new PostgreSQL database, the schema is created automatically.
+
 ## Environment Variables
 
 ### Core Settings
@@ -93,7 +122,10 @@ docker-compose up -d
 
 ## Health Check
 
-The container includes a health check that monitors the web UI on port 3000.
+The container includes a health check at `/health` that validates both the Next.js frontend and Fastify API are running. This endpoint is publicly accessible (no authentication required) and can be used with external monitoring tools like Uptime Kuma.
+
+- **Docker HEALTHCHECK**: `http://localhost:3000/health` (built-in, runs every 30s)
+- **Uptime Kuma / external**: `http://<host>:3000/health`
 
 ## Process Management
 

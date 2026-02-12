@@ -13,6 +13,7 @@ import {
 	importUserCFFromInstanceSchema,
 } from "@arr/shared";
 import type { SonarrClient, RadarrClient } from "arr-sdk";
+import { requireInstance } from "../../lib/arr/instance-helpers.js";
 
 // ============================================================================
 // Helper Functions
@@ -44,16 +45,6 @@ export async function registerUserCustomFormatRoutes(
 	app: FastifyInstance,
 	_opts: FastifyPluginOptions,
 ) {
-	// Auth check for all routes
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
-			return reply.status(401).send({
-				error: "UNAUTHORIZED",
-				message: "Authentication required",
-			});
-		}
-	});
-
 	/**
 	 * GET /user-custom-formats
 	 * List user custom formats with optional serviceType filter
@@ -326,17 +317,7 @@ export async function registerUserCustomFormatRoutes(
 
 		const { instanceId, cfIds, defaultScore } = parsed.data;
 
-		// Verify instance ownership
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { id: instanceId, userId },
-		});
-
-		if (!instance) {
-			return reply.status(404).send({
-				error: "NOT_FOUND",
-				message: "Instance not found",
-			});
-		}
+		const instance = await requireInstance(app, userId, instanceId);
 
 		const serviceType = instance.service === "SONARR" ? "SONARR" : "RADARR";
 
@@ -441,17 +422,7 @@ export async function registerUserCustomFormatRoutes(
 			});
 		}
 
-		// Verify instance ownership
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { id: instanceId, userId },
-		});
-
-		if (!instance) {
-			return reply.status(404).send({
-				error: "NOT_FOUND",
-				message: "Instance not found",
-			});
-		}
+		const instance = await requireInstance(app, userId, instanceId);
 
 		// Fetch user custom formats
 		const userCFs = await app.prisma.userCustomFormat.findMany({
@@ -553,17 +524,7 @@ export async function registerUserCustomFormatRoutes(
 		const userId = request.currentUser!.id;
 		const { instanceId } = request.params;
 
-		// Verify instance ownership
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { id: instanceId, userId },
-		});
-
-		if (!instance) {
-			return reply.status(404).send({
-				error: "NOT_FOUND",
-				message: "Instance not found",
-			});
-		}
+		const instance = await requireInstance(app, userId, instanceId);
 
 		try {
 			const client = app.arrClientFactory.create(instance) as SonarrClient | RadarrClient;

@@ -17,7 +17,6 @@ import {
 	RotateCcw,
 	Save,
 	Trash2,
-	CheckCircle2,
 } from "lucide-react";
 import {
 	useInstanceOverrides,
@@ -73,9 +72,9 @@ export const InstanceOverrideEditor = ({
 	// Merge customFormats (default scores) with saved overrides from API
 	useEffect(() => {
 		if (customFormats.length > 0) {
-			const overrides = data?.overrides || {};
-			const scoreOverrides = overrides.scoreOverrides || {};
-			const cfOverrides = overrides.cfOverrides || {};
+			const overrides = data?.overrides;
+			const scoreOverrides = overrides?.cfScoreOverrides || {};
+			const cfOverrides = overrides?.cfSelectionOverrides || {};
 
 			const rows: CustomFormatOverrideRow[] = customFormats.map((cf) => ({
 				trashId: cf.trashId,

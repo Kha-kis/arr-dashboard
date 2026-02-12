@@ -17,7 +17,9 @@ import type {
 } from "@arr/shared";
 import type { SonarrClient, RadarrClient } from "arr-sdk";
 import type { ArrClientFactory } from "../arr/client-factory.js";
+import type { FastifyBaseLogger } from "fastify";
 import { dequal as deepEqual } from "dequal";
+import { TemplateNotFoundError, InstanceNotFoundError, AppValidationError } from "../errors.js";
 
 // SDK type aliases
 type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]>>[number];
@@ -225,10 +227,12 @@ function specArraysAreEqual(
 export class DeploymentPreviewService {
 	private prisma: PrismaClient;
 	private clientFactory: ArrClientFactory;
+	private log: FastifyBaseLogger;
 
-	constructor(prisma: PrismaClient, clientFactory: ArrClientFactory) {
+	constructor(prisma: PrismaClient, clientFactory: ArrClientFactory, logger: FastifyBaseLogger) {
 		this.prisma = prisma;
 		this.clientFactory = clientFactory;
+		this.log = logger;
 	}
 
 	/**
@@ -248,7 +252,7 @@ export class DeploymentPreviewService {
 		});
 
 		if (!template) {
-			throw new Error("Template not found or access denied");
+			throw new TemplateNotFoundError(templateId);
 		}
 
 		// Get instance with ownership verification
@@ -260,13 +264,13 @@ export class DeploymentPreviewService {
 		});
 
 		if (!instance) {
-			throw new Error("Instance not found or access denied");
+			throw new InstanceNotFoundError(instanceId);
 		}
 
 		// Validate service type match (case-insensitive)
 		// Template stores uppercase "RADARR"/"SONARR", instance stores lowercase "radarr"/"sonarr"
 		if (template.serviceType.toUpperCase() !== instance.service.toUpperCase()) {
-			throw new Error(
+			throw new AppValidationError(
 				`Service type mismatch: template is ${template.serviceType}, instance is ${instance.service}`,
 			);
 		}
@@ -287,7 +291,7 @@ export class DeploymentPreviewService {
 			instanceQualityProfiles = await client.qualityProfile.getAll();
 		} catch (error) {
 			// Instance unreachable - will return preview with warning
-			console.error("Failed to reach instance:", error);
+			this.log.warn({ err: error, instanceId }, "Failed to reach instance for deployment preview");
 		}
 
 		// Parse template config - fail fast on corrupted data
@@ -295,9 +299,8 @@ export class DeploymentPreviewService {
 		try {
 			templateConfig = JSON.parse(template.configData) as ParsedTemplateConfig;
 		} catch (parseError) {
-			throw new Error(
-				`Template ${template.id} has corrupted configData: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
-			);
+			this.log.error({ err: parseError, templateId: template.id }, "Template has corrupted configData");
+			throw new AppValidationError("Template has corrupted configuration data");
 		}
 		const scoreSet = templateConfig.qualityProfile?.trash_score_set;
 		// Convert via unknown since TemplateCustomFormat's originalConfig (TrashCustomFormat)
@@ -319,7 +322,7 @@ export class DeploymentPreviewService {
 				? (JSON.parse(template.instanceOverrides) as InstanceOverridesMap)
 				: {};
 		} catch (parseError) {
-			console.warn(`Failed to parse instanceOverrides for template ${template.id}:`, parseError);
+			this.log.warn({ err: parseError, templateId: template.id }, "Failed to parse instanceOverrides");
 		}
 		const overridesForInstance = instanceOverrides[instanceId] || {};
 		const scoreOverridesMap = overridesForInstance.cfScoreOverrides || {};
@@ -409,7 +412,7 @@ export class DeploymentPreviewService {
 			} else {
 				// Mapping exists but profile not found in instance (may have been deleted/renamed)
 				warnings.push(
-					`Quality profile mapping found (ID: ${qualityProfileMapping.qualityProfileId}) but profile not found in instance. The profile may have been deleted or renamed. Score conflict detection will be limited.`,
+					`Quality profile "${qualityProfileMapping.qualityProfileName}" (ID: ${qualityProfileMapping.qualityProfileId}) no longer exists in the instance. Deploying will create a new quality profile with the template's settings.`,
 				);
 			}
 		}
@@ -424,15 +427,15 @@ export class DeploymentPreviewService {
 			if (targetProfile) {
 				// Matched by name - add warning that this is a fallback
 				warnings.push(
-					`Quality profile matched by name ("${profileNameToMatch}") rather than ID. If the profile was renamed in the instance, consider re-mapping it to ensure reliable matching.`,
+					`Quality profile matched by name ("${profileNameToMatch}") rather than stored ID. The profile may have been recreated. Score conflict detection is based on name match.`,
 				);
 				for (const formatItem of targetProfile.formatItems || []) {
 					instanceCFScoreMap.set(formatItem.format, formatItem.score);
 				}
 			} else {
-				// No profile found at all
+				// No profile found at all — deployment will create the profile
 				warnings.push(
-					`No matching quality profile found in instance. Attempted to match by ID (from mapping) and by name ("${profileNameToMatch}"). Score conflict detection will be unavailable.`,
+					`Quality profile "${profileNameToMatch}" not found in instance. Deploying will create it with the template's quality settings and Custom Format scores.`,
 				);
 			}
 		}
@@ -647,6 +650,7 @@ export class DeploymentPreviewService {
 export function createDeploymentPreviewService(
 	prisma: PrismaClient,
 	clientFactory: ArrClientFactory,
+	logger: FastifyBaseLogger,
 ): DeploymentPreviewService {
-	return new DeploymentPreviewService(prisma, clientFactory);
+	return new DeploymentPreviewService(prisma, clientFactory, logger);
 }

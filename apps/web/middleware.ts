@@ -25,11 +25,9 @@ const isPublicPath = (pathname: string) => {
 };
 
 /**
- * Validate session by calling the auth/me endpoint
- * Returns:
- * - true: session is valid
- * - false: session is definitely invalid (401 response)
- * - true (fallback): on server errors or network issues to avoid false logouts
+ * Validate session by calling the auth/me endpoint.
+ * Returns true if session is valid, false if definitely invalid (401).
+ * On server errors or network issues, returns true to avoid false logouts.
  */
 async function validateSession(request: NextRequest): Promise<boolean> {
 	const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME);
@@ -38,36 +36,27 @@ async function validateSession(request: NextRequest): Promise<boolean> {
 	}
 
 	try {
-		// Use internal API URL for server-side validation
 		const apiHost = process.env.API_HOST || "http://localhost:3001";
 		const response = await fetch(`${apiHost}/auth/me`, {
 			method: "GET",
 			headers: {
 				Cookie: `${SESSION_COOKIE_NAME}=${sessionCookie.value}`,
 			},
-			// Short timeout to avoid blocking middleware
 			signal: AbortSignal.timeout(3000),
 		});
 
 		// Only treat 401 as invalid session
-		// Server errors (5xx) should NOT invalidate the session - the cookie might be valid
+		// Server errors (5xx) should NOT invalidate — the cookie might be valid
 		// but the server is temporarily unavailable
-		if (response.status === 401) {
-			return false;
-		}
-
-		// For any other response (including 5xx errors), assume session might be valid
-		// This prevents false logouts during API issues
-		return true;
+		return response.status !== 401;
 	} catch {
 		// On network error, assume session might be valid to avoid blocking users
-		// The actual API calls will fail and redirect them properly
 		return true;
 	}
 }
 
 /**
- * Create a response that clears the invalid session cookie
+ * Create a response that clears the invalid session cookie and redirects
  */
 function clearSessionAndRedirect(request: NextRequest, targetPath: string): NextResponse {
 	const url = request.nextUrl.clone();
@@ -81,7 +70,6 @@ function clearSessionAndRedirect(request: NextRequest, targetPath: string): Next
 	url.hash = "";
 
 	const response = NextResponse.redirect(url);
-	// Clear the invalid session cookie
 	response.cookies.delete(SESSION_COOKIE_NAME);
 	return response;
 }
@@ -89,10 +77,16 @@ function clearSessionAndRedirect(request: NextRequest, targetPath: string): Next
 export async function middleware(request: NextRequest) {
 	const { pathname } = request.nextUrl;
 
-	// Skip middleware for API/auth routes - handled by rewrites in next.config.mjs
-	if (pathname.startsWith("/api/") || pathname.startsWith("/auth/")) {
+	// Skip middleware for API/auth/health routes — handled by rewrites in next.config.mjs
+	if (pathname.startsWith("/api/") || pathname.startsWith("/auth/") || pathname === "/health") {
 		return NextResponse.next();
 	}
+
+	// RSC (React Server Component) requests are client-side navigations.
+	// For these, return 401 instead of redirect on auth failure —
+	// redirects would break the RSC wire format, and the client-side AuthGate
+	// handles redirect logic for unauthenticated users.
+	const isRSC = request.headers.get("RSC") === "1";
 
 	const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME);
 	const hasSessionCookie = Boolean(sessionCookie?.value);
@@ -100,13 +94,12 @@ export async function middleware(request: NextRequest) {
 	// Home page: redirect to dashboard if logged in, otherwise to login
 	if (pathname === "/") {
 		if (hasSessionCookie) {
-			const isValid = await validateSession(request);
-			if (isValid) {
+			const valid = await validateSession(request);
+			if (valid) {
 				const url = request.nextUrl.clone();
 				url.pathname = "/dashboard";
 				return NextResponse.redirect(url);
 			}
-			// Invalid session - clear cookie and redirect to login
 			return clearSessionAndRedirect(request, "/login");
 		}
 		const url = request.nextUrl.clone();
@@ -116,8 +109,8 @@ export async function middleware(request: NextRequest) {
 
 	if (pathname === "/login") {
 		if (hasSessionCookie) {
-			const isValid = await validateSession(request);
-			if (isValid) {
+			const valid = await validateSession(request);
+			if (valid) {
 				const redirectTo = request.nextUrl.searchParams.get("redirectTo");
 				const target = redirectTo && redirectTo.startsWith("/") ? redirectTo : "/dashboard";
 				const url = request.nextUrl.clone();
@@ -125,7 +118,6 @@ export async function middleware(request: NextRequest) {
 				url.search = "";
 				return NextResponse.redirect(url);
 			}
-			// Invalid session - clear cookie and stay on login
 			const response = NextResponse.next();
 			response.cookies.delete(SESSION_COOKIE_NAME);
 			return response;
@@ -137,14 +129,15 @@ export async function middleware(request: NextRequest) {
 		return NextResponse.next();
 	}
 
-	// Protected routes - validate session
+	// Protected routes — validate session
 	if (!hasSessionCookie) {
+		if (isRSC) return new NextResponse(null, { status: 401 });
 		return clearSessionAndRedirect(request, "/login");
 	}
 
-	const isValid = await validateSession(request);
-	if (!isValid) {
-		// Invalid session - clear cookie and redirect to login
+	const valid = await validateSession(request);
+	if (!valid) {
+		if (isRSC) return new NextResponse(null, { status: 401 });
 		return clearSessionAndRedirect(request, "/login");
 	}
 

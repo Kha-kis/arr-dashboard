@@ -1,17 +1,13 @@
 import type { LibraryItem, ServiceInstanceSummary } from "@arr/shared";
+import { formatBytes as formatBytesShared } from "../../../lib/format-utils";
 
 /**
- * Format bytes into human-readable string (e.g., "1.5 GB")
+ * Format bytes into human-readable string (e.g., "1.5 GB").
+ * Returns `null` for invalid values (library convention).
  */
 export const formatBytes = (value?: number): string | null => {
-	if (value == null || value < 0) {
-		return null;
-	}
-
-	const units = ["B", "KB", "MB", "GB", "TB", "PB"] as const;
-	const exponent = Math.min(Math.floor(Math.log(value) / Math.log(1024)), units.length - 1);
-	const size = value / Math.pow(1024, exponent);
-	return `${size.toFixed(size >= 10 ? 0 : 1)} ${units[exponent]}`;
+	if (value == null || value < 0) return null;
+	return formatBytesShared(value);
 };
 
 /**
@@ -39,7 +35,7 @@ export const formatRuntime = (value?: number | null): string | null => {
 /**
  * Remove trailing slashes from URL
  */
-export const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/, "");
+const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/, "");
 
 /**
  * Build external link to item in Sonarr/Radarr UI

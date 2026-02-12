@@ -389,6 +389,46 @@ export const libraryBookMonitorRequestSchema = z.object({
 
 export type LibraryBookMonitorRequest = z.infer<typeof libraryBookMonitorRequestSchema>;
 
+// ============================================================================
+// Lidarr Track Types (children of albums)
+// ============================================================================
+
+export const libraryTrackSchema = z.object({
+  id: z.number(),
+  albumId: z.number(),
+  trackNumber: z.string().optional(),
+  absoluteTrackNumber: z.number().optional(),
+  title: z.string().optional(),
+  duration: z.number().optional(),
+  hasFile: z.boolean().optional(),
+  mediumNumber: z.number().optional(),
+  explicit: z.boolean().optional(),
+  trackFile: z.object({
+    quality: z.string().optional(),
+    size: z.number().optional(),
+    dateAdded: z.string().optional(),
+    audioCodec: z.string().optional(),
+    audioBitRate: z.string().optional(),
+    audioChannels: z.number().optional(),
+    audioSampleRate: z.string().optional(),
+  }).optional(),
+});
+
+export type LibraryTrack = z.infer<typeof libraryTrackSchema>;
+
+export const libraryTracksRequestSchema = z.object({
+  instanceId: z.string(),
+  albumId: z.union([z.number(), z.string()]),
+});
+
+export type LibraryTracksRequest = z.infer<typeof libraryTracksRequestSchema>;
+
+export const libraryTracksResponseSchema = z.object({
+  tracks: z.array(libraryTrackSchema),
+});
+
+export type LibraryTracksResponse = z.infer<typeof libraryTracksResponseSchema>;
+
 // Lidarr artist search request
 export const libraryArtistSearchRequestSchema = z.object({
   instanceId: z.string(),

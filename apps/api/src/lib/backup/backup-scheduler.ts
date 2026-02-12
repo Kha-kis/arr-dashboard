@@ -12,8 +12,7 @@ export class BackupScheduler {
 
 	constructor(
 		private prisma: PrismaClient,
-		private logger: FastifyBaseLogger,
-		private secretsPath: string,
+		private logger: FastifyBaseLogger,secretsPath: string,
 	) {
 		this.backupService = new BackupService(prisma, secretsPath);
 	}

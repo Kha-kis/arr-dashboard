@@ -1,4 +1,4 @@
-import type { CalendarItem, ServiceInstanceSummary } from "@arr/shared";
+import type { ServiceInstanceSummary } from "@arr/shared";
 import { Button } from "../../../components/ui/button";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { DeduplicatedCalendarItem } from "../hooks/use-calendar-data";

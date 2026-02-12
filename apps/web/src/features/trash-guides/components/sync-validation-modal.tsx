@@ -31,7 +31,7 @@ import { Button } from "../../../components/ui";
 import { useValidateSync, MAX_RETRY_ATTEMPTS } from "../../../hooks/api/useSync";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import type { ValidationResult } from "../../../lib/api-client/sync";
+import type { ValidationResult } from "../../../lib/api-client/trash-guides";
 
 // Check if we're in development mode
 const isDevelopment = process.env.NODE_ENV === "development";
@@ -305,7 +305,7 @@ export const SyncValidationModal = ({
 
 	const isValidating = validateMutation.isPending;
 	const hasErrors = Array.isArray(validation?.errors) && validation.errors.length > 0;
-	const hasWarnings = Array.isArray(validation?.warnings) && validation.warnings.length > 0;
+	const _hasWarnings = Array.isArray(validation?.warnings) && validation.warnings.length > 0;
 	const hasConflicts = Array.isArray(validation?.conflicts) && validation.conflicts.length > 0;
 	const canProceed = validation && validation.valid && !hasErrors;
 
@@ -321,7 +321,7 @@ export const SyncValidationModal = ({
 	);
 	const hasActualWarnings = actualWarnings.length > 0;
 
-	const isAutoRetrying = retryProgress !== null && retryProgress.isWaiting;
+	const _isAutoRetrying = retryProgress !== null && retryProgress.isWaiting;
 
 	return (
 		<div

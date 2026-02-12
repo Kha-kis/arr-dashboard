@@ -381,7 +381,7 @@ export class BackupService {
 			// Decrypt and verify authentication tag
 			const decrypted = Buffer.concat([decipher.update(cipherText), decipher.final()]);
 			return decrypted.toString("utf8");
-		} catch (error) {
+		} catch (_error) {
 			throw new Error("Failed to decrypt backup: invalid password or corrupted data");
 		}
 	}
@@ -570,7 +570,7 @@ export class BackupService {
 						path: backupPath,
 					});
 				}
-			} catch (error) {
+			} catch (_error) {
 				// Type directory doesn't exist yet, skip
 			}
 		}

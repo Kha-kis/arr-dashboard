@@ -11,7 +11,7 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { Alert, AlertDescription, Button, Input } from "../../../components/ui";
+import { Alert, AlertDescription, Button } from "../../../components/ui";
 import { CheckCircle, XCircle, Info, AlertTriangle, AlertCircle } from "lucide-react";
 
 interface PatternTesterProps {

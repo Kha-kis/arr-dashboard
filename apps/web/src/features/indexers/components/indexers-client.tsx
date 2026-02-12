@@ -14,7 +14,6 @@ import { EmptyIndexersCard } from "./empty-indexers-card";
 import { IndexerInstanceCard } from "./indexer-instance-card";
 import {
 	RefreshCw,
-	Loader2,
 	AlertCircle,
 	CheckCircle2,
 	XCircle,

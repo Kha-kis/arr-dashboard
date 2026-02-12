@@ -1,7 +1,7 @@
 "use client";
 
 import type { DiscoverSearchResult, ServiceInstanceSummary } from "@arr/shared";
-import { Loader2, CheckCircle2 } from "lucide-react";
+import { CheckCircle2 } from "lucide-react";
 import { PremiumSkeleton } from "../../../components/layout";
 
 /**

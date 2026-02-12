@@ -12,6 +12,7 @@ import type {
 } from "@arr/shared";
 import type { Prisma, PrismaClient, TrashTemplate as PrismaTrashTemplate } from "../../lib/prisma.js";
 import { z } from "zod";
+import { TemplateNotFoundError, ConflictError, AppValidationError } from "../errors.js";
 import { safeJsonParse } from "./utils.js";
 
 /**
@@ -98,9 +99,11 @@ export interface TemplateListOptions {
 
 export class TemplateService {
 	private prisma: PrismaClient;
+	private dbProvider: "sqlite" | "postgresql";
 
-	constructor(prisma: PrismaClient) {
+	constructor(prisma: PrismaClient, dbProvider: "sqlite" | "postgresql" = "sqlite") {
 		this.prisma = prisma;
+		this.dbProvider = dbProvider;
 	}
 
 	/**
@@ -118,7 +121,7 @@ export class TemplateService {
 		});
 
 		if (existing) {
-			throw new Error(
+			throw new ConflictError(
 				`Template with name "${request.name}" already exists for ${request.serviceType}`,
 			);
 		}
@@ -186,12 +189,18 @@ export class TemplateService {
 		};
 
 		// Add search filter for name and description
-		// SQLite doesn't support mode: "insensitive", but LIKE is case-insensitive by default in SQLite
+		// SQLite LIKE is already case-insensitive; PostgreSQL needs explicit mode: "insensitive" for ILIKE.
 		if (options.search) {
-			whereClause.OR = [
-				{ name: { contains: options.search } },
-				{ description: { contains: options.search } },
-			];
+			whereClause.OR =
+				this.dbProvider === "postgresql"
+					? [
+							{ name: { contains: options.search, mode: "insensitive" } as unknown as Prisma.StringFilter<"TrashTemplate"> },
+							{ description: { contains: options.search, mode: "insensitive" } as unknown as Prisma.StringNullableFilter<"TrashTemplate"> },
+						]
+					: [
+							{ name: { contains: options.search } },
+							{ description: { contains: options.search } },
+						];
 		}
 
 		// Determine if we need to include schedules (for active filter or sorting by usage)
@@ -288,7 +297,7 @@ export class TemplateService {
 		});
 
 		if (!existing) {
-			throw new Error("Template not found or access denied");
+			throw new TemplateNotFoundError(templateId);
 		}
 
 		// Check name uniqueness if name is being updated
@@ -304,7 +313,7 @@ export class TemplateService {
 			});
 
 			if (nameConflict) {
-				throw new Error(
+				throw new ConflictError(
 					`Template with name "${request.name}" already exists for ${existing.serviceType}`,
 				);
 			}
@@ -396,7 +405,7 @@ export class TemplateService {
 		// Get source template
 		const source = await this.getTemplate(templateId, userId);
 		if (!source) {
-			throw new Error("Template not found or access denied");
+			throw new TemplateNotFoundError(templateId);
 		}
 
 		// Create duplicate
@@ -414,7 +423,7 @@ export class TemplateService {
 	async exportTemplate(templateId: string, userId: string): Promise<string> {
 		const template = await this.getTemplate(templateId, userId);
 		if (!template) {
-			throw new Error("Template not found or access denied");
+			throw new TemplateNotFoundError(templateId);
 		}
 
 		const exportData = {
@@ -440,7 +449,7 @@ export class TemplateService {
 		try {
 			rawData = JSON.parse(jsonData);
 		} catch (parseError) {
-			throw new Error(
+			throw new AppValidationError(
 				`Invalid JSON format: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
 			);
 		}
@@ -449,7 +458,7 @@ export class TemplateService {
 		const parseResult = templateImportSchema.safeParse(rawData);
 		if (!parseResult.success) {
 			const errors = parseResult.error.issues.map((e) => `${e.path.join(".")}: ${e.message}`);
-			throw new Error(`Invalid template import format: ${errors.join("; ")}`);
+			throw new AppValidationError(`Invalid template import format: ${errors.join("; ")}`);
 		}
 		// Cast to TemplateImportData - Zod validated the structure, TypeScript interface provides proper typing
 		const data = parseResult.data as unknown as TemplateImportData;
@@ -546,7 +555,7 @@ export class TemplateService {
 		const groupCount = config.customFormatGroups.length;
 
 		// Get unique instances from mappings (actively managed instances)
-		const mappedInstanceIds = new Set(template.qualityProfileMappings.map((m) => m.instanceId));
+		const _mappedInstanceIds = new Set(template.qualityProfileMappings.map((m) => m.instanceId));
 
 		// Get unique instances and their info
 		const instanceMap = new Map<string, TemplateInstanceInfo>();
@@ -719,6 +728,6 @@ export class TemplateService {
 /**
  * Create a template service instance
  */
-export function createTemplateService(prisma: PrismaClient): TemplateService {
-	return new TemplateService(prisma);
+export function createTemplateService(prisma: PrismaClient, dbProvider: "sqlite" | "postgresql" = "sqlite"): TemplateService {
+	return new TemplateService(prisma, dbProvider);
 }

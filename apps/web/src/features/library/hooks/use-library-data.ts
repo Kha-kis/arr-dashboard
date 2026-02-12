@@ -17,6 +17,8 @@ import type {
 const groupItemsByType = (items: LibraryItem[]) => ({
 	movies: items.filter((item) => item.type === "movie"),
 	series: items.filter((item) => item.type === "series"),
+	artists: items.filter((item) => item.type === "artist"),
+	authors: items.filter((item) => item.type === "author"),
 });
 
 export interface LibraryDataParams {
@@ -56,6 +58,8 @@ export interface LibraryData {
 	grouped: {
 		movies: LibraryItem[];
 		series: LibraryItem[];
+		artists: LibraryItem[];
+		authors: LibraryItem[];
 	};
 	/** Pagination info from server */
 	pagination: Pagination;
@@ -182,13 +186,22 @@ export function useLibraryData(params: LibraryDataParams): LibraryData {
 		const services = servicesQuery.data ?? [];
 		// ServiceInstanceSummary uses uppercase service names
 		const arrServices = services.filter(
-			(s) =>
-				s.service.toUpperCase() === "SONARR" || s.service.toUpperCase() === "RADARR",
+			(s) => {
+				const upper = s.service.toUpperCase();
+				return upper === "SONARR" || upper === "RADARR" || upper === "LIDARR" || upper === "READARR";
+			},
 		);
+
+		const serviceLabels: Record<string, string> = {
+			RADARR: "Movies",
+			SONARR: "Series",
+			LIDARR: "Artists",
+			READARR: "Authors",
+		};
 
 		return arrServices.map((service) => ({
 			id: service.id,
-			label: `${service.label} - ${service.service.toUpperCase() === "RADARR" ? "Movies" : "Series"}`,
+			label: `${service.label} - ${serviceLabels[service.service.toUpperCase()] ?? service.service}`,
 			service: service.service.toLowerCase() as LibraryService,
 		}));
 	}, [servicesQuery.data]);

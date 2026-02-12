@@ -20,7 +20,7 @@ import templateSharingRoutes from "./template-sharing-routes.js";
 import { registerUpdateRoutes } from "./update-routes.js";
 import { registerUserCustomFormatRoutes } from "./user-custom-format-routes.js";
 
-export async function registerTrashGuidesRoutes(app: FastifyInstance, opts: FastifyPluginOptions) {
+export async function registerTrashGuidesRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	// Register cache routes under /cache
 	app.register(registerTrashCacheRoutes, { prefix: "/cache" });
 

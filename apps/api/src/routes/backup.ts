@@ -12,6 +12,7 @@ import {
 } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { BackupService } from "../lib/backup/backup-service.js";
+import { validateRequest } from "../lib/utils/validate.js";
 import { resolveSecretsPath } from "../lib/utils/secrets-path.js";
 import { getAppVersion } from "../lib/utils/version.js";
 
@@ -20,16 +21,6 @@ const RESTORE_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };
 const DELETE_RATE_LIMIT = { max: 5, timeWindow: "5 minutes" };
 
 const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-	});
-
 	// Helper to create backup service instance
 	const getBackupService = () => {
 		// Use app.config.DATABASE_URL (includes env schema defaults) not process.env
@@ -60,10 +51,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Create a backup and save it to filesystem
 	 */
 	app.post("/create", { config: { rateLimit: BACKUP_RATE_LIMIT } }, async (request, reply) => {
-		const parsed = createBackupRequestSchema.safeParse(request.body);
-		if (!parsed.success) {
-			return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
-		}
+		validateRequest(createBackupRequestSchema, request.body);
 
 		try {
 			const backupService = getBackupService();
@@ -83,7 +71,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			request.log.info(
 				{
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id,
 					backupId: backupInfo.id,
 					backupSize: backupInfo.size,
 					timestamp: backupInfo.timestamp,
@@ -125,22 +113,19 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Restore from a backup (uploaded file)
 	 */
 	app.post("/restore", { config: { rateLimit: RESTORE_RATE_LIMIT } }, async (request, reply) => {
-		const parsed = restoreBackupRequestSchema.safeParse(request.body);
-		if (!parsed.success) {
-			return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
-		}
+		const { backupData } = validateRequest(restoreBackupRequestSchema, request.body);
 
 		try {
 			const backupService = getBackupService();
 
 			// Decode base64-encoded backup data from client
-			const backupJson = Buffer.from(parsed.data.backupData, "base64").toString("utf-8");
+			const backupJson = Buffer.from(backupData, "base64").toString("utf-8");
 
 			const metadata = await backupService.restoreBackup(backupJson);
 
 			request.log.info(
 				{
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id,
 					backupTimestamp: metadata.timestamp,
 					backupVersion: metadata.version,
 					backupAppVersion: metadata.appVersion,
@@ -184,23 +169,18 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		"/restore-from-file",
 		{ config: { rateLimit: RESTORE_RATE_LIMIT } },
 		async (request, reply) => {
-			const parsed = restoreBackupFromFileRequestSchema.safeParse(request.body);
-			if (!parsed.success) {
-				return reply
-					.status(400)
-					.send({ error: "Invalid request", details: parsed.error.flatten() });
-			}
+			const { id: backupId } = validateRequest(restoreBackupFromFileRequestSchema, request.body);
 
 			try {
 				const backupService = getBackupService();
 
 				// Restore backup from filesystem
-				const metadata = await backupService.restoreBackupFromFile(parsed.data.id);
+				const metadata = await backupService.restoreBackupFromFile(backupId);
 
 				request.log.info(
 					{
-						userId: request.currentUser?.id,
-						backupId: parsed.data.id,
+						userId: request.currentUser!.id,
+						backupId,
 						backupTimestamp: metadata.timestamp,
 						backupVersion: metadata.version,
 						backupAppVersion: metadata.appVersion,
@@ -258,7 +238,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			request.log.info(
 				{
-					userId: request.currentUser?.id,
+					userId: request.currentUser!.id,
 					backupId: params.id,
 					filename: backup.filename,
 				},
@@ -283,21 +263,18 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.delete("/:id", { config: { rateLimit: DELETE_RATE_LIMIT } }, async (request, reply) => {
 		const params = request.params as { id: string };
-		const parsed = deleteBackupRequestSchema.safeParse({ id: params.id });
-		if (!parsed.success) {
-			return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
-		}
+		const { id } = validateRequest(deleteBackupRequestSchema, { id: params.id });
 
 		try {
 			const backupService = getBackupService();
 
 			// Delete backup
-			await backupService.deleteBackup(parsed.data.id);
+			await backupService.deleteBackup(id);
 
 			request.log.info(
 				{
-					userId: request.currentUser?.id,
-					backupId: parsed.data.id,
+					userId: request.currentUser!.id,
+					backupId: id,
 				},
 				"Backup deleted successfully",
 			);
@@ -354,10 +331,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Update backup settings
 	 */
 	app.put("/settings", async (request, reply) => {
-		const parsed = updateBackupSettingsRequestSchema.safeParse(request.body);
-		if (!parsed.success) {
-			return reply.status(400).send({ error: "Invalid request", details: parsed.error.flatten() });
-		}
+		const parsed = validateRequest(updateBackupSettingsRequestSchema, request.body);
 
 		try {
 			// Get or create settings atomically
@@ -369,9 +343,9 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			// Calculate next run time if interval settings changed
 			let nextRunAt = settings.nextRunAt;
-			if (parsed.data.intervalType || parsed.data.intervalValue) {
-				const intervalType = parsed.data.intervalType || settings.intervalType;
-				const intervalValue = parsed.data.intervalValue || settings.intervalValue;
+			if (parsed.intervalType || parsed.intervalValue) {
+				const intervalType = parsed.intervalType || settings.intervalType;
+				const intervalValue = parsed.intervalValue || settings.intervalValue;
 
 				if (intervalType !== "DISABLED") {
 					const now = new Date();
@@ -396,15 +370,15 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			const updated = await app.prisma.backupSettings.update({
 				where: { id: 1 },
 				data: {
-					...parsed.data,
+					...parsed,
 					nextRunAt,
 				},
 			});
 
 			request.log.info(
 				{
-					userId: request.currentUser?.id,
-					settings: parsed.data,
+					userId: request.currentUser!.id,
+					settings: parsed,
 				},
 				"Backup settings updated",
 			);
@@ -466,7 +440,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			const backupService = getBackupService();
 			await backupService.setPassword(password);
 
-			request.log.info({ userId: request.currentUser?.id }, "Backup password updated");
+			request.log.info({ userId: request.currentUser!.id }, "Backup password updated");
 
 			return reply.send({ success: true, message: "Backup password updated successfully" });
 		} catch (error) {
@@ -491,7 +465,7 @@ const backupRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			await backupService.removePassword();
 
 			request.log.info(
-				{ userId: request.currentUser?.id },
+				{ userId: request.currentUser!.id },
 				"Backup password removed from database",
 			);
 

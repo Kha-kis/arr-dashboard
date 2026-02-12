@@ -73,7 +73,7 @@ const StatCard = ({
  * - Two-tier grid layout (4 primary + 2 secondary)
  */
 export const IndexerStatsGrid = ({ stats }: { stats: IndexerStats }) => {
-	const { gradient: themeGradient } = useThemeGradient();
+	const { gradient: _themeGradient } = useThemeGradient();
 
 	return (
 		<div className="space-y-4">

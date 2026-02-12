@@ -1,4 +1,5 @@
 import type { LibraryBook } from "@arr/shared";
+import { resolveImageUrl } from "./image-normalizer.js";
 import { toBoolean, toNumber, toStringValue } from "./type-converters.js";
 
 /**
@@ -33,7 +34,7 @@ export const normalizeBook = (
 		overview: toStringValue(raw?.overview ?? raw?.description),
 		images: images.map((img) => ({
 			coverType: toStringValue(img?.coverType),
-			url: constructImageUrl(toStringValue(img?.url ?? img?.remoteUrl), baseUrl),
+			url: resolveImageUrl(img?.remoteUrl ?? img?.url, baseUrl),
 		})),
 		foreignBookId: toStringValue(raw?.foreignBookId ?? raw?.goodreadsId),
 		asin: toStringValue(raw?.asin),
@@ -49,15 +50,3 @@ const normalizeGenresArray = (genres: unknown): string[] | undefined => {
 	return genres.filter((g): g is string => typeof g === "string");
 };
 
-/**
- * Constructs full image URL from relative path
- */
-const constructImageUrl = (
-	url: string | undefined,
-	baseUrl?: string,
-): string | undefined => {
-	if (!url) return undefined;
-	if (url.startsWith("http")) return url;
-	if (!baseUrl) return url;
-	return `${baseUrl.replace(/\/$/, "")}${url}`;
-};

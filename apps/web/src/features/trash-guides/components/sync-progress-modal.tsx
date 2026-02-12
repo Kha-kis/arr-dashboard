@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
-import { CheckCircle2, XCircle, Loader2, AlertCircle, RefreshCw, Zap } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { useSyncProgress } from "../../../hooks/api/useSync";
-import type { SyncProgressStatus } from "../../../lib/api-client/sync";
+import type { SyncProgressStatus } from "../../../lib/api-client/trash-guides";
 import { Button } from "../../../components/ui";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -151,7 +151,7 @@ export const SyncProgressModal = ({
 	return (
 		<div
 			className="fixed inset-0 z-modal flex items-center justify-center p-4 animate-in fade-in duration-200"
-			onClick={(e) => {
+			onClick={(_e) => {
 				if (isCompleted || isFailed) {
 					onClose();
 				}

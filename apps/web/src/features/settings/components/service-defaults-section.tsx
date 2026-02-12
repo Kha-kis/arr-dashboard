@@ -31,7 +31,7 @@ interface ServiceDefaultsSectionProps {
  * Displays the default settings section for a service form
  */
 export const ServiceDefaultsSection = ({
-	selectedService,
+	selectedService: _selectedService,
 	formState,
 	onFormStateChange,
 	optionsPending,

@@ -21,10 +21,11 @@ export interface ManualImportLogger {
 }
 
 export class ManualImportError extends Error {
-	statusCode: number;
+	readonly statusCode: number;
 
 	constructor(message: string, statusCode = 422) {
 		super(message);
+		this.name = "ManualImportError";
 		this.statusCode = statusCode;
 	}
 }
@@ -330,7 +331,7 @@ export const fetchManualImportCandidates = async (
 	let payload: unknown;
 	try {
 		payload = await response.json();
-	} catch (error) {
+	} catch (_error) {
 		throw new ManualImportError("ARR returned an invalid manual import payload.");
 	}
 
@@ -698,8 +699,7 @@ export const autoImportByDownloadId = async (
 // SDK-based implementations
 // ============================================================================
 
-// Type for clients that support manual import operations
-// All *arr services use the same manualImport API pattern
+// Type for SDK clients that have the manualImport resource (Sonarr, Radarr)
 type ManualImportClient = {
 	manualImport: {
 		get: (params: {
@@ -710,13 +710,28 @@ type ManualImportClient = {
 			filterExistingFiles?: boolean;
 		}) => Promise<unknown[]>;
 	};
-	command: {
-		execute: (command: unknown) => Promise<unknown>;
-	};
+};
+
+// All SDK clients extend BaseClient which has get/post for raw API calls.
+// Lidarr/Readarr lack the typed manualImport resource, so we fall back to these.
+type BaseClientMethods = {
+	get: <T>(path: string, params?: Record<string, unknown>) => Promise<T>;
+	post: <T>(path: string, body?: unknown, params?: Record<string, unknown>) => Promise<T>;
 };
 
 /**
- * Fetches manual import candidates using the arr-sdk client
+ * Checks whether the SDK client has a typed manualImport resource
+ */
+const hasManualImportResource = (client: unknown): client is ManualImportClient => {
+	const c = client as ManualImportClient | undefined;
+	return typeof c?.manualImport?.get === "function";
+};
+
+/**
+ * Fetches manual import candidates using the arr-sdk client.
+ *
+ * Sonarr/Radarr SDKs expose a typed `manualImport` resource.
+ * Lidarr/Readarr SDKs lack it, so we fall back to BaseClient.get() with the raw API path.
  */
 export const fetchManualImportCandidatesWithSdk = async (
 	client: SonarrClient | RadarrClient | LidarrClient | ReadarrClient,
@@ -724,27 +739,31 @@ export const fetchManualImportCandidatesWithSdk = async (
 	options: ManualImportFetchOptions,
 ): Promise<ManualImportCandidate[]> => {
 	try {
-		// Cast to ManualImportClient - all *arr services support manual import via the same API
-		const importClient = client as unknown as ManualImportClient;
+		let rawItems: unknown[];
 
-		// Runtime validation: ensure SDK client has expected interface
-		if (
-			typeof importClient?.manualImport?.get !== "function" ||
-			typeof importClient?.command?.execute !== "function"
-		) {
-			throw new ManualImportError(
-				`SDK client for ${service} does not support manual import operations`,
-				501,
-			);
+		if (hasManualImportResource(client)) {
+			// Sonarr/Radarr: use the typed SDK resource
+			rawItems = await client.manualImport.get({
+				downloadId: options.downloadId,
+				folder: options.folder,
+				seriesId: options.seriesId,
+				seasonNumber: options.seasonNumber,
+				filterExistingFiles: options.filterExistingFiles ?? true,
+			});
+		} else {
+			// Lidarr/Readarr: fall back to BaseClient.get() with the raw API path
+			const baseClient = client as unknown as BaseClientMethods;
+			const apiPath = getManualImportApiPath(service);
+			const params: Record<string, unknown> = {
+				filterExistingFiles: options.filterExistingFiles ?? true,
+			};
+			if (options.downloadId) params.downloadId = options.downloadId;
+			if (options.folder) params.folder = options.folder;
+			if (typeof options.seriesId === "number") params.seriesId = options.seriesId;
+			if (typeof options.seasonNumber === "number") params.seasonNumber = options.seasonNumber;
+
+			rawItems = await baseClient.get<unknown[]>(apiPath, params);
 		}
-
-		const rawItems = await importClient.manualImport.get({
-			downloadId: options.downloadId,
-			folder: options.folder,
-			seriesId: options.seriesId,
-			seasonNumber: options.seasonNumber,
-			filterExistingFiles: options.filterExistingFiles ?? true,
-		});
 
 		if (!Array.isArray(rawItems) || rawItems.length === 0) {
 			return [];
@@ -765,10 +784,12 @@ export const fetchManualImportCandidatesWithSdk = async (
 };
 
 /**
- * Submits a manual import command using the arr-sdk client
+ * Submits a manual import command using the arr-sdk client.
  *
- * Note: Uses SDK's command.execute with properly formatted ManualImport command.
- * The SDK expects "Move" | "Copy" for importMode (capitalized).
+ * Uses BaseClient.post() to call the command API directly, which works for all
+ * services including Lidarr/Readarr whose typed command unions don't include ManualImport.
+ *
+ * Note: The SDK expects "Move" | "Copy" for importMode (capitalized).
  * "auto" mode is translated to "Move" as the default import behavior.
  */
 export const submitManualImportCommandWithSdk = async (
@@ -788,19 +809,12 @@ export const submitManualImportCommandWithSdk = async (
 	const sdkImportMode: "Move" | "Copy" = importMode === "copy" ? "Copy" : "Move";
 
 	try {
-		// Use the command resource's execute method
-		// Cast to ManualImportClient - all *arr services support manual import via the same API
-		const importClient = client as unknown as ManualImportClient;
+		// Use BaseClient.post() directly to call the command API.
+		// This avoids typed command unions that may not include ManualImport (Lidarr/Readarr).
+		const baseClient = client as unknown as BaseClientMethods;
+		const commandPath = getCommandApiPath(service);
 
-		// Runtime validation: ensure SDK client has expected interface
-		if (typeof importClient?.command?.execute !== "function") {
-			throw new ManualImportError(
-				`SDK client for ${service} does not support command execution`,
-				501,
-			);
-		}
-
-		await importClient.command.execute({
+		await baseClient.post(commandPath, {
 			name: "ManualImport",
 			importMode: sdkImportMode,
 			files: commandFiles,

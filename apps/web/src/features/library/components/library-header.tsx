@@ -4,9 +4,11 @@ import type { LibraryService } from "@arr/shared";
 import {
 	ArrowDownAZ,
 	ArrowUpAZ,
+	BookOpen,
 	Film,
 	Filter,
 	Library as LibraryIcon,
+	Music,
 	RefreshCw,
 	Tv,
 } from "lucide-react";
@@ -30,6 +32,8 @@ const SERVICE_OPTIONS: Array<{
 	{ value: "all", label: "All", icon: LibraryIcon },
 	{ value: "radarr", label: "Movies", icon: Film, gradient: SERVICE_GRADIENTS.radarr },
 	{ value: "sonarr", label: "Series", icon: Tv, gradient: SERVICE_GRADIENTS.sonarr },
+	{ value: "lidarr", label: "Artists", icon: Music, gradient: SERVICE_GRADIENTS.lidarr },
+	{ value: "readarr", label: "Authors", icon: BookOpen, gradient: SERVICE_GRADIENTS.readarr },
 ];
 
 /**
@@ -177,7 +181,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 
 						{/* Description */}
 						<p className="text-muted-foreground max-w-xl">
-							Browse, filter, and manage movies and series across all connected instances
+							Browse, filter, and manage your media across all connected instances
 						</p>
 					</div>
 

@@ -64,17 +64,7 @@ const bulkScoreCopySchema = z.object({
 // Routes
 // ============================================================================
 
-const bulkScoreRoutes: FastifyPluginCallback = (app, opts, done) => {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-	});
-
+const bulkScoreRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	/**
 	 * GET /api/trash-guides/bulk-scores
 	 * Get all custom format scores with filtering

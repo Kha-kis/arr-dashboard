@@ -56,6 +56,6 @@ export function useDeepCompareEffect(
 			setCommittedDeps(depsRef.current);
 			return effectRef.current();
 		}
-		// eslint-disable-next-line react-hooks/exhaustive-deps
+		 
 	}, [hasChanged]);
 }

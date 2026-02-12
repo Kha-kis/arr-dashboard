@@ -187,7 +187,7 @@ async function testLidarrIntegration() {
 	}
 
 	// Test what queue cleaner would do
-	console.log("\n" + "=".repeat(60));
+	console.log(`\n${"=".repeat(60)}`);
 	console.log("🧹 Queue Cleaner Preview (simulated):");
 	console.log("=".repeat(60));
 
@@ -219,7 +219,7 @@ async function testLidarrIntegration() {
 		}
 	}
 
-	console.log("\n" + "=".repeat(60));
+	console.log(`\n${"=".repeat(60)}`);
 	console.log("📈 Summary:");
 	console.log(`   Items that would be removed: ${wouldClean}`);
 	console.log(`   Items eligible for auto-import: ${autoImportEligible}`);

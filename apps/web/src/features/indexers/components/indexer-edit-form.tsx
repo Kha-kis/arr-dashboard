@@ -1,7 +1,7 @@
 "use client";
 
 import { Input } from "../../../components/ui/input";
-import { CheckCircle2, XCircle, Hash } from "lucide-react";
+import { CheckCircle2, Hash } from "lucide-react";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
@@ -24,7 +24,7 @@ export const IndexerEditForm = ({
 	onEnableChange: (enabled: boolean) => void;
 	onPriorityChange: (priority: number | undefined) => void;
 }) => {
-	const { gradient: themeGradient } = useThemeGradient();
+	const { gradient: _themeGradient } = useThemeGradient();
 
 	return (
 		<div className="flex flex-wrap items-center gap-6">

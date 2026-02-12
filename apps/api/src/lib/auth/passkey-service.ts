@@ -5,7 +5,6 @@ import {
 	type PublicKeyCredentialCreationOptionsJSON,
 	type PublicKeyCredentialRequestOptionsJSON,
 	type RegistrationResponseJSON,
-	type VerifiedAuthenticationResponse,
 	type VerifiedRegistrationResponse,
 	generateAuthenticationOptions,
 	generateRegistrationOptions,

@@ -19,8 +19,7 @@ import {
 	fetchRecommendations,
 	fetchTestOptions,
 } from "../../lib/api-client/discover";
-
-const QUEUE_QUERY_KEY = ["dashboard", "queue"] as const;
+import { QUEUE_QUERY_KEY } from "../../lib/query-keys";
 
 interface DiscoverSearchQueryOptions {
 	query: string;

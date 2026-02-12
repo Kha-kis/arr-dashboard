@@ -13,7 +13,6 @@ import {
 	isLidarrClient,
 	isReadarrClient,
 } from "../../lib/arr/client-helpers.js";
-import { ArrError, arrErrorToHttpStatus } from "../../lib/arr/client-factory.js";
 import {
 	normalizeQueueItem,
 	parseQueueId,
@@ -21,7 +20,7 @@ import {
 	type QueueService,
 	type QueueClient,
 } from "../../lib/dashboard/queue-utils.js";
-import { ManualImportError, autoImportByDownloadIdWithSdk, setManualImportLogger } from "../manual-import-utils.js";
+import { autoImportByDownloadIdWithSdk, setManualImportLogger } from "../manual-import-utils.js";
 
 /**
  * Queue-related routes for the dashboard
@@ -29,17 +28,8 @@ import { ManualImportError, autoImportByDownloadIdWithSdk, setManualImportLogger
 export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	// Initialize the logger for manual import utilities (used by auto-import feature)
 	setManualImportLogger({
-		warn: (msg, ...args) => app.log.warn({ ...args[0] as object }, msg),
-		debug: (msg, ...args) => app.log.debug({ ...args[0] as object }, msg),
-	});
-
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
-			return reply.status(401).send({
-				error: "Authentication required",
-			});
-		}
+		warn: (msg, ...args) => app.log.warn({ ...(args[0] as object) }, msg),
+		debug: (msg, ...args) => app.log.debug({ ...(args[0] as object) }, msg),
 	});
 
 	/**
@@ -143,90 +133,68 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
-		try {
-			if (body.action === "manualImport") {
-				const downloadId = typeof body.downloadId === "string" ? body.downloadId.trim() : "";
+		if (body.action === "manualImport") {
+			const downloadId = typeof body.downloadId === "string" ? body.downloadId.trim() : "";
 
-				if (!downloadId) {
-					return reply.status(400).send({
-						success: false,
-						message: "Manual import requires a download identifier.",
-					});
-				}
-
-				// Manual import supported for all *arr services with download queues
-				await autoImportByDownloadIdWithSdk(
-					client as SonarrClient | RadarrClient | LidarrClient | ReadarrClient,
-					service,
-					downloadId,
-				);
-			} else if (body.action === "retry") {
-				// Retry by removing from queue without blocklisting
-				const deleteOptions = {
-					removeFromClient: body.removeFromClient ?? true,
-					blocklist: false,
-					changeCategory: false,
-				};
-
-				if (isSonarrClient(client)) {
-					await client.queue.delete(queueId, deleteOptions);
-				} else if (isRadarrClient(client)) {
-					await client.queue.delete(queueId, deleteOptions);
-				} else if (isLidarrClient(client)) {
-					await client.queue.delete(queueId, deleteOptions);
-				} else if (isReadarrClient(client)) {
-					await client.queue.delete(queueId, deleteOptions);
-				}
-			} else {
-				// Remove action
-				const deleteOptions = {
-					removeFromClient: body.removeFromClient,
-					blocklist: body.blocklist,
-					changeCategory: body.changeCategory,
-				};
-
-				if (isSonarrClient(client)) {
-					await client.queue.delete(queueId, deleteOptions);
-				} else if (isRadarrClient(client)) {
-					await client.queue.delete(queueId, deleteOptions);
-				} else if (isLidarrClient(client)) {
-					await client.queue.delete(queueId, deleteOptions);
-				} else if (isReadarrClient(client)) {
-					await client.queue.delete(queueId, deleteOptions);
-				}
-
-				// Trigger search if requested
-				if (body.search) {
-					try {
-						await triggerQueueSearchWithSdk(
-							client as QueueClient,
-							service,
-							body.searchPayload,
-						);
-					} catch (error) {
-						request.log.error({ err: error, queueId, service }, "queue search trigger failed");
-					}
-				}
-			}
-
-			return reply.status(204).send();
-		} catch (error) {
-			if (error instanceof ManualImportError) {
-				return reply.status(error.statusCode).send({
+			if (!downloadId) {
+				return reply.status(400).send({
 					success: false,
-					message: error.message,
+					message: "Manual import requires a download identifier.",
 				});
 			}
 
-			if (error instanceof ArrError) {
-				return reply.status(arrErrorToHttpStatus(error)).send({
-					success: false,
-					message: error.message,
-				});
+			// Manual import supported for all *arr services with download queues
+			await autoImportByDownloadIdWithSdk(
+				client as SonarrClient | RadarrClient | LidarrClient | ReadarrClient,
+				service,
+				downloadId,
+			);
+		} else if (body.action === "retry") {
+			// Retry by removing from queue without blocklisting
+			const deleteOptions = {
+				removeFromClient: body.removeFromClient ?? true,
+				blocklist: false,
+				changeCategory: false,
+			};
+
+			if (isSonarrClient(client)) {
+				await client.queue.delete(queueId, deleteOptions);
+			} else if (isRadarrClient(client)) {
+				await client.queue.delete(queueId, deleteOptions);
+			} else if (isLidarrClient(client)) {
+				await client.queue.delete(queueId, deleteOptions);
+			} else if (isReadarrClient(client)) {
+				await client.queue.delete(queueId, deleteOptions);
+			}
+		} else {
+			// Remove action
+			const deleteOptions = {
+				removeFromClient: body.removeFromClient,
+				blocklist: body.blocklist,
+				changeCategory: body.changeCategory,
+			};
+
+			if (isSonarrClient(client)) {
+				await client.queue.delete(queueId, deleteOptions);
+			} else if (isRadarrClient(client)) {
+				await client.queue.delete(queueId, deleteOptions);
+			} else if (isLidarrClient(client)) {
+				await client.queue.delete(queueId, deleteOptions);
+			} else if (isReadarrClient(client)) {
+				await client.queue.delete(queueId, deleteOptions);
 			}
 
-			throw error;
+			// Trigger search if requested
+			if (body.search) {
+				try {
+					await triggerQueueSearchWithSdk(client as QueueClient, service, body.searchPayload);
+				} catch (error) {
+					request.log.error({ err: error, queueId, service }, "queue search trigger failed");
+				}
+			}
 		}
+
+		return reply.status(204).send();
 	});
 
 	/**
@@ -273,42 +241,31 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
-		try {
-			const deleteOptions =
-				body.action === "retry"
-					? {
-							removeFromClient: body.removeFromClient ?? true,
-							blocklist: false,
-							changeCategory: false,
-						}
-					: {
-							removeFromClient: body.removeFromClient,
-							blocklist: body.blocklist,
-							changeCategory: body.changeCategory,
-						};
+		const deleteOptions =
+			body.action === "retry"
+				? {
+						removeFromClient: body.removeFromClient ?? true,
+						blocklist: false,
+						changeCategory: false,
+					}
+				: {
+						removeFromClient: body.removeFromClient,
+						blocklist: body.blocklist,
+						changeCategory: body.changeCategory,
+					};
 
-			if (isSonarrClient(client)) {
-				await client.queue.bulkDelete(queueIds, deleteOptions);
-			} else if (isRadarrClient(client)) {
-				await client.queue.bulkDelete(queueIds, deleteOptions);
-			} else if (isLidarrClient(client)) {
-				// Lidarr's bulkDelete takes a combined object with ids and options
-				await client.queue.bulkDelete({ ids: queueIds, ...deleteOptions });
-			} else if (isReadarrClient(client)) {
-				await client.queue.bulkDelete(queueIds, deleteOptions);
-			}
-
-			return reply.status(204).send();
-		} catch (error) {
-			if (error instanceof ArrError) {
-				return reply.status(arrErrorToHttpStatus(error)).send({
-					success: false,
-					message: error.message,
-				});
-			}
-
-			throw error;
+		if (isSonarrClient(client)) {
+			await client.queue.bulkDelete(queueIds, deleteOptions);
+		} else if (isRadarrClient(client)) {
+			await client.queue.bulkDelete(queueIds, deleteOptions);
+		} else if (isLidarrClient(client)) {
+			// Lidarr's bulkDelete takes a combined object with ids and options
+			await client.queue.bulkDelete({ ids: queueIds, ...deleteOptions });
+		} else if (isReadarrClient(client)) {
+			await client.queue.bulkDelete(queueIds, deleteOptions);
 		}
+
+		return reply.status(204).send();
 	});
 
 	done();

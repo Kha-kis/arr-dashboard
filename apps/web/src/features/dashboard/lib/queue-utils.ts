@@ -60,6 +60,16 @@ export const getGroupKey = (item: QueueItem): string | null => {
 		const client = item.downloadClient ?? "unknown";
 		return `${item.service}:${item.instanceId}:series:${base}:${protocol}:${client}`;
 	}
+	if (item.service === "lidarr" && item.artistId) {
+		const protocol = item.protocol ?? item.downloadProtocol ?? "unknown";
+		const client = item.downloadClient ?? "unknown";
+		return `${item.service}:${item.instanceId}:artist:${item.artistId}:${protocol}:${client}`;
+	}
+	if (item.service === "readarr" && item.authorId) {
+		const protocol = item.protocol ?? item.downloadProtocol ?? "unknown";
+		const client = item.downloadClient ?? "unknown";
+		return `${item.service}:${item.instanceId}:author:${item.authorId}:${protocol}:${client}`;
+	}
 	return null;
 };
 
@@ -72,7 +82,7 @@ export const deriveTitle = (items: QueueItem[]): string => {
 		return "Queue group";
 	}
 	return (
-		first.series?.title || first.movie?.title || first.title || first.instanceName || "Queue group"
+		first.series?.title || first.movie?.title || first.artist?.name || first.author?.name || first.title || first.instanceName || "Queue group"
 	);
 };
 
@@ -202,7 +212,7 @@ export const summarizeLines = (lines: StatusLine[]): CompactLine[] => {
 		}
 
 		const normalized = trimmed.toLowerCase();
-		const looksLikeFile = /\.(mkv|mp4|avi|m4v|ts|rar|zip|7z)$/i.test(normalized);
+		const looksLikeFile = /\.(mkv|mp4|avi|m4v|ts|rar|zip|7z|flac|mp3|ogg|aac|wav|wma|opus|m4a|alac|epub|mobi|azw3|pdf|cbr|cbz)$/i.test(normalized);
 		if (looksLikeFile || looksLikeReleaseName(trimmed)) {
 			return;
 		}

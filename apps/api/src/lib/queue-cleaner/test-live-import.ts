@@ -102,7 +102,7 @@ async function executeManualImport(items: ManualImportItem[], downloadId: string
 		importMode: "auto",
 	};
 
-	console.log("   Payload:", JSON.stringify(command, null, 2).substring(0, 500) + "...");
+	console.log("   Payload:", `${JSON.stringify(command, null, 2).substring(0, 500)}...`);
 
 	return sonarrFetch<{ id: number }>("/command", {
 		method: "POST",
@@ -178,7 +178,7 @@ async function main() {
 	}
 
 	// Step 3: Ask for confirmation before importing
-	console.log("\n" + "═".repeat(60));
+	console.log(`\n${"═".repeat(60)}`);
 	console.log("⚡ Ready to execute import!");
 	console.log("═".repeat(60));
 
@@ -212,7 +212,7 @@ async function main() {
 				console.log("\n🎉 SUCCESS! Import completed!");
 				console.log("   The episode should now be in your library.");
 				break;
-			} else if (status.status === "failed") {
+			}if (status.status === "failed") {
 				console.log(`\n❌ FAILED: ${status.message || "Unknown error"}`);
 				break;
 			}

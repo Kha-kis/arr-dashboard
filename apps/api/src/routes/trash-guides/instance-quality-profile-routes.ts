@@ -49,17 +49,7 @@ const updateScoresSchema = z.object({
 // Route Handlers
 // ============================================================================
 
-const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, done) => {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-	});
-
+const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	/**
 	 * PATCH /api/trash-guides/instances/:instanceId/quality-profiles/:profileId/scores
 	 * Update custom format scores for a quality profile
@@ -71,7 +61,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		// userId is guaranteed by preHandler authentication check
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { instanceId, profileId } = request.params;
-		const profileIdNum = Number.parseInt(profileId);
+		const profileIdNum = Number.parseInt(profileId, 10);
 
 		if (Number.isNaN(profileIdNum)) {
 			return reply.status(400).send({
@@ -250,7 +240,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		// userId is guaranteed by preHandler authentication check
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { instanceId, profileId } = request.params;
-		const profileIdNum = Number.parseInt(profileId);
+		const profileIdNum = Number.parseInt(profileId, 10);
 
 		if (Number.isNaN(profileIdNum)) {
 			return reply.status(400).send({
@@ -314,7 +304,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		// userId is guaranteed by preHandler authentication check
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { instanceId, profileId } = request.params;
-		const profileIdNum = Number.parseInt(profileId);
+		const profileIdNum = Number.parseInt(profileId, 10);
 		const { customFormatId, templateId } = request.body;
 
 		if (Number.isNaN(profileIdNum)) {
@@ -587,8 +577,8 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 			// userId is guaranteed by preHandler authentication check
 			const userId = request.currentUser!.id; // preHandler guarantees auth
 			const { instanceId, profileId, customFormatId } = request.params;
-			const profileIdNum = Number.parseInt(profileId);
-			const customFormatIdNum = Number.parseInt(customFormatId);
+			const profileIdNum = Number.parseInt(profileId, 10);
+			const customFormatIdNum = Number.parseInt(customFormatId, 10);
 
 			if (Number.isNaN(profileIdNum) || Number.isNaN(customFormatIdNum)) {
 				return reply.status(400).send({
@@ -668,10 +658,10 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 					}
 					// Priority 2: TRaSH Guides score from template's score set
 					else if (
-						templateConfigReset.scoreSet &&
+						templateConfigReset.scoreSet != null &&
+						templateConfigReset.scoreSet !== "" &&
 						templateCf.originalConfig?.trash_scores?.[templateConfigReset.scoreSet] !== undefined
 					) {
-						// Non-null assertion safe because we've just checked !== undefined
 						templateScore = templateCf.originalConfig.trash_scores[templateConfigReset.scoreSet]!;
 					}
 					// Priority 3: TRaSH Guides default score
@@ -794,7 +784,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 		// userId is guaranteed by preHandler authentication check
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { instanceId, profileId } = request.params;
-		const profileIdNum = Number.parseInt(profileId);
+		const profileIdNum = Number.parseInt(profileId, 10);
 		const { customFormatIds } = request.body;
 
 		if (Number.isNaN(profileIdNum)) {
@@ -895,7 +885,8 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, opts, 
 					}
 					// Priority 2: TRaSH Guides score from template's score set
 					else if (
-						templateConfigParsed.scoreSet &&
+						templateConfigParsed.scoreSet != null &&
+						templateConfigParsed.scoreSet !== "" &&
 						templateCf.originalConfig?.trash_scores?.[templateConfigParsed.scoreSet] !== undefined
 					) {
 						score = templateCf.originalConfig.trash_scores[templateConfigParsed.scoreSet];

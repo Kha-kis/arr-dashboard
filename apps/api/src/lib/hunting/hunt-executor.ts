@@ -4,12 +4,15 @@ import type { SonarrClient } from "arr-sdk/sonarr";
 import type { RadarrClient } from "arr-sdk/radarr";
 import type { LidarrClient } from "arr-sdk/lidarr";
 import type { ReadarrClient } from "arr-sdk/readarr";
+import type { QueueCapableClient } from "../arr/client-factory.js";
 import { SEASON_SEARCH_THRESHOLD, SEARCH_DELAY_MS, GRAB_CHECK_DELAY_MS } from "./constants.js";
 import {
 	createSearchHistoryManager,
 	type SearchHistoryManager,
 	type SearchedItem,
 } from "./search-history.js";
+import { delay } from "../utils/delay.js";
+import { fetchWantedWithWrapAround, type ApiCallCounter } from "./pagination-helpers.js";
 
 /**
  * Logger type for hunt executor functions
@@ -17,17 +20,7 @@ import {
  */
 type HuntLogger = FastifyBaseLogger;
 
-/**
- * Delay helper - waits for the specified milliseconds
- */
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/**
- * API call counter for tracking actual API usage during hunts
- */
-interface ApiCallCounter {
-	count: number;
-}
+// delay and ApiCallCounter imported from shared utilities
 
 /**
  * Hunt Executor
@@ -68,7 +61,7 @@ interface SonarrSeries {
 	qualityProfileId: number;
 }
 
-interface SonarrEpisode {
+interface _SonarrEpisode {
 	id: number;
 	seriesId: number;
 	episodeNumber: number;
@@ -80,7 +73,7 @@ interface SonarrEpisode {
 }
 
 // Radarr types
-interface RadarrMovie {
+interface _RadarrMovie {
 	id: number;
 	title: string;
 	year: number;
@@ -94,14 +87,14 @@ interface RadarrMovie {
 	inCinemas?: string;
 }
 
-interface WantedResponse<T> {
+interface _WantedResponse<T> {
 	page: number;
 	pageSize: number;
 	totalRecords: number;
 	records: T[];
 }
 
-interface QueueResponse {
+interface _QueueResponse {
 	totalRecords: number;
 }
 
@@ -120,7 +113,7 @@ interface QueueItem {
 	movieId?: number;
 }
 
-interface FullQueueResponse {
+interface _FullQueueResponse {
 	totalRecords: number;
 	records: QueueItem[];
 }
@@ -146,7 +139,7 @@ interface HistoryRecord {
 	movieId?: number;
 }
 
-interface HistoryResponse {
+interface _HistoryResponse {
 	page: number;
 	pageSize: number;
 	totalRecords: number;
@@ -221,8 +214,25 @@ const SONARR_STATUS_HIERARCHY: Record<string, string[]> = {
 	ended: ["ended"],
 };
 
+/**
+ * Lidarr/Readarr status hierarchy for filtering
+ * Artists and authors use: continuing → ended
+ */
+const LIDARR_STATUS_HIERARCHY: Record<string, string[]> = {
+	continuing: ["continuing", "ended"],
+	ended: ["ended"],
+};
+
 /** Hunt service types */
 type HuntService = "sonarr" | "radarr" | "lidarr" | "readarr";
+
+/** Maps each service to its status hierarchy for filter expansion */
+const STATUS_HIERARCHY_MAP: Record<HuntService, Record<string, string[]>> = {
+	sonarr: SONARR_STATUS_HIERARCHY,
+	radarr: RADARR_STATUS_HIERARCHY,
+	lidarr: LIDARR_STATUS_HIERARCHY,
+	readarr: LIDARR_STATUS_HIERARCHY,
+};
 
 /**
  * Expand a list of status keys to include lifecycle-related statuses for the specified service.
@@ -234,7 +244,7 @@ type HuntService = "sonarr" | "radarr" | "lidarr" | "readarr";
  * @returns A `Set` of lowercased statuses containing the original statuses and any hierarchically related statuses
  */
 function expandStatusFilters(statuses: string[], service: HuntService): Set<string> {
-	const hierarchy = service === "sonarr" ? SONARR_STATUS_HIERARCHY : RADARR_STATUS_HIERARCHY;
+	const hierarchy = STATUS_HIERARCHY_MAP[service];
 	const expanded = new Set<string>();
 
 	for (const status of statuses) {
@@ -397,20 +407,6 @@ function passesFilters(
 	},
 	filters: ParsedFilters,
 ): boolean {
-	const conditions = [
-		"monitored",
-		"includeTags",
-		"excludeTags",
-		"includeQualityProfiles",
-		"excludeQualityProfiles",
-		"includeStatuses",
-		"yearMin",
-		"yearMax",
-		"ageThreshold",
-	];
-
-	const results = conditions.map((condition) => checkFilterCondition(item, filters, condition));
-
 	// Exclude conditions always use AND logic (they're blockers)
 	const excludeResults = [
 		checkFilterCondition(item, filters, "excludeTags"),
@@ -485,7 +481,8 @@ export async function executeHuntWithSdk(
 		instanceId: instance.id,
 		huntType: type,
 	});
-	const client = app.arrClientFactory.create(instance);
+	// Hunting only runs against queue-capable services (not Prowlarr)
+	const client = app.arrClientFactory.create(instance) as QueueCapableClient;
 	const apiCallCounter: ApiCallCounter = { count: 0 };
 
 	const service = instance.service.toLowerCase() as HuntService;
@@ -586,7 +583,7 @@ export async function executeHuntWithSdk(
  * Returns ok: false if check fails to prevent overloading queue on connectivity issues
  */
 async function checkQueueThresholdWithSdk(
-	client: SonarrClient | RadarrClient,
+	client: QueueCapableClient,
 	threshold: number,
 	counter: ApiCallCounter,
 	logger: HuntLogger,
@@ -778,57 +775,18 @@ async function executeSonarrHuntWithSdk(
 		const allSeries = await client.series.getAll();
 		const seriesMap = new Map(allSeries.map((s) => [s.id ?? 0, s]));
 
-		// Get wanted episodes
+		// Get wanted episodes with page rotation
 		const fetchSize = Math.max(batchSize * 5, 50);
 
-		// Calculate page offset based on recently searched items to rotate through large libraries
-		// This prevents getting "stuck" when all items on page 1 have been searched
-		const recentSearchCount = historyManager.getRecentSearchCount();
-		let pageOffset = Math.floor(recentSearchCount / fetchSize) + 1;
-
-		counter.count++;
-		let wantedData =
-			type === "missing"
-				? await client.wanted.missing({
-						page: pageOffset,
-						pageSize: fetchSize,
-						sortKey: "airDateUtc",
-						sortDirection: "descending",
-					})
-				: await client.wanted.cutoff({
-						page: pageOffset,
-						pageSize: fetchSize,
-						sortKey: "airDateUtc",
-						sortDirection: "descending",
-					});
-
-		let records = wantedData.records ?? [];
-
-		// If no records on calculated page and we're past page 1, wrap around to page 1
-		// This handles the case where recentSearchCount exceeds total available items
-		if (records.length === 0 && pageOffset > 1) {
-			logger.debug(
-				{ pageOffset, recentSearchCount, fetchSize },
-				"No records on calculated page, wrapping to page 1",
-			);
-			pageOffset = 1;
-			counter.count++;
-			wantedData =
-				type === "missing"
-					? await client.wanted.missing({
-							page: 1,
-							pageSize: fetchSize,
-							sortKey: "airDateUtc",
-							sortDirection: "descending",
-						})
-					: await client.wanted.cutoff({
-							page: 1,
-							pageSize: fetchSize,
-							sortKey: "airDateUtc",
-							sortDirection: "descending",
-						});
-			records = wantedData.records ?? [];
-		}
+		const records = await fetchWantedWithWrapAround(
+			(page) => {
+				const params = { page, pageSize: fetchSize, sortKey: "airDateUtc" as const, sortDirection: "descending" as const };
+				return type === "missing"
+					? client.wanted.missing(params)
+					: client.wanted.cutoff(params);
+			},
+			{ recentSearchCount: historyManager.getRecentSearchCount(), fetchSize, counter, logger },
+		);
 
 		if (records.length === 0) {
 			return {
@@ -1104,54 +1062,15 @@ async function executeRadarrHuntWithSdk(
 	try {
 		const fetchSize = Math.max(batchSize * 5, 50);
 
-		// Calculate page offset based on recently searched items to rotate through large libraries
-		// This prevents getting "stuck" when all items on page 1 have been searched
-		const recentSearchCount = historyManager.getRecentSearchCount();
-		let pageOffset = Math.floor(recentSearchCount / fetchSize) + 1;
-
-		counter.count++;
-		let wantedData =
-			type === "missing"
-				? await client.wanted.missing({
-						page: pageOffset,
-						pageSize: fetchSize,
-						sortKey: "digitalRelease",
-						sortDirection: "descending",
-					})
-				: await client.wanted.cutoff({
-						page: pageOffset,
-						pageSize: fetchSize,
-						sortKey: "digitalRelease",
-						sortDirection: "descending",
-					});
-
-		let movies = wantedData.records ?? [];
-
-		// If no records on calculated page and we're past page 1, wrap around to page 1
-		// This handles the case where recentSearchCount exceeds total available items
-		if (movies.length === 0 && pageOffset > 1) {
-			logger.debug(
-				{ pageOffset, recentSearchCount, fetchSize },
-				"No records on calculated page, wrapping to page 1",
-			);
-			pageOffset = 1;
-			counter.count++;
-			wantedData =
-				type === "missing"
-					? await client.wanted.missing({
-							page: 1,
-							pageSize: fetchSize,
-							sortKey: "digitalRelease",
-							sortDirection: "descending",
-						})
-					: await client.wanted.cutoff({
-							page: 1,
-							pageSize: fetchSize,
-							sortKey: "digitalRelease",
-							sortDirection: "descending",
-						});
-			movies = wantedData.records ?? [];
-		}
+		const movies = await fetchWantedWithWrapAround(
+			(page) => {
+				const params = { page, pageSize: fetchSize, sortKey: "digitalRelease" as const, sortDirection: "descending" as const };
+				return type === "missing"
+					? client.wanted.missing(params)
+					: client.wanted.cutoff(params);
+			},
+			{ recentSearchCount: historyManager.getRecentSearchCount(), fetchSize, counter, logger },
+		);
 
 		if (movies.length === 0) {
 			return {
@@ -1314,52 +1233,15 @@ async function executeLidarrHuntWithSdk(
 
 		const fetchSize = Math.max(batchSize * 5, 50);
 
-		// Calculate page offset based on recently searched items
-		const recentSearchCount = historyManager.getRecentSearchCount();
-		let pageOffset = Math.floor(recentSearchCount / fetchSize) + 1;
-
-		counter.count++;
-		let wantedData =
-			type === "missing"
-				? await client.wanted.getMissing({
-						page: pageOffset,
-						pageSize: fetchSize,
-						sortKey: "releaseDate",
-						sortDirection: "descending",
-					})
-				: await client.wanted.getCutoffUnmet({
-						page: pageOffset,
-						pageSize: fetchSize,
-						sortKey: "releaseDate",
-						sortDirection: "descending",
-					});
-
-		let albums = wantedData.records ?? [];
-
-		// Wrap around to page 1 if needed
-		if (albums.length === 0 && pageOffset > 1) {
-			logger.debug(
-				{ pageOffset, recentSearchCount, fetchSize },
-				"No records on calculated page, wrapping to page 1",
-			);
-			pageOffset = 1;
-			counter.count++;
-			wantedData =
-				type === "missing"
-					? await client.wanted.getMissing({
-							page: 1,
-							pageSize: fetchSize,
-							sortKey: "releaseDate",
-							sortDirection: "descending",
-						})
-					: await client.wanted.getCutoffUnmet({
-							page: 1,
-							pageSize: fetchSize,
-							sortKey: "releaseDate",
-							sortDirection: "descending",
-						});
-			albums = wantedData.records ?? [];
-		}
+		const albums = await fetchWantedWithWrapAround(
+			(page) => {
+				const params = { page, pageSize: fetchSize, sortKey: "releaseDate" as const, sortDirection: "descending" as const };
+				return type === "missing"
+					? client.wanted.getMissing(params)
+					: client.wanted.getCutoffUnmet(params);
+			},
+			{ recentSearchCount: historyManager.getRecentSearchCount(), fetchSize, counter, logger },
+		);
 
 		if (albums.length === 0) {
 			return {
@@ -1530,52 +1412,15 @@ async function executeReadarrHuntWithSdk(
 
 		const fetchSize = Math.max(batchSize * 5, 50);
 
-		// Calculate page offset based on recently searched items
-		const recentSearchCount = historyManager.getRecentSearchCount();
-		let pageOffset = Math.floor(recentSearchCount / fetchSize) + 1;
-
-		counter.count++;
-		let wantedData =
-			type === "missing"
-				? await client.wanted.getMissing({
-						page: pageOffset,
-						pageSize: fetchSize,
-						sortKey: "releaseDate",
-						sortDirection: "descending",
-					})
-				: await client.wanted.getCutoffUnmet({
-						page: pageOffset,
-						pageSize: fetchSize,
-						sortKey: "releaseDate",
-						sortDirection: "descending",
-					});
-
-		let books = wantedData.records ?? [];
-
-		// Wrap around to page 1 if needed
-		if (books.length === 0 && pageOffset > 1) {
-			logger.debug(
-				{ pageOffset, recentSearchCount, fetchSize },
-				"No records on calculated page, wrapping to page 1",
-			);
-			pageOffset = 1;
-			counter.count++;
-			wantedData =
-				type === "missing"
-					? await client.wanted.getMissing({
-							page: 1,
-							pageSize: fetchSize,
-							sortKey: "releaseDate",
-							sortDirection: "descending",
-						})
-					: await client.wanted.getCutoffUnmet({
-							page: 1,
-							pageSize: fetchSize,
-							sortKey: "releaseDate",
-							sortDirection: "descending",
-						});
-			books = wantedData.records ?? [];
-		}
+		const books = await fetchWantedWithWrapAround(
+			(page) => {
+				const params = { page, pageSize: fetchSize, sortKey: "releaseDate" as const, sortDirection: "descending" as const };
+				return type === "missing"
+					? client.wanted.getMissing(params)
+					: client.wanted.getCutoffUnmet(params);
+			},
+			{ recentSearchCount: historyManager.getRecentSearchCount(), fetchSize, counter, logger },
+		);
 
 		if (books.length === 0) {
 			return {

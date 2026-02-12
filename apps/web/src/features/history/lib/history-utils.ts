@@ -5,6 +5,8 @@ export const SERVICE_FILTERS = [
 	{ value: "sonarr" as const, label: "Sonarr" },
 	{ value: "radarr" as const, label: "Radarr" },
 	{ value: "prowlarr" as const, label: "Prowlarr" },
+	{ value: "lidarr" as const, label: "Lidarr" },
+	{ value: "readarr" as const, label: "Readarr" },
 ];
 
 /**
@@ -173,7 +175,7 @@ export const groupHistoryItems = (
 		let addedToGroup = false;
 
 		// Find a matching group for this delete event (same episode/movie, within time window)
-		for (const [key, groupItems] of groups.entries()) {
+		for (const [_key, groupItems] of groups.entries()) {
 			const firstInGroup = groupItems[0];
 			if (!firstInGroup) continue;
 
@@ -289,4 +291,247 @@ export const buildHistoryExternalLink = (
 	}
 
 	return null;
+};
+
+/**
+ * Filters out Prowlarr RSS sync events
+ */
+export const filterProwlarrRss = (items: HistoryItem[]): HistoryItem[] =>
+	items.filter((item) => {
+		if (item.service !== "prowlarr") return true;
+		const eventType = (item.eventType ?? "").toLowerCase();
+		return !eventType.includes("rss");
+	});
+
+/**
+ * Lifecycle stage for a download event
+ */
+export interface LifecycleStage {
+	stage: string;
+	label: string;
+	color: "success" | "warning" | "error" | "info" | "default";
+}
+
+/**
+ * Detects the lifecycle stages from a group of history items.
+ * Returns stages in chronological order (oldest first).
+ */
+export const detectLifecycleStages = (items: HistoryItem[]): LifecycleStage[] => {
+	if (items.length <= 1) return [];
+
+	const sorted = [...items].sort((a, b) => {
+		const dateA = a.date ? new Date(a.date).getTime() : 0;
+		const dateB = b.date ? new Date(b.date).getTime() : 0;
+		return dateA - dateB;
+	});
+
+	const seen = new Set<string>();
+	const stages: LifecycleStage[] = [];
+
+	for (const item of sorted) {
+		const eventType = (item.eventType ?? item.status ?? "").toLowerCase();
+		let stage: LifecycleStage | undefined;
+
+		if (eventType.includes("grab")) {
+			stage = { stage: "grabbed", label: "Grabbed", color: "info" };
+		} else if (eventType.includes("import") || eventType.includes("download")) {
+			stage = { stage: "imported", label: "Imported", color: "success" };
+		} else if (eventType.includes("fail") || eventType.includes("error") || eventType.includes("reject")) {
+			stage = { stage: "failed", label: "Failed", color: "error" };
+		} else if (eventType.includes("delete") || eventType.includes("removed")) {
+			stage = { stage: "deleted", label: "Deleted", color: "warning" };
+		} else if (eventType.includes("upgrade")) {
+			stage = { stage: "upgraded", label: "Upgraded", color: "success" };
+		} else if (eventType.includes("renam")) {
+			stage = { stage: "renamed", label: "Renamed", color: "default" };
+		}
+
+		if (stage && !seen.has(stage.stage)) {
+			seen.add(stage.stage);
+			stages.push(stage);
+		}
+	}
+
+	return stages;
+};
+
+export { formatBytes } from "../../../lib/format-utils";
+
+/**
+ * Returns a display title for a history item, handling Prowlarr-specific data
+ */
+export const getDisplayTitle = (item: HistoryItem): string => {
+	// For Prowlarr, try to extract meaningful info from data field
+	if (item.service === "prowlarr") {
+		const data = item.data as any;
+		const eventType = (item.eventType ?? "").toLowerCase();
+
+		// For release grabbed events, prioritize release title
+		if (eventType.includes("grab") || eventType.includes("release")) {
+			const release = data?.releaseTitle || data?.title || item.title || item.sourceTitle;
+			if (release && release !== "Untitled" && release) return release;
+		}
+
+		// For query/RSS events, show the search term or category
+		if (eventType.includes("query") || eventType.includes("rss")) {
+			const query = data?.query || data?.searchTerm || data?.term;
+			if (query) return `Search: "${query}"`;
+
+			// For RSS with no query, show categories or "RSS Feed Sync"
+			const categories = data?.categories;
+			if (categories && Array.isArray(categories) && categories.length > 0) {
+				return `RSS: ${categories.join(", ")}`;
+			}
+
+			return "RSS Feed Sync";
+		}
+
+		// Fallback: try release title, then query
+		const release = data?.releaseTitle || data?.title;
+		if (release && release !== "Untitled" && release) return release;
+
+		const query = data?.query || data?.searchTerm;
+		if (query) return `Search: "${query}"`;
+
+		// If we still have nothing useful, show the event type context
+		if (eventType.includes("rss")) return "RSS Feed Sync";
+		if (eventType.includes("query")) return "Indexer Query";
+
+		// Last resort: show application
+		const app = data?.application || data?.source;
+		if (app) return `${eventType} - ${app}`;
+	}
+
+	// For series, show "Series - Episode Title"
+	if (item.service === "sonarr" && item.title) {
+		return item.title;
+	}
+	// For movies, show movie title
+	if (item.service === "radarr" && item.title) {
+		return item.title;
+	}
+	// Fallback to sourceTitle or generic
+	return item.sourceTitle ?? item.title ?? "Unknown";
+};
+
+/**
+ * Maps event type to StatusBadge variant
+ */
+export const getEventTypeStatusBadge = (eventType: string): "success" | "warning" | "error" | "info" | "default" => {
+	const normalized = eventType.toLowerCase();
+	if (normalized.includes("download") || normalized.includes("import")) {
+		return "success";
+	}
+	if (
+		normalized.includes("fail") ||
+		normalized.includes("error") ||
+		normalized.includes("reject")
+	) {
+		return "error";
+	}
+	if (
+		normalized.includes("delete") ||
+		normalized.includes("removed")
+	) {
+		return "error";
+	}
+	if (
+		normalized.includes("ignored") ||
+		normalized.includes("skip") ||
+		normalized.includes("renam") ||
+		normalized.includes("upgrade")
+	) {
+		return "warning";
+	}
+	if (
+		normalized.includes("grab") ||
+		normalized.includes("indexerquery") ||
+		normalized.includes("query") ||
+		normalized.includes("rss")
+	) {
+		return "info";
+	}
+	return "default";
+};
+
+/**
+ * Determines the source/client string for a history item based on event type.
+ * Returns the raw (non-anonymized) value — callers handle incognito wrapping.
+ */
+export const getSourceClient = (item: HistoryItem): string => {
+	const eventType = (item.eventType ?? item.status ?? "").toLowerCase();
+	const isProwlarr = item.service === "prowlarr";
+	const prowlarrData = isProwlarr ? (item.data as any) : null;
+
+	let result = "";
+
+	if (
+		eventType.includes("grab") ||
+		eventType.includes("query") ||
+		eventType.includes("rss")
+	) {
+		result = isProwlarr
+			? prowlarrData?.indexer || prowlarrData?.indexerName || item.indexer || ""
+			: item.indexer || "";
+	} else if (eventType.includes("download") || eventType.includes("import")) {
+		result = item.downloadClient || "";
+	} else {
+		result = item.downloadClient || item.indexer || item.protocol || "";
+	}
+
+	if (result === "localhost" || result === "unknown") {
+		return "";
+	}
+	return result;
+};
+
+/**
+ * Identifies what kind of source a history item has, for incognito anonymization.
+ * Returns "indexer", "client", or "other".
+ */
+export const getSourceClientKind = (item: HistoryItem): "indexer" | "client" | "other" => {
+	const eventType = (item.eventType ?? item.status ?? "").toLowerCase();
+	if (
+		eventType.includes("grab") ||
+		eventType.includes("query") ||
+		eventType.includes("rss")
+	) {
+		return "indexer";
+	}
+	if (eventType.includes("download") || eventType.includes("import")) {
+		return "client";
+	}
+	if (item.downloadClient) return "client";
+	if (item.indexer) return "indexer";
+	return "other";
+};
+
+export interface ActivitySummary {
+	grabs: number;
+	imports: number;
+	failures: number;
+}
+
+/**
+ * Counts grabs, imports, and failures in items from the last 24 hours
+ */
+export const createActivitySummary = (items: HistoryItem[]): ActivitySummary => {
+	const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+	const summary: ActivitySummary = { grabs: 0, imports: 0, failures: 0 };
+
+	for (const item of items) {
+		const dateMs = item.date ? new Date(item.date).getTime() : 0;
+		if (dateMs < cutoff) continue;
+
+		const eventType = (item.eventType ?? item.status ?? "").toLowerCase();
+		if (eventType.includes("grab")) {
+			summary.grabs += 1;
+		} else if (eventType.includes("import") || eventType.includes("download")) {
+			summary.imports += 1;
+		} else if (eventType.includes("fail") || eventType.includes("error") || eventType.includes("reject")) {
+			summary.failures += 1;
+		}
+	}
+
+	return summary;
 };

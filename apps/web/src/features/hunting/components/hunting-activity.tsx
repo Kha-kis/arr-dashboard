@@ -41,7 +41,7 @@ import type { HuntLog } from "../lib/hunting-types";
  * - Theme-aware status badges
  */
 export const HuntingActivity = () => {
-	const { gradient: themeGradient } = useThemeGradient();
+	const { gradient: _themeGradient } = useThemeGradient();
 
 	const [typeFilter, setTypeFilter] = useState<string>("all");
 	const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -217,7 +217,7 @@ const ActivityLogEntry = ({ log, animationDelay = 0 }: ActivityLogEntryProps) =>
 	const StatusIcon = statusInfo.icon;
 
 	// Get service gradient
-	const serviceGradient = getServiceGradient(log.service);
+	const _serviceGradient = getServiceGradient(log.service);
 
 	return (
 		<div

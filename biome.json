@@ -9,11 +9,15 @@
 		"rules": {
 			"recommended": true,
 			"style": {
-				"noNonNullAssertion": "warn",
+				"noNonNullAssertion": "off",
 				"noUselessElse": "warn"
 			},
 			"suspicious": {
 				"noExplicitAny": "warn"
+			},
+			"correctness": {
+				"noUnusedVariables": "warn",
+				"noUnusedImports": "error"
 			}
 		}
 	},

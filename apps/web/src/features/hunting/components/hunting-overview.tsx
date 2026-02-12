@@ -21,12 +21,10 @@ import {
 	PremiumEmptyState,
 	PremiumSection,
 	InstanceCard,
-	ServiceBadge,
 	StatusBadge,
 	PremiumProgress,
-	GlassmorphicCard,
 } from "../../../components/layout";
-import { SERVICE_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { HuntingStatus, InstanceHuntStatus } from "../lib/hunting-types";
 import { API_USAGE_WARNING_THRESHOLD, API_USAGE_DANGER_THRESHOLD } from "../lib/constants";
@@ -46,7 +44,7 @@ interface HuntingOverviewProps {
  * - Theme-aware progress bars for API usage
  */
 export const HuntingOverview = ({ status, onRefresh }: HuntingOverviewProps) => {
-	const { gradient: themeGradient } = useThemeGradient();
+	const { gradient: _themeGradient } = useThemeGradient();
 
 	if (!status || status.instances.length === 0) {
 		return (
@@ -229,7 +227,7 @@ interface InstanceStatusCardProps {
 }
 
 const InstanceStatusCard = ({ instance, onRefresh, animationDelay = 0 }: InstanceStatusCardProps) => {
-	const { gradient: themeGradient } = useThemeGradient();
+	const { gradient: _themeGradient } = useThemeGradient();
 
 	const isActive = instance.huntMissingEnabled || instance.huntUpgradesEnabled;
 	const { triggerHunt, isTriggering, isCooldownError } = useManualHunt();

@@ -16,7 +16,7 @@ import {
 	Download,
 	Wifi,
 } from "lucide-react";
-import { SEMANTIC_COLORS, PROTOCOL_COLORS } from "../../../lib/theme-gradients";
+import { PROTOCOL_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { StatusBadge } from "../../../components/layout";
 

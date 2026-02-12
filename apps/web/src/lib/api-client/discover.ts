@@ -9,7 +9,7 @@ import type {
 	RecommendationsRequest,
 	RecommendationsResponse,
 } from "@arr/shared";
-import { apiRequest, UnauthorizedError, BadRequestError } from "./base";
+import { apiRequest, UnauthorizedError } from "./base";
 
 export interface DiscoverSearchParams {
 	query: string;
