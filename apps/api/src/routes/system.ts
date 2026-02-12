@@ -3,44 +3,25 @@ import { getAppVersion } from "../lib/utils/version.js";
 
 const RESTART_RATE_LIMIT = { max: 2, timeWindow: "5 minutes" };
 
-// Detect database backend from DATABASE_URL
-function getDatabaseBackend(): { type: string; host: string | null } {
-	const dbUrl = process.env.DATABASE_URL || "";
-
-	if (dbUrl.startsWith("postgresql://") || dbUrl.startsWith("postgres://")) {
-		// Extract host from PostgreSQL URL (redact credentials)
+/**
+ * Extract a safe display identifier for the database connection.
+ * For PostgreSQL: returns the hostname (credentials are redacted).
+ * For SQLite: returns the database filename.
+ */
+function getDatabaseHost(dbUrl: string, provider: "sqlite" | "postgresql"): string | null {
+	if (provider === "postgresql") {
 		const match = dbUrl.match(/@([^:/]+)/);
-		return { type: "PostgreSQL", host: match?.[1] || null };
+		return match?.[1] || null;
 	}
-
-	if (dbUrl.startsWith("mysql://")) {
-		const match = dbUrl.match(/@([^:/]+)/);
-		return { type: "MySQL", host: match?.[1] || null };
-	}
-
-	if (dbUrl.startsWith("file:")) {
-		// Extract filename from SQLite path
-		const filename = dbUrl.replace("file:", "").split("/").pop() || "database";
-		return { type: "SQLite", host: filename };
-	}
-
-	return { type: "SQLite", host: "local" };
+	// SQLite: extract filename from path
+	const path = dbUrl.startsWith("file:") ? dbUrl.slice(5) : dbUrl;
+	return path.split("/").pop() || "database";
 }
 
 const APP_VERSION = getAppVersion();
-console.log(`[system] App version detected: ${APP_VERSION}`);
 
 const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-	});
-
+	app.log.info({ version: APP_VERSION }, "App version detected");
 	/**
 	 * GET /system/settings
 	 * Get system-wide settings (ports, listen address, app name, etc.)
@@ -253,7 +234,9 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.get("/info", async (request, reply) => {
 		try {
-			const database = getDatabaseBackend();
+			const dbUrl = process.env.DATABASE_URL || "";
+			const dbType = app.dbProvider === "postgresql" ? "PostgreSQL" : "SQLite";
+			const dbHost = getDatabaseHost(dbUrl, app.dbProvider);
 			const nodeVersion = process.version;
 			const platform = process.platform;
 			const uptime = process.uptime();
@@ -263,8 +246,8 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				data: {
 					version: APP_VERSION,
 					database: {
-						type: database.type,
-						host: database.host,
+						type: dbType,
+						host: dbHost,
 					},
 					runtime: {
 						nodeVersion,

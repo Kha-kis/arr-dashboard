@@ -11,18 +11,8 @@ import { createDeploymentExecutorService } from "../../lib/trash-guides/deployme
 import { createDeploymentPreviewService } from "../../lib/trash-guides/deployment-preview.js";
 
 export async function deploymentRoutes(app: FastifyInstance) {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-	});
-
 	const { prisma } = app;
-	const deploymentPreview = createDeploymentPreviewService(prisma, app.arrClientFactory);
+	const deploymentPreview = createDeploymentPreviewService(prisma, app.arrClientFactory, app.log);
 	const deploymentExecutor = createDeploymentExecutorService(prisma, app.arrClientFactory);
 
 	/**
@@ -71,22 +61,8 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				},
 			});
 		} catch (error) {
-			if (
-				error instanceof Error &&
-				(error.message.includes("not found") || error.message.includes("mismatch"))
-			) {
-				return reply.status(400).send({
-					success: false,
-					error: error.message,
-				});
-			}
-
-			request.log.error({ error }, "Failed to generate deployment preview");
-			return reply.status(500).send({
-				success: false,
-				error: "Failed to generate deployment preview",
-				details: error instanceof Error ? error.message : String(error),
-			});
+			request.log.error({ err: error }, "Failed to generate deployment preview");
+			throw error;
 		}
 	});
 
@@ -134,22 +110,8 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				result: result,
 			});
 		} catch (error) {
-			if (
-				error instanceof Error &&
-				(error.message.includes("not found") || error.message.includes("mismatch"))
-			) {
-				return reply.status(400).send({
-					success: false,
-					error: error.message,
-				});
-			}
-
-			request.log.error({ error }, "Failed to execute deployment");
-			return reply.status(500).send({
-				success: false,
-				error: "Failed to execute deployment",
-				details: error instanceof Error ? error.message : String(error),
-			});
+			request.log.error({ err: error }, "Failed to execute deployment");
+			throw error;
 		}
 	});
 
@@ -232,7 +194,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				},
 			});
 		} catch (error) {
-			request.log.error({ error }, "Failed to update sync strategy");
+			request.log.error({ err: error }, "Failed to update sync strategy");
 			return reply.status(500).send({
 				success: false,
 				error: "Failed to update sync strategy",
@@ -313,7 +275,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				},
 			});
 		} catch (error) {
-			request.log.error({ error }, "Failed to bulk update sync strategy");
+			request.log.error({ err: error }, "Failed to bulk update sync strategy");
 			return reply.status(500).send({
 				success: false,
 				error: "Failed to bulk update sync strategy",
@@ -409,7 +371,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				},
 			});
 		} catch (error) {
-			request.log.error({ error }, "Failed to unlink template from instance");
+			request.log.error({ err: error }, "Failed to unlink template from instance");
 			return reply.status(500).send({
 				success: false,
 				error: "Failed to unlink template from instance",
@@ -462,19 +424,8 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				result: result,
 			});
 		} catch (error) {
-			if (error instanceof Error && error.message.includes("not found")) {
-				return reply.status(400).send({
-					success: false,
-					error: error.message,
-				});
-			}
-
-			request.log.error({ error }, "Failed to execute bulk deployment");
-			return reply.status(500).send({
-				success: false,
-				error: "Failed to execute bulk deployment",
-				details: error instanceof Error ? error.message : String(error),
-			});
+			request.log.error({ err: error }, "Failed to execute bulk deployment");
+			throw error;
 		}
 	});
 }

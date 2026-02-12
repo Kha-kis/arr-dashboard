@@ -6,7 +6,7 @@ import { Alert, AlertDescription } from "../../../../components/ui";
 import { PremiumSkeleton } from "../../../../components/layout/premium-components";
 import { ChevronRight, ChevronLeft, ChevronDown, Info, Star } from "lucide-react";
 import { useThemeGradient } from "../../../../hooks/useThemeGradient";
-import { createSanitizedHtml } from "../../../../lib/sanitize-html";
+import { SanitizedHtml } from "../sanitized-html";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { apiRequest } from "../../../../lib/api-client/base";
 
@@ -254,9 +254,9 @@ export const CFGroupSelection = ({
 											</div>
 
 											{group.trash_description && (
-												<p
+												<SanitizedHtml
+													html={group.trash_description}
 													className="mt-2 text-sm text-foreground/70"
-													dangerouslySetInnerHTML={createSanitizedHtml(group.trash_description)}
 												/>
 											)}
 

@@ -50,11 +50,9 @@ function parseClonedProfileId(trashId: string): { instanceId: string; profileId:
 	const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 	
 	let profileIdIndex: number;
-	let _idSegmentLength: number;
-	
+
 	if (uuidRegex.test(uuidCandidate5) && parts.length >= 7) {
 		// Standard 5-part UUID format detected
-		_idSegmentLength = 5;
 		profileIdIndex = parts.length - 6; // profileId is second-to-last before UUID
 	} else {
 		// Try fallback 2-part format (timestamp-random)
@@ -67,7 +65,6 @@ function parseClonedProfileId(trashId: string): { instanceId: string; profileId:
 		
 		if (timestampPart && randomPart && /^\d+$/.test(timestampPart) && /^[a-z0-9]+$/i.test(randomPart)) {
 			// Fallback 2-part format detected
-			__idSegmentLength = 2;
 			profileIdIndex = parts.length - 3; // profileId is third-to-last before 2-part ID
 		} else {
 			// Neither format matches

@@ -38,6 +38,11 @@ export { ArrError, NotFoundError, UnauthorizedError, ValidationError, TimeoutErr
 export type ArrClient = SonarrClient | RadarrClient | ProwlarrClient | LidarrClient | ReadarrClient;
 
 /**
+ * Clients that have a download queue (excludes Prowlarr, which is an indexer)
+ */
+export type QueueCapableClient = SonarrClient | RadarrClient | LidarrClient | ReadarrClient;
+
+/**
  * Map service type to its corresponding SDK client type
  */
 export type ClientForService<T extends ServiceType> = T extends "SONARR"

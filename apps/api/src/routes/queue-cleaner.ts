@@ -1,6 +1,8 @@
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { getQueueCleanerScheduler, SchedulerNotInitializedError } from "../lib/queue-cleaner/scheduler.js";
+import { toServiceLabel } from "../lib/arr/client-helpers.js";
+import { requireInstance } from "../lib/arr/instance-helpers.js";
+import { getQueueCleanerScheduler } from "../lib/queue-cleaner/scheduler.js";
 import { loggers } from "../lib/logger.js";
 import {
 	MIN_INTERVAL_MINS,
@@ -30,6 +32,9 @@ import {
 	MIN_AUTO_IMPORT_COOLDOWN_MINS,
 	MAX_AUTO_IMPORT_COOLDOWN_MINS,
 } from "../lib/queue-cleaner/constants.js";
+import { InstanceNotFoundError } from "../lib/errors.js";
+import { parsePaginationQuery } from "../lib/utils/pagination.js";
+import { validateRequest } from "../lib/utils/validate.js";
 
 const log = loggers.queueCleaner;
 
@@ -218,13 +223,8 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 	// Note: Scheduler is initialized by queue-cleaner-scheduler plugin
 	// We access it via getQueueCleanerScheduler() singleton
 
-	// Authentication preHandler for all routes
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
-			return reply.status(401).send({ error: "Authentication required" });
-		}
-
-		// Check if queue cleaner feature is available
+	// Check if queue cleaner feature is available
+	app.addHook("preHandler", async (_request, reply) => {
 		if (!app.queueCleanerEnabled) {
 			return reply.status(503).send({
 				error: "Queue cleaner feature is unavailable due to initialization error",
@@ -276,7 +276,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 				return {
 					instanceId: inst.id,
 					instanceName: inst.label,
-					service: inst.service.toLowerCase() as "sonarr" | "radarr",
+					service: toServiceLabel(inst.service),
 					enabled: config?.enabled ?? false,
 					dryRunMode: config?.dryRunMode ?? true,
 					lastRunAt: config?.lastRunAt?.toISOString() ?? null,
@@ -323,7 +323,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 				return {
 					...inst.queueCleanerConfig,
 					instanceName: inst.label,
-					service: inst.service.toLowerCase() as "sonarr" | "radarr",
+					service: toServiceLabel(inst.service),
 					lastRunAt: inst.queueCleanerConfig.lastRunAt?.toISOString() ?? null,
 					createdAt: inst.queueCleanerConfig.createdAt.toISOString(),
 					updatedAt: inst.queueCleanerConfig.updatedAt.toISOString(),
@@ -333,7 +333,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 			const instanceSummaries = instances.map((inst) => ({
 				id: inst.id,
 				label: inst.label,
-				service: inst.service.toLowerCase() as "sonarr" | "radarr",
+				service: toServiceLabel(inst.service),
 			}));
 
 			return reply.send({ configs, instances: instanceSummaries });
@@ -345,25 +345,12 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	// Create config for an instance
 	app.post("/queue-cleaner/configs", async (request, reply) => {
-		const parsed = configCreateSchema.safeParse(request.body);
-		if (!parsed.success) {
-			return reply
-				.status(400)
-				.send({ error: "Invalid payload", details: parsed.error.flatten() });
-		}
+		const { instanceId } = validateRequest(configCreateSchema, request.body);
 
 		try {
 			const userId = request.currentUser!.id;
-			const { instanceId } = parsed.data;
 
-			// Verify instance ownership
-			const instance = await app.prisma.serviceInstance.findFirst({
-				where: { id: instanceId, userId },
-			});
-
-			if (!instance) {
-				return reply.status(404).send({ error: "Not found or access denied" });
-			}
+			const instance = await requireInstance(app, userId, instanceId);
 
 			// Check if config already exists
 			const existing = await app.prisma.queueCleanerConfig.findUnique({
@@ -384,12 +371,13 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(201).send({
 				...config,
 				instanceName: config.instance.label,
-				service: config.instance.service.toLowerCase() as "sonarr" | "radarr",
+				service: toServiceLabel(config.instance.service),
 				lastRunAt: config.lastRunAt?.toISOString() ?? null,
 				createdAt: config.createdAt.toISOString(),
 				updatedAt: config.updatedAt.toISOString(),
 			});
 		} catch (error) {
+			if (error instanceof InstanceNotFoundError) throw error;
 			request.log.error({ err: error, userId: request.currentUser!.id }, "Failed to create queue cleaner config");
 			return reply.status(500).send({ error: "Failed to create queue cleaner config" });
 		}
@@ -398,51 +386,34 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 	// Update config
 	app.patch("/queue-cleaner/configs/:instanceId", async (request, reply) => {
 		const { instanceId } = request.params as { instanceId: string };
-		const parsed = configUpdateSchema.safeParse(request.body);
-		if (!parsed.success) {
-			return reply
-				.status(400)
-				.send({ error: "Invalid payload", details: parsed.error.flatten() });
-		}
+		const data = validateRequest(configUpdateSchema, request.body);
 
 		try {
 			const userId = request.currentUser!.id;
 
-			// Verify instance ownership
-			const instance = await app.prisma.serviceInstance.findFirst({
-				where: { id: instanceId, userId },
-				include: { queueCleanerConfig: true },
-			});
+			const instance = await requireInstance(app, userId, instanceId, { queueCleanerConfig: true });
 
-			if (!instance?.queueCleanerConfig) {
-				return reply.status(404).send({ error: "Not found or access denied" });
+			if (!instance.queueCleanerConfig) {
+				return reply.status(404).send({ error: "Queue cleaner config not found for this instance" });
 			}
 
 			const config = await app.prisma.queueCleanerConfig.update({
 				where: { instanceId },
-				data: parsed.data,
+				data,
 				include: { instance: true },
 			});
 
 			return reply.send({
 				...config,
 				instanceName: config.instance.label,
-				service: config.instance.service.toLowerCase() as "sonarr" | "radarr",
+				service: toServiceLabel(config.instance.service),
 				lastRunAt: config.lastRunAt?.toISOString() ?? null,
 				createdAt: config.createdAt.toISOString(),
 				updatedAt: config.updatedAt.toISOString(),
 			});
 		} catch (error) {
-			const prismaError = error as { code?: string };
-			if (prismaError.code === "P2025") {
-				return reply.status(404).send({ error: "Queue cleaner config not found" });
-			}
-			if (prismaError.code === "P2003") {
-				// Foreign key constraint - instance was deleted between auth check and update
-				return reply.status(400).send({ error: "Instance no longer exists" });
-			}
 			request.log.error({ err: error, userId: request.currentUser!.id }, "Failed to update queue cleaner config");
-			return reply.status(500).send({ error: "Failed to update queue cleaner config" });
+			throw error;
 		}
 	});
 
@@ -453,13 +424,10 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 		try {
 			const userId = request.currentUser!.id;
 
-			const instance = await app.prisma.serviceInstance.findFirst({
-				where: { id: instanceId, userId },
-				include: { queueCleanerConfig: true },
-			});
+			const instance = await requireInstance(app, userId, instanceId, { queueCleanerConfig: true });
 
-			if (!instance?.queueCleanerConfig) {
-				return reply.status(404).send({ error: "Not found or access denied" });
+			if (!instance.queueCleanerConfig) {
+				return reply.status(404).send({ error: "Queue cleaner config not found for this instance" });
 			}
 
 			await app.prisma.queueCleanerConfig.delete({
@@ -468,6 +436,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 			return reply.send({ message: "Queue cleaner config deleted" });
 		} catch (error) {
+			if (error instanceof InstanceNotFoundError) throw error;
 			request.log.error({ err: error, userId: request.currentUser!.id }, "Failed to delete queue cleaner config");
 			return reply.status(500).send({ error: "Failed to delete queue cleaner config" });
 		}
@@ -484,12 +453,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 				pageSize?: string;
 			};
 
-			let page = Number.parseInt(query.page ?? "1", 10);
-			let pageSize = Number.parseInt(query.pageSize ?? "20", 10);
-			if (Number.isNaN(page) || page < 1) page = 1;
-			if (Number.isNaN(pageSize) || pageSize < 1) pageSize = 20;
-			pageSize = Math.min(pageSize, 100);
-			const skip = (page - 1) * pageSize;
+			const { pageSize, skip } = parsePaginationQuery(query);
 
 			const where: Record<string, unknown> = {
 				instance: { userId },
@@ -537,7 +501,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 					id: logEntry.id,
 					instanceId: logEntry.instanceId,
 					instanceName: logEntry.instance.label,
-					service: logEntry.instance.service.toLowerCase() as "sonarr" | "radarr",
+					service: toServiceLabel(logEntry.instance.service),
 					itemsCleaned: logEntry.itemsCleaned,
 					itemsSkipped: logEntry.itemsSkipped,
 					itemsWarned: logEntry.itemsWarned,
@@ -580,13 +544,10 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const userId = request.currentUser!.id;
 
 		try {
-			const instance = await app.prisma.serviceInstance.findFirst({
-				where: { id: instanceId, userId },
-				include: { queueCleanerConfig: true },
-			});
+			const instance = await requireInstance(app, userId, instanceId, { queueCleanerConfig: true });
 
-			if (!instance?.queueCleanerConfig) {
-				return reply.status(404).send({ error: "Not found or access denied" });
+			if (!instance.queueCleanerConfig) {
+				return reply.status(404).send({ error: "Queue cleaner config not found for this instance" });
 			}
 
 			const scheduler = getQueueCleanerScheduler();
@@ -604,11 +565,8 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 				triggered: true,
 			});
 		} catch (error) {
-			if (error instanceof SchedulerNotInitializedError) {
-				return reply.status(503).send({ error: "Queue cleaner scheduler not ready" });
-			}
 			request.log.error({ err: error, userId: request.currentUser!.id }, "Failed to trigger manual queue clean");
-			return reply.status(500).send({ error: "Failed to trigger manual queue clean" });
+			throw error;
 		}
 	});
 
@@ -618,13 +576,10 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const userId = request.currentUser!.id;
 
 		try {
-			const instance = await app.prisma.serviceInstance.findFirst({
-				where: { id: instanceId, userId },
-				include: { queueCleanerConfig: true },
-			});
+			const instance = await requireInstance(app, userId, instanceId, { queueCleanerConfig: true });
 
-			if (!instance?.queueCleanerConfig) {
-				return reply.status(404).send({ error: "Not found or access denied" });
+			if (!instance.queueCleanerConfig) {
+				return reply.status(404).send({ error: "Queue cleaner config not found for this instance" });
 			}
 
 			const scheduler = getQueueCleanerScheduler();
@@ -632,11 +587,8 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 			return reply.send(result);
 		} catch (error) {
-			if (error instanceof SchedulerNotInitializedError) {
-				return reply.status(503).send({ error: "Queue cleaner scheduler not ready" });
-			}
 			request.log.error({ err: error, userId: request.currentUser!.id }, "Failed to run dry-run preview");
-			return reply.status(500).send({ error: "Failed to run dry-run preview" });
+			throw error;
 		}
 	});
 
@@ -646,13 +598,10 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const userId = request.currentUser!.id;
 
 		try {
-			const instance = await app.prisma.serviceInstance.findFirst({
-				where: { id: instanceId, userId },
-				include: { queueCleanerConfig: true },
-			});
+			const instance = await requireInstance(app, userId, instanceId, { queueCleanerConfig: true });
 
-			if (!instance?.queueCleanerConfig) {
-				return reply.status(404).send({ error: "Not found or access denied" });
+			if (!instance.queueCleanerConfig) {
+				return reply.status(404).send({ error: "Queue cleaner config not found for this instance" });
 			}
 
 			const scheduler = getQueueCleanerScheduler();
@@ -660,11 +609,8 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 			return reply.send(result);
 		} catch (error) {
-			if (error instanceof SchedulerNotInitializedError) {
-				return reply.status(503).send({ error: "Queue cleaner scheduler not ready" });
-			}
 			request.log.error({ err: error, userId: request.currentUser!.id }, "Failed to run enhanced preview");
-			return reply.status(500).send({ error: "Failed to run enhanced preview" });
+			throw error;
 		}
 	});
 
@@ -674,14 +620,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const userId = request.currentUser!.id;
 
 		try {
-			// Verify instance ownership
-			const instance = await app.prisma.serviceInstance.findFirst({
-				where: { id: instanceId, userId },
-			});
-
-			if (!instance) {
-				return reply.status(404).send({ error: "Not found or access denied" });
-			}
+			await requireInstance(app, userId, instanceId);
 
 			const strikes = await app.prisma.queueCleanerStrike.findMany({
 				where: { instanceId },
@@ -702,6 +641,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 			return reply.send({ strikes: formattedStrikes });
 		} catch (error) {
+			if (error instanceof InstanceNotFoundError) throw error;
 			request.log.error({ err: error, userId: request.currentUser!.id }, "Failed to fetch strikes");
 			return reply.status(500).send({ error: "Failed to fetch strikes" });
 		}
@@ -713,14 +653,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const userId = request.currentUser!.id;
 
 		try {
-			// Verify instance ownership
-			const instance = await app.prisma.serviceInstance.findFirst({
-				where: { id: instanceId, userId },
-			});
-
-			if (!instance) {
-				return reply.status(404).send({ error: "Not found or access denied" });
-			}
+			const instance = await requireInstance(app, userId, instanceId);
 
 			const result = await app.prisma.queueCleanerStrike.deleteMany({
 				where: { instanceId },
@@ -732,6 +665,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 				message: `Cleared ${result.count} strike(s) for ${instance.label}`,
 			});
 		} catch (error) {
+			if (error instanceof InstanceNotFoundError) throw error;
 			request.log.error({ err: error, userId: request.currentUser!.id }, "Failed to clear strikes");
 			return reply.status(500).send({ error: "Failed to clear strikes" });
 		}
@@ -869,7 +803,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 				return {
 					instanceId: inst.id,
 					instanceName: inst.label,
-					service: inst.service.toLowerCase() as "sonarr" | "radarr",
+					service: toServiceLabel(inst.service),
 					itemsCleaned: instanceLogs.reduce((sum, l) => sum + l.itemsCleaned, 0),
 					totalRuns: instanceLogs.length,
 					lastRunAt: inst.queueCleanerConfig?.lastRunAt?.toISOString() ?? null,
@@ -880,7 +814,7 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 			const recentActivity = allLogs.slice(0, 10).map((logEntry) => ({
 				id: logEntry.id,
 				instanceName: logEntry.instance.label,
-				service: logEntry.instance.service.toLowerCase() as "sonarr" | "radarr",
+				service: toServiceLabel(logEntry.instance.service),
 				itemsCleaned: logEntry.itemsCleaned,
 				itemsSkipped: logEntry.itemsSkipped,
 				status: logEntry.status,

@@ -7,16 +7,6 @@ import type { FastifyPluginCallback } from "fastify";
 import { TMDBClient, type TMDBMovie, type TMDBTVShow } from "../lib/tmdb/index.js";
 
 const recommendationsRoute: FastifyPluginCallback = (app, _opts, done) => {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-	});
-
 	app.get("/recommendations", async (request, reply) => {
 		// Get user with TMDB API key
 		const user = await app.prisma.user.findUnique({

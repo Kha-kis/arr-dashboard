@@ -120,8 +120,8 @@ class LibrarySyncScheduler {
 			return null;
 		}
 
-		// Skip if not Sonarr or Radarr
-		if (instance.service !== "SONARR" && instance.service !== "RADARR") {
+		// Skip if not a library service (only Prowlarr has no library)
+		if (!["SONARR", "RADARR", "LIDARR", "READARR"].includes(instance.service)) {
 			log.debug({ instanceId, service: instance.service }, "Skipping non-library instance");
 			return null;
 		}
@@ -151,11 +151,11 @@ class LibrarySyncScheduler {
 			const now = new Date();
 			const minIntervalMs = MIN_SYNC_INTERVAL_MINS * 60 * 1000;
 
-			// Get all Sonarr/Radarr instances with their sync status
+			// Get all library-capable instances with their sync status
 			const instances = await this.app.prisma.serviceInstance.findMany({
 				where: {
 					enabled: true,
-					service: { in: ["SONARR", "RADARR"] },
+					service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
 				},
 				include: {
 					librarySyncStatus: true,

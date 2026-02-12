@@ -3,8 +3,8 @@ import type { ManualImportSubmission } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { SonarrClient, RadarrClient, LidarrClient, ReadarrClient } from "arr-sdk";
+import { requireInstance } from "../lib/arr/instance-helpers.js";
 import {
-	ManualImportError,
 	type ManualImportFetchOptions,
 	fetchManualImportCandidatesWithSdk,
 	submitManualImportCommandWithSdk,
@@ -23,15 +23,6 @@ const manualImportRoute: FastifyPluginCallback = (app, _opts, done) => {
 		debug: (msg, ...args) => app.log.debug({ ...args[0] as object }, msg),
 	});
 
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
-			return reply.status(401).send({
-				error: "Authentication required",
-			});
-		}
-	});
-
 	app.get("/manual-import", async (request, reply) => {
 		const query = manualImportQuerySchema.parse(request.query ?? {});
 
@@ -42,19 +33,15 @@ const manualImportRoute: FastifyPluginCallback = (app, _opts, done) => {
 			};
 		}
 
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: {
-				id: query.instanceId,
-				userId: request.currentUser!.id,
-			},
-		});
+		const instance = await requireInstance(app, request.currentUser!.id, query.instanceId);
 
-		if (!instance || instance.service.toLowerCase() !== query.service) {
+		if (instance.service.toLowerCase() !== query.service) {
 			reply.status(404);
 			return { error: "Instance not found" };
 		}
 
-		const client = app.arrClientFactory.create(instance);
+		const client = app.arrClientFactory.create(instance) as
+			SonarrClient | RadarrClient | LidarrClient | ReadarrClient;
 
 		// Validate client type matches service
 		if (query.service === "sonarr" && !(client instanceof SonarrClient)) {
@@ -94,34 +81,26 @@ const manualImportRoute: FastifyPluginCallback = (app, _opts, done) => {
 				total: candidates.length,
 			});
 		} catch (error) {
-			const status = error instanceof ManualImportError ? error.statusCode : 502;
-			const message =
-				error instanceof Error ? error.message : "Unable to fetch manual import candidates.";
 			request.log.error(
 				{ err: error, service: query.service, instanceId: query.instanceId },
 				"Failed to fetch manual import candidates",
 			);
-			reply.status(status);
-			return { error: message };
+			throw error;
 		}
 	});
 
 	app.post("/manual-import", async (request, reply) => {
 		const body = manualImportSubmissionSchema.parse(request.body ?? {}) as ManualImportSubmission;
 
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: {
-				id: body.instanceId,
-				userId: request.currentUser!.id,
-			},
-		});
+		const instance = await requireInstance(app, request.currentUser!.id, body.instanceId);
 
-		if (!instance || instance.service.toLowerCase() !== body.service) {
+		if (instance.service.toLowerCase() !== body.service) {
 			reply.status(404);
 			return { error: "Instance not found" };
 		}
 
-		const client = app.arrClientFactory.create(instance);
+		const client = app.arrClientFactory.create(instance) as
+			SonarrClient | RadarrClient | LidarrClient | ReadarrClient;
 
 		// Validate client type matches service
 		if (body.service === "sonarr" && !(client instanceof SonarrClient)) {
@@ -153,14 +132,11 @@ const manualImportRoute: FastifyPluginCallback = (app, _opts, done) => {
 				body.importMode ?? "auto",
 			);
 		} catch (error) {
-			const status = error instanceof ManualImportError ? error.statusCode : 502;
-			const message = error instanceof Error ? error.message : "Manual import failed.";
 			request.log.error(
 				{ err: error, service: body.service, instanceId: body.instanceId, fileCount: body.files.length },
 				"Manual import command failed",
 			);
-			reply.status(status);
-			return { error: message };
+			throw error;
 		}
 
 		return reply.status(204).send();

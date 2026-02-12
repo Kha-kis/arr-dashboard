@@ -1,5 +1,8 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import type { SERVICE_FILTERS } from "../lib/history-utils";
+import { type TimeRangePreset, getTimeRangeStart } from "../lib/date-utils";
+
+export type ViewMode = "timeline" | "table";
 
 export interface HistoryState {
 	page: number;
@@ -11,6 +14,9 @@ export interface HistoryState {
 	instanceFilter: string;
 	statusFilter: string;
 	groupByDownload: boolean;
+	viewMode: ViewMode;
+	timeRangePreset: TimeRangePreset;
+	hideProwlarrRss: boolean;
 }
 
 export interface HistoryStateActions {
@@ -23,6 +29,9 @@ export interface HistoryStateActions {
 	setInstanceFilter: (filter: string) => void;
 	setStatusFilter: (filter: string) => void;
 	setGroupByDownload: (group: boolean) => void;
+	setViewMode: (mode: ViewMode) => void;
+	setTimeRangePreset: (preset: TimeRangePreset) => void;
+	setHideProwlarrRss: (hide: boolean) => void;
 }
 
 export interface UseHistoryStateReturn {
@@ -30,13 +39,15 @@ export interface UseHistoryStateReturn {
 	actions: HistoryStateActions;
 }
 
+const DEFAULT_PRESET: TimeRangePreset = "7d";
+
 /**
  * Manages all state for the history feature
  */
 export const useHistoryState = (): UseHistoryStateReturn => {
 	const [page, setPage] = useState(1);
 	const [pageSize, setPageSize] = useState(25);
-	const [startDate, setStartDate] = useState("");
+	const [startDate, setStartDate] = useState(() => getTimeRangeStart(DEFAULT_PRESET) ?? "");
 	const [endDate, setEndDate] = useState("");
 	const [searchTerm, setSearchTerm] = useState("");
 	const [serviceFilter, setServiceFilter] =
@@ -44,6 +55,16 @@ export const useHistoryState = (): UseHistoryStateReturn => {
 	const [instanceFilter, setInstanceFilter] = useState<string>("all");
 	const [statusFilter, setStatusFilter] = useState<string>("all");
 	const [groupByDownload, setGroupByDownload] = useState(true);
+	const [viewMode, setViewMode] = useState<ViewMode>("timeline");
+	const [timeRangePreset, setTimeRangePresetRaw] = useState<TimeRangePreset>(DEFAULT_PRESET);
+	const [hideProwlarrRss, setHideProwlarrRss] = useState(true);
+
+	const setTimeRangePreset = useCallback((preset: TimeRangePreset) => {
+		setTimeRangePresetRaw(preset);
+		setStartDate(getTimeRangeStart(preset) ?? "");
+		setEndDate("");
+		setPage(1);
+	}, []);
 
 	return {
 		state: {
@@ -56,6 +77,9 @@ export const useHistoryState = (): UseHistoryStateReturn => {
 			instanceFilter,
 			statusFilter,
 			groupByDownload,
+			viewMode,
+			timeRangePreset,
+			hideProwlarrRss,
 		},
 		actions: {
 			setPage,
@@ -67,6 +91,9 @@ export const useHistoryState = (): UseHistoryStateReturn => {
 			setInstanceFilter,
 			setStatusFilter,
 			setGroupByDownload,
+			setViewMode,
+			setTimeRangePreset,
+			setHideProwlarrRss,
 		},
 	};
 };

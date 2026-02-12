@@ -12,6 +12,7 @@ import type {
 } from "@arr/shared";
 import type { Prisma, PrismaClient, TrashTemplate as PrismaTrashTemplate } from "../../lib/prisma.js";
 import { z } from "zod";
+import { TemplateNotFoundError, ConflictError, AppValidationError } from "../errors.js";
 import { safeJsonParse } from "./utils.js";
 
 /**
@@ -118,7 +119,7 @@ export class TemplateService {
 		});
 
 		if (existing) {
-			throw new Error(
+			throw new ConflictError(
 				`Template with name "${request.name}" already exists for ${request.serviceType}`,
 			);
 		}
@@ -186,11 +187,13 @@ export class TemplateService {
 		};
 
 		// Add search filter for name and description
-		// SQLite doesn't support mode: "insensitive", but LIKE is case-insensitive by default in SQLite
+		// mode: "insensitive" generates LIKE on SQLite (already case-insensitive) and ILIKE on PostgreSQL.
+		// Type assertion needed because Prisma generates StringFilter without `mode` for SQLite schemas,
+		// but the field is accepted at runtime for both providers.
 		if (options.search) {
 			whereClause.OR = [
-				{ name: { contains: options.search } },
-				{ description: { contains: options.search } },
+				{ name: { contains: options.search, mode: "insensitive" } as Prisma.StringFilter<"TrashTemplate"> },
+				{ description: { contains: options.search, mode: "insensitive" } as Prisma.StringNullableFilter<"TrashTemplate"> },
 			];
 		}
 
@@ -288,7 +291,7 @@ export class TemplateService {
 		});
 
 		if (!existing) {
-			throw new Error("Template not found or access denied");
+			throw new TemplateNotFoundError(templateId);
 		}
 
 		// Check name uniqueness if name is being updated
@@ -304,7 +307,7 @@ export class TemplateService {
 			});
 
 			if (nameConflict) {
-				throw new Error(
+				throw new ConflictError(
 					`Template with name "${request.name}" already exists for ${existing.serviceType}`,
 				);
 			}
@@ -396,7 +399,7 @@ export class TemplateService {
 		// Get source template
 		const source = await this.getTemplate(templateId, userId);
 		if (!source) {
-			throw new Error("Template not found or access denied");
+			throw new TemplateNotFoundError(templateId);
 		}
 
 		// Create duplicate
@@ -414,7 +417,7 @@ export class TemplateService {
 	async exportTemplate(templateId: string, userId: string): Promise<string> {
 		const template = await this.getTemplate(templateId, userId);
 		if (!template) {
-			throw new Error("Template not found or access denied");
+			throw new TemplateNotFoundError(templateId);
 		}
 
 		const exportData = {
@@ -440,7 +443,7 @@ export class TemplateService {
 		try {
 			rawData = JSON.parse(jsonData);
 		} catch (parseError) {
-			throw new Error(
+			throw new AppValidationError(
 				`Invalid JSON format: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
 			);
 		}
@@ -449,7 +452,7 @@ export class TemplateService {
 		const parseResult = templateImportSchema.safeParse(rawData);
 		if (!parseResult.success) {
 			const errors = parseResult.error.issues.map((e) => `${e.path.join(".")}: ${e.message}`);
-			throw new Error(`Invalid template import format: ${errors.join("; ")}`);
+			throw new AppValidationError(`Invalid template import format: ${errors.join("; ")}`);
 		}
 		// Cast to TemplateImportData - Zod validated the structure, TypeScript interface provides proper typing
 		const data = parseResult.data as unknown as TemplateImportData;

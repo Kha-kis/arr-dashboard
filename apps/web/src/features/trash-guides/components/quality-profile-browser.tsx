@@ -6,7 +6,7 @@ import { useQualityProfiles, useImportQualityProfile } from "../../../hooks/api/
 import { Alert, AlertDescription, EmptyState, Input, Button } from "../../../components/ui";
 import { PremiumSkeleton } from "../../../components/layout/premium-components";
 import { X, Download, FileText, Star, Languages, Gauge } from "lucide-react";
-import { createSanitizedHtml } from "../../../lib/sanitize-html";
+import { SanitizedHtml } from "./sanitized-html";
 import type { QualityProfileSummary } from "../../../lib/api-client/trash-guides";
 import { htmlToPlainText } from "../lib/description-utils";
 
@@ -154,9 +154,9 @@ export const QualityProfileBrowser = ({
 												</div>
 
 												{profile.description && (
-													<p
+													<SanitizedHtml
+														html={profile.description}
 														className="text-sm text-muted-foreground line-clamp-2"
-														dangerouslySetInnerHTML={createSanitizedHtml(profile.description)}
 													/>
 												)}
 
@@ -219,9 +219,9 @@ export const QualityProfileBrowser = ({
 										</div>
 
 										{selectedProfile.description && (
-											<p
+											<SanitizedHtml
+												html={selectedProfile.description}
 												className="text-sm text-muted-foreground"
-												dangerouslySetInnerHTML={createSanitizedHtml(selectedProfile.description)}
 											/>
 										)}
 									</div>

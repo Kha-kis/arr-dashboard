@@ -9,6 +9,7 @@
 	ManualImportSubmission,
 } from "@arr/shared";
 import { apiRequest, UnauthorizedError } from "./base";
+import { buildQueryUrl } from "../build-query-url";
 
 export async function fetchMultiInstanceQueue(): Promise<MultiInstanceQueueResponse> {
 	try {
@@ -27,23 +28,12 @@ export async function fetchMultiInstanceHistory(options?: {
 	page?: number;
 	pageSize?: number;
 }): Promise<MultiInstanceHistoryResponse> {
-	const searchParams = new URLSearchParams();
-	if (options?.startDate) {
-		searchParams.set("startDate", options.startDate);
-	}
-	if (options?.endDate) {
-		searchParams.set("endDate", options.endDate);
-	}
-	if (options?.page) {
-		searchParams.set("page", String(options.page));
-	}
-	if (options?.pageSize) {
-		searchParams.set("pageSize", String(options.pageSize));
-	}
-	const path =
-		searchParams.size > 0
-			? `/api/dashboard/history?${searchParams.toString()}`
-			: "/api/dashboard/history";
+	const path = buildQueryUrl("/api/dashboard/history", {
+		startDate: options?.startDate,
+		endDate: options?.endDate,
+		page: options?.page,
+		pageSize: options?.pageSize,
+	});
 
 	try {
 		return await apiRequest<MultiInstanceHistoryResponse>(path);
@@ -58,21 +48,11 @@ export async function fetchMultiInstanceHistory(options?: {
 export async function fetchMultiInstanceCalendar(
 	options: { start?: string; end?: string; unmonitored?: boolean } = {},
 ): Promise<MultiInstanceCalendarResponse> {
-	const searchParams = new URLSearchParams();
-	if (options.start) {
-		searchParams.set("start", options.start);
-	}
-	if (options.end) {
-		searchParams.set("end", options.end);
-	}
-	if (typeof options.unmonitored === "boolean") {
-		searchParams.set("unmonitored", String(options.unmonitored));
-	}
-
-	const path =
-		searchParams.size > 0
-			? `/api/dashboard/calendar?${searchParams.toString()}`
-			: "/api/dashboard/calendar";
+	const path = buildQueryUrl("/api/dashboard/calendar", {
+		start: options.start,
+		end: options.end,
+		unmonitored: options.unmonitored,
+	});
 
 	try {
 		return await apiRequest<MultiInstanceCalendarResponse>(path);
@@ -124,31 +104,20 @@ export async function fetchManualImportCandidates(params: {
 	seasonNumber?: number;
 	filterExistingFiles?: boolean;
 }): Promise<{ candidates: ManualImportCandidate[]; total: number }> {
-	const search = new URLSearchParams({
+	const path = buildQueryUrl("/api/manual-import", {
 		instanceId: params.instanceId,
 		service: params.service,
+		downloadId: params.downloadId,
+		folder: params.folder,
+		seriesId: params.seriesId,
+		seasonNumber: params.seasonNumber,
+		filterExistingFiles: params.filterExistingFiles,
 	});
-
-	if (params.downloadId) {
-		search.set("downloadId", params.downloadId);
-	}
-	if (params.folder) {
-		search.set("folder", params.folder);
-	}
-	if (typeof params.seriesId === "number") {
-		search.set("seriesId", String(params.seriesId));
-	}
-	if (typeof params.seasonNumber === "number") {
-		search.set("seasonNumber", String(params.seasonNumber));
-	}
-	if (typeof params.filterExistingFiles === "boolean") {
-		search.set("filterExistingFiles", String(params.filterExistingFiles));
-	}
 
 	return await apiRequest<{
 		candidates: ManualImportCandidate[];
 		total: number;
-	}>(`/api/manual-import?${search.toString()}`);
+	}>(path);
 }
 
 export async function submitManualImport(payload: ManualImportSubmission): Promise<void> {

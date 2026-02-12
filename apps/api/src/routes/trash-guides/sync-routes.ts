@@ -17,6 +17,7 @@ import { getSyncMetrics } from "../../lib/trash-guides/sync-metrics.js";
 import { createTemplateUpdater } from "../../lib/trash-guides/template-updater.js";
 import { safeJsonParse } from "../../lib/utils/json.js";
 import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js";
+import { requireInstance } from "../../lib/arr/instance-helpers.js";
 
 // ============================================================================
 // Request Schemas
@@ -92,19 +93,9 @@ function _removeProgress(syncId: string): void {
 // ============================================================================
 
 export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-	});
-
 	// Shared services (repo-independent)
 	const cacheManager = createCacheManager(app.prisma);
-	const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.encryptor);
+	const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.arrClientFactory);
 
 	/** Create repo-aware services configured for the current user's repo settings */
 	async function getServices(userId: string) {
@@ -292,21 +283,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 
 		// Verify instance exists and is owned by the current user.
 		// Including userId in the where clause ensures non-owned instances return null,
-		// preventing instance enumeration attacks (all non-owned instances return 404).
-		// Sync history is filtered by userId (line 279) to ensure user-specific access.
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: {
-				id: instanceId,
-				userId,
-			},
-		});
-
-		if (!instance) {
-			return reply.status(404).send({
-				error: "NOT_FOUND",
-				message: "Instance not found",
-			});
-		}
+		const instance = await requireInstance(app, userId, instanceId);
 
 		// Get sync history for this user and instance
 		const [syncs, total] = await Promise.all([

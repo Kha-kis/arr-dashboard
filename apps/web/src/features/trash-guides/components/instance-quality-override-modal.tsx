@@ -23,8 +23,8 @@ import {
 } from "lucide-react";
 import { QualityGroupEditor } from "./quality-group-editor";
 import {
-	fetchTemplateInstanceOverrides,
-	updateTemplateInstanceOverrides,
+	getInstanceOverrides,
+	updateInstanceOverrides,
 } from "../../../lib/api-client/trash-guides";
 import { cn } from "../../../lib/utils";
 
@@ -75,7 +75,7 @@ export const InstanceQualityOverrideModal = ({
 		setError(null);
 
 		try {
-			const response = await fetchTemplateInstanceOverrides(templateId, instanceId);
+			const response = await getInstanceOverrides(templateId, instanceId);
 			const override = response.overrides?.qualityConfigOverride;
 
 			if (override) {
@@ -120,7 +120,7 @@ export const InstanceQualityOverrideModal = ({
 		setError(null);
 
 		try {
-			await updateTemplateInstanceOverrides(templateId, instanceId, {
+			await updateInstanceOverrides(templateId, instanceId, {
 				qualityConfigOverride: null, // Clear the override
 			});
 
@@ -146,7 +146,7 @@ export const InstanceQualityOverrideModal = ({
 		setError(null);
 
 		try {
-			await updateTemplateInstanceOverrides(templateId, instanceId, {
+			await updateInstanceOverrides(templateId, instanceId, {
 				qualityConfigOverride: {
 					...config,
 					useCustomQualities: true,

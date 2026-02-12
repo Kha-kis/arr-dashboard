@@ -12,6 +12,8 @@ import {
 	ArrError,
 	arrErrorToHttpStatus,
 } from "./client-factory.js";
+import { InstanceNotFoundError } from "../errors.js";
+import { requireEnabledInstance } from "./instance-helpers.js";
 import { SonarrClient, RadarrClient, ProwlarrClient, LidarrClient, ReadarrClient } from "arr-sdk";
 
 // ============================================================================
@@ -69,6 +71,20 @@ export interface MultiInstanceOptions {
 	instanceIds?: string[];
 	/** Continue on error (default: true) */
 	continueOnError?: boolean;
+}
+
+// ============================================================================
+// Service Type Utilities
+// ============================================================================
+
+/**
+ * Convert a database ServiceType (e.g. "SONARR") to its lowercase API form.
+ *
+ * Centralizes the `toLowerCase() as ...` cast so route files don't repeat
+ * the inline type assertion.
+ */
+export function toServiceLabel(service: string): Lowercase<ServiceType> {
+	return service.toLowerCase() as Lowercase<ServiceType>;
 }
 
 // ============================================================================
@@ -132,7 +148,7 @@ export async function executeOnInstances<T>(
 	// Execute operations in parallel
 	const results = await Promise.all(
 		instances.map(async (instance): Promise<InstanceOperationResult<T>> => {
-			const service = instance.service.toLowerCase() as Lowercase<ServiceType>;
+			const service = toServiceLabel(instance.service);
 
 			try {
 				const client = app.arrClientFactory.create(instance);
@@ -307,29 +323,20 @@ export async function getClientForInstance(
 		};
 	}
 
-	const instance = await app.prisma.serviceInstance.findFirst({
-		where: {
-			id: instanceId,
-			userId: request.currentUser.id,
-			enabled: true,
-		},
-	});
-
-	if (!instance) {
-		return {
-			success: false,
-			error: "Instance not found, disabled, or access denied",
-			statusCode: 404,
-		};
+	try {
+		const instance = await requireEnabledInstance(app, request.currentUser.id, instanceId);
+		const client = app.arrClientFactory.create(instance);
+		return { success: true, client, instance };
+	} catch (error) {
+		if (error instanceof InstanceNotFoundError) {
+			return {
+				success: false,
+				error: "Instance not found, disabled, or access denied",
+				statusCode: 404,
+			};
+		}
+		throw error;
 	}
-
-	const client = app.arrClientFactory.create(instance);
-
-	return {
-		success: true,
-		client,
-		instance,
-	};
 }
 
 /**

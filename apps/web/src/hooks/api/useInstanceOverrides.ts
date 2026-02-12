@@ -3,7 +3,7 @@ import {
 	getInstanceOverrides,
 	updateInstanceOverrides,
 	deleteInstanceOverrides,
-	type InstanceOverridesResponse,
+	type GetInstanceOverridesResponse,
 	type UpdateInstanceOverridesPayload,
 } from "../../lib/api-client/trash-guides";
 
@@ -14,7 +14,7 @@ export function useInstanceOverrides(
 	templateId: string | null,
 	instanceId: string | null,
 ) {
-	return useQuery<InstanceOverridesResponse>({
+	return useQuery<GetInstanceOverridesResponse>({
 		queryKey: ["trash-guides", "instance-overrides", templateId, instanceId],
 		queryFn: () => getInstanceOverrides(templateId!, instanceId!),
 		enabled: !!templateId && !!instanceId,

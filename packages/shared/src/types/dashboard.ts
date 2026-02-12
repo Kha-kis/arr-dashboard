@@ -186,6 +186,8 @@ export const historyItemSchema = z.object({
   authorId: z.number().optional(),
   bookId: z.number().optional(),
   data: z.unknown().optional(),
+  customFormats: z.array(z.object({ id: z.number(), name: z.string() })).optional(),
+  customFormatScore: z.number().optional(),
   instanceId: z.string(),
   instanceName: z.string(),
   service: z.enum(["sonarr", "radarr", "prowlarr", "lidarr", "readarr"]),

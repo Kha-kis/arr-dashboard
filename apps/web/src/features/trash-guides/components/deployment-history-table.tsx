@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, lazy, Suspense } from "react";
 import {
 	useDeploymentHistory,
 	useUndeployDeployment,
 	useDeleteDeploymentHistory,
 } from "../../../hooks/api/useDeploymentHistory";
 import { format } from "date-fns";
-import { DeploymentHistoryDetailsModal } from "./deployment-history-details-modal";
+// Lazy-loaded modal — only fetched when the user opens it
+const DeploymentHistoryDetailsModal = lazy(() => import("./deployment-history-details-modal").then(m => ({ default: m.DeploymentHistoryDetailsModal })));
 import {
 	Eye,
 	Undo2,
@@ -426,19 +427,21 @@ export function DeploymentHistoryTable({
 				</div>
 			</div>
 
-			{/* Details Modal */}
+			{/* Details Modal (lazy-loaded) */}
 			{selectedHistoryId && (
-				<DeploymentHistoryDetailsModal
-					historyId={selectedHistoryId}
-					onClose={() => setSelectedHistoryId(null)}
-					onUndeploy={(historyId) => {
-						undeployMutation.mutate(historyId, {
-							onSuccess: () => {
-								setSelectedHistoryId(null);
-							},
-						});
-					}}
-				/>
+				<Suspense>
+					<DeploymentHistoryDetailsModal
+						historyId={selectedHistoryId}
+						onClose={() => setSelectedHistoryId(null)}
+						onUndeploy={(historyId) => {
+							undeployMutation.mutate(historyId, {
+								onSuccess: () => {
+									setSelectedHistoryId(null);
+								},
+							});
+						}}
+					/>
+				</Suspense>
 			)}
 		</div>
 	);

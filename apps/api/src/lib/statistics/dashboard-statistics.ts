@@ -39,7 +39,6 @@ import {
 	processHealthIssues,
 	updateTagBreakdown,
 	updateQualityBreakdown,
-	accumulateCommonFields,
 	finalizeDiskStats,
 	finalizeBreakdown,
 	mergeBreakdown,

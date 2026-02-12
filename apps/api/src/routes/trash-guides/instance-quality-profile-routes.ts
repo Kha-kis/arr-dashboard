@@ -50,16 +50,6 @@ const updateScoresSchema = z.object({
 // ============================================================================
 
 const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts, done) => {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-	});
-
 	/**
 	 * PATCH /api/trash-guides/instances/:instanceId/quality-profiles/:profileId/scores
 	 * Update custom format scores for a quality profile
@@ -668,10 +658,10 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 					}
 					// Priority 2: TRaSH Guides score from template's score set
 					else if (
-						templateConfigReset.scoreSet &&
+						templateConfigReset.scoreSet != null &&
+						templateConfigReset.scoreSet !== "" &&
 						templateCf.originalConfig?.trash_scores?.[templateConfigReset.scoreSet] !== undefined
 					) {
-						// Non-null assertion safe because we've just checked !== undefined
 						templateScore = templateCf.originalConfig.trash_scores[templateConfigReset.scoreSet]!;
 					}
 					// Priority 3: TRaSH Guides default score
@@ -895,7 +885,8 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 					}
 					// Priority 2: TRaSH Guides score from template's score set
 					else if (
-						templateConfigParsed.scoreSet &&
+						templateConfigParsed.scoreSet != null &&
+						templateConfigParsed.scoreSet !== "" &&
 						templateCf.originalConfig?.trash_scores?.[templateConfigParsed.scoreSet] !== undefined
 					) {
 						score = templateCf.originalConfig.trash_scores[templateConfigParsed.scoreSet];

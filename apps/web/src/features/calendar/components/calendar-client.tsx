@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState, useEffect } from "react";
+import { useCallback, useMemo } from "react";
 import { useMultiInstanceCalendarQuery } from "../../../hooks/api/useDashboard";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { Alert, AlertDescription } from "../../../components/ui";
@@ -18,14 +18,9 @@ import {
 } from "../../../components/layout";
 
 export const CalendarClient = () => {
-	const [mounted, setMounted] = useState(false);
 	const calendarState = useCalendarState();
 	const { calendarStart, calendarEnd, filters, monthStart, selectedDate, daysInView } =
 		calendarState;
-
-	useEffect(() => {
-		setMounted(true);
-	}, []);
 
 	const queryParams = useMemo(
 		() => ({
@@ -54,7 +49,7 @@ export const CalendarClient = () => {
 	const selectedEvents = selectedKey ? (eventsByDate.get(selectedKey) ?? []) : [];
 
 	// Loading skeleton
-	if (!mounted || isLoading) {
+	if (isLoading) {
 		return (
 			<div className="space-y-8 animate-in fade-in duration-500">
 				<div className="space-y-4">

@@ -15,8 +15,6 @@ import {
 	type TemplateListResponse,
 	type TemplateResponse,
 	type TemplateStatsResponse,
-} from "../../lib/api-client/templates";
-import {
 	importEnhancedTemplate,
 	type EnhancedImportTemplatePayload,
 } from "../../lib/api-client/trash-guides";

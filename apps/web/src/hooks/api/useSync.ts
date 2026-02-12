@@ -22,7 +22,7 @@ import {
 	getSyncProgress,
 	rollbackSync,
 	validateSync,
-} from "../../lib/api-client/sync";
+} from "../../lib/api-client/trash-guides";
 
 // ============================================================================
 // Validation Hook

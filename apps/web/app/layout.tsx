@@ -60,7 +60,7 @@ interface RootLayoutProps {
 
 const RootLayout = ({ children }: RootLayoutProps) => {
 	return (
-		<html lang="en" suppressHydrationWarning className={`${satoshi.variable} ${dmSans.variable}`}>
+		<html lang="en" suppressHydrationWarning className={`${satoshi.variable} ${dmSans.variable}`} data-scroll-behavior="smooth">
 			<head>
 				{/*
 				  Color Theme Initialization Script (Inline)

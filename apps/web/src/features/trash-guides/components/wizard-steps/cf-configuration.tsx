@@ -8,13 +8,15 @@
 import { useState, useEffect, useRef } from "react";
 import { Alert, AlertDescription, Card, CardHeader, CardTitle, CardDescription, CardContent } from "../../../../components/ui";
 import { PremiumSkeleton } from "../../../../components/layout/premium-components";
-import { ChevronLeft, ChevronRight, Info, AlertCircle, Search, Edit, RotateCcw, Settings } from "lucide-react";
-import { createSanitizedHtml } from "../../../../lib/sanitize-html";
+import { ChevronLeft, ChevronRight, Info, AlertCircle, Search, Edit, RotateCcw } from "lucide-react";
+import { SanitizedHtml } from "../sanitized-html";
 import { useThemeGradient } from "../../../../hooks/useThemeGradient";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
-import { ConditionEditor } from "../condition-editor";
 import { useCFConfiguration } from "../../../../hooks/api/useCFConfiguration";
 import type { ResolvedCF } from "./cf-resolution";
+import { CFConfigurationCloned } from "./cf-configuration-cloned";
+import { CFConfigurationEdit } from "./cf-configuration-edit";
+import { AdditionalCFSection, BrowseCFCatalog } from "./cf-configuration-catalog";
 
 interface CustomFormatItem {
 	displayName?: string;
@@ -247,6 +249,18 @@ export const CFConfiguration = ({
 		return <span className={color}>{sign}{displayScore}</span>;
 	};
 
+	const updateSelection = (cfTrashId: string, update: Partial<{ selected: boolean; scoreOverride: number | undefined; conditionsEnabled: Record<string, boolean> }>) => {
+		setSelections((prev) => ({
+			...prev,
+			[cfTrashId]: {
+				...prev[cfTrashId],
+				selected: prev[cfTrashId]?.selected ?? false,
+				conditionsEnabled: prev[cfTrashId]?.conditionsEnabled || {},
+				...update,
+			},
+		}));
+	};
+
 	const handleNext = () => {
 		// Pass selections to the next step (Summary/Review)
 		// Template naming is now handled in the Review step
@@ -302,192 +316,19 @@ export const CFConfiguration = ({
 	}
 
 	// === CLONED PROFILE MODE ===
-	// Render simplified UI for CFs resolved from the previous step
+	// Delegates to extracted component for CFs resolved from the previous step
 	if (isClonedProfileMode && cfResolutions) {
-		const selectedCount = Object.values(selections).filter(s => s?.selected).length;
-
-		// Group resolutions by decision type
-		const linkedToTrash = cfResolutions.filter(r => r.decision === "use_trash");
-		const keepInstance = cfResolutions.filter(r => r.decision === "keep_instance");
-
-		const renderResolutionCard = (resolution: ResolvedCF) => {
-			const cfKey = resolution.trashId || `instance-${resolution.instanceCFId}`;
-			const selection = selections[cfKey];
-			const scoreOverride = selection?.scoreOverride;
-			const defaultScore = resolution.decision === "use_trash"
-				? resolution.recommendedScore ?? 0
-				: resolution.instanceScore ?? 0;
-
-			return (
-				<div
-					key={cfKey}
-					className="rounded-lg p-4 border border-border/50 bg-card transition-all hover:border-primary/50 hover:shadow-md"
-				>
-					<div className="flex items-start gap-3">
-						<input
-							type="checkbox"
-							checked={selection?.selected ?? true}
-							onChange={() => toggleCF(cfKey)}
-							className="mt-1 h-5 w-5 rounded border-border/50 bg-card text-primary focus:ring-2 focus:ring-primary/50 cursor-pointer transition"
-						/>
-						<div className="flex-1">
-							<div className="flex items-center gap-2 mb-2">
-								<span className="font-medium text-foreground">{resolution.instanceCFName}</span>
-								{resolution.decision === "use_trash" && resolution.trashId && (
-									<span className="inline-flex items-center gap-1 rounded bg-green-500/20 px-2 py-0.5 text-xs font-medium text-green-300">
-										Linked to TRaSH
-									</span>
-								)}
-								{resolution.decision === "keep_instance" && (
-									<span className="inline-flex items-center gap-1 rounded bg-blue-500/20 px-2 py-0.5 text-xs font-medium text-blue-300">
-										Instance Only
-									</span>
-								)}
-								{scoreOverride !== undefined && (
-									<span
-										className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium"
-										style={{
-											backgroundColor: themeGradient.fromLight,
-											color: themeGradient.from,
-										}}
-									>
-										Custom Score
-									</span>
-								)}
-							</div>
-
-							<div className="space-y-2">
-								{/* Show score info */}
-								<div className="flex items-center gap-2 text-xs text-muted-foreground">
-									<span>Current: {scoreOverride ?? defaultScore}</span>
-									{resolution.decision === "use_trash" && resolution.recommendedScore !== undefined && (
-										<span>• TRaSH Recommended: {resolution.recommendedScore}</span>
-									)}
-									{resolution.instanceScore !== undefined && resolution.instanceScore !== defaultScore && (
-										<span>• Instance Score: {resolution.instanceScore}</span>
-									)}
-								</div>
-
-								{/* Score input */}
-								<div className="flex items-center gap-2 flex-wrap">
-									<label className="text-sm text-muted-foreground">Override Score:</label>
-									<input
-										type="number"
-										value={scoreOverride ?? ""}
-										onChange={(e) => updateScore(cfKey, e.target.value)}
-										placeholder={defaultScore.toString()}
-										className="w-20 rounded border border-border/50 bg-background px-2 py-1 text-sm text-foreground focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary/50 transition"
-									/>
-									{scoreOverride !== undefined && (
-										<button
-											type="button"
-											onClick={() => updateScore(cfKey, "")}
-											className="text-xs text-primary hover:text-primary/80 transition"
-											title="Reset to default"
-										>
-											<RotateCcw className="h-3 w-3 inline mr-1" />
-											Reset
-										</button>
-									)}
-								</div>
-							</div>
-						</div>
-					</div>
-				</div>
-			);
-		};
-
 		return (
-			<div className="space-y-6 animate-in fade-in duration-500">
-				{/* Header */}
-				<Card className="border-primary/30 bg-primary/5">
-					<CardHeader>
-						<CardTitle>Configure Custom Format Scores</CardTitle>
-						<CardDescription>
-							Review and adjust scores for the {cfResolutions.length} custom formats from your profile.
-							{selectedCount} formats selected for the template.
-						</CardDescription>
-					</CardHeader>
-				</Card>
-
-				{/* Search */}
-				<div className="relative">
-					<Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-					<input
-						type="text"
-						value={searchQuery}
-						onChange={(e) => setSearchQuery(e.target.value)}
-						placeholder="Search custom formats..."
-						className="w-full rounded-lg border border-border/50 bg-background py-3 pr-4 text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-hidden focus:ring-2 focus:ring-primary/20 transition"
-						style={{ paddingLeft: "2.5rem" }}
-					/>
-				</div>
-
-				{/* Linked to TRaSH CFs */}
-				{linkedToTrash.length > 0 && (
-					<div className="space-y-3">
-						<div className="flex items-center justify-between">
-							<h3 className="text-lg font-medium text-foreground flex items-center gap-2">
-								<span className="w-2 h-2 rounded-full bg-green-500" />
-								Linked to TRaSH Guides
-							</h3>
-							<span className="text-sm text-muted-foreground">{linkedToTrash.length} formats</span>
-						</div>
-						<p className="text-sm text-muted-foreground">
-							These CFs are linked to TRaSH Guides and will receive recommended scores and updates.
-						</p>
-						<div className="space-y-2">
-							{linkedToTrash
-								.filter(r => !searchQuery || r.instanceCFName.toLowerCase().includes(searchQuery.toLowerCase()))
-								.map(renderResolutionCard)}
-						</div>
-					</div>
-				)}
-
-				{/* Instance Only CFs */}
-				{keepInstance.length > 0 && (
-					<div className="space-y-3">
-						<div className="flex items-center justify-between">
-							<h3 className="text-lg font-medium text-foreground flex items-center gap-2">
-								<span className="w-2 h-2 rounded-full bg-blue-500" />
-								Instance Custom Formats
-							</h3>
-							<span className="text-sm text-muted-foreground">{keepInstance.length} formats</span>
-						</div>
-						<p className="text-sm text-muted-foreground">
-							These CFs are unique to your instance and will keep their current configuration.
-						</p>
-						<div className="space-y-2">
-							{keepInstance
-								.filter(r => !searchQuery || r.instanceCFName.toLowerCase().includes(searchQuery.toLowerCase()))
-								.map(renderResolutionCard)}
-						</div>
-					</div>
-				)}
-
-				{/* Navigation Buttons */}
-				<div className="flex items-center justify-between pt-4 border-t border-border/50">
-					{onBack && (
-						<button
-							type="button"
-							onClick={onBack}
-							className="inline-flex items-center gap-2 rounded-lg px-4 py-2 text-muted-foreground hover:text-foreground hover:bg-muted transition"
-						>
-							<ChevronLeft className="h-4 w-4" />
-							Back
-						</button>
-					)}
-					<button
-						type="button"
-						onClick={handleNext}
-						disabled={selectedCount === 0}
-						className="ml-auto inline-flex items-center gap-2 rounded-lg bg-primary px-6 py-2 font-medium text-primary-fg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition"
-					>
-						Continue
-						<ChevronRight className="h-4 w-4" />
-					</button>
-				</div>
-			</div>
+			<CFConfigurationCloned
+				cfResolutions={cfResolutions}
+				selections={selections}
+				searchQuery={searchQuery}
+				onSearchQueryChange={setSearchQuery}
+				onToggleCF={toggleCF}
+				onUpdateScore={updateScore}
+				onNext={handleNext}
+				onBack={onBack}
+			/>
 		);
 	}
 
@@ -545,368 +386,27 @@ export const CFConfiguration = ({
 			)
 		: mandatoryCFs;
 
-	// In edit mode, show quality profile's CFs first, then additional CFs section
+	// Edit mode delegates to extracted component
 	if (isEditMode) {
-		// Separate profile CFs from additional CFs
-		const profileCFIds = new Set(mandatoryCFs.map((cf: any) => cf.trash_id));
-		const profileCFs = mandatoryCFs.filter((cf: any) => selections[cf.trash_id]?.selected);
-
-		const additionalCFs = Object.entries(selections)
-			.filter(([trashId, sel]) => sel?.selected && !profileCFIds.has(trashId))
-			.map(([trashId]) => {
-				// First try to find CF in CF groups
-				for (const group of cfGroups) {
-					const foundCF = group.custom_formats?.find((c: any) =>
-						(typeof c === 'string' ? c : c.trash_id) === trashId
-					);
-					if (foundCF) {
-						return typeof foundCF === 'string'
-							? { trash_id: foundCF, name: foundCF }
-							: foundCF;
-					}
-				}
-
-				// If not found in CF groups, search in availableFormats (for browse section selections)
-				if (data?.availableFormats) {
-					const foundInAvailable = data.availableFormats.find((cf: any) => cf.trash_id === trashId);
-					if (foundInAvailable) {
-						const resolvedScore = resolveScore(foundInAvailable);
-						return {
-							trash_id: foundInAvailable.trash_id,
-							name: foundInAvailable.name,
-							displayName: foundInAvailable.displayName,
-							description: foundInAvailable.description,
-							score: resolvedScore,
-							defaultScore: resolvedScore,
-							originalConfig: foundInAvailable.originalConfig,
-						};
-					}
-				}
-
-				return { trash_id: trashId, name: trashId };
-			});
-
-		const renderCFCard = (cf: any, isFromProfile: boolean) => {
-			const selection = selections[cf.trash_id];
-			const scoreOverride = selection?.scoreOverride;
-			const isRequired = cf.required === true;
-			const resolvedDefaultScore = resolveScore(cf, cf.defaultScore ?? cf.score);
-
-			return (
-				<div
-					key={cf.trash_id}
-					className="rounded-lg p-4 border border-border/50 bg-card transition-all hover:border-primary/50 hover:shadow-md"
-				>
-					<div className="flex items-start gap-3">
-						<input
-							type="checkbox"
-							checked={selection?.selected ?? false}
-							onChange={() => toggleCF(cf.trash_id, isRequired)}
-							className="mt-1 h-5 w-5 rounded border-border/50 bg-card text-primary focus:ring-2 focus:ring-primary/50 cursor-pointer transition"
-						/>
-						<div className="flex-1">
-							<div className="flex items-center gap-2 mb-2">
-								<span className="font-medium text-foreground">{cf.displayName || cf.name}</span>
-								{isRequired && (
-									<span className="inline-flex items-center gap-1 rounded bg-amber-500/20 px-2 py-0.5 text-xs font-medium text-amber-300" title="TRaSH Guides recommends this CF as required">
-										⭐ TRaSH Required
-									</span>
-								)}
-								{isFromProfile && !isRequired && (
-									<span className="inline-flex items-center gap-1 rounded bg-green-500/20 px-2 py-0.5 text-xs font-medium text-green-300">
-										From Profile
-									</span>
-								)}
-								{scoreOverride !== undefined && (
-									<span
-										className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-xs font-medium"
-										style={{
-											backgroundColor: themeGradient.fromLight,
-											color: themeGradient.from,
-										}}
-									>
-										Custom Score
-									</span>
-								)}
-							</div>
-
-							<div className="space-y-2">
-								{/* Show current score info */}
-								<div className="flex items-center gap-2 text-xs text-muted-foreground">
-									<span>Current: {scoreOverride ?? resolvedDefaultScore}</span>
-									{cf.originalConfig?.trash_scores && (
-										<span>• TRaSH Default: {resolvedDefaultScore}</span>
-									)}
-								</div>
-
-								{/* Score input */}
-								<div className="flex items-center gap-2 flex-wrap">
-									<button
-										type="button"
-										onClick={() => setConditionEditorFormat({ trashId: cf.trash_id, format: cf })}
-										className="inline-flex items-center gap-1 rounded bg-card px-2 py-1 text-xs font-medium text-foreground transition hover:bg-muted"
-										title="Advanced condition editing"
-									>
-										<Settings className="h-3 w-3" />
-										Advanced
-									</button>
-									<label className="text-sm text-muted-foreground">Override Score:</label>
-									<input
-										type="number"
-										value={scoreOverride ?? ""}
-										onChange={(e) => updateScore(cf.trash_id, e.target.value)}
-										placeholder={resolvedDefaultScore.toString()}
-										className="w-20 rounded border border-border/50 bg-background px-2 py-1 text-sm text-foreground focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary/50 transition"
-									/>
-									{scoreOverride !== undefined && (
-										<button
-											type="button"
-											onClick={() => updateScore(cf.trash_id, "")}
-											className="text-xs text-primary hover:text-primary/80 transition"
-											title="Reset to template default"
-										>
-											↺ Reset
-										</button>
-									)}
-								</div>
-							</div>
-						</div>
-					</div>
-				</div>
-			);
-		};
-
 		return (
-			<div className="space-y-6 animate-in fade-in duration-500">
-				{/* Header */}
-				<Card className="border-primary/30 bg-primary/5">
-					<CardHeader>
-						<CardTitle>Edit Template Configuration</CardTitle>
-						<CardDescription>
-							Modify custom formats from the quality profile or add additional formats. {selectedCount} custom formats selected.
-						</CardDescription>
-					</CardHeader>
-				</Card>
-
-				{/* Quality Profile CFs */}
-				<div className="space-y-3">
-					<div className="flex items-center justify-between">
-						<h3 className="text-lg font-medium text-foreground">Quality Profile Custom Formats</h3>
-						<span className="text-sm text-muted-foreground">{profileCFs.length} formats</span>
-					</div>
-					<p className="text-sm text-muted-foreground">
-						These custom formats come from the TRaSH Guides quality profile &quot;{qualityProfile.name}&quot;. You can adjust scores or disable them.
-					</p>
-
-					{profileCFs.length > 0 ? (
-						<div className="space-y-2">
-							{profileCFs.map((cf: any) => renderCFCard(cf, true))}
-						</div>
-					) : (
-						<Alert>
-							<Info className="h-4 w-4" />
-							<AlertDescription>
-								All quality profile formats have been removed. Click &quot;Add More Formats&quot; to browse available formats.
-							</AlertDescription>
-						</Alert>
-					)}
-				</div>
-
-				{/* Additional CFs */}
-				{additionalCFs.length > 0 && (
-					<div className="space-y-3">
-						<div className="flex items-center justify-between">
-							<h3 className="text-lg font-medium text-foreground">Additional Custom Formats</h3>
-							<span className="text-sm text-muted-foreground">{additionalCFs.length} formats</span>
-						</div>
-						<p className="text-sm text-muted-foreground">
-							These custom formats were added beyond the quality profile&apos;s defaults.
-						</p>
-
-						<div className="space-y-2">
-							{additionalCFs.map((cf: any) => renderCFCard(cf, false))}
-						</div>
-					</div>
-				)}
-
-
-			{/* Browse Custom Formats Section */}
-			{data.availableFormats && (
-				<div className="space-y-4">
-					<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-						<h3 className="text-lg font-semibold text-foreground">
-							<span className="flex flex-col sm:inline-flex sm:items-center sm:gap-2">
-								<span>Browse Custom Formats</span>
-								<span className="text-sm font-normal text-muted-foreground">
-									(Add additional custom formats to your template)
-								</span>
-							</span>
-						</h3>
-						<span className="text-sm text-muted-foreground whitespace-nowrap">
-							{data.availableFormats.length} formats available
-						</span>
-					</div>
-
-					<Card
-						className="border"
-						style={{
-							borderColor: themeGradient.fromMuted,
-							backgroundColor: themeGradient.fromLight,
-						}}
-					>
-						<CardHeader>
-							<CardTitle className="text-base">Available Custom Formats</CardTitle>
-							<CardDescription>
-								Select additional custom formats to add to your template. Formats already in your template are hidden.
-							</CardDescription>
-						</CardHeader>
-						<CardContent>
-							<div className="space-y-2">
-								{data.availableFormats
-									.filter((cf: any) => {
-										const isInTemplate = data.mandatoryCFs?.some((mandatoryCF: any) => mandatoryCF.trash_id === cf.trash_id);
-										if (isInTemplate) return false;
-
-										// Hide formats that are already selected (showing in Additional Custom Formats section)
-										const isSelected = selections[cf.trash_id]?.selected ?? false;
-										if (isSelected) return false;
-										if (searchQuery) {
-											const search = searchQuery.toLowerCase();
-											return (
-												cf.name?.toLowerCase().includes(search) ||
-												cf.displayName?.toLowerCase().includes(search) ||
-												cf.description?.toLowerCase().includes(search)
-											);
-										}
-										return true;
-									})
-									.map((cf: any) => {
-										const isSelected = selections[cf.trash_id]?.selected ?? false;
-										const scoreOverride = selections[cf.trash_id]?.scoreOverride;
-										const displayScore = resolveScore(cf, cf.score);
-										const isRequired = cf.required === true;
-										return (
-											<div key={cf.trash_id} className="rounded-lg p-4 border border-border/50 bg-card transition-all hover:border-primary/50 hover:bg-muted hover:shadow-md cursor-pointer" role="button" tabIndex={0} onClick={() => toggleCF(cf.trash_id, isRequired)} onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleCF(cf.trash_id, isRequired); } }} aria-pressed={isSelected} aria-label={`${isSelected ? "Deselect" : "Select"} custom format: ${cf.displayName || cf.name}`}>
-												<div className="flex items-start gap-3">
-													<input type="checkbox" checked={isSelected} onChange={() => toggleCF(cf.trash_id, isRequired)} className="mt-1 h-4 w-4 rounded border-border bg-muted text-primary focus:ring-primary focus:ring-offset-0 cursor-pointer" onClick={(e) => e.stopPropagation()} />
-													<div className="flex-1">
-														<div className="flex items-center gap-2 mb-2">
-															<span className="font-medium text-foreground">{cf.displayName || cf.name}</span>
-														</div>
-														{cf.description && (
-															<details className="mb-2 group" onClick={(e) => e.stopPropagation()}>
-																<summary className="cursor-pointer text-xs text-primary hover:text-primary/80 transition flex items-center gap-1">
-																	<span className="group-open:rotate-90 transition-transform">▶</span>
-																	<span>What is this?</span>
-																</summary>
-																<div className="mt-2 pl-4 text-sm text-muted-foreground prose prose-invert prose-sm max-w-none">
-																	<div dangerouslySetInnerHTML={createSanitizedHtml(cf.description)} />
-																</div>
-															</details>
-														)}
-														{isSelected && (
-															<div className="flex items-center gap-2">
-																<label className="text-xs text-muted-foreground">Score (Default: {displayScore}):</label>
-																<input type="number" value={scoreOverride ?? ""} onChange={(e) => updateScore(cf.trash_id, e.target.value)} placeholder={String(displayScore)} className="w-24 rounded border border-border bg-muted px-2 py-1 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary" onClick={(e) => e.stopPropagation()} />
-																{scoreOverride !== undefined && (
-																	<button type="button" onClick={(e) => { e.stopPropagation(); updateScore(cf.trash_id, ""); }} className="text-xs text-primary hover:text-primary/80 transition" title="Reset to default">↺ Reset</button>
-																)}
-															</div>
-														)}
-													</div>
-												</div>
-											</div>
-										);
-									})}
-							</div>
-						</CardContent>
-					</Card>
-				</div>
-			)}
-
-				{/* Navigation */}
-				<div className="flex items-center justify-between border-t border-border/50 pt-6">
-					{onBack && (
-						<button
-							type="button"
-							onClick={onBack}
-							className="inline-flex items-center gap-2 rounded-lg bg-muted px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted/80"
-						>
-							<ChevronLeft className="h-4 w-4" />
-							Back
-						</button>
-					)}
-					<div className="flex-1" />
-					<button
-						type="button"
-						onClick={handleNext}
-						disabled={selectedCount === 0}
-						className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-fg transition hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
-					>
-						Continue to Review
-						<ChevronRight className="h-4 w-4" />
-					</button>
-				</div>
-
-			{/* Condition Editor Modal */}
-			{conditionEditorFormat && (() => {
-				const selection = selections[conditionEditorFormat.trashId];
-
-				// Get specifications from originalConfig if available
-				const format = conditionEditorFormat.format as any;
-				const specs = format.originalConfig?.specifications || format.specifications || [];
-
-				const specificationsWithEnabled = specs.map((spec: any) => ({
-					...spec,
-					enabled: selection?.conditionsEnabled?.[spec.name] !== false,
-				}));
-
-				return (
-					<div
-						className="fixed inset-0 z-popover flex items-center justify-center bg-background/80 backdrop-blur-xs"
-						role="dialog"
-						aria-modal="true"
-						aria-label="Condition Editor"
-					>
-						<div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-xl border border-border bg-card p-6">
-							{/* Close button */}
-							<button
-								type="button"
-								onClick={() => setConditionEditorFormat(null)}
-								className="absolute top-4 right-4 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground z-10"
-								aria-label="Close"
-							>
-								<svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-									<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-								</svg>
-							</button>
-
-							<ConditionEditor
-								customFormatId={conditionEditorFormat.trashId}
-								customFormatName={(conditionEditorFormat.format as any).displayName || (conditionEditorFormat.format as any).name}
-								specifications={specificationsWithEnabled}
-								onChange={(updatedSpecs: any) => {
-									const conditionsEnabled: Record<string, boolean> = {};
-									for (const spec of updatedSpecs) {
-										conditionsEnabled[spec.name] = spec.enabled !== false;
-									}
-									setSelections((prev) => {
-										const current = prev[conditionEditorFormat.trashId] || { selected: true, conditionsEnabled: {} };
-										return {
-											...prev,
-											[conditionEditorFormat.trashId]: {
-												...current,
-												conditionsEnabled,
-											},
-										};
-									});
-								}}
-							/>
-						</div>
-					</div>
-				);
-			})()}
-			</div>
+			<CFConfigurationEdit
+				qualityProfile={qualityProfile}
+				selections={selections}
+				onSelectionsChange={setSelections}
+				selectedCount={selectedCount}
+				mandatoryCFs={mandatoryCFs}
+				cfGroups={cfGroups}
+				availableFormats={data?.availableFormats}
+				searchQuery={searchQuery}
+				onToggleCF={toggleCF}
+				onUpdateScore={updateScore}
+				resolveScore={resolveScore}
+				onNext={handleNext}
+				onBack={onBack}
+				conditionEditorFormat={conditionEditorFormat}
+				onConditionEditorOpen={setConditionEditorFormat}
+				onConditionEditorClose={() => setConditionEditorFormat(null)}
+			/>
 		);
 	}
 
@@ -940,7 +440,7 @@ export const CFConfiguration = ({
 					<button
 						type="button"
 						onClick={() => setSearchQuery("")}
-						className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foregroundtransition"
+						className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground hover:text-foreground transition"
 					>
 						Clear
 					</button>
@@ -1046,7 +546,7 @@ export const CFConfiguration = ({
 															<span>What is this?</span>
 														</summary>
 														<div className="mt-2 pl-4 text-sm text-muted-foreground prose prose-invert prose-sm max-w-none">
-															<div dangerouslySetInnerHTML={createSanitizedHtml(cf.description)} />
+															<SanitizedHtml html={cf.description} />
 														</div>
 													</details>
 												)}
@@ -1064,7 +564,7 @@ export const CFConfiguration = ({
 														onChange={(e) => updateScore(cf.trash_id, e.target.value)}
 														min={-10000}
 														max={10000}
-														className={`w-24 rounded border px-2 py-1 text-sm text-foregroundfocus:outline-none focus:ring-1 ${
+														className={`w-24 rounded border px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 ${
 															scoreOverride !== undefined
 																? "border-primary ring-1 ring-primary/20 bg-primary/5"
 																: "border-border bg-muted"
@@ -1188,10 +688,10 @@ export const CFConfiguration = ({
 										>
 											<div className="flex items-start gap-2">
 												<AlertCircle className="h-4 w-4 mt-0.5 shrink-0" style={{ color: themeGradient.from }} />
-												<div
+												<SanitizedHtml
+													html={group.trash_description}
 													className="text-sm"
 													style={{ color: themeGradient.from }}
-													dangerouslySetInnerHTML={createSanitizedHtml(group.trash_description)}
 												/>
 											</div>
 										</div>
@@ -1254,7 +754,7 @@ export const CFConfiguration = ({
 																		<span>What is this?</span>
 																	</summary>
 																	<div className="mt-2 pl-4 text-sm text-muted-foreground prose prose-invert prose-sm max-w-none">
-																		<div dangerouslySetInnerHTML={createSanitizedHtml(cf.description)} />
+																		<SanitizedHtml html={cf.description} />
 																	</div>
 																</details>
 															)}
@@ -1274,7 +774,7 @@ export const CFConfiguration = ({
 																			onChange={(e) => updateScore(cf.trash_id, e.target.value)}
 																			min={-10000}
 																			max={10000}
-																			className={`w-full sm:w-24 rounded border px-2 py-1 text-sm text-foregroundfocus:outline-none focus:ring-1 ${
+																			className={`w-full sm:w-24 rounded border px-2 py-1 text-sm text-foreground focus:outline-none focus:ring-1 ${
 																				scoreOverride !== undefined
 																					? "border-primary ring-1 ring-primary/20 bg-primary/5"
 																					: "border-border bg-muted"
@@ -1313,309 +813,25 @@ export const CFConfiguration = ({
 			)}
 
 			{/* Additional Custom Formats - Selected from Browse */}
-			{(() => {
-				// Get all selected CFs that are NOT in mandatory or CF groups
-				const mandatoryCFIds = new Set(data.mandatoryCFs?.map((cf: any) => cf.trash_id) || []);
-				const cfGroupCFIds = new Set<string>();
-				data.cfGroups?.forEach((group: any) => {
-					group.custom_formats?.forEach((cf: any) => {
-						const cfTrashId = typeof cf === 'string' ? cf : cf.trash_id;
-						cfGroupCFIds.add(cfTrashId);
-					});
-				});
-
-				const additionalCFs = Object.entries(selections)
-					.filter(([trashId, sel]) =>
-						sel?.selected &&
-						!mandatoryCFIds.has(trashId) &&
-						!cfGroupCFIds.has(trashId)
-					)
-					.map(([trashId]) => {
-						// Find the CF in availableFormats
-						const cf = data.availableFormats?.find((f: any) => f.trash_id === trashId);
-						return cf ? { ...cf, trash_id: trashId } : null;
-					})
-					.filter(Boolean);
-
-				if (additionalCFs.length === 0) return null;
-
-				return (
-					<div className="space-y-4">
-						<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-							<h3 className="text-lg font-semibold text-foreground">
-								<span className="flex flex-col sm:inline-flex sm:items-center sm:gap-2">
-									<span>Additional Custom Formats</span>
-									<span className="text-sm font-normal text-muted-foreground">
-										(Custom formats you&apos;ve added from the catalog)
-									</span>
-								</span>
-							</h3>
-							<span className="text-sm text-muted-foreground whitespace-nowrap">
-								{additionalCFs.length} format{additionalCFs.length !== 1 ? 's' : ''} added
-							</span>
-						</div>
-
-						<Card className="border-green-500/30 bg-green-500/5">
-							<CardHeader>
-								<CardTitle className="text-base flex items-center gap-2">
-									<span>✅ Your Additional Selections</span>
-								</CardTitle>
-								<CardDescription>
-									These custom formats were manually added from the catalog. You can adjust scores or remove them.
-								</CardDescription>
-							</CardHeader>
-							<CardContent>
-								<div className="space-y-2">
-									{additionalCFs.map((cf: any) => {
-										const isSelected = selections[cf.trash_id]?.selected ?? false;
-										const scoreOverride = selections[cf.trash_id]?.scoreOverride;
-										const displayScore = resolveScore(cf, cf.score);
-
-										return (
-											<div
-												key={cf.trash_id}
-												className="rounded-lg p-4 border border-green-500/30 bg-green-500/10 transition-all hover:border-green-500/50 hover:bg-green-500/15 hover:shadow-md"
-											>
-												<div className="flex items-start gap-3">
-													<input
-														type="checkbox"
-														checked={isSelected}
-														onChange={() => toggleCF(cf.trash_id, false)}
-														className="mt-1 h-5 w-5 rounded border-border/50 bg-card text-green-500 focus:ring-2 focus:ring-green-500/50 cursor-pointer transition"
-													/>
-													<div className="flex-1">
-														<div className="flex items-center gap-2 mb-2">
-															<span className="font-medium text-foreground">{cf.displayName || cf.name}</span>
-															<span className="inline-flex items-center gap-1 rounded bg-green-500/20 px-2 py-0.5 text-xs font-medium text-green-300">
-																➕ Added
-															</span>
-														</div>
-
-														{cf.description && (
-															<details className="mb-2 group" onClick={(e) => e.stopPropagation()}>
-																<summary className="cursor-pointer text-xs text-green-400 hover:text-green-300 transition flex items-center gap-1">
-																	<span className="group-open:rotate-90 transition-transform">▶</span>
-																	<span>What is this?</span>
-																</summary>
-																<div className="mt-2 pl-4 text-sm text-muted-foreground prose prose-invert prose-sm max-w-none">
-																	<div dangerouslySetInnerHTML={createSanitizedHtml(cf.description)} />
-																</div>
-															</details>
-														)}
-
-														<div className="flex items-center gap-3 flex-wrap">
-															<div className="flex items-center gap-2">
-																<label className="text-sm text-muted-foreground">TRaSH Score:</label>
-																<span className="text-sm font-medium text-foreground">{displayScore}</span>
-															</div>
-															<div className="flex items-center gap-2">
-																<label className="text-sm text-muted-foreground">Custom Score:</label>
-																<input
-																	type="number"
-																	value={scoreOverride ?? ""}
-																	onChange={(e) => {
-																		const value = e.target.value === "" ? undefined : Number(e.target.value);
-																		setSelections((prev) => ({
-																			...prev,
-																			[cf.trash_id]: {
-																				...prev[cf.trash_id],
-																				scoreOverride: value,
-																			},
-																		}));
-																	}}
-																	placeholder={`Default: ${displayScore}`}
-																	className="w-28 rounded border border-border bg-muted px-3 py-1.5 text-sm text-foregroundfocus:border-green-500 focus:outline-hidden focus:ring-1 focus:ring-green-500"
-																/>
-															</div>
-															<span className="text-xs text-muted-foreground">
-																(leave empty to use TRaSH score)
-															</span>
-														</div>
-													</div>
-												</div>
-											</div>
-										);
-									})}
-								</div>
-							</CardContent>
-						</Card>
-					</div>
-				);
-			})()}
+			<AdditionalCFSection
+				data={data}
+				selections={selections}
+				onToggleCF={(trashId) => toggleCF(trashId)}
+				onUpdateSelection={updateSelection}
+				resolveScore={resolveScore}
+			/>
 
 			{/* Browse All Custom Formats */}
-			{data.availableFormats && data.availableFormats.length > 0 && (
-				<div className="space-y-4">
-					<div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-						<h3 className="text-lg font-semibold text-foreground">
-							<span className="flex flex-col sm:inline-flex sm:items-center sm:gap-2">
-								<span>{isClonedProfile ? "Browse Instance Custom Formats" : "Browse All Custom Formats"}</span>
-								<span className="text-sm font-normal text-muted-foreground">
-									{isClonedProfile
-										? "(Add additional formats from the instance's catalog)"
-										: "(Add any additional custom formats to your template)"
-									}
-								</span>
-							</span>
-						</h3>
-						<span className="text-sm text-muted-foreground whitespace-nowrap">
-							{data.availableFormats.filter((cf: any) => {
-								// Hide formats already in template (mandatory or in groups)
-								const isInMandatory = data.mandatoryCFs?.some((mandatoryCF: any) => mandatoryCF.trash_id === cf.trash_id);
-								if (isInMandatory) return false;
-
-								// Hide formats in CF groups
-								const isInGroups = data.cfGroups?.some((group: any) =>
-									group.custom_formats?.some((groupCF: any) =>
-										(typeof groupCF === 'string' ? groupCF : groupCF.trash_id) === cf.trash_id
-									)
-								);
-								if (isInGroups) return false;
-
-								// Hide already selected formats
-								const isSelected = selections[cf.trash_id]?.selected ?? false;
-								if (isSelected) return false;
-
-								return true;
-							}).length} formats available
-						</span>
-					</div>
-
-					<Card
-						className="border"
-						style={isClonedProfile ? {
-							borderColor: "rgb(59 130 246 / 0.3)",
-							backgroundColor: "rgb(59 130 246 / 0.05)",
-						} : {
-							borderColor: themeGradient.fromMuted,
-							backgroundColor: themeGradient.fromLight,
-						}}
-					>
-						<CardHeader>
-							<CardTitle className="text-base">
-								{isClonedProfile ? "Instance Custom Formats Catalog" : "Additional Custom Formats Catalog"}
-							</CardTitle>
-							<CardDescription>
-								{isClonedProfile
-									? "Browse and select any additional custom formats from your instance. Formats already in your template are hidden."
-									: "Browse and select any additional custom formats from the TRaSH Guides catalog. Formats already in your template are hidden."
-								}
-							</CardDescription>
-						</CardHeader>
-						<CardContent>
-							<div className="space-y-2 max-h-96 overflow-y-auto">
-								{data.availableFormats
-									.filter((cf: any) => {
-										// Hide formats already in template
-										const isInMandatory = data.mandatoryCFs?.some((mandatoryCF: any) => mandatoryCF.trash_id === cf.trash_id);
-										if (isInMandatory) return false;
-
-										// Hide formats in CF groups
-										const isInGroups = data.cfGroups?.some((group: any) =>
-											group.custom_formats?.some((groupCF: any) =>
-												(typeof groupCF === 'string' ? groupCF : groupCF.trash_id) === cf.trash_id
-											)
-										);
-										if (isInGroups) return false;
-
-										// Hide already selected formats
-										const isSelected = selections[cf.trash_id]?.selected ?? false;
-										if (isSelected) return false;
-
-										// Apply search filter
-										if (searchQuery) {
-											const search = searchQuery.toLowerCase();
-											return (
-												cf.name?.toLowerCase().includes(search) ||
-												cf.displayName?.toLowerCase().includes(search) ||
-												cf.description?.toLowerCase().includes(search)
-											);
-										}
-
-										return true;
-									})
-									.map((cf: any) => {
-										const isSelected = selections[cf.trash_id]?.selected ?? false;
-										const scoreOverride = selections[cf.trash_id]?.scoreOverride;
-										const displayScore = resolveScore(cf, cf.score);
-
-										return (
-											<div
-												key={cf.trash_id}
-												className={`rounded-lg p-3 border border-border/50 bg-card transition-all hover:bg-muted hover:shadow-md cursor-pointer ${
-													isClonedProfile ? "hover:border-blue-500/50" : "hover:border-purple-500/50"
-												}`}
-												onClick={() => toggleCF(cf.trash_id, false)}
-											>
-												<div className="flex items-start gap-3">
-													<input
-														type="checkbox"
-														checked={isSelected}
-														onChange={() => toggleCF(cf.trash_id, false)}
-														className={`mt-1 h-4 w-4 rounded border-border bg-muted focus:ring-offset-0 cursor-pointer ${
-															isClonedProfile ? "text-blue-500 focus:ring-blue-500" : "text-purple-500 focus:ring-purple-500"
-														}`}
-														onClick={(e) => e.stopPropagation()}
-													/>
-													<div className="flex-1">
-														<div className="flex items-center gap-2 mb-2">
-															<span className="font-medium text-foreground">{cf.displayName || cf.name}</span>
-															<span className="text-xs text-muted-foreground">
-																(Score: {displayScore})
-															</span>
-														</div>
-
-														{cf.description && (
-															<details className="mb-2 group" onClick={(e) => e.stopPropagation()}>
-																<summary className={`cursor-pointer text-xs transition flex items-center gap-1 ${
-																	isClonedProfile ? "text-blue-400 hover:text-blue-300" : "text-purple-400 hover:text-purple-300"
-																}`}>
-																	<span className="group-open:rotate-90 transition-transform">▶</span>
-																	<span>What is this?</span>
-																</summary>
-																<div className="mt-2 pl-4 text-sm text-muted-foreground prose prose-invert prose-sm max-w-none">
-																	<div dangerouslySetInnerHTML={createSanitizedHtml(cf.description)} />
-																</div>
-															</details>
-														)}
-
-														{isSelected && (
-															<div className="flex items-center gap-2 mt-2">
-																<label className="text-xs text-muted-foreground">Custom Score:</label>
-																<input
-																	type="number"
-																	value={scoreOverride ?? ""}
-																	onChange={(e) => {
-																		const value = e.target.value === "" ? undefined : Number(e.target.value);
-																		setSelections((prev) => ({
-																			...prev,
-																			[cf.trash_id]: {
-																				...prev[cf.trash_id],
-																				scoreOverride: value,
-																			},
-																		}));
-																	}}
-																	onClick={(e) => e.stopPropagation()}
-																	placeholder={`Default: ${displayScore}`}
-																	className={`w-24 rounded border border-border bg-muted px-2 py-1 text-xs text-foregroundfocus:outline-none focus:ring-1 ${
-																		isClonedProfile ? "focus:border-blue-500 focus:ring-blue-500" : "focus:border-purple-500 focus:ring-purple-500"
-																	}`}
-																/>
-																<span className="text-xs text-muted-foreground">
-																	(leave empty for default: {displayScore})
-																</span>
-															</div>
-														)}
-													</div>
-												</div>
-											</div>
-										);
-									})}
-							</div>
-						</CardContent>
-					</Card>
-				</div>
-			)}
+			<BrowseCFCatalog
+				data={data}
+				selections={selections}
+				onToggleCF={(trashId) => toggleCF(trashId)}
+				onUpdateSelection={updateSelection}
+				resolveScore={resolveScore}
+				searchQuery={searchQuery}
+				isClonedProfile={isClonedProfile}
+				themeGradient={themeGradient}
+			/>
 
 			{/* Navigation */}
 			<div className={`flex flex-col-reverse sm:flex-row sm:items-center gap-3 border-t border-border pt-6 ${onBack ? 'sm:justify-between' : 'sm:justify-end'}`}>
@@ -1623,7 +839,7 @@ export const CFConfiguration = ({
 					<button
 						type="button"
 						onClick={onBack}
-						className="inline-flex items-center justify-center gap-2 rounded-lg bg-muted px-4 py-2.5 text-sm font-medium text-foregroundtransition hover:bg-accent disabled:opacity-50"
+						className="inline-flex items-center justify-center gap-2 rounded-lg bg-muted px-4 py-2.5 text-sm font-medium text-foreground transition hover:bg-accent disabled:opacity-50"
 					>
 						<ChevronLeft className="h-4 w-4" />
 						<span>Back</span>

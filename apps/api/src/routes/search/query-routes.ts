@@ -10,16 +10,6 @@ import { performProwlarrSearchWithSdk } from "../../lib/search/prowlarr-api.js";
  * - POST /search/query - Perform a manual search across Prowlarr instances
  */
 export const registerQueryRoutes: FastifyPluginCallback = (app, _opts, done) => {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-	});
-
 	/**
 	 * POST /search/query
 	 * Performs a manual search query across one or more Prowlarr instances.

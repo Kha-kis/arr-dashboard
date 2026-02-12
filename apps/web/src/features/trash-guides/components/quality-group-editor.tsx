@@ -7,7 +7,7 @@ import type {
 	TemplateQualityGroup,
 	CustomQualityConfig,
 } from "@arr/shared";
-import { Button, Input } from "../../../components/ui";
+import { Button } from "../../../components/ui";
 import {
 	GripVertical,
 	Trash2,
@@ -21,9 +21,9 @@ import {
 	HelpCircle,
 	ArrowUp,
 	Info,
-	X,
 	Edit3,
 } from "lucide-react";
+import { QualityGroupModal } from "./quality-group-modal";
 
 interface QualityGroupEditorProps {
 	/** Current quality configuration */
@@ -62,9 +62,9 @@ export const QualityGroupEditor = ({
 
 	// Group creation modal state
 	const [showGroupModal, setShowGroupModal] = useState(false);
-	const [groupModalSelection, setGroupModalSelection] = useState<Set<string>>(new Set());
-	const [groupModalName, setGroupModalName] = useState("");
 	const [editingGroupId, setEditingGroupId] = useState<string | null>(null);
+	const [editingGroupName, setEditingGroupName] = useState("");
+	const [editingGroupQualityIds, setEditingGroupQualityIds] = useState<Set<string>>(new Set());
 
 	// Get display items in REVERSE order (highest priority at TOP for intuitive display)
 	const displayItems = useMemo(() => {
@@ -184,9 +184,9 @@ export const QualityGroupEditor = ({
 
 	// Open group creation modal
 	const openGroupModal = useCallback(() => {
-		setGroupModalSelection(new Set());
-		setGroupModalName("");
 		setEditingGroupId(null);
+		setEditingGroupName("");
+		setEditingGroupQualityIds(new Set());
 		setShowGroupModal(true);
 	}, []);
 
@@ -206,35 +206,22 @@ export const QualityGroupEditor = ({
 			}
 		}
 
-		setGroupModalSelection(selectedIds);
-		setGroupModalName(group.name);
 		setEditingGroupId(groupId);
+		setEditingGroupName(group.name);
+		setEditingGroupQualityIds(selectedIds);
 		setShowGroupModal(true);
 	}, [config.items, ungroupedQualities]);
 
-	// Toggle selection in group modal
-	const toggleModalSelection = useCallback((id: string) => {
-		setGroupModalSelection((prev) => {
-			const newSet = new Set(prev);
-			if (newSet.has(id)) {
-				newSet.delete(id);
-			} else {
-				newSet.add(id);
-			}
-			return newSet;
-		});
-	}, []);
-
-	// Create group from modal selection
-	const createGroupFromModal = useCallback(() => {
-		if (groupModalSelection.size < 2 || !groupModalName.trim()) return;
+	// Create/update group from modal save
+	const handleGroupSave = useCallback((name: string, selectedIds: Set<string>) => {
+		if (selectedIds.size < 2 || !name) return;
 
 		// Get selected qualities
 		const selectedQualities: TemplateQualityItem[] = [];
 		const remainingItems: TemplateQualityEntry[] = [];
 
 		for (const entry of config.items) {
-			if (entry.type === "quality" && groupModalSelection.has(entry.item.id)) {
+			if (entry.type === "quality" && selectedIds.has(entry.item.id)) {
 				selectedQualities.push(entry.item);
 			} else if (entry.type === "group" && entry.group.id === editingGroupId) {
 				// Skip the group being edited (we'll replace it)
@@ -251,7 +238,7 @@ export const QualityGroupEditor = ({
 		// Create new group
 		const newGroup: TemplateQualityGroup = {
 			id: editingGroupId || generateId(),
-			name: groupModalName.trim(),
+			name,
 			allowed: selectedQualities.some((q) => q.allowed),
 			qualities: selectedQualities.map((q) => ({
 				name: q.name,
@@ -269,7 +256,7 @@ export const QualityGroupEditor = ({
 			insertIndex = oldIndex >= 0 ? oldIndex : remainingItems.length;
 		} else {
 			const firstSelectedIndex = config.items.findIndex(
-				(e) => e.type === "quality" && groupModalSelection.has(e.item.id)
+				(e) => e.type === "quality" && selectedIds.has(e.item.id)
 			);
 			insertIndex = firstSelectedIndex >= 0 ? firstSelectedIndex : remainingItems.length;
 		}
@@ -314,10 +301,8 @@ export const QualityGroupEditor = ({
 
 		// Close modal
 		setShowGroupModal(false);
-		setGroupModalSelection(new Set());
-		setGroupModalName("");
 		setEditingGroupId(null);
-	}, [config, onChange, groupModalSelection, groupModalName, editingGroupId]);
+	}, [config, onChange, editingGroupId]);
 
 	// Ungroup a quality group back to individual qualities
 	const ungroupQualities = useCallback(
@@ -844,144 +829,18 @@ export const QualityGroupEditor = ({
 			)}
 
 			{/* Group Creation/Edit Modal */}
-			{showGroupModal && (
-				<div
-					className="fixed inset-0 z-modal flex items-center justify-center bg-black/50"
-					role="dialog"
-					aria-modal="true"
-					aria-labelledby="group-modal-title"
-				>
-					<div className="w-full max-w-lg rounded-lg border border-border bg-background p-6 shadow-xl mx-4">
-						{/* Modal Header */}
-						<div className="flex items-center justify-between mb-4">
-							<div className="flex items-center gap-2">
-								<FolderPlus className="h-5 w-5 text-primary" />
-								<h3 id="group-modal-title" className="text-lg font-medium text-foreground">
-									{editingGroupId ? "Edit Quality Group" : "Create Quality Group"}
-								</h3>
-							</div>
-							<Button
-								variant="ghost"
-								size="sm"
-								onClick={() => {
-									setShowGroupModal(false);
-									setGroupModalSelection(new Set());
-									setGroupModalName("");
-									setEditingGroupId(null);
-								}}
-								aria-label="Close group editor"
-								className="text-muted-foreground hover:text-foreground"
-							>
-								<X className="h-4 w-4" />
-							</Button>
-						</div>
-
-						{/* Instructions */}
-						<p className="text-sm text-muted-foreground mb-4">
-							Select 2 or more qualities to group together. Grouped qualities are treated as equivalent -
-							Radarr/Sonarr won&apos;t upgrade between them.
-						</p>
-
-						{/* Group Name Input */}
-						<div className="mb-4">
-							<label className="block text-sm font-medium text-foreground mb-1">
-								Group Name
-							</label>
-							<Input
-								type="text"
-								value={groupModalName}
-								onChange={(e) => setGroupModalName(e.target.value)}
-								placeholder="e.g., WEB 1080p, HD Streaming"
-								className="w-full"
-							/>
-						</div>
-
-						{/* Quality Selection */}
-						<div className="mb-4">
-							<label className="block text-sm font-medium text-foreground mb-2">
-								Select Qualities ({groupModalSelection.size} selected)
-							</label>
-							<div className="max-h-64 overflow-y-auto rounded-lg border border-border">
-								{ungroupedQualities.length === 0 ? (
-									<p className="p-4 text-sm text-muted-foreground text-center">
-										No ungrouped qualities available. Ungroup existing groups first.
-									</p>
-								) : (
-									ungroupedQualities.map((quality) => {
-										const isSelected = groupModalSelection.has(quality.id);
-										return (
-											<label
-												key={quality.id}
-												className={`flex items-center gap-3 px-4 py-3 cursor-pointer transition-colors ${
-													isSelected
-														? "bg-primary/10"
-														: "hover:bg-card"
-												} border-b border-border last:border-b-0`}
-											>
-												<input
-													type="checkbox"
-													checked={isSelected}
-													onChange={() => toggleModalSelection(quality.id)}
-													className="h-4 w-4 rounded border-border bg-card text-primary focus:ring-primary"
-												/>
-												<div className="flex-1">
-													<span className="text-sm font-medium text-foreground">
-														{quality.name}
-													</span>
-													{quality.resolution && (
-														<span className="ml-2 text-xs text-muted-foreground">
-															({quality.resolution}p)
-														</span>
-													)}
-												</div>
-												{isSelected && (
-													<Check className="h-4 w-4 text-primary" />
-												)}
-											</label>
-										);
-									})
-								)}
-							</div>
-						</div>
-
-						{/* Preview */}
-						{groupModalSelection.size >= 2 && groupModalName.trim() && (
-							<div className="mb-4 p-3 rounded-lg bg-primary/5 border border-primary/20">
-								<div className="text-xs font-medium text-primary mb-1">Preview:</div>
-								<div className="flex items-center gap-2">
-									<Layers className="h-4 w-4 text-primary" />
-									<span className="text-sm font-medium text-foreground">{groupModalName}</span>
-									<span className="text-xs text-muted-foreground">
-										({groupModalSelection.size} qualities)
-									</span>
-								</div>
-							</div>
-						)}
-
-						{/* Actions */}
-						<div className="flex justify-end gap-2">
-							<Button
-								variant="ghost"
-								onClick={() => {
-									setShowGroupModal(false);
-									setGroupModalSelection(new Set());
-									setGroupModalName("");
-									setEditingGroupId(null);
-								}}
-							>
-								Cancel
-							</Button>
-							<Button
-								variant="primary"
-								onClick={createGroupFromModal}
-								disabled={groupModalSelection.size < 2 || !groupModalName.trim()}
-							>
-								{editingGroupId ? "Update Group" : "Create Group"}
-							</Button>
-						</div>
-					</div>
-				</div>
-			)}
+			<QualityGroupModal
+				isOpen={showGroupModal}
+				onClose={() => {
+					setShowGroupModal(false);
+					setEditingGroupId(null);
+				}}
+				onSave={handleGroupSave}
+				ungroupedQualities={ungroupedQualities}
+				editingGroupId={editingGroupId}
+				editingGroupName={editingGroupName}
+				editingGroupQualityIds={editingGroupQualityIds}
+			/>
 		</div>
 	);
 };

@@ -10,6 +10,9 @@ import { z } from "zod";
 import { createDeploymentExecutorService } from "../../lib/trash-guides/deployment-executor.js";
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
 import { parseInstanceOverrides } from "../../lib/trash-guides/utils.js";
+import { requireInstance } from "../../lib/arr/instance-helpers.js";
+import { requireTemplate, transformOverrideToApi } from "../../lib/trash-guides/template-helpers.js";
+import { TemplateNotFoundError, InstanceNotFoundError } from "../../lib/errors.js";
 
 // ============================================================================
 // Request Schemas
@@ -254,16 +257,6 @@ const getTemplateParamsSchema = z.object({
 // ============================================================================
 
 export async function registerTemplateRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-	});
-
 	const templateService = createTemplateService(app.prisma);
 
 	/**
@@ -401,20 +394,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			return reply.send({ template });
 		} catch (error) {
 			app.log.error({ err: error }, "Failed to update template");
-
-			if (error instanceof Error && error.message.includes("not found")) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: error.message,
-				});
-			}
-
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to update template",
-			});
+			throw error;
 		}
 	});
 
@@ -435,20 +415,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			});
 		} catch (error) {
 			app.log.error({ err: error }, "Failed to delete template");
-
-			if (error instanceof Error && error.message.includes("not found")) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: error.message,
-				});
-			}
-
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to delete template",
-			});
+			throw error;
 		}
 	});
 
@@ -476,28 +443,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			});
 		} catch (error) {
 			app.log.error({ err: error }, "Failed to duplicate template");
-
-			if (error instanceof Error && error.message.includes("not found")) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: error.message,
-				});
-			}
-
-			if (error instanceof Error && error.message.includes("already exists")) {
-				return reply.status(409).send({
-					statusCode: 409,
-					error: "Conflict",
-					message: error.message,
-				});
-			}
-
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to duplicate template",
-			});
+			throw error;
 		}
 	});
 
@@ -519,20 +465,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			return reply.send(jsonData);
 		} catch (error) {
 			app.log.error({ err: error }, "Failed to export template");
-
-			if (error instanceof Error && error.message.includes("not found")) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: error.message,
-				});
-			}
-
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to export template",
-			});
+			throw error;
 		}
 	});
 
@@ -554,28 +487,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			});
 		} catch (error) {
 			app.log.error({ err: error }, "Failed to import template");
-
-			if (error instanceof SyntaxError) {
-				return reply.status(400).send({
-					statusCode: 400,
-					error: "ValidationError",
-					message: "Invalid JSON format",
-				});
-			}
-
-			if (error instanceof Error && error.message.includes("Invalid template")) {
-				return reply.status(400).send({
-					statusCode: 400,
-					error: "ValidationError",
-					message: error.message,
-				});
-			}
-
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to import template",
-			});
+			throw error;
 		}
 	});
 
@@ -623,21 +535,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 	}>("/:templateId/instance-overrides/:instanceId", async (request, reply) => {
 		try {
 			const { templateId, instanceId } = request.params;
-
-			const template = await app.prisma.trashTemplate.findFirst({
-				where: {
-					id: templateId,
-					userId: request.currentUser!.id, // preHandler guarantees auth
-				},
-			});
-
-			if (!template) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: "Template not found",
-				});
-			}
+			const template = await requireTemplate(app.prisma, request.currentUser!.id, templateId);
 
 			const instanceOverrides = parseInstanceOverrides(
 				template.instanceOverrides,
@@ -646,31 +544,13 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			);
 			const rawOverride = (instanceOverrides[instanceId] as Record<string, unknown>) || {};
 
-			// Transform storage field names back to API field names for frontend consistency
-			// Storage uses: cfScoreOverrides, cfSelectionOverrides
-			// API uses: scoreOverrides, cfOverrides
-			const transformedOverrides: Record<string, unknown> = {
-				...rawOverride,
-			};
-
-			// Map cfScoreOverrides → scoreOverrides
-			if ("cfScoreOverrides" in rawOverride) {
-				transformedOverrides.scoreOverrides = rawOverride.cfScoreOverrides;
-				transformedOverrides.cfScoreOverrides = undefined;
-			}
-
-			// Map cfSelectionOverrides → cfOverrides
-			if ("cfSelectionOverrides" in rawOverride) {
-				transformedOverrides.cfOverrides = rawOverride.cfSelectionOverrides;
-				transformedOverrides.cfSelectionOverrides = undefined;
-			}
-
 			return reply.send({
 				templateId,
 				instanceId,
-				overrides: transformedOverrides,
+				overrides: transformOverrideToApi(rawOverride),
 			});
 		} catch (error) {
+			if (error instanceof TemplateNotFoundError) throw error;
 			app.log.error({ err: error }, "Failed to get instance overrides");
 			return reply.status(500).send({
 				statusCode: 500,
@@ -702,21 +582,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		try {
 			const { templateId, instanceId } = request.params;
 			const { scoreOverrides, cfOverrides, qualityConfigOverride } = request.body;
-
-			const template = await app.prisma.trashTemplate.findFirst({
-				where: {
-					id: templateId,
-					userId: request.currentUser!.id, // preHandler guarantees auth
-				},
-			});
-
-			if (!template) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: "Template not found",
-				});
-			}
+			const template = await requireTemplate(app.prisma, request.currentUser!.id, templateId);
 
 			// Parse existing overrides with error handling for malformed JSON
 			const instanceOverrides = parseInstanceOverrides(
@@ -772,6 +638,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 				overrides: instanceOverrides[instanceId],
 			});
 		} catch (error) {
+			if (error instanceof TemplateNotFoundError) throw error;
 			app.log.error({ err: error }, "Failed to update instance overrides");
 			return reply.status(500).send({
 				statusCode: 500,
@@ -790,21 +657,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 	}>("/:templateId/instance-overrides/:instanceId", async (request, reply) => {
 		try {
 			const { templateId, instanceId } = request.params;
-
-			const template = await app.prisma.trashTemplate.findFirst({
-				where: {
-					id: templateId,
-					userId: request.currentUser!.id, // preHandler guarantees auth
-				},
-			});
-
-			if (!template) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: "Template not found",
-				});
-			}
+			const template = await requireTemplate(app.prisma, request.currentUser!.id, templateId);
 
 			// Parse existing overrides with error handling for malformed JSON
 			let instanceOverrides: Record<string, unknown> = {};
@@ -857,6 +710,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 				message: "Instance overrides removed successfully",
 			});
 		} catch (error) {
+			if (error instanceof TemplateNotFoundError) throw error;
 			app.log.error({ err: error }, "Failed to remove instance overrides");
 			return reply.status(500).send({
 				statusCode: 500,
@@ -887,40 +741,11 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 				});
 			}
 
-			// Verify template belongs to user
-			const template = await app.prisma.trashTemplate.findFirst({
-				where: {
-					id: templateId,
-					userId: request.currentUser!.id, // preHandler guarantees auth
-				},
-			});
-
-			if (!template) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: "Template not found",
-				});
-			}
-
-			// Verify instance exists
-			const instance = await app.prisma.serviceInstance.findFirst({
-				where: {
-					id: instanceId,
-					userId: request.currentUser!.id, // preHandler guarantees auth
-				},
-			});
-
-			if (!instance) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: "Instance not found",
-				});
-			}
+			await requireTemplate(app.prisma, request.currentUser!.id, templateId);
+			await requireInstance(app, request.currentUser!.id, instanceId);
 
 			// Execute deployment
-			const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.encryptor);
+			const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.arrClientFactory);
 			const result = await deploymentExecutor.deploySingleInstance(
 				templateId,
 				instanceId,
@@ -932,6 +757,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 				result,
 			});
 		} catch (error) {
+			if (error instanceof TemplateNotFoundError || error instanceof InstanceNotFoundError) throw error;
 			app.log.error({ err: error }, "Failed to execute deployment");
 			return reply.status(500).send({
 				statusCode: 500,
@@ -970,21 +796,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 				});
 			}
 
-			// Verify template belongs to user
-			const template = await app.prisma.trashTemplate.findFirst({
-				where: {
-					id: templateId,
-					userId: request.currentUser!.id, // preHandler guarantees auth
-				},
-			});
-
-			if (!template) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: "Template not found",
-				});
-			}
+			await requireTemplate(app.prisma, request.currentUser!.id, templateId);
 
 			// Verify all instances exist
 			const instances = await app.prisma.serviceInstance.findMany({
@@ -1003,7 +815,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			}
 
 			// Execute bulk deployment
-			const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.encryptor);
+			const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.arrClientFactory);
 			const result = await deploymentExecutor.deployBulkInstances(
 				templateId,
 				instanceIds,
@@ -1015,6 +827,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 				result,
 			});
 		} catch (error) {
+			if (error instanceof TemplateNotFoundError) throw error;
 			app.log.error({ err: error }, "Failed to execute bulk deployment");
 			return reply.status(500).send({
 				statusCode: 500,

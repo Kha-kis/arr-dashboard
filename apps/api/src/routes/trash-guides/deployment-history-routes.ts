@@ -6,22 +6,14 @@
 
 import type { FastifyPluginAsync } from "fastify";
 import type { SonarrClient, RadarrClient } from "arr-sdk";
+import { requireInstance } from "../../lib/arr/instance-helpers.js";
+import { InstanceNotFoundError } from "../../lib/errors.js";
 
 // ============================================================================
 // Route Handlers
 // ============================================================================
 
 export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-	});
-
 	/**
 	 * GET /api/trash-guides/deployment/history
 	 * Get all deployment history (global view)
@@ -184,21 +176,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			const limit = request.query.limit ? Number(request.query.limit) : 50;
 			const offset = request.query.offset ? Number(request.query.offset) : 0;
 
-			// Verify instance exists and belongs to the user (combined check prevents info leakage)
-			const instance = await app.prisma.serviceInstance.findFirst({
-				where: {
-					id: instanceId,
-					userId: request.currentUser!.id, // preHandler guarantees authentication
-				},
-			});
-
-			if (!instance) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: "Instance not found",
-				});
-			}
+			await requireInstance(app, request.currentUser!.id, instanceId);
 
 			// Get deployment history
 			const history = await app.prisma.templateDeploymentHistory.findMany({
@@ -239,6 +217,7 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 				},
 			});
 		} catch (error) {
+			if (error instanceof InstanceNotFoundError) throw error;
 			app.log.error({ err: error }, "Failed to retrieve deployment history for instance");
 			return reply.status(500).send({
 				statusCode: 500,
@@ -449,9 +428,9 @@ export const deploymentHistoryRoutes: FastifyPluginAsync = async (app) => {
 			if (configSource) {
 				try {
 					const templateConfig = JSON.parse(configSource);
-					deployedCFNames = (templateConfig.customFormats || []).map(
-						(cf: { name: string }) => cf.name,
-					);
+					deployedCFNames = Array.isArray(templateConfig.customFormats)
+						? templateConfig.customFormats.map((cf: { name: string }) => cf.name)
+						: [];
 				} catch {
 					// If we can't parse the config, we can't undeploy
 					return reply.status(400).send({

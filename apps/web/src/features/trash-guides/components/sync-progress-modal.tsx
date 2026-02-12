@@ -3,7 +3,7 @@
 import { useEffect, useRef, useCallback } from "react";
 import { CheckCircle2, XCircle, Loader2, AlertCircle, RefreshCw } from "lucide-react";
 import { useSyncProgress } from "../../../hooks/api/useSync";
-import type { SyncProgressStatus } from "../../../lib/api-client/sync";
+import type { SyncProgressStatus } from "../../../lib/api-client/trash-guides";
 import { Button } from "../../../components/ui";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";

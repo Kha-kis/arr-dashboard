@@ -643,17 +643,7 @@ interface ServiceGradient {
 | `createGradientStyle(gradient, variant)` | Complete style object | `style={createGradientStyle(gradient, "icon")}` |
 | `createAccentLineStyle(gradient)` | Top accent line for cards | Common card pattern |
 | `createFocusRingStyle(gradient)` | Input focus styling | Form elements |
-| `createGradient(gradient, direction)` | CSS gradient string | `createGradient(gradient, "linear", 135)` |
-| `createGlow(glow, intensity)` | Box-shadow string | `createGlow(gradient.glow, "medium")` |
-
-### Style Variants for `createGradientStyle`
-
-```typescript
-createGradientStyle(gradient, "icon")   // Icon containers with glow
-createGradientStyle(gradient, "button") // Primary buttons
-createGradientStyle(gradient, "card")   // Subtle card backgrounds
-createGradientStyle(gradient, "badge")  // Colored badges/chips
-```
+| `getInfoColor(severity, gradient)` | Theme-aware info colors | Badge/status styling |
 
 ### Import Conventions
 

@@ -4,6 +4,7 @@ import {
 	type LibraryEpisode,
 	type LibraryItem,
 	type LibraryService,
+	type LibraryTrack,
 	type PaginatedLibraryResponse,
 	libraryAlbumsRequestSchema,
 	libraryAlbumsResponseSchema,
@@ -11,6 +12,8 @@ import {
 	libraryBooksResponseSchema,
 	libraryEpisodesRequestSchema,
 	libraryEpisodesResponseSchema,
+	libraryTracksRequestSchema,
+	libraryTracksResponseSchema,
 	paginatedLibraryResponseSchema,
 } from "@arr/shared";
 import type { Prisma, LibraryItemType as PrismaLibraryItemType } from "../../lib/prisma.js";
@@ -21,10 +24,10 @@ import {
 	isReadarrClient,
 	isSonarrClient,
 } from "../../lib/arr/client-helpers.js";
-import { ArrError, arrErrorToHttpStatus } from "../../lib/arr/client-factory.js";
 import { normalizeAlbum } from "../../lib/library/album-normalizer.js";
 import { normalizeBook } from "../../lib/library/book-normalizer.js";
 import { normalizeEpisode } from "../../lib/library/episode-normalizer.js";
+import { normalizeTrack } from "../../lib/library/track-normalizer.js";
 import { libraryQuerySchema } from "../../lib/library/validation-schemas.js";
 import { getLibrarySyncScheduler } from "../../lib/library-sync/index.js";
 
@@ -34,15 +37,6 @@ import { getLibrarySyncScheduler } from "../../lib/library-sync/index.js";
  * - GET /library/episodes - Fetch episodes for a series
  */
 export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
-			return reply.status(401).send({
-				error: "Authentication required",
-			});
-		}
-	});
-
 	/**
 	 * GET /library
 	 * Fetches library items from cache with server-side pagination, search, and filtering
@@ -161,9 +155,11 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 		}
 
 		// Search filter (case-insensitive title search)
-		// Note: SQLite's LIKE is case-insensitive by default, so we omit mode: "insensitive"
+		// mode: "insensitive" generates LIKE on SQLite (already case-insensitive) and ILIKE on PostgreSQL.
+		// Type assertion needed because Prisma generates StringFilter without `mode` for SQLite schemas,
+		// but the field is accepted at runtime for both providers.
 		if (parsed.search) {
-			where.title = { contains: parsed.search };
+			where.title = { contains: parsed.search, mode: "insensitive" } as Prisma.StringFilter<"LibraryCache">;
 		}
 
 		// Monitored filter
@@ -366,16 +362,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 				{ err: error, instance: instance.id, seriesId },
 				"failed to fetch episodes",
 			);
-
-			if (error instanceof ArrError) {
-				return reply.status(arrErrorToHttpStatus(error)).send({
-					error: error.message,
-				});
-			}
-
-			return reply.status(502).send({
-				error: "Failed to fetch episodes",
-			});
+			throw error;
 		}
 	});
 
@@ -424,16 +411,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 				{ err: error, instance: instance.id, artistId },
 				"failed to fetch albums",
 			);
-
-			if (error instanceof ArrError) {
-				return reply.status(arrErrorToHttpStatus(error)).send({
-					error: error.message,
-				});
-			}
-
-			return reply.status(502).send({
-				error: "Failed to fetch albums",
-			});
+			throw error;
 		}
 	});
 
@@ -482,16 +460,56 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 				{ err: error, instance: instance.id, authorId },
 				"failed to fetch books",
 			);
+			throw error;
+		}
+	});
 
-			if (error instanceof ArrError) {
-				return reply.status(arrErrorToHttpStatus(error)).send({
-					error: error.message,
-				});
-			}
+	/**
+	 * GET /library/tracks
+	 * Fetches tracks for a specific album from a Lidarr instance
+	 * Note: Tracks are NOT cached - fetched directly from ARR
+	 */
+	app.get("/library/tracks", async (request, reply) => {
+		const parsed = libraryTracksRequestSchema.parse(request.query ?? {});
 
-			return reply.status(502).send({
-				error: "Failed to fetch books",
+		const clientResult = await getClientForInstance(app, request, parsed.instanceId);
+		if (!clientResult.success) {
+			return reply.status(clientResult.statusCode).send({
+				error: clientResult.error,
 			});
+		}
+
+		const { client, instance } = clientResult;
+		const service = instance.service.toLowerCase() as LibraryService;
+
+		if (service !== "lidarr" || !isLidarrClient(client)) {
+			return reply.status(400).send({
+				error: "Tracks are only available for Lidarr instances",
+			});
+		}
+
+		const albumId = Number(parsed.albumId);
+		if (!Number.isFinite(albumId)) {
+			return reply.status(400).send({
+				error: "Invalid album identifier",
+			});
+		}
+
+		try {
+			// Lidarr track endpoint: /api/v1/track?albumId=X
+			const rawTracks = await client.track.getAll({ albumId });
+
+			const tracks: LibraryTrack[] = rawTracks.map((raw) =>
+				normalizeTrack(raw as Record<string, unknown>, albumId),
+			);
+
+			return libraryTracksResponseSchema.parse({ tracks });
+		} catch (error) {
+			request.log.error(
+				{ err: error, instance: instance.id, albumId },
+				"failed to fetch tracks",
+			);
+			throw error;
 		}
 	});
 

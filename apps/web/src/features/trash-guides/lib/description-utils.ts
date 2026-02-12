@@ -2,7 +2,7 @@
  * Utilities for cleaning and parsing TRaSH Guides descriptions
  */
 
-import type { CFInclude } from "../../../lib/api-client/custom-formats";
+import type { CFInclude } from "../../../lib/api-client/trash-guides";
 
 /**
  * Map of include path to content for quick lookup

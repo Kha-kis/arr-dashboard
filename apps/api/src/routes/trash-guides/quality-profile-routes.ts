@@ -69,16 +69,6 @@ export async function registerQualityProfileRoutes(
 	app: FastifyInstance,
 	_opts: FastifyPluginOptions,
 ) {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-	});
-
 	const cacheManager = createCacheManager(app.prisma);
 	const templateService = createTemplateService(app.prisma);
 
@@ -489,8 +479,6 @@ export async function registerQualityProfileRoutes(
 				customFormatGroupsIncluded: templateConfig.customFormatGroups.length,
 			});
 		} catch (error) {
-			app.log.error({ err: error }, "Failed to import quality profile");
-
 			if (error instanceof z.ZodError) {
 				return reply.status(400).send({
 					statusCode: 400,
@@ -500,11 +488,8 @@ export async function registerQualityProfileRoutes(
 				});
 			}
 
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to import quality profile",
-			});
+			app.log.error({ err: error }, "Failed to import quality profile");
+			throw error;
 		}
 	});
 
@@ -564,16 +549,31 @@ export async function registerQualityProfileRoutes(
 			// Get CF Groups for reference storage
 			const cfGroups = (await cacheManager.get(serviceType, "CF_GROUPS")) as any[] | null;
 
+			// Build lookup maps from existing template data for fallback
+			const existingGroupMap = new Map(
+				(existingConfig.customFormatGroups || []).map((g) => [g.trashId, g]),
+			);
+			const existingCFMap = new Map(
+				(existingConfig.customFormats || []).map((cf) => [cf.trashId, cf]),
+			);
+
 			// Add selected CF Groups
-			if (cfGroups) {
-				for (const groupTrashId of selectedCFGroups) {
-					const group = cfGroups.find((g) => g.trash_id === groupTrashId);
-					if (group) {
+			for (const groupTrashId of selectedCFGroups) {
+				const group = cfGroups?.find((g) => g.trash_id === groupTrashId);
+				if (group) {
+					templateConfig.customFormatGroups.push({
+						trashId: group.trash_id,
+						name: group.name,
+						enabled: true,
+						originalConfig: group,
+					});
+				} else {
+					// Not in cache — preserve from existing template if available
+					const existingGroup = existingGroupMap.get(groupTrashId);
+					if (existingGroup) {
 						templateConfig.customFormatGroups.push({
-							trashId: group.trash_id,
-							name: group.name,
+							...existingGroup,
 							enabled: true,
-							originalConfig: group,
 						});
 					}
 				}
@@ -585,6 +585,7 @@ export async function registerQualityProfileRoutes(
 
 				const customFormat = customFormats.find((cf) => cf.trash_id === cfTrashId);
 				if (customFormat) {
+					// Found in cache — use latest data from TRaSH
 					templateConfig.customFormats.push({
 						trashId: customFormat.trash_id,
 						name: customFormat.name,
@@ -592,6 +593,17 @@ export async function registerQualityProfileRoutes(
 						conditionsEnabled: selection.conditionsEnabled,
 						originalConfig: customFormat,
 					});
+				} else {
+					// Not in cache — preserve from existing template if available
+					const existingCF = existingCFMap.get(cfTrashId);
+					if (existingCF) {
+						templateConfig.customFormats.push({
+							...existingCF,
+							scoreOverride: selection.scoreOverride,
+							conditionsEnabled: selection.conditionsEnabled,
+						});
+					}
+					// If not in cache AND not in existing template, it's genuinely unknown — skip
 				}
 			}
 
@@ -609,8 +621,6 @@ export async function registerQualityProfileRoutes(
 				customFormatGroupsIncluded: templateConfig.customFormatGroups.length,
 			});
 		} catch (error) {
-			app.log.error({ err: error }, "Failed to update quality profile template");
-
 			if (error instanceof z.ZodError) {
 				return reply.status(400).send({
 					statusCode: 400,
@@ -620,20 +630,8 @@ export async function registerQualityProfileRoutes(
 				});
 			}
 
-			if (error instanceof Error && error.message.includes("not found")) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: error.message,
-				});
-			}
-
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message:
-					error instanceof Error ? error.message : "Failed to update quality profile template",
-			});
+			app.log.error({ err: error }, "Failed to update quality profile template");
+			throw error;
 		}
 	});
 }

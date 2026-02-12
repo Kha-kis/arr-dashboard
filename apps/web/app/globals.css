@@ -1210,11 +1210,6 @@
 		min-height: 100vh;
 	}
 
-	/* Smooth scrolling */
-	html {
-		scroll-behavior: smooth;
-	}
-
 	/* Better focus styles */
 	*:focus-visible {
 		@apply outline-2 outline-ring outline-offset-2;

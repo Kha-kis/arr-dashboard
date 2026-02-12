@@ -26,6 +26,9 @@ import {
 	ManualImportError,
 } from "../../routes/manual-import-utils.js";
 import type { AutoImportResult } from "@arr/shared";
+import type { QueueCapableClient } from "../arr/client-factory.js";
+import { delay } from "../utils/delay.js";
+import { parseJsonArray, isString } from "../utils/json.js";
 
 const log = loggers.queueCleaner;
 
@@ -250,14 +253,7 @@ function matchesCustomImportBlockPatterns(
  * Parse JSON array of custom patterns from config, with error handling.
  */
 function parseCustomPatterns(patternsJson: string | null, instanceId?: string): string[] {
-	if (!patternsJson) return [];
-	try {
-		const parsed = JSON.parse(patternsJson);
-		return Array.isArray(parsed) ? parsed.filter((p) => typeof p === "string") : [];
-	} catch (error) {
-		log.warn({ instanceId, err: error }, "Invalid custom import block patterns JSON - using empty list");
-		return [];
-	}
+	return parseJsonArray(patternsJson, isString, "importBlockPatterns", log, { instanceId });
 }
 
 /**
@@ -606,23 +602,11 @@ function evaluateAutoImportEligibility(
 	}
 
 	// Check for custom never patterns
-	const customNeverJson = config.autoImportNeverPatterns;
-	if (customNeverJson) {
-		try {
-			const parsed = JSON.parse(customNeverJson);
-			if (Array.isArray(parsed)) {
-				// Filter to only string elements for type safety
-				const customNeverPatterns = parsed.filter((p): p is string => typeof p === "string");
-				if (customNeverPatterns.length > 0) {
-					const customNeverMatch = matchesKeywords(statusTexts, customNeverPatterns);
-					if (customNeverMatch) {
-						return { eligible: false, reason: `Blocked by custom pattern: ${customNeverMatch}` };
-					}
-				}
-			}
-		} catch (err) {
-			// Log warning so user knows their patterns aren't being applied
-			log.warn({ err, configId: config.id }, "Invalid autoImportNeverPatterns JSON - custom never patterns ignored");
+	const customNeverPatterns = parseJsonArray(config.autoImportNeverPatterns, isString, "autoImportNeverPatterns", log, { configId: config.id });
+	if (customNeverPatterns.length > 0) {
+		const customNeverMatch = matchesKeywords(statusTexts, customNeverPatterns);
+		if (customNeverMatch) {
+			return { eligible: false, reason: `Blocked by custom pattern: ${customNeverMatch}` };
 		}
 	}
 
@@ -634,21 +618,9 @@ function evaluateAutoImportEligibility(
 		// Check custom safe patterns if no built-in match
 		let customMatch: string | null = null;
 		if (!safeMatch) {
-			const customPatternsJson = config.autoImportCustomPatterns;
-			if (customPatternsJson) {
-				try {
-					const parsed = JSON.parse(customPatternsJson);
-					if (Array.isArray(parsed)) {
-						// Filter to only string elements for type safety
-						const customPatterns = parsed.filter((p): p is string => typeof p === "string");
-						if (customPatterns.length > 0) {
-							customMatch = matchesKeywords(statusTexts, customPatterns);
-						}
-					}
-				} catch (err) {
-					// Log warning so user knows their patterns aren't being applied
-					log.warn({ err, configId: config.id }, "Invalid autoImportCustomPatterns JSON - custom safe patterns ignored");
-				}
+			const customPatterns = parseJsonArray(config.autoImportCustomPatterns, isString, "autoImportCustomPatterns", log, { configId: config.id });
+			if (customPatterns.length > 0) {
+				customMatch = matchesKeywords(statusTexts, customPatterns);
 			}
 		}
 
@@ -687,7 +659,7 @@ async function attemptAutoImport(
 	}
 	const service = serviceLower as "sonarr" | "radarr" | "lidarr" | "readarr";
 
-	const client = app.arrClientFactory.create(instance);
+	const client = app.arrClientFactory.create(instance) as QueueCapableClient;
 
 	try {
 		await autoImportByDownloadIdWithSdk(client, service, downloadId);
@@ -728,7 +700,7 @@ export async function executeQueueCleaner(
 	instance: ServiceInstance,
 	config: QueueCleanerConfig,
 ): Promise<CleanerResult> {
-	const client = app.arrClientFactory.create(instance);
+	const client = app.arrClientFactory.create(instance) as QueueCapableClient;
 	const now = new Date();
 
 	// Parse whitelist patterns
@@ -1148,7 +1120,7 @@ export async function executeQueueCleaner(
 
 				// Rate limit: add delay between auto-import attempts to avoid overwhelming ARR
 				if (AUTO_IMPORT_DELAY_MS > 0) {
-					await new Promise((resolve) => setTimeout(resolve, AUTO_IMPORT_DELAY_MS));
+					await delay(AUTO_IMPORT_DELAY_MS);
 				}
 
 				// Update strike record with import attempt info
@@ -1414,7 +1386,7 @@ export async function executeEnhancedPreview(
 	instance: ServiceInstance,
 	config: QueueCleanerConfig,
 ): Promise<EnhancedPreviewResult> {
-	const client = app.arrClientFactory.create(instance);
+	const client = app.arrClientFactory.create(instance) as QueueCapableClient;
 	const now = new Date();
 	const instanceService = instance.service.toLowerCase() as "sonarr" | "radarr" | "lidarr" | "readarr";
 

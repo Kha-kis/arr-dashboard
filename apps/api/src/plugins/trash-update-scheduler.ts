@@ -57,7 +57,7 @@ const trashUpdateSchedulerPlugin = fastifyPlugin(
 			const versionTracker = createVersionTracker(repoConfig);
 			const cacheManager = createCacheManager(app.prisma);
 			const githubFetcher = createTrashFetcher({ repoConfig, logger: app.log });
-			const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.encryptor);
+			const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.arrClientFactory);
 			const templateUpdater = createTemplateUpdater(
 				app.prisma,
 				versionTracker,

@@ -3,8 +3,8 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
     "declaration": true,
     "declarationMap": true,
     "emitDeclarationOnly": false,

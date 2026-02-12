@@ -10,7 +10,6 @@ import {
 	isSonarrClient,
 	isRadarrClient,
 } from "../../lib/arr/client-helpers.js";
-import { ArrError, arrErrorToHttpStatus } from "../../lib/arr/client-factory.js";
 import { SonarrClient, RadarrClient } from "arr-sdk";
 import { toBoolean, toNumber, toStringValue } from "../../lib/data/values.js";
 import { getInstanceOptionsWithSdk } from "../../lib/discover/discover-normalizer.js";
@@ -95,16 +94,6 @@ function transformLanguageProfiles(raw: unknown): Array<{ id: number; name: stri
  * - POST /discover/test-options - Get configuration options without saved instance
  */
 export const registerOptionsRoutes: FastifyPluginCallback = (app, _opts, done) => {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-	});
-
 	/**
 	 * GET /discover/options
 	 * Fetches quality profiles, root folders, and language profiles for an instance
@@ -152,13 +141,7 @@ export const registerOptionsRoutes: FastifyPluginCallback = (app, _opts, done) =
 			});
 		} catch (error) {
 			request.log.error({ err: error, instance: instance.id }, "failed to load discover options");
-
-			if (error instanceof ArrError) {
-				reply.status(arrErrorToHttpStatus(error));
-			} else {
-				reply.status(502);
-			}
-			return reply.send({ message: "Failed to load instance options" });
+			throw error;
 		}
 	});
 

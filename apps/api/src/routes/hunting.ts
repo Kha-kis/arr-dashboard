@@ -1,6 +1,8 @@
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { SonarrClient, RadarrClient } from "arr-sdk";
+import { SonarrClient, RadarrClient, LidarrClient, ReadarrClient } from "arr-sdk";
+import { toServiceLabel } from "../lib/arr/client-helpers.js";
+import { requireInstance } from "../lib/arr/instance-helpers.js";
 import { getHuntingScheduler } from "../lib/hunting/scheduler.js";
 import {
 	MIN_MISSING_INTERVAL_MINS,
@@ -14,28 +16,10 @@ import {
 	MAX_RESEARCH_AFTER_DAYS,
 } from "../lib/hunting/constants.js";
 import { cleanupOldSearchHistory } from "../lib/hunting/search-history.js";
-
-/**
- * Parse a JSON string into an array, returning null when the input is null or parsing fails.
- *
- * Logs a warning containing `context.recordId` and `context.field` if parsing fails.
- *
- * @param json - The JSON string to parse, or `null` to indicate no data
- * @param context - Context used in the warning log: `recordId` identifies the record and `field` identifies the JSON field
- * @returns The parsed array when successful, or `null` if `json` is `null` or invalid
- */
-function parseJsonSafe(
-	json: string | null,
-	context: { recordId: string; field: string },
-): unknown[] | null {
-	if (!json) return null;
-	try {
-		return JSON.parse(json) as unknown[];
-	} catch {
-		console.warn(`[HuntingRoute] Failed to parse ${context.field} for record ${context.recordId}`);
-		return null;
-	}
-}
+import { InstanceNotFoundError } from "../lib/errors.js";
+import { safeJsonParse } from "../lib/utils/json.js";
+import { parsePaginationQuery } from "../lib/utils/pagination.js";
+import { validateRequest } from "../lib/utils/validate.js";
 
 const huntConfigUpdateSchema = z.object({
 	// Feature toggles
@@ -84,16 +68,6 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 	// Initialize scheduler with app reference (enables manual hunts even when scheduler is stopped)
 	getHuntingScheduler().initialize(app);
 
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-	});
-
 	// Get hunting status overview
 	app.get("/hunting/status", async (request, reply) => {
 		try {
@@ -103,7 +77,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 			const instances = await app.prisma.serviceInstance.findMany({
 				where: {
 					userId,
-					service: { in: ["SONARR", "RADARR"] },
+					service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
 				},
 				include: {
 					huntConfig: true,
@@ -146,7 +120,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 				return {
 					instanceId: inst.id,
 					instanceName: inst.label,
-					service: inst.service.toLowerCase() as "sonarr" | "radarr",
+					service: toServiceLabel(inst.service),
 					huntMissingEnabled: config?.huntMissingEnabled ?? false,
 					huntUpgradesEnabled: config?.huntUpgradesEnabled ?? false,
 					lastMissingHunt: config?.lastMissingHunt?.toISOString() ?? null,
@@ -177,7 +151,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 			const instances = await app.prisma.serviceInstance.findMany({
 				where: {
 					userId,
-					service: { in: ["SONARR", "RADARR"] },
+					service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
 				},
 				include: {
 					huntConfig: true,
@@ -191,7 +165,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 				return {
 					...inst.huntConfig,
 					instanceName: inst.label,
-					service: inst.service.toLowerCase() as "sonarr" | "radarr",
+					service: toServiceLabel(inst.service),
 					lastMissingHunt: inst.huntConfig.lastMissingHunt?.toISOString() ?? null,
 					lastUpgradeHunt: inst.huntConfig.lastUpgradeHunt?.toISOString() ?? null,
 					apiCallsResetAt: inst.huntConfig.apiCallsResetAt?.toISOString() ?? null,
@@ -203,7 +177,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 			const instanceSummaries = instances.map((inst) => ({
 				id: inst.id,
 				label: inst.label,
-				service: inst.service.toLowerCase() as "sonarr" | "radarr",
+				service: toServiceLabel(inst.service),
 			}));
 
 			return reply.send({
@@ -218,23 +192,12 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 
 	// Create hunt config for an instance
 	app.post("/hunting/configs", async (request, reply) => {
-		const parsed = huntConfigCreateSchema.safeParse(request.body);
-		if (!parsed.success) {
-			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
-		}
+		const { instanceId } = validateRequest(huntConfigCreateSchema, request.body);
 
 		try {
 			const userId = request.currentUser!.id;
-			const { instanceId } = parsed.data;
 
-			// Verify instance ownership
-			const instance = await app.prisma.serviceInstance.findFirst({
-				where: { id: instanceId, userId },
-			});
-
-			if (!instance) {
-				return reply.status(404).send({ error: "Not found or access denied" });
-			}
+			const instance = await requireInstance(app, userId, instanceId);
 
 			// Check if config already exists
 			const existing = await app.prisma.huntConfig.findUnique({
@@ -253,7 +216,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(201).send({
 				...config,
 				instanceName: config.instance.label,
-				service: config.instance.service.toLowerCase() as "sonarr" | "radarr",
+				service: toServiceLabel(config.instance.service),
 				lastMissingHunt: config.lastMissingHunt?.toISOString() ?? null,
 				lastUpgradeHunt: config.lastUpgradeHunt?.toISOString() ?? null,
 				apiCallsResetAt: config.apiCallsResetAt?.toISOString() ?? null,
@@ -261,6 +224,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 				updatedAt: config.updatedAt.toISOString(),
 			});
 		} catch (error) {
+			if (error instanceof InstanceNotFoundError) throw error;
 			request.log.error({ err: error }, "Failed to create hunt config");
 			return reply.status(500).send({ error: "Failed to create hunt config" });
 		}
@@ -269,34 +233,27 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 	// Update hunt config
 	app.patch("/hunting/configs/:instanceId", async (request, reply) => {
 		const { instanceId } = request.params as { instanceId: string };
-		const parsed = huntConfigUpdateSchema.safeParse(request.body);
-		if (!parsed.success) {
-			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
-		}
+		const data = validateRequest(huntConfigUpdateSchema, request.body);
 
 		try {
 			const userId = request.currentUser!.id;
 
-			// Verify instance ownership
-			const instance = await app.prisma.serviceInstance.findFirst({
-				where: { id: instanceId, userId },
-				include: { huntConfig: true },
-			});
+			const instance = await requireInstance(app, userId, instanceId, { huntConfig: true });
 
-			if (!instance?.huntConfig) {
-				return reply.status(404).send({ error: "Not found or access denied" });
+			if (!instance.huntConfig) {
+				return reply.status(404).send({ error: "Hunt config not found for this instance" });
 			}
 
 			const config = await app.prisma.huntConfig.update({
 				where: { instanceId },
-				data: parsed.data,
+				data,
 				include: { instance: true },
 			});
 
 			return reply.send({
 				...config,
 				instanceName: config.instance.label,
-				service: config.instance.service.toLowerCase() as "sonarr" | "radarr",
+				service: toServiceLabel(config.instance.service),
 				lastMissingHunt: config.lastMissingHunt?.toISOString() ?? null,
 				lastUpgradeHunt: config.lastUpgradeHunt?.toISOString() ?? null,
 				apiCallsResetAt: config.apiCallsResetAt?.toISOString() ?? null,
@@ -304,12 +261,8 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 				updatedAt: config.updatedAt.toISOString(),
 			});
 		} catch (error) {
-			const prismaError = error as { code?: string };
-			if (prismaError.code === "P2025") {
-				return reply.status(404).send({ error: "Hunt config not found" });
-			}
 			request.log.error({ err: error }, "Failed to update hunt config");
-			return reply.status(500).send({ error: "Failed to update hunt config" });
+			throw error;
 		}
 	});
 
@@ -325,13 +278,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 				pageSize?: string;
 			};
 
-			let page = Number.parseInt(query.page ?? "1", 10);
-			let pageSize = Number.parseInt(query.pageSize ?? "20", 10);
-			// Validate pagination inputs
-			if (Number.isNaN(page) || page < 1) page = 1;
-			if (Number.isNaN(pageSize) || pageSize < 1) pageSize = 20;
-			pageSize = Math.min(pageSize, 100);
-			const skip = (page - 1) * pageSize;
+			const { pageSize, skip } = parsePaginationQuery(query);
 
 			const where: Record<string, unknown> = {
 				instance: { userId },
@@ -362,12 +309,12 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 				id: log.id,
 				instanceId: log.instanceId,
 				instanceName: log.instance.label,
-				service: log.instance.service.toLowerCase() as "sonarr" | "radarr",
+				service: toServiceLabel(log.instance.service),
 				huntType: log.huntType as "missing" | "upgrade",
 				itemsSearched: log.itemsSearched,
 				itemsGrabbed: log.itemsFound, // DB field is itemsFound, API returns as itemsGrabbed
-				searchedItems: parseJsonSafe(log.searchedItems, { recordId: log.id, field: "searchedItems" }),
-				grabbedItems: parseJsonSafe(log.foundItems, { recordId: log.id, field: "foundItems" }), // DB field is foundItems
+				searchedItems: safeJsonParse<unknown[]>(log.searchedItems),
+				grabbedItems: safeJsonParse<unknown[]>(log.foundItems), // DB field is foundItems
 				status: log.status as "running" | "completed" | "partial" | "skipped" | "error",
 				message: log.message,
 				durationMs: log.durationMs,
@@ -391,11 +338,6 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 	// Current architecture: Single-admin (authenticated user IS the admin).
 	// Future multi-user: Add role check here (e.g., request.currentUser.role === 'admin').
 	app.post("/hunting/scheduler/toggle", async (request, reply) => {
-		// Explicit auth check for clarity (also enforced by plugin preHandler)
-		if (!request.currentUser!.id) {
-			return reply.status(401).send({ error: "Authentication required" });
-		}
-
 		try {
 			// In single-admin architecture, any authenticated user can control the scheduler.
 			// For multi-user support, add role-based check here:
@@ -428,14 +370,10 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const userId = request.currentUser!.id;
 
 		try {
-			// Verify instance ownership
-			const instance = await app.prisma.serviceInstance.findFirst({
-				where: { id: instanceId, userId },
-				include: { huntConfig: true },
-			});
+			const instance = await requireInstance(app, userId, instanceId, { huntConfig: true });
 
-			if (!instance?.huntConfig) {
-				return reply.status(404).send({ error: "Not found or access denied" });
+			if (!instance.huntConfig) {
+				return reply.status(404).send({ error: "Hunt config not found for this instance" });
 			}
 
 			const huntType = body.type === "upgrade" ? "upgrade" : "missing";
@@ -457,6 +395,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 				queued: true,
 			});
 		} catch (error) {
+			if (error instanceof InstanceNotFoundError) throw error;
 			request.log.error({ err: error }, "Failed to trigger manual hunt");
 			return reply.status(500).send({ error: "Failed to trigger manual hunt" });
 		}
@@ -467,19 +406,12 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const { instanceId } = request.params as { instanceId: string };
 		const userId = request.currentUser!.id;
 
-		// Verify instance ownership
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: { id: instanceId, userId },
-		});
-
-		if (!instance) {
-			return reply.status(404).send({ error: "Not found or access denied" });
-		}
-
+		const instance = await requireInstance(app, userId, instanceId);
 		const service = instance.service.toLowerCase();
 
 		try {
-			const client = app.arrClientFactory.create(instance);
+			const client = app.arrClientFactory.create(instance) as
+				SonarrClient | RadarrClient | LidarrClient | ReadarrClient;
 
 			// Validate client type matches service
 			if (service === "sonarr" && !(client instanceof SonarrClient)) {
@@ -487,6 +419,12 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 			}
 			if (service === "radarr" && !(client instanceof RadarrClient)) {
 				return reply.status(400).send({ error: "Invalid client type for Radarr instance" });
+			}
+			if (service === "lidarr" && !(client instanceof LidarrClient)) {
+				return reply.status(400).send({ error: "Invalid client type for Lidarr instance" });
+			}
+			if (service === "readarr" && !(client instanceof ReadarrClient)) {
+				return reply.status(400).send({ error: "Invalid client type for Readarr instance" });
 			}
 
 			// Fetch tags and quality profiles in parallel
@@ -518,19 +456,28 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 				.map((profile) => ({ id: profile.id, name: profile.name }));
 
 			// Define available statuses based on service type
-			const statuses =
-				service === "sonarr"
-					? [
-							{ value: "continuing", label: "Continuing" },
-							{ value: "ended", label: "Ended" },
-							{ value: "upcoming", label: "Upcoming" },
-						]
-					: [
-							{ value: "tba", label: "TBA" },
-							{ value: "announced", label: "Announced" },
-							{ value: "inCinemas", label: "In Cinemas" },
-							{ value: "released", label: "Released" },
-						];
+			const statusMap: Record<string, Array<{ value: string; label: string }>> = {
+				sonarr: [
+					{ value: "continuing", label: "Continuing" },
+					{ value: "ended", label: "Ended" },
+					{ value: "upcoming", label: "Upcoming" },
+				],
+				radarr: [
+					{ value: "tba", label: "TBA" },
+					{ value: "announced", label: "Announced" },
+					{ value: "inCinemas", label: "In Cinemas" },
+					{ value: "released", label: "Released" },
+				],
+				lidarr: [
+					{ value: "continuing", label: "Continuing" },
+					{ value: "ended", label: "Ended" },
+				],
+				readarr: [
+					{ value: "continuing", label: "Continuing" },
+					{ value: "ended", label: "Ended" },
+				],
+			};
+			const statuses = statusMap[service] ?? [];
 
 			return reply.send({
 				service,
@@ -557,14 +504,10 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 			const userId = request.currentUser!.id;
 			const { instanceId } = request.params;
 
-			// Verify instance belongs to user
-			const instance = await app.prisma.serviceInstance.findFirst({
-				where: { id: instanceId, userId },
-				include: { huntConfig: true },
-			});
+			const instance = await requireInstance(app, userId, instanceId, { huntConfig: true });
 
-			if (!instance?.huntConfig) {
-				return reply.status(404).send({ error: "Not found or access denied" });
+			if (!instance.huntConfig) {
+				return reply.status(404).send({ error: "Hunt config not found for this instance" });
 			}
 
 			const configId = instance.huntConfig.id;
@@ -618,6 +561,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 				recentSearches,
 			});
 		} catch (error) {
+			if (error instanceof InstanceNotFoundError) throw error;
 			request.log.error({ err: error }, "Failed to fetch search history stats");
 			return reply.status(500).send({ error: "Failed to fetch search history stats" });
 		}
@@ -633,14 +577,10 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 			const { instanceId } = request.params;
 			const { huntType } = request.query;
 
-			// Verify instance belongs to user
-			const instance = await app.prisma.serviceInstance.findFirst({
-				where: { id: instanceId, userId },
-				include: { huntConfig: true },
-			});
+			const instance = await requireInstance(app, userId, instanceId, { huntConfig: true });
 
-			if (!instance?.huntConfig) {
-				return reply.status(404).send({ error: "Not found or access denied" });
+			if (!instance.huntConfig) {
+				return reply.status(404).send({ error: "Hunt config not found for this instance" });
 			}
 
 			const configId = instance.huntConfig.id;
@@ -659,6 +599,7 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 				huntType: huntType ?? "all",
 			});
 		} catch (error) {
+			if (error instanceof InstanceNotFoundError) throw error;
 			request.log.error({ err: error }, "Failed to clear search history");
 			return reply.status(500).send({ error: "Failed to clear search history" });
 		}

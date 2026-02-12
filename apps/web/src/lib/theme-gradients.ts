@@ -70,7 +70,7 @@
  * - Semantic colors (SEMANTIC_COLORS): success=green, warning=amber, error=red
  */
 
-import type { CSSProperties } from "react";
+
 import type { ColorTheme } from "../providers/color-theme-provider";
 
 /**
@@ -391,23 +391,6 @@ export function getServiceGradient(service: string): ServiceGradient {
 }
 
 /**
- * Check if a string is a valid service type
- *
- * @param service - Service name to check
- * @returns True if the service is a valid ServiceType
- */
-export function isValidServiceType(service: string): service is ServiceType {
-	const normalized = service.toLowerCase();
-	return (
-		normalized === "sonarr" ||
-		normalized === "radarr" ||
-		normalized === "prowlarr" ||
-		normalized === "lidarr" ||
-		normalized === "readarr"
-	);
-}
-
-/**
  * Semantic colors that remain constant across themes
  * Used for status indicators, alerts, etc.
  */
@@ -489,32 +472,6 @@ export const PROTOCOL_COLORS = {
 export const RATING_COLOR = SEMANTIC_COLORS.warning.text; // #fbbf24
 
 /**
- * Helper function to create CSS gradient strings
- */
-export const createGradient = (
-	gradient: Pick<ThemeGradient, "from" | "to">,
-	direction: "linear" | "radial" = "linear",
-	angle = 135
-): string => {
-	if (direction === "radial") {
-		return `radial-gradient(ellipse at center, ${gradient.from}, ${gradient.to})`;
-	}
-	return `linear-gradient(${angle}deg, ${gradient.from}, ${gradient.to})`;
-};
-
-/**
- * Helper function to create glow box-shadow
- */
-export const createGlow = (
-	glow: string,
-	intensity: "subtle" | "medium" | "strong" = "medium"
-): string => {
-	const blur = { subtle: 12, medium: 20, strong: 32 };
-	const spread = { subtle: -4, medium: -4, strong: -8 };
-	return `0 4px ${blur[intensity]}px ${spread[intensity]}px ${glow}`;
-};
-
-/**
  * Helper to get theme-aware info colors (for badges, etc.)
  * Returns semantic colors for error/warning, theme colors for info
  */
@@ -535,80 +492,6 @@ export const getInfoColor = (
 		text: SEMANTIC_COLORS[severity].text,
 	};
 };
-
-/**
- * Generate complete style object for a gradient background with glow
- *
- * @example
- * ```tsx
- * const gradient = getServiceGradient("sonarr");
- * <div style={createGradientStyle(gradient, "icon")} />
- * ```
- */
-export function createGradientStyle(
-	gradient: Pick<ThemeGradient | ServiceGradient, "from" | "to" | "glow">,
-	variant: "icon" | "button" | "card" | "badge" = "icon"
-): CSSProperties {
-	const styles: Record<typeof variant, CSSProperties> = {
-		icon: {
-			background: `linear-gradient(135deg, ${gradient.from}, ${gradient.to})`,
-			boxShadow: `0 4px 12px -4px ${gradient.glow}`,
-		},
-		button: {
-			background: `linear-gradient(135deg, ${gradient.from}, ${gradient.to})`,
-			boxShadow: `0 4px 16px -4px ${gradient.glow}`,
-		},
-		card: {
-			background: `linear-gradient(135deg, ${gradient.from}15, ${gradient.to}15)`,
-			borderColor: `${gradient.from}30`,
-		},
-		badge: {
-			backgroundColor: `${gradient.from}20`,
-			color: gradient.from,
-			borderColor: `${gradient.from}40`,
-		},
-	};
-	return styles[variant];
-}
-
-/**
- * Generate accent line style (commonly used at top of cards/dialogs)
- *
- * @example
- * ```tsx
- * <div className="absolute top-0 left-0 right-0 h-1" style={createAccentLineStyle(gradient)} />
- * ```
- */
-export function createAccentLineStyle(
-	gradient: Pick<ThemeGradient | ServiceGradient, "from" | "to">,
-	direction: "horizontal" | "vertical" = "horizontal"
-): CSSProperties {
-	const angle = direction === "horizontal" ? "90deg" : "180deg";
-	return {
-		background: `linear-gradient(${angle}, ${gradient.from}, ${gradient.to})`,
-	};
-}
-
-/**
- * Generate focus ring style for form inputs
- *
- * @example
- * ```tsx
- * const [focused, setFocused] = useState(false);
- * <input
- *   style={focused ? createFocusRingStyle(gradient) : undefined}
- *   onFocus={() => setFocused(true)}
- *   onBlur={() => setFocused(false)}
- * />
- * ```
- */
-export function createFocusRingStyle(gradient: ThemeGradient): CSSProperties {
-	return {
-		borderColor: gradient.from,
-		boxShadow: `0 0 0 3px ${gradient.fromLight}, 0 0 20px -5px ${gradient.glow}`,
-		outline: "none",
-	};
-}
 
 /**
  * Semantic color type for status indicators

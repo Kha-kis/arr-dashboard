@@ -4,6 +4,7 @@ import { useCallback, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ManualImportCandidate, ManualImportSubmission } from "@arr/shared";
 import { fetchManualImportCandidates, submitManualImport } from "../../lib/api-client/dashboard";
+import { QUEUE_QUERY_KEY } from "../../lib/query-keys";
 
 const manualImportKey = (params: {
 	instanceId: string;
@@ -62,8 +63,6 @@ export const useManualImportQuery = (params: {
 		candidates,
 	};
 };
-
-const QUEUE_QUERY_KEY = ["dashboard", "queue"] as const;
 
 export const useManualImportMutation = () => {
 	const queryClient = useQueryClient();

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useMemo } from "react";
 import type { QueueItem } from "@arr/shared";
 import { Inbox, Loader2 } from "lucide-react";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -87,8 +87,8 @@ export const QueueTable = ({
 		[selection.selectedItems],
 	);
 
-	// Action handlers for rows (groups or items)
-	const handleRowAction = async (
+	// Action handlers for rows (groups or items) — memoized for stable references
+	const handleRowAction = useCallback(async (
 		rowItems: QueueItem[],
 		action: QueueAction,
 		actionOptions?: QueueActionOptions,
@@ -113,16 +113,16 @@ export const QueueTable = ({
 		if (action === "category" && onChangeCategory) {
 			await onChangeCategory(actionableItems);
 		}
-	};
+	}, [onRetry, onManualImport, onRemove, onChangeCategory]);
 
-	// Action handler for individual items
-	const handleItemAction = async (
+	// Action handler for individual items — memoized
+	const handleItemAction = useCallback(async (
 		item: QueueItem,
 		action: QueueAction,
 		actionOptions?: QueueActionOptions,
 	) => {
 		await handleRowAction([item], action, actionOptions);
-	};
+	}, [handleRowAction]);
 
 	// Loading state with premium styling
 	if (loading) {

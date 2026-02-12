@@ -125,7 +125,7 @@ export const humanizeLabel = (value: string): string =>
 /**
  * Removes trailing slashes from URL
  */
-export const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/, "");
+const normalizeBaseUrl = (value: string): string => value.replace(/\/+$/, "");
 
 /**
  * Builds external link to Sonarr/Radarr/Lidarr/Readarr for a calendar item

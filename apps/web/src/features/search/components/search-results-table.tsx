@@ -17,23 +17,9 @@ import {
 	getLinuxIndexer,
 	getLinuxInstanceName,
 } from "../../../lib/incognito";
+import { formatBytes } from "../../../lib/format-utils";
 
 const integer = new Intl.NumberFormat();
-
-const formatBytes = (value?: number): string => {
-	if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
-		return "-";
-	}
-	const units = ["B", "KB", "MB", "GB", "TB", "PB"] as const;
-	let current = value;
-	let unitIndex = 0;
-	while (current >= 1024 && unitIndex < units.length - 1) {
-		current /= 1024;
-		unitIndex += 1;
-	}
-	const precision = current >= 100 || unitIndex === 0 ? 0 : 1;
-	return `${current.toFixed(precision)} ${units[unitIndex]}`;
-};
 
 const _formatDate = (value?: string): string => {
 	if (!value) {

@@ -11,8 +11,12 @@ export const resolveImageUrl = (value: unknown, baseUrl?: string): string | unde
 	if (!raw) {
 		return undefined;
 	}
-	if (/^https?:\/\//i.test(raw)) {
+	if (/^https:\/\//i.test(raw)) {
 		return raw;
+	}
+	// Upgrade HTTP remote URLs to HTTPS (required by CSP img-src policy)
+	if (/^http:\/\//i.test(raw)) {
+		return raw.replace(/^http:/i, "https:");
 	}
 	if (!baseUrl) {
 		return raw;

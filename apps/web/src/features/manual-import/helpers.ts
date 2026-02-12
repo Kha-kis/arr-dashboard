@@ -2,6 +2,8 @@ import type {
 	ManualImportCandidateUnion,
 	ManualImportSonarrCandidate,
 	ManualImportRadarrCandidate,
+	ManualImportLidarrCandidate,
+	ManualImportReadarrCandidate,
 } from "./types";
 
 export const isSonarrCandidate = (
@@ -11,6 +13,14 @@ export const isSonarrCandidate = (
 export const isRadarrCandidate = (
 	candidate: ManualImportCandidateUnion,
 ): candidate is ManualImportRadarrCandidate => candidate.service === "radarr";
+
+export const isLidarrCandidate = (
+	candidate: ManualImportCandidateUnion,
+): candidate is ManualImportLidarrCandidate => candidate.service === "lidarr";
+
+export const isReadarrCandidate = (
+	candidate: ManualImportCandidateUnion,
+): candidate is ManualImportReadarrCandidate => candidate.service === "readarr";
 
 type SonarrEpisode = NonNullable<ManualImportSonarrCandidate["episodes"]>[number];
 
@@ -84,6 +94,18 @@ export const describeCandidate = (candidate: ManualImportCandidateUnion): string
 
 	if (isRadarrCandidate(candidate)) {
 		return candidate.movie?.title ?? fallback;
+	}
+
+	if (isLidarrCandidate(candidate)) {
+		const artistName = candidate.artist?.artistName ?? "Unknown artist";
+		const albumTitle = candidate.album?.title;
+		return albumTitle ? `${artistName} - ${albumTitle}` : artistName;
+	}
+
+	if (isReadarrCandidate(candidate)) {
+		const authorName = candidate.author?.authorName ?? "Unknown author";
+		const bookTitle = candidate.book?.title;
+		return bookTitle ? `${authorName} - ${bookTitle}` : authorName;
 	}
 
 	return fallback;

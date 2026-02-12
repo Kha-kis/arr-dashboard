@@ -6,85 +6,32 @@
 
 import type { FastifyPluginCallback } from "fastify";
 import { createProfileCloner } from "../../lib/trash-guides/profile-cloner.js";
-import { SonarrClient, RadarrClient, ArrError } from "arr-sdk";
-import { arrErrorToHttpStatus } from "../../lib/arr/client-factory.js";
+import { SonarrClient, RadarrClient } from "arr-sdk";
 import { createCFMatcher, type InstanceCustomFormat } from "../../lib/trash-guides/cf-matcher.js";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
 import { findCutoffQualityName } from "../../lib/utils/quality-utils.js";
+import { requireInstance } from "../../lib/arr/instance-helpers.js";
+import {
+	matchProfileToTrash,
+	buildCFRecommendations,
+	buildCustomFormatsConfig,
+	buildCompleteQualityProfile,
+	type ArrQualityProfileResponse,
+} from "../../lib/trash-guides/profile-matcher.js";
+import type { TrashCFWithScores } from "../../lib/trash-guides/template-score-utils.js";
 import type {
 	CompleteQualityProfile,
 	TrashQualityProfile,
 	TrashCustomFormatGroup,
 	TrashCustomFormat,
 	TemplateConfig,
-	CustomFormatSpecification,
 } from "@arr/shared";
-
-// ============================================================================
-// ARR API Response Types
-// ============================================================================
-
-interface ArrQualityProfileResponse {
-	id: number;
-	name: string;
-	upgradeAllowed: boolean;
-	cutoff: number;
-	minFormatScore: number;
-	cutoffFormatScore?: number;
-	minUpgradeFormatScore?: number;
-	formatItems?: Array<{ format: number; score: number }>;
-	items?: ArrQualityItem[];
-	language?: { id: number; name: string };
-}
-
-interface ArrQualityItem {
-	id?: number;
-	name?: string;
-	quality?: {
-		id: number;
-		name: string;
-		source?: string;
-		resolution?: number;
-	};
-	items?: Array<{
-		id?: number;
-		name?: string;
-		source?: string;
-		resolution?: number;
-		allowed?: boolean;
-		quality?: { id: number; name: string; source?: string; resolution?: number };
-	}>;
-	allowed: boolean;
-}
-
-interface ArrCustomFormatResponse {
-	id: number;
-	name: string;
-	specifications?: unknown[];
-	includeCustomFormatWhenRenaming?: boolean;
-}
-
-/** Extended TrashCustomFormat with trash_scores from cache data */
-interface TrashCustomFormatWithScores extends TrashCustomFormat {
-	trash_scores?: Record<string, number>;
-}
-
 // ============================================================================
 // Routes
 // ============================================================================
 
 const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-	});
-
 	/**
 	 * POST /api/trash-guides/profile-clone/import
 	 * Import complete quality profile from *arr instance
@@ -226,21 +173,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		try {
 			// Get instance - verify ownership by including userId in where clause.
-			// Including userId ensures non-owned instances return null,
-			// preventing instance enumeration attacks (all non-owned instances return 404).
-			const instance = await app.prisma.serviceInstance.findFirst({
-				where: {
-					id: instanceId,
-					userId,
-				},
-			});
-
-			if (!instance) {
-				return reply.status(404).send({
-					success: false,
-					error: "Instance not found",
-				});
-			}
+			const instance = await requireInstance(app, userId, instanceId);
 
 			// Create SDK client and fetch quality profiles
 			const client = app.arrClientFactory.create(instance);
@@ -278,11 +211,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		} catch (error) {
 			app.log.error({ err: error, instanceId }, "Failed to fetch quality profiles");
-			const statusCode = error instanceof ArrError ? arrErrorToHttpStatus(error) : 500;
-			return reply.status(statusCode).send({
-				success: false,
-				error: error instanceof Error ? error.message : "Failed to fetch profiles",
-			});
+			throw error;
 		}
 	});
 
@@ -297,20 +226,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		};
 
 		try {
-			// Get instance - verify ownership by including userId in where clause
-			const instance = await app.prisma.serviceInstance.findFirst({
-				where: {
-					id: instanceId,
-					userId: request.currentUser!.id,
-				},
-			});
-
-			if (!instance) {
-				return reply.status(404).send({
-					success: false,
-					error: "Instance not found",
-				});
-			}
+			const instance = await requireInstance(app, request.currentUser!.id, instanceId);
 
 			// Create SDK client
 			const client = app.arrClientFactory.create(instance);
@@ -384,11 +300,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		} catch (error) {
 			app.log.error({ err: error, instanceId, profileId }, "Failed to fetch profile details");
-			const statusCode = error instanceof ArrError ? arrErrorToHttpStatus(error) : 500;
-			return reply.status(statusCode).send({
-				success: false,
-				error: error instanceof Error ? error.message : "Failed to fetch profile details",
-			});
+			throw error;
 		}
 	});
 
@@ -412,20 +324,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		try {
-			// Get instance - verify ownership by including userId in where clause
-			const instance = await app.prisma.serviceInstance.findFirst({
-				where: {
-					id: instanceId,
-					userId: request.currentUser!.id,
-				},
-			});
-
-			if (!instance) {
-				return reply.status(404).send({
-					success: false,
-					error: "Instance not found",
-				});
-			}
+			const instance = await requireInstance(app, request.currentUser!.id, instanceId);
 
 			// Create SDK client
 			const client = app.arrClientFactory.create(instance);
@@ -504,7 +403,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 							// Include full specifications for comparison view
 							specifications: result.trashCF.specifications,
 							// Include all trash_scores for score comparison
-							trash_scores: (result.trashCF as TrashCustomFormatWithScores).trash_scores,
+							trash_scores: (result.trashCF as TrashCFWithScores).trash_scores,
 						}
 					: null,
 				confidence: result.confidence,
@@ -531,11 +430,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				{ err: error, instanceId, profileId, serviceType },
 				"Failed to validate Custom Formats",
 			);
-			const statusCode = error instanceof ArrError ? arrErrorToHttpStatus(error) : 500;
-			return reply.status(statusCode).send({
-				success: false,
-				error: error instanceof Error ? error.message : "Failed to validate Custom Formats",
-			});
+			throw error;
 		}
 	});
 
@@ -573,171 +468,38 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				});
 			}
 
-			// Get CF groups from cache
+			// Get CF groups and custom formats from cache
 			const cfGroups = (await cacheManager.get(serviceType, "CF_GROUPS")) as
 				| TrashCustomFormatGroup[]
 				| null;
-
-			// Get all custom formats from cache
 			const customFormats = (await cacheManager.get(serviceType, "CUSTOM_FORMATS")) as
 				| TrashCustomFormat[]
 				| null;
 
-			// Normalize profile name for matching
-			const normalizedInput = normalizeProfileName(profileName);
-			app.log.info(
-				`[match-profile] Searching for profile "${profileName}" (normalized: "${normalizedInput}")`,
-			);
+			// Match profile name to TRaSH quality profiles
+			const matchResult = matchProfileToTrash(profileName, qualityProfiles);
 
-			// Try to find a matching TRaSH quality profile
-			let matchedProfile: TrashQualityProfile | null = null;
-			let matchType: "exact" | "fuzzy" | "partial" = "exact";
-
-			// 1. First try exact match (case-insensitive)
-			matchedProfile =
-				qualityProfiles.find((p) => normalizeProfileName(p.name) === normalizedInput) || null;
-
-			// 2. Try fuzzy matching (remove common prefixes/suffixes)
-			if (!matchedProfile) {
-				matchType = "fuzzy";
-				matchedProfile =
-					qualityProfiles.find((p) => {
-						const normalizedTrash = normalizeProfileName(p.name);
-						// Check if either contains the other (handles prefixes like "TRaSH - " or suffixes like " v4")
-						return (
-							normalizedTrash.includes(normalizedInput) || normalizedInput.includes(normalizedTrash)
-						);
-					}) || null;
-			}
-
-			// 3. Try partial word matching (at least 2 significant words match)
-			if (!matchedProfile) {
-				matchType = "partial";
-				const inputWords = extractSignificantWords(normalizedInput);
-				if (inputWords.length >= 2) {
-					let bestMatch: { profile: TrashQualityProfile; score: number } | null = null;
-					for (const profile of qualityProfiles) {
-						const profileWords = extractSignificantWords(normalizeProfileName(profile.name));
-						const matchingWords = inputWords.filter((w) => profileWords.includes(w));
-						const score = matchingWords.length / Math.max(inputWords.length, profileWords.length);
-						if (score >= 0.5 && (!bestMatch || score > bestMatch.score)) {
-							bestMatch = { profile, score };
-						}
-					}
-					matchedProfile = bestMatch?.profile || null;
-				}
-			}
-
-			if (!matchedProfile) {
+			if (!matchResult.matched) {
 				app.log.info(`[match-profile] No match found for "${profileName}"`);
 				return reply.status(200).send({
 					success: true,
-					matched: false,
-					reason: `No TRaSH Guides quality profile matches "${profileName}"`,
-					availableProfiles: qualityProfiles.map((p) => p.name),
+					...matchResult,
 				});
 			}
 
+			const { matchedProfile, matchType } = matchResult;
 			app.log.info(
 				`[match-profile] Matched "${profileName}" to "${matchedProfile.name}" (trash_id: ${matchedProfile.trash_id}) (${matchType})`,
 			);
 			app.log.info(`[match-profile] customFormats count: ${customFormats?.length ?? 0}`);
 			app.log.info(`[match-profile] cfGroups count: ${cfGroups?.length ?? 0}`);
 
-			// Build list of recommended CFs based on the matched profile
-			const recommendedCFs: Array<{
-				trash_id: string;
-				name: string;
-				score: number;
-				source: "profile" | "group";
-				groupName?: string;
-				required: boolean;
-			}> = [];
-
-			// Build CF lookup for scores
-			const cfLookup = new Map<string, TrashCustomFormat>();
-			if (customFormats) {
-				for (const cf of customFormats) {
-					cfLookup.set(cf.trash_id, cf);
-				}
-			}
-
-			// Helper to get score for a CF based on the profile's score set
-			// Note: trash_scores is a dynamic property from the cache data, not in the base type
-			const getScoreForCF = (cf: TrashCustomFormat): number => {
-				const cfWithScores = cf as TrashCustomFormat & { trash_scores?: Record<string, number> };
-				if (!cfWithScores.trash_scores) return cf.score ?? 0;
-				const scoreSet = matchedProfile?.trash_score_set;
-				if (scoreSet && cfWithScores.trash_scores[scoreSet] !== undefined) {
-					return cfWithScores.trash_scores[scoreSet];
-				}
-				if (cfWithScores.trash_scores.default !== undefined) {
-					return cfWithScores.trash_scores.default;
-				}
-				return cf.score ?? 0;
-			};
-
-			// 1. Add mandatory CFs from the profile's formatItems
-			if (matchedProfile.formatItems) {
-				for (const [cfName, cfTrashId] of Object.entries(matchedProfile.formatItems)) {
-					const cf = cfLookup.get(cfTrashId);
-					if (cf) {
-						recommendedCFs.push({
-							trash_id: cfTrashId,
-							name: cf.name || cfName,
-							score: getScoreForCF(cf),
-							source: "profile",
-							required: true,
-						});
-					}
-				}
-			}
-
-			// 2. Add CFs from applicable CF groups
-			app.log.info(`[match-profile] CF Groups count: ${cfGroups?.length ?? 0}`);
-			if (cfGroups) {
-				for (const group of cfGroups) {
-					// Check if this group is excluded for the matched profile
-					const isExcluded =
-						group.quality_profiles?.exclude &&
-						Object.values(group.quality_profiles.exclude).includes(matchedProfile.trash_id);
-
-					if (isExcluded) continue;
-
-					// Process each CF in the group
-					if (group.custom_formats) {
-						for (const groupCF of group.custom_formats) {
-							const cfTrashId = typeof groupCF === "string" ? groupCF : groupCF.trash_id;
-							const cfRequired = typeof groupCF === "object" ? groupCF.required === true : false;
-							const _cfDefault =
-								typeof groupCF === "object"
-									? groupCF.default === true || groupCF.default === "true"
-									: false;
-
-							// Skip if already added from profile
-							if (recommendedCFs.some((r) => r.trash_id === cfTrashId)) continue;
-
-							const cf = cfLookup.get(cfTrashId);
-							if (cf) {
-								// Use group score if specified, otherwise use CF's score for the profile's score set
-								const score = group.quality_profiles?.score ?? getScoreForCF(cf);
-								recommendedCFs.push({
-									trash_id: cfTrashId,
-									name: cf.name,
-									score,
-									source: "group",
-									groupName: group.name,
-									// Required if CF is required in group, or group itself is required
-									required: cfRequired || group.required === true,
-								});
-							}
-						}
-					}
-				}
-			}
-
-			// Build set of recommended trash_ids for quick lookup
-			const recommendedTrashIds = new Set(recommendedCFs.map((cf) => cf.trash_id));
+			// Build CF recommendations from the matched profile
+			const { recommendedCFs, recommendedTrashIds } = buildCFRecommendations(
+				matchedProfile,
+				customFormats,
+				cfGroups,
+			);
 
 			return reply.status(200).send({
 				success: true,
@@ -819,20 +581,7 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		try {
-			// Get instance to fetch the actual CFs - verify ownership by including userId in where clause
-			const instance = await app.prisma.serviceInstance.findFirst({
-				where: {
-					id: sourceInstanceId,
-					userId: request.currentUser!.id,
-				},
-			});
-
-			if (!instance) {
-				return reply.status(404).send({
-					success: false,
-					error: "Source instance not found",
-				});
-			}
+			const instance = await requireInstance(app, userId, sourceInstanceId);
 
 			// Create SDK client
 			const client = app.arrClientFactory.create(instance);
@@ -879,110 +628,19 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				}
 			}
 
-			// Build the template config from selections
-			const customFormatsConfig: TemplateConfig["customFormats"] = [];
-
-			for (const [cfKey, selection] of Object.entries(customFormatSelections)) {
-				if (!selection.selected) continue;
-
-				// Check if this is a TRaSH CF (has a valid trash_id) or an instance CF
-				const trashCF = trashCFLookup.get(cfKey);
-
-				if (trashCF) {
-					// This is a TRaSH-linked CF
-					customFormatsConfig.push({
-						trashId: cfKey,
-						name: trashCF.name,
-						scoreOverride: selection.scoreOverride,
-						conditionsEnabled: selection.conditionsEnabled || {},
-						originalConfig: trashCF,
-					});
-				} else if (cfKey.startsWith("instance-")) {
-					// This is an instance-only CF (not linked to TRaSH)
-					// Extract the instance CF id from the key format "instance-{id}"
-					const instanceCFId = Number.parseInt(cfKey.replace("instance-", ""), 10);
-					const instanceCF = cfLookup.get(instanceCFId);
-
-					if (instanceCF) {
-						customFormatsConfig.push({
-							trashId: cfKey, // Keep the instance-prefixed ID
-							name: instanceCF.name,
-							scoreOverride: selection.scoreOverride,
-							conditionsEnabled: selection.conditionsEnabled || {},
-							originalConfig: {
-								trash_id: cfKey, // Use the instance-prefixed key as trash_id
-								name: instanceCF.name,
-								specifications: (instanceCF.specifications ?? []) as CustomFormatSpecification[],
-								// Mark as instance-sourced for future reference
-								_source: "instance",
-								_instanceId: sourceInstanceId,
-								_instanceCFId: instanceCFId,
-							},
-						});
-					}
-				}
-			}
-
-			// Build the CompleteQualityProfile from the fetched profile
-			const cutoffId = fullProfile.cutoff ?? profileConfig?.cutoff ?? 0;
-			const cutoffQualityName = cutoffId
-				? findCutoffQualityName(fullProfile.items || [], cutoffId)
-				: undefined;
-
-			const completeQualityProfile: CompleteQualityProfile = {
-				// Source information
+			// Build template config from selections using extracted helpers
+			const customFormatsConfig = buildCustomFormatsConfig(
+				customFormatSelections,
+				cfLookup,
+				trashCFLookup,
 				sourceInstanceId,
-				sourceInstanceLabel,
-				sourceProfileId,
-				sourceProfileName,
-				importedAt: new Date().toISOString(),
+			);
 
-				// Quality settings from the instance profile
-				upgradeAllowed: fullProfile.upgradeAllowed ?? profileConfig?.upgradeAllowed ?? true,
-				cutoff: cutoffId,
-				cutoffQuality: cutoffId
-					? {
-							id: cutoffId,
-							name: cutoffQualityName || "Unknown",
-						}
-					: undefined,
-
-				// Quality items with full structure
-				items: (fullProfile.items || []).map((item) => ({
-					quality: item.quality
-						? {
-								id: item.quality.id,
-								name: item.quality.name,
-								source: item.quality.source,
-								resolution: item.quality.resolution,
-							}
-						: undefined,
-					items: item.items?.map((subItem) => ({
-						// Required fields must have defaults
-						id: subItem.id ?? subItem.quality?.id ?? 0,
-						name: subItem.name ?? subItem.quality?.name ?? "",
-						source: subItem.source ?? subItem.quality?.source,
-						resolution: subItem.resolution ?? subItem.quality?.resolution,
-						allowed: subItem.allowed ?? false,
-					})),
-					allowed: item.allowed,
-					id: item.id,
-					name: item.name,
-				})),
-
-				// Format scores
-				minFormatScore: fullProfile.minFormatScore ?? profileConfig?.minFormatScore ?? 0,
-				cutoffFormatScore: fullProfile.cutoffFormatScore ?? profileConfig?.cutoffFormatScore ?? 0,
-				minUpgradeFormatScore: fullProfile.minUpgradeFormatScore,
-
-				// Language settings
-				language: fullProfile.language
-					? {
-							id: fullProfile.language.id,
-							name: fullProfile.language.name,
-						}
-					: undefined,
-			};
+			const completeQualityProfile = buildCompleteQualityProfile(
+				fullProfile,
+				profileConfig,
+				{ sourceInstanceId, sourceInstanceLabel, sourceProfileId, sourceProfileName },
+			);
 
 			// Debug: Log the built completeQualityProfile items
 			app.log.info(
@@ -994,11 +652,9 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			);
 
 			// Build qualityProfile metadata for template card badges
-			// This provides display info (language, cutoff) for the template list
 			const qualityProfileMetadata = {
 				language: completeQualityProfile.language?.name,
 				cutoff: completeQualityProfile.cutoffQuality?.name,
-				// Cloned profiles don't have a TRaSH score set
 				trash_score_set: undefined,
 			};
 
@@ -1008,8 +664,8 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				customFormatGroups: [], // Cloned profiles don't use CF groups
 				qualitySize: [],
 				naming: [],
-				qualityProfile: qualityProfileMetadata, // Add metadata for template card badges
-				completeQualityProfile, // Include the full quality profile settings
+				qualityProfile: qualityProfileMetadata,
+				completeQualityProfile,
 			};
 
 			// Create the template using the template service
@@ -1020,10 +676,8 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 					templateDescription || `Cloned from ${sourceInstanceLabel}: ${sourceProfileName}`,
 				serviceType,
 				config: templateConfig,
-				// Store source information for reference
 				sourceQualityProfileTrashId: trashId,
 				sourceQualityProfileName: sourceProfileName,
-				// Enable TRaSH Guides sync by storing the current commit hash
 				trashGuidesCommitHash: currentCommitHash || undefined,
 			});
 
@@ -1051,49 +705,11 @@ const profileCloneRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				{ err: error, sourceInstanceId, sourceProfileId, templateName },
 				"Failed to create template from cloned profile",
 			);
-
-			// Handle duplicate name error
-			if (error instanceof Error && error.message.includes("already exists")) {
-				return reply.status(409).send({
-					success: false,
-					error: error.message,
-				});
-			}
-
-			// Map SDK errors to appropriate HTTP status codes
-			const statusCode = error instanceof ArrError ? arrErrorToHttpStatus(error) : 500;
-			return reply.status(statusCode).send({
-				success: false,
-				error: error instanceof Error ? error.message : "Failed to create template",
-			});
+			throw error;
 		}
 	});
 
 	done();
 };
-
-/**
- * Normalize profile name for matching
- * Removes common prefixes, suffixes, and normalizes whitespace
- */
-function normalizeProfileName(name: string): string {
-	return name
-		.toLowerCase()
-		.replace(/^trash\s*[-:]\s*/i, "") // Remove "TRaSH - " or "TRaSH:" prefix
-		.replace(/\s*v\d+(\.\d+)?\s*$/i, "") // Remove version suffix like " v4" or " v4.0"
-		.replace(/\s*\(.*\)\s*$/i, "") // Remove parenthetical suffixes
-		.replace(/[-_]/g, " ") // Normalize separators to spaces
-		.replace(/\s+/g, " ") // Normalize multiple spaces
-		.trim();
-}
-
-/**
- * Extract significant words from a profile name (for fuzzy matching)
- * Filters out common words and short words
- */
-function extractSignificantWords(normalized: string): string[] {
-	const stopWords = new Set(["the", "and", "or", "for", "with", "hd", "uhd", "web", "dl"]);
-	return normalized.split(/\s+/).filter((w) => w.length >= 2 && !stopWords.has(w));
-}
 
 export default profileCloneRoutes;

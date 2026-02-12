@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, lazy, Suspense } from "react";
 import { useTemplateStats, useTemplate } from "../../../hooks/api/useTemplates";
 import { ChevronDown, ChevronUp, Calendar, Package, Activity, Rocket, Layers, History, SlidersHorizontal, Unlink2, RefreshCw, Bell, Hand, Sliders } from "lucide-react";
-import { BulkDeploymentModal } from "./bulk-deployment-modal";
 import { DeploymentHistoryTable } from "./deployment-history-table";
 import { InstanceOverrideEditor } from "./instance-override-editor";
-import { InstanceQualityOverrideModal } from "./instance-quality-override-modal";
+
+// Lazy-loaded modals — only fetched when the user opens them
+const BulkDeploymentModal = lazy(() => import("./bulk-deployment-modal").then(m => ({ default: m.BulkDeploymentModal })));
+const InstanceQualityOverrideModal = lazy(() => import("./instance-quality-override-modal").then(m => ({ default: m.InstanceQualityOverrideModal })));
 import { getEffectiveQualityConfig } from "../lib/quality-config-utils";
 import { LegacyDropdownMenu, LegacyDropdownMenuItem, Badge, Button } from "../../../components/ui";
 import {
@@ -380,25 +382,27 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 				</div>
 			)}
 
-			{/* Bulk Deployment Modal */}
+			{/* Bulk Deployment Modal (lazy-loaded) */}
 			{showBulkDeployment && stats && (
-				<BulkDeploymentModal
-					open={showBulkDeployment}
-					onClose={() => setShowBulkDeployment(false)}
-					templateId={templateId}
-					templateName={templateName}
-					serviceType={templateData?.template?.serviceType}
-					templateDefaultQualityConfig={getEffectiveQualityConfig(templateData?.template?.config)}
-					instanceOverrides={templateData?.template?.instanceOverrides}
-					instances={stats.instances.map((inst) => ({
-						instanceId: inst.instanceId,
-						instanceLabel: inst.instanceName,
-						instanceType: inst.instanceType,
-					}))}
-					onDeploySuccess={() => {
-						setShowBulkDeployment(false);
-					}}
-				/>
+				<Suspense>
+					<BulkDeploymentModal
+						open={showBulkDeployment}
+						onClose={() => setShowBulkDeployment(false)}
+						templateId={templateId}
+						templateName={templateName}
+						serviceType={templateData?.template?.serviceType}
+						templateDefaultQualityConfig={getEffectiveQualityConfig(templateData?.template?.config)}
+						instanceOverrides={templateData?.template?.instanceOverrides}
+						instances={stats.instances.map((inst) => ({
+							instanceId: inst.instanceId,
+							instanceLabel: inst.instanceName,
+							instanceType: inst.instanceType,
+						}))}
+						onDeploySuccess={() => {
+							setShowBulkDeployment(false);
+						}}
+					/>
+				</Suspense>
 			)}
 
 			{/* Deployment History Modal */}
@@ -488,21 +492,23 @@ export const TemplateStats = ({ templateId, templateName, onDeploy, onUnlinkInst
 				/>
 			)}
 
-			{/* Instance Quality Override Modal */}
+			{/* Instance Quality Override Modal (lazy-loaded) */}
 			{qualityOverrideModal && (
-				<InstanceQualityOverrideModal
-					open={!!qualityOverrideModal}
-					onClose={() => setQualityOverrideModal(null)}
-					templateId={templateId}
-					templateName={templateName}
-					instanceId={qualityOverrideModal.instanceId}
-					instanceLabel={qualityOverrideModal.instanceName}
-					serviceType={(templateData?.template?.serviceType ?? stats?.instances.find(i => i.instanceId === qualityOverrideModal.instanceId)?.instanceType ?? "RADARR") as "RADARR" | "SONARR"}
-					templateDefaultConfig={getEffectiveQualityConfig(templateData?.template?.config)}
-					onSaved={() => {
-						// Optionally refresh data
-					}}
-				/>
+				<Suspense>
+					<InstanceQualityOverrideModal
+						open={!!qualityOverrideModal}
+						onClose={() => setQualityOverrideModal(null)}
+						templateId={templateId}
+						templateName={templateName}
+						instanceId={qualityOverrideModal.instanceId}
+						instanceLabel={qualityOverrideModal.instanceName}
+						serviceType={(templateData?.template?.serviceType ?? stats?.instances.find(i => i.instanceId === qualityOverrideModal.instanceId)?.instanceType ?? "RADARR") as "RADARR" | "SONARR"}
+						templateDefaultConfig={getEffectiveQualityConfig(templateData?.template?.config)}
+						onSaved={() => {
+							// Optionally refresh data
+						}}
+					/>
+				</Suspense>
 			)}
 		</div>
 	);

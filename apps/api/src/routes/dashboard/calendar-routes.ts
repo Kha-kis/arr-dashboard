@@ -25,16 +25,6 @@ const calendarQuerySchema = z.object({
  * Calendar-related routes for the dashboard
  */
 export const calendarRoutes: FastifyPluginCallback = (app, _opts, done) => {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-	});
-
 	/**
 	 * GET /dashboard/calendar
 	 * Fetches upcoming releases from all enabled Sonarr, Radarr, Lidarr, and Readarr instances

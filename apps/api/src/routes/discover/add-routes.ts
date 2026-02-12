@@ -5,7 +5,6 @@ import {
 	isSonarrClient,
 	isRadarrClient,
 } from "../../lib/arr/client-helpers.js";
-import { ArrError, arrErrorToHttpStatus } from "../../lib/arr/client-factory.js";
 import { toNumber, toStringValue } from "../../lib/data/values.js";
 import {
 	loadRadarrRemoteWithSdk,
@@ -20,16 +19,6 @@ import {
  * - POST /discover/add - Add a movie or series to an instance
  */
 export const registerAddRoutes: FastifyPluginCallback = (app, _opts, done) => {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-	});
-
 	/**
 	 * POST /discover/add
 	 * Adds a movie or series to the specified Sonarr/Radarr instance
@@ -171,16 +160,7 @@ export const registerAddRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.send({ message: "Unsupported service type" });
 		} catch (error) {
 			request.log.error({ err: error, instance: instance.id }, "discover add failed");
-
-			if (error instanceof ArrError) {
-				reply.status(arrErrorToHttpStatus(error));
-			} else {
-				reply.status(502);
-			}
-			return reply.send({
-				message: "Failed to add title",
-				error: error instanceof Error ? error.message : undefined,
-			});
+			throw error;
 		}
 	});
 

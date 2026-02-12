@@ -9,12 +9,11 @@ import type { PrismaClient, ServiceType } from "../../lib/prisma.js";
 import type { SonarrClient, RadarrClient } from "arr-sdk";
 import type { ArrClientFactory } from "../arr/client-factory.js";
 import type { CustomQualityConfig, } from "@arr/shared";
+import { InstanceNotFoundError, TemplateNotFoundError, AppValidationError } from "../errors.js";
 import { getSyncMetrics } from "./sync-metrics.js";
 
 // SDK CustomFormat type for internal use
 type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]>>[number];
-type SdkQualityProfile = Awaited<ReturnType<SonarrClient["qualityProfile"]["getAll"]>>[number];
-
 // ============================================================================
 // Types
 // ============================================================================
@@ -206,23 +205,141 @@ function calculateScoreAndSource(
 	}
 
 	// Priority 3: TRaSH Guides score from profile's score set
-	if (scoreSet && templateCF.originalConfig?.trash_scores?.[scoreSet] !== undefined) {
-		return {
-			score: templateCF.originalConfig.trash_scores[scoreSet],
-			scoreSource: `TRaSH score set (${scoreSet})`,
-		};
+	if (scoreSet != null && scoreSet !== "" && templateCF.originalConfig?.trash_scores?.[scoreSet] !== undefined) {
+		const score = templateCF.originalConfig.trash_scores[scoreSet];
+		if (typeof score === "number" && Number.isFinite(score)) {
+			return { score, scoreSource: `TRaSH score set (${scoreSet})` };
+		}
+		console.warn(
+			`[DEPLOYMENT] Non-numeric score for scoreSet "${scoreSet}": ` +
+			`got ${typeof score} (${String(score)}), falling through to next priority`,
+		);
 	}
 
 	// Priority 4: TRaSH Guides default score
 	if (templateCF.originalConfig?.trash_scores?.default !== undefined) {
-		return {
-			score: templateCF.originalConfig.trash_scores.default,
-			scoreSource: "TRaSH default",
-		};
+		const score = templateCF.originalConfig.trash_scores.default;
+		if (typeof score === "number" && Number.isFinite(score)) {
+			return { score, scoreSource: "TRaSH default" };
+		}
+		console.warn(
+			`[DEPLOYMENT] Non-numeric default score: ` +
+			`got ${typeof score} (${String(score)}), falling back to 0`,
+		);
 	}
 
 	// Priority 5: Fallback to 0
 	return { score: 0, scoreSource: "default" };
+}
+
+// ============================================================================
+// Shared Profile Creation Helpers
+// ============================================================================
+
+/**
+ * Normalize a quality name by removing whitespace and hyphens for consistent matching.
+ * Used across all three createQualityProfile* methods.
+ */
+function normalizeQualityName(name: string): string {
+	return name.replace(/[\s-]/g, "").toLowerCase();
+}
+
+/**
+ * Apply Custom Format scores from a template to a schema's formatItems.
+ * Fetches the current CF list from the instance and maps template scores
+ * using the priority chain in calculateScoreAndSource().
+ */
+async function applyCustomFormatScores(
+	client: SonarrClient | RadarrClient,
+	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR schema formatItems
+	schemaFormatItems: any[],
+	templateCFs: TemplateCF[],
+	scoreSet: string | undefined | null,
+	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR formatItem structure
+): Promise<{ allCFs: SdkCustomFormat[]; formatItemsWithScores: any[] }> {
+	const allCFs = await client.customFormat.getAll();
+	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR formatItem structure
+	const formatItemsWithScores = (schemaFormatItems || []).map((item: any) => {
+		const cf = allCFs.find((c) => c.id === item.format);
+		if (cf) {
+			const templateCF = templateCFs.find((tcf) => tcf.name === cf.name);
+			if (templateCF) {
+				const { score } = calculateScoreAndSource(templateCF, scoreSet);
+				return { ...item, score };
+			}
+		}
+		return item;
+	});
+	return { allCFs, formatItemsWithScores };
+}
+
+/**
+ * Submit a new quality profile to the ARR instance.
+ * Strips the `id` field from the schema-based profile object before creating.
+ */
+async function submitNewProfile(
+	client: SonarrClient | RadarrClient,
+	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality profile structure
+	profileToCreate: Record<string, any>,
+	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality profile response
+): Promise<any> {
+	const { id: _unusedId, ...profileWithoutId } = profileToCreate as {
+		id?: number;
+	} & typeof profileToCreate;
+	return client.qualityProfile.create(profileWithoutId as any);
+}
+
+/**
+ * Extract all individual qualities from a schema's items tree.
+ * Returns maps for lookup by numeric ID and by normalized name.
+ *
+ * Handles two schema shapes:
+ * - Items with a `quality` wrapper (standard individual quality items)
+ * - Sub-items without a `quality` wrapper (e.g. group members with raw id/name/source/resolution)
+ *   → These are normalized into the same `{ quality: {...}, items: [], allowed }` shape.
+ */
+function extractQualitiesFromSchema(
+	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR schema item structure
+	schemaItems: any[],
+): {
+	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality item
+	byId: Map<number, any>;
+	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality item
+	byName: Map<string, any>;
+} {
+	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality item
+	const byId = new Map<number, any>();
+	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality item
+	const byName = new Map<string, any>();
+
+	// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR schema item structure
+	const walk = (items: any[]) => {
+		for (const item of items) {
+			if (item.quality) {
+				byId.set(item.quality.id, item);
+				byName.set(normalizeQualityName(item.quality.name), item);
+			} else if (item.id !== undefined && item.name && !item.items) {
+				const wrappedItem = {
+					quality: {
+						id: item.id,
+						name: item.name,
+						source: item.source,
+						resolution: item.resolution,
+					},
+					items: [],
+					allowed: item.allowed,
+				};
+				byId.set(item.id, wrappedItem);
+				byName.set(normalizeQualityName(item.name), wrappedItem);
+			}
+			if (item.items && Array.isArray(item.items)) {
+				walk(item.items);
+			}
+		}
+	};
+	walk(schemaItems || []);
+
+	return { byId, byName };
 }
 
 // ============================================================================
@@ -257,7 +374,7 @@ export class DeploymentExecutorService {
 		});
 
 		if (!template) {
-			throw new Error("Template not found or access denied");
+			throw new TemplateNotFoundError(templateId);
 		}
 
 		// Get instance with ownership verification
@@ -269,7 +386,7 @@ export class DeploymentExecutorService {
 		});
 
 		if (!instance) {
-			throw new Error("Instance not found or access denied");
+			throw new InstanceNotFoundError(instanceId);
 		}
 
 		// Validate service type match (case-insensitive comparison)
@@ -280,7 +397,7 @@ export class DeploymentExecutorService {
 			!instanceServiceType ||
 			templateServiceType !== instanceServiceType
 		) {
-			throw new Error(
+			throw new AppValidationError(
 				`Service type mismatch: template is ${template.serviceType ?? "undefined"}, instance is ${instance.service ?? "undefined"}`,
 			);
 		}
@@ -455,7 +572,10 @@ export class DeploymentExecutorService {
 				}
 
 				// Check conflict resolution - if user chose "keep_existing" for this CF, skip it
-				if (existingCF && conflictResolutions?.[templateCF.trashId] === "keep_existing") {
+				// Support both trashId and name-based lookup for CFs that may not have a trashId
+				const cfResolution =
+					conflictResolutions?.[templateCF.trashId] ?? conflictResolutions?.[templateCF.name];
+				if (existingCF && cfResolution === "keep_existing") {
 					skipped++;
 					continue;
 				}
@@ -587,6 +707,7 @@ export class DeploymentExecutorService {
 				const scoreSet = templateConfig.qualityProfile?.trash_score_set;
 
 				// Build map of existing scores in the profile for "keep_existing" resolution
+				// and for detecting user-modified scores
 				const existingScoreMap = new Map<number, number>();
 				for (const item of targetProfile.formatItems || []) {
 					if (item.format !== undefined && item.score !== undefined) {
@@ -610,14 +731,33 @@ export class DeploymentExecutorService {
 							}
 						}
 
-						// Use helper to calculate score with instance override support
+						// Calculate what the template wants to set
 						const instanceOverrideScore = overrideMap.get(cf.id);
-						const { score } = calculateScoreAndSource(templateCF, scoreSet, instanceOverrideScore);
+						const { score: templateScore } = calculateScoreAndSource(
+							templateCF,
+							scoreSet,
+							instanceOverrideScore,
+						);
 
-						formatItems.push({
-							format: cf.id,
-							score,
-						});
+						// Check if user manually modified this score on the instance
+						// (instance score differs from what template would set AND there's no explicit instance override)
+						const existingScore = existingScoreMap.get(cf.id);
+						if (
+							existingScore !== undefined &&
+							existingScore !== templateScore &&
+							!overrideMap.has(cf.id)
+						) {
+							// Preserve user's manual modification
+							formatItems.push({
+								format: cf.id,
+								score: existingScore,
+							});
+						} else {
+							formatItems.push({
+								format: cf.id,
+								score: templateScore,
+							});
+						}
 					}
 				}
 
@@ -635,10 +775,10 @@ export class DeploymentExecutorService {
 						const instanceCF = cfByName.get(prevCF.name);
 						// Only add if the format ID isn't already in formatItems
 						if (instanceCF?.id && !addedFormatIds.has(instanceCF.id)) {
-							// Set score to 0 to neutralize it
+							// Use instance override if set, otherwise neutralize with score 0
 							formatItems.push({
 								format: instanceCF.id,
-								score: 0,
+								score: overrideMap.get(instanceCF.id) ?? 0,
 							});
 							addedFormatIds.add(instanceCF.id);
 							orphanedCFs.push(prevCF.name);
@@ -666,43 +806,33 @@ export class DeploymentExecutorService {
 					const clonedProfile = templateConfig.completeQualityProfile;
 					const schema = await client.qualityProfile.getSchema();
 
-					// Build quality items from cloned profile
-					const normalizeQualityName = (name: string) => name.replace(/[\s-]/g, "").toLowerCase();
-					const allAvailableQualities = new Map<number, any>();
-					const qualitiesByName = new Map<string, any>();
-
-					// Extract all qualities from schema - handles both individual items and group sub-items
-					const extractQualities = (items: any[]) => {
-						for (const item of items) {
-							// Items with quality wrapper (individual quality items)
-							if (item.quality) {
-								allAvailableQualities.set(item.quality.id, item);
-								qualitiesByName.set(normalizeQualityName(item.quality.name), item);
-							}
-							// Sub-items inside groups have id/name directly (no quality wrapper)
-							// e.g. {"id":15,"name":"WEBRip-1080p","source":"webRip","resolution":1080,"allowed":true}
-							else if (item.id !== undefined && item.name && !item.items) {
-								// Wrap it in a quality structure for consistency
-								const wrappedItem = {
-									quality: {
-										id: item.id,
-										name: item.name,
-										source: item.source,
-										resolution: item.resolution,
-									},
-									items: [],
-									allowed: item.allowed,
-								};
-								allAvailableQualities.set(item.id, wrappedItem);
-								qualitiesByName.set(normalizeQualityName(item.name), wrappedItem);
-							}
-							// Recurse into groups
-							if (item.items && Array.isArray(item.items)) {
-								extractQualities(item.items);
+					// Build a map of current allowed states from the instance profile
+					// so we can preserve user's manual changes to quality item enabled/disabled states
+					const currentAllowedStates = new Map<string, boolean>();
+					for (const item of targetProfile.items || []) {
+						if (item.quality?.name) {
+							currentAllowedStates.set(
+								normalizeQualityName(item.quality.name),
+								item.allowed ?? false,
+							);
+						}
+						// For groups, track by group name and individual qualities within groups
+						if (item.name && item.items && Array.isArray(item.items) && item.items.length > 0) {
+							currentAllowedStates.set(normalizeQualityName(item.name), item.allowed ?? false);
+							for (const sub of item.items) {
+								if (sub.quality?.name) {
+									currentAllowedStates.set(
+										normalizeQualityName(sub.quality.name),
+										sub.allowed ?? false,
+									);
+								}
 							}
 						}
-					};
-					extractQualities(schema.items || []);
+					}
+
+					// Build quality items from cloned profile
+					const { byId: allAvailableQualities, byName: qualitiesByName } =
+						extractQualitiesFromSchema(schema.items || []);
 
 					let customGroupId = 1000;
 					const qualityItems: any[] = [];
@@ -724,7 +854,9 @@ export class DeploymentExecutorService {
 									groupQualities.push({
 										quality: targetQuality.quality,
 										items: [],
-										allowed: subItem.allowed,
+										allowed: currentAllowedStates.get(
+											normalizeQualityName(subItem.name || ""),
+										) ?? subItem.allowed,
 									});
 								}
 							}
@@ -737,7 +869,9 @@ export class DeploymentExecutorService {
 								qualityItems.push({
 									name: sourceItem.name,
 									items: groupQualities,
-									allowed: sourceItem.allowed,
+									allowed: currentAllowedStates.get(
+										normalizeQualityName(sourceItem.name || ""),
+									) ?? sourceItem.allowed,
 									id: newGroupId,
 								});
 							}
@@ -754,7 +888,9 @@ export class DeploymentExecutorService {
 								}
 								qualityItems.push({
 									...targetQuality,
-									allowed: sourceItem.allowed,
+									allowed: currentAllowedStates.get(
+										normalizeQualityName(sourceItem.quality.name || ""),
+									) ?? sourceItem.allowed,
 								});
 							}
 						}
@@ -868,24 +1004,8 @@ export class DeploymentExecutorService {
 				);
 			}
 
-			// Normalize quality names for consistent matching (remove spaces/hyphens)
-			const normalizeQualityName = (name: string) => name.replace(/[\s-]/g, "").toLowerCase();
-
-			// Build a flat map of all individual qualities available in Radarr schema
-			const allAvailableQualities = new Map<string, any>();
-			const extractQualities = (items: any[]) => {
-				for (const item of items) {
-					if (item.quality) {
-						// This is an individual quality
-						allAvailableQualities.set(normalizeQualityName(item.quality.name), item);
-					}
-					// Recursively extract from nested items
-					if (item.items && Array.isArray(item.items)) {
-						extractQualities(item.items);
-					}
-				}
-			};
-			extractQualities(schema.items || []);
+			// Build a flat map of all individual qualities available in the instance schema
+			const { byName: allAvailableQualities } = extractQualitiesFromSchema(schema.items || []);
 
 			// Build quality items according to TRaSH Guides structure
 			const qualityItems: any[] = [];
@@ -939,50 +1059,34 @@ export class DeploymentExecutorService {
 				}
 			}
 
-			// Get fresh CFs list with IDs for score application
-			const allCFs = await client.customFormat.getAll();
-
 			// Apply CF scores from template to the schema's formatItems
 			const scoreSet = templateConfig.qualityProfile?.trash_score_set;
-			const formatItemsWithScores = (schema.formatItems || []).map((item: any) => {
-				// Find corresponding template CF by matching format ID with CF name
-				const cf = allCFs.find((cf) => cf.id === item.format);
-				if (cf) {
-					const templateCF = templateCFs.find((tcf) => tcf.name === cf.name);
-					if (templateCF) {
-						// Use helper to calculate score (no instance override in create flow)
-						const { score } = calculateScoreAndSource(templateCF, scoreSet);
-						return {
-							...item,
-							score,
-						};
-					}
-				}
-				return item; // Keep default score 0 for CFs not in template
-			});
+			const { formatItemsWithScores } = await applyCustomFormatScores(
+				client,
+				schema.formatItems || [],
+				templateCFs,
+				scoreSet,
+			);
 
 			// Find the cutoff quality ID from the template's cutoff name
 			let cutoffId: number | null = null;
 			if (templateConfig.qualityProfile?.cutoff) {
 				const cutoffName = templateConfig.qualityProfile.cutoff;
 
-				// Normalize names by removing spaces and hyphens for comparison
-				const normalizeName = (name: string) => name.replace(/[\s-]/g, "").toLowerCase();
-
 				const findQualityId = (items: any[], name: string): number | null => {
-					const normalizedSearchName = normalizeName(name);
+					const normalizedSearchName = normalizeQualityName(name);
 
 					for (const item of items) {
 						// Check top-level quality
 						const itemName = item.quality?.name || item.name;
-						if (itemName && normalizeName(itemName) === normalizedSearchName) {
+						if (itemName && normalizeQualityName(itemName) === normalizedSearchName) {
 							return item.quality?.id || item.id;
 						}
 						// Check nested qualities (like WEB 2160p contains WEBDL-2160p, WEBRip-2160p)
 						if (item.items && Array.isArray(item.items)) {
 							for (const subItem of item.items) {
 								const subItemName = subItem.quality?.name || subItem.name;
-								if (subItemName && normalizeName(subItemName) === normalizedSearchName) {
+								if (subItemName && normalizeQualityName(subItemName) === normalizedSearchName) {
 									return item.id; // Return GROUP ID when cutoff is nested
 								}
 							}
@@ -1041,13 +1145,7 @@ export class DeploymentExecutorService {
 						}),
 			};
 
-			// Remove the id field if it exists (schema might include it)
-			const { id: _unusedId, ...profileWithoutId } = profileToCreate as {
-				id?: number;
-			} & typeof profileToCreate;
-
-			// Use any cast - Sonarr/Radarr quality profile types differ in source values but are runtime-compatible
-			return await client.qualityProfile.create(profileWithoutId as any);
+			return await submitNewProfile(client, profileToCreate);
 		} catch (createError) {
 			console.error("[DEPLOYMENT] Failed to create quality profile:", createError);
 			console.error("[DEPLOYMENT] Error details:", JSON.stringify(createError, null, 2));
@@ -1070,43 +1168,10 @@ export class DeploymentExecutorService {
 	): Promise<any> {
 		const clonedProfile = templateConfig.completeQualityProfile;
 
-		// Build a map of all qualities available in the target instance schema
-		const normalizeQualityName = (name: string) => name.replace(/[\s-]/g, "").toLowerCase();
-		const allAvailableQualities = new Map<number, any>();
-		const qualitiesByName = new Map<string, any>();
-
-		// Extract all qualities from schema - handles both individual items and group sub-items
-		const extractQualities = (items: any[]) => {
-			for (const item of items) {
-				// Items with quality wrapper (individual quality items)
-				if (item.quality) {
-					allAvailableQualities.set(item.quality.id, item);
-					qualitiesByName.set(normalizeQualityName(item.quality.name), item);
-				}
-				// Sub-items inside groups have id/name directly (no quality wrapper)
-				// e.g. {"id":15,"name":"WEBRip-1080p","source":"webRip","resolution":1080,"allowed":true}
-				else if (item.id !== undefined && item.name && !item.items) {
-					// Wrap it in a quality structure for consistency
-					const wrappedItem = {
-						quality: {
-							id: item.id,
-							name: item.name,
-							source: item.source,
-							resolution: item.resolution,
-						},
-						items: [],
-						allowed: item.allowed,
-					};
-					allAvailableQualities.set(item.id, wrappedItem);
-					qualitiesByName.set(normalizeQualityName(item.name), wrappedItem);
-				}
-				// Recurse into groups
-				if (item.items && Array.isArray(item.items)) {
-					extractQualities(item.items);
-				}
-			}
-		};
-		extractQualities(schema.items);
+		// Build maps of all qualities available in the target instance schema
+		const { byId: allAvailableQualities, byName: qualitiesByName } = extractQualitiesFromSchema(
+			schema.items,
+		);
 
 		// Transform the cloned profile items to match the target instance's quality IDs
 		// Also build a mapping from source IDs to new IDs for cutoff remapping
@@ -1185,25 +1250,14 @@ export class DeploymentExecutorService {
 			}
 		}
 
-		// Get fresh CFs list with IDs for score application
-		const allCFs = await client.customFormat.getAll();
-
-		// Extract score set from template config (same as non-cloned profile method)
-		const scoreSet = templateConfig.qualityProfile?.trash_score_set;
-
 		// Apply CF scores from template to the schema's formatItems
-		const formatItemsWithScores = schema.formatItems.map((item: any) => {
-			const cf = allCFs.find((c) => c.id === item.format);
-			if (cf) {
-				const templateCF = templateCFs.find((tcf) => tcf.name === cf.name);
-				if (templateCF) {
-					// Use helper to calculate score (no instance override in create flow)
-					const { score } = calculateScoreAndSource(templateCF, scoreSet);
-					return { ...item, score };
-				}
-			}
-			return item;
-		});
+		const scoreSet = templateConfig.qualityProfile?.trash_score_set;
+		const { formatItemsWithScores } = await applyCustomFormatScores(
+			client,
+			schema.formatItems || [],
+			templateCFs,
+			scoreSet,
+		);
 
 		// Build the profile to create
 		const profileToCreate = {
@@ -1221,13 +1275,7 @@ export class DeploymentExecutorService {
 			}),
 		};
 
-		// Remove the id field
-		const { id: _unusedId, ...profileWithoutId } = profileToCreate as {
-			id?: number;
-		} & typeof profileToCreate;
-
-		// Use any cast - Sonarr/Radarr quality profile types differ in source values but are runtime-compatible
-		return await client.qualityProfile.create(profileWithoutId as any);
+		return await submitNewProfile(client, profileToCreate);
 	}
 
 	/**
@@ -1242,34 +1290,8 @@ export class DeploymentExecutorService {
 		profileName: string,
 		customQualityConfig: CustomQualityConfig,
 	): Promise<any> {
-		// Build a map of all qualities available in the target instance schema
-		const normalizeQualityName = (name: string) => name.replace(/[\s-]/g, "").toLowerCase();
-		const qualitiesByName = new Map<string, any>();
-
-		// Extract all qualities from schema
-		const extractQualities = (items: any[]) => {
-			for (const item of items) {
-				if (item.quality) {
-					qualitiesByName.set(normalizeQualityName(item.quality.name), item);
-				} else if (item.id !== undefined && item.name && !item.items) {
-					const wrappedItem = {
-						quality: {
-							id: item.id,
-							name: item.name,
-							source: item.source,
-							resolution: item.resolution,
-						},
-						items: [],
-						allowed: item.allowed,
-					};
-					qualitiesByName.set(normalizeQualityName(item.name), wrappedItem);
-				}
-				if (item.items && Array.isArray(item.items)) {
-					extractQualities(item.items);
-				}
-			}
-		};
-		extractQualities(schema.items);
+		// Build maps of all qualities available in the target instance schema
+		const { byName: qualitiesByName } = extractQualitiesFromSchema(schema.items);
 
 		// Transform custom quality items to *arr format
 		let customGroupId = 1000;
@@ -1336,22 +1358,14 @@ export class DeploymentExecutorService {
 			console.warn(`[DEPLOYMENT] Custom quality cutoff not resolved, defaulting to: ${cutoffId}`);
 		}
 
-		// Get fresh CFs list with IDs for score application
-		const allCFs = await client.customFormat.getAll();
-		const scoreSet = templateConfig.qualityProfile?.trash_score_set;
-
 		// Apply CF scores from template
-		const formatItemsWithScores = schema.formatItems.map((item: any) => {
-			const cf = allCFs.find((c: SdkCustomFormat) => c.id === item.format);
-			if (cf) {
-				const templateCF = templateCFs.find((tcf) => tcf.name === cf.name);
-				if (templateCF) {
-					const { score } = calculateScoreAndSource(templateCF, scoreSet);
-					return { ...item, score };
-				}
-			}
-			return item;
-		});
+		const scoreSet = templateConfig.qualityProfile?.trash_score_set;
+		const { formatItemsWithScores } = await applyCustomFormatScores(
+			client,
+			schema.formatItems || [],
+			templateCFs,
+			scoreSet,
+		);
 
 		// Build the profile to create
 		const profileToCreate = {
@@ -1366,12 +1380,7 @@ export class DeploymentExecutorService {
 			formatItems: formatItemsWithScores,
 		};
 
-		// Remove the id field
-		const { id: _unusedId, ...profileWithoutId } = profileToCreate as {
-			id?: number;
-		} & typeof profileToCreate;
-
-		return await client.qualityProfile.create(profileWithoutId);
+		return await submitNewProfile(client, profileToCreate);
 	}
 
 	/**
@@ -1697,7 +1706,7 @@ export class DeploymentExecutorService {
 		});
 
 		if (!template) {
-			throw new Error("Template not found or access denied");
+			throw new TemplateNotFoundError(templateId);
 		}
 
 		// Deploy to all instances in parallel using Promise.allSettled for error isolation
@@ -1766,10 +1775,6 @@ export class DeploymentExecutorService {
 	}
 
 	/**
-	 * Extract trash_id from Custom Format
-	 * Checks specifications for a field named "trash_id"
-	 */
-	/**
 	 * Extract trash_id from Custom Format specifications.
 	 * Returns null if no trash_id is found, allowing callers to distinguish
 	 * between ID-based matching and name-based matching.
@@ -1801,7 +1806,7 @@ export class DeploymentExecutorService {
 	 */
 	private async getExistingCustomFormats(instance: any): Promise<SdkCustomFormat[]> {
 		const client = this.clientFactory.create(instance) as SonarrClient | RadarrClient;
-		return await client.customFormat.getAll();
+		return client.customFormat.getAll();
 	}
 }
 

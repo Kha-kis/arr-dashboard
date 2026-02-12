@@ -31,7 +31,7 @@ import { Button } from "../../../components/ui";
 import { useValidateSync, MAX_RETRY_ATTEMPTS } from "../../../hooks/api/useSync";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import type { ValidationResult } from "../../../lib/api-client/sync";
+import type { ValidationResult } from "../../../lib/api-client/trash-guides";
 
 // Check if we're in development mode
 const isDevelopment = process.env.NODE_ENV === "development";

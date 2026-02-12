@@ -13,7 +13,6 @@ import {
 	isReadarrClient,
 	isSonarrClient,
 } from "../../lib/arr/client-helpers.js";
-import { ArrError, arrErrorToHttpStatus } from "../../lib/arr/client-factory.js";
 import { toNumber } from "../../lib/library/type-converters.js";
 
 /**
@@ -66,15 +65,6 @@ async function updateCacheMonitoredStatus(
  * - POST /library/book/monitor - Toggle monitoring for books (Readarr)
  */
 export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) => {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
-			return reply.status(401).send({
-				error: "Authentication required",
-			});
-		}
-	});
-
 	/**
 	 * POST /library/monitor
 	 * Toggles monitoring status for movies, series, or specific seasons
@@ -237,16 +227,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 				{ err: error, instance: instance.id, itemId: payload.itemId },
 				"failed to update monitoring",
 			);
-
-			if (error instanceof ArrError) {
-				return reply.status(arrErrorToHttpStatus(error)).send({
-					error: error.message,
-				});
-			}
-
-			return reply.status(502).send({
-				error: "Failed to update monitoring",
-			});
+			throw error;
 		}
 	});
 
@@ -296,16 +277,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 				{ err: error, instance: instance.id, episodeIds: payload.episodeIds },
 				"failed to update episode monitoring",
 			);
-
-			if (error instanceof ArrError) {
-				return reply.status(arrErrorToHttpStatus(error)).send({
-					error: error.message,
-				});
-			}
-
-			return reply.status(502).send({
-				error: "Failed to update episode monitoring",
-			});
+			throw error;
 		}
 	});
 
@@ -358,16 +330,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 				{ err: error, instance: instance.id, albumIds: payload.albumIds },
 				"failed to update album monitoring",
 			);
-
-			if (error instanceof ArrError) {
-				return reply.status(arrErrorToHttpStatus(error)).send({
-					error: error.message,
-				});
-			}
-
-			return reply.status(502).send({
-				error: "Failed to update album monitoring",
-			});
+			throw error;
 		}
 	});
 
@@ -420,16 +383,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 				{ err: error, instance: instance.id, bookIds: payload.bookIds },
 				"failed to update book monitoring",
 			);
-
-			if (error instanceof ArrError) {
-				return reply.status(arrErrorToHttpStatus(error)).send({
-					error: error.message,
-				});
-			}
-
-			return reply.status(502).send({
-				error: "Failed to update book monitoring",
-			});
+			throw error;
 		}
 	});
 

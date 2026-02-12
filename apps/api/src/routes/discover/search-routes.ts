@@ -21,16 +21,6 @@ import {
  * - GET /discover/search - Search for movies or series across instances
  */
 export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) => {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-	});
-
 	/**
 	 * GET /discover/search
 	 * Searches for movies or series across all enabled Sonarr/Radarr instances

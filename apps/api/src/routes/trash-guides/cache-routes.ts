@@ -58,16 +58,6 @@ const getEntriesQuerySchema = z.object({
 // ============================================================================
 
 export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser!.id) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-	});
-
 	const cacheManager = createCacheManager(app.prisma);
 
 	/** Create a fetcher configured for the current user's repo settings */

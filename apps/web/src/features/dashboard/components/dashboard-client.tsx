@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import { useCallback, useMemo, useState } from "react";
+import Link from "next/link";
 import { motion } from "framer-motion";
 import type { QueueItem } from "@arr/shared";
 import {
@@ -32,14 +33,12 @@ import { springs } from "../../../components/motion";
 import { QueueTable } from "./queue-table";
 import { DashboardTabs, type DashboardTab } from "./dashboard-tabs";
 import ManualImportModal from "../../manual-import/components/manual-import-modal";
-import { BulkClearModal } from "./bulk-clear-modal";
 import { ServiceInstancesTable, QueueFilters } from "../../../components/presentational";
 import { useDashboardData } from "../hooks/useDashboardData";
 import { useDashboardFilters } from "../hooks/useDashboardFilters";
 import { useDashboardQueue } from "../hooks/useDashboardQueue";
 import { useQueueGrouping } from "../hooks";
-import { filterProblematicItems } from "../lib/queue-utils";
-import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
+
 import { useIncognitoMode } from "../../../lib/incognito";
 import { SERVICE_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -237,16 +236,10 @@ const DashboardSkeleton = () => (
 export const DashboardClient = () => {
 	const [incognitoMode] = useIncognitoMode();
 	const [activeTab, setActiveTab] = useState<DashboardTab>("overview");
-	const [mounted, setMounted] = useState(false);
 	const [isRefreshing, setIsRefreshing] = useState(false);
-	const [bulkClearOpen, setBulkClearOpen] = useState(false);
 
 	// Get the user's selected color theme
 	const { gradient: themeGradient } = useThemeGradient();
-
-	useEffect(() => {
-		setMounted(true);
-	}, []);
 
 	// Data hooks
 	const {
@@ -339,6 +332,14 @@ export const DashboardClient = () => {
 		clearQueueMessage,
 	} = useDashboardQueue(queueRefetch);
 
+	// Manual import handler - extracts first item and opens modal (memoized)
+	const handleManualImport = useCallback((items: QueueItem[]) => {
+		const [first] = items;
+		if (first) {
+			openManualImport(first);
+		}
+	}, [openManualImport]);
+
 	// Refresh handler with animation
 	const handleRefresh = async () => {
 		setIsRefreshing(true);
@@ -346,47 +347,7 @@ export const DashboardClient = () => {
 		setTimeout(() => setIsRefreshing(false), 500);
 	};
 
-	// Get problematic items for bulk clear modal
-	const problematicItems = useMemo(
-		() => filterProblematicItems(queueAggregated),
-		[queueAggregated]
-	);
-
-	// Bulk clear execute handler
-	const handleBulkClearExecute = async (
-		itemsToRemove: { item: QueueItem; options: QueueActionOptions }[],
-		itemsToRetry: QueueItem[]
-	) => {
-		// Group items by options for efficient batching
-		const optionsGroups = new Map<string, { items: QueueItem[]; options: QueueActionOptions }>();
-
-		for (const { item, options } of itemsToRemove) {
-			const key = JSON.stringify(options);
-			const group = optionsGroups.get(key);
-			if (group) {
-				group.items.push(item);
-			} else {
-				optionsGroups.set(key, { items: [item], options });
-			}
-		}
-
-		// Execute all remove operations in parallel
-		const removePromises = Array.from(optionsGroups.values()).map(({ items, options }) =>
-			handleQueueRemove(items, options)
-		);
-
-		// Execute retry operations
-		const retryPromise = itemsToRetry.length > 0
-			? handleQueueRetry(itemsToRetry)
-			: Promise.resolve();
-
-		await Promise.all([...removePromises, retryPromise]);
-
-		// Refetch queue data
-		await queueRefetch();
-	};
-
-	if (isLoading || !mounted) {
+	if (isLoading) {
 		return <DashboardSkeleton />;
 	}
 
@@ -631,16 +592,19 @@ export const DashboardClient = () => {
 								</div>
 
 								<div className="flex items-center gap-3">
-									{/* Clear Problematic button */}
+									{/* Problematic items link to Queue Cleaner */}
 									{problematicCount > 0 && (
 										<Button
 											variant="secondary"
 											size="sm"
-											onClick={() => setBulkClearOpen(true)}
+											asChild
 											className="gap-2"
 										>
-											<AlertTriangle className="h-4 w-4 text-amber-500" />
-											Clear {problematicCount} Problematic
+											<Link href="/queue-cleaner">
+												<AlertTriangle className="h-4 w-4 text-amber-500" />
+												{problematicCount} Problematic
+												<ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+											</Link>
 										</Button>
 									)}
 
@@ -700,12 +664,7 @@ export const DashboardClient = () => {
 									loading={queueLoading}
 									pending={queueActionsPending}
 									onRetry={handleQueueRetry}
-									onManualImport={(items) => {
-										const [first] = items;
-										if (first) {
-											openManualImport(first);
-										}
-									}}
+									onManualImport={handleManualImport}
 									onRemove={handleQueueRemove}
 									onChangeCategory={handleQueueChangeCategory}
 									onPrefetchManualImport={prefetchManualImport}
@@ -736,13 +695,6 @@ export const DashboardClient = () => {
 				open={manualImportContext.open}
 				onOpenChange={handleManualImportOpenChange}
 				onCompleted={handleManualImportCompleted}
-			/>
-
-			<BulkClearModal
-				open={bulkClearOpen}
-				onOpenChange={setBulkClearOpen}
-				items={problematicItems}
-				onExecute={handleBulkClearExecute}
 			/>
 		</>
 	);

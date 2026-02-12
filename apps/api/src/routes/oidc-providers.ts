@@ -10,6 +10,7 @@ import type { Prisma, OIDCProvider as PrismaOIDCProvider } from "../lib/prisma.j
 import type { FastifyInstance } from "fastify";
 import { hashPassword } from "../lib/auth/password.js";
 import { normalizeIssuerUrl } from "../lib/auth/oidc-utils.js";
+import { validateRequest } from "../lib/utils/validate.js";
 
 /**
  * Transform a Prisma OIDCProvider model to the public DTO shape
@@ -37,11 +38,6 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	app.get<{ Reply: OIDCProviderResponse | ErrorResponse }>(
 		"/api/oidc-providers",
 		async (request, reply) => {
-			// Require authentication (single-admin architecture)
-			if (!request.currentUser) {
-				return reply.status(403).send({ error: "Authentication required" });
-			}
-
 			try {
 				const provider = await app.prisma.oIDCProvider.findFirst();
 
@@ -67,19 +63,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	app.post<{ Body: unknown; Reply: OIDCProvider | ErrorResponse }>(
 		"/api/oidc-providers",
 		async (request, reply) => {
-			// Require authentication (single-admin architecture)
-			if (!request.currentUser) {
-				return reply.status(403).send({ error: "Authentication required" });
-			}
-
-			const validation = createOidcProviderSchema.safeParse(request.body);
-			if (!validation.success) {
-				return reply
-					.status(400)
-					.send({ error: "Validation failed", details: validation.error.issues });
-			}
-
-			const data = validation.data;
+			const data = validateRequest(createOidcProviderSchema, request.body);
 
 			// Normalize issuer URL to prevent discovery failures
 			let normalizedIssuer: string;
@@ -144,12 +128,8 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 
 				return reply.status(201).send(toPublicProvider(provider));
 			} catch (error) {
-				const prismaError = error as { code?: string };
-				if (prismaError.code === "P2002") {
-					return reply.status(409).send({ error: "OIDC provider already exists" });
-				}
 				request.log.error({ err: error }, "Failed to create OIDC provider");
-				return reply.status(500).send({ error: "Failed to create OIDC provider" });
+				throw error;
 			}
 		},
 	);
@@ -161,19 +141,7 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	app.put<{ Body: unknown; Reply: OIDCProvider | ErrorResponse }>(
 		"/api/oidc-providers",
 		async (request, reply) => {
-			// Require authentication (single-admin architecture)
-			if (!request.currentUser) {
-				return reply.status(403).send({ error: "Authentication required" });
-			}
-
-			const validation = updateOidcProviderSchema.safeParse(request.body);
-			if (!validation.success) {
-				return reply
-					.status(400)
-					.send({ error: "Validation failed", details: validation.error.issues });
-			}
-
-			const data = validation.data;
+			const data = validateRequest(updateOidcProviderSchema, request.body);
 
 			// Normalize issuer URL if provided
 			let normalizedIssuer: string | undefined;
@@ -275,12 +243,8 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 
 				return toPublicProvider(provider);
 			} catch (error) {
-				const prismaError = error as { code?: string };
-				if (prismaError.code === "P2025") {
-					return reply.status(404).send({ error: "OIDC provider not found" });
-				}
 				request.log.error({ err: error }, "Failed to update OIDC provider");
-				return reply.status(500).send({ error: "Failed to update OIDC provider" });
+				throw error;
 			}
 		},
 	);
@@ -293,11 +257,6 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 	app.delete<{ Body: unknown; Reply: ErrorResponse | undefined }>(
 		"/api/oidc-providers",
 		async (request, reply) => {
-			// Require authentication (single-admin architecture)
-			if (!request.currentUser) {
-				return reply.status(403).send({ error: "Authentication required" });
-			}
-
 			// Validate request body - must include replacement password
 			const validation = deleteOidcProviderSchema.safeParse(request.body);
 			if (!validation.success) {
@@ -385,12 +344,8 @@ export default async function oidcProvidersRoutes(app: FastifyInstance) {
 
 				return reply.status(204).send(undefined);
 			} catch (error) {
-				const prismaError = error as { code?: string };
-				if (prismaError.code === "P2025") {
-					return reply.status(404).send({ error: "OIDC provider not found" });
-				}
 				request.log.error({ err: error }, "Failed to delete OIDC provider");
-				return reply.status(500).send({ error: "Failed to delete OIDC provider" });
+				throw error;
 			}
 		},
 	);

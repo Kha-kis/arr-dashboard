@@ -302,6 +302,31 @@ describe("summarizeLines", () => {
 		expect(summary[0]?.text).toBe("Actual message");
 	});
 
+	it("should filter out audio file extensions (Lidarr tracks)", () => {
+		const lines = [
+			{ key: "1", text: "One or more tracks were not imported", tone: "warning" as const },
+			{ key: "2", text: "1-01 - Curtains Up.flac", tone: "info" as const },
+			{ key: "3", text: "1-02 - Evil Deeds.flac", tone: "info" as const },
+			{ key: "4", text: "01 - Track Name.mp3", tone: "info" as const },
+			{ key: "5", text: "song.ogg", tone: "info" as const },
+		];
+		const summary = summarizeLines(lines);
+		expect(summary).toHaveLength(1);
+		expect(summary[0]?.text).toBe("One or more tracks were not imported");
+	});
+
+	it("should filter out ebook file extensions (Readarr books)", () => {
+		const lines = [
+			{ key: "1", text: "Import issue detected", tone: "warning" as const },
+			{ key: "2", text: "Book Title.epub", tone: "info" as const },
+			{ key: "3", text: "Another Book.mobi", tone: "info" as const },
+			{ key: "4", text: "Document.pdf", tone: "info" as const },
+		];
+		const summary = summarizeLines(lines);
+		expect(summary).toHaveLength(1);
+		expect(summary[0]?.text).toBe("Import issue detected");
+	});
+
 	it("should escalate tone when duplicates have different tones", () => {
 		const lines = [
 			{ key: "1", text: "Connection issue", tone: "info" as const },

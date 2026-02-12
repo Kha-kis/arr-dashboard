@@ -9,13 +9,6 @@ import { safeOpenUrl } from "../../../lib/utils/url-validation";
 import { copyToClipboard } from "../../../lib/utils/clipboard";
 import type { SearchStateActions } from "./use-search-state";
 
-/**
- * Feedback message for user actions.
- */
-interface _FeedbackMessage {
-	type: "success" | "error";
-	message: string;
-}
 
 /**
  * Hook for managing search actions: performing searches, grabbing results,
@@ -94,8 +87,7 @@ export function useSearchActions(
 				},
 			},
 		);
-		// eslint-disable-next-line react-hooks/exhaustive-deps -- searchMutation.mutate is stable
-	}, [query, searchType, selectedIndexers, stateActions]);
+	}, [query, searchType, selectedIndexers, stateActions, searchMutation]);
 
 	/**
 	 * Handles form submission for search.

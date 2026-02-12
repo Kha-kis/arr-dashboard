@@ -93,19 +93,6 @@ interface TagEntry {
 // ============================================================================
 
 /**
- * Sums an array of numbers, filtering out undefined and non-finite values
- */
-export const sumNumbers = (values: Array<number | undefined>): number => {
-	let total = 0;
-	for (const value of values) {
-		if (typeof value === "number" && Number.isFinite(value)) {
-			total += value;
-		}
-	}
-	return total;
-};
-
-/**
  * Clamps a percentage value between 0 and 100
  */
 export const clampPercentage = (value: number): number => {
@@ -133,20 +120,6 @@ export const toNumber = (value: unknown): number | undefined => {
 		if (Number.isFinite(parsed)) {
 			return parsed;
 		}
-	}
-	return undefined;
-};
-
-/**
- * Safely converts an unknown value to a trimmed string
- */
-export const toStringValue = (value: unknown): string | undefined => {
-	if (typeof value === "string") {
-		const trimmed = value.trim();
-		return trimmed.length > 0 ? trimmed : undefined;
-	}
-	if (typeof value === "number" && Number.isFinite(value)) {
-		return value.toString();
 	}
 	return undefined;
 };
@@ -371,7 +344,7 @@ export const mergeBreakdown = (
  * Creates base aggregation accumulators for content services
  * (shared by Sonarr, Radarr, Lidarr, Readarr)
  */
-export const createBaseAggregator = <T extends HealthIssue>() => ({
+const createBaseAggregator = <T extends HealthIssue>() => ({
 	diskTotal: 0,
 	diskFree: 0,
 	diskUsed: 0,
@@ -385,44 +358,6 @@ export const createBaseAggregator = <T extends HealthIssue>() => ({
 	totalFileSize: 0,
 	totalFiles: 0,
 });
-
-/**
- * Accumulates common fields during aggregation
- */
-export const accumulateCommonFields = <TData extends {
-	diskTotal?: number;
-	diskFree?: number;
-	diskUsed?: number;
-	healthIssues?: number;
-	healthIssuesList?: HealthIssue[];
-	qualityBreakdown?: Record<string, number>;
-	tagBreakdown?: Record<string, number>;
-	recentlyAdded7Days?: number;
-	recentlyAdded30Days?: number;
-	cutoffUnmetCount?: number;
-}>(
-	acc: ReturnType<typeof createBaseAggregator>,
-	data: TData,
-	shouldCountDisk: boolean,
-): void => {
-	if (shouldCountDisk) {
-		acc.diskTotal += data.diskTotal ?? 0;
-		acc.diskFree += data.diskFree ?? 0;
-		acc.diskUsed += data.diskUsed ?? 0;
-	}
-
-	acc.healthIssues += data.healthIssues ?? 0;
-	if (data.healthIssuesList) {
-		acc.healthIssuesList.push(...data.healthIssuesList);
-	}
-
-	acc.recentlyAdded7Days += data.recentlyAdded7Days ?? 0;
-	acc.recentlyAdded30Days += data.recentlyAdded30Days ?? 0;
-	acc.cutoffUnmetCount += data.cutoffUnmetCount ?? 0;
-
-	mergeBreakdown(data.qualityBreakdown, acc.qualityBreakdown);
-	mergeBreakdown(data.tagBreakdown, acc.tagBreakdown);
-};
 
 /**
  * Finalizes disk statistics for aggregated results

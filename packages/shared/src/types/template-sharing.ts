@@ -4,7 +4,7 @@
  * Enhanced types for template export/import with metadata and validation
  */
 
-import type { TemplateConfig } from "./trash-guides.js";
+import type { TemplateConfig } from "./trash-guides";
 
 export interface TemplateExportFormat {
 	// Format version
