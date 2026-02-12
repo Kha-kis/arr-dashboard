@@ -144,7 +144,7 @@ export const getToggleButtonStyles = (gradient: ThemeGradient, isActive: boolean
 /**
  * Get chip/tag styling with theme colors
  */
-export const getChipStyles = (gradient: ThemeGradient, isActive: boolean = false) => ({
+export const getChipStyles = (gradient: ThemeGradient, _isActive: boolean = false) => ({
 	style: {
 		backgroundColor: gradient.fromLight,
 		borderColor: gradient.fromMuted,

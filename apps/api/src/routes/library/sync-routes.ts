@@ -10,6 +10,7 @@
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { getLibrarySyncScheduler } from "../../lib/library-sync/index.js";
+import { requireInstance } from "../../lib/arr/instance-helpers.js";
 
 // ============================================================================
 // Validation Schemas
@@ -29,13 +30,6 @@ const updateSyncSettingsSchema = z.object({
 // ============================================================================
 
 export const registerSyncRoutes: FastifyPluginCallback = (app, _opts, done) => {
-	// Add authentication preHandler for all routes
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
-			return reply.status(401).send({ error: "Authentication required" });
-		}
-	});
-
 	/**
 	 * GET /library/sync/status
 	 * Get sync status for all user's instances
@@ -47,7 +41,7 @@ export const registerSyncRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			where: {
 				userId,
 				enabled: true,
-				service: { in: ["SONARR", "RADARR"] },
+				service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
 			},
 			include: {
 				librarySyncStatus: true,
@@ -96,20 +90,10 @@ export const registerSyncRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const params = instanceIdParamSchema.parse(request.params);
 		const userId = request.currentUser!.id;
 
-		// Verify user owns the instance
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: {
-				id: params.instanceId,
-				userId,
-			},
-		});
+		const instance = await requireInstance(app, userId, params.instanceId);
 
-		if (!instance) {
-			return reply.status(404).send({ error: "Instance not found" });
-		}
-
-		if (instance.service !== "SONARR" && instance.service !== "RADARR") {
-			return reply.status(400).send({ error: "Only Sonarr and Radarr instances can be synced" });
+		if (!["SONARR", "RADARR", "LIDARR", "READARR"].includes(instance.service)) {
+			return reply.status(400).send({ error: "Only Sonarr, Radarr, Lidarr, and Readarr instances can be synced" });
 		}
 
 		const scheduler = getLibrarySyncScheduler();
@@ -140,17 +124,7 @@ export const registerSyncRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const body = updateSyncSettingsSchema.parse(request.body ?? {});
 		const userId = request.currentUser!.id;
 
-		// Verify user owns the instance
-		const instance = await app.prisma.serviceInstance.findFirst({
-			where: {
-				id: params.instanceId,
-				userId,
-			},
-		});
-
-		if (!instance) {
-			return reply.status(404).send({ error: "Instance not found" });
-		}
+		await requireInstance(app, userId, params.instanceId);
 
 		// Upsert sync status with updated settings
 		const updated = await app.prisma.librarySyncStatus.upsert({

@@ -16,7 +16,6 @@ import {
 	renamePasskeyCredential,
 	type PasskeyCredential,
 } from "../../../lib/api-client/auth";
-import { cn } from "../../../lib/utils";
 
 /**
  * Premium Passkey Section

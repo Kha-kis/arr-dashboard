@@ -4,10 +4,9 @@
  * Orchestrates the synchronization of TRaSH configurations to Radarr/Sonarr instances
  */
 
-import type { TemplateConfig } from "@arr/shared";
 import type { PrismaClient } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
-import { SonarrClient, RadarrClient } from "arr-sdk";
+import type { SonarrClient, RadarrClient } from "arr-sdk";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
 import { getSyncMetrics } from "./sync-metrics.js";
 import type { TemplateUpdater } from "./template-updater.js";
@@ -312,7 +311,7 @@ export class SyncEngine {
 						"The sync will only update quality profile settings.",
 				);
 			}
-		} catch (parseError) {
+		} catch (_parseError) {
 			errors.push(
 				"Template configuration data is corrupted and cannot be parsed. " +
 					"Please recreate the template from TRaSH Guides.",

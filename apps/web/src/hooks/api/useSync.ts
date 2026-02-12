@@ -22,7 +22,7 @@ import {
 	getSyncProgress,
 	rollbackSync,
 	validateSync,
-} from "../../lib/api-client/sync";
+} from "../../lib/api-client/trash-guides";
 
 // ============================================================================
 // Validation Hook
@@ -271,7 +271,7 @@ export function useSyncProgress(syncId: string | null, enabled = true) {
 					setUsePolling(true); // Fall back to polling on SSE failure
 				},
 			);
-		} catch (err) {
+		} catch {
 			console.warn("SSE not supported, using polling fallback");
 			setUsePolling(true);
 		}

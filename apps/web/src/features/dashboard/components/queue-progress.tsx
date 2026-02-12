@@ -13,7 +13,7 @@ interface QueueProgressProps {
 /**
  * Premium progress bar with theme-aware gradient and glow effects
  */
-export const QueueProgress = ({ value, size = "md", service }: QueueProgressProps) => {
+export const QueueProgress = ({ value, size = "md", service: _service }: QueueProgressProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 
 	if (typeof value !== "number" || Number.isNaN(value)) {

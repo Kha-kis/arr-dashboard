@@ -14,6 +14,7 @@ const log = loggers.scheduler;
  * Error thrown when scheduler operations are attempted before initialization.
  */
 export class SchedulerNotInitializedError extends Error {
+	readonly statusCode = 503;
 	constructor(operation: string) {
 		super(`Queue cleaner scheduler not initialized - cannot perform ${operation}`);
 		this.name = "SchedulerNotInitializedError";

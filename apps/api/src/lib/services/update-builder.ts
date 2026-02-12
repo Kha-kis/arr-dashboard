@@ -71,22 +71,22 @@ export function buildUpdateData(
 	}
 
 	// Handle nullable fields explicitly
-	if (Object.prototype.hasOwnProperty.call(payload, "externalUrl")) {
+	if (Object.hasOwn(payload, "externalUrl")) {
 		updateData.externalUrl = payload.externalUrl ?? null;
 	}
-	if (Object.prototype.hasOwnProperty.call(payload, "defaultQualityProfileId")) {
+	if (Object.hasOwn(payload, "defaultQualityProfileId")) {
 		updateData.defaultQualityProfileId = payload.defaultQualityProfileId ?? null;
 	}
-	if (Object.prototype.hasOwnProperty.call(payload, "defaultLanguageProfileId")) {
+	if (Object.hasOwn(payload, "defaultLanguageProfileId")) {
 		updateData.defaultLanguageProfileId = payload.defaultLanguageProfileId ?? null;
 	}
-	if (Object.prototype.hasOwnProperty.call(payload, "defaultRootFolderPath")) {
+	if (Object.hasOwn(payload, "defaultRootFolderPath")) {
 		updateData.defaultRootFolderPath = payload.defaultRootFolderPath ?? null;
 	}
-	if (Object.prototype.hasOwnProperty.call(payload, "defaultSeasonFolder")) {
+	if (Object.hasOwn(payload, "defaultSeasonFolder")) {
 		updateData.defaultSeasonFolder = payload.defaultSeasonFolder ?? null;
 	}
-	if (Object.prototype.hasOwnProperty.call(payload, "storageGroupId")) {
+	if (Object.hasOwn(payload, "storageGroupId")) {
 		updateData.storageGroupId = payload.storageGroupId ?? null;
 	}
 

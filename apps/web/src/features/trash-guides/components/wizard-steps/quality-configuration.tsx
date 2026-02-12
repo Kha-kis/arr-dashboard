@@ -113,7 +113,7 @@ export const QualityConfiguration = ({
 	initialQualityConfig,
 	onNext,
 	onBack,
-	isEditMode = false,
+	isEditMode: _isEditMode = false,
 }: QualityConfigurationProps) => {
 	const hasInitializedQualityConfig = useRef(!!initialQualityConfig);
 	const [customQualityConfig, setCustomQualityConfig] = useState<CustomQualityConfig>(

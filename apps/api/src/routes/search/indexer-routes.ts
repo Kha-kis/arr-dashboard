@@ -1,8 +1,5 @@
 import type { FastifyPluginCallback } from "fastify";
 import type {
-	ProwlarrIndexer,
-	SearchIndexerTestRequest,
-	SearchIndexerTestResponse,
 	SearchIndexerUpdateRequest,
 } from "@arr/shared";
 import {
@@ -17,7 +14,6 @@ import {
 	getClientForInstance,
 	isProwlarrClient,
 } from "../../lib/arr/client-helpers.js";
-import { ArrError, arrErrorToHttpStatus } from "../../lib/arr/client-factory.js";
 import {
 	buildIndexerDetailsFallback,
 	fetchProwlarrIndexersWithSdk,
@@ -36,21 +32,11 @@ import {
  * - POST /search/indexers/test - Test an indexer connection
  */
 export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) => {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-	});
-
 	/**
 	 * GET /search/indexers
 	 * Retrieves all indexers from all enabled Prowlarr instances for the current user.
 	 */
-	app.get("/search/indexers", async (request, reply) => {
+	app.get("/search/indexers", async (request, _reply) => {
 		const response = await executeOnInstances(
 			app,
 			request.currentUser!.id,
@@ -135,20 +121,7 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 				{ err: error, instance: instance.id, indexerId },
 				"prowlarr indexer details failed",
 			);
-
-			if (error instanceof ArrError) {
-				reply.status(arrErrorToHttpStatus(error));
-			} else {
-				reply.status(502);
-			}
-			return searchIndexerDetailsResponseSchema.parse({
-				indexer: buildIndexerDetailsFallback(
-					instance.id,
-					instance.label,
-					instance.baseUrl,
-					indexerId,
-				),
-			});
+			throw error;
 		}
 	});
 
@@ -209,20 +182,7 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 				{ err: error, instance: instance.id, indexerId: indexerIdValue },
 				"prowlarr indexer update failed",
 			);
-
-			if (error instanceof ArrError) {
-				reply.status(arrErrorToHttpStatus(error));
-			} else {
-				reply.status(502);
-			}
-			return searchIndexerDetailsResponseSchema.parse({
-				indexer: buildIndexerDetailsFallback(
-					instance.id,
-					instance.label,
-					instance.baseUrl,
-					indexerIdValue,
-				),
-			});
+			throw error;
 		}
 
 		try {
@@ -274,13 +234,6 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 				{ err: error, instance: instance.id, indexerId: payload.indexerId },
 				"prowlarr indexer test failed",
 			);
-
-			if (error instanceof ArrError) {
-				reply.status(arrErrorToHttpStatus(error));
-			} else {
-				reply.status(502);
-			}
-
 			return searchIndexerTestResponseSchema.parse({
 				success: false,
 				message: error instanceof Error ? error.message : "Failed to test indexer",

@@ -46,6 +46,7 @@ export {
 
 // Helper utilities
 export {
+	toServiceLabel,
 	executeOnInstances,
 	executeOnSonarrInstances,
 	executeOnRadarrInstances,

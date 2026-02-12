@@ -53,7 +53,7 @@ interface BulkScoreManagerProps {
 }
 
 export function BulkScoreManager({
-	userId,
+	userId: _userId,
 	onOperationComplete,
 }: BulkScoreManagerProps) {
 	const { gradient: themeGradient } = useThemeGradient();
@@ -69,7 +69,7 @@ export function BulkScoreManager({
 
 	// Get selected instance for service color
 	const selectedInstance = instances.find(i => i.id === instanceId);
-	const serviceColor = selectedInstance?.service
+	const _serviceColor = selectedInstance?.service
 		? SERVICE_COLORS[selectedInstance.service as keyof typeof SERVICE_COLORS]
 		: null;
 
@@ -301,7 +301,7 @@ export function BulkScoreManager({
 				qualityProfileId: profileId,
 				customFormatId,
 			});
-		} catch (error) {
+		} catch {
 			// Error toast handled by mutation hook
 		}
 	};

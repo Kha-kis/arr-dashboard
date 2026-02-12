@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from "react";
-import type { DiscoverSearchType, RecommendationItem } from "@arr/shared";
+import type { DiscoverSearchType } from "@arr/shared";
 import { useInfiniteRecommendationsQuery } from "../../../hooks/api/useDiscover";
 import { useLibraryForFiltering } from "../../../hooks/api/useLibrary";
 import { deduplicateItems, filterExistingItems } from "../lib/discover-utils";

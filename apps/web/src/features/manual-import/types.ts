@@ -1,6 +1,8 @@
 import type {
 	ManualImportCandidate,
+	ManualImportCandidateLidarr,
 	ManualImportCandidateRadarr,
+	ManualImportCandidateReadarr,
 	ManualImportCandidateSonarr,
 	ManualImportRejection,
 	ManualImportSubmissionFile,
@@ -11,6 +13,8 @@ export type ManualImportService = "sonarr" | "radarr" | "lidarr" | "readarr";
 export type ManualImportCandidateUnion = ManualImportCandidate;
 export type ManualImportSonarrCandidate = ManualImportCandidateSonarr;
 export type ManualImportRadarrCandidate = ManualImportCandidateRadarr;
+export type ManualImportLidarrCandidate = ManualImportCandidateLidarr;
+export type ManualImportReadarrCandidate = ManualImportCandidateReadarr;
 
 export type ManualImportSelection = {
 	candidateId: ManualImportCandidateUnion["id"];
@@ -49,4 +53,10 @@ export type ManualImportCandidateRow = {
 	rejectionReason?: string;
 };
 
-export { ManualImportCandidate, ManualImportRejection, ManualImportSubmissionFile };
+export {
+	ManualImportCandidate,
+	ManualImportCandidateLidarr,
+	ManualImportCandidateReadarr,
+	ManualImportRejection,
+	ManualImportSubmissionFile,
+};

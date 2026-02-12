@@ -7,7 +7,7 @@ import { Loader2, Star, ChevronLeft, ChevronRight, ExternalLink, Sparkles } from
 import { fetchTMDBExternalIds } from "../../../lib/api-client/tmdb";
 import { SEMANTIC_COLORS, RATING_COLOR } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { GlassmorphicCard, PremiumSkeleton } from "../../../components/layout";
+import { PremiumSkeleton } from "../../../components/layout";
 
 // ============================================================================
 // Premium Recommendation Card

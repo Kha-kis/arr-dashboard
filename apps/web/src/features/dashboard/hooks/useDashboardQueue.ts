@@ -85,21 +85,30 @@ export const useDashboardQueue = (queueRefetch?: () => void) => {
 		return () => window.clearTimeout(timeout);
 	}, [queueMessage]);
 
-	// Queue action handlers
-	const handleQueueRetry = (items: QueueItem[]) => queueActions.executeAsync("retry", items);
+	// Queue action handlers (memoized for React.memo children)
+	const handleQueueRetry = useCallback(
+		(items: QueueItem[]) => queueActions.executeAsync("retry", items),
+		[queueActions],
+	);
 
-	const handleQueueRemove = (items: QueueItem[], options?: QueueActionOptions) =>
-		queueActions.executeAsync("delete", items, options);
+	const handleQueueRemove = useCallback(
+		(items: QueueItem[], options?: QueueActionOptions) =>
+			queueActions.executeAsync("delete", items, options),
+		[queueActions],
+	);
 
-	const handleQueueChangeCategory = (items: QueueItem[]) =>
-		queueActions.executeAsync("delete", items, {
-			removeFromClient: false,
-			blocklist: false,
-			changeCategory: true,
-		});
+	const handleQueueChangeCategory = useCallback(
+		(items: QueueItem[]) =>
+			queueActions.executeAsync("delete", items, {
+				removeFromClient: false,
+				blocklist: false,
+				changeCategory: true,
+			}),
+		[queueActions],
+	);
 
-	// Manual import modal handlers
-	const openManualImport = (item: QueueItem) => {
+	// Manual import modal handlers (memoized)
+	const openManualImport = useCallback((item: QueueItem) => {
 		if (!item.instanceId || !item.instanceName) {
 			return;
 		}
@@ -110,24 +119,27 @@ export const useDashboardQueue = (queueRefetch?: () => void) => {
 			downloadId: item.downloadId,
 			open: true,
 		});
-	};
+	}, []);
 
-	const handleManualImportOpenChange = (open: boolean) => {
+	const handleManualImportOpenChange = useCallback((open: boolean) => {
 		setManualImportContext((prev) => ({ ...prev, open }));
-	};
+	}, []);
 
-	const handleManualImportCompleted = (result: { imported: number }) => {
-		setQueueMessage({
-			type: "success",
-			message:
-				result.imported === 1
-					? "Manual import requested for 1 file."
-					: `Manual import requested for ${result.imported} files.`,
-		});
-		if (queueRefetch) {
-			queueRefetch();
-		}
-	};
+	const handleManualImportCompleted = useCallback(
+		(result: { imported: number }) => {
+			setQueueMessage({
+				type: "success",
+				message:
+					result.imported === 1
+						? "Manual import requested for 1 file."
+						: `Manual import requested for ${result.imported} files.`,
+			});
+			if (queueRefetch) {
+				queueRefetch();
+			}
+		},
+		[queueRefetch],
+	);
 
 	return {
 		// Queue actions
@@ -146,6 +158,6 @@ export const useDashboardQueue = (queueRefetch?: () => void) => {
 
 		// Messages
 		queueMessage,
-		clearQueueMessage: () => setQueueMessage(null),
+		clearQueueMessage: useCallback(() => setQueueMessage(null), []),
 	};
 };

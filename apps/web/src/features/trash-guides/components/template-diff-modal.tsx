@@ -41,7 +41,6 @@ import {
 import { useTemplateDiff, useSyncTemplate } from "../../../hooks/api/useTemplateUpdates";
 import { cn } from "../../../lib/utils";
 import { toast } from "sonner";
-import type { CustomFormatDiffItem } from "../../../lib/api-client/trash-guides";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 

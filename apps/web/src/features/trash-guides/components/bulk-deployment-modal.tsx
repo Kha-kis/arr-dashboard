@@ -183,7 +183,7 @@ export const BulkDeploymentModal = ({
 	const allInstanceIds = useMemo(() => instances.map((i) => i.instanceId), [instances]);
 
 	// Use React Query hook for fetching all previews in parallel
-	const { results: previewResults, isLoading: isLoadingPreviews } = useBulkDeploymentPreviews(
+	const { results: previewResults, isLoading: _isLoadingPreviews } = useBulkDeploymentPreviews(
 		open ? templateId : null, // Only fetch when modal is open
 		open ? allInstanceIds : [], // Only fetch when modal is open
 	);

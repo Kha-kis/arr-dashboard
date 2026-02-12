@@ -783,7 +783,7 @@ export class TrashGitHubFetcher {
 							} as TrashCFInclude;
 						}
 						return null;
-					} catch (error) {
+					} catch (_error) {
 						this.log.warn(`Failed to fetch include file: ${fileName}`);
 						return null;
 					}

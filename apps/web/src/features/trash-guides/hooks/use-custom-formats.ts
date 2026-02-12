@@ -23,7 +23,7 @@ import {
 	type ImportUserCFFromJsonRequest,
 	type ImportUserCFFromInstanceRequest,
 	type DeployUserCFsRequest,
-} from "../../../lib/api-client/custom-formats";
+} from "../../../lib/api-client/trash-guides";
 
 /**
  * Hook to fetch all available custom formats from TRaSH Guides

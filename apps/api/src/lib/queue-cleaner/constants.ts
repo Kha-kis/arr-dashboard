@@ -145,20 +145,27 @@ export const FAILURE_KEYWORDS = [
 
 /** Downloads that are redundant or don't match quality requirements - SAFE to auto-clean */
 export const IMPORT_BLOCKED_SAFE_KEYWORDS = [
-	// Redundant - content already exists
+	// Redundant - content already exists (verified: Sonarr "Episode file already imported")
 	"already exists",
 	"already in library",
+	"already imported",
 	"duplicate",
 	// Quality mismatch - doesn't meet user's profile
 	"quality not wanted",
 	"not wanted in",
 	"cutoff already met",
+	// Quality/format not an upgrade (verified: "Not an upgrade for existing episode/track/book file(s)")
 	"not an upgrade",
+	// Custom Format rejection (verified: "Not a Custom Format upgrade... do not improve on Existing")
+	"not a custom format upgrade",
+	"do not improve on existing",
 	// Invalid content - not usable
 	"sample only",
 	"sample file",
 	"no files found",
-	"no video files",
+	"no video files",	// Sonarr / Radarr
+	"no audio files",	// Lidarr
+	"no book files",	// Readarr
 	"bad nfo",
 ] as const;
 
@@ -170,6 +177,13 @@ export const IMPORT_BLOCKED_REVIEW_KEYWORDS = [
 	// Partial/incomplete - might be intentional
 	"missing expected",
 	"expected files",
+	// Matching failures - automatic import can't resolve (verified from real queues)
+	"automatic import is not possible",	// Sonarr/Lidarr: title/name mismatch
+	"was not found in the grabbed release",	// Sonarr/Radarr: episode/movie not in release
+	// Lidarr-specific matching issues (verified from real queue)
+	"couldn't find similar album",
+	"match is not close enough",
+	"has unmatched tracks",
 ] as const;
 
 /** Technical issues that might be fixable - DON'T auto-clean */
@@ -228,9 +242,10 @@ export const DEFAULT_AUTO_IMPORT_COOLDOWN_MINS = 30;
  * Status patterns that are SAFE for auto-import.
  * These patterns indicate the item is ready and likely to import successfully.
  *
- * Common scenarios:
- * - Radarr: "Found matching movie via grab history, but release was matched to movie by ID. Manual Import required."
+ * Verified scenarios from real queue data:
  * - Sonarr: "Found matching series via grab history, but release was matched to series by ID. Automatic import is not possible."
+ * - Sonarr: "Series title mismatch; automatic import is not possible."
+ * - Lidarr: "Artist name mismatch, automatic import is not possible."
  * - General: Items waiting for user confirmation but file is correctly identified
  */
 export const AUTO_IMPORT_SAFE_KEYWORDS = [
@@ -241,13 +256,18 @@ export const AUTO_IMPORT_SAFE_KEYWORDS = [
 	"manual import",
 	"waiting for manual",
 	// ID-matched items (file correctly identified via grab history)
-	"matched to series by id",
-	"matched to movie by id",
-	"matched to artist by id",
-	"matched to album by id",
-	"matched to book by id",
+	"matched to series by id",	// Sonarr (verified)
+	"matched to movie by id",	// Radarr
+	"matched to artist by id",	// Lidarr
+	"matched to album by id",	// Lidarr
+	"matched to author by id",	// Readarr
+	"matched to book by id",	// Readarr
 	// Grab history match (indicates proper tracking)
 	"via grab history",
+	// Title/name mismatch - automatic import fails but manual import via API works
+	// (verified: Sonarr "Series title mismatch", Lidarr "Artist name mismatch")
+	"title mismatch",	// Sonarr
+	"name mismatch",	// Lidarr
 ] as const;
 
 /**
@@ -255,12 +275,15 @@ export const AUTO_IMPORT_SAFE_KEYWORDS = [
  * These will always fail or cause problems if imported.
  */
 export const AUTO_IMPORT_NEVER_KEYWORDS = [
-	// Content doesn't exist or is unusable
-	"no video files",
+	// Content doesn't exist or is unusable (service-specific file type messages)
+	"no video files",	// Sonarr / Radarr
+	"no audio files",	// Lidarr
+	"no book files",	// Readarr
 	"no files found",
 	"no files",
 	"sample only",
 	"sample file",
+	"bad nfo",
 	// Extraction/unpacking issues - can't import until resolved
 	"password protected",
 	"unpack required",
@@ -272,10 +295,17 @@ export const AUTO_IMPORT_NEVER_KEYWORDS = [
 	"not an upgrade",
 	"cutoff already met",
 	"not wanted in",
+	// Custom Format rejection (verified: "Not a Custom Format upgrade... do not improve on Existing")
+	"not a custom format upgrade",
+	"do not improve on existing",
 	// Already exists - import would fail anyway
 	"already exists",
 	"already in library",
+	"already imported",
 	"duplicate",
+	// Lidarr-specific: album not recognized (auto-import would fail)
+	"couldn't find similar album",
+	"match is not close enough",
 	// Path issues
 	"path does not exist",
 	"file not found",

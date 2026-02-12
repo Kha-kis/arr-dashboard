@@ -11,7 +11,7 @@
 "use client";
 
 import type { CompleteQualityProfile } from "@arr/shared";
-import { AlertCircle, Award, CheckCircle, Info, Target, TrendingUp } from "lucide-react";
+import { AlertCircle, Award, CheckCircle, Target, TrendingUp } from "lucide-react";
 import { useEffect } from "react";
 import { Alert, AlertDescription } from "../../../components/ui/alert";
 import { usePreviewProfileDeployment } from "../../../hooks/api/useProfileClone";
@@ -39,7 +39,7 @@ export function QualityProfilePreview({
 			profile,
 			customFormats,
 		});
-		// eslint-disable-next-line react-hooks/exhaustive-deps
+		 
 	}, [instanceId, profile, customFormats]);
 
 	useEffect(() => {

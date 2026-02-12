@@ -237,7 +237,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 				});
 			}
 			onClose();
-		} catch (error) {
+		} catch {
 			// Error displayed via mutation state
 		}
 	};
@@ -304,7 +304,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 
 	// Find deprecated CF groups
 	const availableGroupIds = new Set(availableGroups.map(g => g.trash_id));
-	const deprecatedGroups = template?.config.customFormatGroups.filter(
+	const _deprecatedGroups = template?.config.customFormatGroups.filter(
 		g => g.deprecated || !availableGroupIds.has(g.trashId)
 	) || [];
 

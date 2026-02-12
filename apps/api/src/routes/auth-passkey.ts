@@ -5,6 +5,7 @@ import { z } from "zod";
 import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
 import { createPasskeyService } from "../lib/auth/passkey-service.js";
 import { getSessionMetadata } from "../lib/auth/session-metadata.js";
+import { validateRequest } from "../lib/utils/validate.js";
 
 /**
  * In-memory storage for passkey challenges (production: use Redis)
@@ -83,10 +84,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
-		const parsed = passkeyRegisterOptionsSchema.safeParse(request.body);
-		if (!parsed.success) {
-			return reply.status(400).send({ error: "Invalid request" });
-		}
+		validateRequest(passkeyRegisterOptionsSchema, request.body);
 
 		try {
 			const options = await passkeyService.generateRegistrationOptions(
@@ -118,10 +116,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(401).send({ error: "Unauthorized" });
 		}
 
-		const parsed = passkeyRegisterVerifySchema.safeParse(request.body);
-		if (!parsed.success) {
-			return reply.status(400).send({ error: "Invalid request" });
-		}
+		const parsed = validateRequest(passkeyRegisterVerifySchema, request.body);
 
 		const storedChallenge = challengeStore.get(request.currentUser.id);
 		if (!storedChallenge) {
@@ -132,12 +127,12 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		challengeStore.delete(request.currentUser.id);
 
 		try {
-			const response = parsed.data.response as RegistrationResponseJSON;
+			const response = parsed.response as RegistrationResponseJSON;
 			await passkeyService.verifyRegistration(
 				request.currentUser.id,
 				response,
 				storedChallenge.challenge,
-				parsed.data.friendlyName,
+				parsed.friendlyName,
 			);
 
 			return reply.send({ success: true, message: "Passkey registered successfully" });
@@ -192,10 +187,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Public endpoint (no authentication required)
 	 */
 	app.post("/passkey/login/verify", async (request, reply) => {
-		const parsed = passkeyLoginVerifySchema.safeParse(request.body);
-		if (!parsed.success) {
-			return reply.status(400).send({ error: "Invalid request" });
-		}
+		const parsed = validateRequest(passkeyLoginVerifySchema, request.body);
 
 		const sessionId = (request.body as { sessionId?: string }).sessionId;
 		if (!sessionId) {
@@ -211,7 +203,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		challengeStore.delete(sessionId);
 
 		try {
-			const response = parsed.data.response as AuthenticationResponseJSON;
+			const response = parsed.response as AuthenticationResponseJSON;
 			const verification = await passkeyService.verifyAuthentication(
 				response,
 				storedChallenge.challenge,
@@ -283,10 +275,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(401).send({ error: "Unauthorized" });
 		}
 
-		const parsed = passkeyDeleteSchema.safeParse(request.body);
-		if (!parsed.success) {
-			return reply.status(400).send({ error: "Invalid request" });
-		}
+		const parsed = validateRequest(passkeyDeleteSchema, request.body);
 
 		try {
 			// Check how many passkeys the user currently has
@@ -316,7 +305,7 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			const deleted = await passkeyService.deleteCredential(
 				request.currentUser.id,
-				parsed.data.credentialId,
+				parsed.credentialId,
 			);
 
 			if (!deleted) {
@@ -351,16 +340,13 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(401).send({ error: "Unauthorized" });
 		}
 
-		const parsed = passkeyRenameSchema.safeParse(request.body);
-		if (!parsed.success) {
-			return reply.status(400).send({ error: "Invalid request" });
-		}
+		const parsed = validateRequest(passkeyRenameSchema, request.body);
 
 		try {
 			const updated = await passkeyService.renameCredential(
 				request.currentUser.id,
-				parsed.data.credentialId,
-				parsed.data.friendlyName,
+				parsed.credentialId,
+				parsed.friendlyName,
 			);
 
 			if (!updated) {

@@ -19,7 +19,7 @@ import {
 	CheckCircle,
 	AlertCircle,
 } from "lucide-react";
-import { Input, Button } from "../../../components/ui";
+import { Button } from "../../../components/ui";
 import { PatternTester } from "./pattern-tester";
 
 interface Specification {
@@ -40,7 +40,7 @@ interface ConditionEditorProps {
 }
 
 export function ConditionEditor({
-	customFormatId,
+	customFormatId: _customFormatId,
 	customFormatName,
 	specifications: initialSpecs,
 	onChange,

@@ -3,7 +3,7 @@
 	"version": "0.1.0",
 	"private": true,
 	"scripts": {
-		"dev": "next dev -H 0.0.0.0",
+		"dev": "next dev -H 0.0.0.0 --webpack",
 		"build": "next build --webpack",
 		"start": "next start",
 		"lint": "eslint .",
@@ -36,7 +36,6 @@
 		"@tanstack/react-query": "^5.90.19",
 		"@tanstack/react-query-devtools": "^5.91.2",
 		"class-variance-authority": "^0.7.1",
-		"classnames": "^2.5.1",
 		"clsx": "^2.1.1",
 		"cmdk": "^1.1.1",
 		"date-fns": "^4.1.0",

@@ -1,5 +1,5 @@
 import type { ManualImportCandidateUnion, ManualImportSubmissionFile } from "../types";
-import { extractDownloadId, isSonarrCandidate, isRadarrCandidate } from "../helpers";
+import { extractDownloadId, isSonarrCandidate, isRadarrCandidate, isLidarrCandidate, isReadarrCandidate } from "../helpers";
 
 /**
  * Builds default submission values for a candidate
@@ -52,6 +52,27 @@ export function buildSubmissionDefaults(
 		}
 		if (typeof candidate.movieFileId === "number") {
 			defaults.movieFileId = candidate.movieFileId;
+		}
+	} else if (isLidarrCandidate(candidate)) {
+		const artistId = candidate.artist?.id;
+		const albumId = candidate.album?.id;
+		if (typeof artistId === "number") {
+			defaults.artistId = artistId;
+		}
+		if (typeof albumId === "number") {
+			defaults.albumId = albumId;
+		}
+		if (typeof candidate.albumReleaseId === "number") {
+			defaults.albumReleaseId = candidate.albumReleaseId;
+		}
+	} else if (isReadarrCandidate(candidate)) {
+		const authorId = candidate.author?.id;
+		const bookId = candidate.book?.id;
+		if (typeof authorId === "number") {
+			defaults.authorId = authorId;
+		}
+		if (typeof bookId === "number") {
+			defaults.bookId = bookId;
 		}
 	}
 

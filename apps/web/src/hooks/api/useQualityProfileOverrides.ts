@@ -8,10 +8,7 @@ import {
 	bulkDeleteQualityProfileOverrides,
 	type GetOverridesResponse,
 	type PromoteOverridePayload,
-	type PromoteOverrideResponse,
 	type BulkDeleteOverridesPayload,
-	type DeleteOverrideResponse,
-	type BulkDeleteOverridesResponse,
 } from "../../lib/api-client/trash-guides";
 
 /**

@@ -1,9 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { LibraryItem } from "@arr/shared";
 import { toast } from "../../../components/ui";
 import {
+	useLibraryAlbumMonitorMutation,
+	useLibraryAlbumSearchMutation,
+	useLibraryArtistSearchMutation,
+	useLibraryAuthorSearchMutation,
+	useLibraryBookMonitorMutation,
+	useLibraryBookSearchMutation,
 	useLibraryMonitorMutation,
 	useLibrarySeasonSearchMutation,
 	useLibrarySeriesSearchMutation,
@@ -19,9 +25,19 @@ export interface LibraryActions {
 	handleSeasonSearch: (series: LibraryItem, seasonNumber: number) => Promise<void>;
 	handleSeriesSearch: (series: LibraryItem) => Promise<void>;
 	handleMovieSearch: (movie: LibraryItem) => Promise<void>;
+	handleArtistSearch: (artist: LibraryItem) => Promise<void>;
+	handleAlbumMonitor: (artist: LibraryItem, albumId: number, nextMonitored: boolean) => Promise<void>;
+	handleAlbumSearch: (artist: LibraryItem, albumIds: number[]) => Promise<void>;
 	pendingSeasonAction: string | null;
 	pendingMovieSearch: string | null;
 	pendingSeriesSearch: string | null;
+	pendingArtistSearch: string | null;
+	pendingAlbumAction: string | null;
+	handleAuthorSearch: (author: LibraryItem) => Promise<void>;
+	handleBookMonitor: (author: LibraryItem, bookId: number, nextMonitored: boolean) => Promise<void>;
+	handleBookSearch: (author: LibraryItem, bookIds: number[]) => Promise<void>;
+	pendingAuthorSearch: string | null;
+	pendingBookAction: string | null;
 }
 
 /**
@@ -44,17 +60,27 @@ export function useLibraryActions(): LibraryActions {
 	const [pendingSeasonAction, setPendingSeasonAction] = useState<string | null>(null);
 	const [pendingMovieSearch, setPendingMovieSearch] = useState<string | null>(null);
 	const [pendingSeriesSearch, setPendingSeriesSearch] = useState<string | null>(null);
+	const [pendingArtistSearch, setPendingArtistSearch] = useState<string | null>(null);
+	const [pendingAlbumAction, setPendingAlbumAction] = useState<string | null>(null);
+	const [pendingAuthorSearch, setPendingAuthorSearch] = useState<string | null>(null);
+	const [pendingBookAction, setPendingBookAction] = useState<string | null>(null);
 
 	// Mutation hooks
 	const seasonMonitorMutation = useLibraryMonitorMutation();
 	const seasonSearchMutation = useLibrarySeasonSearchMutation();
 	const seriesSearchMutation = useLibrarySeriesSearchMutation();
 	const movieSearchMutation = useLibraryMovieSearchMutation();
+	const artistSearchMutation = useLibraryArtistSearchMutation();
+	const albumSearchMutation = useLibraryAlbumSearchMutation();
+	const albumMonitorMutation = useLibraryAlbumMonitorMutation();
+	const authorSearchMutation = useLibraryAuthorSearchMutation();
+	const bookSearchMutation = useLibraryBookSearchMutation();
+	const bookMonitorMutation = useLibraryBookMonitorMutation();
 
 	/**
 	 * Toggles monitoring for a specific season of a series
 	 */
-	const handleSeasonMonitor = async (
+	const handleSeasonMonitor = useCallback(async (
 		series: LibraryItem,
 		seasonNumber: number,
 		nextMonitored: boolean,
@@ -85,12 +111,12 @@ export function useLibraryActions(): LibraryActions {
 		} finally {
 			setPendingSeasonAction(null);
 		}
-	};
+	}, [seasonMonitorMutation]);
 
 	/**
 	 * Queues a search for all episodes in a specific season
 	 */
-	const handleSeasonSearch = async (series: LibraryItem, seasonNumber: number) => {
+	const handleSeasonSearch = useCallback(async (series: LibraryItem, seasonNumber: number) => {
 		if (series.service !== "sonarr") {
 			toast.warning("Season searches are only available for Sonarr series.");
 			return;
@@ -114,12 +140,12 @@ export function useLibraryActions(): LibraryActions {
 		} finally {
 			setPendingSeasonAction(null);
 		}
-	};
+	}, [seasonSearchMutation]);
 
 	/**
 	 * Queues a search for all monitored episodes in a series
 	 */
-	const handleSeriesSearch = async (series: LibraryItem) => {
+	const handleSeriesSearch = useCallback(async (series: LibraryItem) => {
 		if (series.service !== "sonarr") {
 			toast.warning("Series searches are only available for Sonarr instances.");
 			return;
@@ -141,12 +167,12 @@ export function useLibraryActions(): LibraryActions {
 		} finally {
 			setPendingSeriesSearch(null);
 		}
-	};
+	}, [seriesSearchMutation]);
 
 	/**
 	 * Queues a search for a movie
 	 */
-	const handleMovieSearch = async (movie: LibraryItem) => {
+	const handleMovieSearch = useCallback(async (movie: LibraryItem) => {
 		if (movie.service !== "radarr") {
 			toast.warning("Movie searches are only available for Radarr instances.");
 			return;
@@ -168,15 +194,191 @@ export function useLibraryActions(): LibraryActions {
 		} finally {
 			setPendingMovieSearch(null);
 		}
-	};
+	}, [movieSearchMutation]);
+
+	/**
+	 * Queues a search for all monitored albums of an artist
+	 */
+	const handleArtistSearch = useCallback(async (artist: LibraryItem) => {
+		if (artist.service !== "lidarr") {
+			toast.warning("Artist searches are only available for Lidarr instances.");
+			return;
+		}
+
+		const artistTitle = artist.title ?? "Artist";
+		const actionKey = `${artist.instanceId}:${artist.id}`;
+		setPendingArtistSearch(actionKey);
+		try {
+			await artistSearchMutation.mutateAsync({
+				instanceId: artist.instanceId,
+				service: "lidarr",
+				artistId: artist.id,
+			});
+			toast.success(`${artistTitle} search queued`);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			toast.error(`Failed to queue search for ${artistTitle}: ${message}`);
+		} finally {
+			setPendingArtistSearch(null);
+		}
+	}, [artistSearchMutation]);
+
+	/**
+	 * Toggles monitoring for a specific album
+	 */
+	const handleAlbumMonitor = useCallback(async (
+		artist: LibraryItem,
+		albumId: number,
+		nextMonitored: boolean,
+	) => {
+		if (artist.service !== "lidarr") {
+			toast.warning("Album monitoring actions are only available for Lidarr artists.");
+			return;
+		}
+
+		const actionKey = `monitor:${artist.instanceId}:${artist.id}:${albumId}`;
+		setPendingAlbumAction(actionKey);
+		try {
+			await albumMonitorMutation.mutateAsync({
+				instanceId: artist.instanceId,
+				artistId: artist.id,
+				albumIds: [albumId],
+				monitored: nextMonitored,
+			});
+			toast.success(`Album ${nextMonitored ? "monitoring enabled" : "monitoring disabled"}`);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			toast.error(`Failed to ${nextMonitored ? "enable" : "disable"} album monitoring: ${message}`);
+		} finally {
+			setPendingAlbumAction(null);
+		}
+	}, [albumMonitorMutation]);
+
+	/**
+	 * Queues a search for specific albums
+	 */
+	const handleAlbumSearch = useCallback(async (artist: LibraryItem, albumIds: number[]) => {
+		if (artist.service !== "lidarr") {
+			toast.warning("Album searches are only available for Lidarr instances.");
+			return;
+		}
+
+		const actionKey = `search:${artist.instanceId}:${artist.id}:${albumIds.join(",")}`;
+		setPendingAlbumAction(actionKey);
+		try {
+			await albumSearchMutation.mutateAsync({
+				instanceId: artist.instanceId,
+				albumIds,
+			});
+			toast.success(`Album search queued for ${artist.title ?? "Artist"}`);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			toast.error(`Failed to queue album search: ${message}`);
+		} finally {
+			setPendingAlbumAction(null);
+		}
+	}, [albumSearchMutation]);
+
+	/**
+	 * Queues a search for all monitored books of an author
+	 */
+	const handleAuthorSearch = useCallback(async (author: LibraryItem) => {
+		if (author.service !== "readarr") {
+			toast.warning("Author searches are only available for Readarr instances.");
+			return;
+		}
+
+		const authorTitle = author.title ?? "Author";
+		const actionKey = `${author.instanceId}:${author.id}`;
+		setPendingAuthorSearch(actionKey);
+		try {
+			await authorSearchMutation.mutateAsync({
+				instanceId: author.instanceId,
+				service: "readarr",
+				authorId: author.id,
+			});
+			toast.success(`${authorTitle} search queued`);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			toast.error(`Failed to queue search for ${authorTitle}: ${message}`);
+		} finally {
+			setPendingAuthorSearch(null);
+		}
+	}, [authorSearchMutation]);
+
+	/**
+	 * Toggles monitoring for a specific book
+	 */
+	const handleBookMonitor = useCallback(async (
+		author: LibraryItem,
+		bookId: number,
+		nextMonitored: boolean,
+	) => {
+		if (author.service !== "readarr") {
+			toast.warning("Book monitoring actions are only available for Readarr authors.");
+			return;
+		}
+
+		const actionKey = `monitor:${author.instanceId}:${author.id}:${bookId}`;
+		setPendingBookAction(actionKey);
+		try {
+			await bookMonitorMutation.mutateAsync({
+				instanceId: author.instanceId,
+				authorId: author.id,
+				bookIds: [bookId],
+				monitored: nextMonitored,
+			});
+			toast.success(`Book ${nextMonitored ? "monitoring enabled" : "monitoring disabled"}`);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			toast.error(`Failed to ${nextMonitored ? "enable" : "disable"} book monitoring: ${message}`);
+		} finally {
+			setPendingBookAction(null);
+		}
+	}, [bookMonitorMutation]);
+
+	/**
+	 * Queues a search for specific books
+	 */
+	const handleBookSearch = useCallback(async (author: LibraryItem, bookIds: number[]) => {
+		if (author.service !== "readarr") {
+			toast.warning("Book searches are only available for Readarr instances.");
+			return;
+		}
+
+		const actionKey = `search:${author.instanceId}:${author.id}:${bookIds.join(",")}`;
+		setPendingBookAction(actionKey);
+		try {
+			await bookSearchMutation.mutateAsync({
+				instanceId: author.instanceId,
+				bookIds,
+			});
+			toast.success(`Book search queued for ${author.title ?? "Author"}`);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "Unknown error";
+			toast.error(`Failed to queue book search: ${message}`);
+		} finally {
+			setPendingBookAction(null);
+		}
+	}, [bookSearchMutation]);
 
 	return {
 		handleSeasonMonitor,
 		handleSeasonSearch,
 		handleSeriesSearch,
 		handleMovieSearch,
+		handleArtistSearch,
+		handleAlbumMonitor,
+		handleAlbumSearch,
 		pendingSeasonAction,
 		pendingMovieSearch,
 		pendingSeriesSearch,
+		pendingArtistSearch,
+		pendingAlbumAction,
+		handleAuthorSearch,
+		handleBookMonitor,
+		handleBookSearch,
+		pendingAuthorSearch,
+		pendingBookAction,
 	};
 }

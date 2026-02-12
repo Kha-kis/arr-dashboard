@@ -9,7 +9,6 @@ import {
 	RefreshCw,
 	Bell,
 	Hand,
-	Zap,
 	Database,
 	AlertTriangle,
 	Timer,

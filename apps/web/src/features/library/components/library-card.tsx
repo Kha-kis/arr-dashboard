@@ -1,5 +1,12 @@
 "use client";
 
+/**
+ * LibraryCard - Premium card component for library items
+ *
+ * Wrapped with React.memo for list performance optimization.
+ */
+
+import { memo } from "react";
 import type { LibraryItem } from "@arr/shared";
 import {
 	AlertCircle,
@@ -16,7 +23,6 @@ import {
 	ServiceBadge,
 	StatusBadge,
 } from "../../../components/layout";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
 import { LibraryBadge } from "./library-badge";
 import { formatBytes, formatRuntime } from "../lib/library-utils";
@@ -49,6 +55,18 @@ interface LibraryCardProps {
 	onSearchSeries?: (item: LibraryItem) => void;
 	/** Whether the series search is pending */
 	seriesSearchPending?: boolean;
+	/** Callback to view album details (for artists only) */
+	onViewAlbums?: (item: LibraryItem) => void;
+	/** Callback to search for an artist (for Lidarr only) */
+	onSearchArtist?: (item: LibraryItem) => void;
+	/** Whether the artist search is pending */
+	artistSearchPending?: boolean;
+	/** Callback to view book details (for authors only) */
+	onViewBooks?: (item: LibraryItem) => void;
+	/** Callback to search for an author (for Readarr only) */
+	onSearchAuthor?: (item: LibraryItem) => void;
+	/** Whether the author search is pending */
+	authorSearchPending?: boolean;
 	/** Callback to expand item details modal */
 	onExpandDetails?: (item: LibraryItem) => void;
 }
@@ -71,8 +89,11 @@ interface LibraryCardProps {
  * - Open in external service
  * - View full details
  * - Toggle monitoring status
+ *
+ * Memoized to prevent unnecessary re-renders when rendered in lists.
+ * Parent components should memoize callback props with useCallback.
  */
-export const LibraryCard = ({
+export const LibraryCard = memo(function LibraryCard({
 	item,
 	onToggleMonitor,
 	pending,
@@ -82,8 +103,14 @@ export const LibraryCard = ({
 	movieSearchPending = false,
 	onSearchSeries,
 	seriesSearchPending = false,
+	onViewAlbums,
+	onSearchArtist,
+	artistSearchPending = false,
+	onViewBooks,
+	onSearchAuthor,
+	authorSearchPending = false,
 	onExpandDetails,
-}: LibraryCardProps) => {
+}: LibraryCardProps) {
 	const [incognitoMode] = useIncognitoMode();
 	const monitored = item.monitored ?? false;
 	const hasFile = item.hasFile ?? false;
@@ -293,7 +320,7 @@ export const LibraryCard = ({
 		locationEntries.push({ label: "Root", value: displayRoot });
 	}
 
-	const tagEntries = (item.tags ?? []).filter(Boolean);
+	const _tagEntries = (item.tags ?? []).filter(Boolean);
 	const genreEntries = (item.genres ?? []).filter(Boolean);
 
 	return (
@@ -430,6 +457,68 @@ export const LibraryCard = ({
 							</Button>
 						) : null}
 
+						{item.type === "artist" && onViewAlbums && (item.statistics?.albumCount ?? 0) > 0 ? (
+							<Button
+								type="button"
+								variant="secondary"
+								size="sm"
+								className="flex items-center gap-1.5"
+								onClick={() => onViewAlbums(item)}
+							>
+								<ListTree className="h-3.5 w-3.5" />
+								<span>Albums</span>
+							</Button>
+						) : null}
+
+						{item.service === "lidarr" && onSearchArtist ? (
+							<Button
+								type="button"
+								variant="secondary"
+								size="sm"
+								className="flex items-center gap-1.5"
+								onClick={() => onSearchArtist(item)}
+								disabled={artistSearchPending}
+							>
+								{artistSearchPending ? (
+									<Loader2 className="h-3.5 w-3.5 animate-spin" />
+								) : (
+									<Search className="h-3.5 w-3.5" />
+								)}
+								<span>Search</span>
+							</Button>
+						) : null}
+
+						{item.type === "author" && onViewBooks && (item.statistics?.bookCount ?? 0) > 0 ? (
+							<Button
+								type="button"
+								variant="secondary"
+								size="sm"
+								className="flex items-center gap-1.5"
+								onClick={() => onViewBooks(item)}
+							>
+								<ListTree className="h-3.5 w-3.5" />
+								<span>Books</span>
+							</Button>
+						) : null}
+
+						{item.service === "readarr" && onSearchAuthor ? (
+							<Button
+								type="button"
+								variant="secondary"
+								size="sm"
+								className="flex items-center gap-1.5"
+								onClick={() => onSearchAuthor(item)}
+								disabled={authorSearchPending}
+							>
+								{authorSearchPending ? (
+									<Loader2 className="h-3.5 w-3.5 animate-spin" />
+								) : (
+									<Search className="h-3.5 w-3.5" />
+								)}
+								<span>Search</span>
+							</Button>
+						) : null}
+
 						{externalLink ? (
 							<Button
 								type="button"
@@ -537,4 +626,4 @@ export const LibraryCard = ({
 				</div>
 		</GlassmorphicCard>
 	);
-};
+});

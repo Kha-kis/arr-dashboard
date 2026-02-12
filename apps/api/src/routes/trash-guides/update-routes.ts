@@ -27,20 +27,10 @@ const syncTemplateSchema = z.object({
 // Route Registration
 // ============================================================================
 
-export async function registerUpdateRoutes(app: FastifyInstance, opts: FastifyPluginOptions) {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-	});
-
+export async function registerUpdateRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	// Shared services (repo-independent)
 	const cacheManager = createCacheManager(app.prisma);
-	const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.encryptor);
+	const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.arrClientFactory);
 
 	/** Create repo-aware services configured for the current user's repo settings */
 	async function getServices(userId: string) {
@@ -186,11 +176,7 @@ export async function registerUpdateRoutes(app: FastifyInstance, opts: FastifyPl
 			}
 
 			request.log.error({ error }, "Failed to sync template");
-			return reply.status(500).send({
-				success: false,
-				error: "Failed to sync template",
-				details: error instanceof Error ? error.message : String(error),
-			});
+			throw error;
 		}
 	});
 
@@ -248,32 +234,8 @@ export async function registerUpdateRoutes(app: FastifyInstance, opts: FastifyPl
 				data: diffResult,
 			});
 		} catch (error: unknown) {
-			if (error instanceof Error) {
-				if (error.message === "Template not found") {
-					return reply.status(404).send({
-						success: false,
-						error: "Template not found",
-					});
-				}
-				if (error.message === "Not authorized to access this template") {
-					return reply.status(403).send({
-						success: false,
-						error: "Not authorized to access this template",
-					});
-				}
-			}
-
-			const errorMessage = error instanceof Error ? error.message : String(error);
-			const errorStack = error instanceof Error ? error.stack : undefined;
-			request.log.error(
-				{ error: { message: errorMessage, stack: errorStack } },
-				"Failed to generate diff",
-			);
-			return reply.status(500).send({
-				success: false,
-				error: "Failed to generate template diff",
-				details: errorMessage,
-			});
+			request.log.error({ err: error }, "Failed to generate diff");
+			throw error;
 		}
 	});
 

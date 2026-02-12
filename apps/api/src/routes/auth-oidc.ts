@@ -6,6 +6,7 @@ import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
 import { OIDCProvider } from "../lib/auth/oidc-provider.js";
 import { getSessionMetadata } from "../lib/auth/session-metadata.js";
 import { normalizeIssuerUrl } from "../lib/auth/oidc-utils.js";
+import { validateRequest } from "../lib/utils/validate.js";
 
 /**
  * In-memory storage for OIDC states and nonces (production: use Redis)
@@ -69,22 +70,17 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Configure OIDC provider during initial setup (only allowed when no users exist)
 	 */
 	app.post("/oidc/setup", async (request, reply) => {
-		const parsed = oidcSetupSchema.safeParse(request.body);
-		if (!parsed.success) {
-			return reply
-				.status(400)
-				.send({ error: "Invalid OIDC configuration", details: parsed.error.flatten() });
-		}
+		const parsed = validateRequest(oidcSetupSchema, request.body);
 
-		const { displayName, clientId, clientSecret, scopes } = parsed.data;
+		const { displayName, clientId, clientSecret, scopes } = parsed;
 
 		// Normalize issuer URL to prevent discovery failures
 		let normalizedIssuer: string;
 		try {
-			normalizedIssuer = normalizeIssuerUrl(parsed.data.issuer);
-			if (normalizedIssuer !== parsed.data.issuer) {
+			normalizedIssuer = normalizeIssuerUrl(parsed.issuer);
+			if (normalizedIssuer !== parsed.issuer) {
 				request.log.info(
-					{ original: parsed.data.issuer, normalized: normalizedIssuer },
+					{ original: parsed.issuer, normalized: normalizedIssuer },
 					"Normalized OIDC issuer URL",
 				);
 			}
@@ -97,7 +93,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		// Auto-generate redirect URI if not provided
 		// Use the request origin to detect the correct URL (works in Docker/proxy environments)
-		let redirectUri = parsed.data.redirectUri;
+		let redirectUri = parsed.redirectUri;
 		if (!redirectUri) {
 			const protocol = request.headers["x-forwarded-proto"] || request.protocol;
 			const host = request.headers["x-forwarded-host"] || request.headers.host || "localhost:3000";

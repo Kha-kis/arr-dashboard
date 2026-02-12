@@ -1,4 +1,4 @@
-import type { ArrServiceType } from "./arr.js";
+import type { ArrServiceType } from "./arr";
 
 export interface ServiceTagResponse {
   id: string;

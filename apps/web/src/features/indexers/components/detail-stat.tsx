@@ -19,7 +19,7 @@ export const DetailStat = ({
 	value?: string;
 	color?: string;
 }) => {
-	const { gradient: themeGradient } = useThemeGradient();
+	const { gradient: _themeGradient } = useThemeGradient();
 
 	if (!value || value.trim().length === 0) {
 		return null;

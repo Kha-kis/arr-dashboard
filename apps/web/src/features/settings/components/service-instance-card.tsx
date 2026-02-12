@@ -85,7 +85,7 @@ export const ServiceInstanceCard = ({
 	// Check if this card has test results
 	const hasTestResult = testResult && testResult.id === instance.id;
 	const testSuccess = hasTestResult && testResult.success;
-	const testFailed = hasTestResult && !testResult.success;
+	const _testFailed = hasTestResult && !testResult.success;
 
 	return (
 		<div

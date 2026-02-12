@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { formatBytes, formatRuntime } from "../lib/library-utils";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
-import { SEMANTIC_COLORS, BRAND_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { BRAND_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useFocusTrap } from "../../../hooks/useFocusTrap";
 

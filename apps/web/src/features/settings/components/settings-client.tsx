@@ -11,7 +11,6 @@ import {
 	Archive,
 	Cpu,
 } from "lucide-react";
-import type { CurrentUser } from "@arr/shared";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useTagsQuery } from "../../../hooks/api/useTags";
 import { useDiscoverOptionsQuery, useDiscoverTestOptionsQuery } from "../../../hooks/api/useDiscover";
@@ -23,7 +22,7 @@ import {
 	type PremiumTab,
 } from "../../../components/layout";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { TABS, type TabType } from "../lib/settings-constants";
+import { type TabType } from "../lib/settings-constants";
 import {
 	useServiceFormState,
 	useServicesManagement,
@@ -52,7 +51,7 @@ import { SystemTab } from "./system-tab";
  * - Staggered entrance animations
  */
 export const SettingsClient = () => {
-	const { gradient: themeGradient } = useThemeGradient();
+	const { gradient: _themeGradient } = useThemeGradient();
 
 	// Data queries
 	const { data: services = [], isLoading: servicesLoading } = useServicesQuery();

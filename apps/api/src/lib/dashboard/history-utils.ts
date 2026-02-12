@@ -122,6 +122,12 @@ export const normalizeHistoryItem = (
 		authorId: toNumber(anyItem.authorId ?? anyItem.author?.id),
 		bookId: toNumber(anyItem.bookId ?? anyItem.book?.id),
 		data: typeof anyItem.data === "object" ? anyItem.data : undefined,
+		customFormats: Array.isArray(anyItem.customFormats)
+			? anyItem.customFormats
+				.filter((cf: unknown) => cf && typeof cf === "object" && "id" in cf && "name" in cf)
+				.map((cf: UnknownRecord) => ({ id: Number(cf.id), name: String(cf.name) }))
+			: undefined,
+		customFormatScore: toNumber(anyItem.customFormatScore),
 		instanceId: "",
 		instanceName: "",
 		service,

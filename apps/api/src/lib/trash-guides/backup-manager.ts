@@ -5,7 +5,6 @@
  */
 
 import type { PrismaClient } from "../../lib/prisma.js";
-import type { ServiceInstance } from "../../lib/prisma.js";
 
 // ============================================================================
 // Types

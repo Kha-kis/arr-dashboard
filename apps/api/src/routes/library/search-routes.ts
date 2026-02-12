@@ -17,7 +17,6 @@ import {
 	isReadarrClient,
 	isSonarrClient,
 } from "../../lib/arr/client-helpers.js";
-import { ArrError, arrErrorToHttpStatus } from "../../lib/arr/client-factory.js";
 
 /**
  * Register search operation routes for library
@@ -31,15 +30,6 @@ import { ArrError, arrErrorToHttpStatus } from "../../lib/arr/client-factory.js"
  * - POST /library/book/search - Search for books (Readarr)
  */
 export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) => {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
-			return reply.status(401).send({
-				error: "Authentication required",
-			});
-		}
-	});
-
 	/**
 	 * POST /library/season/search
 	 * Queues a season search in Sonarr
@@ -92,16 +82,7 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 				{ err: error, instance: instance.id, seriesId, seasonNumber },
 				"failed to queue season search",
 			);
-
-			if (error instanceof ArrError) {
-				return reply.status(arrErrorToHttpStatus(error)).send({
-					error: error.message,
-				});
-			}
-
-			return reply.status(502).send({
-				error: "Failed to queue season search",
-			});
+			throw error;
 		}
 	});
 
@@ -149,16 +130,7 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 				{ err: error, instance: instance.id, seriesId },
 				"failed to queue series search",
 			);
-
-			if (error instanceof ArrError) {
-				return reply.status(arrErrorToHttpStatus(error)).send({
-					error: error.message,
-				});
-			}
-
-			return reply.status(502).send({
-				error: "Failed to queue series search",
-			});
+			throw error;
 		}
 	});
 
@@ -206,16 +178,7 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 				{ err: error, instance: instance.id, movieId },
 				"failed to queue movie search",
 			);
-
-			if (error instanceof ArrError) {
-				return reply.status(arrErrorToHttpStatus(error)).send({
-					error: error.message,
-				});
-			}
-
-			return reply.status(502).send({
-				error: "Failed to queue movie search",
-			});
+			throw error;
 		}
 	});
 
@@ -262,16 +225,7 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 				{ err: error, instance: instance.id, episodeIds: payload.episodeIds },
 				"failed to queue episode search",
 			);
-
-			if (error instanceof ArrError) {
-				return reply.status(arrErrorToHttpStatus(error)).send({
-					error: error.message,
-				});
-			}
-
-			return reply.status(502).send({
-				error: "Failed to queue episode search",
-			});
+			throw error;
 		}
 	});
 
@@ -319,16 +273,7 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 				{ err: error, instance: instance.id, artistId },
 				"failed to queue artist search",
 			);
-
-			if (error instanceof ArrError) {
-				return reply.status(arrErrorToHttpStatus(error)).send({
-					error: error.message,
-				});
-			}
-
-			return reply.status(502).send({
-				error: "Failed to queue artist search",
-			});
+			throw error;
 		}
 	});
 
@@ -375,16 +320,7 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 				{ err: error, instance: instance.id, albumIds: payload.albumIds },
 				"failed to queue album search",
 			);
-
-			if (error instanceof ArrError) {
-				return reply.status(arrErrorToHttpStatus(error)).send({
-					error: error.message,
-				});
-			}
-
-			return reply.status(502).send({
-				error: "Failed to queue album search",
-			});
+			throw error;
 		}
 	});
 
@@ -432,16 +368,7 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 				{ err: error, instance: instance.id, authorId },
 				"failed to queue author search",
 			);
-
-			if (error instanceof ArrError) {
-				return reply.status(arrErrorToHttpStatus(error)).send({
-					error: error.message,
-				});
-			}
-
-			return reply.status(502).send({
-				error: "Failed to queue author search",
-			});
+			throw error;
 		}
 	});
 
@@ -488,16 +415,7 @@ export const registerSearchRoutes: FastifyPluginCallback = (app, _opts, done) =>
 				{ err: error, instance: instance.id, bookIds: payload.bookIds },
 				"failed to queue book search",
 			);
-
-			if (error instanceof ArrError) {
-				return reply.status(arrErrorToHttpStatus(error)).send({
-					error: error.message,
-				});
-			}
-
-			return reply.status(502).send({
-				error: "Failed to queue book search",
-			});
+			throw error;
 		}
 	});
 

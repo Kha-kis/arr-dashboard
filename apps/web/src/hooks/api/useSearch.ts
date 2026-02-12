@@ -18,6 +18,7 @@ import {
 	testSearchIndexer,
 	updateSearchIndexer,
 } from "../../lib/api-client/search";
+import { QUEUE_QUERY_KEY } from "../../lib/query-keys";
 
 export const useSearchIndexersQuery = () =>
 	useQuery<SearchIndexersResponse>({
@@ -30,8 +31,6 @@ export const useManualSearchMutation = () =>
 	useMutation<MultiInstanceSearchResponse, unknown, SearchRequest>({
 		mutationFn: performManualSearch,
 	});
-
-const QUEUE_QUERY_KEY = ["dashboard", "queue"] as const;
 
 export const useGrabSearchResultMutation = () => {
 	const queryClient = useQueryClient();

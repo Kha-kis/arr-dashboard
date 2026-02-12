@@ -3,8 +3,11 @@
 /**
  * Component for rendering individual queue items as premium cards
  * Features glassmorphism styling with theme-aware accents
+ *
+ * Wrapped with React.memo for list performance optimization.
  */
 
+import { memo } from "react";
 import type { QueueItem } from "@arr/shared";
 import { cn } from "../../../lib/utils";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
@@ -36,8 +39,11 @@ export interface QueueItemCardProps {
 /**
  * Premium card component for displaying a single queue item
  * Features glassmorphism styling with theme-aware accent colors
+ *
+ * Memoized to prevent unnecessary re-renders when rendered in lists.
+ * Parent components should memoize callback props with useCallback.
  */
-export const QueueItemCard = ({
+export const QueueItemCard = memo(function QueueItemCard({
 	item,
 	instanceUrl,
 	issueLines,
@@ -48,7 +54,7 @@ export const QueueItemCard = ({
 	onAction,
 	onPrefetchManualImport,
 	primaryAction,
-}: QueueItemCardProps) => {
+}: QueueItemCardProps) {
 	const [incognitoMode] = useIncognitoMode();
 	const { gradient: themeGradient } = useThemeGradient();
 	const issueSummary = summarizeIssueCounts(issueLines);
@@ -157,4 +163,4 @@ export const QueueItemCard = ({
 			</div>
 		</div>
 	);
-};
+});

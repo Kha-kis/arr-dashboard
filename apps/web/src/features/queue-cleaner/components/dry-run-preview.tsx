@@ -22,6 +22,7 @@ import { Button, toast } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import type { EnhancedPreviewItem, EnhancedPreviewResult } from "../lib/queue-cleaner-types";
+import { RULE_LABELS, RULE_COLORS, DEFAULT_RULE_COLOR } from "../lib/constants";
 
 interface EnhancedDryRunPreviewProps {
 	result: EnhancedPreviewResult;
@@ -30,77 +31,10 @@ interface EnhancedDryRunPreviewProps {
 	isRunningClean: boolean;
 }
 
-const RULE_LABELS: Record<string, string> = {
-	stalled: "Stalled",
-	failed: "Failed",
-	slow: "Slow",
-	error_pattern: "Error Pattern",
-	seeding_timeout: "Seeding Timeout",
-	import_pending: "Import Pending",
-	import_blocked: "Import Blocked",
-	whitelisted: "Whitelisted",
-	healthy: "Healthy",
-	too_young: "Too New",
-};
-
-// Color type definition for consistent typing
-interface ColorStyle {
-	bg: string;
-	text: string;
-	border: string;
-}
-
-// Default fallback color for rules not in the map
-const DEFAULT_RULE_COLOR: ColorStyle = {
-	bg: "rgba(148, 163, 184, 0.1)",
-	text: "#94a3b8",
-	border: "rgba(148, 163, 184, 0.2)",
-};
-
-const RULE_COLORS: Record<string, ColorStyle> = {
-	stalled: { bg: "rgba(245, 158, 11, 0.1)", text: "#f59e0b", border: "rgba(245, 158, 11, 0.2)" },
-	failed: { bg: "rgba(239, 68, 68, 0.1)", text: "#ef4444", border: "rgba(239, 68, 68, 0.2)" },
-	slow: { bg: "rgba(99, 102, 241, 0.1)", text: "#6366f1", border: "rgba(99, 102, 241, 0.2)" },
-	error_pattern: {
-		bg: "rgba(168, 85, 247, 0.1)",
-		text: "#a855f7",
-		border: "rgba(168, 85, 247, 0.2)",
-	},
-	seeding_timeout: {
-		bg: "rgba(6, 182, 212, 0.1)",
-		text: "#06b6d4",
-		border: "rgba(6, 182, 212, 0.2)",
-	},
-	import_pending: {
-		bg: "rgba(251, 146, 60, 0.1)",
-		text: "#fb923c",
-		border: "rgba(251, 146, 60, 0.2)",
-	},
-	import_blocked: {
-		bg: "rgba(244, 63, 94, 0.1)",
-		text: "#f43f5e",
-		border: "rgba(244, 63, 94, 0.2)",
-	},
-	whitelisted: { bg: "rgba(34, 197, 94, 0.1)", text: "#22c55e", border: "rgba(34, 197, 94, 0.2)" },
-	healthy: { bg: "rgba(34, 197, 94, 0.1)", text: "#22c55e", border: "rgba(34, 197, 94, 0.2)" },
-	too_young: {
-		bg: "rgba(148, 163, 184, 0.1)",
-		text: "#94a3b8",
-		border: "rgba(148, 163, 184, 0.2)",
-	},
-};
-
-// Default fallback color for actions not in the map
-const DEFAULT_ACTION_COLOR: ColorStyle = {
-	bg: "rgba(148, 163, 184, 0.1)",
-	text: "#94a3b8",
-	border: "rgba(148, 163, 184, 0.2)",
-};
-
-const ACTION_COLORS: Record<string, ColorStyle> = {
+const ACTION_COLORS: Record<string, typeof DEFAULT_RULE_COLOR> = {
 	remove: SEMANTIC_COLORS.error,
 	warn: SEMANTIC_COLORS.warning,
-	skip: { bg: "rgba(148, 163, 184, 0.1)", text: "#94a3b8", border: "rgba(148, 163, 184, 0.2)" },
+	skip: DEFAULT_RULE_COLOR,
 	whitelist: SEMANTIC_COLORS.success,
 };
 
@@ -562,7 +496,7 @@ const PreviewItemRow = ({
 	onToggle: () => void;
 }) => {
 	const ruleColor = RULE_COLORS[item.rule] ?? DEFAULT_RULE_COLOR;
-	const actionColor = ACTION_COLORS[item.action] ?? DEFAULT_ACTION_COLOR;
+	const actionColor = ACTION_COLORS[item.action] ?? DEFAULT_RULE_COLOR;
 
 	return (
 		<GlassmorphicCard padding="none">
@@ -649,7 +583,7 @@ const GroupedItemRow = ({
 	expandedItems: Set<number>;
 	onToggleItem: (id: number) => void;
 }) => {
-	const actionColor = ACTION_COLORS[group.worstAction] ?? DEFAULT_ACTION_COLOR;
+	const actionColor = ACTION_COLORS[group.worstAction] ?? DEFAULT_RULE_COLOR;
 	const ruleColor = RULE_COLORS[group.dominantRule] ?? DEFAULT_RULE_COLOR;
 
 	// Find common properties from first item for display

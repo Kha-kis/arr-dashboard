@@ -2,35 +2,54 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+	LibraryAlbumMonitorRequest,
+	LibraryAlbumSearchRequest,
+	LibraryAlbumsResponse,
+	LibraryArtistSearchRequest,
+	LibraryAuthorSearchRequest,
+	LibraryBookMonitorRequest,
+	LibraryBookSearchRequest,
+	LibraryBooksResponse,
 	LibraryEpisodeMonitorRequest,
 	LibraryEpisodeSearchRequest,
 	LibraryEpisodesResponse,
-	LibraryService,
 	LibraryToggleMonitorRequest,
 	LibrarySeasonSearchRequest,
 	LibraryMovieSearchRequest,
 	LibrarySeriesSearchRequest,
+	LibraryTracksResponse,
 	PaginatedLibraryResponse,
 } from "@arr/shared";
 
 import {
+	fetchAlbums,
+	fetchBooks,
 	fetchEpisodes,
 	fetchLibrary,
 	fetchLibrarySyncStatus,
+	fetchTracks,
 	triggerLibrarySync,
 	updateLibrarySyncSettings,
+	searchLibraryAlbum,
+	searchLibraryArtist,
+	searchLibraryAuthor,
+	searchLibraryBook,
 	searchLibraryEpisode,
 	searchLibraryMovie,
 	searchLibrarySeason,
 	searchLibrarySeries,
+	toggleAlbumMonitoring,
+	toggleBookMonitoring,
 	toggleEpisodeMonitoring,
 	toggleLibraryMonitoring,
+	type FetchAlbumsParams,
+	type FetchBooksParams,
+	type FetchTracksParams,
 	type LibraryQueryParams,
 	type LibrarySyncStatusResponse,
 	type LibrarySyncSettings,
 } from "../../lib/api-client/library";
-
-const QUEUE_QUERY_KEY = ["dashboard", "queue"] as const;
+import { QUEUE_QUERY_KEY } from "../../lib/query-keys";
 
 // ============================================================================
 // Library Query Hook (with pagination, search, filters)
@@ -213,6 +232,116 @@ export const useLibraryEpisodeMonitorMutation = () => {
 		onSuccess: () => {
 			void queryClient.invalidateQueries({ queryKey: ["library"] });
 			void queryClient.invalidateQueries({ queryKey: ["library", "episodes"] });
+		},
+	});
+};
+
+// ============================================================================
+// Album Hooks (Lidarr)
+// ============================================================================
+
+export const useAlbumsQuery = (options: FetchAlbumsParams & { enabled?: boolean }) => {
+	const { enabled, ...params } = options;
+	return useQuery<LibraryAlbumsResponse>({
+		queryKey: ["library", "albums", { instanceId: params.instanceId, artistId: params.artistId }],
+		queryFn: () => fetchAlbums(params),
+		enabled: enabled ?? true,
+		staleTime: 60 * 1000,
+	});
+};
+
+export const useLibraryArtistSearchMutation = () => {
+	const queryClient = useQueryClient();
+	return useMutation<void, unknown, LibraryArtistSearchRequest>({
+		mutationFn: searchLibraryArtist,
+		onSuccess: () => {
+			void queryClient.invalidateQueries({ queryKey: ["library"] });
+			void queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
+		},
+	});
+};
+
+export const useLibraryAlbumSearchMutation = () => {
+	const queryClient = useQueryClient();
+	return useMutation<void, unknown, LibraryAlbumSearchRequest>({
+		mutationFn: searchLibraryAlbum,
+		onSuccess: () => {
+			void queryClient.invalidateQueries({ queryKey: ["library"] });
+			void queryClient.invalidateQueries({ queryKey: ["library", "albums"] });
+			void queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
+		},
+	});
+};
+
+export const useLibraryAlbumMonitorMutation = () => {
+	const queryClient = useQueryClient();
+	return useMutation<void, unknown, LibraryAlbumMonitorRequest>({
+		mutationFn: toggleAlbumMonitoring,
+		onSuccess: () => {
+			void queryClient.invalidateQueries({ queryKey: ["library"] });
+			void queryClient.invalidateQueries({ queryKey: ["library", "albums"] });
+		},
+	});
+};
+
+// ============================================================================
+// Track Hooks (Lidarr - children of albums)
+// ============================================================================
+
+export const useTracksQuery = (options: FetchTracksParams & { enabled?: boolean }) => {
+	const { enabled, ...params } = options;
+	return useQuery<LibraryTracksResponse>({
+		queryKey: ["library", "tracks", { instanceId: params.instanceId, albumId: params.albumId }],
+		queryFn: () => fetchTracks(params),
+		enabled: enabled ?? true,
+		staleTime: 60 * 1000,
+	});
+};
+
+// ============================================================================
+// Book Hooks (Readarr)
+// ============================================================================
+
+export const useBooksQuery = (options: FetchBooksParams & { enabled?: boolean }) => {
+	const { enabled, ...params } = options;
+	return useQuery<LibraryBooksResponse>({
+		queryKey: ["library", "books", { instanceId: params.instanceId, authorId: params.authorId }],
+		queryFn: () => fetchBooks(params),
+		enabled: enabled ?? true,
+		staleTime: 60 * 1000,
+	});
+};
+
+export const useLibraryAuthorSearchMutation = () => {
+	const queryClient = useQueryClient();
+	return useMutation<void, unknown, LibraryAuthorSearchRequest>({
+		mutationFn: searchLibraryAuthor,
+		onSuccess: () => {
+			void queryClient.invalidateQueries({ queryKey: ["library"] });
+			void queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
+		},
+	});
+};
+
+export const useLibraryBookSearchMutation = () => {
+	const queryClient = useQueryClient();
+	return useMutation<void, unknown, LibraryBookSearchRequest>({
+		mutationFn: searchLibraryBook,
+		onSuccess: () => {
+			void queryClient.invalidateQueries({ queryKey: ["library"] });
+			void queryClient.invalidateQueries({ queryKey: ["library", "books"] });
+			void queryClient.invalidateQueries({ queryKey: QUEUE_QUERY_KEY });
+		},
+	});
+};
+
+export const useLibraryBookMonitorMutation = () => {
+	const queryClient = useQueryClient();
+	return useMutation<void, unknown, LibraryBookMonitorRequest>({
+		mutationFn: toggleBookMonitoring,
+		onSuccess: () => {
+			void queryClient.invalidateQueries({ queryKey: ["library"] });
+			void queryClient.invalidateQueries({ queryKey: ["library", "books"] });
 		},
 	});
 };

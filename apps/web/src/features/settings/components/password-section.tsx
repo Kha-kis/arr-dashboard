@@ -14,7 +14,6 @@ import { useQuery } from "@tanstack/react-query";
 import { getPasskeyCredentials } from "../../../lib/api-client/auth";
 import { validatePassword } from "../lib/settings-utils";
 import type { CurrentUser } from "@arr/shared";
-import { cn } from "../../../lib/utils";
 
 interface PasswordSectionProps {
 	currentUser?: CurrentUser | null;

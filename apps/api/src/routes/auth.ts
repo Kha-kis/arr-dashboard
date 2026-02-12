@@ -6,6 +6,7 @@ import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
 import { hashPassword, verifyPassword } from "../lib/auth/password.js";
 import { getSessionMetadata } from "../lib/auth/session-metadata.js";
 import { parseUserAgent } from "../lib/auth/user-agent-parser.js";
+import { validateRequest } from "../lib/utils/validate.js";
 
 const loginSchema = z.object({
 	username: z.string().min(3).max(50),
@@ -35,7 +36,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		tmdbApiKey: z.string().max(255).optional(),
 	});
 
-	app.get("/setup-required", async (request, reply) => {
+	app.get("/setup-required", async (_request, reply) => {
 		const userCount = await app.prisma.user.count();
 		return reply.send({
 			required: userCount === 0,
@@ -55,13 +56,10 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
-		const parsed = registerSchema.safeParse(request.body);
-		if (!parsed.success) {
-			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
-		}
+		const parsed = validateRequest(registerSchema, request.body);
 
-		const username = parsed.data.username.trim();
-		const password = parsed.data.password;
+		const username = parsed.username.trim();
+		const password = parsed.password;
 
 		if (!username) {
 			return reply.status(400).send({ error: "Invalid payload" });
@@ -101,10 +99,10 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 			const session = await app.sessionService.createSession(
 				user.id,
-				parsed.data.rememberMe,
+				parsed.rememberMe,
 				getSessionMetadata(request),
 			);
-			app.sessionService.attachCookie(reply, session.token, parsed.data.rememberMe);
+			app.sessionService.attachCookie(reply, session.token, parsed.rememberMe);
 
 			// Pre-warm connections to ARR instances in background (don't await)
 			warmConnectionsForUser(app, user.id).catch((err) => {
@@ -147,13 +145,10 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
-		const parsed = loginSchema.safeParse(request.body);
-		if (!parsed.success) {
-			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
-		}
+		const parsed = validateRequest(loginSchema, request.body);
 
-		const username = parsed.data.username.trim();
-		const password = parsed.data.password;
+		const username = parsed.username.trim();
+		const password = parsed.password;
 
 		if (username.length === 0) {
 			return reply.status(400).send({ error: "Invalid payload" });
@@ -226,10 +221,10 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		const session = await app.sessionService.createSession(
 			user.id,
-			parsed.data.rememberMe,
+			parsed.rememberMe,
 			getSessionMetadata(request),
 		);
-		app.sessionService.attachCookie(reply, session.token, parsed.data.rememberMe);
+		app.sessionService.attachCookie(reply, session.token, parsed.rememberMe);
 
 		// Pre-warm connections to ARR instances in background (don't await)
 		warmConnectionsForUser(app, user.id).catch(() => {});
@@ -381,12 +376,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(401).send({ error: "Unauthorized" });
 		}
 
-		const parsed = updateAccountSchema.safeParse(request.body);
-		if (!parsed.success) {
-			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
-		}
-
-		const { username, currentPassword, newPassword, tmdbApiKey } = parsed.data;
+		const { username, currentPassword, newPassword, tmdbApiKey } = validateRequest(updateAccountSchema, request.body);
 
 		// Check if OIDC provider is enabled - if so, password changes are disabled
 		if (newPassword) {
@@ -522,12 +512,7 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(401).send({ error: "Unauthorized" });
 		}
 
-		const parsed = removePasswordSchema.safeParse(request.body);
-		if (!parsed.success) {
-			return reply.status(400).send({ error: "Invalid payload", details: parsed.error.flatten() });
-		}
-
-		const { currentPassword } = parsed.data;
+		const { currentPassword } = validateRequest(removePasswordSchema, request.body);
 
 		// Get user with current password
 		const user = await app.prisma.user.findUnique({

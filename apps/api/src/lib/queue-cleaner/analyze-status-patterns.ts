@@ -67,7 +67,7 @@ async function analyzeStatusMessages() {
 	}
 
 	// Analyze Radarr
-	console.log("\n" + "═".repeat(70));
+	console.log(`\n${"═".repeat(70)}`);
 	console.log("\n🎬 RADARR Status Patterns:\n");
 	const radarrQueue = await fetchQueue(RADARR_URL, RADARR_API_KEY, "v3");
 	const radarrPatterns = new Map<string, { count: number; sample: string }>();
@@ -111,7 +111,7 @@ async function analyzeStatusMessages() {
 	}
 
 	// Show the eligible Radarr item in detail
-	console.log("\n" + "═".repeat(70));
+	console.log(`\n${"═".repeat(70)}`);
 	console.log("\n✨ ELIGIBLE RADARR ITEM (Full Details):\n");
 
 	for (const item of radarrQueue.records ?? []) {
@@ -141,12 +141,12 @@ async function analyzeStatusMessages() {
 		}
 	}
 
-	console.log("\n" + "═".repeat(70));
+	console.log(`\n${"═".repeat(70)}`);
 	console.log("\n💡 RECOMMENDATION:");
 	console.log("─".repeat(70));
 
 	// Check if there are common patterns that could be added
-	const commonPendingPatterns = [
+	const _commonPendingPatterns = [
 		"series folder",
 		"episode file",
 		"no files found",

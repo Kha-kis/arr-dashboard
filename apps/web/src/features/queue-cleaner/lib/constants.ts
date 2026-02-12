@@ -147,6 +147,49 @@ export const WHITELIST_TYPES = [
 	{ value: "title" as const, label: "Title" },
 ];
 
+// === RULE VISUALIZATION COLORS ===
+
+interface RuleColorStyle {
+	bg: string;
+	text: string;
+	border: string;
+}
+
+/** Default color for unknown rules (slate gray) */
+export const DEFAULT_RULE_COLOR: RuleColorStyle = {
+	bg: "rgba(148, 163, 184, 0.1)",
+	text: "#94a3b8",
+	border: "rgba(148, 163, 184, 0.2)",
+};
+
+/** Categorical colors for distinguishing rule types in charts and badges */
+export const RULE_COLORS: Record<string, RuleColorStyle> = {
+	stalled: { bg: "rgba(245, 158, 11, 0.1)", text: "#f59e0b", border: "rgba(245, 158, 11, 0.2)" },
+	failed: { bg: "rgba(239, 68, 68, 0.1)", text: "#ef4444", border: "rgba(239, 68, 68, 0.2)" },
+	slow: { bg: "rgba(99, 102, 241, 0.1)", text: "#6366f1", border: "rgba(99, 102, 241, 0.2)" },
+	error_pattern: { bg: "rgba(168, 85, 247, 0.1)", text: "#a855f7", border: "rgba(168, 85, 247, 0.2)" },
+	seeding_timeout: { bg: "rgba(6, 182, 212, 0.1)", text: "#06b6d4", border: "rgba(6, 182, 212, 0.2)" },
+	import_pending: { bg: "rgba(251, 146, 60, 0.1)", text: "#fb923c", border: "rgba(251, 146, 60, 0.2)" },
+	import_blocked: { bg: "rgba(244, 63, 94, 0.1)", text: "#f43f5e", border: "rgba(244, 63, 94, 0.2)" },
+	whitelisted: { bg: "rgba(34, 197, 94, 0.1)", text: "#22c55e", border: "rgba(34, 197, 94, 0.2)" },
+	healthy: { bg: "rgba(34, 197, 94, 0.1)", text: "#22c55e", border: "rgba(34, 197, 94, 0.2)" },
+	too_young: { bg: "rgba(148, 163, 184, 0.1)", text: "#94a3b8", border: "rgba(148, 163, 184, 0.2)" },
+};
+
+/** Human-readable labels for rule types */
+export const RULE_LABELS: Record<string, string> = {
+	stalled: "Stalled",
+	failed: "Failed",
+	slow: "Slow",
+	error_pattern: "Error Pattern",
+	seeding_timeout: "Seeding Timeout",
+	import_pending: "Import Pending",
+	import_blocked: "Import Blocked",
+	whitelisted: "Whitelisted",
+	healthy: "Healthy",
+	too_young: "Too New",
+};
+
 // === REFRESH INTERVALS ===
 
 /** Status refresh interval (30 seconds) */

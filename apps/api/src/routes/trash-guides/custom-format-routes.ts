@@ -12,6 +12,8 @@ import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import type { TrashCustomFormat, CustomFormatSpecification } from "@arr/shared";
 import type { SonarrClient, RadarrClient } from "arr-sdk";
+import { requireInstance } from "../../lib/arr/instance-helpers.js";
+import { InstanceNotFoundError } from "../../lib/errors.js";
 
 // ============================================================================
 // Validation Schemas
@@ -60,16 +62,6 @@ export async function registerCustomFormatRoutes(
 	app: FastifyInstance,
 	_opts: FastifyPluginOptions,
 ) {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
-			return reply.status(401).send({
-				error: "UNAUTHORIZED",
-				message: "Authentication required",
-			});
-		}
-	});
-
 	const cacheManager = createCacheManager(app.prisma);
 
 	/** Create a fetcher configured for the current user's repo settings */
@@ -99,20 +91,7 @@ export async function registerCustomFormatRoutes(
 		const { trashIds, instanceId, serviceType } = bodyResult.data;
 
 		try {
-			// Get instance - verify ownership by including userId in where clause
-			const instance = await app.prisma.serviceInstance.findFirst({
-				where: {
-					id: instanceId,
-					userId: request.currentUser?.id,
-				},
-			});
-
-			if (!instance) {
-				return reply.status(404).send({
-					error: "NOT_FOUND",
-					message: "Instance not found",
-				});
-			}
+			const instance = await requireInstance(app, request.currentUser!.id, instanceId);
 
 			// Verify service type matches (case-insensitive)
 			if (instance.service.toUpperCase() !== serviceType) {
@@ -280,6 +259,7 @@ export async function registerCustomFormatRoutes(
 				failed: results.failed,
 			});
 		} catch (error) {
+			if (error instanceof InstanceNotFoundError) throw error;
 			app.log.error(
 				{ err: error, trashIds, instanceId, serviceType },
 				"Failed to deploy custom formats",

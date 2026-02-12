@@ -21,24 +21,7 @@ import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradient
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useQueueCleanerStatistics } from "../hooks/useQueueCleanerStatistics";
 import type { PeriodStats, InstanceBreakdown, RecentActivity } from "../lib/queue-cleaner-types";
-
-const RULE_LABELS: Record<string, string> = {
-	stalled: "Stalled",
-	failed: "Failed",
-	slow: "Slow",
-	error_pattern: "Error Pattern",
-	seeding_timeout: "Seeding Timeout",
-};
-
-const RULE_COLORS: Record<string, string> = {
-	stalled: "#f59e0b",
-	failed: "#ef4444",
-	slow: "#6366f1",
-	error_pattern: "#a855f7",
-	seeding_timeout: "#06b6d4",
-};
-
-const DEFAULT_RULE_COLOR = "#94a3b8";
+import { RULE_LABELS, RULE_COLORS, DEFAULT_RULE_COLOR } from "../lib/constants";
 
 export const QueueCleanerStatistics = () => {
 	const { statistics, isLoading, error } = useQueueCleanerStatistics();
@@ -94,7 +77,7 @@ export const QueueCleanerStatistics = () => {
 						borderColor: "rgba(245, 158, 11, 0.3)",
 					}}
 				>
-					<AlertTriangle className="h-4 w-4 flex-shrink-0" style={{ color: "#f59e0b" }} />
+					<AlertTriangle className="h-4 w-4 flex-shrink-0" style={{ color: SEMANTIC_COLORS.warning.from }} />
 					<p className="text-sm text-amber-200">
 						{statistics.dataQuality.warning}
 					</p>
@@ -238,7 +221,7 @@ const RuleBreakdownChart = ({
 								className="h-full rounded-full transition-all duration-500"
 								style={{
 									width: `${barWidth}%`,
-									backgroundColor: color,
+									backgroundColor: color.text,
 								}}
 							/>
 						</div>

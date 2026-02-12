@@ -9,7 +9,6 @@ import {
 	PremiumPageLoading,
 	type PremiumTab,
 } from "../../../components/layout";
-import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { HuntingOverview } from "./hunting-overview";
 import { HuntingActivity } from "./hunting-activity";
@@ -27,7 +26,7 @@ export type HuntingTab = "overview" | "activity" | "config";
  * - Staggered entrance animations
  */
 export const HuntingClient = () => {
-	const { gradient: themeGradient } = useThemeGradient();
+	const { gradient: _themeGradient } = useThemeGradient();
 
 	const [activeTab, setActiveTab] = useState<HuntingTab>("overview");
 	const { status, isLoading, error, refetch } = useHuntingStatus();

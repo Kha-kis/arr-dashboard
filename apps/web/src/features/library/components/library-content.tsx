@@ -18,6 +18,12 @@ interface LibraryCardProps {
 	movieSearchPending?: boolean;
 	onSearchSeries?: (item: LibraryItem) => void;
 	seriesSearchPending?: boolean;
+	onViewAlbums?: (item: LibraryItem) => void;
+	onSearchArtist?: (item: LibraryItem) => void;
+	artistSearchPending?: boolean;
+	onViewBooks?: (item: LibraryItem) => void;
+	onSearchAuthor?: (item: LibraryItem) => void;
+	authorSearchPending?: boolean;
 	onExpandDetails?: (item: LibraryItem) => void;
 }
 
@@ -35,6 +41,8 @@ interface LibraryContentProps {
 	grouped: {
 		movies: LibraryItem[];
 		series: LibraryItem[];
+		artists: LibraryItem[];
+		authors: LibraryItem[];
 	};
 	/** Total items count */
 	totalItems: number;
@@ -64,6 +72,18 @@ interface LibraryContentProps {
 	onSearchSeries: (item: LibraryItem) => void;
 	/** Pending series search key */
 	pendingSeriesSearch: string | null;
+	/** Handler for viewing albums */
+	onViewAlbums: (item: LibraryItem) => void;
+	/** Handler for searching an artist */
+	onSearchArtist: (item: LibraryItem) => void;
+	/** Pending artist search key */
+	pendingArtistSearch: string | null;
+	/** Handler for viewing books */
+	onViewBooks: (item: LibraryItem) => void;
+	/** Handler for searching an author */
+	onSearchAuthor: (item: LibraryItem) => void;
+	/** Pending author search key */
+	pendingAuthorSearch: string | null;
 	/** Handler for expanding details */
 	onExpandDetails: (item: LibraryItem) => void;
 	/** Function to build external link */
@@ -103,14 +123,21 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 	pendingMovieSearch,
 	onSearchSeries,
 	pendingSeriesSearch,
+	onViewAlbums,
+	onSearchArtist,
+	pendingArtistSearch,
+	onViewBooks,
+	onSearchAuthor,
+	pendingAuthorSearch,
 	onExpandDetails,
 	buildLibraryExternalLink,
 	LibraryCard,
 	isSyncing,
 }) => {
 
-	const allItems = [...grouped.movies, ...grouped.series];
-	const hasBothTypes = grouped.movies.length > 0 && grouped.series.length > 0;
+	const allItems = [...grouped.movies, ...grouped.series, ...grouped.artists, ...grouped.authors];
+	const typesPresent = [grouped.movies, grouped.series, grouped.artists, grouped.authors].filter(g => g.length > 0).length;
+	const hasMixedTypes = typesPresent > 1;
 
 	return (
 		<>
@@ -145,7 +172,7 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 				/>
 			)}
 
-			{hasBothTypes ? (
+			{hasMixedTypes ? (
 				<div className="grid gap-4 lg:grid-cols-2">
 					{allItems.map((item) => (
 						<LibraryCard
@@ -159,6 +186,12 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 							movieSearchPending={item.type === "movie" ? pendingMovieSearch === `${item.instanceId}:${item.id}` : undefined}
 							onSearchSeries={item.type === "series" ? onSearchSeries : undefined}
 							seriesSearchPending={item.type === "series" ? pendingSeriesSearch === `${item.instanceId}:${item.id}` : undefined}
+							onViewAlbums={item.type === "artist" ? onViewAlbums : undefined}
+							onSearchArtist={item.service === "lidarr" ? onSearchArtist : undefined}
+							artistSearchPending={item.service === "lidarr" ? pendingArtistSearch === `${item.instanceId}:${item.id}` : undefined}
+							onViewBooks={item.type === "author" ? onViewBooks : undefined}
+							onSearchAuthor={item.service === "readarr" ? onSearchAuthor : undefined}
+							authorSearchPending={item.service === "readarr" ? pendingAuthorSearch === `${item.instanceId}:${item.id}` : undefined}
 							onExpandDetails={onExpandDetails}
 						/>
 					))}
@@ -203,6 +236,52 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 										onViewSeasons={onViewSeasons}
 										onSearchSeries={onSearchSeries}
 										seriesSearchPending={pendingSeriesSearch === `${item.instanceId}:${item.id}`}
+										onExpandDetails={onExpandDetails}
+									/>
+								))}
+							</div>
+						</section>
+					) : null}
+
+					{grouped.artists.length > 0 ? (
+						<section className="space-y-4">
+							<div className="flex items-center justify-between">
+								<h2 className="text-xl font-semibold text-foreground">Artists</h2>
+							</div>
+							<div className="grid gap-4 lg:grid-cols-2">
+								{grouped.artists.map((item) => (
+									<LibraryCard
+										key={`${item.instanceId}:${item.id}`}
+										item={item}
+										onToggleMonitor={onToggleMonitor}
+										pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
+										externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
+										onViewAlbums={onViewAlbums}
+										onSearchArtist={onSearchArtist}
+										artistSearchPending={pendingArtistSearch === `${item.instanceId}:${item.id}`}
+										onExpandDetails={onExpandDetails}
+									/>
+								))}
+							</div>
+						</section>
+					) : null}
+
+					{grouped.authors.length > 0 ? (
+						<section className="space-y-4">
+							<div className="flex items-center justify-between">
+								<h2 className="text-xl font-semibold text-foreground">Authors</h2>
+							</div>
+							<div className="grid gap-4 lg:grid-cols-2">
+								{grouped.authors.map((item) => (
+									<LibraryCard
+										key={`${item.instanceId}:${item.id}`}
+										item={item}
+										onToggleMonitor={onToggleMonitor}
+										pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
+										externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
+										onViewBooks={onViewBooks}
+										onSearchAuthor={onSearchAuthor}
+										authorSearchPending={pendingAuthorSearch === `${item.instanceId}:${item.id}`}
 										onExpandDetails={onExpandDetails}
 									/>
 								))}

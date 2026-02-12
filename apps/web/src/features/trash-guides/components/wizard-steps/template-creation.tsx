@@ -380,7 +380,7 @@ export const TemplateCreation = ({
 					backgroundColor: themeGradient.fromLight,
 				}}
 			>
-				<h4 className="font-medium text-foregroundmb-2">✅ {isEditMode ? 'Ready to Save!' : 'Almost Done!'}</h4>
+				<h4 className="font-medium text-foreground mb-2">✅ {isEditMode ? 'Ready to Save!' : 'Almost Done!'}</h4>
 				<p className="text-sm text-foreground/70 mb-3">
 					{isEditMode
 						? `You've made changes to your template. Review and save to apply the updates.`
@@ -551,12 +551,12 @@ export const TemplateCreation = ({
 						<div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
 							<div className="rounded bg-amber-500/10 border border-amber-500/20 p-3">
 								<div className="text-xs font-medium text-amber-300">🔒 Mandatory</div>
-								<div className="text-2xl font-bold text-foregroundmt-1">{mandatoryCount}</div>
+								<div className="text-2xl font-bold text-foreground mt-1">{mandatoryCount}</div>
 								<div className="text-xs text-foreground/60 mt-1">From profile</div>
 							</div>
 							<div className="rounded bg-green-500/10 border border-green-500/20 p-3">
 								<div className="text-xs font-medium text-green-300">📦 From Groups</div>
-								<div className="text-2xl font-bold text-foregroundmt-1">{fromGroupsCount}</div>
+								<div className="text-2xl font-bold text-foreground mt-1">{fromGroupsCount}</div>
 								<div className="text-xs text-foreground/60 mt-1">Auto-selected</div>
 							</div>
 							<div
@@ -567,7 +567,7 @@ export const TemplateCreation = ({
 								}}
 							>
 								<div className="text-xs font-medium" style={{ color: themeGradient.from }}>✋ Manual</div>
-								<div className="text-2xl font-bold text-foregroundmt-1">{manuallySelectedCount}</div>
+								<div className="text-2xl font-bold text-foreground mt-1">{manuallySelectedCount}</div>
 								<div className="text-xs text-foreground/60 mt-1">User added</div>
 							</div>
 						</div>
@@ -616,7 +616,7 @@ export const TemplateCreation = ({
 						value={templateName}
 						onChange={(e) => setTemplateName(e.target.value)}
 						placeholder="Enter template name"
-						className="w-full rounded border border-border bg-card px-3 py-2 text-sm text-foregroundplaceholder:text-foreground/40 focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary"
+						className="w-full rounded border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-foreground/40 focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary"
 					/>
 				</div>
 
@@ -629,7 +629,7 @@ export const TemplateCreation = ({
 						onChange={(e) => setTemplateDescription(e.target.value)}
 						placeholder="Enter template description"
 						rows={4}
-						className="w-full rounded border border-border bg-card px-3 py-2 text-sm text-foregroundplaceholder:text-foreground/40 focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary"
+						className="w-full rounded border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-foreground/40 focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary"
 					/>
 				</div>
 			</div>
@@ -671,7 +671,7 @@ export const TemplateCreation = ({
 					type="button"
 					onClick={onBack}
 					disabled={importMutation.isPending || updateMutation.isPending || clonedMutation.isPending}
-					className="inline-flex items-center gap-2 rounded-lg bg-card px-4 py-2 text-sm font-medium text-foregroundtransition hover:bg-muted disabled:opacity-50"
+					className="inline-flex items-center gap-2 rounded-lg bg-card px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted disabled:opacity-50"
 				>
 					<ChevronLeft className="h-4 w-4" />
 					Back
@@ -681,7 +681,7 @@ export const TemplateCreation = ({
 					type="button"
 					onClick={handleSubmit}
 					disabled={!templateName.trim() || importMutation.isPending || updateMutation.isPending || clonedMutation.isPending}
-					className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-foregroundtransition hover:bg-primary/90 disabled:opacity-50"
+					className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-foreground transition hover:bg-primary/90 disabled:opacity-50"
 				>
 					{(importMutation.isPending || updateMutation.isPending || clonedMutation.isPending) ? (
 						<>

@@ -1,6 +1,6 @@
 import { z } from "zod";
 // Use strict schema for OIDC disable - security-critical operation
-import { passwordSchemaStrict } from "./password.js";
+import { passwordSchemaStrict } from "./password";
 
 /**
  * Public OIDC Provider shape (without client secret)

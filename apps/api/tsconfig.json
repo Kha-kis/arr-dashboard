@@ -3,10 +3,15 @@
 	"compilerOptions": {
 		"outDir": "./dist",
 		"rootDir": "../..",
-		"module": "NodeNext",
-		"moduleResolution": "NodeNext",
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
 		"noEmit": false
 	},
 	"include": ["src", "src/generated", "../../packages/shared/src"],
-	"exclude": ["dist", "node_modules"]
+	"exclude": [
+		"dist",
+		"node_modules",
+		"src/lib/queue-cleaner/test-*.ts",
+		"src/lib/queue-cleaner/analyze-*.ts"
+	]
 }

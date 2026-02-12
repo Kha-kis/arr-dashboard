@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, lazy, Suspense } from "react";
 import type { TrashTemplate } from "@arr/shared";
 import {
 	useTemplates,
@@ -17,7 +17,6 @@ import {
 	Trash2,
 	Edit,
 	FileText,
-	RefreshCw,
 	Star,
 	Rocket,
 	Layers,
@@ -30,18 +29,21 @@ import { SEMANTIC_COLORS, getServiceGradient } from "../../../lib/theme-gradient
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useUnlinkTemplateFromInstance } from "../../../hooks/api/useDeploymentPreview";
 import { TemplateStats } from "./template-stats";
-import { SyncValidationModal } from "./sync-validation-modal";
-import { SyncProgressModal } from "./sync-progress-modal";
 import { useExecuteSync } from "../../../hooks/api/useSync";
 import { useTemplateUpdates } from "../../../hooks/api/useTemplateUpdates";
 import { TemplateUpdateBanner } from "./template-update-banner";
-import { DeploymentPreviewModal } from "./deployment-preview-modal";
-import { BulkDeploymentModal } from "./bulk-deployment-modal";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { EnhancedTemplateExportModal } from "./enhanced-template-export-modal";
-import { EnhancedTemplateImportModal } from "./enhanced-template-import-modal";
+import { useTemplateListModals } from "../hooks/use-template-list-modals";
+
+// Lazy-loaded modals — only fetched when the user opens them
+const SyncValidationModal = lazy(() => import("./sync-validation-modal").then(m => ({ default: m.SyncValidationModal })));
+const SyncProgressModal = lazy(() => import("./sync-progress-modal").then(m => ({ default: m.SyncProgressModal })));
+const DeploymentPreviewModal = lazy(() => import("./deployment-preview-modal").then(m => ({ default: m.DeploymentPreviewModal })));
+const BulkDeploymentModal = lazy(() => import("./bulk-deployment-modal").then(m => ({ default: m.BulkDeploymentModal })));
+const EnhancedTemplateExportModal = lazy(() => import("./enhanced-template-export-modal").then(m => ({ default: m.EnhancedTemplateExportModal })));
+const EnhancedTemplateImportModal = lazy(() => import("./enhanced-template-import-modal").then(m => ({ default: m.EnhancedTemplateImportModal })));
 import { getEffectiveQualityConfig } from "../lib/quality-config-utils";
 
 interface TemplateListProps {
@@ -61,7 +63,7 @@ interface TemplateListProps {
  * - Staggered animations
  * - Premium action buttons
  */
-export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBrowseQualityProfiles }: TemplateListProps) => {
+export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onImport, onBrowseQualityProfiles }: TemplateListProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 
 	// Search, filter, and sort state
@@ -92,56 +94,13 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 	const unlinkMutation = useUnlinkTemplateFromInstance();
 	const queryClient = useQueryClient();
 
-	// Modal states
-	const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
-	const [duplicateName, setDuplicateName] = useState<string>("");
-	const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
-	const [instanceSelectorTemplate, setInstanceSelectorTemplate] = useState<{
-		templateId: string;
-		templateName: string;
-		serviceType: "RADARR" | "SONARR";
-	} | null>(null);
-	const [validationModal, setValidationModal] = useState<{
-		templateId: string;
-		templateName: string;
-		instanceId: string;
-		instanceName: string;
-	} | null>(null);
-	const [progressModal, setProgressModal] = useState<{
-		syncId: string;
-		templateName: string;
-		instanceName: string;
-	} | null>(null);
-	const [deploymentModal, setDeploymentModal] = useState<{
-		templateId: string;
-		templateName: string;
-		instanceId: string;
-		instanceLabel: string;
-	} | null>(null);
-	const [exportModal, setExportModal] = useState<{
-		templateId: string;
-		templateName: string;
-	} | null>(null);
-	const [importModal, setImportModal] = useState(false);
-	const [unlinkConfirm, setUnlinkConfirm] = useState<{
-		templateId: string;
-		templateName: string;
-		instanceId: string;
-		instanceName: string;
-	} | null>(null);
-	const [bulkDeployModal, setBulkDeployModal] = useState<{
-		templateId: string;
-		templateName: string;
-		serviceType: "RADARR" | "SONARR";
-		templateDefaultQualityConfig?: TrashTemplate["config"]["customQualityConfig"];
-		instanceOverrides?: TrashTemplate["instanceOverrides"];
-		instances: Array<{ instanceId: string; instanceLabel: string; instanceType: string }>;
-	} | null>(null);
+	// Modal states (consolidated via useReducer)
+	const [modals, dispatch] = useTemplateListModals();
 
 	const handleDelete = async (templateId: string) => {
 		try {
 			await deleteMutation.mutateAsync(templateId);
-			setDeleteConfirm(null);
+			dispatch({ type: "CLOSE_DELETE" });
 		} catch (error) {
 			console.error("Delete failed:", error);
 			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
@@ -150,7 +109,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 	};
 
 	const handleDuplicate = async (templateId: string) => {
-		if (!duplicateName.trim()) {
+		if (!modals.duplicateName.trim()) {
 			toast.error("Please enter a name for the duplicate");
 			return;
 		}
@@ -158,10 +117,9 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 		try {
 			await duplicateMutation.mutateAsync({
 				templateId,
-				newName: duplicateName,
+				newName: modals.duplicateName,
 			});
-			setDuplicatingId(null);
-			setDuplicateName("");
+			dispatch({ type: "CLOSE_DUPLICATE" });
 		} catch (error) {
 			console.error("Duplicate failed:", error);
 			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
@@ -170,21 +128,23 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 	};
 
 	const handleSyncValidationComplete = async (resolutions: Record<string, "REPLACE" | "SKIP">) => {
-		if (!validationModal) return;
+		if (!modals.validationModal) return;
 
 		try {
 			const result = await executeSync.mutateAsync({
-				templateId: validationModal.templateId,
-				instanceId: validationModal.instanceId,
+				templateId: modals.validationModal.templateId,
+				instanceId: modals.validationModal.instanceId,
 				syncType: "MANUAL",
 				conflictResolutions: resolutions,
 			});
 
-			setValidationModal(null);
-			setProgressModal({
-				syncId: result.syncId,
-				templateName: validationModal.templateName,
-				instanceName: validationModal.instanceName,
+			dispatch({
+				type: "VALIDATION_TO_PROGRESS",
+				data: {
+					syncId: result.syncId,
+					templateName: modals.validationModal.templateName,
+					instanceName: modals.validationModal.instanceName,
+				},
 			});
 		} catch (error) {
 			console.error("Sync execution failed:", error);
@@ -194,20 +154,20 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 	};
 
 	const handleSyncComplete = () => {
-		setProgressModal(null);
+		dispatch({ type: "CLOSE_PROGRESS" });
 	};
 
 	const handleUnlinkInstance = () => {
-		if (!unlinkConfirm) return;
+		if (!modals.unlinkConfirm) return;
 
 		unlinkMutation.mutate(
 			{
-				templateId: unlinkConfirm.templateId,
-				instanceId: unlinkConfirm.instanceId,
+				templateId: modals.unlinkConfirm.templateId,
+				instanceId: modals.unlinkConfirm.instanceId,
 			},
 			{
 				onSuccess: () => {
-					setUnlinkConfirm(null);
+					dispatch({ type: "CLOSE_UNLINK" });
 				},
 			}
 		);
@@ -306,7 +266,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 					{/* Secondary Actions */}
 					<button
 						type="button"
-						onClick={() => setImportModal(true)}
+						onClick={() => dispatch({ type: "OPEN_IMPORT" })}
 						title="Import an existing template from JSON"
 						className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium border border-border/50 bg-card/30 hover:bg-card/50 transition-all duration-200"
 					>
@@ -402,7 +362,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 								}}
 							>
 								{/* Delete Confirmation Overlay */}
-								{deleteConfirm === template.id && (
+								{modals.deleteConfirm === template.id && (
 									<div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 rounded-2xl bg-black/90 backdrop-blur-xs p-6">
 										<p className="text-center text-sm text-foreground">
 											Delete &quot;{template.name}&quot;?
@@ -423,7 +383,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 											</button>
 											<button
 												type="button"
-												onClick={() => setDeleteConfirm(null)}
+												onClick={() => dispatch({ type: "CLOSE_DELETE" })}
 												className="rounded-xl px-4 py-2 text-sm font-medium border border-border/50 bg-card/50 hover:bg-card/80 transition-all"
 											>
 												Cancel
@@ -433,13 +393,13 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 								)}
 
 								{/* Duplicate Dialog Overlay */}
-								{duplicatingId === template.id && (
+								{modals.duplicatingId === template.id && (
 									<div className="absolute inset-0 z-10 flex flex-col gap-4 rounded-2xl bg-black/90 backdrop-blur-xs p-6">
 										<p className="text-sm text-foreground">Duplicate as:</p>
 										<input
 											type="text"
-											value={duplicateName}
-											onChange={(e) => setDuplicateName(e.target.value)}
+											value={modals.duplicateName}
+											onChange={(e) => dispatch({ type: "SET_DUPLICATE_NAME", name: e.target.value })}
 											placeholder="New template name"
 											className="rounded-xl border border-border/50 bg-card/50 px-4 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-border focus:outline-hidden"
 											autoFocus
@@ -448,7 +408,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 											<button
 												type="button"
 												onClick={() => handleDuplicate(template.id)}
-												disabled={duplicateMutation.isPending || !duplicateName.trim()}
+												disabled={duplicateMutation.isPending || !modals.duplicateName.trim()}
 												className="rounded-xl px-4 py-2 text-sm font-medium transition-all disabled:opacity-50"
 												style={{
 													background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
@@ -458,10 +418,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 											</button>
 											<button
 												type="button"
-												onClick={() => {
-													setDuplicatingId(null);
-													setDuplicateName("");
-												}}
+												onClick={() => dispatch({ type: "CLOSE_DUPLICATE" })}
 												className="rounded-xl px-4 py-2 text-sm font-medium border border-border/50 bg-card/50 hover:bg-card/80 transition-all"
 											>
 												Cancel
@@ -549,19 +506,25 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 											templateId={template.id}
 											templateName={template.name}
 											onDeploy={(instanceId, instanceLabel) => {
-												setDeploymentModal({
-													templateId: template.id,
-													templateName: template.name,
-													instanceId,
-													instanceLabel,
+												dispatch({
+													type: "OPEN_DEPLOYMENT",
+													data: {
+														templateId: template.id,
+														templateName: template.name,
+														instanceId,
+														instanceLabel,
+													},
 												});
 											}}
 											onUnlinkInstance={(instanceId, instanceName) => {
-												setUnlinkConfirm({
-													templateId: template.id,
-													templateName: template.name,
-													instanceId,
-													instanceName,
+												dispatch({
+													type: "OPEN_UNLINK",
+													data: {
+														templateId: template.id,
+														templateName: template.name,
+														instanceId,
+														instanceName,
+													},
 												});
 											}}
 										/>
@@ -569,10 +532,13 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 										{/* Deploy Button */}
 										<button
 											type="button"
-											onClick={() => setInstanceSelectorTemplate({
-												templateId: template.id,
-												templateName: template.name,
-												serviceType: template.serviceType
+											onClick={() => dispatch({
+												type: "OPEN_INSTANCE_SELECTOR",
+												data: {
+													templateId: template.id,
+													templateName: template.name,
+													serviceType: template.serviceType,
+												},
 											})}
 											className="w-full inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200"
 											style={{
@@ -597,10 +563,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 											</button>
 											<button
 												type="button"
-												onClick={() => {
-													setDuplicatingId(template.id);
-													setDuplicateName(`${template.name} Copy`);
-												}}
+												onClick={() => dispatch({ type: "OPEN_DUPLICATE", templateId: template.id, defaultName: `${template.name} Copy` })}
 												className="flex-1 rounded-xl p-2.5 border border-border/50 bg-card/30 hover:bg-card/50 transition-all"
 												aria-label={`Duplicate template ${template.name}`}
 												title="Duplicate template"
@@ -609,7 +572,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 											</button>
 											<button
 												type="button"
-												onClick={() => setExportModal({ templateId: template.id, templateName: template.name })}
+												onClick={() => dispatch({ type: "OPEN_EXPORT", data: { templateId: template.id, templateName: template.name } })}
 												className="flex-1 rounded-xl p-2.5 border border-border/50 bg-card/30 hover:bg-card/50 transition-all"
 												aria-label={`Export template ${template.name}`}
 												title="Export template"
@@ -618,7 +581,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 											</button>
 											<button
 												type="button"
-												onClick={() => setDeleteConfirm(template.id)}
+												onClick={() => dispatch({ type: "OPEN_DELETE", templateId: template.id })}
 												className="flex-1 rounded-xl p-2.5 transition-all"
 												style={{
 													backgroundColor: SEMANTIC_COLORS.error.bg,
@@ -639,41 +602,47 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 				</>
 			)}
 
-			{/* Sync Modals */}
-			{validationModal && (
-				<SyncValidationModal
-					templateId={validationModal.templateId}
-					templateName={validationModal.templateName}
-					instanceId={validationModal.instanceId}
-					instanceName={validationModal.instanceName}
-					onConfirm={handleSyncValidationComplete}
-					onCancel={() => setValidationModal(null)}
-				/>
+			{/* Sync Modals (lazy-loaded) */}
+			{modals.validationModal && (
+				<Suspense>
+					<SyncValidationModal
+						templateId={modals.validationModal.templateId}
+						templateName={modals.validationModal.templateName}
+						instanceId={modals.validationModal.instanceId}
+						instanceName={modals.validationModal.instanceName}
+						onConfirm={handleSyncValidationComplete}
+						onCancel={() => dispatch({ type: "CLOSE_VALIDATION" })}
+					/>
+				</Suspense>
 			)}
 
-			{progressModal && (
-				<SyncProgressModal
-					syncId={progressModal.syncId}
-					templateName={progressModal.templateName}
-					instanceName={progressModal.instanceName}
-					onComplete={handleSyncComplete}
-					onClose={() => setProgressModal(null)}
-				/>
+			{modals.progressModal && (
+				<Suspense>
+					<SyncProgressModal
+						syncId={modals.progressModal.syncId}
+						templateName={modals.progressModal.templateName}
+						instanceName={modals.progressModal.instanceName}
+						onComplete={handleSyncComplete}
+						onClose={() => dispatch({ type: "CLOSE_PROGRESS" })}
+					/>
+				</Suspense>
 			)}
 
-			{deploymentModal && (
-				<DeploymentPreviewModal
-					open={true}
-					onClose={() => setDeploymentModal(null)}
-					templateId={deploymentModal.templateId}
-					templateName={deploymentModal.templateName}
-					instanceId={deploymentModal.instanceId}
-					instanceLabel={deploymentModal.instanceLabel}
-				/>
+			{modals.deploymentModal && (
+				<Suspense>
+					<DeploymentPreviewModal
+						open={true}
+						onClose={() => dispatch({ type: "CLOSE_DEPLOYMENT" })}
+						templateId={modals.deploymentModal.templateId}
+						templateName={modals.deploymentModal.templateName}
+						instanceId={modals.deploymentModal.instanceId}
+						instanceLabel={modals.deploymentModal.instanceLabel}
+					/>
+				</Suspense>
 			)}
 
 			{/* Instance Selector Modal */}
-			{instanceSelectorTemplate && (
+			{modals.instanceSelectorTemplate && (
 				<div
 					className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center z-modal p-4 animate-in fade-in duration-200"
 					role="dialog"
@@ -701,12 +670,12 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 								</div>
 								<div>
 									<h2 id="deploy-template-title" className="text-lg font-semibold text-foreground">Deploy Template</h2>
-									<p className="text-sm text-muted-foreground">{instanceSelectorTemplate.templateName}</p>
+									<p className="text-sm text-muted-foreground">{modals.instanceSelectorTemplate.templateName}</p>
 								</div>
 							</div>
 							<button
 								type="button"
-								onClick={() => setInstanceSelectorTemplate(null)}
+								onClick={() => dispatch({ type: "CLOSE_INSTANCE_SELECTOR" })}
 								aria-label="Close modal"
 								className="rounded-lg p-2 hover:bg-card/80 transition-colors"
 							>
@@ -719,30 +688,32 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 							{/* Bulk Deploy Button */}
 							{(() => {
 								const matchingInstances = servicesData?.filter(instance =>
-									instance.service.toUpperCase() === instanceSelectorTemplate.serviceType
+									instance.service.toUpperCase() === modals.instanceSelectorTemplate!.serviceType
 								) || [];
 
 								if (matchingInstances.length > 1) {
 									// Find the full template to get quality config and instance overrides
-									const fullTemplate = templates.find(t => t.id === instanceSelectorTemplate.templateId);
+									const fullTemplate = templates.find(t => t.id === modals.instanceSelectorTemplate!.templateId);
 
 									return (
 										<button
 											type="button"
 											onClick={() => {
-												setBulkDeployModal({
-													templateId: instanceSelectorTemplate.templateId,
-													templateName: instanceSelectorTemplate.templateName,
-													serviceType: instanceSelectorTemplate.serviceType,
-													templateDefaultQualityConfig: getEffectiveQualityConfig(fullTemplate?.config),
-													instanceOverrides: fullTemplate?.instanceOverrides,
-													instances: matchingInstances.map(inst => ({
-														instanceId: inst.id,
-														instanceLabel: inst.label,
-														instanceType: inst.service.toUpperCase(),
-													})),
+												dispatch({
+													type: "INSTANCE_TO_BULK",
+													data: {
+														templateId: modals.instanceSelectorTemplate!.templateId,
+														templateName: modals.instanceSelectorTemplate!.templateName,
+														serviceType: modals.instanceSelectorTemplate!.serviceType,
+														templateDefaultQualityConfig: getEffectiveQualityConfig(fullTemplate?.config),
+														instanceOverrides: fullTemplate?.instanceOverrides,
+														instances: matchingInstances.map(inst => ({
+															instanceId: inst.id,
+															instanceLabel: inst.label,
+															instanceType: inst.service.toUpperCase(),
+														})),
+													},
 												});
-												setInstanceSelectorTemplate(null);
 											}}
 											className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-3 mb-4 text-sm font-medium transition-all duration-200"
 											style={{
@@ -764,20 +735,22 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 								{servicesData && servicesData.length > 0 ? (
 									servicesData
 										.filter(instance =>
-											instance.service.toUpperCase() === instanceSelectorTemplate.serviceType
+											instance.service.toUpperCase() === modals.instanceSelectorTemplate!.serviceType
 										)
 										.map((instance) => (
 											<button
 												key={instance.id}
 												type="button"
 												onClick={() => {
-													setDeploymentModal({
-														templateId: instanceSelectorTemplate.templateId,
-														templateName: instanceSelectorTemplate.templateName,
-														instanceId: instance.id,
-														instanceLabel: instance.label,
+													dispatch({
+														type: "INSTANCE_TO_DEPLOY",
+														data: {
+															templateId: modals.instanceSelectorTemplate!.templateId,
+															templateName: modals.instanceSelectorTemplate!.templateName,
+															instanceId: instance.id,
+															instanceLabel: instance.label,
+														},
 													});
-													setInstanceSelectorTemplate(null);
 												}}
 												className="w-full flex items-center justify-between p-4 rounded-xl border border-border/50 bg-card/30 hover:bg-card/50 hover:border-border transition-all text-left group"
 											>
@@ -811,7 +784,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 						<div className="flex items-center justify-end p-6 border-t border-border/50">
 							<button
 								type="button"
-								onClick={() => setInstanceSelectorTemplate(null)}
+								onClick={() => dispatch({ type: "CLOSE_INSTANCE_SELECTOR" })}
 								className="rounded-xl px-4 py-2.5 text-sm font-medium border border-border/50 bg-card/30 hover:bg-card/50 transition-all"
 							>
 								Cancel
@@ -821,8 +794,8 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 				</div>
 			)}
 
-			{/* Export Modal */}
-			{exportModal && (
+			{/* Export Modal (lazy-loaded) */}
+			{modals.exportModal && (
 				<div
 					className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center z-modal p-4 animate-in fade-in duration-200"
 					role="dialog"
@@ -830,17 +803,19 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 					aria-label="Export Template"
 				>
 					<div className="rounded-2xl shadow-2xl border border-border/50 bg-card/95 backdrop-blur-xl max-w-2xl w-full max-h-[90vh] overflow-auto animate-in zoom-in-95 duration-300">
-						<EnhancedTemplateExportModal
-							templateId={exportModal.templateId}
-							templateName={exportModal.templateName}
-							onClose={() => setExportModal(null)}
-						/>
+						<Suspense>
+							<EnhancedTemplateExportModal
+								templateId={modals.exportModal.templateId}
+								templateName={modals.exportModal.templateName}
+								onClose={() => dispatch({ type: "CLOSE_EXPORT" })}
+							/>
+						</Suspense>
 					</div>
 				</div>
 			)}
 
-			{/* Import Modal */}
-			{importModal && (
+			{/* Import Modal (lazy-loaded) */}
+			{modals.importModal && (
 				<div
 					className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center z-modal p-4 animate-in fade-in duration-200"
 					role="dialog"
@@ -848,19 +823,21 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 					aria-label="Import Template"
 				>
 					<div className="rounded-2xl shadow-2xl border border-border/50 bg-card/95 backdrop-blur-xl max-w-2xl w-full max-h-[90vh] overflow-auto animate-in zoom-in-95 duration-300">
-						<EnhancedTemplateImportModal
-							onImportComplete={() => {
-								queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
-								setImportModal(false);
-							}}
-							onClose={() => setImportModal(false)}
-						/>
+						<Suspense>
+							<EnhancedTemplateImportModal
+								onImportComplete={() => {
+									queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
+									dispatch({ type: "CLOSE_IMPORT" });
+								}}
+								onClose={() => dispatch({ type: "CLOSE_IMPORT" })}
+							/>
+						</Suspense>
 					</div>
 				</div>
 			)}
 
 			{/* Unlink Confirmation Modal */}
-			{unlinkConfirm && (
+			{modals.unlinkConfirm && (
 				<div
 					className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center z-modal p-4 animate-in fade-in duration-200"
 					role="dialog"
@@ -882,7 +859,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 								Remove from Instance?
 							</h3>
 							<p className="text-sm text-muted-foreground">
-								Are you sure you want to unlink template &quot;{unlinkConfirm.templateName}&quot; from instance &quot;{unlinkConfirm.instanceName}&quot;?
+								Are you sure you want to unlink template &quot;{modals.unlinkConfirm.templateName}&quot; from instance &quot;{modals.unlinkConfirm.instanceName}&quot;?
 							</p>
 							<p className="text-xs text-muted-foreground">
 								This will remove the deployment mapping. Custom Formats already on the instance will not be deleted.
@@ -890,7 +867,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 							<div className="flex gap-3 justify-center pt-2">
 								<button
 									type="button"
-									onClick={() => setUnlinkConfirm(null)}
+									onClick={() => dispatch({ type: "CLOSE_UNLINK" })}
 									disabled={unlinkMutation.isPending}
 									className="rounded-xl px-4 py-2.5 text-sm font-medium border border-border/50 bg-card/30 hover:bg-card/50 transition-all disabled:opacity-50"
 								>
@@ -922,22 +899,24 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport, onBro
 				</div>
 			)}
 
-			{/* Bulk Deployment Modal */}
-			{bulkDeployModal && (
-				<BulkDeploymentModal
-					open={!!bulkDeployModal}
-					onClose={() => setBulkDeployModal(null)}
-					templateId={bulkDeployModal.templateId}
-					templateName={bulkDeployModal.templateName}
-					serviceType={bulkDeployModal.serviceType}
-					templateDefaultQualityConfig={bulkDeployModal.templateDefaultQualityConfig}
-					instanceOverrides={bulkDeployModal.instanceOverrides}
-					instances={bulkDeployModal.instances}
-					onDeploySuccess={() => {
-						setBulkDeployModal(null);
-						queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
-					}}
-				/>
+			{/* Bulk Deployment Modal (lazy-loaded) */}
+			{modals.bulkDeployModal && (
+				<Suspense>
+					<BulkDeploymentModal
+						open={!!modals.bulkDeployModal}
+						onClose={() => dispatch({ type: "CLOSE_BULK_DEPLOY" })}
+						templateId={modals.bulkDeployModal.templateId}
+						templateName={modals.bulkDeployModal.templateName}
+						serviceType={modals.bulkDeployModal.serviceType}
+						templateDefaultQualityConfig={modals.bulkDeployModal.templateDefaultQualityConfig}
+						instanceOverrides={modals.bulkDeployModal.instanceOverrides}
+						instances={modals.bulkDeployModal.instances}
+						onDeploySuccess={() => {
+							dispatch({ type: "CLOSE_BULK_DEPLOY" });
+							queryClient.invalidateQueries({ queryKey: TEMPLATES_QUERY_KEY });
+						}}
+					/>
+				</Suspense>
 			)}
 		</div>
 	);

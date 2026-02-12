@@ -6,7 +6,7 @@
  */
 
 import { useState, useMemo } from "react";
-import { ChevronDown, ChevronRight, AlertCircle, AlertTriangle, Info } from "lucide-react";
+import { ChevronDown, AlertCircle, AlertTriangle, Info } from "lucide-react";
 import { cn } from "../../../lib/utils";
 import { useIncognitoMode, anonymizeStatusMessage } from "../../../lib/incognito";
 import type { StatusLine } from "../lib/queue-utils";

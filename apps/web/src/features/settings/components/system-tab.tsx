@@ -702,7 +702,7 @@ ports:
 							className="bg-card/30 border-border/50"
 						/>
 						<p className="text-xs text-muted-foreground">
-							Leave empty to auto-detect from browser. Set this if you're behind a reverse proxy.
+							Leave empty to auto-detect from browser. Set this if you&apos;re behind a reverse proxy.
 						</p>
 					</div>
 

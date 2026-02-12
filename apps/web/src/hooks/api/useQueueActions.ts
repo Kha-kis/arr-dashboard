@@ -1,8 +1,10 @@
 "use client";
 
+import { useCallback } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { MultiInstanceQueueResponse, QueueItem } from "@arr/shared";
 import { performQueueAction, performQueueBulkAction } from "../../lib/api-client/dashboard";
+import { QUEUE_QUERY_KEY } from "../../lib/query-keys";
 
 type QueueActionType = "retry" | "delete" | "manualImport";
 
@@ -22,8 +24,6 @@ type QueueActionVariables = {
 type QueueActionContext = {
 	previous?: MultiInstanceQueueResponse;
 };
-
-const QUEUE_QUERY_KEY = ["dashboard", "queue"] as const;
 
 const getItemKey = (item: QueueItem): string | null => {
 	if (item.id === undefined || item.id === null) {
@@ -319,24 +319,25 @@ export const useQueueActions = () => {
 		},
 	});
 
-	const executeAsync = (
-		action: QueueActionType,
-		items: QueueItem[],
-		options?: QueueActionOptions,
-	) => {
-		if (items.length === 0) {
-			return Promise.resolve();
-		}
+	const executeAsync = useCallback(
+		(action: QueueActionType, items: QueueItem[], options?: QueueActionOptions) => {
+			if (items.length === 0) {
+				return Promise.resolve();
+			}
+			return mutation.mutateAsync({ action, items, options });
+		},
+		[mutation],
+	);
 
-		return mutation.mutateAsync({ action, items, options });
-	};
-
-	const execute = (action: QueueActionType, items: QueueItem[], options?: QueueActionOptions) => {
-		if (items.length === 0) {
-			return;
-		}
-		mutation.mutate({ action, items, options });
-	};
+	const execute = useCallback(
+		(action: QueueActionType, items: QueueItem[], options?: QueueActionOptions) => {
+			if (items.length === 0) {
+				return;
+			}
+			mutation.mutate({ action, items, options });
+		},
+		[mutation],
+	);
 
 	return {
 		execute,

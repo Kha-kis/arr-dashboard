@@ -4,11 +4,6 @@ import Link from "next/link";
 import { useSearchIndexersQuery } from "../../../hooks/api/useSearch";
 import {
 	Button,
-	Card,
-	CardContent,
-	CardDescription,
-	CardHeader,
-	CardTitle,
 	Alert,
 	AlertTitle,
 	AlertDescription,
@@ -59,7 +54,7 @@ export const SearchClient = () => {
 	// Search and action handlers
 	const {
 		results,
-		handleSearch,
+		handleSearch: _handleSearch,
 		handleSubmit,
 		handleGrab,
 		handleCopyMagnet,

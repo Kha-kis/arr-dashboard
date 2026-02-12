@@ -1,4 +1,5 @@
 import type { LibraryAlbum } from "@arr/shared";
+import { resolveImageUrl } from "./image-normalizer.js";
 import { toBoolean, toNumber, toStringValue } from "./type-converters.js";
 
 /**
@@ -23,11 +24,8 @@ export const normalizeAlbum = (
 		(img) => img?.coverType === "cover" || img?.coverType === "disc",
 	);
 
-	// Construct full image URL if relative
-	let coverUrl = toStringValue(coverImage?.url ?? coverImage?.remoteUrl);
-	if (coverUrl && baseUrl && !coverUrl.startsWith("http")) {
-		coverUrl = `${baseUrl.replace(/\/$/, "")}${coverUrl}`;
-	}
+	// Construct full image URL - prefer remoteUrl (publicly accessible) over local url
+	const coverUrl = resolveImageUrl(coverImage?.remoteUrl ?? coverImage?.url, baseUrl);
 
 	return {
 		id: toNumber(raw?.id) ?? 0,
@@ -48,7 +46,7 @@ export const normalizeAlbum = (
 		overview: toStringValue(raw?.overview),
 		images: images.map((img) => ({
 			coverType: toStringValue(img?.coverType),
-			url: constructImageUrl(toStringValue(img?.url ?? img?.remoteUrl), baseUrl),
+			url: resolveImageUrl(img?.remoteUrl ?? img?.url, baseUrl),
 		})),
 		foreignAlbumId: toStringValue(raw?.foreignAlbumId),
 	};
@@ -62,15 +60,3 @@ const normalizeGenresArray = (genres: unknown): string[] | undefined => {
 	return genres.filter((g): g is string => typeof g === "string");
 };
 
-/**
- * Constructs full image URL from relative path
- */
-const constructImageUrl = (
-	url: string | undefined,
-	baseUrl?: string,
-): string | undefined => {
-	if (!url) return undefined;
-	if (url.startsWith("http")) return url;
-	if (!baseUrl) return url;
-	return `${baseUrl.replace(/\/$/, "")}${url}`;
-};

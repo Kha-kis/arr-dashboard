@@ -91,7 +91,7 @@ export function QualityProfileImporter({
 
 	// Get selected instance name
 	const selectedInstance = instances?.find((i) => i.id === selectedInstanceId);
-	const selectedProfile = profiles?.find((p) => p.id === selectedProfileId);
+	const _selectedProfile = profiles?.find((p) => p.id === selectedProfileId);
 
 	return (
 		<div className="space-y-4">

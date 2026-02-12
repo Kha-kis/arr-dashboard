@@ -7,7 +7,6 @@ import type {
 } from "@arr/shared";
 import {
 	prowlarrIndexerDetailsSchema,
-	prowlarrIndexerFieldSchema,
 	prowlarrIndexerSchema,
 	prowlarrIndexerStatsSchema,
 	searchResultSchema,

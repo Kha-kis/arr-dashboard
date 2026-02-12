@@ -7,7 +7,6 @@ import {
 	LegacyDropdownMenu,
 	LegacyDropdownMenuItem,
 	LegacyDropdownMenuDivider,
-	toast,
 } from "../../../components/ui";
 import {
 	MoreVertical,
@@ -33,7 +32,6 @@ import {
 import { cn } from "../../../lib/utils";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useTemplateStats } from "../../../hooks/api/useTemplates";
-import type { TemplateStatsResponse, TemplateInstanceInfo } from "../../../lib/api-client/templates";
 import { useUpdateSyncStrategy } from "../../../hooks/api/useDeploymentPreview";
 
 interface TemplateCardProps {

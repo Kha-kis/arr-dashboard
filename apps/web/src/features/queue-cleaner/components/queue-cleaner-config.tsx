@@ -17,16 +17,9 @@ import {
 	Target,
 	Timer,
 	ShieldCheck,
-	X,
 	Clock,
 	TrendingUp,
-	Sparkles,
-	ChevronDown,
-	ChevronUp,
-	CheckCircle2,
-	Ban,
 	FileText,
-	HelpCircle,
 	ArrowRight,
 } from "lucide-react";
 import { Button, toast } from "../../../components/ui";
@@ -47,7 +40,6 @@ import type {
 	QueueCleanerConfigWithInstance,
 	QueueCleanerConfigUpdate,
 	InstanceSummary,
-	WhitelistPattern,
 } from "../lib/queue-cleaner-types";
 import {
 	MIN_INTERVAL_MINS,
@@ -72,14 +64,9 @@ import {
 	MAX_ESTIMATED_MULTIPLIER,
 	MIN_IMPORT_PENDING_MINS,
 	MAX_IMPORT_PENDING_MINS,
-	MIN_AUTO_IMPORT_ATTEMPTS,
-	MAX_AUTO_IMPORT_ATTEMPTS,
-	MIN_AUTO_IMPORT_COOLDOWN_MINS,
-	MAX_AUTO_IMPORT_COOLDOWN_MINS,
-	WHITELIST_TYPES,
-	AUTO_IMPORT_SAFE_PATTERNS,
-	AUTO_IMPORT_NEVER_PATTERNS,
 } from "../lib/constants";
+import { ToggleSwitch, ToggleRow, RuleSection, ConfigInput, WhitelistEditor, Tooltip } from "./queue-cleaner-config-ui";
+import { AutoImportSection } from "./auto-import-section";
 
 export const QueueCleanerConfig = () => {
 	const { gradient: themeGradient } = useThemeGradient();
@@ -259,6 +246,49 @@ const UnconfiguredInstanceCard = ({
 	);
 };
 
+// === Helpers ===
+
+/** Derives form state from a server config object. Used for both initialization and reset. */
+function configToFormData(config: QueueCleanerConfigWithInstance): QueueCleanerConfigUpdate {
+	return {
+		enabled: config.enabled,
+		intervalMins: config.intervalMins,
+		stalledEnabled: config.stalledEnabled,
+		stalledThresholdMins: config.stalledThresholdMins,
+		failedEnabled: config.failedEnabled,
+		slowEnabled: config.slowEnabled,
+		slowSpeedThreshold: config.slowSpeedThreshold,
+		slowGracePeriodMins: config.slowGracePeriodMins,
+		errorPatternsEnabled: config.errorPatternsEnabled,
+		errorPatterns: config.errorPatterns,
+		strikeSystemEnabled: config.strikeSystemEnabled,
+		maxStrikes: config.maxStrikes,
+		strikeDecayHours: config.strikeDecayHours,
+		seedingTimeoutEnabled: config.seedingTimeoutEnabled,
+		seedingTimeoutHours: config.seedingTimeoutHours,
+		estimatedCompletionEnabled: config.estimatedCompletionEnabled,
+		estimatedCompletionMultiplier: config.estimatedCompletionMultiplier,
+		importPendingEnabled: config.importPendingEnabled,
+		importPendingThresholdMins: config.importPendingThresholdMins,
+		importBlockCleanupLevel: config.importBlockCleanupLevel ?? "safe",
+		importBlockPatternMode: config.importBlockPatternMode ?? "defaults",
+		importBlockPatterns: config.importBlockPatterns,
+		autoImportEnabled: config.autoImportEnabled,
+		autoImportMaxAttempts: config.autoImportMaxAttempts,
+		autoImportCooldownMins: config.autoImportCooldownMins,
+		autoImportSafeOnly: config.autoImportSafeOnly,
+		whitelistEnabled: config.whitelistEnabled,
+		whitelistPatterns: config.whitelistPatterns,
+		removeFromClient: config.removeFromClient,
+		addToBlocklist: config.addToBlocklist,
+		searchAfterRemoval: config.searchAfterRemoval,
+		changeCategoryEnabled: config.changeCategoryEnabled,
+		dryRunMode: config.dryRunMode,
+		maxRemovalsPerRun: config.maxRemovalsPerRun,
+		minQueueAgeMins: config.minQueueAgeMins,
+	};
+}
+
 // === Instance Config Card ===
 
 const InstanceConfigCard = ({
@@ -272,56 +302,7 @@ const InstanceConfigCard = ({
 	const serviceGradient = getServiceGradient(config.service);
 	const { updateConfig, isUpdating } = useUpdateQueueCleanerConfig();
 
-	// Local form state
-	const [formData, setFormData] = useState<QueueCleanerConfigUpdate>({
-		enabled: config.enabled,
-		intervalMins: config.intervalMins,
-		stalledEnabled: config.stalledEnabled,
-		stalledThresholdMins: config.stalledThresholdMins,
-		failedEnabled: config.failedEnabled,
-		slowEnabled: config.slowEnabled,
-		slowSpeedThreshold: config.slowSpeedThreshold,
-		slowGracePeriodMins: config.slowGracePeriodMins,
-		errorPatternsEnabled: config.errorPatternsEnabled,
-		errorPatterns: config.errorPatterns,
-		// Strike system
-		strikeSystemEnabled: config.strikeSystemEnabled,
-		maxStrikes: config.maxStrikes,
-		strikeDecayHours: config.strikeDecayHours,
-		// Seeding timeout
-		seedingTimeoutEnabled: config.seedingTimeoutEnabled,
-		seedingTimeoutHours: config.seedingTimeoutHours,
-		// Estimated completion
-		estimatedCompletionEnabled: config.estimatedCompletionEnabled,
-		estimatedCompletionMultiplier: config.estimatedCompletionMultiplier,
-		// Import pending/blocked cleanup
-		importPendingEnabled: config.importPendingEnabled,
-		importPendingThresholdMins: config.importPendingThresholdMins,
-		// Import block cleanup level
-		importBlockCleanupLevel: config.importBlockCleanupLevel ?? "safe",
-		// Import block pattern mode and custom patterns
-		importBlockPatternMode: config.importBlockPatternMode ?? "defaults",
-		importBlockPatterns: config.importBlockPatterns,
-		// Auto-import settings
-		autoImportEnabled: config.autoImportEnabled,
-		autoImportMaxAttempts: config.autoImportMaxAttempts,
-		autoImportCooldownMins: config.autoImportCooldownMins,
-		autoImportSafeOnly: config.autoImportSafeOnly,
-		// Whitelist
-		whitelistEnabled: config.whitelistEnabled,
-		whitelistPatterns: config.whitelistPatterns,
-		// Removal options
-		removeFromClient: config.removeFromClient,
-		addToBlocklist: config.addToBlocklist,
-		searchAfterRemoval: config.searchAfterRemoval,
-		// Change category (torrent-only)
-		changeCategoryEnabled: config.changeCategoryEnabled,
-		// Safety settings
-		dryRunMode: config.dryRunMode,
-		maxRemovalsPerRun: config.maxRemovalsPerRun,
-		minQueueAgeMins: config.minQueueAgeMins,
-	});
-
+	const [formData, setFormData] = useState<QueueCleanerConfigUpdate>(() => configToFormData(config));
 	const [isDirty, setIsDirty] = useState(false);
 
 	const updateField = useCallback(
@@ -348,54 +329,7 @@ const InstanceConfigCard = ({
 	};
 
 	const handleReset = () => {
-		setFormData({
-			enabled: config.enabled,
-			intervalMins: config.intervalMins,
-			stalledEnabled: config.stalledEnabled,
-			stalledThresholdMins: config.stalledThresholdMins,
-			failedEnabled: config.failedEnabled,
-			slowEnabled: config.slowEnabled,
-			slowSpeedThreshold: config.slowSpeedThreshold,
-			slowGracePeriodMins: config.slowGracePeriodMins,
-			errorPatternsEnabled: config.errorPatternsEnabled,
-			errorPatterns: config.errorPatterns,
-			// Strike system
-			strikeSystemEnabled: config.strikeSystemEnabled,
-			maxStrikes: config.maxStrikes,
-			strikeDecayHours: config.strikeDecayHours,
-			// Seeding timeout
-			seedingTimeoutEnabled: config.seedingTimeoutEnabled,
-			seedingTimeoutHours: config.seedingTimeoutHours,
-			// Estimated completion
-			estimatedCompletionEnabled: config.estimatedCompletionEnabled,
-			estimatedCompletionMultiplier: config.estimatedCompletionMultiplier,
-			// Import pending/blocked cleanup
-			importPendingEnabled: config.importPendingEnabled,
-			importPendingThresholdMins: config.importPendingThresholdMins,
-			// Import block cleanup level
-			importBlockCleanupLevel: config.importBlockCleanupLevel ?? "safe",
-			// Import block pattern mode and custom patterns
-			importBlockPatternMode: config.importBlockPatternMode ?? "defaults",
-			importBlockPatterns: config.importBlockPatterns,
-			// Auto-import settings
-			autoImportEnabled: config.autoImportEnabled,
-			autoImportMaxAttempts: config.autoImportMaxAttempts,
-			autoImportCooldownMins: config.autoImportCooldownMins,
-			autoImportSafeOnly: config.autoImportSafeOnly,
-			// Whitelist
-			whitelistEnabled: config.whitelistEnabled,
-			whitelistPatterns: config.whitelistPatterns,
-			// Removal options
-			removeFromClient: config.removeFromClient,
-			addToBlocklist: config.addToBlocklist,
-			searchAfterRemoval: config.searchAfterRemoval,
-			// Change category (torrent-only)
-			changeCategoryEnabled: config.changeCategoryEnabled,
-			// Safety settings
-			dryRunMode: config.dryRunMode,
-			maxRemovalsPerRun: config.maxRemovalsPerRun,
-			minQueueAgeMins: config.minQueueAgeMins,
-		});
+		setFormData(configToFormData(config));
 		setIsDirty(false);
 	};
 
@@ -590,8 +524,8 @@ const InstanceConfigCard = ({
 					>
 						<div className="text-xs p-2.5 rounded-lg bg-red-500/10 border border-red-500/20 mb-3">
 							<p className="text-muted-foreground">
-								<span className="font-medium text-red-400">For broken downloads</span> — matches error messages like "disk space", "permission denied", "connection failed".
-								<span className="text-muted-foreground/70"> (Different from Import Blocked which handles completed downloads that ARR won't import)</span>
+								<span className="font-medium text-red-400">For broken downloads</span> — matches error messages like &quot;disk space&quot;, &quot;permission denied&quot;, &quot;connection failed&quot;.
+								<span className="text-muted-foreground/70"> (Different from Import Blocked which handles completed downloads that ARR won&apos;t import)</span>
 							</p>
 						</div>
 						<div>
@@ -688,7 +622,7 @@ const InstanceConfigCard = ({
 								What this handles:
 							</div>
 							<p className="text-muted-foreground">
-								Downloads that <span className="text-emerald-400 font-medium">finished successfully</span> but are stuck because ARR won't import them — duplicates, wrong quality, sample files, etc.
+								Downloads that <span className="text-emerald-400 font-medium">finished successfully</span> but are stuck because ARR won&apos;t import them — duplicates, wrong quality, sample files, etc.
 								<span className="text-muted-foreground/70"> (Different from Download Errors which handles broken/failed transfers)</span>
 							</p>
 							<div className="flex items-center gap-1.5 text-muted-foreground flex-wrap pt-1">
@@ -843,7 +777,7 @@ const InstanceConfigCard = ({
 								<span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">Optional</span>
 							</div>
 							<p className="text-[11px] text-muted-foreground pl-7">
-								When enabled, attempts to import stuck downloads via ARR's API before removing them.
+								When enabled, attempts to import stuck downloads via ARR&apos;s API before removing them.
 								If import succeeds, the item is saved. If it fails, removal continues as normal.
 							</p>
 						</div>
@@ -948,589 +882,6 @@ const InstanceConfigCard = ({
 					</div>
 				</div>
 			</GlassmorphicCard>
-		</div>
-	);
-};
-
-// === Auto-Import Section Component ===
-
-/**
- * Enhanced auto-import configuration section with pattern visibility.
- * Shows safe patterns (built-in + custom) and never-import patterns (read-only).
- */
-const AutoImportSection = ({
-	formData,
-	updateField,
-}: {
-	formData: QueueCleanerConfigUpdate;
-	updateField: <K extends keyof QueueCleanerConfigUpdate>(key: K, value: QueueCleanerConfigUpdate[K]) => void;
-}) => {
-	const [showSafePatterns, setShowSafePatterns] = useState(false);
-	const [showNeverPatterns, setShowNeverPatterns] = useState(false);
-
-	// Parse custom safe patterns from JSON
-	const customSafePatterns: string[] = (() => {
-		const json = formData.autoImportCustomPatterns;
-		if (!json) return [];
-		try {
-			const parsed = JSON.parse(json);
-			return Array.isArray(parsed) ? parsed : [];
-		} catch {
-			return [];
-		}
-	})();
-
-	// Parse custom never patterns from JSON
-	const customNeverPatterns: string[] = (() => {
-		const json = formData.autoImportNeverPatterns;
-		if (!json) return [];
-		try {
-			const parsed = JSON.parse(json);
-			return Array.isArray(parsed) ? parsed : [];
-		} catch {
-			return [];
-		}
-	})();
-
-	const updateCustomSafePatterns = (patterns: string[]) => {
-		updateField("autoImportCustomPatterns", patterns.length > 0 ? JSON.stringify(patterns) : null);
-	};
-
-	const updateCustomNeverPatterns = (patterns: string[]) => {
-		updateField("autoImportNeverPatterns", patterns.length > 0 ? JSON.stringify(patterns) : null);
-	};
-
-	const addCustomSafePattern = (pattern: string) => {
-		const trimmed = pattern.trim().toLowerCase();
-		if (trimmed && !customSafePatterns.includes(trimmed) && !AUTO_IMPORT_SAFE_PATTERNS.includes(trimmed as typeof AUTO_IMPORT_SAFE_PATTERNS[number])) {
-			updateCustomSafePatterns([...customSafePatterns, trimmed]);
-		}
-	};
-
-	const removeCustomSafePattern = (index: number) => {
-		updateCustomSafePatterns(customSafePatterns.filter((_, i) => i !== index));
-	};
-
-	const addCustomNeverPattern = (pattern: string) => {
-		const trimmed = pattern.trim().toLowerCase();
-		if (trimmed && !customNeverPatterns.includes(trimmed) && !AUTO_IMPORT_NEVER_PATTERNS.includes(trimmed as typeof AUTO_IMPORT_NEVER_PATTERNS[number])) {
-			updateCustomNeverPatterns([...customNeverPatterns, trimmed]);
-		}
-	};
-
-	const removeCustomNeverPattern = (index: number) => {
-		updateCustomNeverPatterns(customNeverPatterns.filter((_, i) => i !== index));
-	};
-
-	return (
-		<div className="space-y-3 pt-3 border-t border-border/30">
-			{/* Header */}
-			<div className="flex items-center gap-2">
-				<Sparkles className="h-4 w-4 text-amber-500" />
-				<h6 className="text-xs font-semibold text-foreground">Auto-Import (Experimental)</h6>
-			</div>
-
-			{/* Main toggle */}
-			<ToggleRow
-				label="Try auto-import before removal"
-				description="Attempt to import completed downloads via ARR API before falling back to removal"
-				checked={formData.autoImportEnabled ?? false}
-				onChange={(v) => updateField("autoImportEnabled", v)}
-			/>
-
-			{formData.autoImportEnabled && (
-				<div className="space-y-4 pl-1">
-					{/* Safe patterns mode toggle with enhanced description */}
-					<div className="space-y-2">
-						<ToggleRow
-							label="Safe patterns only"
-							description={
-								formData.autoImportSafeOnly ?? true
-									? "ON: Only imports items matching safe patterns below (recommended)"
-									: "OFF: Attempts import on ANY pending/blocked item (use with caution)"
-							}
-							checked={formData.autoImportSafeOnly ?? true}
-							onChange={(v) => updateField("autoImportSafeOnly", v)}
-						/>
-					</div>
-
-					{/* Safe Patterns Section (Collapsible) */}
-					<div className="border border-border/30 rounded-lg overflow-hidden">
-						<button
-							type="button"
-							className="w-full flex items-center justify-between p-2.5 bg-card/30 hover:bg-card/50 transition-colors"
-							onClick={() => setShowSafePatterns(!showSafePatterns)}
-						>
-							<div className="flex items-center gap-2">
-								<CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-								<span className="text-xs font-medium text-foreground">
-									Safe Patterns ({AUTO_IMPORT_SAFE_PATTERNS.length + customSafePatterns.length})
-								</span>
-							</div>
-							{showSafePatterns ? (
-								<ChevronUp className="h-4 w-4 text-muted-foreground" />
-							) : (
-								<ChevronDown className="h-4 w-4 text-muted-foreground" />
-							)}
-						</button>
-
-						{showSafePatterns && (
-							<div className="p-2.5 space-y-3 border-t border-border/20 bg-card/20">
-								<p className="text-[10px] text-muted-foreground">
-									Items matching these patterns CAN be auto-imported. Built-in patterns are based on common ARR status messages.
-								</p>
-
-								{/* Built-in patterns */}
-								<div className="space-y-1">
-									<span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Built-in</span>
-									<div className="flex flex-wrap gap-1">
-										{AUTO_IMPORT_SAFE_PATTERNS.map((pattern) => (
-											<span
-												key={pattern}
-												className="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-											>
-												{pattern}
-											</span>
-										))}
-									</div>
-								</div>
-
-								{/* Custom patterns */}
-								<div className="space-y-1.5">
-									<span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Custom</span>
-									{customSafePatterns.length > 0 ? (
-										<div className="flex flex-wrap gap-1">
-											{customSafePatterns.map((pattern, index) => (
-												<span
-													key={pattern}
-													className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-blue-500/10 text-blue-400 border border-blue-500/20"
-												>
-													{pattern}
-													<button
-														type="button"
-														onClick={() => removeCustomSafePattern(index)}
-														className="hover:text-red-400 transition-colors"
-													>
-														<X className="h-2.5 w-2.5" />
-													</button>
-												</span>
-											))}
-										</div>
-									) : (
-										<p className="text-[10px] text-muted-foreground/50 italic">No custom patterns added</p>
-									)}
-
-									{/* Add custom pattern input */}
-									<div className="flex gap-1.5 mt-2">
-										<input
-											type="text"
-											placeholder="Add custom pattern..."
-											className="flex-1 rounded-md border border-border/50 bg-card/50 px-2 py-1 text-[11px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
-											onKeyDown={(e) => {
-												if (e.key === "Enter") {
-													e.preventDefault();
-													const input = e.currentTarget;
-													addCustomSafePattern(input.value);
-													input.value = "";
-												}
-											}}
-										/>
-										<Button
-											variant="secondary"
-											size="sm"
-											className="h-6 px-2 text-[10px]"
-											onClick={(e) => {
-												const input = e.currentTarget.previousElementSibling as HTMLInputElement;
-												if (input?.value) {
-													addCustomSafePattern(input.value);
-													input.value = "";
-												}
-											}}
-										>
-											<Plus className="h-3 w-3" />
-										</Button>
-									</div>
-								</div>
-							</div>
-						)}
-					</div>
-
-					{/* Never-Import Patterns Section (Collapsible) */}
-					<div className="border border-border/30 rounded-lg overflow-hidden">
-						<button
-							type="button"
-							className="w-full flex items-center justify-between p-2.5 bg-card/30 hover:bg-card/50 transition-colors"
-							onClick={() => setShowNeverPatterns(!showNeverPatterns)}
-						>
-							<div className="flex items-center gap-2">
-								<Ban className="h-3.5 w-3.5 text-red-500" />
-								<span className="text-xs font-medium text-foreground">
-									Never Import ({AUTO_IMPORT_NEVER_PATTERNS.length + customNeverPatterns.length})
-								</span>
-							</div>
-							{showNeverPatterns ? (
-								<ChevronUp className="h-4 w-4 text-muted-foreground" />
-							) : (
-								<ChevronDown className="h-4 w-4 text-muted-foreground" />
-							)}
-						</button>
-
-						{showNeverPatterns && (
-							<div className="p-2.5 space-y-3 border-t border-border/20 bg-card/20">
-								<p className="text-[10px] text-muted-foreground">
-									Items matching these patterns are BLOCKED from auto-import. These will never be attempted.
-								</p>
-
-								{/* Built-in never patterns */}
-								<div className="space-y-1">
-									<span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Built-in</span>
-									<div className="flex flex-wrap gap-1">
-										{AUTO_IMPORT_NEVER_PATTERNS.map((pattern) => (
-											<span
-												key={pattern}
-												className="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-red-500/10 text-red-400 border border-red-500/20"
-											>
-												{pattern}
-											</span>
-										))}
-									</div>
-								</div>
-
-								{/* Custom never patterns */}
-								<div className="space-y-1.5">
-									<span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">Custom</span>
-									{customNeverPatterns.length > 0 ? (
-										<div className="flex flex-wrap gap-1">
-											{customNeverPatterns.map((pattern, index) => (
-												<span
-													key={pattern}
-													className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] bg-orange-500/10 text-orange-400 border border-orange-500/20"
-												>
-													{pattern}
-													<button
-														type="button"
-														onClick={() => removeCustomNeverPattern(index)}
-														className="hover:text-red-400 transition-colors"
-													>
-														<X className="h-2.5 w-2.5" />
-													</button>
-												</span>
-											))}
-										</div>
-									) : (
-										<p className="text-[10px] text-muted-foreground/50 italic">No custom patterns added</p>
-									)}
-
-									{/* Add custom never pattern input */}
-									<div className="flex gap-1.5 mt-2">
-										<input
-											type="text"
-											placeholder="Add pattern to block..."
-											className="flex-1 rounded-md border border-border/50 bg-card/50 px-2 py-1 text-[11px] text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30"
-											onKeyDown={(e) => {
-												if (e.key === "Enter") {
-													e.preventDefault();
-													const input = e.currentTarget;
-													addCustomNeverPattern(input.value);
-													input.value = "";
-												}
-											}}
-										/>
-										<Button
-											variant="secondary"
-											size="sm"
-											className="h-6 px-2 text-[10px]"
-											onClick={(e) => {
-												const input = e.currentTarget.previousElementSibling as HTMLInputElement;
-												if (input?.value) {
-													addCustomNeverPattern(input.value);
-													input.value = "";
-												}
-											}}
-										>
-											<Plus className="h-3 w-3" />
-										</Button>
-									</div>
-								</div>
-							</div>
-						)}
-					</div>
-
-					{/* Settings */}
-					<div className="space-y-3 pt-2">
-						<ConfigInput
-							label="Max Import Attempts"
-							description="Stop trying after this many failed attempts per item"
-							value={formData.autoImportMaxAttempts ?? 2}
-							onChange={(v) => updateField("autoImportMaxAttempts", v)}
-							min={MIN_AUTO_IMPORT_ATTEMPTS}
-							max={MAX_AUTO_IMPORT_ATTEMPTS}
-							suffix="attempts"
-						/>
-						<ConfigInput
-							label="Retry Cooldown"
-							description="Wait this long between import attempts on the same item"
-							value={formData.autoImportCooldownMins ?? 30}
-							onChange={(v) => updateField("autoImportCooldownMins", v)}
-							min={MIN_AUTO_IMPORT_COOLDOWN_MINS}
-							max={MAX_AUTO_IMPORT_COOLDOWN_MINS}
-							suffix="mins"
-						/>
-					</div>
-
-					{/* How it works info box */}
-					<div className="text-xs text-muted-foreground p-2.5 rounded-lg bg-card/30 border border-border/30 space-y-1.5">
-						<div className="flex items-center gap-1.5">
-							<FileText className="h-3.5 w-3.5" />
-							<span className="font-medium">How auto-import works:</span>
-						</div>
-						<ol className="list-decimal list-inside space-y-0.5 ml-1 text-[11px]">
-							<li>Detects items stuck in import pending/blocked state</li>
-							<li>Checks eligibility (safe patterns, cooldown, max attempts)</li>
-							<li>Triggers import via ARR's manual import API</li>
-							<li>If import fails, falls back to normal removal behavior</li>
-						</ol>
-					</div>
-				</div>
-			)}
-		</div>
-	);
-};
-
-// === Shared UI Components ===
-
-const Tooltip = ({ text }: { text: string }) => (
-	<div className="group relative inline-flex">
-		<HelpCircle className="h-3.5 w-3.5 text-muted-foreground/50 hover:text-muted-foreground cursor-help" />
-		<div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 text-xs text-foreground bg-popover border border-border rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 w-64 z-50 pointer-events-none">
-			{text}
-			<div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-border" />
-		</div>
-	</div>
-);
-
-const ToggleSwitch = ({
-	checked,
-	onChange,
-	label,
-}: {
-	checked: boolean;
-	onChange: (value: boolean) => void;
-	label?: string;
-}) => (
-	<button
-		type="button"
-		role="switch"
-		aria-checked={checked}
-		aria-label={label}
-		className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors"
-		style={{
-			backgroundColor: checked ? SEMANTIC_COLORS.success.text : "rgba(128, 128, 128, 0.3)",
-		}}
-		onClick={() => onChange(!checked)}
-	>
-		<span
-			className="inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform"
-			style={{ transform: checked ? "translateX(18px)" : "translateX(3px)" }}
-		/>
-	</button>
-);
-
-const ToggleRow = ({
-	label,
-	description,
-	checked,
-	onChange,
-}: {
-	label: string;
-	description: string;
-	checked: boolean;
-	onChange: (value: boolean) => void;
-}) => (
-	<div className="flex items-center justify-between">
-		<div>
-			<span className="text-sm text-foreground">{label}</span>
-			<p className="text-xs text-muted-foreground">{description}</p>
-		</div>
-		<ToggleSwitch checked={checked} onChange={onChange} label={label} />
-	</div>
-);
-
-const RuleSection = ({
-	icon: Icon,
-	title,
-	description,
-	enabled,
-	onToggle,
-	children,
-}: {
-	icon: React.ComponentType<{ className?: string; style?: React.CSSProperties }>;
-	title: string;
-	description: string;
-	enabled: boolean;
-	onToggle: (value: boolean) => void;
-	children?: React.ReactNode;
-}) => (
-	<div className="space-y-3">
-		<div className="flex items-center justify-between">
-			<div className="flex items-center gap-2.5">
-				<Icon className="h-4 w-4 text-muted-foreground" />
-				<div>
-					<h5 className="text-sm font-medium text-foreground">{title}</h5>
-					<p className="text-xs text-muted-foreground">{description}</p>
-				</div>
-			</div>
-			<ToggleSwitch checked={enabled} onChange={onToggle} label={title} />
-		</div>
-		{enabled && children && (
-			<div className="pl-7 space-y-3 border-l-2 border-border/30 ml-2">
-				{children}
-			</div>
-		)}
-	</div>
-);
-
-const ConfigInput = ({
-	label,
-	description,
-	value,
-	onChange,
-	min,
-	max,
-	suffix,
-	id,
-}: {
-	label: string;
-	description: string;
-	value: number;
-	onChange: (value: number) => void;
-	min: number;
-	max: number;
-	suffix: string;
-	id?: string;
-}) => {
-	// Generate stable ID for label-input association (accessibility)
-	const generatedId = `config-input-${label.toLowerCase().replace(/\s+/g, "-")}`;
-	const inputId = id ?? generatedId;
-
-	return (
-		<div>
-			<label htmlFor={inputId} className="text-xs font-medium text-foreground block mb-1">
-				{label}
-			</label>
-			<div className="flex items-center gap-2">
-				<input
-					id={inputId}
-					type="number"
-					className="w-24 rounded-lg border border-border/50 bg-card/50 px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1"
-					value={value}
-					onChange={(e) => {
-						const parsed = Number.parseInt(e.target.value, 10);
-						if (!Number.isNaN(parsed)) {
-							onChange(Math.max(min, Math.min(max, parsed)));
-						}
-					}}
-					min={min}
-					max={max}
-				/>
-				<span className="text-xs text-muted-foreground">{suffix}</span>
-			</div>
-			<p className="text-[10px] text-muted-foreground mt-0.5">{description}</p>
-		</div>
-	);
-};
-
-const WhitelistEditor = ({
-	patterns,
-	onChange,
-}: {
-	patterns: string | null | undefined;
-	onChange: (value: string | null) => void;
-}) => {
-	// Parse patterns from JSON string
-	const parsedPatterns: WhitelistPattern[] = (() => {
-		if (!patterns) return [];
-		try {
-			return JSON.parse(patterns) as WhitelistPattern[];
-		} catch {
-			return [];
-		}
-	})();
-
-	const addPattern = () => {
-		// Generate unique ID for stable React key (prevents reconciliation issues)
-		const id = `wp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-		const newPatterns = [
-			...parsedPatterns,
-			{ type: "tracker" as const, pattern: "", id },
-		];
-		onChange(JSON.stringify(newPatterns));
-	};
-
-	const removePattern = (index: number) => {
-		const newPatterns = parsedPatterns.filter((_, i) => i !== index);
-		onChange(newPatterns.length > 0 ? JSON.stringify(newPatterns) : null);
-	};
-
-	const updatePattern = (index: number, field: keyof WhitelistPattern, value: string) => {
-		const newPatterns = [...parsedPatterns];
-		const currentPattern = newPatterns[index];
-		if (currentPattern) {
-			if (field === "type") {
-				currentPattern.type = value as WhitelistPattern["type"];
-			} else {
-				currentPattern.pattern = value;
-			}
-		}
-		onChange(JSON.stringify(newPatterns));
-	};
-
-	return (
-		<div className="space-y-2">
-			{parsedPatterns.map((p, index) => (
-				// Use pattern's id if available, fallback to content-based key
-				<div key={p.id ?? `${p.type}-${p.pattern}-${index}`} className="flex items-center gap-2">
-					<select
-						className="rounded-lg border border-border/50 bg-card/50 px-2 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1"
-						value={p.type}
-						onChange={(e) => updatePattern(index, "type", e.target.value)}
-					>
-						{WHITELIST_TYPES.map((t) => (
-							<option key={t.value} value={t.value}>
-								{t.label}
-							</option>
-						))}
-					</select>
-					<input
-						type="text"
-						className="flex-1 rounded-lg border border-border/50 bg-card/50 px-2 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1"
-						placeholder="Enter pattern..."
-						value={p.pattern}
-						onChange={(e) => updatePattern(index, "pattern", e.target.value)}
-					/>
-					<button
-						type="button"
-						className="p-1.5 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-						onClick={() => removePattern(index)}
-						aria-label="Remove pattern"
-					>
-						<X className="h-4 w-4" />
-					</button>
-				</div>
-			))}
-			<Button
-				type="button"
-				variant="secondary"
-				size="sm"
-				className="gap-1.5"
-				onClick={addPattern}
-			>
-				<Plus className="h-3.5 w-3.5" />
-				Add Pattern
-			</Button>
-			<p className="text-[10px] text-muted-foreground">
-				Items matching any pattern will be excluded from queue cleaning. Patterns are case-insensitive substring matches.
-			</p>
 		</div>
 	);
 };

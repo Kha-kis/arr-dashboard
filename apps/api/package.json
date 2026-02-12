@@ -26,6 +26,7 @@
 		"@fastify/rate-limit": "^10.3.0",
 		"@fastify/websocket": "^11.2.0",
 		"@prisma/adapter-better-sqlite3": "^7.3.0",
+		"@prisma/adapter-pg": "^7.3.0",
 		"@prisma/client": "^7.3.0",
 		"@simplewebauthn/server": "^13.2.2",
 		"arctic": "^3.7.0",
@@ -34,6 +35,7 @@
 		"better-sqlite3": "^12.6.2",
 		"dequal": "^2.0.3",
 		"dotenv": "^17.2.3",
+		"pg": "^8.13.1",
 		"fastify": "^5.7.2",
 		"fastify-plugin": "^5.1.0",
 		"isomorphic-dompurify": "^2.35.0",
@@ -47,6 +49,7 @@
 	"devDependencies": {
 		"@types/better-sqlite3": "^7.6.13",
 		"@types/node": "^25.0.9",
+		"@types/pg": "^8.11.14",
 		"tsup": "^8.5.1",
 		"tsx": "^4.21.0",
 		"typescript": "^5.9.3",

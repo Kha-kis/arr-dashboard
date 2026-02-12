@@ -6,7 +6,7 @@ import type { LibraryService } from "@arr/shared";
 /**
  * Status filter options for library items
  */
-const STATUS_FILTERS = [
+export const STATUS_FILTERS = [
 	{ value: "all", label: "All statuses" },
 	{ value: "monitored", label: "Monitored" },
 	{ value: "unmonitored", label: "Not monitored" },
@@ -15,7 +15,7 @@ const STATUS_FILTERS = [
 /**
  * File filter options for library items
  */
-const FILE_FILTERS = [
+export const FILE_FILTERS = [
 	{ value: "all", label: "All files" },
 	{ value: "has-file", label: "Has file" },
 	{ value: "missing", label: "Missing file" },
@@ -24,7 +24,7 @@ const FILE_FILTERS = [
 /**
  * Sort options for library items
  */
-const SORT_OPTIONS = [
+export const SORT_OPTIONS = [
 	{ value: "sortTitle", label: "Title" },
 	{ value: "year", label: "Year" },
 	{ value: "sizeOnDisk", label: "Size" },

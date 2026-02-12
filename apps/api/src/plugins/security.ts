@@ -8,7 +8,8 @@ import { resolveSecretsPath } from "../lib/utils/secrets-path.js";
 export const securityPlugin = fp(
 	async (app) => {
 		// Determine secrets path based on DATABASE_URL using shared helper
-		const databaseUrl = app.config.DATABASE_URL;
+		// DATABASE_URL is guaranteed by the env schema transform (auto-configured if not provided)
+		const databaseUrl = app.config.DATABASE_URL!;
 		const secretsPath = resolveSecretsPath(databaseUrl);
 
 		// Get or generate secrets

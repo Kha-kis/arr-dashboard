@@ -12,6 +12,8 @@ import {
 	formatFileSize,
 	isSonarrCandidate,
 	isRadarrCandidate,
+	isLidarrCandidate,
+	isReadarrCandidate,
 	describeEpisode,
 } from "../helpers";
 import { cn } from "../../../lib/utils";
@@ -59,7 +61,11 @@ export const CandidateCard = ({
 		? (candidate.series?.title ?? "Unmapped series")
 		: isRadarrCandidate(candidate)
 			? (candidate.movie?.title ?? "Unmapped movie")
-			: "Unknown";
+			: isLidarrCandidate(candidate)
+				? (candidate.artist?.artistName ?? "Unmapped artist")
+				: isReadarrCandidate(candidate)
+					? (candidate.author?.authorName ?? "Unmapped author")
+					: "Unknown";
 
 	let statusTone: "ready" | "warning" | "error" = "ready";
 	let statusText = "Ready to import";
@@ -76,6 +82,12 @@ export const CandidateCard = ({
 	} else if (selected && isRadarrCandidate(candidate) && candidate.movie?.id === undefined) {
 		statusTone = "warning";
 		statusText = "Movie mapping is missing.";
+	} else if (selected && isLidarrCandidate(candidate) && (candidate.artist?.id === undefined || candidate.album?.id === undefined)) {
+		statusTone = "warning";
+		statusText = candidate.artist?.id === undefined ? "Artist mapping is missing." : "Album mapping is missing.";
+	} else if (selected && isReadarrCandidate(candidate) && (candidate.author?.id === undefined || candidate.book?.id === undefined)) {
+		statusTone = "warning";
+		statusText = candidate.author?.id === undefined ? "Author mapping is missing." : "Book mapping is missing.";
 	}
 
 	const chips = [qualityLabel, sizeLabel, languageLabel, releaseGroup].filter(
@@ -126,6 +138,12 @@ export const CandidateCard = ({
 					<div>
 						<p className="text-xs uppercase text-muted-foreground">Mapping</p>
 						<p>{mappingSummary}</p>
+						{isLidarrCandidate(candidate) && candidate.album?.title && (
+							<p className="text-xs text-muted-foreground/70">{candidate.album.title}</p>
+						)}
+						{isReadarrCandidate(candidate) && candidate.book?.title && (
+							<p className="text-xs text-muted-foreground/70">{candidate.book.title}</p>
+						)}
 					</div>
 					{isSonarrCandidate(candidate) && episodes.length > 0 && (
 						<div className="space-y-2 rounded-md border border-border bg-muted p-3 text-xs text-muted-foreground">

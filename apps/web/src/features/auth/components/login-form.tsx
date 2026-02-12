@@ -6,7 +6,7 @@ import Link from "next/link";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { useQueryClient } from "@tanstack/react-query";
 import { KeyRound, Zap, Lock, Loader2 } from "lucide-react";
-import { useCurrentUser, useSetupRequired, useLoginMutation } from "../../../hooks/api/useAuth";
+import { useSetupRequired, useLoginMutation } from "../../../hooks/api/useAuth";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { PasswordInput } from "../../../components/ui/password-input";
@@ -39,7 +39,7 @@ const sanitizeRedirect = (value: string | null): string => {
 	try {
 		const url = new URL(value, "http://localhost");
 		return `${url.pathname}${url.search}`;
-	} catch (_error) {
+	} catch {
 		return DEFAULT_REDIRECT;
 	}
 };
@@ -74,7 +74,7 @@ export const LoginForm = () => {
 			try {
 				const provider = await getOIDCProvider();
 				setOIDCProvider(provider);
-			} catch (error) {
+			} catch {
 				// Silently fail - OIDC not configured
 			}
 		};

@@ -173,8 +173,9 @@ test.describe("Navigation - Browser Navigation", () => {
 	test("should support browser forward button", async ({ page }) => {
 		await page.goto(ROUTES.dashboard);
 
-		// Navigate to library
+		// Navigate to library and wait for URL change before using browser navigation
 		await clickSidebarLink(page, "Library");
+		await expect(page).toHaveURL(/\/library/);
 
 		// Go back
 		await page.goBack();

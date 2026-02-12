@@ -17,6 +17,8 @@ const SERVICE_FILTERS = [
 	{ value: "all" as const, label: "All services" },
 	{ value: "sonarr" as const, label: "Sonarr" },
 	{ value: "radarr" as const, label: "Radarr" },
+	{ value: "lidarr" as const, label: "Lidarr" },
+	{ value: "readarr" as const, label: "Readarr" },
 ] as const;
 
 /**
@@ -42,6 +44,8 @@ type SortOption = (typeof SORT_OPTIONS)[number]["value"];
 const getItemTitle = (item: QueueItem): string => {
 	if (item.series?.title) return item.series.title;
 	if (item.movie?.title) return item.movie.title;
+	if (item.artist?.name) return item.artist.name;
+	if (item.author?.name) return item.author.name;
 	return item.title ?? "";
 };
 

@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Download, RefreshCw, Tag, Trash2, ChevronDown } from "lucide-react";
 import { cn } from "../../../lib/utils";
-import { Button } from "../../../components/ui/button";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { QueueActionOptions } from "../../../hooks/api/useQueueActions";
 

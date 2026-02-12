@@ -6,7 +6,7 @@ import { Alert, AlertDescription } from "../../../../components/ui";
 import { PremiumSkeleton } from "../../../../components/layout/premium-components";
 import { ChevronRight, ChevronLeft, Info, Settings } from "lucide-react";
 import { useThemeGradient } from "../../../../hooks/useThemeGradient";
-import { createSanitizedHtml } from "../../../../lib/sanitize-html";
+import { SanitizedHtml } from "../sanitized-html";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { apiRequest } from "../../../../lib/api-client/base";
 
@@ -219,7 +219,7 @@ export const CustomFormatCustomization = ({
 					backgroundColor: themeGradient.fromLight,
 				}}
 			>
-				<h4 className="font-medium text-foregroundmb-2">⚙️ Review & Customize Formats</h4>
+				<h4 className="font-medium text-foreground mb-2">⚙️ Review & Customize Formats</h4>
 				<p className="text-sm text-foreground/70 mb-3">
 					TRaSH Guides recommends specific Custom Formats for this profile. <strong className="text-foreground">Pre-selected formats are based on the quality profile&apos;s configuration</strong>. You can adjust as needed:
 				</p>
@@ -285,9 +285,9 @@ export const CustomFormatCustomization = ({
 												)}
 											</div>
 											{cf.trash_description && (
-												<p
+												<SanitizedHtml
+													html={cf.trash_description}
 													className="mt-1 text-sm text-foreground/70"
-													dangerouslySetInnerHTML={createSanitizedHtml(cf.trash_description)}
 												/>
 											)}
 										</div>
@@ -315,7 +315,7 @@ export const CustomFormatCustomization = ({
 													value={scoreOverride ?? ""}
 													onChange={(e) => updateScoreOverride(cf.trash_id, e.target.value)}
 													placeholder="Leave empty for default score"
-													className="w-full rounded border border-border bg-card px-3 py-2 text-sm text-foregroundplaceholder:text-foreground/40 focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary"
+													className="w-full rounded border border-border bg-card px-3 py-2 text-sm text-foreground placeholder:text-foreground/40 focus:border-primary focus:outline-hidden focus:ring-1 focus:ring-primary"
 												/>
 											</div>
 
@@ -365,7 +365,7 @@ export const CustomFormatCustomization = ({
 				<button
 					type="button"
 					onClick={onBack}
-					className="inline-flex items-center gap-2 rounded-lg bg-card px-4 py-2 text-sm font-medium text-foregroundtransition hover:bg-muted"
+					className="inline-flex items-center gap-2 rounded-lg bg-card px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted"
 				>
 					<ChevronLeft className="h-4 w-4" />
 					Back
@@ -375,7 +375,7 @@ export const CustomFormatCustomization = ({
 					type="button"
 					onClick={() => onNext(selections)}
 					disabled={selectedCount === 0}
-					className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-foregroundtransition hover:bg-primary/90 disabled:opacity-50"
+					className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-foreground transition hover:bg-primary/90 disabled:opacity-50"
 				>
 					Next: Create Template
 					<ChevronRight className="h-4 w-4" />

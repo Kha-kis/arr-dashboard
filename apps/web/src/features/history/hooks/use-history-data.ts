@@ -5,10 +5,14 @@ import {
 	extractStatusOptions,
 	createServiceSummary,
 	createStatusSummary,
+	createActivitySummary,
 	groupHistoryItems,
 	normalizeStatus,
+	filterProwlarrRss,
 	type HistoryGroup,
+	type ActivitySummary,
 } from "../lib/history-utils";
+import { groupByDay, type DayGroup } from "../lib/date-utils";
 
 export interface HistoryFilters {
 	searchTerm: string;
@@ -23,10 +27,12 @@ export interface ProcessedHistoryData {
 	allItems: HistoryItem[];
 	filteredItems: HistoryItem[];
 	groupedItems: HistoryGroup[];
+	groupedByDay: DayGroup<HistoryGroup>[];
 	instanceOptions: Array<{ value: string; label: string }>;
 	statusOptions: Array<{ value: string; label: string }>;
 	serviceSummary: Map<HistoryItem["service"], number>;
 	statusSummary: Array<[string, number]>;
+	activitySummary: ActivitySummary;
 	filtersActive: boolean;
 	emptyMessage?: string;
 }
@@ -43,17 +49,24 @@ export const useHistoryData = (
 		| undefined,
 	filters: HistoryFilters,
 	groupByDownload: boolean,
+	hideProwlarrRss: boolean,
 ): ProcessedHistoryData => {
 	const allAggregated = useMemo(() => data?.aggregated ?? [], [data?.aggregated]);
 	const instances = useMemo(() => data?.instances ?? [], [data?.instances]);
 
+	// Apply Prowlarr RSS filter before other processing
+	const rssFilteredItems = useMemo(
+		() => (hideProwlarrRss ? filterProwlarrRss(allAggregated) : allAggregated),
+		[allAggregated, hideProwlarrRss],
+	);
+
 	const instanceOptions = useMemo(() => extractInstanceOptions(instances), [instances]);
 
-	const statusOptions = useMemo(() => extractStatusOptions(allAggregated), [allAggregated]);
+	const statusOptions = useMemo(() => extractStatusOptions(rssFilteredItems), [rssFilteredItems]);
 
 	const filteredItems = useMemo(() => {
 		const term = filters.searchTerm.trim().toLowerCase();
-		return allAggregated.filter((item) => {
+		return rssFilteredItems.filter((item) => {
 			if (filters.serviceFilter !== "all" && item.service !== filters.serviceFilter) {
 				return false;
 			}
@@ -81,16 +94,18 @@ export const useHistoryData = (
 			return true;
 		});
 	}, [
-		allAggregated,
+		rssFilteredItems,
 		filters.serviceFilter,
 		filters.instanceFilter,
 		filters.statusFilter,
 		filters.searchTerm,
 	]);
 
-	const serviceSummary = useMemo(() => createServiceSummary(allAggregated), [allAggregated]);
+	const serviceSummary = useMemo(() => createServiceSummary(rssFilteredItems), [rssFilteredItems]);
 
 	const statusSummary = useMemo(() => createStatusSummary(filteredItems), [filteredItems]);
+
+	const activitySummary = useMemo(() => createActivitySummary(allAggregated), [allAggregated]);
 
 	const filtersActive =
 		filters.serviceFilter !== "all" ||
@@ -101,7 +116,7 @@ export const useHistoryData = (
 		Boolean(filters.endDate);
 
 	const emptyMessage =
-		filteredItems.length === 0 && allAggregated.length > 0
+		filteredItems.length === 0 && rssFilteredItems.length > 0
 			? "No history records match the current filters."
 			: undefined;
 
@@ -110,14 +125,21 @@ export const useHistoryData = (
 		[filteredItems, groupByDownload],
 	);
 
+	const groupedByDay = useMemo(
+		() => groupByDay(groupedItems, (group) => group.items[0]?.date),
+		[groupedItems],
+	);
+
 	return {
-		allItems: allAggregated,
+		allItems: rssFilteredItems,
 		filteredItems,
 		groupedItems,
+		groupedByDay,
 		instanceOptions,
 		statusOptions,
 		serviceSummary,
 		statusSummary,
+		activitySummary,
 		filtersActive,
 		emptyMessage,
 	};

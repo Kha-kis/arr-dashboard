@@ -40,6 +40,7 @@ import type {
 	FastifyRequest,
 } from "fastify";
 import { z } from "zod";
+import { validateRequest } from "../../lib/utils/validate.js";
 import type { TrashCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import type { TrashGitHubFetcher } from "../../lib/trash-guides/github-fetcher.js";
@@ -129,16 +130,6 @@ function populateCacheInBackground(
 }
 
 export async function registerSettingsRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
-	// Add authentication preHandler for all routes in this plugin
-	app.addHook("preHandler", async (request, reply) => {
-		if (!request.currentUser?.id) {
-			return reply.status(401).send({
-				success: false,
-				error: "Authentication required",
-			});
-		}
-	});
-
 	/**
 	 * GET /api/trash-guides/settings
 	 *
@@ -192,16 +183,7 @@ export async function registerSettingsRoutes(app: FastifyInstance, _opts: Fastif
 	app.patch("/", async (request: FastifyRequest, reply: FastifyReply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 
-		// Validate request body
-		const parseResult = updateSettingsSchema.safeParse(request.body);
-		if (!parseResult.success) {
-			return reply.status(400).send({
-				error: "Invalid request body",
-				details: parseResult.error.issues,
-			});
-		}
-
-		const updates = parseResult.data;
+		const updates = validateRequest(updateSettingsSchema, request.body);
 
 		// Check if repo config is changing (need to invalidate cache)
 		const repoFieldsChanging =
@@ -265,15 +247,7 @@ export async function registerSettingsRoutes(app: FastifyInstance, _opts: Fastif
 	 * Checks for the docs/json directory which is required for all data fetching.
 	 */
 	app.post("/test-repo", async (request: FastifyRequest, reply: FastifyReply) => {
-		const parseResult = testRepoSchema.safeParse(request.body);
-		if (!parseResult.success) {
-			return reply.status(400).send({
-				error: "Invalid request body",
-				details: parseResult.error.issues,
-			});
-		}
-
-		const { owner, name, branch } = parseResult.data;
+		const { owner, name, branch } = validateRequest(testRepoSchema, request.body);
 
 		try {
 			const apiUrl = `https://api.github.com/repos/${owner}/${name}/contents/docs/json?ref=${branch}`;

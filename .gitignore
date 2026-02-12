@@ -110,3 +110,7 @@ test-results/
 
 # AI/ML development tools
 .leann/
+memory/
+
+# Debug screenshots (Playwright MCP)
+/album-modal*.png

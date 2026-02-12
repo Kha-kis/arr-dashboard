@@ -1,6 +1,7 @@
 import nextPlugin from "@next/eslint-plugin-next";
 import reactPlugin from "eslint-plugin-react";
 import hooksPlugin from "eslint-plugin-react-hooks";
+import unusedImports from "eslint-plugin-unused-imports";
 import tseslint from "@typescript-eslint/eslint-plugin";
 import tsParser from "@typescript-eslint/parser";
 import globals from "globals";
@@ -24,6 +25,7 @@ const eslintConfig = [
 			"@typescript-eslint": tseslint,
 			react: reactPlugin,
 			"react-hooks": hooksPlugin,
+			"unused-imports": unusedImports,
 		},
 		languageOptions: {
 			parser: tsParser,
@@ -60,8 +62,20 @@ const eslintConfig = [
 			"react-hooks/exhaustive-deps": "warn",
 
 			// TypeScript rules (relaxed for now)
-			"@typescript-eslint/no-unused-vars": "warn",
 			"@typescript-eslint/no-explicit-any": "off",
+
+			// Unused imports - auto-fixable
+			"unused-imports/no-unused-imports": "warn",
+			"unused-imports/no-unused-vars": [
+				"warn",
+				{
+					vars: "all",
+					varsIgnorePattern: "^_",
+					args: "after-used",
+					argsIgnorePattern: "^_",
+				},
+			],
+			"@typescript-eslint/no-unused-vars": "off", // Handled by unused-imports
 		},
 	},
 ];
