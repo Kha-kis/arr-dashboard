@@ -58,6 +58,17 @@ interface CacheStats {
 	newestEntry?: Date;
 }
 
+/** Thrown when a cache entry is corrupted and has been automatically cleaned up. */
+export class CacheCorruptionError extends Error {
+	readonly statusCode = 500;
+	constructor(serviceType: string, configType: string) {
+		super(
+			`Cache for ${serviceType}/${configType} was corrupted and has been cleared. Please refresh to re-fetch from GitHub.`,
+		);
+		this.name = "CacheCorruptionError";
+	}
+}
+
 // ============================================================================
 // Cache Manager Class
 // ============================================================================
@@ -108,17 +119,18 @@ export class TrashCacheManager {
 				identifier: `${serviceType}/${configType}`,
 			});
 			if (parsed === undefined) {
-				// Invalidate corrupted cache entry
+				// Invalidate corrupted cache entry and signal the error
 				await this.delete(serviceType, configType);
-				return null;
+				throw new CacheCorruptionError(serviceType, configType);
 			}
 			return parsed;
 		} catch (error) {
+			if (error instanceof CacheCorruptionError) throw error;
 			// Handle decompression or parsing errors
 			log.error({ err: error, serviceType, configType, dataSize: cacheEntry.data.length }, "Failed to retrieve cache");
-			// Invalidate corrupted cache entry
+			// Invalidate corrupted cache entry and signal the error
 			await this.delete(serviceType, configType);
-			return null;
+			throw new CacheCorruptionError(serviceType, configType);
 		}
 	}
 

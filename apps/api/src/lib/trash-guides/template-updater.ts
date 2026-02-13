@@ -22,7 +22,7 @@ import type {
 	TrashQualityProfile,
 } from "@arr/shared";
 import type { PrismaClient } from "../../lib/prisma.js";
-import type { TrashCacheManager } from "./cache-manager.js";
+import { CacheCorruptionError, type TrashCacheManager } from "./cache-manager.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
 import type { TrashGitHubFetcher } from "./github-fetcher.js";
 import { TemplateNotFoundError } from "../errors.js";
@@ -151,14 +151,22 @@ export class TemplateUpdater {
 
 				if (autoSyncInstanceCount > 0) {
 					if (!cacheByServiceType.has(serviceType)) {
-						const [cfGroups, customFormats] = await Promise.all([
-							this.cacheManager.get<TrashCustomFormatGroup[]>(serviceType, "CF_GROUPS"),
-							this.cacheManager.get<TrashCustomFormat[]>(serviceType, "CUSTOM_FORMATS"),
-						]);
-						cacheByServiceType.set(serviceType, {
-							cfGroups: cfGroups ?? [],
-							customFormats: customFormats ?? [],
-						});
+						try {
+							const [cfGroups, customFormats] = await Promise.all([
+								this.cacheManager.get<TrashCustomFormatGroup[]>(serviceType, "CF_GROUPS"),
+								this.cacheManager.get<TrashCustomFormat[]>(serviceType, "CUSTOM_FORMATS"),
+							]);
+							cacheByServiceType.set(serviceType, {
+								cfGroups: cfGroups ?? [],
+								customFormats: customFormats ?? [],
+							});
+						} catch (error) {
+							if (!(error instanceof CacheCorruptionError)) throw error;
+							cacheByServiceType.set(serviceType, {
+								cfGroups: [],
+								customFormats: [],
+							});
+						}
 					}
 
 					const cache = cacheByServiceType.get(serviceType);

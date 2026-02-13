@@ -465,8 +465,10 @@ export class DeploymentExecutorService {
 						if (
 							existingScore !== undefined &&
 							existingScore !== templateScore &&
-							!overrideMap.has(cf.id)
+							!overrideMap.has(cf.id) &&
+							templateCF.scoreOverride === undefined
 						) {
+							// Preserve manual Radarr/Sonarr tweaks only when no explicit override is set
 							formatItems.push({ format: cf.id, score: existingScore });
 						} else {
 							formatItems.push({ format: cf.id, score: templateScore });
@@ -507,10 +509,15 @@ export class DeploymentExecutorService {
 					formatItems: Array.from(existingFormatMap.values()),
 				};
 
+				// Cache schema to avoid redundant API call when both cloned profile and quality override are active
+				// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR schema type varies by service
+				let cachedSchema: any = null;
+
 				// Update quality items for cloned profiles
 				if (templateConfig.completeQualityProfile) {
 					const clonedProfile = templateConfig.completeQualityProfile;
-					const schema = await client.qualityProfile.getSchema();
+					cachedSchema = await client.qualityProfile.getSchema();
+					const schema = cachedSchema;
 
 					const currentAllowedStates = new Map<string, boolean>();
 					for (const item of targetProfile.items || []) {
@@ -616,6 +623,104 @@ export class DeploymentExecutorService {
 						minUpgradeFormatScore:
 							clonedProfile.minUpgradeFormatScore ?? updatedProfile.minUpgradeFormatScore,
 						...(clonedProfile.language && { language: clonedProfile.language }),
+					};
+				}
+
+				// Apply instance-specific quality override (takes precedence over cloned profile settings)
+				if (effectiveQualityConfig?.useCustomQualities && effectiveQualityConfig.items.length > 0) {
+					const overrideSchema = cachedSchema ?? await client.qualityProfile.getSchema();
+					const { byName: qualitiesByName } = extractQualitiesFromSchema(
+						overrideSchema.items || [],
+					);
+
+					let customGroupId = 1000;
+					// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality item
+					const qualityItems: any[] = [];
+					const itemIdMap = new Map<string, number>();
+
+					for (const entry of effectiveQualityConfig.items) {
+						if (entry.type === "group") {
+							const group = entry.group;
+							// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality item
+							const groupQualities: any[] = [];
+
+							for (const quality of group.qualities) {
+								const targetQuality = qualitiesByName.get(
+									normalizeQualityName(quality.name),
+								);
+								if (targetQuality) {
+									groupQualities.push({
+										quality: targetQuality.quality,
+										items: [],
+										allowed: false,
+									});
+								} else {
+									log.warn(
+										{ qualityName: quality.name, instanceId },
+										"Quality override references unknown quality in group — item skipped",
+									);
+								}
+							}
+
+							if (groupQualities.length > 0) {
+								const newGroupId = customGroupId++;
+								itemIdMap.set(group.id, newGroupId);
+								qualityItems.push({
+									name: group.name,
+									items: groupQualities,
+									allowed: group.allowed,
+									id: newGroupId,
+								});
+							}
+						} else {
+							const item = entry.item;
+							const targetQuality = qualitiesByName.get(
+								normalizeQualityName(item.name),
+							);
+							if (targetQuality) {
+								const qualityId = targetQuality.quality?.id;
+								if (qualityId !== undefined) {
+									itemIdMap.set(item.id, qualityId);
+								}
+								qualityItems.push({
+									...targetQuality,
+									allowed: item.allowed,
+								});
+							} else {
+								log.warn(
+									{ qualityName: item.name, instanceId },
+									"Quality override references unknown quality — item skipped",
+								);
+							}
+						}
+					}
+
+					let cutoffId: number | null = null;
+					if (effectiveQualityConfig.cutoffId) {
+						const mappedId = itemIdMap.get(effectiveQualityConfig.cutoffId);
+						if (mappedId !== undefined) {
+							cutoffId = mappedId;
+						}
+					}
+
+					if (cutoffId === null && qualityItems.length > 0) {
+						const lastItem = qualityItems[qualityItems.length - 1];
+						const resolvedId = lastItem.id ?? lastItem.quality?.id ?? null;
+						if (resolvedId === null) {
+							log.warn(
+								{ instanceId, qualityItemCount: qualityItems.length },
+								"Could not resolve cutoff from quality items — falling back to ID 1",
+							);
+							cutoffId = 1;
+						} else {
+							cutoffId = resolvedId;
+						}
+					}
+
+					updatedProfile = {
+						...updatedProfile,
+						cutoff: cutoffId ?? updatedProfile.cutoff,
+						items: qualityItems,
 					};
 				}
 
@@ -827,13 +932,20 @@ export class DeploymentExecutorService {
 			const metricsResult = completeMetrics();
 			metricsResult.recordFailure(errorMessage);
 
-			await finalizeDeploymentHistoryWithFailure(
-				this.prisma,
-				historyId,
-				deploymentHistoryId,
-				startTime,
-				error,
-			);
+			try {
+				await finalizeDeploymentHistoryWithFailure(
+					this.prisma,
+					historyId,
+					deploymentHistoryId,
+					startTime,
+					error,
+				);
+			} catch (historyError) {
+				log.error(
+					{ err: historyError, originalError: errorMessage },
+					"Failed to record deployment failure in history",
+				);
+			}
 
 			return {
 				instanceId,

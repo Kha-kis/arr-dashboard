@@ -50,6 +50,8 @@ export interface HuntResult {
 	message: string;
 	status: "completed" | "partial" | "skipped" | "error";
 	apiCallsMade: number; // Actual count of API calls made to the arr instance
+	/** True when grab detection failed entirely — itemsGrabbed is unreliable */
+	grabDetectionFailed?: boolean;
 }
 
 // Internal type for sub-functions (apiCallsMade added by executeHunt)
@@ -457,7 +459,7 @@ async function executeSonarrHuntWithSdk(
 
 		await historyManager.recordSearches(searchedHistoryItems);
 
-		const grabbedItems = await detectGrabbedItemsFromHistoryWithSdk(
+		const grabResult = await detectGrabbedItemsFromHistoryWithSdk(
 			client,
 			searchStartTime,
 			[],
@@ -477,14 +479,15 @@ async function executeSonarrHuntWithSdk(
 			searchSummary.push(`${episodesToSearch.length} episode(s)`);
 		}
 
-		const grabSummary = grabbedItems.length > 0 ? ` - ${grabbedItems.length} grabbed` : "";
+		const grabSummary = grabResult.items.length > 0 ? ` - ${grabResult.items.length} grabbed` : "";
 		const errorSummary = searchErrors > 0 ? ` (${searchErrors} search errors)` : "";
 
 		return {
 			itemsSearched: totalSearched - searchErrors,
-			itemsGrabbed: grabbedItems.length,
+			itemsGrabbed: grabResult.items.length,
 			searchedItems: searchedItemNames,
-			grabbedItems,
+			grabbedItems: grabResult.items,
+			grabDetectionFailed: grabResult.failed || undefined,
 			message: `Triggered search for ${searchSummary.join(" and ")}${grabSummary}${errorSummary}`,
 			status: searchErrors > 0 ? "partial" : "completed",
 		};
@@ -632,7 +635,7 @@ async function executeRadarrHuntWithSdk(
 			})),
 		);
 
-		const grabbedItems = await detectGrabbedItemsFromHistoryWithSdk(
+		const grabResult = await detectGrabbedItemsFromHistoryWithSdk(
 			client,
 			searchStartTime,
 			searchedMovieIds,
@@ -642,14 +645,15 @@ async function executeRadarrHuntWithSdk(
 			logger,
 		);
 
-		const grabSummary = grabbedItems.length > 0 ? ` - ${grabbedItems.length} grabbed` : "";
+		const grabSummary = grabResult.items.length > 0 ? ` - ${grabResult.items.length} grabbed` : "";
 		const errorSummary = searchErrors > 0 ? ` (${searchErrors} search errors)` : "";
 
 		return {
 			itemsSearched: moviesToSearch.length - searchErrors,
-			itemsGrabbed: grabbedItems.length,
+			itemsGrabbed: grabResult.items.length,
 			searchedItems: searchedItemNames,
-			grabbedItems,
+			grabbedItems: grabResult.items,
+			grabDetectionFailed: grabResult.failed || undefined,
 			message: `Triggered search for ${moviesToSearch.length} movies${grabSummary}${errorSummary}`,
 			status: searchErrors > 0 ? "partial" : "completed",
 		};

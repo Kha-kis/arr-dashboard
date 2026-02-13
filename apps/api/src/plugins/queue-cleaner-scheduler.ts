@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { getQueueCleanerScheduler } from "../lib/queue-cleaner/scheduler.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
+import { setManualImportLogger } from "../routes/manual-import-utils.js";
 
 declare module "fastify" {
 	interface FastifyInstance {
@@ -21,6 +22,12 @@ const queueCleanerSchedulerPlugin = fastifyPlugin(
 		app.addHook("onReady", async () => {
 			try {
 				app.log.info("Initializing queue cleaner scheduler");
+
+				// Initialize the manual import logger for auto-import operations
+				setManualImportLogger({
+					warn: (msg, ...args) => app.log.warn({ ...(args[0] as object) }, msg),
+					debug: (msg, ...args) => app.log.debug({ ...(args[0] as object) }, msg),
+				});
 
 				const scheduler = getQueueCleanerScheduler();
 				scheduler.initialize(app);

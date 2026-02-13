@@ -64,11 +64,7 @@ export const setManualImportLogger = (logger: ManualImportLogger) => {
 const logNormalizationWarning = (entityType: string, reason: string, rawValue?: unknown) => {
 	if (process.env.NODE_ENV === "development" || process.env.DEBUG_MANUAL_IMPORT) {
 		const msg = `[manual-import] Normalization skipped for ${entityType}: ${reason}`;
-		if (moduleLogger) {
-			moduleLogger.debug(msg, rawValue !== undefined ? { rawValue } : undefined);
-		} else {
-			console.debug(msg, rawValue !== undefined ? { rawValue } : "");
-		}
+		moduleLogger?.debug(msg, rawValue !== undefined ? { rawValue } : undefined);
 	}
 };
 
@@ -283,11 +279,7 @@ const mapCandidate = (
 		// Log validation failures to aid debugging - especially important for newer Lidarr/Readarr integrations
 		const errorMessage = getErrorMessage(error, "Unknown validation error");
 		const warnMsg = `[manual-import] Failed to parse ${service} candidate at path "${path}": ${errorMessage}`;
-		if (moduleLogger) {
-			moduleLogger.warn(warnMsg);
-		} else {
-			console.warn(warnMsg);
-		}
+		moduleLogger?.warn(warnMsg);
 		return null;
 	}
 };
@@ -346,11 +338,7 @@ export const fetchManualImportCandidates = async (
 		const warnMsg =
 			`[manual-import] Unexpected API response structure for ${service}. ` +
 			`Expected array or {items: []}, got: ${typeof payload}`;
-		if (moduleLogger) {
-			moduleLogger.warn(warnMsg);
-		} else {
-			console.warn(warnMsg);
-		}
+		moduleLogger?.warn(warnMsg);
 		return [];
 	}
 

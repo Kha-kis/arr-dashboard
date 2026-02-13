@@ -8,7 +8,7 @@ import { TRASH_CONFIG_TYPES } from "@arr/shared";
 import type { TrashConfigType } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions, } from "fastify";
 import { z } from "zod";
-import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
+import { createCacheManager, CacheCorruptionError } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher, getRateLimitState } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { validateRequest } from "../../lib/utils/validate.js";
@@ -259,21 +259,26 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 		const entries = [];
 
 		for (const configType of configTypes) {
-			const data = await cacheManager.get(serviceType, configType);
-			if (data) {
-				const status = await cacheManager.getStatus(serviceType, configType);
-				if (status) {
-					entries.push({
-						id: `${serviceType}-${configType}`,
-						serviceType,
-						configType,
-						data,
-						version: status.version,
-						fetchedAt: status.lastFetched,
-						lastCheckedAt: status.lastChecked,
-						updatedAt: status.lastFetched,
-					});
+			try {
+				const data = await cacheManager.get(serviceType, configType);
+				if (data) {
+					const status = await cacheManager.getStatus(serviceType, configType);
+					if (status) {
+						entries.push({
+							id: `${serviceType}-${configType}`,
+							serviceType,
+							configType,
+							data,
+							version: status.version,
+							fetchedAt: status.lastFetched,
+							lastCheckedAt: status.lastChecked,
+							updatedAt: status.lastFetched,
+						});
+					}
 				}
+			} catch (error) {
+				if (error instanceof CacheCorruptionError) continue;
+				throw error;
 			}
 		}
 
@@ -334,9 +339,16 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 				await cacheManager.set(service as "RADARR" | "SONARR", "CUSTOM_FORMATS", data);
 				results[service.toLowerCase()] = data;
 			} else {
-				// Get from cache
-				const data = await cacheManager.get(service as "RADARR" | "SONARR", "CUSTOM_FORMATS");
-				results[service.toLowerCase()] = data || [];
+				try {
+					const data = await cacheManager.get(service as "RADARR" | "SONARR", "CUSTOM_FORMATS");
+					results[service.toLowerCase()] = data || [];
+				} catch (error) {
+					if (error instanceof CacheCorruptionError) {
+						results[service.toLowerCase()] = [];
+					} else {
+						throw error;
+					}
+				}
 			}
 		}
 
@@ -370,8 +382,16 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 				await cacheManager.set(service as "RADARR" | "SONARR", "CF_DESCRIPTIONS", data);
 				results[service.toLowerCase()] = data;
 			} else {
-				const data = await cacheManager.get(service as "RADARR" | "SONARR", "CF_DESCRIPTIONS");
-				results[service.toLowerCase()] = data || [];
+				try {
+					const data = await cacheManager.get(service as "RADARR" | "SONARR", "CF_DESCRIPTIONS");
+					results[service.toLowerCase()] = data || [];
+				} catch (error) {
+					if (error instanceof CacheCorruptionError) {
+						results[service.toLowerCase()] = [];
+					} else {
+						throw error;
+					}
+				}
 			}
 		}
 
@@ -440,7 +460,14 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 			return reply.send({ data });
 		}
 
-		const data = await cacheManager.get("RADARR", "CF_INCLUDES");
-		return reply.send({ data: data || [] });
+		try {
+			const data = await cacheManager.get("RADARR", "CF_INCLUDES");
+			return reply.send({ data: data || [] });
+		} catch (error) {
+			if (error instanceof CacheCorruptionError) {
+				return reply.send({ data: [] });
+			}
+			throw error;
+		}
 	});
 }

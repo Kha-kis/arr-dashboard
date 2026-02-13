@@ -20,6 +20,12 @@ export interface GrabbedItem {
 	size?: number;
 }
 
+export interface GrabDetectionResult {
+	items: GrabbedItem[];
+	/** True when both history and queue detection failed — itemsGrabbed count is unreliable */
+	failed: boolean;
+}
+
 /**
  * Detect grabbed items from history using SDK.
  * Checks the instance's history for "grabbed" events that occurred after
@@ -35,7 +41,7 @@ export async function detectGrabbedItemsFromHistoryWithSdk(
 	searchedEpisodeIds: number[],
 	counter: ApiCallCounter,
 	logger: HuntLogger,
-): Promise<GrabbedItem[]> {
+): Promise<GrabDetectionResult> {
 	try {
 		await delay(GRAB_CHECK_DELAY_MS);
 
@@ -95,7 +101,7 @@ export async function detectGrabbedItemsFromHistoryWithSdk(
 			}
 		}
 
-		return grabbedItems;
+		return { items: grabbedItems, failed: false };
 	} catch (error) {
 		logger.warn(
 			{ err: error },
@@ -125,7 +131,7 @@ export async function detectGrabbedItemsFromQueueWithSdk(
 	searchedEpisodeIds: number[],
 	counter: ApiCallCounter,
 	logger: HuntLogger,
-): Promise<GrabbedItem[]> {
+): Promise<GrabDetectionResult> {
 	try {
 		counter.count++;
 		const queue = await client.queue.get({ pageSize: 1000 });
@@ -151,13 +157,13 @@ export async function detectGrabbedItemsFromQueueWithSdk(
 			}
 		}
 
-		return grabbedItems;
+		return { items: grabbedItems, failed: false };
 	} catch (error) {
 		// Both history and queue detection failed - log as error since this is unexpected
 		logger.error(
 			{ err: error },
 			"Grab detection failed completely (both history and queue methods) - grabbed items count will be inaccurate",
 		);
-		return [];
+		return { items: [], failed: true };
 	}
 }

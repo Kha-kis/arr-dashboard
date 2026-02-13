@@ -13,7 +13,7 @@ import {
 } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
+import { createCacheManager, CacheCorruptionError } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
@@ -90,12 +90,15 @@ export async function registerQualityProfileRoutes(
 	}>("/:serviceType", async (request, reply) => {
 		const { serviceType } = validateRequest(getQualityProfilesSchema, request.params);
 
-		// Try to get from cache first
-		let profiles = (await cacheManager.get(serviceType, "QUALITY_PROFILES")) as
-			| TrashQualityProfile[]
-			| null;
+		// Try to get from cache first (auto-recover from corruption)
+		let profiles: TrashQualityProfile[] | null = null;
+		try {
+			profiles = await cacheManager.get<TrashQualityProfile[]>(serviceType, "QUALITY_PROFILES");
+		} catch (error) {
+			if (!(error instanceof CacheCorruptionError)) throw error;
+		}
 
-		// If cache miss or stale, fetch fresh data
+		// If cache miss, stale, or corrupted (auto-deleted), fetch fresh data
 		if (!profiles || !(await cacheManager.isFresh(serviceType, "QUALITY_PROFILES"))) {
 			app.log.info({ serviceType }, "Fetching quality profiles from GitHub");
 			const { fetcher } = await getServices(request.currentUser!.id);

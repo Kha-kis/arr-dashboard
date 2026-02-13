@@ -95,132 +95,140 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 			});
 		}
 
-		if (service === "radarr" && isRadarrClient(client)) {
-			// Fetch current movie, update monitored, then save
-			const movie = await client.movie.getById(itemId);
-			const updatedMovie = {
-				...movie,
-				id: itemId,
-				monitored: payload.monitored,
-			};
-			await client.movie.update(itemId, updatedMovie);
+		try {
+			if (service === "radarr" && isRadarrClient(client)) {
+				// Fetch current movie, update monitored, then save
+				const movie = await client.movie.getById(itemId);
+				const updatedMovie = {
+					...movie,
+					id: itemId,
+					monitored: payload.monitored,
+				};
+				await client.movie.update(itemId, updatedMovie);
 
-			// Optimistically update cache
-			await updateCacheMonitoredStatus(
-				app.prisma,
-				payload.instanceId,
-				itemId,
-				"movie",
-				payload.monitored,
-			);
+				// Optimistically update cache
+				await updateCacheMonitoredStatus(
+					app.prisma,
+					payload.instanceId,
+					itemId,
+					"movie",
+					payload.monitored,
+				);
 
-			return reply.status(204).send();
-		}
-
-		if (service === "sonarr" && isSonarrClient(client)) {
-			// Fetch current series
-			const series = await client.series.getById(itemId);
-
-			// Update series monitored status
-			const updatedSeries = {
-				...series,
-				id: itemId,
-				monitored: payload.monitored,
-			};
-
-			// Update season monitoring if seasons exist
-			if (Array.isArray(series.seasons)) {
-				const seasonNumbers = payload.seasonNumbers
-					?.map((number) => Number(number))
-					.filter((value) => Number.isFinite(value));
-
-				updatedSeries.seasons = series.seasons.map((season: Record<string, unknown>) => {
-					const seasonObj = season;
-					const seasonNumber = toNumber(seasonObj?.seasonNumber) ?? 0;
-					const hasSelections = Array.isArray(seasonNumbers) && seasonNumbers.length > 0;
-
-					let nextMonitored = !!seasonObj?.monitored;
-
-					if (hasSelections) {
-						if (seasonNumbers?.includes(seasonNumber)) {
-							nextMonitored = payload.monitored;
-						}
-					} else {
-						// Don't monitor specials (season 0) by default
-						nextMonitored = seasonNumber === 0 ? false : payload.monitored;
-					}
-
-					return {
-						...seasonObj,
-						monitored: nextMonitored,
-					};
-				});
+				return reply.status(204).send();
 			}
 
-			await client.series.update(
-				itemId,
-				updatedSeries as Parameters<typeof client.series.update>[1],
-			);
+			if (service === "sonarr" && isSonarrClient(client)) {
+				// Fetch current series
+				const series = await client.series.getById(itemId);
 
-			// Optimistically update cache
-			await updateCacheMonitoredStatus(
-				app.prisma,
-				payload.instanceId,
-				itemId,
-				"series",
-				payload.monitored,
-			);
+				// Update series monitored status
+				const updatedSeries = {
+					...series,
+					id: itemId,
+					monitored: payload.monitored,
+				};
 
-			return reply.status(204).send();
+				// Update season monitoring if seasons exist
+				if (Array.isArray(series.seasons)) {
+					const seasonNumbers = payload.seasonNumbers
+						?.map((number) => Number(number))
+						.filter((value) => Number.isFinite(value));
+
+					updatedSeries.seasons = series.seasons.map((season: Record<string, unknown>) => {
+						const seasonObj = season;
+						const seasonNumber = toNumber(seasonObj?.seasonNumber) ?? 0;
+						const hasSelections = Array.isArray(seasonNumbers) && seasonNumbers.length > 0;
+
+						let nextMonitored = !!seasonObj?.monitored;
+
+						if (hasSelections) {
+							if (seasonNumbers?.includes(seasonNumber)) {
+								nextMonitored = payload.monitored;
+							}
+						} else {
+							// Don't monitor specials (season 0) by default
+							nextMonitored = seasonNumber === 0 ? false : payload.monitored;
+						}
+
+						return {
+							...seasonObj,
+							monitored: nextMonitored,
+						};
+					});
+				}
+
+				await client.series.update(
+					itemId,
+					updatedSeries as Parameters<typeof client.series.update>[1],
+				);
+
+				// Optimistically update cache
+				await updateCacheMonitoredStatus(
+					app.prisma,
+					payload.instanceId,
+					itemId,
+					"series",
+					payload.monitored,
+				);
+
+				return reply.status(204).send();
+			}
+
+			if (service === "lidarr" && isLidarrClient(client)) {
+				// Fetch current artist, update monitored, then save
+				const artist = await client.artist.getById(itemId);
+				const updatedArtist = {
+					...artist,
+					id: itemId,
+					monitored: payload.monitored,
+				};
+				await client.artist.update(itemId, updatedArtist);
+
+				// Optimistically update cache
+				await updateCacheMonitoredStatus(
+					app.prisma,
+					payload.instanceId,
+					itemId,
+					"artist",
+					payload.monitored,
+				);
+
+				return reply.status(204).send();
+			}
+
+			if (service === "readarr" && isReadarrClient(client)) {
+				// Fetch current author, update monitored, then save
+				const author = await client.author.getById(itemId);
+				const updatedAuthor = {
+					...author,
+					id: itemId,
+					monitored: payload.monitored,
+				};
+				await client.author.update(itemId, updatedAuthor);
+
+				// Optimistically update cache
+				await updateCacheMonitoredStatus(
+					app.prisma,
+					payload.instanceId,
+					itemId,
+					"author",
+					payload.monitored,
+				);
+
+				return reply.status(204).send();
+			}
+
+			return reply.status(400).send({
+				error: "Unsupported service type",
+			});
+		} catch (error) {
+			request.log.error(
+				{ err: error, instanceId: instance.id, itemId: payload.itemId },
+				"failed to update monitoring",
+			);
+			throw error;
 		}
-
-		if (service === "lidarr" && isLidarrClient(client)) {
-			// Fetch current artist, update monitored, then save
-			const artist = await client.artist.getById(itemId);
-			const updatedArtist = {
-				...artist,
-				id: itemId,
-				monitored: payload.monitored,
-			};
-			await client.artist.update(itemId, updatedArtist);
-
-			// Optimistically update cache
-			await updateCacheMonitoredStatus(
-				app.prisma,
-				payload.instanceId,
-				itemId,
-				"artist",
-				payload.monitored,
-			);
-
-			return reply.status(204).send();
-		}
-
-		if (service === "readarr" && isReadarrClient(client)) {
-			// Fetch current author, update monitored, then save
-			const author = await client.author.getById(itemId);
-			const updatedAuthor = {
-				...author,
-				id: itemId,
-				monitored: payload.monitored,
-			};
-			await client.author.update(itemId, updatedAuthor);
-
-			// Optimistically update cache
-			await updateCacheMonitoredStatus(
-				app.prisma,
-				payload.instanceId,
-				itemId,
-				"author",
-				payload.monitored,
-			);
-
-			return reply.status(204).send();
-		}
-
-		return reply.status(400).send({
-			error: "Unsupported service type",
-		});
 	});
 
 	/**
@@ -259,10 +267,18 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 			});
 		}
 
-		// Use SDK's episode.setMonitored method for bulk monitoring updates
-		await client.episode.setMonitored(payload.episodeIds, payload.monitored);
+		try {
+			// Use SDK's episode.setMonitored method for bulk monitoring updates
+			await client.episode.setMonitored(payload.episodeIds, payload.monitored);
 
-		return reply.status(204).send();
+			return reply.status(204).send();
+		} catch (error) {
+			request.log.error(
+				{ err: error, instanceId: instance.id, episodeIds: payload.episodeIds },
+				"failed to update episode monitoring",
+			);
+			throw error;
+		}
 	});
 
 	/**
@@ -301,13 +317,21 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 			});
 		}
 
-		// Lidarr uses PUT /api/v1/album/monitor for bulk monitoring updates
-		await client.album.monitor({
-			albumIds: payload.albumIds,
-			monitored: payload.monitored,
-		});
+		try {
+			// Lidarr uses PUT /api/v1/album/monitor for bulk monitoring updates
+			await client.album.monitor({
+				albumIds: payload.albumIds,
+				monitored: payload.monitored,
+			});
 
-		return reply.status(204).send();
+			return reply.status(204).send();
+		} catch (error) {
+			request.log.error(
+				{ err: error, instanceId: instance.id, albumIds: payload.albumIds },
+				"failed to update album monitoring",
+			);
+			throw error;
+		}
 	});
 
 	/**
@@ -346,13 +370,21 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 			});
 		}
 
-		// Readarr uses PUT /api/v1/book/monitor for bulk monitoring updates
-		await client.book.monitor({
-			bookIds: payload.bookIds,
-			monitored: payload.monitored,
-		});
+		try {
+			// Readarr uses PUT /api/v1/book/monitor for bulk monitoring updates
+			await client.book.monitor({
+				bookIds: payload.bookIds,
+				monitored: payload.monitored,
+			});
 
-		return reply.status(204).send();
+			return reply.status(204).send();
+		} catch (error) {
+			request.log.error(
+				{ err: error, instanceId: instance.id, bookIds: payload.bookIds },
+				"failed to update book monitoring",
+			);
+			throw error;
+		}
 	});
 
 	done();

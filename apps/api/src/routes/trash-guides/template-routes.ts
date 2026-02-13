@@ -11,7 +11,7 @@ import { createDeploymentExecutorService } from "../../lib/trash-guides/deployme
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
 import { parseInstanceOverrides } from "../../lib/trash-guides/utils.js";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
-import { requireTemplate, transformOverrideToApi } from "../../lib/trash-guides/template-helpers.js";
+import { requireTemplate } from "../../lib/trash-guides/template-helpers.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 // ============================================================================
@@ -485,7 +485,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		return reply.send({
 			templateId,
 			instanceId,
-			overrides: transformOverrideToApi(rawOverride),
+			overrides: rawOverride,
 		});
 	});
 

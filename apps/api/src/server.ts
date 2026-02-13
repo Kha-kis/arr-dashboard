@@ -176,7 +176,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		reply.send({
 			statusCode: reply.statusCode,
 			error: err.name ?? "InternalServerError",
-			message: env.NODE_ENV === "production" ? "Unexpected error" : err.message,
+			message: err.message,
 		});
 	});
 
