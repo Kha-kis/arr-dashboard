@@ -509,12 +509,13 @@ export async function registerQualityProfileRoutes(
 		}
 
 		// Build template config from quality profile using wizard selections
-		// Preserve existing quality profile settings
+		// Spread existing config to preserve customQualityConfig, completeQualityProfile,
+		// syncSettings, qualitySize, naming, and other fields not edited here
 		const existingConfig = existingTemplate.config;
 		const templateConfig: TemplateConfig = {
+			...existingConfig,
 			customFormats: [],
 			customFormatGroups: [],
-			qualityProfile: existingConfig.qualityProfile,
 		};
 
 		// Get CF Groups for reference storage

@@ -121,18 +121,22 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 		}
 
 		// Build config using patch-based approach:
+		// - Spread existing config to preserve qualityProfile, completeQualityProfile,
+		//   qualitySize, naming, and other fields not edited here
 		// - Existing items: Use template's stored data, apply user's changed settings only
 		// - New items: Look up from cache (normal behavior)
 		const config: TemplateConfig = {
+			...(template?.config ?? {}),
 			customFormats: [],
 			customFormatGroups: [],
 			syncSettings: {
 				deleteRemovedCFs,
 			},
-			// Include custom quality config if user has enabled it
-			...(customQualityConfig.useCustomQualities && {
-				customQualityConfig,
-			}),
+			// Explicitly set: when disabled, override the base spread's value
+			// with undefined so it doesn't resurrect a stale customQualityConfig
+			customQualityConfig: customQualityConfig.useCustomQualities
+				? customQualityConfig
+				: undefined,
 		};
 
 		// Track items that couldn't be resolved (new items not in cache)
