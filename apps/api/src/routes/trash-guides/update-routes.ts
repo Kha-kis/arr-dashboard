@@ -6,7 +6,6 @@
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
-import { createDeploymentExecutorService } from "../../lib/trash-guides/deployment-executor.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { createTemplateUpdater } from "../../lib/trash-guides/template-updater.js";
@@ -31,7 +30,7 @@ const syncTemplateSchema = z.object({
 export async function registerUpdateRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	// Shared services (repo-independent)
 	const cacheManager = createCacheManager(app.prisma);
-	const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.arrClientFactory);
+	const { deploymentExecutor } = app;
 
 	/** Create repo-aware services configured for the current user's repo settings */
 	async function getServices(userId: string) {

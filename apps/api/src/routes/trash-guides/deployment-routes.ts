@@ -7,13 +7,11 @@
  */
 
 import type { FastifyInstance } from "fastify";
-import { createDeploymentExecutorService } from "../../lib/trash-guides/deployment-executor.js";
 import { createDeploymentPreviewService } from "../../lib/trash-guides/deployment-preview.js";
 
 export async function deploymentRoutes(app: FastifyInstance) {
-	const { prisma } = app;
+	const { prisma, deploymentExecutor } = app;
 	const deploymentPreview = createDeploymentPreviewService(prisma, app.arrClientFactory, app.log);
-	const deploymentExecutor = createDeploymentExecutorService(prisma, app.arrClientFactory);
 
 	/**
 	 * POST /api/trash-guides/deployment/preview
@@ -44,6 +42,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				templateId,
 				instanceId,
 			},
+			orderBy: { updatedAt: "desc" },
 			select: { syncStrategy: true },
 		});
 
@@ -140,6 +139,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				templateId,
 				instanceId,
 			},
+			orderBy: { updatedAt: "desc" },
 			include: {
 				template: {
 					select: { userId: true },
@@ -283,6 +283,7 @@ export async function deploymentRoutes(app: FastifyInstance) {
 				templateId,
 				instanceId,
 			},
+			orderBy: { updatedAt: "desc" },
 			include: {
 				instance: {
 					select: {

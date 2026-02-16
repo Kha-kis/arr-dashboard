@@ -322,6 +322,23 @@ export function mergeTemplateConfig(
 			const deprecationReason = `No longer in TRaSH Guides as of commit ${commitHash}`;
 
 			if (isUserAdded || !deleteRemovedCFs) {
+				// Auto-remove trash_sync groups that have been deprecated for over 90 days
+				const deprecatedAtMs = currentGroup.deprecatedAt
+					? new Date(currentGroup.deprecatedAt).getTime()
+					: NaN;
+				const isStaleDeprecation =
+					!isUserAdded &&
+					!Number.isNaN(deprecatedAtMs) &&
+					Date.now() - deprecatedAtMs > DEPRECATION_CLEANUP_DAYS * 24 * 60 * 60 * 1000;
+
+				if (isStaleDeprecation) {
+					stats.customFormatGroupsRemoved++;
+					warnings.push(
+						`Custom format group "${currentGroup.name}" (${trashId}) auto-removed after ${DEPRECATION_CLEANUP_DAYS} days deprecated`,
+					);
+					continue;
+				}
+
 				stats.customFormatGroupsDeprecated++;
 
 				if (!currentGroup.deprecated) {

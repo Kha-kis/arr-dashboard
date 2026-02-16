@@ -736,6 +736,16 @@ export class DeploymentExecutorService {
 				// biome-ignore lint/suspicious/noExplicitAny: Sonarr/Radarr profile types differ but are runtime-compatible
 				await client.qualityProfile.update(targetProfile.id, updatedProfile as any);
 
+				// Clean up stale mappings for this template+instance that reference
+				// an old profile ID (e.g., profile was recreated with a new ID)
+				await this.prisma.templateQualityProfileMapping.deleteMany({
+					where: {
+						templateId,
+						instanceId,
+						qualityProfileId: { not: targetProfile.id },
+					},
+				});
+
 				await this.prisma.templateQualityProfileMapping.upsert({
 					where: {
 						instanceId_qualityProfileId: {
@@ -1052,15 +1062,4 @@ export class DeploymentExecutorService {
 		};
 	}
 
-}
-
-// ============================================================================
-// Factory Function
-// ============================================================================
-
-export function createDeploymentExecutorService(
-	prisma: PrismaClient,
-	clientFactory: ArrClientFactory,
-): DeploymentExecutorService {
-	return new DeploymentExecutorService(prisma, clientFactory);
 }

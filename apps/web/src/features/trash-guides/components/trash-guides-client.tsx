@@ -9,6 +9,7 @@ import { SchedulerStatusDashboard } from "./scheduler-status-dashboard";
 import { DeploymentHistoryTable } from "./deployment-history-table";
 import { BulkScoreManager } from "./bulk-score-manager";
 import { CustomFormatsBrowser } from "./custom-formats-browser";
+import { QualitySizeManager } from "./quality-size-manager";
 import { RepoSettingsSection } from "./repo-settings-section";
 import { PremiumEmptyState } from "../../../components/layout";
 import { ErrorBoundary } from "../../../components/error-boundary";
@@ -195,6 +196,8 @@ export function TrashGuidesClient() {
 				);
 			case "custom-formats":
 				return <CustomFormatsBrowser />;
+			case "quality-size":
+				return <QualitySizeManager />;
 			case "settings":
 				return <RepoSettingsSection />;
 			default:

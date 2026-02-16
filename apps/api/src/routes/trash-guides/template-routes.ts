@@ -7,7 +7,6 @@
 import type { TemplateConfig } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { createDeploymentExecutorService } from "../../lib/trash-guides/deployment-executor.js";
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
 import { parseInstanceOverrides } from "../../lib/trash-guides/utils.js";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
@@ -653,8 +652,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		await requireInstance(app, request.currentUser!.id, instanceId);
 
 		// Execute deployment
-		const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.arrClientFactory);
-		const result = await deploymentExecutor.deploySingleInstance(
+		const result = await app.deploymentExecutor.deploySingleInstance(
 			templateId,
 			instanceId,
 			request.currentUser!.id,
@@ -713,8 +711,7 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		}
 
 		// Execute bulk deployment
-		const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.arrClientFactory);
-		const result = await deploymentExecutor.deployBulkInstances(
+		const result = await app.deploymentExecutor.deployBulkInstances(
 			templateId,
 			instanceIds,
 			request.currentUser!.id,

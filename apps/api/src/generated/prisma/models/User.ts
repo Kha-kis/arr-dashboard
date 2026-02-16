@@ -9,8 +9,8 @@
  * 🟢 You can import this file directly.
  */
 import type * as runtime from "@prisma/client/runtime/client"
-import type * as $Enums from "../enums.js"
-import type * as Prisma from "../internal/prismaNamespace.js"
+import type * as $Enums from "../enums"
+import type * as Prisma from "../internal/prismaNamespace"
 
 /**
  * Model User
@@ -262,6 +262,7 @@ export type UserWhereInput = {
   trashSettings?: Prisma.XOR<Prisma.TrashSettingsNullableScalarRelationFilter, Prisma.TrashSettingsWhereInput> | null
   serviceInstances?: Prisma.ServiceInstanceListRelationFilter
   userCustomFormats?: Prisma.UserCustomFormatListRelationFilter
+  qualitySizeMappings?: Prisma.QualitySizeMappingListRelationFilter
 }
 
 export type UserOrderByWithRelationInput = {
@@ -281,6 +282,7 @@ export type UserOrderByWithRelationInput = {
   trashSettings?: Prisma.TrashSettingsOrderByWithRelationInput
   serviceInstances?: Prisma.ServiceInstanceOrderByRelationAggregateInput
   userCustomFormats?: Prisma.UserCustomFormatOrderByRelationAggregateInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingOrderByRelationAggregateInput
 }
 
 export type UserWhereUniqueInput = Prisma.AtLeast<{
@@ -303,6 +305,7 @@ export type UserWhereUniqueInput = Prisma.AtLeast<{
   trashSettings?: Prisma.XOR<Prisma.TrashSettingsNullableScalarRelationFilter, Prisma.TrashSettingsWhereInput> | null
   serviceInstances?: Prisma.ServiceInstanceListRelationFilter
   userCustomFormats?: Prisma.UserCustomFormatListRelationFilter
+  qualitySizeMappings?: Prisma.QualitySizeMappingListRelationFilter
 }, "id" | "username">
 
 export type UserOrderByWithAggregationInput = {
@@ -356,6 +359,7 @@ export type UserCreateInput = {
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateInput = {
@@ -375,6 +379,7 @@ export type UserUncheckedCreateInput = {
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserUpdateInput = {
@@ -394,6 +399,7 @@ export type UserUpdateInput = {
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateInput = {
@@ -413,6 +419,7 @@ export type UserUncheckedUpdateInput = {
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateManyInput = {
@@ -604,6 +611,20 @@ export type UserUpdateOneRequiredWithoutTrashSettingsNestedInput = {
   update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutTrashSettingsInput, Prisma.UserUpdateWithoutTrashSettingsInput>, Prisma.UserUncheckedUpdateWithoutTrashSettingsInput>
 }
 
+export type UserCreateNestedOneWithoutQualitySizeMappingsInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutQualitySizeMappingsInput, Prisma.UserUncheckedCreateWithoutQualitySizeMappingsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutQualitySizeMappingsInput
+  connect?: Prisma.UserWhereUniqueInput
+}
+
+export type UserUpdateOneRequiredWithoutQualitySizeMappingsNestedInput = {
+  create?: Prisma.XOR<Prisma.UserCreateWithoutQualitySizeMappingsInput, Prisma.UserUncheckedCreateWithoutQualitySizeMappingsInput>
+  connectOrCreate?: Prisma.UserCreateOrConnectWithoutQualitySizeMappingsInput
+  upsert?: Prisma.UserUpsertWithoutQualitySizeMappingsInput
+  connect?: Prisma.UserWhereUniqueInput
+  update?: Prisma.XOR<Prisma.XOR<Prisma.UserUpdateToOneWithWhereWithoutQualitySizeMappingsInput, Prisma.UserUpdateWithoutQualitySizeMappingsInput>, Prisma.UserUncheckedUpdateWithoutQualitySizeMappingsInput>
+}
+
 export type UserCreateNestedOneWithoutUserCustomFormatsInput = {
   create?: Prisma.XOR<Prisma.UserCreateWithoutUserCustomFormatsInput, Prisma.UserUncheckedCreateWithoutUserCustomFormatsInput>
   connectOrCreate?: Prisma.UserCreateOrConnectWithoutUserCustomFormatsInput
@@ -634,6 +655,7 @@ export type UserCreateWithoutSessionsInput = {
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutSessionsInput = {
@@ -652,6 +674,7 @@ export type UserUncheckedCreateWithoutSessionsInput = {
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutSessionsInput = {
@@ -686,6 +709,7 @@ export type UserUpdateWithoutSessionsInput = {
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutSessionsInput = {
@@ -704,6 +728,7 @@ export type UserUncheckedUpdateWithoutSessionsInput = {
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutServiceInstancesInput = {
@@ -722,6 +747,7 @@ export type UserCreateWithoutServiceInstancesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutServiceInstancesInput = {
@@ -740,6 +766,7 @@ export type UserUncheckedCreateWithoutServiceInstancesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutServiceInstancesInput = {
@@ -774,6 +801,7 @@ export type UserUpdateWithoutServiceInstancesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutServiceInstancesInput = {
@@ -792,6 +820,7 @@ export type UserUncheckedUpdateWithoutServiceInstancesInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutOidcAccountsInput = {
@@ -810,6 +839,7 @@ export type UserCreateWithoutOidcAccountsInput = {
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutOidcAccountsInput = {
@@ -828,6 +858,7 @@ export type UserUncheckedCreateWithoutOidcAccountsInput = {
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutOidcAccountsInput = {
@@ -862,6 +893,7 @@ export type UserUpdateWithoutOidcAccountsInput = {
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutOidcAccountsInput = {
@@ -880,6 +912,7 @@ export type UserUncheckedUpdateWithoutOidcAccountsInput = {
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutWebauthnCredentialsInput = {
@@ -898,6 +931,7 @@ export type UserCreateWithoutWebauthnCredentialsInput = {
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
@@ -916,6 +950,7 @@ export type UserUncheckedCreateWithoutWebauthnCredentialsInput = {
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutWebauthnCredentialsInput = {
@@ -950,6 +985,7 @@ export type UserUpdateWithoutWebauthnCredentialsInput = {
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
@@ -968,6 +1004,7 @@ export type UserUncheckedUpdateWithoutWebauthnCredentialsInput = {
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
 }
 
 export type UserCreateWithoutTrashSettingsInput = {
@@ -986,6 +1023,7 @@ export type UserCreateWithoutTrashSettingsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutTrashSettingsInput = {
@@ -1004,6 +1042,7 @@ export type UserUncheckedCreateWithoutTrashSettingsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutTrashSettingsInput = {
@@ -1038,6 +1077,7 @@ export type UserUpdateWithoutTrashSettingsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutTrashSettingsInput = {
@@ -1054,6 +1094,99 @@ export type UserUncheckedUpdateWithoutTrashSettingsInput = {
   sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
   oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
+}
+
+export type UserCreateWithoutQualitySizeMappingsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  sessions?: Prisma.SessionCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatCreateNestedManyWithoutUserInput
+}
+
+export type UserUncheckedCreateWithoutQualitySizeMappingsInput = {
+  id?: string
+  username: string
+  hashedPassword?: string | null
+  mustChangePassword?: boolean
+  failedLoginAttempts?: number
+  lockedUntil?: Date | string | null
+  encryptedTmdbApiKey?: string | null
+  tmdbEncryptionIv?: string | null
+  createdAt?: Date | string
+  updatedAt?: Date | string
+  sessions?: Prisma.SessionUncheckedCreateNestedManyWithoutUserInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedCreateNestedManyWithoutUserInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
+  trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
+  serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  userCustomFormats?: Prisma.UserCustomFormatUncheckedCreateNestedManyWithoutUserInput
+}
+
+export type UserCreateOrConnectWithoutQualitySizeMappingsInput = {
+  where: Prisma.UserWhereUniqueInput
+  create: Prisma.XOR<Prisma.UserCreateWithoutQualitySizeMappingsInput, Prisma.UserUncheckedCreateWithoutQualitySizeMappingsInput>
+}
+
+export type UserUpsertWithoutQualitySizeMappingsInput = {
+  update: Prisma.XOR<Prisma.UserUpdateWithoutQualitySizeMappingsInput, Prisma.UserUncheckedUpdateWithoutQualitySizeMappingsInput>
+  create: Prisma.XOR<Prisma.UserCreateWithoutQualitySizeMappingsInput, Prisma.UserUncheckedCreateWithoutQualitySizeMappingsInput>
+  where?: Prisma.UserWhereInput
+}
+
+export type UserUpdateToOneWithWhereWithoutQualitySizeMappingsInput = {
+  where?: Prisma.UserWhereInput
+  data: Prisma.XOR<Prisma.UserUpdateWithoutQualitySizeMappingsInput, Prisma.UserUncheckedUpdateWithoutQualitySizeMappingsInput>
+}
+
+export type UserUpdateWithoutQualitySizeMappingsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  sessions?: Prisma.SessionUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
+  serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  userCustomFormats?: Prisma.UserCustomFormatUpdateManyWithoutUserNestedInput
+}
+
+export type UserUncheckedUpdateWithoutQualitySizeMappingsInput = {
+  id?: Prisma.StringFieldUpdateOperationsInput | string
+  username?: Prisma.StringFieldUpdateOperationsInput | string
+  hashedPassword?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  mustChangePassword?: Prisma.BoolFieldUpdateOperationsInput | boolean
+  failedLoginAttempts?: Prisma.IntFieldUpdateOperationsInput | number
+  lockedUntil?: Prisma.NullableDateTimeFieldUpdateOperationsInput | Date | string | null
+  encryptedTmdbApiKey?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  tmdbEncryptionIv?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
+  sessions?: Prisma.SessionUncheckedUpdateManyWithoutUserNestedInput
+  oidcAccounts?: Prisma.OIDCAccountUncheckedUpdateManyWithoutUserNestedInput
+  webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
+  trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
   userCustomFormats?: Prisma.UserCustomFormatUncheckedUpdateManyWithoutUserNestedInput
 }
@@ -1074,6 +1207,7 @@ export type UserCreateWithoutUserCustomFormatsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingCreateNestedManyWithoutUserInput
 }
 
 export type UserUncheckedCreateWithoutUserCustomFormatsInput = {
@@ -1092,6 +1226,7 @@ export type UserUncheckedCreateWithoutUserCustomFormatsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedCreateNestedManyWithoutUserInput
   trashSettings?: Prisma.TrashSettingsUncheckedCreateNestedOneWithoutUserInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedCreateNestedManyWithoutUserInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedCreateNestedManyWithoutUserInput
 }
 
 export type UserCreateOrConnectWithoutUserCustomFormatsInput = {
@@ -1126,6 +1261,7 @@ export type UserUpdateWithoutUserCustomFormatsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUpdateManyWithoutUserNestedInput
 }
 
 export type UserUncheckedUpdateWithoutUserCustomFormatsInput = {
@@ -1144,6 +1280,7 @@ export type UserUncheckedUpdateWithoutUserCustomFormatsInput = {
   webauthnCredentials?: Prisma.WebAuthnCredentialUncheckedUpdateManyWithoutUserNestedInput
   trashSettings?: Prisma.TrashSettingsUncheckedUpdateOneWithoutUserNestedInput
   serviceInstances?: Prisma.ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput
+  qualitySizeMappings?: Prisma.QualitySizeMappingUncheckedUpdateManyWithoutUserNestedInput
 }
 
 
@@ -1157,6 +1294,7 @@ export type UserCountOutputType = {
   webauthnCredentials: number
   serviceInstances: number
   userCustomFormats: number
+  qualitySizeMappings: number
 }
 
 export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
@@ -1165,6 +1303,7 @@ export type UserCountOutputTypeSelect<ExtArgs extends runtime.Types.Extensions.I
   webauthnCredentials?: boolean | UserCountOutputTypeCountWebauthnCredentialsArgs
   serviceInstances?: boolean | UserCountOutputTypeCountServiceInstancesArgs
   userCustomFormats?: boolean | UserCountOutputTypeCountUserCustomFormatsArgs
+  qualitySizeMappings?: boolean | UserCountOutputTypeCountQualitySizeMappingsArgs
 }
 
 /**
@@ -1212,6 +1351,13 @@ export type UserCountOutputTypeCountUserCustomFormatsArgs<ExtArgs extends runtim
   where?: Prisma.UserCustomFormatWhereInput
 }
 
+/**
+ * UserCountOutputType without action
+ */
+export type UserCountOutputTypeCountQualitySizeMappingsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  where?: Prisma.QualitySizeMappingWhereInput
+}
+
 
 export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetSelect<{
   id?: boolean
@@ -1230,6 +1376,7 @@ export type UserSelect<ExtArgs extends runtime.Types.Extensions.InternalArgs = r
   trashSettings?: boolean | Prisma.User$trashSettingsArgs<ExtArgs>
   serviceInstances?: boolean | Prisma.User$serviceInstancesArgs<ExtArgs>
   userCustomFormats?: boolean | Prisma.User$userCustomFormatsArgs<ExtArgs>
+  qualitySizeMappings?: boolean | Prisma.User$qualitySizeMappingsArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }, ExtArgs["result"]["user"]>
 
@@ -1280,6 +1427,7 @@ export type UserInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = 
   trashSettings?: boolean | Prisma.User$trashSettingsArgs<ExtArgs>
   serviceInstances?: boolean | Prisma.User$serviceInstancesArgs<ExtArgs>
   userCustomFormats?: boolean | Prisma.User$userCustomFormatsArgs<ExtArgs>
+  qualitySizeMappings?: boolean | Prisma.User$qualitySizeMappingsArgs<ExtArgs>
   _count?: boolean | Prisma.UserCountOutputTypeDefaultArgs<ExtArgs>
 }
 export type UserIncludeCreateManyAndReturn<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {}
@@ -1294,6 +1442,7 @@ export type $UserPayload<ExtArgs extends runtime.Types.Extensions.InternalArgs =
     trashSettings: Prisma.$TrashSettingsPayload<ExtArgs> | null
     serviceInstances: Prisma.$ServiceInstancePayload<ExtArgs>[]
     userCustomFormats: Prisma.$UserCustomFormatPayload<ExtArgs>[]
+    qualitySizeMappings: Prisma.$QualitySizeMappingPayload<ExtArgs>[]
   }
   scalars: runtime.Types.Extensions.GetPayloadResult<{
     id: string
@@ -1706,6 +1855,7 @@ export interface Prisma__UserClient<T, Null = never, ExtArgs extends runtime.Typ
   trashSettings<T extends Prisma.User$trashSettingsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$trashSettingsArgs<ExtArgs>>): Prisma.Prisma__TrashSettingsClient<runtime.Types.Result.GetResult<Prisma.$TrashSettingsPayload<ExtArgs>, T, "findUniqueOrThrow", GlobalOmitOptions> | null, null, ExtArgs, GlobalOmitOptions>
   serviceInstances<T extends Prisma.User$serviceInstancesArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$serviceInstancesArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$ServiceInstancePayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   userCustomFormats<T extends Prisma.User$userCustomFormatsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$userCustomFormatsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$UserCustomFormatPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
+  qualitySizeMappings<T extends Prisma.User$qualitySizeMappingsArgs<ExtArgs> = {}>(args?: Prisma.Subset<T, Prisma.User$qualitySizeMappingsArgs<ExtArgs>>): Prisma.PrismaPromise<runtime.Types.Result.GetResult<Prisma.$QualitySizeMappingPayload<ExtArgs>, T, "findMany", GlobalOmitOptions> | Null>
   /**
    * Attaches callbacks for the resolution and/or rejection of the Promise.
    * @param onfulfilled The callback to execute when the Promise is resolved.
@@ -2267,6 +2417,30 @@ export type User$userCustomFormatsArgs<ExtArgs extends runtime.Types.Extensions.
   take?: number
   skip?: number
   distinct?: Prisma.UserCustomFormatScalarFieldEnum | Prisma.UserCustomFormatScalarFieldEnum[]
+}
+
+/**
+ * User.qualitySizeMappings
+ */
+export type User$qualitySizeMappingsArgs<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
+  /**
+   * Select specific fields to fetch from the QualitySizeMapping
+   */
+  select?: Prisma.QualitySizeMappingSelect<ExtArgs> | null
+  /**
+   * Omit specific fields from the QualitySizeMapping
+   */
+  omit?: Prisma.QualitySizeMappingOmit<ExtArgs> | null
+  /**
+   * Choose, which related nodes to fetch as well
+   */
+  include?: Prisma.QualitySizeMappingInclude<ExtArgs> | null
+  where?: Prisma.QualitySizeMappingWhereInput
+  orderBy?: Prisma.QualitySizeMappingOrderByWithRelationInput | Prisma.QualitySizeMappingOrderByWithRelationInput[]
+  cursor?: Prisma.QualitySizeMappingWhereUniqueInput
+  take?: number
+  skip?: number
+  distinct?: Prisma.QualitySizeMappingScalarFieldEnum | Prisma.QualitySizeMappingScalarFieldEnum[]
 }
 
 /**

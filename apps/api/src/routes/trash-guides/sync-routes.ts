@@ -7,7 +7,6 @@
 import type { FastifyInstance, FastifyPluginOptions, FastifyRequest } from "fastify";
 import type { SonarrClient, RadarrClient } from "arr-sdk";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
-import { createDeploymentExecutorService } from "../../lib/trash-guides/deployment-executor.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { createSyncEngine } from "../../lib/trash-guides/sync-engine.js";
@@ -97,7 +96,7 @@ function _removeProgress(syncId: string): void {
 export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	// Shared services (repo-independent)
 	const cacheManager = createCacheManager(app.prisma);
-	const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.arrClientFactory);
+	const { deploymentExecutor } = app;
 
 	/** Create repo-aware services configured for the current user's repo settings */
 	async function getServices(userId: string) {
@@ -460,7 +459,8 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 					backupCFs = parsed.customFormats ?? [];
 					backupQualityProfile = parsed.qualityProfile ?? null;
 				}
-			} catch {
+			} catch (error) {
+				request.log.warn({ syncId, err: error }, "Failed to parse backup data for rollback");
 				return reply.status(400).send({
 					error: "INVALID_BACKUP",
 					message: "Backup data is corrupted or invalid",

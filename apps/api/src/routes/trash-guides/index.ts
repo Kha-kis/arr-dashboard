@@ -13,6 +13,7 @@ import { deploymentRoutes } from "./deployment-routes.js";
 import registerInstanceQualityProfileRoutes from "./instance-quality-profile-routes.js";
 import profileCloneRoutes from "./profile-clone-routes.js";
 import { registerQualityProfileRoutes } from "./quality-profile-routes.js";
+import { qualitySizeRoutes } from "./quality-size-routes.js";
 import { registerSettingsRoutes } from "./settings-routes.js";
 import { registerSyncRoutes } from "./sync-routes.js";
 import { registerTemplateRoutes } from "./template-routes.js";
@@ -56,6 +57,9 @@ export async function registerTrashGuidesRoutes(app: FastifyInstance, _opts: Fas
 
 	// Register custom format routes under /custom-formats
 	app.register(registerCustomFormatRoutes, { prefix: "/custom-formats" });
+
+	// Register quality size routes under /quality-size
+	app.register(qualitySizeRoutes, { prefix: "/quality-size" });
 
 	// Register settings routes under /settings
 	app.register(registerSettingsRoutes, { prefix: "/settings" });

@@ -7,7 +7,6 @@
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { createCacheManager } from "../lib/trash-guides/cache-manager.js";
-import { createDeploymentExecutorService } from "../lib/trash-guides/deployment-executor.js";
 import { createTrashFetcher } from "../lib/trash-guides/github-fetcher.js";
 import { getGlobalRepoConfig } from "../lib/trash-guides/repo-config.js";
 import { createTemplateUpdater } from "../lib/trash-guides/template-updater.js";
@@ -57,13 +56,12 @@ const trashUpdateSchedulerPlugin = fastifyPlugin(
 			const versionTracker = createVersionTracker(repoConfig);
 			const cacheManager = createCacheManager(app.prisma);
 			const githubFetcher = createTrashFetcher({ repoConfig, logger: app.log });
-			const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.arrClientFactory);
 			const templateUpdater = createTemplateUpdater(
 				app.prisma,
 				versionTracker,
 				cacheManager,
 				githubFetcher,
-				deploymentExecutor,
+				app.deploymentExecutor,
 			);
 
 			// Create and register scheduler
@@ -73,6 +71,7 @@ const trashUpdateSchedulerPlugin = fastifyPlugin(
 				versionTracker,
 				app.prisma,
 				app.log,
+				app.arrClientFactory,
 			);
 
 			app.decorate("trashUpdateScheduler", scheduler);
@@ -92,7 +91,7 @@ const trashUpdateSchedulerPlugin = fastifyPlugin(
 	},
 	{
 		name: "trash-update-scheduler",
-		dependencies: ["prisma"],
+		dependencies: ["prisma", "deployment-executor"],
 	},
 );
 
