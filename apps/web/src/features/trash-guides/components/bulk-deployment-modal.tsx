@@ -10,6 +10,7 @@
  */
 
 import { useState, useEffect, useMemo } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import {
 	LegacyDialog,
 	LegacyDialogHeader,
@@ -170,6 +171,7 @@ export const BulkDeploymentModal = ({
 	onDeploySuccess,
 }: BulkDeploymentModalProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
+	const queryClient = useQueryClient();
 	// Track selection state and sync strategies per instance
 	const [selectedInstances, setSelectedInstances] = useState<Set<string>>(new Set());
 	const [syncStrategies, setSyncStrategies] = useState<Record<string, SyncStrategy>>({});
@@ -639,8 +641,9 @@ export const BulkDeploymentModal = ({
 					templateDefaultConfig={templateDefaultQualityConfig}
 					onSaved={() => {
 						setEditingQualityOverride(null);
-						// Note: The deployment previews will need to be refetched
-						// to reflect the new quality config
+						queryClient.invalidateQueries({
+							queryKey: ["trash-guides", "deployment", "preview"],
+						});
 					}}
 				/>
 			)}

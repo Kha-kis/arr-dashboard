@@ -64,6 +64,9 @@ export function useExecuteDeployment() {
 			queryClient.invalidateQueries({
 				queryKey: TEMPLATES_QUERY_KEY,
 			});
+			queryClient.invalidateQueries({
+				queryKey: ["template-stats"],
+			});
 		},
 	});
 }
@@ -86,6 +89,9 @@ export function useExecuteBulkDeployment() {
 			});
 			queryClient.invalidateQueries({
 				queryKey: TEMPLATES_QUERY_KEY,
+			});
+			queryClient.invalidateQueries({
+				queryKey: ["template-stats"],
 			});
 		},
 	});

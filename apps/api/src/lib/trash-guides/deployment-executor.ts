@@ -130,6 +130,7 @@ interface PreviousDeploymentCF {
 export class DeploymentExecutorService {
 	private prisma: PrismaClient;
 	private clientFactory: ArrClientFactory;
+	private activeDeployments = new Map<string, Promise<DeploymentResult>>();
 
 	constructor(prisma: PrismaClient, clientFactory: ArrClientFactory) {
 		this.prisma = prisma;
@@ -256,6 +257,8 @@ export class DeploymentExecutorService {
 		userId: string,
 		preDeploymentCFs: SdkCustomFormat[],
 		templateId: string,
+		// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality profile snapshot
+		preDeploymentQP?: any,
 	): Promise<BackupAndHistoryResult> {
 		const userSettings = await this.prisma.trashSettings.findUnique({
 			where: { userId },
@@ -274,7 +277,10 @@ export class DeploymentExecutorService {
 				data: {
 					instanceId: instance.id,
 					userId,
-					backupData: JSON.stringify(preDeploymentCFs),
+					backupData: JSON.stringify({
+						customFormats: preDeploymentCFs,
+						qualityProfile: preDeploymentQP ?? null,
+					}),
 					expiresAt,
 				},
 			});
@@ -364,7 +370,7 @@ export class DeploymentExecutorService {
 
 					const newCF = {
 						name: templateCF.name,
-						includeCustomFormatWhenRenaming: false,
+						includeCustomFormatWhenRenaming: templateCF.originalConfig?.includeCustomFormatWhenRenaming ?? false,
 						specifications,
 					};
 
@@ -610,7 +616,7 @@ export class DeploymentExecutorService {
 						remappedCutoff = sourceIdToNewId.get(clonedProfile.cutoff)!;
 					} else if (qualityItems.length > 0) {
 						const lastItem = qualityItems[qualityItems.length - 1];
-						remappedCutoff = lastItem.id ?? lastItem.quality?.id ?? clonedProfile.cutoff;
+						remappedCutoff = lastItem.id ?? lastItem.quality?.id ?? 1;
 					}
 
 					updatedProfile = {
@@ -775,6 +781,30 @@ export class DeploymentExecutorService {
 		syncStrategy?: "auto" | "manual" | "notify",
 		conflictResolutions?: Record<string, "use_template" | "keep_existing">,
 	): Promise<DeploymentResult> {
+		if (this.activeDeployments.has(instanceId)) {
+			throw new AppValidationError(
+				"Deployment already in progress for this instance. Please wait for it to complete.",
+			);
+		}
+
+		const deploymentPromise = this.executeSingleDeployment(
+			templateId, instanceId, userId, syncStrategy, conflictResolutions,
+		);
+		this.activeDeployments.set(instanceId, deploymentPromise);
+		try {
+			return await deploymentPromise;
+		} finally {
+			this.activeDeployments.delete(instanceId);
+		}
+	}
+
+	private async executeSingleDeployment(
+		templateId: string,
+		instanceId: string,
+		userId: string,
+		syncStrategy?: "auto" | "manual" | "notify",
+		conflictResolutions?: Record<string, "use_template" | "keep_existing">,
+	): Promise<DeploymentResult> {
 		const startTime = new Date();
 		let historyId: string | null = null;
 		let deploymentHistoryId: string | null = null;
@@ -786,16 +816,6 @@ export class DeploymentExecutorService {
 			const { template, instance, templateConfig, templateCFs, effectiveQualityConfig } =
 				await this.validateAndPrepareDeployment(templateId, instanceId, userId);
 
-			const preDeploymentCFs = await this.getExistingCustomFormats(instance);
-
-			const { backup, historyId: syncHistoryId } = await this.createBackupAndHistory(
-				instance,
-				userId,
-				preDeploymentCFs,
-				templateId,
-			);
-			historyId = syncHistoryId;
-
 			const client = this.clientFactory.create(instance) as SonarrClient | RadarrClient;
 			try {
 				await client.system.get();
@@ -805,7 +825,20 @@ export class DeploymentExecutorService {
 				);
 			}
 
+			// Fetch pre-deployment state for backup (both CFs and quality profile)
 			const existingCFs = await client.customFormat.getAll();
+			const profileName = template.name || "TRaSH Guides HD/UHD";
+			const allProfiles = await client.qualityProfile.getAll();
+			const preDeploymentQP = allProfiles.find((p) => p.name === profileName) ?? null;
+
+			const { backup, historyId: syncHistoryId } = await this.createBackupAndHistory(
+				instance,
+				userId,
+				existingCFs,
+				templateId,
+				preDeploymentQP,
+			);
+			historyId = syncHistoryId;
 			const existingCFMap = new Map<string, SdkCustomFormat>();
 			const existingCFByName = new Map<string, SdkCustomFormat>();
 			for (const cf of existingCFs) {
@@ -873,7 +906,6 @@ export class DeploymentExecutorService {
 				conflictResolutions,
 			);
 
-			const profileName = template.name || "TRaSH Guides HD/UHD";
 			const profileResult = await this.syncQualityProfile(
 				client,
 				templateConfig,
@@ -974,29 +1006,38 @@ export class DeploymentExecutorService {
 			throw new TemplateNotFoundError(templateId);
 		}
 
-		const deploymentPromises = instanceIds.map((instanceId) => {
-			const strategy = instanceSyncStrategies?.[instanceId] ?? syncStrategy;
-			return this.deploySingleInstance(templateId, instanceId, userId, strategy);
-		});
+		// Deploy in chunks to avoid overwhelming ARR instances with concurrent API calls.
+		// Each deployment makes 10-50+ API calls, so unbounded parallelism can cause timeouts.
+		const MAX_CONCURRENT = 3;
+		const results: DeploymentResult[] = [];
 
-		const settledResults = await Promise.allSettled(deploymentPromises);
+		for (let i = 0; i < instanceIds.length; i += MAX_CONCURRENT) {
+			const chunk = instanceIds.slice(i, i + MAX_CONCURRENT);
+			const chunkPromises = chunk.map((instanceId) => {
+				const strategy = instanceSyncStrategies?.[instanceId] ?? syncStrategy;
+				return this.deploySingleInstance(templateId, instanceId, userId, strategy);
+			});
 
-		const results: DeploymentResult[] = settledResults.map((settled, index) => {
-			if (settled.status === "fulfilled") {
-				return settled.value;
+			const settledResults = await Promise.allSettled(chunkPromises);
+
+			for (let j = 0; j < settledResults.length; j++) {
+				const settled = settledResults[j]!;
+				if (settled.status === "fulfilled") {
+					results.push(settled.value);
+				} else {
+					const globalIndex = i + j;
+					results.push({
+						instanceId: instanceIds[globalIndex] ?? `unknown-${globalIndex}`,
+						instanceLabel: `Instance ${globalIndex + 1}`,
+						success: false,
+						customFormatsCreated: 0,
+						customFormatsUpdated: 0,
+						customFormatsSkipped: 0,
+						errors: [getErrorMessage(settled.reason, "Deployment failed")],
+					});
+				}
 			}
-			const errorMessage =
-				getErrorMessage(settled.reason, "Deployment failed");
-			return {
-				instanceId: instanceIds[index] ?? `unknown-${index}`,
-				instanceLabel: `Instance ${index + 1}`,
-				success: false,
-				customFormatsCreated: 0,
-				customFormatsUpdated: 0,
-				customFormatsSkipped: 0,
-				errors: [errorMessage],
-			};
-		});
+		}
 
 		const successfulInstances = results.filter((r) => r.success).length;
 		const failedInstances = results.filter((r) => !r.success).length;
@@ -1011,11 +1052,6 @@ export class DeploymentExecutorService {
 		};
 	}
 
-	// biome-ignore lint/suspicious/noExplicitAny: Dynamic instance type
-	private async getExistingCustomFormats(instance: any): Promise<SdkCustomFormat[]> {
-		const client = this.clientFactory.create(instance) as SonarrClient | RadarrClient;
-		return client.customFormat.getAll();
-	}
 }
 
 // ============================================================================

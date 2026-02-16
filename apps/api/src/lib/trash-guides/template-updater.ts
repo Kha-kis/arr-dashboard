@@ -419,7 +419,7 @@ export class TemplateUpdater {
 				log.warn({ err: parseError, templateId }, "Failed to parse configData for template");
 			}
 
-			const fetchResult = await this.fetchLatestTrashData(serviceType);
+			let fetchResult = await this.fetchLatestTrashData(serviceType);
 			if (!fetchResult.success) {
 				return {
 					success: false,
@@ -432,16 +432,46 @@ export class TemplateUpdater {
 			}
 
 			if (fetchResult.cacheCommitHash && fetchResult.cacheCommitHash !== targetCommit.commitHash) {
-				return {
-					success: false,
-					templateId,
-					previousCommit,
-					newCommit: targetCommit.commitHash,
-					errors: [
-						`Cache/version mismatch: cache contains data for commit ${fetchResult.cacheCommitHash}, but syncing to ${targetCommit.commitHash}. Please refresh the cache and try again.`,
-					],
-					errorType: "sync_failed",
-				};
+				log.info(
+					{ cacheCommit: fetchResult.cacheCommitHash, targetCommit: targetCommit.commitHash, templateId, serviceType },
+					"Cache/version mismatch — auto-refreshing cache",
+				);
+
+				const requiredCacheTypes: TrashConfigType[] = [
+					"CUSTOM_FORMATS",
+					"CF_GROUPS",
+					"QUALITY_PROFILES",
+				];
+
+				for (const configType of requiredCacheTypes) {
+					try {
+						const data = await this.githubFetcher.fetchConfigs(serviceType, configType);
+						await this.cacheManager.set(serviceType, configType, data, targetCommit.commitHash);
+					} catch (fetchError) {
+						return {
+							success: false,
+							templateId,
+							previousCommit,
+							newCommit: targetCommit.commitHash,
+							errors: [
+								`Failed to refresh ${configType} cache for ${serviceType}: ${getErrorMessage(fetchError)}`,
+							],
+							errorType: "sync_failed" as const,
+						};
+					}
+				}
+
+				fetchResult = await this.fetchLatestTrashData(serviceType);
+				if (!fetchResult.success) {
+					return {
+						success: false,
+						templateId,
+						previousCommit,
+						newCommit: targetCommit.commitHash,
+						errors: [`Failed to fetch TRaSH data after cache refresh: ${fetchResult.error}`],
+						errorType: "sync_failed",
+					};
+				}
 			}
 
 			const currentCFTrashIds = new Set(

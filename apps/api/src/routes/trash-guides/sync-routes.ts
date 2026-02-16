@@ -438,7 +438,8 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 			const client = app.arrClientFactory.create(sync.instance) as SonarrClient | RadarrClient;
 
 			// Parse backup data (contains the pre-sync state)
-			// Note: deployment-executor stores backupData as a raw array of CFs, not an object
+			// New format: { customFormats: [...], qualityProfile: {...} | null }
+			// Legacy format: raw array of CFs (pre-QP-backup)
 			interface BackupCustomFormat {
 				id?: number;
 				name: string;
@@ -448,10 +449,17 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 			}
 
 			let backupCFs: BackupCustomFormat[];
+			// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality profile snapshot
+			let backupQualityProfile: any | null = null;
 			try {
 				const parsed = JSON.parse(sync.backup.backupData);
-				// Handle both formats: raw array (deployment-executor) or object with customFormats (backup-manager)
-				backupCFs = Array.isArray(parsed) ? parsed : (parsed.customFormats ?? []);
+				// Handle both formats: raw array (legacy) or object with customFormats + qualityProfile
+				if (Array.isArray(parsed)) {
+					backupCFs = parsed;
+				} else {
+					backupCFs = parsed.customFormats ?? [];
+					backupQualityProfile = parsed.qualityProfile ?? null;
+				}
 			} catch {
 				return reply.status(400).send({
 					error: "INVALID_BACKUP",
@@ -561,14 +569,42 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 				}
 			}
 
-			// Mark sync as rolled back
-			await app.prisma.trashSyncHistory.update({
-				where: { id: syncId },
-				data: {
-					rolledBack: true,
-					rolledBackAt: new Date(),
-				},
-			});
+			// Step 3: Restore quality profile if backup includes one
+			if (backupQualityProfile && backupQualityProfile.id !== undefined) {
+				try {
+					await client.qualityProfile.update(
+						backupQualityProfile.id,
+						// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality profile type
+						backupQualityProfile as any,
+					);
+					request.log.info(
+						{ profileId: backupQualityProfile.id, profileName: backupQualityProfile.name },
+						"Quality profile restored from backup",
+					);
+				} catch (error) {
+					errors.push(
+						`Failed to restore quality profile "${backupQualityProfile.name ?? "unknown"}": ${getErrorMessage(error, "Unknown error")}`,
+					);
+					failedCount++;
+				}
+			}
+
+			// Only mark as fully rolled back when all operations succeeded.
+			// Partial failures leave rolledBack=false so the user can retry.
+			if (failedCount === 0) {
+				await app.prisma.trashSyncHistory.update({
+					where: { id: syncId },
+					data: {
+						rolledBack: true,
+						rolledBackAt: new Date(),
+					},
+				});
+			} else {
+				request.log.warn(
+					{ syncId, failedCount, errors },
+					"Partial rollback — not marking as rolled back to allow retry",
+				);
+			}
 
 			request.log.info(
 				{
@@ -578,7 +614,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 					failedCount,
 					userId,
 				},
-				"Sync rollback completed",
+				failedCount === 0 ? "Sync rollback completed" : "Sync rollback partially completed",
 			);
 
 			// Record metrics

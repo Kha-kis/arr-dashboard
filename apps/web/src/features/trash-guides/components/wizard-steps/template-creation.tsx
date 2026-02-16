@@ -189,7 +189,8 @@ export const TemplateCreation = ({
 	});
 
 	const handleSubmit = async () => {
-		if (!templateName.trim()) {
+		const hasSelectedCFs = Object.values(wizardState.customFormatSelections).some((sel) => sel.selected);
+		if (!templateName.trim() || !hasSelectedCFs) {
 			return;
 		}
 
@@ -677,24 +678,29 @@ export const TemplateCreation = ({
 					Back
 				</button>
 
-				<button
-					type="button"
-					onClick={handleSubmit}
-					disabled={!templateName.trim() || importMutation.isPending || updateMutation.isPending || clonedMutation.isPending}
-					className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-foreground transition hover:bg-primary/90 disabled:opacity-50"
-				>
-					{(importMutation.isPending || updateMutation.isPending || clonedMutation.isPending) ? (
-						<>
-							<div className="h-4 w-4 animate-spin rounded-full border-2 border-border border-t-fg" />
-							{isEditMode ? 'Updating Template...' : 'Creating Template...'}
-						</>
-					) : (
-						<>
-							{isEditMode ? <Save className="h-4 w-4" /> : <Download className="h-4 w-4" />}
-							{isEditMode ? 'Update Template' : 'Create Template'}
-						</>
+				<div className="flex flex-col items-end gap-1">
+					{selectedCFs.length === 0 && (
+						<p className="text-xs text-muted-foreground">Select at least one custom format</p>
 					)}
-				</button>
+					<button
+						type="button"
+						onClick={handleSubmit}
+						disabled={!templateName.trim() || selectedCFs.length === 0 || importMutation.isPending || updateMutation.isPending || clonedMutation.isPending}
+						className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-foreground transition hover:bg-primary/90 disabled:opacity-50"
+					>
+						{(importMutation.isPending || updateMutation.isPending || clonedMutation.isPending) ? (
+							<>
+								<div className="h-4 w-4 animate-spin rounded-full border-2 border-border border-t-fg" />
+								{isEditMode ? 'Updating Template...' : 'Creating Template...'}
+							</>
+						) : (
+							<>
+								{isEditMode ? <Save className="h-4 w-4" /> : <Download className="h-4 w-4" />}
+								{isEditMode ? 'Update Template' : 'Create Template'}
+							</>
+						)}
+					</button>
+				</div>
 			</div>
 		</div>
 	);
