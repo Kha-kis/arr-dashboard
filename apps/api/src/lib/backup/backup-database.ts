@@ -43,6 +43,8 @@ export async function exportDatabase(
 		templateQualityProfileMappings,
 		instanceQualityProfileOverrides,
 		standaloneCFDeployments,
+		// Quality size preset mappings
+		qualitySizeMappings,
 		// TRaSH Guides history/audit
 		trashSyncHistory,
 		templateDeploymentHistory,
@@ -69,6 +71,8 @@ export async function exportDatabase(
 		prisma.templateQualityProfileMapping.findMany(),
 		prisma.instanceQualityProfileOverride.findMany(),
 		prisma.standaloneCFDeployment.findMany(),
+		// Quality size preset mappings
+		prisma.qualitySizeMapping.findMany(),
 		// TRaSH Guides history/audit
 		prisma.trashSyncHistory.findMany(),
 		prisma.templateDeploymentHistory.findMany(),
@@ -114,6 +118,8 @@ export async function exportDatabase(
 		templateQualityProfileMappings,
 		instanceQualityProfileOverrides,
 		standaloneCFDeployments,
+		// Quality size preset mappings
+		qualitySizeMappings,
 		// TRaSH Guides history/audit
 		trashSyncHistory,
 		templateDeploymentHistory,
@@ -151,6 +157,7 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 		await tx.trashSyncHistory.deleteMany();
 
 		// TRaSH configuration (depends on templates, instances)
+		await tx.qualitySizeMapping.deleteMany();
 		await tx.templateQualityProfileMapping.deleteMany();
 		await tx.instanceQualityProfileOverride.deleteMany();
 		await tx.standaloneCFDeployment.deleteMany();
@@ -318,6 +325,17 @@ export async function restoreDatabase(prisma: PrismaClient, data: BackupData["da
 			]);
 			await tx.standaloneCFDeployment.createMany({
 				data: data.standaloneCFDeployments as Prisma.StandaloneCFDeploymentCreateManyInput[],
+			});
+		}
+
+		if (data.qualitySizeMappings && data.qualitySizeMappings.length > 0) {
+			validateRecords(data.qualitySizeMappings, "qualitySizeMapping", [
+				"id",
+				"instanceId",
+				"userId",
+			]);
+			await tx.qualitySizeMapping.createMany({
+				data: data.qualitySizeMappings as Prisma.QualitySizeMappingCreateManyInput[],
 			});
 		}
 
