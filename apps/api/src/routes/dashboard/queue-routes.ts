@@ -21,6 +21,7 @@ import {
 	type QueueClient,
 } from "../../lib/dashboard/queue-utils.js";
 import { autoImportByDownloadIdWithSdk, setManualImportLogger } from "../manual-import-utils.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 /**
  * Queue-related routes for the dashboard
@@ -105,7 +106,7 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Performs an action on a single queue item (remove, retry, or manual import)
 	 */
 	app.post("/dashboard/queue/action", async (request, reply) => {
-		const body = queueActionRequestSchema.parse(request.body);
+		const body = validateRequest(queueActionRequestSchema, request.body);
 
 		const clientResult = await getClientForInstance(app, request, body.instanceId);
 		if (!clientResult.success) {
@@ -202,7 +203,7 @@ export const queueRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Performs an action on multiple queue items at once
 	 */
 	app.post("/dashboard/queue/bulk", async (request, reply) => {
-		const body = queueBulkActionRequestSchema.parse(request.body);
+		const body = validateRequest(queueBulkActionRequestSchema, request.body);
 
 		const clientResult = await getClientForInstance(app, request, body.instanceId);
 		if (!clientResult.success) {

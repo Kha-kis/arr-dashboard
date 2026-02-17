@@ -16,6 +16,7 @@ import {
 	renamePasskeyCredential,
 	type PasskeyCredential,
 } from "../../../lib/api-client/auth";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 /**
  * Premium Passkey Section
@@ -46,7 +47,7 @@ export const PasskeySection = () => {
 			const creds = await getPasskeyCredentials();
 			setCredentials(creds);
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to load passkeys");
+			setError(getErrorMessage(err, "Failed to load passkeys"));
 		} finally {
 			setLoading(false);
 		}
@@ -74,9 +75,7 @@ export const PasskeySection = () => {
 			await loadCredentials();
 		} catch (err) {
 			setError(
-				err instanceof Error
-					? err.message
-					: "Failed to register passkey. Make sure your device supports passkeys."
+				getErrorMessage(err, "Failed to register passkey. Make sure your device supports passkeys.")
 			);
 		} finally {
 			setRegisteringPasskey(false);
@@ -96,7 +95,7 @@ export const PasskeySection = () => {
 			setSuccess("Passkey deleted successfully!");
 			await loadCredentials();
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to delete passkey");
+			setError(getErrorMessage(err, "Failed to delete passkey"));
 		}
 	};
 
@@ -126,7 +125,7 @@ export const PasskeySection = () => {
 			setEditName("");
 			await loadCredentials();
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to rename passkey");
+			setError(getErrorMessage(err, "Failed to rename passkey"));
 		}
 	};
 

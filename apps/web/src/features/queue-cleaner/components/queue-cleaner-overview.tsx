@@ -25,6 +25,7 @@ import type { QueueCleanerStatus, InstanceCleanerStatus } from "../lib/queue-cle
 import { useManualClean } from "../hooks/useManualClean";
 import { useEnhancedPreview } from "../hooks/useDryRun";
 import { EnhancedDryRunPreview } from "./dry-run-preview";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface OverviewProps {
 	status: QueueCleanerStatus | null;
@@ -136,7 +137,7 @@ const InstanceStatusCard = ({
 			if (isCooldownError(error)) {
 				toast.warning((error as Error).message);
 			} else {
-				toast.error(error instanceof Error ? error.message : "Failed to trigger clean");
+				toast.error(getErrorMessage(error, "Failed to trigger clean"));
 			}
 		}
 	};
@@ -146,7 +147,7 @@ const InstanceStatusCard = ({
 			await runPreview(instance.instanceId);
 			setShowPreview(true);
 		} catch (error) {
-			toast.error(error instanceof Error ? error.message : "Preview failed");
+			toast.error(getErrorMessage(error, "Preview failed"));
 		}
 	};
 

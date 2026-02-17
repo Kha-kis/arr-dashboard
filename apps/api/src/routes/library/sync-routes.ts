@@ -11,6 +11,7 @@ import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { getLibrarySyncScheduler } from "../../lib/library-sync/index.js";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 // ============================================================================
 // Validation Schemas
@@ -87,7 +88,7 @@ export const registerSyncRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Trigger a manual sync for a specific instance
 	 */
 	app.post("/library/sync/:instanceId", async (request, reply) => {
-		const params = instanceIdParamSchema.parse(request.params);
+		const params = validateRequest(instanceIdParamSchema, request.params);
 		const userId = request.currentUser!.id;
 
 		const instance = await requireInstance(app, userId, params.instanceId);
@@ -119,9 +120,9 @@ export const registerSyncRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * PATCH /library/sync/:instanceId
 	 * Update sync settings for an instance
 	 */
-	app.patch("/library/sync/:instanceId", async (request, reply) => {
-		const params = instanceIdParamSchema.parse(request.params);
-		const body = updateSyncSettingsSchema.parse(request.body ?? {});
+	app.patch("/library/sync/:instanceId", async (request, _reply) => {
+		const params = validateRequest(instanceIdParamSchema, request.params);
+		const body = validateRequest(updateSyncSettingsSchema, request.body ?? {});
 		const userId = request.currentUser!.id;
 
 		await requireInstance(app, userId, params.instanceId);

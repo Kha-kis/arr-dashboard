@@ -5,6 +5,7 @@ import { Button } from "../../../components/ui";
 import { Clock, X, Calendar, AlertCircle, Loader2, Check, Bell, Zap, Power } from "lucide-react";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface TemplateScheduleModalProps {
 	open: boolean;
@@ -138,7 +139,7 @@ export const TemplateScheduleModal = ({
 			onClose();
 		} catch (err) {
 			console.error("Failed to save schedule:", err);
-			setError(err instanceof Error ? err.message : "Failed to save schedule. Please try again.");
+			setError(getErrorMessage(err, "Failed to save schedule. Please try again."));
 		} finally {
 			setIsSaving(false);
 		}

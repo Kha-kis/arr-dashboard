@@ -1,6 +1,8 @@
 import type { FastifyInstance } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { getQueueCleanerScheduler } from "../lib/queue-cleaner/scheduler.js";
+import { getErrorMessage } from "../lib/utils/error-message.js";
+import { setManualImportLogger } from "../routes/manual-import-utils.js";
 
 declare module "fastify" {
 	interface FastifyInstance {
@@ -21,6 +23,12 @@ const queueCleanerSchedulerPlugin = fastifyPlugin(
 			try {
 				app.log.info("Initializing queue cleaner scheduler");
 
+				// Initialize the manual import logger for auto-import operations
+				setManualImportLogger({
+					warn: (msg, ...args) => app.log.warn({ ...(args[0] as object) }, msg),
+					debug: (msg, ...args) => app.log.debug({ ...(args[0] as object) }, msg),
+				});
+
 				const scheduler = getQueueCleanerScheduler();
 				scheduler.initialize(app);
 
@@ -35,7 +43,7 @@ const queueCleanerSchedulerPlugin = fastifyPlugin(
 				app.queueCleanerEnabled = true;
 				app.log.info("Queue cleaner scheduler started successfully");
 			} catch (error) {
-				const errorMsg = error instanceof Error ? error.message : "Unknown initialization error";
+				const errorMsg = getErrorMessage(error, "Unknown initialization error");
 				app.log.error({ err: error }, "Failed to initialize queue cleaner scheduler - feature disabled");
 				// Store error for user visibility in 503 responses
 				app.decorate("queueCleanerInitError", errorMsg);

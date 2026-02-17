@@ -27,17 +27,7 @@ import {
 import { SanitizedHtml } from "../sanitized-html";
 import { useThemeGradient } from "../../../../hooks/useThemeGradient";
 import { ConditionEditor } from "../condition-editor";
-
-interface CFSelectionState {
-	selected: boolean;
-	scoreOverride?: number;
-	conditionsEnabled: Record<string, boolean>;
-}
-
-interface ConditionEditorTarget {
-	trashId: string;
-	format: any;
-}
+import type { CFSelectionState, ConditionEditorTarget } from "./cf-configuration-types";
 
 interface CFConfigurationEditProps {
 	qualityProfile: { name: string };
@@ -601,7 +591,7 @@ export const CFConfigurationEdit = ({
 					const selection =
 						selections[conditionEditorFormat.trashId];
 
-					const format = conditionEditorFormat.format as any;
+					const format = conditionEditorFormat.format;
 					const specs =
 						format.originalConfig?.specifications ||
 						format.specifications ||
@@ -650,9 +640,9 @@ export const CFConfigurationEdit = ({
 										conditionEditorFormat.trashId
 									}
 									customFormatName={
-										(conditionEditorFormat.format as any)
+										conditionEditorFormat.format
 											.displayName ||
-										(conditionEditorFormat.format as any)
+										conditionEditorFormat.format
 											.name
 									}
 									specifications={specificationsWithEnabled}

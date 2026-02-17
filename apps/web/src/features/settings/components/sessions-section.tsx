@@ -27,6 +27,7 @@ import {
 	revokeSession,
 } from "../../../lib/api-client/auth";
 import { cn } from "../../../lib/utils";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 /**
  * Device type icon component using lucide-react
@@ -79,7 +80,7 @@ export const SessionsSection = () => {
 			setSessions(data.sessions);
 			setTotalSessions(data.totalSessions);
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to load sessions");
+			setError(getErrorMessage(err, "Failed to load sessions"));
 		} finally {
 			setLoading(false);
 			setRefreshing(false);
@@ -93,7 +94,7 @@ export const SessionsSection = () => {
 			await revokeSession(sessionId);
 			await loadSessions(true);
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to revoke session");
+			setError(getErrorMessage(err, "Failed to revoke session"));
 		} finally {
 			setRevokingId(null);
 		}

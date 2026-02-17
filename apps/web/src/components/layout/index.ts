@@ -38,6 +38,15 @@ export {
 	GradientButton,
 } from "./premium-components";
 
+// Config Primitives
+export {
+	Tooltip,
+	ToggleSwitch,
+	ToggleRow,
+	ConfigInput,
+	ConfigSection,
+} from "./config-primitives";
+
 // Bento Grid Layout System
 export {
 	BentoGrid,

@@ -16,6 +16,7 @@ import { Input, Button } from "../../../components/ui";
 import { Upload, X, FileJson, AlertCircle, Info, Loader2 } from "lucide-react";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface TemplateImportDialogProps {
 	open: boolean;
@@ -126,9 +127,7 @@ export const TemplateImportDialog = ({ open, onClose }: TemplateImportDialogProp
 
 	const hasError = importMutation.isError || parseError;
 	const errorMessage = parseError ||
-		(importMutation.error instanceof Error
-			? importMutation.error.message
-			: "Failed to import template");
+		(getErrorMessage(importMutation.error, "Failed to import template"));
 	const canImport = jsonData.trim() && !importMutation.isPending;
 
 	return (

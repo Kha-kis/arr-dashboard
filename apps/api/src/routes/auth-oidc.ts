@@ -7,6 +7,7 @@ import { OIDCProvider } from "../lib/auth/oidc-provider.js";
 import { getSessionMetadata } from "../lib/auth/session-metadata.js";
 import { normalizeIssuerUrl } from "../lib/auth/oidc-utils.js";
 import { validateRequest } from "../lib/utils/validate.js";
+import { getErrorMessage } from "../lib/utils/error-message.js";
 
 /**
  * In-memory storage for OIDC states and nonces (production: use Redis)
@@ -87,7 +88,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		} catch (error) {
 			return reply.status(400).send({
 				error: "Invalid issuer URL",
-				details: error instanceof Error ? error.message : "Could not parse issuer URL",
+				details: getErrorMessage(error, "Could not parse issuer URL"),
 			});
 		}
 
@@ -161,7 +162,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				provider: { displayName: provider.displayName },
 			});
 		} catch (error: unknown) {
-			const errorMessage = error instanceof Error ? error.message : String(error);
+			const errorMessage = getErrorMessage(error);
 			if (errorMessage === "SETUP_CLOSED") {
 				return reply.status(403).send({
 					error:
@@ -223,7 +224,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			);
 			return reply.send({ authorizationUrl });
 		} catch (error) {
-			const errMsg = error instanceof Error ? error.message : String(error);
+			const errMsg = getErrorMessage(error);
 			request.log.error(
 				{ err: error, errorMessage: errMsg },
 				"Failed to generate OIDC authorization URL",
@@ -453,7 +454,7 @@ const authOidcRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			);
 			return reply.redirect("/", 302);
 		} catch (error: unknown) {
-			const errMsg = error instanceof Error ? error.message : String(error);
+			const errMsg = getErrorMessage(error);
 			const errStack = error instanceof Error ? error.stack : undefined;
 			request.log.error(
 				{ err: error, errorMessage: errMsg, errorStack: errStack },

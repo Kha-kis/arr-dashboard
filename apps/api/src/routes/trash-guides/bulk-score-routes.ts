@@ -5,8 +5,9 @@
  */
 
 import type { FastifyPluginCallback } from "fastify";
-import { z } from "zod";
 import { createBulkScoreManager } from "../../lib/trash-guides/bulk-score-manager.js";
+import { validateRequest } from "../../lib/utils/validate.js";
+import { z } from "zod";
 import type {
 	BulkScoreFilters,
 	BulkScoreUpdate,
@@ -14,6 +15,7 @@ import type {
 	BulkScoreReset,
 	BulkScoreImport,
 } from "@arr/shared";
+import { getErrorMessage } from "../../lib/utils/error-message.js";
 
 // ============================================================================
 // Validation Schemas
@@ -90,6 +92,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			sortOrder: query.sortOrder as "asc" | "desc" | undefined,
 		};
 
+		// Specialized catch: returns 404 for "not found" errors, lets others propagate
 		try {
 			const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
 			const scores = await bulkScoreManager.getAllScores(userId, filters);
@@ -102,10 +105,9 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				},
 			});
 		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : "Failed to get scores";
-			app.log.error(`Failed to get bulk scores: ${error}`);
+			const errorMessage = getErrorMessage(error, "Failed to get scores");
 
-			// Return 404 for "not found" errors, 500 for other errors
+			// Return 404 for "not found" errors, let others propagate to global handler
 			if (errorMessage.includes("not found") || errorMessage.includes("access denied")) {
 				return reply.status(404).send({
 					success: false,
@@ -113,10 +115,7 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, _opts, done) => {
 				});
 			}
 
-			return reply.status(500).send({
-				success: false,
-				error: errorMessage,
-			});
+			throw error;
 		}
 	});
 
@@ -126,38 +125,12 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.post("/update", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
+		const update: BulkScoreUpdate = validateRequest(bulkScoreUpdateSchema, request.body);
 
-		// Validate request body
-		const parseResult = bulkScoreUpdateSchema.safeParse(request.body);
-		if (!parseResult.success) {
-			return reply.status(400).send({
-				success: false,
-				message: "Invalid request body",
-				errors: parseResult.error.issues.map((e) => ({
-					path: e.path.join("."),
-					message: e.message,
-				})),
-				affectedTemplates: 0,
-				affectedCustomFormats: 0,
-			});
-		}
+		const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
+		const result = await bulkScoreManager.updateScores(userId, update);
 
-		const update: BulkScoreUpdate = parseResult.data;
-
-		try {
-			const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
-			const result = await bulkScoreManager.updateScores(userId, update);
-
-			return reply.status(200).send(result);
-		} catch (error) {
-			app.log.error(`Failed to update bulk scores: ${error}`);
-			return reply.status(500).send({
-				success: false,
-				message: error instanceof Error ? error.message : "Failed to update scores",
-				affectedTemplates: 0,
-				affectedCustomFormats: 0,
-			});
-		}
+		return reply.status(200).send(result);
 	});
 
 	/**
@@ -166,38 +139,12 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.post("/copy", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
+		const copy: BulkScoreCopy = validateRequest(bulkScoreCopySchema, request.body);
 
-		// Validate request body
-		const parseResult = bulkScoreCopySchema.safeParse(request.body);
-		if (!parseResult.success) {
-			return reply.status(400).send({
-				success: false,
-				message: "Invalid request body",
-				errors: parseResult.error.issues.map((e) => ({
-					path: e.path.join("."),
-					message: e.message,
-				})),
-				affectedTemplates: 0,
-				affectedCustomFormats: 0,
-			});
-		}
+		const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
+		const result = await bulkScoreManager.copyScores(userId, copy);
 
-		const copy: BulkScoreCopy = parseResult.data;
-
-		try {
-			const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
-			const result = await bulkScoreManager.copyScores(userId, copy);
-
-			return reply.status(200).send(result);
-		} catch (error) {
-			app.log.error(`Failed to copy bulk scores: ${error}`);
-			return reply.status(500).send({
-				success: false,
-				message: error instanceof Error ? error.message : "Failed to copy scores",
-				affectedTemplates: 0,
-				affectedCustomFormats: 0,
-			});
-		}
+		return reply.status(200).send(result);
 	});
 
 	/**
@@ -206,38 +153,12 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.post("/reset", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
+		const reset: BulkScoreReset = validateRequest(bulkScoreResetSchema, request.body);
 
-		// Validate request body
-		const parseResult = bulkScoreResetSchema.safeParse(request.body);
-		if (!parseResult.success) {
-			return reply.status(400).send({
-				success: false,
-				message: "Invalid request body",
-				errors: parseResult.error.issues.map((e) => ({
-					path: e.path.join("."),
-					message: e.message,
-				})),
-				affectedTemplates: 0,
-				affectedCustomFormats: 0,
-			});
-		}
+		const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
+		const result = await bulkScoreManager.resetScores(userId, reset);
 
-		const reset: BulkScoreReset = parseResult.data;
-
-		try {
-			const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
-			const result = await bulkScoreManager.resetScores(userId, reset);
-
-			return reply.status(200).send(result);
-		} catch (error) {
-			app.log.error(`Failed to reset bulk scores: ${error}`);
-			return reply.status(500).send({
-				success: false,
-				message: error instanceof Error ? error.message : "Failed to reset scores",
-				affectedTemplates: 0,
-				affectedCustomFormats: 0,
-			});
-		}
+		return reply.status(200).send(result);
 	});
 
 	/**
@@ -251,21 +172,13 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			serviceType?: "RADARR" | "SONARR";
 		};
 
-		try {
-			const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
-			const exportData = await bulkScoreManager.exportScores(userId, templateIds, serviceType);
+		const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
+		const exportData = await bulkScoreManager.exportScores(userId, templateIds, serviceType);
 
-			return reply.status(200).send({
-				success: true,
-				data: exportData,
-			});
-		} catch (error) {
-			app.log.error(`Failed to export bulk scores: ${error}`);
-			return reply.status(500).send({
-				success: false,
-				error: error instanceof Error ? error.message : "Failed to export scores",
-			});
-		}
+		return reply.status(200).send({
+			success: true,
+			data: exportData,
+		});
 	});
 
 	/**
@@ -274,38 +187,12 @@ const bulkScoreRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 */
 	app.post("/import", async (request, reply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
+		const importData: BulkScoreImport = validateRequest(bulkScoreImportSchema, request.body);
 
-		// Validate request body
-		const parseResult = bulkScoreImportSchema.safeParse(request.body);
-		if (!parseResult.success) {
-			return reply.status(400).send({
-				success: false,
-				message: "Invalid import data",
-				errors: parseResult.error.issues.map((e) => ({
-					path: e.path.join("."),
-					message: e.message,
-				})),
-				affectedTemplates: 0,
-				affectedCustomFormats: 0,
-			});
-		}
+		const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
+		const result = await bulkScoreManager.importScores(userId, importData);
 
-		const importData: BulkScoreImport = parseResult.data;
-
-		try {
-			const bulkScoreManager = createBulkScoreManager(app.prisma, app.arrClientFactory);
-			const result = await bulkScoreManager.importScores(userId, importData);
-
-			return reply.status(200).send(result);
-		} catch (error) {
-			app.log.error(`Failed to import bulk scores: ${error}`);
-			return reply.status(500).send({
-				success: false,
-				message: error instanceof Error ? error.message : "Failed to import scores",
-				affectedTemplates: 0,
-				affectedCustomFormats: 0,
-			});
-		}
+		return reply.status(200).send(result);
 	});
 
 	done();

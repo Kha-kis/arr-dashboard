@@ -26,52 +26,44 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * GET /system/settings
 	 * Get system-wide settings (ports, listen address, app name, etc.)
 	 */
-	app.get("/settings", async (request, reply) => {
-		try {
-			// Get or create system settings (singleton)
-			let settings = await app.prisma.systemSettings.findUnique({
-				where: { id: 1 },
-			});
+	app.get("/settings", async (_request, reply) => {
+		// Get or create system settings (singleton)
+		let settings = await app.prisma.systemSettings.findUnique({
+			where: { id: 1 },
+		});
 
-			if (!settings) {
-				settings = await app.prisma.systemSettings.create({
-					data: { id: 1 },
-				});
-			}
-
-			// Get effective values from environment (what's currently running)
-			const effectiveApiPort = Number(process.env.API_PORT) || 3001;
-			const effectiveWebPort = Number(process.env.PORT) || 3000;
-			const effectiveListenAddress = process.env.HOST || process.env.HOSTNAME || "0.0.0.0";
-
-			// Check if settings differ from what's currently running
-			const requiresRestart =
-				settings.apiPort !== effectiveApiPort ||
-				settings.webPort !== effectiveWebPort ||
-				settings.listenAddress !== effectiveListenAddress;
-
-			return reply.send({
-				success: true,
-				data: {
-					apiPort: settings.apiPort,
-					webPort: settings.webPort,
-					listenAddress: settings.listenAddress,
-					appName: settings.appName,
-					externalUrl: settings.externalUrl,
-					effectiveApiPort,
-					effectiveWebPort,
-					effectiveListenAddress,
-					requiresRestart,
-					updatedAt: settings.updatedAt,
-				},
-			});
-		} catch (error) {
-			request.log.error({ err: error }, "Failed to fetch system settings");
-			return reply.status(500).send({
-				success: false,
-				error: "Failed to fetch system settings",
+		if (!settings) {
+			settings = await app.prisma.systemSettings.create({
+				data: { id: 1 },
 			});
 		}
+
+		// Get effective values from environment (what's currently running)
+		const effectiveApiPort = Number(process.env.API_PORT) || 3001;
+		const effectiveWebPort = Number(process.env.PORT) || 3000;
+		const effectiveListenAddress = process.env.HOST || process.env.HOSTNAME || "0.0.0.0";
+
+		// Check if settings differ from what's currently running
+		const requiresRestart =
+			settings.apiPort !== effectiveApiPort ||
+			settings.webPort !== effectiveWebPort ||
+			settings.listenAddress !== effectiveListenAddress;
+
+		return reply.send({
+			success: true,
+			data: {
+				apiPort: settings.apiPort,
+				webPort: settings.webPort,
+				listenAddress: settings.listenAddress,
+				appName: settings.appName,
+				externalUrl: settings.externalUrl,
+				effectiveApiPort,
+				effectiveWebPort,
+				effectiveListenAddress,
+				requiresRestart,
+				updatedAt: settings.updatedAt,
+			},
+		});
 	});
 
 	/**
@@ -88,143 +80,135 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			externalUrl?: string | null;
 		};
 	}>("/settings", async (request, reply) => {
-		try {
-			const { apiPort, webPort, listenAddress, appName, externalUrl } = request.body;
+		const { apiPort, webPort, listenAddress, appName, externalUrl } = request.body;
 
-			// Validate port numbers if provided
-			if (apiPort !== undefined) {
-				if (!Number.isInteger(apiPort) || apiPort < 1 || apiPort > 65535) {
-					return reply.status(400).send({
-						success: false,
-						error: "API Port must be a valid port number (1-65535)",
-					});
-				}
-			}
-
-			if (webPort !== undefined) {
-				if (!Number.isInteger(webPort) || webPort < 1 || webPort > 65535) {
-					return reply.status(400).send({
-						success: false,
-						error: "Web Port must be a valid port number (1-65535)",
-					});
-				}
-			}
-
-			// Check for port conflicts
-			const effectiveApiPort = apiPort ?? (Number(process.env.API_PORT) || 3001);
-			const effectiveWebPort = webPort ?? (Number(process.env.PORT) || 3000);
-			if (effectiveApiPort === effectiveWebPort) {
+		// Validate port numbers if provided
+		if (apiPort !== undefined) {
+			if (!Number.isInteger(apiPort) || apiPort < 1 || apiPort > 65535) {
 				return reply.status(400).send({
 					success: false,
-					error: "API Port and Web Port cannot be the same",
+					error: "API Port must be a valid port number (1-65535)",
 				});
 			}
+		}
 
-			// Validate listen address if provided
-			if (listenAddress !== undefined) {
-				// Must be a valid IP address or 0.0.0.0 or localhost
-				const validAddresses = ["0.0.0.0", "127.0.0.1", "localhost", "::"];
-				const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
-				const isValidIp = validAddresses.includes(listenAddress) || ipv4Regex.test(listenAddress);
-
-				if (!isValidIp) {
-					return reply.status(400).send({
-						success: false,
-						error: "Listen address must be a valid IP address (e.g., 0.0.0.0, 127.0.0.1)",
-					});
-				}
+		if (webPort !== undefined) {
+			if (!Number.isInteger(webPort) || webPort < 1 || webPort > 65535) {
+				return reply.status(400).send({
+					success: false,
+					error: "Web Port must be a valid port number (1-65535)",
+				});
 			}
+		}
 
-			// Validate external URL if provided (not null - null means clear)
-			if (externalUrl !== undefined && externalUrl !== null && externalUrl !== "") {
-				try {
-					const url = new URL(externalUrl);
-					// Must be http or https
-					if (!["http:", "https:"].includes(url.protocol)) {
-						return reply.status(400).send({
-							success: false,
-							error: "External URL must use http or https protocol",
-						});
-					}
-				} catch {
-					return reply.status(400).send({
-						success: false,
-						error: "External URL must be a valid URL (e.g., https://arr.example.com)",
-					});
-				}
-			}
-
-			// Normalize external URL (empty string becomes null)
-			const normalizedExternalUrl = externalUrl === "" ? null : externalUrl;
-
-			// Update or create settings
-			const settings = await app.prisma.systemSettings.upsert({
-				where: { id: 1 },
-				update: {
-					...(apiPort !== undefined && { apiPort }),
-					...(webPort !== undefined && { webPort }),
-					...(listenAddress !== undefined && { listenAddress }),
-					...(appName !== undefined && { appName }),
-					...(externalUrl !== undefined && { externalUrl: normalizedExternalUrl }),
-				},
-				create: {
-					id: 1,
-					apiPort: apiPort || 3001,
-					webPort: webPort || 3000,
-					listenAddress: listenAddress || "0.0.0.0",
-					appName: appName || "Arr Dashboard",
-					externalUrl: normalizedExternalUrl,
-				},
-			});
-
-			// Get currently running values
-			const currentApiPort = Number(process.env.API_PORT) || 3001;
-			const currentWebPort = Number(process.env.PORT) || 3000;
-			const currentListenAddress = process.env.HOST || process.env.HOSTNAME || "0.0.0.0";
-
-			// Check if restart is needed (for port or listen address changes)
-			const requiresRestart =
-				settings.apiPort !== currentApiPort ||
-				settings.webPort !== currentWebPort ||
-				settings.listenAddress !== currentListenAddress;
-
-			request.log.info(
-				{
-					userId: request.currentUser!.id,
-					apiPort: settings.apiPort,
-					webPort: settings.webPort,
-					listenAddress: settings.listenAddress,
-					externalUrl: settings.externalUrl,
-					requiresRestart,
-				},
-				"System settings updated",
-			);
-
-			return reply.send({
-				success: true,
-				data: {
-					apiPort: settings.apiPort,
-					webPort: settings.webPort,
-					listenAddress: settings.listenAddress,
-					appName: settings.appName,
-					externalUrl: settings.externalUrl,
-					effectiveApiPort: currentApiPort,
-					effectiveWebPort: currentWebPort,
-					effectiveListenAddress: currentListenAddress,
-					requiresRestart,
-					updatedAt: settings.updatedAt,
-				},
-				message: requiresRestart
-					? "Settings saved. Container restart required for port changes to take effect."
-					: "Settings saved successfully.",
-			});
-		} catch (error) {
-			request.log.error({ err: error }, "Failed to update system settings");
-			return reply.status(500).send({
+		// Check for port conflicts
+		const effectiveApiPort = apiPort ?? (Number(process.env.API_PORT) || 3001);
+		const effectiveWebPort = webPort ?? (Number(process.env.PORT) || 3000);
+		if (effectiveApiPort === effectiveWebPort) {
+			return reply.status(400).send({
 				success: false,
-				error: "Failed to update system settings",
+				error: "API Port and Web Port cannot be the same",
 			});
 		}
+
+		// Validate listen address if provided
+		if (listenAddress !== undefined) {
+			// Must be a valid IP address or 0.0.0.0 or localhost
+			const validAddresses = ["0.0.0.0", "127.0.0.1", "localhost", "::"];
+			const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+			const isValidIp = validAddresses.includes(listenAddress) || ipv4Regex.test(listenAddress);
+
+			if (!isValidIp) {
+				return reply.status(400).send({
+					success: false,
+					error: "Listen address must be a valid IP address (e.g., 0.0.0.0, 127.0.0.1)",
+				});
+			}
+		}
+
+		// Validate external URL if provided (not null - null means clear)
+		if (externalUrl !== undefined && externalUrl !== null && externalUrl !== "") {
+			try {
+				const url = new URL(externalUrl);
+				// Must be http or https
+				if (!["http:", "https:"].includes(url.protocol)) {
+					return reply.status(400).send({
+						success: false,
+						error: "External URL must use http or https protocol",
+					});
+				}
+			} catch {
+				return reply.status(400).send({
+					success: false,
+					error: "External URL must be a valid URL (e.g., https://arr.example.com)",
+				});
+			}
+		}
+
+		// Normalize external URL (empty string becomes null)
+		const normalizedExternalUrl = externalUrl === "" ? null : externalUrl;
+
+		// Update or create settings
+		const settings = await app.prisma.systemSettings.upsert({
+			where: { id: 1 },
+			update: {
+				...(apiPort !== undefined && { apiPort }),
+				...(webPort !== undefined && { webPort }),
+				...(listenAddress !== undefined && { listenAddress }),
+				...(appName !== undefined && { appName }),
+				...(externalUrl !== undefined && { externalUrl: normalizedExternalUrl }),
+			},
+			create: {
+				id: 1,
+				apiPort: apiPort || 3001,
+				webPort: webPort || 3000,
+				listenAddress: listenAddress || "0.0.0.0",
+				appName: appName || "Arr Dashboard",
+				externalUrl: normalizedExternalUrl,
+			},
+		});
+
+		// Get currently running values
+		const currentApiPort = Number(process.env.API_PORT) || 3001;
+		const currentWebPort = Number(process.env.PORT) || 3000;
+		const currentListenAddress = process.env.HOST || process.env.HOSTNAME || "0.0.0.0";
+
+		// Check if restart is needed (for port or listen address changes)
+		const requiresRestart =
+			settings.apiPort !== currentApiPort ||
+			settings.webPort !== currentWebPort ||
+			settings.listenAddress !== currentListenAddress;
+
+		request.log.info(
+			{
+				userId: request.currentUser!.id,
+				apiPort: settings.apiPort,
+				webPort: settings.webPort,
+				listenAddress: settings.listenAddress,
+				externalUrl: settings.externalUrl,
+				requiresRestart,
+			},
+			"System settings updated",
+		);
+
+		return reply.send({
+			success: true,
+			data: {
+				apiPort: settings.apiPort,
+				webPort: settings.webPort,
+				listenAddress: settings.listenAddress,
+				appName: settings.appName,
+				externalUrl: settings.externalUrl,
+				effectiveApiPort: currentApiPort,
+				effectiveWebPort: currentWebPort,
+				effectiveListenAddress: currentListenAddress,
+				requiresRestart,
+				updatedAt: settings.updatedAt,
+			},
+			message: requiresRestart
+				? "Settings saved. Container restart required for port changes to take effect."
+				: "Settings saved successfully.",
+		});
 	});
 
 	/**
@@ -232,37 +216,29 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Get system information (version, database backend, runtime info)
 	 * This is read-only information about the running system
 	 */
-	app.get("/info", async (request, reply) => {
-		try {
-			const dbUrl = process.env.DATABASE_URL || "";
-			const dbType = app.dbProvider === "postgresql" ? "PostgreSQL" : "SQLite";
-			const dbHost = getDatabaseHost(dbUrl, app.dbProvider);
-			const nodeVersion = process.version;
-			const platform = process.platform;
-			const uptime = process.uptime();
+	app.get("/info", async (_request, reply) => {
+		const dbUrl = process.env.DATABASE_URL || "";
+		const dbType = app.dbProvider === "postgresql" ? "PostgreSQL" : "SQLite";
+		const dbHost = getDatabaseHost(dbUrl, app.dbProvider);
+		const nodeVersion = process.version;
+		const platform = process.platform;
+		const uptime = process.uptime();
 
-			return reply.send({
-				success: true,
-				data: {
-					version: APP_VERSION,
-					database: {
-						type: dbType,
-						host: dbHost,
-					},
-					runtime: {
-						nodeVersion,
-						platform,
-						uptime: Math.floor(uptime),
-					},
+		return reply.send({
+			success: true,
+			data: {
+				version: APP_VERSION,
+				database: {
+					type: dbType,
+					host: dbHost,
 				},
-			});
-		} catch (error) {
-			request.log.error({ err: error }, "Failed to fetch system info");
-			return reply.status(500).send({
-				success: false,
-				error: "Failed to fetch system info",
-			});
-		}
+				runtime: {
+					nodeVersion,
+					platform,
+					uptime: Math.floor(uptime),
+				},
+			},
+		});
 	});
 
 	/**
@@ -273,27 +249,19 @@ const systemRoutes: FastifyPluginCallback = (app, _opts, done) => {
 	 * Rate limited to prevent abuse (2 requests per 5 minutes)
 	 */
 	app.post("/restart", { config: { rateLimit: RESTART_RATE_LIMIT } }, async (request, reply) => {
-		try {
-			request.log.info(
-				{ userId: request.currentUser!.id, username: request.currentUser?.username },
-				"Manual restart requested",
-			);
+		request.log.info(
+			{ userId: request.currentUser!.id, username: request.currentUser?.username },
+			"Manual restart requested",
+		);
 
-			// Send response immediately
-			await reply.send({
-				success: true,
-				message: app.lifecycle.getRestartMessage(),
-			});
+		// Send response immediately
+		await reply.send({
+			success: true,
+			message: app.lifecycle.getRestartMessage(),
+		});
 
-			// Initiate restart
-			await app.lifecycle.restart("manual-restart");
-		} catch (error) {
-			request.log.error({ err: error }, "Failed to initiate system restart");
-			return reply.status(500).send({
-				success: false,
-				error: "Failed to initiate system restart",
-			});
-		}
+		// Initiate restart
+		await app.lifecycle.restart("manual-restart");
 	});
 
 	done();

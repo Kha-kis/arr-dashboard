@@ -7,6 +7,7 @@ import { GlassmorphicCard } from "../../../components/layout";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useCreateBackup } from "../../../hooks/api/useBackup";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 export const BackupCreateCard = () => {
 	const { gradient: themeGradient } = useThemeGradient();
@@ -21,7 +22,7 @@ export const BackupCreateCard = () => {
 			setCreateSuccess(true);
 			setTimeout(() => setCreateSuccess(false), 5000);
 		} catch (error: unknown) {
-			const message = error instanceof Error ? error.message : "Unknown error";
+			const message = getErrorMessage(error, "Unknown error");
 			toast.error(`Failed to create backup: ${message}`);
 		}
 	};

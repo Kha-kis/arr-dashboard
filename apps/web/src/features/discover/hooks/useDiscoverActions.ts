@@ -8,6 +8,7 @@ import type {
 } from "@arr/shared";
 import { useDiscoverAddMutation } from "../../../hooks/api/useDiscover";
 import { convertRecommendationToSearchResult } from "../lib/discover-utils";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 /**
  * Feedback message displayed to user after add operations.
@@ -85,7 +86,7 @@ export function useDiscoverActions(
 			}
 			setSelectedResult(null);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Failed to add title";
+			const message = getErrorMessage(error, "Failed to add title");
 			setFeedback({ type: "error", message });
 		}
 	};

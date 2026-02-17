@@ -13,10 +13,10 @@
  * 🟢 You can import this file directly.
  */
 
-import * as Prisma from './internal/prismaNamespaceBrowser.js'
+import * as Prisma from './internal/prismaNamespaceBrowser'
 export { Prisma }
-export * as $Enums from './enums.js'
-export * from './enums.js';
+export * as $Enums from './enums'
+export * from './enums';
 /**
  * Model User
  * 
@@ -117,6 +117,11 @@ export type TemplateDeploymentHistory = Prisma.TemplateDeploymentHistoryModel
  * 
  */
 export type StandaloneCFDeployment = Prisma.StandaloneCFDeploymentModel
+/**
+ * Model QualitySizeMapping
+ * 
+ */
+export type QualitySizeMapping = Prisma.QualitySizeMappingModel
 /**
  * Model HuntConfig
  * Hunt configuration per service instance (admin-only feature)

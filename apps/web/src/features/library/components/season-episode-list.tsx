@@ -10,6 +10,7 @@ import {
 	useLibraryEpisodeSearchMutation,
 } from "../../../hooks/api/useLibrary";
 import { LibraryBadge } from "./library-badge";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 /**
  * Props for the SeasonEpisodeList component
@@ -55,7 +56,7 @@ export const SeasonEpisodeList = ({
 			});
 			toast.success(`Episode search queued`);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
+			const message = getErrorMessage(error, "Unknown error");
 			toast.error(`Failed to queue episode search: ${message}`);
 		} finally {
 			setPendingEpisodeSearch(null);
@@ -75,7 +76,7 @@ export const SeasonEpisodeList = ({
 				`Episode ${!currentlyMonitored ? "monitoring enabled" : "monitoring disabled"}`,
 			);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
+			const message = getErrorMessage(error, "Unknown error");
 			toast.error(`Failed to toggle monitoring: ${message}`);
 		} finally {
 			setPendingEpisodeMonitor(null);

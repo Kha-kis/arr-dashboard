@@ -10,6 +10,9 @@ import { gunzip, gzip } from "node:zlib";
 import type { TrashCacheStatus, TrashConfigType } from "@arr/shared";
 import type { PrismaClient } from "../../lib/prisma.js";
 import { safeJsonParse } from "./utils.js";
+import { loggers } from "../logger.js";
+
+const log = loggers.trashGuides;
 
 // ============================================================================
 // Compression Utilities
@@ -53,6 +56,17 @@ interface CacheStats {
 	totalSizeBytes: number;
 	oldestEntry?: Date;
 	newestEntry?: Date;
+}
+
+/** Thrown when a cache entry is corrupted and has been automatically cleaned up. */
+export class CacheCorruptionError extends Error {
+	readonly statusCode = 500;
+	constructor(serviceType: string, configType: string) {
+		super(
+			`Cache for ${serviceType}/${configType} was corrupted and has been cleared. Please refresh to re-fetch from GitHub.`,
+		);
+		this.name = "CacheCorruptionError";
+	}
 }
 
 // ============================================================================
@@ -105,23 +119,18 @@ export class TrashCacheManager {
 				identifier: `${serviceType}/${configType}`,
 			});
 			if (parsed === undefined) {
-				// Invalidate corrupted cache entry
+				// Invalidate corrupted cache entry and signal the error
 				await this.delete(serviceType, configType);
-				return null;
+				throw new CacheCorruptionError(serviceType, configType);
 			}
 			return parsed;
 		} catch (error) {
+			if (error instanceof CacheCorruptionError) throw error;
 			// Handle decompression or parsing errors
-			console.error(
-				`[TrashCacheManager] Failed to retrieve cache for ${serviceType}/${configType}`,
-				{
-					dataSize: cacheEntry.data.length,
-					error: error instanceof Error ? error.message : String(error),
-				},
-			);
-			// Invalidate corrupted cache entry
+			log.error({ err: error, serviceType, configType, dataSize: cacheEntry.data.length }, "Failed to retrieve cache");
+			// Invalidate corrupted cache entry and signal the error
 			await this.delete(serviceType, configType);
-			return null;
+			throw new CacheCorruptionError(serviceType, configType);
 		}
 	}
 
@@ -247,10 +256,7 @@ export class TrashCacheManager {
 			itemCount = Array.isArray(data) ? data.length : 0;
 		} catch (error) {
 			// Handle decompression errors
-			console.error(`[TrashCacheManager] Failed to get status for ${serviceType}/${configType}`, {
-				dataSize: cacheEntry.data.length,
-				error: error instanceof Error ? error.message : String(error),
-			});
+			log.error({ err: error, serviceType, configType, dataSize: cacheEntry.data.length }, "Failed to get cache status");
 			await this.delete(serviceType, configType);
 			return null;
 		}
@@ -300,13 +306,7 @@ export class TrashCacheManager {
 				itemCount = Array.isArray(data) ? data.length : 0;
 			} catch (error) {
 				// Handle decompression errors - mark for deletion
-				console.error(
-					`[TrashCacheManager] Failed to get status for ${serviceType}/${entry.configType}`,
-					{
-						dataSize: entry.data.length,
-						error: error instanceof Error ? error.message : String(error),
-					},
-				);
+				log.error({ err: error, serviceType, configType: entry.configType, dataSize: entry.data.length }, "Failed to get cache status");
 				entriesToDelete.push(entry.configType);
 				continue;
 			}

@@ -398,6 +398,7 @@ export class DeploymentPreviewService {
 				templateId,
 				instanceId,
 			},
+			orderBy: { updatedAt: "desc" },
 		});
 
 		if (qualityProfileMapping) {
@@ -409,11 +410,6 @@ export class DeploymentPreviewService {
 				for (const formatItem of targetProfile.formatItems || []) {
 					instanceCFScoreMap.set(formatItem.format, formatItem.score);
 				}
-			} else {
-				// Mapping exists but profile not found in instance (may have been deleted/renamed)
-				warnings.push(
-					`Quality profile "${qualityProfileMapping.qualityProfileName}" (ID: ${qualityProfileMapping.qualityProfileId}) no longer exists in the instance. Deploying will create a new quality profile with the template's settings.`,
-				);
 			}
 		}
 
@@ -425,10 +421,16 @@ export class DeploymentPreviewService {
 			targetProfile = instanceQualityProfiles.find((p) => p.name === profileNameToMatch);
 
 			if (targetProfile) {
-				// Matched by name - add warning that this is a fallback
-				warnings.push(
-					`Quality profile matched by name ("${profileNameToMatch}") rather than stored ID. The profile may have been recreated. Score conflict detection is based on name match.`,
-				);
+				// Profile recovered by name — ID changed (e.g., profile was recreated)
+				if (qualityProfileMapping) {
+					warnings.push(
+						`Quality profile "${qualityProfileMapping.qualityProfileName}" (ID: ${qualityProfileMapping.qualityProfileId}) was recreated in the instance (now ID: ${targetProfile.id}). The stored mapping will be updated on deploy.`,
+					);
+				} else {
+					warnings.push(
+						`Quality profile matched by name ("${profileNameToMatch}") rather than stored ID. Score conflict detection is based on name match.`,
+					);
+				}
 				for (const formatItem of targetProfile.formatItems || []) {
 					instanceCFScoreMap.set(formatItem.format, formatItem.score);
 				}

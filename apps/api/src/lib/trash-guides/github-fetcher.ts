@@ -326,7 +326,9 @@ async function fetchWithRetry(
 			// Check for GitHub rate limiting (reactive - 429 response)
 			if (response.status === 429) {
 				const retryAfter = response.headers.get("Retry-After");
-				const waitTime = retryAfter ? Number.parseInt(retryAfter, 10) * 1000 : retryDelay * attempt;
+				const waitTime = retryAfter
+					? Number.parseInt(retryAfter, 10) * 1000
+					: Math.min(retryDelay * Math.pow(2, attempt - 1) + Math.random() * 1000, 60000);
 				const rateLimitRemaining = response.headers.get("X-RateLimit-Remaining");
 				const rateLimitReset = response.headers.get("X-RateLimit-Reset");
 

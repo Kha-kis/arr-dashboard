@@ -14,6 +14,8 @@ import {
 } from "@arr/shared";
 import type { SonarrClient, RadarrClient } from "arr-sdk";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
+import { validateRequest } from "../../lib/utils/validate.js";
+import { getErrorMessage } from "../../lib/utils/error-message.js";
 
 // ============================================================================
 // Helper Functions
@@ -81,17 +83,8 @@ export async function registerUserCustomFormatRoutes(
 	 */
 	app.post("/", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const parsed = createUserCustomFormatSchema.safeParse(request.body);
-
-		if (!parsed.success) {
-			return reply.status(400).send({
-				error: "VALIDATION_ERROR",
-				message: "Invalid request body",
-				details: parsed.error.issues,
-			});
-		}
-
-		const { name, serviceType, description, includeCustomFormatWhenRenaming, specifications, defaultScore } = parsed.data;
+		const { name, serviceType, description, includeCustomFormatWhenRenaming, specifications, defaultScore } =
+			validateRequest(createUserCustomFormatSchema, request.body);
 
 		// Check for duplicate name
 		const existing = await app.prisma.userCustomFormat.findFirst({
@@ -135,15 +128,7 @@ export async function registerUserCustomFormatRoutes(
 	}>("/:id", async (request, reply) => {
 		const userId = request.currentUser!.id;
 		const { id } = request.params;
-		const parsed = updateUserCustomFormatSchema.safeParse(request.body);
-
-		if (!parsed.success) {
-			return reply.status(400).send({
-				error: "VALIDATION_ERROR",
-				message: "Invalid request body",
-				details: parsed.error.issues,
-			});
-		}
+		const parsed = validateRequest(updateUserCustomFormatSchema, request.body);
 
 		// Verify ownership
 		const existing = await app.prisma.userCustomFormat.findFirst({
@@ -158,12 +143,12 @@ export async function registerUserCustomFormatRoutes(
 		}
 
 		const data: Record<string, unknown> = {};
-		if (parsed.data.name !== undefined) data.name = parsed.data.name;
-		if (parsed.data.serviceType !== undefined) data.serviceType = parsed.data.serviceType;
-		if (parsed.data.description !== undefined) data.description = parsed.data.description;
-		if (parsed.data.includeCustomFormatWhenRenaming !== undefined) data.includeCustomFormatWhenRenaming = parsed.data.includeCustomFormatWhenRenaming;
-		if (parsed.data.specifications !== undefined) data.specifications = JSON.stringify(parsed.data.specifications);
-		if (parsed.data.defaultScore !== undefined) data.defaultScore = parsed.data.defaultScore;
+		if (parsed.name !== undefined) data.name = parsed.name;
+		if (parsed.serviceType !== undefined) data.serviceType = parsed.serviceType;
+		if (parsed.description !== undefined) data.description = parsed.description;
+		if (parsed.includeCustomFormatWhenRenaming !== undefined) data.includeCustomFormatWhenRenaming = parsed.includeCustomFormatWhenRenaming;
+		if (parsed.specifications !== undefined) data.specifications = JSON.stringify(parsed.specifications);
+		if (parsed.defaultScore !== undefined) data.defaultScore = parsed.defaultScore;
 
 		// Check name uniqueness if name or serviceType changed
 		if (data.name || data.serviceType) {
@@ -234,17 +219,8 @@ export async function registerUserCustomFormatRoutes(
 	 */
 	app.post("/import-json", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const parsed = importUserCFFromJsonSchema.safeParse(request.body);
-
-		if (!parsed.success) {
-			return reply.status(400).send({
-				error: "VALIDATION_ERROR",
-				message: "Invalid request body",
-				details: parsed.error.issues,
-			});
-		}
-
-		const { serviceType, customFormats, defaultScore } = parsed.data;
+		const { serviceType, customFormats, defaultScore } =
+			validateRequest(importUserCFFromJsonSchema, request.body);
 
 		const results = {
 			created: [] as string[],
@@ -252,6 +228,7 @@ export async function registerUserCustomFormatRoutes(
 			failed: [] as Array<{ name: string; error: string }>,
 		};
 
+		// Loop-level error collection — KEEP
 		for (const cf of customFormats) {
 			try {
 				// Check for duplicate
@@ -288,7 +265,7 @@ export async function registerUserCustomFormatRoutes(
 			} catch (error) {
 				results.failed.push({
 					name: cf.name,
-					error: error instanceof Error ? error.message : "Unknown error",
+					error: getErrorMessage(error, "Unknown error"),
 				});
 			}
 		}
@@ -305,101 +282,82 @@ export async function registerUserCustomFormatRoutes(
 	 */
 	app.post("/import-from-instance", async (request, reply) => {
 		const userId = request.currentUser!.id;
-		const parsed = importUserCFFromInstanceSchema.safeParse(request.body);
-
-		if (!parsed.success) {
-			return reply.status(400).send({
-				error: "VALIDATION_ERROR",
-				message: "Invalid request body",
-				details: parsed.error.issues,
-			});
-		}
-
-		const { instanceId, cfIds, defaultScore } = parsed.data;
+		const { instanceId, cfIds, defaultScore } =
+			validateRequest(importUserCFFromInstanceSchema, request.body);
 
 		const instance = await requireInstance(app, userId, instanceId);
 
 		const serviceType = instance.service === "SONARR" ? "SONARR" : "RADARR";
 
-		try {
-			// Create SDK client
-			const client = app.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
-			const allCFs = await client.customFormat.getAll();
+		// Create SDK client
+		const client = app.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
+		const allCFs = await client.customFormat.getAll();
 
-			// Filter to requested CF IDs
-			const selectedCFs = allCFs.filter((cf) => cf.id !== undefined && cfIds.includes(cf.id));
+		// Filter to requested CF IDs
+		const selectedCFs = allCFs.filter((cf) => cf.id !== undefined && cfIds.includes(cf.id));
 
-			if (selectedCFs.length === 0) {
-				return reply.status(404).send({
-					error: "NOT_FOUND",
-					message: "No matching custom formats found in instance",
-				});
-			}
-
-			const results = {
-				created: [] as string[],
-				skipped: [] as string[],
-				failed: [] as Array<{ name: string; error: string }>,
-			};
-
-			for (const cf of selectedCFs) {
-				const cfName = cf.name || `CF-${cf.id}`;
-				try {
-					// Check for duplicate
-					const existing = await app.prisma.userCustomFormat.findFirst({
-						where: { userId, name: cfName, serviceType },
-					});
-
-					if (existing) {
-						results.skipped.push(cfName);
-						continue;
-					}
-
-					// Normalize specifications
-					const specs = ((cf as any).specifications || []).map((spec: any) => ({
-						name: spec.name || "",
-						implementation: spec.implementation || "",
-						negate: spec.negate ?? false,
-						required: spec.required ?? false,
-						fields: normalizeFields(spec.fields),
-					}));
-
-					await app.prisma.userCustomFormat.create({
-						data: {
-							userId,
-							name: cfName,
-							serviceType,
-							includeCustomFormatWhenRenaming: (cf as any).includeCustomFormatWhenRenaming ?? false,
-							specifications: JSON.stringify(specs),
-							defaultScore: defaultScore ?? 0,
-							sourceInstanceId: instanceId,
-							sourceCFId: cf.id,
-						},
-					});
-
-					results.created.push(cfName);
-				} catch (error) {
-					results.failed.push({
-						name: cfName,
-						error: error instanceof Error ? error.message : "Unknown error",
-					});
-				}
-			}
-
-			return reply.send({
-				success: results.failed.length === 0,
-				...results,
-			});
-		} catch (error) {
-			app.log.error(
-				{ err: error, instanceId },
-				"Failed to import custom formats from instance",
-			);
-			return reply.status(500).send({
-				error: "IMPORT_FAILED",
-				message: error instanceof Error ? error.message : "Failed to connect to instance",
+		if (selectedCFs.length === 0) {
+			return reply.status(404).send({
+				error: "NOT_FOUND",
+				message: "No matching custom formats found in instance",
 			});
 		}
+
+		const results = {
+			created: [] as string[],
+			skipped: [] as string[],
+			failed: [] as Array<{ name: string; error: string }>,
+		};
+
+		// Loop-level error collection — KEEP
+		for (const cf of selectedCFs) {
+			const cfName = cf.name || `CF-${cf.id}`;
+			try {
+				// Check for duplicate
+				const existing = await app.prisma.userCustomFormat.findFirst({
+					where: { userId, name: cfName, serviceType },
+				});
+
+				if (existing) {
+					results.skipped.push(cfName);
+					continue;
+				}
+
+				// Normalize specifications
+				const specs = ((cf as any).specifications || []).map((spec: any) => ({
+					name: spec.name || "",
+					implementation: spec.implementation || "",
+					negate: spec.negate ?? false,
+					required: spec.required ?? false,
+					fields: normalizeFields(spec.fields),
+				}));
+
+				await app.prisma.userCustomFormat.create({
+					data: {
+						userId,
+						name: cfName,
+						serviceType,
+						includeCustomFormatWhenRenaming: (cf as any).includeCustomFormatWhenRenaming ?? false,
+						specifications: JSON.stringify(specs),
+						defaultScore: defaultScore ?? 0,
+						sourceInstanceId: instanceId,
+						sourceCFId: cf.id,
+					},
+				});
+
+				results.created.push(cfName);
+			} catch (error) {
+				results.failed.push({
+					name: cfName,
+					error: getErrorMessage(error, "Unknown error"),
+				});
+			}
+		}
+
+		return reply.send({
+			success: results.failed.length === 0,
+			...results,
+		});
 	});
 
 	/**
@@ -439,79 +397,69 @@ export async function registerUserCustomFormatRoutes(
 			});
 		}
 
-		try {
-			const client = app.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
+		const client = app.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
 
-			// Get existing CFs for dedup by name
-			const existingFormats = await client.customFormat.getAll();
-			const existingByName = new Map<string, (typeof existingFormats)[number]>();
-			for (const cf of existingFormats) {
-				if (cf.name) existingByName.set(cf.name, cf);
-			}
-
-			const results = {
-				created: [] as string[],
-				updated: [] as string[],
-				failed: [] as Array<{ name: string; error: string }>,
-			};
-
-			for (const userCF of userCFs) {
-				try {
-					const specs = JSON.parse(userCF.specifications);
-
-					// Transform fields from object to array format for the ARR API
-					const transformedSpecs = specs.map((spec: any) => ({
-						...spec,
-						fields: Object.entries(spec.fields || {}).map(([name, value]) => ({ name, value })),
-					}));
-
-					const existing = existingByName.get(userCF.name);
-
-					if (existing?.id) {
-						const updatedCF = {
-							...existing,
-							name: userCF.name,
-							includeCustomFormatWhenRenaming: userCF.includeCustomFormatWhenRenaming,
-							specifications: transformedSpecs,
-						};
-						await client.customFormat.update(
-							existing.id,
-							updatedCF as unknown as Parameters<typeof client.customFormat.update>[1],
-						);
-						results.updated.push(userCF.name);
-					} else {
-						const newCF = {
-							name: userCF.name,
-							includeCustomFormatWhenRenaming: userCF.includeCustomFormatWhenRenaming,
-							specifications: transformedSpecs,
-						};
-						await client.customFormat.create(
-							newCF as unknown as Parameters<typeof client.customFormat.create>[0],
-						);
-						results.created.push(userCF.name);
-					}
-				} catch (error) {
-					results.failed.push({
-						name: userCF.name,
-						error: error instanceof Error ? error.message : "Unknown error",
-					});
-				}
-			}
-
-			return reply.send({
-				success: results.failed.length === 0,
-				...results,
-			});
-		} catch (error) {
-			app.log.error(
-				{ err: error, instanceId },
-				"Failed to deploy user custom formats",
-			);
-			return reply.status(500).send({
-				error: "DEPLOYMENT_FAILED",
-				message: error instanceof Error ? error.message : "Failed to deploy custom formats",
-			});
+		// Get existing CFs for dedup by name
+		const existingFormats = await client.customFormat.getAll();
+		const existingByName = new Map<string, (typeof existingFormats)[number]>();
+		for (const cf of existingFormats) {
+			if (cf.name) existingByName.set(cf.name, cf);
 		}
+
+		const results = {
+			created: [] as string[],
+			updated: [] as string[],
+			failed: [] as Array<{ name: string; error: string }>,
+		};
+
+		// Loop-level error collection — KEEP
+		for (const userCF of userCFs) {
+			try {
+				const specs = JSON.parse(userCF.specifications);
+
+				// Transform fields from object to array format for the ARR API
+				const transformedSpecs = specs.map((spec: any) => ({
+					...spec,
+					fields: Object.entries(spec.fields || {}).map(([name, value]) => ({ name, value })),
+				}));
+
+				const existing = existingByName.get(userCF.name);
+
+				if (existing?.id) {
+					const updatedCF = {
+						...existing,
+						name: userCF.name,
+						includeCustomFormatWhenRenaming: userCF.includeCustomFormatWhenRenaming,
+						specifications: transformedSpecs,
+					};
+					await client.customFormat.update(
+						existing.id,
+						updatedCF as unknown as Parameters<typeof client.customFormat.update>[1],
+					);
+					results.updated.push(userCF.name);
+				} else {
+					const newCF = {
+						name: userCF.name,
+						includeCustomFormatWhenRenaming: userCF.includeCustomFormatWhenRenaming,
+						specifications: transformedSpecs,
+					};
+					await client.customFormat.create(
+						newCF as unknown as Parameters<typeof client.customFormat.create>[0],
+					);
+					results.created.push(userCF.name);
+				}
+			} catch (error) {
+				results.failed.push({
+					name: userCF.name,
+					error: getErrorMessage(error, "Unknown error"),
+				});
+			}
+		}
+
+		return reply.send({
+			success: results.failed.length === 0,
+			...results,
+		});
 	});
 
 	/**
@@ -526,28 +474,17 @@ export async function registerUserCustomFormatRoutes(
 
 		const instance = await requireInstance(app, userId, instanceId);
 
-		try {
-			const client = app.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
-			const allCFs = await client.customFormat.getAll();
+		const client = app.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
+		const allCFs = await client.customFormat.getAll();
 
-			return reply.send({
-				success: true,
-				data: allCFs
-					.filter((cf) => cf.id !== undefined && cf.name)
-					.map((cf) => ({
-						id: cf.id,
-						name: cf.name,
-					})),
-			});
-		} catch (error) {
-			app.log.error(
-				{ err: error, instanceId },
-				"Failed to list instance custom formats",
-			);
-			return reply.status(500).send({
-				error: "FETCH_FAILED",
-				message: error instanceof Error ? error.message : "Failed to fetch instance custom formats",
-			});
-		}
+		return reply.send({
+			success: true,
+			data: allCFs
+				.filter((cf) => cf.id !== undefined && cf.name)
+				.map((cf) => ({
+					id: cf.id,
+					name: cf.name,
+				})),
+		});
 	});
 }

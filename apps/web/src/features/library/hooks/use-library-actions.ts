@@ -15,6 +15,7 @@ import {
 	useLibrarySeriesSearchMutation,
 	useLibraryMovieSearchMutation,
 } from "../../../hooks/api/useLibrary";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 export interface LibraryActions {
 	handleSeasonMonitor: (
@@ -106,7 +107,7 @@ export function useLibraryActions(): LibraryActions {
 				`${seasonLabel} ${nextMonitored ? "monitoring enabled" : "monitoring disabled"} for ${seriesTitle}`,
 			);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
+			const message = getErrorMessage(error, "Unknown error");
 			toast.error(`Failed to ${nextMonitored ? "enable" : "disable"} ${seasonLabel}: ${message}`);
 		} finally {
 			setPendingSeasonAction(null);
@@ -135,7 +136,7 @@ export function useLibraryActions(): LibraryActions {
 			});
 			toast.success(`${seasonLabel} search queued for ${seriesTitle}`);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
+			const message = getErrorMessage(error, "Unknown error");
 			toast.error(`Failed to queue search for ${seasonLabel}: ${message}`);
 		} finally {
 			setPendingSeasonAction(null);
@@ -162,7 +163,7 @@ export function useLibraryActions(): LibraryActions {
 			});
 			toast.success(`${seriesTitle} search queued`);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
+			const message = getErrorMessage(error, "Unknown error");
 			toast.error(`Failed to queue search for ${seriesTitle}: ${message}`);
 		} finally {
 			setPendingSeriesSearch(null);
@@ -189,7 +190,7 @@ export function useLibraryActions(): LibraryActions {
 			});
 			toast.success(`${movieTitle} search queued`);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
+			const message = getErrorMessage(error, "Unknown error");
 			toast.error(`Failed to queue search for ${movieTitle}: ${message}`);
 		} finally {
 			setPendingMovieSearch(null);
@@ -216,7 +217,7 @@ export function useLibraryActions(): LibraryActions {
 			});
 			toast.success(`${artistTitle} search queued`);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
+			const message = getErrorMessage(error, "Unknown error");
 			toast.error(`Failed to queue search for ${artistTitle}: ${message}`);
 		} finally {
 			setPendingArtistSearch(null);
@@ -247,7 +248,7 @@ export function useLibraryActions(): LibraryActions {
 			});
 			toast.success(`Album ${nextMonitored ? "monitoring enabled" : "monitoring disabled"}`);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
+			const message = getErrorMessage(error, "Unknown error");
 			toast.error(`Failed to ${nextMonitored ? "enable" : "disable"} album monitoring: ${message}`);
 		} finally {
 			setPendingAlbumAction(null);
@@ -272,7 +273,7 @@ export function useLibraryActions(): LibraryActions {
 			});
 			toast.success(`Album search queued for ${artist.title ?? "Artist"}`);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
+			const message = getErrorMessage(error, "Unknown error");
 			toast.error(`Failed to queue album search: ${message}`);
 		} finally {
 			setPendingAlbumAction(null);
@@ -299,7 +300,7 @@ export function useLibraryActions(): LibraryActions {
 			});
 			toast.success(`${authorTitle} search queued`);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
+			const message = getErrorMessage(error, "Unknown error");
 			toast.error(`Failed to queue search for ${authorTitle}: ${message}`);
 		} finally {
 			setPendingAuthorSearch(null);
@@ -330,7 +331,7 @@ export function useLibraryActions(): LibraryActions {
 			});
 			toast.success(`Book ${nextMonitored ? "monitoring enabled" : "monitoring disabled"}`);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
+			const message = getErrorMessage(error, "Unknown error");
 			toast.error(`Failed to ${nextMonitored ? "enable" : "disable"} book monitoring: ${message}`);
 		} finally {
 			setPendingBookAction(null);
@@ -355,7 +356,7 @@ export function useLibraryActions(): LibraryActions {
 			});
 			toast.success(`Book search queued for ${author.title ?? "Author"}`);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
+			const message = getErrorMessage(error, "Unknown error");
 			toast.error(`Failed to queue book search: ${message}`);
 		} finally {
 			setPendingBookAction(null);

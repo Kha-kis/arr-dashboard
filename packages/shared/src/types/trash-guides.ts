@@ -176,13 +176,28 @@ export function isCFGroupApplicableToProfile(
 }
 
 /**
- * Quality Size Settings from TRaSH Guides
+ * Single quality entry within a TRaSH Quality Size preset.
+ * Defines file size limits (in GB per hour of content) for one quality tier.
+ */
+export interface TrashQualitySizeQuality {
+	quality: string; // e.g., "HDTV-720p", "Bluray-1080p"
+	min: number; // Minimum file size
+	preferred: number; // Preferred file size
+	max: number; // Maximum file size
+}
+
+/**
+ * Quality Size preset from TRaSH Guides.
+ * Each preset contains min/preferred/max file size settings for all quality tiers.
+ *
+ * Available presets:
+ * - Radarr: movie, anime, sqp-streaming, sqp-uhd
+ * - Sonarr: series, anime
  */
 export interface TrashQualitySize {
-	type: string;
-	preferred?: boolean;
-	min?: number;
-	max?: number;
+	trash_id: string; // Unique preset identifier
+	type: string; // e.g., "movie", "series", "anime", "sqp-streaming", "sqp-uhd"
+	qualities: TrashQualitySizeQuality[];
 }
 
 /**
@@ -1069,6 +1084,8 @@ export interface SchedulerStats {
 		templatesWithNotifyStrategy: number;
 		cachesRefreshed: number;
 		cachesFailed: number;
+		qualitySizeAutoSynced: number;
+		qualitySizeUpdatesPending: number;
 		errors: string[];
 	};
 }

@@ -23,21 +23,16 @@ export const registerGrabRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return { success: false, message: clientResult.error };
 		}
 
-		const { client, instance } = clientResult;
+		const { client } = clientResult;
 
 		if (!isProwlarrClient(client)) {
 			reply.status(400);
 			return { success: false, message: "Instance is not a Prowlarr instance" };
 		}
 
-		try {
-			await grabProwlarrReleaseWithSdk(client, payload.result);
-			reply.status(204);
-			return null;
-		} catch (error) {
-			request.log.error({ err: error, instance: instance.id }, "prowlarr grab failed");
-			throw error;
-		}
+		await grabProwlarrReleaseWithSdk(client, payload.result);
+		reply.status(204);
+		return null;
 	});
 
 	done();

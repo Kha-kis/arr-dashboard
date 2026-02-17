@@ -10,6 +10,7 @@ import { createSanitizedHtml } from "../../../../lib/sanitize-html";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import type { CompleteQualityProfile } from "@arr/shared";
 import { QualityProfileImporter } from "../quality-profile-importer";
+import { getErrorMessage } from "../../../../lib/error-utils";
 
 interface QualityProfileSelectionProps {
 	serviceType: "RADARR" | "SONARR";
@@ -75,7 +76,7 @@ export const QualityProfileSelection = ({
 		return (
 			<Alert variant="danger">
 				<AlertDescription>
-					{error instanceof Error ? error.message : "Failed to load quality profiles"}
+					{getErrorMessage(error, "Failed to load quality profiles")}
 				</AlertDescription>
 			</Alert>
 		);

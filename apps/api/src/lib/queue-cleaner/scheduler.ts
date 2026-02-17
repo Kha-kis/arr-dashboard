@@ -7,6 +7,7 @@ import {
 } from "./cleaner-executor.js";
 import { MANUAL_CLEAN_COOLDOWN_MINS, MAX_CLEAN_DURATION_MS, SCHEDULER_TICK_MS } from "./constants.js";
 import { loggers } from "../logger.js";
+import { getErrorMessage } from "../utils/error-message.js";
 
 const log = loggers.scheduler;
 
@@ -141,7 +142,7 @@ class QueueCleanerScheduler {
 				.catch((error) => {
 					// Track failures for health monitoring
 					this.consecutiveTickFailures++;
-					this.lastTickError = error instanceof Error ? error.message : "Unknown error";
+					this.lastTickError = getErrorMessage(error, "Unknown error");
 					log.error(
 						{ err: error, consecutiveFailures: this.consecutiveTickFailures },
 						"Queue cleaner scheduler tick failed",
@@ -262,7 +263,7 @@ class QueueCleanerScheduler {
 		// Don't await - we want to return immediately
 		// But we do catch to prevent unhandled rejection AND create visible error entry
 		logIdPromise.catch(async (error) => {
-			const message = error instanceof Error ? error.message : "Unknown error";
+			const message = getErrorMessage(error, "Unknown error");
 			log.error({ err: error, instanceId }, "Manual queue clean failed before log entry creation");
 
 			// Create an error log entry so the failure is visible in Activity tab
@@ -472,7 +473,7 @@ class QueueCleanerScheduler {
 		} catch (error) {
 			// Track consecutive failures for health monitoring
 			this.consecutiveDecayFailures++;
-			this.lastDecayError = error instanceof Error ? error.message : "Unknown error";
+			this.lastDecayError = getErrorMessage(error, "Unknown error");
 			log.error(
 				{ err: error, consecutiveFailures: this.consecutiveDecayFailures },
 				"Failed to decay strikes - strikes may accumulate unexpectedly",
@@ -617,7 +618,7 @@ class QueueCleanerScheduler {
 			});
 		} catch (error) {
 			const durationMs = Date.now() - startTime;
-			const message = error instanceof Error ? error.message : "Unknown error";
+			const message = getErrorMessage(error, "Unknown error");
 
 			await this.app.prisma.queueCleanerLog.update({
 				where: { id: logEntry.id },

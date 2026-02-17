@@ -21,6 +21,7 @@ import {
 	ChevronRight,
 	Info,
 } from "lucide-react";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface QualityProfileImporterProps {
 	serviceType: "RADARR" | "SONARR";
@@ -202,9 +203,7 @@ export function QualityProfileImporter({
 				<Alert variant="danger">
 					<AlertCircle className="h-4 w-4" />
 					<AlertDescription className="text-xs">
-						{importMutation.error instanceof Error
-							? importMutation.error.message
-							: "Failed to import profile"}
+						{getErrorMessage(importMutation.error, "Failed to import profile")}
 					</AlertDescription>
 				</Alert>
 			)}

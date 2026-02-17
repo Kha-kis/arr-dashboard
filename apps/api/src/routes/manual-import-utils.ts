@@ -10,6 +10,7 @@ import type {
 import { manualImportCandidateListSchema, manualImportCandidateSchema } from "@arr/shared";
 import type { SonarrClient, RadarrClient, LidarrClient, ReadarrClient } from "arr-sdk";
 import { toNumber, toStringValue } from "../lib/data/values.js";
+import { getErrorMessage } from "../lib/utils/error-message.js";
 
 /**
  * Simple logger interface compatible with Fastify's logger
@@ -63,11 +64,7 @@ export const setManualImportLogger = (logger: ManualImportLogger) => {
 const logNormalizationWarning = (entityType: string, reason: string, rawValue?: unknown) => {
 	if (process.env.NODE_ENV === "development" || process.env.DEBUG_MANUAL_IMPORT) {
 		const msg = `[manual-import] Normalization skipped for ${entityType}: ${reason}`;
-		if (moduleLogger) {
-			moduleLogger.debug(msg, rawValue !== undefined ? { rawValue } : undefined);
-		} else {
-			console.debug(msg, rawValue !== undefined ? { rawValue } : "");
-		}
+		moduleLogger?.debug(msg, rawValue !== undefined ? { rawValue } : undefined);
 	}
 };
 
@@ -280,13 +277,9 @@ const mapCandidate = (
 		return null;
 	} catch (error) {
 		// Log validation failures to aid debugging - especially important for newer Lidarr/Readarr integrations
-		const errorMessage = error instanceof Error ? error.message : "Unknown validation error";
+		const errorMessage = getErrorMessage(error, "Unknown validation error");
 		const warnMsg = `[manual-import] Failed to parse ${service} candidate at path "${path}": ${errorMessage}`;
-		if (moduleLogger) {
-			moduleLogger.warn(warnMsg);
-		} else {
-			console.warn(warnMsg);
-		}
+		moduleLogger?.warn(warnMsg);
 		return null;
 	}
 };
@@ -345,11 +338,7 @@ export const fetchManualImportCandidates = async (
 		const warnMsg =
 			`[manual-import] Unexpected API response structure for ${service}. ` +
 			`Expected array or {items: []}, got: ${typeof payload}`;
-		if (moduleLogger) {
-			moduleLogger.warn(warnMsg);
-		} else {
-			console.warn(warnMsg);
-		}
+		moduleLogger?.warn(warnMsg);
 		return [];
 	}
 
@@ -778,7 +767,7 @@ export const fetchManualImportCandidatesWithSdk = async (
 		if (error instanceof ManualImportError) {
 			throw error;
 		}
-		const message = error instanceof Error ? error.message : "Unknown error";
+		const message = getErrorMessage(error, "Unknown error");
 		throw new ManualImportError(`Failed to fetch manual import items: ${message}`, 502);
 	}
 };
@@ -823,7 +812,7 @@ export const submitManualImportCommandWithSdk = async (
 		if (error instanceof ManualImportError) {
 			throw error;
 		}
-		const message = error instanceof Error ? error.message : "Unknown error";
+		const message = getErrorMessage(error, "Unknown error");
 		throw new ManualImportError(`ARR manual import command failed: ${message}`, 502);
 	}
 };

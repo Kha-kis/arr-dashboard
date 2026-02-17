@@ -16,10 +16,10 @@
  */
 
 import * as runtime from "@prisma/client/runtime/client"
-import type * as Prisma from "../models.js"
-import { type PrismaClient } from "./class.js"
+import type * as Prisma from "../models"
+import { type PrismaClient } from "./class"
 
-export type * from '../models.js'
+export type * from '../models'
 
 export type DMMF = typeof runtime.DMMF
 
@@ -404,6 +404,7 @@ export const ModelName = {
   InstanceQualityProfileOverride: 'InstanceQualityProfileOverride',
   TemplateDeploymentHistory: 'TemplateDeploymentHistory',
   StandaloneCFDeployment: 'StandaloneCFDeployment',
+  QualitySizeMapping: 'QualitySizeMapping',
   HuntConfig: 'HuntConfig',
   HuntLog: 'HuntLog',
   HuntSearchHistory: 'HuntSearchHistory',
@@ -428,7 +429,7 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
     omit: GlobalOmitOptions
   }
   meta: {
-    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike"
+    modelProps: "user" | "session" | "serviceTag" | "serviceInstance" | "serviceInstanceTag" | "oIDCProvider" | "oIDCAccount" | "webAuthnCredential" | "backupSettings" | "systemSettings" | "trashCache" | "trashTemplate" | "trashSyncHistory" | "trashBackup" | "trashSyncSchedule" | "trashSettings" | "templateQualityProfileMapping" | "instanceQualityProfileOverride" | "templateDeploymentHistory" | "standaloneCFDeployment" | "qualitySizeMapping" | "huntConfig" | "huntLog" | "huntSearchHistory" | "libraryCache" | "librarySyncStatus" | "userCustomFormat" | "queueCleanerConfig" | "queueCleanerLog" | "queueCleanerStrike"
     txIsolationLevel: TransactionIsolationLevel
   }
   model: {
@@ -1912,6 +1913,80 @@ export type TypeMap<ExtArgs extends runtime.Types.Extensions.InternalArgs = runt
         }
       }
     }
+    QualitySizeMapping: {
+      payload: Prisma.$QualitySizeMappingPayload<ExtArgs>
+      fields: Prisma.QualitySizeMappingFieldRefs
+      operations: {
+        findUnique: {
+          args: Prisma.QualitySizeMappingFindUniqueArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QualitySizeMappingPayload> | null
+        }
+        findUniqueOrThrow: {
+          args: Prisma.QualitySizeMappingFindUniqueOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QualitySizeMappingPayload>
+        }
+        findFirst: {
+          args: Prisma.QualitySizeMappingFindFirstArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QualitySizeMappingPayload> | null
+        }
+        findFirstOrThrow: {
+          args: Prisma.QualitySizeMappingFindFirstOrThrowArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QualitySizeMappingPayload>
+        }
+        findMany: {
+          args: Prisma.QualitySizeMappingFindManyArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QualitySizeMappingPayload>[]
+        }
+        create: {
+          args: Prisma.QualitySizeMappingCreateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QualitySizeMappingPayload>
+        }
+        createMany: {
+          args: Prisma.QualitySizeMappingCreateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        createManyAndReturn: {
+          args: Prisma.QualitySizeMappingCreateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QualitySizeMappingPayload>[]
+        }
+        delete: {
+          args: Prisma.QualitySizeMappingDeleteArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QualitySizeMappingPayload>
+        }
+        update: {
+          args: Prisma.QualitySizeMappingUpdateArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QualitySizeMappingPayload>
+        }
+        deleteMany: {
+          args: Prisma.QualitySizeMappingDeleteManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateMany: {
+          args: Prisma.QualitySizeMappingUpdateManyArgs<ExtArgs>
+          result: BatchPayload
+        }
+        updateManyAndReturn: {
+          args: Prisma.QualitySizeMappingUpdateManyAndReturnArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QualitySizeMappingPayload>[]
+        }
+        upsert: {
+          args: Prisma.QualitySizeMappingUpsertArgs<ExtArgs>
+          result: runtime.Types.Utils.PayloadToResult<Prisma.$QualitySizeMappingPayload>
+        }
+        aggregate: {
+          args: Prisma.QualitySizeMappingAggregateArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.AggregateQualitySizeMapping>
+        }
+        groupBy: {
+          args: Prisma.QualitySizeMappingGroupByArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.QualitySizeMappingGroupByOutputType>[]
+        }
+        count: {
+          args: Prisma.QualitySizeMappingCountArgs<ExtArgs>
+          result: runtime.Types.Utils.Optional<Prisma.QualitySizeMappingCountAggregateOutputType> | number
+        }
+      }
+    }
     HuntConfig: {
       payload: Prisma.$HuntConfigPayload<ExtArgs>
       fields: Prisma.HuntConfigFieldRefs
@@ -2949,6 +3024,23 @@ export const StandaloneCFDeploymentScalarFieldEnum = {
 export type StandaloneCFDeploymentScalarFieldEnum = (typeof StandaloneCFDeploymentScalarFieldEnum)[keyof typeof StandaloneCFDeploymentScalarFieldEnum]
 
 
+export const QualitySizeMappingScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  userId: 'userId',
+  presetTrashId: 'presetTrashId',
+  presetType: 'presetType',
+  serviceType: 'serviceType',
+  syncStrategy: 'syncStrategy',
+  appliedDataHash: 'appliedDataHash',
+  lastAppliedAt: 'lastAppliedAt',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type QualitySizeMappingScalarFieldEnum = (typeof QualitySizeMappingScalarFieldEnum)[keyof typeof QualitySizeMappingScalarFieldEnum]
+
+
 export const HuntConfigScalarFieldEnum = {
   id: 'id',
   instanceId: 'instanceId',
@@ -3365,6 +3457,7 @@ export type GlobalOmitConfig = {
   instanceQualityProfileOverride?: Prisma.InstanceQualityProfileOverrideOmit
   templateDeploymentHistory?: Prisma.TemplateDeploymentHistoryOmit
   standaloneCFDeployment?: Prisma.StandaloneCFDeploymentOmit
+  qualitySizeMapping?: Prisma.QualitySizeMappingOmit
   huntConfig?: Prisma.HuntConfigOmit
   huntLog?: Prisma.HuntLogOmit
   huntSearchHistory?: Prisma.HuntSearchHistoryOmit

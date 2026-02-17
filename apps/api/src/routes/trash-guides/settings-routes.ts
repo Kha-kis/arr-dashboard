@@ -46,6 +46,7 @@ import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import type { TrashGitHubFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
+import { getErrorMessage } from "../../lib/utils/error-message.js";
 
 // Regex for valid GitHub owner/repo names
 const githubNameRegex = /^[a-zA-Z0-9_.-]+$/;
@@ -338,7 +339,7 @@ export async function registerSettingsRoutes(app: FastifyInstance, _opts: Fastif
 				error: `GitHub API returned HTTP ${response.status}${statusDetail}`,
 			});
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Unknown error";
+			const message = getErrorMessage(error, "Unknown error");
 			return reply.send({
 				valid: false,
 				error: `Failed to connect to GitHub API: ${message}`,

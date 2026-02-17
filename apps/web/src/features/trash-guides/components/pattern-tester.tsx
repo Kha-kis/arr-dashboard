@@ -13,6 +13,7 @@
 import { useState, useMemo } from "react";
 import { Alert, AlertDescription, Button } from "../../../components/ui";
 import { CheckCircle, XCircle, Info, AlertTriangle, AlertCircle } from "lucide-react";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface PatternTesterProps {
 	pattern: string;
@@ -88,7 +89,7 @@ export function PatternTester({
 			return {
 				matches: false,
 				valid: false,
-				error: error instanceof Error ? error.message : "Invalid regex",
+				error: getErrorMessage(error, "Invalid regex"),
 				matchGroups: [],
 			};
 		}

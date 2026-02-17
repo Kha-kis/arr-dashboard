@@ -35,6 +35,7 @@ import { useBulkScores } from "../../../hooks/api/useBulkScores";
 import { useQueryClient } from "@tanstack/react-query";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 /**
  * Service-specific colors for Radarr/Sonarr identification
@@ -366,7 +367,7 @@ export function BulkScoreManager({
 			toast.success(`Successfully reset ${totalDeleted} override${totalDeleted === 1 ? "" : "s"} to template defaults`);
 		} catch (error) {
 			console.error("Failed to bulk reset:", error);
-			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+			const errorMessage = getErrorMessage(error, "Unknown error occurred");
 			toast.error(`Failed to reset overrides: ${errorMessage}. Some overrides may have been reset. Please refresh to see the current state.`);
 		}
 	};

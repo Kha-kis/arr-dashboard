@@ -17,6 +17,7 @@ import { useEpisodeSelection } from "../hooks/use-episode-selection";
 import { useAutoSelection } from "../hooks/use-auto-selection";
 import { useImportSubmission } from "../hooks/use-import-submission";
 import { CandidateCard } from "./candidate-card";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 const importModeOptions = [
 	{ value: "auto", label: "Auto (match ARR settings)" },
@@ -271,7 +272,7 @@ export const ManualImportModal = ({
 							<AlertTriangle className="h-4 w-4 shrink-0" />
 							<span>
 								Failed to fetch manual import candidates.{" "}
-								{query.error instanceof Error ? query.error.message : ""}
+								{getErrorMessage(query.error, "")}
 							</span>
 						</div>
 					)}

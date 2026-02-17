@@ -27,6 +27,7 @@ import {
 	updateInstanceOverrides,
 } from "../../../lib/api-client/trash-guides";
 import { cn } from "../../../lib/utils";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface InstanceQualityOverrideModalProps {
 	open: boolean;
@@ -95,7 +96,7 @@ export const InstanceQualityOverrideModal = ({
 			}
 			setHasChanges(false);
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to load override");
+			setError(getErrorMessage(err, "Failed to load override"));
 		} finally {
 			setIsLoading(false);
 		}
@@ -134,7 +135,7 @@ export const InstanceQualityOverrideModal = ({
 			setHasChanges(false);
 			onSaved?.();
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to reset override");
+			setError(getErrorMessage(err, "Failed to reset override"));
 		} finally {
 			setIsSaving(false);
 		}
@@ -159,7 +160,7 @@ export const InstanceQualityOverrideModal = ({
 			setHasChanges(false);
 			onSaved?.();
 		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to save override");
+			setError(getErrorMessage(err, "Failed to save override"));
 		} finally {
 			setIsSaving(false);
 		}

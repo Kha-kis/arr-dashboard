@@ -26,6 +26,7 @@ import {
 } from "../../../lib/api-client/auth";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 const DEFAULT_REDIRECT = "/dashboard";
 
@@ -109,9 +110,7 @@ export const LoginForm = () => {
 			window.location.href = redirectTarget;
 		} catch (error) {
 			const message =
-				error instanceof Error
-					? error.message
-					: "Unable to sign in. Please verify your credentials and try again.";
+				getErrorMessage(error, "Unable to sign in. Please verify your credentials and try again.");
 			setErrorMessage(message);
 		}
 	};
@@ -126,7 +125,7 @@ export const LoginForm = () => {
 			window.location.href = authUrl;
 		} catch (error) {
 			const message =
-				error instanceof Error ? error.message : "Failed to initiate OIDC login";
+				getErrorMessage(error, "Failed to initiate OIDC login");
 			setErrorMessage(message);
 			setOIDCLoading(false);
 		}
@@ -153,9 +152,7 @@ export const LoginForm = () => {
 			window.location.href = redirectTarget;
 		} catch (error) {
 			const message =
-				error instanceof Error
-					? error.message
-					: "Passkey authentication failed. Please try again or use password.";
+				getErrorMessage(error, "Passkey authentication failed. Please try again or use password.");
 			setErrorMessage(message);
 			setPasskeyLoading(false);
 		}

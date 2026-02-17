@@ -1,72 +1,24 @@
 /**
- * Queue Cleaner Config - Shared UI Components
+ * Queue Cleaner Config - UI Components
  *
- * Reusable form primitives used by InstanceConfigCard and AutoImportSection.
- * Extracted from queue-cleaner-config.tsx for maintainability.
+ * Domain-specific components for queue cleaner configuration.
+ * Shared primitives (Tooltip, ToggleSwitch, ToggleRow, ConfigInput) are
+ * re-exported from @/components/layout/config-primitives.
  */
 
-import { HelpCircle, Plus, X } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { Button } from "../../../components/ui";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { WHITELIST_TYPES } from "../lib/constants";
 import type { WhitelistPattern } from "../lib/queue-cleaner-types";
 
-export const Tooltip = ({ text }: { text: string }) => (
-	<div className="group relative inline-flex">
-		<HelpCircle className="h-3.5 w-3.5 text-muted-foreground/50 hover:text-muted-foreground cursor-help" />
-		<div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 text-xs text-foreground bg-popover border border-border rounded-lg shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 w-64 z-50 pointer-events-none">
-			{text}
-			<div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-border" />
-		</div>
-	</div>
-);
+// Re-export shared primitives for backward compatibility
+export { Tooltip, ToggleSwitch, ToggleRow, ConfigInput, ConfigSection } from "../../../components/layout/config-primitives";
 
-export const ToggleSwitch = ({
-	checked,
-	onChange,
-	label,
-}: {
-	checked: boolean;
-	onChange: (value: boolean) => void;
-	label?: string;
-}) => (
-	<button
-		type="button"
-		role="switch"
-		aria-checked={checked}
-		aria-label={label}
-		className="relative inline-flex h-5 w-9 items-center rounded-full transition-colors"
-		style={{
-			backgroundColor: checked ? SEMANTIC_COLORS.success.text : "rgba(128, 128, 128, 0.3)",
-		}}
-		onClick={() => onChange(!checked)}
-	>
-		<span
-			className="inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform"
-			style={{ transform: checked ? "translateX(18px)" : "translateX(3px)" }}
-		/>
-	</button>
-);
+// ============================================================================
+// RuleSection (domain-specific — uses ToggleSwitch + plain styling)
+// ============================================================================
 
-export const ToggleRow = ({
-	label,
-	description,
-	checked,
-	onChange,
-}: {
-	label: string;
-	description: string;
-	checked: boolean;
-	onChange: (value: boolean) => void;
-}) => (
-	<div className="flex items-center justify-between">
-		<div>
-			<span className="text-sm text-foreground">{label}</span>
-			<p className="text-xs text-muted-foreground">{description}</p>
-		</div>
-		<ToggleSwitch checked={checked} onChange={onChange} label={label} />
-	</div>
-);
+import { ToggleSwitch } from "../../../components/layout/config-primitives";
 
 export const RuleSection = ({
 	icon: Icon,
@@ -102,55 +54,9 @@ export const RuleSection = ({
 	</div>
 );
 
-export const ConfigInput = ({
-	label,
-	description,
-	value,
-	onChange,
-	min,
-	max,
-	suffix,
-	id,
-}: {
-	label: string;
-	description: string;
-	value: number;
-	onChange: (value: number) => void;
-	min: number;
-	max: number;
-	suffix: string;
-	id?: string;
-}) => {
-	// Generate stable ID for label-input association (accessibility)
-	const generatedId = `config-input-${label.toLowerCase().replace(/\s+/g, "-")}`;
-	const inputId = id ?? generatedId;
-
-	return (
-		<div>
-			<label htmlFor={inputId} className="text-xs font-medium text-foreground block mb-1">
-				{label}
-			</label>
-			<div className="flex items-center gap-2">
-				<input
-					id={inputId}
-					type="number"
-					className="w-24 rounded-lg border border-border/50 bg-card/50 px-3 py-1.5 text-sm text-foreground focus:outline-none focus:ring-1"
-					value={value}
-					onChange={(e) => {
-						const parsed = Number.parseInt(e.target.value, 10);
-						if (!Number.isNaN(parsed)) {
-							onChange(Math.max(min, Math.min(max, parsed)));
-						}
-					}}
-					min={min}
-					max={max}
-				/>
-				<span className="text-xs text-muted-foreground">{suffix}</span>
-			</div>
-			<p className="text-[10px] text-muted-foreground mt-0.5">{description}</p>
-		</div>
-	);
-};
+// ============================================================================
+// WhitelistEditor (domain-specific)
+// ============================================================================
 
 export const WhitelistEditor = ({
 	patterns,

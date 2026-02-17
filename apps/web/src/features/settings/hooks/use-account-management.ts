@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useUpdateAccountMutation } from "../../../hooks/api/useAuth";
 import type { AccountFormState } from "../components/account-tab";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 /**
  * Hook for managing account updates (username and TMDB API key)
@@ -56,7 +57,7 @@ export const useAccountManagement = (
 		} catch (error: unknown) {
 			setAccountUpdateResult({
 				success: false,
-				message: error instanceof Error ? error.message : "Failed to update account",
+				message: getErrorMessage(error, "Failed to update account"),
 			});
 		}
 	};

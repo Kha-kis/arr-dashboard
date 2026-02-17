@@ -18,6 +18,7 @@ import {
 	useSetBackupPassword,
 	useRemoveBackupPassword,
 } from "../../../hooks/api/useBackup";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 export const BackupEncryptionSection = () => {
 	const { gradient: themeGradient } = useThemeGradient();
@@ -47,7 +48,7 @@ export const BackupEncryptionSection = () => {
 			setShowPasswordForm(false);
 			toast.success("Backup password updated successfully");
 		} catch (error: unknown) {
-			const errorMessage = error instanceof Error ? error.message : "Unknown error";
+			const errorMessage = getErrorMessage(error, "Unknown error");
 			toast.error(`Failed to set password: ${errorMessage}`);
 		}
 	};
@@ -60,7 +61,7 @@ export const BackupEncryptionSection = () => {
 			await removePasswordMutation.mutateAsync();
 			toast.success("Backup password removed from database");
 		} catch (error: unknown) {
-			const errorMessage = error instanceof Error ? error.message : "Unknown error";
+			const errorMessage = getErrorMessage(error, "Unknown error");
 			toast.error(`Failed to remove password: ${errorMessage}`);
 		}
 	};

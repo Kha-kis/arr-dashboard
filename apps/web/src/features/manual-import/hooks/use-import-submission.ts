@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ManualImportSelection } from "../types";
 import { hasValidSelections } from "../store";
 import { useManualImportMutation } from "../../../hooks/api/useManualImport";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface UseImportSubmissionParams {
 	instanceId: string;
@@ -46,7 +47,7 @@ export const useImportSubmission = ({
 			const importedCount = selectionsForThisService.length;
 			onSuccess(importedCount);
 		} catch (error) {
-			const message = error instanceof Error ? error.message : "Manual import failed.";
+			const message = getErrorMessage(error, "Manual import failed.");
 			setError(message);
 		}
 	};

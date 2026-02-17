@@ -8,9 +8,11 @@ import { TRASH_CONFIG_TYPES } from "@arr/shared";
 import type { TrashConfigType } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions, } from "fastify";
 import { z } from "zod";
-import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
+import { createCacheManager, CacheCorruptionError } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher, getRateLimitState } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
+import { validateRequest } from "../../lib/utils/validate.js";
+import { getErrorMessage } from "../../lib/utils/error-message.js";
 
 // ============================================================================
 // Request Schemas
@@ -73,51 +75,42 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 	app.get<{
 		Params: z.infer<typeof getCacheParamsSchema>;
 	}>("/:serviceType/:configType", async (request, reply) => {
-		const { serviceType, configType } = getCacheParamsSchema.parse(request.params);
+		const { serviceType, configType } = validateRequest(getCacheParamsSchema, request.params);
 
-		try {
-			// Check if cache exists and is fresh
-			const isFresh = await cacheManager.isFresh(serviceType, configType);
+		// Check if cache exists and is fresh
+		const isFresh = await cacheManager.isFresh(serviceType, configType);
 
-			if (!isFresh) {
-				// Cache is stale or doesn't exist, fetch fresh data
-				app.log.info({ serviceType, configType }, "Cache miss or stale, fetching fresh data");
+		if (!isFresh) {
+			// Cache is stale or doesn't exist, fetch fresh data
+			app.log.info({ serviceType, configType }, "Cache miss or stale, fetching fresh data");
 
-				const fetcher = await getFetcher(request.currentUser!.id);
-				const data = await fetcher.fetchConfigs(serviceType, configType);
-				await cacheManager.set(serviceType, configType, data);
-
-				return reply.send({
-					data,
-					cached: false,
-					status: await cacheManager.getStatus(serviceType, configType),
-				});
-			}
-
-			// Get cached data
-			const data = await cacheManager.get(serviceType, configType);
-
-			if (!data) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: `No cache found for ${serviceType} ${configType}`,
-				});
-			}
+			const fetcher = await getFetcher(request.currentUser!.id);
+			const data = await fetcher.fetchConfigs(serviceType, configType);
+			await cacheManager.set(serviceType, configType, data);
 
 			return reply.send({
 				data,
-				cached: true,
+				cached: false,
 				status: await cacheManager.getStatus(serviceType, configType),
 			});
-		} catch (error) {
-			app.log.error({ err: error, serviceType, configType }, "Failed to get cache");
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to fetch TRaSH Guides data",
+		}
+
+		// Get cached data
+		const data = await cacheManager.get(serviceType, configType);
+
+		if (!data) {
+			return reply.status(404).send({
+				statusCode: 404,
+				error: "NotFound",
+				message: `No cache found for ${serviceType} ${configType}`,
 			});
 		}
+
+		return reply.send({
+			data,
+			cached: true,
+			status: await cacheManager.getStatus(serviceType, configType),
+		});
 	});
 
 	/**
@@ -127,109 +120,100 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 	app.post<{
 		Body: z.infer<typeof refreshCacheBodySchema>;
 	}>("/refresh", async (request, reply) => {
-		const { serviceType, configType, force } = refreshCacheBodySchema.parse(request.body);
+		const { serviceType, configType, force } = validateRequest(refreshCacheBodySchema, request.body);
 
-		try {
-			const results: Record<string, unknown> = {};
+		const results: Record<string, unknown> = {};
 
-			// If specific config type provided, refresh only that
-			if (configType) {
+		// If specific config type provided, refresh only that
+		if (configType) {
+			// Check if refresh is needed
+			if (!force) {
+				const isFresh = await cacheManager.isFresh(serviceType, configType);
+				if (isFresh) {
+					return reply.send({
+						message: "Cache is already fresh",
+						refreshed: false,
+						status: await cacheManager.getStatus(serviceType, configType),
+					});
+				}
+			}
+
+			app.log.info({ serviceType, configType, force }, "Refreshing cache");
+
+			const fetcher = await getFetcher(request.currentUser!.id);
+			const data = await fetcher.fetchConfigs(serviceType, configType);
+			await cacheManager.set(serviceType, configType, data);
+
+			results[configType] = {
+				success: true,
+				itemCount: Array.isArray(data) ? data.length : 0,
+			};
+
+			return reply.send({
+				message: "Cache refreshed successfully",
+				refreshed: true,
+				results,
+				status: await cacheManager.getStatus(serviceType, configType),
+			});
+		}
+
+		// Refresh all config types for the service
+		app.log.info({ serviceType, force }, "Refreshing all caches");
+
+		// Skip heavy types during full refresh - they make 100+ requests and can crash the server.
+		// These are lazy-loaded by the frontend when needed.
+		const SKIP_DURING_FULL_REFRESH = ["CF_DESCRIPTIONS", "CF_INCLUDES"];
+		const configTypes = (Object.values(TRASH_CONFIG_TYPES) as TrashConfigType[]).filter(
+			(type) => !SKIP_DURING_FULL_REFRESH.includes(type),
+		);
+
+		const fetcher = await getFetcher(request.currentUser!.id);
+
+		for (const type of configTypes) {
+			try {
 				// Check if refresh is needed
 				if (!force) {
-					const isFresh = await cacheManager.isFresh(serviceType, configType);
+					const isFresh = await cacheManager.isFresh(serviceType, type);
 					if (isFresh) {
-						return reply.send({
-							message: "Cache is already fresh",
-							refreshed: false,
-							status: await cacheManager.getStatus(serviceType, configType),
-						});
+						results[type] = {
+							success: true,
+							skipped: true,
+							reason: "Cache is fresh",
+						};
+						continue;
 					}
 				}
 
-				app.log.info({ serviceType, configType, force }, "Refreshing cache");
+				const data = await fetcher.fetchConfigs(serviceType, type);
+				await cacheManager.set(serviceType, type, data);
 
-				const fetcher = await getFetcher(request.currentUser!.id);
-				const data = await fetcher.fetchConfigs(serviceType, configType);
-				await cacheManager.set(serviceType, configType, data);
-
-				results[configType] = {
+				results[type] = {
 					success: true,
 					itemCount: Array.isArray(data) ? data.length : 0,
 				};
-
-				return reply.send({
-					message: "Cache refreshed successfully",
-					refreshed: true,
-					results,
-					status: await cacheManager.getStatus(serviceType, configType),
-				});
-			}
-
-			// Refresh all config types for the service
-			app.log.info({ serviceType, force }, "Refreshing all caches");
-
-			// Skip heavy types during full refresh - they make 100+ requests and can crash the server.
-			// These are lazy-loaded by the frontend when needed.
-			const SKIP_DURING_FULL_REFRESH = ["CF_DESCRIPTIONS", "CF_INCLUDES"];
-			const configTypes = (Object.values(TRASH_CONFIG_TYPES) as TrashConfigType[]).filter(
-				(type) => !SKIP_DURING_FULL_REFRESH.includes(type),
-			);
-
-			const fetcher = await getFetcher(request.currentUser!.id);
-
-			for (const type of configTypes) {
-				try {
-					// Check if refresh is needed
-					if (!force) {
-						const isFresh = await cacheManager.isFresh(serviceType, type);
-						if (isFresh) {
-							results[type] = {
-								success: true,
-								skipped: true,
-								reason: "Cache is fresh",
-							};
-							continue;
-						}
-					}
-
-					const data = await fetcher.fetchConfigs(serviceType, type);
-					await cacheManager.set(serviceType, type, data);
-
-					results[type] = {
-						success: true,
-						itemCount: Array.isArray(data) ? data.length : 0,
-					};
-				} catch (error) {
-					app.log.error({ err: error, configType: type }, "Failed to refresh config type");
-					results[type] = {
-						success: false,
-						error: error instanceof Error ? error.message : "Unknown error",
-					};
-				}
-			}
-
-			// Mark skipped types
-			for (const type of SKIP_DURING_FULL_REFRESH) {
+			} catch (error) {
+				app.log.error({ err: error, configType: type }, "Failed to refresh config type");
 				results[type] = {
-					success: true,
-					skipped: true,
-					reason: "Lazy-loaded on demand",
+					success: false,
+					error: getErrorMessage(error, "Unknown error"),
 				};
 			}
-
-			return reply.send({
-				message: "Cache refresh completed",
-				refreshed: true,
-				results,
-			});
-		} catch (error) {
-			app.log.error({ err: error, serviceType, configType }, "Failed to refresh cache");
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to refresh cache",
-			});
 		}
+
+		// Mark skipped types
+		for (const type of SKIP_DURING_FULL_REFRESH) {
+			results[type] = {
+				success: true,
+				skipped: true,
+				reason: "Lazy-loaded on demand",
+			};
+		}
+
+		return reply.send({
+			message: "Cache refresh completed",
+			refreshed: true,
+			results,
+		});
 	});
 
 	/**
@@ -239,36 +223,27 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 	app.get<{
 		Querystring: z.infer<typeof getStatusParamsSchema>;
 	}>("/status", async (request, reply) => {
-		const { serviceType } = getStatusParamsSchema.parse(request.query);
+		const { serviceType } = validateRequest(getStatusParamsSchema, request.query);
 
-		try {
-			if (serviceType) {
-				// Get status for specific service
-				const statuses = await cacheManager.getAllStatuses(serviceType);
-
-				return reply.send({
-					serviceType,
-					statuses,
-				});
-			}
-
-			// Get status for all services
-			const radarrStatuses = await cacheManager.getAllStatuses("RADARR");
-			const sonarrStatuses = await cacheManager.getAllStatuses("SONARR");
+		if (serviceType) {
+			// Get status for specific service
+			const statuses = await cacheManager.getAllStatuses(serviceType);
 
 			return reply.send({
-				radarr: radarrStatuses,
-				sonarr: sonarrStatuses,
-				stats: await cacheManager.getStats(),
-			});
-		} catch (error) {
-			app.log.error({ err: error }, "Failed to get cache status");
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to get cache status",
+				serviceType,
+				statuses,
 			});
 		}
+
+		// Get status for all services
+		const radarrStatuses = await cacheManager.getAllStatuses("RADARR");
+		const sonarrStatuses = await cacheManager.getAllStatuses("SONARR");
+
+		return reply.send({
+			radarr: radarrStatuses,
+			sonarr: sonarrStatuses,
+			stats: await cacheManager.getStats(),
+		});
 	});
 
 	/**
@@ -278,13 +253,13 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 	app.get<{
 		Querystring: z.infer<typeof getEntriesQuerySchema>;
 	}>("/entries", async (request, reply) => {
-		const { serviceType } = getEntriesQuerySchema.parse(request.query);
+		const { serviceType } = validateRequest(getEntriesQuerySchema, request.query);
 
-		try {
-			const configTypes = Object.values(TRASH_CONFIG_TYPES) as TrashConfigType[];
-			const entries = [];
+		const configTypes = Object.values(TRASH_CONFIG_TYPES) as TrashConfigType[];
+		const entries = [];
 
-			for (const configType of configTypes) {
+		for (const configType of configTypes) {
+			try {
 				const data = await cacheManager.get(serviceType, configType);
 				if (data) {
 					const status = await cacheManager.getStatus(serviceType, configType);
@@ -301,17 +276,13 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 						});
 					}
 				}
+			} catch (error) {
+				if (error instanceof CacheCorruptionError) continue;
+				throw error;
 			}
-
-			return reply.send(entries);
-		} catch (error) {
-			app.log.error({ err: error, serviceType }, "Failed to get cache entries");
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to get cache entries",
-			});
 		}
+
+		return reply.send(entries);
 	});
 
 	/**
@@ -321,32 +292,23 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 	app.delete<{
 		Params: z.infer<typeof getCacheParamsSchema>;
 	}>("/:serviceType/:configType", async (request, reply) => {
-		const { serviceType, configType } = getCacheParamsSchema.parse(request.params);
+		const { serviceType, configType } = validateRequest(getCacheParamsSchema, request.params);
 
-		try {
-			const deleted = await cacheManager.delete(serviceType, configType);
+		const deleted = await cacheManager.delete(serviceType, configType);
 
-			if (!deleted) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: `No cache found for ${serviceType} ${configType}`,
-				});
-			}
-
-			return reply.send({
-				message: "Cache deleted successfully",
-				serviceType,
-				configType,
-			});
-		} catch (error) {
-			app.log.error({ err: error, serviceType, configType }, "Failed to delete cache");
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to delete cache",
+		if (!deleted) {
+			return reply.status(404).send({
+				statusCode: 404,
+				error: "NotFound",
+				message: `No cache found for ${serviceType} ${configType}`,
 			});
 		}
+
+		return reply.send({
+			message: "Cache deleted successfully",
+			serviceType,
+			configType,
+		});
 	});
 
 	/**
@@ -358,41 +320,39 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 	}>("/custom-formats/list", async (request, reply) => {
 		const { serviceType } = request.query;
 
-		try {
-			const results: Record<string, unknown> = {};
+		const results: Record<string, unknown> = {};
 
-			// Fetch custom formats for requested service types
-			const serviceTypes = serviceType ? [serviceType] : ["RADARR", "SONARR"];
+		// Fetch custom formats for requested service types
+		const serviceTypes = serviceType ? [serviceType] : ["RADARR", "SONARR"];
 
-			for (const service of serviceTypes) {
-				// Check cache freshness
-				const isFresh = await cacheManager.isFresh(
-					service as "RADARR" | "SONARR",
-					"CUSTOM_FORMATS",
-				);
+		for (const service of serviceTypes) {
+			// Check cache freshness
+			const isFresh = await cacheManager.isFresh(
+				service as "RADARR" | "SONARR",
+				"CUSTOM_FORMATS",
+			);
 
-				if (!isFresh) {
-					// Fetch fresh data if cache is stale
-					const fetcher = await getFetcher(request.currentUser!.id);
-					const data = await fetcher.fetchConfigs(service as "RADARR" | "SONARR", "CUSTOM_FORMATS");
-					await cacheManager.set(service as "RADARR" | "SONARR", "CUSTOM_FORMATS", data);
-					results[service.toLowerCase()] = data;
-				} else {
-					// Get from cache
+			if (!isFresh) {
+				// Fetch fresh data if cache is stale
+				const fetcher = await getFetcher(request.currentUser!.id);
+				const data = await fetcher.fetchConfigs(service as "RADARR" | "SONARR", "CUSTOM_FORMATS");
+				await cacheManager.set(service as "RADARR" | "SONARR", "CUSTOM_FORMATS", data);
+				results[service.toLowerCase()] = data;
+			} else {
+				try {
 					const data = await cacheManager.get(service as "RADARR" | "SONARR", "CUSTOM_FORMATS");
 					results[service.toLowerCase()] = data || [];
+				} catch (error) {
+					if (error instanceof CacheCorruptionError) {
+						results[service.toLowerCase()] = [];
+					} else {
+						throw error;
+					}
 				}
 			}
-
-			return reply.send(results);
-		} catch (error) {
-			app.log.error({ err: error, serviceType }, "Failed to fetch custom formats list");
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to fetch custom formats",
-			});
 		}
+
+		return reply.send(results);
 	});
 
 	/**
@@ -404,39 +364,38 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 	}>("/cf-descriptions/list", async (request, reply) => {
 		const { serviceType } = request.query;
 
-		try {
-			const results: Record<string, unknown> = {};
-			const serviceTypes = serviceType ? [serviceType] : ["RADARR", "SONARR"];
+		const results: Record<string, unknown> = {};
+		const serviceTypes = serviceType ? [serviceType] : ["RADARR", "SONARR"];
 
-			for (const service of serviceTypes) {
-				const isFresh = await cacheManager.isFresh(
+		for (const service of serviceTypes) {
+			const isFresh = await cacheManager.isFresh(
+				service as "RADARR" | "SONARR",
+				"CF_DESCRIPTIONS",
+			);
+
+			if (!isFresh) {
+				const fetcher = await getFetcher(request.currentUser!.id);
+				const data = await fetcher.fetchConfigs(
 					service as "RADARR" | "SONARR",
 					"CF_DESCRIPTIONS",
 				);
-
-				if (!isFresh) {
-					const fetcher = await getFetcher(request.currentUser!.id);
-					const data = await fetcher.fetchConfigs(
-						service as "RADARR" | "SONARR",
-						"CF_DESCRIPTIONS",
-					);
-					await cacheManager.set(service as "RADARR" | "SONARR", "CF_DESCRIPTIONS", data);
-					results[service.toLowerCase()] = data;
-				} else {
+				await cacheManager.set(service as "RADARR" | "SONARR", "CF_DESCRIPTIONS", data);
+				results[service.toLowerCase()] = data;
+			} else {
+				try {
 					const data = await cacheManager.get(service as "RADARR" | "SONARR", "CF_DESCRIPTIONS");
 					results[service.toLowerCase()] = data || [];
+				} catch (error) {
+					if (error instanceof CacheCorruptionError) {
+						results[service.toLowerCase()] = [];
+					} else {
+						throw error;
+					}
 				}
 			}
-
-			return reply.send(results);
-		} catch (error) {
-			app.log.error({ err: error, serviceType }, "Failed to fetch CF descriptions");
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to fetch CF descriptions",
-			});
 		}
+
+		return reply.send(results);
 	});
 
 	/**
@@ -491,26 +450,24 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 	 * Stored under RADARR serviceType as a convention (includes are shared).
 	 */
 	app.get("/cf-includes/list", async (request, reply) => {
+		// CF includes are stored under RADARR as they're shared across services
+		const isFresh = await cacheManager.isFresh("RADARR", "CF_INCLUDES");
+
+		if (!isFresh) {
+			const fetcher = await getFetcher(request.currentUser!.id);
+			const data = await fetcher.fetchConfigs("RADARR", "CF_INCLUDES");
+			await cacheManager.set("RADARR", "CF_INCLUDES", data);
+			return reply.send({ data });
+		}
+
 		try {
-			// CF includes are stored under RADARR as they're shared across services
-			const isFresh = await cacheManager.isFresh("RADARR", "CF_INCLUDES");
-
-			if (!isFresh) {
-				const fetcher = await getFetcher(request.currentUser!.id);
-				const data = await fetcher.fetchConfigs("RADARR", "CF_INCLUDES");
-				await cacheManager.set("RADARR", "CF_INCLUDES", data);
-				return reply.send({ data });
-			}
-
 			const data = await cacheManager.get("RADARR", "CF_INCLUDES");
 			return reply.send({ data: data || [] });
 		} catch (error) {
-			app.log.error({ err: error }, "Failed to fetch CF includes");
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to fetch CF includes",
-			});
+			if (error instanceof CacheCorruptionError) {
+				return reply.send({ data: [] });
+			}
+			throw error;
 		}
 	});
 }

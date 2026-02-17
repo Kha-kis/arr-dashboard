@@ -15,6 +15,7 @@ import {
 import { InstanceNotFoundError } from "../errors.js";
 import { requireEnabledInstance } from "./instance-helpers.js";
 import { SonarrClient, RadarrClient, ProwlarrClient, LidarrClient, ReadarrClient } from "arr-sdk";
+import { getErrorMessage } from "../utils/error-message.js";
 
 // ============================================================================
 // Types
@@ -167,7 +168,7 @@ export async function executeOnInstances<T>(
 				}
 
 				const statusCode = error instanceof ArrError ? arrErrorToHttpStatus(error) : 500;
-				const errorMessage = error instanceof Error ? error.message : "Unknown error";
+				const errorMessage = getErrorMessage(error, "Unknown error");
 
 				// Log error for server-side debugging
 				app.log.error(

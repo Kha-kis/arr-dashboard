@@ -86,24 +86,19 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		validateRequest(passkeyRegisterOptionsSchema, request.body);
 
-		try {
-			const options = await passkeyService.generateRegistrationOptions(
-				request.currentUser.id,
-				request.currentUser.username,
-				undefined, // email field removed from User model
-			);
+		const options = await passkeyService.generateRegistrationOptions(
+			request.currentUser.id,
+			request.currentUser.username,
+			undefined, // email field removed from User model
+		);
 
-			// Store challenge for verification
-			challengeStore.set(request.currentUser.id, {
-				challenge: options.challenge,
-				expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
-			});
+		// Store challenge for verification
+		challengeStore.set(request.currentUser.id, {
+			challenge: options.challenge,
+			expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
+		});
 
-			return reply.send(options);
-		} catch (error) {
-			request.log.error({ err: error }, "Failed to generate passkey registration options");
-			return reply.status(500).send({ error: "Failed to generate registration options" });
-		}
+		return reply.send(options);
 	});
 
 	/**
@@ -159,26 +154,21 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
-		try {
-			const options = await passkeyService.generateAuthenticationOptions();
+		const options = await passkeyService.generateAuthenticationOptions();
 
-			// Generate temporary session ID for challenge storage
-			const tempSessionId = randomBytes(32).toString("base64url");
+		// Generate temporary session ID for challenge storage
+		const tempSessionId = randomBytes(32).toString("base64url");
 
-			// Store challenge for verification
-			challengeStore.set(tempSessionId, {
-				challenge: options.challenge,
-				expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
-			});
+		// Store challenge for verification
+		challengeStore.set(tempSessionId, {
+			challenge: options.challenge,
+			expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
+		});
 
-			return reply.send({
-				options,
-				sessionId: tempSessionId, // Client must send this back
-			});
-		} catch (error) {
-			request.log.error({ err: error }, "Failed to generate passkey authentication options");
-			return reply.status(500).send({ error: "Failed to generate authentication options" });
-		}
+		return reply.send({
+			options,
+			sessionId: tempSessionId, // Client must send this back
+		});
 	});
 
 	/**
@@ -256,13 +246,8 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(401).send({ error: "Unauthorized" });
 		}
 
-		try {
-			const credentials = await passkeyService.listUserCredentials(request.currentUser.id);
-			return reply.send({ credentials });
-		} catch (error) {
-			request.log.error({ err: error }, "Failed to list passkey credentials");
-			return reply.status(500).send({ error: "Failed to list credentials" });
-		}
+		const credentials = await passkeyService.listUserCredentials(request.currentUser.id);
+		return reply.send({ credentials });
 	});
 
 	/**
@@ -277,57 +262,52 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		const parsed = validateRequest(passkeyDeleteSchema, request.body);
 
-		try {
-			// Check how many passkeys the user currently has
-			const passkeyCount = await app.prisma.webAuthnCredential.count({
+		// Check how many passkeys the user currently has
+		const passkeyCount = await app.prisma.webAuthnCredential.count({
+			where: { userId: request.currentUser.id },
+		});
+
+		// If deleting the last passkey, ensure user has alternative auth
+		if (passkeyCount === 1) {
+			const user = await app.prisma.user.findUnique({
+				where: { id: request.currentUser.id },
+			});
+
+			const hasPassword = !!user?.hashedPassword;
+
+			const oidcAccounts = await app.prisma.oIDCAccount.count({
 				where: { userId: request.currentUser.id },
 			});
 
-			// If deleting the last passkey, ensure user has alternative auth
-			if (passkeyCount === 1) {
-				const user = await app.prisma.user.findUnique({
-					where: { id: request.currentUser.id },
+			if (!hasPassword && oidcAccounts === 0) {
+				return reply.status(400).send({
+					error:
+						"Cannot delete last passkey without alternative authentication method. Please add a password or OIDC provider first.",
 				});
-
-				const hasPassword = !!user?.hashedPassword;
-
-				const oidcAccounts = await app.prisma.oIDCAccount.count({
-					where: { userId: request.currentUser.id },
-				});
-
-				if (!hasPassword && oidcAccounts === 0) {
-					return reply.status(400).send({
-						error:
-							"Cannot delete last passkey without alternative authentication method. Please add a password or OIDC provider first.",
-					});
-				}
 			}
-
-			const deleted = await passkeyService.deleteCredential(
-				request.currentUser.id,
-				parsed.credentialId,
-			);
-
-			if (!deleted) {
-				return reply.status(404).send({ error: "Credential not found" });
-			}
-
-			// Invalidate all other sessions (keep current session)
-			if (request.sessionToken) {
-				await app.sessionService.invalidateAllUserSessions(
-					request.currentUser.id,
-					request.sessionToken,
-				);
-			} else {
-				// Fallback: invalidate all sessions if sessionToken is somehow unavailable
-				await app.sessionService.invalidateAllUserSessions(request.currentUser.id);
-			}
-
-			return reply.send({ success: true, message: "Passkey deleted successfully" });
-		} catch (error) {
-			request.log.error({ err: error }, "Failed to delete passkey credential");
-			return reply.status(500).send({ error: "Failed to delete credential" });
 		}
+
+		const deleted = await passkeyService.deleteCredential(
+			request.currentUser.id,
+			parsed.credentialId,
+		);
+
+		if (!deleted) {
+			return reply.status(404).send({ error: "Credential not found" });
+		}
+
+		// Invalidate all other sessions (keep current session)
+		if (request.sessionToken) {
+			await app.sessionService.invalidateAllUserSessions(
+				request.currentUser.id,
+				request.sessionToken,
+			);
+		} else {
+			// Fallback: invalidate all sessions if sessionToken is somehow unavailable
+			await app.sessionService.invalidateAllUserSessions(request.currentUser.id);
+		}
+
+		return reply.send({ success: true, message: "Passkey deleted successfully" });
 	});
 
 	/**
@@ -342,22 +322,17 @@ const authPasskeyRoutes: FastifyPluginCallback = (app, _opts, done) => {
 
 		const parsed = validateRequest(passkeyRenameSchema, request.body);
 
-		try {
-			const updated = await passkeyService.renameCredential(
-				request.currentUser.id,
-				parsed.credentialId,
-				parsed.friendlyName,
-			);
+		const updated = await passkeyService.renameCredential(
+			request.currentUser.id,
+			parsed.credentialId,
+			parsed.friendlyName,
+		);
 
-			if (!updated) {
-				return reply.status(404).send({ error: "Credential not found" });
-			}
-
-			return reply.send({ success: true, message: "Passkey renamed successfully" });
-		} catch (error) {
-			request.log.error({ err: error }, "Failed to rename passkey credential");
-			return reply.status(500).send({ error: "Failed to rename credential" });
+		if (!updated) {
+			return reply.status(404).send({ error: "Credential not found" });
 		}
+
+		return reply.send({ success: true, message: "Passkey renamed successfully" });
 	});
 
 	done();

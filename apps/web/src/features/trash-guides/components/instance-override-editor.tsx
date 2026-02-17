@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
 	LegacyDialog,
 	LegacyDialogHeader,
@@ -25,6 +25,7 @@ import {
 } from "../../../hooks/api/useInstanceOverrides";
 import { cn } from "../../../lib/utils";
 import { toast } from "sonner";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface CustomFormatOverrideRow {
 	trashId: string;
@@ -67,10 +68,21 @@ export const InstanceOverrideEditor = ({
 
 	const [editedOverrides, setEditedOverrides] = useState<CustomFormatOverrideRow[]>([]);
 	const [hasChanges, setHasChanges] = useState(false);
+	// Track pending edits via ref to prevent useEffect from resetting mid-edit
+	// (customFormats is a new array reference on every parent render)
+	const pendingEditsRef = useRef(false);
+
+	// Reset pending edits guard when dialog opens/closes
+	useEffect(() => {
+		if (!open) {
+			pendingEditsRef.current = false;
+		}
+	}, [open]);
 
 	// Initialize edited overrides when data loads
 	// Merge customFormats (default scores) with saved overrides from API
 	useEffect(() => {
+		if (pendingEditsRef.current) return;
 		if (customFormats.length > 0) {
 			const overrides = data?.overrides;
 			const scoreOverrides = overrides?.cfScoreOverrides || {};
@@ -117,6 +129,7 @@ export const InstanceOverrideEditor = ({
 					: row,
 			),
 		);
+		pendingEditsRef.current = true;
 		setHasChanges(true);
 	};
 
@@ -126,6 +139,7 @@ export const InstanceOverrideEditor = ({
 				row.trashId === trashId ? { ...row, enabled } : row,
 			),
 		);
+		pendingEditsRef.current = true;
 		setHasChanges(true);
 	};
 
@@ -137,6 +151,7 @@ export const InstanceOverrideEditor = ({
 					: row,
 			),
 		);
+		pendingEditsRef.current = true;
 		setHasChanges(true);
 	};
 
@@ -148,6 +163,7 @@ export const InstanceOverrideEditor = ({
 				enabled: true,
 			})),
 		);
+		pendingEditsRef.current = true;
 		setHasChanges(true);
 	};
 
@@ -174,10 +190,12 @@ export const InstanceOverrideEditor = ({
 				templateId,
 				instanceId,
 				payload: {
-					scoreOverrides: Object.keys(scoreOverrides).length > 0 ? scoreOverrides : undefined,
-					cfOverrides: Object.keys(cfOverrides).length > 0 ? cfOverrides : undefined,
+					scoreOverrides,
+					cfOverrides,
 				},
 			});
+			// Clear pending edits guard before refetch so useEffect can rebuild from fresh data
+			pendingEditsRef.current = false;
 			// Refetch to ensure we have the latest data from the server
 			await refetch();
 			setHasChanges(false);
@@ -193,6 +211,8 @@ export const InstanceOverrideEditor = ({
 
 		try {
 			await deleteMutation.mutateAsync({ templateId, instanceId });
+			// Clear pending edits guard before refetch
+			pendingEditsRef.current = false;
 			// Refetch to ensure we have the latest data from the server
 			await refetch();
 			setEditedOverrides((prev) =>
@@ -247,7 +267,7 @@ export const InstanceOverrideEditor = ({
 									Failed to load instance overrides
 								</p>
 								<p className="text-sm text-muted-foreground mt-1">
-									{error instanceof Error ? error.message : "Please try again"}
+									{getErrorMessage(error, "Please try again")}
 								</p>
 							</div>
 						</div>

@@ -12,6 +12,7 @@ import { ConditionEditor } from "./condition-editor";
 import { InstanceOverridesPanel } from "./instance-overrides-panel";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { getEffectiveQualityConfig } from "../lib/quality-config-utils";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 /** Specification type from TrashCustomFormat with enabled flag for UI */
 type SpecificationWithEnabled = TrashCustomFormat["specifications"][number] & { enabled: boolean };
@@ -120,18 +121,22 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 		}
 
 		// Build config using patch-based approach:
+		// - Spread existing config to preserve qualityProfile, completeQualityProfile,
+		//   qualitySize, naming, and other fields not edited here
 		// - Existing items: Use template's stored data, apply user's changed settings only
 		// - New items: Look up from cache (normal behavior)
 		const config: TemplateConfig = {
+			...(template?.config ?? {}),
 			customFormats: [],
 			customFormatGroups: [],
 			syncSettings: {
 				deleteRemovedCFs,
 			},
-			// Include custom quality config if user has enabled it
-			...(customQualityConfig.useCustomQualities && {
-				customQualityConfig,
-			}),
+			// Explicitly set: when disabled, override the base spread's value
+			// with undefined so it doesn't resurrect a stale customQualityConfig
+			customQualityConfig: customQualityConfig.useCustomQualities
+				? customQualityConfig
+				: undefined,
 		};
 
 		// Track items that couldn't be resolved (new items not in cache)
@@ -337,7 +342,7 @@ export const TemplateEditor = ({ open, onClose, template }: TemplateEditorProps)
 				{mutation.isError && (
 					<Alert variant="danger" className="mb-4">
 						<AlertDescription>
-							{mutation.error instanceof Error ? mutation.error.message : "Failed to save template"}
+							{getErrorMessage(mutation.error, "Failed to save template")}
 						</AlertDescription>
 					</Alert>
 				)}

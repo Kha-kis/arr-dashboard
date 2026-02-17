@@ -13,11 +13,12 @@ import {
 } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
+import { createCacheManager, CacheCorruptionError } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
 import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 // ============================================================================
 // Request Schemas
@@ -87,47 +88,41 @@ export async function registerQualityProfileRoutes(
 	app.get<{
 		Params: z.infer<typeof getQualityProfilesSchema>;
 	}>("/:serviceType", async (request, reply) => {
-		const { serviceType } = getQualityProfilesSchema.parse(request.params);
+		const { serviceType } = validateRequest(getQualityProfilesSchema, request.params);
 
+		// Try to get from cache first (auto-recover from corruption)
+		let profiles: TrashQualityProfile[] | null = null;
 		try {
-			// Try to get from cache first
-			let profiles = (await cacheManager.get(serviceType, "QUALITY_PROFILES")) as
-				| TrashQualityProfile[]
-				| null;
-
-			// If cache miss or stale, fetch fresh data
-			if (!profiles || !(await cacheManager.isFresh(serviceType, "QUALITY_PROFILES"))) {
-				app.log.info({ serviceType }, "Fetching quality profiles from GitHub");
-				const { fetcher } = await getServices(request.currentUser!.id);
-				profiles = await fetcher.fetchQualityProfiles(serviceType);
-				await cacheManager.set(serviceType, "QUALITY_PROFILES", profiles);
-			}
-
-			// Transform profiles for UI display
-			const profilesWithMeta = profiles.map((profile) => ({
-				trashId: profile.trash_id,
-				name: profile.name,
-				description: profile.trash_description,
-				scoreSet: profile.trash_score_set,
-				upgradeAllowed: profile.upgradeAllowed,
-				cutoff: profile.cutoff,
-				language: profile.language,
-				customFormatCount: Object.keys(profile.formatItems || {}).length,
-				qualityCount: profile.items.length,
-			}));
-
-			return reply.send({
-				profiles: profilesWithMeta,
-				count: profilesWithMeta.length,
-			});
+			profiles = await cacheManager.get<TrashQualityProfile[]>(serviceType, "QUALITY_PROFILES");
 		} catch (error) {
-			app.log.error({ err: error, serviceType }, "Failed to fetch quality profiles");
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to fetch quality profiles",
-			});
+			if (!(error instanceof CacheCorruptionError)) throw error;
 		}
+
+		// If cache miss, stale, or corrupted (auto-deleted), fetch fresh data
+		if (!profiles || !(await cacheManager.isFresh(serviceType, "QUALITY_PROFILES"))) {
+			app.log.info({ serviceType }, "Fetching quality profiles from GitHub");
+			const { fetcher } = await getServices(request.currentUser!.id);
+			profiles = await fetcher.fetchQualityProfiles(serviceType);
+			await cacheManager.set(serviceType, "QUALITY_PROFILES", profiles);
+		}
+
+		// Transform profiles for UI display
+		const profilesWithMeta = profiles.map((profile) => ({
+			trashId: profile.trash_id,
+			name: profile.name,
+			description: profile.trash_description,
+			scoreSet: profile.trash_score_set,
+			upgradeAllowed: profile.upgradeAllowed,
+			cutoff: profile.cutoff,
+			language: profile.language,
+			customFormatCount: Object.keys(profile.formatItems || {}).length,
+			qualityCount: profile.items.length,
+		}));
+
+		return reply.send({
+			profiles: profilesWithMeta,
+			count: profilesWithMeta.length,
+		});
 	});
 
 	/**
@@ -147,192 +142,183 @@ export async function registerQualityProfileRoutes(
 			});
 		}
 
-		try {
-			// Get quality profile from cache
-			const profiles = (await cacheManager.get(
-				serviceType as "RADARR" | "SONARR",
-				"QUALITY_PROFILES",
-			)) as TrashQualityProfile[] | null;
+		// Get quality profile from cache
+		const profiles = (await cacheManager.get(
+			serviceType as "RADARR" | "SONARR",
+			"QUALITY_PROFILES",
+		)) as TrashQualityProfile[] | null;
 
-			if (!profiles) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message:
-						"Quality profiles not cached. Please refresh cache first at /:serviceType endpoint.",
-				});
-			}
-
-			const profile = profiles.find((p) => p.trash_id === trashId);
-
-			if (!profile) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: `Quality profile with trash_id ${trashId} not found`,
-				});
-			}
-
-			// Get CF Groups from cache
-			const cfGroups = (await cacheManager.get(serviceType as "RADARR" | "SONARR", "CF_GROUPS")) as
-				| any[]
-				| null;
-
-			// Get Custom Formats from cache
-			const customFormats = (await cacheManager.get(
-				serviceType as "RADARR" | "SONARR",
-				"CUSTOM_FORMATS",
-			)) as any[] | null;
-
-			// Get CF Descriptions from cache
-			const cfDescriptions = (await cacheManager.get(
-				serviceType as "RADARR" | "SONARR",
-				"CF_DESCRIPTIONS",
-			)) as any[] | null;
-
-			// Build description lookup by CF name (slug format)
-			const descriptionMap = new Map<string, any>();
-			if (cfDescriptions) {
-				for (const desc of cfDescriptions) {
-					descriptionMap.set(desc.cfName, desc);
-				}
-			}
-
-			// Filter CF Groups that apply to this quality profile
-			// Supports both new `include` semantics (TRaSH Guides PR #2590) and legacy `exclude` semantics
-			const applicableCFGroups =
-				cfGroups
-					?.filter((group) => {
-						return isCFGroupApplicableToProfile(group, profile.trash_id);
-					})
-					.map((group) => {
-						// Enrich each CF in the group with full details
-						const enrichedCFs =
-							group.custom_formats?.map((cf: GroupCustomFormat | string) => {
-								const cfTrashId = typeof cf === "string" ? cf : cf.trash_id;
-								const cfName = typeof cf === "string" ? cf : cf.name;
-
-								// Find the full CF definition
-								const fullCF = customFormats?.find(
-									(f: TrashCustomFormat) => f.trash_id === cfTrashId,
-								);
-
-								// Find description
-								let description = null;
-								let displayName = cfName;
-								if (fullCF) {
-									// Try to find description by CF name slug
-									const slug = fullCF.name
-										.toLowerCase()
-										.replace(/\s+/g, "-")
-										.replace(/[^a-z0-9-]/g, "");
-									const desc = descriptionMap.get(slug);
-									if (desc) {
-										description = desc.description;
-										displayName = desc.displayName || fullCF.name;
-									}
-								}
-
-								// Get score from CF's trash_scores using profile's trash_score_set
-								let score = 0; // Default to 0 for zero-score CFs
-								if (fullCF?.trash_scores) {
-									const scoreSet = profile.trash_score_set;
-									if (scoreSet && fullCF.trash_scores[scoreSet] !== undefined) {
-										score = fullCF.trash_scores[scoreSet];
-									} else if (fullCF.trash_scores.default !== undefined) {
-										score = fullCF.trash_scores.default;
-									}
-									// else remains 0 (explicit zero for CFs with no scores)
-								}
-
-								return {
-									trash_id: cfTrashId,
-									name: cfName,
-									displayName,
-									description,
-									score,
-									required: typeof cf === "object" ? cf.required === true : false,
-									defaultChecked:
-										typeof cf === "object" && (cf.default === true || cf.default === "true"),
-									source: "group" as const, // NEW: Mark as optional (from CF Group)
-									...(fullCF && { specifications: fullCF.specifications }),
-								};
-							}) || [];
-
-						return {
-							...group,
-							custom_formats: enrichedCFs,
-							defaultEnabled: group.default === "true" || group.default === true,
-							required: group.required === true,
-						};
-					}) || [];
-
-			// Get Mandatory Custom Formats directly referenced in the profile (formatItems)
-			const mandatoryCFs = [];
-			if (profile.formatItems && customFormats) {
-				for (const [cfName, cfTrashId] of Object.entries(profile.formatItems)) {
-					const customFormat = customFormats.find((cf) => cf.trash_id === cfTrashId);
-					if (customFormat) {
-						// Try to find description by converting CF name to slug format
-						const slug = cfName
-							.toLowerCase()
-							.replace(/\s+/g, "-")
-							.replace(/[^a-z0-9-]/g, "");
-						const description = descriptionMap.get(slug);
-
-						// Get score from CF's trash_scores using profile's trash_score_set
-						let score = 0; // Default to 0 for zero-score CFs
-						if (customFormat.trash_scores) {
-							const scoreSet = profile.trash_score_set;
-							if (scoreSet && customFormat.trash_scores[scoreSet] !== undefined) {
-								score = customFormat.trash_scores[scoreSet];
-							} else if (customFormat.trash_scores.default !== undefined) {
-								score = customFormat.trash_scores.default;
-							}
-							// else remains 0 (explicit zero for CFs with no scores)
-						}
-
-						mandatoryCFs.push({
-							...customFormat,
-							description: description?.description,
-							displayName: description?.displayName,
-							score,
-							source: "profile" as const, // NEW: Mark as mandatory
-							locked: true, // NEW: Indicates this CF is mandatory
-						});
-					}
-				}
-			}
-
-			// Build a Set of all CF trash_ids from applicable CF Groups
-			const cfGroupCFTrashIds = new Set<string>();
-			for (const group of applicableCFGroups) {
-				if (group.custom_formats && Array.isArray(group.custom_formats)) {
-					for (const cf of group.custom_formats) {
-						const cfTrashId = typeof cf === "string" ? cf : cf.trash_id;
-						cfGroupCFTrashIds.add(cfTrashId);
-					}
-				}
-			}
-
-			return reply.send({
-				profile,
-				mandatoryCFs, // NEW: Separated mandatory CFs
-				cfGroups: applicableCFGroups,
-				stats: {
-					mandatoryCount: mandatoryCFs.length,
-					optionalGroupCount: applicableCFGroups.length,
-					totalOptionalCFs: cfGroupCFTrashIds.size,
-				},
-			});
-		} catch (error) {
-			app.log.error({ err: error, serviceType, trashId }, "Failed to get quality profile");
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to get quality profile",
+		if (!profiles) {
+			return reply.status(404).send({
+				statusCode: 404,
+				error: "NotFound",
+				message:
+					"Quality profiles not cached. Please refresh cache first at /:serviceType endpoint.",
 			});
 		}
+
+		const profile = profiles.find((p) => p.trash_id === trashId);
+
+		if (!profile) {
+			return reply.status(404).send({
+				statusCode: 404,
+				error: "NotFound",
+				message: `Quality profile with trash_id ${trashId} not found`,
+			});
+		}
+
+		// Get CF Groups from cache
+		const cfGroups = (await cacheManager.get(serviceType as "RADARR" | "SONARR", "CF_GROUPS")) as
+			| any[]
+			| null;
+
+		// Get Custom Formats from cache
+		const customFormats = (await cacheManager.get(
+			serviceType as "RADARR" | "SONARR",
+			"CUSTOM_FORMATS",
+		)) as any[] | null;
+
+		// Get CF Descriptions from cache
+		const cfDescriptions = (await cacheManager.get(
+			serviceType as "RADARR" | "SONARR",
+			"CF_DESCRIPTIONS",
+		)) as any[] | null;
+
+		// Build description lookup by CF name (slug format)
+		const descriptionMap = new Map<string, any>();
+		if (cfDescriptions) {
+			for (const desc of cfDescriptions) {
+				descriptionMap.set(desc.cfName, desc);
+			}
+		}
+
+		// Filter CF Groups that apply to this quality profile
+		// Supports both new `include` semantics (TRaSH Guides PR #2590) and legacy `exclude` semantics
+		const applicableCFGroups =
+			cfGroups
+				?.filter((group) => {
+					return isCFGroupApplicableToProfile(group, profile.trash_id);
+				})
+				.map((group) => {
+					// Enrich each CF in the group with full details
+					const enrichedCFs =
+						group.custom_formats?.map((cf: GroupCustomFormat | string) => {
+							const cfTrashId = typeof cf === "string" ? cf : cf.trash_id;
+							const cfName = typeof cf === "string" ? cf : cf.name;
+
+							// Find the full CF definition
+							const fullCF = customFormats?.find(
+								(f: TrashCustomFormat) => f.trash_id === cfTrashId,
+							);
+
+							// Find description
+							let description = null;
+							let displayName = cfName;
+							if (fullCF) {
+								// Try to find description by CF name slug
+								const slug = fullCF.name
+									.toLowerCase()
+									.replace(/\s+/g, "-")
+									.replace(/[^a-z0-9-]/g, "");
+								const desc = descriptionMap.get(slug);
+								if (desc) {
+									description = desc.description;
+									displayName = desc.displayName || fullCF.name;
+								}
+							}
+
+							// Get score from CF's trash_scores using profile's trash_score_set
+							let score = 0; // Default to 0 for zero-score CFs
+							if (fullCF?.trash_scores) {
+								const scoreSet = profile.trash_score_set;
+								if (scoreSet && fullCF.trash_scores[scoreSet] !== undefined) {
+									score = fullCF.trash_scores[scoreSet];
+								} else if (fullCF.trash_scores.default !== undefined) {
+									score = fullCF.trash_scores.default;
+								}
+								// else remains 0 (explicit zero for CFs with no scores)
+							}
+
+							return {
+								trash_id: cfTrashId,
+								name: cfName,
+								displayName,
+								description,
+								score,
+								required: typeof cf === "object" ? cf.required === true : false,
+								defaultChecked:
+									typeof cf === "object" && (cf.default === true || cf.default === "true"),
+								source: "group" as const, // NEW: Mark as optional (from CF Group)
+								...(fullCF && { specifications: fullCF.specifications }),
+							};
+						}) || [];
+
+					return {
+						...group,
+						custom_formats: enrichedCFs,
+						defaultEnabled: group.default === "true" || group.default === true,
+						required: group.required === true,
+					};
+				}) || [];
+
+		// Get Mandatory Custom Formats directly referenced in the profile (formatItems)
+		const mandatoryCFs = [];
+		if (profile.formatItems && customFormats) {
+			for (const [cfName, cfTrashId] of Object.entries(profile.formatItems)) {
+				const customFormat = customFormats.find((cf) => cf.trash_id === cfTrashId);
+				if (customFormat) {
+					// Try to find description by converting CF name to slug format
+					const slug = cfName
+						.toLowerCase()
+						.replace(/\s+/g, "-")
+						.replace(/[^a-z0-9-]/g, "");
+					const description = descriptionMap.get(slug);
+
+					// Get score from CF's trash_scores using profile's trash_score_set
+					let score = 0; // Default to 0 for zero-score CFs
+					if (customFormat.trash_scores) {
+						const scoreSet = profile.trash_score_set;
+						if (scoreSet && customFormat.trash_scores[scoreSet] !== undefined) {
+							score = customFormat.trash_scores[scoreSet];
+						} else if (customFormat.trash_scores.default !== undefined) {
+							score = customFormat.trash_scores.default;
+						}
+						// else remains 0 (explicit zero for CFs with no scores)
+					}
+
+					mandatoryCFs.push({
+						...customFormat,
+						description: description?.description,
+						displayName: description?.displayName,
+						score,
+						source: "profile" as const, // NEW: Mark as mandatory
+						locked: true, // NEW: Indicates this CF is mandatory
+					});
+				}
+			}
+		}
+
+		// Build a Set of all CF trash_ids from applicable CF Groups
+		const cfGroupCFTrashIds = new Set<string>();
+		for (const group of applicableCFGroups) {
+			if (group.custom_formats && Array.isArray(group.custom_formats)) {
+				for (const cf of group.custom_formats) {
+					const cfTrashId = typeof cf === "string" ? cf : cf.trash_id;
+					cfGroupCFTrashIds.add(cfTrashId);
+				}
+			}
+		}
+
+		return reply.send({
+			profile,
+			mandatoryCFs, // NEW: Separated mandatory CFs
+			cfGroups: applicableCFGroups,
+			stats: {
+				mandatoryCount: mandatoryCFs.length,
+				optionalGroupCount: applicableCFGroups.length,
+				totalOptionalCFs: cfGroupCFTrashIds.size,
+			},
+		});
 	});
 
 	/**
@@ -342,155 +328,141 @@ export async function registerQualityProfileRoutes(
 	app.post<{
 		Body: z.infer<typeof importQualityProfileSchema>;
 	}>("/import", async (request, reply) => {
-		try {
-			const {
-				serviceType,
-				trashId,
-				templateName,
-				templateDescription,
-				selectedCFGroups,
-				customFormatSelections,
-			} = importQualityProfileSchema.parse(request.body);
+		const {
+			serviceType,
+			trashId,
+			templateName,
+			templateDescription,
+			selectedCFGroups,
+			customFormatSelections,
+		} = validateRequest(importQualityProfileSchema, request.body);
 
-			// Get quality profile from cache
-			const profiles = (await cacheManager.get(serviceType, "QUALITY_PROFILES")) as
-				| TrashQualityProfile[]
-				| null;
+		// Get quality profile from cache
+		const profiles = (await cacheManager.get(serviceType, "QUALITY_PROFILES")) as
+			| TrashQualityProfile[]
+			| null;
 
-			if (!profiles) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message:
-						"Quality profiles not cached. Please browse quality profiles first to populate cache.",
-				});
-			}
+		if (!profiles) {
+			return reply.status(404).send({
+				statusCode: 404,
+				error: "NotFound",
+				message:
+					"Quality profiles not cached. Please browse quality profiles first to populate cache.",
+			});
+		}
 
-			const profile = profiles.find((p) => p.trash_id === trashId);
+		const profile = profiles.find((p) => p.trash_id === trashId);
 
-			if (!profile) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: `Quality profile with trash_id ${trashId} not found`,
-				});
-			}
+		if (!profile) {
+			return reply.status(404).send({
+				statusCode: 404,
+				error: "NotFound",
+				message: `Quality profile with trash_id ${trashId} not found`,
+			});
+		}
 
-			// Get Custom Formats referenced in the quality profile
-			const customFormats = (await cacheManager.get(serviceType, "CUSTOM_FORMATS")) as any[] | null;
+		// Get Custom Formats referenced in the quality profile
+		const customFormats = (await cacheManager.get(serviceType, "CUSTOM_FORMATS")) as any[] | null;
 
-			if (!customFormats) {
-				return reply.status(400).send({
-					statusCode: 400,
-					error: "BadRequest",
-					message:
-						"Custom Formats not cached. Please refresh Custom Formats cache first before importing quality profiles.",
-				});
-			}
+		if (!customFormats) {
+			return reply.status(400).send({
+				statusCode: 400,
+				error: "BadRequest",
+				message:
+					"Custom Formats not cached. Please refresh Custom Formats cache first before importing quality profiles.",
+			});
+		}
 
-			// Build template config from quality profile using wizard selections
-			const templateConfig: TemplateConfig = {
-				customFormats: [],
-				customFormatGroups: [],
-				qualityProfile: {
-					upgradeAllowed: profile.upgradeAllowed,
-					cutoff: profile.cutoff,
-					items: profile.items as Array<{
-						name: string;
-						allowed: boolean;
-						items?: string[];
-					}>,
-					minFormatScore: profile.minFormatScore,
-					cutoffFormatScore: profile.cutoffFormatScore,
-					minUpgradeFormatScore: profile.minUpgradeFormatScore,
-					trash_score_set: profile.trash_score_set, // Store the score set from TRaSH Guides
-					language: profile.language, // Store language from TRaSH Guides
-				},
-			};
+		// Build template config from quality profile using wizard selections
+		const templateConfig: TemplateConfig = {
+			customFormats: [],
+			customFormatGroups: [],
+			qualityProfile: {
+				upgradeAllowed: profile.upgradeAllowed,
+				cutoff: profile.cutoff,
+				items: profile.items as Array<{
+					name: string;
+					allowed: boolean;
+					items?: string[];
+				}>,
+				minFormatScore: profile.minFormatScore,
+				cutoffFormatScore: profile.cutoffFormatScore,
+				minUpgradeFormatScore: profile.minUpgradeFormatScore,
+				trash_score_set: profile.trash_score_set, // Store the score set from TRaSH Guides
+				language: profile.language, // Store language from TRaSH Guides
+			},
+		};
 
-			// Get CF Groups for reference storage
-			const cfGroups = (await cacheManager.get(serviceType, "CF_GROUPS")) as any[] | null;
+		// Get CF Groups for reference storage
+		const cfGroups = (await cacheManager.get(serviceType, "CF_GROUPS")) as any[] | null;
 
-			// Add selected CF Groups
-			if (cfGroups) {
-				for (const groupTrashId of selectedCFGroups) {
-					const group = cfGroups.find((g) => g.trash_id === groupTrashId);
-					if (group) {
-						templateConfig.customFormatGroups.push({
-							trashId: group.trash_id,
-							name: group.name,
-							enabled: true,
-							originalConfig: group,
-						});
-					}
-				}
-			}
-
-			// Add selected Custom Formats with user customizations
-			for (const [cfTrashId, selection] of Object.entries(customFormatSelections)) {
-				if (!selection.selected) continue;
-
-				const customFormat = customFormats.find((cf) => cf.trash_id === cfTrashId);
-				if (customFormat) {
-					templateConfig.customFormats.push({
-						trashId: customFormat.trash_id,
-						name: customFormat.name,
-						scoreOverride: selection.scoreOverride,
-						conditionsEnabled: selection.conditionsEnabled,
-						originalConfig: customFormat,
+		// Add selected CF Groups
+		if (cfGroups) {
+			for (const groupTrashId of selectedCFGroups) {
+				const group = cfGroups.find((g) => g.trash_id === groupTrashId);
+				if (group) {
+					templateConfig.customFormatGroups.push({
+						trashId: group.trash_id,
+						name: group.name,
+						enabled: true,
+						originalConfig: group,
 					});
 				}
 			}
+		}
 
-			// Fetch latest TRaSH Guides commit hash for version tracking
-			let latestCommitHash: string | undefined;
-			try {
-				const { versionTracker } = await getServices(request.currentUser!.id);
-				const latestCommit = await versionTracker.getLatestCommit();
-				latestCommitHash = latestCommit?.commitHash;
-				app.log.info(
-					{ commitHash: latestCommitHash },
-					"Fetched TRaSH Guides commit hash for template import",
-				);
-			} catch (error) {
-				app.log.warn(
-					{ err: error },
-					"Failed to fetch TRaSH Guides commit hash, template will be created without version tracking",
-				);
-			}
+		// Add selected Custom Formats with user customizations
+		for (const [cfTrashId, selection] of Object.entries(customFormatSelections)) {
+			if (!selection.selected) continue;
 
-			// Create template
-			const template = await templateService.createTemplate(request.currentUser!.id, {
-				name: templateName,
-				description:
-					templateDescription ||
-					`Imported from TRaSH Guides: ${profile.name}${profile.trash_description ? ` - ${profile.trash_description}` : ""}`,
-				serviceType,
-				config: templateConfig,
-				sourceQualityProfileTrashId: profile.trash_id,
-				sourceQualityProfileName: profile.name,
-				trashGuidesCommitHash: latestCommitHash,
-			});
-
-			return reply.status(201).send({
-				template,
-				message: `Successfully imported quality profile "${profile.name}" as template`,
-				customFormatsIncluded: templateConfig.customFormats.length,
-				customFormatGroupsIncluded: templateConfig.customFormatGroups.length,
-			});
-		} catch (error) {
-			if (error instanceof z.ZodError) {
-				return reply.status(400).send({
-					statusCode: 400,
-					error: "ValidationError",
-					message: "Invalid request data",
-					errors: error.issues,
+			const customFormat = customFormats.find((cf) => cf.trash_id === cfTrashId);
+			if (customFormat) {
+				templateConfig.customFormats.push({
+					trashId: customFormat.trash_id,
+					name: customFormat.name,
+					scoreOverride: selection.scoreOverride,
+					conditionsEnabled: selection.conditionsEnabled,
+					originalConfig: customFormat,
 				});
 			}
-
-			app.log.error({ err: error }, "Failed to import quality profile");
-			throw error;
 		}
+
+		// Fetch latest TRaSH Guides commit hash for version tracking
+		let latestCommitHash: string | undefined;
+		try {
+			const { versionTracker } = await getServices(request.currentUser!.id);
+			const latestCommit = await versionTracker.getLatestCommit();
+			latestCommitHash = latestCommit?.commitHash;
+			app.log.info(
+				{ commitHash: latestCommitHash },
+				"Fetched TRaSH Guides commit hash for template import",
+			);
+		} catch (error) {
+			app.log.warn(
+				{ err: error },
+				"Failed to fetch TRaSH Guides commit hash, template will be created without version tracking",
+			);
+		}
+
+		// Create template
+		const template = await templateService.createTemplate(request.currentUser!.id, {
+			name: templateName,
+			description:
+				templateDescription ||
+				`Imported from TRaSH Guides: ${profile.name}${profile.trash_description ? ` - ${profile.trash_description}` : ""}`,
+			serviceType,
+			config: templateConfig,
+			sourceQualityProfileTrashId: profile.trash_id,
+			sourceQualityProfileName: profile.name,
+			trashGuidesCommitHash: latestCommitHash,
+		});
+
+		return reply.status(201).send({
+			template,
+			message: `Successfully imported quality profile "${profile.name}" as template`,
+			customFormatsIncluded: templateConfig.customFormats.length,
+			customFormatGroupsIncluded: templateConfig.customFormatGroups.length,
+		});
 	});
 
 	/**
@@ -501,137 +473,124 @@ export async function registerQualityProfileRoutes(
 		Params: { templateId: string };
 		Body: z.infer<typeof updateQualityProfileTemplateSchema>;
 	}>("/update/:templateId", async (request, reply) => {
-		try {
-			const { templateId } = request.params;
-			const {
-				serviceType,
-				templateName,
-				templateDescription,
-				selectedCFGroups,
-				customFormatSelections,
-			} = updateQualityProfileTemplateSchema.parse(request.body);
+		const { templateId } = request.params;
+		const {
+			serviceType,
+			templateName,
+			templateDescription,
+			selectedCFGroups,
+			customFormatSelections,
+		} = validateRequest(updateQualityProfileTemplateSchema, request.body);
 
-			// Get existing template to preserve quality profile settings
-			const existingTemplate = await templateService.getTemplate(
-				templateId,
-				request.currentUser!.id,
-			);
+		// Get existing template to preserve quality profile settings
+		const existingTemplate = await templateService.getTemplate(
+			templateId,
+			request.currentUser!.id,
+		);
 
-			if (!existingTemplate) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: `Template with ID ${templateId} not found`,
+		if (!existingTemplate) {
+			return reply.status(404).send({
+				statusCode: 404,
+				error: "NotFound",
+				message: `Template with ID ${templateId} not found`,
+			});
+		}
+
+		// Get Custom Formats from cache
+		const customFormats = (await cacheManager.get(serviceType, "CUSTOM_FORMATS")) as any[] | null;
+
+		if (!customFormats) {
+			return reply.status(400).send({
+				statusCode: 400,
+				error: "BadRequest",
+				message:
+					"Custom Formats not cached. Please refresh Custom Formats cache first before updating templates.",
+			});
+		}
+
+		// Build template config from quality profile using wizard selections
+		// Spread existing config to preserve customQualityConfig, completeQualityProfile,
+		// syncSettings, qualitySize, naming, and other fields not edited here
+		const existingConfig = existingTemplate.config;
+		const templateConfig: TemplateConfig = {
+			...existingConfig,
+			customFormats: [],
+			customFormatGroups: [],
+		};
+
+		// Get CF Groups for reference storage
+		const cfGroups = (await cacheManager.get(serviceType, "CF_GROUPS")) as any[] | null;
+
+		// Build lookup maps from existing template data for fallback
+		const existingGroupMap = new Map(
+			(existingConfig.customFormatGroups || []).map((g) => [g.trashId, g]),
+		);
+		const existingCFMap = new Map(
+			(existingConfig.customFormats || []).map((cf) => [cf.trashId, cf]),
+		);
+
+		// Add selected CF Groups
+		for (const groupTrashId of selectedCFGroups) {
+			const group = cfGroups?.find((g) => g.trash_id === groupTrashId);
+			if (group) {
+				templateConfig.customFormatGroups.push({
+					trashId: group.trash_id,
+					name: group.name,
+					enabled: true,
+					originalConfig: group,
 				});
-			}
-
-			// Get Custom Formats from cache
-			const customFormats = (await cacheManager.get(serviceType, "CUSTOM_FORMATS")) as any[] | null;
-
-			if (!customFormats) {
-				return reply.status(400).send({
-					statusCode: 400,
-					error: "BadRequest",
-					message:
-						"Custom Formats not cached. Please refresh Custom Formats cache first before updating templates.",
-				});
-			}
-
-			// Build template config from quality profile using wizard selections
-			// Preserve existing quality profile settings
-			const existingConfig = existingTemplate.config;
-			const templateConfig: TemplateConfig = {
-				customFormats: [],
-				customFormatGroups: [],
-				qualityProfile: existingConfig.qualityProfile,
-			};
-
-			// Get CF Groups for reference storage
-			const cfGroups = (await cacheManager.get(serviceType, "CF_GROUPS")) as any[] | null;
-
-			// Build lookup maps from existing template data for fallback
-			const existingGroupMap = new Map(
-				(existingConfig.customFormatGroups || []).map((g) => [g.trashId, g]),
-			);
-			const existingCFMap = new Map(
-				(existingConfig.customFormats || []).map((cf) => [cf.trashId, cf]),
-			);
-
-			// Add selected CF Groups
-			for (const groupTrashId of selectedCFGroups) {
-				const group = cfGroups?.find((g) => g.trash_id === groupTrashId);
-				if (group) {
+			} else {
+				// Not in cache — preserve from existing template if available
+				const existingGroup = existingGroupMap.get(groupTrashId);
+				if (existingGroup) {
 					templateConfig.customFormatGroups.push({
-						trashId: group.trash_id,
-						name: group.name,
+						...existingGroup,
 						enabled: true,
-						originalConfig: group,
 					});
-				} else {
-					// Not in cache — preserve from existing template if available
-					const existingGroup = existingGroupMap.get(groupTrashId);
-					if (existingGroup) {
-						templateConfig.customFormatGroups.push({
-							...existingGroup,
-							enabled: true,
-						});
-					}
 				}
 			}
+		}
 
-			// Add selected Custom Formats with user customizations
-			for (const [cfTrashId, selection] of Object.entries(customFormatSelections)) {
-				if (!selection.selected) continue;
+		// Add selected Custom Formats with user customizations
+		for (const [cfTrashId, selection] of Object.entries(customFormatSelections)) {
+			if (!selection.selected) continue;
 
-				const customFormat = customFormats.find((cf) => cf.trash_id === cfTrashId);
-				if (customFormat) {
-					// Found in cache — use latest data from TRaSH
+			const customFormat = customFormats.find((cf) => cf.trash_id === cfTrashId);
+			if (customFormat) {
+				// Found in cache — use latest data from TRaSH
+				templateConfig.customFormats.push({
+					trashId: customFormat.trash_id,
+					name: customFormat.name,
+					scoreOverride: selection.scoreOverride,
+					conditionsEnabled: selection.conditionsEnabled,
+					originalConfig: customFormat,
+				});
+			} else {
+				// Not in cache — preserve from existing template if available
+				const existingCF = existingCFMap.get(cfTrashId);
+				if (existingCF) {
 					templateConfig.customFormats.push({
-						trashId: customFormat.trash_id,
-						name: customFormat.name,
+						...existingCF,
 						scoreOverride: selection.scoreOverride,
 						conditionsEnabled: selection.conditionsEnabled,
-						originalConfig: customFormat,
 					});
-				} else {
-					// Not in cache — preserve from existing template if available
-					const existingCF = existingCFMap.get(cfTrashId);
-					if (existingCF) {
-						templateConfig.customFormats.push({
-							...existingCF,
-							scoreOverride: selection.scoreOverride,
-							conditionsEnabled: selection.conditionsEnabled,
-						});
-					}
-					// If not in cache AND not in existing template, it's genuinely unknown — skip
 				}
+				// If not in cache AND not in existing template, it's genuinely unknown — skip
 			}
-
-			// Update template
-			const template = await templateService.updateTemplate(templateId, request.currentUser!.id, {
-				name: templateName,
-				description: templateDescription,
-				config: templateConfig,
-			});
-
-			return reply.send({
-				template,
-				message: `Successfully updated quality profile template "${templateName}"`,
-				customFormatsIncluded: templateConfig.customFormats.length,
-				customFormatGroupsIncluded: templateConfig.customFormatGroups.length,
-			});
-		} catch (error) {
-			if (error instanceof z.ZodError) {
-				return reply.status(400).send({
-					statusCode: 400,
-					error: "ValidationError",
-					message: "Invalid request data",
-					errors: error.issues,
-				});
-			}
-
-			app.log.error({ err: error }, "Failed to update quality profile template");
-			throw error;
 		}
+
+		// Update template
+		const template = await templateService.updateTemplate(templateId, request.currentUser!.id, {
+			name: templateName,
+			description: templateDescription,
+			config: templateConfig,
+		});
+
+		return reply.send({
+			template,
+			message: `Successfully updated quality profile template "${templateName}"`,
+			customFormatsIncluded: templateConfig.customFormats.length,
+			customFormatGroupsIncluded: templateConfig.customFormatGroups.length,
+		});
 	});
 }

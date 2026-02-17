@@ -7,7 +7,6 @@ import { testServiceConnection } from "../lib/services/connection-tester.js";
 import { formatServiceInstance } from "../lib/services/service-formatter.js";
 import { updateInstanceTags, upsertTags } from "../lib/services/tag-manager.js";
 import { buildUpdateData } from "../lib/services/update-builder.js";
-import { InstanceNotFoundError } from "../lib/errors.js";
 import { validateRequest } from "../lib/utils/validate.js";
 
 const servicePayloadSchema = z.object({
@@ -46,186 +45,148 @@ const tagCreateSchema = z.object({
 
 const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	app.get("/services", async (request, reply) => {
-		try {
-			const instances = await app.prisma.serviceInstance.findMany({
-				where: { userId: request.currentUser!.id },
-				include: {
-					tags: {
-						include: {
-							tag: true,
-						},
+		const instances = await app.prisma.serviceInstance.findMany({
+			where: { userId: request.currentUser!.id },
+			include: {
+				tags: {
+					include: {
+						tag: true,
 					},
 				},
-				orderBy: { createdAt: "asc" },
-			});
+			},
+			orderBy: { createdAt: "asc" },
+		});
 
-			const formatted = instances.map(formatServiceInstance);
-			return reply.send({ services: formatted });
-		} catch (error) {
-			request.log.error({ err: error }, "Failed to fetch service instances");
-			return reply.status(500).send({ error: "Failed to fetch service instances" });
-		}
+		const formatted = instances.map(formatServiceInstance);
+		return reply.send({ services: formatted });
 	});
 
 	app.post("/services", async (request, reply) => {
 		const { apiKey, service, tags, isDefault, ...rest } = validateRequest(servicePayloadSchema, request.body);
 
-		try {
-			const encrypted = app.encryptor.encrypt(apiKey);
+		const encrypted = app.encryptor.encrypt(apiKey);
 
-			const serviceEnum = service.toUpperCase() as ServiceType;
+		const serviceEnum = service.toUpperCase() as ServiceType;
 
-			if (isDefault) {
-				await app.prisma.serviceInstance.updateMany({
-					where: { service: serviceEnum },
-					data: { isDefault: false },
-				});
-			}
-
-			const tagRecords = await upsertTags(app.prisma, tags);
-
-			const created = await app.prisma.serviceInstance.create({
-				data: {
-					userId: request.currentUser!.id, // preHandler guarantees auth
-					service: serviceEnum,
-					encryptedApiKey: encrypted.value,
-					encryptionIv: encrypted.iv,
-					isDefault,
-					...rest,
-					tags: {
-						create: tagRecords,
-					},
-				},
-				include: {
-					tags: {
-						include: {
-							tag: true,
-						},
-					},
-				},
+		if (isDefault) {
+			await app.prisma.serviceInstance.updateMany({
+				where: { service: serviceEnum },
+				data: { isDefault: false },
 			});
-
-			return reply.status(201).send({
-				service: formatServiceInstance(created),
-			});
-		} catch (error) {
-			request.log.error({ err: error }, "Failed to create service instance");
-			return reply.status(500).send({ error: "Failed to create service instance" });
 		}
+
+		const tagRecords = await upsertTags(app.prisma, tags);
+
+		const created = await app.prisma.serviceInstance.create({
+			data: {
+				userId: request.currentUser!.id, // preHandler guarantees auth
+				service: serviceEnum,
+				encryptedApiKey: encrypted.value,
+				encryptionIv: encrypted.iv,
+				isDefault,
+				...rest,
+				tags: {
+					create: tagRecords,
+				},
+			},
+			include: {
+				tags: {
+					include: {
+						tag: true,
+					},
+				},
+			},
+		});
+
+		return reply.status(201).send({
+			service: formatServiceInstance(created),
+		});
 	});
 
 	app.put("/services/:id", async (request, reply) => {
 		const { id } = request.params as { id: string };
 		const payload = validateRequest(serviceUpdateSchema, request.body);
+		const userId = request.currentUser!.id;
+		const existing = await requireInstance(app, userId, id);
 
-		try {
-			const userId = request.currentUser!.id;
-			const existing = await requireInstance(app, userId, id);
+		const updateData = buildUpdateData(payload, app.encryptor);
 
-			const updateData = buildUpdateData(payload, app.encryptor);
-
-			if (payload.isDefault === true || payload.service) {
-				const targetService = (
-					payload.service ?? existing.service.toLowerCase()
-				).toUpperCase() as ServiceType;
-				await app.prisma.serviceInstance.updateMany({
-					where: { service: targetService, NOT: { id } },
-					data: { isDefault: false },
-				});
-			}
-
-			const _updated = await app.prisma.serviceInstance.update({
-				where: { id },
-				data: updateData,
-				include: {
-					tags: { include: { tag: true } },
-				},
+		if (payload.isDefault === true || payload.service) {
+			const targetService = (
+				payload.service ?? existing.service.toLowerCase()
+			).toUpperCase() as ServiceType;
+			await app.prisma.serviceInstance.updateMany({
+				where: { service: targetService, NOT: { id } },
+				data: { isDefault: false },
 			});
-
-			if (payload.tags) {
-				await updateInstanceTags(app.prisma, id, payload.tags);
-			}
-
-			// Fetch updated instance - include userId to ensure we only get owned instances
-			const fresh = await app.prisma.serviceInstance.findFirst({
-				where: {
-					id,
-					userId,
-				},
-				include: { tags: { include: { tag: true } } },
-			});
-
-			if (!fresh) {
-				return reply.status(404).send({ error: "Service instance not found" });
-			}
-
-			return reply.send({
-				service: formatServiceInstance(fresh),
-			});
-		} catch (error) {
-			if (error instanceof InstanceNotFoundError) throw error;
-			request.log.error({ err: error }, "Failed to update service instance");
-			return reply.status(500).send({ error: "Failed to update service instance" });
 		}
+
+		const _updated = await app.prisma.serviceInstance.update({
+			where: { id },
+			data: updateData,
+			include: {
+				tags: { include: { tag: true } },
+			},
+		});
+
+		if (payload.tags) {
+			await updateInstanceTags(app.prisma, id, payload.tags);
+		}
+
+		// Fetch updated instance - include userId to ensure we only get owned instances
+		const fresh = await app.prisma.serviceInstance.findFirst({
+			where: {
+				id,
+				userId,
+			},
+			include: { tags: { include: { tag: true } } },
+		});
+
+		if (!fresh) {
+			return reply.status(404).send({ error: "Service instance not found" });
+		}
+
+		return reply.send({
+			service: formatServiceInstance(fresh),
+		});
 	});
 
 	app.delete("/services/:id", async (request, reply) => {
 		const { id } = request.params as { id: string };
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
 
-		try {
-			await requireInstance(app, userId, id);
-			await app.prisma.serviceInstance.delete({ where: { id, userId } });
-			return reply.status(204).send();
-		} catch (error) {
-			if (error instanceof InstanceNotFoundError) throw error;
-			request.log.error({ err: error }, "Failed to delete service instance");
-			return reply.status(500).send({ error: "Failed to delete service instance" });
-		}
+		await requireInstance(app, userId, id);
+		await app.prisma.serviceInstance.delete({ where: { id, userId } });
+		return reply.status(204).send();
 	});
 
-	app.get("/tags", async (request, reply) => {
-		try {
-			const tags = await app.prisma.serviceTag.findMany({
-				orderBy: { name: "asc" },
-			});
+	app.get("/tags", async (_request, reply) => {
+		const tags = await app.prisma.serviceTag.findMany({
+			orderBy: { name: "asc" },
+		});
 
-			return reply.send({ tags });
-		} catch (error) {
-			request.log.error({ err: error }, "Failed to fetch tags");
-			return reply.status(500).send({ error: "Failed to fetch tags" });
-		}
+		return reply.send({ tags });
 	});
 
 	app.post("/tags", async (request, reply) => {
 		const { name } = validateRequest(tagCreateSchema, request.body);
 
-		try {
-			const tag = await app.prisma.serviceTag.upsert({
-				where: { name },
-				update: {},
-				create: { name },
-			});
+		const tag = await app.prisma.serviceTag.upsert({
+			where: { name },
+			update: {},
+			create: { name },
+		});
 
-			return reply.status(201).send({ tag });
-		} catch (error) {
-			request.log.error({ err: error }, "Failed to create tag");
-			return reply.status(500).send({ error: "Failed to create tag" });
-		}
+		return reply.status(201).send({ tag });
 	});
 
-	app.delete("/tags/:id", async (request, reply) => {
-		const { id } = request.params as { id: string };
+	app.delete("/tags/:id", async (_request, reply) => {
+		const { id } = (_request as { params: { id: string } }).params;
 
-		try {
-			await app.prisma.serviceTag.delete({
-				where: { id },
-			});
-			return reply.status(204).send();
-		} catch (error) {
-			request.log.error({ err: error }, "Failed to delete tag");
-			throw error;
-		}
+		await app.prisma.serviceTag.delete({
+			where: { id },
+		});
+		return reply.status(204).send();
 	});
 
 	app.post("/services/test-connection", async (request, reply) => {
@@ -253,35 +214,24 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
-		try {
-			const result = await testServiceConnection(baseUrl, apiKey, service);
-			return reply.status(200).send(result);
-		} catch (error) {
-			request.log.error({ err: error }, "Failed to test service connection");
-			return reply.status(500).send({ error: "Failed to test service connection" });
-		}
+		const result = await testServiceConnection(baseUrl, apiKey, service);
+		return reply.status(200).send(result);
 	});
 
 	app.post("/services/:id/test", async (request, reply) => {
 		const { id } = request.params as { id: string };
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
 
-		try {
-			const instance = await requireInstance(app, userId, id);
+		const instance = await requireInstance(app, userId, id);
 
-			const apiKey = app.encryptor.decrypt({
-				value: instance.encryptedApiKey,
-				iv: instance.encryptionIv,
-			});
-			const service = instance.service.toLowerCase();
+		const apiKey = app.encryptor.decrypt({
+			value: instance.encryptedApiKey,
+			iv: instance.encryptionIv,
+		});
+		const service = instance.service.toLowerCase();
 
-			const result = await testServiceConnection(instance.baseUrl, apiKey, service);
-			return reply.status(200).send(result);
-		} catch (error) {
-			if (error instanceof InstanceNotFoundError) throw error;
-			request.log.error({ err: error }, "Failed to test service instance connection");
-			return reply.status(500).send({ error: "Failed to test service instance connection" });
-		}
+		const result = await testServiceConnection(instance.baseUrl, apiKey, service);
+		return reply.status(200).send(result);
 	});
 
 	done();

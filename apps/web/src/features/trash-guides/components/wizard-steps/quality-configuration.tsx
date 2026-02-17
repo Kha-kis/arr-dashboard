@@ -14,6 +14,7 @@ import type { QualityProfileSummary } from "../../../../lib/api-client/trash-gui
 import { QualityGroupEditor } from "../quality-group-editor";
 import { useQuery } from "@tanstack/react-query";
 import { apiRequest } from "../../../../lib/api-client/base";
+import { getErrorMessage } from "../../../../lib/error-utils";
 
 /**
  * Wizard-specific profile type that allows undefined trashId for edit mode.
@@ -269,7 +270,7 @@ export const QualityConfiguration = ({
 					<CardContent className="pt-6">
 						<div className="flex items-center gap-3 text-red-400">
 							<AlertCircle className="h-5 w-5" />
-							<p>Failed to load quality configuration: {error instanceof Error ? error.message : "Unknown error"}</p>
+							<p>Failed to load quality configuration: {getErrorMessage(error, "Unknown error")}</p>
 						</div>
 					</CardContent>
 				</Card>

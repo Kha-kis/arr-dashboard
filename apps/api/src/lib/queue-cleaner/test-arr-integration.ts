@@ -9,6 +9,7 @@
  *   RADARR_URL, RADARR_API_KEY
  *   LIDARR_URL, LIDARR_API_KEY
  */
+import { getErrorMessage } from "../utils/error-message.js";
 
 // ============================================================================
 // CONFIGURATION - Edit these or use environment variables
@@ -235,7 +236,7 @@ async function testInstance(instance: ArrInstance): Promise<TestResult> {
 			}
 		}
 	} catch (error) {
-		result.error = error instanceof Error ? error.message : String(error);
+		result.error = getErrorMessage(error);
 	}
 
 	return result;

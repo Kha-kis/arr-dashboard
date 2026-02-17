@@ -12,6 +12,12 @@ import type { PrismaClient } from "../../../lib/prisma.js";
 import { createTestPrismaClient } from "../../__tests__/test-prisma.js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BackupService } from "../backup-service.js";
+import { generateBackupId } from "../backup-file-utils.js";
+import {
+	isEncryptedBackupEnvelope,
+	isPlaintextBackup,
+	validateBackup,
+} from "../backup-validation.js";
 
 // Check if we should run integration tests (requires writable test database)
 const RUN_DB_TESTS = process.env.TEST_DB === "true";
@@ -228,32 +234,7 @@ const mockEncryptor = {
 
 // Unit tests - these don't require database access
 describe("BackupService - Backup Validation (Unit)", () => {
-	let backupService: BackupService;
-	let testBackupsDir: string;
-	let testSecretsPath: string;
-
-	beforeEach(async () => {
-		// Create minimal setup for unit tests
-		testBackupsDir = path.join(os.tmpdir(), `backup-unit-test-${Date.now()}`);
-		testSecretsPath = path.join(testBackupsDir, "secrets.json");
-		await fs.mkdir(testBackupsDir, { recursive: true });
-		await fs.writeFile(
-			testSecretsPath,
-			JSON.stringify({
-				ENCRYPTION_KEY: "test-encryption-key-32-bytes-hex",
-				SESSION_COOKIE_SECRET: "test-session-secret",
-			}),
-		);
-		// Create service with null prisma - we won't use DB methods
-		backupService = new BackupService(null as any, testSecretsPath, mockEncryptor as any);
-	});
-
-	afterEach(async () => {
-		await fs.rm(testBackupsDir, { recursive: true, force: true }).catch(() => {});
-	});
-
 	it("should validate backup structure", () => {
-		// Note: validateBackup is an assertion function that throws on invalid input
 		const validBackup = {
 			version: "1.0",
 			appVersion: "2.6.2",
@@ -274,7 +255,7 @@ describe("BackupService - Backup Validation (Unit)", () => {
 		};
 
 		// Should not throw for valid backup
-		expect(() => (backupService as any).validateBackup(validBackup)).not.toThrow();
+		expect(() => validateBackup(validBackup)).not.toThrow();
 	});
 
 	it("should reject invalid backup version", () => {
@@ -286,7 +267,7 @@ describe("BackupService - Backup Validation (Unit)", () => {
 			secrets: {},
 		};
 
-		expect(() => (backupService as any).validateBackup(invalidBackup)).toThrow(
+		expect(() => validateBackup(invalidBackup)).toThrow(
 			"Unsupported backup version: 999.0",
 		);
 	});
@@ -302,7 +283,7 @@ describe("BackupService - Backup Validation (Unit)", () => {
 			secrets: {},
 		};
 
-		expect(() => (backupService as any).validateBackup(invalidBackup)).toThrow();
+		expect(() => validateBackup(invalidBackup)).toThrow();
 	});
 
 	it("should reject backup with missing version", () => {
@@ -312,52 +293,30 @@ describe("BackupService - Backup Validation (Unit)", () => {
 			data: {},
 		};
 
-		expect(() => (backupService as any).validateBackup(invalidBackup)).toThrow(
+		expect(() => validateBackup(invalidBackup)).toThrow(
 			"Invalid backup format: missing or invalid version",
 		);
 	});
 });
 
 describe("BackupService - Backup ID Generation (Unit)", () => {
-	let backupService: BackupService;
-	let testBackupsDir: string;
-	let testSecretsPath: string;
-
-	beforeEach(async () => {
-		testBackupsDir = path.join(os.tmpdir(), `backup-unit-test-${Date.now()}`);
-		testSecretsPath = path.join(testBackupsDir, "secrets.json");
-		await fs.mkdir(testBackupsDir, { recursive: true });
-		await fs.writeFile(
-			testSecretsPath,
-			JSON.stringify({
-				ENCRYPTION_KEY: "test-encryption-key-32-bytes-hex",
-				SESSION_COOKIE_SECRET: "test-session-secret",
-			}),
-		);
-		backupService = new BackupService(null as any, testSecretsPath, mockEncryptor as any);
-	});
-
-	afterEach(async () => {
-		await fs.rm(testBackupsDir, { recursive: true, force: true }).catch(() => {});
-	});
-
 	it("should generate consistent IDs for the same path", () => {
 		const testPath = "/path/to/backup.json";
-		const id1 = (backupService as any).generateBackupId(testPath);
-		const id2 = (backupService as any).generateBackupId(testPath);
+		const id1 = generateBackupId(testPath);
+		const id2 = generateBackupId(testPath);
 
 		expect(id1).toBe(id2);
 	});
 
 	it("should generate different IDs for different paths", () => {
-		const id1 = (backupService as any).generateBackupId("/path/to/backup1.json");
-		const id2 = (backupService as any).generateBackupId("/path/to/backup2.json");
+		const id1 = generateBackupId("/path/to/backup1.json");
+		const id2 = generateBackupId("/path/to/backup2.json");
 
 		expect(id1).not.toBe(id2);
 	});
 
 	it("should generate 24-character hex IDs", () => {
-		const id = (backupService as any).generateBackupId("/path/to/backup.json");
+		const id = generateBackupId("/path/to/backup.json");
 
 		expect(id).toHaveLength(24);
 		expect(/^[a-f0-9]+$/.test(id)).toBe(true);
@@ -365,31 +324,7 @@ describe("BackupService - Backup ID Generation (Unit)", () => {
 });
 
 describe("BackupService - Encryption Detection (Unit)", () => {
-	let backupService: BackupService;
-	let testBackupsDir: string;
-	let testSecretsPath: string;
-
-	beforeEach(async () => {
-		testBackupsDir = path.join(os.tmpdir(), `backup-unit-test-${Date.now()}`);
-		testSecretsPath = path.join(testBackupsDir, "secrets.json");
-		await fs.mkdir(testBackupsDir, { recursive: true });
-		await fs.writeFile(
-			testSecretsPath,
-			JSON.stringify({
-				ENCRYPTION_KEY: "test-encryption-key-32-bytes-hex",
-				SESSION_COOKIE_SECRET: "test-session-secret",
-			}),
-		);
-		backupService = new BackupService(null as any, testSecretsPath, mockEncryptor as any);
-	});
-
-	afterEach(async () => {
-		await fs.rm(testBackupsDir, { recursive: true, force: true }).catch(() => {});
-	});
-
 	it("should detect encrypted backup envelope", () => {
-		// Encrypted envelope has specific structure with salt, iv, tag, cipherText
-		// kdfParams requires: algorithm, hash, iterations, saltLength
 		const encryptedEnvelope = {
 			version: "1",
 			salt: "some-salt-base64",
@@ -404,12 +339,10 @@ describe("BackupService - Encryption Detection (Unit)", () => {
 			},
 		};
 
-		const result = (backupService as any).isEncryptedBackupEnvelope(encryptedEnvelope);
-		expect(result).toBe(true);
+		expect(isEncryptedBackupEnvelope(encryptedEnvelope)).toBe(true);
 	});
 
 	it("should detect plaintext backup", () => {
-		// Plaintext backup has version, data, and secrets
 		const plaintextBackup = {
 			version: "1.0",
 			appVersion: "2.6.2",
@@ -422,8 +355,7 @@ describe("BackupService - Encryption Detection (Unit)", () => {
 			},
 		};
 
-		const result = (backupService as any).isPlaintextBackup(plaintextBackup);
-		expect(result).toBe(true);
+		expect(isPlaintextBackup(plaintextBackup)).toBe(true);
 	});
 
 	it("should not detect plaintext as encrypted", () => {
@@ -435,8 +367,7 @@ describe("BackupService - Encryption Detection (Unit)", () => {
 			secrets: {},
 		};
 
-		const result = (backupService as any).isEncryptedBackupEnvelope(plaintextBackup);
-		expect(result).toBe(false);
+		expect(isEncryptedBackupEnvelope(plaintextBackup)).toBe(false);
 	});
 
 	it("should not detect encrypted as plaintext", () => {
@@ -454,7 +385,6 @@ describe("BackupService - Encryption Detection (Unit)", () => {
 			},
 		};
 
-		const result = (backupService as any).isPlaintextBackup(encryptedEnvelope);
-		expect(result).toBe(false);
+		expect(isPlaintextBackup(encryptedEnvelope)).toBe(false);
 	});
 });

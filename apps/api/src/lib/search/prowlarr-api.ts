@@ -9,6 +9,9 @@ import { prowlarrIndexerDetailsSchema } from "@arr/shared";
 import type { ServiceInstance } from "../../lib/prisma.js";
 import type { ProwlarrClient } from "arr-sdk/prowlarr";
 import { normalizeIndexer, normalizeIndexerDetails, normalizeSearchResult } from "./normalizers.js";
+import { loggers } from "../logger.js";
+
+const log = loggers.api;
 
 /**
  * Converts a value to a string if possible, otherwise returns undefined.
@@ -145,9 +148,9 @@ export const fetchProwlarrIndexerDetailsWithSdk = async (
 			indexerId,
 		);
 	} catch (error) {
-		console.warn(
-			`[Prowlarr] Failed to fetch indexer details for ID ${indexerId} from ${instance.label}:`,
-			error,
+		log.warn(
+			{ err: error, indexerId, instanceLabel: instance.label, instanceId: instance.id },
+			"Failed to fetch indexer details from Prowlarr",
 		);
 		return null;
 	}

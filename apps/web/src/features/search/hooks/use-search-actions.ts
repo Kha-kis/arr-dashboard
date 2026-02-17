@@ -8,6 +8,7 @@ import { buildFilters, deriveGrabErrorMessage } from "../lib/search-utils";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
 import { copyToClipboard } from "../../../lib/utils/clipboard";
 import type { SearchStateActions } from "./use-search-state";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 
 /**
@@ -82,7 +83,7 @@ export function useSearchActions(
 					});
 				},
 				onError: (error) => {
-					const message = error instanceof Error ? error.message : "Search failed";
+					const message = getErrorMessage(error, "Search failed");
 					stateActions.setFeedback({ type: "error", message });
 				},
 			},
@@ -148,7 +149,7 @@ export function useSearchActions(
 				await copyToClipboard(link);
 				stateActions.setFeedback({ type: "success", message: "Copied link to clipboard." });
 			} catch (error) {
-				const message = error instanceof Error ? error.message : "Clipboard copy failed.";
+				const message = getErrorMessage(error, "Clipboard copy failed.");
 				stateActions.setFeedback({
 					type: "error",
 					message: `Unable to copy link: ${message}`,

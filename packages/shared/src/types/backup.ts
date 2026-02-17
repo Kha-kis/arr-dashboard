@@ -113,6 +113,9 @@ export interface BackupData {
 		// Limited to non-expired backups from last 7 days
 		trashBackups?: unknown[];
 
+		// Quality size preset mappings
+		qualitySizeMappings?: unknown[];
+
 		// Hunting feature configuration & history
 		huntConfigs?: unknown[];
 		huntLogs?: unknown[];

@@ -4,6 +4,7 @@ import { AlertTriangle, Loader2, Music2 } from "lucide-react";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useTracksQuery } from "../../../hooks/api/useLibrary";
 import { LibraryBadge } from "./library-badge";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 /**
  * Props for the AlbumTrackList component
@@ -62,7 +63,7 @@ export const AlbumTrackList = ({
 			>
 				<AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" style={{ color: SEMANTIC_COLORS.error.from }} />
 				<p className="text-xs" style={{ color: SEMANTIC_COLORS.error.text }}>
-					Failed to load tracks{error instanceof Error ? `: ${error.message}` : ""}
+					Failed to load tracks{error ? `: ${getErrorMessage(error)}` : ""}
 				</p>
 			</div>
 		);

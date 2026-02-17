@@ -200,14 +200,69 @@ export class ArrClientFactory {
 	}
 
 	/**
+	 * Call a raw API endpoint on an instance.
+	 * Used for endpoints not wrapped by the SDK (e.g., quality definition reset).
+	 */
+	async rawRequest(
+		instance: ClientInstanceData,
+		path: string,
+		options?: { method?: string; body?: unknown; timeout?: number },
+	): Promise<Response> {
+		const instanceLabel = instance.label ?? instance.id;
+		let apiKey: string;
+		try {
+			apiKey = this.encryptor.decrypt({
+				value: instance.encryptedApiKey,
+				iv: instance.encryptionIv,
+			});
+		} catch (error) {
+			throw new Error(
+				`Failed to decrypt API key for ${instanceLabel}: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+		const baseUrl = instance.baseUrl.replace(/\/$/, "");
+		const url = `${baseUrl}${path}`;
+		const headers: Record<string, string> = { "X-Api-Key": apiKey };
+		let body: string | undefined;
+		if (options?.body !== undefined) {
+			headers["Content-Type"] = "application/json";
+			body = JSON.stringify(options.body);
+		}
+		const timeout = options?.timeout ?? this.defaultTimeout;
+		try {
+			return await fetch(url, {
+				method: options?.method ?? "GET",
+				headers,
+				body,
+				signal: AbortSignal.timeout(timeout),
+			});
+		} catch (error) {
+			if (error instanceof Error && error.name === "TimeoutError") {
+				throw new Error(`Request to ${instanceLabel} (${path}) timed out after ${timeout}ms`);
+			}
+			throw new Error(
+				`Network request to ${instanceLabel} (${path}) failed: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+	}
+
+	/**
 	 * Build client configuration with decrypted API key
 	 */
 	private buildConfig(instance: ClientInstanceData, options?: ClientFactoryOptions): ClientConfig {
 		// Decrypt API key on-demand (not cached)
-		const apiKey = this.encryptor.decrypt({
-			value: instance.encryptedApiKey,
-			iv: instance.encryptionIv,
-		});
+		const instanceLabel = instance.label ?? instance.id;
+		let apiKey: string;
+		try {
+			apiKey = this.encryptor.decrypt({
+				value: instance.encryptedApiKey,
+				iv: instance.encryptionIv,
+			});
+		} catch (error) {
+			throw new Error(
+				`Failed to decrypt API key for ${instanceLabel}: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
 
 		const config: ClientConfig = {
 			baseUrl: instance.baseUrl.replace(/\/$/, ""),

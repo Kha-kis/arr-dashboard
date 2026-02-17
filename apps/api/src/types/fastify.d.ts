@@ -4,6 +4,7 @@ import type { ApiEnv } from "../config/env";
 import type { Encryptor } from "../lib/auth/encryption";
 import type { SessionService } from "../lib/auth/session";
 import type { ArrClientFactory } from "../lib/arr/client-factory";
+import type { DeploymentExecutorService } from "../lib/trash-guides/deployment-executor";
 
 /**
  * The subset of User fields available on request.currentUser.
@@ -19,6 +20,7 @@ declare module "fastify" {
 		encryptor: Encryptor;
 		sessionService: SessionService;
 		arrClientFactory: ArrClientFactory;
+		deploymentExecutor: DeploymentExecutorService;
 	}
 
 	interface FastifyRequest {

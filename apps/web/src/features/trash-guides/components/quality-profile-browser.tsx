@@ -9,6 +9,7 @@ import { X, Download, FileText, Star, Languages, Gauge } from "lucide-react";
 import { SanitizedHtml } from "./sanitized-html";
 import type { QualityProfileSummary } from "../../../lib/api-client/trash-guides";
 import { htmlToPlainText } from "../lib/description-utils";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface QualityProfileBrowserProps {
 	open: boolean;
@@ -99,9 +100,7 @@ export const QualityProfileBrowser = ({
 					{importMutation.isError && (
 						<Alert variant="danger" className="mb-4">
 							<AlertDescription>
-								{importMutation.error instanceof Error
-									? importMutation.error.message
-									: "Failed to import quality profile"}
+								{getErrorMessage(importMutation.error, "Failed to import quality profile")}
 							</AlertDescription>
 						</Alert>
 					)}
@@ -109,7 +108,7 @@ export const QualityProfileBrowser = ({
 					{error && (
 						<Alert variant="danger">
 							<AlertDescription>
-								{error instanceof Error ? error.message : "Failed to load quality profiles"}
+								{getErrorMessage(error, "Failed to load quality profiles")}
 							</AlertDescription>
 						</Alert>
 					)}

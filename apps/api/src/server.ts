@@ -6,6 +6,7 @@ import { type ApiEnv, envSchema } from "./config/env.js";
 import { isArrError, arrErrorToHttpStatus } from "./lib/arr/client-factory.js";
 import { arrClientPlugin } from "./plugins/arr-client.js";
 import backupSchedulerPlugin from "./plugins/backup-scheduler.js";
+import deploymentExecutorPlugin from "./plugins/deployment-executor.js";
 import queueCleanerSchedulerPlugin from "./plugins/queue-cleaner-scheduler.js";
 import librarySyncSchedulerPlugin from "./plugins/library-sync-scheduler.js";
 import lifecyclePlugin from "./plugins/lifecycle.js";
@@ -92,6 +93,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(prismaPlugin);
 	app.register(securityPlugin);
 	app.register(arrClientPlugin);
+	app.register(deploymentExecutorPlugin);
 	app.register(lifecyclePlugin);
 	app.register(backupSchedulerPlugin);
 	app.register(librarySyncSchedulerPlugin);
@@ -176,7 +178,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		reply.send({
 			statusCode: reply.statusCode,
 			error: err.name ?? "InternalServerError",
-			message: env.NODE_ENV === "production" ? "Unexpected error" : err.message,
+			message: err.message,
 		});
 	});
 

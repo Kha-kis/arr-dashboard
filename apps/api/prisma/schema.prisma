@@ -38,8 +38,9 @@ model User {
   oidcAccounts        OIDCAccount[]
   webauthnCredentials WebAuthnCredential[]
   trashSettings       TrashSettings?
-  serviceInstances    ServiceInstance[]
-  userCustomFormats   UserCustomFormat[]
+  serviceInstances      ServiceInstance[]
+  userCustomFormats     UserCustomFormat[]
+  qualitySizeMappings   QualitySizeMapping[]
 }
 
 model Session {
@@ -94,6 +95,7 @@ model ServiceInstance {
   qualityProfileMappings      TemplateQualityProfileMapping[]
   deploymentHistory           TemplateDeploymentHistory[]
   standaloneCFDeployments     StandaloneCFDeployment[]
+  qualitySizeMapping          QualitySizeMapping?
   huntConfig                  HuntConfig?
   huntLogs                    HuntLog[]
   queueCleanerConfig          QueueCleanerConfig?
@@ -541,6 +543,29 @@ model StandaloneCFDeployment {
   @@index([instanceId])
   @@index([commitHash])
   @@map("standalone_cf_deployments")
+}
+
+// Quality Size Mapping - tracks TRaSH quality size presets applied to instances
+// Each instance can have at most one active quality size preset
+model QualitySizeMapping {
+  id              String   @id @default(cuid())
+  instanceId      String   @unique
+  userId          String
+  presetTrashId   String   // trash_id from the TRaSH preset
+  presetType      String   // e.g., "movie", "anime", "series", "sqp-streaming"
+  serviceType     String   // "RADARR" | "SONARR"
+  syncStrategy    String   @default("manual") // "auto" | "manual" | "notify"
+  appliedDataHash String?  // SHA-256 hash of applied qualities for change detection
+  lastAppliedAt   DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([syncStrategy])
+  @@map("quality_size_mappings")
 }
 
 // ============================================================================

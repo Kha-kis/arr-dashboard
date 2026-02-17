@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { useRefreshTrashCache, useDeleteTrashCacheEntry, type DeleteCachePayload } from "../../../hooks/api/useTrashCache";
 import { toast } from "sonner";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 type ServiceType = "RADARR" | "SONARR";
 type ConfigType = DeleteCachePayload["configType"];
@@ -29,7 +30,7 @@ export function useTrashGuidesActions() {
 			try {
 				await refreshMutation.mutateAsync({ serviceType, force: true });
 			} catch (error) {
-				const message = error instanceof Error ? error.message : "Unknown error";
+				const message = getErrorMessage(error, "Unknown error");
 				toast.error(`Failed to refresh ${serviceType.toLowerCase()} cache: ${message}`);
 			} finally {
 				setRefreshing(null);
@@ -48,7 +49,7 @@ export function useTrashGuidesActions() {
 			try {
 				await refreshMutation.mutateAsync({ serviceType, configType, force: true });
 			} catch (error) {
-				const message = error instanceof Error ? error.message : "Unknown error";
+				const message = getErrorMessage(error, "Unknown error");
 				toast.error(`Failed to refresh ${configType} cache: ${message}`);
 			} finally {
 				setRefreshingEntry(null);
@@ -65,7 +66,7 @@ export function useTrashGuidesActions() {
 			try {
 				await deleteMutation.mutateAsync({ serviceType, configType });
 			} catch (error) {
-				const message = error instanceof Error ? error.message : "Unknown error";
+				const message = getErrorMessage(error, "Unknown error");
 				toast.error(`Failed to delete ${configType} cache: ${message}`);
 			}
 		},

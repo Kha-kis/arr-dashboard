@@ -18,6 +18,7 @@ import {
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { PremiumSkeleton } from "../../../components/layout/premium-components";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 /**
  * Premium Indexer Details Panel
@@ -94,7 +95,7 @@ export const IndexerDetailsPanel = ({
 	}
 
 	const detailError =
-		error instanceof Error ? error.message : error ? "Unable to load indexer settings." : null;
+		error ? getErrorMessage(error, "Unable to load indexer settings.") : null;
 	const isLoadingState = isLoading && !detail.fields && !detail.stats;
 
 	const handleStartEditing = () => {
@@ -130,7 +131,7 @@ export const IndexerDetailsPanel = ({
 			await onUpdate(instanceId, indexer.id, payload);
 			setIsEditing(false);
 		} catch (err) {
-			const message = err instanceof Error ? err.message : "Failed to update indexer";
+			const message = getErrorMessage(err, "Failed to update indexer");
 			setLocalError(message);
 		} finally {
 			setIsSaving(false);

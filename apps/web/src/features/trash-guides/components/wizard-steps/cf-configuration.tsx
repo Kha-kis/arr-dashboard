@@ -17,6 +17,8 @@ import type { ResolvedCF } from "./cf-resolution";
 import { CFConfigurationCloned } from "./cf-configuration-cloned";
 import { CFConfigurationEdit } from "./cf-configuration-edit";
 import { AdditionalCFSection, BrowseCFCatalog } from "./cf-configuration-catalog";
+import type { CFSelectionState, ConditionEditorTarget } from "./cf-configuration-types";
+import { getErrorMessage } from "../../../../lib/error-utils";
 
 interface CustomFormatItem {
 	displayName?: string;
@@ -42,18 +44,8 @@ type WizardSelectedProfile = Omit<QualityProfileSummary, 'trashId'> & {
 interface CFConfigurationProps {
 	serviceType: "RADARR" | "SONARR";
 	qualityProfile: WizardSelectedProfile;
-	initialSelections: Record<string, {
-		selected: boolean;
-		scoreOverride?: number;
-		conditionsEnabled: Record<string, boolean>;
-	}>;
-	onNext: (
-		selections: Record<string, {
-			selected: boolean;
-			scoreOverride?: number;
-			conditionsEnabled: Record<string, boolean>;
-		}>
-	) => void;
+	initialSelections: Record<string, CFSelectionState>;
+	onNext: (selections: Record<string, CFSelectionState>) => void;
 	onBack?: () => void; // Optional - undefined means hide back button
 	isEditMode?: boolean; // Edit mode flag to skip API call
 	editingTemplate?: any; // Template being edited (contains all CF data)
@@ -73,10 +65,7 @@ export const CFConfiguration = ({
 	const { gradient: themeGradient } = useThemeGradient();
 	const [selections, setSelections] = useState(initialSelections);
 	const [searchQuery, setSearchQuery] = useState("");
-	const [conditionEditorFormat, setConditionEditorFormat] = useState<{
-		trashId: string;
-		format: CustomFormatItem;
-	} | null>(null);
+	const [conditionEditorFormat, setConditionEditorFormat] = useState<ConditionEditorTarget | null>(null);
 	const hasInitializedSelections = useRef(false);
 
 	// Check if we're in cloned profile mode (cfResolutions provided from previous step)
@@ -306,9 +295,7 @@ export const CFConfiguration = ({
 				<Alert variant="danger">
 					<AlertCircle className="h-4 w-4" />
 					<AlertDescription>
-						{error instanceof Error
-							? error.message
-							: "Failed to load quality profile details"}
+						{getErrorMessage(error, "Failed to load quality profile details")}
 					</AlertDescription>
 				</Alert>
 			</div>

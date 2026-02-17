@@ -73,20 +73,12 @@ const manualImportRoute: FastifyPluginCallback = (app, _opts, done) => {
 			filterExistingFiles: query.filterExistingFiles,
 		};
 
-		try {
-			// fetchManualImportCandidatesWithSdk already validates via Zod - no need to re-parse
-			const candidates = await fetchManualImportCandidatesWithSdk(client, query.service, options);
-			return reply.send({
-				candidates,
-				total: candidates.length,
-			});
-		} catch (error) {
-			request.log.error(
-				{ err: error, service: query.service, instanceId: query.instanceId },
-				"Failed to fetch manual import candidates",
-			);
-			throw error;
-		}
+		// fetchManualImportCandidatesWithSdk already validates via Zod - no need to re-parse
+		const candidates = await fetchManualImportCandidatesWithSdk(client, query.service, options);
+		return reply.send({
+			candidates,
+			total: candidates.length,
+		});
 	});
 
 	app.post("/manual-import", async (request, reply) => {
@@ -124,20 +116,12 @@ const manualImportRoute: FastifyPluginCallback = (app, _opts, done) => {
 			return { error: "Invalid client type for Readarr instance" };
 		}
 
-		try {
-			await submitManualImportCommandWithSdk(
-				client,
-				body.service,
-				body.files,
-				body.importMode ?? "auto",
-			);
-		} catch (error) {
-			request.log.error(
-				{ err: error, service: body.service, instanceId: body.instanceId, fileCount: body.files.length },
-				"Manual import command failed",
-			);
-			throw error;
-		}
+		await submitManualImportCommandWithSdk(
+			client,
+			body.service,
+			body.files,
+			body.importMode ?? "auto",
+		);
 
 		return reply.status(204).send();
 	});

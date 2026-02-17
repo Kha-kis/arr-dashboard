@@ -1,4 +1,5 @@
 import type { ApiErrorPayload } from "@arr/shared";
+import { getErrorMessage } from "../error-utils";
 
 export class ApiError extends Error {
 	constructor(
@@ -62,7 +63,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 	} catch (error) {
 		// Network error (API unreachable, CORS, etc.)
 		throw new NetworkError(
-			error instanceof Error ? `Cannot connect to API server: ${error.message}` : "Cannot connect to API server"
+			`Cannot connect to API server: ${getErrorMessage(error, "unknown error")}`
 		);
 	}
 

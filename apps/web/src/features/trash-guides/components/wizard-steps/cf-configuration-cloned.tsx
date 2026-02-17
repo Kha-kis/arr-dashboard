@@ -11,12 +11,7 @@ import { ChevronLeft, ChevronRight, RotateCcw, Search } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription } from "../../../../components/ui";
 import { useThemeGradient } from "../../../../hooks/useThemeGradient";
 import type { ResolvedCF } from "./cf-resolution";
-
-interface CFSelectionState {
-	selected: boolean;
-	scoreOverride?: number;
-	conditionsEnabled: Record<string, boolean>;
-}
+import type { CFSelectionState } from "./cf-configuration-types";
 
 interface CFConfigurationClonedProps {
 	cfResolutions: ResolvedCF[];

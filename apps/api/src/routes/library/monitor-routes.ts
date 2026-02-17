@@ -224,7 +224,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 			});
 		} catch (error) {
 			request.log.error(
-				{ err: error, instance: instance.id, itemId: payload.itemId },
+				{ err: error, instanceId: instance.id, itemId: payload.itemId },
 				"failed to update monitoring",
 			);
 			throw error;
@@ -274,7 +274,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 			return reply.status(204).send();
 		} catch (error) {
 			request.log.error(
-				{ err: error, instance: instance.id, episodeIds: payload.episodeIds },
+				{ err: error, instanceId: instance.id, episodeIds: payload.episodeIds },
 				"failed to update episode monitoring",
 			);
 			throw error;
@@ -327,7 +327,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 			return reply.status(204).send();
 		} catch (error) {
 			request.log.error(
-				{ err: error, instance: instance.id, albumIds: payload.albumIds },
+				{ err: error, instanceId: instance.id, albumIds: payload.albumIds },
 				"failed to update album monitoring",
 			);
 			throw error;
@@ -380,7 +380,7 @@ export const registerMonitorRoutes: FastifyPluginCallback = (app, _opts, done) =
 			return reply.status(204).send();
 		} catch (error) {
 			request.log.error(
-				{ err: error, instance: instance.id, bookIds: payload.bookIds },
+				{ err: error, instanceId: instance.id, bookIds: payload.bookIds },
 				"failed to update book monitoring",
 			);
 			throw error;

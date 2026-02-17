@@ -4,11 +4,9 @@
  * Tests extractTrashId function and ID-based vs name-based matching behavior
  */
 
-import { describe, it, expect, beforeEach, vi } from "vitest";
-import type { PrismaClient } from "../../../lib/prisma.js";
+import { describe, it, expect } from "vitest";
 import type { SonarrClient } from "arr-sdk";
-import { DeploymentExecutorService } from "../deployment-executor.js";
-import type { ArrClientFactory } from "../../arr/client-factory.js";
+import { extractTrashId } from "../cf-field-utils.js";
 
 // SDK CustomFormat type alias
 type SdkCustomFormat = Awaited<ReturnType<SonarrClient["customFormat"]["getAll"]>>[number];
@@ -41,27 +39,7 @@ const createSpecWithObjectFields = (
 	fields: fields as unknown as SdkSpecification["fields"],
 });
 
-// Helper to access private extractTrashId method in tests
-// Uses index signature to bypass TypeScript's private member checking
-const getExtractTrashId = (
-	service: DeploymentExecutorService
-): ((cf: SdkCustomFormat) => string | null) => {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	return (service as unknown as { extractTrashId: (cf: SdkCustomFormat) => string | null }).extractTrashId.bind(service);
-};
-
-describe("DeploymentExecutorService - extractTrashId", () => {
-	let service: DeploymentExecutorService;
-	let mockPrisma: PrismaClient;
-	let mockClientFactory: ArrClientFactory;
-
-	beforeEach(() => {
-		mockPrisma = {} as PrismaClient;
-		mockClientFactory = {
-			create: vi.fn(),
-		} as unknown as ArrClientFactory;
-		service = new DeploymentExecutorService(mockPrisma, mockClientFactory);
-	});
+describe("extractTrashId", () => {
 
 	it("should extract trash_id from array format fields", () => {
 		const cf: SdkCustomFormat = {
@@ -75,8 +53,6 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			],
 		};
 
-		// Access private method via helper
-		const extractTrashId = getExtractTrashId(service);
 		const trashId = extractTrashId(cf);
 		expect(trashId).toBe("test-uuid-123");
 	});
@@ -93,7 +69,6 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			],
 		};
 
-		const extractTrashId = getExtractTrashId(service);
 		const trashId = extractTrashId(cf);
 		expect(trashId).toBe("test-uuid-456");
 	});
@@ -109,7 +84,6 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			],
 		};
 
-		const extractTrashId = getExtractTrashId(service);
 		const trashId = extractTrashId(cf);
 		expect(trashId).toBeNull();
 	});
@@ -121,7 +95,6 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			specifications: [],
 		};
 
-		const extractTrashId = getExtractTrashId(service);
 		const trashId = extractTrashId(cf);
 		expect(trashId).toBeNull();
 	});
@@ -134,7 +107,6 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			specifications: undefined,
 		} as unknown as SdkCustomFormat;
 
-		const extractTrashId = getExtractTrashId(service);
 		const trashId = extractTrashId(cf);
 		expect(trashId).toBeNull();
 	});
@@ -161,7 +133,6 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			],
 		};
 
-		const extractTrashId = getExtractTrashId(service);
 		const trashId = extractTrashId(cf);
 		expect(trashId).toBeNull();
 	});
@@ -183,7 +154,6 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			],
 		};
 
-		const extractTrashId = getExtractTrashId(service);
 		const trashId = extractTrashId(cf);
 		expect(trashId).toBe("first-uuid");
 	});
@@ -199,7 +169,6 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			],
 		};
 
-		const extractTrashId = getExtractTrashId(service);
 		const trashId = extractTrashId(cf);
 		expect(trashId).toBe("12345");
 		expect(typeof trashId).toBe("string");
@@ -217,7 +186,6 @@ describe("DeploymentExecutorService - extractTrashId", () => {
 			],
 		};
 
-		const extractTrashId = getExtractTrashId(service);
 		const trashId = extractTrashId(cfWithoutId);
 		expect(trashId).toBeNull();
 
