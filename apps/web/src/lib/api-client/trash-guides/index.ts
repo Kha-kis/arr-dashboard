@@ -9,6 +9,7 @@
  * - profiles.ts        - Quality profile operations, overrides, cloning
  * - updates.ts         - Template updates, syncing, scheduler
  * - deployment.ts      - Deployment preview, execution, history
+ * - quality-size.ts    - Quality size preset management
  * - settings.ts        - TRaSH Guides settings, custom repo configuration
  * - custom-formats.ts  - Custom format browsing, deployment, user CFs
  * - sync.ts            - Sync validation, execution, progress, history
@@ -314,6 +315,29 @@ export type {
 	TemplateStatsResponse,
 	DeleteTemplateResponse,
 } from "./templates";
+
+// ============================================================================
+// Quality Size Module
+// ============================================================================
+
+export {
+	fetchQualitySizePresets,
+	getQualitySizePreview,
+	fetchQualitySizeMapping,
+	applyQualitySize,
+	updateQualitySizeSyncStrategy,
+} from "./quality-size";
+
+export type {
+	QualitySizePresetsResponse,
+	QualitySizeComparison,
+	QualitySizePreviewResponse,
+	QualitySizeMappingResponse,
+	ApplyQualitySizePayload,
+	ApplyQualitySizeResponse,
+	UpdateSyncStrategyPayload as QualitySizeUpdateSyncStrategyPayload,
+	UpdateSyncStrategyResponse as QualitySizeUpdateSyncStrategyResponse,
+} from "./quality-size";
 
 // ============================================================================
 // Settings Module

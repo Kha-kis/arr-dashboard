@@ -31,6 +31,7 @@ import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { DeploymentAction, ConflictResolution } from "../../../lib/api-client/trash-guides";
 import { InstanceOverrideEditor } from "./instance-override-editor";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface DeploymentPreviewModalProps {
 	open: boolean;
@@ -208,9 +209,7 @@ export const DeploymentPreviewModal = ({
 
 	// Derive error message from mutation state
 	const deploymentError = deploymentMutation.isError
-		? deploymentMutation.error instanceof Error
-			? deploymentMutation.error.message
-			: "Failed to execute deployment"
+		? getErrorMessage(deploymentMutation.error, "Failed to execute deployment")
 		: deploymentMutation.data && !deploymentMutation.data.success
 			? Array.isArray(deploymentMutation.data.result?.errors) && deploymentMutation.data.result.errors.length > 0
 				? deploymentMutation.data.result.errors.join(", ")
@@ -257,7 +256,7 @@ export const DeploymentPreviewModal = ({
 									Failed to load deployment preview
 								</p>
 								<p className="text-sm text-muted-foreground mt-1">
-									{error instanceof Error ? error.message : "Please try again"}
+									{getErrorMessage(error, "Please try again")}
 								</p>
 							</div>
 						</div>

@@ -22,6 +22,7 @@ import type { CFMatchResult } from "../../../../lib/api-client/trash-guides";
 import { useThemeGradient } from "../../../../hooks/useThemeGradient";
 import { CFResolutionItem, ExcludedCFItem } from "./cf-resolution-items";
 import { ProfileMatchBanner, ResolutionStatistics, CollapsibleCFSection } from "./cf-resolution-panels";
+import { getErrorMessage } from "../../../../lib/error-utils";
 
 /**
  * User's decision for a matched CF
@@ -564,7 +565,7 @@ export const CFResolution = ({
 			<div className="space-y-6">
 				<Alert variant="danger">
 					<AlertDescription>
-						Failed to validate Custom Formats: {error instanceof Error ? error.message : "Unknown error"}
+						Failed to validate Custom Formats: {getErrorMessage(error, "Unknown error")}
 					</AlertDescription>
 				</Alert>
 				<div className="flex items-center justify-between border-t border-border pt-6">

@@ -17,8 +17,8 @@
 
 import * as runtime from "@prisma/client/runtime/index-browser"
 
-export type * from '../models.js'
-export type * from './prismaNamespace.js'
+export type * from '../models'
+export type * from './prismaNamespace'
 
 export const Decimal = runtime.Decimal
 
@@ -71,6 +71,7 @@ export const ModelName = {
   InstanceQualityProfileOverride: 'InstanceQualityProfileOverride',
   TemplateDeploymentHistory: 'TemplateDeploymentHistory',
   StandaloneCFDeployment: 'StandaloneCFDeployment',
+  QualitySizeMapping: 'QualitySizeMapping',
   HuntConfig: 'HuntConfig',
   HuntLog: 'HuntLog',
   HuntSearchHistory: 'HuntSearchHistory',
@@ -428,6 +429,23 @@ export const StandaloneCFDeploymentScalarFieldEnum = {
 } as const
 
 export type StandaloneCFDeploymentScalarFieldEnum = (typeof StandaloneCFDeploymentScalarFieldEnum)[keyof typeof StandaloneCFDeploymentScalarFieldEnum]
+
+
+export const QualitySizeMappingScalarFieldEnum = {
+  id: 'id',
+  instanceId: 'instanceId',
+  userId: 'userId',
+  presetTrashId: 'presetTrashId',
+  presetType: 'presetType',
+  serviceType: 'serviceType',
+  syncStrategy: 'syncStrategy',
+  appliedDataHash: 'appliedDataHash',
+  lastAppliedAt: 'lastAppliedAt',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+} as const
+
+export type QualitySizeMappingScalarFieldEnum = (typeof QualitySizeMappingScalarFieldEnum)[keyof typeof QualitySizeMappingScalarFieldEnum]
 
 
 export const HuntConfigScalarFieldEnum = {

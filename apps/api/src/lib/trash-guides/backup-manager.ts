@@ -5,6 +5,10 @@
  */
 
 import type { PrismaClient } from "../../lib/prisma.js";
+import { loggers } from "../logger.js";
+import { getErrorMessage } from "../utils/error-message.js";
+
+const log = loggers.trashGuides;
 
 // ============================================================================
 // Types
@@ -145,7 +149,7 @@ export class BackupManager {
 		try {
 			return JSON.parse(backup.backupData) as BackupData;
 		} catch (error) {
-			console.error(`Failed to parse backup data for backupId ${backupId}:`, error);
+			log.error({ err: error, backupId }, "Failed to parse backup data");
 			return null;
 		}
 	}
@@ -190,10 +194,7 @@ export class BackupManager {
 					configCount: data.customFormats.length,
 				});
 			} catch (error) {
-				console.error(
-					`Failed to parse backup data for backup ${backup.id}, instanceId ${backup.instanceId}:`,
-					error,
-				);
+				log.error({ err: error, backupId: backup.id, instanceId: backup.instanceId }, "Failed to parse backup data");
 				// Skip corrupted backups instead of crashing
 			}
 			return result;
@@ -302,7 +303,7 @@ export class BackupManager {
 			});
 			return true;
 		} catch (error) {
-			console.error(`deleteBackup failed for backupId ${backupId}:`, error);
+			log.error({ err: error, backupId }, "Failed to delete backup");
 			return false;
 		}
 	}
@@ -407,7 +408,7 @@ export class BackupManager {
 			return JSON.parse(backup.backupData) as BackupData;
 		} catch (parseError) {
 			throw new Error(
-				`Backup ${backupId} contains invalid JSON data: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+				`Backup ${backupId} contains invalid JSON data: ${getErrorMessage(parseError)}`,
 			);
 		}
 	}

@@ -108,7 +108,7 @@ export function mergeTemplateConfig(
 			);
 
 			// Determine final score based on applyScoreUpdates option
-			const finalScoreOverride: number | undefined = currentCF.scoreOverride;
+			let finalScoreOverride: number | undefined = currentCF.scoreOverride;
 			const userOverrideScore = currentCF.scoreOverride;
 
 			if (scoreOptions?.applyScoreUpdates) {
@@ -125,6 +125,7 @@ export function mergeTemplateConfig(
 					}
 				} else {
 					if (currentScore !== recommendedScore) {
+						finalScoreOverride = recommendedScore;
 						stats.scoresUpdated++;
 						stats.scoreChangeDetails.push({
 							trashId,
@@ -209,6 +210,7 @@ export function mergeTemplateConfig(
 	// Handle CFs no longer in TRaSH Guides
 	const deleteRemovedCFs = scoreOptions?.deleteRemovedCFs ?? false;
 	const commitHash = scoreOptions?.targetCommitHash || "unknown";
+	const DEPRECATION_CLEANUP_DAYS = 90;
 
 	for (const [trashId, currentCF] of currentCFMap) {
 		if (!latestCFMap.has(trashId)) {
@@ -217,6 +219,27 @@ export function mergeTemplateConfig(
 			const deprecationReason = `No longer in TRaSH Guides as of commit ${commitHash}`;
 
 			if (isUserAdded || !deleteRemovedCFs) {
+				// Auto-remove trash_sync CFs that have been deprecated for over 90 days
+				const deprecatedAtMs = currentCF.deprecatedAt
+					? new Date(currentCF.deprecatedAt).getTime()
+					: NaN;
+				const isStaleDeprecation =
+					!isUserAdded &&
+					!Number.isNaN(deprecatedAtMs) &&
+					Date.now() - deprecatedAtMs > DEPRECATION_CLEANUP_DAYS * 24 * 60 * 60 * 1000;
+
+				if (isStaleDeprecation) {
+					stats.customFormatsRemoved++;
+					stats.removedCFDetails.push({
+						trashId,
+						name: currentCF.name,
+					});
+					warnings.push(
+						`Custom format "${currentCF.name}" (${trashId}) auto-removed after ${DEPRECATION_CLEANUP_DAYS} days deprecated`,
+					);
+					continue;
+				}
+
 				stats.customFormatsDeprecated++;
 				stats.deprecatedCFDetails.push({
 					trashId,
@@ -299,6 +322,23 @@ export function mergeTemplateConfig(
 			const deprecationReason = `No longer in TRaSH Guides as of commit ${commitHash}`;
 
 			if (isUserAdded || !deleteRemovedCFs) {
+				// Auto-remove trash_sync groups that have been deprecated for over 90 days
+				const deprecatedAtMs = currentGroup.deprecatedAt
+					? new Date(currentGroup.deprecatedAt).getTime()
+					: NaN;
+				const isStaleDeprecation =
+					!isUserAdded &&
+					!Number.isNaN(deprecatedAtMs) &&
+					Date.now() - deprecatedAtMs > DEPRECATION_CLEANUP_DAYS * 24 * 60 * 60 * 1000;
+
+				if (isStaleDeprecation) {
+					stats.customFormatGroupsRemoved++;
+					warnings.push(
+						`Custom format group "${currentGroup.name}" (${trashId}) auto-removed after ${DEPRECATION_CLEANUP_DAYS} days deprecated`,
+					);
+					continue;
+				}
+
 				stats.customFormatGroupsDeprecated++;
 
 				if (!currentGroup.deprecated) {

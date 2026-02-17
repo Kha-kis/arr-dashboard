@@ -7,12 +7,11 @@
 import type { TemplateConfig } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { createDeploymentExecutorService } from "../../lib/trash-guides/deployment-executor.js";
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
 import { parseInstanceOverrides } from "../../lib/trash-guides/utils.js";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
-import { requireTemplate, transformOverrideToApi } from "../../lib/trash-guides/template-helpers.js";
-import { TemplateNotFoundError, InstanceNotFoundError } from "../../lib/errors.js";
+import { requireTemplate } from "../../lib/trash-guides/template-helpers.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 // ============================================================================
 // Request Schemas
@@ -266,33 +265,24 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 	app.get<{
 		Querystring: z.infer<typeof listTemplatesQuerySchema>;
 	}>("/", async (request, reply) => {
-		try {
-			const query = listTemplatesQuerySchema.parse(request.query);
+		const query = validateRequest(listTemplatesQuerySchema, request.query);
 
-			const templates = await templateService.listTemplates({
-				userId: request.currentUser!.id, // preHandler guarantees auth
-				serviceType: query.serviceType,
-				includeDeleted: query.includeDeleted,
-				active: query.active,
-				search: query.search,
-				sortBy: query.sortBy,
-				sortOrder: query.sortOrder,
-				limit: query.limit,
-				offset: query.offset,
-			});
+		const templates = await templateService.listTemplates({
+			userId: request.currentUser!.id, // preHandler guarantees auth
+			serviceType: query.serviceType,
+			includeDeleted: query.includeDeleted,
+			active: query.active,
+			search: query.search,
+			sortBy: query.sortBy,
+			sortOrder: query.sortOrder,
+			limit: query.limit,
+			offset: query.offset,
+		});
 
-			return reply.send({
-				templates,
-				count: templates.length,
-			});
-		} catch (error) {
-			app.log.error({ err: error }, "Failed to list templates");
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to list templates",
-			});
-		}
+		return reply.send({
+			templates,
+			count: templates.length,
+		});
 	});
 
 	/**
@@ -302,31 +292,22 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 	app.post<{
 		Body: z.infer<typeof createTemplateSchema>;
 	}>("/", async (request, reply) => {
-		try {
-			const body = createTemplateSchema.parse(request.body);
+		const body = validateRequest(createTemplateSchema, request.body);
 
-			// Validate template configuration
-			const validation = templateService.validateTemplateConfig(body.config);
-			if (!validation.valid) {
-				return reply.status(400).send({
-					statusCode: 400,
-					error: "ValidationError",
-					message: "Invalid template configuration",
-					errors: validation.errors,
-				});
-			}
-
-			const template = await templateService.createTemplate(request.currentUser!.id, body);
-
-			return reply.status(201).send({ template });
-		} catch (error) {
-			app.log.error({ err: error }, "Failed to create template");
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to create template",
+		// Validate template configuration
+		const validation = templateService.validateTemplateConfig(body.config);
+		if (!validation.valid) {
+			return reply.status(400).send({
+				statusCode: 400,
+				error: "ValidationError",
+				message: "Invalid template configuration",
+				errors: validation.errors,
 			});
 		}
+
+		const template = await templateService.createTemplate(request.currentUser!.id, body);
+
+		return reply.status(201).send({ template });
 	});
 
 	/**
@@ -336,28 +317,19 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 	app.get<{
 		Params: z.infer<typeof getTemplateParamsSchema>;
 	}>("/:templateId", async (request, reply) => {
-		try {
-			const { templateId } = getTemplateParamsSchema.parse(request.params);
+		const { templateId } = validateRequest(getTemplateParamsSchema, request.params);
 
-			const template = await templateService.getTemplate(templateId, request.currentUser!.id);
+		const template = await templateService.getTemplate(templateId, request.currentUser!.id);
 
-			if (!template) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: "Template not found",
-				});
-			}
-
-			return reply.send({ template });
-		} catch (error) {
-			app.log.error({ err: error }, "Failed to get template");
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to get template",
+		if (!template) {
+			return reply.status(404).send({
+				statusCode: 404,
+				error: "NotFound",
+				message: "Template not found",
 			});
 		}
+
+		return reply.send({ template });
 	});
 
 	/**
@@ -368,34 +340,29 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		Params: z.infer<typeof getTemplateParamsSchema>;
 		Body: z.infer<typeof updateTemplateSchema>;
 	}>("/:templateId", async (request, reply) => {
-		try {
-			const { templateId } = getTemplateParamsSchema.parse(request.params);
-			const body = updateTemplateSchema.parse(request.body);
+		const { templateId } = validateRequest(getTemplateParamsSchema, request.params);
+		const body = validateRequest(updateTemplateSchema, request.body);
 
-			// Validate template configuration if provided
-			if (body.config) {
-				const validation = templateService.validateTemplateConfig(body.config);
-				if (!validation.valid) {
-					return reply.status(400).send({
-						statusCode: 400,
-						error: "ValidationError",
-						message: "Invalid template configuration",
-						errors: validation.errors,
-					});
-				}
+		// Validate template configuration if provided
+		if (body.config) {
+			const validation = templateService.validateTemplateConfig(body.config);
+			if (!validation.valid) {
+				return reply.status(400).send({
+					statusCode: 400,
+					error: "ValidationError",
+					message: "Invalid template configuration",
+					errors: validation.errors,
+				});
 			}
-
-			const template = await templateService.updateTemplate(
-				templateId,
-				request.currentUser!.id,
-				body,
-			);
-
-			return reply.send({ template });
-		} catch (error) {
-			app.log.error({ err: error }, "Failed to update template");
-			throw error;
 		}
+
+		const template = await templateService.updateTemplate(
+			templateId,
+			request.currentUser!.id,
+			body,
+		);
+
+		return reply.send({ template });
 	});
 
 	/**
@@ -405,18 +372,13 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 	app.delete<{
 		Params: z.infer<typeof getTemplateParamsSchema>;
 	}>("/:templateId", async (request, reply) => {
-		try {
-			const { templateId } = getTemplateParamsSchema.parse(request.params);
+		const { templateId } = validateRequest(getTemplateParamsSchema, request.params);
 
-			await templateService.deleteTemplate(templateId, request.currentUser!.id);
+		await templateService.deleteTemplate(templateId, request.currentUser!.id);
 
-			return reply.send({
-				message: "Template deleted successfully",
-			});
-		} catch (error) {
-			app.log.error({ err: error }, "Failed to delete template");
-			throw error;
-		}
+		return reply.send({
+			message: "Template deleted successfully",
+		});
 	});
 
 	/**
@@ -427,24 +389,19 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		Params: z.infer<typeof getTemplateParamsSchema>;
 		Body: z.infer<typeof duplicateTemplateSchema>;
 	}>("/:templateId/duplicate", async (request, reply) => {
-		try {
-			const { templateId } = getTemplateParamsSchema.parse(request.params);
-			const { newName } = duplicateTemplateSchema.parse(request.body);
+		const { templateId } = validateRequest(getTemplateParamsSchema, request.params);
+		const { newName } = validateRequest(duplicateTemplateSchema, request.body);
 
-			const template = await templateService.duplicateTemplate(
-				templateId,
-				request.currentUser!.id,
-				newName,
-			);
+		const template = await templateService.duplicateTemplate(
+			templateId,
+			request.currentUser!.id,
+			newName,
+		);
 
-			return reply.status(201).send({
-				template,
-				message: "Template duplicated successfully",
-			});
-		} catch (error) {
-			app.log.error({ err: error }, "Failed to duplicate template");
-			throw error;
-		}
+		return reply.status(201).send({
+			template,
+			message: "Template duplicated successfully",
+		});
 	});
 
 	/**
@@ -454,19 +411,14 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 	app.get<{
 		Params: z.infer<typeof getTemplateParamsSchema>;
 	}>("/:templateId/export", async (request, reply) => {
-		try {
-			const { templateId } = getTemplateParamsSchema.parse(request.params);
+		const { templateId } = validateRequest(getTemplateParamsSchema, request.params);
 
-			const jsonData = await templateService.exportTemplate(templateId, request.currentUser!.id);
+		const jsonData = await templateService.exportTemplate(templateId, request.currentUser!.id);
 
-			reply.header("Content-Type", "application/json");
-			reply.header("Content-Disposition", `attachment; filename="template-${templateId}.json"`);
+		reply.header("Content-Type", "application/json");
+		reply.header("Content-Disposition", `attachment; filename="template-${templateId}.json"`);
 
-			return reply.send(jsonData);
-		} catch (error) {
-			app.log.error({ err: error }, "Failed to export template");
-			throw error;
-		}
+		return reply.send(jsonData);
 	});
 
 	/**
@@ -476,19 +428,14 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 	app.post<{
 		Body: z.infer<typeof importTemplateSchema>;
 	}>("/import", async (request, reply) => {
-		try {
-			const { jsonData } = importTemplateSchema.parse(request.body);
+		const { jsonData } = validateRequest(importTemplateSchema, request.body);
 
-			const template = await templateService.importTemplate(request.currentUser!.id, jsonData);
+		const template = await templateService.importTemplate(request.currentUser!.id, jsonData);
 
-			return reply.status(201).send({
-				template,
-				message: "Template imported successfully",
-			});
-		} catch (error) {
-			app.log.error({ err: error }, "Failed to import template");
-			throw error;
-		}
+		return reply.status(201).send({
+			template,
+			message: "Template imported successfully",
+		});
 	});
 
 	/**
@@ -498,28 +445,19 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 	app.get<{
 		Params: z.infer<typeof getTemplateParamsSchema>;
 	}>("/:templateId/stats", async (request, reply) => {
-		try {
-			const { templateId } = getTemplateParamsSchema.parse(request.params);
+		const { templateId } = validateRequest(getTemplateParamsSchema, request.params);
 
-			const stats = await templateService.getTemplateStats(templateId, request.currentUser!.id);
+		const stats = await templateService.getTemplateStats(templateId, request.currentUser!.id);
 
-			if (!stats) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: "Template not found",
-				});
-			}
-
-			return reply.send({ stats });
-		} catch (error) {
-			app.log.error({ err: error }, "Failed to get template stats");
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to get template stats",
+		if (!stats) {
+			return reply.status(404).send({
+				statusCode: 404,
+				error: "NotFound",
+				message: "Template not found",
 			});
 		}
+
+		return reply.send({ stats });
 	});
 
 	// ============================================================================
@@ -533,31 +471,21 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 	app.get<{
 		Params: { templateId: string; instanceId: string };
 	}>("/:templateId/instance-overrides/:instanceId", async (request, reply) => {
-		try {
-			const { templateId, instanceId } = request.params;
-			const template = await requireTemplate(app.prisma, request.currentUser!.id, templateId);
+		const { templateId, instanceId } = request.params;
+		const template = await requireTemplate(app.prisma, request.currentUser!.id, templateId);
 
-			const instanceOverrides = parseInstanceOverrides(
-				template.instanceOverrides,
-				{ templateId, operation: "get" },
-				app.log,
-			);
-			const rawOverride = (instanceOverrides[instanceId] as Record<string, unknown>) || {};
+		const instanceOverrides = parseInstanceOverrides(
+			template.instanceOverrides,
+			{ templateId, operation: "get" },
+			app.log,
+		);
+		const rawOverride = (instanceOverrides[instanceId] as Record<string, unknown>) || {};
 
-			return reply.send({
-				templateId,
-				instanceId,
-				overrides: transformOverrideToApi(rawOverride),
-			});
-		} catch (error) {
-			if (error instanceof TemplateNotFoundError) throw error;
-			app.log.error({ err: error }, "Failed to get instance overrides");
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to get instance overrides",
-			});
-		}
+		return reply.send({
+			templateId,
+			instanceId,
+			overrides: rawOverride,
+		});
 	});
 
 	/**
@@ -579,73 +507,63 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			} | null; // null to clear the override
 		};
 	}>("/:templateId/instance-overrides/:instanceId", async (request, reply) => {
-		try {
-			const { templateId, instanceId } = request.params;
-			const { scoreOverrides, cfOverrides, qualityConfigOverride } = request.body;
-			const template = await requireTemplate(app.prisma, request.currentUser!.id, templateId);
+		const { templateId, instanceId } = request.params;
+		const { scoreOverrides, cfOverrides, qualityConfigOverride } = request.body;
+		const template = await requireTemplate(app.prisma, request.currentUser!.id, templateId);
 
-			// Parse existing overrides with error handling for malformed JSON
-			const instanceOverrides = parseInstanceOverrides(
-				template.instanceOverrides,
-				{ templateId, operation: "update" },
-				app.log,
-			);
+		// Parse existing overrides with error handling for malformed JSON
+		const instanceOverrides = parseInstanceOverrides(
+			template.instanceOverrides,
+			{ templateId, operation: "update" },
+			app.log,
+		);
 
-			// Get existing override for this instance to preserve fields not being updated
-			const existingOverride = (instanceOverrides[instanceId] as Record<string, unknown>) || {};
+		// Get existing override for this instance to preserve fields not being updated
+		const existingOverride = (instanceOverrides[instanceId] as Record<string, unknown>) || {};
 
-			// Update overrides for this instance (merge with existing)
-			const updatedOverride: Record<string, unknown> = {
-				...existingOverride,
-				instanceId,
-				lastModifiedAt: new Date().toISOString(),
-				lastModifiedBy: request.currentUser!.id,
-			};
+		// Update overrides for this instance (merge with existing)
+		const updatedOverride: Record<string, unknown> = {
+			...existingOverride,
+			instanceId,
+			lastModifiedAt: new Date().toISOString(),
+			lastModifiedBy: request.currentUser!.id,
+		};
 
-			// Update score overrides if provided
-			if (scoreOverrides !== undefined) {
-				updatedOverride.cfScoreOverrides = scoreOverrides;
-			}
-
-			// Update CF selection overrides if provided
-			if (cfOverrides !== undefined) {
-				updatedOverride.cfSelectionOverrides = cfOverrides;
-			}
-
-			// Update quality config override if provided (null clears it)
-			if (qualityConfigOverride !== undefined) {
-				if (qualityConfigOverride === null) {
-					updatedOverride.qualityConfigOverride = undefined;
-				} else {
-					updatedOverride.qualityConfigOverride = qualityConfigOverride;
-				}
-			}
-
-			instanceOverrides[instanceId] = updatedOverride;
-
-			// Save back to database
-			await app.prisma.trashTemplate.update({
-				where: { id: templateId },
-				data: {
-					instanceOverrides: JSON.stringify(instanceOverrides),
-					updatedAt: new Date(),
-				},
-			});
-
-			return reply.send({
-				success: true,
-				message: "Instance overrides updated successfully",
-				overrides: instanceOverrides[instanceId],
-			});
-		} catch (error) {
-			if (error instanceof TemplateNotFoundError) throw error;
-			app.log.error({ err: error }, "Failed to update instance overrides");
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to update instance overrides",
-			});
+		// Update score overrides if provided
+		if (scoreOverrides !== undefined) {
+			updatedOverride.cfScoreOverrides = scoreOverrides;
 		}
+
+		// Update CF selection overrides if provided
+		if (cfOverrides !== undefined) {
+			updatedOverride.cfSelectionOverrides = cfOverrides;
+		}
+
+		// Update quality config override if provided (null clears it)
+		if (qualityConfigOverride !== undefined) {
+			if (qualityConfigOverride === null) {
+				updatedOverride.qualityConfigOverride = undefined;
+			} else {
+				updatedOverride.qualityConfigOverride = qualityConfigOverride;
+			}
+		}
+
+		instanceOverrides[instanceId] = updatedOverride;
+
+		// Save back to database
+		await app.prisma.trashTemplate.update({
+			where: { id: templateId },
+			data: {
+				instanceOverrides: JSON.stringify(instanceOverrides),
+				updatedAt: new Date(),
+			},
+		});
+
+		return reply.send({
+			success: true,
+			message: "Instance overrides updated successfully",
+			overrides: instanceOverrides[instanceId],
+		});
 	});
 
 	/**
@@ -655,69 +573,59 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 	app.delete<{
 		Params: { templateId: string; instanceId: string };
 	}>("/:templateId/instance-overrides/:instanceId", async (request, reply) => {
-		try {
-			const { templateId, instanceId } = request.params;
-			const template = await requireTemplate(app.prisma, request.currentUser!.id, templateId);
+		const { templateId, instanceId } = request.params;
+		const template = await requireTemplate(app.prisma, request.currentUser!.id, templateId);
 
-			// Parse existing overrides with error handling for malformed JSON
-			let instanceOverrides: Record<string, unknown> = {};
-			if (template.instanceOverrides) {
+		// Parse existing overrides with error handling for malformed JSON
+		let instanceOverrides: Record<string, unknown> = {};
+		if (template.instanceOverrides) {
+			try {
+				instanceOverrides = JSON.parse(template.instanceOverrides);
+			} catch {
+				app.log.warn({ templateId }, "Malformed instanceOverrides JSON, clearing corrupted data");
+				// Clear corrupted JSON data in database
 				try {
-					instanceOverrides = JSON.parse(template.instanceOverrides);
-				} catch {
-					app.log.warn({ templateId }, "Malformed instanceOverrides JSON, clearing corrupted data");
-					// Clear corrupted JSON data in database
-					try {
-						await app.prisma.trashTemplate.update({
-							where: { id: templateId },
-							data: {
-								instanceOverrides: JSON.stringify({}),
-								updatedAt: new Date(),
-							},
-						});
-						return reply.send({
-							success: true,
-							message: "Corrupted instance overrides cleared successfully",
-						});
-					} catch (dbError) {
-						app.log.error(
-							{ err: dbError, templateId },
-							"Failed to clear corrupted instanceOverrides",
-						);
-						return reply.status(500).send({
-							statusCode: 500,
-							error: "InternalServerError",
-							message: "Failed to repair corrupted instance overrides",
-						});
-					}
+					await app.prisma.trashTemplate.update({
+						where: { id: templateId },
+						data: {
+							instanceOverrides: JSON.stringify({}),
+							updatedAt: new Date(),
+						},
+					});
+					return reply.send({
+						success: true,
+						message: "Corrupted instance overrides cleared successfully",
+					});
+				} catch (dbError) {
+					app.log.error(
+						{ err: dbError, templateId },
+						"Failed to clear corrupted instanceOverrides",
+					);
+					return reply.status(500).send({
+						statusCode: 500,
+						error: "InternalServerError",
+						message: "Failed to repair corrupted instance overrides",
+					});
 				}
 			}
-
-			// Remove overrides for this instance
-			delete instanceOverrides[instanceId];
-
-			// Save back to database
-			await app.prisma.trashTemplate.update({
-				where: { id: templateId },
-				data: {
-					instanceOverrides: JSON.stringify(instanceOverrides),
-					updatedAt: new Date(),
-				},
-			});
-
-			return reply.send({
-				success: true,
-				message: "Instance overrides removed successfully",
-			});
-		} catch (error) {
-			if (error instanceof TemplateNotFoundError) throw error;
-			app.log.error({ err: error }, "Failed to remove instance overrides");
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to remove instance overrides",
-			});
 		}
+
+		// Remove overrides for this instance
+		delete instanceOverrides[instanceId];
+
+		// Save back to database
+		await app.prisma.trashTemplate.update({
+			where: { id: templateId },
+			data: {
+				instanceOverrides: JSON.stringify(instanceOverrides),
+				updatedAt: new Date(),
+			},
+		});
+
+		return reply.send({
+			success: true,
+			message: "Instance overrides removed successfully",
+		});
 	});
 
 	/**
@@ -730,41 +638,30 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			instanceId: string;
 		};
 	}>("/deployment/execute", async (request, reply) => {
-		try {
-			const { templateId, instanceId } = request.body;
+		const { templateId, instanceId } = request.body;
 
-			if (!templateId || !instanceId) {
-				return reply.status(400).send({
-					statusCode: 400,
-					error: "BadRequest",
-					message: "templateId and instanceId are required",
-				});
-			}
-
-			await requireTemplate(app.prisma, request.currentUser!.id, templateId);
-			await requireInstance(app, request.currentUser!.id, instanceId);
-
-			// Execute deployment
-			const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.arrClientFactory);
-			const result = await deploymentExecutor.deploySingleInstance(
-				templateId,
-				instanceId,
-				request.currentUser!.id,
-			);
-
-			return reply.send({
-				success: result.success,
-				result,
-			});
-		} catch (error) {
-			if (error instanceof TemplateNotFoundError || error instanceof InstanceNotFoundError) throw error;
-			app.log.error({ err: error }, "Failed to execute deployment");
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to execute deployment",
+		if (!templateId || !instanceId) {
+			return reply.status(400).send({
+				statusCode: 400,
+				error: "BadRequest",
+				message: "templateId and instanceId are required",
 			});
 		}
+
+		await requireTemplate(app.prisma, request.currentUser!.id, templateId);
+		await requireInstance(app, request.currentUser!.id, instanceId);
+
+		// Execute deployment
+		const result = await app.deploymentExecutor.deploySingleInstance(
+			templateId,
+			instanceId,
+			request.currentUser!.id,
+		);
+
+		return reply.send({
+			success: result.success,
+			result,
+		});
 	});
 
 	/**
@@ -777,63 +674,52 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 			instanceIds: string[];
 		};
 	}>("/deployment/bulk", async (request, reply) => {
-		try {
-			const { templateId, instanceIds } = request.body;
+		const { templateId, instanceIds } = request.body;
 
-			if (!templateId || !instanceIds || !Array.isArray(instanceIds)) {
-				return reply.status(400).send({
-					statusCode: 400,
-					error: "BadRequest",
-					message: "templateId and instanceIds array are required",
-				});
-			}
-
-			if (instanceIds.length === 0) {
-				return reply.status(400).send({
-					statusCode: 400,
-					error: "BadRequest",
-					message: "At least one instance ID is required",
-				});
-			}
-
-			await requireTemplate(app.prisma, request.currentUser!.id, templateId);
-
-			// Verify all instances exist
-			const instances = await app.prisma.serviceInstance.findMany({
-				where: {
-					id: { in: instanceIds },
-					userId: request.currentUser!.id, // preHandler guarantees auth
-				},
-			});
-
-			if (instances.length !== instanceIds.length) {
-				return reply.status(404).send({
-					statusCode: 404,
-					error: "NotFound",
-					message: "One or more instances not found or not owned by user",
-				});
-			}
-
-			// Execute bulk deployment
-			const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.arrClientFactory);
-			const result = await deploymentExecutor.deployBulkInstances(
-				templateId,
-				instanceIds,
-				request.currentUser!.id,
-			);
-
-			return reply.send({
-				success: result.successfulInstances > 0,
-				result,
-			});
-		} catch (error) {
-			if (error instanceof TemplateNotFoundError) throw error;
-			app.log.error({ err: error }, "Failed to execute bulk deployment");
-			return reply.status(500).send({
-				statusCode: 500,
-				error: "InternalServerError",
-				message: error instanceof Error ? error.message : "Failed to execute bulk deployment",
+		if (!templateId || !instanceIds || !Array.isArray(instanceIds)) {
+			return reply.status(400).send({
+				statusCode: 400,
+				error: "BadRequest",
+				message: "templateId and instanceIds array are required",
 			});
 		}
+
+		if (instanceIds.length === 0) {
+			return reply.status(400).send({
+				statusCode: 400,
+				error: "BadRequest",
+				message: "At least one instance ID is required",
+			});
+		}
+
+		await requireTemplate(app.prisma, request.currentUser!.id, templateId);
+
+		// Verify all instances exist
+		const instances = await app.prisma.serviceInstance.findMany({
+			where: {
+				id: { in: instanceIds },
+				userId: request.currentUser!.id, // preHandler guarantees auth
+			},
+		});
+
+		if (instances.length !== instanceIds.length) {
+			return reply.status(404).send({
+				statusCode: 404,
+				error: "NotFound",
+				message: "One or more instances not found or not owned by user",
+			});
+		}
+
+		// Execute bulk deployment
+		const result = await app.deploymentExecutor.deployBulkInstances(
+			templateId,
+			instanceIds,
+			request.currentUser!.id,
+		);
+
+		return reply.send({
+			success: result.successfulInstances > 0,
+			result,
+		});
 	});
 }

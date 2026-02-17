@@ -3,22 +3,17 @@
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "../../../../components/ui";
 import { SanitizedHtml } from "../sanitized-html";
 import type { ThemeGradient } from "../../../../lib/theme-gradients";
-
-interface CFSelection {
-	selected: boolean;
-	scoreOverride?: number;
-	conditionsEnabled: Record<string, boolean>;
-}
+import type { CFSelectionState } from "./cf-configuration-types";
 
 interface CatalogSectionProps {
 	/** The full CF configuration data from the hook */
 	data: any;
 	/** Current user selections */
-	selections: Record<string, CFSelection>;
+	selections: Record<string, CFSelectionState>;
 	/** Toggle a CF on/off */
 	onToggleCF: (trashId: string) => void;
 	/** Update selection (for score overrides) */
-	onUpdateSelection: (trashId: string, update: Partial<CFSelection>) => void;
+	onUpdateSelection: (trashId: string, update: Partial<CFSelectionState>) => void;
 	/** Resolve the score for a CF using the profile's score set */
 	resolveScore: (cf: any, fallback?: number) => number;
 }

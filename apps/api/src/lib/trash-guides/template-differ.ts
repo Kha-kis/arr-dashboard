@@ -29,6 +29,10 @@ import {
 	getRecommendedScore,
 	type TrashCFWithScores,
 } from "./template-score-utils.js";
+import { loggers } from "../logger.js";
+import { getErrorMessage } from "../utils/error-message.js";
+
+const log = loggers.trashGuides;
 
 // ============================================================================
 // Types
@@ -106,7 +110,7 @@ export async function computeTemplateDiff(
 				const data = await githubFetcher.fetchConfigs(serviceType, configType);
 				await cacheManager.set(serviceType, configType, data, targetCommitHash);
 			} catch (fetchError) {
-				const errorMsg = fetchError instanceof Error ? fetchError.message : String(fetchError);
+				const errorMsg = getErrorMessage(fetchError);
 				throw new Error(`Failed to refresh ${configType} cache for ${serviceType}: ${errorMsg}`);
 			}
 		}
@@ -128,7 +132,7 @@ export async function computeTemplateDiff(
 		templateConfig = JSON.parse(template.configData) as typeof templateConfig;
 	} catch (parseError) {
 		throw new Error(
-			`Template "${template.name}" (id: ${template.id}) has corrupt configData: ${parseError instanceof Error ? parseError.message : "Unknown error"}`,
+			`Template "${template.name}" (id: ${template.id}) has corrupt configData: ${getErrorMessage(parseError, "Unknown error")}`,
 		);
 	}
 
@@ -423,8 +427,9 @@ function getRecentAutoSyncEntry(
 		const parsed = JSON.parse(changeLogJson);
 		changeLog = Array.isArray(parsed) ? parsed : [];
 	} catch (parseError) {
-		console.warn(
-			`[TemplateDiffer] Failed to parse changeLog in getRecentAutoSyncEntry: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+		log.warn(
+			{ err: parseError },
+			"Failed to parse changeLog in getRecentAutoSyncEntry",
 		);
 		return null;
 	}

@@ -1,11 +1,14 @@
 /**
  * Score resolution utilities for TRaSH Guides template operations.
  *
- * Consolidates the duplicated score lookup logic used by the merger, differ, and
- * CF-group-addition detector into a single source of truth.
+ * Consolidates the duplicated score lookup logic used by the merger, differ,
+ * CF-group-addition detector, and deployment executor into a single source of truth.
  */
 
 import type { TemplateCustomFormat, TrashCustomFormat } from "@arr/shared";
+import { loggers } from "../logger.js";
+
+const log = loggers.deployment;
 
 /** TRaSH CF with the optional `trash_scores` map present in real API data. */
 export type TrashCFWithScores = TrashCustomFormat & {
@@ -69,4 +72,66 @@ export function getCurrentScore(cf: TemplateCustomFormat, scoreSet: string): num
 	}
 
 	return 0;
+}
+
+// ============================================================================
+// Deployment Score Calculation
+// ============================================================================
+
+export interface ScoreCalculationResult {
+	score: number;
+	scoreSource: string;
+}
+
+export interface TemplateCFForScoring {
+	scoreOverride?: number | null;
+	originalConfig?: {
+		trash_scores?: Record<string, number>;
+	};
+}
+
+/**
+ * Calculates the resolved score for a Custom Format using priority rules:
+ * 1. Instance-level override (manual changes in instance)
+ * 2. Template-level override (user's wizard selection)
+ * 3. TRaSH Guides score from profile's score set
+ * 4. TRaSH Guides default score
+ * 5. Fallback to 0
+ */
+export function calculateScoreAndSource(
+	templateCF: TemplateCFForScoring,
+	scoreSet: string | undefined | null,
+	instanceOverrideScore?: number,
+): ScoreCalculationResult {
+	if (instanceOverrideScore !== undefined) {
+		return { score: instanceOverrideScore, scoreSource: "instance override" };
+	}
+
+	if (templateCF.scoreOverride !== undefined && templateCF.scoreOverride !== null) {
+		return { score: templateCF.scoreOverride, scoreSource: "template override" };
+	}
+
+	if (scoreSet != null && scoreSet !== "" && templateCF.originalConfig?.trash_scores?.[scoreSet] !== undefined) {
+		const score = templateCF.originalConfig.trash_scores[scoreSet];
+		if (typeof score === "number" && Number.isFinite(score)) {
+			return { score, scoreSource: `TRaSH score set (${scoreSet})` };
+		}
+		log.warn(
+			{ scoreSet, scoreType: typeof score, scoreValue: String(score) },
+			"Non-numeric score for scoreSet, falling through to next priority",
+		);
+	}
+
+	if (templateCF.originalConfig?.trash_scores?.default !== undefined) {
+		const score = templateCF.originalConfig.trash_scores.default;
+		if (typeof score === "number" && Number.isFinite(score)) {
+			return { score, scoreSource: "TRaSH default" };
+		}
+		log.warn(
+			{ scoreType: typeof score, scoreValue: String(score) },
+			"Non-numeric default score, falling back to 0",
+		);
+	}
+
+	return { score: 0, scoreSource: "default" };
 }

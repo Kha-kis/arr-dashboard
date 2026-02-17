@@ -22,10 +22,13 @@ import type {
 	TrashQualityProfile,
 } from "@arr/shared";
 import type { PrismaClient } from "../../lib/prisma.js";
-import type { TrashCacheManager } from "./cache-manager.js";
+import { CacheCorruptionError, type TrashCacheManager } from "./cache-manager.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
 import type { TrashGitHubFetcher } from "./github-fetcher.js";
 import { TemplateNotFoundError } from "../errors.js";
+import { loggers } from "../logger.js";
+
+const log = loggers.trashGuides;
 import { getSyncMetrics } from "./sync-metrics.js";
 import { computeTemplateDiff } from "./template-differ.js";
 import { mergeTemplateConfig, validateMergedConfig } from "./template-merger.js";
@@ -49,6 +52,8 @@ import type {
 	TemplateUpdateInfo,
 	UpdateCheckResult,
 } from "./template-updater-types.js";
+
+import { getErrorMessage } from "../utils/error-message.js";
 
 // ============================================================================
 // Template Updater Class
@@ -85,9 +90,7 @@ export class TemplateUpdater {
 		try {
 			latestCommit = await this.versionTracker.getLatestCommit();
 		} catch (error) {
-			console.error(
-				`[TemplateUpdater] Failed to get latest commit from GitHub: ${error instanceof Error ? error.message : String(error)}`,
-			);
+			log.error({ err: error }, "Failed to get latest commit from GitHub");
 			return {
 				templatesWithUpdates: [],
 				latestCommit: { commitHash: "", commitDate: "", commitMessage: "", commitUrl: "" },
@@ -148,14 +151,22 @@ export class TemplateUpdater {
 
 				if (autoSyncInstanceCount > 0) {
 					if (!cacheByServiceType.has(serviceType)) {
-						const [cfGroups, customFormats] = await Promise.all([
-							this.cacheManager.get<TrashCustomFormatGroup[]>(serviceType, "CF_GROUPS"),
-							this.cacheManager.get<TrashCustomFormat[]>(serviceType, "CUSTOM_FORMATS"),
-						]);
-						cacheByServiceType.set(serviceType, {
-							cfGroups: cfGroups ?? [],
-							customFormats: customFormats ?? [],
-						});
+						try {
+							const [cfGroups, customFormats] = await Promise.all([
+								this.cacheManager.get<TrashCustomFormatGroup[]>(serviceType, "CF_GROUPS"),
+								this.cacheManager.get<TrashCustomFormat[]>(serviceType, "CUSTOM_FORMATS"),
+							]);
+							cacheByServiceType.set(serviceType, {
+								cfGroups: cfGroups ?? [],
+								customFormats: customFormats ?? [],
+							});
+						} catch (error) {
+							if (!(error instanceof CacheCorruptionError)) throw error;
+							cacheByServiceType.set(serviceType, {
+								cfGroups: [],
+								customFormats: [],
+							});
+						}
 					}
 
 					const cache = cacheByServiceType.get(serviceType);
@@ -382,7 +393,7 @@ export class TemplateUpdater {
 				? await this.versionTracker.getCommitInfo(targetCommitHash)
 				: await this.versionTracker.getLatestCommit();
 		} catch (error) {
-			const errorMsg = `Failed to get commit info from GitHub: ${error instanceof Error ? error.message : String(error)}`;
+			const errorMsg = `Failed to get commit info from GitHub: ${getErrorMessage(error)}`;
 			completeMetrics().recordFailure(errorMsg);
 			return {
 				success: false,
@@ -405,12 +416,10 @@ export class TemplateUpdater {
 			try {
 				currentConfig = JSON.parse(template.configData) as TemplateConfig;
 			} catch (parseError) {
-				console.warn(
-					`[TemplateUpdater] Failed to parse configData for template ${templateId}: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
-				);
+				log.warn({ err: parseError, templateId }, "Failed to parse configData for template");
 			}
 
-			const fetchResult = await this.fetchLatestTrashData(serviceType);
+			let fetchResult = await this.fetchLatestTrashData(serviceType);
 			if (!fetchResult.success) {
 				return {
 					success: false,
@@ -423,16 +432,46 @@ export class TemplateUpdater {
 			}
 
 			if (fetchResult.cacheCommitHash && fetchResult.cacheCommitHash !== targetCommit.commitHash) {
-				return {
-					success: false,
-					templateId,
-					previousCommit,
-					newCommit: targetCommit.commitHash,
-					errors: [
-						`Cache/version mismatch: cache contains data for commit ${fetchResult.cacheCommitHash}, but syncing to ${targetCommit.commitHash}. Please refresh the cache and try again.`,
-					],
-					errorType: "sync_failed",
-				};
+				log.info(
+					{ cacheCommit: fetchResult.cacheCommitHash, targetCommit: targetCommit.commitHash, templateId, serviceType },
+					"Cache/version mismatch — auto-refreshing cache",
+				);
+
+				const requiredCacheTypes: TrashConfigType[] = [
+					"CUSTOM_FORMATS",
+					"CF_GROUPS",
+					"QUALITY_PROFILES",
+				];
+
+				for (const configType of requiredCacheTypes) {
+					try {
+						const data = await this.githubFetcher.fetchConfigs(serviceType, configType);
+						await this.cacheManager.set(serviceType, configType, data, targetCommit.commitHash);
+					} catch (fetchError) {
+						return {
+							success: false,
+							templateId,
+							previousCommit,
+							newCommit: targetCommit.commitHash,
+							errors: [
+								`Failed to refresh ${configType} cache for ${serviceType}: ${getErrorMessage(fetchError)}`,
+							],
+							errorType: "sync_failed" as const,
+						};
+					}
+				}
+
+				fetchResult = await this.fetchLatestTrashData(serviceType);
+				if (!fetchResult.success) {
+					return {
+						success: false,
+						templateId,
+						previousCommit,
+						newCommit: targetCommit.commitHash,
+						errors: [`Failed to fetch TRaSH data after cache refresh: ${fetchResult.error}`],
+						errorType: "sync_failed",
+					};
+				}
 			}
 
 			const currentCFTrashIds = new Set(
@@ -475,10 +514,7 @@ export class TemplateUpdater {
 					if (config.trash_id && config.name) {
 						filteredCustomFormats.push(config as TrashCustomFormat);
 					} else {
-						console.warn(
-							`[TemplateUpdater] Skipping CF "${cf.name}" (${cf.trashId}): ` +
-							`originalConfig is missing required fields (trash_id or name)`,
-						);
+						log.warn({ cfName: cf.name, trashId: cf.trashId }, "Skipping CF: originalConfig is missing required fields (trash_id or name)");
 					}
 				}
 			}
@@ -498,10 +534,7 @@ export class TemplateUpdater {
 					if (config.trash_id && config.name) {
 						filteredCFGroups.push(config as TrashCustomFormatGroup);
 					} else {
-						console.warn(
-							`[TemplateUpdater] Skipping CF group "${group.name}" (${group.trashId}): ` +
-							`originalConfig is missing required fields (trash_id or name)`,
-						);
+						log.warn({ groupName: group.name, trashId: group.trashId }, "Skipping CF group: originalConfig is missing required fields (trash_id or name)");
 					}
 				}
 			}
@@ -578,9 +611,7 @@ export class TemplateUpdater {
 					const parsed = JSON.parse(template.changeLog);
 					existingChangeLog = Array.isArray(parsed) ? parsed : [];
 				} catch (parseError) {
-					console.warn(
-						`[TemplateUpdater] Failed to parse changeLog for template ${templateId}: ${parseError instanceof Error ? parseError.message : String(parseError)}. Resetting to empty array.`,
-					);
+					log.warn({ err: parseError, templateId }, "Failed to parse changeLog for template, resetting to empty array");
 					existingChangeLog = [];
 				}
 			}
@@ -610,7 +641,7 @@ export class TemplateUpdater {
 					mergeResult.scoreConflicts.length > 0 ? mergeResult.scoreConflicts : undefined,
 			};
 		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : String(error);
+			const errorMessage = getErrorMessage(error);
 			const metricsResult = completeMetrics();
 			metricsResult.recordFailure(errorMessage);
 
@@ -664,7 +695,7 @@ export class TemplateUpdater {
 				customFormats: [],
 				customFormatGroups: [],
 				cacheCommitHash: null,
-				error: error instanceof Error ? error.message : String(error),
+				error: getErrorMessage(error),
 			};
 		}
 	}
@@ -718,12 +749,12 @@ export class TemplateUpdater {
 				try {
 					await this.deployToMappedInstances(template.templateId);
 				} catch (error) {
-					console.error(`Auto-deploy failed for template ${template.templateId}:`, error);
+					log.error({ err: error, templateId: template.templateId }, "Auto-deploy failed for template");
 					if (!result.errors) {
 						result.errors = [];
 					}
 					result.errors.push(
-						`Auto-deploy failed: ${error instanceof Error ? error.message : String(error)}`,
+						`Auto-deploy failed: ${getErrorMessage(error)}`,
 					);
 				}
 			} else {
@@ -756,7 +787,7 @@ export class TemplateUpdater {
 		});
 
 		if (!template) {
-			console.error(`[TemplateUpdater] Cannot auto-deploy: template ${templateId} not found`);
+			log.error({ templateId }, "Cannot auto-deploy: template not found");
 			return;
 		}
 
@@ -783,15 +814,15 @@ export class TemplateUpdater {
 				);
 
 				if (!result.success) {
-					console.error(
-						`[TemplateUpdater] Failed to auto-deploy template "${template.name}" (${templateId}) to instance ${mapping.instance.label}:`,
-						result.errors,
+					log.error(
+						{ templateId, templateName: template.name, instanceLabel: mapping.instance.label, errors: result.errors },
+						"Failed to auto-deploy template to instance",
 					);
 				}
 			} catch (error) {
-				console.error(
-					`[TemplateUpdater] Error auto-deploying template "${template.name}" (${templateId}) to instance ${mapping.instanceId}:`,
-					error instanceof Error ? error.message : error,
+				log.error(
+					{ err: error, templateId, templateName: template.name, instanceId: mapping.instanceId },
+					"Error auto-deploying template to instance",
 				);
 				throw error;
 			}
@@ -845,8 +876,8 @@ export class TemplateUpdater {
 				: await this.versionTracker.getLatestCommit();
 		} catch (error) {
 			const context = targetCommitHash ? `commit ${targetCommitHash}` : "latest commit";
-			const errorMsg = error instanceof Error ? error.message : String(error);
-			console.error(`[TemplateUpdater] Failed to fetch ${context} for template diff: ${errorMsg}`);
+			const errorMsg = getErrorMessage(error);
+			log.error({ err: error, context }, "Failed to fetch version info for template diff");
 			throw new Error(`Failed to fetch version info for ${context}: ${errorMsg}`);
 		}
 
@@ -884,7 +915,7 @@ export class TemplateUpdater {
 		} catch (error) {
 			return {
 				needsUpdate: false,
-				error: error instanceof Error ? error.message : String(error),
+				error: getErrorMessage(error),
 			};
 		}
 	}
@@ -915,7 +946,7 @@ export class TemplateUpdater {
 		try {
 			latestCommit = await this.versionTracker.getLatestCommit();
 		} catch (error) {
-			const errorMsg = `[TemplateUpdater] Failed to fetch latest commit: ${error instanceof Error ? error.message : String(error)}`;
+			const errorMsg = `[TemplateUpdater] Failed to fetch latest commit: ${getErrorMessage(error)}`;
 			errors.push(errorMsg);
 			return { refreshed: 0, failed: configTypes.length, errors };
 		}
@@ -935,7 +966,7 @@ export class TemplateUpdater {
 				refreshed++;
 			} catch (error) {
 				failed++;
-				errors.push(`${configType}: ${error instanceof Error ? error.message : String(error)}`);
+				errors.push(`${configType}: ${getErrorMessage(error)}`);
 			}
 		}
 

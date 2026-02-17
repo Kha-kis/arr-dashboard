@@ -9,6 +9,7 @@ import { useThemeGradient } from "../../../../hooks/useThemeGradient";
 import { SanitizedHtml } from "../sanitized-html";
 import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { apiRequest } from "../../../../lib/api-client/base";
+import { getErrorMessage } from "../../../../lib/error-utils";
 
 interface CFGroupSelectionProps {
 	serviceType: "RADARR" | "SONARR";
@@ -114,9 +115,7 @@ export const CFGroupSelection = ({
 		return (
 			<Alert variant="danger">
 				<AlertDescription>
-					{error instanceof Error
-						? error.message
-						: "Failed to load quality profile details"}
+					{getErrorMessage(error, "Failed to load quality profile details")}
 				</AlertDescription>
 			</Alert>
 		);

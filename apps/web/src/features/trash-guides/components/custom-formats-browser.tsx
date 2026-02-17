@@ -36,6 +36,7 @@ import { cleanDescription } from "../lib/description-utils";
 import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { UserCFImportDialog } from "./user-cf-import-dialog";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 const DeployCFModal = lazy(() => import("./deploy-cf-modal"));
 const CFDetailsModal = lazy(() => import("./cf-details-modal"));
@@ -412,7 +413,7 @@ export const CustomFormatsBrowser = () => {
 			}
 		} catch (error) {
 			toast.error(
-				error instanceof Error ? error.message : "Failed to deploy custom formats"
+				getErrorMessage(error, "Failed to deploy custom formats")
 			);
 		}
 	};
@@ -468,7 +469,7 @@ export const CustomFormatsBrowser = () => {
 					<div>
 						<h3 className="font-semibold text-foreground mb-1">Failed to load custom formats</h3>
 						<p className="text-sm text-muted-foreground">
-							{error instanceof Error ? error.message : "Please refresh the page and try again."}
+							{getErrorMessage(error, "Please refresh the page and try again.")}
 						</p>
 					</div>
 				</div>
@@ -636,7 +637,7 @@ export const CustomFormatsBrowser = () => {
 													},
 													onError: (err) => {
 														toast.error("Deploy failed", {
-															description: err instanceof Error ? err.message : "Unknown error",
+															description: getErrorMessage(err, "Unknown error"),
 														});
 													},
 												});

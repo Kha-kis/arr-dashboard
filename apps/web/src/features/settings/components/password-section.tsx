@@ -14,6 +14,7 @@ import { useQuery } from "@tanstack/react-query";
 import { getPasskeyCredentials } from "../../../lib/api-client/auth";
 import { validatePassword } from "../lib/settings-utils";
 import type { CurrentUser } from "@arr/shared";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface PasswordSectionProps {
 	currentUser?: CurrentUser | null;
@@ -122,7 +123,7 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 		} catch (error: unknown) {
 			setUpdateResult({
 				success: false,
-				message: error instanceof Error ? error.message : "Failed to update password",
+				message: getErrorMessage(error, "Failed to update password"),
 			});
 		}
 	};
@@ -146,7 +147,7 @@ export const PasswordSection = ({ currentUser }: PasswordSectionProps) => {
 			setShowRemovePassword(false);
 		} catch (error) {
 			setRemovePasswordError(
-				error instanceof Error ? error.message : "Failed to remove password"
+				getErrorMessage(error, "Failed to remove password")
 			);
 		}
 	};

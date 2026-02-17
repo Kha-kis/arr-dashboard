@@ -5,6 +5,10 @@
  */
 
 import type { FastifyBaseLogger } from "fastify";
+import { loggers } from "../logger.js";
+import { getErrorMessage } from "../utils/error-message.js";
+
+const log = loggers.trashGuides;
 
 // ============================================================================
 // JSON Parsing
@@ -43,13 +47,13 @@ export function safeJsonParse<T>(
 		const message = `[${context.source}] Failed to parse JSON for ${context.identifier}${context.field ? `, field: ${context.field}` : ""}`;
 		const details = {
 			dataSize: value.length,
-			error: error instanceof Error ? error.message : String(error),
+			error: getErrorMessage(error),
 		};
 
 		if (logger) {
 			logger.warn(details, message);
 		} else {
-			console.warn(message, details);
+			log.warn(details, message);
 		}
 
 		return undefined;
@@ -85,7 +89,7 @@ export function parseInstanceOverrides(
 		if (logger) {
 			logger.warn({ templateId: context.templateId, error }, message);
 		} else {
-			console.warn(message);
+			log.warn({ templateId: context.templateId, err: error }, message);
 		}
 		return {};
 	}

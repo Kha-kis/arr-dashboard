@@ -5,10 +5,8 @@
  */
 
 import type { FastifyInstance, FastifyPluginOptions, FastifyRequest } from "fastify";
-import { z } from "zod";
 import type { SonarrClient, RadarrClient } from "arr-sdk";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
-import { createDeploymentExecutorService } from "../../lib/trash-guides/deployment-executor.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { createSyncEngine } from "../../lib/trash-guides/sync-engine.js";
@@ -16,8 +14,11 @@ import type { SyncProgress } from "../../lib/trash-guides/sync-engine.js";
 import { getSyncMetrics } from "../../lib/trash-guides/sync-metrics.js";
 import { createTemplateUpdater } from "../../lib/trash-guides/template-updater.js";
 import { safeJsonParse } from "../../lib/utils/json.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
+import { z } from "zod";
+import { getErrorMessage } from "../../lib/utils/error-message.js";
 
 // ============================================================================
 // Request Schemas
@@ -95,7 +96,7 @@ function _removeProgress(syncId: string): void {
 export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	// Shared services (repo-independent)
 	const cacheManager = createCacheManager(app.prisma);
-	const deploymentExecutor = createDeploymentExecutorService(app.prisma, app.arrClientFactory);
+	const { deploymentExecutor } = app;
 
 	/** Create repo-aware services configured for the current user's repo settings */
 	async function getServices(userId: string) {
@@ -123,7 +124,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 	 * POST /api/trash-guides/sync/validate
 	 */
 	app.post("/validate", async (request: FastifyRequest, reply) => {
-		const body = validateSyncSchema.parse(request.body);
+		const body = validateRequest(validateSyncSchema, request.body);
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 
 		const { syncEngine } = await getServices(userId);
@@ -142,7 +143,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 	 * POST /api/trash-guides/sync/execute
 	 */
 	app.post("/execute", async (request: FastifyRequest, reply) => {
-		const body = executeSyncSchema.parse(request.body);
+		const body = validateRequest(executeSyncSchema, request.body);
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 
 		// Convert conflictResolutions object to Map
@@ -278,7 +279,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 		Params: { instanceId: string };
 	}>("/history/:instanceId", async (request, reply) => {
 		const { instanceId } = request.params;
-		const query = syncHistoryQuerySchema.parse(request.query);
+		const query = validateRequest(syncHistoryQuerySchema, request.query);
 		const userId = request.currentUser!.id; // preHandler guarantees authentication
 
 		// Verify instance exists and is owned by the current user.
@@ -384,6 +385,8 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 	/**
 	 * Rollback to backup
 	 * POST /api/trash-guides/sync/:syncId/rollback
+	 *
+	 * NOTE: Specialized catch block KEPT — records sync metrics on failure
 	 */
 	app.post<{
 		Params: { syncId: string };
@@ -434,7 +437,8 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 			const client = app.arrClientFactory.create(sync.instance) as SonarrClient | RadarrClient;
 
 			// Parse backup data (contains the pre-sync state)
-			// Note: deployment-executor stores backupData as a raw array of CFs, not an object
+			// New format: { customFormats: [...], qualityProfile: {...} | null }
+			// Legacy format: raw array of CFs (pre-QP-backup)
 			interface BackupCustomFormat {
 				id?: number;
 				name: string;
@@ -444,11 +448,19 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 			}
 
 			let backupCFs: BackupCustomFormat[];
+			// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality profile snapshot
+			let backupQualityProfile: any | null = null;
 			try {
 				const parsed = JSON.parse(sync.backup.backupData);
-				// Handle both formats: raw array (deployment-executor) or object with customFormats (backup-manager)
-				backupCFs = Array.isArray(parsed) ? parsed : (parsed.customFormats ?? []);
-			} catch {
+				// Handle both formats: raw array (legacy) or object with customFormats + qualityProfile
+				if (Array.isArray(parsed)) {
+					backupCFs = parsed;
+				} else {
+					backupCFs = parsed.customFormats ?? [];
+					backupQualityProfile = parsed.qualityProfile ?? null;
+				}
+			} catch (error) {
+				request.log.warn({ syncId, err: error }, "Failed to parse backup data for rollback");
 				return reply.status(400).send({
 					error: "INVALID_BACKUP",
 					message: "Backup data is corrupted or invalid",
@@ -535,7 +547,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 					}
 				} catch (error) {
 					errors.push(
-						`Failed to restore "${name}": ${error instanceof Error ? error.message : "Unknown error"}`,
+						`Failed to restore "${name}": ${getErrorMessage(error, "Unknown error")}`,
 					);
 					failedCount++;
 				}
@@ -550,21 +562,49 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 						deletedCount++;
 					} catch (error) {
 						errors.push(
-							`Failed to delete "${name}": ${error instanceof Error ? error.message : "Unknown error"}`,
+							`Failed to delete "${name}": ${getErrorMessage(error, "Unknown error")}`,
 						);
 						failedCount++;
 					}
 				}
 			}
 
-			// Mark sync as rolled back
-			await app.prisma.trashSyncHistory.update({
-				where: { id: syncId },
-				data: {
-					rolledBack: true,
-					rolledBackAt: new Date(),
-				},
-			});
+			// Step 3: Restore quality profile if backup includes one
+			if (backupQualityProfile && backupQualityProfile.id !== undefined) {
+				try {
+					await client.qualityProfile.update(
+						backupQualityProfile.id,
+						// biome-ignore lint/suspicious/noExplicitAny: Dynamic ARR quality profile type
+						backupQualityProfile as any,
+					);
+					request.log.info(
+						{ profileId: backupQualityProfile.id, profileName: backupQualityProfile.name },
+						"Quality profile restored from backup",
+					);
+				} catch (error) {
+					errors.push(
+						`Failed to restore quality profile "${backupQualityProfile.name ?? "unknown"}": ${getErrorMessage(error, "Unknown error")}`,
+					);
+					failedCount++;
+				}
+			}
+
+			// Only mark as fully rolled back when all operations succeeded.
+			// Partial failures leave rolledBack=false so the user can retry.
+			if (failedCount === 0) {
+				await app.prisma.trashSyncHistory.update({
+					where: { id: syncId },
+					data: {
+						rolledBack: true,
+						rolledBackAt: new Date(),
+					},
+				});
+			} else {
+				request.log.warn(
+					{ syncId, failedCount, errors },
+					"Partial rollback — not marking as rolled back to allow retry",
+				);
+			}
 
 			request.log.info(
 				{
@@ -574,7 +614,7 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 					failedCount,
 					userId,
 				},
-				"Sync rollback completed",
+				failedCount === 0 ? "Sync rollback completed" : "Sync rollback partially completed",
 			);
 
 			// Record metrics
@@ -597,8 +637,8 @@ export async function registerSyncRoutes(app: FastifyInstance, _opts: FastifyPlu
 						: `Rollback completed with errors: ${restoredCount} restored, ${deletedCount} deleted, ${failedCount} failed`,
 			});
 		} catch (error) {
-			// Record failure metrics
-			const errorMessage = error instanceof Error ? error.message : "Rollback failed";
+			// Specialized catch: records failure metrics before propagating
+			const errorMessage = getErrorMessage(error, "Rollback failed");
 			const metricsResult = completeMetrics();
 			metricsResult.recordFailure(errorMessage);
 

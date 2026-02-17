@@ -22,6 +22,7 @@ import {
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { PremiumSkeleton } from "../../../components/layout/premium-components";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 /**
  * Premium Indexers Client
@@ -93,7 +94,7 @@ export const IndexersClient = () => {
 				message: result.message ?? "Indexer test passed",
 			});
 		} catch (err) {
-			const message = err instanceof Error ? err.message : "Indexer test failed";
+			const message = getErrorMessage(err, "Indexer test failed");
 			setFeedback({ type: "error", message });
 		} finally {
 			setTestingKey(null);
@@ -116,7 +117,7 @@ export const IndexersClient = () => {
 			void refetch();
 			return result;
 		} catch (err) {
-			const message = err instanceof Error ? err.message : "Failed to update indexer";
+			const message = getErrorMessage(err, "Failed to update indexer");
 			setFeedback({ type: "error", message });
 			throw err instanceof Error ? err : new Error(message);
 		}

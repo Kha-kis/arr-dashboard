@@ -6,14 +6,15 @@
  */
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
-import { z } from "zod";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import type { TrashCustomFormat, CustomFormatSpecification } from "@arr/shared";
 import type { SonarrClient, RadarrClient } from "arr-sdk";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
-import { InstanceNotFoundError } from "../../lib/errors.js";
+import { validateRequest } from "../../lib/utils/validate.js";
+import { z } from "zod";
+import { getErrorMessage } from "../../lib/utils/error-message.js";
 
 // ============================================================================
 // Validation Schemas
@@ -79,196 +80,176 @@ export async function registerCustomFormatRoutes(
 		Body: z.infer<typeof deployMultipleSchema>;
 	}>("/deploy-multiple", async (request, reply) => {
 		// Validate request body
-		const bodyResult = deployMultipleSchema.safeParse(request.body);
-		if (!bodyResult.success) {
+		const { trashIds, instanceId, serviceType } = validateRequest(deployMultipleSchema, request.body);
+
+		const instance = await requireInstance(app, request.currentUser!.id, instanceId);
+
+		// Verify service type matches (case-insensitive)
+		if (instance.service.toUpperCase() !== serviceType) {
 			return reply.status(400).send({
-				error: "VALIDATION_ERROR",
-				message: "Invalid request body",
-				details: bodyResult.error.issues,
+				error: "SERVICE_MISMATCH",
+				message: `Instance is ${instance.service}, but trying to deploy ${serviceType} custom formats`,
 			});
 		}
 
-		const { trashIds, instanceId, serviceType } = bodyResult.data;
+		// Get custom formats from cache
+		const isFresh = await cacheManager.isFresh(serviceType, "CUSTOM_FORMATS");
+		let allCustomFormats: TrashCustomFormat[];
 
-		try {
-			const instance = await requireInstance(app, request.currentUser!.id, instanceId);
+		if (!isFresh) {
+			const fetcher = await getFetcher(request.currentUser!.id);
+			const data = await fetcher.fetchConfigs(serviceType, "CUSTOM_FORMATS");
+			await cacheManager.set(serviceType, "CUSTOM_FORMATS", data);
+			allCustomFormats = data as TrashCustomFormat[];
+		} else {
+			const data = await cacheManager.get<TrashCustomFormat[]>(serviceType, "CUSTOM_FORMATS");
+			allCustomFormats = data || [];
+		}
 
-			// Verify service type matches (case-insensitive)
-			if (instance.service.toUpperCase() !== serviceType) {
-				return reply.status(400).send({
-					error: "SERVICE_MISMATCH",
-					message: `Instance is ${instance.service}, but trying to deploy ${serviceType} custom formats`,
-				});
-			}
+		// Filter to only requested custom formats
+		const customFormats = allCustomFormats.filter((cf) => trashIds.includes(cf.trash_id));
 
-			// Get custom formats from cache
-			const isFresh = await cacheManager.isFresh(serviceType, "CUSTOM_FORMATS");
-			let allCustomFormats: TrashCustomFormat[];
-
-			if (!isFresh) {
-				const fetcher = await getFetcher(request.currentUser!.id);
-				const data = await fetcher.fetchConfigs(serviceType, "CUSTOM_FORMATS");
-				await cacheManager.set(serviceType, "CUSTOM_FORMATS", data);
-				allCustomFormats = data as TrashCustomFormat[];
-			} else {
-				const data = await cacheManager.get<TrashCustomFormat[]>(serviceType, "CUSTOM_FORMATS");
-				allCustomFormats = data || [];
-			}
-
-			// Filter to only requested custom formats
-			const customFormats = allCustomFormats.filter((cf) => trashIds.includes(cf.trash_id));
-
-			if (customFormats.length === 0) {
-				return reply.status(404).send({
-					error: "NOT_FOUND",
-					message: "No matching custom formats found",
-				});
-			}
-
-			// Create SDK client using factory
-			const client = app.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
-
-			// Get existing Custom Formats from instance
-			const existingFormats = await client.customFormat.getAll();
-			const existingByName = new Map<string, (typeof existingFormats)[number]>();
-			for (const cf of existingFormats) {
-				if (cf.name) {
-					existingByName.set(cf.name, cf);
-				}
-			}
-
-			// Get the commit hash from cache for tracking
-			const cacheEntry = await app.prisma.trashCache.findFirst({
-				where: {
-					serviceType,
-					configType: "CUSTOM_FORMATS",
-				},
-				select: { commitHash: true },
+		if (customFormats.length === 0) {
+			return reply.status(404).send({
+				error: "NOT_FOUND",
+				message: "No matching custom formats found",
 			});
-			const commitHash = cacheEntry?.commitHash ?? "unknown";
+		}
 
-			// Deploy each custom format
-			const results = {
-				created: [] as string[],
-				updated: [] as string[],
-				failed: [] as Array<{ name: string; error: string }>,
-			};
+		// Create SDK client using factory
+		const client = app.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
 
-			// Track successful deployments for recording
-			const successfulDeployments: Array<{ trashId: string; name: string }> = [];
-
-			for (const customFormat of customFormats) {
-				try {
-					// Check if custom format already exists by name
-					const existing = existingByName.get(customFormat.name);
-
-					// Transform specifications: convert fields from object to array format
-					const specifications = (customFormat.specifications || []).map(
-						(spec: CustomFormatSpecification) => {
-							const transformedFields = transformFieldsToArray(spec.fields);
-							return {
-								...spec,
-								fields: transformedFields,
-							};
-						},
-					);
-
-					if (existing?.id) {
-						// Update existing custom format
-						// Note: The ARR API expects fields as array, but TRaSH format uses object
-						// Using double type assertion to bridge the gap between TRaSH format and SDK types
-						const updatedCF = {
-							...existing,
-							name: customFormat.name,
-							specifications,
-						};
-						await client.customFormat.update(
-							existing.id,
-							updatedCF as unknown as Parameters<typeof client.customFormat.update>[1],
-						);
-						results.updated.push(customFormat.name);
-						successfulDeployments.push({ trashId: customFormat.trash_id, name: customFormat.name });
-					} else {
-						// Create new custom format
-						// Note: The ARR API expects fields as array, but TRaSH format uses object
-						// Using double type assertion to bridge the gap between TRaSH format and SDK types
-						const newCF = {
-							name: customFormat.name,
-							includeCustomFormatWhenRenaming:
-								customFormat.includeCustomFormatWhenRenaming ?? false,
-							specifications,
-						};
-						await client.customFormat.create(
-							newCF as unknown as Parameters<typeof client.customFormat.create>[0],
-						);
-						results.created.push(customFormat.name);
-						successfulDeployments.push({ trashId: customFormat.trash_id, name: customFormat.name });
-					}
-				} catch (error) {
-					results.failed.push({
-						name: customFormat.name,
-						error: error instanceof Error ? error.message : "Unknown error",
-					});
-				}
+		// Get existing Custom Formats from instance
+		const existingFormats = await client.customFormat.getAll();
+		const existingByName = new Map<string, (typeof existingFormats)[number]>();
+		for (const cf of existingFormats) {
+			if (cf.name) {
+				existingByName.set(cf.name, cf);
 			}
+		}
 
-			// Record successful deployments for update tracking
-			if (successfulDeployments.length > 0) {
-				const userId = request.currentUser!.id; // preHandler guarantees auth
-				await Promise.all(
-					successfulDeployments.map((deployment) =>
-						app.prisma.standaloneCFDeployment.upsert({
-							where: {
-								instanceId_cfTrashId: {
-									instanceId,
-									cfTrashId: deployment.trashId,
-								},
-							},
-							update: {
-								cfName: deployment.name,
-								commitHash,
-								deployedAt: new Date(),
-							},
-							create: {
-								userId,
+		// Get the commit hash from cache for tracking
+		const cacheEntry = await app.prisma.trashCache.findFirst({
+			where: {
+				serviceType,
+				configType: "CUSTOM_FORMATS",
+			},
+			select: { commitHash: true },
+		});
+		const commitHash = cacheEntry?.commitHash ?? "unknown";
+
+		// Deploy each custom format
+		const results = {
+			created: [] as string[],
+			updated: [] as string[],
+			failed: [] as Array<{ name: string; error: string }>,
+		};
+
+		// Track successful deployments for recording
+		const successfulDeployments: Array<{ trashId: string; name: string }> = [];
+
+		// Loop-level error collection — KEEP
+		for (const customFormat of customFormats) {
+			try {
+				// Check if custom format already exists by name
+				const existing = existingByName.get(customFormat.name);
+
+				// Transform specifications: convert fields from object to array format
+				const specifications = (customFormat.specifications || []).map(
+					(spec: CustomFormatSpecification) => {
+						const transformedFields = transformFieldsToArray(spec.fields);
+						return {
+							...spec,
+							fields: transformedFields,
+						};
+					},
+				);
+
+				if (existing?.id) {
+					// Update existing custom format
+					// Note: The ARR API expects fields as array, but TRaSH format uses object
+					// Using double type assertion to bridge the gap between TRaSH format and SDK types
+					const updatedCF = {
+						...existing,
+						name: customFormat.name,
+						specifications,
+					};
+					await client.customFormat.update(
+						existing.id,
+						updatedCF as unknown as Parameters<typeof client.customFormat.update>[1],
+					);
+					results.updated.push(customFormat.name);
+					successfulDeployments.push({ trashId: customFormat.trash_id, name: customFormat.name });
+				} else {
+					// Create new custom format
+					// Note: The ARR API expects fields as array, but TRaSH format uses object
+					// Using double type assertion to bridge the gap between TRaSH format and SDK types
+					const newCF = {
+						name: customFormat.name,
+						includeCustomFormatWhenRenaming:
+							customFormat.includeCustomFormatWhenRenaming ?? false,
+						specifications,
+					};
+					await client.customFormat.create(
+						newCF as unknown as Parameters<typeof client.customFormat.create>[0],
+					);
+					results.created.push(customFormat.name);
+					successfulDeployments.push({ trashId: customFormat.trash_id, name: customFormat.name });
+				}
+			} catch (error) {
+				results.failed.push({
+					name: customFormat.name,
+					error: getErrorMessage(error, "Unknown error"),
+				});
+			}
+		}
+
+		// Record successful deployments for update tracking
+		if (successfulDeployments.length > 0) {
+			const userId = request.currentUser!.id; // preHandler guarantees auth
+			await Promise.all(
+				successfulDeployments.map((deployment) =>
+					app.prisma.standaloneCFDeployment.upsert({
+						where: {
+							instanceId_cfTrashId: {
 								instanceId,
 								cfTrashId: deployment.trashId,
-								cfName: deployment.name,
-								serviceType,
-								commitHash,
 							},
-						}),
-					),
-				);
-			}
+						},
+						update: {
+							cfName: deployment.name,
+							commitHash,
+							deployedAt: new Date(),
+						},
+						create: {
+							userId,
+							instanceId,
+							cfTrashId: deployment.trashId,
+							cfName: deployment.name,
+							serviceType,
+							commitHash,
+						},
+					}),
+				),
+			);
+		}
 
-			const success = results.failed.length === 0;
+		const success = results.failed.length === 0;
 
-			if (success) {
-				return reply.send({
-					success: true,
-					created: results.created,
-					updated: results.updated,
-					failed: results.failed,
-				});
-			}
-			return reply.status(400).send({
-				success: false,
+		if (success) {
+			return reply.send({
+				success: true,
 				created: results.created,
 				updated: results.updated,
 				failed: results.failed,
 			});
-		} catch (error) {
-			if (error instanceof InstanceNotFoundError) throw error;
-			app.log.error(
-				{ err: error, trashIds, instanceId, serviceType },
-				"Failed to deploy custom formats",
-			);
-			return reply.status(500).send({
-				error: "DEPLOYMENT_FAILED",
-				message: error instanceof Error ? error.message : "Failed to deploy custom formats",
-			});
 		}
+		return reply.status(400).send({
+			success: false,
+			created: results.created,
+			updated: results.updated,
+			failed: results.failed,
+		});
 	});
 
 	/**
@@ -285,103 +266,92 @@ export async function registerCustomFormatRoutes(
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { instanceId, serviceType } = request.query;
 
-		try {
-			// Build query filter
-			const where: {
-				userId: string;
-				instanceId?: string;
-				serviceType?: "RADARR" | "SONARR";
-			} = { userId };
+		// Build query filter
+		const where: {
+			userId: string;
+			instanceId?: string;
+			serviceType?: "RADARR" | "SONARR";
+		} = { userId };
 
-			if (instanceId) {
-				where.instanceId = instanceId;
-			}
-			if (serviceType) {
-				where.serviceType = serviceType;
-			}
+		if (instanceId) {
+			where.instanceId = instanceId;
+		}
+		if (serviceType) {
+			where.serviceType = serviceType;
+		}
 
-			// Get all standalone deployments for this user
-			const deployments = await app.prisma.standaloneCFDeployment.findMany({
-				where,
-				include: {
-					instance: {
-						select: {
-							label: true,
-							service: true,
-						},
+		// Get all standalone deployments for this user
+		const deployments = await app.prisma.standaloneCFDeployment.findMany({
+			where,
+			include: {
+				instance: {
+					select: {
+						label: true,
+						service: true,
 					},
 				},
-			});
+			},
+		});
 
-			if (deployments.length === 0) {
-				return reply.send({
-					success: true,
-					hasUpdates: false,
-					updates: [],
-					message: "No standalone custom format deployments found",
-				});
-			}
-
-			// Get current cache commit hashes for each service type
-			const serviceTypes = [...new Set(deployments.map((d) => d.serviceType))];
-			const cacheCommitHashes = new Map<string, string>();
-
-			for (const svc of serviceTypes) {
-				const cache = await app.prisma.trashCache.findFirst({
-					where: {
-						serviceType: svc,
-						configType: "CUSTOM_FORMATS",
-					},
-					select: { commitHash: true },
-				});
-				if (cache?.commitHash) {
-					cacheCommitHashes.set(svc, cache.commitHash);
-				}
-			}
-
-			// Compare deployments to current cache
-			const updates: Array<{
-				cfTrashId: string;
-				cfName: string;
-				instanceId: string;
-				instanceLabel: string;
-				serviceType: string;
-				deployedCommitHash: string;
-				currentCommitHash: string;
-			}> = [];
-
-			for (const deployment of deployments) {
-				const currentHash = cacheCommitHashes.get(deployment.serviceType);
-				if (currentHash && currentHash !== deployment.commitHash) {
-					updates.push({
-						cfTrashId: deployment.cfTrashId,
-						cfName: deployment.cfName,
-						instanceId: deployment.instanceId,
-						instanceLabel: deployment.instance.label,
-						serviceType: deployment.serviceType,
-						deployedCommitHash: deployment.commitHash,
-						currentCommitHash: currentHash,
-					});
-				}
-			}
-
+		if (deployments.length === 0) {
 			return reply.send({
 				success: true,
-				hasUpdates: updates.length > 0,
-				updates,
-				totalDeployed: deployments.length,
-				outdatedCount: updates.length,
-			});
-		} catch (error) {
-			app.log.error(
-				{ err: error, instanceId, serviceType },
-				"Failed to check standalone CF updates",
-			);
-			return reply.status(500).send({
-				error: "CHECK_FAILED",
-				message: error instanceof Error ? error.message : "Failed to check for updates",
+				hasUpdates: false,
+				updates: [],
+				message: "No standalone custom format deployments found",
 			});
 		}
+
+		// Get current cache commit hashes for each service type
+		const serviceTypes = [...new Set(deployments.map((d) => d.serviceType))];
+		const cacheCommitHashes = new Map<string, string>();
+
+		for (const svc of serviceTypes) {
+			const cache = await app.prisma.trashCache.findFirst({
+				where: {
+					serviceType: svc,
+					configType: "CUSTOM_FORMATS",
+				},
+				select: { commitHash: true },
+			});
+			if (cache?.commitHash) {
+				cacheCommitHashes.set(svc, cache.commitHash);
+			}
+		}
+
+		// Compare deployments to current cache
+		const updates: Array<{
+			cfTrashId: string;
+			cfName: string;
+			instanceId: string;
+			instanceLabel: string;
+			serviceType: string;
+			deployedCommitHash: string;
+			currentCommitHash: string;
+		}> = [];
+
+		for (const deployment of deployments) {
+			const currentHash = cacheCommitHashes.get(deployment.serviceType);
+			if (currentHash && currentHash !== deployment.commitHash) {
+				updates.push({
+					cfTrashId: deployment.cfTrashId,
+					cfName: deployment.cfName,
+					instanceId: deployment.instanceId,
+					instanceLabel: deployment.instance.label,
+					serviceType: deployment.serviceType,
+					deployedCommitHash: deployment.commitHash,
+					currentCommitHash: currentHash,
+				});
+			}
+		}
+
+		return reply.send({
+			success: true,
+			hasUpdates: updates.length > 0,
+			updates,
+			totalDeployed: deployments.length,
+			outdatedCount: updates.length,
+		});
 	});
 
 	/**
@@ -397,57 +367,46 @@ export async function registerCustomFormatRoutes(
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { instanceId, serviceType } = request.query;
 
-		try {
-			const where: {
-				userId: string;
-				instanceId?: string;
-				serviceType?: "RADARR" | "SONARR";
-			} = { userId };
+		const where: {
+			userId: string;
+			instanceId?: string;
+			serviceType?: "RADARR" | "SONARR";
+		} = { userId };
 
-			if (instanceId) {
-				where.instanceId = instanceId;
-			}
-			if (serviceType) {
-				where.serviceType = serviceType;
-			}
+		if (instanceId) {
+			where.instanceId = instanceId;
+		}
+		if (serviceType) {
+			where.serviceType = serviceType;
+		}
 
-			const deployments = await app.prisma.standaloneCFDeployment.findMany({
-				where,
-				include: {
-					instance: {
-						select: {
-							label: true,
-							service: true,
-						},
+		const deployments = await app.prisma.standaloneCFDeployment.findMany({
+			where,
+			include: {
+				instance: {
+					select: {
+						label: true,
+						service: true,
 					},
 				},
-				orderBy: [{ instanceId: "asc" }, { cfName: "asc" }],
-			});
+			},
+			orderBy: [{ instanceId: "asc" }, { cfName: "asc" }],
+		});
 
-			return reply.send({
-				success: true,
-				deployments: deployments.map((d) => ({
-					id: d.id,
-					cfTrashId: d.cfTrashId,
-					cfName: d.cfName,
-					instanceId: d.instanceId,
-					instanceLabel: d.instance.label,
-					serviceType: d.serviceType,
-					commitHash: d.commitHash,
-					deployedAt: d.deployedAt,
-				})),
-				count: deployments.length,
-			});
-		} catch (error) {
-			app.log.error(
-				{ err: error, instanceId, serviceType },
-				"Failed to list standalone CF deployments",
-			);
-			return reply.status(500).send({
-				error: "LIST_FAILED",
-				message: error instanceof Error ? error.message : "Failed to list deployments",
-			});
-		}
+		return reply.send({
+			success: true,
+			deployments: deployments.map((d) => ({
+				id: d.id,
+				cfTrashId: d.cfTrashId,
+				cfName: d.cfName,
+				instanceId: d.instanceId,
+				instanceLabel: d.instance.label,
+				serviceType: d.serviceType,
+				commitHash: d.commitHash,
+				deployedAt: d.deployedAt,
+			})),
+			count: deployments.length,
+		});
 	});
 
 	/**
@@ -460,33 +419,25 @@ export async function registerCustomFormatRoutes(
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 		const { id } = request.params;
 
-		try {
-			// Verify ownership
-			const deployment = await app.prisma.standaloneCFDeployment.findFirst({
-				where: { id, userId },
-			});
+		// Verify ownership
+		const deployment = await app.prisma.standaloneCFDeployment.findFirst({
+			where: { id, userId },
+		});
 
-			if (!deployment) {
-				return reply.status(404).send({
-					error: "NOT_FOUND",
-					message: "Deployment record not found",
-				});
-			}
-
-			await app.prisma.standaloneCFDeployment.delete({
-				where: { id },
-			});
-
-			return reply.send({
-				success: true,
-				message: `Stopped tracking updates for ${deployment.cfName}`,
-			});
-		} catch (error) {
-			app.log.error({ err: error, id }, "Failed to delete standalone CF deployment");
-			return reply.status(500).send({
-				error: "DELETE_FAILED",
-				message: error instanceof Error ? error.message : "Failed to delete deployment record",
+		if (!deployment) {
+			return reply.status(404).send({
+				error: "NOT_FOUND",
+				message: "Deployment record not found",
 			});
 		}
+
+		await app.prisma.standaloneCFDeployment.delete({
+			where: { id },
+		});
+
+		return reply.send({
+			success: true,
+			message: `Stopped tracking updates for ${deployment.cfName}`,
+		});
 	});
 }

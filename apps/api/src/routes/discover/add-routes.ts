@@ -159,7 +159,7 @@ export const registerAddRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			reply.status(400);
 			return reply.send({ message: "Unsupported service type" });
 		} catch (error) {
-			request.log.error({ err: error, instance: instance.id }, "discover add failed");
+			request.log.error({ err: error, instanceId: instance.id }, "discover add failed");
 			throw error;
 		}
 	});

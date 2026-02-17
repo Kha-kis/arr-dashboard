@@ -17,6 +17,7 @@ import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { toast } from "sonner";
 import { usePromoteOverride } from "../../../hooks/api/useQualityProfileOverrides";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface PromoteOverrideDialogProps {
 	open: boolean;
@@ -76,7 +77,7 @@ export function PromoteOverrideDialog({
 			onSuccess?.();
 			onOpenChange(false);
 		} catch (error) {
-			const errorMessage = error instanceof Error ? error.message : "Failed to promote override";
+			const errorMessage = getErrorMessage(error, "Failed to promote override");
 			console.error("Failed to promote override:", errorMessage);
 			toast.error(errorMessage);
 		} finally {

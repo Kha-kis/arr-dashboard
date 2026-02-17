@@ -29,6 +29,7 @@ import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import type { HuntingStatus, InstanceHuntStatus } from "../lib/hunting-types";
 import { API_USAGE_WARNING_THRESHOLD, API_USAGE_DANGER_THRESHOLD } from "../lib/constants";
 import { useManualHunt } from "../hooks/useManualHunt";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface HuntingOverviewProps {
 	status: HuntingStatus | null;
@@ -243,7 +244,7 @@ const InstanceStatusCard = ({ instance, onRefresh, animationDelay = 0 }: Instanc
 			if (isCooldownError(error)) {
 				toast.warning(error.message);
 			} else {
-				toast.error(error instanceof Error ? error.message : "Failed to trigger hunt");
+				toast.error(getErrorMessage(error, "Failed to trigger hunt"));
 			}
 		} finally {
 			setTriggeringType(null);

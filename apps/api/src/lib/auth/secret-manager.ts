@@ -1,6 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
+import { loggers } from "../logger.js";
+
+const log = loggers.auth;
 
 export interface Secrets {
 	encryptionKey: string;
@@ -35,9 +38,9 @@ export class SecretManager {
 				}
 
 				// Invalid format, will regenerate below
-				console.warn("Invalid secrets format, regenerating...");
+				log.warn("Invalid secrets format, regenerating");
 			} catch (error) {
-				console.error("Failed to load secrets, regenerating...", error);
+				log.error({ err: error }, "Failed to load secrets, regenerating");
 			}
 		}
 
@@ -58,9 +61,9 @@ export class SecretManager {
 			writeFileSync(this.secretsPath, JSON.stringify(secrets, null, 2), {
 				mode: 0o600, // Read/write for owner only
 			});
-			console.info(`Generated new secrets at ${this.secretsPath}`);
+			log.info({ path: this.secretsPath }, "Generated new secrets");
 		} catch (error) {
-			console.error("Failed to persist secrets:", error);
+			log.error({ err: error, path: this.secretsPath }, "Failed to persist secrets");
 			throw new Error("Could not save secrets to disk");
 		}
 

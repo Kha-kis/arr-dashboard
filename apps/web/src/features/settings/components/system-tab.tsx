@@ -28,6 +28,7 @@ import {
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
 import { cn } from "../../../lib/utils";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface SystemSettings {
 	apiPort: number;
@@ -188,7 +189,7 @@ export function SystemTab() {
 			setHasChanges(false);
 		},
 		onError: (error) => {
-			toast.error(error instanceof Error ? error.message : "Failed to save settings");
+			toast.error(getErrorMessage(error, "Failed to save settings"));
 		},
 	});
 
@@ -198,7 +199,7 @@ export function SystemTab() {
 			toast.success(response.message || "Restart initiated");
 		},
 		onError: (error) => {
-			toast.error(error instanceof Error ? error.message : "Failed to restart");
+			toast.error(getErrorMessage(error, "Failed to restart"));
 		},
 	});
 

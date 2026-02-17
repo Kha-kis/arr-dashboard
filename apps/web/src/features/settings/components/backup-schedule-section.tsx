@@ -8,6 +8,7 @@ import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useBackupSettings, useUpdateBackupSettings } from "../../../hooks/api/useBackup";
 import type { BackupIntervalType } from "@arr/shared";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 export const BackupScheduleSection = () => {
 	const { gradient: themeGradient } = useThemeGradient();
@@ -43,7 +44,7 @@ export const BackupScheduleSection = () => {
 			setSettingsSuccess(true);
 			setTimeout(() => setSettingsSuccess(false), 3000);
 		} catch (error: unknown) {
-			const message = error instanceof Error ? error.message : "Unknown error";
+			const message = getErrorMessage(error, "Unknown error");
 			toast.error(`Failed to save settings: ${message}`);
 		}
 	};

@@ -16,6 +16,7 @@ import {
 import { useSchedulerStatus, useTriggerUpdateCheck } from "../../../hooks/api/useTemplateUpdates";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 /**
  * Safely formats a date value as relative time (e.g., "5 minutes ago").
@@ -148,7 +149,7 @@ export const SchedulerStatusDashboard = () => {
 					<div>
 						<h3 className="font-semibold text-foreground mb-1">Failed to load scheduler status</h3>
 						<p className="text-sm text-muted-foreground">
-							{error instanceof Error ? error.message : "Please try again"}
+							{getErrorMessage(error, "Please try again")}
 						</p>
 					</div>
 				</div>

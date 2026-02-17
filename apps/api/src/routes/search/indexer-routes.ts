@@ -21,6 +21,7 @@ import {
 	updateProwlarrIndexerWithSdk,
 	testProwlarrIndexerWithSdk,
 } from "../../lib/search/prowlarr-api.js";
+import { getErrorMessage } from "../../lib/utils/error-message.js";
 
 /**
  * Registers indexer-related routes for Prowlarr.
@@ -102,27 +103,19 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 			});
 		}
 
-		try {
-			const details = await fetchProwlarrIndexerDetailsWithSdk(client, instance, indexerId);
-			if (!details) {
-				reply.status(502);
-				return searchIndexerDetailsResponseSchema.parse({
-					indexer: buildIndexerDetailsFallback(
-						instance.id,
-						instance.label,
-						instance.baseUrl,
-						indexerId,
-					),
-				});
-			}
-			return searchIndexerDetailsResponseSchema.parse({ indexer: details });
-		} catch (error) {
-			request.log.error(
-				{ err: error, instance: instance.id, indexerId },
-				"prowlarr indexer details failed",
-			);
-			throw error;
+		const details = await fetchProwlarrIndexerDetailsWithSdk(client, instance, indexerId);
+		if (!details) {
+			reply.status(502);
+			return searchIndexerDetailsResponseSchema.parse({
+				indexer: buildIndexerDetailsFallback(
+					instance.id,
+					instance.label,
+					instance.baseUrl,
+					indexerId,
+				),
+			});
 		}
+		return searchIndexerDetailsResponseSchema.parse({ indexer: details });
 	});
 
 	/**
@@ -175,15 +168,7 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 			instanceUrl: originalIndexer.instanceUrl ?? instance.baseUrl,
 		};
 
-		try {
-			await updateProwlarrIndexerWithSdk(client, indexerIdValue, bodyIndexer);
-		} catch (error) {
-			request.log.error(
-				{ err: error, instance: instance.id, indexerId: indexerIdValue },
-				"prowlarr indexer update failed",
-			);
-			throw error;
-		}
+		await updateProwlarrIndexerWithSdk(client, indexerIdValue, bodyIndexer);
 
 		try {
 			const updated = await fetchProwlarrIndexerDetailsWithSdk(client, instance, indexerIdValue);
@@ -236,7 +221,7 @@ export const registerIndexerRoutes: FastifyPluginCallback = (app, _opts, done) =
 			);
 			return searchIndexerTestResponseSchema.parse({
 				success: false,
-				message: error instanceof Error ? error.message : "Failed to test indexer",
+				message: getErrorMessage(error, "Failed to test indexer"),
 			});
 		}
 	});

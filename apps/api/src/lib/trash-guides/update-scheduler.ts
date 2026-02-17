@@ -5,14 +5,21 @@
  * Automatically syncs templates based on user preferences and notifies when manual review needed.
  */
 
+import { createHash } from "node:crypto";
+import type { SonarrClient, RadarrClient } from "arr-sdk";
+import type { TrashQualitySize } from "@arr/shared";
 import type { PrismaClient } from "../../lib/prisma.js";
+import type { ArrClientFactory } from "../arr/client-factory.js";
 import type {
 	ScoreConflict,
 	SyncResult,
 	TemplateUpdateInfo,
 	TemplateUpdater,
 } from "./template-updater.js";
+import { applyQualitySizeToDefinitions } from "./quality-size-matcher.js";
 import type { VersionTracker } from "./version-tracker.js";
+import { createCacheManager } from "./cache-manager.js";
+import { getErrorMessage } from "../utils/error-message.js";
 
 // ============================================================================
 // Types
@@ -39,15 +46,17 @@ export interface SchedulerStats {
 		templatesWithScoreConflicts: number; // Templates where score updates were skipped due to user overrides
 		cachesRefreshed: number;
 		cachesFailed: number;
+		qualitySizeAutoSynced: number;
+		qualitySizeUpdatesPending: number;
 		errors: string[];
 	};
 }
 
 interface Logger {
-	info: (msg: string, data?: unknown) => void;
-	warn: (msg: string, data?: unknown) => void;
-	error: (msg: string, data?: unknown) => void;
-	debug: (msg: string, data?: unknown) => void;
+	info: (objOrMsg: Record<string, unknown> | string, msg?: string) => void;
+	warn: (objOrMsg: Record<string, unknown> | string, msg?: string) => void;
+	error: (objOrMsg: Record<string, unknown> | string, msg?: string) => void;
+	debug: (objOrMsg: Record<string, unknown> | string, msg?: string) => void;
 }
 
 // ============================================================================
@@ -60,6 +69,7 @@ export class UpdateScheduler {
 	private versionTracker: VersionTracker;
 	private prisma: PrismaClient;
 	private logger: Logger;
+	private arrClientFactory?: ArrClientFactory;
 	private intervalId?: NodeJS.Timeout;
 	private stats: SchedulerStats = { isRunning: false };
 	private isCheckInProgress = false;
@@ -70,6 +80,7 @@ export class UpdateScheduler {
 		versionTracker: VersionTracker,
 		prisma: PrismaClient,
 		logger: Logger,
+		arrClientFactory?: ArrClientFactory,
 	) {
 		this.config = {
 			enabled: config.enabled,
@@ -80,6 +91,7 @@ export class UpdateScheduler {
 		this.versionTracker = versionTracker;
 		this.prisma = prisma;
 		this.logger = logger;
+		this.arrClientFactory = arrClientFactory;
 	}
 
 	/**
@@ -102,14 +114,14 @@ export class UpdateScheduler {
 
 		// Run immediately on start
 		this.checkForUpdates().catch((error) => {
-			this.logger.error("Initial update check failed:", error);
+			this.logger.error({ err: error instanceof Error ? error : new Error(String(error)) }, "Initial update check failed");
 		});
 
 		// Schedule periodic checks
 		const intervalMs = this.config.intervalHours * 60 * 60 * 1000;
 		this.intervalId = setInterval(() => {
 			this.checkForUpdates().catch((error) => {
-				this.logger.error("Scheduled update check failed:", error);
+				this.logger.error({ err: error instanceof Error ? error : new Error(String(error)) }, "Scheduled update check failed");
 			});
 		}, intervalMs);
 
@@ -168,6 +180,8 @@ export class UpdateScheduler {
 		let templatesNeedingAttention = 0;
 		let templatesNeedingApproval = 0;
 		let templatesWithScoreConflicts = 0;
+		let qualitySizeAutoSynced = 0;
+		let qualitySizeUpdatesPending = 0;
 
 		// Count templates by sync strategy (unique templates with at least one mapping of each type)
 		const [templatesWithAutoStrategy, templatesWithNotifyStrategy] = await Promise.all([
@@ -198,10 +212,9 @@ export class UpdateScheduler {
 		try {
 			// Get latest version info
 			const latestCommit = await this.versionTracker.getLatestCommit();
-			this.logger.debug("Latest TRaSH commit:", {
-				hash: latestCommit.commitHash,
-				date: latestCommit.commitDate,
-			});
+			this.logger.debug(
+				`Latest TRaSH commit: ${latestCommit.commitHash} (${latestCommit.commitDate})`,
+			);
 
 			// Refresh caches for both services
 			this.logger.info("Refreshing TRaSH Guides caches...");
@@ -224,6 +237,14 @@ export class UpdateScheduler {
 			}
 			if (sonarrCacheResult.errors.length > 0) {
 				errors.push(...sonarrCacheResult.errors.map((e: string) => `Sonarr: ${e}`));
+			}
+
+			// Process quality size auto-sync after caches are refreshed
+			const qsResult = await this.processQualitySizeSync();
+			qualitySizeAutoSynced = qsResult.autoSynced;
+			qualitySizeUpdatesPending = qsResult.updatesPending;
+			if (qsResult.errors.length > 0) {
+				errors.push(...qsResult.errors);
 			}
 
 			// Get all distinct user IDs with templates to process updates per-user
@@ -302,6 +323,8 @@ export class UpdateScheduler {
 					templatesWithScoreConflicts: 0,
 					cachesRefreshed: totalCachesRefreshed,
 					cachesFailed: totalCacheFailed,
+					qualitySizeAutoSynced,
+					qualitySizeUpdatesPending,
 					errors: [],
 				};
 				// Calculate next check time
@@ -330,6 +353,8 @@ export class UpdateScheduler {
 				templatesWithScoreConflicts,
 				cachesRefreshed: totalCachesRefreshed,
 				cachesFailed: totalCacheFailed,
+				qualitySizeAutoSynced,
+				qualitySizeUpdatesPending,
 				errors,
 			};
 
@@ -341,8 +366,11 @@ export class UpdateScheduler {
 				`Update check completed in ${duration}ms. Next check at ${this.stats.nextCheckAt.toISOString()}`,
 			);
 		} catch (error) {
-			this.logger.error("Update check failed:", error);
-			errors.push(error instanceof Error ? error.message : String(error));
+			this.logger.error(
+				{ err: error instanceof Error ? error : new Error(String(error)) },
+				"Update check failed",
+			);
+			errors.push(getErrorMessage(error));
 
 			this.stats.lastCheckAt = new Date();
 			this.stats.lastCheckResult = {
@@ -356,6 +384,8 @@ export class UpdateScheduler {
 				templatesWithScoreConflicts: 0,
 				cachesRefreshed: 0,
 				cachesFailed: 0,
+				qualitySizeAutoSynced: 0,
+				qualitySizeUpdatesPending: 0,
 				errors,
 			};
 
@@ -367,6 +397,161 @@ export class UpdateScheduler {
 		} finally {
 			this.isCheckInProgress = false;
 		}
+	}
+
+	/**
+	 * Process quality size auto-sync for instances with "auto" or "notify" strategy.
+	 * Compares current preset hash to the stored appliedDataHash and applies changes
+	 * for "auto" mappings, or counts pending updates for "notify" mappings.
+	 */
+	private async processQualitySizeSync(): Promise<{
+		autoSynced: number;
+		updatesPending: number;
+		errors: string[];
+	}> {
+		const result = { autoSynced: 0, updatesPending: 0, errors: [] as string[] };
+
+		if (!this.arrClientFactory) {
+			const mappingCount = await this.prisma.qualitySizeMapping.count({
+				where: { syncStrategy: { in: ["auto", "notify"] } },
+			});
+			if (mappingCount > 0) {
+				this.logger.warn(
+					`${mappingCount} quality size mapping(s) with auto/notify strategy exist but arrClientFactory is not available — skipping sync`,
+				);
+			}
+			return result;
+		}
+
+		const mappings = await this.prisma.qualitySizeMapping.findMany({
+			where: {
+				syncStrategy: { in: ["auto", "notify"] },
+			},
+			include: {
+				instance: true,
+			},
+		});
+
+		if (mappings.length === 0) return result;
+
+		const cacheManager = createCacheManager(this.prisma);
+
+		for (const mapping of mappings) {
+			try {
+				// Get latest preset data from cache
+				const cached = await cacheManager.get<TrashQualitySize[]>(
+					mapping.serviceType as "RADARR" | "SONARR",
+					"QUALITY_SIZE",
+				);
+				if (!cached) {
+					this.logger.warn(
+						`Quality size cache empty for ${mapping.serviceType} — skipping sync for instance ${mapping.instance.label}`,
+					);
+					continue;
+				}
+
+				const preset = cached.find((p) => p.trash_id === mapping.presetTrashId);
+				if (!preset) {
+					result.errors.push(
+						`Quality size preset "${mapping.presetTrashId}" no longer exists in ${mapping.serviceType} cache for instance ${mapping.instance.label}`,
+					);
+					this.logger.warn(
+						`Quality size preset ${mapping.presetTrashId} not found in cache for ${mapping.serviceType} — preset may have been removed from TRaSH Guides`,
+					);
+					continue;
+				}
+
+				// Compute content hash and compare to stored hash
+				const currentHash = createHash("sha256")
+					.update(JSON.stringify(preset.qualities))
+					.digest("hex");
+
+				if (currentHash === mapping.appliedDataHash) {
+					continue; // No changes — preset hasn't been updated
+				}
+
+				if (mapping.syncStrategy === "notify") {
+					result.updatesPending++;
+					continue;
+				}
+
+				// Auto-sync: reset to factory defaults first, then apply
+				if (!mapping.instance.enabled) {
+					this.logger.debug(
+						`Skipping quality size sync for disabled instance ${mapping.instance.label}`,
+					);
+					continue;
+				}
+
+				// Reset to factory defaults before applying (matches manual apply flow)
+				const resetResponse = await this.arrClientFactory.rawRequest(
+					mapping.instance,
+					"/api/v3/qualitydefinition/reset",
+					{ method: "PUT" },
+				);
+				if (!resetResponse.ok) {
+					throw new Error(
+						`Failed to reset quality definitions: ${resetResponse.status} ${resetResponse.statusText}`,
+					);
+				}
+
+				// Apply preset on top of factory defaults
+				try {
+					const client = this.arrClientFactory.create(mapping.instance) as
+						| SonarrClient
+						| RadarrClient;
+					const definitions = await client.qualityDefinition.getAll();
+					const { updated, appliedCount } = applyQualitySizeToDefinitions(
+						preset.qualities,
+						definitions,
+					);
+
+					// biome-ignore lint/suspicious/noExplicitAny: arr-sdk types are loosely typed from OpenAPI specs
+					await client.qualityDefinition.updateAll(updated as any[]);
+
+					// Update the mapping with new hash
+					await this.prisma.qualitySizeMapping.update({
+						where: { id: mapping.id },
+						data: {
+							appliedDataHash: currentHash,
+							lastAppliedAt: new Date(),
+						},
+					});
+
+					result.autoSynced++;
+					this.logger.info(
+						`Auto-synced quality size for ${mapping.instance.label} (${appliedCount} qualities updated)`,
+					);
+				} catch (applyError) {
+					// Reset succeeded but apply failed — instance is at factory defaults.
+					// Null out the hash so the next run detects the mismatch and retries.
+					let hashCleanupFailed = false;
+					await this.prisma.qualitySizeMapping.update({
+						where: { id: mapping.id },
+						data: { appliedDataHash: null },
+					}).catch((cleanupErr) => {
+						hashCleanupFailed = true;
+						this.logger.warn(
+							{ err: cleanupErr instanceof Error ? cleanupErr : new Error(String(cleanupErr)), mappingId: mapping.id },
+							"Failed to null appliedDataHash after apply failure — retry logic may be impaired",
+						);
+					});
+					throw new Error(
+						`Apply failed after reset (instance at factory defaults)${hashCleanupFailed ? " [hash cleanup also failed, auto-retry may not work]" : ""}: ${getErrorMessage(applyError)}`,
+					);
+				}
+			} catch (error) {
+				result.errors.push(
+					`Quality size sync failed for instance ${mapping.instance?.label ?? mapping.instanceId}: ${getErrorMessage(error)}`,
+				);
+				this.logger.error(
+					{ err: error instanceof Error ? error : new Error(String(error)), instanceId: mapping.instanceId },
+					`Quality size sync failed for instance ${mapping.instanceId}`,
+				);
+			}
+		}
+
+		return result;
 	}
 
 	/**
@@ -389,7 +574,7 @@ export class UpdateScheduler {
 					} catch (parseError) {
 						this.logger.warn(
 							`Failed to parse changeLog for template ${template.templateId}: ${
-								parseError instanceof Error ? parseError.message : String(parseError)
+								getErrorMessage(parseError)
 							}. Raw value: ${String(existingTemplate.changeLog).slice(0, 100)}`,
 						);
 					}
@@ -434,8 +619,8 @@ export class UpdateScheduler {
 				}
 			} catch (error) {
 				this.logger.error(
-					`Failed to create notification for template ${template.templateId}:`,
-					error,
+					{ err: error instanceof Error ? error : new Error(String(error)), templateId: template.templateId },
+					`Failed to create notification for template ${template.templateId}`,
 				);
 			}
 		}
@@ -462,8 +647,10 @@ export class UpdateScheduler {
 				try {
 					const parsed = JSON.parse(existingTemplate.changeLog);
 					changeLog = Array.isArray(parsed) ? parsed : [];
-				} catch {
-					// If parsing fails, start fresh
+				} catch (parseError) {
+					this.logger.warn(
+						`Failed to parse changeLog for template ${templateId}: ${getErrorMessage(parseError)}. Raw value: ${String(existingTemplate.changeLog).slice(0, 100)}`,
+					);
 				}
 			}
 
@@ -497,8 +684,8 @@ export class UpdateScheduler {
 			}
 		} catch (error) {
 			this.logger.error(
-				`Failed to create score conflict notification for template ${templateId}:`,
-				error,
+				{ err: error instanceof Error ? error : new Error(String(error)), templateId },
+				`Failed to create score conflict notification for template ${templateId}`,
 			);
 		}
 	}
@@ -514,6 +701,7 @@ export function createUpdateScheduler(
 	versionTracker: VersionTracker,
 	prisma: PrismaClient,
 	logger: Logger,
+	arrClientFactory?: ArrClientFactory,
 ): UpdateScheduler {
-	return new UpdateScheduler(config, templateUpdater, versionTracker, prisma, logger);
+	return new UpdateScheduler(config, templateUpdater, versionTracker, prisma, logger, arrClientFactory);
 }

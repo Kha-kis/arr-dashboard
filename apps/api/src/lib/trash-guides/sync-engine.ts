@@ -10,6 +10,10 @@ import type { SonarrClient, RadarrClient } from "arr-sdk";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
 import { getSyncMetrics } from "./sync-metrics.js";
 import type { TemplateUpdater } from "./template-updater.js";
+import { loggers } from "../logger.js";
+import { getErrorMessage } from "../utils/error-message.js";
+
+const log = loggers.trashGuides;
 
 // ============================================================================
 // Types
@@ -237,9 +241,9 @@ export class SyncEngine {
 							name: p.name ?? "",
 						}));
 					} catch (profileError) {
-						console.warn(
-							`[SyncEngine] Failed to fetch quality profiles from instance ${instance.label}:`,
-							profileError,
+						log.warn(
+							{ err: profileError, instanceLabel: instance.label, instanceId: instance.id },
+							"Failed to fetch quality profiles from instance during sync validation",
 						);
 						warnings.push(
 							"Could not fetch quality profiles from instance. Profile validation will be skipped.",
@@ -248,7 +252,7 @@ export class SyncEngine {
 				}
 			} catch (connectError) {
 				const errorMessage =
-					connectError instanceof Error ? connectError.message : String(connectError);
+					getErrorMessage(connectError);
 				errors.push(
 					`Unable to connect to instance "${instance.label}" (${instance.baseUrl}). ` +
 						`Please verify the instance is running and accessible. Error: ${errorMessage}`,

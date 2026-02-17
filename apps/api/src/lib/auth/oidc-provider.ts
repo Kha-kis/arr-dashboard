@@ -1,4 +1,5 @@
 import * as oauth from "oauth4webapi";
+import { getErrorMessage } from "../utils/error-message.js";
 
 export interface OIDCProviderConfig {
 	clientId: string;
@@ -174,7 +175,7 @@ export class OIDCProvider {
 			this.authServer = authServer;
 			return authServer;
 		} catch (error) {
-			const errMsg = error instanceof Error ? error.message : String(error);
+			const errMsg = getErrorMessage(error);
 			const discoveryUrl = `${this.config.issuer}/.well-known/openid-configuration`;
 
 			// Provide helpful error messages for common issues

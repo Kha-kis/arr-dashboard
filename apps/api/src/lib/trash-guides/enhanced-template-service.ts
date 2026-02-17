@@ -16,6 +16,7 @@ import type {
 } from "@arr/shared";
 import type { PrismaClient, ServiceType, TrashTemplate } from "../../lib/prisma.js";
 import { createTemplateValidator } from "./template-validator.js";
+import { getErrorMessage } from "../utils/error-message.js";
 
 export class EnhancedTemplateService {
 	constructor(private prisma: PrismaClient) {}
@@ -57,7 +58,7 @@ export class EnhancedTemplateService {
 			config = JSON.parse(template.configData) as TemplateConfig;
 		} catch (parseError) {
 			throw new Error(
-				`Invalid template config data: ${parseError instanceof Error ? parseError.message : "Parse error"}`,
+				`Invalid template config data: ${getErrorMessage(parseError, "Parse error")}`,
 			);
 		}
 		if (!options.includeQualitySettings) {
@@ -212,7 +213,7 @@ export class EnhancedTemplateService {
 		} catch (error) {
 			return {
 				success: false,
-				error: error instanceof Error ? error.message : "Failed to import template",
+				error: getErrorMessage(error, "Failed to import template"),
 			};
 		}
 	}
@@ -330,7 +331,7 @@ export class EnhancedTemplateService {
 			};
 		} catch (error) {
 			throw new Error(
-				`Failed to validate template: ${error instanceof Error ? error.message : "Unknown error"}`,
+				`Failed to validate template: ${getErrorMessage(error, "Unknown error")}`,
 			);
 		}
 	}

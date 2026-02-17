@@ -13,26 +13,20 @@ import {
 	AlertCircle,
 	Plus,
 	Download,
-	Copy,
-	Trash2,
-	Edit,
 	FileText,
 	Star,
-	Rocket,
-	Layers,
-	X,
 	Search,
 	ArrowUpDown,
 	Loader2,
 } from "lucide-react";
-import { SEMANTIC_COLORS, getServiceGradient } from "../../../lib/theme-gradients";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useUnlinkTemplateFromInstance } from "../../../hooks/api/useDeploymentPreview";
-import { TemplateStats } from "./template-stats";
 import { useExecuteSync } from "../../../hooks/api/useSync";
 import { useTemplateUpdates } from "../../../hooks/api/useTemplateUpdates";
-import { TemplateUpdateBanner } from "./template-update-banner";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
+import { TemplateCardContent } from "./template-card-content";
+import { TemplateInstanceSelector } from "./template-instance-selector";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useTemplateListModals } from "../hooks/use-template-list-modals";
@@ -45,6 +39,7 @@ const BulkDeploymentModal = lazy(() => import("./bulk-deployment-modal").then(m 
 const EnhancedTemplateExportModal = lazy(() => import("./enhanced-template-export-modal").then(m => ({ default: m.EnhancedTemplateExportModal })));
 const EnhancedTemplateImportModal = lazy(() => import("./enhanced-template-import-modal").then(m => ({ default: m.EnhancedTemplateImportModal })));
 import { getEffectiveQualityConfig } from "../lib/quality-config-utils";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface TemplateListProps {
 	serviceType?: "RADARR" | "SONARR";
@@ -103,7 +98,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onIm
 			dispatch({ type: "CLOSE_DELETE" });
 		} catch (error) {
 			console.error("Delete failed:", error);
-			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+			const errorMessage = getErrorMessage(error, "Unknown error occurred");
 			toast.error("Failed to delete template", { description: errorMessage });
 		}
 	};
@@ -122,7 +117,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onIm
 			dispatch({ type: "CLOSE_DUPLICATE" });
 		} catch (error) {
 			console.error("Duplicate failed:", error);
-			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+			const errorMessage = getErrorMessage(error, "Unknown error occurred");
 			toast.error("Failed to duplicate template", { description: errorMessage });
 		}
 	};
@@ -148,7 +143,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onIm
 			});
 		} catch (error) {
 			console.error("Sync execution failed:", error);
-			const errorMessage = error instanceof Error ? error.message : "Unknown error occurred";
+			const errorMessage = getErrorMessage(error, "Unknown error occurred");
 			toast.error("Failed to start sync operation", { description: errorMessage });
 		}
 	};
@@ -217,7 +212,7 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onIm
 					<div>
 						<h3 className="font-semibold text-foreground mb-1">Failed to load templates</h3>
 						<p className="text-sm text-muted-foreground">
-							{error instanceof Error ? error.message : "Please try again"}
+							{getErrorMessage(error, "Please try again")}
 						</p>
 					</div>
 				</div>
@@ -428,174 +423,45 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onIm
 								)}
 
 								{/* Template Card Content */}
-								<div className="flex flex-1 flex-col">
-									{/* Header */}
-									<div className="space-y-3 mb-4">
-										<div className="flex items-start justify-between">
-											<div>
-												<h3 className="font-semibold text-foreground">{template.name}</h3>
-												<p
-													className="mt-1 text-xs font-medium"
-													style={{ color: getServiceGradient(template.serviceType).from }}
-												>
-													{template.serviceType}
-												</p>
-											</div>
-											<span className="text-xs text-muted-foreground">
-												{template.updatedAt ? new Date(template.updatedAt).toLocaleDateString() : ""}
-											</span>
-										</div>
-
-										{template.description && (
-											<p className="text-sm text-muted-foreground line-clamp-2">{template.description}</p>
-										)}
-
-										<div className="space-y-2">
-											<div className="flex items-center gap-2 text-xs text-muted-foreground">
-												<span>{template.config.customFormats.length} formats</span>
-												<span className="text-border">•</span>
-												<span>{template.config.customFormatGroups.length} groups</span>
-											</div>
-											{template.config.qualityProfile && (
-												<div className="flex flex-wrap gap-1.5">
-													{template.config.qualityProfile.language && (
-														<span
-															className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-medium"
-															style={{
-																backgroundColor: `${themeGradient.from}15`,
-																border: `1px solid ${themeGradient.from}25`,
-																color: themeGradient.from,
-															}}
-														>
-															🌐 {template.config.qualityProfile.language}
-														</span>
-													)}
-													{template.config.qualityProfile.trash_score_set && (
-														<span className="inline-flex items-center gap-1 rounded-lg bg-purple-500/15 border border-purple-500/25 px-2 py-0.5 text-xs font-medium text-purple-400">
-															📊 {template.config.qualityProfile.trash_score_set}
-														</span>
-													)}
-													{template.config.qualityProfile.cutoff && (
-														<span
-															className="inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-xs font-medium"
-															style={{
-																backgroundColor: SEMANTIC_COLORS.success.bg,
-																border: `1px solid ${SEMANTIC_COLORS.success.border}`,
-																color: SEMANTIC_COLORS.success.text,
-															}}
-														>
-															🎬 {template.config.qualityProfile.cutoff}
-														</span>
-													)}
-												</div>
-											)}
-										</div>
-
-										{/* Update Banner */}
-										{(() => {
-											const templateUpdate = updatesData?.data.templatesWithUpdates.find((u) => u.templateId === template.id);
-											return templateUpdate ? (
-												<TemplateUpdateBanner update={templateUpdate} />
-											) : null;
-										})()}
-									</div>
-
-									{/* Fixed Bottom Section */}
-									<div className="mt-auto space-y-3 pt-3 border-t border-border/30">
-										<TemplateStats
-											templateId={template.id}
-											templateName={template.name}
-											onDeploy={(instanceId, instanceLabel) => {
-												dispatch({
-													type: "OPEN_DEPLOYMENT",
-													data: {
-														templateId: template.id,
-														templateName: template.name,
-														instanceId,
-														instanceLabel,
-													},
-												});
-											}}
-											onUnlinkInstance={(instanceId, instanceName) => {
-												dispatch({
-													type: "OPEN_UNLINK",
-													data: {
-														templateId: template.id,
-														templateName: template.name,
-														instanceId,
-														instanceName,
-													},
-												});
-											}}
-										/>
-
-										{/* Deploy Button */}
-										<button
-											type="button"
-											onClick={() => dispatch({
-												type: "OPEN_INSTANCE_SELECTOR",
-												data: {
-													templateId: template.id,
-													templateName: template.name,
-													serviceType: template.serviceType,
-												},
-											})}
-											className="w-full inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all duration-200"
-											style={{
-												background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-												boxShadow: `0 4px 12px -4px ${themeGradient.glow}`,
-											}}
-										>
-											<Rocket className="h-4 w-4" />
-											Deploy to Instance
-										</button>
-
-										{/* Action Buttons */}
-										<div className="flex gap-2">
-											<button
-												type="button"
-												onClick={() => onEdit(template)}
-												className="flex-1 rounded-xl p-2.5 border border-border/50 bg-card/30 hover:bg-card/50 transition-all"
-												aria-label={`Edit template ${template.name}`}
-												title="Edit template"
-											>
-												<Edit className="mx-auto h-4 w-4" />
-											</button>
-											<button
-												type="button"
-												onClick={() => dispatch({ type: "OPEN_DUPLICATE", templateId: template.id, defaultName: `${template.name} Copy` })}
-												className="flex-1 rounded-xl p-2.5 border border-border/50 bg-card/30 hover:bg-card/50 transition-all"
-												aria-label={`Duplicate template ${template.name}`}
-												title="Duplicate template"
-											>
-												<Copy className="mx-auto h-4 w-4" />
-											</button>
-											<button
-												type="button"
-												onClick={() => dispatch({ type: "OPEN_EXPORT", data: { templateId: template.id, templateName: template.name } })}
-												className="flex-1 rounded-xl p-2.5 border border-border/50 bg-card/30 hover:bg-card/50 transition-all"
-												aria-label={`Export template ${template.name}`}
-												title="Export template"
-											>
-												<Download className="mx-auto h-4 w-4" />
-											</button>
-											<button
-												type="button"
-												onClick={() => dispatch({ type: "OPEN_DELETE", templateId: template.id })}
-												className="flex-1 rounded-xl p-2.5 transition-all"
-												style={{
-													backgroundColor: SEMANTIC_COLORS.error.bg,
-													border: `1px solid ${SEMANTIC_COLORS.error.border}`,
-													color: SEMANTIC_COLORS.error.text,
-												}}
-												aria-label={`Delete template ${template.name}`}
-												title="Delete template"
-											>
-												<Trash2 className="mx-auto h-4 w-4" />
-											</button>
-										</div>
-									</div>
-								</div>
+								<TemplateCardContent
+									template={template}
+									themeGradient={themeGradient}
+									templateUpdate={updatesData?.data.templatesWithUpdates.find((u) => u.templateId === template.id)}
+									onEdit={() => onEdit(template)}
+									onDeploy={(instanceId, instanceLabel) => {
+										dispatch({
+											type: "OPEN_DEPLOYMENT",
+											data: {
+												templateId: template.id,
+												templateName: template.name,
+												instanceId,
+												instanceLabel,
+											},
+										});
+									}}
+									onUnlinkInstance={(instanceId, instanceName) => {
+										dispatch({
+											type: "OPEN_UNLINK",
+											data: {
+												templateId: template.id,
+												templateName: template.name,
+												instanceId,
+												instanceName,
+											},
+										});
+									}}
+									onOpenInstanceSelector={() => dispatch({
+										type: "OPEN_INSTANCE_SELECTOR",
+										data: {
+											templateId: template.id,
+											templateName: template.name,
+											serviceType: template.serviceType,
+										},
+									})}
+									onOpenDuplicate={() => dispatch({ type: "OPEN_DUPLICATE", templateId: template.id, defaultName: `${template.name} Copy` })}
+									onOpenExport={() => dispatch({ type: "OPEN_EXPORT", data: { templateId: template.id, templateName: template.name } })}
+									onOpenDelete={() => dispatch({ type: "OPEN_DELETE", templateId: template.id })}
+								/>
 							</article>
 						))}
 					</div>
@@ -643,155 +509,45 @@ export const TemplateList = ({ serviceType, onCreateNew, onEdit, onImport: _onIm
 
 			{/* Instance Selector Modal */}
 			{modals.instanceSelectorTemplate && (
-				<div
-					className="fixed inset-0 bg-black/80 backdrop-blur-xs flex items-center justify-center z-modal p-4 animate-in fade-in duration-200"
-					role="dialog"
-					aria-modal="true"
-					aria-labelledby="deploy-template-title"
-				>
-					<div
-						className="rounded-2xl shadow-2xl border border-border/50 bg-card/95 backdrop-blur-xl max-w-2xl w-full max-h-[90vh] overflow-hidden flex flex-col animate-in zoom-in-95 duration-300"
-					>
-						{/* Header */}
-						<div
-							className="flex items-center justify-between p-6 border-b border-border/50"
-							style={{
-								background: `linear-gradient(135deg, ${themeGradient.from}10, transparent)`,
-							}}
-						>
-							<div className="flex items-center gap-3">
-								<div
-									className="flex h-10 w-10 items-center justify-center rounded-xl"
-									style={{
-										background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
-									}}
-								>
-									<Rocket className="h-5 w-5" style={{ color: themeGradient.from }} />
-								</div>
-								<div>
-									<h2 id="deploy-template-title" className="text-lg font-semibold text-foreground">Deploy Template</h2>
-									<p className="text-sm text-muted-foreground">{modals.instanceSelectorTemplate.templateName}</p>
-								</div>
-							</div>
-							<button
-								type="button"
-								onClick={() => dispatch({ type: "CLOSE_INSTANCE_SELECTOR" })}
-								aria-label="Close modal"
-								className="rounded-lg p-2 hover:bg-card/80 transition-colors"
-							>
-								<X className="h-5 w-5" />
-							</button>
-						</div>
-
-						{/* Instance List */}
-						<div className="flex-1 overflow-y-auto p-6">
-							{/* Bulk Deploy Button */}
-							{(() => {
-								const matchingInstances = servicesData?.filter(instance =>
-									instance.service.toUpperCase() === modals.instanceSelectorTemplate!.serviceType
-								) || [];
-
-								if (matchingInstances.length > 1) {
-									// Find the full template to get quality config and instance overrides
-									const fullTemplate = templates.find(t => t.id === modals.instanceSelectorTemplate!.templateId);
-
-									return (
-										<button
-											type="button"
-											onClick={() => {
-												dispatch({
-													type: "INSTANCE_TO_BULK",
-													data: {
-														templateId: modals.instanceSelectorTemplate!.templateId,
-														templateName: modals.instanceSelectorTemplate!.templateName,
-														serviceType: modals.instanceSelectorTemplate!.serviceType,
-														templateDefaultQualityConfig: getEffectiveQualityConfig(fullTemplate?.config),
-														instanceOverrides: fullTemplate?.instanceOverrides,
-														instances: matchingInstances.map(inst => ({
-															instanceId: inst.id,
-															instanceLabel: inst.label,
-															instanceType: inst.service.toUpperCase(),
-														})),
-													},
-												});
-											}}
-											className="w-full flex items-center justify-center gap-2 rounded-xl px-4 py-3 mb-4 text-sm font-medium transition-all duration-200"
-											style={{
-												background: `linear-gradient(135deg, ${themeGradient.from}15, ${themeGradient.to}15)`,
-												border: `1px solid ${themeGradient.from}30`,
-												color: themeGradient.from,
-											}}
-										>
-											<Layers className="h-5 w-5" />
-											Deploy to Multiple Instances ({matchingInstances.length} available)
-										</button>
-									);
-								}
-								return null;
-							})()}
-
-							<h3 className="text-sm font-medium text-foreground mb-4">Select an instance:</h3>
-							<div className="space-y-3">
-								{servicesData && servicesData.length > 0 ? (
-									servicesData
-										.filter(instance =>
-											instance.service.toUpperCase() === modals.instanceSelectorTemplate!.serviceType
-										)
-										.map((instance) => (
-											<button
-												key={instance.id}
-												type="button"
-												onClick={() => {
-													dispatch({
-														type: "INSTANCE_TO_DEPLOY",
-														data: {
-															templateId: modals.instanceSelectorTemplate!.templateId,
-															templateName: modals.instanceSelectorTemplate!.templateName,
-															instanceId: instance.id,
-															instanceLabel: instance.label,
-														},
-													});
-												}}
-												className="w-full flex items-center justify-between p-4 rounded-xl border border-border/50 bg-card/30 hover:bg-card/50 hover:border-border transition-all text-left group"
-											>
-												<div>
-													<div className="font-medium text-foreground group-hover:text-foreground transition-colors">
-														{instance.label}
-													</div>
-													<div className="text-sm text-muted-foreground mt-1">
-														{instance.service}
-													</div>
-												</div>
-												<Rocket
-													className="h-5 w-5 transition-transform group-hover:scale-110"
-													style={{ color: themeGradient.from }}
-												/>
-											</button>
-										))
-								) : (
-									<div className="text-center py-12 px-4 rounded-xl border border-dashed border-border/50">
-										<AlertCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-										<p className="text-foreground font-medium">No instances available.</p>
-										<p className="text-sm text-muted-foreground mt-2">
-											Add a Radarr or Sonarr instance in Settings first.
-										</p>
-									</div>
-								)}
-							</div>
-						</div>
-
-						{/* Footer */}
-						<div className="flex items-center justify-end p-6 border-t border-border/50">
-							<button
-								type="button"
-								onClick={() => dispatch({ type: "CLOSE_INSTANCE_SELECTOR" })}
-								className="rounded-xl px-4 py-2.5 text-sm font-medium border border-border/50 bg-card/30 hover:bg-card/50 transition-all"
-							>
-								Cancel
-							</button>
-						</div>
-					</div>
-				</div>
+				<TemplateInstanceSelector
+					templateName={modals.instanceSelectorTemplate.templateName}
+					matchingInstances={(servicesData || [])
+						.filter(inst => inst.service.toUpperCase() === modals.instanceSelectorTemplate!.serviceType)
+						.map(inst => ({ id: inst.id, label: inst.label, service: inst.service }))}
+					themeGradient={themeGradient}
+					onSelectInstance={(instanceId, instanceLabel) => {
+						dispatch({
+							type: "INSTANCE_TO_DEPLOY",
+							data: {
+								templateId: modals.instanceSelectorTemplate!.templateId,
+								templateName: modals.instanceSelectorTemplate!.templateName,
+								instanceId,
+								instanceLabel,
+							},
+						});
+					}}
+					onBulkDeploy={() => {
+						const fullTemplate = templates.find(t => t.id === modals.instanceSelectorTemplate!.templateId);
+						const instances = (servicesData || [])
+							.filter(inst => inst.service.toUpperCase() === modals.instanceSelectorTemplate!.serviceType);
+						dispatch({
+							type: "INSTANCE_TO_BULK",
+							data: {
+								templateId: modals.instanceSelectorTemplate!.templateId,
+								templateName: modals.instanceSelectorTemplate!.templateName,
+								serviceType: modals.instanceSelectorTemplate!.serviceType,
+								templateDefaultQualityConfig: getEffectiveQualityConfig(fullTemplate?.config),
+								instanceOverrides: fullTemplate?.instanceOverrides,
+								instances: instances.map(inst => ({
+									instanceId: inst.id,
+									instanceLabel: inst.label,
+									instanceType: inst.service.toUpperCase(),
+								})),
+							},
+						});
+					}}
+					onClose={() => dispatch({ type: "CLOSE_INSTANCE_SELECTOR" })}
+				/>
 			)}
 
 			{/* Export Modal (lazy-loaded) */}

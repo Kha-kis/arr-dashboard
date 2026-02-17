@@ -31,6 +31,7 @@ import type {
 import { useEnhancedImportTemplate } from "../../../hooks/api/useTemplates";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getErrorMessage } from "../../../lib/error-utils";
 
 interface EnhancedTemplateImportModalProps {
 	onImportComplete?: () => void;
@@ -112,9 +113,7 @@ export function EnhancedTemplateImportModal({
 					onClose?.();
 				},
 				onError: (error) => {
-					const errorMessage = error instanceof Error
-						? error.message
-						: "Failed to import template";
+					const errorMessage = getErrorMessage(error, "Failed to import template");
 					toast.error(errorMessage);
 				},
 			},
