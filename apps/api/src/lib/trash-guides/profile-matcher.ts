@@ -400,10 +400,31 @@ export function buildCompleteQualityProfile(
  */
 function normalizeProfileName(name: string): string {
 	let result = name.toLowerCase().trim();
-	result = result.replace(/^trash\s*[-:]\s*/, ""); // Remove "TRaSH - " or "TRaSH:" prefix
-	result = result.replace(/\s+v\d+(?:\.\d+)?$/, ""); // Remove version suffix like " v4" or " v4.0"
-	result = result.replace(/\s+\([^)]*\)$/, ""); // Remove parenthetical suffixes
-	return result.replace(/[-_]/g, " ").replace(/\s+/g, " ").trim(); // Normalize separators
+
+	// Remove "TRaSH - " or "TRaSH:" prefix
+	const trashMatch = result.match(/^trash\s*[-:]\s*/);
+	if (trashMatch) result = result.slice(trashMatch[0].length);
+
+	// Remove version suffix like " v4" or " v4.0" from end (string-based to avoid ReDoS)
+	const lastV = result.lastIndexOf(" v");
+	if (lastV > 0) {
+		const suffix = result.slice(lastV + 2);
+		if (/^\d+(\.\d+)?$/.test(suffix)) {
+			result = result.slice(0, lastV);
+		}
+	}
+
+	// Remove parenthetical suffix from end (string-based to avoid ReDoS)
+	if (result.endsWith(")")) {
+		const openParen = result.lastIndexOf("(");
+		if (openParen > 0) {
+			const before = result.slice(0, openParen).trimEnd();
+			if (before.length > 0) result = before;
+		}
+	}
+
+	// Normalize separators and whitespace
+	return result.replace(/[-_]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 /**

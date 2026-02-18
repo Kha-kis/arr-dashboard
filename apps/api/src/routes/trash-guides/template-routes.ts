@@ -18,7 +18,6 @@ import { validateRequest } from "../../lib/utils/validate.js";
 // ============================================================================
 
 /** Keys that must never be used as property names (prototype pollution prevention) */
-const UNSAFE_PROPERTY_KEYS = new Set(["__proto__", "constructor", "prototype"]);
 
 // ============================================================================
 // Request Schemas
@@ -479,8 +478,9 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		Params: { templateId: string; instanceId: string };
 	}>("/:templateId/instance-overrides/:instanceId", async (request, reply) => {
 		const { templateId, instanceId } = request.params;
-		if (UNSAFE_PROPERTY_KEYS.has(instanceId)) {
-			return reply.status(400).send({ error: "Invalid instance ID" });
+		// Validate instanceId is a safe CUID (alphanumeric only) — prevents prototype pollution
+		if (!/^[a-z0-9]+$/.test(instanceId)) {
+			return reply.status(400).send({ error: "Invalid instance ID format" });
 		}
 		const template = await requireTemplate(app.prisma, request.currentUser!.id, templateId);
 
@@ -518,20 +518,18 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		};
 	}>("/:templateId/instance-overrides/:instanceId", async (request, reply) => {
 		const { templateId, instanceId } = request.params;
-		if (UNSAFE_PROPERTY_KEYS.has(instanceId)) {
-			return reply.status(400).send({ error: "Invalid instance ID" });
+		// Validate instanceId is a safe CUID (alphanumeric only) — prevents prototype pollution
+		if (!/^[a-z0-9]+$/.test(instanceId)) {
+			return reply.status(400).send({ error: "Invalid instance ID format" });
 		}
 		const { scoreOverrides, cfOverrides, qualityConfigOverride } = request.body;
 		const template = await requireTemplate(app.prisma, request.currentUser!.id, templateId);
 
-		// Parse existing overrides into null-prototype object (prevents prototype pollution)
-		const instanceOverrides: Record<string, unknown> = Object.assign(
-			Object.create(null),
-			parseInstanceOverrides(
-				template.instanceOverrides,
-				{ templateId, operation: "update" },
-				app.log,
-			),
+		// Parse existing overrides with error handling for malformed JSON
+		const instanceOverrides = parseInstanceOverrides(
+			template.instanceOverrides,
+			{ templateId, operation: "update" },
+			app.log,
 		);
 
 		// Get existing override for this instance to preserve fields not being updated
@@ -590,16 +588,17 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		Params: { templateId: string; instanceId: string };
 	}>("/:templateId/instance-overrides/:instanceId", async (request, reply) => {
 		const { templateId, instanceId } = request.params;
-		if (UNSAFE_PROPERTY_KEYS.has(instanceId)) {
-			return reply.status(400).send({ error: "Invalid instance ID" });
+		// Validate instanceId is a safe CUID (alphanumeric only) — prevents prototype pollution
+		if (!/^[a-z0-9]+$/.test(instanceId)) {
+			return reply.status(400).send({ error: "Invalid instance ID format" });
 		}
 		const template = await requireTemplate(app.prisma, request.currentUser!.id, templateId);
 
-		// Parse existing overrides into null-prototype object (prevents prototype pollution)
-		let instanceOverrides: Record<string, unknown> = Object.create(null);
+		// Parse existing overrides with error handling for malformed JSON
+		let instanceOverrides: Record<string, unknown> = {};
 		if (template.instanceOverrides) {
 			try {
-				instanceOverrides = Object.assign(Object.create(null), JSON.parse(template.instanceOverrides));
+				instanceOverrides = JSON.parse(template.instanceOverrides);
 			} catch {
 				app.log.warn({ templateId }, "Malformed instanceOverrides JSON, clearing corrupted data");
 				// Clear corrupted JSON data in database
