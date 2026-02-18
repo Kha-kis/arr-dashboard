@@ -83,7 +83,17 @@ export async function clickSidebarLink(page: Page, linkName: string): Promise<vo
 
 	// Wait for the link to be visible before clicking
 	await expect(link).toBeVisible({ timeout: TIMEOUTS.short });
+
+	// Get the target href so we can wait for the URL to actually change
+	const href = await link.getAttribute("href");
+
 	await link.click();
+
+	// Wait for URL to change (handles Next.js hydration delay where click
+	// may fire before client-side router is attached)
+	if (href) {
+		await page.waitForURL(`**${href}`, { timeout: TIMEOUTS.navigation });
+	}
 	await page.waitForLoadState("networkidle");
 }
 

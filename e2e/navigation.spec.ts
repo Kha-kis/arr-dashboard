@@ -84,6 +84,8 @@ test.describe("Navigation - Route Changes", () => {
 	for (const { name, route, heading } of routes) {
 		test(`should navigate to ${name} page via sidebar`, async ({ page }) => {
 			await page.goto(ROUTES.dashboard);
+			// Wait for hydration so client-side router is active
+			await page.waitForLoadState("networkidle");
 
 			// Click sidebar link
 			await clickSidebarLink(page, name);
