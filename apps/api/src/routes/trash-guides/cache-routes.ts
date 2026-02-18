@@ -55,11 +55,11 @@ const refreshCacheBodySchema = z.object({
 	force: z.boolean().optional().default(false),
 });
 
-const getStatusParamsSchema = z.object({
+const optionalServiceTypeSchema = z.object({
 	serviceType: z.enum(["RADARR", "SONARR"]).optional(),
 });
 
-const getEntriesQuerySchema = z.object({
+const requiredServiceTypeSchema = z.object({
 	serviceType: z.enum(["RADARR", "SONARR"]),
 });
 
@@ -229,9 +229,9 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 	 * Get cache status for all or specific service
 	 */
 	app.get<{
-		Querystring: z.infer<typeof getStatusParamsSchema>;
+		Querystring: z.infer<typeof optionalServiceTypeSchema>;
 	}>("/status", async (request, reply) => {
-		const { serviceType } = validateRequest(getStatusParamsSchema, request.query);
+		const { serviceType } = validateRequest(optionalServiceTypeSchema, request.query);
 
 		if (serviceType) {
 			// Get status for specific service
@@ -259,9 +259,9 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 	 * Get cache entries with data for a specific service type
 	 */
 	app.get<{
-		Querystring: z.infer<typeof getEntriesQuerySchema>;
+		Querystring: z.infer<typeof requiredServiceTypeSchema>;
 	}>("/entries", async (request, reply) => {
-		const { serviceType } = validateRequest(getEntriesQuerySchema, request.query);
+		const { serviceType } = validateRequest(requiredServiceTypeSchema, request.query);
 
 		const configTypes = Object.values(TRASH_CONFIG_TYPES) as TrashConfigType[];
 		const entries = [];
@@ -324,9 +324,9 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 	 * Get all available custom formats from cache for browsing
 	 */
 	app.get<{
-		Querystring: { serviceType?: "RADARR" | "SONARR" };
+		Querystring: z.infer<typeof optionalServiceTypeSchema>;
 	}>("/custom-formats/list", async (request, reply) => {
-		const { serviceType } = request.query;
+		const { serviceType } = validateRequest(optionalServiceTypeSchema, request.query);
 
 		const results: Record<string, unknown> = {};
 		const serviceTypes: ServiceType[] = serviceType ? [serviceType] : [...ALL_SERVICE_TYPES];
@@ -361,9 +361,9 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 	 * Get all CF descriptions from cache
 	 */
 	app.get<{
-		Querystring: { serviceType?: "RADARR" | "SONARR" };
+		Querystring: z.infer<typeof optionalServiceTypeSchema>;
 	}>("/cf-descriptions/list", async (request, reply) => {
-		const { serviceType } = request.query;
+		const { serviceType } = validateRequest(optionalServiceTypeSchema, request.query);
 
 		const results: Record<string, unknown> = {};
 		const serviceTypes: ServiceType[] = serviceType ? [serviceType] : [...ALL_SERVICE_TYPES];
