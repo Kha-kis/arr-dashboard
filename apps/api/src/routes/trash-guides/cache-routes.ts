@@ -19,6 +19,7 @@ import { getErrorMessage } from "../../lib/utils/error-message.js";
 // ============================================================================
 
 const VALID_SERVICE_TYPES = new Set(["RADARR", "SONARR"]);
+const SERVICE_RESULT_KEY: Record<string, string> = { RADARR: "radarr", SONARR: "sonarr" };
 
 // ============================================================================
 // Request Schemas
@@ -344,14 +345,14 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 				const fetcher = await getFetcher(request.currentUser!.id);
 				const data = await fetcher.fetchConfigs(service as "RADARR" | "SONARR", "CUSTOM_FORMATS");
 				await cacheManager.set(service as "RADARR" | "SONARR", "CUSTOM_FORMATS", data);
-				results[service.toLowerCase()] = data;
+				results[SERVICE_RESULT_KEY[service]!] = data;
 			} else {
 				try {
 					const data = await cacheManager.get(service as "RADARR" | "SONARR", "CUSTOM_FORMATS");
-					results[service.toLowerCase()] = data || [];
+					results[SERVICE_RESULT_KEY[service]!] = data || [];
 				} catch (error) {
 					if (error instanceof CacheCorruptionError) {
-						results[service.toLowerCase()] = [];
+						results[SERVICE_RESULT_KEY[service]!] = [];
 					} else {
 						throw error;
 					}
@@ -388,14 +389,14 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 					"CF_DESCRIPTIONS",
 				);
 				await cacheManager.set(service as "RADARR" | "SONARR", "CF_DESCRIPTIONS", data);
-				results[service.toLowerCase()] = data;
+				results[SERVICE_RESULT_KEY[service]!] = data;
 			} else {
 				try {
 					const data = await cacheManager.get(service as "RADARR" | "SONARR", "CF_DESCRIPTIONS");
-					results[service.toLowerCase()] = data || [];
+					results[SERVICE_RESULT_KEY[service]!] = data || [];
 				} catch (error) {
 					if (error instanceof CacheCorruptionError) {
-						results[service.toLowerCase()] = [];
+						results[SERVICE_RESULT_KEY[service]!] = [];
 					} else {
 						throw error;
 					}

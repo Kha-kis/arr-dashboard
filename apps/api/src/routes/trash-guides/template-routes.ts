@@ -524,11 +524,14 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		const { scoreOverrides, cfOverrides, qualityConfigOverride } = request.body;
 		const template = await requireTemplate(app.prisma, request.currentUser!.id, templateId);
 
-		// Parse existing overrides with error handling for malformed JSON
-		const instanceOverrides = parseInstanceOverrides(
-			template.instanceOverrides,
-			{ templateId, operation: "update" },
-			app.log,
+		// Parse existing overrides into null-prototype object (prevents prototype pollution)
+		const instanceOverrides: Record<string, unknown> = Object.assign(
+			Object.create(null),
+			parseInstanceOverrides(
+				template.instanceOverrides,
+				{ templateId, operation: "update" },
+				app.log,
+			),
 		);
 
 		// Get existing override for this instance to preserve fields not being updated
@@ -592,11 +595,11 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		}
 		const template = await requireTemplate(app.prisma, request.currentUser!.id, templateId);
 
-		// Parse existing overrides with error handling for malformed JSON
-		let instanceOverrides: Record<string, unknown> = {};
+		// Parse existing overrides into null-prototype object (prevents prototype pollution)
+		let instanceOverrides: Record<string, unknown> = Object.create(null);
 		if (template.instanceOverrides) {
 			try {
-				instanceOverrides = JSON.parse(template.instanceOverrides);
+				instanceOverrides = Object.assign(Object.create(null), JSON.parse(template.instanceOverrides));
 			} catch {
 				app.log.warn({ templateId }, "Malformed instanceOverrides JSON, clearing corrupted data");
 				// Clear corrupted JSON data in database

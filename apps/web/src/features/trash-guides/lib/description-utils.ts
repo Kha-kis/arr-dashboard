@@ -109,7 +109,8 @@ export function cleanDescription(rawMarkdown: string, titleToRemove?: string): s
 
 		// HTML and escapes
 		.replace(/<br\s*\/?>/gi, ' ')  // Replace <br> tags with space
-		.replace(/<[^>]*>/g, '')  // Remove any other HTML tags
+		.replace(/<[^>]*>/g, '')  // Remove complete HTML tags
+		.replace(/</g, '')  // Remove any remaining < from incomplete tags (e.g., <script without >)
 		.replace(/\\_/g, '_')  // Replace escaped underscores
 		.replace(/\\\*/g, '*')  // Replace escaped asterisks
 		.replace(/\\`/g, '`')  // Replace escaped backticks
