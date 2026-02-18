@@ -19,7 +19,7 @@
     }
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.3.15",
+    "@biomejs/biome": "^2.4.2",
     "@playwright/test": "^1.58.2",
     "dotenv": "^17.3.1",
     "eslint-plugin-unused-imports": "^4.4.1",
