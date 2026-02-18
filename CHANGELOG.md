@@ -5,6 +5,42 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.1] - 2026-02-18
+
+### Added
+
+- **Quality Size Preset Management** - Apply TRaSH Guides quality size presets (movie, anime, series, streaming) to Sonarr/Radarr instances. Includes preview diff, factory reset, sync strategy tracking, and per-instance mapping persistence ([#96](https://github.com/Kha-kis/arr-dashboard/pull/96))
+- **Hunting Reset Confirmation** - Reset History button now shows a confirmation dialog to prevent accidental data loss
+- **CodeQL & Semgrep Code Scanning** - Automated security analysis on every push and PR via GitHub Actions ([#100](https://github.com/Kha-kis/arr-dashboard/pull/100))
+
+### Changed
+
+- **Major Codebase Refactoring** - Consolidated error handling with `getErrorMessage()` utility (replaces 179 `instanceof Error` patterns), extracted backup-service into focused modules, removed redundant try/catch blocks in favor of global error handler, and decomposed large frontend components ([#93](https://github.com/Kha-kis/arr-dashboard/pull/93), [#96](https://github.com/Kha-kis/arr-dashboard/pull/96))
+- **Deployment Executor Plugin** - Extracted long-running deployment logic into a Fastify plugin with proper lifecycle management and structured logging
+- **Template Route Consistency** - DELETE instance-override handler now uses shared `parseInstanceOverrides()` utility consistent with GET/PUT handlers
+- **Cache Route Type Safety** - Replaced dynamic `service.toLowerCase()` keys and type casts with typed `ServiceType` alias and static lookup maps
+
+### Fixed
+
+- **Runtime Query Validation** - Added Zod validation for `serviceType` query parameter on `/custom-formats/list` and `/cf-descriptions/list` endpoints — Fastify TypeScript generics don't validate at runtime ([#102](https://github.com/Kha-kis/arr-dashboard/pull/102))
+- **Quality Size Service Guard** - Non-Sonarr/Radarr instances now return a clear 400 error instead of cryptic 500 when attempting quality size operations
+- **Flaky E2E Tests** - Resolved intermittent sidebar navigation test failures with improved wait strategies ([#101](https://github.com/Kha-kis/arr-dashboard/pull/101))
+
+### Security
+
+- **46 Code Scanning Alerts Resolved** - Fixed all CodeQL and Semgrep findings including log injection, prototype pollution, ReDoS, filesystem race conditions, and property injection ([#102](https://github.com/Kha-kis/arr-dashboard/pull/102))
+- **ReDoS Prevention** - Rewrote `normalizeProfileName` with string methods (no regex) to eliminate catastrophic backtracking vectors
+- **Prototype Pollution Prevention** - CUID format validation (`/^[a-z0-9]+$/`) on instance ID route parameters prevents `__proto__` injection
+- **Log Injection Prevention** - `sanitizeForLog()` strips `\r\n` from all interpolated values in structured log messages
+- **Atomic Secret Writes** - Secret manager uses temp file + `renameSync` pattern, catches `ENOENT` instead of TOCTOU-vulnerable `existsSync`
+
+### Dependencies
+
+- Bumped 27 production dependencies and 6 remaining outdated packages ([#97](https://github.com/Kha-kis/arr-dashboard/pull/97), [#99](https://github.com/Kha-kis/arr-dashboard/pull/99))
+- Bumped GitHub Actions group (7 updates) and dev dependencies group (4 updates)
+
+---
+
 ## [2.8.0] - 2026-02-06
 
 ### Added
@@ -505,6 +541,7 @@ Major dependency updates:
 
 ---
 
+[2.8.1]: https://github.com/Kha-kis/arr-dashboard/compare/v2.8.0...v2.8.1
 [2.8.0]: https://github.com/Kha-kis/arr-dashboard/compare/v2.7.4...v2.8.0
 [2.7.4]: https://github.com/Kha-kis/arr-dashboard/compare/v2.7.3...v2.7.4
 [2.7.3]: https://github.com/Kha-kis/arr-dashboard/compare/v2.7.2...v2.7.3

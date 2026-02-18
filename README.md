@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.8.0** - Full Lidarr & Readarr support + Queue Cleaner auto-import
+> **Version 2.8.1** - Security hardening, quality size presets & deep refactoring
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -141,6 +141,7 @@ docker-compose up -d
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.8.1` | Security hardening, quality size presets & deep refactoring |
 | `2.8.0` | Full Lidarr & Readarr support + Queue Cleaner auto-import |
 | `2.7.4` | Configurable password policy for passphrase support |
 | `2.7.3` | Queue Cleaner, Prefer Season Packs & improved error handling |
