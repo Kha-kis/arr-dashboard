@@ -14,12 +14,6 @@ import { requireTemplate } from "../../lib/trash-guides/template-helpers.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 // ============================================================================
-// Constants
-// ============================================================================
-
-/** Keys that must never be used as property names (prototype pollution prevention) */
-
-// ============================================================================
 // Request Schemas
 // ============================================================================
 
@@ -594,39 +588,11 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		}
 		const template = await requireTemplate(app.prisma, request.currentUser!.id, templateId);
 
-		// Parse existing overrides with error handling for malformed JSON
-		let instanceOverrides: Record<string, unknown> = {};
-		if (template.instanceOverrides) {
-			try {
-				instanceOverrides = JSON.parse(template.instanceOverrides);
-			} catch {
-				app.log.warn({ templateId }, "Malformed instanceOverrides JSON, clearing corrupted data");
-				// Clear corrupted JSON data in database
-				try {
-					await app.prisma.trashTemplate.update({
-						where: { id: templateId },
-						data: {
-							instanceOverrides: JSON.stringify({}),
-							updatedAt: new Date(),
-						},
-					});
-					return reply.send({
-						success: true,
-						message: "Corrupted instance overrides cleared successfully",
-					});
-				} catch (dbError) {
-					app.log.error(
-						{ err: dbError, templateId },
-						"Failed to clear corrupted instanceOverrides",
-					);
-					return reply.status(500).send({
-						statusCode: 500,
-						error: "InternalServerError",
-						message: "Failed to repair corrupted instance overrides",
-					});
-				}
-			}
-		}
+		const instanceOverrides = parseInstanceOverrides(
+			template.instanceOverrides,
+			{ templateId, operation: "delete" },
+			app.log,
+		);
 
 		// Remove overrides for this instance
 		delete instanceOverrides[instanceId];

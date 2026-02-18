@@ -18,8 +18,9 @@ import { getErrorMessage } from "../../lib/utils/error-message.js";
 // Constants
 // ============================================================================
 
-const VALID_SERVICE_TYPES = new Set(["RADARR", "SONARR"]);
-const SERVICE_RESULT_KEY: Record<string, string> = { RADARR: "radarr", SONARR: "sonarr" };
+type ServiceType = "RADARR" | "SONARR";
+const ALL_SERVICE_TYPES = ["RADARR", "SONARR"] as const satisfies readonly ServiceType[];
+const SERVICE_RESULT_KEY: Record<ServiceType, string> = { RADARR: "radarr", SONARR: "sonarr" };
 
 // ============================================================================
 // Request Schemas
@@ -328,31 +329,23 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 		const { serviceType } = request.query;
 
 		const results: Record<string, unknown> = {};
-
-		// Fetch custom formats for requested service types (validated against whitelist)
-		const serviceTypes = (serviceType ? [serviceType] : ["RADARR", "SONARR"])
-			.filter(s => VALID_SERVICE_TYPES.has(s));
+		const serviceTypes: ServiceType[] = serviceType ? [serviceType] : [...ALL_SERVICE_TYPES];
 
 		for (const service of serviceTypes) {
-			// Check cache freshness
-			const isFresh = await cacheManager.isFresh(
-				service as "RADARR" | "SONARR",
-				"CUSTOM_FORMATS",
-			);
+			const isFresh = await cacheManager.isFresh(service, "CUSTOM_FORMATS");
 
 			if (!isFresh) {
-				// Fetch fresh data if cache is stale
 				const fetcher = await getFetcher(request.currentUser!.id);
-				const data = await fetcher.fetchConfigs(service as "RADARR" | "SONARR", "CUSTOM_FORMATS");
-				await cacheManager.set(service as "RADARR" | "SONARR", "CUSTOM_FORMATS", data);
-				results[SERVICE_RESULT_KEY[service]!] = data;
+				const data = await fetcher.fetchConfigs(service, "CUSTOM_FORMATS");
+				await cacheManager.set(service, "CUSTOM_FORMATS", data);
+				results[SERVICE_RESULT_KEY[service]] = data;
 			} else {
 				try {
-					const data = await cacheManager.get(service as "RADARR" | "SONARR", "CUSTOM_FORMATS");
-					results[SERVICE_RESULT_KEY[service]!] = data || [];
+					const data = await cacheManager.get(service, "CUSTOM_FORMATS");
+					results[SERVICE_RESULT_KEY[service]] = data || [];
 				} catch (error) {
 					if (error instanceof CacheCorruptionError) {
-						results[SERVICE_RESULT_KEY[service]!] = [];
+						results[SERVICE_RESULT_KEY[service]] = [];
 					} else {
 						throw error;
 					}
@@ -373,30 +366,23 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 		const { serviceType } = request.query;
 
 		const results: Record<string, unknown> = {};
-		const serviceTypes = (serviceType ? [serviceType] : ["RADARR", "SONARR"])
-			.filter(s => VALID_SERVICE_TYPES.has(s));
+		const serviceTypes: ServiceType[] = serviceType ? [serviceType] : [...ALL_SERVICE_TYPES];
 
 		for (const service of serviceTypes) {
-			const isFresh = await cacheManager.isFresh(
-				service as "RADARR" | "SONARR",
-				"CF_DESCRIPTIONS",
-			);
+			const isFresh = await cacheManager.isFresh(service, "CF_DESCRIPTIONS");
 
 			if (!isFresh) {
 				const fetcher = await getFetcher(request.currentUser!.id);
-				const data = await fetcher.fetchConfigs(
-					service as "RADARR" | "SONARR",
-					"CF_DESCRIPTIONS",
-				);
-				await cacheManager.set(service as "RADARR" | "SONARR", "CF_DESCRIPTIONS", data);
-				results[SERVICE_RESULT_KEY[service]!] = data;
+				const data = await fetcher.fetchConfigs(service, "CF_DESCRIPTIONS");
+				await cacheManager.set(service, "CF_DESCRIPTIONS", data);
+				results[SERVICE_RESULT_KEY[service]] = data;
 			} else {
 				try {
-					const data = await cacheManager.get(service as "RADARR" | "SONARR", "CF_DESCRIPTIONS");
-					results[SERVICE_RESULT_KEY[service]!] = data || [];
+					const data = await cacheManager.get(service, "CF_DESCRIPTIONS");
+					results[SERVICE_RESULT_KEY[service]] = data || [];
 				} catch (error) {
 					if (error instanceof CacheCorruptionError) {
-						results[SERVICE_RESULT_KEY[service]!] = [];
+						results[SERVICE_RESULT_KEY[service]] = [];
 					} else {
 						throw error;
 					}
