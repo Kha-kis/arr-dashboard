@@ -4,6 +4,17 @@
 
 import type { CFInclude } from "../../../lib/api-client/trash-guides";
 
+/** Iteratively remove HTML comments until none remain (prevents partial match remnants) */
+function stripHtmlComments(text: string): string {
+	const pattern = /<!--.*?-->/gs;
+	let result = text;
+	while (pattern.test(result)) {
+		result = result.replace(pattern, '');
+		pattern.lastIndex = 0;
+	}
+	return result;
+}
+
 /**
  * Map of include path to content for quick lookup
  */
@@ -60,9 +71,8 @@ export function resolveIncludes(markdown: string, includesMap: IncludesMap): str
 export function cleanDescription(rawMarkdown: string, titleToRemove?: string): string {
 	// Remove markdown comment blocks and formatting
 	// Order matters: handle multi-char markers before single-char ones
-	let cleaned = rawMarkdown
+	let cleaned = stripHtmlComments(rawMarkdown)
 		// Comments and metadata
-		.replace(/<!--.*?-->/gs, '')  // Remove all HTML comments (including markdownlint)
 		.replace(/\{:.*?\}/g, '')  // Remove standalone markdown attributes {:target="_blank" rel="noopener noreferrer"}
 
 		// MkDocs-specific syntax
@@ -139,9 +149,8 @@ export function cleanDescription(rawMarkdown: string, titleToRemove?: string): s
  * @returns HTML string with preserved formatting
  */
 export function markdownToFormattedHtml(rawMarkdown: string, titleToRemove?: string): string {
-	let text = rawMarkdown
+	let text = stripHtmlComments(rawMarkdown)
 		// Comments and metadata
-		.replace(/<!--.*?-->/gs, '')
 		.replace(/\{:.*?\}/g, '')
 
 		// Fenced code blocks → styled code blocks

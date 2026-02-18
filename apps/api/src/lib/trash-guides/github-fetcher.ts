@@ -283,7 +283,7 @@ async function fetchWithRetry(
 	} = options;
 
 	// Determine if this is a GitHub API request (vs raw.githubusercontent.com)
-	const isGitHubApi = url.includes("api.github.com");
+	const isGitHubApi = new URL(url).hostname === "api.github.com";
 	const headers = buildHeaders(githubToken, isGitHubApi);
 
 	// Proactive rate limit check (only for GitHub API requests)
@@ -776,8 +776,13 @@ export class TrashGitHubFetcher {
 
 						if (fetchResponse.ok) {
 							let content = await fetchResponse.text();
-							// Clean the content: remove HTML comments
-							content = content.replace(/<!--.*?-->/gs, "").trim();
+							// Clean the content: iteratively remove HTML comments
+							const commentPattern = /<!--.*?-->/gs;
+							while (commentPattern.test(content)) {
+								content = content.replace(commentPattern, "");
+								commentPattern.lastIndex = 0;
+							}
+							content = content.trim();
 							return {
 								path,
 								content,
