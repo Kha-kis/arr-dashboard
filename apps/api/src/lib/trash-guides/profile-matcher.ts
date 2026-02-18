@@ -399,14 +399,11 @@ export function buildCompleteQualityProfile(
  * Removes common prefixes, suffixes, and normalizes whitespace.
  */
 function normalizeProfileName(name: string): string {
-	return name
-		.toLowerCase()
-		.replace(/^trash\s*[-:]\s*/i, "") // Remove "TRaSH - " or "TRaSH:" prefix
-		.replace(/\s*v\d+(?:\.\d+)?\s*$/i, "") // Remove version suffix like " v4" or " v4.0"
-		.replace(/\s*\([^)]*\)\s*$/i, "") // Remove parenthetical suffixes
-		.replace(/[-_]/g, " ") // Normalize separators to spaces
-		.replace(/\s+/g, " ") // Normalize multiple spaces
-		.trim();
+	let result = name.toLowerCase().trim();
+	result = result.replace(/^trash\s*[-:]\s*/, ""); // Remove "TRaSH - " or "TRaSH:" prefix
+	result = result.replace(/\s+v\d+(?:\.\d+)?$/, ""); // Remove version suffix like " v4" or " v4.0"
+	result = result.replace(/\s+\([^)]*\)$/, ""); // Remove parenthetical suffixes
+	return result.replace(/[-_]/g, " ").replace(/\s+/g, " ").trim(); // Normalize separators
 }
 
 /**
