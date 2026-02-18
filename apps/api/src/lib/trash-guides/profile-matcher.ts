@@ -402,8 +402,8 @@ function normalizeProfileName(name: string): string {
 	return name
 		.toLowerCase()
 		.replace(/^trash\s*[-:]\s*/i, "") // Remove "TRaSH - " or "TRaSH:" prefix
-		.replace(/\s*v\d+(\.\d+)?\s*$/i, "") // Remove version suffix like " v4" or " v4.0"
-		.replace(/\s*\(.*\)\s*$/i, "") // Remove parenthetical suffixes
+		.replace(/\s*v\d+(?:\.\d+)?\s*$/i, "") // Remove version suffix like " v4" or " v4.0"
+		.replace(/\s*\([^)]*\)\s*$/i, "") // Remove parenthetical suffixes
 		.replace(/[-_]/g, " ") // Normalize separators to spaces
 		.replace(/\s+/g, " ") // Normalize multiple spaces
 		.trim();

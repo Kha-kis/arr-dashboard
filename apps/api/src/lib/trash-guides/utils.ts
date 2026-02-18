@@ -10,6 +10,11 @@ import { getErrorMessage } from "../utils/error-message.js";
 
 const log = loggers.trashGuides;
 
+/** Strip newlines to prevent log injection (forged log entries) */
+function sanitizeForLog(value: string): string {
+	return value.replace(/[\r\n]/g, "");
+}
+
 // ============================================================================
 // JSON Parsing
 // ============================================================================
@@ -44,7 +49,9 @@ export function safeJsonParse<T>(
 	try {
 		return JSON.parse(value) as T;
 	} catch (error) {
-		const message = `[${context.source}] Failed to parse JSON for ${context.identifier}${context.field ? `, field: ${context.field}` : ""}`;
+		const safeId = sanitizeForLog(context.identifier);
+		const safeSource = sanitizeForLog(context.source);
+		const message = `[${safeSource}] Failed to parse JSON for ${safeId}${context.field ? `, field: ${sanitizeForLog(context.field)}` : ""}`;
 		const details = {
 			dataSize: value.length,
 			error: getErrorMessage(error),
@@ -85,11 +92,12 @@ export function parseInstanceOverrides(
 	try {
 		return JSON.parse(instanceOverrides);
 	} catch (error) {
-		const message = `Malformed instanceOverrides JSON for template ${context.templateId} during ${context.operation}`;
+		const safeTemplateId = sanitizeForLog(context.templateId);
+		const message = `Malformed instanceOverrides JSON for template ${safeTemplateId} during ${sanitizeForLog(context.operation)}`;
 		if (logger) {
-			logger.warn({ templateId: context.templateId, error }, message);
+			logger.warn({ templateId: safeTemplateId, error }, message);
 		} else {
-			log.warn({ templateId: context.templateId, err: error }, message);
+			log.warn({ templateId: safeTemplateId, err: error }, message);
 		}
 		return {};
 	}

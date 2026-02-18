@@ -15,6 +15,12 @@ import { validateRequest } from "../../lib/utils/validate.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+const VALID_SERVICE_TYPES = new Set(["RADARR", "SONARR"]);
+
+// ============================================================================
 // Request Schemas
 // ============================================================================
 
@@ -322,8 +328,9 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 
 		const results: Record<string, unknown> = {};
 
-		// Fetch custom formats for requested service types
-		const serviceTypes = serviceType ? [serviceType] : ["RADARR", "SONARR"];
+		// Fetch custom formats for requested service types (validated against whitelist)
+		const serviceTypes = (serviceType ? [serviceType] : ["RADARR", "SONARR"])
+			.filter(s => VALID_SERVICE_TYPES.has(s));
 
 		for (const service of serviceTypes) {
 			// Check cache freshness
@@ -365,7 +372,8 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 		const { serviceType } = request.query;
 
 		const results: Record<string, unknown> = {};
-		const serviceTypes = serviceType ? [serviceType] : ["RADARR", "SONARR"];
+		const serviceTypes = (serviceType ? [serviceType] : ["RADARR", "SONARR"])
+			.filter(s => VALID_SERVICE_TYPES.has(s));
 
 		for (const service of serviceTypes) {
 			const isFresh = await cacheManager.isFresh(
