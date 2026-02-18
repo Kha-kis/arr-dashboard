@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { loggers } from "../logger.js";
 
@@ -26,20 +26,21 @@ export class SecretManager {
 	 * and persists them to disk.
 	 */
 	getOrCreateSecrets(): Secrets {
-		// If secrets file exists, load and return
-		if (existsSync(this.secretsPath)) {
-			try {
-				const content = readFileSync(this.secretsPath, "utf-8");
-				const secrets = JSON.parse(content) as Secrets;
+		// Try to load existing secrets (no existence check to avoid TOCTOU race)
+		try {
+			const content = readFileSync(this.secretsPath, "utf-8");
+			const secrets = JSON.parse(content) as Secrets;
 
-				// Validate loaded secrets
-				if (this.isValidSecrets(secrets)) {
-					return secrets;
-				}
+			// Validate loaded secrets
+			if (this.isValidSecrets(secrets)) {
+				return secrets;
+			}
 
-				// Invalid format, will regenerate below
-				log.warn("Invalid secrets format, regenerating");
-			} catch (error) {
+			// Invalid format, will regenerate below
+			log.warn("Invalid secrets format, regenerating");
+		} catch (error) {
+			// ENOENT is expected on first run — only log unexpected errors
+			if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
 				log.error({ err: error }, "Failed to load secrets, regenerating");
 			}
 		}
@@ -50,17 +51,16 @@ export class SecretManager {
 			sessionCookieSecret: randomBytes(32).toString("hex"),
 		};
 
-		// Ensure directory exists
-		const dir = dirname(this.secretsPath);
-		if (!existsSync(dir)) {
-			mkdirSync(dir, { recursive: true });
-		}
+		// Ensure directory exists (recursive is idempotent)
+		mkdirSync(dirname(this.secretsPath), { recursive: true });
 
-		// Persist to disk
+		// Persist to disk atomically (write to temp, then rename)
+		const tmpPath = `${this.secretsPath}.tmp`;
 		try {
-			writeFileSync(this.secretsPath, JSON.stringify(secrets, null, 2), {
+			writeFileSync(tmpPath, JSON.stringify(secrets, null, 2), {
 				mode: 0o600, // Read/write for owner only
 			});
+			renameSync(tmpPath, this.secretsPath);
 			log.info({ path: this.secretsPath }, "Generated new secrets");
 		} catch (error) {
 			log.error({ err: error, path: this.secretsPath }, "Failed to persist secrets");

@@ -14,6 +14,13 @@ import { requireTemplate } from "../../lib/trash-guides/template-helpers.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 // ============================================================================
+// Constants
+// ============================================================================
+
+/** Keys that must never be used as property names (prototype pollution prevention) */
+const UNSAFE_PROPERTY_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+// ============================================================================
 // Request Schemas
 // ============================================================================
 
@@ -472,6 +479,9 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		Params: { templateId: string; instanceId: string };
 	}>("/:templateId/instance-overrides/:instanceId", async (request, reply) => {
 		const { templateId, instanceId } = request.params;
+		if (UNSAFE_PROPERTY_KEYS.has(instanceId)) {
+			return reply.status(400).send({ error: "Invalid instance ID" });
+		}
 		const template = await requireTemplate(app.prisma, request.currentUser!.id, templateId);
 
 		const instanceOverrides = parseInstanceOverrides(
@@ -508,6 +518,9 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		};
 	}>("/:templateId/instance-overrides/:instanceId", async (request, reply) => {
 		const { templateId, instanceId } = request.params;
+		if (UNSAFE_PROPERTY_KEYS.has(instanceId)) {
+			return reply.status(400).send({ error: "Invalid instance ID" });
+		}
 		const { scoreOverrides, cfOverrides, qualityConfigOverride } = request.body;
 		const template = await requireTemplate(app.prisma, request.currentUser!.id, templateId);
 
@@ -574,6 +587,9 @@ export async function registerTemplateRoutes(app: FastifyInstance, _opts: Fastif
 		Params: { templateId: string; instanceId: string };
 	}>("/:templateId/instance-overrides/:instanceId", async (request, reply) => {
 		const { templateId, instanceId } = request.params;
+		if (UNSAFE_PROPERTY_KEYS.has(instanceId)) {
+			return reply.status(400).send({ error: "Invalid instance ID" });
+		}
 		const template = await requireTemplate(app.prisma, request.currentUser!.id, templateId);
 
 		// Parse existing overrides with error handling for malformed JSON
