@@ -74,10 +74,10 @@ function clearSessionAndRedirect(request: NextRequest, targetPath: string): Next
 	return response;
 }
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
 	const { pathname } = request.nextUrl;
 
-	// Skip middleware for API/auth/health routes — handled by rewrites in next.config.mjs
+	// Skip proxy for API/auth/health routes — handled by rewrites in next.config.mjs
 	if (pathname.startsWith("/api/") || pathname.startsWith("/auth/") || pathname === "/health") {
 		return NextResponse.next();
 	}
