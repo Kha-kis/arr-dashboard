@@ -177,6 +177,13 @@ export async function qualitySizeRoutes(app: FastifyInstance, _opts: FastifyPlug
 			// Verify ownership + get instance
 			const instance = await requireInstance(app, userId, instanceId);
 
+			if (instance.service !== "SONARR" && instance.service !== "RADARR") {
+				return reply.status(400).send({
+					success: false,
+					error: `Quality size presets are not supported for ${instance.service} instances`,
+				});
+			}
+
 			// Fetch presets from cache
 			const serviceType = instance.service === "SONARR" ? "SONARR" : "RADARR";
 			const presets = await getPresets(userId, serviceType);
@@ -236,6 +243,13 @@ export async function qualitySizeRoutes(app: FastifyInstance, _opts: FastifyPlug
 			const userId = request.currentUser!.id;
 
 			const instance = await requireInstance(app, userId, instanceId);
+
+			if (instance.service !== "SONARR" && instance.service !== "RADARR") {
+				return reply.status(400).send({
+					success: false,
+					error: `Quality size presets are not supported for ${instance.service} instances`,
+				});
+			}
 
 			// Handle "default" — just reset, remove mapping, done
 			if (presetTrashId === DEFAULT_PRESET_ID) {
