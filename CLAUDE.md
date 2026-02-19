@@ -1048,6 +1048,6 @@ app.config            // Environment config
 ---
 
 **Last Updated:** 2026-02-18
-**Version:** 2.8.1
+**Version:** 2.8.2
 **Node:** 22+
 **pnpm:** 10+

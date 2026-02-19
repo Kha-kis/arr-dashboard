@@ -32,24 +32,21 @@ COPY apps/api ./apps/api
 COPY apps/web ./apps/web
 COPY tsconfig.base.json turbo.json ./
 
+# Regenerate Prisma client BEFORE building so the bundled code matches the
+# installed @prisma/client runtime version (tsup inlines the generated config)
+RUN cd apps/api && npx prisma generate --schema prisma/schema.prisma
+
 # Build all packages using Turbo (parallel builds with caching)
 RUN --mount=type=cache,id=turbo,target=/app/.turbo \
     pnpm turbo run build --filter=@arr/shared --filter=@arr/api --filter=@arr/web
 
-# Deploy API for production and generate Prisma client
+# Deploy API for production
 # Also create version.json from root package.json for runtime version detection
-# Note: Prisma 7 uses prisma.config.ts for CLI configuration
-# Note: prisma.config.ts needs tsconfig files for TypeScript compilation
 RUN --mount=type=cache,id=pnpm,target=/root/.local/share/pnpm/store \
     pnpm --filter @arr/api --prod deploy /app/deploy-api && \
     cd /app/deploy-api && \
     cp -r /app/apps/api/dist ./dist && \
     cp -r /app/apps/api/prisma ./prisma && \
-    cp /app/apps/api/prisma.config.ts ./prisma.config.ts && \
-    cp /app/apps/api/tsconfig.json ./tsconfig.json && \
-    mkdir -p ../../ && cp /app/tsconfig.base.json ../../tsconfig.base.json && \
-    npx prisma generate --schema prisma/schema.prisma && \
-    rm -rf ../../tsconfig.base.json tsconfig.json && \
     node -e "const p=require('/app/package.json'); console.log(JSON.stringify({version:p.version,name:p.name}))" > ./version.json && \
     # Remove non-Linux native module prebuilds to reduce image size (~1MB)
     find node_modules -type d -name "prebuilds" -exec sh -c 'cd "{}" && rm -rf darwin-* win32-* freebsd-*' \; 2>/dev/null || true
