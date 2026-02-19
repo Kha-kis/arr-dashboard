@@ -20,10 +20,13 @@ export async function testServiceConnection(
 	service: string,
 ): Promise<ConnectionTestResult> {
 	try {
-		// Prowlarr, Lidarr, and Readarr use v1 API; Sonarr and Radarr use v3
-		const apiPath = ["prowlarr", "lidarr", "readarr"].includes(service)
-			? "/api/v1/system/status"
-			: "/api/v3/system/status";
+		// Seerr uses its own status endpoint; Prowlarr/Lidarr/Readarr use v1; Sonarr/Radarr use v3
+		const apiPath =
+			service === "seerr"
+				? "/api/v1/status"
+				: ["prowlarr", "lidarr", "readarr"].includes(service)
+					? "/api/v1/system/status"
+					: "/api/v3/system/status";
 		const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
 		const testUrl = `${normalizedBaseUrl}${apiPath}`;
 
