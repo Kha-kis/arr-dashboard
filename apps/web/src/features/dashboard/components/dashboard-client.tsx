@@ -43,6 +43,7 @@ import { useIncognitoMode } from "../../../lib/incognito";
 import { SERVICE_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { cn } from "../../../lib/utils";
+import { SeerrRequestsWidget } from "./seerr-requests-widget";
 
 /** Map of instanceId to baseUrl for linking to instances */
 export type InstanceUrlMap = Map<string, string>;
@@ -264,6 +265,12 @@ export const DashboardClient = () => {
 
 	// Group FILTERED items into summary rows
 	const allSummaryRows = useQueueGrouping(filterState.filteredItems);
+
+	// Find first enabled Seerr instance for dashboard widget
+	const seerrInstance = useMemo(
+		() => services.find((s) => s.service.toLowerCase() === "seerr" && s.enabled),
+		[services],
+	);
 
 	// Build instanceId → baseUrl map
 	const instanceUrlMap = useMemo<InstanceUrlMap>(() => {
@@ -513,6 +520,11 @@ export const DashboardClient = () => {
 								themeGradient={themeGradient}
 							/>
 						</div>
+
+						{/* Seerr Requests Widget — only if instance configured */}
+						{seerrInstance && (
+							<SeerrRequestsWidget instanceId={seerrInstance.id} animationDelay={400} />
+						)}
 
 						{/* Configured Instances Section */}
 						<div

@@ -2,9 +2,9 @@
  * Constants for settings feature
  */
 
-export type ServiceType = "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr";
+export type ServiceType = "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr" | "seerr";
 
-export const SERVICE_TYPES: ServiceType[] = ["sonarr", "radarr", "prowlarr", "lidarr", "readarr"];
+export const SERVICE_TYPES: ServiceType[] = ["sonarr", "radarr", "prowlarr", "lidarr", "readarr", "seerr"];
 
 /**
  * Base select classes without focus colors.

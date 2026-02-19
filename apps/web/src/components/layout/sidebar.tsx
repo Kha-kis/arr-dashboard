@@ -19,6 +19,7 @@ import {
 	Trash2,
 	History,
 	Sparkles,
+	Inbox,
 	Settings,
 	ChevronRight,
 } from "lucide-react";
@@ -34,6 +35,7 @@ const NAV_ITEMS = [
 	{ href: "/indexers", label: "Indexers", icon: Globe },
 	{ href: "/calendar", label: "Calendar", icon: Calendar },
 	{ href: "/statistics", label: "Statistics", icon: BarChart3 },
+	{ href: "/requests", label: "Requests", icon: Inbox },
 	{ href: "/hunting", label: "Hunting", icon: Target },
 	{ href: "/queue-cleaner", label: "Queue Cleaner", icon: Trash2 },
 	{ href: "/history", label: "History", icon: History },

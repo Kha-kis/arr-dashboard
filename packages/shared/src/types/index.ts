@@ -12,3 +12,4 @@ export * from "./backup";
 export * from "./trash-guides";
 export * from "./template-sharing";
 export * from "./queue-cleaner";
+export * from "./seerr";
