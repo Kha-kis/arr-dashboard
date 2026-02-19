@@ -26,20 +26,19 @@ export async function registerNotificationRoutes(
 	_opts: FastifyPluginOptions,
 ) {
 	// GET /api/seerr/notifications/:instanceId — All notification agents
-	app.get("/:instanceId", async (request, reply) => {
+	app.get("/:instanceId", async (request) => {
 		const { instanceId } = validateRequest(instanceIdParams, request.params);
 		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
 		const agents = await client.getNotificationAgents();
-		return reply.send({ agents });
+		return { agents };
 	});
 
 	// POST /api/seerr/notifications/:instanceId/:agentId — Update notification config
-	app.post("/:instanceId/:agentId", async (request, reply) => {
+	app.post("/:instanceId/:agentId", async (request) => {
 		const { instanceId, agentId } = validateRequest(agentParams, request.params);
 		const body = validateRequest(updateNotificationBody, request.body);
 		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
-		const agent = await client.updateNotificationAgent(agentId, body);
-		return reply.send(agent);
+		return client.updateNotificationAgent(agentId, body);
 	});
 
 	// POST /api/seerr/notifications/:instanceId/:agentId/test — Test notification

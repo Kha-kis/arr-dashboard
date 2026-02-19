@@ -28,28 +28,25 @@ const updateUserBody = z.object({
 
 export async function registerUserRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	// GET /api/seerr/users/:instanceId — List users
-	app.get("/:instanceId", async (request, reply) => {
+	app.get("/:instanceId", async (request) => {
 		const { instanceId } = validateRequest(instanceIdParams, request.params);
 		const query = validateRequest(listUsersQuery, request.query);
 		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
-		const result = await client.getUsers(query);
-		return reply.send(result);
+		return client.getUsers(query);
 	});
 
 	// GET /api/seerr/users/:instanceId/:seerrUserId/quota — User quota usage
-	app.get("/:instanceId/:seerrUserId/quota", async (request, reply) => {
+	app.get("/:instanceId/:seerrUserId/quota", async (request) => {
 		const { instanceId, seerrUserId } = validateRequest(userIdParams, request.params);
 		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
-		const quota = await client.getUserQuota(seerrUserId);
-		return reply.send(quota);
+		return client.getUserQuota(seerrUserId);
 	});
 
 	// PUT /api/seerr/users/:instanceId/:seerrUserId — Update user
-	app.put("/:instanceId/:seerrUserId", async (request, reply) => {
+	app.put("/:instanceId/:seerrUserId", async (request) => {
 		const { instanceId, seerrUserId } = validateRequest(userIdParams, request.params);
 		const body = validateRequest(updateUserBody, request.body);
 		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
-		const user = await client.updateUser(seerrUserId, body);
-		return reply.send(user);
+		return client.updateUser(seerrUserId, body);
 	});
 }

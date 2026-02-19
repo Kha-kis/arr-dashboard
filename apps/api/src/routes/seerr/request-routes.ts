@@ -27,37 +27,33 @@ const listRequestsQuery = z.object({
 
 export async function registerRequestRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	// GET /api/seerr/requests/:instanceId — List requests (paginated)
-	app.get("/:instanceId", async (request, reply) => {
+	app.get("/:instanceId", async (request) => {
 		const { instanceId } = validateRequest(instanceIdParams, request.params);
 		const query = validateRequest(listRequestsQuery, request.query);
 		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
 		const result = await client.getRequests(query);
-		const enriched = await client.enrichRequestsWithMedia(result);
-		return reply.send(enriched);
+		return client.enrichRequestsWithMedia(result);
 	});
 
 	// GET /api/seerr/requests/:instanceId/count — Aggregated counts
-	app.get("/:instanceId/count", async (request, reply) => {
+	app.get("/:instanceId/count", async (request) => {
 		const { instanceId } = validateRequest(instanceIdParams, request.params);
 		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
-		const counts = await client.getRequestCount();
-		return reply.send(counts);
+		return client.getRequestCount();
 	});
 
 	// POST /api/seerr/requests/:instanceId/:requestId/approve
-	app.post("/:instanceId/:requestId/approve", async (request, reply) => {
+	app.post("/:instanceId/:requestId/approve", async (request) => {
 		const { instanceId, requestId } = validateRequest(requestIdParams, request.params);
 		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
-		const result = await client.approveRequest(requestId);
-		return reply.send(result);
+		return client.approveRequest(requestId);
 	});
 
 	// POST /api/seerr/requests/:instanceId/:requestId/decline
-	app.post("/:instanceId/:requestId/decline", async (request, reply) => {
+	app.post("/:instanceId/:requestId/decline", async (request) => {
 		const { instanceId, requestId } = validateRequest(requestIdParams, request.params);
 		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
-		const result = await client.declineRequest(requestId);
-		return reply.send(result);
+		return client.declineRequest(requestId);
 	});
 
 	// DELETE /api/seerr/requests/:instanceId/:requestId
@@ -69,10 +65,9 @@ export async function registerRequestRoutes(app: FastifyInstance, _opts: Fastify
 	});
 
 	// POST /api/seerr/requests/:instanceId/:requestId/retry
-	app.post("/:instanceId/:requestId/retry", async (request, reply) => {
+	app.post("/:instanceId/:requestId/retry", async (request) => {
 		const { instanceId, requestId } = validateRequest(requestIdParams, request.params);
 		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
-		const result = await client.retryRequest(requestId);
-		return reply.send(result);
+		return client.retryRequest(requestId);
 	});
 }

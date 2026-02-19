@@ -29,29 +29,26 @@ const updateStatusBody = z.object({
 
 export async function registerIssueRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	// GET /api/seerr/issues/:instanceId — List issues
-	app.get("/:instanceId", async (request, reply) => {
+	app.get("/:instanceId", async (request) => {
 		const { instanceId } = validateRequest(instanceIdParams, request.params);
 		const query = validateRequest(listIssuesQuery, request.query);
 		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
-		const result = await client.getIssues(query);
-		return reply.send(result);
+		return client.getIssues(query);
 	});
 
 	// POST /api/seerr/issues/:instanceId/:issueId/comment — Add comment
-	app.post("/:instanceId/:issueId/comment", async (request, reply) => {
+	app.post("/:instanceId/:issueId/comment", async (request) => {
 		const { instanceId, issueId } = validateRequest(issueIdParams, request.params);
 		const { message } = validateRequest(addCommentBody, request.body);
 		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
-		const comment = await client.addIssueComment(issueId, message);
-		return reply.send(comment);
+		return client.addIssueComment(issueId, message);
 	});
 
 	// PUT /api/seerr/issues/:instanceId/:issueId — Update issue status
-	app.put("/:instanceId/:issueId", async (request, reply) => {
+	app.put("/:instanceId/:issueId", async (request) => {
 		const { instanceId, issueId } = validateRequest(issueIdParams, request.params);
 		const { status } = validateRequest(updateStatusBody, request.body);
 		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
-		const issue = await client.updateIssueStatus(issueId, status);
-		return reply.send(issue);
+		return client.updateIssueStatus(issueId, status);
 	});
 }

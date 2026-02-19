@@ -13,10 +13,9 @@ const instanceIdParams = z.object({ instanceId: z.string().min(1) });
 
 export async function registerStatusRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	// GET /api/seerr/status/:instanceId — Health + version + stats
-	app.get("/:instanceId", async (request, reply) => {
+	app.get("/:instanceId", async (request) => {
 		const { instanceId } = validateRequest(instanceIdParams, request.params);
 		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
-		const status = await client.getStatus();
-		return reply.send(status);
+		return client.getStatus();
 	});
 }
