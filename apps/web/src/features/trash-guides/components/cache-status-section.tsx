@@ -12,6 +12,10 @@ interface CacheStatusEntry {
 	itemCount: number;
 	lastFetched: string;
 	isStale: boolean;
+	sourceBreakdown?: {
+		official: number;
+		custom: number;
+	};
 }
 
 interface CacheStatusSectionProps {
@@ -36,12 +40,14 @@ const CacheStatusCard = ({
 	itemCount,
 	lastFetched,
 	isStale,
+	sourceBreakdown,
 }: {
 	configTypeLabel: string;
 	version: number;
 	itemCount: number;
 	lastFetched: string;
 	isStale: boolean;
+	sourceBreakdown?: { official: number; custom: number };
 }) => {
 	const { gradient: themeGradient } = useThemeGradient();
 
@@ -96,6 +102,12 @@ const CacheStatusCard = ({
 					<Database className="h-4 w-4 text-muted-foreground" />
 					<span className="text-muted-foreground">
 						<span className="font-medium text-foreground">{itemCount}</span> items cached
+						{sourceBreakdown && (
+							<span className="ml-1">
+								({sourceBreakdown.official} official,{" "}
+								<span style={{ color: themeGradient.from }}>{sourceBreakdown.custom} custom</span>)
+							</span>
+						)}
 					</span>
 				</div>
 				<div className="flex items-center gap-2.5 text-sm">
@@ -215,6 +227,7 @@ export const CacheStatusSection = ({
 								itemCount={status.itemCount}
 								lastFetched={status.lastFetched}
 								isStale={status.isStale}
+								sourceBreakdown={status.sourceBreakdown}
 							/>
 						</div>
 					))}

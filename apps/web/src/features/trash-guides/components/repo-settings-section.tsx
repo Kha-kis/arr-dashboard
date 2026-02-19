@@ -12,12 +12,15 @@ import {
 	Globe,
 	AlertCircle,
 	Link,
+	FileSearch,
+	ChevronRight,
 } from "lucide-react";
 import {
 	useTrashSettings,
 	useUpdateTrashSettings,
 	useTestCustomRepo,
 	useResetToOfficialRepo,
+	useSupplementaryReport,
 } from "../../../hooks/api/useTrashSettings";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
@@ -87,8 +90,14 @@ export const RepoSettingsSection = () => {
 
 	// Form state — URL-based input
 	const [repoUrl, setRepoUrl] = useState("");
-	const [branch, setBranch] = useState("master");
+	const [branch, setBranch] = useState("main");
+	const [mode, setMode] = useState<"fork" | "supplementary">("fork");
 	const [urlError, setUrlError] = useState<string | null>(null);
+
+	// Supplementary report state
+	const [reportEnabled, setReportEnabled] = useState(false);
+	const [reportServiceType, setReportServiceType] = useState<"RADARR" | "SONARR">("RADARR");
+	const reportQuery = useSupplementaryReport(reportServiceType, reportEnabled);
 
 	// Seed form from API response
 	useEffect(() => {
@@ -100,6 +109,7 @@ export const RepoSettingsSection = () => {
 				setRepoUrl("");
 			}
 			setBranch(s.customRepoBranch ?? settingsData.defaultRepo?.branch ?? "master");
+			setMode((s.customRepoMode === "supplementary" ? "supplementary" : "fork") as "fork" | "supplementary");
 		}
 	}, [settingsData]);
 
@@ -134,7 +144,7 @@ export const RepoSettingsSection = () => {
 		testMutation.mutate({
 			owner: parsed.owner,
 			name: parsed.name,
-			branch: branch.trim() || "master",
+			branch: branch.trim() || "main",
 		});
 	};
 
@@ -144,7 +154,8 @@ export const RepoSettingsSection = () => {
 		updateMutation.mutate({
 			customRepoOwner: parsed.owner,
 			customRepoName: parsed.name,
-			customRepoBranch: branch.trim() || "master",
+			customRepoBranch: branch.trim() || "main",
+			customRepoMode: mode,
 		});
 	};
 
@@ -152,7 +163,8 @@ export const RepoSettingsSection = () => {
 		resetMutation.mutate(undefined, {
 			onSuccess: () => {
 				setRepoUrl("");
-				setBranch("master");
+				setBranch("main");
+				setMode("fork");
 				setUrlError(null);
 				testMutation.reset();
 			},
@@ -204,38 +216,260 @@ export const RepoSettingsSection = () => {
 							structure, so all parsing works automatically.
 						</p>
 
-						{/* Current repo badge */}
-						<div className="flex items-center gap-3 mt-4 flex-wrap">
-							<div
-								className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium"
-								style={{
-									backgroundColor: isCustom ? `${themeGradient.from}15` : "rgba(255,255,255,0.05)",
-									border: `1px solid ${isCustom ? themeGradient.from : "var(--border)"}40`,
-									color: isCustom ? themeGradient.from : "var(--foreground)",
-								}}
-							>
-								<GitBranch className="h-3.5 w-3.5" />
-								{currentOwner}/{currentName}
+						{/* Current repo badge(s) */}
+						{isCustom && settingsData?.settings?.customRepoMode === "supplementary" ? (
+							/* Dual-repo display for supplementary mode */
+							<div className="mt-4 space-y-2">
+								{/* Base: Official TRaSH-Guides */}
+								<div className="flex items-center gap-2 flex-wrap">
+									<div
+										className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium"
+										style={{
+											backgroundColor: "rgba(255,255,255,0.05)",
+											border: `1px solid var(--border)40`,
+											color: "var(--foreground)",
+										}}
+									>
+										<GitBranch className="h-3.5 w-3.5" />
+										TRaSH-Guides/Guides
+									</div>
+									<span
+										className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium"
+										style={{
+											backgroundColor: `${SEMANTIC_COLORS.success.from}15`,
+											color: SEMANTIC_COLORS.success.from,
+											border: `1px solid ${SEMANTIC_COLORS.success.from}30`,
+										}}
+									>
+										Base
+									</span>
+								</div>
+								{/* Merge indicator */}
+								<div className="flex items-center gap-2 pl-4 text-muted-foreground">
+									<span className="text-xs font-medium">+</span>
+								</div>
+								{/* Overlay: Custom repo */}
+								<div className="flex items-center gap-2 flex-wrap">
+									<div
+										className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium"
+										style={{
+											backgroundColor: `${themeGradient.from}15`,
+											border: `1px solid ${themeGradient.from}40`,
+											color: themeGradient.from,
+										}}
+									>
+										<GitBranch className="h-3.5 w-3.5" />
+										{currentOwner}/{currentName}
+									</div>
+									<span
+										className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium"
+										style={{
+											backgroundColor: `${themeGradient.from}15`,
+											color: themeGradient.from,
+											border: `1px solid ${themeGradient.from}30`,
+										}}
+									>
+										Overlay
+									</span>
+									<span className="text-xs text-muted-foreground">
+										branch: <code className="font-mono">{currentBranch}</code>
+									</span>
+								</div>
 							</div>
-							<span
-								className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium"
-								style={{
-									backgroundColor: isCustom
-										? `${themeGradient.from}15`
-										: `${SEMANTIC_COLORS.success.from}15`,
-									color: isCustom ? themeGradient.from : SEMANTIC_COLORS.success.from,
-									border: `1px solid ${isCustom ? themeGradient.from : SEMANTIC_COLORS.success.from}30`,
-								}}
-							>
-								{isCustom ? "Custom" : "Official"}
-							</span>
-							<span className="text-xs text-muted-foreground">
-								branch: <code className="font-mono">{currentBranch}</code>
-							</span>
-						</div>
+						) : (
+							/* Single-repo display for fork mode and official */
+							<div className="flex items-center gap-3 mt-4 flex-wrap">
+								<div
+									className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium"
+									style={{
+										backgroundColor: isCustom ? `${themeGradient.from}15` : "rgba(255,255,255,0.05)",
+										border: `1px solid ${isCustom ? themeGradient.from : "var(--border)"}40`,
+										color: isCustom ? themeGradient.from : "var(--foreground)",
+									}}
+								>
+									<GitBranch className="h-3.5 w-3.5" />
+									{currentOwner}/{currentName}
+								</div>
+								<span
+									className="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium"
+									style={{
+										backgroundColor: isCustom
+											? `${themeGradient.from}15`
+											: `${SEMANTIC_COLORS.success.from}15`,
+										color: isCustom ? themeGradient.from : SEMANTIC_COLORS.success.from,
+										border: `1px solid ${isCustom ? themeGradient.from : SEMANTIC_COLORS.success.from}30`,
+									}}
+								>
+									{isCustom ? "Custom (Fork)" : "Official"}
+								</span>
+								<span className="text-xs text-muted-foreground">
+									branch: <code className="font-mono">{currentBranch}</code>
+								</span>
+							</div>
+						)}
 					</div>
 				</div>
 			</div>
+
+			{/* Override Report — only visible in supplementary mode */}
+			{isCustom && settingsData?.settings?.customRepoMode === "supplementary" && (
+				<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6 animate-in fade-in duration-300">
+					<div className="flex items-start justify-between gap-4">
+						<div>
+							<h4 className="text-base font-semibold text-foreground flex items-center gap-2">
+								<FileSearch className="h-4 w-4" style={{ color: themeGradient.from }} />
+								Override Report
+							</h4>
+							<p className="text-sm text-muted-foreground mt-1">
+								Compare your custom repo against official TRaSH Guides to see which entries
+								are overrides vs new additions.
+							</p>
+						</div>
+						<div className="flex items-center gap-2 shrink-0">
+							{/* Service type toggle */}
+							<div className="inline-flex rounded-lg border border-border/50 bg-card/50 p-0.5">
+								{(["RADARR", "SONARR"] as const).map((svc) => (
+									<button
+										key={svc}
+										type="button"
+										onClick={() => {
+											setReportServiceType(svc);
+											if (reportEnabled) setReportEnabled(false);
+										}}
+										className="rounded-md px-2.5 py-1 text-xs font-medium transition-all duration-200"
+										style={{
+											backgroundColor: reportServiceType === svc ? `${themeGradient.from}15` : "transparent",
+											color: reportServiceType === svc ? themeGradient.from : "var(--muted-foreground)",
+											border: reportServiceType === svc ? `1px solid ${themeGradient.from}40` : "1px solid transparent",
+										}}
+									>
+										{svc === "RADARR" ? "Radarr" : "Sonarr"}
+									</button>
+								))}
+							</div>
+							<button
+								type="button"
+								onClick={() => {
+									if (reportEnabled) {
+										void reportQuery.refetch();
+									} else {
+										setReportEnabled(true);
+									}
+								}}
+								disabled={reportQuery.isFetching}
+								className="inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm font-medium text-white transition-all duration-200 disabled:opacity-50"
+								style={{
+									background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
+									boxShadow: `0 2px 8px ${themeGradient.from}30`,
+								}}
+							>
+								{reportQuery.isFetching ? (
+									<Loader2 className="h-3.5 w-3.5 animate-spin" />
+								) : (
+									<FileSearch className="h-3.5 w-3.5" />
+								)}
+								{reportEnabled ? "Refresh" : "Generate Report"}
+							</button>
+						</div>
+					</div>
+
+					{/* Report error */}
+					{reportQuery.isError && (
+						<div
+							className="mt-4 rounded-lg border p-3 text-sm animate-in fade-in duration-200"
+							style={{
+								backgroundColor: SEMANTIC_COLORS.error.bg,
+								borderColor: SEMANTIC_COLORS.error.border,
+							}}
+						>
+							<div className="flex items-center gap-2">
+								<AlertCircle className="h-4 w-4 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
+								<p style={{ color: SEMANTIC_COLORS.error.from }}>
+									{getErrorMessage(reportQuery.error, "Failed to generate report")}
+								</p>
+							</div>
+						</div>
+					)}
+
+					{/* Report results */}
+					{reportQuery.data && (
+						<div className="mt-4 space-y-3 animate-in fade-in slide-in-from-top-1 duration-200">
+							{(["CUSTOM_FORMATS", "CF_GROUPS", "QUALITY_PROFILES"] as const).map((configType) => {
+								const entry = reportQuery.data.configTypes[configType];
+								if (!entry) return null;
+								const label = configType === "CUSTOM_FORMATS"
+									? "Custom Formats"
+									: configType === "CF_GROUPS"
+										? "CF Groups"
+										: "Quality Profiles";
+								const hasItems = entry.overrides.length > 0 || entry.additions.length > 0;
+
+								return (
+									<div
+										key={configType}
+										className="rounded-lg border border-border/40 bg-card/20 p-3"
+									>
+										<div className="flex items-center justify-between">
+											<span className="text-sm font-medium text-foreground">{label}</span>
+											<div className="flex items-center gap-3 text-xs text-muted-foreground">
+												<span>Official: {entry.officialCount}</span>
+												<span>Custom: {entry.customCount}</span>
+											</div>
+										</div>
+										<div className="flex items-center gap-4 mt-1.5 text-xs">
+											<span style={{ color: themeGradient.from }}>
+												{entry.overrides.length} override{entry.overrides.length !== 1 ? "s" : ""}
+											</span>
+											<span style={{ color: SEMANTIC_COLORS.success.from }}>
+												{entry.additions.length} addition{entry.additions.length !== 1 ? "s" : ""}
+											</span>
+										</div>
+
+										{hasItems && (
+											<div className="mt-2 space-y-1.5">
+												{entry.overrides.length > 0 && (
+													<details className="group">
+														<summary className="cursor-pointer text-xs font-medium flex items-center gap-1" style={{ color: themeGradient.from }}>
+															<ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
+															Overrides ({entry.overrides.length})
+														</summary>
+														<ul className="mt-1 ml-4 space-y-0.5 text-xs text-muted-foreground">
+															{entry.overrides.map((item) => (
+																<li key={item.trash_id} className="flex items-center gap-1.5">
+																	<span className="h-1 w-1 rounded-full shrink-0" style={{ backgroundColor: themeGradient.from }} />
+																	{item.name}
+																	<code className="text-[10px] opacity-60 font-mono">{item.trash_id.slice(0, 8)}</code>
+																</li>
+															))}
+														</ul>
+													</details>
+												)}
+												{entry.additions.length > 0 && (
+													<details className="group">
+														<summary className="cursor-pointer text-xs font-medium flex items-center gap-1" style={{ color: SEMANTIC_COLORS.success.from }}>
+															<ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
+															Additions ({entry.additions.length})
+														</summary>
+														<ul className="mt-1 ml-4 space-y-0.5 text-xs text-muted-foreground">
+															{entry.additions.map((item) => (
+																<li key={item.trash_id} className="flex items-center gap-1.5">
+																	<span className="h-1 w-1 rounded-full shrink-0" style={{ backgroundColor: SEMANTIC_COLORS.success.from }} />
+																	{item.name}
+																	<code className="text-[10px] opacity-60 font-mono">{item.trash_id.slice(0, 8)}</code>
+																</li>
+															))}
+														</ul>
+													</details>
+												)}
+											</div>
+										)}
+									</div>
+								);
+							})}
+						</div>
+					)}
+				</div>
+			)}
 
 			{/* Configure Custom Repository Form */}
 			<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs p-6">
@@ -246,6 +480,46 @@ export const RepoSettingsSection = () => {
 				</p>
 
 				<div className="space-y-4">
+					{/* Repository Mode */}
+					<div>
+						<label className="block text-sm font-medium text-foreground mb-1.5">
+							Repository Mode
+						</label>
+						<div className="inline-flex rounded-lg border border-border/50 bg-card/50 p-1">
+							{([
+								{
+									value: "fork" as const,
+									label: "Full Fork",
+									desc: "Your repo replaces the official guides entirely",
+								},
+								{
+									value: "supplementary" as const,
+									label: "Supplementary",
+									desc: "Merged with official guides (custom overrides matching entries)",
+								},
+							]).map((option) => (
+								<button
+									key={option.value}
+									type="button"
+									onClick={() => setMode(option.value)}
+									className="relative rounded-md px-4 py-2 text-sm font-medium transition-all duration-200"
+									style={{
+										backgroundColor: mode === option.value ? `${themeGradient.from}15` : "transparent",
+										color: mode === option.value ? themeGradient.from : "var(--muted-foreground)",
+										border: mode === option.value ? `1px solid ${themeGradient.from}40` : "1px solid transparent",
+									}}
+								>
+									{option.label}
+								</button>
+							))}
+						</div>
+						<p className="mt-1.5 text-xs text-muted-foreground">
+							{mode === "fork"
+								? "Your fork replaces all official data. Best for full forks that include all official CFs plus your additions."
+								: "Official TRaSH Guides data is fetched first, then your repo's configs are merged on top. Matching entries (by trash_id) are overridden by your version."}
+						</p>
+					</div>
+
 					{/* Git URL */}
 					<div>
 						<label htmlFor="repo-url" className="block text-sm font-medium text-foreground mb-1.5">
@@ -300,7 +574,7 @@ export const RepoSettingsSection = () => {
 								setBranch(e.target.value);
 								testMutation.reset();
 							}}
-							placeholder="master"
+							placeholder="main"
 							className="w-full rounded-lg border border-border/50 bg-card/50 px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-hidden transition-all duration-200"
 							onFocus={(e) => {
 								e.currentTarget.style.borderColor = themeGradient.from;
@@ -364,6 +638,19 @@ export const RepoSettingsSection = () => {
 										<p className="text-muted-foreground mt-0.5">
 											{testMutation.data.error || "Repository does not have the expected TRaSH Guides structure."}
 										</p>
+										{testMutation.data.suggestedBranch && (
+											<button
+												type="button"
+												onClick={() => {
+													setBranch(testMutation.data!.suggestedBranch!);
+													testMutation.reset();
+												}}
+												className="mt-1.5 text-xs font-medium transition-colors hover:opacity-80"
+												style={{ color: themeGradient.from }}
+											>
+												Use &ldquo;{testMutation.data.suggestedBranch}&rdquo; branch instead?
+											</button>
+										)}
 									</>
 								)}
 							</div>
