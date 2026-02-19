@@ -348,6 +348,7 @@ export {
 	updateTrashSettings,
 	testCustomRepo,
 	resetToOfficialRepo,
+	fetchSupplementaryReport,
 } from "./settings";
 
 export type {
@@ -357,4 +358,6 @@ export type {
 	TestRepoPayload,
 	TestRepoResponse,
 	ResetRepoResponse,
+	SupplementaryReportResponse,
+	SupplementaryReportConfigEntry,
 } from "./settings";

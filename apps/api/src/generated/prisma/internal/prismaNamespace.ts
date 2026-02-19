@@ -2944,6 +2944,7 @@ export const TrashSettingsScalarFieldEnum = {
   customRepoOwner: 'customRepoOwner',
   customRepoName: 'customRepoName',
   customRepoBranch: 'customRepoBranch',
+  customRepoMode: 'customRepoMode',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 } as const

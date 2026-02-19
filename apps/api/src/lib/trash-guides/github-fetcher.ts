@@ -382,6 +382,56 @@ async function fetchWithRetry(
 }
 
 // ============================================================================
+// Supplementary Merge Helpers
+// ============================================================================
+
+/**
+ * Extract a dedup key from a config item.
+ * Supports all TRaSH config types:
+ * - TrashCustomFormat, TrashQualityProfile, TrashQualitySize, etc. → `trash_id`
+ * - TrashCFDescription → `cfName`
+ * - TrashCFInclude → `path`
+ */
+function getItemKey(item: unknown): string | undefined {
+	if (!item || typeof item !== "object") return undefined;
+	if ("trash_id" in item) return (item as { trash_id: string }).trash_id;
+	if ("cfName" in item) return (item as { cfName: string }).cfName;
+	if ("path" in item) return (item as { path: string }).path;
+	return undefined;
+}
+
+/**
+ * Merge official and custom config arrays using a "base + overlay" strategy.
+ * Custom items override official items when they share the same key.
+ * Items without a key are concatenated (no dedup possible).
+ */
+function mergeByTrashId<T>(official: T[], custom: T[]): T[] {
+	const customKeys = new Set<string>();
+	for (const item of custom) {
+		const key = getItemKey(item);
+		if (key) customKeys.add(key);
+	}
+	const base = official.filter((item) => {
+		const key = getItemKey(item);
+		return !key || !customKeys.has(key);
+	});
+
+	// Tag shallow copies with source repo for provenance tracking (avoids mutating inputs)
+	const taggedBase = base.map((item) =>
+		item && typeof item === "object"
+			? ({ ...item, _repoSource: "official" as const } as T)
+			: item,
+	);
+	const taggedCustom = custom.map((item) =>
+		item && typeof item === "object"
+			? ({ ...item, _repoSource: "custom" as const } as T)
+			: item,
+	);
+
+	return [...taggedBase, ...taggedCustom];
+}
+
+// ============================================================================
 // Main Fetcher Class
 // ============================================================================
 
@@ -807,9 +857,32 @@ export class TrashGitHubFetcher {
 	}
 
 	/**
-	 * Generic fetch for any config type
+	 * Generic fetch for any config type.
+	 * When mode is "supplementary", fetches from both official and custom repos
+	 * in parallel, then merges results (custom overrides official by key).
 	 */
 	async fetchConfigs(
+		serviceType: "RADARR" | "SONARR",
+		configType: TrashConfigType,
+	): Promise<unknown[]> {
+		if (this.repoConfig.mode === "supplementary") {
+			const officialFetcher = new TrashGitHubFetcher({
+				...this.fetchOptions,
+				repoConfig: DEFAULT_TRASH_REPO, // mode undefined = no recursion
+			});
+			const [official, custom] = await Promise.all([
+				officialFetcher.fetchConfigsFromRepo(serviceType, configType),
+				this.fetchConfigsFromRepo(serviceType, configType),
+			]);
+			return mergeByTrashId(official, custom);
+		}
+		return this.fetchConfigsFromRepo(serviceType, configType);
+	}
+
+	/**
+	 * Fetch configs from this fetcher's single repo (no merge logic).
+	 */
+	private async fetchConfigsFromRepo(
 		serviceType: "RADARR" | "SONARR",
 		configType: TrashConfigType,
 	): Promise<unknown[]> {

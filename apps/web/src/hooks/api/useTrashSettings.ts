@@ -9,12 +9,14 @@ import type {
 	TestRepoPayload,
 	TestRepoResponse,
 	ResetRepoResponse,
+	SupplementaryReportResponse,
 } from "../../lib/api-client/trash-guides";
 import {
 	fetchTrashSettings,
 	updateTrashSettings,
 	testCustomRepo,
 	resetToOfficialRepo,
+	fetchSupplementaryReport,
 } from "../../lib/api-client/trash-guides";
 
 /**
@@ -96,5 +98,21 @@ export function useResetToOfficialRepo() {
 			void queryClient.invalidateQueries({ queryKey: ["trash-cache-entries"] });
 			scheduleCacheRefresh(queryClient);
 		},
+	});
+}
+
+/**
+ * Hook to fetch the supplementary report comparing custom repo against official.
+ * Uses `enabled` flag so the query only fires when the user explicitly requests it.
+ */
+export function useSupplementaryReport(
+	serviceType: "RADARR" | "SONARR",
+	enabled: boolean,
+) {
+	return useQuery<SupplementaryReportResponse>({
+		queryKey: ["supplementary-report", serviceType],
+		queryFn: () => fetchSupplementaryReport(serviceType),
+		enabled,
+		staleTime: 10 * 60 * 1000, // 10 minutes — GitHub data changes infrequently
 	});
 }
