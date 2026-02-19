@@ -1,6 +1,8 @@
 "use client";
 
-import { Check, X } from "lucide-react";
+import { useState } from "react";
+import { AlertCircle, Check, X } from "lucide-react";
+import { toast } from "sonner";
 import { GradientButton, PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import {
@@ -15,9 +17,14 @@ interface ApprovalQueueTabProps {
 }
 
 export const ApprovalQueueTab = ({ instanceId }: ApprovalQueueTabProps) => {
-	const { data, isLoading } = useSeerrRequests({ instanceId, filter: "pending", take: 50 });
+	const { data, isLoading, isError } = useSeerrRequests({
+		instanceId,
+		filter: "pending",
+		take: 50,
+	});
 	const approveMutation = useApproveSeerrRequest();
 	const declineMutation = useDeclineSeerrRequest();
+	const [confirmingDeclineId, setConfirmingDeclineId] = useState<number | null>(null);
 
 	if (isLoading) {
 		return (
@@ -26,6 +33,16 @@ export const ApprovalQueueTab = ({ instanceId }: ApprovalQueueTabProps) => {
 					<PremiumSkeleton key={i} className="h-24 w-full rounded-xl" />
 				))}
 			</div>
+		);
+	}
+
+	if (isError) {
+		return (
+			<PremiumEmptyState
+				icon={AlertCircle}
+				title="Failed to Load Requests"
+				description="Could not connect to the Seerr instance. Check your configuration in Settings."
+			/>
 		);
 	}
 
@@ -54,20 +71,59 @@ export const ApprovalQueueTab = ({ instanceId }: ApprovalQueueTabProps) => {
 								size="sm"
 								icon={Check}
 								disabled={approveMutation.isPending}
-								onClick={() => approveMutation.mutate({ instanceId, requestId: request.id })}
+								onClick={() =>
+									approveMutation.mutate(
+										{ instanceId, requestId: request.id },
+										{
+											onSuccess: () => toast.success("Request approved"),
+											onError: () => toast.error("Failed to approve request"),
+										},
+									)
+								}
 							>
 								Approve
 							</GradientButton>
-							<Button
-								variant="secondary"
-								size="sm"
-								disabled={declineMutation.isPending}
-								onClick={() => declineMutation.mutate({ instanceId, requestId: request.id })}
-								className="gap-1.5 border-border/50 bg-card/50"
-							>
-								<X className="h-3.5 w-3.5" />
-								Decline
-							</Button>
+							{confirmingDeclineId === request.id ? (
+								<>
+									<Button
+										variant="destructive"
+										size="sm"
+										disabled={declineMutation.isPending}
+										onClick={() => {
+											declineMutation.mutate(
+												{ instanceId, requestId: request.id },
+												{
+													onSuccess: () => toast.success("Request declined"),
+													onError: () => toast.error("Failed to decline request"),
+												},
+											);
+											setConfirmingDeclineId(null);
+										}}
+										className="gap-1.5 text-xs"
+									>
+										Confirm
+									</Button>
+									<Button
+										variant="secondary"
+										size="sm"
+										onClick={() => setConfirmingDeclineId(null)}
+										className="gap-1.5 border-border/50 bg-card/50 text-xs"
+									>
+										Cancel
+									</Button>
+								</>
+							) : (
+								<Button
+									variant="secondary"
+									size="sm"
+									disabled={declineMutation.isPending}
+									onClick={() => setConfirmingDeclineId(request.id)}
+									className="gap-1.5 border-border/50 bg-card/50"
+								>
+									<X className="h-3.5 w-3.5" />
+									Decline
+								</Button>
+							)}
 						</>
 					}
 				/>

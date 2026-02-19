@@ -6,12 +6,14 @@
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { requireInstance } from "../../lib/arr/instance-helpers.js";
-import { createSeerrClient } from "../../lib/seerr/seerr-client.js";
+import { requireSeerrClient, KNOWN_NOTIFICATION_AGENT_IDS } from "../../lib/seerr/seerr-client.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 const instanceIdParams = z.object({ instanceId: z.string().min(1) });
-const agentParams = z.object({ instanceId: z.string().min(1), agentId: z.string().min(1) });
+const agentParams = z.object({
+	instanceId: z.string().min(1),
+	agentId: z.enum(KNOWN_NOTIFICATION_AGENT_IDS),
+});
 
 const updateNotificationBody = z.object({
 	enabled: z.boolean().optional(),
@@ -19,15 +21,14 @@ const updateNotificationBody = z.object({
 	options: z.record(z.string(), z.unknown()).optional(),
 });
 
-export async function registerNotificationRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
+export async function registerNotificationRoutes(
+	app: FastifyInstance,
+	_opts: FastifyPluginOptions,
+) {
 	// GET /api/seerr/notifications/:instanceId — All notification agents
 	app.get("/:instanceId", async (request, reply) => {
 		const { instanceId } = validateRequest(instanceIdParams, request.params);
-		const instance = await requireInstance(app, request.currentUser!.id, instanceId);
-		if (instance.service !== "SEERR") {
-			return reply.status(400).send({ error: "Instance is not a Seerr service" });
-		}
-		const client = createSeerrClient(app.arrClientFactory, instance);
+		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
 		const agents = await client.getNotificationAgents();
 		return reply.send({ agents });
 	});
@@ -36,11 +37,7 @@ export async function registerNotificationRoutes(app: FastifyInstance, _opts: Fa
 	app.post("/:instanceId/:agentId", async (request, reply) => {
 		const { instanceId, agentId } = validateRequest(agentParams, request.params);
 		const body = validateRequest(updateNotificationBody, request.body);
-		const instance = await requireInstance(app, request.currentUser!.id, instanceId);
-		if (instance.service !== "SEERR") {
-			return reply.status(400).send({ error: "Instance is not a Seerr service" });
-		}
-		const client = createSeerrClient(app.arrClientFactory, instance);
+		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
 		const agent = await client.updateNotificationAgent(agentId, body);
 		return reply.send(agent);
 	});
@@ -48,12 +45,8 @@ export async function registerNotificationRoutes(app: FastifyInstance, _opts: Fa
 	// POST /api/seerr/notifications/:instanceId/:agentId/test — Test notification
 	app.post("/:instanceId/:agentId/test", async (request, reply) => {
 		const { instanceId, agentId } = validateRequest(agentParams, request.params);
-		const instance = await requireInstance(app, request.currentUser!.id, instanceId);
-		if (instance.service !== "SEERR") {
-			return reply.status(400).send({ error: "Instance is not a Seerr service" });
-		}
-		const client = createSeerrClient(app.arrClientFactory, instance);
-		const result = await client.testNotificationAgent(agentId);
-		return reply.send(result);
+		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
+		await client.testNotificationAgent(agentId);
+		return reply.status(204).send();
 	});
 }

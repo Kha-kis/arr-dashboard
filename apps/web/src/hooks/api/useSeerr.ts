@@ -144,10 +144,16 @@ export const useSeerrUserQuota = (instanceId: string, userId: number) =>
 
 export const useUpdateSeerrUser = () => {
 	const queryClient = useQueryClient();
-	return useMutation<SeerrUser, Error, { instanceId: string; seerrUserId: number; data: UpdateSeerrUserPayload }>({
-		mutationFn: ({ instanceId, seerrUserId, data }) => updateSeerrUser(instanceId, seerrUserId, data),
+	return useMutation<
+		SeerrUser,
+		Error,
+		{ instanceId: string; seerrUserId: number; data: UpdateSeerrUserPayload }
+	>({
+		mutationFn: ({ instanceId, seerrUserId, data }) =>
+			updateSeerrUser(instanceId, seerrUserId, data),
 		onSuccess: (_, { instanceId }) => {
 			queryClient.invalidateQueries({ queryKey: ["seerr", "users", instanceId] });
+			queryClient.invalidateQueries({ queryKey: ["seerr", "user-quota", instanceId] });
 		},
 	});
 };
@@ -166,8 +172,13 @@ export const useSeerrIssues = (params: FetchSeerrIssuesParams) =>
 
 export const useAddSeerrIssueComment = () => {
 	const queryClient = useQueryClient();
-	return useMutation<SeerrIssueComment, Error, { instanceId: string; issueId: number; message: string }>({
-		mutationFn: ({ instanceId, issueId, message }) => addSeerrIssueComment(instanceId, issueId, message),
+	return useMutation<
+		SeerrIssueComment,
+		Error,
+		{ instanceId: string; issueId: number; message: string }
+	>({
+		mutationFn: ({ instanceId, issueId, message }) =>
+			addSeerrIssueComment(instanceId, issueId, message),
 		onSuccess: (_, { instanceId }) => {
 			queryClient.invalidateQueries({ queryKey: ["seerr", "issues", instanceId] });
 		},
@@ -176,8 +187,13 @@ export const useAddSeerrIssueComment = () => {
 
 export const useUpdateSeerrIssueStatus = () => {
 	const queryClient = useQueryClient();
-	return useMutation<SeerrIssue, Error, { instanceId: string; issueId: number; status: "open" | "resolved" }>({
-		mutationFn: ({ instanceId, issueId, status }) => updateSeerrIssueStatus(instanceId, issueId, status),
+	return useMutation<
+		SeerrIssue,
+		Error,
+		{ instanceId: string; issueId: number; status: "open" | "resolved" }
+	>({
+		mutationFn: ({ instanceId, issueId, status }) =>
+			updateSeerrIssueStatus(instanceId, issueId, status),
 		onSuccess: (_, { instanceId }) => {
 			queryClient.invalidateQueries({ queryKey: ["seerr", "issues", instanceId] });
 		},
@@ -203,7 +219,8 @@ export const useUpdateSeerrNotification = () => {
 		Error,
 		{ instanceId: string; agentId: string; config: Partial<SeerrNotificationAgent> }
 	>({
-		mutationFn: ({ instanceId, agentId, config }) => updateSeerrNotification(instanceId, agentId, config),
+		mutationFn: ({ instanceId, agentId, config }) =>
+			updateSeerrNotification(instanceId, agentId, config),
 		onSuccess: (_, { instanceId }) => {
 			queryClient.invalidateQueries({ queryKey: seerrKeys.notifications(instanceId) });
 		},
@@ -211,7 +228,7 @@ export const useUpdateSeerrNotification = () => {
 };
 
 export const useTestSeerrNotification = () =>
-	useMutation<{ success: boolean }, Error, { instanceId: string; agentId: string }>({
+	useMutation<void, Error, { instanceId: string; agentId: string }>({
 		mutationFn: ({ instanceId, agentId }) => testSeerrNotification(instanceId, agentId),
 	});
 

@@ -2,9 +2,17 @@
 
 import type { ReactNode } from "react";
 import type { SeerrRequest } from "@arr/shared";
-import { Film, Tv } from "lucide-react";
+import { SEERR_REQUEST_STATUS } from "@arr/shared";
+import { Film, Tv, User } from "lucide-react";
 import { GlassmorphicCard, StatusBadge } from "../../../components/layout";
-import { getRequestStatusLabel, getRequestStatusVariant, formatRelativeTime, getPosterUrl } from "../lib/seerr-utils";
+import {
+	getRequestStatusLabel,
+	getRequestStatusVariant,
+	getMediaStatusLabel,
+	getMediaStatusVariant,
+	formatRelativeTime,
+	getPosterUrl,
+} from "../lib/seerr-utils";
 
 interface RequestCardProps {
 	request: SeerrRequest;
@@ -12,9 +20,22 @@ interface RequestCardProps {
 	index?: number;
 }
 
+function formatSeasons(seasons?: { seasonNumber: number }[]): string | null {
+	if (!seasons || seasons.length === 0) return null;
+	if (seasons.length <= 4) {
+		return seasons.map((s) => `S${s.seasonNumber}`).join(", ");
+	}
+	return `${seasons.length} seasons`;
+}
+
 export const RequestCard = ({ request, actions, index = 0 }: RequestCardProps) => {
-	const posterUrl = getPosterUrl(request.mediaInfo?.posterPath);
+	const posterUrl = getPosterUrl(request.media.posterPath);
 	const TypeIcon = request.type === "movie" ? Film : Tv;
+	const seasonInfo = request.type === "tv" ? formatSeasons(request.seasons) : null;
+	const showMediaStatus =
+		request.status === SEERR_REQUEST_STATUS.APPROVED ||
+		request.status === SEERR_REQUEST_STATUS.COMPLETED ||
+		request.status === SEERR_REQUEST_STATUS.FAILED;
 
 	return (
 		<div
@@ -28,7 +49,7 @@ export const RequestCard = ({ request, actions, index = 0 }: RequestCardProps) =
 						{posterUrl ? (
 							<img
 								src={posterUrl}
-								alt={request.mediaInfo?.title ?? "Media"}
+								alt={request.media.title ?? "Media"}
 								className="h-full w-full object-cover"
 							/>
 						) : (
@@ -38,21 +59,30 @@ export const RequestCard = ({ request, actions, index = 0 }: RequestCardProps) =
 
 					{/* Title + metadata */}
 					<div className="min-w-0 flex-1">
-						<div className="flex items-center gap-2">
+						<div className="flex items-center gap-2 flex-wrap">
 							<h3 className="truncate text-sm font-semibold text-foreground">
-								{request.mediaInfo?.title ?? `${request.type === "movie" ? "Movie" : "Series"} #${request.media.tmdbId}`}
+								{request.media.title ?? `${request.type === "movie" ? "Movie" : "Series"} #${request.media.tmdbId}`}
 							</h3>
 							<StatusBadge status={getRequestStatusVariant(request.status)}>
 								{getRequestStatusLabel(request.status)}
 							</StatusBadge>
+							{showMediaStatus && (
+								<StatusBadge status={getMediaStatusVariant(request.media.status)}>
+									{getMediaStatusLabel(request.media.status)}
+								</StatusBadge>
+							)}
 						</div>
-						<div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
+						<div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
 							<span className="flex items-center gap-1">
 								<TypeIcon className="h-3 w-3" />
 								{request.type === "movie" ? "Movie" : "TV"}
 								{request.is4k && " (4K)"}
 							</span>
-							<span>by {request.requestedBy.displayName}</span>
+							{seasonInfo && <span>{seasonInfo}</span>}
+							<span className="flex items-center gap-1">
+								<User className="h-3 w-3" />
+								{request.requestedBy.displayName}
+							</span>
 							<span>{formatRelativeTime(request.createdAt)}</span>
 						</div>
 					</div>

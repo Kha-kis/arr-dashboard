@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Inbox, ChevronRight, Clock, Check, X } from "lucide-react";
 import { GlassmorphicCard } from "../../../components/layout";
 import { useSeerrRequestCount } from "../../../hooks/api/useSeerr";
-import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { SERVICE_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 interface SeerrRequestsWidgetProps {
 	instanceId: string;
@@ -13,15 +13,18 @@ interface SeerrRequestsWidgetProps {
 
 const seerrGradient = SERVICE_GRADIENTS.seerr;
 
-export const SeerrRequestsWidget = ({ instanceId, animationDelay = 0 }: SeerrRequestsWidgetProps) => {
-	const { data: counts } = useSeerrRequestCount(instanceId);
+export const SeerrRequestsWidget = ({
+	instanceId,
+	animationDelay = 0,
+}: SeerrRequestsWidgetProps) => {
+	const { data: counts, isError } = useSeerrRequestCount(instanceId);
 
-	if (!counts) return null;
+	if (isError || !counts) return null;
 
 	const stats = [
-		{ icon: Clock, label: "Pending", value: counts.pending, color: "#f59e0b" },
-		{ icon: Check, label: "Approved", value: counts.approved, color: "#22c55e" },
-		{ icon: X, label: "Declined", value: counts.declined, color: "#ef4444" },
+		{ icon: Clock, label: "Pending", value: counts.pending, color: SEMANTIC_COLORS.warning.text },
+		{ icon: Check, label: "Approved", value: counts.approved, color: SEMANTIC_COLORS.success.text },
+		{ icon: X, label: "Declined", value: counts.declined, color: SEMANTIC_COLORS.error.text },
 	];
 
 	return (
@@ -34,7 +37,9 @@ export const SeerrRequestsWidget = ({ instanceId, animationDelay = 0 }: SeerrReq
 					{/* Accent line */}
 					<div
 						className="h-0.5 w-full rounded-t-xl"
-						style={{ background: `linear-gradient(90deg, ${seerrGradient.from}, ${seerrGradient.to})` }}
+						style={{
+							background: `linear-gradient(90deg, ${seerrGradient.from}, ${seerrGradient.to})`,
+						}}
 					/>
 
 					<div className="p-4">
@@ -56,9 +61,7 @@ export const SeerrRequestsWidget = ({ instanceId, animationDelay = 0 }: SeerrReq
 									</p>
 								</div>
 							</div>
-							<ChevronRight
-								className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5"
-							/>
+							<ChevronRight className="h-4 w-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
 						</div>
 
 						{/* Mini stats row */}

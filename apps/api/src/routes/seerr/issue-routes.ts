@@ -6,8 +6,7 @@
 
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { requireInstance } from "../../lib/arr/instance-helpers.js";
-import { createSeerrClient } from "../../lib/seerr/seerr-client.js";
+import { requireSeerrClient } from "../../lib/seerr/seerr-client.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 const instanceIdParams = z.object({ instanceId: z.string().min(1) });
@@ -33,11 +32,7 @@ export async function registerIssueRoutes(app: FastifyInstance, _opts: FastifyPl
 	app.get("/:instanceId", async (request, reply) => {
 		const { instanceId } = validateRequest(instanceIdParams, request.params);
 		const query = validateRequest(listIssuesQuery, request.query);
-		const instance = await requireInstance(app, request.currentUser!.id, instanceId);
-		if (instance.service !== "SEERR") {
-			return reply.status(400).send({ error: "Instance is not a Seerr service" });
-		}
-		const client = createSeerrClient(app.arrClientFactory, instance);
+		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
 		const result = await client.getIssues(query);
 		return reply.send(result);
 	});
@@ -46,11 +41,7 @@ export async function registerIssueRoutes(app: FastifyInstance, _opts: FastifyPl
 	app.post("/:instanceId/:issueId/comment", async (request, reply) => {
 		const { instanceId, issueId } = validateRequest(issueIdParams, request.params);
 		const { message } = validateRequest(addCommentBody, request.body);
-		const instance = await requireInstance(app, request.currentUser!.id, instanceId);
-		if (instance.service !== "SEERR") {
-			return reply.status(400).send({ error: "Instance is not a Seerr service" });
-		}
-		const client = createSeerrClient(app.arrClientFactory, instance);
+		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
 		const comment = await client.addIssueComment(issueId, message);
 		return reply.send(comment);
 	});
@@ -59,11 +50,7 @@ export async function registerIssueRoutes(app: FastifyInstance, _opts: FastifyPl
 	app.put("/:instanceId/:issueId", async (request, reply) => {
 		const { instanceId, issueId } = validateRequest(issueIdParams, request.params);
 		const { status } = validateRequest(updateStatusBody, request.body);
-		const instance = await requireInstance(app, request.currentUser!.id, instanceId);
-		if (instance.service !== "SEERR") {
-			return reply.status(400).send({ error: "Instance is not a Seerr service" });
-		}
-		const client = createSeerrClient(app.arrClientFactory, instance);
+		const client = await requireSeerrClient(app, request.currentUser!.id, instanceId);
 		const issue = await client.updateIssueStatus(issueId, status);
 		return reply.send(issue);
 	});

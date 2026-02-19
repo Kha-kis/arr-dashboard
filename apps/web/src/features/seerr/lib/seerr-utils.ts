@@ -3,8 +3,13 @@
  */
 
 import {
+	type SeerrRequestStatus,
+	type SeerrMediaStatus,
+	type SeerrIssueType,
+	type SeerrIssueStatus,
 	SEERR_REQUEST_STATUS,
 	SEERR_REQUEST_STATUS_LABEL,
+	SEERR_MEDIA_STATUS,
 	SEERR_MEDIA_STATUS_LABEL,
 	SEERR_ISSUE_TYPE_LABEL,
 	SEERR_ISSUE_STATUS,
@@ -15,40 +20,64 @@ import {
 // Request helpers
 // ============================================================================
 
-export function getRequestStatusLabel(status: number): string {
-	return SEERR_REQUEST_STATUS_LABEL[status] ?? "Unknown";
+export function getRequestStatusLabel(status: SeerrRequestStatus): string {
+	return SEERR_REQUEST_STATUS_LABEL[status] ?? `Status ${status}`;
 }
 
-export function getRequestStatusVariant(status: number): "warning" | "success" | "error" | "info" | "default" {
+export function getRequestStatusVariant(
+	status: SeerrRequestStatus,
+): "warning" | "success" | "error" | "info" | "default" {
 	switch (status) {
 		case SEERR_REQUEST_STATUS.PENDING:
 			return "warning";
 		case SEERR_REQUEST_STATUS.APPROVED:
+		case SEERR_REQUEST_STATUS.COMPLETED:
 			return "success";
 		case SEERR_REQUEST_STATUS.DECLINED:
+		case SEERR_REQUEST_STATUS.FAILED:
 			return "error";
 		default:
 			return "default";
 	}
 }
 
-export function getMediaStatusLabel(status: number): string {
-	return SEERR_MEDIA_STATUS_LABEL[status] ?? "Unknown";
+export function getMediaStatusLabel(status: SeerrMediaStatus): string {
+	return SEERR_MEDIA_STATUS_LABEL[status] ?? `Status ${status}`;
+}
+
+export function getMediaStatusVariant(
+	status: SeerrMediaStatus,
+): "warning" | "success" | "error" | "info" | "default" {
+	switch (status) {
+		case SEERR_MEDIA_STATUS.AVAILABLE:
+			return "success";
+		case SEERR_MEDIA_STATUS.PARTIALLY_AVAILABLE:
+		case SEERR_MEDIA_STATUS.PROCESSING:
+			return "info";
+		case SEERR_MEDIA_STATUS.PENDING:
+			return "warning";
+		case SEERR_MEDIA_STATUS.BLOCKLISTED:
+		case SEERR_MEDIA_STATUS.DELETED:
+			return "error";
+		case SEERR_MEDIA_STATUS.UNKNOWN:
+		default:
+			return "default";
+	}
 }
 
 // ============================================================================
 // Issue helpers
 // ============================================================================
 
-export function getIssueTypeLabel(type: number): string {
+export function getIssueTypeLabel(type: SeerrIssueType): string {
 	return SEERR_ISSUE_TYPE_LABEL[type] ?? "Other";
 }
 
-export function getIssueStatusLabel(status: number): string {
+export function getIssueStatusLabel(status: SeerrIssueStatus): string {
 	return SEERR_ISSUE_STATUS_LABEL[status] ?? "Unknown";
 }
 
-export function getIssueStatusVariant(status: number): "warning" | "success" | "default" {
+export function getIssueStatusVariant(status: SeerrIssueStatus): "warning" | "success" | "default" {
 	switch (status) {
 		case SEERR_ISSUE_STATUS.OPEN:
 			return "warning";

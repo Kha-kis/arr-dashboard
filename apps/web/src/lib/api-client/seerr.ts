@@ -14,6 +14,10 @@ import type {
 	SeerrNotificationAgent,
 	SeerrStatus,
 	SeerrPageResult,
+	SeerrRequestParams,
+	SeerrIssueParams,
+	SeerrUserParams,
+	SeerrUserUpdateData,
 } from "@arr/shared";
 import { apiRequest } from "./base";
 
@@ -21,16 +25,13 @@ import { apiRequest } from "./base";
 // Requests
 // ============================================================================
 
-export interface FetchSeerrRequestsParams {
+export interface FetchSeerrRequestsParams extends SeerrRequestParams {
 	instanceId: string;
-	take?: number;
-	skip?: number;
-	filter?: "all" | "approved" | "available" | "pending" | "processing" | "unavailable" | "failed";
-	sort?: "added" | "modified";
-	requestedBy?: number;
 }
 
-export async function fetchSeerrRequests(params: FetchSeerrRequestsParams): Promise<SeerrPageResult<SeerrRequest>> {
+export async function fetchSeerrRequests(
+	params: FetchSeerrRequestsParams,
+): Promise<SeerrPageResult<SeerrRequest>> {
 	const { instanceId, ...query } = params;
 	const qs = buildQueryString(query);
 	return apiRequest(`/api/seerr/requests/${instanceId}${qs}`);
@@ -40,11 +41,17 @@ export async function fetchSeerrRequestCount(instanceId: string): Promise<SeerrR
 	return apiRequest(`/api/seerr/requests/${instanceId}/count`);
 }
 
-export async function approveSeerrRequest(instanceId: string, requestId: number): Promise<SeerrRequest> {
+export async function approveSeerrRequest(
+	instanceId: string,
+	requestId: number,
+): Promise<SeerrRequest> {
 	return apiRequest(`/api/seerr/requests/${instanceId}/${requestId}/approve`, { method: "POST" });
 }
 
-export async function declineSeerrRequest(instanceId: string, requestId: number): Promise<SeerrRequest> {
+export async function declineSeerrRequest(
+	instanceId: string,
+	requestId: number,
+): Promise<SeerrRequest> {
 	return apiRequest(`/api/seerr/requests/${instanceId}/${requestId}/decline`, { method: "POST" });
 }
 
@@ -52,7 +59,10 @@ export async function deleteSeerrRequest(instanceId: string, requestId: number):
 	return apiRequest(`/api/seerr/requests/${instanceId}/${requestId}`, { method: "DELETE" });
 }
 
-export async function retrySeerrRequest(instanceId: string, requestId: number): Promise<SeerrRequest> {
+export async function retrySeerrRequest(
+	instanceId: string,
+	requestId: number,
+): Promise<SeerrRequest> {
 	return apiRequest(`/api/seerr/requests/${instanceId}/${requestId}/retry`, { method: "POST" });
 }
 
@@ -60,35 +70,31 @@ export async function retrySeerrRequest(instanceId: string, requestId: number): 
 // Users
 // ============================================================================
 
-export interface FetchSeerrUsersParams {
+export interface FetchSeerrUsersParams extends SeerrUserParams {
 	instanceId: string;
-	take?: number;
-	skip?: number;
-	sort?: "created" | "updated" | "displayname" | "requests";
 }
 
-export async function fetchSeerrUsers(params: FetchSeerrUsersParams): Promise<SeerrPageResult<SeerrUser>> {
+export async function fetchSeerrUsers(
+	params: FetchSeerrUsersParams,
+): Promise<SeerrPageResult<SeerrUser>> {
 	const { instanceId, ...query } = params;
 	const qs = buildQueryString(query);
 	return apiRequest(`/api/seerr/users/${instanceId}${qs}`);
 }
 
-export async function fetchSeerrUserQuota(instanceId: string, seerrUserId: number): Promise<SeerrQuota> {
+export async function fetchSeerrUserQuota(
+	instanceId: string,
+	seerrUserId: number,
+): Promise<SeerrQuota> {
 	return apiRequest(`/api/seerr/users/${instanceId}/${seerrUserId}/quota`);
 }
 
-export interface UpdateSeerrUserPayload {
-	permissions?: number;
-	movieQuotaLimit?: number | null;
-	movieQuotaDays?: number | null;
-	tvQuotaLimit?: number | null;
-	tvQuotaDays?: number | null;
-}
+export { type SeerrUserUpdateData as UpdateSeerrUserPayload } from "@arr/shared";
 
 export async function updateSeerrUser(
 	instanceId: string,
 	seerrUserId: number,
-	data: UpdateSeerrUserPayload,
+	data: SeerrUserUpdateData,
 ): Promise<SeerrUser> {
 	return apiRequest(`/api/seerr/users/${instanceId}/${seerrUserId}`, { method: "PUT", json: data });
 }
@@ -97,15 +103,13 @@ export async function updateSeerrUser(
 // Issues
 // ============================================================================
 
-export interface FetchSeerrIssuesParams {
+export interface FetchSeerrIssuesParams extends SeerrIssueParams {
 	instanceId: string;
-	take?: number;
-	skip?: number;
-	filter?: "all" | "open" | "resolved";
-	sort?: "added" | "modified";
 }
 
-export async function fetchSeerrIssues(params: FetchSeerrIssuesParams): Promise<SeerrPageResult<SeerrIssue>> {
+export async function fetchSeerrIssues(
+	params: FetchSeerrIssuesParams,
+): Promise<SeerrPageResult<SeerrIssue>> {
 	const { instanceId, ...query } = params;
 	const qs = buildQueryString(query);
 	return apiRequest(`/api/seerr/issues/${instanceId}${qs}`);
@@ -116,7 +120,10 @@ export async function addSeerrIssueComment(
 	issueId: number,
 	message: string,
 ): Promise<SeerrIssueComment> {
-	return apiRequest(`/api/seerr/issues/${instanceId}/${issueId}/comment`, { method: "POST", json: { message } });
+	return apiRequest(`/api/seerr/issues/${instanceId}/${issueId}/comment`, {
+		method: "POST",
+		json: { message },
+	});
 }
 
 export async function updateSeerrIssueStatus(
@@ -124,7 +131,10 @@ export async function updateSeerrIssueStatus(
 	issueId: number,
 	status: "open" | "resolved",
 ): Promise<SeerrIssue> {
-	return apiRequest(`/api/seerr/issues/${instanceId}/${issueId}`, { method: "PUT", json: { status } });
+	return apiRequest(`/api/seerr/issues/${instanceId}/${issueId}`, {
+		method: "PUT",
+		json: { status },
+	});
 }
 
 // ============================================================================
@@ -142,13 +152,13 @@ export async function updateSeerrNotification(
 	agentId: string,
 	config: Partial<SeerrNotificationAgent>,
 ): Promise<SeerrNotificationAgent> {
-	return apiRequest(`/api/seerr/notifications/${instanceId}/${agentId}`, { method: "POST", json: config });
+	return apiRequest(`/api/seerr/notifications/${instanceId}/${agentId}`, {
+		method: "POST",
+		json: config,
+	});
 }
 
-export async function testSeerrNotification(
-	instanceId: string,
-	agentId: string,
-): Promise<{ success: boolean }> {
+export async function testSeerrNotification(instanceId: string, agentId: string): Promise<void> {
 	return apiRequest(`/api/seerr/notifications/${instanceId}/${agentId}/test`, { method: "POST" });
 }
 

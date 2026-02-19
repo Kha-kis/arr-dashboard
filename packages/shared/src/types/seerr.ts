@@ -5,19 +5,25 @@
  */
 
 // ============================================================================
-// Status Constants
+// Status Constants & Derived Union Types
 // ============================================================================
 
 export const SEERR_REQUEST_STATUS = {
 	PENDING: 1,
 	APPROVED: 2,
 	DECLINED: 3,
+	FAILED: 4,
+	COMPLETED: 5,
 } as const;
 
-export const SEERR_REQUEST_STATUS_LABEL: Record<number, string> = {
+export type SeerrRequestStatus = (typeof SEERR_REQUEST_STATUS)[keyof typeof SEERR_REQUEST_STATUS];
+
+export const SEERR_REQUEST_STATUS_LABEL: Record<SeerrRequestStatus, string> = {
 	1: "Pending",
 	2: "Approved",
 	3: "Declined",
+	4: "Failed",
+	5: "Completed",
 };
 
 export const SEERR_MEDIA_STATUS = {
@@ -26,14 +32,20 @@ export const SEERR_MEDIA_STATUS = {
 	PROCESSING: 3,
 	PARTIALLY_AVAILABLE: 4,
 	AVAILABLE: 5,
+	BLOCKLISTED: 6,
+	DELETED: 7,
 } as const;
 
-export const SEERR_MEDIA_STATUS_LABEL: Record<number, string> = {
-	1: "Unknown",
+export type SeerrMediaStatus = (typeof SEERR_MEDIA_STATUS)[keyof typeof SEERR_MEDIA_STATUS];
+
+export const SEERR_MEDIA_STATUS_LABEL: Record<SeerrMediaStatus, string> = {
+	1: "Unavailable",
 	2: "Pending",
 	3: "Processing",
 	4: "Partially Available",
 	5: "Available",
+	6: "Blocklisted",
+	7: "Deleted",
 };
 
 export const SEERR_ISSUE_TYPE = {
@@ -43,7 +55,9 @@ export const SEERR_ISSUE_TYPE = {
 	OTHER: 4,
 } as const;
 
-export const SEERR_ISSUE_TYPE_LABEL: Record<number, string> = {
+export type SeerrIssueType = (typeof SEERR_ISSUE_TYPE)[keyof typeof SEERR_ISSUE_TYPE];
+
+export const SEERR_ISSUE_TYPE_LABEL: Record<SeerrIssueType, string> = {
 	1: "Video",
 	2: "Audio",
 	3: "Subtitle",
@@ -55,7 +69,9 @@ export const SEERR_ISSUE_STATUS = {
 	RESOLVED: 2,
 } as const;
 
-export const SEERR_ISSUE_STATUS_LABEL: Record<number, string> = {
+export type SeerrIssueStatus = (typeof SEERR_ISSUE_STATUS)[keyof typeof SEERR_ISSUE_STATUS];
+
+export const SEERR_ISSUE_STATUS_LABEL: Record<SeerrIssueStatus, string> = {
 	1: "Open",
 	2: "Resolved",
 };
@@ -68,16 +84,21 @@ export interface SeerrMediaInfo {
 	id: number;
 	tmdbId: number;
 	tvdbId?: number;
-	status: number;
+	status: SeerrMediaStatus;
 	createdAt: string;
 	updatedAt: string;
 }
 
 export interface SeerrRequest {
 	id: number;
-	status: number;
+	status: SeerrRequestStatus;
 	type: "movie" | "tv";
-	media: SeerrMediaInfo;
+	media: SeerrMediaInfo & {
+		posterPath?: string;
+		title?: string;
+		originalTitle?: string;
+		overview?: string;
+	};
 	createdAt: string;
 	updatedAt: string;
 	requestedBy: SeerrUser;
@@ -89,18 +110,12 @@ export interface SeerrRequest {
 	languageProfileId?: number;
 	tags?: number[];
 	seasons?: SeerrSeason[];
-	mediaInfo?: {
-		posterPath?: string;
-		title?: string;
-		originalTitle?: string;
-		overview?: string;
-	};
 }
 
 export interface SeerrSeason {
 	id: number;
 	seasonNumber: number;
-	status: number;
+	status: SeerrMediaStatus;
 }
 
 export interface SeerrRequestCount {
@@ -121,6 +136,7 @@ export interface SeerrUser {
 	avatar?: string;
 	createdAt: string;
 	updatedAt: string;
+	/** Bitmask of Seerr permission flags */
 	permissions: number;
 	requestCount: number;
 	movieQuotaLimit?: number;
@@ -137,8 +153,8 @@ export interface SeerrQuota {
 
 export interface SeerrIssue {
 	id: number;
-	issueType: number;
-	status: number;
+	issueType: SeerrIssueType;
+	status: SeerrIssueStatus;
 	problemSeason: number;
 	problemEpisode: number;
 	createdAt: string;
@@ -159,9 +175,10 @@ export interface SeerrIssueComment {
 }
 
 export interface SeerrNotificationAgent {
-	id: number;
+	id: string;
 	name: string;
 	enabled: boolean;
+	/** Bitmask of notification event types */
 	types: number;
 	options: Record<string, unknown>;
 }
@@ -176,4 +193,37 @@ export interface SeerrStatus {
 export interface SeerrPageResult<T> {
 	pageInfo: { pages: number; pageSize: number; results: number; page: number };
 	results: T[];
+}
+
+// ============================================================================
+// Request Parameter Types
+// ============================================================================
+
+export interface SeerrRequestParams {
+	take?: number;
+	skip?: number;
+	filter?: "all" | "approved" | "available" | "pending" | "processing" | "unavailable" | "failed";
+	sort?: "added" | "modified";
+	requestedBy?: number;
+}
+
+export interface SeerrIssueParams {
+	take?: number;
+	skip?: number;
+	filter?: "all" | "open" | "resolved";
+	sort?: "added" | "modified";
+}
+
+export interface SeerrUserParams {
+	take?: number;
+	skip?: number;
+	sort?: "created" | "updated" | "displayname" | "requests";
+}
+
+export interface SeerrUserUpdateData {
+	permissions?: number;
+	movieQuotaLimit?: number | null;
+	movieQuotaDays?: number | null;
+	tvQuotaLimit?: number | null;
+	tvQuotaDays?: number | null;
 }

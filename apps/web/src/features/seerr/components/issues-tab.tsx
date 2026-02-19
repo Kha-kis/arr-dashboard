@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, CheckCircle, MessageSquare } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle, MessageSquare } from "lucide-react";
+import { toast } from "sonner";
 import {
 	FilterSelect,
 	GlassmorphicCard,
@@ -10,7 +11,11 @@ import {
 	PremiumSkeleton,
 } from "../../../components/layout";
 import { Button } from "../../../components/ui";
-import { useSeerrIssues, useUpdateSeerrIssueStatus, useAddSeerrIssueComment } from "../../../hooks/api/useSeerr";
+import {
+	useSeerrIssues,
+	useUpdateSeerrIssueStatus,
+	useAddSeerrIssueComment,
+} from "../../../hooks/api/useSeerr";
 import {
 	getIssueTypeLabel,
 	getIssueStatusLabel,
@@ -34,7 +39,7 @@ interface IssuesTabProps {
 
 export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 	const [filter, setFilter] = useState<IssueFilter>("open");
-	const { data, isLoading } = useSeerrIssues({ instanceId, filter, take: 50 });
+	const { data, isLoading, isError } = useSeerrIssues({ instanceId, filter, take: 50 });
 	const updateStatusMutation = useUpdateSeerrIssueStatus();
 	const addCommentMutation = useAddSeerrIssueComment();
 	const [commentInput, setCommentInput] = useState<Record<number, string>>({});
@@ -49,14 +54,22 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 		);
 	}
 
+	if (isError) {
+		return (
+			<PremiumEmptyState
+				icon={AlertCircle}
+				title="Failed to Load Issues"
+				description="Could not connect to the Seerr instance. Check your configuration in Settings."
+			/>
+		);
+	}
+
 	const issues = data?.results ?? [];
 
 	return (
 		<div className="space-y-4">
 			<div className="flex items-center justify-between">
-				<p className="text-sm text-muted-foreground">
-					{data?.pageInfo.results ?? 0} total issues
-				</p>
+				<p className="text-sm text-muted-foreground">{data?.pageInfo.results ?? 0} total issues</p>
 				<FilterSelect
 					value={filter}
 					onChange={(v) => setFilter(v as IssueFilter)}
@@ -119,6 +132,23 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 												)}
 											</div>
 
+											{/* Existing comments */}
+											{issue.comments.length > 0 && (
+												<div className="mt-2 space-y-1.5 border-l-2 border-border/30 pl-3">
+													{issue.comments.map((comment) => (
+														<div key={comment.id} className="text-xs">
+															<span className="font-medium text-foreground">
+																{comment.user.displayName}
+															</span>
+															<span className="ml-1.5 text-muted-foreground">
+																{formatRelativeTime(comment.createdAt)}
+															</span>
+															<p className="mt-0.5 text-muted-foreground">{comment.message}</p>
+														</div>
+													))}
+												</div>
+											)}
+
 											{/* Comment input for open issues */}
 											{issue.status === SEERR_ISSUE_STATUS.OPEN && (
 												<div className="mt-2 flex items-center gap-2">
@@ -132,11 +162,17 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 														className="h-7 flex-1 rounded-md border border-border/50 bg-card/30 px-2 text-xs text-foreground placeholder:text-muted-foreground focus:outline-hidden"
 														onKeyDown={(e) => {
 															if (e.key === "Enter" && commentInput[issue.id]?.trim()) {
-																addCommentMutation.mutate({
-																	instanceId,
-																	issueId: issue.id,
-																	message: commentInput[issue.id]!.trim(),
-																});
+																addCommentMutation.mutate(
+																	{
+																		instanceId,
+																		issueId: issue.id,
+																		message: commentInput[issue.id]!.trim(),
+																	},
+																	{
+																		onSuccess: () => toast.success("Comment added"),
+																		onError: () => toast.error("Failed to add comment"),
+																	},
+																);
 																setCommentInput((prev) => ({ ...prev, [issue.id]: "" }));
 															}
 														}}
@@ -153,7 +189,13 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 													size="sm"
 													disabled={updateStatusMutation.isPending}
 													onClick={() =>
-														updateStatusMutation.mutate({ instanceId, issueId: issue.id, status: "resolved" })
+														updateStatusMutation.mutate(
+															{ instanceId, issueId: issue.id, status: "resolved" },
+															{
+																onSuccess: () => toast.success("Issue resolved"),
+																onError: () => toast.error("Failed to resolve issue"),
+															},
+														)
 													}
 													className="gap-1.5 border-border/50 bg-card/50 text-xs"
 												>
@@ -166,7 +208,13 @@ export const IssuesTab = ({ instanceId }: IssuesTabProps) => {
 													size="sm"
 													disabled={updateStatusMutation.isPending}
 													onClick={() =>
-														updateStatusMutation.mutate({ instanceId, issueId: issue.id, status: "open" })
+														updateStatusMutation.mutate(
+															{ instanceId, issueId: issue.id, status: "open" },
+															{
+																onSuccess: () => toast.success("Issue reopened"),
+																onError: () => toast.error("Failed to reopen issue"),
+															},
+														)
 													}
 													className="gap-1.5 border-border/50 bg-card/50 text-xs"
 												>

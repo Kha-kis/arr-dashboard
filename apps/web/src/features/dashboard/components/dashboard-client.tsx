@@ -266,6 +266,12 @@ export const DashboardClient = () => {
 	// Group FILTERED items into summary rows
 	const allSummaryRows = useQueueGrouping(filterState.filteredItems);
 
+	// Find first enabled Seerr instance for dashboard widget
+	const seerrInstance = useMemo(
+		() => services.find((s) => s.service.toLowerCase() === "seerr" && s.enabled),
+		[services],
+	);
+
 	// Build instanceId → baseUrl map
 	const instanceUrlMap = useMemo<InstanceUrlMap>(() => {
 		const map = new Map<string, string>();
@@ -373,12 +379,6 @@ export const DashboardClient = () => {
 
 	// Calculate total instances
 	const totalInstances = (groupedByService.sonarr ?? 0) + (groupedByService.radarr ?? 0) + (groupedByService.prowlarr ?? 0) + (groupedByService.lidarr ?? 0) + (groupedByService.readarr ?? 0);
-
-	// Find first enabled Seerr instance for dashboard widget
-	const seerrInstance = useMemo(
-		() => services.find((s) => s.service.toLowerCase() === "seerr" && s.enabled),
-		[services],
-	);
 
 	return (
 		<>

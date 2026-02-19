@@ -1,15 +1,24 @@
 "use client";
 
-import { Users } from "lucide-react";
-import { GlassmorphicCard, PremiumEmptyState, PremiumProgress, PremiumSkeleton } from "../../../components/layout";
+import { useState } from "react";
+import { AlertCircle, Users, Settings } from "lucide-react";
+import type { SeerrUser } from "@arr/shared";
+import {
+	GlassmorphicCard,
+	PremiumEmptyState,
+	PremiumProgress,
+	PremiumSkeleton,
+} from "../../../components/layout";
 import { useSeerrUsers, useSeerrUserQuota } from "../../../hooks/api/useSeerr";
+import { UserSettingsDialog } from "./user-settings-dialog";
 
 interface UsersTabProps {
 	instanceId: string;
 }
 
 export const UsersTab = ({ instanceId }: UsersTabProps) => {
-	const { data, isLoading } = useSeerrUsers({ instanceId, take: 50 });
+	const { data, isLoading, isError } = useSeerrUsers({ instanceId, take: 50 });
+	const [managingUser, setManagingUser] = useState<SeerrUser | null>(null);
 
 	if (isLoading) {
 		return (
@@ -18,6 +27,16 @@ export const UsersTab = ({ instanceId }: UsersTabProps) => {
 					<PremiumSkeleton key={i} className="h-20 w-full rounded-xl" />
 				))}
 			</div>
+		);
+	}
+
+	if (isError) {
+		return (
+			<PremiumEmptyState
+				icon={AlertCircle}
+				title="Failed to Load Users"
+				description="Could not connect to the Seerr instance. Check your configuration in Settings."
+			/>
 		);
 	}
 
@@ -73,10 +92,29 @@ export const UsersTab = ({ instanceId }: UsersTabProps) => {
 
 							{/* Quota bars */}
 							<UserQuotaBars instanceId={instanceId} userId={user.id} />
+
+							{/* Manage button */}
+							<button
+								type="button"
+								onClick={() => setManagingUser(user)}
+								className="shrink-0 rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-muted/30 hover:text-foreground"
+								title="Manage user quotas"
+							>
+								<Settings className="h-4 w-4" />
+							</button>
 						</div>
 					</GlassmorphicCard>
 				</div>
 			))}
+
+			<UserSettingsDialog
+				user={managingUser}
+				instanceId={instanceId}
+				open={managingUser !== null}
+				onOpenChange={(open) => {
+					if (!open) setManagingUser(null);
+				}}
+			/>
 		</div>
 	);
 };
@@ -89,12 +127,14 @@ function UserQuotaBars({ instanceId, userId }: { instanceId: string; userId: num
 
 	if (!quota) return null;
 
-	const moviePct = quota.movie.restricted && quota.movie.limit > 0
-		? Math.round((quota.movie.used / quota.movie.limit) * 100)
-		: null;
-	const tvPct = quota.tv.restricted && quota.tv.limit > 0
-		? Math.round((quota.tv.used / quota.tv.limit) * 100)
-		: null;
+	const moviePct =
+		quota.movie.restricted && quota.movie.limit > 0
+			? Math.round((quota.movie.used / quota.movie.limit) * 100)
+			: null;
+	const tvPct =
+		quota.tv.restricted && quota.tv.limit > 0
+			? Math.round((quota.tv.used / quota.tv.limit) * 100)
+			: null;
 
 	if (moviePct === null && tvPct === null) return null;
 
