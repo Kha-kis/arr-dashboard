@@ -207,10 +207,10 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
-		if (!["sonarr", "radarr", "prowlarr", "lidarr", "readarr"].includes(service)) {
+		if (!["sonarr", "radarr", "prowlarr", "lidarr", "readarr", "seerr"].includes(service)) {
 			return reply.status(400).send({
 				error: "Invalid service type",
-				details: "Service must be sonarr, radarr, prowlarr, lidarr, or readarr",
+				details: "Service must be sonarr, radarr, prowlarr, lidarr, readarr, or seerr",
 			});
 		}
 

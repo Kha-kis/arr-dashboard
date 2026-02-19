@@ -32,6 +32,7 @@ import { registerSearchRoutes } from "./routes/search.js";
 import { registerServiceRoutes } from "./routes/services.js";
 import { registerSystemRoutes } from "./routes/system.js";
 import { registerTMDBRoutes } from "./routes/tmdb.js";
+import { registerSeerrRoutes } from "./routes/seerr/index.js";
 import { registerTrashGuidesRoutes } from "./routes/trash-guides/index.js";
 
 function isPrismaKnownError(
@@ -208,6 +209,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		api.register(registerBackupRoutes, { prefix: "/api/backup" });
 		api.register(registerSystemRoutes, { prefix: "/api/system" });
 		api.register(registerTrashGuidesRoutes, { prefix: "/api/trash-guides" });
+		api.register(registerSeerrRoutes, { prefix: "/api/seerr" });
 		api.register(registerHuntingRoutes, { prefix: "/api" });
 		api.register(registerQueueCleanerRoutes, { prefix: "/api" });
 	});

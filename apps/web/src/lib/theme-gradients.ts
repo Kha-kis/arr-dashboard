@@ -325,7 +325,7 @@ export interface ServiceGradient {
 }
 
 /** Valid service types for gradient lookup */
-export type ServiceType = "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr";
+export type ServiceType = "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr" | "seerr";
 
 /**
  * Service-specific gradients for visual distinction
@@ -336,6 +336,7 @@ export type ServiceType = "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr
  * - Prowlarr (Indexers): Purple-Pink gradient
  * - Lidarr (Music): Green-Teal gradient
  * - Readarr (Books): Violet-Indigo gradient
+ * - Seerr (Requests): Rose-Pink gradient
  */
 export const SERVICE_GRADIENTS: Record<ServiceType, ServiceGradient> = {
 	sonarr: {
@@ -362,6 +363,11 @@ export const SERVICE_GRADIENTS: Record<ServiceType, ServiceGradient> = {
 		from: "#8b5cf6",      // violet-500 (books/wisdom)
 		to: "#6366f1",        // indigo-500
 		glow: "rgba(139, 92, 246, 0.4)",
+	},
+	seerr: {
+		from: "#e11d48",      // rose-600 (requests/approvals)
+		to: "#f43f5e",        // rose-500
+		glow: "rgba(225, 29, 72, 0.4)",
 	},
 };
 

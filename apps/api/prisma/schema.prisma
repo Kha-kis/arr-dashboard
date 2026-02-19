@@ -13,6 +13,7 @@ enum ServiceType {
   PROWLARR
   LIDARR
   READARR
+  SEERR
 }
 
 // Library item type enum - uses lowercase to match Zod schema in shared package

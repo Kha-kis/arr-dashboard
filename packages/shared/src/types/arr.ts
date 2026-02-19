@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const arrServiceTypeSchema = z
-  .enum(["sonarr", "radarr", "prowlarr", "lidarr", "readarr"])
+  .enum(["sonarr", "radarr", "prowlarr", "lidarr", "readarr", "seerr"])
   .describe("Supported *arr service types");
 
 export type ArrServiceType = z.infer<typeof arrServiceTypeSchema>;
@@ -35,6 +35,7 @@ export const multiInstanceConfigSchema = z.object({
   prowlarr: z.array(serviceInstanceSchema).default([]),
   lidarr: z.array(serviceInstanceSchema).default([]),
   readarr: z.array(serviceInstanceSchema).default([]),
+  seerr: z.array(serviceInstanceSchema).default([]),
 });
 
 export type MultiInstanceConfig = z.infer<typeof multiInstanceConfigSchema>;

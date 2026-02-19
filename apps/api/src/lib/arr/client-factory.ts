@@ -33,6 +33,11 @@ export { ArrError, NotFoundError, UnauthorizedError, ValidationError, TimeoutErr
 // ============================================================================
 
 /**
+ * Service types that have ARR SDK clients (excludes Seerr)
+ */
+export type ArrServiceType = Exclude<ServiceType, "SEERR">;
+
+/**
  * Union type of all ARR SDK clients
  */
 export type ArrClient = SonarrClient | RadarrClient | ProwlarrClient | LidarrClient | ReadarrClient;
@@ -55,7 +60,9 @@ export type ClientForService<T extends ServiceType> = T extends "SONARR"
 				? LidarrClient
 				: T extends "READARR"
 					? ReadarrClient
-					: never;
+					: T extends "SEERR"
+						? never // Seerr uses SeerrClient (separate class), not the ARR SDK
+						: never;
 
 /**
  * Options for client creation
@@ -132,10 +139,10 @@ export class ArrClientFactory {
 				return new LidarrClient(config) as ClientForService<T>;
 			case "READARR":
 				return new ReadarrClient(config) as ClientForService<T>;
-			default: {
-				const exhaustiveCheck: never = instance.service;
-				throw new Error(`Unknown service type: ${exhaustiveCheck}`);
-			}
+			case "SEERR":
+				throw new Error("Seerr uses SeerrClient — use createSeerrClient() from lib/seerr/seerr-client");
+			default:
+				throw new Error(`Unknown service type: ${String(instance.service)}`);
 		}
 	}
 
@@ -193,7 +200,8 @@ export class ArrClientFactory {
 	}
 
 	/**
-	 * Create any ARR client (when service type is dynamic)
+	 * Create any ARR client (when service type is dynamic).
+	 * Throws for SEERR — use createSeerrClient() from lib/seerr/seerr-client instead.
 	 */
 	createAnyClient(instance: ClientInstanceData, options?: ClientFactoryOptions): ArrClient {
 		return this.create(instance, options);
