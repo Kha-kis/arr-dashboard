@@ -18,7 +18,6 @@ import {
 	applyQualitySizeToDefinitions,
 } from "../../lib/trash-guides/quality-size-matcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
-import { getErrorMessage } from "../../lib/utils/error-message.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 // ============================================================================
@@ -73,27 +72,21 @@ export async function qualitySizeRoutes(app: FastifyInstance, _opts: FastifyPlug
 	}
 
 	/**
-	 * Call PUT /api/v3/qualitydefinition/reset on the instance to restore factory defaults.
-	 * The arr-sdk doesn't wrap this endpoint, so we use the factory's raw request method.
+	 * Reset quality definitions to factory defaults via the Sonarr/Radarr command system.
+	 * The arr-sdk doesn't include this command in its typed enum, so we use rawRequest.
 	 */
 	async function resetQualityDefinitions(
 		instance: Parameters<typeof app.arrClientFactory.rawRequest>[0],
 	): Promise<void> {
 		const response = await app.arrClientFactory.rawRequest(
 			instance,
-			"/api/v3/qualitydefinition/reset",
-			{ method: "PUT" },
+			"/api/v3/command",
+			{ method: "POST", body: { name: "ResetQualityDefinitions" } },
 		);
 		if (!response.ok) {
-			const body = await response.text().catch((bodyErr) => {
-				app.log.debug(
-					{ err: bodyErr, status: response.status },
-					"Failed to read error response body from quality definition reset",
-				);
-				return "";
-			});
+			const body = await response.text().catch(() => "");
 			throw new Error(
-				`Failed to reset quality definitions: ${response.status} ${response.statusText}${body ? ` — ${body}` : ""}`,
+				`Failed to queue quality definition reset: ${response.status} ${response.statusText}${body ? ` — ${body}` : ""}`,
 			);
 		}
 	}
@@ -251,7 +244,8 @@ export async function qualitySizeRoutes(app: FastifyInstance, _opts: FastifyPlug
 				});
 			}
 
-			// Handle "default" — just reset, remove mapping, done
+			// Handle "default" — queue reset command, remove mapping, done.
+			// The reset executes asynchronously on the Sonarr/Radarr instance.
 			if (presetTrashId === DEFAULT_PRESET_ID) {
 				await resetQualityDefinitions(instance);
 				await app.prisma.qualitySizeMapping.deleteMany({
@@ -260,7 +254,7 @@ export async function qualitySizeRoutes(app: FastifyInstance, _opts: FastifyPlug
 
 				app.log.info(
 					{ instanceId },
-					"Reset quality size definitions to factory defaults",
+					"Queued quality size reset to factory defaults",
 				);
 
 				return reply.send({
@@ -271,7 +265,7 @@ export async function qualitySizeRoutes(app: FastifyInstance, _opts: FastifyPlug
 				});
 			}
 
-			// Validate preset exists BEFORE the destructive reset
+			// Validate preset exists before applying
 			const serviceType = instance.service === "SONARR" ? "SONARR" : "RADARR";
 			const presets = await getPresets(userId, serviceType);
 			const preset = presets.find((p) => p.trash_id === presetTrashId);
@@ -283,36 +277,22 @@ export async function qualitySizeRoutes(app: FastifyInstance, _opts: FastifyPlug
 				});
 			}
 
-			// Reset to factory defaults, then apply TRaSH preset on top
-			await resetQualityDefinitions(instance);
+			// Apply TRaSH preset values directly on top of current definitions.
+			// No reset needed — applyQualitySizeToDefinitions maps by quality name.
+			const client = app.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
+			const instanceDefs = await client.qualityDefinition.getAll();
+			const result = applyQualitySizeToDefinitions(preset.qualities, instanceDefs);
+			const appliedCount = result.appliedCount;
 
-			let appliedCount: number;
 			try {
-				const client = app.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
-				const instanceDefs = await client.qualityDefinition.getAll();
-				const result = applyQualitySizeToDefinitions(preset.qualities, instanceDefs);
-				appliedCount = result.appliedCount;
-
 				// biome-ignore lint/suspicious/noExplicitAny: arr-sdk types are loosely typed from OpenAPI specs
 				await client.qualityDefinition.updateAll(result.updated as any[]);
 			} catch (error) {
-				// Reset succeeded but apply failed — instance is at factory defaults.
-				// Clear any stale mapping so the UI doesn't show an incorrect "Applied" state.
-				await app.prisma.qualitySizeMapping.deleteMany({ where: { instanceId } }).catch((cleanupErr) => {
-					request.log.warn(
-						{ err: cleanupErr, instanceId },
-						"Failed to clean up stale quality size mapping after apply failure",
-					);
-				});
 				request.log.error(
-					{ err: error, instanceId, presetTrashId },
-					"Quality size apply failed after reset — instance is at factory defaults",
+					{ err: error, instanceId, presetTrashId, appliedCount: result.appliedCount },
+					"Quality size apply failed — instance may have partial updates",
 				);
-				return reply.status(500).send({
-					success: false,
-					error: "APPLY_AFTER_RESET_FAILED",
-					message: `Quality definitions were reset to factory defaults but applying the preset failed: ${getErrorMessage(error)}. The instance is currently running factory defaults.`,
-				});
+				throw error;
 			}
 
 			// Upsert the mapping record — this is metadata, not the destructive operation.

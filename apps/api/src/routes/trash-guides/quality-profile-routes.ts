@@ -60,6 +60,41 @@ const updateQualityProfileTemplateSchema = z.object({
 			conditionsEnabled: z.record(z.string(), z.boolean()),
 		}),
 	),
+	// Quality configuration (optional — preserves existing when not sent)
+	customQualityConfig: z
+		.object({
+			useCustomQualities: z.boolean(),
+			items: z.array(
+				z.union([
+					z.looseObject({
+						type: z.literal("quality"),
+						item: z.looseObject({
+							name: z.string(),
+							allowed: z.boolean(),
+							source: z.string().optional(),
+							resolution: z.number().optional(),
+						}),
+					}),
+					z.looseObject({
+						type: z.literal("group"),
+						group: z.looseObject({
+							id: z.string(),
+							name: z.string(),
+							allowed: z.boolean(),
+							qualities: z.array(z.looseObject({
+								name: z.string(),
+								source: z.string().optional(),
+								resolution: z.number().optional(),
+							})),
+						}),
+					}),
+				]),
+			),
+			cutoffId: z.string().optional(),
+			customizedAt: z.string().optional(),
+			origin: z.enum(["trash_profile", "instance_clone", "manual", "instance"]).optional(),
+		})
+		.optional(),
 });
 
 // ============================================================================
@@ -480,6 +515,7 @@ export async function registerQualityProfileRoutes(
 			templateDescription,
 			selectedCFGroups,
 			customFormatSelections,
+			customQualityConfig,
 		} = validateRequest(updateQualityProfileTemplateSchema, request.body);
 
 		// Get existing template to preserve quality profile settings
@@ -508,14 +544,20 @@ export async function registerQualityProfileRoutes(
 			});
 		}
 
-		// Build template config from quality profile using wizard selections
-		// Spread existing config to preserve customQualityConfig, completeQualityProfile,
-		// syncSettings, qualitySize, naming, and other fields not edited here
+		// Build template config from quality profile using wizard selections.
+		// Spread existing config to preserve completeQualityProfile, syncSettings,
+		// qualitySize, naming, and other fields not edited here.
+		// Apply customQualityConfig from the wizard when provided.
 		const existingConfig = existingTemplate.config;
 		const templateConfig: TemplateConfig = {
 			...existingConfig,
 			customFormats: [],
 			customFormatGroups: [],
+			...(customQualityConfig !== undefined && {
+				customQualityConfig: customQualityConfig.useCustomQualities
+					? (customQualityConfig as TemplateConfig["customQualityConfig"])
+					: undefined,
+			}),
 		};
 
 		// Get CF Groups for reference storage

@@ -53,6 +53,14 @@ const githubNameRegex = /^[a-zA-Z0-9_.-]+$/;
 // Branch names can also contain forward slashes (e.g., feature/custom-formats)
 const githubBranchRegex = /^[a-zA-Z0-9_./-]+$/;
 
+// Schema for supplementary-report query
+const supplementaryReportQuerySchema = z.object({
+	serviceType: z.enum(["RADARR", "SONARR"]),
+});
+
+// Config types compared in the supplementary report
+const REPORT_CONFIG_TYPES = ["CUSTOM_FORMATS", "CF_GROUPS", "QUALITY_PROFILES"] as const;
+
 // Schema for update request
 const updateSettingsSchema = z.object({
 	checkFrequency: z.number().min(1).max(168).optional(), // 1 hour to 1 week
@@ -79,6 +87,7 @@ const updateSettingsSchema = z.object({
 		.max(100)
 		.nullable()
 		.optional(),
+	customRepoMode: z.enum(["fork", "supplementary"]).optional(),
 });
 
 // Schema for test-repo endpoint
@@ -190,7 +199,8 @@ export async function registerSettingsRoutes(app: FastifyInstance, _opts: Fastif
 		const repoFieldsChanging =
 			updates.customRepoOwner !== undefined ||
 			updates.customRepoName !== undefined ||
-			updates.customRepoBranch !== undefined;
+			updates.customRepoBranch !== undefined ||
+			updates.customRepoMode !== undefined;
 
 		let previousRepoConfig: Awaited<ReturnType<typeof app.prisma.trashSettings.findUnique>> | null =
 			null;
@@ -216,7 +226,8 @@ export async function registerSettingsRoutes(app: FastifyInstance, _opts: Fastif
 			const repoActuallyChanged =
 				settings.customRepoOwner !== previousRepoConfig.customRepoOwner ||
 				settings.customRepoName !== previousRepoConfig.customRepoName ||
-				settings.customRepoBranch !== previousRepoConfig.customRepoBranch;
+				settings.customRepoBranch !== previousRepoConfig.customRepoBranch ||
+				settings.customRepoMode !== previousRepoConfig.customRepoMode;
 
 			if (repoActuallyChanged) {
 				const cacheManager = createCacheManager(app.prisma);
@@ -290,6 +301,24 @@ export async function registerSettingsRoutes(app: FastifyInstance, _opts: Fastif
 			}
 
 			if (response.status === 404) {
+				// Check if the repo exists but on a different default branch
+				try {
+					const repoInfoUrl = `https://api.github.com/repos/${owner}/${name}`;
+					const repoResponse = await fetch(repoInfoUrl, { headers });
+					if (repoResponse.ok) {
+						const repoInfo = (await repoResponse.json()) as { default_branch?: string };
+						if (repoInfo.default_branch && repoInfo.default_branch !== branch) {
+							return reply.send({
+								valid: false,
+								error: `Branch "${branch}" not found. This repo's default branch is "${repoInfo.default_branch}". Also ensure the repo has a docs/json directory.`,
+								suggestedBranch: repoInfo.default_branch,
+							});
+						}
+					}
+				} catch {
+					// Ignore — fall through to generic 404 message
+				}
+
 				return reply.send({
 					valid: false,
 					error: `Repository or path not found: ${owner}/${name} (branch: ${branch}). Ensure the repo exists and has a docs/json directory.`,
@@ -356,7 +385,7 @@ export async function registerSettingsRoutes(app: FastifyInstance, _opts: Fastif
 	app.post("/reset-repo", async (request: FastifyRequest, reply: FastifyReply) => {
 		const userId = request.currentUser!.id; // preHandler guarantees auth
 
-		// Clear custom repo fields
+		// Clear custom repo fields and reset mode
 		const settings = await app.prisma.trashSettings.upsert({
 			where: { userId },
 			create: { userId },
@@ -364,6 +393,7 @@ export async function registerSettingsRoutes(app: FastifyInstance, _opts: Fastif
 				customRepoOwner: null,
 				customRepoName: null,
 				customRepoBranch: null,
+				customRepoMode: "fork",
 			},
 		});
 
@@ -470,4 +500,132 @@ export async function registerSettingsRoutes(app: FastifyInstance, _opts: Fastif
 			},
 		});
 	});
+
+	/**
+	 * GET /api/trash-guides/settings/supplementary-report?serviceType=RADARR
+	 *
+	 * Generate a report comparing the user's custom (supplementary) repo against
+	 * the official TRaSH-Guides repo. Shows which items override official entries
+	 * vs which are new additions.
+	 *
+	 * Only available when customRepoMode is "supplementary". Returns 400 otherwise.
+	 */
+	app.get("/supplementary-report", async (request: FastifyRequest, reply: FastifyReply) => {
+		const userId = request.currentUser!.id;
+		const { serviceType } = validateRequest(supplementaryReportQuerySchema, request.query);
+
+		// Verify the user is in supplementary mode with a custom repo configured
+		const settings = await app.prisma.trashSettings.findUnique({
+			where: { userId },
+			select: {
+				customRepoOwner: true,
+				customRepoName: true,
+				customRepoBranch: true,
+				customRepoMode: true,
+			},
+		});
+
+		if (!settings?.customRepoOwner || settings.customRepoMode !== "supplementary") {
+			return reply.status(400).send({
+				error: "Supplementary report is only available when using supplementary mode with a custom repository configured.",
+			});
+		}
+
+		// Create two independent fetchers — both without "supplementary" mode
+		// so they each fetch from their single repo without merging.
+		const officialFetcher = createTrashFetcher({
+			repoConfig: DEFAULT_TRASH_REPO,
+			logger: app.log,
+		});
+		const customFetcher = createTrashFetcher({
+			repoConfig: {
+				owner: settings.customRepoOwner,
+				name: settings.customRepoName ?? DEFAULT_TRASH_REPO.name,
+				branch: settings.customRepoBranch ?? DEFAULT_TRASH_REPO.branch,
+				// mode defaults to "fork" — no merge
+			},
+			logger: app.log,
+		});
+
+		// Fetch all config types from both repos in parallel, with per-fetch error handling
+		const fetchPromises = REPORT_CONFIG_TYPES.map(async (configType) => {
+			try {
+				const [officialItems, customItems] = await Promise.all([
+					officialFetcher.fetchConfigs(serviceType, configType),
+					customFetcher.fetchConfigs(serviceType, configType),
+				]);
+				return { configType, officialItems, customItems, error: null };
+			} catch (error) {
+				app.log.error(
+					{ err: error, configType, serviceType },
+					"Failed to fetch configs for supplementary report",
+				);
+				return { configType, officialItems: [] as unknown[], customItems: [] as unknown[], error: getErrorMessage(error) };
+			}
+		});
+
+		const results = await Promise.all(fetchPromises);
+
+		// Build per-config-type report
+		const configTypes: Record<
+			string,
+			{
+				officialCount: number;
+				customCount: number;
+				overrides: Array<{ trash_id: string; name: string }>;
+				additions: Array<{ trash_id: string; name: string }>;
+				error?: string;
+			}
+		> = {};
+
+		for (const { configType, officialItems, customItems, error } of results) {
+			// Build a set of official trash_ids for O(1) lookup
+			const officialIds = new Set<string>();
+			for (const item of officialItems) {
+				const id = extractTrashId(item);
+				if (id) officialIds.add(id);
+			}
+
+			const overrides: Array<{ trash_id: string; name: string }> = [];
+			const additions: Array<{ trash_id: string; name: string }> = [];
+
+			for (const item of customItems) {
+				const id = extractTrashId(item);
+				const name = extractName(item);
+				if (!id) continue;
+
+				if (officialIds.has(id)) {
+					overrides.push({ trash_id: id, name });
+				} else {
+					additions.push({ trash_id: id, name });
+				}
+			}
+
+			configTypes[configType] = {
+				officialCount: officialItems.length,
+				customCount: customItems.length,
+				overrides,
+				additions,
+				...(error && { error }),
+			};
+		}
+
+		return reply.send({ serviceType, configTypes });
+	});
+}
+
+/** Extract trash_id from a config item (works for CFs, CF Groups, Quality Profiles, Quality Sizes) */
+function extractTrashId(item: unknown): string | undefined {
+	if (item && typeof item === "object" && "trash_id" in item) {
+		return (item as { trash_id: string }).trash_id;
+	}
+	return undefined;
+}
+
+/** Extract display name from a config item */
+function extractName(item: unknown): string {
+	if (item && typeof item === "object" && "name" in item) {
+		return (item as { name: string }).name;
+	}
+	return "(unnamed)";
 }

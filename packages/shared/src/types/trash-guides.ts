@@ -285,6 +285,10 @@ export interface TrashCacheStatus {
 	lastChecked: string;
 	itemCount: number;
 	isStale: boolean;
+	sourceBreakdown?: {
+		official: number;
+		custom: number;
+	};
 }
 
 /**
@@ -987,13 +991,16 @@ export interface UpdateScheduleRequest {
  * Allows users to point at a fork that follows the same directory structure
  * as the official TRaSH-Guides/Guides repo.
  *
- * When a custom repo is configured, it **replaces** the official upstream
- * entirely (forks already contain all official CFs plus custom additions).
+ * Two modes are supported:
+ * - "fork" (default): Custom repo replaces official upstream entirely
+ * - "supplementary": Custom repo's configs are merged on top of official data
+ *   (custom overrides official when `trash_id` matches)
  */
 export interface TrashRepoConfig {
 	owner: string;   // GitHub owner, e.g., "TRaSH-Guides"
 	name: string;    // Repository name, e.g., "Guides"
 	branch: string;  // Branch name, e.g., "master" or "main"
+	mode?: "fork" | "supplementary"; // default: "fork"
 }
 
 /**

@@ -50,6 +50,7 @@ export type TrashSettingsMinAggregateOutputType = {
   customRepoOwner: string | null
   customRepoName: string | null
   customRepoBranch: string | null
+  customRepoMode: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -66,6 +67,7 @@ export type TrashSettingsMaxAggregateOutputType = {
   customRepoOwner: string | null
   customRepoName: string | null
   customRepoBranch: string | null
+  customRepoMode: string | null
   createdAt: Date | null
   updatedAt: Date | null
 }
@@ -82,6 +84,7 @@ export type TrashSettingsCountAggregateOutputType = {
   customRepoOwner: number
   customRepoName: number
   customRepoBranch: number
+  customRepoMode: number
   createdAt: number
   updatedAt: number
   _all: number
@@ -112,6 +115,7 @@ export type TrashSettingsMinAggregateInputType = {
   customRepoOwner?: true
   customRepoName?: true
   customRepoBranch?: true
+  customRepoMode?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -128,6 +132,7 @@ export type TrashSettingsMaxAggregateInputType = {
   customRepoOwner?: true
   customRepoName?: true
   customRepoBranch?: true
+  customRepoMode?: true
   createdAt?: true
   updatedAt?: true
 }
@@ -144,6 +149,7 @@ export type TrashSettingsCountAggregateInputType = {
   customRepoOwner?: true
   customRepoName?: true
   customRepoBranch?: true
+  customRepoMode?: true
   createdAt?: true
   updatedAt?: true
   _all?: true
@@ -247,6 +253,7 @@ export type TrashSettingsGroupByOutputType = {
   customRepoOwner: string | null
   customRepoName: string | null
   customRepoBranch: string | null
+  customRepoMode: string
   createdAt: Date
   updatedAt: Date
   _count: TrashSettingsCountAggregateOutputType | null
@@ -286,6 +293,7 @@ export type TrashSettingsWhereInput = {
   customRepoOwner?: Prisma.StringNullableFilter<"TrashSettings"> | string | null
   customRepoName?: Prisma.StringNullableFilter<"TrashSettings"> | string | null
   customRepoBranch?: Prisma.StringNullableFilter<"TrashSettings"> | string | null
+  customRepoMode?: Prisma.StringFilter<"TrashSettings"> | string
   createdAt?: Prisma.DateTimeFilter<"TrashSettings"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"TrashSettings"> | Date | string
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
@@ -303,6 +311,7 @@ export type TrashSettingsOrderByWithRelationInput = {
   customRepoOwner?: Prisma.SortOrderInput | Prisma.SortOrder
   customRepoName?: Prisma.SortOrderInput | Prisma.SortOrder
   customRepoBranch?: Prisma.SortOrderInput | Prisma.SortOrder
+  customRepoMode?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   user?: Prisma.UserOrderByWithRelationInput
@@ -323,6 +332,7 @@ export type TrashSettingsWhereUniqueInput = Prisma.AtLeast<{
   customRepoOwner?: Prisma.StringNullableFilter<"TrashSettings"> | string | null
   customRepoName?: Prisma.StringNullableFilter<"TrashSettings"> | string | null
   customRepoBranch?: Prisma.StringNullableFilter<"TrashSettings"> | string | null
+  customRepoMode?: Prisma.StringFilter<"TrashSettings"> | string
   createdAt?: Prisma.DateTimeFilter<"TrashSettings"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"TrashSettings"> | Date | string
   user?: Prisma.XOR<Prisma.UserScalarRelationFilter, Prisma.UserWhereInput>
@@ -340,6 +350,7 @@ export type TrashSettingsOrderByWithAggregationInput = {
   customRepoOwner?: Prisma.SortOrderInput | Prisma.SortOrder
   customRepoName?: Prisma.SortOrderInput | Prisma.SortOrder
   customRepoBranch?: Prisma.SortOrderInput | Prisma.SortOrder
+  customRepoMode?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   _count?: Prisma.TrashSettingsCountOrderByAggregateInput
@@ -364,6 +375,7 @@ export type TrashSettingsScalarWhereWithAggregatesInput = {
   customRepoOwner?: Prisma.StringNullableWithAggregatesFilter<"TrashSettings"> | string | null
   customRepoName?: Prisma.StringNullableWithAggregatesFilter<"TrashSettings"> | string | null
   customRepoBranch?: Prisma.StringNullableWithAggregatesFilter<"TrashSettings"> | string | null
+  customRepoMode?: Prisma.StringWithAggregatesFilter<"TrashSettings"> | string
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"TrashSettings"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"TrashSettings"> | Date | string
 }
@@ -379,6 +391,7 @@ export type TrashSettingsCreateInput = {
   customRepoOwner?: string | null
   customRepoName?: string | null
   customRepoBranch?: string | null
+  customRepoMode?: string
   createdAt?: Date | string
   updatedAt?: Date | string
   user: Prisma.UserCreateNestedOneWithoutTrashSettingsInput
@@ -396,6 +409,7 @@ export type TrashSettingsUncheckedCreateInput = {
   customRepoOwner?: string | null
   customRepoName?: string | null
   customRepoBranch?: string | null
+  customRepoMode?: string
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -411,6 +425,7 @@ export type TrashSettingsUpdateInput = {
   customRepoOwner?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   customRepoName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   customRepoBranch?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  customRepoMode?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   user?: Prisma.UserUpdateOneRequiredWithoutTrashSettingsNestedInput
@@ -428,6 +443,7 @@ export type TrashSettingsUncheckedUpdateInput = {
   customRepoOwner?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   customRepoName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   customRepoBranch?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  customRepoMode?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -444,6 +460,7 @@ export type TrashSettingsCreateManyInput = {
   customRepoOwner?: string | null
   customRepoName?: string | null
   customRepoBranch?: string | null
+  customRepoMode?: string
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -459,6 +476,7 @@ export type TrashSettingsUpdateManyMutationInput = {
   customRepoOwner?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   customRepoName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   customRepoBranch?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  customRepoMode?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -475,6 +493,7 @@ export type TrashSettingsUncheckedUpdateManyInput = {
   customRepoOwner?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   customRepoName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   customRepoBranch?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  customRepoMode?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -496,6 +515,7 @@ export type TrashSettingsCountOrderByAggregateInput = {
   customRepoOwner?: Prisma.SortOrder
   customRepoName?: Prisma.SortOrder
   customRepoBranch?: Prisma.SortOrder
+  customRepoMode?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -518,6 +538,7 @@ export type TrashSettingsMaxOrderByAggregateInput = {
   customRepoOwner?: Prisma.SortOrder
   customRepoName?: Prisma.SortOrder
   customRepoBranch?: Prisma.SortOrder
+  customRepoMode?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -534,6 +555,7 @@ export type TrashSettingsMinOrderByAggregateInput = {
   customRepoOwner?: Prisma.SortOrder
   customRepoName?: Prisma.SortOrder
   customRepoBranch?: Prisma.SortOrder
+  customRepoMode?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
 }
@@ -587,6 +609,7 @@ export type TrashSettingsCreateWithoutUserInput = {
   customRepoOwner?: string | null
   customRepoName?: string | null
   customRepoBranch?: string | null
+  customRepoMode?: string
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -602,6 +625,7 @@ export type TrashSettingsUncheckedCreateWithoutUserInput = {
   customRepoOwner?: string | null
   customRepoName?: string | null
   customRepoBranch?: string | null
+  customRepoMode?: string
   createdAt?: Date | string
   updatedAt?: Date | string
 }
@@ -633,6 +657,7 @@ export type TrashSettingsUpdateWithoutUserInput = {
   customRepoOwner?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   customRepoName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   customRepoBranch?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  customRepoMode?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -648,6 +673,7 @@ export type TrashSettingsUncheckedUpdateWithoutUserInput = {
   customRepoOwner?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   customRepoName?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   customRepoBranch?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
+  customRepoMode?: Prisma.StringFieldUpdateOperationsInput | string
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
 }
@@ -666,6 +692,7 @@ export type TrashSettingsSelect<ExtArgs extends runtime.Types.Extensions.Interna
   customRepoOwner?: boolean
   customRepoName?: boolean
   customRepoBranch?: boolean
+  customRepoMode?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
@@ -683,6 +710,7 @@ export type TrashSettingsSelectCreateManyAndReturn<ExtArgs extends runtime.Types
   customRepoOwner?: boolean
   customRepoName?: boolean
   customRepoBranch?: boolean
+  customRepoMode?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
@@ -700,6 +728,7 @@ export type TrashSettingsSelectUpdateManyAndReturn<ExtArgs extends runtime.Types
   customRepoOwner?: boolean
   customRepoName?: boolean
   customRepoBranch?: boolean
+  customRepoMode?: boolean
   createdAt?: boolean
   updatedAt?: boolean
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
@@ -717,11 +746,12 @@ export type TrashSettingsSelectScalar = {
   customRepoOwner?: boolean
   customRepoName?: boolean
   customRepoBranch?: boolean
+  customRepoMode?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type TrashSettingsOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "checkFrequency" | "autoRefreshCache" | "notifyOnUpdates" | "notifyOnSyncFail" | "backupRetention" | "backupRetentionDays" | "customRepoOwner" | "customRepoName" | "customRepoBranch" | "createdAt" | "updatedAt", ExtArgs["result"]["trashSettings"]>
+export type TrashSettingsOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "checkFrequency" | "autoRefreshCache" | "notifyOnUpdates" | "notifyOnSyncFail" | "backupRetention" | "backupRetentionDays" | "customRepoOwner" | "customRepoName" | "customRepoBranch" | "customRepoMode" | "createdAt" | "updatedAt", ExtArgs["result"]["trashSettings"]>
 export type TrashSettingsInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
 }
@@ -749,6 +779,7 @@ export type $TrashSettingsPayload<ExtArgs extends runtime.Types.Extensions.Inter
     customRepoOwner: string | null
     customRepoName: string | null
     customRepoBranch: string | null
+    customRepoMode: string
     createdAt: Date
     updatedAt: Date
   }, ExtArgs["result"]["trashSettings"]>
@@ -1186,6 +1217,7 @@ export interface TrashSettingsFieldRefs {
   readonly customRepoOwner: Prisma.FieldRef<"TrashSettings", 'String'>
   readonly customRepoName: Prisma.FieldRef<"TrashSettings", 'String'>
   readonly customRepoBranch: Prisma.FieldRef<"TrashSettings", 'String'>
+  readonly customRepoMode: Prisma.FieldRef<"TrashSettings", 'String'>
   readonly createdAt: Prisma.FieldRef<"TrashSettings", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"TrashSettings", 'DateTime'>
 }

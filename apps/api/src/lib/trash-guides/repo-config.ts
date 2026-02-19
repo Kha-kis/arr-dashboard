@@ -23,6 +23,7 @@ export async function getRepoConfig(prisma: PrismaClient, userId: string): Promi
 			customRepoOwner: true,
 			customRepoName: true,
 			customRepoBranch: true,
+			customRepoMode: true,
 		},
 	});
 
@@ -31,6 +32,7 @@ export async function getRepoConfig(prisma: PrismaClient, userId: string): Promi
 			owner: settings.customRepoOwner,
 			name: settings.customRepoName ?? DEFAULT_TRASH_REPO.name,
 			branch: settings.customRepoBranch ?? DEFAULT_TRASH_REPO.branch,
+			mode: settings.customRepoMode === "supplementary" ? "supplementary" : "fork",
 		};
 	}
 
@@ -55,6 +57,7 @@ export async function getGlobalRepoConfig(prisma: PrismaClient): Promise<TrashRe
 			customRepoOwner: true,
 			customRepoName: true,
 			customRepoBranch: true,
+			customRepoMode: true,
 		},
 	});
 
@@ -63,6 +66,7 @@ export async function getGlobalRepoConfig(prisma: PrismaClient): Promise<TrashRe
 			owner: settings.customRepoOwner,
 			name: settings.customRepoName ?? DEFAULT_TRASH_REPO.name,
 			branch: settings.customRepoBranch ?? DEFAULT_TRASH_REPO.branch,
+			mode: settings.customRepoMode === "supplementary" ? "supplementary" : "fork",
 		};
 	}
 

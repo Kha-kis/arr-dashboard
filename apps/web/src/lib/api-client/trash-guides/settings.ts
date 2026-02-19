@@ -24,6 +24,7 @@ export type TrashSettingsResponse = {
 		customRepoOwner: string | null;
 		customRepoName: string | null;
 		customRepoBranch: string | null;
+		customRepoMode: string;
 	};
 	defaultRepo: {
 		owner: string;
@@ -42,6 +43,7 @@ export type UpdateTrashSettingsPayload = {
 	customRepoOwner?: string | null;
 	customRepoName?: string | null;
 	customRepoBranch?: string | null;
+	customRepoMode?: "fork" | "supplementary";
 };
 
 export type UpdateTrashSettingsResponse = {
@@ -66,12 +68,25 @@ export type TestRepoResponse = {
 		directoriesFound: string[];
 	};
 	error?: string;
+	suggestedBranch?: string;
 };
 
 export type ResetRepoResponse = {
 	settings: TrashSettingsResponse["settings"];
 	message: string;
 	cacheEntriesCleared: number;
+};
+
+export type SupplementaryReportConfigEntry = {
+	officialCount: number;
+	customCount: number;
+	overrides: Array<{ trash_id: string; name: string }>;
+	additions: Array<{ trash_id: string; name: string }>;
+};
+
+export type SupplementaryReportResponse = {
+	serviceType: "RADARR" | "SONARR";
+	configTypes: Record<string, SupplementaryReportConfigEntry>;
 };
 
 // ============================================================================
@@ -116,4 +131,16 @@ export async function resetToOfficialRepo(): Promise<ResetRepoResponse> {
 	return await apiRequest<ResetRepoResponse>("/api/trash-guides/settings/reset-repo", {
 		method: "POST",
 	});
+}
+
+/**
+ * Fetch the supplementary report comparing custom repo against official
+ */
+export async function fetchSupplementaryReport(
+	serviceType: "RADARR" | "SONARR",
+): Promise<SupplementaryReportResponse> {
+	const params = new URLSearchParams({ serviceType });
+	return await apiRequest<SupplementaryReportResponse>(
+		`/api/trash-guides/settings/supplementary-report?${params}`,
+	);
 }

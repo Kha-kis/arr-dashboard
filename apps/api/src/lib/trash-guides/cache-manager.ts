@@ -42,6 +42,35 @@ async function decompressData<T = unknown>(compressedData: string): Promise<T> {
 }
 
 // ============================================================================
+// Source Breakdown
+// ============================================================================
+
+/**
+ * Count items by _repoSource tag (set during supplementary mode merge).
+ * Returns undefined when no items carry the tag (official-only or fork mode).
+ */
+function countSourceBreakdown(data: unknown): { official: number; custom: number } | undefined {
+	if (!Array.isArray(data)) return undefined;
+	let official = 0;
+	let custom = 0;
+	for (const item of data) {
+		if (item && typeof item === "object" && "_repoSource" in item) {
+			const source = (item as { _repoSource: string })._repoSource;
+			if (source === "official") official++;
+			else if (source === "custom") custom++;
+		}
+	}
+	if (official === 0 && custom === 0) return undefined;
+	if (official + custom !== data.length) {
+		log.warn(
+			{ official, custom, total: data.length },
+			"Source breakdown count mismatch — some items may lack _repoSource tag",
+		);
+	}
+	return { official, custom };
+}
+
+// ============================================================================
 // Types
 // ============================================================================
 
@@ -237,8 +266,9 @@ export class TrashCacheManager {
 		staleThreshold.setHours(staleThreshold.getHours() - this.options.staleAfterHours);
 		const isStale = cacheEntry.lastCheckedAt <= staleThreshold;
 
-		// Get item count with error handling
+		// Get item count and source breakdown with error handling
 		let itemCount = 0;
+		let sourceBreakdown: { official: number; custom: number } | undefined;
 		try {
 			const data = this.options.compressionEnabled
 				? await decompressData<unknown[]>(cacheEntry.data)
@@ -254,6 +284,7 @@ export class TrashCacheManager {
 			}
 
 			itemCount = Array.isArray(data) ? data.length : 0;
+			sourceBreakdown = countSourceBreakdown(data);
 		} catch (error) {
 			// Handle decompression errors
 			log.error({ err: error, serviceType, configType, dataSize: cacheEntry.data.length }, "Failed to get cache status");
@@ -269,6 +300,7 @@ export class TrashCacheManager {
 			lastChecked: cacheEntry.lastCheckedAt.toISOString(),
 			itemCount,
 			isStale,
+			...(sourceBreakdown && { sourceBreakdown }),
 		};
 	}
 
@@ -289,6 +321,7 @@ export class TrashCacheManager {
 			const isStale = entry.lastCheckedAt <= staleThreshold;
 
 			let itemCount = 0;
+			let sourceBreakdown: { official: number; custom: number } | undefined;
 			try {
 				const data = this.options.compressionEnabled
 					? await decompressData<unknown[]>(entry.data)
@@ -304,6 +337,7 @@ export class TrashCacheManager {
 				}
 
 				itemCount = Array.isArray(data) ? data.length : 0;
+				sourceBreakdown = countSourceBreakdown(data);
 			} catch (error) {
 				// Handle decompression errors - mark for deletion
 				log.error({ err: error, serviceType, configType: entry.configType, dataSize: entry.data.length }, "Failed to get cache status");
@@ -319,6 +353,7 @@ export class TrashCacheManager {
 				lastChecked: entry.lastCheckedAt.toISOString(),
 				itemCount,
 				isStale,
+				...(sourceBreakdown && { sourceBreakdown }),
 			});
 		}
 

@@ -21,7 +21,7 @@ import { useTrashGuidesActions } from "../hooks/use-trash-guides-actions";
 import { useTrashGuidesModals } from "../hooks/use-trash-guides-modals";
 import { CONFIG_TYPE_LABELS } from "../lib/constants";
 import { useCurrentUser } from "../../../hooks/api/useAuth";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { SEMANTIC_COLORS, getServiceGradient } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
 
@@ -298,11 +298,15 @@ export function TrashGuidesClient() {
 						>
 							<div className="flex items-center gap-2">
 								<HardDrive className="h-4 w-4 text-muted-foreground" />
-								<span className="text-sm">
-									<span className="font-semibold" style={{ color: themeGradient.from }}>
-										{cacheStatus.stats.totalEntries}
+								<span className="text-sm text-muted-foreground">
+									Cache:{" "}
+									<span className="font-semibold" style={{ color: getServiceGradient("RADARR").from }}>
+										{cacheStatus.radarr.length} Radarr
 									</span>
-									<span className="text-muted-foreground ml-1">entries</span>
+									,{" "}
+									<span className="font-semibold" style={{ color: getServiceGradient("SONARR").from }}>
+										{cacheStatus.sonarr.length} Sonarr
+									</span>
 								</span>
 							</div>
 							{cacheStatus.stats.staleEntries > 0 && (

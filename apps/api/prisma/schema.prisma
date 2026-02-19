@@ -412,6 +412,7 @@ model TrashSettings {
   customRepoOwner    String?   // GitHub owner
   customRepoName     String?   // Repository name
   customRepoBranch   String?   // Branch name
+  customRepoMode     String    @default("fork")  // "fork" or "supplementary"
 
   createdAt          DateTime @default(now())
   updatedAt          DateTime @updatedAt
