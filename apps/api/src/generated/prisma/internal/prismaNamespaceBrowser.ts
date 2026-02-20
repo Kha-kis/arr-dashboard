@@ -146,10 +146,6 @@ export const ServiceInstanceScalarFieldEnum = {
   encryptionIv: 'encryptionIv',
   isDefault: 'isDefault',
   enabled: 'enabled',
-  defaultQualityProfileId: 'defaultQualityProfileId',
-  defaultLanguageProfileId: 'defaultLanguageProfileId',
-  defaultRootFolderPath: 'defaultRootFolderPath',
-  defaultSeasonFolder: 'defaultSeasonFolder',
   storageGroupId: 'storageGroupId',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'

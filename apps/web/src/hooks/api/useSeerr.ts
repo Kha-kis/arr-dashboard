@@ -4,17 +4,24 @@
  * React Query hooks for Seerr integration
  */
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
-	SeerrRequest,
-	SeerrRequestCount,
-	SeerrUser,
-	SeerrQuota,
+	SeerrCreateRequestPayload,
+	SeerrCreateRequestResponse,
+	SeerrDiscoverResponse,
+	SeerrGenre,
 	SeerrIssue,
 	SeerrIssueComment,
+	SeerrMovieDetails,
 	SeerrNotificationAgent,
-	SeerrStatus,
 	SeerrPageResult,
+	SeerrQuota,
+	SeerrRequest,
+	SeerrRequestCount,
+	SeerrRequestOptions,
+	SeerrStatus,
+	SeerrTvDetails,
+	SeerrUser,
 } from "@arr/shared";
 import {
 	fetchSeerrRequests,
@@ -33,6 +40,18 @@ import {
 	updateSeerrNotification,
 	testSeerrNotification,
 	fetchSeerrStatus,
+	fetchSeerrDiscoverMovies,
+	fetchSeerrDiscoverTv,
+	fetchSeerrDiscoverTrending,
+	fetchSeerrDiscoverMoviesUpcoming,
+	fetchSeerrDiscoverTvUpcoming,
+	fetchSeerrSearch,
+	fetchSeerrMovieDetails,
+	fetchSeerrTvDetails,
+	fetchSeerrGenres,
+	fetchSeerrDiscoverByGenre,
+	fetchSeerrRequestOptions,
+	createSeerrRequest,
 	type FetchSeerrRequestsParams,
 	type FetchSeerrUsersParams,
 	type FetchSeerrIssuesParams,
@@ -56,6 +75,29 @@ const seerrKeys = {
 		["seerr", "issues", instanceId, params] as const,
 	notifications: (instanceId: string) => ["seerr", "notifications", instanceId] as const,
 	status: (instanceId: string) => ["seerr", "status", instanceId] as const,
+	// Discover
+	discover: {
+		all: ["seerr", "discover"] as const,
+		movies: (instanceId: string) => ["seerr", "discover", "movies", instanceId] as const,
+		tv: (instanceId: string) => ["seerr", "discover", "tv", instanceId] as const,
+		trending: (instanceId: string) => ["seerr", "discover", "trending", instanceId] as const,
+		moviesUpcoming: (instanceId: string) =>
+			["seerr", "discover", "movies-upcoming", instanceId] as const,
+		tvUpcoming: (instanceId: string) =>
+			["seerr", "discover", "tv-upcoming", instanceId] as const,
+		search: (instanceId: string, query: string) =>
+			["seerr", "discover", "search", instanceId, query] as const,
+		movieDetails: (instanceId: string, tmdbId: number) =>
+			["seerr", "discover", "movie", instanceId, tmdbId] as const,
+		tvDetails: (instanceId: string, tmdbId: number) =>
+			["seerr", "discover", "tv-details", instanceId, tmdbId] as const,
+		genres: (instanceId: string, mediaType: "movie" | "tv") =>
+			["seerr", "discover", "genres", instanceId, mediaType] as const,
+		requestOptions: (instanceId: string, mediaType: "movie" | "tv") =>
+			["seerr", "discover", "request-options", instanceId, mediaType] as const,
+		byGenre: (instanceId: string, mediaType: "movie" | "tv", genreId: number) =>
+			["seerr", "discover", "genre", instanceId, mediaType, genreId] as const,
+	},
 };
 
 // ============================================================================
@@ -243,3 +285,137 @@ export const useSeerrStatus = (instanceId: string) =>
 		refetchInterval: 5 * 60_000,
 		enabled: !!instanceId,
 	});
+
+// ============================================================================
+// Discover Hooks
+// ============================================================================
+
+const DISCOVER_STALE_TIME = 5 * 60_000;
+
+const discoverInfiniteOptions = (
+	queryKey: readonly unknown[],
+	fetchFn: (page: number) => Promise<SeerrDiscoverResponse>,
+	enabled: boolean,
+) => ({
+	queryKey,
+	queryFn: ({ pageParam }: { pageParam: number }) => fetchFn(pageParam),
+	initialPageParam: 1,
+	getNextPageParam: (last: SeerrDiscoverResponse) =>
+		last.page < last.totalPages ? last.page + 1 : undefined,
+	staleTime: DISCOVER_STALE_TIME,
+	enabled,
+});
+
+export const useSeerrDiscoverMovies = (instanceId: string) =>
+	useInfiniteQuery(
+		discoverInfiniteOptions(
+			seerrKeys.discover.movies(instanceId),
+			(page) => fetchSeerrDiscoverMovies(instanceId, page),
+			!!instanceId,
+		),
+	);
+
+export const useSeerrDiscoverTv = (instanceId: string) =>
+	useInfiniteQuery(
+		discoverInfiniteOptions(
+			seerrKeys.discover.tv(instanceId),
+			(page) => fetchSeerrDiscoverTv(instanceId, page),
+			!!instanceId,
+		),
+	);
+
+export const useSeerrDiscoverTrending = (instanceId: string) =>
+	useInfiniteQuery(
+		discoverInfiniteOptions(
+			seerrKeys.discover.trending(instanceId),
+			(page) => fetchSeerrDiscoverTrending(instanceId, page),
+			!!instanceId,
+		),
+	);
+
+export const useSeerrDiscoverMoviesUpcoming = (instanceId: string) =>
+	useInfiniteQuery(
+		discoverInfiniteOptions(
+			seerrKeys.discover.moviesUpcoming(instanceId),
+			(page) => fetchSeerrDiscoverMoviesUpcoming(instanceId, page),
+			!!instanceId,
+		),
+	);
+
+export const useSeerrDiscoverTvUpcoming = (instanceId: string) =>
+	useInfiniteQuery(
+		discoverInfiniteOptions(
+			seerrKeys.discover.tvUpcoming(instanceId),
+			(page) => fetchSeerrDiscoverTvUpcoming(instanceId, page),
+			!!instanceId,
+		),
+	);
+
+export const useSeerrSearch = (instanceId: string, query: string) =>
+	useQuery<SeerrDiscoverResponse>({
+		queryKey: seerrKeys.discover.search(instanceId, query),
+		queryFn: () => fetchSeerrSearch(instanceId, query),
+		staleTime: 30_000,
+		enabled: !!instanceId && query.length > 0,
+	});
+
+export const useSeerrMovieDetails = (instanceId: string, tmdbId: number) =>
+	useQuery<SeerrMovieDetails>({
+		queryKey: seerrKeys.discover.movieDetails(instanceId, tmdbId),
+		queryFn: () => fetchSeerrMovieDetails(instanceId, tmdbId),
+		staleTime: DISCOVER_STALE_TIME,
+		enabled: !!instanceId && tmdbId > 0,
+	});
+
+export const useSeerrTvDetails = (instanceId: string, tmdbId: number) =>
+	useQuery<SeerrTvDetails>({
+		queryKey: seerrKeys.discover.tvDetails(instanceId, tmdbId),
+		queryFn: () => fetchSeerrTvDetails(instanceId, tmdbId),
+		staleTime: DISCOVER_STALE_TIME,
+		enabled: !!instanceId && tmdbId > 0,
+	});
+
+export const useSeerrGenres = (instanceId: string, mediaType: "movie" | "tv") =>
+	useQuery<SeerrGenre[]>({
+		queryKey: seerrKeys.discover.genres(instanceId, mediaType),
+		queryFn: () => fetchSeerrGenres(instanceId, mediaType),
+		staleTime: 60 * 60_000,
+		enabled: !!instanceId,
+	});
+
+export const useSeerrDiscoverByGenre = (
+	instanceId: string,
+	mediaType: "movie" | "tv",
+	genreId: number,
+) =>
+	useInfiniteQuery(
+		discoverInfiniteOptions(
+			seerrKeys.discover.byGenre(instanceId, mediaType, genreId),
+			(page) => fetchSeerrDiscoverByGenre(instanceId, mediaType, genreId, page),
+			!!instanceId && genreId > 0,
+		),
+	);
+
+export const useSeerrRequestOptions = (instanceId: string, mediaType: "movie" | "tv") =>
+	useQuery<SeerrRequestOptions>({
+		queryKey: seerrKeys.discover.requestOptions(instanceId, mediaType),
+		queryFn: () => fetchSeerrRequestOptions(instanceId, mediaType),
+		staleTime: 5 * 60_000,
+		enabled: !!instanceId,
+	});
+
+export const useCreateSeerrRequest = () => {
+	const queryClient = useQueryClient();
+	return useMutation<
+		SeerrCreateRequestResponse,
+		Error,
+		{ instanceId: string; payload: SeerrCreateRequestPayload }
+	>({
+		mutationFn: ({ instanceId, payload }) => createSeerrRequest(instanceId, payload),
+		onSuccess: (_, { instanceId }) => {
+			queryClient.invalidateQueries({ queryKey: seerrKeys.discover.all });
+			queryClient.invalidateQueries({ queryKey: ["seerr", "requests", instanceId] });
+			queryClient.invalidateQueries({ queryKey: seerrKeys.requestCount(instanceId) });
+		},
+	});
+};

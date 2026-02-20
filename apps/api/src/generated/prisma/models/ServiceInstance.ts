@@ -20,20 +20,8 @@ export type ServiceInstanceModel = runtime.Types.Result.DefaultSelection<Prisma.
 
 export type AggregateServiceInstance = {
   _count: ServiceInstanceCountAggregateOutputType | null
-  _avg: ServiceInstanceAvgAggregateOutputType | null
-  _sum: ServiceInstanceSumAggregateOutputType | null
   _min: ServiceInstanceMinAggregateOutputType | null
   _max: ServiceInstanceMaxAggregateOutputType | null
-}
-
-export type ServiceInstanceAvgAggregateOutputType = {
-  defaultQualityProfileId: number | null
-  defaultLanguageProfileId: number | null
-}
-
-export type ServiceInstanceSumAggregateOutputType = {
-  defaultQualityProfileId: number | null
-  defaultLanguageProfileId: number | null
 }
 
 export type ServiceInstanceMinAggregateOutputType = {
@@ -47,10 +35,6 @@ export type ServiceInstanceMinAggregateOutputType = {
   encryptionIv: string | null
   isDefault: boolean | null
   enabled: boolean | null
-  defaultQualityProfileId: number | null
-  defaultLanguageProfileId: number | null
-  defaultRootFolderPath: string | null
-  defaultSeasonFolder: boolean | null
   storageGroupId: string | null
   createdAt: Date | null
   updatedAt: Date | null
@@ -67,10 +51,6 @@ export type ServiceInstanceMaxAggregateOutputType = {
   encryptionIv: string | null
   isDefault: boolean | null
   enabled: boolean | null
-  defaultQualityProfileId: number | null
-  defaultLanguageProfileId: number | null
-  defaultRootFolderPath: string | null
-  defaultSeasonFolder: boolean | null
   storageGroupId: string | null
   createdAt: Date | null
   updatedAt: Date | null
@@ -87,26 +67,12 @@ export type ServiceInstanceCountAggregateOutputType = {
   encryptionIv: number
   isDefault: number
   enabled: number
-  defaultQualityProfileId: number
-  defaultLanguageProfileId: number
-  defaultRootFolderPath: number
-  defaultSeasonFolder: number
   storageGroupId: number
   createdAt: number
   updatedAt: number
   _all: number
 }
 
-
-export type ServiceInstanceAvgAggregateInputType = {
-  defaultQualityProfileId?: true
-  defaultLanguageProfileId?: true
-}
-
-export type ServiceInstanceSumAggregateInputType = {
-  defaultQualityProfileId?: true
-  defaultLanguageProfileId?: true
-}
 
 export type ServiceInstanceMinAggregateInputType = {
   id?: true
@@ -119,10 +85,6 @@ export type ServiceInstanceMinAggregateInputType = {
   encryptionIv?: true
   isDefault?: true
   enabled?: true
-  defaultQualityProfileId?: true
-  defaultLanguageProfileId?: true
-  defaultRootFolderPath?: true
-  defaultSeasonFolder?: true
   storageGroupId?: true
   createdAt?: true
   updatedAt?: true
@@ -139,10 +101,6 @@ export type ServiceInstanceMaxAggregateInputType = {
   encryptionIv?: true
   isDefault?: true
   enabled?: true
-  defaultQualityProfileId?: true
-  defaultLanguageProfileId?: true
-  defaultRootFolderPath?: true
-  defaultSeasonFolder?: true
   storageGroupId?: true
   createdAt?: true
   updatedAt?: true
@@ -159,10 +117,6 @@ export type ServiceInstanceCountAggregateInputType = {
   encryptionIv?: true
   isDefault?: true
   enabled?: true
-  defaultQualityProfileId?: true
-  defaultLanguageProfileId?: true
-  defaultRootFolderPath?: true
-  defaultSeasonFolder?: true
   storageGroupId?: true
   createdAt?: true
   updatedAt?: true
@@ -207,18 +161,6 @@ export type ServiceInstanceAggregateArgs<ExtArgs extends runtime.Types.Extension
   /**
    * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
    * 
-   * Select which fields to average
-  **/
-  _avg?: ServiceInstanceAvgAggregateInputType
-  /**
-   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
-   * 
-   * Select which fields to sum
-  **/
-  _sum?: ServiceInstanceSumAggregateInputType
-  /**
-   * {@link https://www.prisma.io/docs/concepts/components/prisma-client/aggregations Aggregation Docs}
-   * 
    * Select which fields to find the minimum value
   **/
   _min?: ServiceInstanceMinAggregateInputType
@@ -249,8 +191,6 @@ export type ServiceInstanceGroupByArgs<ExtArgs extends runtime.Types.Extensions.
   take?: number
   skip?: number
   _count?: ServiceInstanceCountAggregateInputType | true
-  _avg?: ServiceInstanceAvgAggregateInputType
-  _sum?: ServiceInstanceSumAggregateInputType
   _min?: ServiceInstanceMinAggregateInputType
   _max?: ServiceInstanceMaxAggregateInputType
 }
@@ -266,16 +206,10 @@ export type ServiceInstanceGroupByOutputType = {
   encryptionIv: string
   isDefault: boolean
   enabled: boolean
-  defaultQualityProfileId: number | null
-  defaultLanguageProfileId: number | null
-  defaultRootFolderPath: string | null
-  defaultSeasonFolder: boolean | null
   storageGroupId: string | null
   createdAt: Date
   updatedAt: Date
   _count: ServiceInstanceCountAggregateOutputType | null
-  _avg: ServiceInstanceAvgAggregateOutputType | null
-  _sum: ServiceInstanceSumAggregateOutputType | null
   _min: ServiceInstanceMinAggregateOutputType | null
   _max: ServiceInstanceMaxAggregateOutputType | null
 }
@@ -309,10 +243,6 @@ export type ServiceInstanceWhereInput = {
   encryptionIv?: Prisma.StringFilter<"ServiceInstance"> | string
   isDefault?: Prisma.BoolFilter<"ServiceInstance"> | boolean
   enabled?: Prisma.BoolFilter<"ServiceInstance"> | boolean
-  defaultQualityProfileId?: Prisma.IntNullableFilter<"ServiceInstance"> | number | null
-  defaultLanguageProfileId?: Prisma.IntNullableFilter<"ServiceInstance"> | number | null
-  defaultRootFolderPath?: Prisma.StringNullableFilter<"ServiceInstance"> | string | null
-  defaultSeasonFolder?: Prisma.BoolNullableFilter<"ServiceInstance"> | boolean | null
   storageGroupId?: Prisma.StringNullableFilter<"ServiceInstance"> | string | null
   createdAt?: Prisma.DateTimeFilter<"ServiceInstance"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"ServiceInstance"> | Date | string
@@ -346,10 +276,6 @@ export type ServiceInstanceOrderByWithRelationInput = {
   encryptionIv?: Prisma.SortOrder
   isDefault?: Prisma.SortOrder
   enabled?: Prisma.SortOrder
-  defaultQualityProfileId?: Prisma.SortOrderInput | Prisma.SortOrder
-  defaultLanguageProfileId?: Prisma.SortOrderInput | Prisma.SortOrder
-  defaultRootFolderPath?: Prisma.SortOrderInput | Prisma.SortOrder
-  defaultSeasonFolder?: Prisma.SortOrderInput | Prisma.SortOrder
   storageGroupId?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
@@ -386,10 +312,6 @@ export type ServiceInstanceWhereUniqueInput = Prisma.AtLeast<{
   encryptionIv?: Prisma.StringFilter<"ServiceInstance"> | string
   isDefault?: Prisma.BoolFilter<"ServiceInstance"> | boolean
   enabled?: Prisma.BoolFilter<"ServiceInstance"> | boolean
-  defaultQualityProfileId?: Prisma.IntNullableFilter<"ServiceInstance"> | number | null
-  defaultLanguageProfileId?: Prisma.IntNullableFilter<"ServiceInstance"> | number | null
-  defaultRootFolderPath?: Prisma.StringNullableFilter<"ServiceInstance"> | string | null
-  defaultSeasonFolder?: Prisma.BoolNullableFilter<"ServiceInstance"> | boolean | null
   storageGroupId?: Prisma.StringNullableFilter<"ServiceInstance"> | string | null
   createdAt?: Prisma.DateTimeFilter<"ServiceInstance"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"ServiceInstance"> | Date | string
@@ -423,18 +345,12 @@ export type ServiceInstanceOrderByWithAggregationInput = {
   encryptionIv?: Prisma.SortOrder
   isDefault?: Prisma.SortOrder
   enabled?: Prisma.SortOrder
-  defaultQualityProfileId?: Prisma.SortOrderInput | Prisma.SortOrder
-  defaultLanguageProfileId?: Prisma.SortOrderInput | Prisma.SortOrder
-  defaultRootFolderPath?: Prisma.SortOrderInput | Prisma.SortOrder
-  defaultSeasonFolder?: Prisma.SortOrderInput | Prisma.SortOrder
   storageGroupId?: Prisma.SortOrderInput | Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
   _count?: Prisma.ServiceInstanceCountOrderByAggregateInput
-  _avg?: Prisma.ServiceInstanceAvgOrderByAggregateInput
   _max?: Prisma.ServiceInstanceMaxOrderByAggregateInput
   _min?: Prisma.ServiceInstanceMinOrderByAggregateInput
-  _sum?: Prisma.ServiceInstanceSumOrderByAggregateInput
 }
 
 export type ServiceInstanceScalarWhereWithAggregatesInput = {
@@ -451,10 +367,6 @@ export type ServiceInstanceScalarWhereWithAggregatesInput = {
   encryptionIv?: Prisma.StringWithAggregatesFilter<"ServiceInstance"> | string
   isDefault?: Prisma.BoolWithAggregatesFilter<"ServiceInstance"> | boolean
   enabled?: Prisma.BoolWithAggregatesFilter<"ServiceInstance"> | boolean
-  defaultQualityProfileId?: Prisma.IntNullableWithAggregatesFilter<"ServiceInstance"> | number | null
-  defaultLanguageProfileId?: Prisma.IntNullableWithAggregatesFilter<"ServiceInstance"> | number | null
-  defaultRootFolderPath?: Prisma.StringNullableWithAggregatesFilter<"ServiceInstance"> | string | null
-  defaultSeasonFolder?: Prisma.BoolNullableWithAggregatesFilter<"ServiceInstance"> | boolean | null
   storageGroupId?: Prisma.StringNullableWithAggregatesFilter<"ServiceInstance"> | string | null
   createdAt?: Prisma.DateTimeWithAggregatesFilter<"ServiceInstance"> | Date | string
   updatedAt?: Prisma.DateTimeWithAggregatesFilter<"ServiceInstance"> | Date | string
@@ -470,10 +382,6 @@ export type ServiceInstanceCreateInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -507,10 +415,6 @@ export type ServiceInstanceUncheckedCreateInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -542,10 +446,6 @@ export type ServiceInstanceUpdateInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -579,10 +479,6 @@ export type ServiceInstanceUncheckedUpdateInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -615,10 +511,6 @@ export type ServiceInstanceCreateManyInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -634,10 +526,6 @@ export type ServiceInstanceUpdateManyMutationInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -654,10 +542,6 @@ export type ServiceInstanceUncheckedUpdateManyInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -684,18 +568,9 @@ export type ServiceInstanceCountOrderByAggregateInput = {
   encryptionIv?: Prisma.SortOrder
   isDefault?: Prisma.SortOrder
   enabled?: Prisma.SortOrder
-  defaultQualityProfileId?: Prisma.SortOrder
-  defaultLanguageProfileId?: Prisma.SortOrder
-  defaultRootFolderPath?: Prisma.SortOrder
-  defaultSeasonFolder?: Prisma.SortOrder
   storageGroupId?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
-}
-
-export type ServiceInstanceAvgOrderByAggregateInput = {
-  defaultQualityProfileId?: Prisma.SortOrder
-  defaultLanguageProfileId?: Prisma.SortOrder
 }
 
 export type ServiceInstanceMaxOrderByAggregateInput = {
@@ -709,10 +584,6 @@ export type ServiceInstanceMaxOrderByAggregateInput = {
   encryptionIv?: Prisma.SortOrder
   isDefault?: Prisma.SortOrder
   enabled?: Prisma.SortOrder
-  defaultQualityProfileId?: Prisma.SortOrder
-  defaultLanguageProfileId?: Prisma.SortOrder
-  defaultRootFolderPath?: Prisma.SortOrder
-  defaultSeasonFolder?: Prisma.SortOrder
   storageGroupId?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
@@ -729,18 +600,9 @@ export type ServiceInstanceMinOrderByAggregateInput = {
   encryptionIv?: Prisma.SortOrder
   isDefault?: Prisma.SortOrder
   enabled?: Prisma.SortOrder
-  defaultQualityProfileId?: Prisma.SortOrder
-  defaultLanguageProfileId?: Prisma.SortOrder
-  defaultRootFolderPath?: Prisma.SortOrder
-  defaultSeasonFolder?: Prisma.SortOrder
   storageGroupId?: Prisma.SortOrder
   createdAt?: Prisma.SortOrder
   updatedAt?: Prisma.SortOrder
-}
-
-export type ServiceInstanceSumOrderByAggregateInput = {
-  defaultQualityProfileId?: Prisma.SortOrder
-  defaultLanguageProfileId?: Prisma.SortOrder
 }
 
 export type ServiceInstanceScalarRelationFilter = {
@@ -797,18 +659,6 @@ export type ServiceInstanceUncheckedUpdateManyWithoutUserNestedInput = {
 
 export type EnumServiceTypeFieldUpdateOperationsInput = {
   set?: $Enums.ServiceType
-}
-
-export type NullableIntFieldUpdateOperationsInput = {
-  set?: number | null
-  increment?: number
-  decrement?: number
-  multiply?: number
-  divide?: number
-}
-
-export type NullableBoolFieldUpdateOperationsInput = {
-  set?: boolean | null
 }
 
 export type ServiceInstanceCreateNestedOneWithoutTagsInput = {
@@ -1047,10 +897,6 @@ export type ServiceInstanceCreateWithoutUserInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -1082,10 +928,6 @@ export type ServiceInstanceUncheckedCreateWithoutUserInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -1146,10 +988,6 @@ export type ServiceInstanceScalarWhereInput = {
   encryptionIv?: Prisma.StringFilter<"ServiceInstance"> | string
   isDefault?: Prisma.BoolFilter<"ServiceInstance"> | boolean
   enabled?: Prisma.BoolFilter<"ServiceInstance"> | boolean
-  defaultQualityProfileId?: Prisma.IntNullableFilter<"ServiceInstance"> | number | null
-  defaultLanguageProfileId?: Prisma.IntNullableFilter<"ServiceInstance"> | number | null
-  defaultRootFolderPath?: Prisma.StringNullableFilter<"ServiceInstance"> | string | null
-  defaultSeasonFolder?: Prisma.BoolNullableFilter<"ServiceInstance"> | boolean | null
   storageGroupId?: Prisma.StringNullableFilter<"ServiceInstance"> | string | null
   createdAt?: Prisma.DateTimeFilter<"ServiceInstance"> | Date | string
   updatedAt?: Prisma.DateTimeFilter<"ServiceInstance"> | Date | string
@@ -1165,10 +1003,6 @@ export type ServiceInstanceCreateWithoutTagsInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -1201,10 +1035,6 @@ export type ServiceInstanceUncheckedCreateWithoutTagsInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -1251,10 +1081,6 @@ export type ServiceInstanceUpdateWithoutTagsInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1287,10 +1113,6 @@ export type ServiceInstanceUncheckedUpdateWithoutTagsInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1321,10 +1143,6 @@ export type ServiceInstanceCreateWithoutTrashSyncHistoryInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -1357,10 +1175,6 @@ export type ServiceInstanceUncheckedCreateWithoutTrashSyncHistoryInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -1407,10 +1221,6 @@ export type ServiceInstanceUpdateWithoutTrashSyncHistoryInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1443,10 +1253,6 @@ export type ServiceInstanceUncheckedUpdateWithoutTrashSyncHistoryInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1477,10 +1283,6 @@ export type ServiceInstanceCreateWithoutTrashBackupsInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -1513,10 +1315,6 @@ export type ServiceInstanceUncheckedCreateWithoutTrashBackupsInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -1563,10 +1361,6 @@ export type ServiceInstanceUpdateWithoutTrashBackupsInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1599,10 +1393,6 @@ export type ServiceInstanceUncheckedUpdateWithoutTrashBackupsInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1633,10 +1423,6 @@ export type ServiceInstanceCreateWithoutTrashSchedulesInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -1669,10 +1455,6 @@ export type ServiceInstanceUncheckedCreateWithoutTrashSchedulesInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -1719,10 +1501,6 @@ export type ServiceInstanceUpdateWithoutTrashSchedulesInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1755,10 +1533,6 @@ export type ServiceInstanceUncheckedUpdateWithoutTrashSchedulesInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1789,10 +1563,6 @@ export type ServiceInstanceCreateWithoutQualityProfileMappingsInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -1825,10 +1595,6 @@ export type ServiceInstanceUncheckedCreateWithoutQualityProfileMappingsInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -1875,10 +1641,6 @@ export type ServiceInstanceUpdateWithoutQualityProfileMappingsInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1911,10 +1673,6 @@ export type ServiceInstanceUncheckedUpdateWithoutQualityProfileMappingsInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -1945,10 +1703,6 @@ export type ServiceInstanceCreateWithoutQualityProfileOverridesInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -1981,10 +1735,6 @@ export type ServiceInstanceUncheckedCreateWithoutQualityProfileOverridesInput = 
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -2031,10 +1781,6 @@ export type ServiceInstanceUpdateWithoutQualityProfileOverridesInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2067,10 +1813,6 @@ export type ServiceInstanceUncheckedUpdateWithoutQualityProfileOverridesInput = 
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2101,10 +1843,6 @@ export type ServiceInstanceCreateWithoutDeploymentHistoryInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -2137,10 +1875,6 @@ export type ServiceInstanceUncheckedCreateWithoutDeploymentHistoryInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -2187,10 +1921,6 @@ export type ServiceInstanceUpdateWithoutDeploymentHistoryInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2223,10 +1953,6 @@ export type ServiceInstanceUncheckedUpdateWithoutDeploymentHistoryInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2257,10 +1983,6 @@ export type ServiceInstanceCreateWithoutStandaloneCFDeploymentsInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -2293,10 +2015,6 @@ export type ServiceInstanceUncheckedCreateWithoutStandaloneCFDeploymentsInput = 
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -2343,10 +2061,6 @@ export type ServiceInstanceUpdateWithoutStandaloneCFDeploymentsInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2379,10 +2093,6 @@ export type ServiceInstanceUncheckedUpdateWithoutStandaloneCFDeploymentsInput = 
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2413,10 +2123,6 @@ export type ServiceInstanceCreateWithoutQualitySizeMappingInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -2449,10 +2155,6 @@ export type ServiceInstanceUncheckedCreateWithoutQualitySizeMappingInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -2499,10 +2201,6 @@ export type ServiceInstanceUpdateWithoutQualitySizeMappingInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2535,10 +2233,6 @@ export type ServiceInstanceUncheckedUpdateWithoutQualitySizeMappingInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2569,10 +2263,6 @@ export type ServiceInstanceCreateWithoutHuntConfigInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -2605,10 +2295,6 @@ export type ServiceInstanceUncheckedCreateWithoutHuntConfigInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -2655,10 +2341,6 @@ export type ServiceInstanceUpdateWithoutHuntConfigInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2691,10 +2373,6 @@ export type ServiceInstanceUncheckedUpdateWithoutHuntConfigInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2725,10 +2403,6 @@ export type ServiceInstanceCreateWithoutHuntLogsInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -2761,10 +2435,6 @@ export type ServiceInstanceUncheckedCreateWithoutHuntLogsInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -2811,10 +2481,6 @@ export type ServiceInstanceUpdateWithoutHuntLogsInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2847,10 +2513,6 @@ export type ServiceInstanceUncheckedUpdateWithoutHuntLogsInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -2881,10 +2543,6 @@ export type ServiceInstanceCreateWithoutLibraryCacheInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -2917,10 +2575,6 @@ export type ServiceInstanceUncheckedCreateWithoutLibraryCacheInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -2967,10 +2621,6 @@ export type ServiceInstanceUpdateWithoutLibraryCacheInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -3003,10 +2653,6 @@ export type ServiceInstanceUncheckedUpdateWithoutLibraryCacheInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -3037,10 +2683,6 @@ export type ServiceInstanceCreateWithoutLibrarySyncStatusInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -3073,10 +2715,6 @@ export type ServiceInstanceUncheckedCreateWithoutLibrarySyncStatusInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -3123,10 +2761,6 @@ export type ServiceInstanceUpdateWithoutLibrarySyncStatusInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -3159,10 +2793,6 @@ export type ServiceInstanceUncheckedUpdateWithoutLibrarySyncStatusInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -3193,10 +2823,6 @@ export type ServiceInstanceCreateWithoutQueueCleanerConfigInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -3229,10 +2855,6 @@ export type ServiceInstanceUncheckedCreateWithoutQueueCleanerConfigInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -3279,10 +2901,6 @@ export type ServiceInstanceUpdateWithoutQueueCleanerConfigInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -3315,10 +2933,6 @@ export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerConfigInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -3349,10 +2963,6 @@ export type ServiceInstanceCreateWithoutQueueCleanerLogsInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -3385,10 +2995,6 @@ export type ServiceInstanceUncheckedCreateWithoutQueueCleanerLogsInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -3435,10 +3041,6 @@ export type ServiceInstanceUpdateWithoutQueueCleanerLogsInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -3471,10 +3073,6 @@ export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerLogsInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -3505,10 +3103,6 @@ export type ServiceInstanceCreateWithoutQueueCleanerStrikesInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -3541,10 +3135,6 @@ export type ServiceInstanceUncheckedCreateWithoutQueueCleanerStrikesInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -3591,10 +3181,6 @@ export type ServiceInstanceUpdateWithoutQueueCleanerStrikesInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -3627,10 +3213,6 @@ export type ServiceInstanceUncheckedUpdateWithoutQueueCleanerStrikesInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -3661,10 +3243,6 @@ export type ServiceInstanceCreateManyUserInput = {
   encryptionIv: string
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: number | null
-  defaultLanguageProfileId?: number | null
-  defaultRootFolderPath?: string | null
-  defaultSeasonFolder?: boolean | null
   storageGroupId?: string | null
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -3680,10 +3258,6 @@ export type ServiceInstanceUpdateWithoutUserInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -3715,10 +3289,6 @@ export type ServiceInstanceUncheckedUpdateWithoutUserInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -3750,10 +3320,6 @@ export type ServiceInstanceUncheckedUpdateManyWithoutUserInput = {
   encryptionIv?: Prisma.StringFieldUpdateOperationsInput | string
   isDefault?: Prisma.BoolFieldUpdateOperationsInput | boolean
   enabled?: Prisma.BoolFieldUpdateOperationsInput | boolean
-  defaultQualityProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultLanguageProfileId?: Prisma.NullableIntFieldUpdateOperationsInput | number | null
-  defaultRootFolderPath?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
-  defaultSeasonFolder?: Prisma.NullableBoolFieldUpdateOperationsInput | boolean | null
   storageGroupId?: Prisma.NullableStringFieldUpdateOperationsInput | string | null
   createdAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
   updatedAt?: Prisma.DateTimeFieldUpdateOperationsInput | Date | string
@@ -3900,10 +3466,6 @@ export type ServiceInstanceSelect<ExtArgs extends runtime.Types.Extensions.Inter
   encryptionIv?: boolean
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: boolean
-  defaultLanguageProfileId?: boolean
-  defaultRootFolderPath?: boolean
-  defaultSeasonFolder?: boolean
   storageGroupId?: boolean
   createdAt?: boolean
   updatedAt?: boolean
@@ -3938,10 +3500,6 @@ export type ServiceInstanceSelectCreateManyAndReturn<ExtArgs extends runtime.Typ
   encryptionIv?: boolean
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: boolean
-  defaultLanguageProfileId?: boolean
-  defaultRootFolderPath?: boolean
-  defaultSeasonFolder?: boolean
   storageGroupId?: boolean
   createdAt?: boolean
   updatedAt?: boolean
@@ -3959,10 +3517,6 @@ export type ServiceInstanceSelectUpdateManyAndReturn<ExtArgs extends runtime.Typ
   encryptionIv?: boolean
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: boolean
-  defaultLanguageProfileId?: boolean
-  defaultRootFolderPath?: boolean
-  defaultSeasonFolder?: boolean
   storageGroupId?: boolean
   createdAt?: boolean
   updatedAt?: boolean
@@ -3980,16 +3534,12 @@ export type ServiceInstanceSelectScalar = {
   encryptionIv?: boolean
   isDefault?: boolean
   enabled?: boolean
-  defaultQualityProfileId?: boolean
-  defaultLanguageProfileId?: boolean
-  defaultRootFolderPath?: boolean
-  defaultSeasonFolder?: boolean
   storageGroupId?: boolean
   createdAt?: boolean
   updatedAt?: boolean
 }
 
-export type ServiceInstanceOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "service" | "label" | "baseUrl" | "externalUrl" | "encryptedApiKey" | "encryptionIv" | "isDefault" | "enabled" | "defaultQualityProfileId" | "defaultLanguageProfileId" | "defaultRootFolderPath" | "defaultSeasonFolder" | "storageGroupId" | "createdAt" | "updatedAt", ExtArgs["result"]["serviceInstance"]>
+export type ServiceInstanceOmit<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = runtime.Types.Extensions.GetOmit<"id" | "userId" | "service" | "label" | "baseUrl" | "externalUrl" | "encryptedApiKey" | "encryptionIv" | "isDefault" | "enabled" | "storageGroupId" | "createdAt" | "updatedAt", ExtArgs["result"]["serviceInstance"]>
 export type ServiceInstanceInclude<ExtArgs extends runtime.Types.Extensions.InternalArgs = runtime.Types.Extensions.DefaultArgs> = {
   user?: boolean | Prisma.UserDefaultArgs<ExtArgs>
   tags?: boolean | Prisma.ServiceInstance$tagsArgs<ExtArgs>
@@ -4049,10 +3599,6 @@ export type $ServiceInstancePayload<ExtArgs extends runtime.Types.Extensions.Int
     encryptionIv: string
     isDefault: boolean
     enabled: boolean
-    defaultQualityProfileId: number | null
-    defaultLanguageProfileId: number | null
-    defaultRootFolderPath: string | null
-    defaultSeasonFolder: boolean | null
     storageGroupId: string | null
     createdAt: Date
     updatedAt: Date
@@ -4506,10 +4052,6 @@ export interface ServiceInstanceFieldRefs {
   readonly encryptionIv: Prisma.FieldRef<"ServiceInstance", 'String'>
   readonly isDefault: Prisma.FieldRef<"ServiceInstance", 'Boolean'>
   readonly enabled: Prisma.FieldRef<"ServiceInstance", 'Boolean'>
-  readonly defaultQualityProfileId: Prisma.FieldRef<"ServiceInstance", 'Int'>
-  readonly defaultLanguageProfileId: Prisma.FieldRef<"ServiceInstance", 'Int'>
-  readonly defaultRootFolderPath: Prisma.FieldRef<"ServiceInstance", 'String'>
-  readonly defaultSeasonFolder: Prisma.FieldRef<"ServiceInstance", 'Boolean'>
   readonly storageGroupId: Prisma.FieldRef<"ServiceInstance", 'String'>
   readonly createdAt: Prisma.FieldRef<"ServiceInstance", 'DateTime'>
   readonly updatedAt: Prisma.FieldRef<"ServiceInstance", 'DateTime'>

@@ -14,10 +14,6 @@ export interface ServiceInstanceSummary {
   enabled: boolean;
   isDefault: boolean;
   hasApiKey: boolean;
-  defaultQualityProfileId: number | null;
-  defaultLanguageProfileId: number | null;
-  defaultRootFolderPath: string | null;
-  defaultSeasonFolder: boolean | null;
   storageGroupId: string | null;
   createdAt: string;
   updatedAt: string;

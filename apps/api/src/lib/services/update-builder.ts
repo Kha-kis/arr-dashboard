@@ -12,10 +12,6 @@ export interface UpdatePayload {
 	isDefault?: boolean;
 	service?: string;
 	apiKey?: string;
-	defaultQualityProfileId?: number | null;
-	defaultLanguageProfileId?: number | null;
-	defaultRootFolderPath?: string | null;
-	defaultSeasonFolder?: boolean | null;
 	storageGroupId?: string | null;
 }
 
@@ -33,10 +29,6 @@ export interface UpdateData {
 	service?: ServiceType;
 	encryptedApiKey?: string;
 	encryptionIv?: string;
-	defaultQualityProfileId?: number | null;
-	defaultLanguageProfileId?: number | null;
-	defaultRootFolderPath?: string | null;
-	defaultSeasonFolder?: boolean | null;
 	storageGroupId?: string | null;
 }
 
@@ -73,18 +65,6 @@ export function buildUpdateData(
 	// Handle nullable fields explicitly
 	if (Object.hasOwn(payload, "externalUrl")) {
 		updateData.externalUrl = payload.externalUrl ?? null;
-	}
-	if (Object.hasOwn(payload, "defaultQualityProfileId")) {
-		updateData.defaultQualityProfileId = payload.defaultQualityProfileId ?? null;
-	}
-	if (Object.hasOwn(payload, "defaultLanguageProfileId")) {
-		updateData.defaultLanguageProfileId = payload.defaultLanguageProfileId ?? null;
-	}
-	if (Object.hasOwn(payload, "defaultRootFolderPath")) {
-		updateData.defaultRootFolderPath = payload.defaultRootFolderPath ?? null;
-	}
-	if (Object.hasOwn(payload, "defaultSeasonFolder")) {
-		updateData.defaultSeasonFolder = payload.defaultSeasonFolder ?? null;
 	}
 	if (Object.hasOwn(payload, "storageGroupId")) {
 		updateData.storageGroupId = payload.storageGroupId ?? null;

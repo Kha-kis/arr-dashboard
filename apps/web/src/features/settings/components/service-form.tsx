@@ -1,6 +1,5 @@
 "use client";
 
-import type { ReactNode } from "react";
 import type { ServiceInstanceSummary } from "@arr/shared";
 import type { ServiceFormState } from "../lib/settings-utils";
 import {
@@ -49,8 +48,6 @@ interface ServiceFormProps {
 		success: boolean;
 		message: string;
 	} | null;
-	/** Content for the default settings section */
-	defaultSectionContent: ReactNode;
 }
 
 /**
@@ -68,7 +65,6 @@ export const ServiceForm = ({
 	isUpdating,
 	isTesting,
 	testResult,
-	defaultSectionContent,
 }: ServiceFormProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const placeholders = getServicePlaceholders(formState.service);
@@ -96,10 +92,6 @@ export const ServiceForm = ({
 										onFormStateChange((prev) => ({
 											...prev,
 											service,
-											defaultQualityProfileId: "",
-											defaultLanguageProfileId: "",
-											defaultRootFolderPath: "",
-											defaultSeasonFolder: "",
 											isDefault: service === "prowlarr" ? false : prev.isDefault,
 										}))
 									}
@@ -266,19 +258,6 @@ export const ServiceForm = ({
 								autoComplete="off"
 							/>
 						</SimpleFormField>
-					)}
-					{formState.service !== "prowlarr" && (
-						<div className="space-y-3 rounded-xl border border-border bg-card p-4">
-							<div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-								<p className="text-xs uppercase tracking-widest text-muted-foreground">
-									Default add settings
-								</p>
-								<span className="text-xs text-muted-foreground">
-									Applied when using Discover and library tools.
-								</span>
-							</div>
-							{defaultSectionContent}
-						</div>
 					)}
 					<div className="flex items-center gap-3">
 						<label className="flex items-center gap-2 text-sm text-muted-foreground">

@@ -14,10 +14,6 @@ export type ServiceFormState = {
 	enabled: boolean;
 	isDefault: boolean;
 	tags: string;
-	defaultQualityProfileId: string;
-	defaultLanguageProfileId: string;
-	defaultRootFolderPath: string;
-	defaultSeasonFolder: "" | "true" | "false";
 	storageGroupId: string;
 };
 
@@ -33,35 +29,8 @@ export const defaultFormState = (service: ServiceType): ServiceFormState => ({
 	enabled: true,
 	isDefault: false,
 	tags: "",
-	defaultQualityProfileId: "",
-	defaultLanguageProfileId: "",
-	defaultRootFolderPath: "",
-	defaultSeasonFolder: "",
 	storageGroupId: "",
 });
-
-/**
- * Parses a string to a number or returns null if invalid
- */
-export const parseNumericValue = (value: string): number | null => {
-	if (!value || value.trim() === "") {
-		return null;
-	}
-	const parsed = Number(value);
-	return Number.isNaN(parsed) ? null : parsed;
-};
-
-/**
- * Parses season folder value from form state
- */
-export const parseSeasonFolderValue = (
-	value: ServiceFormState["defaultSeasonFolder"],
-): boolean | null => {
-	if (value === "") {
-		return null;
-	}
-	return value === "true";
-};
 
 /**
  * Returns service-specific placeholder values
