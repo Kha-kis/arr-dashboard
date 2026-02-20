@@ -8,6 +8,7 @@ import {
 	Clock,
 	TrendingUp,
 	Activity,
+	Sparkles,
 } from "lucide-react";
 import {
 	StatCard,
@@ -315,7 +316,7 @@ const InstanceBreakdownList = ({
 										border: `1px solid ${gradient.from}30`,
 									}}
 								>
-									<Trash2 className="h-4 w-4" style={{ color: gradient.from }} />
+									<Sparkles className="h-4 w-4" style={{ color: gradient.from }} />
 								</div>
 								<div>
 									<div className="flex items-center gap-2">
@@ -383,7 +384,7 @@ const RecentActivityList = ({
 									border: `1px solid ${gradient.from}30`,
 								}}
 							>
-								<Trash2 className="h-3.5 w-3.5" style={{ color: gradient.from }} />
+								<Sparkles className="h-3.5 w-3.5" style={{ color: gradient.from }} />
 							</div>
 							<div>
 								<div className="text-sm font-medium text-foreground">
