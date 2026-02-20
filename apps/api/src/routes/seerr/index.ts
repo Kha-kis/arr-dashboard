@@ -10,6 +10,7 @@ import { registerUserRoutes } from "./user-routes.js";
 import { registerIssueRoutes } from "./issue-routes.js";
 import { registerNotificationRoutes } from "./notification-routes.js";
 import { registerStatusRoutes } from "./status-routes.js";
+import { registerDiscoverRoutes } from "./discover-routes.js";
 
 export async function registerSeerrRoutes(app: FastifyInstance, _opts: FastifyPluginOptions) {
 	app.register(registerRequestRoutes, { prefix: "/requests" });
@@ -17,4 +18,5 @@ export async function registerSeerrRoutes(app: FastifyInstance, _opts: FastifyPl
 	app.register(registerIssueRoutes, { prefix: "/issues" });
 	app.register(registerNotificationRoutes, { prefix: "/notifications" });
 	app.register(registerStatusRoutes, { prefix: "/status" });
+	app.register(registerDiscoverRoutes, { prefix: "/discover" });
 }

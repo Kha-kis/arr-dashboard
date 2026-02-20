@@ -5,6 +5,15 @@ const nextConfig = {
 	// Empty turbopack config to silence Next.js 16 warning when using --webpack for builds
 	turbopack: {},
 	poweredByHeader: false,
+	images: {
+		remotePatterns: [
+			{
+				protocol: "https",
+				hostname: "image.tmdb.org",
+				pathname: "/t/p/**",
+			},
+		],
+	},
 	async rewrites() {
 		const apiHost = process.env.API_HOST || "http://localhost:3001";
 		return [

@@ -27,17 +27,6 @@ export const useServiceFormState = () => {
 			enabled: service.enabled,
 			isDefault: service.isDefault,
 			tags: service.tags.map((tag) => tag.name).join(", "),
-			defaultQualityProfileId:
-				service.defaultQualityProfileId != null ? String(service.defaultQualityProfileId) : "",
-			defaultLanguageProfileId:
-				service.defaultLanguageProfileId != null ? String(service.defaultLanguageProfileId) : "",
-			defaultRootFolderPath: service.defaultRootFolderPath ?? "",
-			defaultSeasonFolder:
-				service.defaultSeasonFolder === null || service.defaultSeasonFolder === undefined
-					? ""
-					: service.defaultSeasonFolder
-						? "true"
-						: "false",
 			storageGroupId: service.storageGroupId ?? "",
 		});
 	};

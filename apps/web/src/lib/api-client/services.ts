@@ -22,10 +22,6 @@ export type CreateServicePayload = {
 	enabled?: boolean;
 	isDefault?: boolean;
 	tags?: string[];
-	defaultQualityProfileId?: number | null;
-	defaultLanguageProfileId?: number | null;
-	defaultRootFolderPath?: string | null;
-	defaultSeasonFolder?: boolean | null;
 	storageGroupId?: string | null;
 };
 

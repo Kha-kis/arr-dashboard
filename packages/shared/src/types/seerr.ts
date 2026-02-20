@@ -76,6 +76,12 @@ export const SEERR_ISSUE_STATUS_LABEL: Record<SeerrIssueStatus, string> = {
 	2: "Resolved",
 };
 
+/** TMDB keyword ID that marks a series as anime */
+export const SEERR_ANIME_KEYWORD_ID = 210024;
+
+/** TMDB genre ID for "Animation" */
+export const TMDB_ANIMATION_GENRE_ID = 16;
+
 // ============================================================================
 // Response Types
 // ============================================================================
@@ -226,4 +232,234 @@ export interface SeerrUserUpdateData {
 	movieQuotaDays?: number | null;
 	tvQuotaLimit?: number | null;
 	tvQuotaDays?: number | null;
+}
+
+// ============================================================================
+// Discovery Types
+// ============================================================================
+
+/** Single result from Seerr's discover/search endpoints, enriched with mediaInfo */
+export interface SeerrDiscoverResult {
+	id: number;
+	mediaType: "movie" | "tv";
+	title?: string;
+	name?: string;
+	originalTitle?: string;
+	originalName?: string;
+	overview?: string;
+	posterPath?: string;
+	backdropPath?: string;
+	releaseDate?: string;
+	firstAirDate?: string;
+	voteAverage?: number;
+	voteCount?: number;
+	popularity?: number;
+	genreIds?: number[];
+	originalLanguage?: string;
+	adult?: boolean;
+	mediaInfo?: SeerrMediaInfo;
+}
+
+/** Paginated discover/search response */
+export interface SeerrDiscoverResponse {
+	page: number;
+	totalPages: number;
+	totalResults: number;
+	results: SeerrDiscoverResult[];
+}
+
+/** Full movie details from /api/v1/movie/{tmdbId} */
+export interface SeerrMovieDetails {
+	id: number;
+	title: string;
+	originalTitle?: string;
+	overview?: string;
+	posterPath?: string;
+	backdropPath?: string;
+	releaseDate?: string;
+	runtime?: number;
+	budget?: number;
+	revenue?: number;
+	voteAverage?: number;
+	voteCount?: number;
+	popularity?: number;
+	status?: string;
+	originalLanguage?: string;
+	genres: SeerrGenre[];
+	productionCompanies?: { id: number; name: string; logoPath?: string }[];
+	credits: SeerrCredits;
+	relatedVideos?: SeerrVideo[];
+	mediaInfo?: SeerrMediaInfo;
+	externalIds?: SeerrExternalIds;
+	recommendations: SeerrDiscoverResponse;
+	similar: SeerrDiscoverResponse;
+}
+
+/** Full TV details from /api/v1/tv/{tmdbId} */
+export interface SeerrTvDetails {
+	id: number;
+	name: string;
+	originalName?: string;
+	overview?: string;
+	posterPath?: string;
+	backdropPath?: string;
+	firstAirDate?: string;
+	lastAirDate?: string;
+	numberOfSeasons?: number;
+	numberOfEpisodes?: number;
+	episodeRunTime?: number[];
+	voteAverage?: number;
+	voteCount?: number;
+	popularity?: number;
+	status?: string;
+	originalLanguage?: string;
+	genres: SeerrGenre[];
+	networks?: { id: number; name: string; logoPath?: string }[];
+	credits: SeerrCredits;
+	relatedVideos?: SeerrVideo[];
+	mediaInfo?: SeerrMediaInfo;
+	externalIds?: SeerrExternalIds;
+	keywords: { id: number; name: string }[];
+	seasons: SeerrSeasonSummary[];
+	recommendations: SeerrDiscoverResponse;
+	similar: SeerrDiscoverResponse;
+}
+
+export interface SeerrSeasonSummary {
+	id: number;
+	seasonNumber: number;
+	name?: string;
+	overview?: string;
+	episodeCount: number;
+	airDate?: string;
+	posterPath?: string;
+}
+
+export interface SeerrCredits {
+	cast: SeerrCastMember[];
+	crew: SeerrCrewMember[];
+}
+
+export interface SeerrCastMember {
+	id: number;
+	name: string;
+	character?: string;
+	profilePath?: string;
+	order?: number;
+}
+
+export interface SeerrCrewMember {
+	id: number;
+	name: string;
+	job?: string;
+	department?: string;
+	profilePath?: string;
+}
+
+export interface SeerrVideo {
+	key: string;
+	name?: string;
+	site: string;
+	type?: string;
+	size?: number;
+}
+
+export interface SeerrGenre {
+	id: number;
+	name: string;
+}
+
+export interface SeerrExternalIds {
+	imdbId?: string;
+	tvdbId?: number;
+	facebookId?: string;
+	instagramId?: string;
+	twitterId?: string;
+}
+
+/** Payload for POST /api/v1/request */
+export interface SeerrCreateRequestPayload {
+	mediaId: number;
+	mediaType: "movie" | "tv";
+	seasons?: number[];
+	is4k?: boolean;
+	serverId?: number;
+	profileId?: number;
+	rootFolder?: string;
+	languageProfileId?: number;
+	tags?: number[];
+}
+
+/** Response from POST /api/v1/request */
+export interface SeerrCreateRequestResponse {
+	id: number;
+	status: SeerrRequestStatus;
+	type: "movie" | "tv";
+	media: SeerrMediaInfo;
+	createdAt: string;
+	is4k: boolean;
+	seasons?: SeerrSeason[];
+}
+
+// ============================================================================
+// Service Servers (for request options)
+// ============================================================================
+
+/** Summary of a configured Radarr/Sonarr server in Seerr */
+export interface SeerrServiceServer {
+	id: number;
+	name: string;
+	is4k: boolean;
+	isDefault: boolean;
+	activeProfileId: number;
+	activeDirectory: string;
+	activeLanguageProfileId?: number;
+	activeAnimeProfileId?: number;
+	activeAnimeDirectory?: string;
+	activeAnimeLanguageProfileId?: number;
+	activeTags: number[];
+}
+
+export interface SeerrQualityProfile {
+	id: number;
+	name: string;
+}
+
+export interface SeerrRootFolder {
+	id: number;
+	path: string;
+	freeSpace?: number;
+	totalSpace?: number;
+}
+
+export interface SeerrTag {
+	id: number;
+	label: string;
+}
+
+/** Full server details including profiles, root folders, and tags */
+export interface SeerrServerWithDetails {
+	server: SeerrServiceServer;
+	profiles: SeerrQualityProfile[];
+	rootFolders: SeerrRootFolder[];
+	languageProfiles?: { id: number; name: string }[];
+	tags: SeerrTag[];
+}
+
+/** Combined request options for the request dialog */
+export interface SeerrRequestOptions {
+	servers: SeerrServerWithDetails[];
+}
+
+/** Params for discover endpoints */
+export interface SeerrDiscoverParams {
+	page?: number;
+	language?: string;
+}
+
+/** Params for search endpoint */
+export interface SeerrSearchParams {
+	query: string;
+	page?: number;
+	language?: string;
 }

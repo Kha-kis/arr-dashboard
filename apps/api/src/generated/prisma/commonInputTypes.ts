@@ -178,22 +178,6 @@ export type EnumServiceTypeFilter<$PrismaModel = never> = {
   not?: Prisma.NestedEnumServiceTypeFilter<$PrismaModel> | $Enums.ServiceType
 }
 
-export type IntNullableFilter<$PrismaModel = never> = {
-  equals?: number | Prisma.IntFieldRefInput<$PrismaModel> | null
-  in?: number[] | null
-  notIn?: number[] | null
-  lt?: number | Prisma.IntFieldRefInput<$PrismaModel>
-  lte?: number | Prisma.IntFieldRefInput<$PrismaModel>
-  gt?: number | Prisma.IntFieldRefInput<$PrismaModel>
-  gte?: number | Prisma.IntFieldRefInput<$PrismaModel>
-  not?: Prisma.NestedIntNullableFilter<$PrismaModel> | number | null
-}
-
-export type BoolNullableFilter<$PrismaModel = never> = {
-  equals?: boolean | Prisma.BooleanFieldRefInput<$PrismaModel> | null
-  not?: Prisma.NestedBoolNullableFilter<$PrismaModel> | boolean | null
-}
-
 export type EnumServiceTypeWithAggregatesFilter<$PrismaModel = never> = {
   equals?: $Enums.ServiceType | Prisma.EnumServiceTypeFieldRefInput<$PrismaModel>
   in?: $Enums.ServiceType[]
@@ -202,30 +186,6 @@ export type EnumServiceTypeWithAggregatesFilter<$PrismaModel = never> = {
   _count?: Prisma.NestedIntFilter<$PrismaModel>
   _min?: Prisma.NestedEnumServiceTypeFilter<$PrismaModel>
   _max?: Prisma.NestedEnumServiceTypeFilter<$PrismaModel>
-}
-
-export type IntNullableWithAggregatesFilter<$PrismaModel = never> = {
-  equals?: number | Prisma.IntFieldRefInput<$PrismaModel> | null
-  in?: number[] | null
-  notIn?: number[] | null
-  lt?: number | Prisma.IntFieldRefInput<$PrismaModel>
-  lte?: number | Prisma.IntFieldRefInput<$PrismaModel>
-  gt?: number | Prisma.IntFieldRefInput<$PrismaModel>
-  gte?: number | Prisma.IntFieldRefInput<$PrismaModel>
-  not?: Prisma.NestedIntNullableWithAggregatesFilter<$PrismaModel> | number | null
-  _count?: Prisma.NestedIntNullableFilter<$PrismaModel>
-  _avg?: Prisma.NestedFloatNullableFilter<$PrismaModel>
-  _sum?: Prisma.NestedIntNullableFilter<$PrismaModel>
-  _min?: Prisma.NestedIntNullableFilter<$PrismaModel>
-  _max?: Prisma.NestedIntNullableFilter<$PrismaModel>
-}
-
-export type BoolNullableWithAggregatesFilter<$PrismaModel = never> = {
-  equals?: boolean | Prisma.BooleanFieldRefInput<$PrismaModel> | null
-  not?: Prisma.NestedBoolNullableWithAggregatesFilter<$PrismaModel> | boolean | null
-  _count?: Prisma.NestedIntNullableFilter<$PrismaModel>
-  _min?: Prisma.NestedBoolNullableFilter<$PrismaModel>
-  _max?: Prisma.NestedBoolNullableFilter<$PrismaModel>
 }
 
 export type EnumBackupIntervalTypeFilter<$PrismaModel = never> = {
@@ -243,6 +203,33 @@ export type EnumBackupIntervalTypeWithAggregatesFilter<$PrismaModel = never> = {
   _count?: Prisma.NestedIntFilter<$PrismaModel>
   _min?: Prisma.NestedEnumBackupIntervalTypeFilter<$PrismaModel>
   _max?: Prisma.NestedEnumBackupIntervalTypeFilter<$PrismaModel>
+}
+
+export type IntNullableFilter<$PrismaModel = never> = {
+  equals?: number | Prisma.IntFieldRefInput<$PrismaModel> | null
+  in?: number[] | null
+  notIn?: number[] | null
+  lt?: number | Prisma.IntFieldRefInput<$PrismaModel>
+  lte?: number | Prisma.IntFieldRefInput<$PrismaModel>
+  gt?: number | Prisma.IntFieldRefInput<$PrismaModel>
+  gte?: number | Prisma.IntFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedIntNullableFilter<$PrismaModel> | number | null
+}
+
+export type IntNullableWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: number | Prisma.IntFieldRefInput<$PrismaModel> | null
+  in?: number[] | null
+  notIn?: number[] | null
+  lt?: number | Prisma.IntFieldRefInput<$PrismaModel>
+  lte?: number | Prisma.IntFieldRefInput<$PrismaModel>
+  gt?: number | Prisma.IntFieldRefInput<$PrismaModel>
+  gte?: number | Prisma.IntFieldRefInput<$PrismaModel>
+  not?: Prisma.NestedIntNullableWithAggregatesFilter<$PrismaModel> | number | null
+  _count?: Prisma.NestedIntNullableFilter<$PrismaModel>
+  _avg?: Prisma.NestedFloatNullableFilter<$PrismaModel>
+  _sum?: Prisma.NestedIntNullableFilter<$PrismaModel>
+  _min?: Prisma.NestedIntNullableFilter<$PrismaModel>
+  _max?: Prisma.NestedIntNullableFilter<$PrismaModel>
 }
 
 export type EnumLibraryItemTypeFilter<$PrismaModel = never> = {
@@ -497,11 +484,6 @@ export type NestedEnumServiceTypeFilter<$PrismaModel = never> = {
   not?: Prisma.NestedEnumServiceTypeFilter<$PrismaModel> | $Enums.ServiceType
 }
 
-export type NestedBoolNullableFilter<$PrismaModel = never> = {
-  equals?: boolean | Prisma.BooleanFieldRefInput<$PrismaModel> | null
-  not?: Prisma.NestedBoolNullableFilter<$PrismaModel> | boolean | null
-}
-
 export type NestedEnumServiceTypeWithAggregatesFilter<$PrismaModel = never> = {
   equals?: $Enums.ServiceType | Prisma.EnumServiceTypeFieldRefInput<$PrismaModel>
   in?: $Enums.ServiceType[]
@@ -510,6 +492,23 @@ export type NestedEnumServiceTypeWithAggregatesFilter<$PrismaModel = never> = {
   _count?: Prisma.NestedIntFilter<$PrismaModel>
   _min?: Prisma.NestedEnumServiceTypeFilter<$PrismaModel>
   _max?: Prisma.NestedEnumServiceTypeFilter<$PrismaModel>
+}
+
+export type NestedEnumBackupIntervalTypeFilter<$PrismaModel = never> = {
+  equals?: $Enums.BackupIntervalType | Prisma.EnumBackupIntervalTypeFieldRefInput<$PrismaModel>
+  in?: $Enums.BackupIntervalType[]
+  notIn?: $Enums.BackupIntervalType[]
+  not?: Prisma.NestedEnumBackupIntervalTypeFilter<$PrismaModel> | $Enums.BackupIntervalType
+}
+
+export type NestedEnumBackupIntervalTypeWithAggregatesFilter<$PrismaModel = never> = {
+  equals?: $Enums.BackupIntervalType | Prisma.EnumBackupIntervalTypeFieldRefInput<$PrismaModel>
+  in?: $Enums.BackupIntervalType[]
+  notIn?: $Enums.BackupIntervalType[]
+  not?: Prisma.NestedEnumBackupIntervalTypeWithAggregatesFilter<$PrismaModel> | $Enums.BackupIntervalType
+  _count?: Prisma.NestedIntFilter<$PrismaModel>
+  _min?: Prisma.NestedEnumBackupIntervalTypeFilter<$PrismaModel>
+  _max?: Prisma.NestedEnumBackupIntervalTypeFilter<$PrismaModel>
 }
 
 export type NestedIntNullableWithAggregatesFilter<$PrismaModel = never> = {
@@ -537,31 +536,6 @@ export type NestedFloatNullableFilter<$PrismaModel = never> = {
   gt?: number | Prisma.FloatFieldRefInput<$PrismaModel>
   gte?: number | Prisma.FloatFieldRefInput<$PrismaModel>
   not?: Prisma.NestedFloatNullableFilter<$PrismaModel> | number | null
-}
-
-export type NestedBoolNullableWithAggregatesFilter<$PrismaModel = never> = {
-  equals?: boolean | Prisma.BooleanFieldRefInput<$PrismaModel> | null
-  not?: Prisma.NestedBoolNullableWithAggregatesFilter<$PrismaModel> | boolean | null
-  _count?: Prisma.NestedIntNullableFilter<$PrismaModel>
-  _min?: Prisma.NestedBoolNullableFilter<$PrismaModel>
-  _max?: Prisma.NestedBoolNullableFilter<$PrismaModel>
-}
-
-export type NestedEnumBackupIntervalTypeFilter<$PrismaModel = never> = {
-  equals?: $Enums.BackupIntervalType | Prisma.EnumBackupIntervalTypeFieldRefInput<$PrismaModel>
-  in?: $Enums.BackupIntervalType[]
-  notIn?: $Enums.BackupIntervalType[]
-  not?: Prisma.NestedEnumBackupIntervalTypeFilter<$PrismaModel> | $Enums.BackupIntervalType
-}
-
-export type NestedEnumBackupIntervalTypeWithAggregatesFilter<$PrismaModel = never> = {
-  equals?: $Enums.BackupIntervalType | Prisma.EnumBackupIntervalTypeFieldRefInput<$PrismaModel>
-  in?: $Enums.BackupIntervalType[]
-  notIn?: $Enums.BackupIntervalType[]
-  not?: Prisma.NestedEnumBackupIntervalTypeWithAggregatesFilter<$PrismaModel> | $Enums.BackupIntervalType
-  _count?: Prisma.NestedIntFilter<$PrismaModel>
-  _min?: Prisma.NestedEnumBackupIntervalTypeFilter<$PrismaModel>
-  _max?: Prisma.NestedEnumBackupIntervalTypeFilter<$PrismaModel>
 }
 
 export type NestedEnumLibraryItemTypeFilter<$PrismaModel = never> = {

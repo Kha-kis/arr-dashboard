@@ -18,10 +18,6 @@ const servicePayloadSchema = z.object({
 	enabled: z.boolean().default(true),
 	isDefault: z.boolean().default(false),
 	tags: z.array(z.string().min(1).max(64)).default([]),
-	defaultQualityProfileId: z.number().int().min(0).nullable().optional(),
-	defaultLanguageProfileId: z.number().int().min(0).nullable().optional(),
-	defaultRootFolderPath: z.string().min(1).nullable().optional(),
-	defaultSeasonFolder: z.boolean().nullable().optional(),
 	storageGroupId: z.string().min(1).max(64).nullable().optional(),
 });
 

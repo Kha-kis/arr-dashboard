@@ -9,7 +9,6 @@ import {
 	useTestServiceConnection,
 	useTestConnectionBeforeAdd,
 } from "../../../hooks/api/useServiceMutations";
-import { parseNumericValue, parseSeasonFolderValue } from "../lib/settings-utils";
 import { getErrorMessage } from "../../../lib/error-utils";
 
 /**
@@ -44,15 +43,6 @@ export const useServicesManagement = () => {
 			.map((tag) => tag.trim())
 			.filter(Boolean);
 
-		const defaultQualityProfileId = parseNumericValue(formState.defaultQualityProfileId);
-		const defaultLanguageProfileId =
-			formState.service === "sonarr" ? parseNumericValue(formState.defaultLanguageProfileId) : null;
-		const trimmedRootFolder = formState.defaultRootFolderPath.trim();
-		const defaultRootFolderPath =
-			formState.service !== "prowlarr" && trimmedRootFolder.length > 0 ? trimmedRootFolder : null;
-		const defaultSeasonFolder =
-			formState.service === "sonarr" ? parseSeasonFolderValue(formState.defaultSeasonFolder) : null;
-
 		// Handle storage group: empty string becomes null
 		const trimmedStorageGroupId = formState.storageGroupId.trim();
 		const storageGroupId = trimmedStorageGroupId.length > 0 ? trimmedStorageGroupId : null;
@@ -70,10 +60,6 @@ export const useServicesManagement = () => {
 			enabled: formState.enabled,
 			isDefault: formState.isDefault,
 			tags: trimmedTags,
-			defaultQualityProfileId,
-			defaultLanguageProfileId,
-			defaultRootFolderPath,
-			defaultSeasonFolder,
 			storageGroupId,
 		};
 

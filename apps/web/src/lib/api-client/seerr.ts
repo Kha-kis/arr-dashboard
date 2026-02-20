@@ -5,17 +5,24 @@
  */
 
 import type {
-	SeerrRequest,
-	SeerrRequestCount,
-	SeerrUser,
-	SeerrQuota,
+	SeerrCreateRequestPayload,
+	SeerrCreateRequestResponse,
+	SeerrDiscoverResponse,
+	SeerrGenre,
 	SeerrIssue,
 	SeerrIssueComment,
-	SeerrNotificationAgent,
-	SeerrStatus,
-	SeerrPageResult,
-	SeerrRequestParams,
 	SeerrIssueParams,
+	SeerrMovieDetails,
+	SeerrNotificationAgent,
+	SeerrPageResult,
+	SeerrQuota,
+	SeerrRequest,
+	SeerrRequestCount,
+	SeerrRequestOptions,
+	SeerrRequestParams,
+	SeerrStatus,
+	SeerrTvDetails,
+	SeerrUser,
 	SeerrUserParams,
 	SeerrUserUpdateData,
 } from "@arr/shared";
@@ -168,6 +175,102 @@ export async function testSeerrNotification(instanceId: string, agentId: string)
 
 export async function fetchSeerrStatus(instanceId: string): Promise<SeerrStatus> {
 	return apiRequest(`/api/seerr/status/${instanceId}`);
+}
+
+// ============================================================================
+// Discover
+// ============================================================================
+
+const BASE_DISCOVER = "/api/seerr/discover";
+
+export async function fetchSeerrDiscoverMovies(
+	instanceId: string,
+	page = 1,
+): Promise<SeerrDiscoverResponse> {
+	return apiRequest(`${BASE_DISCOVER}/${instanceId}/movies?page=${page}`);
+}
+
+export async function fetchSeerrDiscoverTv(
+	instanceId: string,
+	page = 1,
+): Promise<SeerrDiscoverResponse> {
+	return apiRequest(`${BASE_DISCOVER}/${instanceId}/tv?page=${page}`);
+}
+
+export async function fetchSeerrDiscoverTrending(
+	instanceId: string,
+	page = 1,
+): Promise<SeerrDiscoverResponse> {
+	return apiRequest(`${BASE_DISCOVER}/${instanceId}/trending?page=${page}`);
+}
+
+export async function fetchSeerrDiscoverMoviesUpcoming(
+	instanceId: string,
+	page = 1,
+): Promise<SeerrDiscoverResponse> {
+	return apiRequest(`${BASE_DISCOVER}/${instanceId}/movies/upcoming?page=${page}`);
+}
+
+export async function fetchSeerrDiscoverTvUpcoming(
+	instanceId: string,
+	page = 1,
+): Promise<SeerrDiscoverResponse> {
+	return apiRequest(`${BASE_DISCOVER}/${instanceId}/tv/upcoming?page=${page}`);
+}
+
+export async function fetchSeerrDiscoverByGenre(
+	instanceId: string,
+	mediaType: "movie" | "tv",
+	genreId: number,
+	page = 1,
+): Promise<SeerrDiscoverResponse> {
+	const segment = mediaType === "movie" ? "movies" : "tv";
+	return apiRequest(`${BASE_DISCOVER}/${instanceId}/${segment}/genre/${genreId}?page=${page}`);
+}
+
+export async function fetchSeerrSearch(
+	instanceId: string,
+	query: string,
+	page = 1,
+): Promise<SeerrDiscoverResponse> {
+	const qs = buildQueryString({ query, page });
+	return apiRequest(`${BASE_DISCOVER}/${instanceId}/search${qs}`);
+}
+
+export async function fetchSeerrMovieDetails(
+	instanceId: string,
+	tmdbId: number,
+): Promise<SeerrMovieDetails> {
+	return apiRequest(`${BASE_DISCOVER}/${instanceId}/movie/${tmdbId}`);
+}
+
+export async function fetchSeerrTvDetails(
+	instanceId: string,
+	tmdbId: number,
+): Promise<SeerrTvDetails> {
+	return apiRequest(`${BASE_DISCOVER}/${instanceId}/tv/${tmdbId}`);
+}
+
+export async function fetchSeerrGenres(
+	instanceId: string,
+	mediaType: "movie" | "tv",
+): Promise<SeerrGenre[]> {
+	const segment = mediaType === "movie" ? "movie" : "tv";
+	return apiRequest(`${BASE_DISCOVER}/${instanceId}/genres/${segment}`);
+}
+
+export async function fetchSeerrRequestOptions(
+	instanceId: string,
+	mediaType: "movie" | "tv",
+): Promise<SeerrRequestOptions> {
+	return apiRequest(`${BASE_DISCOVER}/${instanceId}/request-options?mediaType=${mediaType}`);
+}
+
+export async function createSeerrRequest(
+	instanceId: string,
+	payload: SeerrCreateRequestPayload,
+): Promise<SeerrCreateRequestResponse> {
+	return apiRequest(`${BASE_DISCOVER}/${instanceId}/request`, { json: payload });
 }
 
 // ============================================================================

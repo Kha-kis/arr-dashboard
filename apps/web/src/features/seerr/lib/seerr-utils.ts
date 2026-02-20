@@ -109,5 +109,5 @@ export function formatRelativeTime(dateStr: string): string {
 
 export function getPosterUrl(posterPath?: string | null): string | null {
 	if (!posterPath) return null;
-	return `https://image.tmdb.org/t/p/w92${posterPath}`;
+	return `https://image.tmdb.org/t/p/w185${posterPath}`;
 }

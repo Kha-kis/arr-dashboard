@@ -13,10 +13,6 @@ interface ServiceInstanceWithTags {
 	createdAt: Date;
 	updatedAt: Date;
 	encryptedApiKey: string;
-	defaultQualityProfileId: number | null;
-	defaultLanguageProfileId: number | null;
-	defaultRootFolderPath: string | null;
-	defaultSeasonFolder: boolean | null;
 	storageGroupId: string | null;
 	tags: Array<{
 		tag: {
@@ -37,10 +33,6 @@ export interface FormattedServiceInstance {
 	createdAt: Date;
 	updatedAt: Date;
 	hasApiKey: boolean;
-	defaultQualityProfileId: number | null;
-	defaultLanguageProfileId: number | null;
-	defaultRootFolderPath: string | null;
-	defaultSeasonFolder: boolean | null;
 	storageGroupId: string | null;
 	tags: Array<{ id: string; name: string }>;
 }
@@ -60,10 +52,6 @@ export function formatServiceInstance(instance: ServiceInstanceWithTags): Format
 		createdAt: instance.createdAt,
 		updatedAt: instance.updatedAt,
 		hasApiKey: Boolean(instance.encryptedApiKey),
-		defaultQualityProfileId: instance.defaultQualityProfileId,
-		defaultLanguageProfileId: instance.defaultLanguageProfileId,
-		defaultRootFolderPath: instance.defaultRootFolderPath,
-		defaultSeasonFolder: instance.defaultSeasonFolder,
 		storageGroupId: instance.storageGroupId,
 		tags: instance.tags.map(({ tag }) => ({ id: tag.id, name: tag.name })),
 	};
