@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useTagsQuery } from "../../../hooks/api/useTags";
-import { useDiscoverOptionsQuery, useDiscoverTestOptionsQuery } from "../../../hooks/api/useDiscover";
 import { useCurrentUser } from "../../../hooks/api/useAuth";
 import {
 	PremiumPageHeader,
@@ -31,7 +30,6 @@ import {
 } from "../hooks";
 import { ServicesTab } from "./services-tab";
 import { ServiceForm } from "./service-form";
-import { ServiceDefaultsSection } from "./service-defaults-section";
 import { TagsTab } from "./tags-tab";
 import { AccountTab } from "./account-tab";
 import { OIDCProviderSection } from "./oidc-provider-section";
@@ -69,88 +67,6 @@ export const SettingsClient = () => {
 
 	// Available tags for autocomplete
 	const availableTags = useMemo(() => tags.map((tag) => tag.name), [tags]);
-
-	// Check if editing service supports defaults (not prowlarr)
-	const editingSupportsDefaults = Boolean(
-		serviceFormState.selectedServiceForEdit &&
-			serviceFormState.selectedServiceForEdit.service !== "prowlarr",
-	);
-
-	// Type guard for services that support defaults (radarr and sonarr only)
-	const isDefaultsSupportedService = (
-		service: string,
-	): service is "radarr" | "sonarr" => {
-		return service === "radarr" || service === "sonarr";
-	};
-
-	// Check if creating new service supports defaults (radarr or sonarr only)
-	const creatingSupportsDefaults = Boolean(
-		!serviceFormState.selectedServiceForEdit &&
-			isDefaultsSupportedService(serviceFormState.formState.service) &&
-			serviceFormState.formState.baseUrl &&
-			serviceFormState.formState.apiKey,
-	);
-
-	// Fetch instance options for default settings (editing existing)
-	const {
-		data: instanceOptions,
-		isLoading: instanceOptionsLoading,
-		isFetching: instanceOptionsFetching,
-		isError: instanceOptionsError,
-	} = useDiscoverOptionsQuery(
-		editingSupportsDefaults ? (serviceFormState.selectedServiceForEdit?.id ?? null) : null,
-		serviceFormState.selectedServiceForEdit?.service === "sonarr" ? "series" : "movie",
-		editingSupportsDefaults,
-	);
-
-	// Fetch test options for default settings (creating new)
-	const serviceForTestQuery = isDefaultsSupportedService(
-		serviceFormState.formState.service,
-	)
-		? serviceFormState.formState.service
-		: null;
-
-	const {
-		data: testOptions,
-		isLoading: testOptionsLoading,
-		isFetching: testOptionsFetching,
-		isError: testOptionsError,
-	} = useDiscoverTestOptionsQuery(
-		creatingSupportsDefaults && serviceForTestQuery
-			? {
-					baseUrl: serviceFormState.formState.baseUrl,
-					apiKey: serviceFormState.formState.apiKey,
-					service: serviceForTestQuery,
-				}
-			: null,
-		creatingSupportsDefaults,
-	);
-
-	// Combine options from both sources
-	const optionsPending = editingSupportsDefaults
-		? instanceOptionsLoading || instanceOptionsFetching
-		: creatingSupportsDefaults
-			? testOptionsLoading || testOptionsFetching
-			: false;
-
-	const optionsData = editingSupportsDefaults ? (instanceOptions ?? null) : (testOptions ?? null);
-
-	const optionsLoadFailed = Boolean(
-		(editingSupportsDefaults && !optionsPending && (instanceOptionsError || !instanceOptions)) ||
-			(creatingSupportsDefaults && !optionsPending && (testOptionsError || !testOptions)),
-	);
-
-	// Build default section content for service form
-	const defaultSectionContent = (
-		<ServiceDefaultsSection
-			selectedService={serviceFormState.selectedServiceForEdit}
-			formState={serviceFormState.formState}
-			onFormStateChange={serviceFormState.setFormState}
-			optionsPending={optionsPending}
-			optionsLoadFailed={optionsLoadFailed}
-			optionsData={optionsData}
-		/>
-	);
 
 	// Handler for service form submission
 	const handleServiceFormSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -253,7 +169,6 @@ export const SettingsClient = () => {
 							isUpdating={servicesManagement.updateServiceMutation.isPending}
 							isTesting={servicesManagement.testingFormConnection}
 							testResult={servicesManagement.formTestResult}
-							defaultSectionContent={defaultSectionContent}
 						/>
 					</div>
 				)}

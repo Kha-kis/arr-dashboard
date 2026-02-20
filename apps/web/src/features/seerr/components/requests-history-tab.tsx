@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useMemo } from "react";
-import { AlertCircle, ClipboardList, Trash2 } from "lucide-react";
+import { useState, useMemo, useCallback, useEffect, useRef } from "react";
+import { AlertCircle, ClipboardList, Trash2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { SEERR_REQUEST_STATUS } from "@arr/shared";
+import { SEERR_REQUEST_STATUS, type SeerrRequest } from "@arr/shared";
 import { FilterSelect, PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import {
@@ -23,6 +23,7 @@ type RequestFilter =
 	| "unavailable"
 	| "failed";
 type TypeFilter = "all" | "movie" | "tv";
+type RequestSort = "added" | "modified";
 
 const STATUS_OPTIONS: { value: RequestFilter; label: string }[] = [
 	{ value: "all", label: "All Statuses" },
@@ -33,6 +34,11 @@ const STATUS_OPTIONS: { value: RequestFilter; label: string }[] = [
 	{ value: "failed", label: "Failed" },
 ];
 
+const SORT_OPTIONS: { value: RequestSort; label: string }[] = [
+	{ value: "added", label: "Newest" },
+	{ value: "modified", label: "Last Updated" },
+];
+
 const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
 	{ value: "all", label: "All Types" },
 	{ value: "movie", label: "Movies" },
@@ -41,21 +47,43 @@ const TYPE_OPTIONS: { value: TypeFilter; label: string }[] = [
 
 interface RequestsHistoryTabProps {
 	instanceId: string;
+	onSelectRequest?: (request: SeerrRequest) => void;
 }
 
-export const RequestsHistoryTab = ({ instanceId }: RequestsHistoryTabProps) => {
+export const RequestsHistoryTab = ({ instanceId, onSelectRequest }: RequestsHistoryTabProps) => {
 	const [statusFilter, setStatusFilter] = useState<RequestFilter>("all");
 	const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
 	const [userFilter, setUserFilter] = useState<string>("all");
+	const [sort, setSort] = useState<RequestSort>("added");
+	const PAGE_SIZE = 50;
+	const [take, setTake] = useState(PAGE_SIZE);
 
 	const requestedBy = userFilter !== "all" ? Number(userFilter) : undefined;
-	const { data, isLoading, isError } = useSeerrRequests({
+	const { data, isLoading, isFetching, isError } = useSeerrRequests({
 		instanceId,
 		filter: statusFilter,
-		take: 50,
+		sort,
+		take,
 		requestedBy,
 	});
 	const { data: usersData } = useSeerrUsers({ instanceId, take: 50, sort: "displayname" });
+
+	// Reset pagination when filters change
+	const prevFilterRef = useRef({ statusFilter, userFilter, sort });
+	useEffect(() => {
+		if (
+			prevFilterRef.current.statusFilter !== statusFilter ||
+			prevFilterRef.current.userFilter !== userFilter ||
+			prevFilterRef.current.sort !== sort
+		) {
+			setTake(PAGE_SIZE);
+			prevFilterRef.current = { statusFilter, userFilter, sort };
+		}
+	}, [statusFilter, userFilter, sort]);
+
+	const totalResults = data?.pageInfo.results ?? 0;
+	const hasMore = (data?.results.length ?? 0) < totalResults;
+	const handleLoadMore = useCallback(() => setTake((prev) => prev + PAGE_SIZE), []);
 	const deleteMutation = useDeleteSeerrRequest();
 	const retryMutation = useRetrySeerrRequest();
 	const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null);
@@ -102,10 +130,16 @@ export const RequestsHistoryTab = ({ instanceId }: RequestsHistoryTabProps) => {
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<p className="text-sm text-muted-foreground">
 					{requests.length === allRequests.length
-						? `${data?.pageInfo.results ?? 0} total requests`
-						: `${requests.length} of ${data?.pageInfo.results ?? 0} requests`}
+						? `${totalResults} total requests`
+						: `${requests.length} of ${totalResults} requests`}
 				</p>
 				<div className="flex flex-wrap items-center gap-2">
+					<FilterSelect
+						value={sort}
+						onChange={(v) => setSort(v as RequestSort)}
+						options={SORT_OPTIONS}
+						className="min-w-[120px]"
+					/>
 					<FilterSelect
 						value={typeFilter}
 						onChange={(v) => setTypeFilter(v as TypeFilter)}
@@ -140,6 +174,7 @@ export const RequestsHistoryTab = ({ instanceId }: RequestsHistoryTabProps) => {
 							key={request.id}
 							request={request}
 							index={index}
+							onClick={() => onSelectRequest?.(request)}
 							actions={
 								<>
 									{request.status === SEERR_REQUEST_STATUS.FAILED && (
@@ -205,6 +240,22 @@ export const RequestsHistoryTab = ({ instanceId }: RequestsHistoryTabProps) => {
 							}
 						/>
 					))}
+
+					{hasMore && (
+						<div className="flex justify-center pt-2">
+							<Button
+								variant="secondary"
+								onClick={handleLoadMore}
+								disabled={isFetching}
+								className="gap-2 border-border/50 bg-card/50 text-xs"
+							>
+								{isFetching ? (
+									<Loader2 className="h-3 w-3 animate-spin" />
+								) : null}
+								Load More ({totalResults - allRequests.length} remaining)
+							</Button>
+						</div>
+					)}
 				</div>
 			)}
 		</div>

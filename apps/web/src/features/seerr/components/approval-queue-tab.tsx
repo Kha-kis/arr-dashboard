@@ -1,30 +1,50 @@
 "use client";
 
-import { useState } from "react";
-import { AlertCircle, Check, X } from "lucide-react";
+import { useState, useCallback } from "react";
+import { AlertCircle, Check, X, Loader2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import { GradientButton, PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
+import { FilterSelect, GradientButton, PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import {
 	useSeerrRequests,
 	useApproveSeerrRequest,
 	useDeclineSeerrRequest,
+	useDeleteSeerrRequest,
 } from "../../../hooks/api/useSeerr";
+import type { SeerrRequest } from "@arr/shared";
 import { RequestCard } from "./request-card";
+
+type RequestSort = "added" | "modified";
+
+const SORT_OPTIONS: { value: RequestSort; label: string }[] = [
+	{ value: "added", label: "Newest" },
+	{ value: "modified", label: "Last Updated" },
+];
 
 interface ApprovalQueueTabProps {
 	instanceId: string;
+	onSelectRequest?: (request: SeerrRequest) => void;
 }
 
-export const ApprovalQueueTab = ({ instanceId }: ApprovalQueueTabProps) => {
-	const { data, isLoading, isError } = useSeerrRequests({
+const PAGE_SIZE = 50;
+
+export const ApprovalQueueTab = ({ instanceId, onSelectRequest }: ApprovalQueueTabProps) => {
+	const [sort, setSort] = useState<RequestSort>("added");
+	const [take, setTake] = useState(PAGE_SIZE);
+	const { data, isLoading, isFetching, isError } = useSeerrRequests({
 		instanceId,
 		filter: "pending",
-		take: 50,
+		sort,
+		take,
 	});
+	const totalResults = data?.pageInfo.results ?? 0;
+	const hasMore = (data?.results.length ?? 0) < totalResults;
+	const handleLoadMore = useCallback(() => setTake((prev) => prev + PAGE_SIZE), []);
 	const approveMutation = useApproveSeerrRequest();
 	const declineMutation = useDeclineSeerrRequest();
+	const deleteMutation = useDeleteSeerrRequest();
 	const [confirmingDeclineId, setConfirmingDeclineId] = useState<number | null>(null);
+	const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null);
 
 	if (isLoading) {
 		return (
@@ -60,11 +80,23 @@ export const ApprovalQueueTab = ({ instanceId }: ApprovalQueueTabProps) => {
 
 	return (
 		<div className="space-y-3">
+			<div className="flex items-center justify-between">
+				<p className="text-sm text-muted-foreground">
+					{totalResults} pending request{totalResults !== 1 ? "s" : ""}
+				</p>
+				<FilterSelect
+					value={sort}
+					onChange={(v) => setSort(v as RequestSort)}
+					options={SORT_OPTIONS}
+					className="min-w-[120px]"
+				/>
+			</div>
 			{requests.map((request, index) => (
 				<RequestCard
 					key={request.id}
 					request={request}
 					index={index}
+					onClick={() => onSelectRequest?.(request)}
 					actions={
 						<>
 							<GradientButton
@@ -124,10 +156,64 @@ export const ApprovalQueueTab = ({ instanceId }: ApprovalQueueTabProps) => {
 									Decline
 								</Button>
 							)}
+							{confirmingDeleteId === request.id ? (
+								<>
+									<Button
+										variant="destructive"
+										size="sm"
+										disabled={deleteMutation.isPending}
+										onClick={() => {
+											deleteMutation.mutate(
+												{ instanceId, requestId: request.id },
+												{
+													onSuccess: () => toast.success("Request deleted"),
+													onError: () => toast.error("Failed to delete request"),
+												},
+											);
+											setConfirmingDeleteId(null);
+										}}
+										className="gap-1.5 text-xs"
+									>
+										Confirm
+									</Button>
+									<Button
+										variant="secondary"
+										size="sm"
+										onClick={() => setConfirmingDeleteId(null)}
+										className="gap-1.5 border-border/50 bg-card/50 text-xs"
+									>
+										Cancel
+									</Button>
+								</>
+							) : (
+								<Button
+									variant="secondary"
+									size="sm"
+									disabled={deleteMutation.isPending}
+									onClick={() => setConfirmingDeleteId(request.id)}
+									className="gap-1.5 border-border/50 bg-card/50"
+								>
+									<Trash2 className="h-3 w-3" />
+								</Button>
+							)}
 						</>
 					}
 				/>
 			))}
+
+			{hasMore && (
+				<div className="flex justify-center pt-2">
+					<Button
+						variant="secondary"
+						onClick={handleLoadMore}
+						disabled={isFetching}
+						className="gap-2 border-border/50 bg-card/50 text-xs"
+					>
+						{isFetching ? <Loader2 className="h-3 w-3 animate-spin" /> : null}
+						Load More ({totalResults - requests.length} remaining)
+					</Button>
+				</div>
+			)}
 		</div>
 	);
 };

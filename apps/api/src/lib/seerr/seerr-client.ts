@@ -11,16 +11,27 @@ import type { ArrClientFactory, ClientInstanceData } from "../arr/client-factory
 import { requireInstance } from "../arr/instance-helpers.js";
 import { AppValidationError } from "../errors.js";
 import type {
+	SeerrCreateRequestPayload,
+	SeerrCreateRequestResponse,
+	SeerrDiscoverParams,
+	SeerrDiscoverResponse,
+	SeerrGenre,
 	SeerrIssue,
 	SeerrIssueComment,
 	SeerrIssueParams,
+	SeerrMovieDetails,
 	SeerrNotificationAgent,
 	SeerrPageResult,
 	SeerrQuota,
 	SeerrRequest,
 	SeerrRequestCount,
+	SeerrRequestOptions,
 	SeerrRequestParams,
+	SeerrSearchParams,
+	SeerrServerWithDetails,
+	SeerrServiceServer,
 	SeerrStatus,
+	SeerrTvDetails,
 	SeerrUser,
 	SeerrUserParams,
 	SeerrUserUpdateData,
@@ -79,7 +90,10 @@ export class SeerrClient {
 
 	/** Read error body (truncated) for inclusion in error messages */
 	private async readErrorBody(response: Response): Promise<string> {
-		const body = await response.text().catch(() => "");
+		const body = await response.text().catch((err) => {
+			this.log.debug({ err }, "Seerr: failed to read error response body");
+			return "";
+		});
 		return body ? ` — ${body.slice(0, 500)}` : "";
 	}
 
@@ -296,15 +310,18 @@ export class SeerrClient {
 		);
 
 		let enrichmentFailures = 0;
+		let firstError: unknown;
 		for (const outcome of settled) {
 			if (outcome.status === "fulfilled") {
 				mediaMap.set(outcome.value.key, outcome.value.details);
 			} else {
 				enrichmentFailures++;
+				firstError ??= outcome.reason;
 			}
 		}
 		if (enrichmentFailures > 0) {
 			this.log.warn(
+				{ err: firstError },
 				`Seerr: ${enrichmentFailures}/${entries.length} media enrichment lookups failed`,
 			);
 		}
@@ -320,6 +337,120 @@ export class SeerrClient {
 		});
 
 		return { ...result, results: enriched };
+	}
+
+	// --- Discovery ---
+
+	async discoverMovies(params?: SeerrDiscoverParams): Promise<SeerrDiscoverResponse> {
+		const qs = buildQueryString(params);
+		return this.get(`/api/v1/discover/movies${qs}`);
+	}
+
+	async discoverTv(params?: SeerrDiscoverParams): Promise<SeerrDiscoverResponse> {
+		const qs = buildQueryString(params);
+		return this.get(`/api/v1/discover/tv${qs}`);
+	}
+
+	async discoverTrending(params?: SeerrDiscoverParams): Promise<SeerrDiscoverResponse> {
+		const qs = buildQueryString(params);
+		return this.get(`/api/v1/discover/trending${qs}`);
+	}
+
+	async discoverMoviesUpcoming(params?: SeerrDiscoverParams): Promise<SeerrDiscoverResponse> {
+		const qs = buildQueryString(params);
+		return this.get(`/api/v1/discover/movies/upcoming${qs}`);
+	}
+
+	async discoverTvUpcoming(params?: SeerrDiscoverParams): Promise<SeerrDiscoverResponse> {
+		const qs = buildQueryString(params);
+		return this.get(`/api/v1/discover/tv/upcoming${qs}`);
+	}
+
+	async discoverMoviesByGenre(
+		genreId: number,
+		params?: SeerrDiscoverParams,
+	): Promise<SeerrDiscoverResponse> {
+		const qs = buildQueryString(params);
+		return this.get(`/api/v1/discover/movies/genre/${genreId}${qs}`);
+	}
+
+	async discoverTvByGenre(
+		genreId: number,
+		params?: SeerrDiscoverParams,
+	): Promise<SeerrDiscoverResponse> {
+		const qs = buildQueryString(params);
+		return this.get(`/api/v1/discover/tv/genre/${genreId}${qs}`);
+	}
+
+	// --- Search ---
+
+	async search(params: SeerrSearchParams): Promise<SeerrDiscoverResponse> {
+		const qs = buildQueryString(params);
+		return this.get(`/api/v1/search${qs}`);
+	}
+
+	// --- Full Details (with credits, recommendations, etc.) ---
+
+	async getMovieDetailsFull(tmdbId: number): Promise<SeerrMovieDetails> {
+		return this.get(`/api/v1/movie/${tmdbId}`);
+	}
+
+	async getTvDetailsFull(tmdbId: number): Promise<SeerrTvDetails> {
+		return this.get(`/api/v1/tv/${tmdbId}`);
+	}
+
+	// --- Genres ---
+
+	async getMovieGenres(): Promise<SeerrGenre[]> {
+		return this.get("/api/v1/genres/movie");
+	}
+
+	async getTvGenres(): Promise<SeerrGenre[]> {
+		return this.get("/api/v1/genres/tv");
+	}
+
+	// --- Create Request ---
+
+	async createRequest(payload: SeerrCreateRequestPayload): Promise<SeerrCreateRequestResponse> {
+		return this.post("/api/v1/request", payload);
+	}
+
+	// --- Service Servers (for request options) ---
+
+	async getServiceServers(serviceType: "radarr" | "sonarr"): Promise<SeerrServiceServer[]> {
+		return this.get(`/api/v1/service/${serviceType}`);
+	}
+
+	async getServerDetails(
+		serviceType: "radarr" | "sonarr",
+		serverId: number,
+	): Promise<SeerrServerWithDetails> {
+		return this.get(`/api/v1/service/${serviceType}/${serverId}`);
+	}
+
+	async getRequestOptions(mediaType: "movie" | "tv"): Promise<SeerrRequestOptions> {
+		const serviceType = mediaType === "movie" ? "radarr" : "sonarr";
+		const servers = await this.getServiceServers(serviceType);
+
+		// Fetch full details (profiles, rootFolders, tags) for each server in parallel
+		const settled = await Promise.allSettled(
+			servers.map((s) => this.getServerDetails(serviceType, s.id)),
+		);
+
+		const results: SeerrServerWithDetails[] = [];
+		for (let i = 0; i < settled.length; i++) {
+			const outcome = settled[i]!;
+			if (outcome.status === "fulfilled") {
+				results.push(outcome.value);
+			} else {
+				this.log.warn(
+					{ err: outcome.reason },
+					`Seerr: failed to fetch details for ${serviceType} server ${servers[i]!.id}`,
+				);
+			}
+		}
+
+		return { servers: results };
 	}
 
 	// --- System ---

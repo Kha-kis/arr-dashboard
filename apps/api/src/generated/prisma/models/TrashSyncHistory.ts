@@ -753,6 +753,14 @@ export type TrashSyncHistoryUncheckedUpdateManyWithoutTemplateNestedInput = {
   deleteMany?: Prisma.TrashSyncHistoryScalarWhereInput | Prisma.TrashSyncHistoryScalarWhereInput[]
 }
 
+export type NullableIntFieldUpdateOperationsInput = {
+  set?: number | null
+  increment?: number
+  decrement?: number
+  multiply?: number
+  divide?: number
+}
+
 export type TrashSyncHistoryCreateNestedManyWithoutBackupInput = {
   create?: Prisma.XOR<Prisma.TrashSyncHistoryCreateWithoutBackupInput, Prisma.TrashSyncHistoryUncheckedCreateWithoutBackupInput> | Prisma.TrashSyncHistoryCreateWithoutBackupInput[] | Prisma.TrashSyncHistoryUncheckedCreateWithoutBackupInput[]
   connectOrCreate?: Prisma.TrashSyncHistoryCreateOrConnectWithoutBackupInput | Prisma.TrashSyncHistoryCreateOrConnectWithoutBackupInput[]

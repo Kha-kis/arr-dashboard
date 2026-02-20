@@ -50,7 +50,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 	let response: Response;
 	try {
 		response = await fetch(resolveUrl(path), {
-			method: json ? "POST" : (options.method ?? "GET"),
+			method: options.method ?? (json ? "POST" : "GET"),
 			credentials: "include",
 			headers: {
 				Accept: "application/json",
