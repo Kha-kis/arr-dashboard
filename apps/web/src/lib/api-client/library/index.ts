@@ -10,6 +10,7 @@ import type {
 	LibraryEpisodeMonitorRequest,
 	LibraryEpisodeSearchRequest,
 	LibraryEpisodesResponse,
+	LibraryMovieFileResponse,
 	LibraryToggleMonitorRequest,
 	LibrarySeasonSearchRequest,
 	LibraryMovieSearchRequest,
@@ -118,6 +119,17 @@ export async function fetchEpisodes(params: FetchEpisodesParams): Promise<Librar
 	}
 
 	return await apiRequest<LibraryEpisodesResponse>(`/api/library/episodes?${search.toString()}`);
+}
+
+export async function fetchMovieFile(params: {
+	instanceId: string;
+	movieId: number | string;
+}): Promise<LibraryMovieFileResponse> {
+	const search = new URLSearchParams({
+		instanceId: params.instanceId,
+		movieId: String(params.movieId),
+	});
+	return await apiRequest<LibraryMovieFileResponse>(`/api/library/movie-file?${search.toString()}`);
 }
 
 export async function searchLibraryEpisode(payload: LibraryEpisodeSearchRequest): Promise<void> {

@@ -460,6 +460,11 @@ export const BRAND_COLORS = {
 		border: "rgba(237, 29, 36, 0.25)",
 		text: "#ed1d24",
 	},
+	tvdb: {
+		bg: "rgba(38, 166, 154, 0.1)",
+		border: "rgba(38, 166, 154, 0.25)",
+		text: "#26a69a",
+	},
 } as const;
 
 /**

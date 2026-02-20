@@ -1,17 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useState } from "react";
 import type { LibraryItem } from "@arr/shared";
+import { toast } from "../../../components/ui";
 import { useLibraryMonitorMutation } from "../../../hooks/api/useLibrary";
+import { useLibraryEnrichment } from "../../../hooks/api/useSeerr";
+import { useSeerrInstances } from "../../seerr/hooks/use-seerr-instances";
 import { useLibraryFilters, useLibraryData, useLibraryActions } from "../hooks";
 import { LibraryHeader } from "./library-header";
 import { LibraryContent } from "./library-content";
 import { LibraryCard } from "./library-card";
 import { ItemDetailsModal } from "./item-details-modal";
-import { SeasonBreakdownModal } from "./season-breakdown-modal";
 import { AlbumBreakdownModal } from "./album-breakdown-modal";
 import { BookBreakdownModal } from "./book-breakdown-modal";
 import { buildLibraryExternalLink } from "../lib/library-utils";
+
+const EnrichedDetailModal = React.lazy(() =>
+	import("./enriched-detail-modal").then((m) => ({ default: m.EnrichedDetailModal })),
+);
 
 /**
  * Main library client component
@@ -28,9 +34,12 @@ import { buildLibraryExternalLink } from "../lib/library-utils";
 export const LibraryClient: React.FC = () => {
 	// Modal state
 	const [itemDetail, setItemDetail] = useState<LibraryItem | null>(null);
-	const [seasonDetail, setSeasonDetail] = useState<LibraryItem | null>(null);
 	const [albumDetail, setAlbumDetail] = useState<LibraryItem | null>(null);
 	const [bookDetail, setBookDetail] = useState<LibraryItem | null>(null);
+
+	// Seerr integration — detect if any Seerr instance is configured
+	const { defaultInstance: seerrInstance } = useSeerrInstances();
+	const seerrInstanceId = seerrInstance?.id ?? null;
 
 	// Custom hooks - filters now include pagination and sorting
 	const filters = useLibraryFilters();
@@ -47,6 +56,17 @@ export const LibraryClient: React.FC = () => {
 	});
 	const actions = useLibraryActions();
 
+	// Seerr enrichment — fetch TMDB ratings + issue counts for current page items
+	const enrichmentQuery = useLibraryEnrichment(seerrInstanceId, data.items);
+	const enrichmentMap = enrichmentQuery.data?.items ?? null;
+
+	// Notify user if Seerr enrichment fails (one-time per error transition)
+	useEffect(() => {
+		if (enrichmentQuery.isError && seerrInstanceId) {
+			toast.warning("Could not load TMDB enrichment data from Seerr");
+		}
+	}, [enrichmentQuery.isError, seerrInstanceId]);
+
 	// Monitor mutation for toggling item monitoring
 	const monitorMutation = useLibraryMonitorMutation();
 
@@ -54,29 +74,6 @@ export const LibraryClient: React.FC = () => {
 	const pendingKey = monitorMutation.isPending
 		? `${monitorMutation.variables?.service ?? ""}:${monitorMutation.variables?.itemId ?? ""}`
 		: null;
-
-	// Update seasonDetail when data changes to reflect fresh season data
-	useEffect(() => {
-		if (!seasonDetail) {
-			return;
-		}
-
-		const updated = data.items.find(
-			(candidate) =>
-				candidate.instanceId === seasonDetail.instanceId &&
-				candidate.service === seasonDetail.service &&
-				String(candidate.id) === String(seasonDetail.id),
-		);
-
-		if (!updated || updated.type !== "series" || !updated.seasons?.length) {
-			setSeasonDetail(null);
-			return;
-		}
-
-		if (updated !== seasonDetail) {
-			setSeasonDetail(updated);
-		}
-	}, [data.items, seasonDetail]);
 
 	// Update albumDetail when data changes to reflect fresh artist data
 	useEffect(() => {
@@ -127,13 +124,6 @@ export const LibraryClient: React.FC = () => {
 	// Modal handlers (memoized for React.memo children)
 	const handleExpandDetails = useCallback((item: LibraryItem) => setItemDetail(item), []);
 	const handleCloseItemDetail = useCallback(() => setItemDetail(null), []);
-	const handleViewSeasons = useCallback((item: LibraryItem) => {
-		if (item.type !== "series" || !item.seasons?.length) {
-			return;
-		}
-		setSeasonDetail(item);
-	}, []);
-	const handleCloseSeasonDetail = useCallback(() => setSeasonDetail(null), []);
 	const handleViewAlbums = useCallback((item: LibraryItem) => {
 		if (item.type !== "artist") {
 			return;
@@ -199,7 +189,6 @@ export const LibraryClient: React.FC = () => {
 					pendingKey={pendingKey}
 					isMonitorPending={monitorMutation.isPending}
 					serviceLookup={data.serviceLookup}
-					onViewSeasons={handleViewSeasons}
 					onSearchMovie={actions.handleMovieSearch}
 					pendingMovieSearch={actions.pendingMovieSearch}
 					onSearchSeries={actions.handleSeriesSearch}
@@ -214,21 +203,34 @@ export const LibraryClient: React.FC = () => {
 					buildLibraryExternalLink={buildLibraryExternalLink}
 					LibraryCard={LibraryCard}
 					isSyncing={data.isSyncing}
+					enrichmentMap={enrichmentMap}
 				/>
 			</div>
 
-			{itemDetail && <ItemDetailsModal item={itemDetail} onClose={handleCloseItemDetail} />}
-
-			{seasonDetail && (
-				<SeasonBreakdownModal
-					item={seasonDetail}
-					onClose={handleCloseSeasonDetail}
-					onToggleSeason={(seasonNumber, nextMonitored) =>
-						actions.handleSeasonMonitor(seasonDetail, seasonNumber, nextMonitored)
-					}
-					onSearchSeason={(seasonNumber) => actions.handleSeasonSearch(seasonDetail, seasonNumber)}
-					pendingActionKey={actions.pendingSeasonAction}
-				/>
+			{itemDetail && (
+				seerrInstanceId && (itemDetail.service === "sonarr" || itemDetail.service === "radarr") && itemDetail.remoteIds?.tmdbId ? (
+					<Suspense>
+						<EnrichedDetailModal
+							item={itemDetail}
+							seerrInstanceId={seerrInstanceId}
+							onClose={handleCloseItemDetail}
+							onToggleSeason={(seasonNumber, nextMonitored) =>
+								actions.handleSeasonMonitor(itemDetail, seasonNumber, nextMonitored)
+							}
+							onSearchSeason={(seasonNumber) =>
+								actions.handleSeasonSearch(itemDetail, seasonNumber)
+							}
+							pendingSeasonAction={actions.pendingSeasonAction}
+							enrichedPosterPath={
+								enrichmentMap && itemDetail.remoteIds?.tmdbId
+									? enrichmentMap[`${itemDetail.type === "movie" ? "movie" : "tv"}:${itemDetail.remoteIds.tmdbId}`]?.posterPath
+									: undefined
+							}
+						/>
+					</Suspense>
+				) : (
+					<ItemDetailsModal item={itemDetail} onClose={handleCloseItemDetail} />
+				)
 			)}
 
 			{albumDetail && (

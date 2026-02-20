@@ -5,6 +5,7 @@
  */
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo } from "react";
 import type {
 	SeerrCreateRequestPayload,
 	SeerrCreateRequestResponse,
@@ -22,6 +23,8 @@ import type {
 	SeerrStatus,
 	SeerrTvDetails,
 	SeerrUser,
+	LibraryEnrichmentResponse,
+	LibraryItem,
 } from "@arr/shared";
 import {
 	fetchSeerrRequests,
@@ -52,6 +55,7 @@ import {
 	fetchSeerrDiscoverByGenre,
 	fetchSeerrRequestOptions,
 	createSeerrRequest,
+	fetchLibraryEnrichment,
 	type FetchSeerrRequestsParams,
 	type FetchSeerrUsersParams,
 	type FetchSeerrIssuesParams,
@@ -76,6 +80,8 @@ const seerrKeys = {
 	notifications: (instanceId: string) => ["seerr", "notifications", instanceId] as const,
 	status: (instanceId: string) => ["seerr", "status", instanceId] as const,
 	// Discover
+	libraryEnrichment: (instanceId: string, tmdbIdKey: string) =>
+		["seerr", "library-enrichment", instanceId, tmdbIdKey] as const,
 	discover: {
 		all: ["seerr", "discover"] as const,
 		movies: (instanceId: string) => ["seerr", "discover", "movies", instanceId] as const,
@@ -417,5 +423,49 @@ export const useCreateSeerrRequest = () => {
 			queryClient.invalidateQueries({ queryKey: ["seerr", "requests", instanceId] });
 			queryClient.invalidateQueries({ queryKey: seerrKeys.requestCount(instanceId) });
 		},
+	});
+};
+
+// ============================================================================
+// Library Enrichment Hook
+// ============================================================================
+
+/**
+ * Fetches TMDB ratings + open issue counts for a page of library items.
+ * Only fires when a Seerr instance is available and there are enrichable items
+ * (movie/series with tmdbId).
+ */
+export const useLibraryEnrichment = (
+	seerrInstanceId: string | null | undefined,
+	items: LibraryItem[],
+) => {
+	// Extract enrichable items (movie/series with tmdbId)
+	const enrichable = useMemo(() => {
+		if (!seerrInstanceId || items.length === 0) return { tmdbIds: [], types: [], key: "" };
+
+		const tmdbIds: number[] = [];
+		const types: ("movie" | "tv")[] = [];
+
+		for (const item of items) {
+			if (
+				(item.service === "sonarr" || item.service === "radarr") &&
+				item.remoteIds?.tmdbId
+			) {
+				tmdbIds.push(item.remoteIds.tmdbId);
+				types.push(item.type === "movie" ? "movie" : "tv");
+			}
+		}
+
+		// Stable key for query deduplication — includes types so movie/tv with same ID don't collide
+		const key = tmdbIds.map((id, i) => `${types[i]}:${id}`).join(",");
+		return { tmdbIds, types, key };
+	}, [seerrInstanceId, items]);
+
+	return useQuery<LibraryEnrichmentResponse>({
+		queryKey: seerrKeys.libraryEnrichment(seerrInstanceId ?? "", enrichable.key),
+		queryFn: () =>
+			fetchLibraryEnrichment(seerrInstanceId!, enrichable.tmdbIds, enrichable.types),
+		staleTime: 5 * 60_000,
+		enabled: !!seerrInstanceId && enrichable.tmdbIds.length > 0,
 	});
 };

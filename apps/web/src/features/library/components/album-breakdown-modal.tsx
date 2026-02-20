@@ -46,8 +46,8 @@ interface AlbumBreakdownModalProps {
 const LIDARR_COLOR = SERVICE_GRADIENTS.lidarr.from;
 
 const ALBUM_TYPE_COLORS: Record<string, { bg: string; border: string; text: string }> = {
-	Album: { bg: "rgba(34, 197, 94, 0.1)", border: "rgba(34, 197, 94, 0.3)", text: "#22c55e" },
-	EP: { bg: "rgba(59, 130, 246, 0.1)", border: "rgba(59, 130, 246, 0.3)", text: "#3b82f6" },
+	Album: SEMANTIC_COLORS.success,
+	EP: SEMANTIC_COLORS.info,
 	Single: { bg: "rgba(168, 85, 247, 0.1)", border: "rgba(168, 85, 247, 0.3)", text: "#a855f7" },
 };
 
@@ -84,11 +84,7 @@ const AlbumBadge = ({
 	);
 };
 
-const DEFAULT_ALBUM_TYPE_COLOR: { bg: string; border: string; text: string } = {
-	bg: "rgba(34, 197, 94, 0.1)",
-	border: "rgba(34, 197, 94, 0.3)",
-	text: "#22c55e",
-};
+const DEFAULT_ALBUM_TYPE_COLOR = SEMANTIC_COLORS.success;
 
 const AlbumTypeBadge = ({ albumType }: { albumType: string }) => {
 	const color = ALBUM_TYPE_COLORS[albumType] ?? DEFAULT_ALBUM_TYPE_COLOR;

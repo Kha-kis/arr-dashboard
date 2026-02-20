@@ -35,11 +35,33 @@ export const libraryMovieFileSchema = z.object({
   id: z.number().optional(),
   relativePath: z.string().optional(),
   quality: z.string().optional(),
+  releaseGroup: z.string().optional(),
   size: z.number().optional(),
+  dateAdded: z.string().optional(),
+  languages: z.array(z.string()).optional(),
+  videoCodec: z.string().optional(),
+  audioCodec: z.string().optional(),
   resolution: z.string().optional(),
+  videoDynamicRange: z.string().optional(),
+  customFormats: z.array(z.string()).optional(),
+  customFormatScore: z.number().optional(),
 });
 
 export type LibraryMovieFile = z.infer<typeof libraryMovieFileSchema>;
+
+export const libraryMovieFileRequestSchema = z.object({
+  instanceId: z.string(),
+  movieId: z.union([z.number(), z.string()]),
+});
+
+export type LibraryMovieFileRequest = z.infer<typeof libraryMovieFileRequestSchema>;
+
+export const libraryMovieFileResponseSchema = z.object({
+  movieFile: libraryMovieFileSchema.nullable(),
+  qualityProfileName: z.string().optional(),
+});
+
+export type LibraryMovieFileResponse = z.infer<typeof libraryMovieFileResponseSchema>;
 
 export const librarySeasonSchema = z.object({
   seasonNumber: z.number(),
@@ -214,6 +236,23 @@ export type LibrarySeriesSearchRequest = z.infer<
   typeof librarySeriesSearchRequestSchema
 >;
 
+export const libraryEpisodeFileSchema = z.object({
+  relativePath: z.string().optional(),
+  quality: z.string().optional(),
+  releaseGroup: z.string().optional(),
+  size: z.number().optional(),
+  dateAdded: z.string().optional(),
+  languages: z.array(z.string()).optional(),
+  videoCodec: z.string().optional(),
+  audioCodec: z.string().optional(),
+  resolution: z.string().optional(),
+  videoDynamicRange: z.string().optional(),
+  customFormats: z.array(z.string()).optional(),
+  customFormatScore: z.number().optional(),
+});
+
+export type LibraryEpisodeFile = z.infer<typeof libraryEpisodeFileSchema>;
+
 export const libraryEpisodeSchema = z.object({
   id: z.number(),
   seriesId: z.number(),
@@ -225,6 +264,9 @@ export const libraryEpisodeSchema = z.object({
   monitored: z.boolean().optional(),
   overview: z.string().optional(),
   episodeFileId: z.number().optional(),
+  runtime: z.number().optional(),
+  finaleType: z.string().optional(),
+  episodeFile: libraryEpisodeFileSchema.optional(),
 });
 
 export type LibraryEpisode = z.infer<typeof libraryEpisodeSchema>;

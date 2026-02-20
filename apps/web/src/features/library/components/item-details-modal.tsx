@@ -2,7 +2,6 @@
 
 import type { LibraryItem } from "@arr/shared";
 import {
-	ExternalLink,
 	X,
 	Film,
 	Tv,
@@ -14,24 +13,17 @@ import {
 	Tag,
 	Layers,
 } from "lucide-react";
-import { formatBytes, formatRuntime } from "../lib/library-utils";
-import { safeOpenUrl } from "../../../lib/utils/url-validation";
-import { BRAND_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { formatBytes, formatRuntime, SERVICE_COLORS } from "../lib/library-utils";
+import { PosterImage } from "./poster-image";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useFocusTrap } from "../../../hooks/useFocusTrap";
+import { useMovieFileQuery } from "../../../hooks/api/useLibrary";
+import { ExternalLinksSection } from "../../discover/components/media-detail-sections";
 
 export interface ItemDetailsModalProps {
 	item: LibraryItem;
 	onClose: () => void;
 }
-
-// Use centralized service colors
-const SERVICE_COLORS: Record<"sonarr" | "radarr" | "lidarr" | "readarr", string> = {
-	sonarr: SERVICE_GRADIENTS.sonarr.from,
-	radarr: SERVICE_GRADIENTS.radarr.from,
-	lidarr: SERVICE_GRADIENTS.lidarr.from,
-	readarr: SERVICE_GRADIENTS.readarr.from,
-};
 
 /**
  * Premium Metadata Item Component
@@ -70,6 +62,17 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const focusTrapRef = useFocusTrap<HTMLDivElement>(true, onClose);
 
+	const isMovie = item.type === "movie";
+
+	// Fetch live movie file details from Radarr (includes codecs, custom formats, etc.)
+	const movieFileQuery = useMovieFileQuery({
+		instanceId: item.instanceId,
+		movieId: item.id,
+		enabled: isMovie && item.hasFile === true,
+	});
+	const liveMovieFile = movieFileQuery.data?.movieFile ?? null;
+	const liveQualityProfileName = movieFileQuery.data?.qualityProfileName;
+
 	const sizeLabel = formatBytes(item.sizeOnDisk);
 	const runtimeLabel = formatRuntime(item.runtime);
 	const serviceLabels: Record<"sonarr" | "radarr" | "lidarr" | "readarr", string> = {
@@ -80,64 +83,45 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 	};
 	const serviceLabel = serviceLabels[item.service];
 	const serviceColor = SERVICE_COLORS[item.service];
-	const movieFileName =
-		item.type === "movie"
-			? (item.movieFile?.relativePath ?? item.path)?.split(/[\\/]/g).pop()
-			: undefined;
+	const resolvedQualityProfileName = liveQualityProfileName ?? item.qualityProfileName;
 
-	const metadata: Array<{ label: string; value: React.ReactNode; icon?: React.ComponentType<{ className?: string }> }> = [
-		{ label: "Instance", value: item.instanceName },
-		{ label: "Service", value: serviceLabel },
-	];
+	const isMovieFileFetchError = isMovie && item.hasFile === true && movieFileQuery.isError;
 
-	if (item.qualityProfileName) {
-		metadata.push({ label: "Quality profile", value: item.qualityProfileName });
-	}
+	// For movies: metadata is merged into a combined section with file details.
+	// For series/other: build a metadata grid.
+	const mf = isMovie ? (liveMovieFile ?? item.movieFile) : null;
 
-	if (item.type === "movie") {
-		const movieQuality = item.movieFile?.quality ?? item.qualityProfileName;
-		if (movieQuality) {
-			metadata.push({ label: "Current quality", value: movieQuality });
+	const seriesMetadata: Array<{ label: string; value: React.ReactNode; icon?: React.ComponentType<{ className?: string }> }> = [];
+	if (!isMovie) {
+		seriesMetadata.push({ label: "Instance", value: item.instanceName });
+		seriesMetadata.push({ label: "Service", value: serviceLabel });
+		if (resolvedQualityProfileName) {
+			seriesMetadata.push({ label: "Quality profile", value: resolvedQualityProfileName });
 		}
-		if (sizeLabel) {
-			metadata.push({ label: "On disk", value: sizeLabel, icon: HardDrive });
-		}
-		if (runtimeLabel) {
-			metadata.push({ label: "Runtime", value: runtimeLabel, icon: Clock });
-		}
-	} else {
 		const seasonCount =
 			item.seasons?.filter((s) => s.seasonNumber !== 0).length ||
 			item.statistics?.seasonCount ||
 			undefined;
 		if (seasonCount) {
-			metadata.push({ label: "Seasons", value: seasonCount, icon: Layers });
+			seriesMetadata.push({ label: "Seasons", value: seasonCount, icon: Layers });
 		}
 		const episodeFileCount = item.statistics?.episodeFileCount ?? 0;
 		const totalEpisodes = item.statistics?.episodeCount ?? item.statistics?.totalEpisodeCount ?? 0;
 		if (totalEpisodes > 0) {
-			metadata.push({
-				label: "Episodes",
-				value: `${episodeFileCount}/${totalEpisodes}`,
-			});
+			seriesMetadata.push({ label: "Episodes", value: `${episodeFileCount}/${totalEpisodes}` });
 		}
 		if (runtimeLabel) {
-			metadata.push({ label: "Episode length", value: runtimeLabel, icon: Clock });
+			seriesMetadata.push({ label: "Episode length", value: runtimeLabel, icon: Clock });
 		}
 		if (sizeLabel) {
-			metadata.push({ label: "On disk", value: sizeLabel, icon: HardDrive });
+			seriesMetadata.push({ label: "On disk", value: sizeLabel, icon: HardDrive });
 		}
-	}
-
-	const locationEntries: Array<{ label: string; value: string; icon: React.ComponentType<{ className?: string }> }> = [];
-	if (item.path) {
-		locationEntries.push({ label: "Location", value: item.path, icon: FolderOpen });
-	}
-	if (movieFileName) {
-		locationEntries.push({ label: "File", value: movieFileName, icon: FileVideo });
-	}
-	if (item.rootFolderPath && item.rootFolderPath !== item.path) {
-		locationEntries.push({ label: "Root", value: item.rootFolderPath, icon: FolderOpen });
+		if (item.path) {
+			seriesMetadata.push({ label: "Location", value: item.path, icon: FolderOpen });
+		}
+		if (item.rootFolderPath && item.rootFolderPath !== item.path) {
+			seriesMetadata.push({ label: "Root", value: item.rootFolderPath, icon: FolderOpen });
+		}
 	}
 
 	const tagEntries = (item.tags ?? []).filter(Boolean);
@@ -183,8 +167,11 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 					<div className="flex gap-5">
 						{item.poster && (
 							<div className="h-48 w-32 overflow-hidden rounded-xl border border-border/50 shadow-lg shrink-0">
-								{/* eslint-disable-next-line @next/next/no-img-element -- External poster from arr instance */}
-								<img src={item.poster} alt={item.title} className="h-full w-full object-cover" />
+								<PosterImage
+									arrPosterUrl={item.poster}
+									size="w342"
+									alt={item.title}
+								/>
 							</div>
 						)}
 						<div className="flex-1 min-w-0">
@@ -262,60 +249,12 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 					)}
 
 					{/* External Links */}
-					{(item.remoteIds?.tmdbId || item.remoteIds?.imdbId || item.remoteIds?.tvdbId) && (
-						<div>
-							<h3 className="text-xs uppercase tracking-wider font-medium text-muted-foreground mb-3">
-								External Links
-							</h3>
-							<div className="flex flex-wrap gap-2">
-								{item.remoteIds?.tmdbId && (
-									<button
-										type="button"
-										className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:opacity-80"
-										style={{
-											backgroundColor: `${themeGradient.from}15`,
-											border: `1px solid ${themeGradient.from}30`,
-											color: themeGradient.from,
-										}}
-										onClick={() => safeOpenUrl(`https://www.themoviedb.org/${item.type === "movie" ? "movie" : "tv"}/${item.remoteIds?.tmdbId}`)}
-									>
-										<ExternalLink className="h-3.5 w-3.5" />
-										TMDB
-									</button>
-								)}
-								{item.remoteIds?.imdbId && (
-									<button
-										type="button"
-										className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:opacity-80"
-										style={{
-											backgroundColor: BRAND_COLORS.imdb.bg,
-											border: `1px solid ${BRAND_COLORS.imdb.border}`,
-											color: BRAND_COLORS.imdb.text,
-										}}
-										onClick={() => safeOpenUrl(`https://www.imdb.com/title/${item.remoteIds?.imdbId}`)}
-									>
-										<ExternalLink className="h-3.5 w-3.5" />
-										IMDB
-									</button>
-								)}
-								{item.remoteIds?.tvdbId && (
-									<button
-										type="button"
-										className="inline-flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition-colors hover:opacity-80"
-										style={{
-											backgroundColor: BRAND_COLORS.rottenTomatoes.bg,
-											border: `1px solid ${BRAND_COLORS.rottenTomatoes.border}`,
-											color: BRAND_COLORS.rottenTomatoes.text,
-										}}
-										onClick={() => safeOpenUrl(`https://www.thetvdb.com/dereferrer/series/${item.remoteIds?.tvdbId}`)}
-									>
-										<ExternalLink className="h-3.5 w-3.5" />
-										TVDB
-									</button>
-								)}
-							</div>
-						</div>
-					)}
+					<ExternalLinksSection
+						tmdbId={item.remoteIds?.tmdbId}
+						imdbId={item.remoteIds?.imdbId}
+						tvdbId={item.remoteIds?.tvdbId}
+						mediaType={item.type === "movie" ? "movie" : "tv"}
+					/>
 
 					{/* Tags */}
 					{tagEntries.length > 0 && (
@@ -337,42 +276,154 @@ export const ItemDetailsModal = ({ item, onClose }: ItemDetailsModalProps) => {
 						</div>
 					)}
 
-					{/* Metadata Grid */}
-					<div>
-						<h3 className="text-xs uppercase tracking-wider font-medium text-muted-foreground mb-3">
-							Metadata
-						</h3>
-						<div className="grid grid-cols-2 md:grid-cols-3 gap-4 rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
-							{metadata.map((entry) => (
-								<MetadataItem
-									key={entry.label}
-									label={entry.label}
-									value={entry.value}
-									icon={entry.icon}
-								/>
-							))}
-						</div>
-					</div>
-
-					{/* File Information */}
-					{locationEntries.length > 0 && (
+					{/* Movie: Single combined details section (metadata + file info) */}
+					{isMovie && (
 						<div>
 							<h3 className="text-xs uppercase tracking-wider font-medium text-muted-foreground mb-3">
-								File Information
+								Media Details
 							</h3>
-							<div className="space-y-3 rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
-								{locationEntries.map((entry) => (
-									<div key={entry.label} className="space-y-1">
-										<div className="flex items-center gap-1.5">
-											<entry.icon className="h-3 w-3 text-muted-foreground" />
-											<p className="text-xs uppercase tracking-wider text-muted-foreground">{entry.label}</p>
-										</div>
-										<p className="break-all font-mono text-xs text-foreground/80">{entry.value}</p>
+							{isMovieFileFetchError && (
+								<p className="text-xs text-amber-400/70 italic mb-2">
+									Live file details unavailable — showing cached data
+								</p>
+							)}
+							<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4 space-y-3">
+								{/* Key metadata row: instance + quality profile + runtime */}
+								<div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 text-sm">
+									<div>
+										<p className="text-xs text-muted-foreground">Instance</p>
+										<p className="font-medium text-foreground">{item.instanceName}</p>
 									</div>
+									{resolvedQualityProfileName && (
+										<div>
+											<p className="text-xs text-muted-foreground">Quality Profile</p>
+											<p className="font-medium text-foreground">{resolvedQualityProfileName}</p>
+										</div>
+									)}
+									{runtimeLabel && (
+										<div>
+											<p className="text-xs text-muted-foreground">Runtime</p>
+											<p className="font-medium text-foreground">{runtimeLabel}</p>
+										</div>
+									)}
+								</div>
+
+								{mf && (
+									<>
+										{/* Quality + release group + resolution + codecs */}
+										<div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm pt-2 border-t border-border/20">
+											{mf.quality && (
+												<span className="inline-flex items-center gap-1.5">
+													<Film className="h-3.5 w-3.5 text-cyan-400/70" />
+													<span className="font-medium text-foreground">{mf.quality}</span>
+													{mf.releaseGroup && (
+														<span className="text-muted-foreground/70">— {mf.releaseGroup}</span>
+													)}
+												</span>
+											)}
+											{mf.resolution && (
+												<span className="text-foreground/80">
+													{mf.resolution}
+													{mf.videoDynamicRange && mf.videoDynamicRange !== "SDR" && (
+														<span className="ml-1 text-amber-400/80 font-semibold">
+															{mf.videoDynamicRange}
+														</span>
+													)}
+												</span>
+											)}
+											{(mf.videoCodec || mf.audioCodec) && (
+												<span className="text-muted-foreground/70">
+													{[mf.videoCodec, mf.audioCodec].filter(Boolean).join(" / ")}
+												</span>
+											)}
+										</div>
+
+										{/* Languages + size + score */}
+										<div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-sm text-muted-foreground">
+											{mf.languages && mf.languages.length > 0 && (
+												<span>{mf.languages.join(", ")}</span>
+											)}
+											{mf.size != null && mf.size > 0 && (
+												<span className="inline-flex items-center gap-1.5">
+													<HardDrive className="h-3.5 w-3.5 text-muted-foreground/50" />
+													{formatBytes(mf.size)}
+												</span>
+											)}
+											{mf.customFormatScore != null && (
+												<span className="font-medium text-foreground/70">
+													Score: {mf.customFormatScore}
+												</span>
+											)}
+										</div>
+
+										{/* Custom format badges */}
+										{mf.customFormats && mf.customFormats.length > 0 && (
+											<div className="flex flex-wrap items-center gap-1.5">
+												{mf.customFormats.map((cf) => (
+													<span
+														key={cf}
+														className="rounded-full border border-purple-400/30 bg-purple-500/10 px-2 py-0.5 text-xs text-purple-300"
+													>
+														{cf}
+													</span>
+												))}
+											</div>
+										)}
+
+										{/* File path + folder location */}
+										{(mf.relativePath || item.path) && (
+											<div className="space-y-1 pt-1 border-t border-border/20">
+												{mf.relativePath && (
+													<p className="break-all font-mono text-xs text-muted-foreground/60">
+														<span className="inline-flex items-center gap-1">
+															<FileVideo className="h-3 w-3 shrink-0" />
+															{mf.relativePath}
+														</span>
+													</p>
+												)}
+												{item.path && (
+													<p className="break-all font-mono text-xs text-muted-foreground/40">
+														<span className="inline-flex items-center gap-1">
+															<FolderOpen className="h-3 w-3 shrink-0" />
+															{item.path}
+														</span>
+													</p>
+												)}
+											</div>
+										)}
+									</>
+								)}
+
+								{/* Fallback if no file yet: just show size if available */}
+								{!mf && sizeLabel && (
+									<div className="flex items-center gap-1.5 text-sm text-muted-foreground pt-2 border-t border-border/20">
+										<HardDrive className="h-3.5 w-3.5 text-muted-foreground/50" />
+										{sizeLabel}
+									</div>
+								)}
+							</div>
+						</div>
+					)}
+
+					{/* Series/Other: Metadata grid */}
+					{!isMovie && seriesMetadata.length > 0 && (
+						<div>
+							<h3 className="text-xs uppercase tracking-wider font-medium text-muted-foreground mb-3">
+								Media Details
+							</h3>
+							<div className="grid grid-cols-2 md:grid-cols-3 gap-4 rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4">
+								{seriesMetadata.map((entry) => (
+									<MetadataItem
+										key={entry.label}
+										label={entry.label}
+										value={entry.value}
+										icon={entry.icon}
+									/>
 								))}
 							</div>
 						</div>
 					)}
+
 				</div>
 			</div>
 		</div>

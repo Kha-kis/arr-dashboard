@@ -12,6 +12,8 @@ import {
 	libraryBooksResponseSchema,
 	libraryEpisodesRequestSchema,
 	libraryEpisodesResponseSchema,
+	libraryMovieFileRequestSchema,
+	libraryMovieFileResponseSchema,
 	libraryTracksRequestSchema,
 	libraryTracksResponseSchema,
 	paginatedLibraryResponseSchema,
@@ -21,12 +23,14 @@ import type { FastifyPluginCallback } from "fastify";
 import {
 	getClientForInstance,
 	isLidarrClient,
+	isRadarrClient,
 	isReadarrClient,
 	isSonarrClient,
 } from "../../lib/arr/client-helpers.js";
 import { normalizeAlbum } from "../../lib/library/album-normalizer.js";
 import { normalizeBook } from "../../lib/library/book-normalizer.js";
 import { normalizeEpisode } from "../../lib/library/episode-normalizer.js";
+import { buildMovieFile } from "../../lib/library/movie-normalizer.js";
 import { normalizeTrack } from "../../lib/library/track-normalizer.js";
 import { libraryQuerySchema } from "../../lib/library/validation-schemas.js";
 import { getLibrarySyncScheduler } from "../../lib/library-sync/index.js";
@@ -350,6 +354,7 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 		const rawEpisodes = await client.episode.getAll({
 			seriesId,
 			seasonNumber: parsed.seasonNumber,
+			includeEpisodeFile: true,
 		});
 
 		const episodes: LibraryEpisode[] = rawEpisodes.map((raw) =>
@@ -357,6 +362,83 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 		);
 
 		return libraryEpisodesResponseSchema.parse({ episodes });
+	});
+
+	/**
+	 * GET /library/movie-file
+	 * Fetches the movie file details for a specific movie from a Radarr instance.
+	 * NOT cached — fetched directly from Radarr for fresh data (codecs, custom formats, etc.)
+	 *
+	 * Fetches both the full movie (for quality profile + embedded movieFile) and
+	 * the standalone movieFile endpoint in parallel. The standalone endpoint may
+	 * include custom format scores that the embedded version omits, depending on
+	 * the Radarr version — we merge the richest data from both responses.
+	 */
+	app.get("/library/movie-file", async (request, reply) => {
+		const parsed = libraryMovieFileRequestSchema.parse(request.query ?? {});
+
+		const clientResult = await getClientForInstance(app, request, parsed.instanceId);
+		if (!clientResult.success) {
+			return reply.status(clientResult.statusCode).send({
+				error: clientResult.error,
+			});
+		}
+
+		const { client, instance } = clientResult;
+		const service = instance.service.toLowerCase() as LibraryService;
+
+		if (service !== "radarr" || !isRadarrClient(client)) {
+			return reply.status(400).send({
+				error: "Movie file details are only available for Radarr instances",
+			});
+		}
+
+		const movieId = Number(parsed.movieId);
+		if (!Number.isFinite(movieId)) {
+			return reply.status(400).send({
+				error: "Invalid movie identifier",
+			});
+		}
+
+		// Fetch both in parallel: the full movie (for quality profile + embedded movieFile)
+		// and the standalone movieFile endpoint (may include custom format scores).
+		// Use allSettled so a failure in one doesn't block the other.
+		const [movieResult, filesResult] = await Promise.allSettled([
+			client.movie.getById(movieId),
+			client.movieFile.getByMovie(movieId),
+		]);
+
+		// If both requests failed, the Radarr instance is likely unreachable
+		if (movieResult.status === "rejected" && filesResult.status === "rejected") {
+			request.log.warn(
+				{ movieErr: movieResult.reason, filesErr: filesResult.reason },
+				`Failed to fetch movie file details from Radarr for movie ${movieId}`,
+			);
+			return reply.status(502).send({
+				error: "Unable to fetch movie file details from Radarr instance",
+			});
+		}
+
+		const movieRaw = (movieResult.status === "fulfilled" ? movieResult.value : null) as Record<string, unknown> | null;
+		const embeddedFile = movieRaw?.movieFile as Record<string, unknown> | undefined;
+		const standaloneFile = (filesResult.status === "fulfilled" ? filesResult.value[0] : null) as Record<string, unknown> | null;
+
+		// Prefer the source that has custom formats; fall back to whichever is available
+		const bestRawFile =
+			standaloneFile?.customFormats ? standaloneFile
+				: embeddedFile?.customFormats ? embeddedFile
+				: standaloneFile ?? embeddedFile;
+
+		const movieFile = bestRawFile ? buildMovieFile(bestRawFile) : null;
+
+		// Extract quality profile name from the movie response
+		const qualityProfile = movieRaw?.qualityProfile as Record<string, unknown> | undefined;
+		const qualityProfileName = qualityProfile?.name as string | undefined;
+
+		return libraryMovieFileResponseSchema.parse({
+			movieFile: movieFile ?? null,
+			qualityProfileName,
+		});
 	});
 
 	/**

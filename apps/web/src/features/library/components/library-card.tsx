@@ -9,13 +9,15 @@
 import { memo } from "react";
 import type { LibraryItem } from "@arr/shared";
 import {
-	AlertCircle,
+	AlertTriangle,
 	ExternalLink,
+	Info,
 	ListTree,
 	Loader2,
 	PauseCircle,
 	PlayCircle,
 	Search,
+	Star,
 } from "lucide-react";
 import { Button } from "../../../components/ui";
 import {
@@ -24,7 +26,9 @@ import {
 	StatusBadge,
 } from "../../../components/layout";
 import { safeOpenUrl } from "../../../lib/utils/url-validation";
+import { RATING_COLOR, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { LibraryBadge } from "./library-badge";
+import { PosterImage } from "./poster-image";
 import { formatBytes, formatRuntime } from "../lib/library-utils";
 import {
 	useIncognitoMode,
@@ -45,8 +49,6 @@ interface LibraryCardProps {
 	pending: boolean;
 	/** External link to the item in the *arr service (optional) */
 	externalLink?: string | null;
-	/** Callback to view season details (for series only) */
-	onViewSeasons?: (item: LibraryItem) => void;
 	/** Callback to search for a movie (for movies only) */
 	onSearchMovie?: (item: LibraryItem) => void;
 	/** Whether the movie search is pending */
@@ -69,6 +71,12 @@ interface LibraryCardProps {
 	authorSearchPending?: boolean;
 	/** Callback to expand item details modal */
 	onExpandDetails?: (item: LibraryItem) => void;
+	/** TMDB vote average from Seerr enrichment (0-10 scale) */
+	tmdbRating?: number | null;
+	/** Number of open issues in Seerr for this media */
+	openIssueCount?: number;
+	/** TMDB poster path from Seerr enrichment (e.g. "/xyz123.jpg") */
+	posterPath?: string | null;
 }
 
 /**
@@ -84,10 +92,9 @@ interface LibraryCardProps {
  * - Genres
  *
  * Available actions:
- * - View seasons (series only)
  * - Search for content
  * - Open in external service
- * - View full details
+ * - View full details (poster/title click)
  * - Toggle monitoring status
  *
  * Memoized to prevent unnecessary re-renders when rendered in lists.
@@ -98,7 +105,6 @@ export const LibraryCard = memo(function LibraryCard({
 	onToggleMonitor,
 	pending,
 	externalLink,
-	onViewSeasons,
 	onSearchMovie,
 	movieSearchPending = false,
 	onSearchSeries,
@@ -110,6 +116,9 @@ export const LibraryCard = memo(function LibraryCard({
 	onSearchAuthor,
 	authorSearchPending = false,
 	onExpandDetails,
+	tmdbRating,
+	openIssueCount,
+	posterPath,
 }: LibraryCardProps) {
 	const [incognitoMode] = useIncognitoMode();
 	const monitored = item.monitored ?? false;
@@ -320,27 +329,79 @@ export const LibraryCard = memo(function LibraryCard({
 		locationEntries.push({ label: "Root", value: displayRoot });
 	}
 
-	const _tagEntries = (item.tags ?? []).filter(Boolean);
 	const genreEntries = (item.genres ?? []).filter(Boolean);
+
+	// Collect external links for the compact link row
+	const externalLinks: Array<{ label: string; onClick: () => void }> = [];
+	if (externalLink) {
+		externalLinks.push({ label: serviceLabel, onClick: handleOpenExternal });
+	}
+	if (item.remoteIds?.tmdbId) {
+		const tmdbType = item.type === "movie" ? "movie" : "tv";
+		const tmdbId = item.remoteIds.tmdbId;
+		externalLinks.push({
+			label: "TMDB",
+			onClick: () => safeOpenUrl(`https://www.themoviedb.org/${tmdbType}/${tmdbId}`),
+		});
+	}
+	if (item.remoteIds?.imdbId) {
+		const imdbId = item.remoteIds.imdbId;
+		externalLinks.push({
+			label: "IMDB",
+			onClick: () => safeOpenUrl(`https://www.imdb.com/title/${imdbId}`),
+		});
+	}
+	if (item.remoteIds?.tvdbId) {
+		const tvdbId = item.remoteIds.tvdbId;
+		externalLinks.push({
+			label: "TVDB",
+			onClick: () => safeOpenUrl(`https://www.thetvdb.com/dereferrer/series/${tvdbId}`),
+		});
+	}
+	if (item.remoteIds?.musicBrainzId) {
+		const mbId = item.remoteIds.musicBrainzId;
+		externalLinks.push({
+			label: "MusicBrainz",
+			onClick: () => safeOpenUrl(`https://musicbrainz.org/artist/${mbId}`),
+		});
+	}
+	if (item.remoteIds?.goodreadsId) {
+		const grId = item.remoteIds.goodreadsId;
+		externalLinks.push({
+			label: "Goodreads",
+			onClick: () => safeOpenUrl(`https://www.goodreads.com/author/show/${grId}`),
+		});
+	}
 
 	return (
 		<GlassmorphicCard padding="md" className="flex flex-col gap-3">
 				<div className="flex gap-3">
-					<div className="h-36 w-24 overflow-hidden rounded-lg border border-border bg-muted shadow-md shrink-0">
-						{item.poster ? (
-							/* eslint-disable-next-line @next/next/no-img-element -- External poster from arr instance */
-							<img src={item.poster} alt={item.title} className="h-full w-full object-cover" />
-						) : (
-							<div className="flex h-full w-full items-center justify-center text-xs text-muted-foreground">
-								{item.type === "movie" ? "Poster" : "Artwork"}
-							</div>
-						)}
-					</div>
+					<button
+						type="button"
+						className="h-36 w-24 overflow-hidden rounded-lg border border-border bg-muted shadow-md shrink-0 transition-transform hover:scale-105 cursor-pointer"
+						onClick={() => onExpandDetails?.(item)}
+					>
+						<PosterImage
+							tmdbPosterPath={posterPath}
+							arrPosterUrl={item.poster}
+							size="w185"
+							alt={item.title}
+							placeholder={item.type === "movie" ? "Poster" : "Artwork"}
+						/>
+					</button>
 
 					<div className="flex-1 min-w-0 space-y-2">
 						<div>
 							<div className="flex flex-wrap items-baseline gap-2">
-								<h3 className="text-base font-semibold text-foreground">{item.title}</h3>
+								<h3
+									className="text-base font-semibold text-foreground hover:text-primary cursor-pointer transition-colors"
+									onClick={() => onExpandDetails?.(item)}
+									role="button"
+									tabIndex={0}
+									onKeyDown={(e) => e.key === "Enter" && onExpandDetails?.(item)}
+								>
+									{item.title}
+								</h3>
 								{item.year && item.type === "movie" ? (
 									<span className="text-xs text-muted-foreground">{item.year}</span>
 								) : null}
@@ -353,6 +414,32 @@ export const LibraryCard = memo(function LibraryCard({
 								<StatusBadge status={monitoredStatus}>
 									{monitored ? "Monitored" : "Unmonitored"}
 								</StatusBadge>
+								{typeof tmdbRating === "number" && tmdbRating > 0 && (
+									<span
+										className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold"
+										style={{
+											backgroundColor: SEMANTIC_COLORS.warning.bg,
+											border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+											color: RATING_COLOR,
+										}}
+									>
+										<Star className="h-3 w-3 fill-current" />
+										{tmdbRating.toFixed(1)}
+									</span>
+								)}
+								{typeof openIssueCount === "number" && openIssueCount > 0 && (
+									<span
+										className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold"
+										style={{
+											backgroundColor: SEMANTIC_COLORS.error.bg,
+											border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+											color: SEMANTIC_COLORS.error.text,
+										}}
+									>
+										<AlertTriangle className="h-3 w-3" />
+										{openIssueCount}
+									</span>
+								)}
 							</div>
 						</div>
 
@@ -406,223 +493,162 @@ export const LibraryCard = memo(function LibraryCard({
 					</div>
 				</div>
 
-				<div className="flex flex-wrap items-center justify-between gap-2 border-t border-border pt-3">
-					<div className="flex flex-wrap gap-1.5">
-						{item.type === "series" && hasSeasonProgress && onViewSeasons ? (
-							<Button
-								type="button"
-								variant="secondary"
-								size="sm"
-								className="flex items-center gap-1.5"
-								onClick={() => onViewSeasons(item)}
-							>
-								<ListTree className="h-3.5 w-3.5" />
-								<span>Seasons</span>
-							</Button>
-						) : null}
+				{/* Card footer — two tiers: action buttons + external links */}
+				<div className="border-t border-border/50 pt-3 space-y-2">
+					{/* Primary actions */}
+					<div className="flex items-center justify-between gap-2">
+						<div className="flex flex-wrap items-center gap-1.5">
+							{item.service === "sonarr" && onSearchSeries ? (
+								<Button
+									type="button"
+									variant="secondary"
+									size="sm"
+									className="flex items-center gap-1.5"
+									onClick={() => onSearchSeries(item)}
+									disabled={seriesSearchPending}
+								>
+									{seriesSearchPending ? (
+										<Loader2 className="h-3.5 w-3.5 animate-spin" />
+									) : (
+										<Search className="h-3.5 w-3.5" />
+									)}
+									<span>Search</span>
+								</Button>
+							) : null}
 
-						{item.service === "sonarr" && onSearchSeries ? (
-							<Button
-								type="button"
-								variant="secondary"
-								size="sm"
-								className="flex items-center gap-1.5"
-								onClick={() => onSearchSeries(item)}
-								disabled={seriesSearchPending}
-							>
-								{seriesSearchPending ? (
-									<Loader2 className="h-3.5 w-3.5 animate-spin" />
-								) : (
-									<Search className="h-3.5 w-3.5" />
-								)}
-								<span>Search</span>
-							</Button>
-						) : null}
+							{item.service === "radarr" && onSearchMovie ? (
+								<Button
+									type="button"
+									variant="secondary"
+									size="sm"
+									className="flex items-center gap-1.5"
+									onClick={() => onSearchMovie(item)}
+									disabled={movieSearchPending}
+								>
+									{movieSearchPending ? (
+										<Loader2 className="h-3.5 w-3.5 animate-spin" />
+									) : (
+										<Search className="h-3.5 w-3.5" />
+									)}
+									<span>Search</span>
+								</Button>
+							) : null}
 
-						{item.service === "radarr" && onSearchMovie ? (
-							<Button
-								type="button"
-								variant="secondary"
-								size="sm"
-								className="flex items-center gap-1.5"
-								onClick={() => onSearchMovie(item)}
-								disabled={movieSearchPending}
-							>
-								{movieSearchPending ? (
-									<Loader2 className="h-3.5 w-3.5 animate-spin" />
-								) : (
-									<Search className="h-3.5 w-3.5" />
-								)}
-								<span>Search</span>
-							</Button>
-						) : null}
+							{item.type === "artist" && onViewAlbums && (item.statistics?.albumCount ?? 0) > 0 ? (
+								<Button
+									type="button"
+									variant="secondary"
+									size="sm"
+									className="flex items-center gap-1.5"
+									onClick={() => onViewAlbums(item)}
+								>
+									<ListTree className="h-3.5 w-3.5" />
+									<span>Albums</span>
+								</Button>
+							) : null}
 
-						{item.type === "artist" && onViewAlbums && (item.statistics?.albumCount ?? 0) > 0 ? (
-							<Button
-								type="button"
-								variant="secondary"
-								size="sm"
-								className="flex items-center gap-1.5"
-								onClick={() => onViewAlbums(item)}
-							>
-								<ListTree className="h-3.5 w-3.5" />
-								<span>Albums</span>
-							</Button>
-						) : null}
+							{item.service === "lidarr" && onSearchArtist ? (
+								<Button
+									type="button"
+									variant="secondary"
+									size="sm"
+									className="flex items-center gap-1.5"
+									onClick={() => onSearchArtist(item)}
+									disabled={artistSearchPending}
+								>
+									{artistSearchPending ? (
+										<Loader2 className="h-3.5 w-3.5 animate-spin" />
+									) : (
+										<Search className="h-3.5 w-3.5" />
+									)}
+									<span>Search</span>
+								</Button>
+							) : null}
 
-						{item.service === "lidarr" && onSearchArtist ? (
-							<Button
-								type="button"
-								variant="secondary"
-								size="sm"
-								className="flex items-center gap-1.5"
-								onClick={() => onSearchArtist(item)}
-								disabled={artistSearchPending}
-							>
-								{artistSearchPending ? (
-									<Loader2 className="h-3.5 w-3.5 animate-spin" />
-								) : (
-									<Search className="h-3.5 w-3.5" />
-								)}
-								<span>Search</span>
-							</Button>
-						) : null}
+							{item.type === "author" && onViewBooks && (item.statistics?.bookCount ?? 0) > 0 ? (
+								<Button
+									type="button"
+									variant="secondary"
+									size="sm"
+									className="flex items-center gap-1.5"
+									onClick={() => onViewBooks(item)}
+								>
+									<ListTree className="h-3.5 w-3.5" />
+									<span>Books</span>
+								</Button>
+							) : null}
 
-						{item.type === "author" && onViewBooks && (item.statistics?.bookCount ?? 0) > 0 ? (
-							<Button
-								type="button"
-								variant="secondary"
-								size="sm"
-								className="flex items-center gap-1.5"
-								onClick={() => onViewBooks(item)}
-							>
-								<ListTree className="h-3.5 w-3.5" />
-								<span>Books</span>
-							</Button>
-						) : null}
+							{item.service === "readarr" && onSearchAuthor ? (
+								<Button
+									type="button"
+									variant="secondary"
+									size="sm"
+									className="flex items-center gap-1.5"
+									onClick={() => onSearchAuthor(item)}
+									disabled={authorSearchPending}
+								>
+									{authorSearchPending ? (
+										<Loader2 className="h-3.5 w-3.5 animate-spin" />
+									) : (
+										<Search className="h-3.5 w-3.5" />
+									)}
+									<span>Search</span>
+								</Button>
+							) : null}
 
-						{item.service === "readarr" && onSearchAuthor ? (
-							<Button
-								type="button"
-								variant="secondary"
-								size="sm"
-								className="flex items-center gap-1.5"
-								onClick={() => onSearchAuthor(item)}
-								disabled={authorSearchPending}
-							>
-								{authorSearchPending ? (
-									<Loader2 className="h-3.5 w-3.5 animate-spin" />
-								) : (
-									<Search className="h-3.5 w-3.5" />
-								)}
-								<span>Search</span>
-							</Button>
-						) : null}
+							{onExpandDetails ? (
+								<Button
+									type="button"
+									variant="secondary"
+									size="sm"
+									className="flex items-center gap-1.5"
+									onClick={() => onExpandDetails(item)}
+								>
+									<Info className="h-3.5 w-3.5" />
+									<span>Details</span>
+								</Button>
+							) : null}
+						</div>
 
-						{externalLink ? (
-							<Button
-								type="button"
-								variant="secondary"
-								size="sm"
-								className="flex items-center gap-1.5"
-								onClick={handleOpenExternal}
-							>
-								<ExternalLink className="h-3.5 w-3.5" />
-								<span>{serviceLabel}</span>
-							</Button>
-						) : null}
-
-						{item.remoteIds?.tmdbId ? (
-							<Button
-								type="button"
-								variant="ghost"
-								size="sm"
-								className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
-								onClick={() => safeOpenUrl(`https://www.themoviedb.org/${item.type === "movie" ? "movie" : "tv"}/${item.remoteIds?.tmdbId}`)}
-							>
-								<span>TMDB</span>
-							</Button>
-						) : null}
-
-						{item.remoteIds?.imdbId ? (
-							<Button
-								type="button"
-								variant="ghost"
-								size="sm"
-								className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
-								onClick={() => safeOpenUrl(`https://www.imdb.com/title/${item.remoteIds?.imdbId}`)}
-							>
-								<span>IMDB</span>
-							</Button>
-						) : null}
-
-						{item.remoteIds?.tvdbId ? (
-							<Button
-								type="button"
-								variant="ghost"
-								size="sm"
-								className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
-								onClick={() => safeOpenUrl(`https://www.thetvdb.com/dereferrer/series/${item.remoteIds?.tvdbId}`)}
-							>
-								<span>TVDB</span>
-							</Button>
-						) : null}
-
-						{item.remoteIds?.musicBrainzId ? (
-							<Button
-								type="button"
-								variant="ghost"
-								size="sm"
-								className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
-								onClick={() => safeOpenUrl(`https://musicbrainz.org/artist/${item.remoteIds?.musicBrainzId}`)}
-							>
-								<span>MusicBrainz</span>
-							</Button>
-						) : null}
-
-						{item.remoteIds?.goodreadsId ? (
-							<Button
-								type="button"
-								variant="ghost"
-								size="sm"
-								className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
-								onClick={() => safeOpenUrl(`https://www.goodreads.com/author/show/${item.remoteIds?.goodreadsId}`)}
-							>
-								<span>Goodreads</span>
-							</Button>
-						) : null}
-
-						{onExpandDetails ? (
-							<Button
-								type="button"
-								variant="secondary"
-								size="sm"
-								className="flex items-center gap-1.5"
-								onClick={() => onExpandDetails(item)}
-							>
-								<AlertCircle className="h-3.5 w-3.5" />
-								<span>Details</span>
-							</Button>
-						) : null}
+						<Button
+							type="button"
+							variant={monitored ? "secondary" : "primary"}
+							size="sm"
+							className="flex items-center gap-1.5 shrink-0"
+							onClick={() => onToggleMonitor(item)}
+							disabled={pending}
+						>
+							{pending ? (
+								<Loader2 className="h-3.5 w-3.5 animate-spin" />
+							) : monitored ? (
+								<PauseCircle className="h-3.5 w-3.5" />
+							) : (
+								<PlayCircle className="h-3.5 w-3.5" />
+							)}
+							{monitored ? "Unmonitor" : "Monitor"}
+						</Button>
 					</div>
 
-					<Button
-						type="button"
-						variant={monitored ? "secondary" : "primary"}
-						size="sm"
-						className="flex items-center gap-1.5"
-						onClick={() => onToggleMonitor(item)}
-						disabled={pending}
-					>
-						{pending ? (
-							<Loader2 className="h-3.5 w-3.5 animate-spin" />
-						) : monitored ? (
-							<PauseCircle className="h-3.5 w-3.5" />
-						) : (
-							<PlayCircle className="h-3.5 w-3.5" />
-						)}
-						{monitored ? "Unmonitor" : "Monitor"}
-					</Button>
+					{/* External links — subtle, dot-separated text */}
+					{externalLinks.length > 0 && (
+						<div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px]">
+							<ExternalLink className="h-3 w-3 text-muted-foreground/40 mr-0.5" />
+							{externalLinks.map((link, i) => (
+								<span key={link.label} className="inline-flex items-center gap-1">
+									<button
+										type="button"
+										className="text-muted-foreground/60 hover:text-foreground transition-colors"
+										onClick={link.onClick}
+									>
+										{link.label}
+									</button>
+									{i < externalLinks.length - 1 && (
+										<span className="text-muted-foreground/30">·</span>
+									)}
+								</span>
+							))}
+						</div>
+					)}
 				</div>
 		</GlassmorphicCard>
 	);

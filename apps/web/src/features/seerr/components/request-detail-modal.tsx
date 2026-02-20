@@ -1,6 +1,5 @@
 "use client";
 
-import { useRef } from "react";
 import {
 	X,
 	Star,
@@ -8,7 +7,6 @@ import {
 	Calendar,
 	Film,
 	Tv,
-	Play,
 	Loader2,
 	Layers,
 	User,
@@ -16,11 +14,11 @@ import {
 	RotateCcw,
 	Trash2,
 } from "lucide-react";
-import type { SeerrRequest, SeerrCastMember, SeerrSeason } from "@arr/shared";
+import type { SeerrRequest, SeerrSeason } from "@arr/shared";
 import { SEERR_REQUEST_STATUS, SEERR_MEDIA_STATUS } from "@arr/shared";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { useFocusTrap } from "../../../hooks/useFocusTrap";
-import { RATING_COLOR, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { RATING_COLOR } from "../../../lib/theme-gradients";
 import { StatusBadge, GradientButton } from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import {
@@ -30,8 +28,12 @@ import {
 import {
 	getSeerrImageUrl,
 	isAnimeFromKeywords,
-	isValidYoutubeKey,
 } from "../../discover/lib/seerr-image-utils";
+import {
+	CastSection,
+	TrailerButton,
+	ExternalLinksSection,
+} from "../../discover/components/media-detail-sections";
 import {
 	getRequestStatusLabel,
 	getRequestStatusVariant,
@@ -147,10 +149,8 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 	// Cast (top 12)
 	const cast = (details?.credits?.cast ?? []).slice(0, 12);
 
-	// Trailer (validate key format to prevent URL injection from rogue Seerr data)
-	const trailer = (details?.relatedVideos ?? []).find(
-		(v) => v.site === "YouTube" && (v.type === "Trailer" || v.type === "Teaser") && isValidYoutubeKey(v.key),
-	);
+	// Trailer videos (passed to shared TrailerButton which handles validation)
+	const trailerVideos = details?.relatedVideos;
 
 	// Seasons (TV only) — from TMDB details, merged with request seasons
 	const detailSeasons = !isMovie
@@ -466,89 +466,18 @@ export const RequestDetailModal: React.FC<RequestDetailModalProps> = ({
 					{cast.length > 0 && <CastSection cast={cast} />}
 
 					{/* Trailer */}
-					{trailer && (
-						<div className="space-y-2">
-							<h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-								Trailer
-							</h3>
-							<a
-								href={`https://www.youtube.com/watch?v=${trailer.key}`}
-								target="_blank"
-								rel="noopener noreferrer"
-								className="group/trailer inline-flex items-center gap-2 rounded-xl border border-border/50 bg-card/40 px-4 py-3 text-sm text-foreground transition-all hover:border-border/80 hover:bg-card/60"
-							>
-								<div
-									className="flex h-8 w-8 items-center justify-center rounded-lg"
-									style={{
-										background: `linear-gradient(135deg, ${SEMANTIC_COLORS.error.from}, ${SEMANTIC_COLORS.error.to})`,
-									}}
-								>
-									<Play className="h-4 w-4 text-white fill-white" />
-								</div>
-								<span className="font-medium">
-									{trailer.name || "Watch Trailer"}
-								</span>
-							</a>
-						</div>
-					)}
+					<TrailerButton videos={trailerVideos} />
+
+					{/* External Links */}
+					<ExternalLinksSection
+						tmdbId={tmdbId}
+						imdbId={details?.externalIds?.imdbId}
+						tvdbId={details?.externalIds?.tvdbId}
+						mediaType={isMovie ? "movie" : "tv"}
+					/>
 				</div>
 			</div>
 		</div>
 	);
 };
 
-// ============================================================================
-// Cast Section (horizontal scroll) — mirrors discover-detail-modal pattern
-// ============================================================================
-
-const CastSection: React.FC<{ cast: SeerrCastMember[] }> = ({ cast }) => {
-	const scrollRef = useRef<HTMLDivElement>(null);
-
-	return (
-		<div className="space-y-2">
-			<h3 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-				Cast
-			</h3>
-			<div
-				ref={scrollRef}
-				className="flex gap-3 overflow-x-auto pb-2 scrollbar-none"
-				style={{
-					maskImage: "linear-gradient(to right, black 95%, transparent)",
-					WebkitMaskImage: "linear-gradient(to right, black 95%, transparent)",
-				}}
-			>
-				{cast.map((member) => (
-					<CastCard key={member.id} member={member} />
-				))}
-			</div>
-		</div>
-	);
-};
-
-const CastCard: React.FC<{ member: SeerrCastMember }> = ({ member }) => {
-	const profileUrl = getSeerrImageUrl(member.profilePath, "w185");
-
-	return (
-		<div className="w-[100px] shrink-0 text-center space-y-1.5">
-			<div className="mx-auto h-[100px] w-[100px] rounded-xl overflow-hidden bg-card/40 border border-border/30">
-				{profileUrl ? (
-					/* eslint-disable-next-line @next/next/no-img-element */
-					<img
-						src={profileUrl}
-						alt={member.name}
-						className="h-full w-full object-cover"
-						loading="lazy"
-					/>
-				) : (
-					<div className="flex h-full items-center justify-center text-2xl text-muted-foreground/50">
-						{member.name.charAt(0)}
-					</div>
-				)}
-			</div>
-			<p className="text-xs font-medium text-foreground truncate">{member.name}</p>
-			{member.character && (
-				<p className="text-[10px] text-muted-foreground truncate">{member.character}</p>
-			)}
-		</div>
-	);
-};

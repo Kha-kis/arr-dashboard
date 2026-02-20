@@ -601,6 +601,7 @@ import { BRAND_COLORS, RATING_COLOR } from "@/lib/theme-gradients";
 | `BRAND_COLORS.rottenTomatoes` | #5d8a3a | RT ratings |
 | `BRAND_COLORS.tmdb` | #01d277 | TMDB badges |
 | `BRAND_COLORS.trakt` | #ed1d24 | Trakt links |
+| `BRAND_COLORS.tvdb` | #26a69a | TVDB links |
 
 #### Protocol Colors (Indexer Types)
 
