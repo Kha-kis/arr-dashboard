@@ -1,5 +1,14 @@
 import type { LibraryItem, ServiceInstanceSummary } from "@arr/shared";
 import { formatBytes as formatBytesShared } from "../../../lib/format-utils";
+import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+
+/** Maps each ARR service type to its primary accent color. */
+export const SERVICE_COLORS: Record<"sonarr" | "radarr" | "lidarr" | "readarr", string> = {
+	sonarr: SERVICE_GRADIENTS.sonarr.from,
+	radarr: SERVICE_GRADIENTS.radarr.from,
+	lidarr: SERVICE_GRADIENTS.lidarr.from,
+	readarr: SERVICE_GRADIENTS.readarr.from,
+};
 
 /**
  * Format bytes into human-readable string (e.g., "1.5 GB").

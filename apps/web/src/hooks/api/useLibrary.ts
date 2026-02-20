@@ -13,6 +13,7 @@ import type {
 	LibraryEpisodeMonitorRequest,
 	LibraryEpisodeSearchRequest,
 	LibraryEpisodesResponse,
+	LibraryMovieFileResponse,
 	LibraryToggleMonitorRequest,
 	LibrarySeasonSearchRequest,
 	LibraryMovieSearchRequest,
@@ -26,6 +27,7 @@ import {
 	fetchBooks,
 	fetchEpisodes,
 	fetchLibrary,
+	fetchMovieFile,
 	fetchLibrarySyncStatus,
 	fetchTracks,
 	triggerLibrarySync,
@@ -211,6 +213,32 @@ export const useEpisodesQuery = (options: EpisodesQueryOptions) =>
 			}),
 		enabled: options.enabled ?? true,
 		staleTime: 60 * 1000,
+	});
+
+// ============================================================================
+// Movie File Detail Query (live fetch from Radarr, not cached)
+// ============================================================================
+
+interface MovieFileQueryOptions {
+	instanceId: string;
+	movieId: number | string;
+	enabled?: boolean;
+}
+
+export const useMovieFileQuery = (options: MovieFileQueryOptions) =>
+	useQuery<LibraryMovieFileResponse>({
+		queryKey: [
+			"library",
+			"movie-file",
+			{ instanceId: options.instanceId, movieId: options.movieId },
+		],
+		queryFn: () =>
+			fetchMovieFile({
+				instanceId: options.instanceId,
+				movieId: options.movieId,
+			}),
+		enabled: options.enabled ?? true,
+		staleTime: 5 * 60 * 1000,
 	});
 
 export const useLibraryEpisodeSearchMutation = () => {

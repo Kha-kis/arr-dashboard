@@ -453,6 +453,57 @@ export class SeerrClient {
 		return { servers: results };
 	}
 
+	// --- Library Enrichment ---
+
+	/**
+	 * Fetch lightweight TMDB summary (vote average + backdrop) for a single media item.
+	 * Reuses the same /api/v1/movie/:id and /api/v1/tv/:id endpoints but only extracts
+	 * the fields needed for library card badges.
+	 */
+	async getMediaSummary(
+		type: "movie" | "tv",
+		tmdbId: number,
+	): Promise<{ voteAverage: number | null; backdropPath: string | null; posterPath: string | null }> {
+		const data = await this.get<{ voteAverage?: number; backdropPath?: string; posterPath?: string }>(
+			`/api/v1/${type}/${tmdbId}`,
+		);
+		return {
+			voteAverage: data.voteAverage ?? null,
+			backdropPath: data.backdropPath ?? null,
+			posterPath: data.posterPath ?? null,
+		};
+	}
+
+	/**
+	 * Fetch all open issues and aggregate counts by tmdbId.
+	 * Returns a Map<string, number> keyed by "movie:{tmdbId}" or "tv:{tmdbId}".
+	 *
+	 * Seerr's issue API only returns 20 items per page by default.
+	 * We paginate up to 500 open issues (25 pages) to cover typical usage.
+	 */
+	async getOpenIssueCounts(): Promise<Map<string, number>> {
+		const counts = new Map<string, number>();
+		const take = 20;
+		let skip = 0;
+		const maxPages = 25;
+
+		for (let page = 0; page < maxPages; page++) {
+			const result = await this.getIssues({ filter: "open", take, skip });
+			for (const issue of result.results) {
+				if (!issue.media?.tmdbId) continue;
+				// Use the API-provided mediaType; fall back to tvdbId heuristic
+				const mediaType = issue.media.mediaType ?? (issue.media.tvdbId ? "tv" : "movie");
+				const key = `${mediaType}:${issue.media.tmdbId}`;
+				counts.set(key, (counts.get(key) ?? 0) + 1);
+			}
+			// Stop if we got fewer than requested (last page)
+			if (result.results.length < take) break;
+			skip += take;
+		}
+
+		return counts;
+	}
+
 	// --- System ---
 
 	async getStatus(): Promise<SeerrStatus> {

@@ -49,7 +49,9 @@ export const buildMovieFile = (raw: Record<string, unknown>) => {
 	const qualityObj = raw?.quality as Record<string, unknown> | undefined;
 	const qualityQuality = qualityObj?.quality as Record<string, unknown> | undefined;
 	const quality = toStringValue(qualityQuality?.name) ?? toStringValue(qualityObj?.name);
+	const releaseGroup = toStringValue(raw?.releaseGroup);
 	const size = toNumber(raw?.size) ?? toNumber(raw?.sizeOnDisk);
+	const dateAdded = toStringValue(raw?.dateAdded);
 	const mediaInfo = raw?.mediaInfo as Record<string, unknown> | undefined;
 	let resolution = toStringValue(mediaInfo?.resolution) ?? toStringValue(mediaInfo?.screenSize);
 	const width = toNumber(mediaInfo?.width);
@@ -57,6 +59,17 @@ export const buildMovieFile = (raw: Record<string, unknown>) => {
 	if (!resolution && width !== undefined && height !== undefined) {
 		resolution = `${width}x${height}`;
 	}
+	const videoCodec = toStringValue(mediaInfo?.videoCodec);
+	const audioCodec = toStringValue(mediaInfo?.audioCodec);
+	const videoDynamicRange = toStringValue(mediaInfo?.videoDynamicRange);
+	const languages = (raw?.languages as Array<Record<string, unknown>> | undefined)
+		?.map((l) => toStringValue(l?.name))
+		.filter((n): n is string => !!n);
+	const customFormats = (raw?.customFormats as Array<Record<string, unknown>> | undefined)
+		?.map((cf) => toStringValue(cf?.name))
+		.filter((n): n is string => !!n);
+	const customFormatScore = toNumber(raw?.customFormatScore);
+
 	if (!relativePath && !quality && !size && !resolution && id === undefined) {
 		return undefined;
 	}
@@ -64,8 +77,16 @@ export const buildMovieFile = (raw: Record<string, unknown>) => {
 		id,
 		relativePath,
 		quality,
+		releaseGroup,
 		size,
+		dateAdded,
+		languages,
+		videoCodec,
+		audioCodec,
 		resolution,
+		videoDynamicRange,
+		customFormats,
+		customFormatScore,
 	};
 };
 

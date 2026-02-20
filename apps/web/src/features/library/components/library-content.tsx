@@ -1,6 +1,6 @@
 "use client";
 
-import type { LibraryItem, ServiceInstanceSummary } from "@arr/shared";
+import type { LibraryItem, LibraryEnrichmentItem, ServiceInstanceSummary } from "@arr/shared";
 import { Library as LibraryIcon } from "lucide-react";
 import { Pagination } from "../../../components/ui";
 import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
@@ -13,7 +13,6 @@ interface LibraryCardProps {
 	onToggleMonitor: (item: LibraryItem) => void;
 	pending: boolean;
 	externalLink?: string | null;
-	onViewSeasons?: (item: LibraryItem) => void;
 	onSearchMovie?: (item: LibraryItem) => void;
 	movieSearchPending?: boolean;
 	onSearchSeries?: (item: LibraryItem) => void;
@@ -25,6 +24,9 @@ interface LibraryCardProps {
 	onSearchAuthor?: (item: LibraryItem) => void;
 	authorSearchPending?: boolean;
 	onExpandDetails?: (item: LibraryItem) => void;
+	tmdbRating?: number | null;
+	openIssueCount?: number;
+	posterPath?: string | null;
 }
 
 /**
@@ -62,8 +64,6 @@ interface LibraryContentProps {
 	isMonitorPending: boolean;
 	/** Service lookup for building external links */
 	serviceLookup: Record<string, ServiceInstanceSummary>;
-	/** Handler for viewing seasons */
-	onViewSeasons: (item: LibraryItem) => void;
 	/** Handler for searching a movie */
 	onSearchMovie: (item: LibraryItem) => void;
 	/** Pending movie search key */
@@ -92,6 +92,8 @@ interface LibraryContentProps {
 	LibraryCard: React.ComponentType<LibraryCardProps>;
 	/** Whether the library cache is currently syncing */
 	isSyncing?: boolean;
+	/** Seerr enrichment map keyed by "movie:{tmdbId}" or "tv:{tmdbId}" */
+	enrichmentMap?: Record<string, LibraryEnrichmentItem> | null;
 }
 
 /**
@@ -118,7 +120,6 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 	pendingKey,
 	isMonitorPending,
 	serviceLookup,
-	onViewSeasons,
 	onSearchMovie,
 	pendingMovieSearch,
 	onSearchSeries,
@@ -133,7 +134,15 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 	buildLibraryExternalLink,
 	LibraryCard,
 	isSyncing,
+	enrichmentMap,
 }) => {
+
+	/** Lookup enrichment for a library item by its tmdbId + type */
+	const getEnrichment = (item: LibraryItem) => {
+		if (!enrichmentMap || !item.remoteIds?.tmdbId) return undefined;
+		const key = `${item.type === "movie" ? "movie" : "tv"}:${item.remoteIds.tmdbId}`;
+		return enrichmentMap[key];
+	};
 
 	const allItems = [...grouped.movies, ...grouped.series, ...grouped.artists, ...grouped.authors];
 	const typesPresent = [grouped.movies, grouped.series, grouped.artists, grouped.authors].filter(g => g.length > 0).length;
@@ -174,14 +183,15 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 
 			{hasMixedTypes ? (
 				<div className="grid gap-4 lg:grid-cols-2">
-					{allItems.map((item) => (
+					{allItems.map((item) => {
+						const enrichment = getEnrichment(item);
+						return (
 						<LibraryCard
 							key={`${item.instanceId}:${item.id}`}
 							item={item}
 							onToggleMonitor={onToggleMonitor}
 							pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
 							externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
-							onViewSeasons={item.type === "series" ? onViewSeasons : undefined}
 							onSearchMovie={item.type === "movie" ? onSearchMovie : undefined}
 							movieSearchPending={item.type === "movie" ? pendingMovieSearch === `${item.instanceId}:${item.id}` : undefined}
 							onSearchSeries={item.type === "series" ? onSearchSeries : undefined}
@@ -193,8 +203,12 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 							onSearchAuthor={item.service === "readarr" ? onSearchAuthor : undefined}
 							authorSearchPending={item.service === "readarr" ? pendingAuthorSearch === `${item.instanceId}:${item.id}` : undefined}
 							onExpandDetails={onExpandDetails}
+							tmdbRating={enrichment?.voteAverage}
+							openIssueCount={enrichment?.openIssueCount}
+							posterPath={enrichment?.posterPath}
 						/>
-					))}
+						);
+					})}
 				</div>
 			) : (
 				<>
@@ -204,7 +218,9 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 								<h2 className="text-xl font-semibold text-foreground">Movies</h2>
 							</div>
 							<div className="grid gap-4 lg:grid-cols-2">
-								{grouped.movies.map((item) => (
+								{grouped.movies.map((item) => {
+									const enrichment = getEnrichment(item);
+									return (
 									<LibraryCard
 										key={`${item.instanceId}:${item.id}`}
 										item={item}
@@ -214,8 +230,12 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 										onSearchMovie={onSearchMovie}
 										movieSearchPending={pendingMovieSearch === `${item.instanceId}:${item.id}`}
 										onExpandDetails={onExpandDetails}
+										tmdbRating={enrichment?.voteAverage}
+										openIssueCount={enrichment?.openIssueCount}
+										posterPath={enrichment?.posterPath}
 									/>
-								))}
+									);
+								})}
 							</div>
 						</section>
 					) : null}
@@ -226,19 +246,24 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 								<h2 className="text-xl font-semibold text-foreground">Series</h2>
 							</div>
 							<div className="grid gap-4 lg:grid-cols-2">
-								{grouped.series.map((item) => (
+								{grouped.series.map((item) => {
+									const enrichment = getEnrichment(item);
+									return (
 									<LibraryCard
 										key={`${item.instanceId}:${item.id}`}
 										item={item}
 										onToggleMonitor={onToggleMonitor}
 										pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
 										externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
-										onViewSeasons={onViewSeasons}
 										onSearchSeries={onSearchSeries}
 										seriesSearchPending={pendingSeriesSearch === `${item.instanceId}:${item.id}`}
 										onExpandDetails={onExpandDetails}
+										tmdbRating={enrichment?.voteAverage}
+										openIssueCount={enrichment?.openIssueCount}
+										posterPath={enrichment?.posterPath}
 									/>
-								))}
+									);
+								})}
 							</div>
 						</section>
 					) : null}
@@ -249,7 +274,9 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 								<h2 className="text-xl font-semibold text-foreground">Artists</h2>
 							</div>
 							<div className="grid gap-4 lg:grid-cols-2">
-								{grouped.artists.map((item) => (
+								{grouped.artists.map((item) => {
+									const enrichment = getEnrichment(item);
+									return (
 									<LibraryCard
 										key={`${item.instanceId}:${item.id}`}
 										item={item}
@@ -260,8 +287,12 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 										onSearchArtist={onSearchArtist}
 										artistSearchPending={pendingArtistSearch === `${item.instanceId}:${item.id}`}
 										onExpandDetails={onExpandDetails}
+										tmdbRating={enrichment?.voteAverage}
+										openIssueCount={enrichment?.openIssueCount}
+										posterPath={enrichment?.posterPath}
 									/>
-								))}
+									);
+								})}
 							</div>
 						</section>
 					) : null}
@@ -272,7 +303,9 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 								<h2 className="text-xl font-semibold text-foreground">Authors</h2>
 							</div>
 							<div className="grid gap-4 lg:grid-cols-2">
-								{grouped.authors.map((item) => (
+								{grouped.authors.map((item) => {
+									const enrichment = getEnrichment(item);
+									return (
 									<LibraryCard
 										key={`${item.instanceId}:${item.id}`}
 										item={item}
@@ -283,8 +316,12 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 										onSearchAuthor={onSearchAuthor}
 										authorSearchPending={pendingAuthorSearch === `${item.instanceId}:${item.id}`}
 										onExpandDetails={onExpandDetails}
+										tmdbRating={enrichment?.voteAverage}
+										openIssueCount={enrichment?.openIssueCount}
+										posterPath={enrichment?.posterPath}
 									/>
-								))}
+									);
+								})}
 							</div>
 						</section>
 					) : null}

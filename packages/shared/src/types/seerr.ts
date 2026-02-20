@@ -90,6 +90,7 @@ export interface SeerrMediaInfo {
 	id: number;
 	tmdbId: number;
 	tvdbId?: number;
+	mediaType?: "movie" | "tv";
 	status: SeerrMediaStatus;
 	createdAt: string;
 	updatedAt: string;
@@ -462,4 +463,21 @@ export interface SeerrSearchParams {
 	query: string;
 	page?: number;
 	language?: string;
+}
+
+// ============================================================================
+// Library Enrichment Types
+// ============================================================================
+
+/** TMDB enrichment data for a single library item */
+export interface LibraryEnrichmentItem {
+	voteAverage: number | null;
+	backdropPath: string | null;
+	posterPath: string | null;
+	openIssueCount: number;
+}
+
+/** Batch enrichment response keyed by "movie:{tmdbId}" or "tv:{tmdbId}" */
+export interface LibraryEnrichmentResponse {
+	items: Record<string, LibraryEnrichmentItem>;
 }

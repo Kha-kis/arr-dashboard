@@ -25,6 +25,7 @@ import type {
 	SeerrUser,
 	SeerrUserParams,
 	SeerrUserUpdateData,
+	LibraryEnrichmentResponse,
 } from "@arr/shared";
 import { apiRequest } from "./base";
 
@@ -271,6 +272,22 @@ export async function createSeerrRequest(
 	payload: SeerrCreateRequestPayload,
 ): Promise<SeerrCreateRequestResponse> {
 	return apiRequest(`${BASE_DISCOVER}/${instanceId}/request`, { json: payload });
+}
+
+// ============================================================================
+// Library Enrichment
+// ============================================================================
+
+export async function fetchLibraryEnrichment(
+	instanceId: string,
+	tmdbIds: number[],
+	types: ("movie" | "tv")[],
+): Promise<LibraryEnrichmentResponse> {
+	const qs = buildQueryString({
+		tmdbIds: tmdbIds.join(","),
+		types: types.join(","),
+	});
+	return apiRequest(`/api/seerr/library-enrichment/${instanceId}${qs}`);
 }
 
 // ============================================================================
