@@ -10,6 +10,7 @@ import {
 	Zap,
 	ShieldAlert,
 	SkipForward,
+	Sparkles,
 } from "lucide-react";
 import { Button, toast } from "../../../components/ui";
 import {
@@ -187,7 +188,7 @@ const InstanceStatusCard = ({
 										border: `1px solid ${serviceGradient.from}30`,
 									}}
 								>
-									<Trash2
+									<Sparkles
 										className="h-4 w-4"
 										style={{ color: serviceGradient.from }}
 									/>

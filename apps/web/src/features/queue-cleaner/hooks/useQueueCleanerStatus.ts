@@ -12,7 +12,6 @@ interface UseQueueCleanerStatusResult {
 	status: QueueCleanerStatus | null;
 	isLoading: boolean;
 	error: Error | null;
-	refetch: () => Promise<unknown>;
 }
 
 /**
@@ -30,6 +29,5 @@ export function useQueueCleanerStatus(): UseQueueCleanerStatusResult {
 		status: query.data ?? null,
 		isLoading: query.isLoading,
 		error: query.error,
-		refetch: query.refetch,
 	};
 }

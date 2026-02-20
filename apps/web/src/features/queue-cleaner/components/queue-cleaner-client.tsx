@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Trash2, Activity, Settings, RefreshCw, BarChart3 } from "lucide-react";
-import { Button, Alert, AlertDescription } from "../../../components/ui";
+import { useQueryClient } from "@tanstack/react-query";
+import { Button, Alert, AlertDescription, toast } from "../../../components/ui";
 import {
 	PremiumPageHeader,
 	PremiumTabs,
@@ -19,7 +20,29 @@ export type CleanerTab = "overview" | "activity" | "statistics" | "config";
 
 export const QueueCleanerClient = () => {
 	const [activeTab, setActiveTab] = useState<CleanerTab>("overview");
-	const { status, isLoading, error, refetch } = useQueueCleanerStatus();
+	const { status, isLoading, error } = useQueueCleanerStatus();
+	const queryClient = useQueryClient();
+	const [isRefreshing, setIsRefreshing] = useState(false);
+	const refreshTimeout = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+	useEffect(() => {
+		return () => clearTimeout(refreshTimeout.current);
+	}, []);
+
+	const handleRefresh = useCallback(() => {
+		if (isRefreshing) return;
+		setIsRefreshing(true);
+		clearTimeout(refreshTimeout.current);
+
+		void queryClient
+			.invalidateQueries({ queryKey: ["queue-cleaner"] })
+			.catch(() => {
+				toast.error("Failed to refresh queue cleaner data");
+			})
+			.finally(() => {
+				refreshTimeout.current = setTimeout(() => setIsRefreshing(false), 600);
+			});
+	}, [queryClient, isRefreshing]);
 
 	const tabs: PremiumTab[] = [
 		{
@@ -69,10 +92,11 @@ export const QueueCleanerClient = () => {
 				actions={
 					<Button
 						variant="secondary"
-						onClick={() => void refetch()}
+						onClick={handleRefresh}
+						disabled={isRefreshing}
 						className="gap-2 border-border/50 bg-card/50 backdrop-blur-xs hover:bg-card/80"
 					>
-						<RefreshCw className="h-4 w-4" />
+						<RefreshCw className={`h-4 w-4 transition-transform ${isRefreshing ? "animate-spin" : ""}`} />
 						Refresh
 					</Button>
 				}
@@ -94,7 +118,7 @@ export const QueueCleanerClient = () => {
 				style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
 			>
 				{activeTab === "overview" && (
-					<QueueCleanerOverview status={status} onRefresh={refetch} />
+					<QueueCleanerOverview status={status} onRefresh={handleRefresh} />
 				)}
 				{activeTab === "activity" && <QueueCleanerActivity />}
 				{activeTab === "statistics" && <QueueCleanerStatistics />}

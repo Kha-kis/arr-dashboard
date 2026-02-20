@@ -21,6 +21,7 @@ import {
 	TrendingUp,
 	FileText,
 	ArrowRight,
+	Sparkles,
 } from "lucide-react";
 import { Button, toast } from "../../../components/ui";
 import {
@@ -219,7 +220,7 @@ const UnconfiguredInstanceCard = ({
 							border: `1px solid ${serviceGradient.from}30`,
 						}}
 					>
-						<Trash2 className="h-4 w-4" style={{ color: serviceGradient.from }} />
+						<Sparkles className="h-4 w-4" style={{ color: serviceGradient.from }} />
 					</div>
 					<div>
 						<span className="text-sm font-medium text-foreground">{instance.label}</span>
@@ -301,10 +302,11 @@ const InstanceConfigCard = ({
 }) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const serviceGradient = getServiceGradient(config.service);
-	const { updateConfig, isUpdating } = useUpdateQueueCleanerConfig();
+	const { updateConfig, deleteConfig, isUpdating, isDeleting } = useUpdateQueueCleanerConfig();
 
 	const [formData, setFormData] = useState<QueueCleanerConfigUpdate>(() => configToFormData(config));
 	const [isDirty, setIsDirty] = useState(false);
+	const [confirmDelete, setConfirmDelete] = useState(false);
 
 	const updateField = useCallback(
 		<K extends keyof QueueCleanerConfigUpdate>(
@@ -334,6 +336,21 @@ const InstanceConfigCard = ({
 		setIsDirty(false);
 	};
 
+	const handleDelete = async () => {
+		if (!confirmDelete) {
+			setConfirmDelete(true);
+			return;
+		}
+		try {
+			await deleteConfig(config.instanceId);
+			toast.success(`Config deleted for ${config.instanceName}`);
+		} catch (error) {
+			toast.error(getErrorMessage(error, "Failed to delete config"));
+		} finally {
+			setConfirmDelete(false);
+		}
+	};
+
 	return (
 		<div
 			className="animate-in fade-in slide-in-from-bottom-2 duration-300"
@@ -359,7 +376,7 @@ const InstanceConfigCard = ({
 									border: `1px solid ${serviceGradient.from}30`,
 								}}
 							>
-								<Trash2 className="h-4 w-4" style={{ color: serviceGradient.from }} />
+								<Sparkles className="h-4 w-4" style={{ color: serviceGradient.from }} />
 							</div>
 							<div>
 								<h4 className="font-medium text-foreground">{config.instanceName}</h4>
@@ -850,36 +867,57 @@ const InstanceConfigCard = ({
 						/>
 					</div>
 
-					{/* Save/Reset buttons */}
-					<div className="flex justify-end gap-2 pt-2 border-t border-border/30">
+					{/* Save/Reset/Delete buttons */}
+					<div className="flex justify-between gap-2 pt-2 border-t border-border/30">
 						<Button
 							variant="secondary"
 							size="sm"
 							className="gap-1.5"
-							onClick={handleReset}
-							disabled={!isDirty}
-						>
-							<RotateCcw className="h-3.5 w-3.5" />
-							Reset
-						</Button>
-						<Button
-							variant="secondary"
-							size="sm"
-							className="gap-1.5"
-							onClick={() => void handleSave()}
-							disabled={!isDirty || isUpdating}
+							onClick={() => void handleDelete()}
+							onBlur={() => setConfirmDelete(false)}
+							disabled={isDeleting}
 							style={{
-								borderColor: isDirty ? `${themeGradient.from}40` : undefined,
-								color: isDirty ? themeGradient.from : undefined,
+								borderColor: confirmDelete ? `${SEMANTIC_COLORS.error.border}` : undefined,
+								color: confirmDelete ? SEMANTIC_COLORS.error.text : undefined,
 							}}
 						>
-							{isUpdating ? (
+							{isDeleting ? (
 								<Loader2 className="h-3.5 w-3.5 animate-spin" />
 							) : (
-								<Save className="h-3.5 w-3.5" />
+								<Trash2 className="h-3.5 w-3.5" />
 							)}
-							Save
+							{confirmDelete ? "Confirm Delete?" : "Delete"}
 						</Button>
+						<div className="flex gap-2">
+							<Button
+								variant="secondary"
+								size="sm"
+								className="gap-1.5"
+								onClick={handleReset}
+								disabled={!isDirty}
+							>
+								<RotateCcw className="h-3.5 w-3.5" />
+								Reset
+							</Button>
+							<Button
+								variant="secondary"
+								size="sm"
+								className="gap-1.5"
+								onClick={() => void handleSave()}
+								disabled={!isDirty || isUpdating}
+								style={{
+									borderColor: isDirty ? `${themeGradient.from}40` : undefined,
+									color: isDirty ? themeGradient.from : undefined,
+								}}
+							>
+								{isUpdating ? (
+									<Loader2 className="h-3.5 w-3.5 animate-spin" />
+								) : (
+									<Save className="h-3.5 w-3.5" />
+								)}
+								Save
+							</Button>
+						</div>
 					</div>
 				</div>
 			</GlassmorphicCard>

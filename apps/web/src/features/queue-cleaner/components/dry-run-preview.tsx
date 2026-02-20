@@ -12,6 +12,7 @@ import {
 	Play,
 	Shield,
 	Trash2,
+	Sparkles,
 	Wifi,
 	WifiOff,
 	X,
@@ -196,7 +197,7 @@ export const EnhancedDryRunPreview = ({
 								border: `1px solid ${serviceGradient.from}30`,
 							}}
 						>
-							<Trash2 className="h-5 w-5" style={{ color: serviceGradient.from }} />
+							<Sparkles className="h-5 w-5" style={{ color: serviceGradient.from }} />
 						</div>
 						<div>
 							<div className="flex items-center gap-2">
