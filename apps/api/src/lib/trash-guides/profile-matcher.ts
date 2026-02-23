@@ -5,13 +5,14 @@
  * HTTP adapters. All functions are pure (no I/O) and operate on pre-fetched data.
  */
 
-import type {
-	CompleteQualityProfile,
-	CustomFormatSpecification,
-	TemplateConfig,
-	TrashCustomFormat,
-	TrashCustomFormatGroup,
-	TrashQualityProfile,
+import {
+	type CompleteQualityProfile,
+	type CustomFormatSpecification,
+	isCFGroupApplicableToProfile,
+	type TemplateConfig,
+	type TrashCustomFormat,
+	type TrashCustomFormatGroup,
+	type TrashQualityProfile,
 } from "@arr/shared";
 import { findCutoffQualityName } from "../utils/quality-utils.js";
 import type { TrashCFWithScores } from "./template-score-utils.js";
@@ -168,12 +169,8 @@ export function buildCFRecommendations(
 	// 2. Add CFs from applicable CF groups
 	if (cfGroups) {
 		for (const group of cfGroups) {
-			// Check if this group is excluded for the matched profile
-			const isExcluded =
-				group.quality_profiles?.exclude &&
-				Object.values(group.quality_profiles.exclude).includes(matchedProfile.trash_id);
-
-			if (isExcluded) continue;
+			// Check if this group applies to the matched profile (supports both include and exclude semantics)
+			if (!isCFGroupApplicableToProfile(group, matchedProfile.trash_id)) continue;
 
 			if (group.custom_formats) {
 				for (const groupCF of group.custom_formats) {
@@ -317,12 +314,14 @@ export interface ArrQualityItem {
  */
 export function buildCompleteQualityProfile(
 	fullProfile: ArrQualityProfileResponse,
-	profileConfig: {
-		upgradeAllowed?: boolean;
-		cutoff?: number;
-		minFormatScore?: number;
-		cutoffFormatScore?: number;
-	} | undefined,
+	profileConfig:
+		| {
+				upgradeAllowed?: boolean;
+				cutoff?: number;
+				minFormatScore?: number;
+				cutoffFormatScore?: number;
+		  }
+		| undefined,
 	sourceInfo: {
 		sourceInstanceId: string;
 		sourceInstanceLabel: string;
