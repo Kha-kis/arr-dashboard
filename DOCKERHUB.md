@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.7.2** - Custom upstream repos, user custom formats & bug fixes
+> **Version 2.8.3** - TRaSH Guides PR #2590 compatibility (include semantics + quality ordering)
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -81,6 +81,12 @@ services:
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.8.3` | TRaSH Guides PR #2590 compatibility (include semantics + quality ordering) |
+| `2.8.2` | Hotfix for Docker startup crash in v2.8.1 |
+| `2.8.1` | Security hardening, quality size presets & deep refactoring |
+| `2.8.0` | Full Lidarr & Readarr support + Queue Cleaner auto-import |
+| `2.7.4` | Configurable password policy for passphrase support |
+| `2.7.3` | Queue Cleaner, Prefer Season Packs & improved error handling |
 | `2.7.2` | Custom upstream repos, user custom formats & bug fixes |
 | `2.7.1` | TRaSH template persistence fix + Next.js security patch |
 | `2.7.0` | Major stack upgrade (Node 22, Next.js 16, Prisma 7, Tailwind 4) |
