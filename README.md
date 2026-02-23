@@ -1,6 +1,6 @@
 # Arr Dashboard
 
-> **Version 2.8.3** - TRaSH Guides PR #2590 compatibility (include semantics + quality ordering)
+> **Version 2.8.4** - Harden quality definition reset with multi-strategy fallback
 
 A unified dashboard for managing multiple Sonarr, Radarr, and Prowlarr instances. Consolidate your media automation management into a single, secure, and powerful interface.
 
@@ -141,6 +141,7 @@ docker-compose up -d
 | Tag | Description |
 |-----|-------------|
 | `latest` | Latest stable release |
+| `2.8.4` | Harden quality definition reset with multi-strategy fallback |
 | `2.8.3` | TRaSH Guides PR #2590 compatibility (include semantics + quality ordering) |
 | `2.8.2` | Hotfix for Docker startup crash in v2.8.1 |
 | `2.8.1` | Security hardening, quality size presets & deep refactoring |

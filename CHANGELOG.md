@@ -5,6 +5,15 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.4] - 2026-02-23
+
+### Fixed
+
+- **Quality Definition Reset Compatibility** - The "Reset to Factory Defaults" action now tries multiple API strategies (command API → direct endpoint) with proper fallback, instead of relying on a single endpoint that doesn't exist across all Sonarr/Radarr versions. Shows a clear actionable error if the instance doesn't support either method ([#114](https://github.com/Kha-kis/arr-dashboard/issues/114))
+- **Reset UI Feedback** - The quality size reset confirmation panel now displays error and success states instead of silently failing
+
+---
+
 ## [2.8.3] - 2026-02-23
 
 ### Fixed
@@ -558,6 +567,7 @@ Major dependency updates:
 
 ---
 
+[2.8.4]: https://github.com/Kha-kis/arr-dashboard/compare/v2.8.3...v2.8.4
 [2.8.3]: https://github.com/Kha-kis/arr-dashboard/compare/v2.8.2...v2.8.3
 [2.8.2]: https://github.com/Kha-kis/arr-dashboard/compare/v2.8.1...v2.8.2
 [2.8.1]: https://github.com/Kha-kis/arr-dashboard/compare/v2.8.0...v2.8.1
