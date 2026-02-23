@@ -72,23 +72,34 @@ export async function qualitySizeRoutes(app: FastifyInstance, _opts: FastifyPlug
 	}
 
 	/**
-	 * Reset quality definitions to factory defaults via the Sonarr/Radarr command system.
-	 * The arr-sdk doesn't include this command in its typed enum, so we use rawRequest.
+	 * Reset quality definitions to factory defaults.
+	 * Tries two strategies since no single endpoint works across all *arr versions:
+	 * 1. POST /api/v3/command { name: "ResetQualityDefinitions" } (Sonarr v4.0.8+)
+	 * 2. PUT /api/v3/qualitydefinition/reset (some older *arr builds)
 	 */
 	async function resetQualityDefinitions(
 		instance: Parameters<typeof app.arrClientFactory.rawRequest>[0],
 	): Promise<void> {
-		const response = await app.arrClientFactory.rawRequest(
+		// Strategy 1: Command API (Sonarr v4.0.8+)
+		const cmdResponse = await app.arrClientFactory.rawRequest(
 			instance,
 			"/api/v3/command",
 			{ method: "POST", body: { name: "ResetQualityDefinitions" } },
 		);
-		if (!response.ok) {
-			const body = await response.text().catch(() => "");
-			throw new Error(
-				`Failed to queue quality definition reset: ${response.status} ${response.statusText}${body ? ` — ${body}` : ""}`,
-			);
-		}
+		if (cmdResponse.ok) return;
+
+		// Strategy 2: Direct reset endpoint (some *arr builds)
+		const putResponse = await app.arrClientFactory.rawRequest(
+			instance,
+			"/api/v3/qualitydefinition/reset",
+			{ method: "PUT" },
+		);
+		if (putResponse.ok) return;
+
+		throw new Error(
+			"This instance does not support resetting quality definitions to factory defaults. " +
+				"You can reset them manually in your Sonarr/Radarr Settings > Quality page.",
+		);
 	}
 
 	/**
