@@ -5,6 +5,24 @@ All notable changes to Arr Dashboard will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.4] - 2026-02-23
+
+### Fixed
+
+- **Quality Definition Reset Compatibility** - The "Reset to Factory Defaults" action now tries multiple API strategies (command API → direct endpoint) with proper fallback, instead of relying on a single endpoint that doesn't exist across all Sonarr/Radarr versions. Shows a clear actionable error if the instance doesn't support either method ([#114](https://github.com/Kha-kis/arr-dashboard/issues/114))
+- **Reset UI Feedback** - The quality size reset confirmation panel now displays error and success states instead of silently failing
+
+---
+
+## [2.8.3] - 2026-02-23
+
+### Fixed
+
+- **TRaSH Guides PR #2590 Compatibility** - Activated support for TRaSH Guides' upstream format changes: CF groups now use `include` semantics (explicitly listing applicable profiles instead of exclusions), and quality items are ordered human-readable (low→high) requiring reversal before Sonarr/Radarr API submission
+- **CF Group Profile Filtering** - Fixed `profile-matcher.ts` using inline `exclude`-only logic instead of the shared `isCFGroupApplicableToProfile()` helper, which caused CF groups to be applied to all profiles regardless of include/exclude restrictions
+
+---
+
 ## [2.8.2] - 2026-02-19
 
 ### Fixed
@@ -549,6 +567,8 @@ Major dependency updates:
 
 ---
 
+[2.8.4]: https://github.com/Kha-kis/arr-dashboard/compare/v2.8.3...v2.8.4
+[2.8.3]: https://github.com/Kha-kis/arr-dashboard/compare/v2.8.2...v2.8.3
 [2.8.2]: https://github.com/Kha-kis/arr-dashboard/compare/v2.8.1...v2.8.2
 [2.8.1]: https://github.com/Kha-kis/arr-dashboard/compare/v2.8.0...v2.8.1
 [2.8.0]: https://github.com/Kha-kis/arr-dashboard/compare/v2.7.4...v2.8.0

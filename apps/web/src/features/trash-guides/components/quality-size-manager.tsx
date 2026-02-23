@@ -365,6 +365,14 @@ export function QualitySizeManager() {
 							`Reset ${selectedInstance?.label ?? "Instance"} to Defaults`
 						)}
 					</button>
+					{applyMutation.isError && (
+						<ErrorBanner message={`Reset failed: ${applyMutation.error.message}`} />
+					)}
+					{applyMutation.isSuccess && (
+						<p className="text-sm text-green-400">
+							{applyMutation.data?.message ?? "Quality sizes reset to factory defaults."}
+						</p>
+					)}
 				</div>
 			)}
 

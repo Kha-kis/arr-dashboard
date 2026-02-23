@@ -40,7 +40,7 @@ export interface TemplateCF {
  * See: https://github.com/TRaSH-Guides/Guides/pull/2590
  * See: https://github.com/Kha-kis/arr-dashboard/issues/85
  */
-export const TRASH_GUIDES_NEW_QUALITY_FORMAT_MERGED = false;
+export const TRASH_GUIDES_NEW_QUALITY_FORMAT_MERGED = true;
 
 /**
  * Reverses quality items if TRaSH Guides uses NEW format (PR #2590).
