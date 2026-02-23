@@ -210,7 +210,7 @@ describe("extractTrashId", () => {
  * See: https://github.com/TRaSH-Guides/Guides/pull/2590
  * See: https://github.com/Kha-kis/arr-dashboard/issues/85
  */
-const TRASH_GUIDES_NEW_QUALITY_FORMAT_MERGED = false;
+const TRASH_GUIDES_NEW_QUALITY_FORMAT_MERGED = true;
 
 /**
  * Test implementation of reverseQualityItemsIfNeeded.
@@ -226,15 +226,12 @@ const reverseQualityItemsIfNeeded = <T>(items: T[]): T[] => {
 
 describe("Quality Format Reversal (TRaSH Guides PR #2590)", () => {
 	describe("reverseQualityItemsIfNeeded", () => {
-		// NOTE: Reversal is DISABLED until TRaSH Guides PR #2590 is merged.
-		// When PR #2590 is merged:
-		// 1. Change TRASH_GUIDES_NEW_QUALITY_FORMAT_MERGED to true
-		// 2. Update tests to expect reversal
-		// See: https://github.com/TRaSH-Guides/Guides/pull/2590
-		// See: https://github.com/Kha-kis/arr-dashboard/issues/85
+		// TRaSH Guides PR #2590 has been merged.
+		// Quality items are now in human-readable order (low→high) in TRaSH JSON.
+		// We reverse them before sending to Sonarr/Radarr API (which expects high→low).
 
-		it("should NOT reverse items (flag disabled until PR #2590)", () => {
-			// TRaSH currently uses OLD format (high→low), matching API order
+		it("should reverse items for API compatibility (PR #2590 merged)", () => {
+			// TRaSH NEW format: low→high (Unknown → Remux)
 			const items = [
 				{ name: "Unknown" },
 				{ name: "DVD" },
@@ -242,31 +239,30 @@ describe("Quality Format Reversal (TRaSH Guides PR #2590)", () => {
 			];
 			const result = reverseQualityItemsIfNeeded(items);
 
-			// No reversal - items returned unchanged
-			expect(result).toBe(items);
+			// Reversed for API: high→low (Remux → Unknown)
+			expect(result).not.toBe(items);
 			expect(result).toEqual([
-				{ name: "Unknown" },
-				{ name: "DVD" },
 				{ name: "Remux" },
+				{ name: "DVD" },
+				{ name: "Unknown" },
 			]);
 		});
 
-		it("should pass through OLD format items unchanged", () => {
-			// This is the current TRaSH format: high quality first (Remux → Unknown)
-			const oldFormatItems = [
-				{ name: "Remux" },
-				{ name: "DVD" },
+		it("should reverse items and create a new array", () => {
+			const newFormatItems = [
 				{ name: "Unknown" },
+				{ name: "DVD" },
+				{ name: "Remux" },
 			];
-			const result = reverseQualityItemsIfNeeded(oldFormatItems);
+			const result = reverseQualityItemsIfNeeded(newFormatItems);
 
 			expect(result).toEqual([
 				{ name: "Remux" },
 				{ name: "DVD" },
 				{ name: "Unknown" },
 			]);
-			// Same reference - no copy made
-			expect(result).toBe(oldFormatItems);
+			// New array created, original untouched
+			expect(result).not.toBe(newFormatItems);
 		});
 
 		it("should handle empty arrays", () => {
@@ -279,7 +275,7 @@ describe("Quality Format Reversal (TRaSH Guides PR #2590)", () => {
 			expect(reverseQualityItemsIfNeeded(undefined as unknown as any[])).toBe(undefined);
 		});
 
-		it("should preserve item properties when not reversing", () => {
+		it("should preserve item properties after reversing", () => {
 			const items = [
 				{ name: "Unknown", allowed: false, id: 1 },
 				{ name: "DVD", allowed: true, id: 2 },
@@ -287,36 +283,11 @@ describe("Quality Format Reversal (TRaSH Guides PR #2590)", () => {
 			];
 			const result = reverseQualityItemsIfNeeded(items);
 
-			// Same reference returned
-			expect(result).toBe(items);
-			// All properties intact
-			expect(result[0]).toEqual({ name: "Unknown", allowed: false, id: 1 });
-			expect(result[2]).toEqual({ name: "Remux", allowed: true, id: 3 });
-		});
-	});
-
-	describe("when TRASH_GUIDES_NEW_QUALITY_FORMAT_MERGED is true (future state)", () => {
-		// These tests document expected behavior AFTER PR #2590 merges.
-		// Currently skipped because the flag is false.
-		// When PR #2590 merges, change the flag and unskip these tests.
-
-		it.skip("should reverse items when flag is enabled", () => {
-			// After PR #2590, TRaSH will use NEW format (low→high)
-			// We need to reverse for API compatibility (high→low)
-			const newFormatItems = [
-				{ name: "Unknown" },
-				{ name: "DVD" },
-				{ name: "Remux" },
-			];
-
-			// When flag is true, this should reverse
-			// const result = reverseQualityItemsIfNeeded(newFormatItems);
-			// expect(result).toEqual([
-			// 	{ name: "Remux" },
-			// 	{ name: "DVD" },
-			// 	{ name: "Unknown" },
-			// ]);
-			// expect(result).not.toBe(newFormatItems); // New array created
+			// New array, reversed
+			expect(result).not.toBe(items);
+			// All properties intact, order reversed
+			expect(result[0]).toEqual({ name: "Remux", allowed: true, id: 3 });
+			expect(result[2]).toEqual({ name: "Unknown", allowed: false, id: 1 });
 		});
 	});
 });

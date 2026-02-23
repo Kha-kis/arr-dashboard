@@ -5,9 +5,9 @@
  * (schema-based, cloned, custom) and the quality profile sync logic.
  */
 
-import type { SonarrClient, RadarrClient } from "arr-sdk";
-import { calculateScoreAndSource } from "./template-score-utils.js";
+import type { RadarrClient, SonarrClient } from "arr-sdk";
 import { loggers } from "../logger.js";
+import { calculateScoreAndSource } from "./template-score-utils.js";
 
 const log = loggers.deployment;
 
@@ -40,7 +40,7 @@ export interface TemplateCF {
  * See: https://github.com/TRaSH-Guides/Guides/pull/2590
  * See: https://github.com/Kha-kis/arr-dashboard/issues/85
  */
-export const TRASH_GUIDES_NEW_QUALITY_FORMAT_MERGED = false;
+export const TRASH_GUIDES_NEW_QUALITY_FORMAT_MERGED = true;
 
 /**
  * Reverses quality items if TRaSH Guides uses NEW format (PR #2590).
