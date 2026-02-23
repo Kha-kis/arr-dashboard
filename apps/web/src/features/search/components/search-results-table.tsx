@@ -2,22 +2,22 @@
 
 import type { SearchResult } from "@arr/shared";
 import { Copy, ExternalLink, Search } from "lucide-react";
-import { Button } from "../../../components/ui/button";
 import {
+	PremiumEmptyState,
+	PremiumSkeleton,
 	PremiumTable,
 	PremiumTableHeader,
 	PremiumTableRow,
-	PremiumEmptyState,
-	PremiumSkeleton,
 	StatusBadge,
 } from "../../../components/layout";
+import { Button } from "../../../components/ui/button";
+import { formatBytes } from "../../../lib/format-utils";
 import {
-	useIncognitoMode,
-	getLinuxIsoName,
 	getLinuxIndexer,
 	getLinuxInstanceName,
+	getLinuxIsoName,
+	useIncognitoMode,
 } from "../../../lib/incognito";
-import { formatBytes } from "../../../lib/format-utils";
 
 const integer = new Intl.NumberFormat();
 
@@ -146,8 +146,12 @@ export const SearchResultsTable = ({
 			<table className="w-full divide-y divide-border text-sm text-muted-foreground">
 				<PremiumTableHeader>
 					<tr>
-						<th className="px-4 py-3 text-left text-xs uppercase tracking-wide text-muted-foreground">Release</th>
-						<th className="px-4 py-3 text-right text-xs uppercase tracking-wide text-muted-foreground">Actions</th>
+						<th className="px-4 py-3 text-left text-xs uppercase tracking-wide text-muted-foreground">
+							Release
+						</th>
+						<th className="px-4 py-3 text-right text-xs uppercase tracking-wide text-muted-foreground">
+							Actions
+						</th>
 					</tr>
 				</PremiumTableHeader>
 				<tbody className="divide-y divide-border">
@@ -181,9 +185,7 @@ export const SearchResultsTable = ({
 													{qualityLabel}
 												</span>
 											) : null}
-											{result.rejected ? (
-												<StatusBadge status="error">Rejected</StatusBadge>
-											) : null}
+											{result.rejected ? <StatusBadge status="error">Rejected</StatusBadge> : null}
 										</div>
 
 										<div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
@@ -192,7 +194,9 @@ export const SearchResultsTable = ({
 											</span>
 											<span className="text-muted-foreground">#{result.indexerId}</span>
 											<span className="text-muted-foreground">
-												{incognitoMode ? getLinuxInstanceName(result.instanceName) : result.instanceName}
+												{incognitoMode
+													? getLinuxInstanceName(result.instanceName)
+													: result.instanceName}
 											</span>
 										</div>
 

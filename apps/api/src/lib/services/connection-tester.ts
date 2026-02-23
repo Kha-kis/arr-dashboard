@@ -20,6 +20,13 @@ export async function testServiceConnection(
 	service: string,
 ): Promise<ConnectionTestResult> {
 	try {
+		const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
+
+		// Tautulli uses query-param auth instead of X-Api-Key header
+		if (service === "tautulli") {
+			return await testTautulliConnection(normalizedBaseUrl, apiKey);
+		}
+
 		// Seerr uses its own status endpoint; Prowlarr/Lidarr/Readarr use v1; Sonarr/Radarr use v3
 		const apiPath =
 			service === "seerr"
@@ -27,7 +34,6 @@ export async function testServiceConnection(
 				: ["prowlarr", "lidarr", "readarr"].includes(service)
 					? "/api/v1/system/status"
 					: "/api/v3/system/status";
-		const normalizedBaseUrl = baseUrl.replace(/\/$/, "");
 		const testUrl = `${normalizedBaseUrl}${apiPath}`;
 
 		const response = await fetch(testUrl, {
@@ -129,19 +135,67 @@ function handleHttpError(response: Response, baseUrl: string): ConnectionTestRes
 }
 
 /**
+ * Tests connection to a Tautulli instance using query-param auth.
+ */
+async function testTautulliConnection(
+	baseUrl: string,
+	apiKey: string,
+): Promise<ConnectionTestResult> {
+	const testUrl = `${baseUrl}/api/v2?apikey=${encodeURIComponent(apiKey)}&cmd=get_tautulli_info`;
+
+	const response = await fetch(testUrl, {
+		headers: { Accept: "application/json" },
+		signal: AbortSignal.timeout(5000),
+	});
+
+	if (!response.ok) {
+		return handleHttpError(response, baseUrl);
+	}
+
+	const contentType = response.headers.get("content-type");
+	if (!contentType?.includes("application/json")) {
+		return {
+			success: false,
+			error: "Invalid response format",
+			details:
+				"Received HTML instead of JSON. Check if the base URL is correct (e.g., http://localhost:8181).",
+		};
+	}
+
+	const json = (await response.json()) as {
+		response?: { result?: string; data?: { tautulli_version?: string } };
+	};
+
+	if (json.response?.result !== "success") {
+		return {
+			success: false,
+			error: "Tautulli API returned an error",
+			details: "Check that the API key is correct and Tautulli is running.",
+		};
+	}
+
+	const version = json.response.data?.tautulli_version ?? "unknown";
+	return {
+		success: true,
+		message: "Successfully connected to Tautulli",
+		version,
+	};
+}
+
+/**
  * Handles connection errors and returns appropriate error result
  */
 function handleConnectionError(error: unknown): ConnectionTestResult {
 	let errorMessage = "Connection failed";
 	let details = "Unknown error";
 
-	if (
-		error &&
-		typeof error === "object" &&
-		("name" in error || "code" in error || "message" in error)
-	) {
-		const err = error as { name?: string; code?: string; message?: string };
+	// Node.js fetch wraps real errors in TypeError with message "fetch failed" —
+	// the actual cause (ECONNREFUSED, ENOTFOUND, etc.) is in error.cause
+	const raw = error as { cause?: unknown; name?: string; code?: string; message?: string };
+	const cause = raw?.cause as { name?: string; code?: string; message?: string } | undefined;
+	const err = cause?.code || cause?.name ? cause : raw;
 
+	if (err && typeof err === "object") {
 		if (err.name === "TimeoutError" || err.code === "ETIMEDOUT") {
 			errorMessage = "Connection timeout";
 			details =
@@ -150,8 +204,18 @@ function handleConnectionError(error: unknown): ConnectionTestResult {
 			errorMessage = "Connection refused";
 			details =
 				"Could not connect to the service. Verify the base URL and that the service is running.";
-		} else if (err.message) {
+		} else if (err.code === "ENOTFOUND") {
+			errorMessage = "Host not found";
+			details =
+				"Could not resolve the hostname. Check that the base URL is correct and the DNS name is reachable from this server.";
+		} else if (err.code === "UNABLE_TO_VERIFY_LEAF_SIGNATURE" || err.code === "CERT_HAS_EXPIRED" || err.code === "DEPTH_ZERO_SELF_SIGNED_CERT") {
+			errorMessage = "TLS/SSL error";
+			details =
+				"Certificate verification failed. If using a self-signed certificate, try using HTTP instead of HTTPS, or configure your system to trust the certificate.";
+		} else if (err.message && err.message !== "fetch failed") {
 			details = err.message;
+		} else if (cause?.message) {
+			details = cause.message;
 		}
 	}
 

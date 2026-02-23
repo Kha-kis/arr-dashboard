@@ -1,33 +1,38 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import {
+	AlertCircle,
+	Check,
+	Clock,
+	Info,
+	Loader2,
 	Monitor,
+	RefreshCw,
+	Shield,
 	Smartphone,
 	Tablet,
-	RefreshCw,
-	Clock,
 	Wifi,
-	AlertCircle,
-	Shield,
-	Check,
 	X,
-	Loader2,
-	Info,
 } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import {
+	GlassmorphicCard,
+	PremiumEmptyState,
+	PremiumSection,
+	PremiumSkeleton,
+} from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
-import { PremiumSection, GlassmorphicCard, PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import {
 	type DeviceType,
-	type SessionInfo,
-	type SessionsResponse,
 	getSessions,
 	revokeSession,
+	type SessionInfo,
+	type SessionsResponse,
 } from "../../../lib/api-client/auth";
-import { cn } from "../../../lib/utils";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { cn } from "../../../lib/utils";
 
 /**
  * Device type icon component using lucide-react
@@ -279,7 +284,7 @@ export const SessionsSection = () => {
 													? "border-transparent"
 													: isExpired
 														? "border-transparent"
-														: "border-border/50 bg-card/30 hover:border-border/80"
+														: "border-border/50 bg-card/30 hover:border-border/80",
 											)}
 											style={{
 												animationDelay: `${index * 50}ms`,
@@ -378,7 +383,7 @@ export const SessionsSection = () => {
 													<p
 														className={cn(
 															"text-sm font-medium",
-															isExpired ? "text-destructive" : "text-muted-foreground"
+															isExpired ? "text-destructive" : "text-muted-foreground",
 														)}
 													>
 														{getTimeRemaining(session.expiresAt)}

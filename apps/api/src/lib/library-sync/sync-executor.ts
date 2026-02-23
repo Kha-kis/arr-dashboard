@@ -6,10 +6,10 @@
  */
 
 import type { LibraryItem, LibraryService } from "@arr/shared";
-import type { Prisma, PrismaClient, ServiceInstance } from "../../lib/prisma.js";
+import { LidarrClient, RadarrClient, ReadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyBaseLogger } from "fastify";
+import type { Prisma, PrismaClient, ServiceInstance } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
-import { SonarrClient, RadarrClient, LidarrClient, ReadarrClient } from "arr-sdk";
 import { buildLibraryItem } from "../library/library-item-builder.js";
 import { getErrorMessage } from "../utils/error-message.js";
 

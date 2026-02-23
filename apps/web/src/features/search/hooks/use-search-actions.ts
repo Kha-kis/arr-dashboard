@@ -1,15 +1,11 @@
-import { useCallback, useState } from "react";
 import type { SearchResult } from "@arr/shared";
-import {
-	useManualSearchMutation,
-	useGrabSearchResultMutation,
-} from "../../../hooks/api/useSearch";
-import { buildFilters, deriveGrabErrorMessage } from "../lib/search-utils";
-import { safeOpenUrl } from "../../../lib/utils/url-validation";
-import { copyToClipboard } from "../../../lib/utils/clipboard";
-import type { SearchStateActions } from "./use-search-state";
+import { useCallback, useState } from "react";
+import { useGrabSearchResultMutation, useManualSearchMutation } from "../../../hooks/api/useSearch";
 import { getErrorMessage } from "../../../lib/error-utils";
-
+import { copyToClipboard } from "../../../lib/utils/clipboard";
+import { safeOpenUrl } from "../../../lib/utils/url-validation";
+import { buildFilters, deriveGrabErrorMessage } from "../lib/search-utils";
+import type { SearchStateActions } from "./use-search-state";
 
 /**
  * Hook for managing search actions: performing searches, grabbing results,

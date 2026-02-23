@@ -6,10 +6,10 @@ import type {
 	SearchResult,
 } from "@arr/shared";
 import { prowlarrIndexerDetailsSchema } from "@arr/shared";
-import type { ServiceInstance } from "../../lib/prisma.js";
 import type { ProwlarrClient } from "arr-sdk/prowlarr";
-import { normalizeIndexer, normalizeIndexerDetails, normalizeSearchResult } from "./normalizers.js";
+import type { ServiceInstance } from "../../lib/prisma.js";
 import { loggers } from "../logger.js";
+import { normalizeIndexer, normalizeIndexerDetails, normalizeSearchResult } from "./normalizers.js";
 
 const log = loggers.api;
 

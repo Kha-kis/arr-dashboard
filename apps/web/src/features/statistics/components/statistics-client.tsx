@@ -1,16 +1,16 @@
 "use client";
 
+import { BarChart3, BookOpen, Film, Globe, Music, RefreshCw, Tv } from "lucide-react";
 import { useState } from "react";
-import { Button } from "../../../components/ui/button";
-import { Alert, AlertDescription } from "../../../components/ui";
 import { PremiumSkeleton } from "../../../components/layout";
-import { useStatisticsData } from "../hooks/useStatisticsData";
-import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { Alert, AlertDescription } from "../../../components/ui";
+import { Button } from "../../../components/ui/button";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
-import { BarChart3, Tv, Film, Globe, RefreshCw, Music, BookOpen } from "lucide-react";
-import { OverviewTab } from "./overview-tab";
+import { useStatisticsData } from "../hooks/useStatisticsData";
 import { ArrServiceTab } from "./arr-service-tab";
+import { OverviewTab } from "./overview-tab";
 import { ProwlarrTab } from "./prowlarr-tab";
 import type { StatisticsTab } from "./statistics-tabs";
 
@@ -44,13 +44,49 @@ export const StatisticsClient = () => {
 		setTimeout(() => setIsRefreshing(false), 500);
 	};
 
-	const tabs: Array<{ id: StatisticsTab; label: string; icon: React.ComponentType<{ className?: string }>; count?: number; gradient?: { from: string; to: string; glow: string } }> = [
+	const tabs: Array<{
+		id: StatisticsTab;
+		label: string;
+		icon: React.ComponentType<{ className?: string }>;
+		count?: number;
+		gradient?: { from: string; to: string; glow: string };
+	}> = [
 		{ id: "overview", label: "Overview", icon: BarChart3 },
-		{ id: "sonarr", label: "Sonarr", icon: Tv, count: sonarrRows.length, gradient: SERVICE_GRADIENTS.sonarr },
-		{ id: "radarr", label: "Radarr", icon: Film, count: radarrRows.length, gradient: SERVICE_GRADIENTS.radarr },
-		{ id: "lidarr", label: "Lidarr", icon: Music, count: lidarrRows.length, gradient: SERVICE_GRADIENTS.lidarr },
-		{ id: "readarr", label: "Readarr", icon: BookOpen, count: readarrRows.length, gradient: SERVICE_GRADIENTS.readarr },
-		{ id: "prowlarr", label: "Prowlarr", icon: Globe, count: prowlarrRows.length, gradient: SERVICE_GRADIENTS.prowlarr },
+		{
+			id: "sonarr",
+			label: "Sonarr",
+			icon: Tv,
+			count: sonarrRows.length,
+			gradient: SERVICE_GRADIENTS.sonarr,
+		},
+		{
+			id: "radarr",
+			label: "Radarr",
+			icon: Film,
+			count: radarrRows.length,
+			gradient: SERVICE_GRADIENTS.radarr,
+		},
+		{
+			id: "lidarr",
+			label: "Lidarr",
+			icon: Music,
+			count: lidarrRows.length,
+			gradient: SERVICE_GRADIENTS.lidarr,
+		},
+		{
+			id: "readarr",
+			label: "Readarr",
+			icon: BookOpen,
+			count: readarrRows.length,
+			gradient: SERVICE_GRADIENTS.readarr,
+		},
+		{
+			id: "prowlarr",
+			label: "Prowlarr",
+			icon: Globe,
+			count: prowlarrRows.length,
+			gradient: SERVICE_GRADIENTS.prowlarr,
+		},
 	];
 
 	// Loading skeleton
@@ -63,13 +99,22 @@ export const StatisticsClient = () => {
 				</div>
 				<div className="grid gap-4 md:grid-cols-4">
 					{[0, 1, 2, 3].map((i) => (
-						<div
-							key={i}
-							className="rounded-2xl border border-border/30 bg-card/30 p-6"
-						>
-							<PremiumSkeleton variant="circle" className="h-12 w-12 rounded-xl mb-4" style={{ animationDelay: `${i * 50}ms` }} />
-							<PremiumSkeleton variant="line" className="h-8 w-16 mb-2" style={{ animationDelay: `${i * 50 + 25}ms` }} />
-							<PremiumSkeleton variant="line" className="h-4 w-24" style={{ animationDelay: `${i * 50 + 50}ms` }} />
+						<div key={i} className="rounded-2xl border border-border/30 bg-card/30 p-6">
+							<PremiumSkeleton
+								variant="circle"
+								className="h-12 w-12 rounded-xl mb-4"
+								style={{ animationDelay: `${i * 50}ms` }}
+							/>
+							<PremiumSkeleton
+								variant="line"
+								className="h-8 w-16 mb-2"
+								style={{ animationDelay: `${i * 50 + 25}ms` }}
+							/>
+							<PremiumSkeleton
+								variant="line"
+								className="h-4 w-24"
+								style={{ animationDelay: `${i * 50 + 50}ms` }}
+							/>
 						</div>
 					))}
 				</div>
@@ -113,13 +158,13 @@ export const StatisticsClient = () => {
 						disabled={isFetching}
 						className={cn(
 							"relative overflow-hidden transition-all duration-300",
-							isRefreshing && "pointer-events-none"
+							isRefreshing && "pointer-events-none",
 						)}
 					>
 						<RefreshCw
 							className={cn(
 								"h-4 w-4 mr-2 transition-transform duration-500",
-								isRefreshing && "animate-spin"
+								isRefreshing && "animate-spin",
 							)}
 						/>
 						Refresh
@@ -153,7 +198,7 @@ export const StatisticsClient = () => {
 								onClick={() => setActiveTab(tab.id)}
 								className={cn(
 									"relative flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-all duration-300",
-									isActive ? "text-white" : "text-muted-foreground hover:text-foreground"
+									isActive ? "text-white" : "text-muted-foreground hover:text-foreground",
 								)}
 							>
 								{isActive && (
@@ -171,9 +216,7 @@ export const StatisticsClient = () => {
 									<span
 										className={cn(
 											"relative z-10 ml-1 px-2 py-0.5 rounded-full text-xs font-medium",
-											isActive
-												? "bg-white/20 text-white"
-												: "bg-muted/50 text-muted-foreground"
+											isActive ? "bg-white/20 text-white" : "bg-muted/50 text-muted-foreground",
 										)}
 									>
 										{tab.count}
@@ -214,19 +257,43 @@ export const StatisticsClient = () => {
 			)}
 
 			{activeTab === "sonarr" && (
-				<ArrServiceTab serviceType="sonarr" icon={Tv} gradient={SERVICE_GRADIENTS.sonarr} totals={sonarrTotals} rows={sonarrRows} />
+				<ArrServiceTab
+					serviceType="sonarr"
+					icon={Tv}
+					gradient={SERVICE_GRADIENTS.sonarr}
+					totals={sonarrTotals}
+					rows={sonarrRows}
+				/>
 			)}
 
 			{activeTab === "radarr" && (
-				<ArrServiceTab serviceType="radarr" icon={Film} gradient={SERVICE_GRADIENTS.radarr} totals={radarrTotals} rows={radarrRows} />
+				<ArrServiceTab
+					serviceType="radarr"
+					icon={Film}
+					gradient={SERVICE_GRADIENTS.radarr}
+					totals={radarrTotals}
+					rows={radarrRows}
+				/>
 			)}
 
 			{activeTab === "lidarr" && (
-				<ArrServiceTab serviceType="lidarr" icon={Music} gradient={SERVICE_GRADIENTS.lidarr} totals={lidarrTotals} rows={lidarrRows} />
+				<ArrServiceTab
+					serviceType="lidarr"
+					icon={Music}
+					gradient={SERVICE_GRADIENTS.lidarr}
+					totals={lidarrTotals}
+					rows={lidarrRows}
+				/>
 			)}
 
 			{activeTab === "readarr" && (
-				<ArrServiceTab serviceType="readarr" icon={BookOpen} gradient={SERVICE_GRADIENTS.readarr} totals={readarrTotals} rows={readarrRows} />
+				<ArrServiceTab
+					serviceType="readarr"
+					icon={BookOpen}
+					gradient={SERVICE_GRADIENTS.readarr}
+					totals={readarrTotals}
+					rows={readarrRows}
+				/>
 			)}
 
 			{activeTab === "prowlarr" && (

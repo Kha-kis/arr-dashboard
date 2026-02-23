@@ -1,48 +1,47 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
-import Link from "next/link";
-import { motion } from "framer-motion";
 import type { QueueItem } from "@arr/shared";
+import { motion } from "framer-motion";
 import {
-	Button,
+	Activity,
+	AlertCircle,
+	AlertTriangle,
+	BookOpen,
+	ChevronRight,
+	Film,
+	ListOrdered,
+	Music,
+	RefreshCw,
+	Search,
+	Server,
+	Tv,
+	Zap,
+} from "lucide-react";
+import Link from "next/link";
+import { useCallback, useMemo, useState } from "react";
+import { PremiumSkeleton } from "../../../components/layout/premium-components";
+import { springs } from "../../../components/motion";
+import { QueueFilters, ServiceInstancesTable } from "../../../components/presentational";
+import {
 	Alert,
-	AlertTitle,
 	AlertDescription,
+	AlertTitle,
+	Button,
 	EmptyState,
 	Pagination,
 	Typography,
 } from "../../../components/ui";
-import { PremiumSkeleton } from "../../../components/layout/premium-components";
-import {
-	AlertCircle,
-	AlertTriangle,
-	RefreshCw,
-	Tv,
-	Film,
-	Search,
-	ListOrdered,
-	Activity,
-	Zap,
-	Server,
-	ChevronRight,
-	Music,
-	BookOpen,
-} from "lucide-react";
-import { springs } from "../../../components/motion";
-import { QueueTable } from "./queue-table";
-import { DashboardTabs, type DashboardTab } from "./dashboard-tabs";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { useIncognitoMode } from "../../../lib/incognito";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import { cn } from "../../../lib/utils";
 import ManualImportModal from "../../manual-import/components/manual-import-modal";
-import { ServiceInstancesTable, QueueFilters } from "../../../components/presentational";
+import { useQueueGrouping } from "../hooks";
 import { useDashboardData } from "../hooks/useDashboardData";
 import { useDashboardFilters } from "../hooks/useDashboardFilters";
 import { useDashboardQueue } from "../hooks/useDashboardQueue";
-import { useQueueGrouping } from "../hooks";
-
-import { useIncognitoMode } from "../../../lib/incognito";
-import { SERVICE_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { cn } from "../../../lib/utils";
+import { type DashboardTab, DashboardTabs } from "./dashboard-tabs";
+import { QueueTable } from "./queue-table";
 import { SeerrRequestsWidget } from "./seerr-requests-widget";
 
 /** Map of instanceId to baseUrl for linking to instances */
@@ -82,11 +81,18 @@ const ServiceStatCard = ({
 	themeGradient?: { from: string; to: string; glow: string };
 }) => {
 	// Use theme gradient for queue, service-specific for others
-	const config = isQueue && themeGradient
-		? { ...themeGradient, icon: ListOrdered, label: "Queue" }
-		: service !== "queue"
-			? SERVICE_CONFIG[service]
-			: { from: SEMANTIC_COLORS.success.from, to: SEMANTIC_COLORS.success.to, glow: SEMANTIC_COLORS.success.glow, icon: ListOrdered, label: "Queue" };
+	const config =
+		isQueue && themeGradient
+			? { ...themeGradient, icon: ListOrdered, label: "Queue" }
+			: service !== "queue"
+				? SERVICE_CONFIG[service]
+				: {
+						from: SEMANTIC_COLORS.success.from,
+						to: SEMANTIC_COLORS.success.to,
+						glow: SEMANTIC_COLORS.success.glow,
+						icon: ListOrdered,
+						label: "Queue",
+					};
 
 	const Icon = config.icon;
 	const hasItems = isQueue && value > 0;
@@ -99,7 +105,7 @@ const ServiceStatCard = ({
 			className={cn(
 				"group relative overflow-hidden rounded-2xl border border-border/50 bg-card/50 backdrop-blur-xs p-6 text-left transition-colors duration-300",
 				onClick && "cursor-pointer hover:border-border",
-				!onClick && "cursor-default"
+				!onClick && "cursor-default",
 			)}
 			initial={{ opacity: 0, y: 20 }}
 			animate={{ opacity: 1, y: 0 }}
@@ -107,22 +113,30 @@ const ServiceStatCard = ({
 				...springs.soft,
 				delay: animationDelay / 1000,
 			}}
-			whileHover={onClick ? {
-				y: -4,
-				scale: 1.02,
-				boxShadow: `0 20px 40px -12px ${config.glow}`,
-				transition: springs.soft,
-			} : undefined}
-			whileTap={onClick ? {
-				scale: 0.98,
-				transition: springs.quick,
-			} : undefined}
+			whileHover={
+				onClick
+					? {
+							y: -4,
+							scale: 1.02,
+							boxShadow: `0 20px 40px -12px ${config.glow}`,
+							transition: springs.soft,
+						}
+					: undefined
+			}
+			whileTap={
+				onClick
+					? {
+							scale: 0.98,
+							transition: springs.quick,
+						}
+					: undefined
+			}
 		>
 			{/* Ambient glow on hover */}
 			<div
 				className={cn(
 					"pointer-events-none absolute -inset-4 opacity-0 blur-2xl transition-opacity duration-500",
-					onClick && "group-hover:opacity-40"
+					onClick && "group-hover:opacity-40",
 				)}
 				style={{ backgroundColor: config.glow }}
 			/>
@@ -144,7 +158,7 @@ const ServiceStatCard = ({
 					<div
 						className={cn(
 							"flex h-12 w-12 items-center justify-center rounded-xl transition-all duration-300",
-							onClick && "group-hover:scale-110"
+							onClick && "group-hover:scale-110",
 						)}
 						style={{
 							background: `linear-gradient(135deg, ${config.from}, ${config.to})`,
@@ -159,7 +173,7 @@ const ServiceStatCard = ({
 						<ChevronRight
 							className={cn(
 								"h-5 w-5 text-muted-foreground transition-all duration-300",
-								"opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0"
+								"opacity-0 -translate-x-2 group-hover:opacity-100 group-hover:translate-x-0",
 							)}
 						/>
 					)}
@@ -170,7 +184,7 @@ const ServiceStatCard = ({
 					<span
 						className={cn(
 							"text-4xl font-bold tracking-tight transition-all duration-300",
-							onClick && "group-hover:translate-x-1"
+							onClick && "group-hover:translate-x-1",
 						)}
 						style={{
 							background: `linear-gradient(135deg, ${config.from}, ${config.to})`,
@@ -189,15 +203,13 @@ const ServiceStatCard = ({
 				</p>
 
 				{/* Description */}
-				<p className="mt-1 text-xs text-muted-foreground">
-					{description}
-				</p>
+				<p className="mt-1 text-xs text-muted-foreground">{description}</p>
 
 				{/* Active indicator line */}
 				<div
 					className={cn(
 						"absolute bottom-0 left-0 h-0.5 transition-all duration-500",
-						onClick ? "w-0 group-hover:w-full" : "w-8"
+						onClick ? "w-0 group-hover:w-full" : "w-8",
 					)}
 					style={{
 						background: `linear-gradient(90deg, ${config.from}, ${config.to})`,
@@ -340,12 +352,15 @@ export const DashboardClient = () => {
 	} = useDashboardQueue(queueRefetch);
 
 	// Manual import handler - extracts first item and opens modal (memoized)
-	const handleManualImport = useCallback((items: QueueItem[]) => {
-		const [first] = items;
-		if (first) {
-			openManualImport(first);
-		}
-	}, [openManualImport]);
+	const handleManualImport = useCallback(
+		(items: QueueItem[]) => {
+			const [first] = items;
+			if (first) {
+				openManualImport(first);
+			}
+		},
+		[openManualImport],
+	);
 
 	// Refresh handler with animation
 	const handleRefresh = async () => {
@@ -378,7 +393,12 @@ export const DashboardClient = () => {
 	}
 
 	// Calculate total instances
-	const totalInstances = (groupedByService.sonarr ?? 0) + (groupedByService.radarr ?? 0) + (groupedByService.prowlarr ?? 0) + (groupedByService.lidarr ?? 0) + (groupedByService.readarr ?? 0);
+	const totalInstances =
+		(groupedByService.sonarr ?? 0) +
+		(groupedByService.radarr ?? 0) +
+		(groupedByService.prowlarr ?? 0) +
+		(groupedByService.lidarr ?? 0) +
+		(groupedByService.readarr ?? 0);
 
 	return (
 		<>
@@ -406,13 +426,12 @@ export const DashboardClient = () => {
 							</span>
 						</h1>
 						<p className="text-muted-foreground max-w-xl">
-							Your media server command center. {totalInstances} instance{totalInstances !== 1 ? "s" : ""} configured
+							Your media server command center. {totalInstances} instance
+							{totalInstances !== 1 ? "s" : ""} configured
 							{totalQueueItems > 0 && (
-								<span
-									className="font-medium"
-									style={{ color: themeGradient.from }}
-								>
-									{" "}with {totalQueueItems} items in queue
+								<span className="font-medium" style={{ color: themeGradient.from }}>
+									{" "}
+									with {totalQueueItems} items in queue
 								</span>
 							)}
 						</p>
@@ -423,13 +442,13 @@ export const DashboardClient = () => {
 						onClick={() => void handleRefresh()}
 						className={cn(
 							"relative overflow-hidden transition-all duration-300",
-							isRefreshing && "pointer-events-none"
+							isRefreshing && "pointer-events-none",
 						)}
 					>
 						<RefreshCw
 							className={cn(
 								"h-4 w-4 mr-2 transition-transform duration-500",
-								isRefreshing && "animate-spin"
+								isRefreshing && "animate-spin",
 							)}
 						/>
 						Refresh
@@ -547,8 +566,7 @@ export const DashboardClient = () => {
 										<p className="text-sm text-muted-foreground">
 											{services.length === 0
 												? "Add your first instance to get started"
-												: `${services.length} connected service${services.length !== 1 ? "s" : ""}`
-											}
+												: `${services.length} connected service${services.length !== 1 ? "s" : ""}`}
 										</p>
 									</div>
 								</div>
@@ -566,7 +584,8 @@ export const DashboardClient = () => {
 											</div>
 											<h3 className="text-lg font-medium mb-1">No instances configured</h3>
 											<p className="text-sm text-muted-foreground max-w-sm mx-auto">
-												Add a Sonarr, Radarr, Lidarr, Readarr, or Prowlarr instance from the Settings page to begin monitoring.
+												Add a Sonarr, Radarr, Lidarr, Readarr, or Prowlarr instance from the
+												Settings page to begin monitoring.
 											</p>
 										</div>
 									) : (
@@ -580,9 +599,7 @@ export const DashboardClient = () => {
 
 				{/* Queue Tab */}
 				{activeTab === "queue" && (
-					<div
-						className="animate-in fade-in duration-300"
-					>
+					<div className="animate-in fade-in duration-300">
 						<div className="rounded-2xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden">
 							<div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-border/50">
 								<div className="flex items-center gap-3">
@@ -590,7 +607,8 @@ export const DashboardClient = () => {
 										className="flex h-10 w-10 items-center justify-center rounded-xl"
 										style={{
 											background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,
-											boxShadow: totalQueueItems > 0 ? `0 8px 24px -8px ${themeGradient.glow}` : undefined,
+											boxShadow:
+												totalQueueItems > 0 ? `0 8px 24px -8px ${themeGradient.glow}` : undefined,
 										}}
 									>
 										<ListOrdered className="h-5 w-5 text-white" />
@@ -598,7 +616,8 @@ export const DashboardClient = () => {
 									<div>
 										<h2 className="text-lg font-semibold">Active Queue</h2>
 										<p className="text-sm text-muted-foreground">
-											Monitoring {queueInstances.length} instance{queueInstances.length === 1 ? "" : "s"}
+											Monitoring {queueInstances.length} instance
+											{queueInstances.length === 1 ? "" : "s"}
 										</p>
 									</div>
 								</div>
@@ -606,12 +625,7 @@ export const DashboardClient = () => {
 								<div className="flex items-center gap-3">
 									{/* Problematic items link to Queue Cleaner */}
 									{problematicCount > 0 && (
-										<Button
-											variant="secondary"
-											size="sm"
-											asChild
-											className="gap-2"
-										>
+										<Button variant="secondary" size="sm" asChild className="gap-2">
 											<Link href="/queue-cleaner">
 												<AlertTriangle className="h-4 w-4 text-amber-500" />
 												{problematicCount} Problematic
@@ -621,7 +635,8 @@ export const DashboardClient = () => {
 									)}
 
 									<Typography variant="caption" className="text-muted-foreground">
-										Showing {paginatedRows.length} of {allSummaryRows.length} cards ({filteredItems.length} items)
+										Showing {paginatedRows.length} of {allSummaryRows.length} cards (
+										{filteredItems.length} items)
 									</Typography>
 								</div>
 							</div>

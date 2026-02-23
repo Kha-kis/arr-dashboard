@@ -15,9 +15,12 @@ async function runEnhancedPreview(instanceId: string): Promise<EnhancedPreviewRe
 }
 
 async function triggerClean(instanceId: string): Promise<{ triggered: boolean; message: string }> {
-	return apiRequest<{ triggered: boolean; message: string }>(`/api/queue-cleaner/trigger/${instanceId}`, {
-		method: "POST",
-	});
+	return apiRequest<{ triggered: boolean; message: string }>(
+		`/api/queue-cleaner/trigger/${instanceId}`,
+		{
+			method: "POST",
+		},
+	);
 }
 
 export function useDryRun() {

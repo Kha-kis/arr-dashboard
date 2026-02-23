@@ -1,33 +1,33 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import {
 	Activity,
-	Search,
+	AlertCircle,
 	ArrowUpCircle,
 	CheckCircle2,
-	AlertCircle,
-	Clock,
-	ListChecks,
-	Loader2,
-	Download,
-	HardDrive,
 	ChevronDown,
 	ChevronUp,
+	Clock,
+	Download,
+	HardDrive,
+	ListChecks,
+	Loader2,
 	type LucideIcon,
+	Search,
 } from "lucide-react";
-import { Pagination } from "../../../components/ui";
+import { useEffect, useState } from "react";
 import {
-	PremiumSection,
-	PremiumEmptyState,
-	GlassmorphicCard,
 	FilterSelect,
+	GlassmorphicCard,
+	PremiumEmptyState,
+	PremiumSection,
+	PremiumSkeleton,
 	ServiceBadge,
 	StatusBadge,
-	PremiumSkeleton,
 } from "../../../components/layout";
-import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { Pagination } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useHuntingLogs } from "../hooks/useHuntingLogs";
 import type { HuntLog } from "../lib/hunting-types";
 
@@ -160,11 +160,7 @@ export const HuntingActivity = () => {
 				<>
 					<div className="space-y-3">
 						{logs.map((log, index) => (
-							<ActivityLogEntry
-								key={log.id}
-								log={log}
-								animationDelay={index * 30}
-							/>
+							<ActivityLogEntry key={log.id} log={log} animationDelay={index * 30} />
 						))}
 					</div>
 
@@ -287,9 +283,7 @@ const ActivityLogEntry = ({ log, animationDelay = 0 }: ActivityLogEntryProps) =>
 					</div>
 					<div className="text-xs">
 						{isRunning ? (
-							<span style={{ color: themeGradient.from }}>
-								Started {formatTime(log.startedAt)}
-							</span>
+							<span style={{ color: themeGradient.from }}>Started {formatTime(log.startedAt)}</span>
 						) : (
 							formatTime(log.startedAt)
 						)}
@@ -307,9 +301,7 @@ const ActivityLogEntry = ({ log, animationDelay = 0 }: ActivityLogEntryProps) =>
 			{expanded && (
 				<div className="px-4 py-4 border-t border-border/30 bg-muted/10 text-sm space-y-4">
 					{/* Message */}
-					{log.message && (
-						<p className="text-muted-foreground">{log.message}</p>
-					)}
+					{log.message && <p className="text-muted-foreground">{log.message}</p>}
 
 					{/* Metadata */}
 					<div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
@@ -345,15 +337,9 @@ const ActivityLogEntry = ({ log, animationDelay = 0 }: ActivityLogEntryProps) =>
 											border: `1px solid ${SEMANTIC_COLORS.success.border}`,
 										}}
 									>
-										<span className="font-medium text-foreground flex-1">
-											{item.title}
-										</span>
-										{item.quality && (
-											<StatusBadge status="success">{item.quality}</StatusBadge>
-										)}
-										{item.indexer && (
-											<span className="text-muted-foreground">{item.indexer}</span>
-										)}
+										<span className="font-medium text-foreground flex-1">{item.title}</span>
+										{item.quality && <StatusBadge status="success">{item.quality}</StatusBadge>}
+										{item.indexer && <span className="text-muted-foreground">{item.indexer}</span>}
 										{item.size && (
 											<span className="text-muted-foreground flex items-center gap-1">
 												<HardDrive className="h-3 w-3" />
@@ -374,9 +360,7 @@ const ActivityLogEntry = ({ log, animationDelay = 0 }: ActivityLogEntryProps) =>
 					{/* Searched Items */}
 					{log.searchedItems && log.searchedItems.length > 0 && (
 						<div>
-							<h4 className="text-xs font-semibold text-muted-foreground mb-2">
-								Searched Items:
-							</h4>
+							<h4 className="text-xs font-semibold text-muted-foreground mb-2">Searched Items:</h4>
 							<div className="flex flex-wrap gap-1.5">
 								{log.searchedItems.slice(0, 10).map((item, i) => (
 									<span
@@ -420,5 +404,5 @@ function formatSize(bytes: number): string {
 	const k = 1024;
 	const sizes = ["B", "KB", "MB", "GB", "TB"];
 	const i = Math.floor(Math.log(bytes) / Math.log(k));
-	return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+	return `${parseFloat((bytes / k ** i).toFixed(1))} ${sizes[i]}`;
 }

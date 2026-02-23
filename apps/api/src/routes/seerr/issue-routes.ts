@@ -10,7 +10,10 @@ import { requireSeerrClient } from "../../lib/seerr/seerr-client.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 const instanceIdParams = z.object({ instanceId: z.string().min(1) });
-const issueIdParams = z.object({ instanceId: z.string().min(1), issueId: z.coerce.number().int().positive() });
+const issueIdParams = z.object({
+	instanceId: z.string().min(1),
+	issueId: z.coerce.number().int().positive(),
+});
 
 const listIssuesQuery = z.object({
 	take: z.coerce.number().int().min(1).max(100).default(20),

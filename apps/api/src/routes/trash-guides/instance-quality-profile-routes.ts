@@ -4,11 +4,11 @@
  * Routes for managing quality profiles on specific Radarr/Sonarr instances
  */
 
+import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import type { SonarrClient, RadarrClient } from "arr-sdk";
-import { validateRequest } from "../../lib/utils/validate.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 // ============================================================================
 // Type Definitions
@@ -103,9 +103,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 		}
 
 		// Create SDK client using factory
-		const client = request.server.arrClientFactory.create(instance) as
-			| SonarrClient
-			| RadarrClient;
+		const client = request.server.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
 
 		// Fetch current quality profile
 		const profile = await client.qualityProfile.getById(profileIdNum);
@@ -555,18 +553,17 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 			}
 
 			// Get the template mapping to find the template score
-			const templateMapping =
-				await request.server.prisma.templateQualityProfileMapping.findUnique({
-					where: {
-						instanceId_qualityProfileId: {
-							instanceId,
-							qualityProfileId: profileIdNum,
-						},
+			const templateMapping = await request.server.prisma.templateQualityProfileMapping.findUnique({
+				where: {
+					instanceId_qualityProfileId: {
+						instanceId,
+						qualityProfileId: profileIdNum,
 					},
-					include: {
-						template: true,
-					},
-				});
+				},
+				include: {
+					template: true,
+				},
+			});
 
 			if (!templateMapping) {
 				return reply.status(400).send({
@@ -590,8 +587,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 				});
 			}
 			const templateCf = templateConfigReset.customFormats?.find(
-				(cf: ParsedTemplateCustomFormat) =>
-					cf.originalConfig?._instanceCFId === customFormatIdNum,
+				(cf: ParsedTemplateCustomFormat) => cf.originalConfig?._instanceCFId === customFormatIdNum,
 			);
 
 			// Calculate the template score (if CF not in template, default to 0)
@@ -798,9 +794,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 		}
 
 		// Create SDK client using factory
-		const client = request.server.arrClientFactory.create(instance) as
-			| SonarrClient
-			| RadarrClient;
+		const client = request.server.arrClientFactory.create(instance) as SonarrClient | RadarrClient;
 
 		// Fetch current quality profile
 		const profile = await client.qualityProfile.getById(profileIdNum);
@@ -842,8 +836,7 @@ const registerInstanceQualityProfileRoutes: FastifyPluginCallback = (app, _opts,
 		// Update the formatItems with template scores for the specified CFs
 		const profileFormatItems = profile.formatItems ?? [];
 		const updatedFormatItems = profileFormatItems.map((item) => {
-			const templateScore =
-				item.format !== undefined ? templateScores.get(item.format) : undefined;
+			const templateScore = item.format !== undefined ? templateScores.get(item.format) : undefined;
 			if (templateScore !== undefined) {
 				return {
 					...item,

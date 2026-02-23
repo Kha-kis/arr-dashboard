@@ -1,7 +1,7 @@
 "use client";
 
 import { dequal } from "dequal";
-import { useEffect, useRef, useState, type DependencyList, type EffectCallback } from "react";
+import { type DependencyList, type EffectCallback, useEffect, useRef, useState } from "react";
 
 /**
  * A custom hook that works like useEffect but uses deep comparison
@@ -24,10 +24,7 @@ import { useEffect, useRef, useState, type DependencyList, type EffectCallback }
  * This ensures all mutations happen in the commit phase, making the hook
  * compatible with React's concurrent rendering features.
  */
-export function useDeepCompareEffect(
-	effect: EffectCallback,
-	deps: DependencyList
-): void {
+export function useDeepCompareEffect(effect: EffectCallback, deps: DependencyList): void {
 	// State to hold the last committed deps - triggers re-render when updated
 	const [committedDeps, setCommittedDeps] = useState<DependencyList | undefined>(undefined);
 
@@ -56,6 +53,5 @@ export function useDeepCompareEffect(
 			setCommittedDeps(depsRef.current);
 			return effectRef.current();
 		}
-		 
 	}, [hasChanged]);
 }

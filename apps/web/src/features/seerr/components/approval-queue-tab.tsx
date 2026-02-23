@@ -1,17 +1,22 @@
 "use client";
 
-import { useState, useCallback } from "react";
-import { AlertCircle, Check, X, Loader2, Trash2 } from "lucide-react";
+import type { SeerrRequest } from "@arr/shared";
+import { AlertCircle, Check, Loader2, Trash2, X } from "lucide-react";
+import { useCallback, useState } from "react";
 import { toast } from "sonner";
-import { FilterSelect, GradientButton, PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
+import {
+	FilterSelect,
+	GradientButton,
+	PremiumEmptyState,
+	PremiumSkeleton,
+} from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import {
-	useSeerrRequests,
 	useApproveSeerrRequest,
 	useDeclineSeerrRequest,
 	useDeleteSeerrRequest,
+	useSeerrRequests,
 } from "../../../hooks/api/useSeerr";
-import type { SeerrRequest } from "@arr/shared";
 import { RequestCard } from "./request-card";
 
 type RequestSort = "added" | "modified";

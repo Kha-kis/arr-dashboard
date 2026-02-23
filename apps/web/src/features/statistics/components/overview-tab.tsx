@@ -1,28 +1,28 @@
 "use client";
 
-import type { HealthIssue, CombinedDiskStats } from "@arr/shared";
-import { PremiumCard, StatCard } from "../../../components/layout";
-import {
-	useIncognitoMode,
-	getLinuxInstanceName,
-	anonymizeHealthMessage,
-	getLinuxUrl,
-} from "../../../lib/incognito";
-import { getServiceGradient, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
-import { formatBytes, formatPercent } from "../lib/formatters";
-import { ServiceQuickCard } from "./service-quick-card";
+import type { CombinedDiskStats, HealthIssue } from "@arr/shared";
 import {
 	AlertTriangle,
+	BookOpen,
 	CheckCircle2,
-	HardDrive,
 	ExternalLink,
-	Tv,
 	Film,
 	Globe,
+	HardDrive,
 	Music,
-	BookOpen,
+	Tv,
 } from "lucide-react";
+import { PremiumCard, StatCard } from "../../../components/layout";
+import {
+	anonymizeHealthMessage,
+	getLinuxInstanceName,
+	getLinuxUrl,
+	useIncognitoMode,
+} from "../../../lib/incognito";
+import { getServiceGradient, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import type { useStatisticsData } from "../hooks/useStatisticsData";
+import { formatBytes, formatPercent } from "../lib/formatters";
+import { ServiceQuickCard } from "./service-quick-card";
 import type { StatisticsTab } from "./statistics-tabs";
 
 type StatisticsData = ReturnType<typeof useStatisticsData>;
@@ -94,7 +94,9 @@ export const OverviewTab = ({
 											);
 										})()}
 										<span className="text-sm text-muted-foreground">
-											{incognitoMode ? getLinuxInstanceName(issue.instanceName) : issue.instanceName}
+											{incognitoMode
+												? getLinuxInstanceName(issue.instanceName)
+												: issue.instanceName}
 										</span>
 									</div>
 									<a
@@ -211,7 +213,11 @@ export const OverviewTab = ({
 					onViewDetails={() => onSwitchTab("sonarr")}
 					stats={[
 						{ label: "Series", value: sonarrTotals.totalSeries },
-						{ label: "Downloaded", value: formatPercent(sonarrTotals.downloadPercent), highlight: true },
+						{
+							label: "Downloaded",
+							value: formatPercent(sonarrTotals.downloadPercent),
+							highlight: true,
+						},
 						{ label: "Missing", value: sonarrTotals.missingEpisodes },
 						{ label: "Disk Usage", value: formatPercent(sonarrTotals.diskPercent) },
 					]}
@@ -223,7 +229,11 @@ export const OverviewTab = ({
 					onViewDetails={() => onSwitchTab("radarr")}
 					stats={[
 						{ label: "Movies", value: radarrTotals.totalMovies },
-						{ label: "Downloaded", value: formatPercent(radarrTotals.downloadPercent), highlight: true },
+						{
+							label: "Downloaded",
+							value: formatPercent(radarrTotals.downloadPercent),
+							highlight: true,
+						},
 						{ label: "Missing", value: radarrTotals.missingMovies },
 						{ label: "Disk Usage", value: formatPercent(radarrTotals.diskPercent) },
 					]}
@@ -235,7 +245,11 @@ export const OverviewTab = ({
 					onViewDetails={() => onSwitchTab("lidarr")}
 					stats={[
 						{ label: "Artists", value: lidarrTotals.totalArtists },
-						{ label: "Downloaded", value: formatPercent(lidarrTotals.downloadPercent), highlight: true },
+						{
+							label: "Downloaded",
+							value: formatPercent(lidarrTotals.downloadPercent),
+							highlight: true,
+						},
 						{ label: "Missing", value: lidarrTotals.missingTracks },
 						{ label: "Disk Usage", value: formatPercent(lidarrTotals.diskPercent) },
 					]}
@@ -247,7 +261,11 @@ export const OverviewTab = ({
 					onViewDetails={() => onSwitchTab("readarr")}
 					stats={[
 						{ label: "Authors", value: readarrTotals.totalAuthors },
-						{ label: "Downloaded", value: formatPercent(readarrTotals.downloadPercent), highlight: true },
+						{
+							label: "Downloaded",
+							value: formatPercent(readarrTotals.downloadPercent),
+							highlight: true,
+						},
 						{ label: "Missing", value: readarrTotals.missingBooks },
 						{ label: "Disk Usage", value: formatPercent(readarrTotals.diskPercent) },
 					]}

@@ -12,7 +12,13 @@ import { WHITELIST_TYPES } from "../lib/constants";
 import type { WhitelistPattern } from "../lib/queue-cleaner-types";
 
 // Re-export shared primitives for backward compatibility
-export { Tooltip, ToggleSwitch, ToggleRow, ConfigInput, ConfigSection } from "../../../components/layout/config-primitives";
+export {
+	ConfigInput,
+	ConfigSection,
+	ToggleRow,
+	ToggleSwitch,
+	Tooltip,
+} from "../../../components/layout/config-primitives";
 
 // ============================================================================
 // RuleSection (domain-specific — uses ToggleSwitch + plain styling)
@@ -47,9 +53,7 @@ export const RuleSection = ({
 			<ToggleSwitch checked={enabled} onChange={onToggle} label={title} />
 		</div>
 		{enabled && children && (
-			<div className="pl-7 space-y-3 border-l-2 border-border/30 ml-2">
-				{children}
-			</div>
+			<div className="pl-7 space-y-3 border-l-2 border-border/30 ml-2">{children}</div>
 		)}
 	</div>
 );
@@ -78,10 +82,7 @@ export const WhitelistEditor = ({
 	const addPattern = () => {
 		// Generate unique ID for stable React key (prevents reconciliation issues)
 		const id = `wp-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-		const newPatterns = [
-			...parsedPatterns,
-			{ type: "tracker" as const, pattern: "", id },
-		];
+		const newPatterns = [...parsedPatterns, { type: "tracker" as const, pattern: "", id }];
 		onChange(JSON.stringify(newPatterns));
 	};
 
@@ -136,18 +137,13 @@ export const WhitelistEditor = ({
 					</button>
 				</div>
 			))}
-			<Button
-				type="button"
-				variant="secondary"
-				size="sm"
-				className="gap-1.5"
-				onClick={addPattern}
-			>
+			<Button type="button" variant="secondary" size="sm" className="gap-1.5" onClick={addPattern}>
 				<Plus className="h-3.5 w-3.5" />
 				Add Pattern
 			</Button>
 			<p className="text-[10px] text-muted-foreground">
-				Items matching any pattern will be excluded from queue cleaning. Patterns are case-insensitive substring matches.
+				Items matching any pattern will be excluded from queue cleaning. Patterns are
+				case-insensitive substring matches.
 			</p>
 		</div>
 	);

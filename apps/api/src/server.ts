@@ -3,33 +3,37 @@ import fastifyHelmet from "@fastify/helmet";
 import fastifyRateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance } from "fastify";
 import { type ApiEnv, envSchema } from "./config/env.js";
-import { isArrError, arrErrorToHttpStatus } from "./lib/arr/client-factory.js";
+import { arrErrorToHttpStatus, isArrError } from "./lib/arr/client-factory.js";
 import { arrClientPlugin } from "./plugins/arr-client.js";
 import backupSchedulerPlugin from "./plugins/backup-scheduler.js";
 import deploymentExecutorPlugin from "./plugins/deployment-executor.js";
-import queueCleanerSchedulerPlugin from "./plugins/queue-cleaner-scheduler.js";
+import libraryCleanupSchedulerPlugin from "./plugins/library-cleanup-scheduler.js";
 import librarySyncSchedulerPlugin from "./plugins/library-sync-scheduler.js";
 import lifecyclePlugin from "./plugins/lifecycle.js";
+import notificationServicePlugin from "./plugins/notification-service.js";
 import { prismaPlugin } from "./plugins/prisma.js";
+import queueCleanerSchedulerPlugin from "./plugins/queue-cleaner-scheduler.js";
 import { securityPlugin } from "./plugins/security.js";
 import sessionCleanupPlugin from "./plugins/session-cleanup.js";
 import trashBackupCleanupPlugin from "./plugins/trash-backup-cleanup.js";
 import trashUpdateSchedulerPlugin from "./plugins/trash-update-scheduler.js";
+import { registerAuthRoutes } from "./routes/auth.js";
 import { registerAuthOidcRoutes } from "./routes/auth-oidc.js";
 import { registerAuthPasskeyRoutes } from "./routes/auth-passkey.js";
-import { registerAuthRoutes } from "./routes/auth.js";
 import { registerBackupRoutes } from "./routes/backup.js";
 import { registerDashboardRoutes } from "./routes/dashboard.js";
 import { registerHealthRoutes } from "./routes/health.js";
 import { registerHuntingRoutes } from "./routes/hunting.js";
-import { registerQueueCleanerRoutes } from "./routes/queue-cleaner.js";
 import { registerLibraryRoutes } from "./routes/library.js";
+import { registerLibraryCleanupRoutes } from "./routes/library-cleanup.js";
 import { registerManualImportRoutes } from "./routes/manual-import.js";
+import { registerNotificationRoutes } from "./routes/notifications.js";
 import oidcProvidersRoutes from "./routes/oidc-providers.js";
+import { registerQueueCleanerRoutes } from "./routes/queue-cleaner.js";
 import { registerSearchRoutes } from "./routes/search.js";
+import { registerSeerrRoutes } from "./routes/seerr/index.js";
 import { registerServiceRoutes } from "./routes/services.js";
 import { registerSystemRoutes } from "./routes/system.js";
-import { registerSeerrRoutes } from "./routes/seerr/index.js";
 import { registerTrashGuidesRoutes } from "./routes/trash-guides/index.js";
 
 function isPrismaKnownError(
@@ -92,6 +96,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(securityPlugin);
 	app.register(arrClientPlugin);
 	app.register(deploymentExecutorPlugin);
+	app.register(notificationServicePlugin);
 	app.register(lifecyclePlugin);
 	app.register(backupSchedulerPlugin);
 	app.register(librarySyncSchedulerPlugin);
@@ -99,6 +104,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(trashBackupCleanupPlugin);
 	app.register(trashUpdateSchedulerPlugin);
 	app.register(queueCleanerSchedulerPlugin);
+	app.register(libraryCleanupSchedulerPlugin);
 
 	app.decorateRequest("currentUser", null);
 	app.decorateRequest("sessionToken", null);
@@ -129,7 +135,11 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		// === Known application errors (statusCode convention) ===
 		// ZodValidationError, InstanceNotFoundError, TemplateNotFoundError,
 		// ConflictError, AppValidationError, ManualImportError, SchedulerNotInitializedError
-		if (error instanceof Error && "statusCode" in error && typeof (error as Record<string, unknown>).statusCode === "number") {
+		if (
+			error instanceof Error &&
+			"statusCode" in error &&
+			typeof (error as Record<string, unknown>).statusCode === "number"
+		) {
 			const statusCode = (error as Record<string, unknown>).statusCode as number;
 			if (statusCode >= 500) {
 				request.log.error({ err: error }, "application error");
@@ -206,6 +216,8 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 		api.register(registerSeerrRoutes, { prefix: "/api/seerr" });
 		api.register(registerHuntingRoutes, { prefix: "/api" });
 		api.register(registerQueueCleanerRoutes, { prefix: "/api" });
+		api.register(registerNotificationRoutes, { prefix: "/api/notifications" });
+		api.register(registerLibraryCleanupRoutes, { prefix: "/api" });
 	});
 
 	return app;

@@ -1,8 +1,8 @@
 import { arrServiceTypeSchema } from "@arr/shared";
-import type { ServiceType } from "../lib/prisma.js";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { requireInstance } from "../lib/arr/instance-helpers.js";
+import type { ServiceType } from "../lib/prisma.js";
 import { testServiceConnection } from "../lib/services/connection-tester.js";
 import { formatServiceInstance } from "../lib/services/service-formatter.js";
 import { updateInstanceTags, upsertTags } from "../lib/services/tag-manager.js";
@@ -58,7 +58,10 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	app.post("/services", async (request, reply) => {
-		const { apiKey, service, tags, isDefault, ...rest } = validateRequest(servicePayloadSchema, request.body);
+		const { apiKey, service, tags, isDefault, ...rest } = validateRequest(
+			servicePayloadSchema,
+			request.body,
+		);
 
 		const encrypted = app.encryptor.encrypt(apiKey);
 
@@ -203,10 +206,10 @@ const servicesRoute: FastifyPluginCallback = (app, _opts, done) => {
 			});
 		}
 
-		if (!["sonarr", "radarr", "prowlarr", "lidarr", "readarr", "seerr"].includes(service)) {
+		if (!["sonarr", "radarr", "prowlarr", "lidarr", "readarr", "seerr", "tautulli"].includes(service)) {
 			return reply.status(400).send({
 				error: "Invalid service type",
-				details: "Service must be sonarr, radarr, prowlarr, lidarr, readarr, or seerr",
+				details: "Service must be sonarr, radarr, prowlarr, lidarr, readarr, seerr, or tautulli",
 			});
 		}
 

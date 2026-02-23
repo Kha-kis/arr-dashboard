@@ -1,22 +1,38 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { startRegistration } from "@simplewebauthn/browser";
-import { Key, Fingerprint, Plus, Trash2, Pencil, Check, X, Loader2, ShieldCheck, Calendar } from "lucide-react";
+import {
+	Calendar,
+	Check,
+	Fingerprint,
+	Key,
+	Loader2,
+	Pencil,
+	Plus,
+	ShieldCheck,
+	Trash2,
+	X,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+import {
+	GlassmorphicCard,
+	PremiumEmptyState,
+	PremiumSection,
+	PremiumSkeleton,
+} from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
-import { PremiumSection, GlassmorphicCard, PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import {
+	deletePasskeyCredential,
 	getPasskeyCredentials,
 	getPasskeyRegistrationOptions,
-	verifyPasskeyRegistration,
-	deletePasskeyCredential,
-	renamePasskeyCredential,
 	type PasskeyCredential,
+	renamePasskeyCredential,
+	verifyPasskeyRegistration,
 } from "../../../lib/api-client/auth";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 /**
  * Premium Passkey Section
@@ -75,7 +91,10 @@ export const PasskeySection = () => {
 			await loadCredentials();
 		} catch (err) {
 			setError(
-				getErrorMessage(err, "Failed to register passkey. Make sure your device supports passkeys.")
+				getErrorMessage(
+					err,
+					"Failed to register passkey. Make sure your device supports passkeys.",
+				),
 			);
 		} finally {
 			setRegisteringPasskey(false);
@@ -176,7 +195,8 @@ export const PasskeySection = () => {
 							<div>
 								<h3 className="font-semibold text-foreground">Register New Passkey</h3>
 								<p className="text-xs text-muted-foreground">
-									You&apos;ll be prompted to use your device&apos;s biometric authentication or security key.
+									You&apos;ll be prompted to use your device&apos;s biometric authentication or
+									security key.
 								</p>
 							</div>
 						</div>
@@ -295,11 +315,7 @@ export const PasskeySection = () => {
 														<Check className="h-3.5 w-3.5" />
 														Save
 													</Button>
-													<Button
-														size="sm"
-														variant="outline"
-														onClick={cancelEdit}
-													>
+													<Button size="sm" variant="outline" onClick={cancelEdit}>
 														Cancel
 													</Button>
 												</div>
@@ -337,9 +353,7 @@ export const PasskeySection = () => {
 															<Calendar className="h-3 w-3" />
 															Created: {formatDate(credential.createdAt)}
 														</span>
-														<span>
-															Last used: {formatDate(credential.lastUsedAt)}
-														</span>
+														<span>Last used: {formatDate(credential.lastUsedAt)}</span>
 													</p>
 												</>
 											)}

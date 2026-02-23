@@ -5,26 +5,29 @@
  * Used by the frontend to enrich library cards with Seerr data.
  */
 
+import type { LibraryEnrichmentItem, LibraryEnrichmentResponse } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 import { requireSeerrClient } from "../../lib/seerr/seerr-client.js";
 import { validateRequest } from "../../lib/utils/validate.js";
-import type { LibraryEnrichmentItem, LibraryEnrichmentResponse } from "@arr/shared";
 
 const instanceIdParams = z.object({ instanceId: z.string().min(1) });
 
 const enrichmentQuery = z.object({
 	tmdbIds: z.string().min(1),
-	types: z.string().min(1).transform((val, ctx) => {
-		const parts = val.split(",");
-		for (const t of parts) {
-			if (t !== "movie" && t !== "tv") {
-				ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Invalid type: ${t}` });
-				return z.NEVER;
+	types: z
+		.string()
+		.min(1)
+		.transform((val, ctx) => {
+			const parts = val.split(",");
+			for (const t of parts) {
+				if (t !== "movie" && t !== "tv") {
+					ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Invalid type: ${t}` });
+					return z.NEVER;
+				}
 			}
-		}
-		return parts as ("movie" | "tv")[];
-	}),
+			return parts as ("movie" | "tv")[];
+		}),
 });
 
 /** Max items per batch request */
@@ -73,10 +76,7 @@ export async function registerLibraryEnrichmentRoutes(
 	 */
 	app.get("/:instanceId", async (request, reply) => {
 		const { instanceId } = validateRequest(instanceIdParams, request.params);
-		const { tmdbIds: tmdbIdsRaw, types } = validateRequest(
-			enrichmentQuery,
-			request.query,
-		);
+		const { tmdbIds: tmdbIdsRaw, types } = validateRequest(enrichmentQuery, request.query);
 
 		const tmdbIds = tmdbIdsRaw.split(",").map(Number);
 
@@ -104,7 +104,11 @@ export async function registerLibraryEnrichmentRoutes(
 		// Fetch media summaries in parallel with concurrency limit
 		const entries = [...uniqueItems.entries()];
 		const summaryResults = await runWithConcurrency(
-			entries.map(([, { type, tmdbId }]) => () => client.getMediaSummary(type, tmdbId)),
+			entries.map(
+				([, { type, tmdbId }]) =>
+					() =>
+						client.getMediaSummary(type, tmdbId),
+			),
 			CONCURRENCY_LIMIT,
 		);
 

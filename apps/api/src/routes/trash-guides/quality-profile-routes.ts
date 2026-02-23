@@ -5,15 +5,15 @@
  */
 
 import {
-	isCFGroupApplicableToProfile,
 	type GroupCustomFormat,
+	isCFGroupApplicableToProfile,
 	type TemplateConfig,
 	type TrashCustomFormat,
 	type TrashQualityProfile,
 } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { createCacheManager, CacheCorruptionError } from "../../lib/trash-guides/cache-manager.js";
+import { CacheCorruptionError, createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
@@ -81,11 +81,13 @@ const updateQualityProfileTemplateSchema = z.object({
 							id: z.string(),
 							name: z.string(),
 							allowed: z.boolean(),
-							qualities: z.array(z.looseObject({
-								name: z.string(),
-								source: z.string().optional(),
-								resolution: z.number().optional(),
-							})),
+							qualities: z.array(
+								z.looseObject({
+									name: z.string(),
+									source: z.string().optional(),
+									resolution: z.number().optional(),
+								}),
+							),
 						}),
 					}),
 				]),
@@ -519,10 +521,7 @@ export async function registerQualityProfileRoutes(
 		} = validateRequest(updateQualityProfileTemplateSchema, request.body);
 
 		// Get existing template to preserve quality profile settings
-		const existingTemplate = await templateService.getTemplate(
-			templateId,
-			request.currentUser!.id,
-		);
+		const existingTemplate = await templateService.getTemplate(templateId, request.currentUser!.id);
 
 		if (!existingTemplate) {
 			return reply.status(404).send({

@@ -3,20 +3,20 @@
 import { formatDistanceToNow } from "date-fns";
 import {
 	AlertCircle,
+	AlertTriangle,
+	Bell,
 	CheckCircle2,
 	Clock,
+	Database,
+	Hand,
 	Play,
 	RefreshCw,
-	Bell,
-	Hand,
-	Database,
-	AlertTriangle,
 	Timer,
 } from "lucide-react";
 import { useSchedulerStatus, useTriggerUpdateCheck } from "../../../hooks/api/useTemplateUpdates";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 /**
  * Safely formats a date value as relative time (e.g., "5 minutes ago").
@@ -52,9 +52,7 @@ const StatCard = ({
 	const displayColor = color || themeGradient.from;
 
 	return (
-		<div
-			className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4 transition-all duration-300 hover:bg-card/50"
-		>
+		<div className="rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs p-4 transition-all duration-300 hover:bg-card/50">
 			<div className="flex items-center gap-2 mb-3">
 				<div
 					className="flex h-8 w-8 items-center justify-center rounded-lg"
@@ -67,9 +65,7 @@ const StatCard = ({
 				</span>
 			</div>
 			<p className="text-2xl font-bold text-foreground">{value}</p>
-			{subtext && (
-				<p className="text-xs text-muted-foreground mt-1">{subtext}</p>
-			)}
+			{subtext && <p className="text-xs text-muted-foreground mt-1">{subtext}</p>}
 		</div>
 	);
 };
@@ -261,7 +257,11 @@ export const SchedulerStatusDashboard = () => {
 						icon={AlertTriangle}
 						label="Outdated"
 						value={schedulerData.lastCheckResult?.templatesOutdated ?? 0}
-						color={schedulerData.lastCheckResult?.templatesOutdated ? SEMANTIC_COLORS.warning.from : undefined}
+						color={
+							schedulerData.lastCheckResult?.templatesOutdated
+								? SEMANTIC_COLORS.warning.from
+								: undefined
+						}
 					/>
 				</div>
 
@@ -273,15 +273,21 @@ export const SchedulerStatusDashboard = () => {
 						{/* Template Version Check Results */}
 						<div className="space-y-3">
 							<div>
-								<h5 className="text-sm font-medium text-foreground mb-1">Template Version Updates</h5>
+								<h5 className="text-sm font-medium text-foreground mb-1">
+									Template Version Updates
+								</h5>
 								<p className="text-xs text-muted-foreground">
-									Compares templates against latest TRaSH Guides commits. Auto-sync templates update automatically.
+									Compares templates against latest TRaSH Guides commits. Auto-sync templates update
+									automatically.
 								</p>
 							</div>
 							<div className="grid gap-4 grid-cols-2 md:grid-cols-5">
 								<div className="space-y-1">
 									<div className="flex items-center gap-1.5">
-										<RefreshCw className="h-3.5 w-3.5" style={{ color: SEMANTIC_COLORS.success.from }} />
+										<RefreshCw
+											className="h-3.5 w-3.5"
+											style={{ color: SEMANTIC_COLORS.success.from }}
+										/>
 										<span className="text-xs text-muted-foreground">Auto-Sync</span>
 									</div>
 									<p className="text-lg font-bold" style={{ color: SEMANTIC_COLORS.success.from }}>
@@ -313,14 +319,17 @@ export const SchedulerStatusDashboard = () => {
 											0,
 											schedulerData.lastCheckResult.templatesChecked -
 												(schedulerData.lastCheckResult.templatesWithAutoStrategy ?? 0) -
-												(schedulerData.lastCheckResult.templatesWithNotifyStrategy ?? 0)
+												(schedulerData.lastCheckResult.templatesWithNotifyStrategy ?? 0),
 										)}
 									</p>
 									<p className="text-xs text-muted-foreground">Excluded from checks</p>
 								</div>
 								<div className="space-y-1">
 									<div className="flex items-center gap-1.5">
-										<AlertTriangle className="h-3.5 w-3.5" style={{ color: SEMANTIC_COLORS.warning.from }} />
+										<AlertTriangle
+											className="h-3.5 w-3.5"
+											style={{ color: SEMANTIC_COLORS.warning.from }}
+										/>
 										<span className="text-xs text-muted-foreground">Needs Attention</span>
 									</div>
 									<p className="text-lg font-bold" style={{ color: SEMANTIC_COLORS.warning.from }}>
@@ -329,7 +338,10 @@ export const SchedulerStatusDashboard = () => {
 								</div>
 								<div className="space-y-1">
 									<div className="flex items-center gap-1.5">
-										<AlertCircle className="h-3.5 w-3.5" style={{ color: SEMANTIC_COLORS.error.from }} />
+										<AlertCircle
+											className="h-3.5 w-3.5"
+											style={{ color: SEMANTIC_COLORS.error.from }}
+										/>
 										<span className="text-xs text-muted-foreground">Errors</span>
 									</div>
 									<p className="text-lg font-bold" style={{ color: SEMANTIC_COLORS.error.from }}>
@@ -342,9 +354,12 @@ export const SchedulerStatusDashboard = () => {
 						{/* Cache Refresh Results */}
 						<div className="pt-4 border-t border-border/50 space-y-3">
 							<div>
-								<h5 className="text-sm font-medium text-foreground mb-1">TRaSH Guides Data Cache</h5>
+								<h5 className="text-sm font-medium text-foreground mb-1">
+									TRaSH Guides Data Cache
+								</h5>
 								<p className="text-xs text-muted-foreground">
-									Refreshes cached quality profiles, naming formats, and custom formats from repository
+									Refreshes cached quality profiles, naming formats, and custom formats from
+									repository
 								</p>
 							</div>
 							<div className="grid gap-4 md:grid-cols-2">
@@ -357,15 +372,16 @@ export const SchedulerStatusDashboard = () => {
 									</div>
 									<div>
 										<p className="text-xs text-muted-foreground">Caches Refreshed</p>
-										<p className="text-xl font-bold" style={{ color: SEMANTIC_COLORS.success.from }}>
+										<p
+											className="text-xl font-bold"
+											style={{ color: SEMANTIC_COLORS.success.from }}
+										>
 											{schedulerData.lastCheckResult.cachesRefreshed ?? 0}
 										</p>
 									</div>
 								</div>
 								<div className="flex items-center gap-3">
-									<div
-										className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted/10"
-									>
+									<div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted/10">
 										<AlertCircle className="h-5 w-5 text-muted-foreground" />
 									</div>
 									<div>

@@ -1,42 +1,40 @@
 "use client";
 
-import { useState, useMemo, lazy, Suspense } from "react";
 import {
-	toast,
-} from "../../../components/ui";
-import { PremiumSkeleton } from "../../../components/layout";
-import {
-	Search,
-	Package,
-	Download,
 	CheckCircle2,
-	XCircle,
-	Loader2,
-	Info,
-	Palette,
-	Filter,
 	CheckSquare,
-	Square,
 	ChevronDown,
+	Download,
+	Filter,
+	Info,
+	Loader2,
+	Package,
+	Palette,
 	Plus,
+	Search,
+	Square,
 	Trash2,
 	User,
+	XCircle,
 } from "lucide-react";
-import {
-	useCustomFormats,
-	useCFDescriptions,
-	useDeployMultipleCustomFormats,
-	useUserCustomFormats,
-	useDeleteUserCustomFormat,
-	useDeployUserCustomFormats,
-} from "../hooks/use-custom-formats";
+import { lazy, Suspense, useMemo, useState } from "react";
+import { PremiumSkeleton } from "../../../components/layout";
+import { toast } from "../../../components/ui";
 import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
-import type { CustomFormat } from "../../../lib/api-client/trash-guides";
-import { cleanDescription } from "../lib/description-utils";
-import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { UserCFImportDialog } from "./user-cf-import-dialog";
+import type { CustomFormat } from "../../../lib/api-client/trash-guides";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
+import {
+	useCFDescriptions,
+	useCustomFormats,
+	useDeleteUserCustomFormat,
+	useDeployMultipleCustomFormats,
+	useDeployUserCustomFormats,
+	useUserCustomFormats,
+} from "../hooks/use-custom-formats";
+import { cleanDescription } from "../lib/description-utils";
+import { UserCFImportDialog } from "./user-cf-import-dialog";
 
 const DeployCFModal = lazy(() => import("./deploy-cf-modal"));
 const CFDetailsModal = lazy(() => import("./cf-details-modal"));
@@ -164,9 +162,7 @@ const CustomFormatCard = ({
 
 				{/* Description */}
 				{description && (
-					<p className="text-sm text-muted-foreground line-clamp-2 mb-3">
-						{description}
-					</p>
+					<p className="text-sm text-muted-foreground line-clamp-2 mb-3">{description}</p>
 				)}
 
 				{/* Metadata */}
@@ -213,14 +209,16 @@ export const CustomFormatsBrowser = () => {
 	const [deployDialogOpen, setDeployDialogOpen] = useState(false);
 	const [selectedInstance, setSelectedInstance] = useState("");
 	const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
-	const [selectedFormatForDetails, setSelectedFormatForDetails] = useState<(CustomFormat & { service: "RADARR" | "SONARR" }) | null>(null);
+	const [selectedFormatForDetails, setSelectedFormatForDetails] = useState<
+		(CustomFormat & { service: "RADARR" | "SONARR" }) | null
+	>(null);
 	const [importDialogOpen, setImportDialogOpen] = useState(false);
 	const [selectedUserCFs, setSelectedUserCFs] = useState<Set<string>>(new Set());
 	const [userCFDeployInstance, setUserCFDeployInstance] = useState("");
 
 	// Fetch user custom formats
 	const { data: userCFsData } = useUserCustomFormats(
-		selectedService === "ALL" ? undefined : selectedService
+		selectedService === "ALL" ? undefined : selectedService,
 	);
 	const deleteMutation = useDeleteUserCustomFormat();
 	const deployUserCFsMutation = useDeployUserCustomFormats();
@@ -228,22 +226,25 @@ export const CustomFormatsBrowser = () => {
 	const userCustomFormats = useMemo(() => {
 		const cfs = userCFsData?.customFormats || [];
 		if (searchQuery) {
-			return cfs.filter((cf) =>
-				cf.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-				cf.description?.toLowerCase().includes(searchQuery.toLowerCase())
+			return cfs.filter(
+				(cf) =>
+					cf.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+					cf.description?.toLowerCase().includes(searchQuery.toLowerCase()),
 			);
 		}
 		return cfs;
 	}, [userCFsData, searchQuery]);
 
 	// Fetch custom formats
-	const { data: customFormatsData, isLoading, error } = useCustomFormats(
-		selectedService === "ALL" ? undefined : selectedService
-	);
+	const {
+		data: customFormatsData,
+		isLoading,
+		error,
+	} = useCustomFormats(selectedService === "ALL" ? undefined : selectedService);
 
 	// Fetch CF descriptions
 	const { data: cfDescriptionsData } = useCFDescriptions(
-		selectedService === "ALL" ? undefined : selectedService
+		selectedService === "ALL" ? undefined : selectedService,
 	);
 
 	// Fetch instances
@@ -259,18 +260,20 @@ export const CustomFormatsBrowser = () => {
 		const formats: Array<CustomFormat & { service: "RADARR" | "SONARR" }> = [];
 
 		if (customFormatsData.radarr) {
-			formats.push(...customFormatsData.radarr.map(cf => ({ ...cf, service: "RADARR" as const })));
+			formats.push(
+				...customFormatsData.radarr.map((cf) => ({ ...cf, service: "RADARR" as const })),
+			);
 		}
 
 		if (customFormatsData.sonarr) {
-			formats.push(...customFormatsData.sonarr.map(cf => ({ ...cf, service: "SONARR" as const })));
+			formats.push(
+				...customFormatsData.sonarr.map((cf) => ({ ...cf, service: "SONARR" as const })),
+			);
 		}
 
 		// Filter by search query
 		if (searchQuery) {
-			return formats.filter(cf =>
-				cf.name.toLowerCase().includes(searchQuery.toLowerCase())
-			);
+			return formats.filter((cf) => cf.name.toLowerCase().includes(searchQuery.toLowerCase()));
 		}
 
 		return formats;
@@ -284,10 +287,10 @@ export const CustomFormatsBrowser = () => {
 		if (selectedFormatsArray.length === 0) return [];
 
 		const selectedServicesSet = new Set(
-			selectedFormatsArray.map(selectionKey => {
-				const [service] = selectionKey.split('-');
+			selectedFormatsArray.map((selectionKey) => {
+				const [service] = selectionKey.split("-");
 				return service;
-			})
+			}),
 		);
 
 		if (selectedServicesSet.size > 1) {
@@ -295,7 +298,7 @@ export const CustomFormatsBrowser = () => {
 		}
 
 		const service = Array.from(selectedServicesSet)[0];
-		return instances.filter(inst => inst.service.toUpperCase() === service);
+		return instances.filter((inst) => inst.service.toUpperCase() === service);
 	}, [instances, selectedFormats]);
 
 	// Helper to create combined selection key
@@ -318,7 +321,7 @@ export const CustomFormatsBrowser = () => {
 		if (selectedFormats.size === customFormats.length) {
 			setSelectedFormats(new Set());
 		} else {
-			setSelectedFormats(new Set(customFormats.map(cf => getSelectionKey(cf))));
+			setSelectedFormats(new Set(customFormats.map((cf) => getSelectionKey(cf))));
 		}
 	};
 
@@ -328,27 +331,27 @@ export const CustomFormatsBrowser = () => {
 		const descriptions = cfDescriptionsData?.[service] || [];
 		const name = format.name;
 		const nameLower = name.toLowerCase();
-		const slug = nameLower.replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+		const slug = nameLower.replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
 
 		// Strategy 1: Exact slug match on cfName (file name)
-		let match = descriptions.find(d => d.cfName === slug);
+		let match = descriptions.find((d) => d.cfName === slug);
 
 		// Strategy 2: Match displayName case-insensitively
 		if (!match) {
-			match = descriptions.find(d => d.displayName.toLowerCase() === nameLower);
+			match = descriptions.find((d) => d.displayName.toLowerCase() === nameLower);
 		}
 
 		// Strategy 3: Base name without parenthetical suffix (e.g., "ATMOS (undefined)" → "atmos")
 		if (!match) {
-			const baseName = nameLower.replace(/\s*\([^)]*\)\s*$/, '').trim();
-			const baseSlug = baseName.replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+			const baseName = nameLower.replace(/\s*\([^)]*\)\s*$/, "").trim();
+			const baseSlug = baseName.replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
 			if (baseSlug !== slug) {
-				match = descriptions.find(d => d.cfName === baseSlug);
+				match = descriptions.find((d) => d.cfName === baseSlug);
 			}
 
 			// Strategy 4: Partial displayName match (displayName starts with CF name)
 			if (!match) {
-				match = descriptions.find(d => d.displayName.toLowerCase().startsWith(baseName));
+				match = descriptions.find((d) => d.displayName.toLowerCase().startsWith(baseName));
 			}
 		}
 
@@ -381,15 +384,15 @@ export const CustomFormatsBrowser = () => {
 			return;
 		}
 
-		const instance = instances?.find(inst => inst.id === selectedInstance);
+		const instance = instances?.find((inst) => inst.id === selectedInstance);
 		if (!instance) {
 			toast.error("Instance not found");
 			return;
 		}
 
 		try {
-			const trashIds = Array.from(selectedFormats).map(selectionKey => {
-				const firstHyphenIndex = selectionKey.indexOf('-');
+			const trashIds = Array.from(selectedFormats).map((selectionKey) => {
+				const firstHyphenIndex = selectionKey.indexOf("-");
 				return selectionKey.slice(firstHyphenIndex + 1);
 			});
 
@@ -401,20 +404,16 @@ export const CustomFormatsBrowser = () => {
 
 			if (result.success) {
 				toast.success(
-					`Successfully deployed ${result.created.length + result.updated.length} custom formats`
+					`Successfully deployed ${result.created.length + result.updated.length} custom formats`,
 				);
 				setSelectedFormats(new Set());
 				setDeployDialogOpen(false);
 				setSelectedInstance("");
 			} else {
-				toast.error(
-					`Deployed with errors: ${result.failed.length} failed`
-				);
+				toast.error(`Deployed with errors: ${result.failed.length} failed`);
 			}
 		} catch (error) {
-			toast.error(
-				getErrorMessage(error, "Failed to deploy custom formats")
-			);
+			toast.error(getErrorMessage(error, "Failed to deploy custom formats"));
 		}
 	};
 
@@ -428,21 +427,46 @@ export const CustomFormatsBrowser = () => {
 						<div className="flex items-center gap-4">
 							<PremiumSkeleton variant="card" className="h-12 w-12 rounded-xl" />
 							<div className="space-y-2 flex-1">
-								<PremiumSkeleton variant="line" className="h-6 w-48" style={{ animationDelay: "50ms" }} />
-								<PremiumSkeleton variant="line" className="h-4 w-96" style={{ animationDelay: "100ms" }} />
+								<PremiumSkeleton
+									variant="line"
+									className="h-6 w-48"
+									style={{ animationDelay: "50ms" }}
+								/>
+								<PremiumSkeleton
+									variant="line"
+									className="h-4 w-96"
+									style={{ animationDelay: "100ms" }}
+								/>
 							</div>
 						</div>
 						<div className="flex gap-4">
-							<PremiumSkeleton variant="card" className="h-10 w-40 rounded-xl" style={{ animationDelay: "150ms" }} />
-							<PremiumSkeleton variant="card" className="h-10 flex-1 rounded-xl" style={{ animationDelay: "200ms" }} />
-							<PremiumSkeleton variant="card" className="h-10 w-32 rounded-xl" style={{ animationDelay: "250ms" }} />
+							<PremiumSkeleton
+								variant="card"
+								className="h-10 w-40 rounded-xl"
+								style={{ animationDelay: "150ms" }}
+							/>
+							<PremiumSkeleton
+								variant="card"
+								className="h-10 flex-1 rounded-xl"
+								style={{ animationDelay: "200ms" }}
+							/>
+							<PremiumSkeleton
+								variant="card"
+								className="h-10 w-32 rounded-xl"
+								style={{ animationDelay: "250ms" }}
+							/>
 						</div>
 					</div>
 				</div>
 				{/* Cards Skeleton */}
 				<div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
 					{Array.from({ length: 6 }).map((_, i) => (
-						<PremiumSkeleton key={i} variant="card" className="h-56 rounded-2xl" style={{ animationDelay: `${(i + 6) * 50}ms` }} />
+						<PremiumSkeleton
+							key={i}
+							variant="card"
+							className="h-56 rounded-2xl"
+							style={{ animationDelay: `${(i + 6) * 50}ms` }}
+						/>
 					))}
 				</div>
 			</div>
@@ -569,10 +593,12 @@ export const CustomFormatsBrowser = () => {
 								disabled={selectedFormats.size === 0}
 								className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-medium text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
 								style={{
-									background: selectedFormats.size > 0
-										? `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`
-										: "rgba(var(--muted), 0.5)",
-									boxShadow: selectedFormats.size > 0 ? `0 4px 12px -4px ${themeGradient.glow}` : undefined,
+									background:
+										selectedFormats.size > 0
+											? `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`
+											: "rgba(var(--muted), 0.5)",
+									boxShadow:
+										selectedFormats.size > 0 ? `0 4px 12px -4px ${themeGradient.glow}` : undefined,
 								}}
 							>
 								<Download className="h-4 w-4" />
@@ -600,7 +626,9 @@ export const CustomFormatsBrowser = () => {
 								</div>
 								<div>
 									<h4 className="font-semibold text-foreground">My Custom Formats</h4>
-									<p className="text-xs text-muted-foreground">{userCustomFormats.length} format{userCustomFormats.length !== 1 ? "s" : ""}</p>
+									<p className="text-xs text-muted-foreground">
+										{userCustomFormats.length} format{userCustomFormats.length !== 1 ? "s" : ""}
+									</p>
 								</div>
 							</div>
 							<div className="flex items-center gap-2">
@@ -625,22 +653,25 @@ export const CustomFormatsBrowser = () => {
 											type="button"
 											onClick={() => {
 												if (!userCFDeployInstance || selectedUserCFs.size === 0) return;
-												deployUserCFsMutation.mutate({
-													userCFIds: Array.from(selectedUserCFs),
-													instanceId: userCFDeployInstance,
-												}, {
-													onSuccess: (data) => {
-														toast.success("Deployed custom formats", {
-															description: `Created: ${data.created.length}, Updated: ${data.updated.length}`,
-														});
-														setSelectedUserCFs(new Set());
+												deployUserCFsMutation.mutate(
+													{
+														userCFIds: Array.from(selectedUserCFs),
+														instanceId: userCFDeployInstance,
 													},
-													onError: (err) => {
-														toast.error("Deploy failed", {
-															description: getErrorMessage(err, "Unknown error"),
-														});
+													{
+														onSuccess: (data) => {
+															toast.success("Deployed custom formats", {
+																description: `Created: ${data.created.length}, Updated: ${data.updated.length}`,
+															});
+															setSelectedUserCFs(new Set());
+														},
+														onError: (err) => {
+															toast.error("Deploy failed", {
+																description: getErrorMessage(err, "Unknown error"),
+															});
+														},
 													},
-												});
+												);
 											}}
 											disabled={!userCFDeployInstance || deployUserCFsMutation.isPending}
 											className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-white transition disabled:opacity-50"
@@ -678,7 +709,9 @@ export const CustomFormatsBrowser = () => {
 									className="group rounded-xl border p-4 transition-all hover:shadow-md animate-in fade-in slide-in-from-bottom-2 duration-300"
 									style={{
 										borderColor: isSelected ? themeGradient.from : "rgba(var(--border), 0.5)",
-										backgroundColor: isSelected ? `${themeGradient.from}08` : "rgba(var(--card), 0.3)",
+										backgroundColor: isSelected
+											? `${themeGradient.from}08`
+											: "rgba(var(--card), 0.3)",
 										animationDelay: `${index * 30}ms`,
 										animationFillMode: "backwards",
 									}}
@@ -699,7 +732,9 @@ export const CustomFormatsBrowser = () => {
 										/>
 										<div className="flex-1 min-w-0">
 											<div className="flex items-center gap-2 mb-1">
-												<span className="font-medium text-sm text-foreground truncate">{cf.name}</span>
+												<span className="font-medium text-sm text-foreground truncate">
+													{cf.name}
+												</span>
 												<span
 													className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium shrink-0"
 													style={{
@@ -721,8 +756,11 @@ export const CustomFormatsBrowser = () => {
 													{cf.specifications.length} spec{cf.specifications.length !== 1 ? "s" : ""}
 												</span>
 												{cf.defaultScore !== 0 && (
-													<span className={`text-xs font-medium ${cf.defaultScore > 0 ? "text-green-400" : "text-red-400"}`}>
-														{cf.defaultScore > 0 ? "+" : ""}{cf.defaultScore}
+													<span
+														className={`text-xs font-medium ${cf.defaultScore > 0 ? "text-green-400" : "text-red-400"}`}
+													>
+														{cf.defaultScore > 0 ? "+" : ""}
+														{cf.defaultScore}
 													</span>
 												)}
 												<button

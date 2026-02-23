@@ -1,23 +1,23 @@
-import { dashboardStatisticsResponseSchema } from "@arr/shared";
 import type { DashboardStatisticsResponse } from "@arr/shared";
+import { dashboardStatisticsResponseSchema } from "@arr/shared";
+import { LidarrClient, ProwlarrClient, RadarrClient, ReadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyPluginCallback } from "fastify";
-import { SonarrClient, RadarrClient, ProwlarrClient, LidarrClient, ReadarrClient } from "arr-sdk";
 import {
+	aggregateLidarrStatistics,
 	aggregateProwlarrStatistics,
 	aggregateRadarrStatistics,
-	aggregateSonarrStatistics,
-	aggregateLidarrStatistics,
 	aggregateReadarrStatistics,
+	aggregateSonarrStatistics,
+	emptyLidarrStatistics,
 	emptyProwlarrStatistics,
 	emptyRadarrStatistics,
-	emptySonarrStatistics,
-	emptyLidarrStatistics,
 	emptyReadarrStatistics,
-	fetchSonarrStatisticsWithSdk,
-	fetchRadarrStatisticsWithSdk,
-	fetchProwlarrStatisticsWithSdk,
+	emptySonarrStatistics,
 	fetchLidarrStatisticsWithSdk,
+	fetchProwlarrStatisticsWithSdk,
+	fetchRadarrStatisticsWithSdk,
 	fetchReadarrStatisticsWithSdk,
+	fetchSonarrStatisticsWithSdk,
 } from "../../lib/statistics/dashboard-statistics.js";
 
 /**

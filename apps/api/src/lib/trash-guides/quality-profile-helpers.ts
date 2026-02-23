@@ -5,9 +5,9 @@
  * (schema-based, cloned, custom) and the quality profile sync logic.
  */
 
-import type { SonarrClient, RadarrClient } from "arr-sdk";
-import { calculateScoreAndSource } from "./template-score-utils.js";
+import type { RadarrClient, SonarrClient } from "arr-sdk";
 import { loggers } from "../logger.js";
+import { calculateScoreAndSource } from "./template-score-utils.js";
 
 const log = loggers.deployment;
 

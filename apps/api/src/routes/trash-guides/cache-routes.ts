@@ -4,15 +4,15 @@
  * Endpoints for fetching, refreshing, and managing TRaSH Guides cache.
  */
 
-import { TRASH_CONFIG_TYPES } from "@arr/shared";
 import type { TrashConfigType } from "@arr/shared";
-import type { FastifyInstance, FastifyPluginOptions, } from "fastify";
+import { TRASH_CONFIG_TYPES } from "@arr/shared";
+import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { createCacheManager, CacheCorruptionError } from "../../lib/trash-guides/cache-manager.js";
+import { CacheCorruptionError, createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createTrashFetcher, getRateLimitState } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
-import { validateRequest } from "../../lib/utils/validate.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 // ============================================================================
 // Constants
@@ -128,7 +128,10 @@ export async function registerTrashCacheRoutes(app: FastifyInstance, _opts: Fast
 	app.post<{
 		Body: z.infer<typeof refreshCacheBodySchema>;
 	}>("/refresh", async (request, reply) => {
-		const { serviceType, configType, force } = validateRequest(refreshCacheBodySchema, request.body);
+		const { serviceType, configType, force } = validateRequest(
+			refreshCacheBodySchema,
+			request.body,
+		);
 
 		const results: Record<string, unknown> = {};
 

@@ -1,16 +1,16 @@
-import { historyItemSchema } from "@arr/shared";
 import type { HistoryItem } from "@arr/shared";
+import { historyItemSchema } from "@arr/shared";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import {
 	executeOnInstances,
-	isSonarrClient,
-	isRadarrClient,
-	isProwlarrClient,
 	isLidarrClient,
+	isProwlarrClient,
+	isRadarrClient,
 	isReadarrClient,
+	isSonarrClient,
 } from "../../lib/arr/client-helpers.js";
-import { normalizeHistoryItem, type HistoryService } from "../../lib/dashboard/history-utils.js";
+import { type HistoryService, normalizeHistoryItem } from "../../lib/dashboard/history-utils.js";
 
 /**
  * Query schema for history endpoint.

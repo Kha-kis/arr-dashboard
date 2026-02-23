@@ -1,10 +1,10 @@
 "use client";
 
-import { useRef, useState, useCallback, useEffect } from "react";
-import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import type { SeerrGenre } from "@arr/shared";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSeerrGenres } from "../../../hooks/api/useSeerr";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 
 interface DiscoverGenreFilterProps {
 	instanceId: string;
@@ -87,7 +87,8 @@ export const DiscoverGenreFilter: React.FC<DiscoverGenreFilterProps> = ({
 				className="flex items-center gap-2 overflow-x-auto scrollbar-none px-1"
 				style={{
 					maskImage: "linear-gradient(to right, transparent, black 2%, black 98%, transparent)",
-					WebkitMaskImage: "linear-gradient(to right, transparent, black 2%, black 98%, transparent)",
+					WebkitMaskImage:
+						"linear-gradient(to right, transparent, black 2%, black 98%, transparent)",
 				}}
 			>
 				{selectedGenreId && (
@@ -129,7 +130,13 @@ interface GenrePillProps {
 	themeTo: string;
 }
 
-const GenrePill: React.FC<GenrePillProps> = ({ genre, isSelected, onSelect, themeFrom, themeTo }) => (
+const GenrePill: React.FC<GenrePillProps> = ({
+	genre,
+	isSelected,
+	onSelect,
+	themeFrom,
+	themeTo,
+}) => (
 	<button
 		type="button"
 		onClick={onSelect}

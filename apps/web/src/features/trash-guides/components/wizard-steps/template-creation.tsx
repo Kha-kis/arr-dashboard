@@ -1,15 +1,29 @@
 "use client";
 
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { useImportQualityProfileWizard, useUpdateQualityProfileTemplate, useCreateClonedProfileTemplate } from "../../../../hooks/api/useQualityProfiles";
-import { Alert, AlertDescription } from "../../../../components/ui";
-import { PremiumSkeleton } from "../../../../components/layout/premium-components";
-import { ChevronLeft, Download, CheckCircle, Info, Save, Edit2, TrendingUp, TrendingDown, Minus } from "lucide-react";
-import { useThemeGradient } from "../../../../hooks/useThemeGradient";
-import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import type { CustomQualityConfig, TrashTemplate } from "@arr/shared";
+import { useQuery } from "@tanstack/react-query";
+import {
+	CheckCircle,
+	ChevronLeft,
+	Download,
+	Edit2,
+	Info,
+	Minus,
+	Save,
+	TrendingDown,
+	TrendingUp,
+} from "lucide-react";
+import { useState } from "react";
+import { PremiumSkeleton } from "../../../../components/layout/premium-components";
+import { Alert, AlertDescription } from "../../../../components/ui";
+import {
+	useCreateClonedProfileTemplate,
+	useImportQualityProfileWizard,
+	useUpdateQualityProfileTemplate,
+} from "../../../../hooks/api/useQualityProfiles";
+import { useThemeGradient } from "../../../../hooks/useThemeGradient";
 import { apiRequest } from "../../../../lib/api-client/base";
+import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 
 /**
  * Check if a trashId indicates a cloned profile from an instance
@@ -60,7 +74,12 @@ function parseClonedProfileId(trashId: string): { instanceId: string; profileId:
 		const timestampPart = uuidParts2[0];
 		const randomPart = uuidParts2[1];
 
-		if (timestampPart && randomPart && /^\d+$/.test(timestampPart) && /^[a-z0-9]+$/i.test(randomPart)) {
+		if (
+			timestampPart &&
+			randomPart &&
+			/^\d+$/.test(timestampPart) &&
+			/^[a-z0-9]+$/i.test(randomPart)
+		) {
 			// Fallback 2-part format detected
 			profileIdIndex = parts.length - 3; // profileId is third-to-last before 2-part ID
 		} else {
@@ -88,7 +107,7 @@ function parseClonedProfileId(trashId: string): { instanceId: string; profileId:
  * Wizard-specific profile type that allows undefined trashId for edit mode.
  * In edit mode, templates don't persist the original TRaSH profile ID.
  */
-type WizardSelectedProfile = Omit<QualityProfileSummary, 'trashId'> & {
+type WizardSelectedProfile = Omit<QualityProfileSummary, "trashId"> & {
 	trashId?: string;
 };
 
@@ -96,11 +115,14 @@ interface TemplateCreationProps {
 	serviceType: "RADARR" | "SONARR";
 	wizardState: {
 		selectedProfile: WizardSelectedProfile;
-		customFormatSelections: Record<string, {
-			selected: boolean;
-			scoreOverride?: number;
-			conditionsEnabled: Record<string, boolean>;
-		}>;
+		customFormatSelections: Record<
+			string,
+			{
+				selected: boolean;
+				scoreOverride?: number;
+				conditionsEnabled: Record<string, boolean>;
+			}
+		>;
 		templateName: string;
 		templateDescription: string;
 		customQualityConfig?: CustomQualityConfig;
@@ -133,7 +155,9 @@ export const TemplateCreation = ({
 
 	// Detect if this is a cloned profile
 	const isCloned = isClonedProfile(wizardState.selectedProfile.trashId);
-	const clonedProfileInfo = isCloned ? parseClonedProfileId(wizardState.selectedProfile.trashId!) : null;
+	const clonedProfileInfo = isCloned
+		? parseClonedProfileId(wizardState.selectedProfile.trashId!)
+		: null;
 
 	// Only fetch profile details when we have a valid trashId (not in edit mode and not cloned)
 	// In edit mode, trashId is undefined and we don't need profile data from TRaSH Guides
@@ -165,7 +189,9 @@ export const TemplateCreation = ({
 		queryKey: ["cf-groups-cache", serviceType],
 		queryFn: async () => {
 			// API returns array directly, not wrapped in { entries: [...] }
-			const entries = await apiRequest<any[]>(`/api/trash-guides/cache/entries?serviceType=${serviceType}`);
+			const entries = await apiRequest<any[]>(
+				`/api/trash-guides/cache/entries?serviceType=${serviceType}`,
+			);
 			const cfGroupsEntry = entries?.find((e: any) => e.configType === "CF_GROUPS");
 			return cfGroupsEntry?.data || [];
 		},
@@ -189,7 +215,9 @@ export const TemplateCreation = ({
 	});
 
 	const handleSubmit = async () => {
-		const hasSelectedCFs = Object.values(wizardState.customFormatSelections).some((sel) => sel.selected);
+		const hasSelectedCFs = Object.values(wizardState.customFormatSelections).some(
+			(sel) => sel.selected,
+		);
 		if (!templateName.trim() || !hasSelectedCFs) {
 			return;
 		}
@@ -198,24 +226,26 @@ export const TemplateCreation = ({
 		const selectedCFTrashIds = new Set(
 			Object.entries(wizardState.customFormatSelections)
 				.filter(([_, sel]) => sel.selected)
-				.map(([trashId]) => trashId)
+				.map(([trashId]) => trashId),
 		);
 
 		// Find all groups that contain at least one selected CF
 		// In edit mode, prefer cfGroupsCache from TRaSH cache for comprehensive group coverage
 		const cfGroupsForSubmit = isEditMode
-			? (cfGroupsCache || editingTemplate?.config.customFormatGroups.map(g => ({
-				trash_id: g.trashId,
-				name: g.name,
-				custom_formats: g.originalConfig?.custom_formats || [],
-			})) || [])
-			: (data?.cfGroups || []);
+			? cfGroupsCache ||
+				editingTemplate?.config.customFormatGroups.map((g) => ({
+					trash_id: g.trashId,
+					name: g.name,
+					custom_formats: g.originalConfig?.custom_formats || [],
+				})) ||
+				[]
+			: data?.cfGroups || [];
 
 		const relevantGroupIds = cfGroupsForSubmit
 			.filter((group: any) => {
 				const groupCFs = Array.isArray(group.custom_formats) ? group.custom_formats : [];
 				return groupCFs.some((cf: any) => {
-					const cfTrashId = typeof cf === 'string' ? cf : cf.trash_id;
+					const cfTrashId = typeof cf === "string" ? cf : cf.trash_id;
 					return selectedCFTrashIds.has(cfTrashId);
 				});
 			})
@@ -241,7 +271,9 @@ export const TemplateCreation = ({
 
 				// Extract profile config from the data we fetched
 				const profileData = data?.data?.profile || data?.profile;
-				const instanceLabel = wizardState.selectedProfile.description?.replace("Cloned from ", "") || "Unknown Instance";
+				const instanceLabel =
+					wizardState.selectedProfile.description?.replace("Cloned from ", "") ||
+					"Unknown Instance";
 
 				await clonedMutation.mutateAsync({
 					serviceType,
@@ -254,7 +286,8 @@ export const TemplateCreation = ({
 					sourceProfileName: wizardState.selectedProfile.name,
 					sourceInstanceLabel: instanceLabel,
 					profileConfig: {
-						upgradeAllowed: profileData?.upgradeAllowed ?? wizardState.selectedProfile.upgradeAllowed ?? true,
+						upgradeAllowed:
+							profileData?.upgradeAllowed ?? wizardState.selectedProfile.upgradeAllowed ?? true,
 						cutoff: profileData?.cutoff ?? 0,
 						minFormatScore: profileData?.minFormatScore ?? 0,
 						cutoffFormatScore: profileData?.cutoffFormatScore ?? 0,
@@ -282,7 +315,14 @@ export const TemplateCreation = ({
 			onComplete();
 		} catch (error) {
 			// Error will be displayed through mutation state
-			console.error(isEditMode ? "Update failed:" : isCloned ? "Cloned template creation failed:" : "Import failed:", error);
+			console.error(
+				isEditMode
+					? "Update failed:"
+					: isCloned
+						? "Cloned template creation failed:"
+						: "Import failed:",
+				error,
+			);
 		}
 	};
 
@@ -300,23 +340,25 @@ export const TemplateCreation = ({
 	// In edit mode, prefer cfGroupsCache from TRaSH cache, fallback to template's stored groups
 	// This ensures proper categorization even for templates with incomplete group data
 	const cfGroups = isEditMode
-		? (cfGroupsCache || editingTemplate?.config.customFormatGroups.map(g => ({
-			trash_id: g.trashId,
-			name: g.name,
-			custom_formats: g.originalConfig?.custom_formats || [],
-		})) || [])
-		: (data?.cfGroups || []);
+		? cfGroupsCache ||
+			editingTemplate?.config.customFormatGroups.map((g) => ({
+				trash_id: g.trashId,
+				name: g.name,
+				custom_formats: g.originalConfig?.custom_formats || [],
+			})) ||
+			[]
+		: data?.cfGroups || [];
 
 	const selectedCFTrashIds = new Set(
 		Object.entries(wizardState.customFormatSelections)
 			.filter(([_, sel]) => sel.selected)
-			.map(([trashId]) => trashId)
+			.map(([trashId]) => trashId),
 	);
 
 	const selectedCFGroups = cfGroups.filter((group: any) => {
 		const groupCFs = Array.isArray(group.custom_formats) ? group.custom_formats : [];
 		return groupCFs.some((cf: any) => {
-			const cfTrashId = typeof cf === 'string' ? cf : cf.trash_id;
+			const cfTrashId = typeof cf === "string" ? cf : cf.trash_id;
 			return selectedCFTrashIds.has(cfTrashId);
 		});
 	});
@@ -329,8 +371,8 @@ export const TemplateCreation = ({
 	// In edit mode, use the source profile data to determine mandatory CFs
 	// This requires the template to have sourceQualityProfileTrashId set
 	const mandatoryCFs = isEditMode
-		? (sourceProfileData?.mandatoryCFs || [])
-		: (data?.mandatoryCFs || []);
+		? sourceProfileData?.mandatoryCFs || []
+		: data?.mandatoryCFs || [];
 	const mandatoryCFIds = new Set(mandatoryCFs.map((cf: any) => cf.trash_id));
 
 	// CFs from groups that have at least one selected CF
@@ -340,7 +382,7 @@ export const TemplateCreation = ({
 		.filter((group: any) => groupsWithSelectedCFs.has(group.trash_id))
 		.flatMap((group: any) => {
 			const groupCFs = Array.isArray(group.custom_formats) ? group.custom_formats : [];
-			return groupCFs.map((cf: any) => (typeof cf === 'string' ? cf : cf.trash_id));
+			return groupCFs.map((cf: any) => (typeof cf === "string" ? cf : cf.trash_id));
 		});
 	const cfsFromSelectedGroupsSet = new Set(cfsFromSelectedGroups);
 
@@ -349,15 +391,17 @@ export const TemplateCreation = ({
 	// - From Groups: CFs that belong to selected CF Groups (but not mandatory)
 	// - Manual: CFs added individually by the user (not in any group or mandatory list)
 	const mandatoryCount = selectedCFs.filter(([trashId]) => mandatoryCFIds.has(trashId)).length;
-	const fromGroupsCount = selectedCFs.filter(([trashId]) =>
-		!mandatoryCFIds.has(trashId) && cfsFromSelectedGroupsSet.has(trashId)
+	const fromGroupsCount = selectedCFs.filter(
+		([trashId]) => !mandatoryCFIds.has(trashId) && cfsFromSelectedGroupsSet.has(trashId),
 	).length;
-	const manuallySelectedCount = selectedCFs.filter(([trashId]) =>
-		!mandatoryCFIds.has(trashId) && !cfsFromSelectedGroupsSet.has(trashId)
+	const manuallySelectedCount = selectedCFs.filter(
+		([trashId]) => !mandatoryCFIds.has(trashId) && !cfsFromSelectedGroupsSet.has(trashId),
 	).length;
 
 	// Score distribution
-	const scoreOverridesCount = selectedCFs.filter(([_, sel]) => sel.scoreOverride !== undefined).length;
+	const scoreOverridesCount = selectedCFs.filter(
+		([_, sel]) => sel.scoreOverride !== undefined,
+	).length;
 	const positiveScores = selectedCFs.filter(([_, sel]) => {
 		const score = sel.scoreOverride ?? 0;
 		return score > 0;
@@ -381,7 +425,9 @@ export const TemplateCreation = ({
 					backgroundColor: themeGradient.fromLight,
 				}}
 			>
-				<h4 className="font-medium text-foreground mb-2">✅ {isEditMode ? 'Ready to Save!' : 'Almost Done!'}</h4>
+				<h4 className="font-medium text-foreground mb-2">
+					✅ {isEditMode ? "Ready to Save!" : "Almost Done!"}
+				</h4>
 				<p className="text-sm text-foreground/70 mb-3">
 					{isEditMode
 						? `You've made changes to your template. Review and save to apply the updates.`
@@ -389,7 +435,8 @@ export const TemplateCreation = ({
 				</p>
 				{!isEditMode && (
 					<p className="text-xs text-foreground/60 italic">
-						💡 Tip: Choose a descriptive name that reflects the quality preferences (e.g., &quot;4K HDR Optimized&quot;, &quot;Anime Quality Profile&quot;).
+						💡 Tip: Choose a descriptive name that reflects the quality preferences (e.g., &quot;4K
+						HDR Optimized&quot;, &quot;Anime Quality Profile&quot;).
 					</p>
 				)}
 			</div>
@@ -397,7 +444,9 @@ export const TemplateCreation = ({
 			{/* Summary */}
 			<div className="rounded-xl border border-border bg-card p-6">
 				<div className="flex items-center justify-between mb-4">
-					<h3 className="text-lg font-medium text-foreground">{isEditMode ? 'Review & Update Template' : 'Review & Create Template'}</h3>
+					<h3 className="text-lg font-medium text-foreground">
+						{isEditMode ? "Review & Update Template" : "Review & Create Template"}
+					</h3>
 					{onEditStep && (
 						<button
 							type="button"
@@ -456,18 +505,22 @@ export const TemplateCreation = ({
 					</div>
 
 					{/* Quality Configuration - Always visible */}
-					<div className={`rounded-lg border p-4 ${
-						wizardState.customQualityConfig?.useCustomQualities
-							? "border-amber-500/20 bg-amber-500/5"
-							: "border-border bg-card"
-					}`}>
+					<div
+						className={`rounded-lg border p-4 ${
+							wizardState.customQualityConfig?.useCustomQualities
+								? "border-amber-500/20 bg-amber-500/5"
+								: "border-border bg-card"
+						}`}
+					>
 						<div className="flex items-center justify-between">
 							<div className="flex items-center gap-2 text-sm font-medium text-foreground">
-								<CheckCircle className={`h-4 w-4 ${
-									wizardState.customQualityConfig?.useCustomQualities
-										? "text-amber-400"
-										: "text-green-400"
-								}`} />
+								<CheckCircle
+									className={`h-4 w-4 ${
+										wizardState.customQualityConfig?.useCustomQualities
+											? "text-amber-400"
+											: "text-green-400"
+									}`}
+								/>
 								Quality Configuration
 								{wizardState.customQualityConfig?.useCustomQualities && (
 									<span className="rounded bg-amber-500/20 px-2 py-0.5 text-xs text-amber-300">
@@ -521,7 +574,10 @@ export const TemplateCreation = ({
 							</div>
 							<div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
 								{selectedCFGroups.map((group: any) => (
-									<div key={group.trash_id} className="text-sm text-foreground/70 flex items-start gap-2">
+									<div
+										key={group.trash_id}
+										className="text-sm text-foreground/70 flex items-start gap-2"
+									>
 										<span className="text-green-400 mt-0.5">•</span>
 										<span>{group.name}</span>
 									</div>
@@ -567,8 +623,12 @@ export const TemplateCreation = ({
 									borderColor: themeGradient.fromMuted,
 								}}
 							>
-								<div className="text-xs font-medium" style={{ color: themeGradient.from }}>✋ Manual</div>
-								<div className="text-2xl font-bold text-foreground mt-1">{manuallySelectedCount}</div>
+								<div className="text-xs font-medium" style={{ color: themeGradient.from }}>
+									✋ Manual
+								</div>
+								<div className="text-2xl font-bold text-foreground mt-1">
+									{manuallySelectedCount}
+								</div>
 								<div className="text-xs text-foreground/60 mt-1">User added</div>
 							</div>
 						</div>
@@ -658,10 +718,10 @@ export const TemplateCreation = ({
 				<Alert variant="success">
 					<AlertDescription>
 						{isEditMode
-							? 'Successfully updated template!'
+							? "Successfully updated template!"
 							: isCloned
-								? 'Successfully created template from cloned profile!'
-								: 'Successfully imported quality profile as template!'}
+								? "Successfully created template from cloned profile!"
+								: "Successfully imported quality profile as template!"}
 					</AlertDescription>
 				</Alert>
 			)}
@@ -671,7 +731,9 @@ export const TemplateCreation = ({
 				<button
 					type="button"
 					onClick={onBack}
-					disabled={importMutation.isPending || updateMutation.isPending || clonedMutation.isPending}
+					disabled={
+						importMutation.isPending || updateMutation.isPending || clonedMutation.isPending
+					}
 					className="inline-flex items-center gap-2 rounded-lg bg-card px-4 py-2 text-sm font-medium text-foreground transition hover:bg-muted disabled:opacity-50"
 				>
 					<ChevronLeft className="h-4 w-4" />
@@ -685,18 +747,24 @@ export const TemplateCreation = ({
 					<button
 						type="button"
 						onClick={handleSubmit}
-						disabled={!templateName.trim() || selectedCFs.length === 0 || importMutation.isPending || updateMutation.isPending || clonedMutation.isPending}
+						disabled={
+							!templateName.trim() ||
+							selectedCFs.length === 0 ||
+							importMutation.isPending ||
+							updateMutation.isPending ||
+							clonedMutation.isPending
+						}
 						className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-foreground transition hover:bg-primary/90 disabled:opacity-50"
 					>
-						{(importMutation.isPending || updateMutation.isPending || clonedMutation.isPending) ? (
+						{importMutation.isPending || updateMutation.isPending || clonedMutation.isPending ? (
 							<>
 								<div className="h-4 w-4 animate-spin rounded-full border-2 border-border border-t-fg" />
-								{isEditMode ? 'Updating Template...' : 'Creating Template...'}
+								{isEditMode ? "Updating Template..." : "Creating Template..."}
 							</>
 						) : (
 							<>
 								{isEditMode ? <Save className="h-4 w-4" /> : <Download className="h-4 w-4" />}
-								{isEditMode ? 'Update Template' : 'Create Template'}
+								{isEditMode ? "Update Template" : "Create Template"}
 							</>
 						)}
 					</button>

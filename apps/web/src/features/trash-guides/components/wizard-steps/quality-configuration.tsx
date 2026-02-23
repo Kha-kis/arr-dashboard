@@ -5,21 +5,27 @@
 
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "../../../../components/ui";
-import { PremiumSkeleton } from "../../../../components/layout/premium-components";
-import { ChevronLeft, ChevronRight, Gauge, AlertCircle } from "lucide-react";
 import type { CustomQualityConfig } from "@arr/shared";
-import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
-import { QualityGroupEditor } from "../quality-group-editor";
 import { useQuery } from "@tanstack/react-query";
+import { AlertCircle, ChevronLeft, ChevronRight, Gauge } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { PremiumSkeleton } from "../../../../components/layout/premium-components";
+import {
+	Card,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+} from "../../../../components/ui";
 import { apiRequest } from "../../../../lib/api-client/base";
+import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { getErrorMessage } from "../../../../lib/error-utils";
+import { QualityGroupEditor } from "../quality-group-editor";
 
 /**
  * Wizard-specific profile type that allows undefined trashId for edit mode.
  */
-type WizardSelectedProfile = Omit<QualityProfileSummary, 'trashId'> & {
+type WizardSelectedProfile = Omit<QualityProfileSummary, "trashId"> & {
 	trashId?: string;
 };
 
@@ -66,7 +72,12 @@ function parseClonedProfileId(trashId: string): { instanceId: string; profileId:
 		const timestampPart = uuidParts2[0];
 		const randomPart = uuidParts2[1];
 
-		if (timestampPart && randomPart && /^\d+$/.test(timestampPart) && /^[a-z0-9]+$/i.test(randomPart)) {
+		if (
+			timestampPart &&
+			randomPart &&
+			/^\d+$/.test(timestampPart) &&
+			/^[a-z0-9]+$/i.test(randomPart)
+		) {
 			profileIdIndex = parts.length - 3;
 		} else {
 			return null;
@@ -118,7 +129,7 @@ export const QualityConfiguration = ({
 }: QualityConfigurationProps) => {
 	const hasInitializedQualityConfig = useRef(!!initialQualityConfig);
 	const [customQualityConfig, setCustomQualityConfig] = useState<CustomQualityConfig>(
-		initialQualityConfig ?? { useCustomQualities: false, items: [] }
+		initialQualityConfig ?? { useCustomQualities: false, items: [] },
 	);
 
 	const isCloned = isClonedProfile(qualityProfile.trashId);
@@ -133,28 +144,32 @@ export const QualityConfiguration = ({
 			if (isCloned && clonedInfo) {
 				// Fetch from cloned profile
 				const response = await apiRequest<any>(
-					`/api/trash-guides/profile-clone/profile-details/${clonedInfo.instanceId}/${clonedInfo.profileId}`
+					`/api/trash-guides/profile-clone/profile-details/${clonedInfo.instanceId}/${clonedInfo.profileId}`,
 				);
 				if (!response.success || !response.data) {
 					throw new Error(response.error || "Failed to fetch profile details");
 				}
 				const { profile } = response.data;
 				return {
-					qualityItems: profile.items?.map((item: any) => ({
-						name: item.name || item.quality?.name,
-						allowed: item.allowed ?? true,
-						source: item.quality?.source,
-						resolution: item.quality?.resolution,
-						items: item.items?.map((q: any) => typeof q === 'string' ? q : q.name || q.quality?.name),
-					})) || [],
+					qualityItems:
+						profile.items?.map((item: any) => ({
+							name: item.name || item.quality?.name,
+							allowed: item.allowed ?? true,
+							source: item.quality?.source,
+							resolution: item.quality?.resolution,
+							items: item.items?.map((q: any) =>
+								typeof q === "string" ? q : q.name || q.quality?.name,
+							),
+						})) || [],
 					profile: {
 						cutoff: profile.cutoff,
 					},
 				};
-			} else if (qualityProfile.trashId) {
+			}
+			if (qualityProfile.trashId) {
 				// Fetch from TRaSH profile
 				const profileData = await apiRequest<any>(
-					`/api/trash-guides/quality-profiles/${serviceType}/${qualityProfile.trashId}`
+					`/api/trash-guides/quality-profiles/${serviceType}/${qualityProfile.trashId}`,
 				);
 				if (profileData.statusCode || profileData.error) {
 					throw new Error(profileData.message || "Failed to fetch quality profile");
@@ -219,7 +234,8 @@ export const QualityConfiguration = ({
 				if (entry.type === "quality" && entry.item.name === profileCutoffName) {
 					cutoffId = entry.item.id;
 					break;
-				} else if (entry.type === "group" && entry.group.name === profileCutoffName) {
+				}
+				if (entry.type === "group" && entry.group.name === profileCutoffName) {
 					cutoffId = entry.group.id;
 					break;
 				}
@@ -244,7 +260,11 @@ export const QualityConfiguration = ({
 				<Card>
 					<CardHeader>
 						<PremiumSkeleton variant="line" className="h-6 w-48" />
-						<PremiumSkeleton variant="line" className="h-4 w-96 mt-2" style={{ animationDelay: "50ms" }} />
+						<PremiumSkeleton
+							variant="line"
+							className="h-4 w-96 mt-2"
+							style={{ animationDelay: "50ms" }}
+						/>
 					</CardHeader>
 					<CardContent>
 						<div className="space-y-4">
@@ -291,8 +311,8 @@ export const QualityConfiguration = ({
 						</span>
 					</CardTitle>
 					<CardDescription>
-						Configure which qualities are enabled, create quality groups, and set the cutoff for upgrades.
-						These settings will be applied when deploying to your instances.
+						Configure which qualities are enabled, create quality groups, and set the cutoff for
+						upgrades. These settings will be applied when deploying to your instances.
 					</CardDescription>
 				</CardHeader>
 				<CardContent>

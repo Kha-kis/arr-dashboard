@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
 import type { SeerrDiscoverResult } from "@arr/shared";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export type DiscoverMediaType = "movie" | "tv";
 

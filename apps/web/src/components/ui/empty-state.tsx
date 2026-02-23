@@ -1,8 +1,8 @@
 "use client";
 
+import type { LucideIcon } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { Button, type ButtonProps } from "./button";
-import type { LucideIcon } from "lucide-react";
 
 /**
  * EmptyState Component

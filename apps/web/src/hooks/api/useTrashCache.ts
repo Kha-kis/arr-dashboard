@@ -1,9 +1,24 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import type { TrashCacheEntry, TrashConfigType, GitHubRateLimitResponse, SyncMetricsSnapshot } from "@arr/shared";
-import type { TrashCacheStatusResponse, RefreshCachePayload } from "../../lib/api-client/trash-guides";
-import { fetchCacheStatus, fetchCacheEntries, refreshCache, deleteCacheEntry, fetchGitHubRateLimit, fetchSyncMetrics } from "../../lib/api-client/trash-guides";
+import type {
+	GitHubRateLimitResponse,
+	SyncMetricsSnapshot,
+	TrashCacheEntry,
+	TrashConfigType,
+} from "@arr/shared";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type {
+	RefreshCachePayload,
+	TrashCacheStatusResponse,
+} from "../../lib/api-client/trash-guides";
+import {
+	deleteCacheEntry,
+	fetchCacheEntries,
+	fetchCacheStatus,
+	fetchGitHubRateLimit,
+	fetchSyncMetrics,
+	refreshCache,
+} from "../../lib/api-client/trash-guides";
 
 /**
  * Hook to fetch TRaSH Guides cache status

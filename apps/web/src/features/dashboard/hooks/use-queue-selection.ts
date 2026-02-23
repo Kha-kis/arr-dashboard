@@ -2,8 +2,8 @@
  * Hook for managing queue item selection state
  */
 
-import { useState, useEffect, useMemo } from "react";
 import type { QueueItem } from "@arr/shared";
+import { useEffect, useMemo, useState } from "react";
 import { buildKey } from "../lib/queue-utils";
 
 /**

@@ -1,27 +1,27 @@
 "use client";
 
-import { Suspense, lazy, useCallback, useMemo, useState } from "react";
-import { Compass, Film, Tv, TrendingUp, Clock, Tag, EyeOff, Eye } from "lucide-react";
 import { SEERR_MEDIA_STATUS, type SeerrDiscoverResult } from "@arr/shared";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { useSeerrInstances } from "../../seerr/hooks/use-seerr-instances";
-import { InstanceSelector } from "../../seerr/components/instance-selector";
+import { Clock, Compass, Eye, EyeOff, Film, Tag, TrendingUp, Tv } from "lucide-react";
+import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import {
+	useSeerrDiscoverByGenre,
 	useSeerrDiscoverMovies,
-	useSeerrDiscoverTv,
-	useSeerrDiscoverTrending,
 	useSeerrDiscoverMoviesUpcoming,
+	useSeerrDiscoverTrending,
+	useSeerrDiscoverTv,
 	useSeerrDiscoverTvUpcoming,
 	useSeerrSearch,
-	useSeerrDiscoverByGenre,
 } from "../../../hooks/api/useSeerr";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { InstanceSelector } from "../../seerr/components/instance-selector";
+import { useSeerrInstances } from "../../seerr/hooks/use-seerr-instances";
 import { useDiscoverState } from "../hooks/use-discover-state";
-import { DiscoverSearchBar } from "./discover-search-bar";
-import { DiscoverMediaToggle } from "./discover-media-toggle";
 import { DiscoverCarousel } from "./discover-carousel";
-import { DiscoverSearchResults } from "./discover-search-results";
 import { DiscoverEmptyState } from "./discover-empty-state";
 import { DiscoverGenreFilter } from "./discover-genre-filter";
+import { DiscoverMediaToggle } from "./discover-media-toggle";
+import { DiscoverSearchBar } from "./discover-search-bar";
+import { DiscoverSearchResults } from "./discover-search-results";
 
 const DiscoverDetailModal = lazy(() =>
 	import("./discover-detail-modal").then((m) => ({ default: m.DiscoverDetailModal })),
@@ -143,7 +143,10 @@ export const DiscoverClient = () => {
 			<PageHeader themeGradient={themeGradient} />
 
 			{/* Search bar + controls */}
-			<div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500" style={{ animationDelay: "100ms", animationFillMode: "backwards" }}>
+			<div
+				className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
+				style={{ animationDelay: "100ms", animationFillMode: "backwards" }}
+			>
 				<div className="flex flex-col sm:flex-row sm:items-center gap-4">
 					<div className="flex-1">
 						<DiscoverSearchBar
@@ -176,10 +179,16 @@ export const DiscoverClient = () => {
 											color: "var(--muted-foreground)",
 										}
 							}
-							title={hideAvailable ? "Showing only unavailable media" : "Hide available media from browse"}
+							title={
+								hideAvailable
+									? "Showing only unavailable media"
+									: "Hide available media from browse"
+							}
 						>
 							{hideAvailable ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-							<span className="hidden sm:inline">{hideAvailable ? "Hidden" : "Hide Available"}</span>
+							<span className="hidden sm:inline">
+								{hideAvailable ? "Hidden" : "Hide Available"}
+							</span>
 						</button>
 					</div>
 				</div>
@@ -252,9 +261,7 @@ export const DiscoverClient = () => {
 						<DiscoverCarousel
 							title={mediaType === "movie" ? "Coming Soon" : "Upcoming TV"}
 							description={
-								mediaType === "movie"
-									? "Upcoming movies to watch out for"
-									: "TV shows coming soon"
+								mediaType === "movie" ? "Upcoming movies to watch out for" : "TV shows coming soon"
 							}
 							icon={Clock}
 							items={upcomingItems}

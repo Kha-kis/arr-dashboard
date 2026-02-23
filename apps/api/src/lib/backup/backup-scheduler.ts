@@ -1,5 +1,7 @@
-import type { PrismaClient } from "../../lib/prisma.js";
 import type { FastifyBaseLogger } from "fastify";
+import type { PrismaClient } from "../../lib/prisma.js";
+import type { NotificationPayload } from "../notifications/types.js";
+import { getErrorMessage } from "../utils/error-message.js";
 import { getAppVersion } from "../utils/version.js";
 import { BackupService } from "./backup-service.js";
 
@@ -9,12 +11,16 @@ export class BackupScheduler {
 	private intervalId: NodeJS.Timeout | null = null;
 	private backupService: BackupService;
 	private isRunning = false;
+	private notifyFn?: (payload: NotificationPayload) => Promise<void>;
 
 	constructor(
 		private prisma: PrismaClient,
-		private logger: FastifyBaseLogger,secretsPath: string,
+		private logger: FastifyBaseLogger,
+		secretsPath: string,
+		notifyFn?: (payload: NotificationPayload) => Promise<void>,
 	) {
 		this.backupService = new BackupService(prisma, secretsPath);
+		this.notifyFn = notifyFn;
 	}
 
 	/**
@@ -122,12 +128,24 @@ export class BackupScheduler {
 					},
 					"Scheduled backup completed",
 				);
+
+				this.notifyFn?.({
+					eventType: "BACKUP_COMPLETED",
+					title: "Scheduled backup completed",
+					body: `Next backup at ${nextRunAt.toISOString()}`,
+				}).catch(() => {});
 			} finally {
 				// Always reset the running flag, even if backup fails
 				this.isRunning = false;
 			}
 		} catch (error) {
 			this.logger.error({ err: error }, "Error checking/running scheduled backup");
+
+			this.notifyFn?.({
+				eventType: "BACKUP_FAILED",
+				title: "Scheduled backup failed",
+				body: getErrorMessage(error),
+			}).catch(() => {});
 		}
 	}
 

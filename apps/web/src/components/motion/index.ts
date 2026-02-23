@@ -16,31 +16,24 @@
  */
 
 export {
-	// Spring configurations
-	springs,
-
-	// Card with hover lift
-	MotionCard,
-
+	// Re-export AnimatePresence for enter/exit
+	AnimatePresence,
 	// Button with tap scale
 	MotionButton,
-
+	// Card with hover lift
+	MotionCard,
 	// Fade in animations
 	MotionFade,
-
+	// Hover glow effect
+	MotionGlow,
 	// Staggered list animations
 	MotionList,
 	MotionListItem,
-
 	// Scale in animation
 	MotionScale,
-
-	// Hover glow effect
-	MotionGlow,
-
-	// Re-export AnimatePresence for enter/exit
-	AnimatePresence,
+	// Spring configurations
+	springs,
 } from "./motion-components";
 
 // Page transition for smooth navigation animations
-export { PageTransition, pageVariants, pageTransition } from "./page-transition";
+export { PageTransition, pageTransition, pageVariants } from "./page-transition";

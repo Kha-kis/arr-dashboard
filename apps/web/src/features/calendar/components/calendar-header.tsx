@@ -1,11 +1,11 @@
 "use client";
 
-import { Button } from "../../../components/ui/button";
-import { formatMonthLabel } from "../lib/calendar-formatters";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { Calendar, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
-import { cn } from "../../../lib/utils";
 import { useState } from "react";
+import { Button } from "../../../components/ui/button";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { cn } from "../../../lib/utils";
+import { formatMonthLabel } from "../lib/calendar-formatters";
 
 interface CalendarHeaderProps {
 	monthStart: Date;
@@ -69,9 +69,7 @@ export const CalendarHeader = ({
 				{/* Navigation Controls */}
 				<div className="flex items-center gap-2">
 					{/* Month navigation group */}
-					<div
-						className="flex items-center rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden"
-					>
+					<div className="flex items-center rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs overflow-hidden">
 						<Button
 							variant="ghost"
 							size="sm"
@@ -117,13 +115,13 @@ export const CalendarHeader = ({
 						aria-label="Refresh calendar"
 						className={cn(
 							"relative overflow-hidden transition-all duration-300",
-							isRefreshing && "pointer-events-none"
+							isRefreshing && "pointer-events-none",
 						)}
 					>
 						<RefreshCw
 							className={cn(
 								"h-4 w-4 transition-transform duration-500",
-								isRefreshing && "animate-spin"
+								isRefreshing && "animate-spin",
 							)}
 						/>
 						{isRefreshing && (

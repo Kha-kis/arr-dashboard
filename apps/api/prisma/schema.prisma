@@ -14,6 +14,7 @@ enum ServiceType {
   LIDARR
   READARR
   SEERR
+  TAUTULLI
 }
 
 // Library item type enum - uses lowercase to match Zod schema in shared package
@@ -42,6 +43,8 @@ model User {
   serviceInstances      ServiceInstance[]
   userCustomFormats     UserCustomFormat[]
   qualitySizeMappings   QualitySizeMapping[]
+  notificationChannels  NotificationChannel[]
+  libraryCleanupConfig  LibraryCleanupConfig?
 }
 
 model Session {
@@ -100,6 +103,7 @@ model ServiceInstance {
   queueCleanerStrikes         QueueCleanerStrike[]
   libraryCache                LibraryCache[]
   librarySyncStatus           LibrarySyncStatus?
+  tautulliCache               TautulliCache[]
 
   @@index([service])
   @@index([userId])
@@ -881,6 +885,14 @@ model QueueCleanerConfig {
   autoImportCustomPatterns      String?                   // JSON array of custom safe patterns
   autoImportNeverPatterns       String?                   // JSON array of custom never-import patterns
 
+  // Tag/profile pre-filters (skip items that don't match)
+  tagFilterEnabled      Boolean         @default(false)
+  includeTags           String?                           // JSON array of tag IDs
+  excludeTags           String?                           // JSON array of tag IDs
+  profileFilterEnabled  Boolean         @default(false)
+  includeProfiles       String?                           // JSON array of profile IDs
+  excludeProfiles       String?                           // JSON array of profile IDs
+
   // Whitelist/Ignore patterns
   whitelistEnabled      Boolean         @default(false)
   whitelistPatterns     String?                           // JSON: [{ type, pattern }]
@@ -950,4 +962,219 @@ model QueueCleanerStrike {
   @@unique([instanceId, downloadId])
   @@index([instanceId, lastStrikeAt])
   @@map("queue_cleaner_strikes")
+}
+
+// ============================================================================
+// Notification System Models
+// 6-channel notification engine with event subscriptions and delivery logging
+// ============================================================================
+
+/// Notification channel types supported by the system
+enum NotificationChannelType {
+  DISCORD
+  TELEGRAM
+  EMAIL
+  BROWSER_PUSH
+  PUSHBULLET
+  PUSHOVER
+}
+
+/// Events that can trigger notifications
+enum NotificationEventType {
+  HUNT_CONTENT_FOUND
+  HUNT_COMPLETED
+  QUEUE_ITEMS_REMOVED
+  QUEUE_STRIKES_ISSUED
+  TRASH_PROFILE_UPDATED
+  TRASH_SYNC_ERROR
+  BACKUP_COMPLETED
+  BACKUP_FAILED
+  LIBRARY_NEW_CONTENT
+  SYSTEM_STARTUP
+  SYSTEM_ERROR
+  CLEANUP_ITEMS_FLAGGED
+  CLEANUP_ITEMS_REMOVED
+}
+
+/// User-configured notification delivery channels (Discord webhook, Telegram bot, etc.)
+model NotificationChannel {
+  id              String                  @id @default(cuid())
+  userId          String
+  name            String
+  type            NotificationChannelType
+  enabled         Boolean                 @default(true)
+  encryptedConfig String                  // AES-256-GCM encrypted JSON blob per channel type
+  configIv        String
+  lastTestedAt    DateTime?
+  lastTestResult  String?                 // "success" | "failed: <reason>"
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+
+  user          User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptions NotificationSubscription[]
+
+  @@index([userId])
+  @@map("notification_channels")
+}
+
+/// Maps channels to event types they should receive
+model NotificationSubscription {
+  id        String                  @id @default(cuid())
+  channelId String
+  eventType NotificationEventType
+
+  channel NotificationChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@unique([channelId, eventType])
+  @@map("notification_subscriptions")
+}
+
+/// VAPID keys for Web Push notifications (singleton table)
+model VapidKeys {
+  id                  Int      @id @default(1) // Singleton
+  publicKey           String
+  encryptedPrivateKey String
+  privateKeyIv        String
+  createdAt           DateTime @default(now())
+
+  @@map("vapid_keys")
+}
+
+/// Notification delivery log for audit and debugging
+model NotificationLog {
+  id          String                  @id @default(cuid())
+  channelId   String
+  channelType NotificationChannelType
+  eventType   NotificationEventType
+  title       String
+  body        String
+  status      String                  // "sent" | "failed"
+  error       String?
+  sentAt      DateTime                @default(now())
+
+  @@index([channelId])
+  @@index([sentAt])
+  @@map("notification_logs")
+}
+
+// ============================================================================
+// Library Cleanup Feature Models
+// Maintainerr-style automated library cleanup with rule evaluation engine
+// ============================================================================
+
+/// Singleton config per user for the library cleanup scheduler
+model LibraryCleanupConfig {
+  id                String    @id @default(cuid())
+  userId            String    @unique // Singleton per user
+  enabled           Boolean   @default(false)
+  intervalHours     Int       @default(24)
+  lastRunAt         DateTime?
+  nextRunAt         DateTime?
+  dryRunMode        Boolean   @default(true)  // Safety: starts in dry-run
+  maxRemovalsPerRun Int       @default(5)
+  requireApproval   Boolean   @default(true)  // Queue items for approval vs auto-remove
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  user          User                       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  rules         LibraryCleanupRule[]
+  approvalQueue LibraryCleanupApproval[]
+  logs          LibraryCleanupLog[]
+
+  @@map("library_cleanup_configs")
+}
+
+/// Individual cleanup rules evaluated against LibraryCache items
+model LibraryCleanupRule {
+  id             String  @id @default(cuid())
+  configId       String
+  enabled        Boolean @default(true)
+  name           String
+  priority       Int     @default(0)
+  ruleType       String  // "age" | "size" | "rating" | "status" | "unmonitored"
+  parameters     String  // JSON blob per rule type
+  serviceFilter  String? // JSON: ["SONARR", "RADARR"] or null for all
+  instanceFilter String? // JSON: ["instance-id"] or null for all
+  excludeTags    String? // JSON: [1, 5]
+  excludeTitles  String? // JSON: ["regex"]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  config LibraryCleanupConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@index([configId])
+  @@map("library_cleanup_rules")
+}
+
+/// Items flagged by cleanup rules awaiting user approval
+model LibraryCleanupApproval {
+  id              String          @id @default(cuid())
+  configId        String
+  instanceId      String
+  arrItemId       Int
+  itemType        LibraryItemType
+  title           String
+  matchedRuleId   String
+  matchedRuleName String
+  reason          String
+  sizeOnDisk      BigInt          @default(0)
+  year            Int?
+  rating          Float?
+  status          String          @default("pending") // pending | approved | rejected | executed
+  reviewedAt      DateTime?
+  executedAt      DateTime?
+  createdAt       DateTime        @default(now())
+  expiresAt       DateTime
+
+  config LibraryCleanupConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@index([configId])
+  @@index([status])
+  @@map("library_cleanup_approvals")
+}
+
+/// Execution history for cleanup runs
+model LibraryCleanupLog {
+  id             String    @id @default(cuid())
+  configId       String
+  isDryRun       Boolean
+  status         String    // "completed" | "partial" | "error"
+  itemsEvaluated Int       @default(0)
+  itemsFlagged   Int       @default(0)
+  itemsRemoved   Int       @default(0)
+  itemsSkipped   Int       @default(0)
+  details        String?   // JSON array
+  error          String?
+  durationMs     Int?
+  startedAt      DateTime  @default(now())
+  completedAt    DateTime?
+
+  config LibraryCleanupConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+
+  @@index([configId])
+  @@index([startedAt])
+  @@map("library_cleanup_logs")
+}
+
+// ============================================================================
+// Tautulli Integration Cache
+// Materialized view of Tautulli watch data for library cleanup rules
+// ============================================================================
+
+/// Cached watch data from Tautulli, keyed by (instanceId, tmdbId, mediaType)
+model TautulliCache {
+  id              String    @id @default(cuid())
+  instanceId      String
+  tmdbId          Int
+  mediaType       String    // "movie" | "series"
+  lastWatchedAt   DateTime?
+  watchCount      Int       @default(0)
+  watchedByUsers  String    @default("[]") // JSON array of usernames
+  updatedAt       DateTime  @updatedAt
+
+  instance ServiceInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, tmdbId, mediaType])
+  @@index([instanceId])
+  @@map("tautulli_cache")
 }

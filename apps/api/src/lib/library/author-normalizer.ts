@@ -25,7 +25,8 @@ const extractAuthorYear = (raw: Record<string, unknown>): number | undefined => 
 	// Try to extract from earliest book release
 	const nextBook = raw?.nextBook as Record<string, unknown> | undefined;
 	const lastBook = raw?.lastBook as Record<string, unknown> | undefined;
-	const bookYear = toNumber(nextBook?.releaseDate?.toString()?.slice(0, 4)) ??
+	const bookYear =
+		toNumber(nextBook?.releaseDate?.toString()?.slice(0, 4)) ??
 		toNumber(lastBook?.releaseDate?.toString()?.slice(0, 4));
 
 	if (typeof bookYear === "number") {

@@ -150,7 +150,7 @@ export interface TrashCustomFormatGroup {
  */
 export function isCFGroupApplicableToProfile(
 	group: TrashCustomFormatGroup,
-	profileTrashId: string
+	profileTrashId: string,
 ): boolean {
 	const qualityProfiles = group.quality_profiles;
 
@@ -267,7 +267,13 @@ export interface TrashCacheEntry {
 	id: string;
 	serviceType: "RADARR" | "SONARR";
 	configType: TrashConfigType;
-	data: TrashCustomFormat[] | TrashCustomFormatGroup[] | TrashQualitySize[] | TrashNamingScheme[] | TrashQualityProfile[] | TrashCFDescription[];
+	data:
+		| TrashCustomFormat[]
+		| TrashCustomFormatGroup[]
+		| TrashQualitySize[]
+		| TrashNamingScheme[]
+		| TrashQualityProfile[]
+		| TrashCFDescription[];
 	version: number;
 	fetchedAt: string;
 	lastCheckedAt: string;
@@ -734,7 +740,7 @@ export interface InstanceQualityOverrideStatus {
  */
 export function getEffectiveQualityConfig(
 	template: TrashTemplate,
-	instanceId: string
+	instanceId: string,
 ): { config: CustomQualityConfig | undefined; source: "template_default" | "instance_override" } {
 	const override = template.instanceOverrides?.[instanceId]?.qualityConfigOverride;
 	if (override) {
@@ -997,9 +1003,9 @@ export interface UpdateScheduleRequest {
  *   (custom overrides official when `trash_id` matches)
  */
 export interface TrashRepoConfig {
-	owner: string;   // GitHub owner, e.g., "TRaSH-Guides"
-	name: string;    // Repository name, e.g., "Guides"
-	branch: string;  // Branch name, e.g., "master" or "main"
+	owner: string; // GitHub owner, e.g., "TRaSH-Guides"
+	name: string; // Repository name, e.g., "Guides"
+	branch: string; // Branch name, e.g., "master" or "main"
 	mode?: "fork" | "supplementary"; // default: "fork"
 }
 
@@ -1549,13 +1555,17 @@ export const createUserCustomFormatSchema = z.object({
 	serviceType: z.enum(["RADARR", "SONARR"]),
 	description: z.string().max(2000).optional(),
 	includeCustomFormatWhenRenaming: z.boolean().default(false),
-	specifications: z.array(z.object({
-		name: z.string().min(1),
-		implementation: z.string().min(1),
-		negate: z.boolean().default(false),
-		required: z.boolean().default(false),
-		fields: z.record(z.string(), z.unknown()).default({}),
-	})).min(1, "At least one specification is required"),
+	specifications: z
+		.array(
+			z.object({
+				name: z.string().min(1),
+				implementation: z.string().min(1),
+				negate: z.boolean().default(false),
+				required: z.boolean().default(false),
+				fields: z.record(z.string(), z.unknown()).default({}),
+			}),
+		)
+		.min(1, "At least one specification is required"),
 	defaultScore: z.number().int().default(0),
 });
 
@@ -1575,20 +1585,30 @@ export type UpdateUserCustomFormatInput = z.infer<typeof updateUserCustomFormatS
  */
 export const importUserCFFromJsonSchema = z.object({
 	serviceType: z.enum(["RADARR", "SONARR"]),
-	customFormats: z.array(z.object({
-		name: z.string().min(1),
-		includeCustomFormatWhenRenaming: z.boolean().optional(),
-		specifications: z.array(z.object({
-			name: z.string(),
-			implementation: z.string(),
-			negate: z.boolean().optional(),
-			required: z.boolean().optional(),
-			fields: z.union([
-				z.record(z.string(), z.unknown()),
-				z.array(z.object({ name: z.string(), value: z.unknown() })),
-			]).optional(),
-		})).optional(),
-	})).min(1, "At least one custom format is required"),
+	customFormats: z
+		.array(
+			z.object({
+				name: z.string().min(1),
+				includeCustomFormatWhenRenaming: z.boolean().optional(),
+				specifications: z
+					.array(
+						z.object({
+							name: z.string(),
+							implementation: z.string(),
+							negate: z.boolean().optional(),
+							required: z.boolean().optional(),
+							fields: z
+								.union([
+									z.record(z.string(), z.unknown()),
+									z.array(z.object({ name: z.string(), value: z.unknown() })),
+								])
+								.optional(),
+						}),
+					)
+					.optional(),
+			}),
+		)
+		.min(1, "At least one custom format is required"),
 	defaultScore: z.number().int().optional().default(0),
 });
 

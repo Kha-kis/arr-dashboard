@@ -101,7 +101,11 @@ export const FilterControls = ({
 						style={selectStyle}
 					>
 						{PROTOCOL_FILTERS.map((option) => (
-							<option key={option.value} value={option.value} className="bg-background text-foreground">
+							<option
+								key={option.value}
+								value={option.value}
+								className="bg-background text-foreground"
+							>
 								{option.label}
 							</option>
 						))}

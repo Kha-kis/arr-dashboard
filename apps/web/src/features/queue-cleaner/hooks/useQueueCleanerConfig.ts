@@ -1,9 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "../../../lib/api-client/base";
 import type {
-	QueueCleanerConfigWithInstance,
-	QueueCleanerConfigUpdate,
 	InstanceSummary,
+	QueueCleanerConfigUpdate,
+	QueueCleanerConfigWithInstance,
 } from "../lib/queue-cleaner-types";
 
 interface ConfigsResponse {
@@ -19,10 +19,10 @@ async function updateConfig(
 	instanceId: string,
 	data: QueueCleanerConfigUpdate,
 ): Promise<QueueCleanerConfigWithInstance> {
-	return apiRequest<QueueCleanerConfigWithInstance>(
-		`/api/queue-cleaner/configs/${instanceId}`,
-		{ method: "PATCH", json: data },
-	);
+	return apiRequest<QueueCleanerConfigWithInstance>(`/api/queue-cleaner/configs/${instanceId}`, {
+		method: "PATCH",
+		json: data,
+	});
 }
 
 async function createConfig(instanceId: string): Promise<QueueCleanerConfigWithInstance> {
@@ -57,13 +57,8 @@ export function useUpdateQueueCleanerConfig() {
 	const queryClient = useQueryClient();
 
 	const updateMutation = useMutation({
-		mutationFn: ({
-			instanceId,
-			data,
-		}: {
-			instanceId: string;
-			data: QueueCleanerConfigUpdate;
-		}) => updateConfig(instanceId, data),
+		mutationFn: ({ instanceId, data }: { instanceId: string; data: QueueCleanerConfigUpdate }) =>
+			updateConfig(instanceId, data),
 		onSuccess: () => {
 			void queryClient.invalidateQueries({ queryKey: ["queue-cleaner"] });
 		},

@@ -1,29 +1,29 @@
 "use client";
 
-import { AlertCircle, HardDrive, Clock, Zap, Sparkles, BookOpen } from "lucide-react";
-import { TemplateList } from "./template-list";
-import { TemplateEditor } from "./template-editor";
-import { TemplateImportDialog } from "./template-import-dialog";
-import { QualityProfileWizard } from "./quality-profile-wizard";
-import { SchedulerStatusDashboard } from "./scheduler-status-dashboard";
-import { DeploymentHistoryTable } from "./deployment-history-table";
-import { BulkScoreManager } from "./bulk-score-manager";
-import { CustomFormatsBrowser } from "./custom-formats-browser";
-import { QualitySizeManager } from "./quality-size-manager";
-import { RepoSettingsSection } from "./repo-settings-section";
-import { PremiumEmptyState } from "../../../components/layout";
+import { AlertCircle, BookOpen, Clock, HardDrive, Sparkles, Zap } from "lucide-react";
 import { ErrorBoundary } from "../../../components/error-boundary";
-import { CacheStatusSection } from "./cache-status-section";
-import { TrashGuidesTabs } from "./trash-guides-tabs";
-import { useTrashGuidesState } from "../hooks/use-trash-guides-state";
-import { useTrashGuidesData } from "../hooks/use-trash-guides-data";
-import { useTrashGuidesActions } from "../hooks/use-trash-guides-actions";
-import { useTrashGuidesModals } from "../hooks/use-trash-guides-modals";
-import { CONFIG_TYPE_LABELS } from "../lib/constants";
+import { PremiumEmptyState } from "../../../components/layout";
 import { useCurrentUser } from "../../../hooks/api/useAuth";
-import { SEMANTIC_COLORS, getServiceGradient } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useTrashGuidesActions } from "../hooks/use-trash-guides-actions";
+import { useTrashGuidesData } from "../hooks/use-trash-guides-data";
+import { useTrashGuidesModals } from "../hooks/use-trash-guides-modals";
+import { useTrashGuidesState } from "../hooks/use-trash-guides-state";
+import { CONFIG_TYPE_LABELS } from "../lib/constants";
+import { BulkScoreManager } from "./bulk-score-manager";
+import { CacheStatusSection } from "./cache-status-section";
+import { CustomFormatsBrowser } from "./custom-formats-browser";
+import { DeploymentHistoryTable } from "./deployment-history-table";
+import { QualityProfileWizard } from "./quality-profile-wizard";
+import { QualitySizeManager } from "./quality-size-manager";
+import { RepoSettingsSection } from "./repo-settings-section";
+import { SchedulerStatusDashboard } from "./scheduler-status-dashboard";
+import { TemplateEditor } from "./template-editor";
+import { TemplateImportDialog } from "./template-import-dialog";
+import { TemplateList } from "./template-list";
+import { TrashGuidesTabs } from "./trash-guides-tabs";
 
 function PremiumSkeleton() {
 	const { gradient: themeGradient } = useThemeGradient();
@@ -35,7 +35,9 @@ function PremiumSkeleton() {
 				<div className="flex items-center gap-4">
 					<div
 						className="h-14 w-14 rounded-2xl animate-pulse"
-						style={{ background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)` }}
+						style={{
+							background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
+						}}
 					/>
 					<div className="space-y-2">
 						<div className="h-8 w-56 rounded-lg bg-muted/30 animate-pulse" />
@@ -86,7 +88,15 @@ export function TrashGuidesClient() {
 	const { data: currentUser, isLoading: isAuthLoading } = useCurrentUser();
 	const { activeTab, setActiveTab } = useTrashGuidesState();
 	const { cacheStatus, isLoading, error, refetchCache } = useTrashGuidesData();
-	const { handleRefresh, handleRefreshEntry, handleDelete, refreshing, refreshingEntry, refreshMutation, deleteMutation } = useTrashGuidesActions();
+	const {
+		handleRefresh,
+		handleRefreshEntry,
+		handleDelete,
+		refreshing,
+		refreshingEntry,
+		refreshMutation,
+		deleteMutation,
+	} = useTrashGuidesActions();
 	const {
 		editorOpen,
 		importOpen,
@@ -161,7 +171,8 @@ export function TrashGuidesClient() {
 										Deployment History
 									</h3>
 									<p className="text-muted-foreground mt-1">
-										View all template deployments across your instances. Track deployment status, review applied configurations, and undeploy when needed.
+										View all template deployments across your instances. Track deployment status,
+										review applied configurations, and undeploy when needed.
 									</p>
 								</div>
 							</div>
@@ -176,7 +187,7 @@ export function TrashGuidesClient() {
 							<div className="flex items-center justify-center py-12">
 								<div
 									className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent"
-									style={{ borderColor: `${themeGradient.from}40`, borderTopColor: 'transparent' }}
+									style={{ borderColor: `${themeGradient.from}40`, borderTopColor: "transparent" }}
 								/>
 							</div>
 						) : currentUser?.id ? (
@@ -187,9 +198,7 @@ export function TrashGuidesClient() {
 						) : (
 							<div className="text-center py-12">
 								<Sparkles className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-								<p className="text-muted-foreground">
-									Please log in to manage bulk scores
-								</p>
+								<p className="text-muted-foreground">Please log in to manage bulk scores</p>
 							</div>
 						)}
 					</div>
@@ -300,11 +309,17 @@ export function TrashGuidesClient() {
 								<HardDrive className="h-4 w-4 text-muted-foreground" />
 								<span className="text-sm text-muted-foreground">
 									Cache:{" "}
-									<span className="font-semibold" style={{ color: getServiceGradient("RADARR").from }}>
+									<span
+										className="font-semibold"
+										style={{ color: getServiceGradient("RADARR").from }}
+									>
 										{cacheStatus.radarr.length} Radarr
 									</span>
 									,{" "}
-									<span className="font-semibold" style={{ color: getServiceGradient("SONARR").from }}>
+									<span
+										className="font-semibold"
+										style={{ color: getServiceGradient("SONARR").from }}
+									>
 										{cacheStatus.sonarr.length} Sonarr
 									</span>
 								</span>
@@ -313,7 +328,10 @@ export function TrashGuidesClient() {
 								<>
 									<span className="text-border">•</span>
 									<div className="flex items-center gap-1.5">
-										<Clock className="h-3.5 w-3.5" style={{ color: SEMANTIC_COLORS.warning.from }} />
+										<Clock
+											className="h-3.5 w-3.5"
+											style={{ color: SEMANTIC_COLORS.warning.from }}
+										/>
 										<span
 											className="text-sm font-medium"
 											style={{ color: SEMANTIC_COLORS.warning.from }}
@@ -342,11 +360,17 @@ export function TrashGuidesClient() {
 				>
 					<div className="flex items-center justify-between gap-4">
 						<div className="flex items-center gap-3">
-							<AlertCircle className="h-5 w-5 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
+							<AlertCircle
+								className="h-5 w-5 shrink-0"
+								style={{ color: SEMANTIC_COLORS.error.from }}
+							/>
 							<div>
 								<p className="font-medium text-foreground">Refresh failed</p>
 								<p className="text-sm text-muted-foreground">
-									{getErrorMessage(refreshMutation.error, "Failed to refresh cache. Please try again.")}
+									{getErrorMessage(
+										refreshMutation.error,
+										"Failed to refresh cache. Please try again.",
+									)}
 								</p>
 							</div>
 						</div>
@@ -363,21 +387,12 @@ export function TrashGuidesClient() {
 
 			{/* Tab Content -- key forces remount + re-animation on tab switch */}
 			<ErrorBoundary key={activeTab}>
-				<div className="animate-in fade-in duration-300">
-					{renderTabContent()}
-				</div>
+				<div className="animate-in fade-in duration-300">{renderTabContent()}</div>
 			</ErrorBoundary>
 
 			{/* Modals */}
-			<TemplateEditor
-				open={editorOpen}
-				onClose={handleCloseEditor}
-				template={editingTemplate}
-			/>
-			<TemplateImportDialog
-				open={importOpen}
-				onClose={handleCloseImport}
-			/>
+			<TemplateEditor open={editorOpen} onClose={handleCloseEditor} template={editingTemplate} />
+			<TemplateImportDialog open={importOpen} onClose={handleCloseImport} />
 			{selectedServiceType && (
 				<QualityProfileWizard
 					open={qualityProfileBrowserOpen}

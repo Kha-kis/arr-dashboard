@@ -1,19 +1,19 @@
 "use client";
 
-import React, { Suspense, useCallback, useEffect, useState } from "react";
 import type { LibraryItem } from "@arr/shared";
+import React, { Suspense, useCallback, useEffect, useState } from "react";
 import { toast } from "../../../components/ui";
 import { useLibraryMonitorMutation } from "../../../hooks/api/useLibrary";
 import { useLibraryEnrichment } from "../../../hooks/api/useSeerr";
 import { useSeerrInstances } from "../../seerr/hooks/use-seerr-instances";
-import { useLibraryFilters, useLibraryData, useLibraryActions } from "../hooks";
-import { LibraryHeader } from "./library-header";
-import { LibraryContent } from "./library-content";
-import { LibraryCard } from "./library-card";
-import { ItemDetailsModal } from "./item-details-modal";
+import { useLibraryActions, useLibraryData, useLibraryFilters } from "../hooks";
+import { buildLibraryExternalLink } from "../lib/library-utils";
 import { AlbumBreakdownModal } from "./album-breakdown-modal";
 import { BookBreakdownModal } from "./book-breakdown-modal";
-import { buildLibraryExternalLink } from "../lib/library-utils";
+import { ItemDetailsModal } from "./item-details-modal";
+import { LibraryCard } from "./library-card";
+import { LibraryContent } from "./library-content";
+import { LibraryHeader } from "./library-header";
 
 const EnrichedDetailModal = React.lazy(() =>
 	import("./enriched-detail-modal").then((m) => ({ default: m.EnrichedDetailModal })),
@@ -140,14 +140,17 @@ export const LibraryClient: React.FC = () => {
 	const handleCloseBookDetail = useCallback(() => setBookDetail(null), []);
 
 	// Item monitoring handler (memoized)
-	const handleToggleMonitor = useCallback((item: LibraryItem) => {
-		monitorMutation.mutate({
-			instanceId: item.instanceId,
-			service: item.service,
-			itemId: item.id,
-			monitored: !(item.monitored ?? false),
-		});
-	}, [monitorMutation]);
+	const handleToggleMonitor = useCallback(
+		(item: LibraryItem) => {
+			monitorMutation.mutate({
+				instanceId: item.instanceId,
+				service: item.service,
+				itemId: item.id,
+				monitored: !(item.monitored ?? false),
+			});
+		},
+		[monitorMutation],
+	);
 
 	return (
 		<>
@@ -207,8 +210,10 @@ export const LibraryClient: React.FC = () => {
 				/>
 			</div>
 
-			{itemDetail && (
-				seerrInstanceId && (itemDetail.service === "sonarr" || itemDetail.service === "radarr") && itemDetail.remoteIds?.tmdbId ? (
+			{itemDetail &&
+				(seerrInstanceId &&
+				(itemDetail.service === "sonarr" || itemDetail.service === "radarr") &&
+				itemDetail.remoteIds?.tmdbId ? (
 					<Suspense>
 						<EnrichedDetailModal
 							item={itemDetail}
@@ -223,15 +228,16 @@ export const LibraryClient: React.FC = () => {
 							pendingSeasonAction={actions.pendingSeasonAction}
 							enrichedPosterPath={
 								enrichmentMap && itemDetail.remoteIds?.tmdbId
-									? enrichmentMap[`${itemDetail.type === "movie" ? "movie" : "tv"}:${itemDetail.remoteIds.tmdbId}`]?.posterPath
+									? enrichmentMap[
+											`${itemDetail.type === "movie" ? "movie" : "tv"}:${itemDetail.remoteIds.tmdbId}`
+										]?.posterPath
 									: undefined
 							}
 						/>
 					</Suspense>
 				) : (
 					<ItemDetailsModal item={itemDetail} onClose={handleCloseItemDetail} />
-				)
-			)}
+				))}
 
 			{albumDetail && (
 				<AlbumBreakdownModal

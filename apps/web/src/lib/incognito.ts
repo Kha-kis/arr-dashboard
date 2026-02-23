@@ -126,21 +126,22 @@ export function anonymizeHealthMessage(message: string): string {
 		/(Indexers[^:]+:\s*)([A-Za-z0-9._\-, ]+)(\s|$)/gi,
 		(match, prefix, indexerList, suffix) => {
 			// Split by comma, replace each with LinuxTracker
-			const anonymizedList = indexerList.split(',')
+			const anonymizedList = indexerList
+				.split(",")
 				.map(() => "LinuxTracker")
-				.join(', ');
+				.join(", ");
 			return `${prefix}${anonymizedList}${suffix}`;
-		}
+		},
 	);
 
 	// Replace individual series/movie entries: "SeriesName (tvdbid 123456)" or "SeriesName (tmdbid 123456)"
 	// This will handle comma-separated lists by processing each item individually
 	anonymized = anonymized.replace(
-		/([A-Za-z0-9\s.:'&!?()\-]+?)\s+\((tvdbid|tmdbid)\s+\d+\)/gi,
+		/([A-Za-z0-9\s.:'&!?()-]+?)\s+\((tvdbid|tmdbid)\s+\d+\)/gi,
 		(match, name, idType) => {
 			const isoName = getLinuxIsoName(name.trim());
 			return `${isoName} (${idType} [redacted])`;
-		}
+		},
 	);
 
 	// Replace any remaining quoted names with generic alternatives
@@ -157,13 +158,14 @@ export function anonymizeStatusMessage(message: string): string {
 	// Keep the episode number pattern but anonymize the context
 	anonymized = anonymized.replace(
 		/Episode\s+(\d+x\d+)\s+was not found in the grabbed release:\s*(.+)$/gi,
-		(_, episode) => `Episode ${episode} was not found in the grabbed release: linux-distribution-v1.0-x86_64`
+		(_, episode) =>
+			`Episode ${episode} was not found in the grabbed release: linux-distribution-v1.0-x86_64`,
 	);
 
 	// Replace "grabbed release: Title S01 1080p..." patterns
 	anonymized = anonymized.replace(
 		/grabbed release:\s*[^\n]+/gi,
-		"grabbed release: linux-distribution-v1.0-x86_64"
+		"grabbed release: linux-distribution-v1.0-x86_64",
 	);
 
 	// Replace release names with resolution and codec info (most comprehensive pattern)
@@ -171,39 +173,39 @@ export function anonymizeStatusMessage(message: string): string {
 	// This catches scene release naming conventions
 	anonymized = anonymized.replace(
 		/[A-Za-z0-9\s.'\-:]+(?:\d{4}\s+)?S\d{1,2}E\d{1,2}[A-Za-z0-9\s.'\-:]*\d{3,4}p[^\n]*/gi,
-		"linux-distribution-v1.0-x86_64"
+		"linux-distribution-v1.0-x86_64",
 	);
 
 	// Replace release names that look like media (contain resolution, codec info)
 	// Pattern matches things like "Show Name S01E02 1080p WEB-DL..."
 	anonymized = anonymized.replace(
 		/[A-Za-z0-9\s.'\-:]+\s+S\d{1,2}(?:E\d{1,2})?\s+\d{3,4}p[^\n,]*/gi,
-		"linux-distribution-v1.0-x86_64"
+		"linux-distribution-v1.0-x86_64",
 	);
 
 	// Replace movie release patterns "Movie Name (2024) 1080p..."
 	anonymized = anonymized.replace(
 		/[A-Za-z0-9\s.'\-:]+\s+\(\d{4}\)\s+\d{3,4}p[^\n,]*/gi,
-		"linux-distribution-v1.0-x86_64"
+		"linux-distribution-v1.0-x86_64",
 	);
 
 	// Replace standalone release names with resolution (720p, 1080p, 2160p, etc.)
 	// and common release group suffixes
 	anonymized = anonymized.replace(
-		/[A-Za-z0-9\s.'\-:]{10,}\d{3,4}p[A-Za-z0-9\s.\-]*(?:WEB|HDTV|BluRay|BDRip|DVDRip|REMUX|NF|AMZN|DSNP|HMAX)[^\n]*/gi,
-		"linux-distribution-v1.0-x86_64"
+		/[A-Za-z0-9\s.'\-:]{10,}\d{3,4}p[A-Za-z0-9\s.-]*(?:WEB|HDTV|BluRay|BDRip|DVDRip|REMUX|NF|AMZN|DSNP|HMAX)[^\n]*/gi,
+		"linux-distribution-v1.0-x86_64",
 	);
 
 	// Replace "expected in this release" messages
 	anonymized = anonymized.replace(
 		/expected in this release were not imported/gi,
-		"expected in this distribution were not verified"
+		"expected in this distribution were not verified",
 	);
 
 	// Replace show/movie titles after common prefixes
 	anonymized = anonymized.replace(
 		/(for|from|in|of)\s+['"]?[A-Z][A-Za-z0-9\s.'\-:]+['"]?\s*(S\d|Season|\()/gi,
-		(_, prefix) => `${prefix} linux-distribution (`
+		(_, prefix) => `${prefix} linux-distribution (`,
 	);
 
 	// Keep generic messages as-is

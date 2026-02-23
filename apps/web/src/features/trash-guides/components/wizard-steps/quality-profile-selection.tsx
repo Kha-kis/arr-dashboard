@@ -1,16 +1,26 @@
 "use client";
 
-import { useState } from "react";
-import { useQualityProfiles } from "../../../../hooks/api/useQualityProfiles";
-import { Alert, AlertDescription, EmptyState, Card, CardHeader, CardTitle, CardDescription, CardContent, Button } from "../../../../components/ui";
-import { PremiumSkeleton } from "../../../../components/layout/premium-components";
-import { FileText, Star, Languages, Gauge, Info, Download, Layers } from "lucide-react";
-import { useThemeGradient } from "../../../../hooks/useThemeGradient";
-import { createSanitizedHtml } from "../../../../lib/sanitize-html";
-import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import type { CompleteQualityProfile } from "@arr/shared";
-import { QualityProfileImporter } from "../quality-profile-importer";
+import { Download, FileText, Gauge, Info, Languages, Layers, Star } from "lucide-react";
+import { useState } from "react";
+import { PremiumSkeleton } from "../../../../components/layout/premium-components";
+import {
+	Alert,
+	AlertDescription,
+	Button,
+	Card,
+	CardContent,
+	CardDescription,
+	CardHeader,
+	CardTitle,
+	EmptyState,
+} from "../../../../components/ui";
+import { useQualityProfiles } from "../../../../hooks/api/useQualityProfiles";
+import { useThemeGradient } from "../../../../hooks/useThemeGradient";
+import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { getErrorMessage } from "../../../../lib/error-utils";
+import { createSanitizedHtml } from "../../../../lib/sanitize-html";
+import { QualityProfileImporter } from "../quality-profile-importer";
 
 interface QualityProfileSelectionProps {
 	serviceType: "RADARR" | "SONARR";
@@ -28,17 +38,19 @@ export const QualityProfileSelection = ({
 	// Handle imported profile from cloning
 	const handleProfileImported = (importedProfile: CompleteQualityProfile) => {
 		// Generate unique ID using crypto if available, falling back to timestamp
-		const uniqueSuffix = typeof crypto !== "undefined" && crypto.randomUUID
-			? crypto.randomUUID()
-			: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+		const uniqueSuffix =
+			typeof crypto !== "undefined" && crypto.randomUUID
+				? crypto.randomUUID()
+				: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
 		// Count custom formats from profile items (items with negative IDs indicate custom formats)
 		const customFormatCount = importedProfile.items.filter(
-			(item) => item.id !== undefined && item.id < 0
+			(item) => item.id !== undefined && item.id < 0,
 		).length;
 
 		// Use friendly instance label if available, fall back to instance ID
-		const instanceDisplayName = importedProfile.sourceInstanceLabel || importedProfile.sourceInstanceId;
+		const instanceDisplayName =
+			importedProfile.sourceInstanceLabel || importedProfile.sourceInstanceId;
 
 		// Convert CompleteQualityProfile to QualityProfileSummary format for wizard
 		const profileSummary: QualityProfileSummary = {
@@ -103,10 +115,7 @@ export const QualityProfileSelection = ({
 							Import a complete quality profile from an existing *arr instance
 						</p>
 					</div>
-					<Button
-						variant="secondary"
-						onClick={() => setShowCloneImporter(false)}
-					>
+					<Button variant="secondary" onClick={() => setShowCloneImporter(false)}>
 						Back to TRaSH Guides
 					</Button>
 				</div>
@@ -126,7 +135,9 @@ export const QualityProfileSelection = ({
 			<Alert>
 				<Info className="h-4 w-4" />
 				<AlertDescription>
-					<strong>Quality profiles</strong> are expert-curated configurations from TRaSH Guides that define quality preferences, custom format rules, and scoring systems. Choose a profile that matches your quality preferences.
+					<strong>Quality profiles</strong> are expert-curated configurations from TRaSH Guides that
+					define quality preferences, custom format rules, and scoring systems. Choose a profile
+					that matches your quality preferences.
 				</AlertDescription>
 			</Alert>
 

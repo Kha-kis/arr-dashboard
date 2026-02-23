@@ -317,12 +317,14 @@ export interface ArrQualityItem {
  */
 export function buildCompleteQualityProfile(
 	fullProfile: ArrQualityProfileResponse,
-	profileConfig: {
-		upgradeAllowed?: boolean;
-		cutoff?: number;
-		minFormatScore?: number;
-		cutoffFormatScore?: number;
-	} | undefined,
+	profileConfig:
+		| {
+				upgradeAllowed?: boolean;
+				cutoff?: number;
+				minFormatScore?: number;
+				cutoffFormatScore?: number;
+		  }
+		| undefined,
 	sourceInfo: {
 		sourceInstanceId: string;
 		sourceInstanceLabel: string;

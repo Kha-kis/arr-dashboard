@@ -7,7 +7,7 @@
 
 import type { QueueCleanerConfig } from "../prisma.js";
 import type { QueueStateSummary } from "./constants.js";
-import { type RawQueueItem, parseDate, collectStatusTexts } from "./queue-item-utils.js";
+import { collectStatusTexts, parseDate, type RawQueueItem } from "./queue-item-utils.js";
 
 /**
  * Generate detailed reason string based on rule and item context.

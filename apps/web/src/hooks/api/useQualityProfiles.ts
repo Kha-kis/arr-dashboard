@@ -1,25 +1,25 @@
 "use client";
 
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
-	QualityProfilesResponse,
+	CFValidationResponse,
+	CreateClonedTemplatePayload,
 	ImportQualityProfilePayload,
 	ImportQualityProfileResponse,
-	UpdateQualityProfileTemplatePayload,
-	CreateClonedTemplatePayload,
-	ValidateCFsPayload,
-	CFValidationResponse,
 	MatchProfilePayload,
 	ProfileMatchResult,
+	QualityProfilesResponse,
+	UpdateQualityProfileTemplatePayload,
+	ValidateCFsPayload,
 } from "../../lib/api-client/trash-guides";
 import {
-	fetchQualityProfiles,
-	fetchQualityProfileDetails,
-	importQualityProfile,
-	updateQualityProfileTemplate,
 	createClonedProfileTemplate,
-	validateClonedCFs,
+	fetchQualityProfileDetails,
+	fetchQualityProfiles,
+	importQualityProfile,
 	matchProfileToTrash,
+	updateQualityProfileTemplate,
+	validateClonedCFs,
 } from "../../lib/api-client/trash-guides";
 import { TEMPLATES_QUERY_KEY } from "./useTemplates";
 
@@ -69,11 +69,15 @@ export const useImportQualityProfile = () => {
 export const useImportQualityProfileWizard = () => {
 	const queryClient = useQueryClient();
 
-	return useMutation<ImportQualityProfileResponse, Error, ImportQualityProfilePayload & {
-		selectedCFGroups: string[];
-		customFormatSelections: Record<string, any>;
-		customQualityConfig?: any;
-	}>({
+	return useMutation<
+		ImportQualityProfileResponse,
+		Error,
+		ImportQualityProfilePayload & {
+			selectedCFGroups: string[];
+			customFormatSelections: Record<string, any>;
+			customQualityConfig?: any;
+		}
+	>({
 		mutationFn: (payload) => importQualityProfile(payload),
 		onSuccess: () => {
 			// Invalidate templates query to show newly created template
@@ -88,11 +92,15 @@ export const useImportQualityProfileWizard = () => {
 export const useUpdateQualityProfileTemplate = () => {
 	const queryClient = useQueryClient();
 
-	return useMutation<ImportQualityProfileResponse, Error, UpdateQualityProfileTemplatePayload & {
-		selectedCFGroups: string[];
-		customFormatSelections: Record<string, any>;
-		customQualityConfig?: any;
-	}>({
+	return useMutation<
+		ImportQualityProfileResponse,
+		Error,
+		UpdateQualityProfileTemplatePayload & {
+			selectedCFGroups: string[];
+			customFormatSelections: Record<string, any>;
+			customQualityConfig?: any;
+		}
+	>({
 		mutationFn: (payload) => updateQualityProfileTemplate(payload),
 		onSuccess: () => {
 			// Invalidate templates query to show updated template

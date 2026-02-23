@@ -1,6 +1,5 @@
 ﻿"use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
 	MultiInstanceSearchResponse,
 	ProwlarrIndexerDetails,
@@ -10,11 +9,12 @@ import type {
 	SearchIndexerTestResponse,
 	SearchRequest,
 } from "@arr/shared";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-	fetchSearchIndexers,
 	fetchSearchIndexerDetails,
-	performManualSearch,
+	fetchSearchIndexers,
 	grabManualSearchResult,
+	performManualSearch,
 	testSearchIndexer,
 	updateSearchIndexer,
 } from "../../lib/api-client/search";

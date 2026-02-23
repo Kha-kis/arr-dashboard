@@ -1,24 +1,17 @@
 "use client";
 
+import { AlertCircle, AlertTriangle, CheckCircle2, Key, Loader2, Shield } from "lucide-react";
 import { useState } from "react";
-import {
-	Key,
-	CheckCircle2,
-	AlertTriangle,
-	Loader2,
-	Shield,
-	AlertCircle,
-} from "lucide-react";
+import { GlassmorphicCard, PremiumSection } from "../../../components/layout";
 import { Button, Input, toast } from "../../../components/ui";
-import { PremiumSection, GlassmorphicCard } from "../../../components/layout";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import {
 	useBackupPasswordStatus,
-	useSetBackupPassword,
 	useRemoveBackupPassword,
+	useSetBackupPassword,
 } from "../../../hooks/api/useBackup";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 export const BackupEncryptionSection = () => {
 	const { gradient: themeGradient } = useThemeGradient();
@@ -54,7 +47,11 @@ export const BackupEncryptionSection = () => {
 	};
 
 	const handleRemovePassword = async () => {
-		if (!confirm("Are you sure you want to remove the backup password from the database?\n\nIf you have the BACKUP_PASSWORD environment variable set, backups will use that instead.")) {
+		if (
+			!confirm(
+				"Are you sure you want to remove the backup password from the database?\n\nIf you have the BACKUP_PASSWORD environment variable set, backups will use that instead.",
+			)
+		) {
 			return;
 		}
 		try {
@@ -87,7 +84,10 @@ export const BackupEncryptionSection = () => {
 							border: `1px solid ${SEMANTIC_COLORS.success.border}`,
 						}}
 					>
-						<CheckCircle2 className="h-5 w-5 shrink-0" style={{ color: SEMANTIC_COLORS.success.text }} />
+						<CheckCircle2
+							className="h-5 w-5 shrink-0"
+							style={{ color: SEMANTIC_COLORS.success.text }}
+						/>
 						<div className="flex-1">
 							<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.success.text }}>
 								Password Configured
@@ -118,7 +118,10 @@ export const BackupEncryptionSection = () => {
 							border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
 						}}
 					>
-						<AlertTriangle className="h-5 w-5 shrink-0" style={{ color: SEMANTIC_COLORS.warning.text }} />
+						<AlertTriangle
+							className="h-5 w-5 shrink-0"
+							style={{ color: SEMANTIC_COLORS.warning.text }}
+						/>
 						<div className="flex-1">
 							<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.warning.text }}>
 								No Password Configured
@@ -175,7 +178,11 @@ export const BackupEncryptionSection = () => {
 							<div className="flex gap-2">
 								<Button
 									type="submit"
-									disabled={setPasswordMutation.isPending || newPassword.length < 8 || newPassword !== confirmPassword}
+									disabled={
+										setPasswordMutation.isPending ||
+										newPassword.length < 8 ||
+										newPassword !== confirmPassword
+									}
 									className="gap-2"
 									style={{
 										background: `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`,

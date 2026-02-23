@@ -53,8 +53,8 @@ export const SilentFailurePanel = ({
 					Validation Failed
 				</h3>
 				<p className="mt-1 text-sm" style={{ color: SEMANTIC_COLORS.warning.text }}>
-					Validation could not be completed, but no specific errors were reported.
-					This may be a temporary issue.
+					Validation could not be completed, but no specific errors were reported. This may be a
+					temporary issue.
 				</p>
 				<div className="mt-3 flex items-center gap-3">
 					<Button
@@ -65,9 +65,7 @@ export const SilentFailurePanel = ({
 						className="gap-2 rounded-xl"
 					>
 						<RefreshCw className={`h-3 w-3 ${isValidating ? "animate-spin" : ""}`} />
-						{retryCount > 0
-							? `Retry (${retryCount}/${maxManualRetries})`
-							: "Retry Validation"}
+						{retryCount > 0 ? `Retry (${retryCount}/${maxManualRetries})` : "Retry Validation"}
 					</Button>
 					<span className="text-xs" style={{ color: SEMANTIC_COLORS.warning.text }}>
 						Try again or check your instance connectivity
@@ -197,9 +195,7 @@ export const ValidationErrorPanel = ({
 						className="gap-2 rounded-xl"
 					>
 						<RefreshCw className={`h-3 w-3 ${isValidating ? "animate-spin" : ""}`} />
-						{retryCount > 0
-							? `Retry (${retryCount}/${maxManualRetries})`
-							: "Retry Validation"}
+						{retryCount > 0 ? `Retry (${retryCount}/${maxManualRetries})` : "Retry Validation"}
 					</Button>
 				</div>
 

@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
-import type { PrismaClient } from "../../lib/prisma.js";
 import type { FastifyReply, FastifyRequest } from "fastify";
 import type { ApiEnv } from "../../config/env.js";
+import type { PrismaClient } from "../../lib/prisma.js";
 
 /**
  * Base cookie options for session management.

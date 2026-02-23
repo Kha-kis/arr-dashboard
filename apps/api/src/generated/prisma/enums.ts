@@ -15,7 +15,8 @@ export const ServiceType = {
   PROWLARR: 'PROWLARR',
   LIDARR: 'LIDARR',
   READARR: 'READARR',
-  SEERR: 'SEERR'
+  SEERR: 'SEERR',
+  TAUTULLI: 'TAUTULLI'
 } as const
 
 export type ServiceType = (typeof ServiceType)[keyof typeof ServiceType]
@@ -39,3 +40,34 @@ export const BackupIntervalType = {
 } as const
 
 export type BackupIntervalType = (typeof BackupIntervalType)[keyof typeof BackupIntervalType]
+
+
+export const NotificationChannelType = {
+  DISCORD: 'DISCORD',
+  TELEGRAM: 'TELEGRAM',
+  EMAIL: 'EMAIL',
+  BROWSER_PUSH: 'BROWSER_PUSH',
+  PUSHBULLET: 'PUSHBULLET',
+  PUSHOVER: 'PUSHOVER'
+} as const
+
+export type NotificationChannelType = (typeof NotificationChannelType)[keyof typeof NotificationChannelType]
+
+
+export const NotificationEventType = {
+  HUNT_CONTENT_FOUND: 'HUNT_CONTENT_FOUND',
+  HUNT_COMPLETED: 'HUNT_COMPLETED',
+  QUEUE_ITEMS_REMOVED: 'QUEUE_ITEMS_REMOVED',
+  QUEUE_STRIKES_ISSUED: 'QUEUE_STRIKES_ISSUED',
+  TRASH_PROFILE_UPDATED: 'TRASH_PROFILE_UPDATED',
+  TRASH_SYNC_ERROR: 'TRASH_SYNC_ERROR',
+  BACKUP_COMPLETED: 'BACKUP_COMPLETED',
+  BACKUP_FAILED: 'BACKUP_FAILED',
+  LIBRARY_NEW_CONTENT: 'LIBRARY_NEW_CONTENT',
+  SYSTEM_STARTUP: 'SYSTEM_STARTUP',
+  SYSTEM_ERROR: 'SYSTEM_ERROR',
+  CLEANUP_ITEMS_FLAGGED: 'CLEANUP_ITEMS_FLAGGED',
+  CLEANUP_ITEMS_REMOVED: 'CLEANUP_ITEMS_REMOVED'
+} as const
+
+export type NotificationEventType = (typeof NotificationEventType)[keyof typeof NotificationEventType]

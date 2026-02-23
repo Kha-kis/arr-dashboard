@@ -8,10 +8,10 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, RotateCcw, Search } from "lucide-react";
-import { Card, CardHeader, CardTitle, CardDescription } from "../../../../components/ui";
+import { Card, CardDescription, CardHeader, CardTitle } from "../../../../components/ui";
 import { useThemeGradient } from "../../../../hooks/useThemeGradient";
-import type { ResolvedCF } from "./cf-resolution";
 import type { CFSelectionState } from "./cf-configuration-types";
+import type { ResolvedCF } from "./cf-resolution";
 
 interface CFConfigurationClonedProps {
 	cfResolutions: ResolvedCF[];
@@ -41,9 +41,10 @@ const ResolutionCard = ({
 	onUpdateScore: (score: string) => void;
 }) => {
 	const scoreOverride = selection?.scoreOverride;
-	const defaultScore = resolution.decision === "use_trash"
-		? resolution.recommendedScore ?? 0
-		: resolution.instanceScore ?? 0;
+	const defaultScore =
+		resolution.decision === "use_trash"
+			? (resolution.recommendedScore ?? 0)
+			: (resolution.instanceScore ?? 0);
 
 	return (
 		<div className="rounded-lg p-4 border border-border/50 bg-card transition-all hover:border-primary/50 hover:shadow-md">
@@ -86,9 +87,10 @@ const ResolutionCard = ({
 							{resolution.decision === "use_trash" && resolution.recommendedScore !== undefined && (
 								<span>• TRaSH Recommended: {resolution.recommendedScore}</span>
 							)}
-							{resolution.instanceScore !== undefined && resolution.instanceScore !== defaultScore && (
-								<span>• Instance Score: {resolution.instanceScore}</span>
-							)}
+							{resolution.instanceScore !== undefined &&
+								resolution.instanceScore !== defaultScore && (
+									<span>• Instance Score: {resolution.instanceScore}</span>
+								)}
 						</div>
 
 						<div className="flex items-center gap-2 flex-wrap">
@@ -136,11 +138,11 @@ export const CFConfigurationCloned = ({
 	onBack,
 }: CFConfigurationClonedProps) => {
 	const { gradient: themeGradient } = useThemeGradient();
-	const selectedCount = Object.values(selections).filter(s => s?.selected).length;
+	const selectedCount = Object.values(selections).filter((s) => s?.selected).length;
 
 	// Group resolutions by decision type
-	const linkedToTrash = cfResolutions.filter(r => r.decision === "use_trash");
-	const keepInstance = cfResolutions.filter(r => r.decision === "keep_instance");
+	const linkedToTrash = cfResolutions.filter((r) => r.decision === "use_trash");
+	const keepInstance = cfResolutions.filter((r) => r.decision === "keep_instance");
 
 	const searchLower = searchQuery.toLowerCase();
 	const filterBySearch = (r: ResolvedCF) =>
@@ -153,7 +155,8 @@ export const CFConfigurationCloned = ({
 				<CardHeader>
 					<CardTitle>Configure Custom Format Scores</CardTitle>
 					<CardDescription>
-						Review and adjust scores for the {cfResolutions.length} custom formats from your profile.
+						Review and adjust scores for the {cfResolutions.length} custom formats from your
+						profile.
 						{selectedCount} formats selected for the template.
 					</CardDescription>
 				</CardHeader>

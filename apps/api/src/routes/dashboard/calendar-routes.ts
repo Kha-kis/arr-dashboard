@@ -3,16 +3,16 @@ import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import {
 	executeOnInstances,
-	isSonarrClient,
-	isRadarrClient,
 	isLidarrClient,
+	isRadarrClient,
 	isReadarrClient,
+	isSonarrClient,
 } from "../../lib/arr/client-helpers.js";
 import {
+	type CalendarService,
+	compareCalendarItems,
 	formatDateOnly,
 	normalizeCalendarItem,
-	compareCalendarItems,
-	type CalendarService,
 } from "../../lib/dashboard/calendar-utils.js";
 
 const calendarQuerySchema = z.object({

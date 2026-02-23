@@ -6,8 +6,8 @@
  */
 
 import type { FastifyInstance } from "fastify";
-import { syncInstance, type SyncResult } from "./sync-executor.js";
 import { createLogger } from "../logger.js";
+import { type SyncResult, syncInstance } from "./sync-executor.js";
 
 const log = createLogger("library-sync");
 

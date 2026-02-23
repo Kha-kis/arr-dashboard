@@ -1,35 +1,35 @@
 "use client";
 
-import { useState } from "react";
 import {
-	Play,
-	Search,
-	ArrowUpCircle,
-	Clock,
-	CheckCircle2,
 	AlertCircle,
+	ArrowUpCircle,
+	CheckCircle2,
+	ChevronDown,
+	Clock,
+	Download,
 	Gauge,
 	Loader2,
-	ChevronDown,
+	Play,
+	Search,
 	Target,
-	Download,
 	Zap,
 } from "lucide-react";
-import { Button, toast } from "../../../components/ui";
+import { useState } from "react";
 import {
-	StatCard,
-	PremiumEmptyState,
-	PremiumSection,
 	InstanceCard,
-	StatusBadge,
+	PremiumEmptyState,
 	PremiumProgress,
+	PremiumSection,
+	StatCard,
+	StatusBadge,
 } from "../../../components/layout";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { Button, toast } from "../../../components/ui";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import type { HuntingStatus, InstanceHuntStatus } from "../lib/hunting-types";
-import { API_USAGE_WARNING_THRESHOLD, API_USAGE_DANGER_THRESHOLD } from "../lib/constants";
-import { useManualHunt } from "../hooks/useManualHunt";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useManualHunt } from "../hooks/useManualHunt";
+import { API_USAGE_DANGER_THRESHOLD, API_USAGE_WARNING_THRESHOLD } from "../lib/constants";
+import type { HuntingStatus, InstanceHuntStatus } from "../lib/hunting-types";
 
 interface HuntingOverviewProps {
 	status: HuntingStatus | null;
@@ -58,7 +58,7 @@ export const HuntingOverview = ({ status, onRefresh }: HuntingOverviewProps) => 
 	}
 
 	const activeInstances = status.instances.filter(
-		(i) => i.huntMissingEnabled || i.huntUpgradesEnabled
+		(i) => i.huntMissingEnabled || i.huntUpgradesEnabled,
 	);
 	const totalSearchesToday = status.instances.reduce((sum, i) => sum + i.searchesToday, 0);
 	const totalItemsFound = status.instances.reduce((sum, i) => sum + i.itemsFoundToday, 0);
@@ -184,7 +184,9 @@ const HuntDropdown = ({ instance, isTriggering, onTrigger }: HuntDropdownProps) 
 								</div>
 								<div>
 									<div className="font-medium text-foreground">Hunt Missing</div>
-									<div className="text-xs text-muted-foreground">Search for undownloaded content</div>
+									<div className="text-xs text-muted-foreground">
+										Search for undownloaded content
+									</div>
 								</div>
 							</button>
 						)}
@@ -227,7 +229,11 @@ interface InstanceStatusCardProps {
 	animationDelay?: number;
 }
 
-const InstanceStatusCard = ({ instance, onRefresh, animationDelay = 0 }: InstanceStatusCardProps) => {
+const InstanceStatusCard = ({
+	instance,
+	onRefresh,
+	animationDelay = 0,
+}: InstanceStatusCardProps) => {
 	const { gradient: _themeGradient } = useThemeGradient();
 
 	const isActive = instance.huntMissingEnabled || instance.huntUpgradesEnabled;
@@ -321,20 +327,17 @@ const InstanceStatusCard = ({ instance, onRefresh, animationDelay = 0 }: Instanc
 			{/* Today's Stats */}
 			<div className="flex justify-between text-sm pt-3 border-t border-border/30">
 				<div className="text-muted-foreground">
-					<span className="font-semibold text-foreground">{instance.searchesToday}</span>{" "}
-					searches today
+					<span className="font-semibold text-foreground">{instance.searchesToday}</span> searches
+					today
 				</div>
 				<div className="text-muted-foreground">
-					<span className="font-semibold text-foreground">{instance.itemsFoundToday}</span>{" "}
-					items found
+					<span className="font-semibold text-foreground">{instance.itemsFoundToday}</span> items
+					found
 				</div>
 			</div>
 
 			{/* API Usage Indicator */}
-			<ApiUsageIndicator
-				current={instance.apiCallsThisHour}
-				max={instance.hourlyApiCap}
-			/>
+			<ApiUsageIndicator current={instance.apiCallsThisHour} max={instance.hourlyApiCap} />
 		</InstanceCard>
 	);
 };

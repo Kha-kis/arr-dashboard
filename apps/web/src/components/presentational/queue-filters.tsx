@@ -7,10 +7,10 @@
  * Uses Radix UI Select primitives for proper accessibility and UX.
  */
 
-import { Filter, X, ChevronDown, RotateCcw, Check, ArrowUpDown } from "lucide-react";
 import * as SelectPrimitive from "@radix-ui/react-select";
-import { cn } from "../../lib/utils";
+import { ArrowUpDown, Check, ChevronDown, Filter, RotateCcw, X } from "lucide-react";
 import { useThemeGradient } from "../../hooks/useThemeGradient";
+import { cn } from "../../lib/utils";
 
 interface FilterOption {
 	value: string;
@@ -70,7 +70,7 @@ const PremiumSelect = ({
 			<span
 				className={cn(
 					"absolute -top-2 left-3 z-20 px-1.5 text-[10px] font-medium uppercase tracking-wider transition-colors duration-300",
-					isActive ? "text-foreground" : "text-muted-foreground"
+					isActive ? "text-foreground" : "text-muted-foreground",
 				)}
 				style={{
 					background: "linear-gradient(180deg, transparent 0%, hsl(var(--card)) 20%)",
@@ -90,7 +90,7 @@ const PremiumSelect = ({
 						"disabled:cursor-not-allowed disabled:opacity-50",
 						isActive
 							? "border-primary/50"
-							: "border-border/50 hover:border-border hover:bg-card/80"
+							: "border-border/50 hover:border-border hover:bg-card/80",
 					)}
 					style={{
 						boxShadow: isActive ? `0 4px 16px -4px ${themeGradient.glow}` : undefined,
@@ -102,7 +102,7 @@ const PremiumSelect = ({
 						<ChevronDown
 							className={cn(
 								"h-4 w-4 transition-all duration-300",
-								isActive ? "" : "text-muted-foreground"
+								isActive ? "" : "text-muted-foreground",
 							)}
 							style={isActive ? { color: themeGradient.from } : undefined}
 						/>
@@ -130,7 +130,7 @@ const PremiumSelect = ({
 							"data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0",
 							"data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
 							"data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
-							"origin-(--radix-select-content-transform-origin)"
+							"origin-(--radix-select-content-transform-origin)",
 						)}
 						position="popper"
 						sideOffset={6}
@@ -156,11 +156,13 @@ const PremiumSelect = ({
 										"text-foreground/80",
 										"focus:text-foreground",
 										"data-disabled:pointer-events-none data-disabled:opacity-50",
-										"data-highlighted:outline-hidden"
+										"data-highlighted:outline-hidden",
 									)}
-									style={{
-										// Hover/focus background with theme color
-									}}
+									style={
+										{
+											// Hover/focus background with theme color
+										}
+									}
 									onFocus={(e) => {
 										e.currentTarget.style.background = `linear-gradient(135deg, ${themeGradient.from}15, ${themeGradient.to}10)`;
 									}}
@@ -178,10 +180,7 @@ const PremiumSelect = ({
 								>
 									<span className="absolute left-2.5 flex h-4 w-4 items-center justify-center">
 										<SelectPrimitive.ItemIndicator>
-											<Check
-												className="h-4 w-4"
-												style={{ color: themeGradient.from }}
-											/>
+											<Check className="h-4 w-4" style={{ color: themeGradient.from }} />
 										</SelectPrimitive.ItemIndicator>
 									</span>
 									<SelectPrimitive.ItemText>{option.label}</SelectPrimitive.ItemText>
@@ -256,7 +255,8 @@ export const QueueFilters = ({
 	];
 
 	// Check if sorting is enabled and active
-	const hasSorting = sortBy !== undefined && onSortChange !== undefined && sortOptions !== undefined;
+	const hasSorting =
+		sortBy !== undefined && onSortChange !== undefined && sortOptions !== undefined;
 	const sortIsActive = hasSorting && sortBy !== "default";
 
 	// Determine which filters are active for chips
@@ -325,13 +325,13 @@ export const QueueFilters = ({
 					<div
 						className={cn(
 							"flex h-9 w-9 items-center justify-center rounded-xl transition-all duration-300",
-							filtersActive ? "scale-110" : "bg-muted/30"
+							filtersActive ? "scale-110" : "bg-muted/30",
 						)}
 						style={
 							filtersActive
 								? {
 										background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
-								  }
+									}
 								: undefined
 						}
 					>
@@ -384,13 +384,13 @@ export const QueueFilters = ({
 									<div
 										className={cn(
 											"absolute -left-7 top-1/2 -translate-y-1/2 hidden sm:flex h-6 w-6 items-center justify-center rounded-lg transition-all duration-300",
-											sortIsActive ? "scale-110" : "opacity-50"
+											sortIsActive ? "scale-110" : "opacity-50",
 										)}
 										style={
 											sortIsActive
 												? {
 														background: `linear-gradient(135deg, ${themeGradient.from}20, ${themeGradient.to}20)`,
-												  }
+													}
 												: undefined
 										}
 									>
@@ -424,13 +424,13 @@ export const QueueFilters = ({
 								"group inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-medium transition-all duration-300",
 								filtersActive
 									? "border-border/50 bg-card/80 text-foreground hover:border-border hover:bg-card"
-									: "border-transparent text-muted-foreground/50 cursor-not-allowed"
+									: "border-transparent text-muted-foreground/50 cursor-not-allowed",
 							)}
 						>
 							<RotateCcw
 								className={cn(
 									"h-4 w-4 transition-transform duration-300",
-									filtersActive && "group-hover:-rotate-180"
+									filtersActive && "group-hover:-rotate-180",
 								)}
 							/>
 							<span>Reset</span>

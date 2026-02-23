@@ -2,39 +2,39 @@ import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
 import { toServiceLabel } from "../lib/arr/client-helpers.js";
 import { requireInstance } from "../lib/arr/instance-helpers.js";
-import { getQueueCleanerScheduler } from "../lib/queue-cleaner/scheduler.js";
 import { loggers } from "../lib/logger.js";
 import {
-	MIN_INTERVAL_MINS,
-	MAX_INTERVAL_MINS,
-	MIN_STALLED_THRESHOLD_MINS,
-	MAX_STALLED_THRESHOLD_MINS,
-	MIN_SLOW_SPEED_THRESHOLD,
-	MAX_SLOW_SPEED_THRESHOLD,
-	MIN_SLOW_GRACE_PERIOD_MINS,
-	MAX_SLOW_GRACE_PERIOD_MINS,
-	MIN_MAX_REMOVALS,
-	MAX_MAX_REMOVALS,
-	MIN_QUEUE_AGE_MINS,
-	MAX_QUEUE_AGE_MINS,
-	MIN_MAX_STRIKES,
-	MAX_MAX_STRIKES,
-	MIN_STRIKE_DECAY_HOURS,
-	MAX_STRIKE_DECAY_HOURS,
-	MIN_SEEDING_TIMEOUT_HOURS,
-	MAX_SEEDING_TIMEOUT_HOURS,
-	MIN_ESTIMATED_MULTIPLIER,
-	MAX_ESTIMATED_MULTIPLIER,
-	MIN_IMPORT_PENDING_MINS,
-	MAX_IMPORT_PENDING_MINS,
-	MIN_AUTO_IMPORT_ATTEMPTS,
 	MAX_AUTO_IMPORT_ATTEMPTS,
-	MIN_AUTO_IMPORT_COOLDOWN_MINS,
 	MAX_AUTO_IMPORT_COOLDOWN_MINS,
+	MAX_ESTIMATED_MULTIPLIER,
+	MAX_IMPORT_PENDING_MINS,
+	MAX_INTERVAL_MINS,
+	MAX_MAX_REMOVALS,
+	MAX_MAX_STRIKES,
+	MAX_QUEUE_AGE_MINS,
+	MAX_SEEDING_TIMEOUT_HOURS,
+	MAX_SLOW_GRACE_PERIOD_MINS,
+	MAX_SLOW_SPEED_THRESHOLD,
+	MAX_STALLED_THRESHOLD_MINS,
+	MAX_STRIKE_DECAY_HOURS,
+	MIN_AUTO_IMPORT_ATTEMPTS,
+	MIN_AUTO_IMPORT_COOLDOWN_MINS,
+	MIN_ESTIMATED_MULTIPLIER,
+	MIN_IMPORT_PENDING_MINS,
+	MIN_INTERVAL_MINS,
+	MIN_MAX_REMOVALS,
+	MIN_MAX_STRIKES,
+	MIN_QUEUE_AGE_MINS,
+	MIN_SEEDING_TIMEOUT_HOURS,
+	MIN_SLOW_GRACE_PERIOD_MINS,
+	MIN_SLOW_SPEED_THRESHOLD,
+	MIN_STALLED_THRESHOLD_MINS,
+	MIN_STRIKE_DECAY_HOURS,
 } from "../lib/queue-cleaner/constants.js";
+import { getQueueCleanerScheduler } from "../lib/queue-cleaner/scheduler.js";
+import { getErrorMessage } from "../lib/utils/error-message.js";
 import { parsePaginationQuery } from "../lib/utils/pagination.js";
 import { validateRequest } from "../lib/utils/validate.js";
-import { getErrorMessage } from "../lib/utils/error-message.js";
 
 const log = loggers.queueCleaner;
 
@@ -88,15 +88,19 @@ function validatePatternJson(json: string | null | undefined): string | undefine
 }
 
 /** Zod schema for pattern validation with specific error messages */
-const patternJsonSchema = z.string().nullable().optional().superRefine((val, ctx) => {
-	const error = validatePatternJson(val);
-	if (error) {
-		ctx.addIssue({
-			code: z.ZodIssueCode.custom,
-			message: error,
-		});
-	}
-});
+const patternJsonSchema = z
+	.string()
+	.nullable()
+	.optional()
+	.superRefine((val, ctx) => {
+		const error = validatePatternJson(val);
+		if (error) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: error,
+			});
+		}
+	});
 
 /**
  * Result of parseJsonSafe - includes data and optional parse error.
@@ -118,7 +122,10 @@ function parseJsonSafe(
 		return { data: JSON.parse(json) as unknown[] };
 	} catch (error) {
 		const message = getErrorMessage(error, "Unknown parse error");
-		log.warn({ recordId: context.recordId, field: context.field, err: error }, "Failed to parse JSON field in log record");
+		log.warn(
+			{ recordId: context.recordId, field: context.field, err: error },
+			"Failed to parse JSON field in log record",
+		);
 		return { data: null, parseError: message };
 	}
 }
@@ -174,19 +181,38 @@ const configUpdateSchema = z.object({
 	// Strike system
 	strikeSystemEnabled: z.boolean().optional(),
 	maxStrikes: z.number().int().min(MIN_MAX_STRIKES).max(MAX_MAX_STRIKES).optional(),
-	strikeDecayHours: z.number().int().min(MIN_STRIKE_DECAY_HOURS).max(MAX_STRIKE_DECAY_HOURS).optional(),
+	strikeDecayHours: z
+		.number()
+		.int()
+		.min(MIN_STRIKE_DECAY_HOURS)
+		.max(MAX_STRIKE_DECAY_HOURS)
+		.optional(),
 
 	// Seeding timeout
 	seedingTimeoutEnabled: z.boolean().optional(),
-	seedingTimeoutHours: z.number().int().min(MIN_SEEDING_TIMEOUT_HOURS).max(MAX_SEEDING_TIMEOUT_HOURS).optional(),
+	seedingTimeoutHours: z
+		.number()
+		.int()
+		.min(MIN_SEEDING_TIMEOUT_HOURS)
+		.max(MAX_SEEDING_TIMEOUT_HOURS)
+		.optional(),
 
 	// Estimated completion
 	estimatedCompletionEnabled: z.boolean().optional(),
-	estimatedCompletionMultiplier: z.number().min(MIN_ESTIMATED_MULTIPLIER).max(MAX_ESTIMATED_MULTIPLIER).optional(),
+	estimatedCompletionMultiplier: z
+		.number()
+		.min(MIN_ESTIMATED_MULTIPLIER)
+		.max(MAX_ESTIMATED_MULTIPLIER)
+		.optional(),
 
 	// Import pending/blocked rule
 	importPendingEnabled: z.boolean().optional(),
-	importPendingThresholdMins: z.number().int().min(MIN_IMPORT_PENDING_MINS).max(MAX_IMPORT_PENDING_MINS).optional(),
+	importPendingThresholdMins: z
+		.number()
+		.int()
+		.min(MIN_IMPORT_PENDING_MINS)
+		.max(MAX_IMPORT_PENDING_MINS)
+		.optional(),
 
 	// Import block cleanup level
 	importBlockCleanupLevel: z.enum(["safe", "moderate", "aggressive"]).optional(),
@@ -199,8 +225,18 @@ const configUpdateSchema = z.object({
 
 	// Auto-import settings (try importing before removing)
 	autoImportEnabled: z.boolean().optional(),
-	autoImportMaxAttempts: z.number().int().min(MIN_AUTO_IMPORT_ATTEMPTS).max(MAX_AUTO_IMPORT_ATTEMPTS).optional(),
-	autoImportCooldownMins: z.number().int().min(MIN_AUTO_IMPORT_COOLDOWN_MINS).max(MAX_AUTO_IMPORT_COOLDOWN_MINS).optional(),
+	autoImportMaxAttempts: z
+		.number()
+		.int()
+		.min(MIN_AUTO_IMPORT_ATTEMPTS)
+		.max(MAX_AUTO_IMPORT_ATTEMPTS)
+		.optional(),
+	autoImportCooldownMins: z
+		.number()
+		.int()
+		.min(MIN_AUTO_IMPORT_COOLDOWN_MINS)
+		.max(MAX_AUTO_IMPORT_COOLDOWN_MINS)
+		.optional(),
 	autoImportSafeOnly: z.boolean().optional(),
 	autoImportCustomPatterns: patternJsonSchema,
 	autoImportNeverPatterns: patternJsonSchema,
@@ -213,6 +249,16 @@ const configUpdateSchema = z.object({
 	// Instead of deleting, move torrent to a different category in the client
 	// The actual category name is configured in Sonarr/Radarr's download client settings
 	changeCategoryEnabled: z.boolean().optional(),
+
+	// Tag pre-filter
+	tagFilterEnabled: z.boolean().optional(),
+	includeTags: z.string().nullable().optional(), // JSON array of tag IDs
+	excludeTags: z.string().nullable().optional(),
+
+	// Quality profile pre-filter
+	profileFilterEnabled: z.boolean().optional(),
+	includeProfiles: z.string().nullable().optional(), // JSON array of profile IDs
+	excludeProfiles: z.string().nullable().optional(),
 });
 
 const configCreateSchema = z.object({
@@ -413,271 +459,283 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 	});
 
 	// Get logs (paginated)
-	app.get("/queue-cleaner/logs", { config: { rateLimit: READ_RATE_LIMIT } }, async (request, reply) => {
-		const userId = request.currentUser!.id;
-		const query = request.query as {
-			status?: string;
-			instanceId?: string;
-			page?: string;
-			pageSize?: string;
-		};
+	app.get(
+		"/queue-cleaner/logs",
+		{ config: { rateLimit: READ_RATE_LIMIT } },
+		async (request, reply) => {
+			const userId = request.currentUser!.id;
+			const query = request.query as {
+				status?: string;
+				instanceId?: string;
+				page?: string;
+				pageSize?: string;
+			};
 
-		const { pageSize, skip } = parsePaginationQuery(query);
+			const { pageSize, skip } = parsePaginationQuery(query);
 
-		const where: Record<string, unknown> = {
-			instance: { userId },
-		};
+			const where: Record<string, unknown> = {
+				instance: { userId },
+			};
 
-		if (query.status && query.status !== "all") {
-			where.status = query.status;
-		}
-		if (query.instanceId && query.instanceId !== "all") {
-			where.instanceId = query.instanceId;
-		}
-
-		const [logs, totalCount] = await Promise.all([
-			app.prisma.queueCleanerLog.findMany({
-				where,
-				include: { instance: true },
-				orderBy: { startedAt: "desc" },
-				skip,
-				take: pageSize,
-			}),
-			app.prisma.queueCleanerLog.count({ where }),
-		]);
-
-		let logsWithParseErrors = 0;
-		const formattedLogs = logs.map((logEntry) => {
-			const cleanedResult = parseJsonSafe(logEntry.cleanedItems, {
-				recordId: logEntry.id,
-				field: "cleanedItems",
-			});
-			const skippedResult = parseJsonSafe(logEntry.skippedItems, {
-				recordId: logEntry.id,
-				field: "skippedItems",
-			});
-			const warnedResult = parseJsonSafe(logEntry.warnedItems, {
-				recordId: logEntry.id,
-				field: "warnedItems",
-			});
-
-			// Track logs with parse errors for data quality indicator
-			if (cleanedResult.parseError || skippedResult.parseError || warnedResult.parseError) {
-				logsWithParseErrors++;
+			if (query.status && query.status !== "all") {
+				where.status = query.status;
+			}
+			if (query.instanceId && query.instanceId !== "all") {
+				where.instanceId = query.instanceId;
 			}
 
-			return {
-				id: logEntry.id,
-				instanceId: logEntry.instanceId,
-				instanceName: logEntry.instance.label,
-				service: toServiceLabel(logEntry.instance.service),
-				itemsCleaned: logEntry.itemsCleaned,
-				itemsSkipped: logEntry.itemsSkipped,
-				itemsWarned: logEntry.itemsWarned,
-				isDryRun: logEntry.isDryRun,
-				cleanedItems: cleanedResult.data,
-				skippedItems: skippedResult.data,
-				warnedItems: warnedResult.data,
-				// Include parse error flag so UI can indicate data may be incomplete
-				hasDataError: !!(cleanedResult.parseError || skippedResult.parseError || warnedResult.parseError),
-				status: logEntry.status as
-					| "running"
-					| "completed"
-					| "partial"
-					| "skipped"
-					| "error",
-				message: logEntry.message,
-				durationMs: logEntry.durationMs,
-				startedAt: logEntry.startedAt.toISOString(),
-				completedAt: logEntry.completedAt?.toISOString() ?? null,
-			};
-		});
+			const [logs, totalCount] = await Promise.all([
+				app.prisma.queueCleanerLog.findMany({
+					where,
+					include: { instance: true },
+					orderBy: { startedAt: "desc" },
+					skip,
+					take: pageSize,
+				}),
+				app.prisma.queueCleanerLog.count({ where }),
+			]);
 
-		return reply.send({
-			logs: formattedLogs,
-			totalCount,
-			// Data quality indicator for Issue 5
-			dataQuality: logsWithParseErrors > 0
-				? { warning: `${logsWithParseErrors} log(s) have corrupted data - item details may be incomplete` }
-				: undefined,
-		});
-	});
+			let logsWithParseErrors = 0;
+			const formattedLogs = logs.map((logEntry) => {
+				const cleanedResult = parseJsonSafe(logEntry.cleanedItems, {
+					recordId: logEntry.id,
+					field: "cleanedItems",
+				});
+				const skippedResult = parseJsonSafe(logEntry.skippedItems, {
+					recordId: logEntry.id,
+					field: "skippedItems",
+				});
+				const warnedResult = parseJsonSafe(logEntry.warnedItems, {
+					recordId: logEntry.id,
+					field: "warnedItems",
+				});
+
+				// Track logs with parse errors for data quality indicator
+				if (cleanedResult.parseError || skippedResult.parseError || warnedResult.parseError) {
+					logsWithParseErrors++;
+				}
+
+				return {
+					id: logEntry.id,
+					instanceId: logEntry.instanceId,
+					instanceName: logEntry.instance.label,
+					service: toServiceLabel(logEntry.instance.service),
+					itemsCleaned: logEntry.itemsCleaned,
+					itemsSkipped: logEntry.itemsSkipped,
+					itemsWarned: logEntry.itemsWarned,
+					isDryRun: logEntry.isDryRun,
+					cleanedItems: cleanedResult.data,
+					skippedItems: skippedResult.data,
+					warnedItems: warnedResult.data,
+					// Include parse error flag so UI can indicate data may be incomplete
+					hasDataError: !!(
+						cleanedResult.parseError ||
+						skippedResult.parseError ||
+						warnedResult.parseError
+					),
+					status: logEntry.status as "running" | "completed" | "partial" | "skipped" | "error",
+					message: logEntry.message,
+					durationMs: logEntry.durationMs,
+					startedAt: logEntry.startedAt.toISOString(),
+					completedAt: logEntry.completedAt?.toISOString() ?? null,
+				};
+			});
+
+			return reply.send({
+				logs: formattedLogs,
+				totalCount,
+				// Data quality indicator for Issue 5
+				dataQuality:
+					logsWithParseErrors > 0
+						? {
+								warning: `${logsWithParseErrors} log(s) have corrupted data - item details may be incomplete`,
+							}
+						: undefined,
+			});
+		},
+	);
 
 	// Manual clean trigger
-	app.post("/queue-cleaner/trigger/:instanceId", { config: { rateLimit: MANUAL_CLEAN_RATE_LIMIT } }, async (request, reply) => {
-		const { instanceId } = request.params as { instanceId: string };
-		const userId = request.currentUser!.id;
+	app.post(
+		"/queue-cleaner/trigger/:instanceId",
+		{ config: { rateLimit: MANUAL_CLEAN_RATE_LIMIT } },
+		async (request, reply) => {
+			const { instanceId } = request.params as { instanceId: string };
+			const userId = request.currentUser!.id;
 
-		const instance = await requireInstance(app, userId, instanceId, { queueCleanerConfig: true });
+			const instance = await requireInstance(app, userId, instanceId, { queueCleanerConfig: true });
 
-		if (!instance.queueCleanerConfig) {
-			return reply.status(404).send({ error: "Queue cleaner config not found for this instance" });
-		}
+			if (!instance.queueCleanerConfig) {
+				return reply
+					.status(404)
+					.send({ error: "Queue cleaner config not found for this instance" });
+			}
 
-		const scheduler = getQueueCleanerScheduler();
-		const result = await scheduler.triggerManualClean(instanceId);
+			const scheduler = getQueueCleanerScheduler();
+			const result = await scheduler.triggerManualClean(instanceId);
 
-		if (!result.triggered) {
-			// Use standard error format per CLAUDE.md
-			return reply.status(429).send({
-				error: result.message,
+			if (!result.triggered) {
+				// Use standard error format per CLAUDE.md
+				return reply.status(429).send({
+					error: result.message,
+				});
+			}
+
+			return reply.send({
+				message: `Queue clean started for ${instance.label}`,
+				triggered: true,
 			});
-		}
-
-		return reply.send({
-			message: `Queue clean started for ${instance.label}`,
-			triggered: true,
-		});
-	});
+		},
+	);
 
 	// Dry-run preview (legacy endpoint - returns basic CleanerResult)
-	app.post("/queue-cleaner/dry-run/:instanceId", { config: { rateLimit: PREVIEW_RATE_LIMIT } }, async (request, reply) => {
-		const { instanceId } = request.params as { instanceId: string };
-		const userId = request.currentUser!.id;
+	app.post(
+		"/queue-cleaner/dry-run/:instanceId",
+		{ config: { rateLimit: PREVIEW_RATE_LIMIT } },
+		async (request, reply) => {
+			const { instanceId } = request.params as { instanceId: string };
+			const userId = request.currentUser!.id;
 
-		const instance = await requireInstance(app, userId, instanceId, { queueCleanerConfig: true });
+			const instance = await requireInstance(app, userId, instanceId, { queueCleanerConfig: true });
 
-		if (!instance.queueCleanerConfig) {
-			return reply.status(404).send({ error: "Queue cleaner config not found for this instance" });
-		}
+			if (!instance.queueCleanerConfig) {
+				return reply
+					.status(404)
+					.send({ error: "Queue cleaner config not found for this instance" });
+			}
 
-		const scheduler = getQueueCleanerScheduler();
-		const result = await scheduler.triggerDryRun(instanceId);
+			const scheduler = getQueueCleanerScheduler();
+			const result = await scheduler.triggerDryRun(instanceId);
 
-		return reply.send(result);
-	});
+			return reply.send(result);
+		},
+	);
 
 	// Enhanced preview (returns rich data for preview modal)
-	app.post("/queue-cleaner/preview/:instanceId", { config: { rateLimit: PREVIEW_RATE_LIMIT } }, async (request, reply) => {
-		const { instanceId } = request.params as { instanceId: string };
-		const userId = request.currentUser!.id;
+	app.post(
+		"/queue-cleaner/preview/:instanceId",
+		{ config: { rateLimit: PREVIEW_RATE_LIMIT } },
+		async (request, reply) => {
+			const { instanceId } = request.params as { instanceId: string };
+			const userId = request.currentUser!.id;
 
-		const instance = await requireInstance(app, userId, instanceId, { queueCleanerConfig: true });
+			const instance = await requireInstance(app, userId, instanceId, { queueCleanerConfig: true });
 
-		if (!instance.queueCleanerConfig) {
-			return reply.status(404).send({ error: "Queue cleaner config not found for this instance" });
-		}
+			if (!instance.queueCleanerConfig) {
+				return reply
+					.status(404)
+					.send({ error: "Queue cleaner config not found for this instance" });
+			}
 
-		const scheduler = getQueueCleanerScheduler();
-		const result = await scheduler.triggerEnhancedPreview(instanceId);
+			const scheduler = getQueueCleanerScheduler();
+			const result = await scheduler.triggerEnhancedPreview(instanceId);
 
-		return reply.send(result);
-	});
+			return reply.send(result);
+		},
+	);
 
 	// Get strikes for an instance
-	app.get("/queue-cleaner/strikes/:instanceId", { config: { rateLimit: READ_RATE_LIMIT } }, async (request, reply) => {
-		const { instanceId } = request.params as { instanceId: string };
-		const userId = request.currentUser!.id;
+	app.get(
+		"/queue-cleaner/strikes/:instanceId",
+		{ config: { rateLimit: READ_RATE_LIMIT } },
+		async (request, reply) => {
+			const { instanceId } = request.params as { instanceId: string };
+			const userId = request.currentUser!.id;
 
-		await requireInstance(app, userId, instanceId);
+			await requireInstance(app, userId, instanceId);
 
-		const strikes = await app.prisma.queueCleanerStrike.findMany({
-			where: { instanceId },
-			orderBy: { lastStrikeAt: "desc" },
-		});
+			const strikes = await app.prisma.queueCleanerStrike.findMany({
+				where: { instanceId },
+				orderBy: { lastStrikeAt: "desc" },
+			});
 
-		const formattedStrikes = strikes.map((s) => ({
-			id: s.id,
-			instanceId: s.instanceId,
-			downloadId: s.downloadId,
-			downloadTitle: s.downloadTitle,
-			strikeCount: s.strikeCount,
-			lastRule: s.lastRule,
-			lastReason: s.lastReason,
-			firstStrikeAt: s.firstStrikeAt.toISOString(),
-			lastStrikeAt: s.lastStrikeAt.toISOString(),
-		}));
+			const formattedStrikes = strikes.map((s) => ({
+				id: s.id,
+				instanceId: s.instanceId,
+				downloadId: s.downloadId,
+				downloadTitle: s.downloadTitle,
+				strikeCount: s.strikeCount,
+				lastRule: s.lastRule,
+				lastReason: s.lastReason,
+				firstStrikeAt: s.firstStrikeAt.toISOString(),
+				lastStrikeAt: s.lastStrikeAt.toISOString(),
+			}));
 
-		return reply.send({ strikes: formattedStrikes });
-	});
+			return reply.send({ strikes: formattedStrikes });
+		},
+	);
 
 	// Clear all strikes for an instance
-	app.delete("/queue-cleaner/strikes/:instanceId", { config: { rateLimit: WRITE_RATE_LIMIT } }, async (request, reply) => {
-		const { instanceId } = request.params as { instanceId: string };
-		const userId = request.currentUser!.id;
+	app.delete(
+		"/queue-cleaner/strikes/:instanceId",
+		{ config: { rateLimit: WRITE_RATE_LIMIT } },
+		async (request, reply) => {
+			const { instanceId } = request.params as { instanceId: string };
+			const userId = request.currentUser!.id;
 
-		const instance = await requireInstance(app, userId, instanceId);
+			const instance = await requireInstance(app, userId, instanceId);
 
-		const result = await app.prisma.queueCleanerStrike.deleteMany({
-			where: { instanceId },
-		});
+			const result = await app.prisma.queueCleanerStrike.deleteMany({
+				where: { instanceId },
+			});
 
-		return reply.send({
-			success: true,
-			deletedCount: result.count,
-			message: `Cleared ${result.count} strike(s) for ${instance.label}`,
-		});
-	});
+			return reply.send({
+				success: true,
+				deletedCount: result.count,
+				message: `Cleared ${result.count} strike(s) for ${instance.label}`,
+			});
+		},
+	);
 
 	// Statistics endpoint
-	app.get("/queue-cleaner/statistics", { config: { rateLimit: STATISTICS_RATE_LIMIT } }, async (request, reply) => {
-		const userId = request.currentUser!.id;
+	app.get(
+		"/queue-cleaner/statistics",
+		{ config: { rateLimit: STATISTICS_RATE_LIMIT } },
+		async (request, reply) => {
+			const userId = request.currentUser!.id;
 
-		// Get all logs for user instances
-		const allLogs = await app.prisma.queueCleanerLog.findMany({
-			where: {
-				instance: { userId },
-			},
-			include: { instance: true },
-			orderBy: { startedAt: "desc" },
-		});
+			// Get all logs for user instances
+			const allLogs = await app.prisma.queueCleanerLog.findMany({
+				where: {
+					instance: { userId },
+				},
+				include: { instance: true },
+				orderBy: { startedAt: "desc" },
+			});
 
-		// Get user's instances for the breakdown
-		const instances = await app.prisma.serviceInstance.findMany({
-			where: {
-				userId,
-				service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
-			},
-			include: { queueCleanerConfig: true },
-		});
+			// Get user's instances for the breakdown
+			const instances = await app.prisma.serviceInstance.findMany({
+				where: {
+					userId,
+					service: { in: ["SONARR", "RADARR", "LIDARR", "READARR"] },
+				},
+				include: { queueCleanerConfig: true },
+			});
 
-		// Calculate date boundaries
-		const now = new Date();
-		const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-		const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-		const fourWeeksAgo = new Date(today.getTime() - 28 * 24 * 60 * 60 * 1000);
+			// Calculate date boundaries
+			const now = new Date();
+			const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+			const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+			const fourWeeksAgo = new Date(today.getTime() - 28 * 24 * 60 * 60 * 1000);
 
-		// Filter logs for different time periods
-		const logsLast7Days = allLogs.filter((l) => l.startedAt >= sevenDaysAgo);
-		const logsLast4Weeks = allLogs.filter((l) => l.startedAt >= fourWeeksAgo);
+			// Filter logs for different time periods
+			const logsLast7Days = allLogs.filter((l) => l.startedAt >= sevenDaysAgo);
+			const logsLast4Weeks = allLogs.filter((l) => l.startedAt >= fourWeeksAgo);
 
-		// Calculate daily stats (last 7 days)
-		const dailyMap = new Map<string, { itemsCleaned: number; itemsWarned: number; runsCompleted: number }>();
-		for (let i = 0; i < 7; i++) {
-			const date = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
-			const dateKey = date.toISOString().split("T")[0]!;
-			dailyMap.set(dateKey, { itemsCleaned: 0, itemsWarned: 0, runsCompleted: 0 });
-		}
-
-		for (const logEntry of logsLast7Days) {
-			const dateKey = logEntry.startedAt.toISOString().split("T")[0]!;
-			const existing = dailyMap.get(dateKey);
-			if (existing) {
-				existing.itemsCleaned += logEntry.itemsCleaned;
-				existing.itemsWarned += logEntry.itemsWarned;
-				if (logEntry.status === "completed" || logEntry.status === "partial") {
-					existing.runsCompleted += 1;
-				}
+			// Calculate daily stats (last 7 days)
+			const dailyMap = new Map<
+				string,
+				{ itemsCleaned: number; itemsWarned: number; runsCompleted: number }
+			>();
+			for (let i = 0; i < 7; i++) {
+				const date = new Date(today.getTime() - i * 24 * 60 * 60 * 1000);
+				const dateKey = date.toISOString().split("T")[0]!;
+				dailyMap.set(dateKey, { itemsCleaned: 0, itemsWarned: 0, runsCompleted: 0 });
 			}
-		}
 
-		const daily = Array.from(dailyMap.entries())
-			.map(([period, stats]) => ({ period, ...stats }))
-			.sort((a, b) => a.period.localeCompare(b.period));
-
-		// Calculate weekly stats (last 4 weeks)
-		const weeklyMap = new Map<string, { itemsCleaned: number; itemsWarned: number; runsCompleted: number }>();
-		for (let i = 0; i < 4; i++) {
-			const weekKey = `Week ${4 - i}`;
-			weeklyMap.set(weekKey, { itemsCleaned: 0, itemsWarned: 0, runsCompleted: 0 });
-		}
-
-		for (const logEntry of logsLast4Weeks) {
-			const daysDiff = Math.floor((today.getTime() - logEntry.startedAt.getTime()) / (24 * 60 * 60 * 1000));
-			const weekIndex = Math.floor(daysDiff / 7);
-			if (weekIndex < 4) {
-				const weekKey = `Week ${4 - weekIndex}`;
-				const existing = weeklyMap.get(weekKey);
+			for (const logEntry of logsLast7Days) {
+				const dateKey = logEntry.startedAt.toISOString().split("T")[0]!;
+				const existing = dailyMap.get(dateKey);
 				if (existing) {
 					existing.itemsCleaned += logEntry.itemsCleaned;
 					existing.itemsWarned += logEntry.itemsWarned;
@@ -686,92 +744,133 @@ const queueCleanerRoute: FastifyPluginCallback = (app, _opts, done) => {
 					}
 				}
 			}
-		}
 
-		const weekly = Array.from(weeklyMap.entries())
-			.map(([period, stats]) => ({ period, ...stats }))
-			.sort((a, b) => a.period.localeCompare(b.period));
+			const daily = Array.from(dailyMap.entries())
+				.map(([period, stats]) => ({ period, ...stats }))
+				.sort((a, b) => a.period.localeCompare(b.period));
 
-		// Calculate totals
-		const completedLogs = allLogs.filter((l) => l.status === "completed" || l.status === "partial");
-		const errorLogs = allLogs.filter((l) => l.status === "error");
-		const logsWithDuration = allLogs.filter((l) => l.durationMs !== null);
+			// Calculate weekly stats (last 4 weeks)
+			const weeklyMap = new Map<
+				string,
+				{ itemsCleaned: number; itemsWarned: number; runsCompleted: number }
+			>();
+			for (let i = 0; i < 4; i++) {
+				const weekKey = `Week ${4 - i}`;
+				weeklyMap.set(weekKey, { itemsCleaned: 0, itemsWarned: 0, runsCompleted: 0 });
+			}
 
-		const totals = {
-			itemsCleaned: allLogs.reduce((sum, l) => sum + l.itemsCleaned, 0),
-			itemsSkipped: allLogs.reduce((sum, l) => sum + l.itemsSkipped, 0),
-			itemsWarned: allLogs.reduce((sum, l) => sum + l.itemsWarned, 0),
-			totalRuns: allLogs.length,
-			completedRuns: completedLogs.length,
-			errorRuns: errorLogs.length,
-			averageDurationMs:
-				logsWithDuration.length > 0
-					? Math.round(logsWithDuration.reduce((sum, l) => sum + (l.durationMs ?? 0), 0) / logsWithDuration.length)
-					: 0,
-			successRate: allLogs.length > 0 ? Math.round((completedLogs.length / allLogs.length) * 100) : 100,
-		};
-
-		// Calculate rule breakdown from cleanedItems JSON
-		// Track skipped entries for data quality indicator (Issue 4)
-		const ruleBreakdown: Record<string, number> = {};
-		let skippedLogEntries = 0;
-		for (const logEntry of allLogs) {
-			if (logEntry.cleanedItems) {
-				try {
-					const items = JSON.parse(logEntry.cleanedItems) as Array<{ rule?: string }>;
-					for (const item of items) {
-						if (item.rule) {
-							ruleBreakdown[item.rule] = (ruleBreakdown[item.rule] ?? 0) + 1;
+			for (const logEntry of logsLast4Weeks) {
+				const daysDiff = Math.floor(
+					(today.getTime() - logEntry.startedAt.getTime()) / (24 * 60 * 60 * 1000),
+				);
+				const weekIndex = Math.floor(daysDiff / 7);
+				if (weekIndex < 4) {
+					const weekKey = `Week ${4 - weekIndex}`;
+					const existing = weeklyMap.get(weekKey);
+					if (existing) {
+						existing.itemsCleaned += logEntry.itemsCleaned;
+						existing.itemsWarned += logEntry.itemsWarned;
+						if (logEntry.status === "completed" || logEntry.status === "partial") {
+							existing.runsCompleted += 1;
 						}
 					}
-				} catch (error) {
-					skippedLogEntries++;
-					log.warn(
-						{ logId: logEntry.id, instanceId: logEntry.instanceId, err: error },
-						"Malformed cleanedItems JSON in log entry - statistics may be incomplete",
-					);
 				}
 			}
-		}
 
-		// Calculate per-instance breakdown
-		const instanceBreakdown = instances.map((inst) => {
-			const instanceLogs = allLogs.filter((l) => l.instanceId === inst.id);
-			return {
-				instanceId: inst.id,
-				instanceName: inst.label,
-				service: toServiceLabel(inst.service),
-				itemsCleaned: instanceLogs.reduce((sum, l) => sum + l.itemsCleaned, 0),
-				totalRuns: instanceLogs.length,
-				lastRunAt: inst.queueCleanerConfig?.lastRunAt?.toISOString() ?? null,
+			const weekly = Array.from(weeklyMap.entries())
+				.map(([period, stats]) => ({ period, ...stats }))
+				.sort((a, b) => a.period.localeCompare(b.period));
+
+			// Calculate totals
+			const completedLogs = allLogs.filter(
+				(l) => l.status === "completed" || l.status === "partial",
+			);
+			const errorLogs = allLogs.filter((l) => l.status === "error");
+			const logsWithDuration = allLogs.filter((l) => l.durationMs !== null);
+
+			const totals = {
+				itemsCleaned: allLogs.reduce((sum, l) => sum + l.itemsCleaned, 0),
+				itemsSkipped: allLogs.reduce((sum, l) => sum + l.itemsSkipped, 0),
+				itemsWarned: allLogs.reduce((sum, l) => sum + l.itemsWarned, 0),
+				totalRuns: allLogs.length,
+				completedRuns: completedLogs.length,
+				errorRuns: errorLogs.length,
+				averageDurationMs:
+					logsWithDuration.length > 0
+						? Math.round(
+								logsWithDuration.reduce((sum, l) => sum + (l.durationMs ?? 0), 0) /
+									logsWithDuration.length,
+							)
+						: 0,
+				successRate:
+					allLogs.length > 0 ? Math.round((completedLogs.length / allLogs.length) * 100) : 100,
 			};
-		});
 
-		// Recent activity (last 10 runs)
-		const recentActivity = allLogs.slice(0, 10).map((logEntry) => ({
-			id: logEntry.id,
-			instanceName: logEntry.instance.label,
-			service: toServiceLabel(logEntry.instance.service),
-			itemsCleaned: logEntry.itemsCleaned,
-			itemsSkipped: logEntry.itemsSkipped,
-			status: logEntry.status,
-			isDryRun: logEntry.isDryRun,
-			startedAt: logEntry.startedAt.toISOString(),
-		}));
+			// Calculate rule breakdown from cleanedItems JSON
+			// Track skipped entries for data quality indicator (Issue 4)
+			const ruleBreakdown: Record<string, number> = {};
+			let skippedLogEntries = 0;
+			for (const logEntry of allLogs) {
+				if (logEntry.cleanedItems) {
+					try {
+						const items = JSON.parse(logEntry.cleanedItems) as Array<{ rule?: string }>;
+						for (const item of items) {
+							if (item.rule) {
+								ruleBreakdown[item.rule] = (ruleBreakdown[item.rule] ?? 0) + 1;
+							}
+						}
+					} catch (error) {
+						skippedLogEntries++;
+						log.warn(
+							{ logId: logEntry.id, instanceId: logEntry.instanceId, err: error },
+							"Malformed cleanedItems JSON in log entry - statistics may be incomplete",
+						);
+					}
+				}
+			}
 
-		return reply.send({
-			daily,
-			weekly,
-			totals,
-			ruleBreakdown,
-			instanceBreakdown,
-			recentActivity,
-			// Data quality indicator for Issue 4
-			dataQuality: skippedLogEntries > 0
-				? { warning: `${skippedLogEntries} log entries had corrupted data and were excluded from rule breakdown statistics` }
-				: undefined,
-		});
-	});
+			// Calculate per-instance breakdown
+			const instanceBreakdown = instances.map((inst) => {
+				const instanceLogs = allLogs.filter((l) => l.instanceId === inst.id);
+				return {
+					instanceId: inst.id,
+					instanceName: inst.label,
+					service: toServiceLabel(inst.service),
+					itemsCleaned: instanceLogs.reduce((sum, l) => sum + l.itemsCleaned, 0),
+					totalRuns: instanceLogs.length,
+					lastRunAt: inst.queueCleanerConfig?.lastRunAt?.toISOString() ?? null,
+				};
+			});
+
+			// Recent activity (last 10 runs)
+			const recentActivity = allLogs.slice(0, 10).map((logEntry) => ({
+				id: logEntry.id,
+				instanceName: logEntry.instance.label,
+				service: toServiceLabel(logEntry.instance.service),
+				itemsCleaned: logEntry.itemsCleaned,
+				itemsSkipped: logEntry.itemsSkipped,
+				status: logEntry.status,
+				isDryRun: logEntry.isDryRun,
+				startedAt: logEntry.startedAt.toISOString(),
+			}));
+
+			return reply.send({
+				daily,
+				weekly,
+				totals,
+				ruleBreakdown,
+				instanceBreakdown,
+				recentActivity,
+				// Data quality indicator for Issue 4
+				dataQuality:
+					skippedLogEntries > 0
+						? {
+								warning: `${skippedLogEntries} log entries had corrupted data and were excluded from rule breakdown statistics`,
+							}
+						: undefined,
+			});
+		},
+	);
 
 	// Toggle scheduler
 	// Note: Auth is handled by preHandler hook - no need to check here

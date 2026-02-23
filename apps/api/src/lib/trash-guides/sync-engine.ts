@@ -4,14 +4,14 @@
  * Orchestrates the synchronization of TRaSH configurations to Radarr/Sonarr instances
  */
 
+import type { RadarrClient, SonarrClient } from "arr-sdk";
 import type { PrismaClient } from "../../lib/prisma.js";
 import type { ArrClientFactory } from "../arr/client-factory.js";
-import type { SonarrClient, RadarrClient } from "arr-sdk";
+import { loggers } from "../logger.js";
+import { getErrorMessage } from "../utils/error-message.js";
 import type { DeploymentExecutorService } from "./deployment-executor.js";
 import { getSyncMetrics } from "./sync-metrics.js";
 import type { TemplateUpdater } from "./template-updater.js";
-import { loggers } from "../logger.js";
-import { getErrorMessage } from "../utils/error-message.js";
 
 const log = loggers.trashGuides;
 
@@ -251,8 +251,7 @@ export class SyncEngine {
 					}
 				}
 			} catch (connectError) {
-				const errorMessage =
-					getErrorMessage(connectError);
+				const errorMessage = getErrorMessage(connectError);
 				errors.push(
 					`Unable to connect to instance "${instance.label}" (${instance.baseUrl}). ` +
 						`Please verify the instance is running and accessible. Error: ${errorMessage}`,

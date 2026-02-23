@@ -1,15 +1,15 @@
 "use client";
 
+import { Download, FileText, Gauge, Languages, Star, X } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { useQualityProfiles, useImportQualityProfile } from "../../../hooks/api/useQualityProfiles";
-import { Alert, AlertDescription, EmptyState, Input, Button } from "../../../components/ui";
 import { PremiumSkeleton } from "../../../components/layout/premium-components";
-import { X, Download, FileText, Star, Languages, Gauge } from "lucide-react";
-import { SanitizedHtml } from "./sanitized-html";
+import { Alert, AlertDescription, Button, EmptyState, Input } from "../../../components/ui";
+import { useImportQualityProfile, useQualityProfiles } from "../../../hooks/api/useQualityProfiles";
 import type { QualityProfileSummary } from "../../../lib/api-client/trash-guides";
-import { htmlToPlainText } from "../lib/description-utils";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { htmlToPlainText } from "../lib/description-utils";
+import { SanitizedHtml } from "./sanitized-html";
 
 interface QualityProfileBrowserProps {
 	open: boolean;
@@ -78,19 +78,17 @@ export const QualityProfileBrowser = ({
 				{/* Header */}
 				<div className="sticky top-0 z-10 flex items-center justify-between border-b border-border bg-card/95 p-6 backdrop-blur-sm">
 					<div>
-						<h2 id="quality-profile-browser-title" className="text-xl font-semibold text-foreground">
+						<h2
+							id="quality-profile-browser-title"
+							className="text-xl font-semibold text-foreground"
+						>
 							Browse TRaSH Quality Profiles
 						</h2>
 						<p className="mt-1 text-sm text-muted-foreground">
 							Select a quality profile to import as a template for {serviceType}
 						</p>
 					</div>
-					<Button
-						variant="ghost"
-						size="sm"
-						onClick={onClose}
-						aria-label="Close dialog"
-					>
+					<Button variant="ghost" size="sm" onClick={onClose} aria-label="Close dialog">
 						<X className="h-5 w-5" />
 					</Button>
 				</div>

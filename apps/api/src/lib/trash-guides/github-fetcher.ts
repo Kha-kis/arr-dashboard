@@ -328,7 +328,7 @@ async function fetchWithRetry(
 				const retryAfter = response.headers.get("Retry-After");
 				const waitTime = retryAfter
 					? Number.parseInt(retryAfter, 10) * 1000
-					: Math.min(retryDelay * Math.pow(2, attempt - 1) + Math.random() * 1000, 60000);
+					: Math.min(retryDelay * 2 ** (attempt - 1) + Math.random() * 1000, 60000);
 				const rateLimitRemaining = response.headers.get("X-RateLimit-Remaining");
 				const rateLimitReset = response.headers.get("X-RateLimit-Reset");
 
@@ -418,14 +418,10 @@ function mergeByTrashId<T>(official: T[], custom: T[]): T[] {
 
 	// Tag shallow copies with source repo for provenance tracking (avoids mutating inputs)
 	const taggedBase = base.map((item) =>
-		item && typeof item === "object"
-			? ({ ...item, _repoSource: "official" as const } as T)
-			: item,
+		item && typeof item === "object" ? ({ ...item, _repoSource: "official" as const } as T) : item,
 	);
 	const taggedCustom = custom.map((item) =>
-		item && typeof item === "object"
-			? ({ ...item, _repoSource: "custom" as const } as T)
-			: item,
+		item && typeof item === "object" ? ({ ...item, _repoSource: "custom" as const } as T) : item,
 	);
 
 	return [...taggedBase, ...taggedCustom];

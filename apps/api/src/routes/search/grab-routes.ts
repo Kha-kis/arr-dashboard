@@ -1,5 +1,5 @@
-import type { FastifyPluginCallback } from "fastify";
 import { searchGrabRequestSchema } from "@arr/shared";
+import type { FastifyPluginCallback } from "fastify";
 import { getClientForInstance, isProwlarrClient } from "../../lib/arr/client-helpers.js";
 import { grabProwlarrReleaseWithSdk } from "../../lib/search/prowlarr-api.js";
 

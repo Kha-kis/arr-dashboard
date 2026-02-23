@@ -1,9 +1,9 @@
 "use client";
 
-import { Search, Loader2 } from "lucide-react";
-import type { SeerrDiscoverResult, SeerrDiscoverResponse } from "@arr/shared";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import type { SeerrDiscoverResponse, SeerrDiscoverResult } from "@arr/shared";
+import { Loader2, Search } from "lucide-react";
 import { PremiumSkeleton } from "../../../components/layout";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { DiscoverPosterCard } from "./discover-poster-card";
 
 interface DiscoverSearchResultsProps {
@@ -74,8 +74,8 @@ export const DiscoverSearchResults: React.FC<DiscoverSearchResultsProps> = ({
 			<div className="flex items-center gap-2 text-sm text-muted-foreground">
 				<Search className="h-4 w-4" />
 				<span>
-					Found <span className="font-medium text-foreground">{data.totalResults}</span> results
-					for &quot;{query}&quot;
+					Found <span className="font-medium text-foreground">{data.totalResults}</span> results for
+					&quot;{query}&quot;
 				</span>
 			</div>
 

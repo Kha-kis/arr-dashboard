@@ -4,8 +4,7 @@
  * Provides `requireTemplate()` — the template analogue of `requireInstance()`.
  */
 
-import type { TrashTemplate } from "../../lib/prisma.js";
-import type { PrismaClientInstance } from "../../lib/prisma.js";
+import type { PrismaClientInstance, TrashTemplate } from "../../lib/prisma.js";
 import { TemplateNotFoundError } from "../errors.js";
 
 /**

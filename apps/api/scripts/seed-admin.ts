@@ -28,39 +28,40 @@ const prisma = new PrismaClient();
  * DEV_SHOW_PASSWORD is set to "true"; otherwise a generic success message is logged.
  */
 async function main() {
-  const password = process.env.ADMIN_PASSWORD ?? "admin1234";
-  const username = process.env.ADMIN_USERNAME ?? "admin";
+	const password = process.env.ADMIN_PASSWORD ?? "admin1234";
+	const username = process.env.ADMIN_USERNAME ?? "admin";
 
-  const existing = await prisma.user.findUnique({ where: { username } });
-  if (existing) {
-    console.log(`Admin user already exists (${username})`);
-    return;
-  }
+	const existing = await prisma.user.findUnique({ where: { username } });
+	if (existing) {
+		console.log(`Admin user already exists (${username})`);
+		return;
+	}
 
-  const hashedPassword = await hashPassword(password);
-  const user = await prisma.user.create({
-    data: {
-      username,
-      hashedPassword,
-      // Note: No role field exists in the schema. Admin privileges are
-      // determined by convention (first user = admin), not by a stored role.
-    },
-  });
+	const hashedPassword = await hashPassword(password);
+	const user = await prisma.user.create({
+		data: {
+			username,
+			hashedPassword,
+			// Note: No role field exists in the schema. Admin privileges are
+			// determined by convention (first user = admin), not by a stored role.
+		},
+	});
 
-  // Only show password in development or when explicitly requested
-  const showPassword = process.env.NODE_ENV === "development" || process.env.DEV_SHOW_PASSWORD === "true";
-  if (showPassword) {
-    console.log(`Seeded admin user "${user.username}" (password: ${password})`);
-  } else {
-    console.log(`Seeded admin user "${user.username}" successfully`);
-  }
+	// Only show password in development or when explicitly requested
+	const showPassword =
+		process.env.NODE_ENV === "development" || process.env.DEV_SHOW_PASSWORD === "true";
+	if (showPassword) {
+		console.log(`Seeded admin user "${user.username}" (password: ${password})`);
+	} else {
+		console.log(`Seeded admin user "${user.username}" successfully`);
+	}
 }
 
 main()
-  .catch((error) => {
-    console.error("Failed to seed admin user", error);
-    process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
-  });
+	.catch((error) => {
+		console.error("Failed to seed admin user", error);
+		process.exit(1);
+	})
+	.finally(async () => {
+		await prisma.$disconnect();
+	});

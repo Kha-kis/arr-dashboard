@@ -6,7 +6,6 @@
  * Wrapped with React.memo for list performance optimization.
  */
 
-import { memo } from "react";
 import type { LibraryItem } from "@arr/shared";
 import {
 	AlertTriangle,
@@ -19,23 +18,20 @@ import {
 	Search,
 	Star,
 } from "lucide-react";
+import { memo } from "react";
+import { GlassmorphicCard, ServiceBadge, StatusBadge } from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import {
-	GlassmorphicCard,
-	ServiceBadge,
-	StatusBadge,
-} from "../../../components/layout";
-import { safeOpenUrl } from "../../../lib/utils/url-validation";
+	getLinuxInstanceName,
+	getLinuxIsoName,
+	getLinuxSavePath,
+	useIncognitoMode,
+} from "../../../lib/incognito";
 import { RATING_COLOR, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { safeOpenUrl } from "../../../lib/utils/url-validation";
+import { formatBytes, formatRuntime } from "../lib/library-utils";
 import { LibraryBadge } from "./library-badge";
 import { PosterImage } from "./poster-image";
-import { formatBytes, formatRuntime } from "../lib/library-utils";
-import {
-	useIncognitoMode,
-	getLinuxIsoName,
-	getLinuxInstanceName,
-	getLinuxSavePath,
-} from "../../../lib/incognito";
 
 /**
  * Props for the LibraryCard component
@@ -137,9 +133,8 @@ export const LibraryCard = memo(function LibraryCard({
 		item.type === "movie"
 			? (item.movieFile?.relativePath ?? item.path)?.split(/[\\/]/g).pop()
 			: undefined;
-	const movieFileName = incognitoMode && rawMovieFileName
-		? getLinuxIsoName(rawMovieFileName)
-		: rawMovieFileName;
+	const movieFileName =
+		incognitoMode && rawMovieFileName ? getLinuxIsoName(rawMovieFileName) : rawMovieFileName;
 
 	const handleOpenExternal = () => {
 		if (!externalLink) {
@@ -224,7 +219,8 @@ export const LibraryCard = memo(function LibraryCard({
 	}
 
 	if (item.type === "author") {
-		const missingBooks = (item.statistics?.totalBookCount ?? 0) - (item.statistics?.bookFileCount ?? 0);
+		const missingBooks =
+			(item.statistics?.totalBookCount ?? 0) - (item.statistics?.bookFileCount ?? 0);
 		statusBadges.push({
 			tone: hasFile ? "green" : "blue",
 			label: hasFile ? "Books on disk" : "Awaiting books",
@@ -375,281 +371,281 @@ export const LibraryCard = memo(function LibraryCard({
 
 	return (
 		<GlassmorphicCard padding="md" className="flex flex-col gap-3">
-				<div className="flex gap-3">
-					<button
-						type="button"
-						className="h-36 w-24 overflow-hidden rounded-lg border border-border bg-muted shadow-md shrink-0 transition-transform hover:scale-105 cursor-pointer"
-						onClick={() => onExpandDetails?.(item)}
-					>
-						<PosterImage
-							tmdbPosterPath={posterPath}
-							arrPosterUrl={item.poster}
-							size="w185"
-							alt={item.title}
-							placeholder={item.type === "movie" ? "Poster" : "Artwork"}
-						/>
-					</button>
+			<div className="flex gap-3">
+				<button
+					type="button"
+					className="h-36 w-24 overflow-hidden rounded-lg border border-border bg-muted shadow-md shrink-0 transition-transform hover:scale-105 cursor-pointer"
+					onClick={() => onExpandDetails?.(item)}
+				>
+					<PosterImage
+						tmdbPosterPath={posterPath}
+						arrPosterUrl={item.poster}
+						size="w185"
+						alt={item.title}
+						placeholder={item.type === "movie" ? "Poster" : "Artwork"}
+					/>
+				</button>
 
-					<div className="flex-1 min-w-0 space-y-2">
-						<div>
-							<div className="flex flex-wrap items-baseline gap-2">
-								<h3
-									className="text-base font-semibold text-foreground hover:text-primary cursor-pointer transition-colors"
-									onClick={() => onExpandDetails?.(item)}
-									role="button"
-									tabIndex={0}
-									onKeyDown={(e) => e.key === "Enter" && onExpandDetails?.(item)}
+				<div className="flex-1 min-w-0 space-y-2">
+					<div>
+						<div className="flex flex-wrap items-baseline gap-2">
+							<h3
+								className="text-base font-semibold text-foreground hover:text-primary cursor-pointer transition-colors"
+								onClick={() => onExpandDetails?.(item)}
+								role="button"
+								tabIndex={0}
+								onKeyDown={(e) => e.key === "Enter" && onExpandDetails?.(item)}
+							>
+								{item.title}
+							</h3>
+							{item.year && item.type === "movie" ? (
+								<span className="text-xs text-muted-foreground">{item.year}</span>
+							) : null}
+						</div>
+						<div className="flex flex-wrap items-center gap-2 mt-1">
+							<p className="text-xs text-muted-foreground">
+								{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}
+							</p>
+							<ServiceBadge service={serviceType} />
+							<StatusBadge status={monitoredStatus}>
+								{monitored ? "Monitored" : "Unmonitored"}
+							</StatusBadge>
+							{typeof tmdbRating === "number" && tmdbRating > 0 && (
+								<span
+									className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold"
+									style={{
+										backgroundColor: SEMANTIC_COLORS.warning.bg,
+										border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
+										color: RATING_COLOR,
+									}}
 								>
-									{item.title}
-								</h3>
-								{item.year && item.type === "movie" ? (
-									<span className="text-xs text-muted-foreground">{item.year}</span>
-								) : null}
-							</div>
-							<div className="flex flex-wrap items-center gap-2 mt-1">
-								<p className="text-xs text-muted-foreground">
-									{incognitoMode ? getLinuxInstanceName(item.instanceName) : item.instanceName}
-								</p>
-								<ServiceBadge service={serviceType} />
-								<StatusBadge status={monitoredStatus}>
-									{monitored ? "Monitored" : "Unmonitored"}
-								</StatusBadge>
-								{typeof tmdbRating === "number" && tmdbRating > 0 && (
-									<span
-										className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold"
-										style={{
-											backgroundColor: SEMANTIC_COLORS.warning.bg,
-											border: `1px solid ${SEMANTIC_COLORS.warning.border}`,
-											color: RATING_COLOR,
-										}}
-									>
-										<Star className="h-3 w-3 fill-current" />
-										{tmdbRating.toFixed(1)}
-									</span>
-								)}
-								{typeof openIssueCount === "number" && openIssueCount > 0 && (
-									<span
-										className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold"
-										style={{
-											backgroundColor: SEMANTIC_COLORS.error.bg,
-											border: `1px solid ${SEMANTIC_COLORS.error.border}`,
-											color: SEMANTIC_COLORS.error.text,
-										}}
-									>
-										<AlertTriangle className="h-3 w-3" />
-										{openIssueCount}
-									</span>
-								)}
-							</div>
-						</div>
-
-						{item.overview ? (
-							<div className="group relative">
-								<p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
-									{item.overview}
-								</p>
-								{item.overview.length > 120 && onExpandDetails ? (
-									<button
-										onClick={() => onExpandDetails(item)}
-										className="mt-1 text-xs text-primary hover:text-primary-hover transition-colors"
-									>
-										Read more...
-									</button>
-								) : null}
-							</div>
-						) : null}
-
-						<div className="flex flex-wrap gap-2">
-							{statusBadges.map((badge, index) => (
-								<LibraryBadge key={`${item.id}-badge-${index}`} tone={badge.tone}>
-									{badge.label}
-								</LibraryBadge>
-							))}
-						</div>
-
-						<div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-							{metadata.slice(0, 4).map((entry) => (
-								<span key={`${item.id}-${entry.label}`}>
-									<span className="text-muted-foreground/70">{entry.label}:</span> {entry.value}
+									<Star className="h-3 w-3 fill-current" />
+									{tmdbRating.toFixed(1)}
 								</span>
-							))}
-						</div>
-
-						{genreEntries.length > 0 ? (
-							<div className="flex flex-wrap gap-1.5 text-xs">
-								{genreEntries.slice(0, 3).map((genre) => (
-									<span
-										key={`${item.id}-genre-${genre}`}
-										className="rounded-full border border-border bg-muted px-2 py-0.5 text-muted-foreground"
-									>
-										{genre}
-									</span>
-								))}
-								{genreEntries.length > 3 && (
-									<span className="text-muted-foreground">+{genreEntries.length - 3} more</span>
-								)}
-							</div>
-						) : null}
-					</div>
-				</div>
-
-				{/* Card footer — two tiers: action buttons + external links */}
-				<div className="border-t border-border/50 pt-3 space-y-2">
-					{/* Primary actions */}
-					<div className="flex items-center justify-between gap-2">
-						<div className="flex flex-wrap items-center gap-1.5">
-							{item.service === "sonarr" && onSearchSeries ? (
-								<Button
-									type="button"
-									variant="secondary"
-									size="sm"
-									className="flex items-center gap-1.5"
-									onClick={() => onSearchSeries(item)}
-									disabled={seriesSearchPending}
-								>
-									{seriesSearchPending ? (
-										<Loader2 className="h-3.5 w-3.5 animate-spin" />
-									) : (
-										<Search className="h-3.5 w-3.5" />
-									)}
-									<span>Search</span>
-								</Button>
-							) : null}
-
-							{item.service === "radarr" && onSearchMovie ? (
-								<Button
-									type="button"
-									variant="secondary"
-									size="sm"
-									className="flex items-center gap-1.5"
-									onClick={() => onSearchMovie(item)}
-									disabled={movieSearchPending}
-								>
-									{movieSearchPending ? (
-										<Loader2 className="h-3.5 w-3.5 animate-spin" />
-									) : (
-										<Search className="h-3.5 w-3.5" />
-									)}
-									<span>Search</span>
-								</Button>
-							) : null}
-
-							{item.type === "artist" && onViewAlbums && (item.statistics?.albumCount ?? 0) > 0 ? (
-								<Button
-									type="button"
-									variant="secondary"
-									size="sm"
-									className="flex items-center gap-1.5"
-									onClick={() => onViewAlbums(item)}
-								>
-									<ListTree className="h-3.5 w-3.5" />
-									<span>Albums</span>
-								</Button>
-							) : null}
-
-							{item.service === "lidarr" && onSearchArtist ? (
-								<Button
-									type="button"
-									variant="secondary"
-									size="sm"
-									className="flex items-center gap-1.5"
-									onClick={() => onSearchArtist(item)}
-									disabled={artistSearchPending}
-								>
-									{artistSearchPending ? (
-										<Loader2 className="h-3.5 w-3.5 animate-spin" />
-									) : (
-										<Search className="h-3.5 w-3.5" />
-									)}
-									<span>Search</span>
-								</Button>
-							) : null}
-
-							{item.type === "author" && onViewBooks && (item.statistics?.bookCount ?? 0) > 0 ? (
-								<Button
-									type="button"
-									variant="secondary"
-									size="sm"
-									className="flex items-center gap-1.5"
-									onClick={() => onViewBooks(item)}
-								>
-									<ListTree className="h-3.5 w-3.5" />
-									<span>Books</span>
-								</Button>
-							) : null}
-
-							{item.service === "readarr" && onSearchAuthor ? (
-								<Button
-									type="button"
-									variant="secondary"
-									size="sm"
-									className="flex items-center gap-1.5"
-									onClick={() => onSearchAuthor(item)}
-									disabled={authorSearchPending}
-								>
-									{authorSearchPending ? (
-										<Loader2 className="h-3.5 w-3.5 animate-spin" />
-									) : (
-										<Search className="h-3.5 w-3.5" />
-									)}
-									<span>Search</span>
-								</Button>
-							) : null}
-
-							{onExpandDetails ? (
-								<Button
-									type="button"
-									variant="secondary"
-									size="sm"
-									className="flex items-center gap-1.5"
-									onClick={() => onExpandDetails(item)}
-								>
-									<Info className="h-3.5 w-3.5" />
-									<span>Details</span>
-								</Button>
-							) : null}
-						</div>
-
-						<Button
-							type="button"
-							variant={monitored ? "secondary" : "primary"}
-							size="sm"
-							className="flex items-center gap-1.5 shrink-0"
-							onClick={() => onToggleMonitor(item)}
-							disabled={pending}
-						>
-							{pending ? (
-								<Loader2 className="h-3.5 w-3.5 animate-spin" />
-							) : monitored ? (
-								<PauseCircle className="h-3.5 w-3.5" />
-							) : (
-								<PlayCircle className="h-3.5 w-3.5" />
 							)}
-							{monitored ? "Unmonitor" : "Monitor"}
-						</Button>
+							{typeof openIssueCount === "number" && openIssueCount > 0 && (
+								<span
+									className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold"
+									style={{
+										backgroundColor: SEMANTIC_COLORS.error.bg,
+										border: `1px solid ${SEMANTIC_COLORS.error.border}`,
+										color: SEMANTIC_COLORS.error.text,
+									}}
+								>
+									<AlertTriangle className="h-3 w-3" />
+									{openIssueCount}
+								</span>
+							)}
+						</div>
 					</div>
 
-					{/* External links — subtle, dot-separated text */}
-					{externalLinks.length > 0 && (
-						<div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px]">
-							<ExternalLink className="h-3 w-3 text-muted-foreground/40 mr-0.5" />
-							{externalLinks.map((link, i) => (
-								<span key={link.label} className="inline-flex items-center gap-1">
-									<button
-										type="button"
-										className="text-muted-foreground/60 hover:text-foreground transition-colors"
-										onClick={link.onClick}
-									>
-										{link.label}
-									</button>
-									{i < externalLinks.length - 1 && (
-										<span className="text-muted-foreground/30">·</span>
-									)}
+					{item.overview ? (
+						<div className="group relative">
+							<p className="text-xs leading-relaxed text-muted-foreground line-clamp-2">
+								{item.overview}
+							</p>
+							{item.overview.length > 120 && onExpandDetails ? (
+								<button
+									onClick={() => onExpandDetails(item)}
+									className="mt-1 text-xs text-primary hover:text-primary-hover transition-colors"
+								>
+									Read more...
+								</button>
+							) : null}
+						</div>
+					) : null}
+
+					<div className="flex flex-wrap gap-2">
+						{statusBadges.map((badge, index) => (
+							<LibraryBadge key={`${item.id}-badge-${index}`} tone={badge.tone}>
+								{badge.label}
+							</LibraryBadge>
+						))}
+					</div>
+
+					<div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+						{metadata.slice(0, 4).map((entry) => (
+							<span key={`${item.id}-${entry.label}`}>
+								<span className="text-muted-foreground/70">{entry.label}:</span> {entry.value}
+							</span>
+						))}
+					</div>
+
+					{genreEntries.length > 0 ? (
+						<div className="flex flex-wrap gap-1.5 text-xs">
+							{genreEntries.slice(0, 3).map((genre) => (
+								<span
+									key={`${item.id}-genre-${genre}`}
+									className="rounded-full border border-border bg-muted px-2 py-0.5 text-muted-foreground"
+								>
+									{genre}
 								</span>
 							))}
+							{genreEntries.length > 3 && (
+								<span className="text-muted-foreground">+{genreEntries.length - 3} more</span>
+							)}
 						</div>
-					)}
+					) : null}
 				</div>
+			</div>
+
+			{/* Card footer — two tiers: action buttons + external links */}
+			<div className="border-t border-border/50 pt-3 space-y-2">
+				{/* Primary actions */}
+				<div className="flex items-center justify-between gap-2">
+					<div className="flex flex-wrap items-center gap-1.5">
+						{item.service === "sonarr" && onSearchSeries ? (
+							<Button
+								type="button"
+								variant="secondary"
+								size="sm"
+								className="flex items-center gap-1.5"
+								onClick={() => onSearchSeries(item)}
+								disabled={seriesSearchPending}
+							>
+								{seriesSearchPending ? (
+									<Loader2 className="h-3.5 w-3.5 animate-spin" />
+								) : (
+									<Search className="h-3.5 w-3.5" />
+								)}
+								<span>Search</span>
+							</Button>
+						) : null}
+
+						{item.service === "radarr" && onSearchMovie ? (
+							<Button
+								type="button"
+								variant="secondary"
+								size="sm"
+								className="flex items-center gap-1.5"
+								onClick={() => onSearchMovie(item)}
+								disabled={movieSearchPending}
+							>
+								{movieSearchPending ? (
+									<Loader2 className="h-3.5 w-3.5 animate-spin" />
+								) : (
+									<Search className="h-3.5 w-3.5" />
+								)}
+								<span>Search</span>
+							</Button>
+						) : null}
+
+						{item.type === "artist" && onViewAlbums && (item.statistics?.albumCount ?? 0) > 0 ? (
+							<Button
+								type="button"
+								variant="secondary"
+								size="sm"
+								className="flex items-center gap-1.5"
+								onClick={() => onViewAlbums(item)}
+							>
+								<ListTree className="h-3.5 w-3.5" />
+								<span>Albums</span>
+							</Button>
+						) : null}
+
+						{item.service === "lidarr" && onSearchArtist ? (
+							<Button
+								type="button"
+								variant="secondary"
+								size="sm"
+								className="flex items-center gap-1.5"
+								onClick={() => onSearchArtist(item)}
+								disabled={artistSearchPending}
+							>
+								{artistSearchPending ? (
+									<Loader2 className="h-3.5 w-3.5 animate-spin" />
+								) : (
+									<Search className="h-3.5 w-3.5" />
+								)}
+								<span>Search</span>
+							</Button>
+						) : null}
+
+						{item.type === "author" && onViewBooks && (item.statistics?.bookCount ?? 0) > 0 ? (
+							<Button
+								type="button"
+								variant="secondary"
+								size="sm"
+								className="flex items-center gap-1.5"
+								onClick={() => onViewBooks(item)}
+							>
+								<ListTree className="h-3.5 w-3.5" />
+								<span>Books</span>
+							</Button>
+						) : null}
+
+						{item.service === "readarr" && onSearchAuthor ? (
+							<Button
+								type="button"
+								variant="secondary"
+								size="sm"
+								className="flex items-center gap-1.5"
+								onClick={() => onSearchAuthor(item)}
+								disabled={authorSearchPending}
+							>
+								{authorSearchPending ? (
+									<Loader2 className="h-3.5 w-3.5 animate-spin" />
+								) : (
+									<Search className="h-3.5 w-3.5" />
+								)}
+								<span>Search</span>
+							</Button>
+						) : null}
+
+						{onExpandDetails ? (
+							<Button
+								type="button"
+								variant="secondary"
+								size="sm"
+								className="flex items-center gap-1.5"
+								onClick={() => onExpandDetails(item)}
+							>
+								<Info className="h-3.5 w-3.5" />
+								<span>Details</span>
+							</Button>
+						) : null}
+					</div>
+
+					<Button
+						type="button"
+						variant={monitored ? "secondary" : "primary"}
+						size="sm"
+						className="flex items-center gap-1.5 shrink-0"
+						onClick={() => onToggleMonitor(item)}
+						disabled={pending}
+					>
+						{pending ? (
+							<Loader2 className="h-3.5 w-3.5 animate-spin" />
+						) : monitored ? (
+							<PauseCircle className="h-3.5 w-3.5" />
+						) : (
+							<PlayCircle className="h-3.5 w-3.5" />
+						)}
+						{monitored ? "Unmonitor" : "Monitor"}
+					</Button>
+				</div>
+
+				{/* External links — subtle, dot-separated text */}
+				{externalLinks.length > 0 && (
+					<div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 text-[11px]">
+						<ExternalLink className="h-3 w-3 text-muted-foreground/40 mr-0.5" />
+						{externalLinks.map((link, i) => (
+							<span key={link.label} className="inline-flex items-center gap-1">
+								<button
+									type="button"
+									className="text-muted-foreground/60 hover:text-foreground transition-colors"
+									onClick={link.onClick}
+								>
+									{link.label}
+								</button>
+								{i < externalLinks.length - 1 && (
+									<span className="text-muted-foreground/30">·</span>
+								)}
+							</span>
+						))}
+					</div>
+				)}
+			</div>
 		</GlassmorphicCard>
 	);
 });

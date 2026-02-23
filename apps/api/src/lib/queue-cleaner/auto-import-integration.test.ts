@@ -5,11 +5,8 @@
  * Run with: npx vitest run auto-import-integration.test.ts
  */
 
-import { describe, it, expect } from "vitest";
-import {
-	AUTO_IMPORT_SAFE_KEYWORDS,
-	AUTO_IMPORT_NEVER_KEYWORDS,
-} from "./constants.js";
+import { describe, expect, it } from "vitest";
+import { AUTO_IMPORT_NEVER_KEYWORDS, AUTO_IMPORT_SAFE_KEYWORDS } from "./constants.js";
 
 // Mock queue items that simulate various import states
 const mockQueueItems = {
@@ -168,11 +165,12 @@ describe("Auto-Import Integration", () => {
 				rule: "import_pending",
 				action: "remove",
 				autoImportEligible: !neverMatch && !!safeMatch,
-				autoImportReason: !neverMatch && !!safeMatch
-					? "Eligible for auto-import"
-					: neverMatch
-						? `Cannot auto-import: ${neverMatch}`
-						: "No safe pattern matched",
+				autoImportReason:
+					!neverMatch && !!safeMatch
+						? "Eligible for auto-import"
+						: neverMatch
+							? `Cannot auto-import: ${neverMatch}`
+							: "No safe pattern matched",
 			};
 
 			expect(previewItem.autoImportEligible).toBe(true);

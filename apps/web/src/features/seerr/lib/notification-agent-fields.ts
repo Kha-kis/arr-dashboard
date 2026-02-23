@@ -17,13 +17,23 @@ export interface AgentField {
 
 export const AGENT_FIELDS: Record<string, AgentField[]> = {
 	discord: [
-		{ key: "webhookUrl", label: "Webhook URL", type: "url", placeholder: "https://discord.com/api/webhooks/..." },
+		{
+			key: "webhookUrl",
+			label: "Webhook URL",
+			type: "url",
+			placeholder: "https://discord.com/api/webhooks/...",
+		},
 		{ key: "botUsername", label: "Bot Username", type: "text", placeholder: "Seerr" },
 		{ key: "botAvatarUrl", label: "Bot Avatar URL", type: "url", placeholder: "https://..." },
 		{ key: "enableMentions", label: "Enable Mentions", type: "boolean" },
 	],
 	email: [
-		{ key: "emailFrom", label: "Sender Address", type: "text", placeholder: "no-reply@example.com" },
+		{
+			key: "emailFrom",
+			label: "Sender Address",
+			type: "text",
+			placeholder: "no-reply@example.com",
+		},
 		{ key: "senderName", label: "Sender Name", type: "text", placeholder: "Seerr" },
 		{ key: "smtpHost", label: "SMTP Host", type: "text", placeholder: "smtp.example.com" },
 		{ key: "smtpPort", label: "SMTP Port", type: "number", placeholder: "587" },
@@ -38,7 +48,12 @@ export const AGENT_FIELDS: Record<string, AgentField[]> = {
 		{ key: "token", label: "App Token", type: "password" },
 	],
 	lunasea: [
-		{ key: "webhookUrl", label: "Webhook URL", type: "url", placeholder: "https://notify.lunasea.app/v1/custom/..." },
+		{
+			key: "webhookUrl",
+			label: "Webhook URL",
+			type: "url",
+			placeholder: "https://notify.lunasea.app/v1/custom/...",
+		},
 	],
 	ntfy: [
 		{ key: "url", label: "Server URL", type: "url", placeholder: "https://ntfy.sh" },
@@ -56,7 +71,12 @@ export const AGENT_FIELDS: Record<string, AgentField[]> = {
 		{ key: "sound", label: "Sound", type: "text", placeholder: "pushover" },
 	],
 	slack: [
-		{ key: "webhookUrl", label: "Webhook URL", type: "url", placeholder: "https://hooks.slack.com/services/..." },
+		{
+			key: "webhookUrl",
+			label: "Webhook URL",
+			type: "url",
+			placeholder: "https://hooks.slack.com/services/...",
+		},
 	],
 	telegram: [
 		{ key: "botAPI", label: "Bot Token", type: "password", placeholder: "123456:ABC-DEF..." },

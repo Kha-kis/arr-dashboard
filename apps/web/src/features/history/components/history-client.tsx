@@ -1,43 +1,43 @@
 "use client";
 
-import { useDeferredValue, useMemo, useState } from "react";
 import type { ServiceInstanceSummary } from "@arr/shared";
-import { useMultiInstanceHistoryQuery } from "../../../hooks/api/useDashboard";
-import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
-import { Button } from "../../../components/ui/button";
-import { Input } from "../../../components/ui/input";
-import { Alert, AlertDescription, Pagination } from "../../../components/ui";
 import {
-	PremiumPageHeader,
-	StatCard,
-	PremiumSkeleton,
-	FilterSelect,
-	ServiceBadge,
-} from "../../../components/layout";
-import { HistoryTable } from "./history-table";
-import { HistoryTimeline } from "./history-timeline";
-import { SERVICE_FILTERS } from "../lib/history-utils";
-import { useHistoryState } from "../hooks/use-history-state";
-import { useHistoryData } from "../hooks/use-history-data";
-import type { TimeRangePreset } from "../lib/date-utils";
-import { groupByDay } from "../lib/date-utils";
-import {
-	History,
-	RefreshCw,
-	Filter,
-	RotateCcw,
-	LayoutList,
-	Table2,
-	ArrowDownToLine,
-	Package,
 	AlertTriangle,
+	ArrowDownToLine,
 	ChevronDown,
 	ChevronUp,
+	Filter,
+	History,
+	LayoutList,
+	Package,
+	RefreshCw,
+	RotateCcw,
+	Table2,
 	X,
 } from "lucide-react";
-import { SERVICE_GRADIENTS, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { useDeferredValue, useMemo, useState } from "react";
+import {
+	FilterSelect,
+	PremiumPageHeader,
+	PremiumSkeleton,
+	ServiceBadge,
+	StatCard,
+} from "../../../components/layout";
+import { Alert, AlertDescription, Pagination } from "../../../components/ui";
+import { Button } from "../../../components/ui/button";
+import { Input } from "../../../components/ui/input";
+import { useMultiInstanceHistoryQuery } from "../../../hooks/api/useDashboard";
+import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { SEMANTIC_COLORS, SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
+import { useHistoryData } from "../hooks/use-history-data";
+import { useHistoryState } from "../hooks/use-history-state";
+import type { TimeRangePreset } from "../lib/date-utils";
+import { groupByDay } from "../lib/date-utils";
+import { SERVICE_FILTERS } from "../lib/history-utils";
+import { HistoryTable } from "./history-table";
+import { HistoryTimeline } from "./history-timeline";
 
 const TIME_RANGE_PRESETS: Array<{ value: TimeRangePreset; label: string }> = [
 	{ value: "24h", label: "24h" },
@@ -137,7 +137,11 @@ export const HistoryClient = () => {
 			const dateMs = item.date ? new Date(item.date).getTime() : 0;
 			if (dateMs < cutoff) continue;
 			const eventType = (item.eventType ?? item.status ?? "").toLowerCase();
-			if (eventType.includes("fail") || eventType.includes("error") || eventType.includes("reject")) {
+			if (
+				eventType.includes("fail") ||
+				eventType.includes("error") ||
+				eventType.includes("reject")
+			) {
 				const title = item.title ?? item.sourceTitle ?? "Unknown";
 				if (!titles.includes(title)) {
 					titles.push(title);
@@ -168,7 +172,11 @@ export const HistoryClient = () => {
 			<div className="space-y-8 animate-in fade-in duration-500">
 				<div className="space-y-4">
 					<PremiumSkeleton variant="line" className="h-8 w-48" />
-					<PremiumSkeleton variant="line" className="h-10 w-64" style={{ animationDelay: "50ms" }} />
+					<PremiumSkeleton
+						variant="line"
+						className="h-10 w-64"
+						style={{ animationDelay: "50ms" }}
+					/>
 				</div>
 				<div className="grid gap-4 md:grid-cols-3">
 					{[0, 1, 2].map((i) => (
@@ -176,9 +184,21 @@ export const HistoryClient = () => {
 							key={i}
 							className="relative overflow-hidden rounded-2xl border border-border/30 bg-card/30 p-6"
 						>
-							<PremiumSkeleton variant="card" className="h-12 w-12 rounded-xl mb-4" style={{ animationDelay: `${(i + 2) * 50}ms` }} />
-							<PremiumSkeleton variant="line" className="h-8 w-16 mb-2" style={{ animationDelay: `${(i + 3) * 50}ms` }} />
-							<PremiumSkeleton variant="line" className="h-4 w-24" style={{ animationDelay: `${(i + 4) * 50}ms` }} />
+							<PremiumSkeleton
+								variant="card"
+								className="h-12 w-12 rounded-xl mb-4"
+								style={{ animationDelay: `${(i + 2) * 50}ms` }}
+							/>
+							<PremiumSkeleton
+								variant="line"
+								className="h-8 w-16 mb-2"
+								style={{ animationDelay: `${(i + 3) * 50}ms` }}
+							/>
+							<PremiumSkeleton
+								variant="line"
+								className="h-4 w-24"
+								style={{ animationDelay: `${(i + 4) * 50}ms` }}
+							/>
 						</div>
 					))}
 				</div>
@@ -196,9 +216,7 @@ export const HistoryClient = () => {
 				gradientTitle
 				description="Review recent activity from all configured instances."
 				highlightStat={
-					allItems.length > 0
-						? { value: allItems.length, label: "events tracked" }
-						: undefined
+					allItems.length > 0 ? { value: allItems.length, label: "events tracked" } : undefined
 				}
 				actions={
 					<div className="flex items-center gap-2">
@@ -211,12 +229,16 @@ export const HistoryClient = () => {
 									"flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all",
 									viewMode === "timeline"
 										? "text-foreground"
-										: "text-muted-foreground hover:text-foreground"
+										: "text-muted-foreground hover:text-foreground",
 								)}
-								style={viewMode === "timeline" ? {
-									backgroundColor: themeGradient.fromLight,
-									color: themeGradient.from,
-								} : undefined}
+								style={
+									viewMode === "timeline"
+										? {
+												backgroundColor: themeGradient.fromLight,
+												color: themeGradient.from,
+											}
+										: undefined
+								}
 							>
 								<LayoutList className="h-3.5 w-3.5" />
 								Timeline
@@ -228,12 +250,16 @@ export const HistoryClient = () => {
 									"flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-all border-l border-border/50",
 									viewMode === "table"
 										? "text-foreground"
-										: "text-muted-foreground hover:text-foreground"
+										: "text-muted-foreground hover:text-foreground",
 								)}
-								style={viewMode === "table" ? {
-									backgroundColor: themeGradient.fromLight,
-									color: themeGradient.from,
-								} : undefined}
+								style={
+									viewMode === "table"
+										? {
+												backgroundColor: themeGradient.fromLight,
+												color: themeGradient.from,
+											}
+										: undefined
+								}
 							>
 								<Table2 className="h-3.5 w-3.5" />
 								Table
@@ -244,13 +270,13 @@ export const HistoryClient = () => {
 							onClick={() => void handleRefresh()}
 							className={cn(
 								"relative overflow-hidden transition-all duration-300",
-								isRefreshing && "pointer-events-none"
+								isRefreshing && "pointer-events-none",
 							)}
 						>
 							<RefreshCw
 								className={cn(
 									"h-4 w-4 mr-2 transition-transform duration-500",
-									isRefreshing && "animate-spin"
+									isRefreshing && "animate-spin",
 								)}
 							/>
 							Refresh
@@ -286,14 +312,18 @@ export const HistoryClient = () => {
 								"rounded-full px-4 py-1.5 text-xs font-medium transition-all duration-200 border",
 								isActive
 									? "border-transparent shadow-sm"
-									: "border-border/50 bg-card/30 text-muted-foreground hover:text-foreground hover:border-border/80"
+									: "border-border/50 bg-card/30 text-muted-foreground hover:text-foreground hover:border-border/80",
 							)}
-							style={isActive ? {
-								backgroundColor: themeGradient.fromLight,
-								color: themeGradient.from,
-								borderColor: themeGradient.fromMuted,
-								boxShadow: `0 0 12px ${themeGradient.glow}`,
-							} : undefined}
+							style={
+								isActive
+									? {
+											backgroundColor: themeGradient.fromLight,
+											color: themeGradient.from,
+											borderColor: themeGradient.fromMuted,
+											boxShadow: `0 0 12px ${themeGradient.glow}`,
+										}
+									: undefined
+							}
 						>
 							{preset.label}
 						</button>
@@ -331,11 +361,15 @@ export const HistoryClient = () => {
 						label="Failures"
 						description="Last 24 hours"
 						icon={AlertTriangle}
-						gradient={activitySummary.failures > 0 ? {
-							from: SEMANTIC_COLORS.error.text,
-							to: SEMANTIC_COLORS.error.text,
-							glow: `${SEMANTIC_COLORS.error.text}40`,
-						} : undefined}
+						gradient={
+							activitySummary.failures > 0
+								? {
+										from: SEMANTIC_COLORS.error.text,
+										to: SEMANTIC_COLORS.error.text,
+										glow: `${SEMANTIC_COLORS.error.text}40`,
+									}
+								: undefined
+						}
 						animationDelay={300}
 					/>
 				</div>
@@ -372,19 +406,20 @@ export const HistoryClient = () => {
 										"flex items-center gap-2 rounded-lg border px-3 py-2 transition-all duration-200 cursor-pointer",
 										isActive
 											? "ring-1 shadow-sm"
-											: "border-border/50 bg-card/30 hover:border-border/80"
+											: "border-border/50 bg-card/30 hover:border-border/80",
 									)}
-									style={isActive ? {
-										borderColor: gradient.from,
-										backgroundColor: `${gradient.from}15`,
-										boxShadow: `0 0 8px ${gradient.glow}`,
-									} : undefined}
+									style={
+										isActive
+											? {
+													borderColor: gradient.from,
+													backgroundColor: `${gradient.from}15`,
+													boxShadow: `0 0 8px ${gradient.glow}`,
+												}
+											: undefined
+									}
 								>
 									<ServiceBadge service={service} />
-									<span
-										className="text-sm font-semibold"
-										style={{ color: gradient.from }}
-									>
+									<span className="text-sm font-semibold" style={{ color: gradient.from }}>
 										{count}
 									</span>
 								</button>
@@ -446,7 +481,7 @@ export const HistoryClient = () => {
 						)}
 						{instanceFilter !== "all" && (
 							<ActiveFilterChip
-								label={`Instance: ${instanceOptions.find(o => o.value === instanceFilter)?.label ?? instanceFilter}`}
+								label={`Instance: ${instanceOptions.find((o) => o.value === instanceFilter)?.label ?? instanceFilter}`}
 								onRemove={() => actions.setInstanceFilter("all")}
 								gradient={themeGradient}
 							/>
@@ -466,7 +501,10 @@ export const HistoryClient = () => {
 					<div className="px-5 pb-5 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
 						<div className="flex flex-wrap items-end gap-4">
 							<div className="flex min-w-[140px] flex-col gap-1.5">
-								<label className="text-xs font-medium text-muted-foreground uppercase tracking-wide" htmlFor="history-start-date">
+								<label
+									className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+									htmlFor="history-start-date"
+								>
 									From Date
 								</label>
 								<Input
@@ -481,7 +519,10 @@ export const HistoryClient = () => {
 								/>
 							</div>
 							<div className="flex min-w-[140px] flex-col gap-1.5">
-								<label className="text-xs font-medium text-muted-foreground uppercase tracking-wide" htmlFor="history-end-date">
+								<label
+									className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+									htmlFor="history-end-date"
+								>
 									To Date
 								</label>
 								<Input
@@ -496,7 +537,10 @@ export const HistoryClient = () => {
 								/>
 							</div>
 							<div className="flex min-w-[200px] flex-1 flex-col gap-1.5">
-								<label className="text-xs font-medium text-muted-foreground uppercase tracking-wide" htmlFor="history-search">
+								<label
+									className="text-xs font-medium text-muted-foreground uppercase tracking-wide"
+									htmlFor="history-search"
+								>
 									Search
 								</label>
 								<Input
@@ -510,9 +554,7 @@ export const HistoryClient = () => {
 							<FilterSelect
 								value={serviceFilter}
 								onChange={(value) =>
-									actions.setServiceFilter(
-										value as (typeof SERVICE_FILTERS)[number]["value"],
-									)
+									actions.setServiceFilter(value as (typeof SERVICE_FILTERS)[number]["value"])
 								}
 								options={SERVICE_FILTERS}
 								label="Service"
@@ -587,10 +629,7 @@ export const HistoryClient = () => {
 							className="flex items-center gap-2 rounded-full border border-border/50 bg-card/30 backdrop-blur-xs px-4 py-2 text-sm"
 						>
 							<span className="text-muted-foreground">{label}</span>
-							<span
-								className="font-semibold"
-								style={{ color: themeGradient.from }}
-							>
+							<span className="font-semibold" style={{ color: themeGradient.from }}>
 								{count}
 							</span>
 						</div>
@@ -636,11 +675,9 @@ export const HistoryClient = () => {
 						style={{ color: SEMANTIC_COLORS.error.text }}
 					/>
 					<div className="flex-1 min-w-0 space-y-1">
-						<p
-							className="text-sm font-medium"
-							style={{ color: SEMANTIC_COLORS.error.text }}
-						>
-							{activitySummary.failures} failure{activitySummary.failures !== 1 ? "s" : ""} in the last 24 hours
+						<p className="text-sm font-medium" style={{ color: SEMANTIC_COLORS.error.text }}>
+							{activitySummary.failures} failure{activitySummary.failures !== 1 ? "s" : ""} in the
+							last 24 hours
 						</p>
 						{recentFailureTitles.length > 0 && (
 							<p className="text-xs text-muted-foreground truncate">

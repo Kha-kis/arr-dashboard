@@ -3,7 +3,15 @@ import { useState } from "react";
 /**
  * Tab types for the TRaSH Guides interface
  */
-export type TrashGuidesTab = "cache" | "templates" | "scheduler" | "history" | "bulk-scores" | "custom-formats" | "quality-size" | "settings";
+export type TrashGuidesTab =
+	| "cache"
+	| "templates"
+	| "scheduler"
+	| "history"
+	| "bulk-scores"
+	| "custom-formats"
+	| "quality-size"
+	| "settings";
 
 /**
  * Hook for managing TRaSH Guides UI state (tabs).

@@ -44,6 +44,15 @@ const start = async () => {
 			host: env.API_HOST,
 		});
 		app.log.info({ port: portConfig.apiPort, host: env.API_HOST }, "API server started");
+
+		// Fire-and-forget startup notification
+		app.notificationService
+			?.notify({
+				eventType: "SYSTEM_STARTUP",
+				title: "Arr Dashboard started",
+				body: `Server listening on ${env.API_HOST}:${portConfig.apiPort}`,
+			})
+			.catch(() => {});
 	} catch (error) {
 		app.log.error({ err: error }, "Failed to start API server");
 		process.exit(1);

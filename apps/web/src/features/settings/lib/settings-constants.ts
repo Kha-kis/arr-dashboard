@@ -2,9 +2,24 @@
  * Constants for settings feature
  */
 
-export type ServiceType = "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr" | "seerr";
+export type ServiceType =
+	| "sonarr"
+	| "radarr"
+	| "prowlarr"
+	| "lidarr"
+	| "readarr"
+	| "seerr"
+	| "tautulli";
 
-export const SERVICE_TYPES: ServiceType[] = ["sonarr", "radarr", "prowlarr", "lidarr", "readarr", "seerr"];
+export const SERVICE_TYPES: ServiceType[] = [
+	"sonarr",
+	"radarr",
+	"prowlarr",
+	"lidarr",
+	"readarr",
+	"seerr",
+	"tautulli",
+];
 
 /**
  * Base select classes without focus colors.
@@ -19,6 +34,15 @@ export const OPTION_STYLE = {
 	color: "hsl(var(--color-fg))",
 } as const;
 
-export const TABS = ["services", "tags", "account", "authentication", "appearance", "backup", "system"] as const;
+export const TABS = [
+	"services",
+	"tags",
+	"account",
+	"authentication",
+	"appearance",
+	"backup",
+	"notifications",
+	"system",
+] as const;
 
 export type TabType = (typeof TABS)[number];

@@ -1,14 +1,12 @@
-import type { FastifyPluginCallback } from "fastify";
-import type {
-	SearchIndexerUpdateRequest,
-} from "@arr/shared";
+import type { SearchIndexerUpdateRequest } from "@arr/shared";
 import {
 	searchIndexerDetailsResponseSchema,
+	searchIndexersResponseSchema,
 	searchIndexerTestRequestSchema,
 	searchIndexerTestResponseSchema,
 	searchIndexerUpdateRequestSchema,
-	searchIndexersResponseSchema,
 } from "@arr/shared";
+import type { FastifyPluginCallback } from "fastify";
 import {
 	executeOnInstances,
 	getClientForInstance,
@@ -16,10 +14,10 @@ import {
 } from "../../lib/arr/client-helpers.js";
 import {
 	buildIndexerDetailsFallback,
-	fetchProwlarrIndexersWithSdk,
 	fetchProwlarrIndexerDetailsWithSdk,
-	updateProwlarrIndexerWithSdk,
+	fetchProwlarrIndexersWithSdk,
 	testProwlarrIndexerWithSdk,
+	updateProwlarrIndexerWithSdk,
 } from "../../lib/search/prowlarr-api.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
 

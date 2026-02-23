@@ -1,32 +1,29 @@
 "use client";
 
-import { useState } from "react";
+import type { ServiceInstanceSummary } from "@arr/shared";
 import {
-	Ruler,
-	Server,
-	CheckCircle2,
-	AlertTriangle,
 	AlertCircle,
+	AlertTriangle,
+	CheckCircle2,
+	Loader2,
 	MinusCircle,
 	RotateCcw,
-	Loader2,
+	Ruler,
+	Server,
 } from "lucide-react";
-import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
+import { useState } from "react";
+import { GlassmorphicCard, ServiceBadge } from "../../../components/layout/premium-components";
 import {
-	useQualitySizePresets,
-	useQualitySizeMapping,
-	useQualitySizePreview,
 	useApplyQualitySize,
+	useQualitySizeMapping,
+	useQualitySizePresets,
+	useQualitySizePreview,
 	useUpdateQualitySizeSyncStrategy,
 } from "../../../hooks/api/useQualitySize";
-import { SyncStrategyControl } from "./sync-strategy-control";
-import {
-	GlassmorphicCard,
-	ServiceBadge,
-} from "../../../components/layout/premium-components";
+import { useServicesQuery } from "../../../hooks/api/useServicesQuery";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { SEMANTIC_COLORS, getServiceGradient } from "../../../lib/theme-gradients";
-import type { ServiceInstanceSummary } from "@arr/shared";
+import { getServiceGradient, SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { SyncStrategyControl } from "./sync-strategy-control";
 
 // ============================================================================
 // Constants
@@ -85,20 +82,24 @@ export function QualitySizeManager() {
 				: null;
 
 	// Data fetching
-	const { data: presetsData, isLoading: presetsLoading, error: presetsError } = useQualitySizePresets(serviceType);
+	const {
+		data: presetsData,
+		isLoading: presetsLoading,
+		error: presetsError,
+	} = useQualitySizePresets(serviceType);
 	const { data: mappingData, error: mappingError } = useQualitySizeMapping(selectedInstanceId);
 	const previewPresetId = selectedPresetId === DEFAULT_PRESET_ID ? null : selectedPresetId;
-	const { data: previewData, isLoading: previewLoading, error: previewError } = useQualitySizePreview(
-		selectedInstanceId,
-		previewPresetId,
-	);
+	const {
+		data: previewData,
+		isLoading: previewLoading,
+		error: previewError,
+	} = useQualitySizePreview(selectedInstanceId, previewPresetId);
 	const applyMutation = useApplyQualitySize();
 	const syncStrategyMutation = useUpdateQualitySizeSyncStrategy();
 
 	// Filtered instances: only Radarr and Sonarr
-	const arrInstances = services?.filter(
-		(s) => (s.service === "radarr" || s.service === "sonarr") && s.enabled,
-	) ?? [];
+	const arrInstances =
+		services?.filter((s) => (s.service === "radarr" || s.service === "sonarr") && s.enabled) ?? [];
 
 	// Current mapping for the selected instance (independent of preset selection)
 	const existingMapping = mappingData?.mapping ?? null;
@@ -230,9 +231,7 @@ export function QualitySizeManager() {
 
 			{/* Phase 2: Preset Selection */}
 			{selectedInstance && (
-				<div
-					className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300"
-				>
+				<div className="space-y-3 animate-in fade-in slide-in-from-bottom-2 duration-300">
 					<h3 className="text-sm font-medium text-muted-foreground">Select Preset</h3>
 					{presetsError ? (
 						<ErrorBanner message={`Failed to load presets: ${presetsError.message}`} />
@@ -251,8 +250,7 @@ export function QualitySizeManager() {
 						<div className="flex flex-wrap gap-3">
 							{presetsData.presets.map((preset) => {
 								const isSelected = selectedPresetId === preset.trash_id;
-								const isCurrentlyApplied =
-									existingMapping?.presetTrashId === preset.trash_id;
+								const isCurrentlyApplied = existingMapping?.presetTrashId === preset.trash_id;
 
 								return (
 									<button
@@ -315,7 +313,9 @@ export function QualitySizeManager() {
 
 			{/* Mapping load error — show when we can't determine if a preset is already applied */}
 			{mappingError && selectedInstance && (
-				<ErrorBanner message={`Could not load current mapping: ${mappingError.message}. Applied preset status may be inaccurate.`} />
+				<ErrorBanner
+					message={`Could not load current mapping: ${mappingError.message}. Applied preset status may be inaccurate.`}
+				/>
 			)}
 
 			{/* Sync Strategy (shown when a TRaSH preset is selected, not for "default") */}
@@ -339,9 +339,10 @@ export function QualitySizeManager() {
 								<p className="text-sm font-medium">Reset to Factory Defaults</p>
 								<p className="text-sm text-muted-foreground mt-1">
 									This will restore all quality size definitions on{" "}
-									<span className="font-medium text-foreground">{selectedInstance?.label}</span>{" "}
-									to the original values set by {selectedInstance?.service === "sonarr" ? "Sonarr" : "Radarr"}.
-									Any previously applied TRaSH preset will be removed.
+									<span className="font-medium text-foreground">{selectedInstance?.label}</span> to
+									the original values set by{" "}
+									{selectedInstance?.service === "sonarr" ? "Sonarr" : "Radarr"}. Any previously
+									applied TRaSH preset will be removed.
 								</p>
 							</div>
 						</div>
@@ -375,11 +376,17 @@ export function QualitySizeManager() {
 						{previewData?.summary && (
 							<div className="flex items-center gap-4 text-xs text-muted-foreground">
 								<span className="flex items-center gap-1">
-									<CheckCircle2 className="h-3.5 w-3.5" style={{ color: SEMANTIC_COLORS.success.text }} />
+									<CheckCircle2
+										className="h-3.5 w-3.5"
+										style={{ color: SEMANTIC_COLORS.success.text }}
+									/>
 									{previewData.summary.matched - previewData.summary.changed} unchanged
 								</span>
 								<span className="flex items-center gap-1">
-									<AlertTriangle className="h-3.5 w-3.5" style={{ color: SEMANTIC_COLORS.warning.text }} />
+									<AlertTriangle
+										className="h-3.5 w-3.5"
+										style={{ color: SEMANTIC_COLORS.warning.text }}
+									/>
 									{previewData.summary.changed} changed
 								</span>
 								{previewData.summary.unmatched > 0 && (
@@ -405,14 +412,39 @@ export function QualitySizeManager() {
 								<table className="w-full text-sm">
 									<thead>
 										<tr className="border-b border-border/50">
-											<th className="px-4 py-3 text-left font-medium text-muted-foreground">Quality</th>
-											<th className="px-4 py-3 text-right font-medium text-muted-foreground">Current Min</th>
-											<th className="px-4 py-3 text-right font-medium text-muted-foreground">Current Preferred</th>
-											<th className="px-4 py-3 text-right font-medium text-muted-foreground">Current Max</th>
-											<th className="px-4 py-3 text-right font-medium" style={{ color: themeGradient.from }}>TRaSH Min</th>
-											<th className="px-4 py-3 text-right font-medium" style={{ color: themeGradient.from }}>TRaSH Preferred</th>
-											<th className="px-4 py-3 text-right font-medium" style={{ color: themeGradient.from }}>TRaSH Max</th>
-											<th className="px-4 py-3 text-center font-medium text-muted-foreground">Status</th>
+											<th className="px-4 py-3 text-left font-medium text-muted-foreground">
+												Quality
+											</th>
+											<th className="px-4 py-3 text-right font-medium text-muted-foreground">
+												Current Min
+											</th>
+											<th className="px-4 py-3 text-right font-medium text-muted-foreground">
+												Current Preferred
+											</th>
+											<th className="px-4 py-3 text-right font-medium text-muted-foreground">
+												Current Max
+											</th>
+											<th
+												className="px-4 py-3 text-right font-medium"
+												style={{ color: themeGradient.from }}
+											>
+												TRaSH Min
+											</th>
+											<th
+												className="px-4 py-3 text-right font-medium"
+												style={{ color: themeGradient.from }}
+											>
+												TRaSH Preferred
+											</th>
+											<th
+												className="px-4 py-3 text-right font-medium"
+												style={{ color: themeGradient.from }}
+											>
+												TRaSH Max
+											</th>
+											<th className="px-4 py-3 text-center font-medium text-muted-foreground">
+												Status
+											</th>
 										</tr>
 									</thead>
 									<tbody>
@@ -459,9 +491,15 @@ export function QualitySizeManager() {
 													{!row.matched ? (
 														<MinusCircle className="h-4 w-4 mx-auto text-muted-foreground" />
 													) : row.changed ? (
-														<AlertTriangle className="h-4 w-4 mx-auto" style={{ color: SEMANTIC_COLORS.warning.text }} />
+														<AlertTriangle
+															className="h-4 w-4 mx-auto"
+															style={{ color: SEMANTIC_COLORS.warning.text }}
+														/>
 													) : (
-														<CheckCircle2 className="h-4 w-4 mx-auto" style={{ color: SEMANTIC_COLORS.success.text }} />
+														<CheckCircle2
+															className="h-4 w-4 mx-auto"
+															style={{ color: SEMANTIC_COLORS.success.text }}
+														/>
 													)}
 												</td>
 											</tr>
@@ -482,7 +520,8 @@ export function QualitySizeManager() {
 									disabled={
 										applyMutation.isPending ||
 										previewData.summary.matched === 0 ||
-										(previewData.summary.changed === 0 && existingMapping?.presetTrashId === selectedPresetId)
+										(previewData.summary.changed === 0 &&
+											existingMapping?.presetTrashId === selectedPresetId)
 									}
 									className="rounded-xl px-6 py-2.5 text-sm font-medium text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed hover:brightness-110"
 									style={{

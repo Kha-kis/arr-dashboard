@@ -1,14 +1,14 @@
 "use client";
 
-import { Star } from "lucide-react";
 import type { SeerrDiscoverResult } from "@arr/shared";
-import { RATING_COLOR } from "../../../lib/theme-gradients";
+import { Star } from "lucide-react";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { RATING_COLOR } from "../../../lib/theme-gradients";
 import {
-	getSeerrImageUrl,
-	getMediaStatusInfo,
 	getDisplayTitle,
+	getMediaStatusInfo,
 	getReleaseYear,
+	getSeerrImageUrl,
 	isLikelyAnime,
 } from "../lib/seerr-image-utils";
 
@@ -18,11 +18,7 @@ interface DiscoverPosterCardProps {
 	index: number;
 }
 
-export const DiscoverPosterCard: React.FC<DiscoverPosterCardProps> = ({
-	item,
-	onClick,
-	index,
-}) => {
+export const DiscoverPosterCard: React.FC<DiscoverPosterCardProps> = ({ item, onClick, index }) => {
 	const { gradient: themeGradient } = useThemeGradient();
 	const posterUrl = getSeerrImageUrl(item.posterPath, "w300");
 	const title = getDisplayTitle(item);

@@ -184,5 +184,13 @@ export function getPortConfig(): PortConfig {
  * Log the port configuration for debugging
  */
 export function logPortConfig(config: PortConfig): void {
-	log.info({ apiPort: config.apiPort, apiSource: config.source.apiPort, webPort: config.webPort, webSource: config.source.webPort }, "Port configuration loaded");
+	log.info(
+		{
+			apiPort: config.apiPort,
+			apiSource: config.source.apiPort,
+			webPort: config.webPort,
+			webSource: config.source.webPort,
+		},
+		"Port configuration loaded",
+	);
 }

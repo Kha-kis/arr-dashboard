@@ -40,13 +40,13 @@ import type {
 	FastifyRequest,
 } from "fastify";
 import { z } from "zod";
-import { validateRequest } from "../../lib/utils/validate.js";
 import type { TrashCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import { createCacheManager } from "../../lib/trash-guides/cache-manager.js";
 import type { TrashGitHubFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { getErrorMessage } from "../../lib/utils/error-message.js";
+import { validateRequest } from "../../lib/utils/validate.js";
 
 // Regex for valid GitHub owner/repo names
 const githubNameRegex = /^[a-zA-Z0-9_.-]+$/;
@@ -527,7 +527,8 @@ export async function registerSettingsRoutes(app: FastifyInstance, _opts: Fastif
 
 		if (!settings?.customRepoOwner || settings.customRepoMode !== "supplementary") {
 			return reply.status(400).send({
-				error: "Supplementary report is only available when using supplementary mode with a custom repository configured.",
+				error:
+					"Supplementary report is only available when using supplementary mode with a custom repository configured.",
 			});
 		}
 
@@ -560,7 +561,12 @@ export async function registerSettingsRoutes(app: FastifyInstance, _opts: Fastif
 					{ err: error, configType, serviceType },
 					"Failed to fetch configs for supplementary report",
 				);
-				return { configType, officialItems: [] as unknown[], customItems: [] as unknown[], error: getErrorMessage(error) };
+				return {
+					configType,
+					officialItems: [] as unknown[],
+					customItems: [] as unknown[],
+					error: getErrorMessage(error),
+				};
 			}
 		});
 

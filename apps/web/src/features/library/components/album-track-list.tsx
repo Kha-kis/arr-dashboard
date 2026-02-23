@@ -1,10 +1,10 @@
 "use client";
 
 import { AlertTriangle, Loader2, Music2 } from "lucide-react";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { useTracksQuery } from "../../../hooks/api/useLibrary";
-import { LibraryBadge } from "./library-badge";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { LibraryBadge } from "./library-badge";
 
 /**
  * Props for the AlbumTrackList component
@@ -34,10 +34,7 @@ const formatDuration = (ms: number | undefined): string | null => {
  * This is the Lidarr equivalent of SeasonEpisodeList — a self-contained
  * component that manages its own data fetching via useTracksQuery.
  */
-export const AlbumTrackList = ({
-	instanceId,
-	albumId,
-}: AlbumTrackListProps) => {
+export const AlbumTrackList = ({ instanceId, albumId }: AlbumTrackListProps) => {
 	const { data, isLoading, isError, error } = useTracksQuery({
 		instanceId,
 		albumId,
@@ -61,7 +58,10 @@ export const AlbumTrackList = ({
 					border: `1px solid ${SEMANTIC_COLORS.error.border}`,
 				}}
 			>
-				<AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" style={{ color: SEMANTIC_COLORS.error.from }} />
+				<AlertTriangle
+					className="h-4 w-4 shrink-0 mt-0.5"
+					style={{ color: SEMANTIC_COLORS.error.from }}
+				/>
 				<p className="text-xs" style={{ color: SEMANTIC_COLORS.error.text }}>
 					Failed to load tracks{error ? `: ${getErrorMessage(error)}` : ""}
 				</p>
@@ -98,17 +98,19 @@ export const AlbumTrackList = ({
 								)}
 							</div>
 							<div className="flex items-center gap-3 mt-0.5 ml-8">
-								{duration && (
-									<span className="text-xs text-muted-foreground">{duration}</span>
-								)}
+								{duration && <span className="text-xs text-muted-foreground">{duration}</span>}
 								{track.trackFile?.quality && (
 									<span className="text-xs text-muted-foreground">{track.trackFile.quality}</span>
 								)}
 								{track.trackFile?.audioCodec && (
-									<span className="text-xs text-muted-foreground">{track.trackFile.audioCodec}</span>
+									<span className="text-xs text-muted-foreground">
+										{track.trackFile.audioCodec}
+									</span>
 								)}
 								{track.trackFile?.audioBitRate && (
-									<span className="text-xs text-muted-foreground">{track.trackFile.audioBitRate}</span>
+									<span className="text-xs text-muted-foreground">
+										{track.trackFile.audioBitRate}
+									</span>
 								)}
 							</div>
 						</div>

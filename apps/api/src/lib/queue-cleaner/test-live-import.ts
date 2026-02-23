@@ -59,7 +59,11 @@ async function findEligibleItem(): Promise<QueueItem | null> {
 	// Find a Married at First Sight episode that's import blocked with the right status
 	for (const item of queue.records) {
 		if (!item.title.toLowerCase().includes("married")) continue;
-		if (item.trackedDownloadState !== "importBlocked" && item.trackedDownloadState !== "importPending") continue;
+		if (
+			item.trackedDownloadState !== "importBlocked" &&
+			item.trackedDownloadState !== "importPending"
+		)
+			continue;
 
 		// Check for the safe pattern
 		const messages: string[] = [];
@@ -79,17 +83,22 @@ async function findEligibleItem(): Promise<QueueItem | null> {
 
 async function getManualImportPreview(downloadId: string): Promise<ManualImportItem[]> {
 	console.log(`\n🔍 Getting manual import preview for downloadId: ${downloadId}`);
-	return sonarrFetch<ManualImportItem[]>(`/manualimport?downloadId=${downloadId}&filterExistingFiles=true`);
+	return sonarrFetch<ManualImportItem[]>(
+		`/manualimport?downloadId=${downloadId}&filterExistingFiles=true`,
+	);
 }
 
-async function executeManualImport(items: ManualImportItem[], downloadId: string): Promise<{ id: number }> {
+async function executeManualImport(
+	items: ManualImportItem[],
+	downloadId: string,
+): Promise<{ id: number }> {
 	console.log(`\n🚀 Executing manual import for ${items.length} file(s)...`);
 
 	// Build the import command payload
-	const files = items.map(item => ({
+	const files = items.map((item) => ({
 		path: item.path,
 		seriesId: item.series?.id,
-		episodeIds: item.episodes?.map(e => e.id) ?? [],
+		episodeIds: item.episodes?.map((e) => e.id) ?? [],
 		quality: item.quality,
 		// Use the existing parsed data
 		releaseGroup: undefined,
@@ -110,7 +119,9 @@ async function executeManualImport(items: ManualImportItem[], downloadId: string
 	});
 }
 
-async function checkCommandStatus(commandId: number): Promise<{ status: string; message?: string }> {
+async function checkCommandStatus(
+	commandId: number,
+): Promise<{ status: string; message?: string }> {
 	return sonarrFetch<{ status: string; message?: string }>(`/command/${commandId}`);
 }
 
@@ -148,7 +159,9 @@ async function main() {
 		}
 
 		if (importItem.episodes && importItem.episodes.length > 0) {
-			const eps = importItem.episodes.map(e => `S${e.seasonNumber}E${e.episodeNumber}`).join(", ");
+			const eps = importItem.episodes
+				.map((e) => `S${e.seasonNumber}E${e.episodeNumber}`)
+				.join(", ");
 			console.log(`   Episodes: ${eps}`);
 		}
 
@@ -165,8 +178,8 @@ async function main() {
 	}
 
 	// Check if any items have rejections
-	const hasRejections = importItems.some(i => i.rejections && i.rejections.length > 0);
-	const hasValidItems = importItems.some(i => i.series && i.episodes && i.episodes.length > 0);
+	const hasRejections = importItems.some((i) => i.rejections && i.rejections.length > 0);
+	const hasValidItems = importItems.some((i) => i.series && i.episodes && i.episodes.length > 0);
 
 	if (!hasValidItems) {
 		console.log("\n❌ No valid items to import (missing series/episode mapping)");
@@ -183,7 +196,7 @@ async function main() {
 	console.log("═".repeat(60));
 
 	// Filter to only items that can be imported (have series and episodes)
-	const validItems = importItems.filter(i => i.series && i.episodes && i.episodes.length > 0);
+	const validItems = importItems.filter((i) => i.series && i.episodes && i.episodes.length > 0);
 
 	if (validItems.length === 0) {
 		console.log("\n❌ No valid items to import after filtering");
@@ -205,14 +218,15 @@ async function main() {
 		const maxAttempts = 30; // 30 seconds max
 
 		while (attempts < maxAttempts) {
-			await new Promise(resolve => setTimeout(resolve, 1000));
+			await new Promise((resolve) => setTimeout(resolve, 1000));
 			status = await checkCommandStatus(command.id);
 
 			if (status.status === "completed") {
 				console.log("\n🎉 SUCCESS! Import completed!");
 				console.log("   The episode should now be in your library.");
 				break;
-			}if (status.status === "failed") {
+			}
+			if (status.status === "failed") {
 				console.log(`\n❌ FAILED: ${status.message || "Unknown error"}`);
 				break;
 			}
@@ -226,7 +240,6 @@ async function main() {
 		}
 
 		console.log(`\n   Final status: ${status.status}`);
-
 	} catch (error) {
 		console.log(`\n❌ Import failed: ${error}`);
 	}

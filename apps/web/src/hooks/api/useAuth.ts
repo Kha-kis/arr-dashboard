@@ -1,19 +1,19 @@
 "use client";
 
-import { useEffect } from "react";
-import { useMutation, useQuery, useQueryClient, type UseQueryResult } from "@tanstack/react-query";
 import type { CurrentUser } from "@arr/shared";
+import { type UseQueryResult, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
 import {
-	login,
-	logout,
-	fetchCurrentUser,
-	updateAccount,
 	checkSetupRequired,
-	removePassword,
+	fetchCurrentUser,
 	getPasskeyCredentials,
 	initiateOIDCLogin,
+	login,
+	logout,
 	type PasskeyCredential,
+	removePassword,
 	type SetupRequiredResponse,
+	updateAccount,
 } from "../../lib/api-client/auth";
 
 // Login
@@ -50,7 +50,9 @@ export const useLogoutMutation = () => {
 };
 
 // Current User
-export const useCurrentUser = (enabled: boolean = true): UseQueryResult<CurrentUser | null, Error> => {
+export const useCurrentUser = (
+	enabled: boolean = true,
+): UseQueryResult<CurrentUser | null, Error> => {
 	const queryClient = useQueryClient();
 
 	const query = useQuery<CurrentUser | null>({
@@ -66,7 +68,12 @@ export const useCurrentUser = (enabled: boolean = true): UseQueryResult<CurrentU
 	// Handle 401 errors to clear stale cache
 	// Run as a controlled side effect after render
 	useEffect(() => {
-		if (query.error && typeof query.error === "object" && "status" in query.error && query.error.status === 401) {
+		if (
+			query.error &&
+			typeof query.error === "object" &&
+			"status" in query.error &&
+			query.error.status === 401
+		) {
 			queryClient.setQueryData(["current-user"], null);
 		}
 	}, [query.error, queryClient]);

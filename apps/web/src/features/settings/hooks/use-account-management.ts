@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useUpdateAccountMutation } from "../../../hooks/api/useAuth";
-import type { AccountFormState } from "../components/account-tab";
 import { getErrorMessage } from "../../../lib/error-utils";
+import type { AccountFormState } from "../components/account-tab";
 
 /**
  * Hook for managing account updates (username and TMDB API key)

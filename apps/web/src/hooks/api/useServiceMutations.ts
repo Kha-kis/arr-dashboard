@@ -1,13 +1,13 @@
 ﻿"use client";
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { ServiceInstanceSummary } from "@arr/shared";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-	createService,
-	updateService,
-	removeService,
 	type CreateServicePayload,
+	createService,
+	removeService,
 	type UpdateServicePayload,
+	updateService,
 } from "../../lib/api-client/services";
 
 const SERVICES_QUERY_KEY = ["services"] as const;
@@ -74,9 +74,9 @@ export const useDeleteServiceMutation = () => {
 
 // Service Connection Testing
 import {
-	testServiceConnection,
-	testConnectionBeforeAdd,
 	type TestConnectionResponse,
+	testConnectionBeforeAdd,
+	testServiceConnection,
 } from "../../lib/api-client/services";
 
 export const useTestServiceConnection = () => {
@@ -89,7 +89,11 @@ export const useTestConnectionBeforeAdd = () => {
 	return useMutation<
 		TestConnectionResponse,
 		Error,
-		{ baseUrl: string; apiKey: string; service: "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr" | "seerr" }
+		{
+			baseUrl: string;
+			apiKey: string;
+			service: "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr" | "seerr" | "tautulli";
+		}
 	>({
 		mutationFn: ({ baseUrl, apiKey, service }) => testConnectionBeforeAdd(baseUrl, apiKey, service),
 	});

@@ -9,8 +9,8 @@
 
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { getLibrarySyncScheduler } from "../../lib/library-sync/index.js";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
+import { getLibrarySyncScheduler } from "../../lib/library-sync/index.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 // ============================================================================
@@ -94,7 +94,9 @@ export const registerSyncRoutes: FastifyPluginCallback = (app, _opts, done) => {
 		const instance = await requireInstance(app, userId, params.instanceId);
 
 		if (!["SONARR", "RADARR", "LIDARR", "READARR"].includes(instance.service)) {
-			return reply.status(400).send({ error: "Only Sonarr, Radarr, Lidarr, and Readarr instances can be synced" });
+			return reply
+				.status(400)
+				.send({ error: "Only Sonarr, Radarr, Lidarr, and Readarr instances can be synced" });
 		}
 
 		const scheduler = getLibrarySyncScheduler();

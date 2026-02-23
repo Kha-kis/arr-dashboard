@@ -5,7 +5,6 @@ import {
 	type LibraryItem,
 	type LibraryService,
 	type LibraryTrack,
-	type PaginatedLibraryResponse,
 	libraryAlbumsRequestSchema,
 	libraryAlbumsResponseSchema,
 	libraryBooksRequestSchema,
@@ -16,9 +15,9 @@ import {
 	libraryMovieFileResponseSchema,
 	libraryTracksRequestSchema,
 	libraryTracksResponseSchema,
+	type PaginatedLibraryResponse,
 	paginatedLibraryResponseSchema,
 } from "@arr/shared";
-import type { Prisma, LibraryItemType as PrismaLibraryItemType } from "../../lib/prisma.js";
 import type { FastifyPluginCallback } from "fastify";
 import {
 	getClientForInstance,
@@ -34,6 +33,7 @@ import { buildMovieFile } from "../../lib/library/movie-normalizer.js";
 import { normalizeTrack } from "../../lib/library/track-normalizer.js";
 import { libraryQuerySchema } from "../../lib/library/validation-schemas.js";
 import { getLibrarySyncScheduler } from "../../lib/library-sync/index.js";
+import type { Prisma, LibraryItemType as PrismaLibraryItemType } from "../../lib/prisma.js";
 
 /**
  * Register data fetching routes for library
@@ -163,7 +163,10 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 		if (parsed.search) {
 			where.title =
 				app.dbProvider === "postgresql"
-					? ({ contains: parsed.search, mode: "insensitive" } as unknown as Prisma.StringFilter<"LibraryCache">)
+					? ({
+							contains: parsed.search,
+							mode: "insensitive",
+						} as unknown as Prisma.StringFilter<"LibraryCache">)
 					: { contains: parsed.search };
 		}
 
@@ -228,10 +231,12 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 		const cachedItems = await app.prisma.libraryCache.findMany({
 			where,
 			orderBy,
-			...(fetchAll ? {} : {
-				skip: (parsed.page - 1) * parsed.limit,
-				take: parsed.limit,
-			}),
+			...(fetchAll
+				? {}
+				: {
+						skip: (parsed.page - 1) * parsed.limit,
+						take: parsed.limit,
+					}),
 		});
 
 		// Parse JSON data back to LibraryItem
@@ -419,15 +424,21 @@ export const registerFetchRoutes: FastifyPluginCallback = (app, _opts, done) => 
 			});
 		}
 
-		const movieRaw = (movieResult.status === "fulfilled" ? movieResult.value : null) as Record<string, unknown> | null;
+		const movieRaw = (movieResult.status === "fulfilled" ? movieResult.value : null) as Record<
+			string,
+			unknown
+		> | null;
 		const embeddedFile = movieRaw?.movieFile as Record<string, unknown> | undefined;
-		const standaloneFile = (filesResult.status === "fulfilled" ? filesResult.value[0] : null) as Record<string, unknown> | null;
+		const standaloneFile = (
+			filesResult.status === "fulfilled" ? filesResult.value[0] : null
+		) as Record<string, unknown> | null;
 
 		// Prefer the source that has custom formats; fall back to whichever is available
-		const bestRawFile =
-			standaloneFile?.customFormats ? standaloneFile
-				: embeddedFile?.customFormats ? embeddedFile
-				: standaloneFile ?? embeddedFile;
+		const bestRawFile = standaloneFile?.customFormats
+			? standaloneFile
+			: embeddedFile?.customFormats
+				? embeddedFile
+				: (standaloneFile ?? embeddedFile);
 
 		const movieFile = bestRawFile ? buildMovieFile(bestRawFile) : null;
 

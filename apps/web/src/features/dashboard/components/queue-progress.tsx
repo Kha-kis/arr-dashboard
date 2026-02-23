@@ -1,7 +1,7 @@
 "use client";
 
-import { cn } from "../../../lib/utils";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { cn } from "../../../lib/utils";
 
 interface QueueProgressProps {
 	value?: number;
@@ -19,10 +19,12 @@ export const QueueProgress = ({ value, size = "md", service: _service }: QueuePr
 	if (typeof value !== "number" || Number.isNaN(value)) {
 		return (
 			<div className="flex flex-col gap-1">
-				<div className={cn(
-					"relative overflow-hidden rounded-full bg-muted/30",
-					size === "sm" ? "h-2" : "h-2.5"
-				)}>
+				<div
+					className={cn(
+						"relative overflow-hidden rounded-full bg-muted/30",
+						size === "sm" ? "h-2" : "h-2.5",
+					)}
+				>
 					<div className="absolute inset-0 bg-linear-to-r from-muted/20 via-muted/40 to-muted/20 animate-pulse" />
 				</div>
 				<span className="text-xs text-muted-foreground">–</span>
@@ -61,7 +63,7 @@ export const QueueProgress = ({ value, size = "md", service: _service }: QueuePr
 			<span
 				className={cn(
 					"text-xs transition-colors duration-300",
-					isComplete ? "font-medium" : "text-muted-foreground"
+					isComplete ? "font-medium" : "text-muted-foreground",
 				)}
 				style={isComplete ? { color: themeGradient.from } : undefined}
 			>

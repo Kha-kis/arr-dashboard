@@ -15,8 +15,8 @@ import type {
 	TemplateMetadata,
 } from "@arr/shared";
 import type { PrismaClient, ServiceType, TrashTemplate } from "../../lib/prisma.js";
-import { createTemplateValidator } from "./template-validator.js";
 import { getErrorMessage } from "../utils/error-message.js";
+import { createTemplateValidator } from "./template-validator.js";
 
 export class EnhancedTemplateService {
 	constructor(private prisma: PrismaClient) {}
@@ -330,9 +330,7 @@ export class EnhancedTemplateService {
 				compatibility,
 			};
 		} catch (error) {
-			throw new Error(
-				`Failed to validate template: ${getErrorMessage(error, "Unknown error")}`,
-			);
+			throw new Error(`Failed to validate template: ${getErrorMessage(error, "Unknown error")}`);
 		}
 	}
 }

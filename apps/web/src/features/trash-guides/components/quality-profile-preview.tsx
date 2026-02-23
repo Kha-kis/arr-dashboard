@@ -40,7 +40,6 @@ export function QualityProfilePreview({
 			profile,
 			customFormats,
 		});
-		 
 	}, [instanceId, profile, customFormats]);
 
 	useEffect(() => {
@@ -104,11 +103,15 @@ export function QualityProfilePreview({
 					</div>
 					<div>
 						<span className="text-muted-foreground">Total Qualities:</span>
-						<div className="font-medium text-foreground">{preview.qualityDefinitions.totalQualities}</div>
+						<div className="font-medium text-foreground">
+							{preview.qualityDefinitions.totalQualities}
+						</div>
 					</div>
 					<div>
 						<span className="text-muted-foreground">Allowed Qualities:</span>
-						<div className="font-medium text-foreground">{preview.qualityDefinitions.allowedQualities}</div>
+						<div className="font-medium text-foreground">
+							{preview.qualityDefinitions.allowedQualities}
+						</div>
 					</div>
 				</div>
 			</div>
@@ -131,7 +134,9 @@ export function QualityProfilePreview({
 					</div>
 					<div>
 						<span className="text-muted-foreground">Unmatched:</span>
-						<div className={`font-medium ${hasUnmatched ? "text-warning" : "text-muted-foreground"}`}>
+						<div
+							className={`font-medium ${hasUnmatched ? "text-warning" : "text-muted-foreground"}`}
+						>
 							{preview.customFormats.unmatched.length}
 						</div>
 					</div>

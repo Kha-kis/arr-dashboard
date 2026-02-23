@@ -4,9 +4,9 @@
  * React Query hooks for Seerr integration
  */
 
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo } from "react";
 import type {
+	LibraryEnrichmentResponse,
+	LibraryItem,
 	SeerrCreateRequestPayload,
 	SeerrCreateRequestResponse,
 	SeerrDiscoverResponse,
@@ -23,43 +23,43 @@ import type {
 	SeerrStatus,
 	SeerrTvDetails,
 	SeerrUser,
-	LibraryEnrichmentResponse,
-	LibraryItem,
 } from "@arr/shared";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMemo } from "react";
 import {
-	fetchSeerrRequests,
-	fetchSeerrRequestCount,
+	addSeerrIssueComment,
 	approveSeerrRequest,
+	createSeerrRequest,
 	declineSeerrRequest,
 	deleteSeerrRequest,
-	retrySeerrRequest,
-	fetchSeerrUsers,
-	fetchSeerrUserQuota,
-	updateSeerrUser,
-	fetchSeerrIssues,
-	addSeerrIssueComment,
-	updateSeerrIssueStatus,
-	fetchSeerrNotifications,
-	updateSeerrNotification,
-	testSeerrNotification,
-	fetchSeerrStatus,
-	fetchSeerrDiscoverMovies,
-	fetchSeerrDiscoverTv,
-	fetchSeerrDiscoverTrending,
-	fetchSeerrDiscoverMoviesUpcoming,
-	fetchSeerrDiscoverTvUpcoming,
-	fetchSeerrSearch,
-	fetchSeerrMovieDetails,
-	fetchSeerrTvDetails,
-	fetchSeerrGenres,
-	fetchSeerrDiscoverByGenre,
-	fetchSeerrRequestOptions,
-	createSeerrRequest,
-	fetchLibraryEnrichment,
+	type FetchSeerrIssuesParams,
 	type FetchSeerrRequestsParams,
 	type FetchSeerrUsersParams,
-	type FetchSeerrIssuesParams,
+	fetchLibraryEnrichment,
+	fetchSeerrDiscoverByGenre,
+	fetchSeerrDiscoverMovies,
+	fetchSeerrDiscoverMoviesUpcoming,
+	fetchSeerrDiscoverTrending,
+	fetchSeerrDiscoverTv,
+	fetchSeerrDiscoverTvUpcoming,
+	fetchSeerrGenres,
+	fetchSeerrIssues,
+	fetchSeerrMovieDetails,
+	fetchSeerrNotifications,
+	fetchSeerrRequestCount,
+	fetchSeerrRequestOptions,
+	fetchSeerrRequests,
+	fetchSeerrSearch,
+	fetchSeerrStatus,
+	fetchSeerrTvDetails,
+	fetchSeerrUserQuota,
+	fetchSeerrUsers,
+	retrySeerrRequest,
+	testSeerrNotification,
 	type UpdateSeerrUserPayload,
+	updateSeerrIssueStatus,
+	updateSeerrNotification,
+	updateSeerrUser,
 } from "../../lib/api-client/seerr";
 
 // ============================================================================
@@ -89,8 +89,7 @@ const seerrKeys = {
 		trending: (instanceId: string) => ["seerr", "discover", "trending", instanceId] as const,
 		moviesUpcoming: (instanceId: string) =>
 			["seerr", "discover", "movies-upcoming", instanceId] as const,
-		tvUpcoming: (instanceId: string) =>
-			["seerr", "discover", "tv-upcoming", instanceId] as const,
+		tvUpcoming: (instanceId: string) => ["seerr", "discover", "tv-upcoming", instanceId] as const,
 		search: (instanceId: string, query: string) =>
 			["seerr", "discover", "search", instanceId, query] as const,
 		movieDetails: (instanceId: string, tmdbId: number) =>
@@ -447,10 +446,7 @@ export const useLibraryEnrichment = (
 		const types: ("movie" | "tv")[] = [];
 
 		for (const item of items) {
-			if (
-				(item.service === "sonarr" || item.service === "radarr") &&
-				item.remoteIds?.tmdbId
-			) {
+			if ((item.service === "sonarr" || item.service === "radarr") && item.remoteIds?.tmdbId) {
 				tmdbIds.push(item.remoteIds.tmdbId);
 				types.push(item.type === "movie" ? "movie" : "tv");
 			}
@@ -463,8 +459,7 @@ export const useLibraryEnrichment = (
 
 	return useQuery<LibraryEnrichmentResponse>({
 		queryKey: seerrKeys.libraryEnrichment(seerrInstanceId ?? "", enrichable.key),
-		queryFn: () =>
-			fetchLibraryEnrichment(seerrInstanceId!, enrichable.tmdbIds, enrichable.types),
+		queryFn: () => fetchLibraryEnrichment(seerrInstanceId!, enrichable.tmdbIds, enrichable.types),
 		staleTime: 5 * 60_000,
 		enabled: !!seerrInstanceId && enrichable.tmdbIds.length > 0,
 	});

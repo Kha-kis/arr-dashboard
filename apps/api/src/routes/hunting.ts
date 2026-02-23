@@ -1,20 +1,20 @@
+import { LidarrClient, RadarrClient, ReadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { SonarrClient, RadarrClient, LidarrClient, ReadarrClient } from "arr-sdk";
 import { toServiceLabel } from "../lib/arr/client-helpers.js";
 import { requireInstance } from "../lib/arr/instance-helpers.js";
-import { getHuntingScheduler } from "../lib/hunting/scheduler.js";
 import {
-	MIN_MISSING_INTERVAL_MINS,
-	MIN_UPGRADE_INTERVAL_MINS,
-	MAX_INTERVAL_MINS,
-	MIN_BATCH_SIZE,
 	MAX_BATCH_SIZE,
-	MIN_HOURLY_API_CAP,
 	MAX_HOURLY_API_CAP,
+	MAX_INTERVAL_MINS,
 	MAX_QUEUE_THRESHOLD,
 	MAX_RESEARCH_AFTER_DAYS,
+	MIN_BATCH_SIZE,
+	MIN_HOURLY_API_CAP,
+	MIN_MISSING_INTERVAL_MINS,
+	MIN_UPGRADE_INTERVAL_MINS,
 } from "../lib/hunting/constants.js";
+import { getHuntingScheduler } from "../lib/hunting/scheduler.js";
 import { cleanupOldSearchHistory } from "../lib/hunting/search-history.js";
 import { safeJsonParse } from "../lib/utils/json.js";
 import { parsePaginationQuery } from "../lib/utils/pagination.js";
@@ -370,7 +370,10 @@ const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
 		const service = instance.service.toLowerCase();
 
 		const client = app.arrClientFactory.create(instance) as
-			SonarrClient | RadarrClient | LidarrClient | ReadarrClient;
+			| SonarrClient
+			| RadarrClient
+			| LidarrClient
+			| ReadarrClient;
 
 		// Validate client type matches service
 		if (service === "sonarr" && !(client instanceof SonarrClient)) {

@@ -1,6 +1,6 @@
-import { useState, useCallback } from "react";
+import { useCallback, useState } from "react";
+import { getTimeRangeStart, type TimeRangePreset } from "../lib/date-utils";
 import type { SERVICE_FILTERS } from "../lib/history-utils";
-import { type TimeRangePreset, getTimeRangeStart } from "../lib/date-utils";
 
 export type ViewMode = "timeline" | "table";
 

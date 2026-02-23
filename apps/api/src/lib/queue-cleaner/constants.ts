@@ -7,80 +7,80 @@
 
 // Re-export all shared types and constants
 export {
+	type CleanerResult,
+	type CleanerResultItem,
 	// Types
 	type CleanerRule,
-	type PreviewStatusRule,
-	type PreviewRule,
-	type ImportBlockCleanupLevel,
-	type ImportBlockPatternMode,
-	type WhitelistType,
-	type WhitelistPattern,
-	type CleanerResultItem,
-	type StrikeInfo,
-	type EnhancedPreviewItem,
-	type QueueStateSummary,
-	type CleanerResult,
-	type EnhancedPreviewResult,
-	type PreviewConfigSnapshot,
+	cleanerResultItemSchema,
+	cleanerResultSchema,
 	// Schemas (for validation)
 	cleanerRuleSchema,
-	previewStatusRuleSchema,
-	previewRuleSchema,
-	importBlockCleanupLevelSchema,
-	importBlockPatternModeSchema,
-	whitelistTypeSchema,
-	whitelistPatternSchema,
-	cleanerResultItemSchema,
-	strikeInfoSchema,
-	enhancedPreviewItemSchema,
-	queueStateSummarySchema,
-	cleanerResultSchema,
-	enhancedPreviewResultSchema,
-	previewConfigSnapshotSchema,
-	// Constants - Intervals
-	MIN_INTERVAL_MINS,
-	MAX_INTERVAL_MINS,
-	DEFAULT_INTERVAL_MINS,
-	// Constants - Stalled
-	MIN_STALLED_THRESHOLD_MINS,
-	MAX_STALLED_THRESHOLD_MINS,
-	DEFAULT_STALLED_THRESHOLD_MINS,
-	// Constants - Slow
-	MIN_SLOW_SPEED_THRESHOLD,
-	MAX_SLOW_SPEED_THRESHOLD,
-	DEFAULT_SLOW_SPEED_THRESHOLD,
-	MIN_SLOW_GRACE_PERIOD_MINS,
-	MAX_SLOW_GRACE_PERIOD_MINS,
-	DEFAULT_SLOW_GRACE_PERIOD_MINS,
-	// Constants - Safety
-	MIN_MAX_REMOVALS,
-	MAX_MAX_REMOVALS,
-	DEFAULT_MAX_REMOVALS,
-	MIN_QUEUE_AGE_MINS,
-	MAX_QUEUE_AGE_MINS,
-	DEFAULT_QUEUE_AGE_MINS,
-	// Constants - Strikes
-	MIN_MAX_STRIKES,
-	MAX_MAX_STRIKES,
-	DEFAULT_MAX_STRIKES,
-	MIN_STRIKE_DECAY_HOURS,
-	MAX_STRIKE_DECAY_HOURS,
-	DEFAULT_STRIKE_DECAY_HOURS,
-	// Constants - Seeding
-	MIN_SEEDING_TIMEOUT_HOURS,
-	MAX_SEEDING_TIMEOUT_HOURS,
-	DEFAULT_SEEDING_TIMEOUT_HOURS,
-	// Constants - Estimated
-	MIN_ESTIMATED_MULTIPLIER,
-	MAX_ESTIMATED_MULTIPLIER,
 	DEFAULT_ESTIMATED_MULTIPLIER,
-	// Constants - Import Pending
-	MIN_IMPORT_PENDING_MINS,
-	MAX_IMPORT_PENDING_MINS,
-	DEFAULT_IMPORT_PENDING_MINS,
 	// Constants - Defaults
 	DEFAULT_IMPORT_BLOCK_CLEANUP_LEVEL,
 	DEFAULT_IMPORT_BLOCK_PATTERN_MODE,
+	DEFAULT_IMPORT_PENDING_MINS,
+	DEFAULT_INTERVAL_MINS,
+	DEFAULT_MAX_REMOVALS,
+	DEFAULT_MAX_STRIKES,
+	DEFAULT_QUEUE_AGE_MINS,
+	DEFAULT_SEEDING_TIMEOUT_HOURS,
+	DEFAULT_SLOW_GRACE_PERIOD_MINS,
+	DEFAULT_SLOW_SPEED_THRESHOLD,
+	DEFAULT_STALLED_THRESHOLD_MINS,
+	DEFAULT_STRIKE_DECAY_HOURS,
+	type EnhancedPreviewItem,
+	type EnhancedPreviewResult,
+	enhancedPreviewItemSchema,
+	enhancedPreviewResultSchema,
+	type ImportBlockCleanupLevel,
+	type ImportBlockPatternMode,
+	importBlockCleanupLevelSchema,
+	importBlockPatternModeSchema,
+	MAX_ESTIMATED_MULTIPLIER,
+	MAX_IMPORT_PENDING_MINS,
+	MAX_INTERVAL_MINS,
+	MAX_MAX_REMOVALS,
+	MAX_MAX_STRIKES,
+	MAX_QUEUE_AGE_MINS,
+	MAX_SEEDING_TIMEOUT_HOURS,
+	MAX_SLOW_GRACE_PERIOD_MINS,
+	MAX_SLOW_SPEED_THRESHOLD,
+	MAX_STALLED_THRESHOLD_MINS,
+	MAX_STRIKE_DECAY_HOURS,
+	// Constants - Estimated
+	MIN_ESTIMATED_MULTIPLIER,
+	// Constants - Import Pending
+	MIN_IMPORT_PENDING_MINS,
+	// Constants - Intervals
+	MIN_INTERVAL_MINS,
+	// Constants - Safety
+	MIN_MAX_REMOVALS,
+	// Constants - Strikes
+	MIN_MAX_STRIKES,
+	MIN_QUEUE_AGE_MINS,
+	// Constants - Seeding
+	MIN_SEEDING_TIMEOUT_HOURS,
+	MIN_SLOW_GRACE_PERIOD_MINS,
+	// Constants - Slow
+	MIN_SLOW_SPEED_THRESHOLD,
+	// Constants - Stalled
+	MIN_STALLED_THRESHOLD_MINS,
+	MIN_STRIKE_DECAY_HOURS,
+	type PreviewConfigSnapshot,
+	type PreviewRule,
+	type PreviewStatusRule,
+	previewConfigSnapshotSchema,
+	previewRuleSchema,
+	previewStatusRuleSchema,
+	type QueueStateSummary,
+	queueStateSummarySchema,
+	type StrikeInfo,
+	strikeInfoSchema,
+	type WhitelistPattern,
+	type WhitelistType,
+	whitelistPatternSchema,
+	whitelistTypeSchema,
 } from "@arr/shared";
 
 // ============================================================================
@@ -163,9 +163,9 @@ export const IMPORT_BLOCKED_SAFE_KEYWORDS = [
 	"sample only",
 	"sample file",
 	"no files found",
-	"no video files",	// Sonarr / Radarr
-	"no audio files",	// Lidarr
-	"no book files",	// Readarr
+	"no video files", // Sonarr / Radarr
+	"no audio files", // Lidarr
+	"no book files", // Readarr
 	"bad nfo",
 ] as const;
 
@@ -178,8 +178,8 @@ export const IMPORT_BLOCKED_REVIEW_KEYWORDS = [
 	"missing expected",
 	"expected files",
 	// Matching failures - automatic import can't resolve (verified from real queues)
-	"automatic import is not possible",	// Sonarr/Lidarr: title/name mismatch
-	"was not found in the grabbed release",	// Sonarr/Radarr: episode/movie not in release
+	"automatic import is not possible", // Sonarr/Lidarr: title/name mismatch
+	"was not found in the grabbed release", // Sonarr/Radarr: episode/movie not in release
 	// Lidarr-specific matching issues (verified from real queue)
 	"couldn't find similar album",
 	"match is not close enough",
@@ -256,18 +256,18 @@ export const AUTO_IMPORT_SAFE_KEYWORDS = [
 	"manual import",
 	"waiting for manual",
 	// ID-matched items (file correctly identified via grab history)
-	"matched to series by id",	// Sonarr (verified)
-	"matched to movie by id",	// Radarr
-	"matched to artist by id",	// Lidarr
-	"matched to album by id",	// Lidarr
-	"matched to author by id",	// Readarr
-	"matched to book by id",	// Readarr
+	"matched to series by id", // Sonarr (verified)
+	"matched to movie by id", // Radarr
+	"matched to artist by id", // Lidarr
+	"matched to album by id", // Lidarr
+	"matched to author by id", // Readarr
+	"matched to book by id", // Readarr
 	// Grab history match (indicates proper tracking)
 	"via grab history",
 	// Title/name mismatch - automatic import fails but manual import via API works
 	// (verified: Sonarr "Series title mismatch", Lidarr "Artist name mismatch")
-	"title mismatch",	// Sonarr
-	"name mismatch",	// Lidarr
+	"title mismatch", // Sonarr
+	"name mismatch", // Lidarr
 ] as const;
 
 /**
@@ -276,9 +276,9 @@ export const AUTO_IMPORT_SAFE_KEYWORDS = [
  */
 export const AUTO_IMPORT_NEVER_KEYWORDS = [
 	// Content doesn't exist or is unusable (service-specific file type messages)
-	"no video files",	// Sonarr / Radarr
-	"no audio files",	// Lidarr
-	"no book files",	// Readarr
+	"no video files", // Sonarr / Radarr
+	"no audio files", // Lidarr
+	"no book files", // Readarr
 	"no files found",
 	"no files",
 	"sample only",

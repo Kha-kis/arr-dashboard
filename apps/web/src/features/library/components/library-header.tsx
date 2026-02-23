@@ -12,13 +12,13 @@ import {
 	RefreshCw,
 	Tv,
 } from "lucide-react";
+import { FilterSelect, GlassmorphicCard } from "../../../components/layout";
 import { Button, Input } from "../../../components/ui";
-import { GlassmorphicCard, FilterSelect } from "../../../components/layout";
-import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
 import { cn } from "../../../lib/utils";
-import type { SortByValue, SortOrderValue } from "../hooks/use-library-filters";
 import type { SyncStatus } from "../hooks/use-library-data";
+import type { SortByValue, SortOrderValue } from "../hooks/use-library-filters";
 
 /**
  * Service filter options for the library
@@ -187,9 +187,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 
 					{/* Sync Status Indicator */}
 					{syncStatus && (
-						<div
-							className="flex items-center gap-2 rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs px-4 py-2 text-sm"
-						>
+						<div className="flex items-center gap-2 rounded-xl border border-border/50 bg-card/30 backdrop-blur-xs px-4 py-2 text-sm">
 							{isSyncing ? (
 								<>
 									<RefreshCw
@@ -220,11 +218,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 			</div>
 
 			{/* Filters Card */}
-			<GlassmorphicCard
-				padding="none"
-				animationDelay={100}
-				className="overflow-hidden"
-			>
+			<GlassmorphicCard padding="none" animationDelay={100} className="overflow-hidden">
 				{/* Header */}
 				<div className="flex items-center gap-3 px-6 py-4 border-b border-border/50">
 					<div
@@ -260,7 +254,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 										onClick={() => onServiceFilterChange(option.value)}
 										className={cn(
 											"relative flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-all duration-300",
-											isActive ? "text-white" : "text-muted-foreground hover:text-foreground"
+											isActive ? "text-white" : "text-muted-foreground hover:text-foreground",
 										)}
 									>
 										{isActive && (
@@ -299,9 +293,7 @@ export const LibraryHeader: React.FC<LibraryHeaderProps> = ({
 							options={[
 								{ value: "all", label: "All instances" },
 								...instanceOptions
-									.filter(
-										(option) => serviceFilter === "all" || option.service === serviceFilter,
-									)
+									.filter((option) => serviceFilter === "all" || option.service === serviceFilter)
 									.map((option) => ({
 										value: option.id,
 										label: option.label,

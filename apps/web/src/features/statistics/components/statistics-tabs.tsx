@@ -26,8 +26,18 @@ export const StatisticsTabs = ({
 	readarrCount,
 	healthIssueCount,
 }: StatisticsTabsProps) => {
-	const tabs: Array<{ id: StatisticsTab; label: string; badge?: number; badgeVariant?: "default" | "warning" }> = [
-		{ id: "overview", label: "Overview", badge: healthIssueCount > 0 ? healthIssueCount : undefined, badgeVariant: "warning" },
+	const tabs: Array<{
+		id: StatisticsTab;
+		label: string;
+		badge?: number;
+		badgeVariant?: "default" | "warning";
+	}> = [
+		{
+			id: "overview",
+			label: "Overview",
+			badge: healthIssueCount > 0 ? healthIssueCount : undefined,
+			badgeVariant: "warning",
+		},
 		{ id: "sonarr", label: "Sonarr", badge: sonarrCount },
 		{ id: "radarr", label: "Radarr", badge: radarrCount },
 		{ id: "lidarr", label: "Lidarr", badge: lidarrCount },
@@ -51,11 +61,13 @@ export const StatisticsTabs = ({
 					>
 						{tab.label}
 						{tab.badge !== undefined && tab.badge > 0 && (
-							<span className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-medium ${
-								tab.badgeVariant === "warning"
-									? "bg-amber-500/10 text-amber-400"
-									: "bg-primary/10 text-primary"
-							}`}>
+							<span
+								className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-medium ${
+									tab.badgeVariant === "warning"
+										? "bg-amber-500/10 text-amber-400"
+										: "bg-primary/10 text-primary"
+								}`}
+							>
 								{tab.badge}
 							</span>
 						)}

@@ -6,10 +6,6 @@
  * `X-Api-Key` header authentication — same auth pattern as *arr apps.
  */
 
-import type { FastifyBaseLogger, FastifyInstance } from "fastify";
-import type { ArrClientFactory, ClientInstanceData } from "../arr/client-factory.js";
-import { requireInstance } from "../arr/instance-helpers.js";
-import { AppValidationError } from "../errors.js";
 import type {
 	SeerrCreateRequestPayload,
 	SeerrCreateRequestResponse,
@@ -36,6 +32,10 @@ import type {
 	SeerrUserParams,
 	SeerrUserUpdateData,
 } from "@arr/shared";
+import type { FastifyBaseLogger, FastifyInstance } from "fastify";
+import type { ArrClientFactory, ClientInstanceData } from "../arr/client-factory.js";
+import { requireInstance } from "../arr/instance-helpers.js";
+import { AppValidationError } from "../errors.js";
 
 // ============================================================================
 // Known Notification Agents
@@ -463,10 +463,16 @@ export class SeerrClient {
 	async getMediaSummary(
 		type: "movie" | "tv",
 		tmdbId: number,
-	): Promise<{ voteAverage: number | null; backdropPath: string | null; posterPath: string | null }> {
-		const data = await this.get<{ voteAverage?: number; backdropPath?: string; posterPath?: string }>(
-			`/api/v1/${type}/${tmdbId}`,
-		);
+	): Promise<{
+		voteAverage: number | null;
+		backdropPath: string | null;
+		posterPath: string | null;
+	}> {
+		const data = await this.get<{
+			voteAverage?: number;
+			backdropPath?: string;
+			posterPath?: string;
+		}>(`/api/v1/${type}/${tmdbId}`);
 		return {
 			voteAverage: data.voteAverage ?? null,
 			backdropPath: data.backdropPath ?? null,

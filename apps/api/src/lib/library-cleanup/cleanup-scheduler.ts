@@ -1,0 +1,146 @@
+/**
+ * Library Cleanup Scheduler
+ *
+ * Interval-based scheduler that checks if a cleanup run is due.
+ * Follows the same pattern as BackupScheduler:
+ * - Checks every minute
+ * - In-flight guard prevents overlapping runs
+ * - Calculates next run time after completion
+ */
+
+import type { FastifyBaseLogger } from "fastify";
+import type { ArrClientFactory } from "../arr/client-factory.js";
+import type { NotificationPayload } from "../notifications/types.js";
+import type { PrismaClient } from "../prisma.js";
+import { getErrorMessage } from "../utils/error-message.js";
+import { executeCleanupRun } from "./cleanup-executor.js";
+
+const CHECK_INTERVAL_MS = 60 * 1000; // Check every minute
+
+export class CleanupScheduler {
+	private intervalId: NodeJS.Timeout | null = null;
+	private isRunning = false;
+	private notifyFn?: (payload: NotificationPayload) => Promise<void>;
+
+	constructor(
+		private prisma: PrismaClient,
+		private arrClientFactory: ArrClientFactory,
+		private logger: FastifyBaseLogger,
+		notifyFn?: (payload: NotificationPayload) => Promise<void>,
+	) {
+		this.notifyFn = notifyFn;
+	}
+
+	/**
+	 * Start the cleanup scheduler.
+	 */
+	start(): void {
+		if (this.intervalId) {
+			this.logger.warn("Cleanup scheduler already running");
+			return;
+		}
+
+		this.logger.info("Starting library cleanup scheduler");
+
+		// Check immediately on startup
+		this.checkAndRun().catch((error) => {
+			this.logger.error({ err: error }, "Failed to run initial cleanup check");
+		});
+
+		// Then check every minute
+		this.intervalId = setInterval(() => {
+			this.checkAndRun().catch((error) => {
+				this.logger.error({ err: error }, "Failed to run scheduled cleanup check");
+			});
+		}, CHECK_INTERVAL_MS);
+	}
+
+	/**
+	 * Stop the cleanup scheduler.
+	 */
+	stop(): void {
+		if (this.intervalId) {
+			clearInterval(this.intervalId);
+			this.intervalId = null;
+			this.logger.info("Cleanup scheduler stopped");
+		}
+	}
+
+	/**
+	 * Check if a cleanup run should execute and run it.
+	 */
+	private async checkAndRun(): Promise<void> {
+		if (this.isRunning) {
+			this.logger.debug("Cleanup already running, skipping check");
+			return;
+		}
+
+		try {
+			// Find any user's config that is enabled and due for a run.
+			// (Single-admin app, so there's at most one config.)
+			const config = await this.prisma.libraryCleanupConfig.findFirst({
+				where: { enabled: true },
+			});
+
+			if (!config) return;
+
+			const now = new Date();
+			if (!config.nextRunAt || config.nextRunAt > now) return;
+
+			this.isRunning = true;
+
+			this.logger.info(
+				{ intervalHours: config.intervalHours, dryRunMode: config.dryRunMode },
+				"Running scheduled library cleanup",
+			);
+
+			try {
+				const result = await executeCleanupRun(
+					{ prisma: this.prisma, arrClientFactory: this.arrClientFactory, log: this.logger },
+					config.userId,
+				);
+
+				// Calculate next run time
+				const nextRunAt = new Date(now.getTime() + config.intervalHours * 60 * 60 * 1000);
+
+				await this.prisma.libraryCleanupConfig.update({
+					where: { id: config.id },
+					data: { lastRunAt: now, nextRunAt },
+				});
+
+				this.logger.info(
+					{
+						itemsEvaluated: result.itemsEvaluated,
+						itemsFlagged: result.itemsFlagged,
+						itemsRemoved: result.itemsRemoved,
+						nextRunAt: nextRunAt.toISOString(),
+					},
+					"Scheduled library cleanup completed",
+				);
+
+				if (result.itemsFlagged > 0 || result.itemsRemoved > 0) {
+					const body =
+						result.itemsRemoved > 0
+							? `Removed ${result.itemsRemoved} items, flagged ${result.itemsFlagged}`
+							: `Flagged ${result.itemsFlagged} items for review`;
+
+					this.notifyFn?.({
+						eventType: "CLEANUP_ITEMS_FLAGGED",
+						title: "Library cleanup completed",
+						body,
+					}).catch(() => {});
+				}
+			} finally {
+				this.isRunning = false;
+			}
+		} catch (error) {
+			this.logger.error({ err: error }, "Error checking/running scheduled cleanup");
+
+			this.notifyFn?.({
+				eventType: "SYSTEM_ERROR",
+				title: "Library cleanup failed",
+				body: getErrorMessage(error),
+			}).catch(() => {});
+		}
+	}
+}

@@ -1,18 +1,18 @@
-import { useMemo } from "react";
 import type { HistoryItem } from "@arr/shared";
+import { useMemo } from "react";
+import { type DayGroup, groupByDay } from "../lib/date-utils";
 import {
-	extractInstanceOptions,
-	extractStatusOptions,
+	type ActivitySummary,
+	createActivitySummary,
 	createServiceSummary,
 	createStatusSummary,
-	createActivitySummary,
-	groupHistoryItems,
-	normalizeStatus,
+	extractInstanceOptions,
+	extractStatusOptions,
 	filterProwlarrRss,
+	groupHistoryItems,
 	type HistoryGroup,
-	type ActivitySummary,
+	normalizeStatus,
 } from "../lib/history-utils";
-import { groupByDay, type DayGroup } from "../lib/date-utils";
 
 export interface HistoryFilters {
 	searchTerm: string;

@@ -7,7 +7,7 @@
 
 import type { FastifyInstance } from "fastify";
 import type { ServiceInstance } from "../../lib/prisma.js";
-import { isSonarrClient, isRadarrClient, isProwlarrClient } from "./client-helpers.js";
+import { isProwlarrClient, isRadarrClient, isSonarrClient } from "./client-helpers.js";
 
 /**
  * Warm up connections to all enabled instances for a user.

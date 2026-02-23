@@ -7,12 +7,12 @@
 
 import { apiRequest } from "../base";
 import type {
-	TrashCacheStatus,
-	TrashCacheEntry,
-	TrashConfigType,
 	GitHubRateLimitResponse,
-	SyncMetricsSnapshot,
 	ServiceType,
+	SyncMetricsSnapshot,
+	TrashCacheEntry,
+	TrashCacheStatus,
+	TrashConfigType,
 } from "./types";
 
 // ============================================================================
@@ -88,9 +88,7 @@ export async function fetchSyncMetrics(): Promise<SyncMetricsSnapshot> {
 /**
  * Fetch cache entries with data
  */
-export async function fetchCacheEntries(
-	serviceType: ServiceType,
-): Promise<TrashCacheEntry[]> {
+export async function fetchCacheEntries(serviceType: ServiceType): Promise<TrashCacheEntry[]> {
 	return await apiRequest<TrashCacheEntry[]>(
 		`/api/trash-guides/cache/entries?serviceType=${serviceType}`,
 	);

@@ -1,12 +1,12 @@
 "use client";
 
 import type { ProwlarrIndexerStat } from "@arr/shared";
-import { Globe, CheckCircle2, AlertTriangle, Activity, TrendingUp } from "lucide-react";
+import { Activity, AlertTriangle, CheckCircle2, Globe, TrendingUp } from "lucide-react";
 import { PremiumCard, StatCard } from "../../../components/layout";
-import { formatPercent } from "../lib/formatters";
+import { getLinuxIndexer, getLinuxInstanceName, useIncognitoMode } from "../../../lib/incognito";
 import { SERVICE_GRADIENTS } from "../../../lib/theme-gradients";
-import { useIncognitoMode, getLinuxInstanceName, getLinuxIndexer } from "../../../lib/incognito";
 import type { useStatisticsData } from "../hooks/useStatisticsData";
+import { formatPercent } from "../lib/formatters";
 
 const integer = new Intl.NumberFormat();
 const percentFormatter = new Intl.NumberFormat(undefined, {
@@ -30,11 +30,33 @@ export const ProwlarrTab = ({ prowlarrTotals, prowlarrRows }: ProwlarrTabProps) 
 				className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
 				style={{ animationDelay: "200ms", animationFillMode: "backwards" }}
 			>
-				<StatCard value={prowlarrTotals.totalIndexers} label="Indexers" icon={Globe} gradient={SERVICE_GRADIENTS.prowlarr} animationDelay={200} />
-				<StatCard value={prowlarrTotals.activeIndexers} label="Active" icon={CheckCircle2} gradient={SERVICE_GRADIENTS.prowlarr} animationDelay={250} />
-				<StatCard value={prowlarrTotals.pausedIndexers} label="Paused" icon={AlertTriangle} gradient={SERVICE_GRADIENTS.prowlarr} animationDelay={300} />
 				<StatCard
-					value={prowlarrTotals.averageResponseTime ? `${percentFormatter.format(prowlarrTotals.averageResponseTime)} ms` : "-"}
+					value={prowlarrTotals.totalIndexers}
+					label="Indexers"
+					icon={Globe}
+					gradient={SERVICE_GRADIENTS.prowlarr}
+					animationDelay={200}
+				/>
+				<StatCard
+					value={prowlarrTotals.activeIndexers}
+					label="Active"
+					icon={CheckCircle2}
+					gradient={SERVICE_GRADIENTS.prowlarr}
+					animationDelay={250}
+				/>
+				<StatCard
+					value={prowlarrTotals.pausedIndexers}
+					label="Paused"
+					icon={AlertTriangle}
+					gradient={SERVICE_GRADIENTS.prowlarr}
+					animationDelay={300}
+				/>
+				<StatCard
+					value={
+						prowlarrTotals.averageResponseTime
+							? `${percentFormatter.format(prowlarrTotals.averageResponseTime)} ms`
+							: "-"
+					}
 					label="Avg Response"
 					icon={Activity}
 					gradient={SERVICE_GRADIENTS.prowlarr}
@@ -46,10 +68,24 @@ export const ProwlarrTab = ({ prowlarrTotals, prowlarrRows }: ProwlarrTabProps) 
 				className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 animate-in fade-in slide-in-from-bottom-4 duration-500"
 				style={{ animationDelay: "300ms", animationFillMode: "backwards" }}
 			>
-				<StatCard value={prowlarrTotals.totalQueries} label="Queries" description="Total searches" animationDelay={400} />
-				<StatCard value={prowlarrTotals.successfulQueries ?? "-"} label="Successful" description="Queries" animationDelay={450} />
+				<StatCard
+					value={prowlarrTotals.totalQueries}
+					label="Queries"
+					description="Total searches"
+					animationDelay={400}
+				/>
+				<StatCard
+					value={prowlarrTotals.successfulQueries ?? "-"}
+					label="Successful"
+					description="Queries"
+					animationDelay={450}
+				/>
 				<StatCard value={prowlarrTotals.totalGrabs} label="Total Grabs" animationDelay={500} />
-				<StatCard value={formatPercent(prowlarrTotals.grabRate)} label="Grab Rate" animationDelay={550} />
+				<StatCard
+					value={formatPercent(prowlarrTotals.grabRate)}
+					label="Grab Rate"
+					animationDelay={550}
+				/>
 			</div>
 
 			{/* Top Indexers */}
@@ -65,20 +101,35 @@ export const ProwlarrTab = ({ prowlarrTotals, prowlarrRows }: ProwlarrTabProps) 
 						<table className="w-full text-sm">
 							<thead>
 								<tr className="border-b border-border/50">
-									<th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Name</th>
-									<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Queries</th>
-									<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Grabs</th>
-									<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Success Rate</th>
+									<th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+										Name
+									</th>
+									<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+										Queries
+									</th>
+									<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+										Grabs
+									</th>
+									<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+										Success Rate
+									</th>
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-border/30">
 								{prowlarrTotals.indexers.map((indexer: ProwlarrIndexerStat, index: number) => (
-									<tr key={`${index}-${indexer.name}`} className="hover:bg-muted/20 transition-colors">
+									<tr
+										key={`${index}-${indexer.name}`}
+										className="hover:bg-muted/20 transition-colors"
+									>
 										<td className="py-3 px-4 font-medium">
 											{incognitoMode ? getLinuxIndexer(indexer.name) : indexer.name}
 										</td>
-										<td className="py-3 px-4 text-right text-muted-foreground">{integer.format(indexer.queries)}</td>
-										<td className="py-3 px-4 text-right text-muted-foreground">{integer.format(indexer.grabs)}</td>
+										<td className="py-3 px-4 text-right text-muted-foreground">
+											{integer.format(indexer.queries)}
+										</td>
+										<td className="py-3 px-4 text-right text-muted-foreground">
+											{integer.format(indexer.grabs)}
+										</td>
 										<td className="py-3 px-4 text-right">
 											<span style={{ color: SERVICE_GRADIENTS.prowlarr.from }}>
 												{formatPercent(indexer.successRate)}
@@ -101,18 +152,32 @@ export const ProwlarrTab = ({ prowlarrTotals, prowlarrRows }: ProwlarrTabProps) 
 				animationDelay={500}
 			>
 				{prowlarrRows.length === 0 ? (
-					<p className="text-muted-foreground text-center py-8">No Prowlarr instances configured.</p>
+					<p className="text-muted-foreground text-center py-8">
+						No Prowlarr instances configured.
+					</p>
 				) : (
 					<div className="overflow-x-auto">
 						<table className="w-full text-sm">
 							<thead>
 								<tr className="border-b border-border/50">
-									<th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Instance</th>
-									<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Indexers</th>
-									<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Active</th>
-									<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Paused</th>
-									<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Queries</th>
-									<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">Grabs</th>
+									<th className="text-left py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+										Instance
+									</th>
+									<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+										Indexers
+									</th>
+									<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+										Active
+									</th>
+									<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+										Paused
+									</th>
+									<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+										Queries
+									</th>
+									<th className="text-right py-3 px-4 text-xs font-medium text-muted-foreground uppercase tracking-wide">
+										Grabs
+									</th>
 								</tr>
 							</thead>
 							<tbody className="divide-y divide-border/30">

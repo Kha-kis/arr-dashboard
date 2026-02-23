@@ -1,24 +1,24 @@
 "use client";
 
 import type { ProwlarrIndexer, ProwlarrIndexerDetails } from "@arr/shared";
-import { IndexerDetailsPanel } from "./indexer-details-panel";
-import { protocolLabel } from "../lib/indexers-utils";
-import { useIncognitoMode, getLinuxIndexer } from "../../../lib/incognito";
 import {
-	PlayCircle,
+	CheckCircle2,
 	ChevronDown,
 	ChevronUp,
-	Loader2,
-	CheckCircle2,
-	XCircle,
-	Search,
-	Rss,
 	Download,
+	Loader2,
+	PlayCircle,
+	Rss,
+	Search,
 	Wifi,
+	XCircle,
 } from "lucide-react";
-import { PROTOCOL_COLORS } from "../../../lib/theme-gradients";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { StatusBadge } from "../../../components/layout";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getLinuxIndexer, useIncognitoMode } from "../../../lib/incognito";
+import { PROTOCOL_COLORS } from "../../../lib/theme-gradients";
+import { protocolLabel } from "../lib/indexers-utils";
+import { IndexerDetailsPanel } from "./indexer-details-panel";
 
 /**
  * Capability Badge Component
@@ -79,7 +79,8 @@ export const IndexerRow = ({
 	const [incognitoMode] = useIncognitoMode();
 
 	// Protocol-based colors
-	const protocolColor = indexer.protocol === "torrent" ? PROTOCOL_COLORS.torrent : PROTOCOL_COLORS.usenet;
+	const protocolColor =
+		indexer.protocol === "torrent" ? PROTOCOL_COLORS.torrent : PROTOCOL_COLORS.usenet;
 
 	return (
 		<div className="space-y-0 overflow-hidden">
@@ -108,10 +109,7 @@ export const IndexerRow = ({
 									{incognitoMode ? getLinuxIndexer(indexer.name) : indexer.name}
 								</h3>
 								<p className="text-xs text-muted-foreground flex items-center gap-2 mt-0.5">
-									<span
-										className="inline-flex items-center gap-1"
-										style={{ color: protocolColor }}
-									>
+									<span className="inline-flex items-center gap-1" style={{ color: protocolColor }}>
 										{indexer.protocol === "torrent" ? (
 											<Download className="h-3 w-3" />
 										) : (
@@ -128,18 +126,10 @@ export const IndexerRow = ({
 						{/* Capability Badges */}
 						<div className="flex flex-wrap gap-1.5">
 							{indexer.supportsSearch && (
-								<CapabilityBadge
-									icon={Search}
-									label="Search"
-									color={themeGradient.from}
-								/>
+								<CapabilityBadge icon={Search} label="Search" color={themeGradient.from} />
 							)}
 							{indexer.supportsRss && (
-								<CapabilityBadge
-									icon={Rss}
-									label="RSS"
-									color={themeGradient.from}
-								/>
+								<CapabilityBadge icon={Rss} label="RSS" color={themeGradient.from} />
 							)}
 							{Array.isArray(indexer.capabilities) && indexer.capabilities.length > 0 && (
 								<span className="text-xs text-muted-foreground px-2 py-0.5">

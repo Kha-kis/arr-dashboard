@@ -70,7 +70,6 @@
  * - Semantic colors (SEMANTIC_COLORS): success=green, warning=amber, error=red
  */
 
-
 import type { ColorTheme } from "../providers/color-theme-provider";
 
 /**
@@ -160,48 +159,48 @@ export const THEME_GRADIENTS: Record<ColorTheme, ThemeGradient> = {
  */
 export const THEME_GRADIENT_VALUES: Record<ColorTheme, ThemeGradient> = {
 	blue: {
-		from: "#3b82f6",      // blue-500
-		to: "#8b5cf6",        // violet-500
+		from: "#3b82f6", // blue-500
+		to: "#8b5cf6", // violet-500
 		glow: "rgba(59, 130, 246, 0.4)",
 		fromLight: "rgba(59, 130, 246, 0.1)",
 		fromMedium: "rgba(59, 130, 246, 0.2)",
 		fromMuted: "rgba(59, 130, 246, 0.3)",
 	},
 	purple: {
-		from: "#8b5cf6",      // violet-500
-		to: "#ec4899",        // pink-500
+		from: "#8b5cf6", // violet-500
+		to: "#ec4899", // pink-500
 		glow: "rgba(139, 92, 246, 0.4)",
 		fromLight: "rgba(139, 92, 246, 0.1)",
 		fromMedium: "rgba(139, 92, 246, 0.2)",
 		fromMuted: "rgba(139, 92, 246, 0.3)",
 	},
 	green: {
-		from: "#22c55e",      // green-500
-		to: "#14b8a6",        // teal-500
+		from: "#22c55e", // green-500
+		to: "#14b8a6", // teal-500
 		glow: "rgba(34, 197, 94, 0.4)",
 		fromLight: "rgba(34, 197, 94, 0.1)",
 		fromMedium: "rgba(34, 197, 94, 0.2)",
 		fromMuted: "rgba(34, 197, 94, 0.3)",
 	},
 	orange: {
-		from: "#f97316",      // orange-500
-		to: "#eab308",        // yellow-500
+		from: "#f97316", // orange-500
+		to: "#eab308", // yellow-500
 		glow: "rgba(249, 115, 22, 0.4)",
 		fromLight: "rgba(249, 115, 22, 0.1)",
 		fromMedium: "rgba(249, 115, 22, 0.2)",
 		fromMuted: "rgba(249, 115, 22, 0.3)",
 	},
 	rose: {
-		from: "#f43f5e",      // rose-500
-		to: "#ec4899",        // pink-500
+		from: "#f43f5e", // rose-500
+		to: "#ec4899", // pink-500
 		glow: "rgba(244, 63, 94, 0.4)",
 		fromLight: "rgba(244, 63, 94, 0.1)",
 		fromMedium: "rgba(244, 63, 94, 0.2)",
 		fromMuted: "rgba(244, 63, 94, 0.3)",
 	},
 	slate: {
-		from: "#64748b",      // slate-500
-		to: "#475569",        // slate-600
+		from: "#64748b", // slate-500
+		to: "#475569", // slate-600
 		glow: "rgba(100, 116, 139, 0.3)",
 		fromLight: "rgba(100, 116, 139, 0.1)",
 		fromMedium: "rgba(100, 116, 139, 0.15)",
@@ -209,32 +208,32 @@ export const THEME_GRADIENT_VALUES: Record<ColorTheme, ThemeGradient> = {
 	},
 	// === NOSTALGIC / SPECIAL THEMES ===
 	winamp: {
-		from: "#00ff00",      // Classic Winamp neon green
-		to: "#39ff14",        // Electric lime
+		from: "#00ff00", // Classic Winamp neon green
+		to: "#39ff14", // Electric lime
 		glow: "rgba(0, 255, 0, 0.5)",
 		fromLight: "rgba(0, 255, 0, 0.1)",
 		fromMedium: "rgba(0, 255, 0, 0.2)",
 		fromMuted: "rgba(0, 255, 0, 0.3)",
 	},
 	terminal: {
-		from: "#20c20e",      // Matrix green
-		to: "#00ff41",        // Phosphor green
+		from: "#20c20e", // Matrix green
+		to: "#00ff41", // Phosphor green
 		glow: "rgba(32, 194, 14, 0.5)",
 		fromLight: "rgba(32, 194, 14, 0.1)",
 		fromMedium: "rgba(32, 194, 14, 0.2)",
 		fromMuted: "rgba(32, 194, 14, 0.3)",
 	},
 	vaporwave: {
-		from: "#ff6ec7",      // Hot pink
-		to: "#00ffff",        // Cyan
+		from: "#ff6ec7", // Hot pink
+		to: "#00ffff", // Cyan
 		glow: "rgba(255, 110, 199, 0.5)",
 		fromLight: "rgba(255, 110, 199, 0.1)",
 		fromMedium: "rgba(255, 110, 199, 0.2)",
 		fromMuted: "rgba(255, 110, 199, 0.3)",
 	},
 	cyber: {
-		from: "#00d4ff",      // Electric cyan
-		to: "#ff00ff",        // Magenta
+		from: "#00d4ff", // Electric cyan
+		to: "#ff00ff", // Magenta
 		glow: "rgba(0, 212, 255, 0.5)",
 		fromLight: "rgba(0, 212, 255, 0.1)",
 		fromMedium: "rgba(0, 212, 255, 0.2)",
@@ -242,32 +241,32 @@ export const THEME_GRADIENT_VALUES: Record<ColorTheme, ThemeGradient> = {
 	},
 	// === NEW IMMERSIVE THEMES ===
 	noir: {
-		from: "#c9a855",      // Muted gold
-		to: "#e8dcc8",        // Cream
+		from: "#c9a855", // Muted gold
+		to: "#e8dcc8", // Cream
 		glow: "rgba(201, 168, 85, 0.5)",
 		fromLight: "rgba(201, 168, 85, 0.1)",
 		fromMedium: "rgba(201, 168, 85, 0.2)",
 		fromMuted: "rgba(201, 168, 85, 0.3)",
 	},
 	vhs: {
-		from: "#b8c4d0",      // Blue-tinted white
-		to: "#d94545",        // Recording red
+		from: "#b8c4d0", // Blue-tinted white
+		to: "#d94545", // Recording red
 		glow: "rgba(184, 196, 208, 0.5)",
 		fromLight: "rgba(184, 196, 208, 0.1)",
 		fromMedium: "rgba(184, 196, 208, 0.2)",
 		fromMuted: "rgba(184, 196, 208, 0.3)",
 	},
 	synthwave: {
-		from: "#ff2d95",      // Hot pink
-		to: "#00ffff",        // Electric cyan
+		from: "#ff2d95", // Hot pink
+		to: "#00ffff", // Electric cyan
 		glow: "rgba(255, 45, 149, 0.5)",
 		fromLight: "rgba(255, 45, 149, 0.1)",
 		fromMedium: "rgba(255, 45, 149, 0.2)",
 		fromMuted: "rgba(255, 45, 149, 0.3)",
 	},
 	amber: {
-		from: "#ffb000",      // Amber phosphor
-		to: "#ffc940",        // Bright amber
+		from: "#ffb000", // Amber phosphor
+		to: "#ffc940", // Bright amber
 		glow: "rgba(255, 176, 0, 0.5)",
 		fromLight: "rgba(255, 176, 0, 0.1)",
 		fromMedium: "rgba(255, 176, 0, 0.2)",
@@ -275,32 +274,32 @@ export const THEME_GRADIENT_VALUES: Record<ColorTheme, ThemeGradient> = {
 	},
 	// Premium themes
 	arr: {
-		from: "#35c5f4",      // Sonarr cyan
-		to: "#ffc230",        // Radarr amber
+		from: "#35c5f4", // Sonarr cyan
+		to: "#ffc230", // Radarr amber
 		glow: "rgba(53, 197, 244, 0.5)",
 		fromLight: "rgba(53, 197, 244, 0.1)",
 		fromMedium: "rgba(53, 197, 244, 0.2)",
 		fromMuted: "rgba(53, 197, 244, 0.3)",
 	},
 	qbittorrent: {
-		from: "#4a90c2",      // qBittorrent blue - flat design, no gradient
-		to: "#4a90c2",        // Same as 'from' - qBittorrent uses flat colors, not gradients
-		glow: "transparent",  // No glow effects - authentic desktop app style
+		from: "#4a90c2", // qBittorrent blue - flat design, no gradient
+		to: "#4a90c2", // Same as 'from' - qBittorrent uses flat colors, not gradients
+		glow: "transparent", // No glow effects - authentic desktop app style
 		fromLight: "rgba(74, 144, 194, 0.1)",
 		fromMedium: "rgba(74, 144, 194, 0.15)",
 		fromMuted: "rgba(74, 144, 194, 0.2)",
 	},
 	cyberpunk: {
-		from: "#ff2a6d",      // Cyberpunk 2077 hot pink
-		to: "#05d9e8",        // Electric cyan
+		from: "#ff2a6d", // Cyberpunk 2077 hot pink
+		to: "#05d9e8", // Electric cyan
 		glow: "rgba(255, 42, 109, 0.6)",
 		fromLight: "rgba(255, 42, 109, 0.1)",
 		fromMedium: "rgba(255, 42, 109, 0.2)",
 		fromMuted: "rgba(255, 42, 109, 0.35)",
 	},
 	midnight: {
-		from: "#4a0080",      // Deep purple
-		to: "#000033",        // Midnight blue
+		from: "#4a0080", // Deep purple
+		to: "#000033", // Midnight blue
 		glow: "rgba(100, 50, 180, 0.5)",
 		fromLight: "rgba(74, 0, 128, 0.1)",
 		fromMedium: "rgba(74, 0, 128, 0.2)",
@@ -325,7 +324,14 @@ export interface ServiceGradient {
 }
 
 /** Valid service types for gradient lookup */
-export type ServiceType = "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr" | "seerr";
+export type ServiceType =
+	| "sonarr"
+	| "radarr"
+	| "prowlarr"
+	| "lidarr"
+	| "readarr"
+	| "seerr"
+	| "tautulli";
 
 /**
  * Service-specific gradients for visual distinction
@@ -340,34 +346,39 @@ export type ServiceType = "sonarr" | "radarr" | "prowlarr" | "lidarr" | "readarr
  */
 export const SERVICE_GRADIENTS: Record<ServiceType, ServiceGradient> = {
 	sonarr: {
-		from: "#06b6d4",      // cyan-500
-		to: "#3b82f6",        // blue-500
+		from: "#06b6d4", // cyan-500
+		to: "#3b82f6", // blue-500
 		glow: "rgba(6, 182, 212, 0.4)",
 	},
 	radarr: {
-		from: "#f97316",      // orange-500
-		to: "#eab308",        // yellow-500
+		from: "#f97316", // orange-500
+		to: "#eab308", // yellow-500
 		glow: "rgba(249, 115, 22, 0.4)",
 	},
 	prowlarr: {
-		from: "#a855f7",      // purple-500
-		to: "#ec4899",        // pink-500
+		from: "#a855f7", // purple-500
+		to: "#ec4899", // pink-500
 		glow: "rgba(168, 85, 247, 0.4)",
 	},
 	lidarr: {
-		from: "#22c55e",      // green-500 (music/harmony)
-		to: "#14b8a6",        // teal-500
+		from: "#22c55e", // green-500 (music/harmony)
+		to: "#14b8a6", // teal-500
 		glow: "rgba(34, 197, 94, 0.4)",
 	},
 	readarr: {
-		from: "#8b5cf6",      // violet-500 (books/wisdom)
-		to: "#6366f1",        // indigo-500
+		from: "#8b5cf6", // violet-500 (books/wisdom)
+		to: "#6366f1", // indigo-500
 		glow: "rgba(139, 92, 246, 0.4)",
 	},
 	seerr: {
-		from: "#e11d48",      // rose-600 (requests/approvals)
-		to: "#f43f5e",        // rose-500
+		from: "#e11d48", // rose-600 (requests/approvals)
+		to: "#f43f5e", // rose-500
 		glow: "rgba(225, 29, 72, 0.4)",
+	},
+	tautulli: {
+		from: "#e4a50a", // amber/gold (Tautulli branding)
+		to: "#d97706", // amber-600
+		glow: "rgba(228, 165, 10, 0.4)",
 	},
 };
 
@@ -488,7 +499,7 @@ export const RATING_COLOR = SEMANTIC_COLORS.warning.text; // #fbbf24
  */
 export const getInfoColor = (
 	severity: "info" | "warning" | "error" | "success",
-	themeGradient: ThemeGradient
+	themeGradient: ThemeGradient,
 ): { bg: string; border: string; text: string } => {
 	if (severity === "info") {
 		return {

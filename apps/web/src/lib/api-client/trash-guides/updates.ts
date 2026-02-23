@@ -6,7 +6,7 @@
  */
 
 import { apiRequest } from "../base";
-import type { ServiceType, CommitInfo } from "./types";
+import type { CommitInfo, ServiceType } from "./types";
 
 // ============================================================================
 // Template Update Types
@@ -266,55 +266,42 @@ export async function syncTemplate(
 	templateId: string,
 	payload?: SyncTemplatePayload,
 ): Promise<SyncTemplateResponse> {
-	return await apiRequest<SyncTemplateResponse>(
-		`/api/trash-guides/updates/${templateId}/sync`,
-		{
-			method: "POST",
-			json: payload || {},
-		},
-	);
+	return await apiRequest<SyncTemplateResponse>(`/api/trash-guides/updates/${templateId}/sync`, {
+		method: "POST",
+		json: payload || {},
+	});
 }
 
 /**
  * Process all auto-sync eligible templates
  */
 export async function processAutoUpdates(): Promise<ProcessAutoUpdatesResponse> {
-	return await apiRequest<ProcessAutoUpdatesResponse>(
-		"/api/trash-guides/updates/process-auto",
-		{
-			method: "POST",
-		},
-	);
+	return await apiRequest<ProcessAutoUpdatesResponse>("/api/trash-guides/updates/process-auto", {
+		method: "POST",
+	});
 }
 
 /**
  * Get latest TRaSH Guides version information
  */
 export async function getLatestVersion(): Promise<LatestVersionResponse> {
-	return await apiRequest<LatestVersionResponse>(
-		"/api/trash-guides/updates/version/latest",
-	);
+	return await apiRequest<LatestVersionResponse>("/api/trash-guides/updates/version/latest");
 }
 
 /**
  * Get scheduler status and statistics
  */
 export async function getSchedulerStatus(): Promise<SchedulerStatusResponse> {
-	return await apiRequest<SchedulerStatusResponse>(
-		"/api/trash-guides/updates/scheduler/status",
-	);
+	return await apiRequest<SchedulerStatusResponse>("/api/trash-guides/updates/scheduler/status");
 }
 
 /**
  * Manually trigger an update check
  */
 export async function triggerUpdateCheck(): Promise<TriggerCheckResponse> {
-	return await apiRequest<TriggerCheckResponse>(
-		"/api/trash-guides/updates/scheduler/trigger",
-		{
-			method: "POST",
-		},
-	);
+	return await apiRequest<TriggerCheckResponse>("/api/trash-guides/updates/scheduler/trigger", {
+		method: "POST",
+	});
 }
 
 /**

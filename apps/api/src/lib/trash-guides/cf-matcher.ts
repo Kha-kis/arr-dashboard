@@ -6,8 +6,8 @@
  */
 
 import type { TrashConfigType, TrashCustomFormat } from "@arr/shared";
-import type { PrismaClient } from "../../lib/prisma.js";
 import { dequal as deepEqual } from "dequal";
+import type { PrismaClient } from "../../lib/prisma.js";
 import { createCacheManager } from "./cache-manager.js";
 
 // ============================================================================
@@ -408,12 +408,7 @@ export class CFMatcher {
 		const results: CFMatchResult[] = [];
 
 		for (const instanceCF of instanceCFs) {
-			const result = this.matchSingleCFWithMaps(
-				instanceCF,
-				trashByTrashId,
-				trashByName,
-				scoreSet,
-			);
+			const result = this.matchSingleCFWithMaps(instanceCF, trashByTrashId, trashByName, scoreSet);
 			results.push(result);
 		}
 

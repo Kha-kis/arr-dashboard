@@ -1,33 +1,33 @@
 "use client";
 
-import { useState, lazy, Suspense } from "react";
-import { Inbox, ClipboardList, Users, AlertTriangle, Bell, RefreshCw } from "lucide-react";
-import { toast } from "sonner";
 import type { SeerrRequest } from "@arr/shared";
+import { AlertTriangle, Bell, ClipboardList, Inbox, RefreshCw, Users } from "lucide-react";
+import { lazy, Suspense, useState } from "react";
+import { toast } from "sonner";
+import {
+	PremiumEmptyState,
+	PremiumPageHeader,
+	PremiumPageLoading,
+	type PremiumTab,
+	PremiumTabs,
+} from "../../../components/layout";
 import { Button } from "../../../components/ui";
 import {
-	PremiumPageHeader,
-	PremiumTabs,
-	PremiumPageLoading,
-	PremiumEmptyState,
-	type PremiumTab,
-} from "../../../components/layout";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { useSeerrInstances } from "../hooks/use-seerr-instances";
-import {
-	useSeerrRequestCount,
-	useSeerrStatus,
 	useApproveSeerrRequest,
 	useDeclineSeerrRequest,
 	useDeleteSeerrRequest,
 	useRetrySeerrRequest,
+	useSeerrRequestCount,
+	useSeerrStatus,
 } from "../../../hooks/api/useSeerr";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { useSeerrInstances } from "../hooks/use-seerr-instances";
 import { ApprovalQueueTab } from "./approval-queue-tab";
-import { RequestsHistoryTab } from "./requests-history-tab";
-import { UsersTab } from "./users-tab";
+import { InstanceSelector } from "./instance-selector";
 import { IssuesTab } from "./issues-tab";
 import { NotificationsTab } from "./notifications-tab";
-import { InstanceSelector } from "./instance-selector";
+import { RequestsHistoryTab } from "./requests-history-tab";
+import { UsersTab } from "./users-tab";
 
 const RequestDetailModal = lazy(() =>
 	import("./request-detail-modal").then((m) => ({ default: m.RequestDetailModal })),
@@ -115,7 +115,9 @@ export const RequestsClient = () => {
 								<span>v{seerrStatus.version}</span>
 								{seerrStatus.updateAvailable && (
 									<span className="rounded-md bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 text-[10px] font-semibold text-amber-400">
-										Update Available{seerrStatus.commitsBehind > 0 && ` (${seerrStatus.commitsBehind} commits behind)`}
+										Update Available
+										{seerrStatus.commitsBehind > 0 &&
+											` (${seerrStatus.commitsBehind} commits behind)`}
 									</span>
 								)}
 							</div>
@@ -156,8 +158,18 @@ export const RequestsClient = () => {
 			>
 				{currentInstance && (
 					<>
-						{activeTab === "approval" && <ApprovalQueueTab instanceId={currentInstanceId} onSelectRequest={setSelectedRequest} />}
-						{activeTab === "all" && <RequestsHistoryTab instanceId={currentInstanceId} onSelectRequest={setSelectedRequest} />}
+						{activeTab === "approval" && (
+							<ApprovalQueueTab
+								instanceId={currentInstanceId}
+								onSelectRequest={setSelectedRequest}
+							/>
+						)}
+						{activeTab === "all" && (
+							<RequestsHistoryTab
+								instanceId={currentInstanceId}
+								onSelectRequest={setSelectedRequest}
+							/>
+						)}
 						{activeTab === "users" && <UsersTab instanceId={currentInstanceId} />}
 						{activeTab === "issues" && <IssuesTab instanceId={currentInstanceId} />}
 						{activeTab === "notifications" && <NotificationsTab instanceId={currentInstanceId} />}

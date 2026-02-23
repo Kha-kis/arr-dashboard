@@ -1,14 +1,14 @@
-import { manualImportFetchQuerySchema, manualImportSubmissionSchema } from "@arr/shared";
 import type { ManualImportSubmission } from "@arr/shared";
+import { manualImportFetchQuerySchema, manualImportSubmissionSchema } from "@arr/shared";
+import { LidarrClient, RadarrClient, ReadarrClient, SonarrClient } from "arr-sdk";
 import type { FastifyPluginCallback } from "fastify";
 import { z } from "zod";
-import { SonarrClient, RadarrClient, LidarrClient, ReadarrClient } from "arr-sdk";
 import { requireInstance } from "../lib/arr/instance-helpers.js";
 import {
-	type ManualImportFetchOptions,
 	fetchManualImportCandidatesWithSdk,
-	submitManualImportCommandWithSdk,
+	type ManualImportFetchOptions,
 	setManualImportLogger,
+	submitManualImportCommandWithSdk,
 } from "./manual-import-utils.js";
 
 const manualImportQuerySchema = manualImportFetchQuerySchema.extend({
@@ -19,8 +19,8 @@ const manualImportQuerySchema = manualImportFetchQuerySchema.extend({
 const manualImportRoute: FastifyPluginCallback = (app, _opts, done) => {
 	// Initialize the logger for manual import utilities
 	setManualImportLogger({
-		warn: (msg, ...args) => app.log.warn({ ...args[0] as object }, msg),
-		debug: (msg, ...args) => app.log.debug({ ...args[0] as object }, msg),
+		warn: (msg, ...args) => app.log.warn({ ...(args[0] as object) }, msg),
+		debug: (msg, ...args) => app.log.debug({ ...(args[0] as object) }, msg),
 	});
 
 	app.get("/manual-import", async (request, reply) => {
@@ -41,26 +41,41 @@ const manualImportRoute: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		const client = app.arrClientFactory.create(instance) as
-			SonarrClient | RadarrClient | LidarrClient | ReadarrClient;
+			| SonarrClient
+			| RadarrClient
+			| LidarrClient
+			| ReadarrClient;
 
 		// Validate client type matches service
 		if (query.service === "sonarr" && !(client instanceof SonarrClient)) {
-			request.log.warn({ instanceId: query.instanceId, service: query.service }, "Client type mismatch");
+			request.log.warn(
+				{ instanceId: query.instanceId, service: query.service },
+				"Client type mismatch",
+			);
 			reply.status(400);
 			return { error: "Invalid client type for Sonarr instance" };
 		}
 		if (query.service === "radarr" && !(client instanceof RadarrClient)) {
-			request.log.warn({ instanceId: query.instanceId, service: query.service }, "Client type mismatch");
+			request.log.warn(
+				{ instanceId: query.instanceId, service: query.service },
+				"Client type mismatch",
+			);
 			reply.status(400);
 			return { error: "Invalid client type for Radarr instance" };
 		}
 		if (query.service === "lidarr" && !(client instanceof LidarrClient)) {
-			request.log.warn({ instanceId: query.instanceId, service: query.service }, "Client type mismatch");
+			request.log.warn(
+				{ instanceId: query.instanceId, service: query.service },
+				"Client type mismatch",
+			);
 			reply.status(400);
 			return { error: "Invalid client type for Lidarr instance" };
 		}
 		if (query.service === "readarr" && !(client instanceof ReadarrClient)) {
-			request.log.warn({ instanceId: query.instanceId, service: query.service }, "Client type mismatch");
+			request.log.warn(
+				{ instanceId: query.instanceId, service: query.service },
+				"Client type mismatch",
+			);
 			reply.status(400);
 			return { error: "Invalid client type for Readarr instance" };
 		}
@@ -92,26 +107,41 @@ const manualImportRoute: FastifyPluginCallback = (app, _opts, done) => {
 		}
 
 		const client = app.arrClientFactory.create(instance) as
-			SonarrClient | RadarrClient | LidarrClient | ReadarrClient;
+			| SonarrClient
+			| RadarrClient
+			| LidarrClient
+			| ReadarrClient;
 
 		// Validate client type matches service
 		if (body.service === "sonarr" && !(client instanceof SonarrClient)) {
-			request.log.warn({ instanceId: body.instanceId, service: body.service }, "Client type mismatch");
+			request.log.warn(
+				{ instanceId: body.instanceId, service: body.service },
+				"Client type mismatch",
+			);
 			reply.status(400);
 			return { error: "Invalid client type for Sonarr instance" };
 		}
 		if (body.service === "radarr" && !(client instanceof RadarrClient)) {
-			request.log.warn({ instanceId: body.instanceId, service: body.service }, "Client type mismatch");
+			request.log.warn(
+				{ instanceId: body.instanceId, service: body.service },
+				"Client type mismatch",
+			);
 			reply.status(400);
 			return { error: "Invalid client type for Radarr instance" };
 		}
 		if (body.service === "lidarr" && !(client instanceof LidarrClient)) {
-			request.log.warn({ instanceId: body.instanceId, service: body.service }, "Client type mismatch");
+			request.log.warn(
+				{ instanceId: body.instanceId, service: body.service },
+				"Client type mismatch",
+			);
 			reply.status(400);
 			return { error: "Invalid client type for Lidarr instance" };
 		}
 		if (body.service === "readarr" && !(client instanceof ReadarrClient)) {
-			request.log.warn({ instanceId: body.instanceId, service: body.service }, "Client type mismatch");
+			request.log.warn(
+				{ instanceId: body.instanceId, service: body.service },
+				"Client type mismatch",
+			);
 			reply.status(400);
 			return { error: "Invalid client type for Readarr instance" };
 		}

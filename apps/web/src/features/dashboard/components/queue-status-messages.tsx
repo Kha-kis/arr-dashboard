@@ -5,12 +5,12 @@
  * Features graduated severity styling with smooth transitions
  */
 
-import { useState, useMemo } from "react";
-import { ChevronDown, AlertCircle, AlertTriangle, Info } from "lucide-react";
+import { AlertCircle, AlertTriangle, ChevronDown, Info } from "lucide-react";
+import { useMemo, useState } from "react";
+import { anonymizeStatusMessage, useIncognitoMode } from "../../../lib/incognito";
 import { cn } from "../../../lib/utils";
-import { useIncognitoMode, anonymizeStatusMessage } from "../../../lib/incognito";
 import type { StatusLine } from "../lib/queue-utils";
-import { summarizeLines, type CompactLine } from "../lib/queue-utils";
+import { type CompactLine, summarizeLines } from "../lib/queue-utils";
 
 interface QueueStatusMessagesProps {
 	lines: StatusLine[];
@@ -121,7 +121,12 @@ export const QueueStatusMessages = ({ lines }: QueueStatusMessagesProps) => {
 					animationFillMode: "backwards",
 				}}
 			>
-				<Icon className={cn("mt-0.5 h-3.5 w-3.5 shrink-0 transition-transform duration-300 group-hover:scale-110", style.iconClass)} />
+				<Icon
+					className={cn(
+						"mt-0.5 h-3.5 w-3.5 shrink-0 transition-transform duration-300 group-hover:scale-110",
+						style.iconClass,
+					)}
+				/>
 				<span className="wrap-break-word leading-relaxed">
 					{incognitoMode ? anonymizeStatusMessage(entry.text) : entry.text}
 				</span>
@@ -151,9 +156,7 @@ export const QueueStatusMessages = ({ lines }: QueueStatusMessagesProps) => {
 							)}
 						>
 							<Icon className={cn("h-3.5 w-3.5 shrink-0", style.iconClass)} />
-							<span className="flex-1 leading-relaxed font-medium">
-								{group.pattern}
-							</span>
+							<span className="flex-1 leading-relaxed font-medium">{group.pattern}</span>
 							<span className="rounded-full bg-black/20 px-2 py-0.5 text-[10px] font-medium">
 								{group.items.length} episodes
 							</span>

@@ -28,9 +28,7 @@ const rl = readline.createInterface({
 const question = (prompt: string): Promise<string> =>
 	new Promise((resolve) => rl.question(prompt, resolve));
 
-const validatePassword = (
-	password: string,
-): { valid: boolean; error?: string } => {
+const validatePassword = (password: string): { valid: boolean; error?: string } => {
 	if (password.length < 8) {
 		return { valid: false, error: "Password must be at least 8 characters" };
 	}

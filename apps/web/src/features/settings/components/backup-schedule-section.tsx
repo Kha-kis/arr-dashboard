@@ -1,14 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Clock, CheckCircle2, Loader2 } from "lucide-react";
-import { Button, Input, NativeSelect, SelectOption, toast } from "../../../components/ui";
-import { PremiumSection } from "../../../components/layout";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { useBackupSettings, useUpdateBackupSettings } from "../../../hooks/api/useBackup";
 import type { BackupIntervalType } from "@arr/shared";
+import { CheckCircle2, Clock, Loader2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { PremiumSection } from "../../../components/layout";
+import { Button, Input, NativeSelect, SelectOption, toast } from "../../../components/ui";
+import { useBackupSettings, useUpdateBackupSettings } from "../../../hooks/api/useBackup";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 export const BackupScheduleSection = () => {
 	const { gradient: themeGradient } = useThemeGradient();
@@ -128,7 +128,8 @@ export const BackupScheduleSection = () => {
 							className="bg-card/30 border-border/50"
 						/>
 						<p className="text-xs text-muted-foreground">
-							Keep the {retentionCount} most recent scheduled backup{retentionCount !== 1 ? "s" : ""}
+							Keep the {retentionCount} most recent scheduled backup
+							{retentionCount !== 1 ? "s" : ""}
 						</p>
 					</div>
 				)}
@@ -145,7 +146,10 @@ export const BackupScheduleSection = () => {
 						style={{ accentColor: themeGradient.from }}
 					/>
 					<div>
-						<label htmlFor="includeTrashBackups" className="text-sm font-medium text-foreground cursor-pointer">
+						<label
+							htmlFor="includeTrashBackups"
+							className="text-sm font-medium text-foreground cursor-pointer"
+						>
 							Include TRaSH Guides instance backups
 						</label>
 						<p className="text-xs text-muted-foreground mt-1">

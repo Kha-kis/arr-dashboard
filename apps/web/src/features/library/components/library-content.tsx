@@ -1,9 +1,9 @@
 "use client";
 
-import type { LibraryItem, LibraryEnrichmentItem, ServiceInstanceSummary } from "@arr/shared";
+import type { LibraryEnrichmentItem, LibraryItem, ServiceInstanceSummary } from "@arr/shared";
 import { Library as LibraryIcon } from "lucide-react";
-import { Pagination } from "../../../components/ui";
 import { PremiumEmptyState, PremiumSkeleton } from "../../../components/layout";
+import { Pagination } from "../../../components/ui";
 
 /**
  * Props for LibraryCard component (passthrough)
@@ -136,7 +136,6 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 	isSyncing,
 	enrichmentMap,
 }) => {
-
 	/** Lookup enrichment for a library item by its tmdbId + type */
 	const getEnrichment = (item: LibraryItem) => {
 		if (!enrichmentMap || !item.remoteIds?.tmdbId) return undefined;
@@ -145,7 +144,9 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 	};
 
 	const allItems = [...grouped.movies, ...grouped.series, ...grouped.artists, ...grouped.authors];
-	const typesPresent = [grouped.movies, grouped.series, grouped.artists, grouped.authors].filter(g => g.length > 0).length;
+	const typesPresent = [grouped.movies, grouped.series, grouped.artists, grouped.authors].filter(
+		(g) => g.length > 0,
+	).length;
 	const hasMixedTypes = typesPresent > 1;
 
 	return (
@@ -182,31 +183,47 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 			)}
 
 			{hasMixedTypes ? (
-				<div className="grid gap-4 lg:grid-cols-2">
+				<div className="grid gap-4 md:grid-cols-2">
 					{allItems.map((item) => {
 						const enrichment = getEnrichment(item);
 						return (
-						<LibraryCard
-							key={`${item.instanceId}:${item.id}`}
-							item={item}
-							onToggleMonitor={onToggleMonitor}
-							pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
-							externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
-							onSearchMovie={item.type === "movie" ? onSearchMovie : undefined}
-							movieSearchPending={item.type === "movie" ? pendingMovieSearch === `${item.instanceId}:${item.id}` : undefined}
-							onSearchSeries={item.type === "series" ? onSearchSeries : undefined}
-							seriesSearchPending={item.type === "series" ? pendingSeriesSearch === `${item.instanceId}:${item.id}` : undefined}
-							onViewAlbums={item.type === "artist" ? onViewAlbums : undefined}
-							onSearchArtist={item.service === "lidarr" ? onSearchArtist : undefined}
-							artistSearchPending={item.service === "lidarr" ? pendingArtistSearch === `${item.instanceId}:${item.id}` : undefined}
-							onViewBooks={item.type === "author" ? onViewBooks : undefined}
-							onSearchAuthor={item.service === "readarr" ? onSearchAuthor : undefined}
-							authorSearchPending={item.service === "readarr" ? pendingAuthorSearch === `${item.instanceId}:${item.id}` : undefined}
-							onExpandDetails={onExpandDetails}
-							tmdbRating={enrichment?.voteAverage}
-							openIssueCount={enrichment?.openIssueCount}
-							posterPath={enrichment?.posterPath}
-						/>
+							<LibraryCard
+								key={`${item.instanceId}:${item.id}`}
+								item={item}
+								onToggleMonitor={onToggleMonitor}
+								pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
+								externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
+								onSearchMovie={item.type === "movie" ? onSearchMovie : undefined}
+								movieSearchPending={
+									item.type === "movie"
+										? pendingMovieSearch === `${item.instanceId}:${item.id}`
+										: undefined
+								}
+								onSearchSeries={item.type === "series" ? onSearchSeries : undefined}
+								seriesSearchPending={
+									item.type === "series"
+										? pendingSeriesSearch === `${item.instanceId}:${item.id}`
+										: undefined
+								}
+								onViewAlbums={item.type === "artist" ? onViewAlbums : undefined}
+								onSearchArtist={item.service === "lidarr" ? onSearchArtist : undefined}
+								artistSearchPending={
+									item.service === "lidarr"
+										? pendingArtistSearch === `${item.instanceId}:${item.id}`
+										: undefined
+								}
+								onViewBooks={item.type === "author" ? onViewBooks : undefined}
+								onSearchAuthor={item.service === "readarr" ? onSearchAuthor : undefined}
+								authorSearchPending={
+									item.service === "readarr"
+										? pendingAuthorSearch === `${item.instanceId}:${item.id}`
+										: undefined
+								}
+								onExpandDetails={onExpandDetails}
+								tmdbRating={enrichment?.voteAverage}
+								openIssueCount={enrichment?.openIssueCount}
+								posterPath={enrichment?.posterPath}
+							/>
 						);
 					})}
 				</div>
@@ -217,23 +234,23 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 							<div className="flex items-center justify-between">
 								<h2 className="text-xl font-semibold text-foreground">Movies</h2>
 							</div>
-							<div className="grid gap-4 lg:grid-cols-2">
+							<div className="grid gap-4 md:grid-cols-2">
 								{grouped.movies.map((item) => {
 									const enrichment = getEnrichment(item);
 									return (
-									<LibraryCard
-										key={`${item.instanceId}:${item.id}`}
-										item={item}
-										onToggleMonitor={onToggleMonitor}
-										pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
-										externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
-										onSearchMovie={onSearchMovie}
-										movieSearchPending={pendingMovieSearch === `${item.instanceId}:${item.id}`}
-										onExpandDetails={onExpandDetails}
-										tmdbRating={enrichment?.voteAverage}
-										openIssueCount={enrichment?.openIssueCount}
-										posterPath={enrichment?.posterPath}
-									/>
+										<LibraryCard
+											key={`${item.instanceId}:${item.id}`}
+											item={item}
+											onToggleMonitor={onToggleMonitor}
+											pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
+											externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
+											onSearchMovie={onSearchMovie}
+											movieSearchPending={pendingMovieSearch === `${item.instanceId}:${item.id}`}
+											onExpandDetails={onExpandDetails}
+											tmdbRating={enrichment?.voteAverage}
+											openIssueCount={enrichment?.openIssueCount}
+											posterPath={enrichment?.posterPath}
+										/>
 									);
 								})}
 							</div>
@@ -245,23 +262,23 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 							<div className="flex items-center justify-between">
 								<h2 className="text-xl font-semibold text-foreground">Series</h2>
 							</div>
-							<div className="grid gap-4 lg:grid-cols-2">
+							<div className="grid gap-4 md:grid-cols-2">
 								{grouped.series.map((item) => {
 									const enrichment = getEnrichment(item);
 									return (
-									<LibraryCard
-										key={`${item.instanceId}:${item.id}`}
-										item={item}
-										onToggleMonitor={onToggleMonitor}
-										pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
-										externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
-										onSearchSeries={onSearchSeries}
-										seriesSearchPending={pendingSeriesSearch === `${item.instanceId}:${item.id}`}
-										onExpandDetails={onExpandDetails}
-										tmdbRating={enrichment?.voteAverage}
-										openIssueCount={enrichment?.openIssueCount}
-										posterPath={enrichment?.posterPath}
-									/>
+										<LibraryCard
+											key={`${item.instanceId}:${item.id}`}
+											item={item}
+											onToggleMonitor={onToggleMonitor}
+											pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
+											externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
+											onSearchSeries={onSearchSeries}
+											seriesSearchPending={pendingSeriesSearch === `${item.instanceId}:${item.id}`}
+											onExpandDetails={onExpandDetails}
+											tmdbRating={enrichment?.voteAverage}
+											openIssueCount={enrichment?.openIssueCount}
+											posterPath={enrichment?.posterPath}
+										/>
 									);
 								})}
 							</div>
@@ -273,24 +290,24 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 							<div className="flex items-center justify-between">
 								<h2 className="text-xl font-semibold text-foreground">Artists</h2>
 							</div>
-							<div className="grid gap-4 lg:grid-cols-2">
+							<div className="grid gap-4 md:grid-cols-2">
 								{grouped.artists.map((item) => {
 									const enrichment = getEnrichment(item);
 									return (
-									<LibraryCard
-										key={`${item.instanceId}:${item.id}`}
-										item={item}
-										onToggleMonitor={onToggleMonitor}
-										pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
-										externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
-										onViewAlbums={onViewAlbums}
-										onSearchArtist={onSearchArtist}
-										artistSearchPending={pendingArtistSearch === `${item.instanceId}:${item.id}`}
-										onExpandDetails={onExpandDetails}
-										tmdbRating={enrichment?.voteAverage}
-										openIssueCount={enrichment?.openIssueCount}
-										posterPath={enrichment?.posterPath}
-									/>
+										<LibraryCard
+											key={`${item.instanceId}:${item.id}`}
+											item={item}
+											onToggleMonitor={onToggleMonitor}
+											pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
+											externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
+											onViewAlbums={onViewAlbums}
+											onSearchArtist={onSearchArtist}
+											artistSearchPending={pendingArtistSearch === `${item.instanceId}:${item.id}`}
+											onExpandDetails={onExpandDetails}
+											tmdbRating={enrichment?.voteAverage}
+											openIssueCount={enrichment?.openIssueCount}
+											posterPath={enrichment?.posterPath}
+										/>
 									);
 								})}
 							</div>
@@ -302,24 +319,24 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 							<div className="flex items-center justify-between">
 								<h2 className="text-xl font-semibold text-foreground">Authors</h2>
 							</div>
-							<div className="grid gap-4 lg:grid-cols-2">
+							<div className="grid gap-4 md:grid-cols-2">
 								{grouped.authors.map((item) => {
 									const enrichment = getEnrichment(item);
 									return (
-									<LibraryCard
-										key={`${item.instanceId}:${item.id}`}
-										item={item}
-										onToggleMonitor={onToggleMonitor}
-										pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
-										externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
-										onViewBooks={onViewBooks}
-										onSearchAuthor={onSearchAuthor}
-										authorSearchPending={pendingAuthorSearch === `${item.instanceId}:${item.id}`}
-										onExpandDetails={onExpandDetails}
-										tmdbRating={enrichment?.voteAverage}
-										openIssueCount={enrichment?.openIssueCount}
-										posterPath={enrichment?.posterPath}
-									/>
+										<LibraryCard
+											key={`${item.instanceId}:${item.id}`}
+											item={item}
+											onToggleMonitor={onToggleMonitor}
+											pending={pendingKey === `${item.service}:${item.id}` && isMonitorPending}
+											externalLink={buildLibraryExternalLink(item, serviceLookup[item.instanceId])}
+											onViewBooks={onViewBooks}
+											onSearchAuthor={onSearchAuthor}
+											authorSearchPending={pendingAuthorSearch === `${item.instanceId}:${item.id}`}
+											onExpandDetails={onExpandDetails}
+											tmdbRating={enrichment?.voteAverage}
+											openIssueCount={enrichment?.openIssueCount}
+											posterPath={enrichment?.posterPath}
+										/>
 									);
 								})}
 							</div>
@@ -343,7 +360,9 @@ export const LibraryContent: React.FC<LibraryContentProps> = ({
 				<PremiumEmptyState
 					icon={LibraryIcon}
 					title="Failed to load library"
-					description={error?.message ?? "An error occurred while loading your library. Please try again."}
+					description={
+						error?.message ?? "An error occurred while loading your library. Please try again."
+					}
 				/>
 			) : null}
 		</>

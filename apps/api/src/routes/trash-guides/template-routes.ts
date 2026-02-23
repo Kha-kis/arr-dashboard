@@ -7,10 +7,10 @@
 import type { TemplateConfig } from "@arr/shared";
 import type { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
-import { createTemplateService } from "../../lib/trash-guides/template-service.js";
-import { parseInstanceOverrides } from "../../lib/trash-guides/utils.js";
 import { requireInstance } from "../../lib/arr/instance-helpers.js";
 import { requireTemplate } from "../../lib/trash-guides/template-helpers.js";
+import { createTemplateService } from "../../lib/trash-guides/template-service.js";
+import { parseInstanceOverrides } from "../../lib/trash-guides/utils.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
 // ============================================================================

@@ -1,28 +1,22 @@
 "use client";
 
-import { useMemo, useState } from "react";
 import type { ProwlarrIndexerDetails } from "@arr/shared";
+import { AlertCircle, CheckCircle2, RefreshCw, Search, XCircle } from "lucide-react";
+import { useMemo, useState } from "react";
+import { PremiumSkeleton } from "../../../components/layout/premium-components";
+import { Pagination } from "../../../components/ui";
 import {
 	useSearchIndexersQuery,
 	useTestIndexerMutation,
 	useUpdateIndexerMutation,
 } from "../../../hooks/api/useSearch";
-import { Pagination } from "../../../components/ui";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 import { computeStats } from "../lib/indexers-utils";
-import { IndexerStatsGrid } from "./indexer-stats-grid";
 import { EmptyIndexersCard } from "./empty-indexers-card";
 import { IndexerInstanceCard } from "./indexer-instance-card";
-import {
-	RefreshCw,
-	AlertCircle,
-	CheckCircle2,
-	XCircle,
-	Search,
-} from "lucide-react";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import { PremiumSkeleton } from "../../../components/layout/premium-components";
-import { getErrorMessage } from "../../../lib/error-utils";
+import { IndexerStatsGrid } from "./indexer-stats-grid";
 
 /**
  * Premium Indexers Client
@@ -59,14 +53,14 @@ export const IndexersClient = () => {
 	}, [aggregated, page, pageSize]);
 
 	const paginatedInstances = useMemo(() => {
-		const instanceMap = new Map<string, typeof instances[0]>();
+		const instanceMap = new Map<string, (typeof instances)[0]>();
 
 		for (const indexer of paginatedAggregated) {
 			const existingInstance = instanceMap.get(indexer.instanceId);
 			if (existingInstance) {
 				existingInstance.data.push(indexer);
 			} else {
-				const originalInstance = instances.find(inst => inst.instanceId === indexer.instanceId);
+				const originalInstance = instances.find((inst) => inst.instanceId === indexer.instanceId);
 				if (originalInstance) {
 					instanceMap.set(indexer.instanceId, {
 						instanceId: originalInstance.instanceId,
@@ -135,8 +129,16 @@ export const IndexersClient = () => {
 				{/* Header Skeleton */}
 				<div className="space-y-4">
 					<PremiumSkeleton variant="line" className="h-4 w-32" />
-					<PremiumSkeleton variant="line" className="h-10 w-48" style={{ animationDelay: "50ms" }} />
-					<PremiumSkeleton variant="line" className="h-4 w-96" style={{ animationDelay: "100ms" }} />
+					<PremiumSkeleton
+						variant="line"
+						className="h-10 w-48"
+						style={{ animationDelay: "50ms" }}
+					/>
+					<PremiumSkeleton
+						variant="line"
+						className="h-4 w-96"
+						style={{ animationDelay: "100ms" }}
+					/>
 				</div>
 
 				{/* Stats Grid Skeleton */}
@@ -194,8 +196,8 @@ export const IndexersClient = () => {
 							Indexers
 						</h1>
 						<p className="mt-2 text-sm text-muted-foreground max-w-xl">
-							Review indexers from your configured Prowlarr instances, inspect their settings, and run
-							connectivity tests.
+							Review indexers from your configured Prowlarr instances, inspect their settings, and
+							run connectivity tests.
 						</p>
 					</div>
 				</div>
@@ -246,20 +248,30 @@ export const IndexersClient = () => {
 				<div
 					className="rounded-2xl border p-5 backdrop-blur-xs animate-in fade-in slide-in-from-top-2 duration-300"
 					style={{
-						backgroundColor: feedback.type === "success" ? SEMANTIC_COLORS.success.bg : SEMANTIC_COLORS.error.bg,
-						borderColor: feedback.type === "success" ? SEMANTIC_COLORS.success.border : SEMANTIC_COLORS.error.border,
+						backgroundColor:
+							feedback.type === "success" ? SEMANTIC_COLORS.success.bg : SEMANTIC_COLORS.error.bg,
+						borderColor:
+							feedback.type === "success"
+								? SEMANTIC_COLORS.success.border
+								: SEMANTIC_COLORS.error.border,
 					}}
 				>
 					<div className="flex items-center gap-3">
 						{feedback.type === "success" ? (
-							<CheckCircle2 className="h-5 w-5 shrink-0" style={{ color: SEMANTIC_COLORS.success.from }} />
+							<CheckCircle2
+								className="h-5 w-5 shrink-0"
+								style={{ color: SEMANTIC_COLORS.success.from }}
+							/>
 						) : (
 							<XCircle className="h-5 w-5 shrink-0" style={{ color: SEMANTIC_COLORS.error.from }} />
 						)}
 						<p
 							className="font-medium"
 							style={{
-								color: feedback.type === "success" ? SEMANTIC_COLORS.success.text : SEMANTIC_COLORS.error.text,
+								color:
+									feedback.type === "success"
+										? SEMANTIC_COLORS.success.text
+										: SEMANTIC_COLORS.error.text,
 							}}
 						>
 							{feedback.message}

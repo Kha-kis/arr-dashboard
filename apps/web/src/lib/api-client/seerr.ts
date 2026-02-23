@@ -5,6 +5,7 @@
  */
 
 import type {
+	LibraryEnrichmentResponse,
 	SeerrCreateRequestPayload,
 	SeerrCreateRequestResponse,
 	SeerrDiscoverResponse,
@@ -25,7 +26,6 @@ import type {
 	SeerrUser,
 	SeerrUserParams,
 	SeerrUserUpdateData,
-	LibraryEnrichmentResponse,
 } from "@arr/shared";
 import { apiRequest } from "./base";
 
@@ -97,7 +97,7 @@ export async function fetchSeerrUserQuota(
 	return apiRequest(`/api/seerr/users/${instanceId}/${seerrUserId}/quota`);
 }
 
-export { type SeerrUserUpdateData as UpdateSeerrUserPayload } from "@arr/shared";
+export type { SeerrUserUpdateData as UpdateSeerrUserPayload } from "@arr/shared";
 
 export async function updateSeerrUser(
 	instanceId: string,

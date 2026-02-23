@@ -1,35 +1,27 @@
 "use client";
 
+import type { BackupFileInfo } from "@arr/shared";
+import { AlertCircle, Archive, Download, FileText, Loader2, Trash2, Upload } from "lucide-react";
 import { useState } from "react";
 import {
-	Download,
-	Upload,
-	Trash2,
-	FileText,
-	Archive,
-	Loader2,
-	AlertCircle,
-} from "lucide-react";
-import { Button, toast } from "../../../components/ui";
-import {
-	PremiumSection,
-	PremiumEmptyState,
 	GlassmorphicCard,
+	PremiumEmptyState,
+	PremiumSection,
 	PremiumTable,
 	PremiumTableHeader,
 	PremiumTableRow,
 	StatusBadge,
 } from "../../../components/layout";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { Button, toast } from "../../../components/ui";
 import {
 	useBackups,
 	useDeleteBackup,
-	useRestoreBackupFromFile,
 	useDownloadBackup,
+	useRestoreBackupFromFile,
 } from "../../../hooks/api/useBackup";
-import type { BackupFileInfo } from "@arr/shared";
-import { formatBytes } from "../../../lib/format-utils";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { formatBytes } from "../../../lib/format-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
 
 interface BackupListSectionProps {
 	onRestoreComplete: (willRestart: boolean) => void;
@@ -41,15 +33,21 @@ const formatDate = (dateString: string) => {
 
 const getTypeStatus = (type: string): "success" | "info" | "warning" | "default" => {
 	switch (type) {
-		case "manual": return "info";
-		case "scheduled": return "success";
-		case "update": return "warning";
-		default: return "default";
+		case "manual":
+			return "info";
+		case "scheduled":
+			return "success";
+		case "update":
+			return "warning";
+		default:
+			return "default";
 	}
 };
 
 export const BackupListSection = ({ onRestoreComplete }: BackupListSectionProps) => {
-	const [selectedBackupForRestore, setSelectedBackupForRestore] = useState<BackupFileInfo | null>(null);
+	const [selectedBackupForRestore, setSelectedBackupForRestore] = useState<BackupFileInfo | null>(
+		null,
+	);
 	const [showBackupRestoreModal, setShowBackupRestoreModal] = useState(false);
 
 	const { data: backupsData, isLoading: backupsLoading, error: backupsError } = useBackups();
@@ -69,7 +67,11 @@ export const BackupListSection = ({ onRestoreComplete }: BackupListSectionProps)
 	};
 
 	const handleDeleteBackup = async (backup: BackupFileInfo) => {
-		if (!confirm(`Are you sure you want to delete this backup?\n\n${backup.filename}\n\nThis action cannot be undone.`)) {
+		if (
+			!confirm(
+				`Are you sure you want to delete this backup?\n\n${backup.filename}\n\nThis action cannot be undone.`,
+			)
+		) {
 			return;
 		}
 		try {
@@ -99,7 +101,9 @@ export const BackupListSection = ({ onRestoreComplete }: BackupListSectionProps)
 			if (willAutoRestart) {
 				onRestoreComplete(true);
 			} else {
-				toast.success(`Backup restored from ${new Date(response.metadata.timestamp).toLocaleString()}`);
+				toast.success(
+					`Backup restored from ${new Date(response.metadata.timestamp).toLocaleString()}`,
+				);
 				onRestoreComplete(false);
 			}
 		} catch (error: unknown) {
@@ -141,11 +145,21 @@ export const BackupListSection = ({ onRestoreComplete }: BackupListSectionProps)
 					<PremiumTable>
 						<PremiumTableHeader>
 							<tr>
-								<th className="py-3 px-4 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Type</th>
-								<th className="py-3 px-4 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Filename</th>
-								<th className="py-3 px-4 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Date</th>
-								<th className="py-3 px-4 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">Size</th>
-								<th className="py-3 px-4 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">Actions</th>
+								<th className="py-3 px-4 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+									Type
+								</th>
+								<th className="py-3 px-4 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+									Filename
+								</th>
+								<th className="py-3 px-4 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+									Date
+								</th>
+								<th className="py-3 px-4 text-left text-xs font-medium uppercase tracking-wider text-muted-foreground">
+									Size
+								</th>
+								<th className="py-3 px-4 text-right text-xs font-medium uppercase tracking-wider text-muted-foreground">
+									Actions
+								</th>
 							</tr>
 						</PremiumTableHeader>
 						<tbody>
@@ -160,10 +174,14 @@ export const BackupListSection = ({ onRestoreComplete }: BackupListSectionProps)
 										<span className="text-sm text-muted-foreground">{backup.filename}</span>
 									</td>
 									<td className="py-3 px-4">
-										<span className="text-sm text-muted-foreground">{formatDate(backup.timestamp)}</span>
+										<span className="text-sm text-muted-foreground">
+											{formatDate(backup.timestamp)}
+										</span>
 									</td>
 									<td className="py-3 px-4">
-										<span className="text-sm text-muted-foreground">{formatBytes(backup.size)}</span>
+										<span className="text-sm text-muted-foreground">
+											{formatBytes(backup.size)}
+										</span>
 									</td>
 									<td className="py-3 px-4">
 										<div className="flex items-center justify-end gap-2">
@@ -214,7 +232,9 @@ export const BackupListSection = ({ onRestoreComplete }: BackupListSectionProps)
 				>
 					<GlassmorphicCard padding="lg" className="w-full max-w-md m-4">
 						<div className="space-y-4">
-							<h3 id="restore-backup-title" className="text-lg font-semibold text-foreground">Restore Backup</h3>
+							<h3 id="restore-backup-title" className="text-lg font-semibold text-foreground">
+								Restore Backup
+							</h3>
 
 							<div
 								className="p-3 rounded-lg text-sm"
@@ -226,7 +246,8 @@ export const BackupListSection = ({ onRestoreComplete }: BackupListSectionProps)
 							>
 								<p className="font-medium mb-1">Warning: Destructive Operation</p>
 								<p className="text-xs">
-									Restoring this backup will replace all current data. Any changes made after this backup was created will be lost.
+									Restoring this backup will replace all current data. Any changes made after this
+									backup was created will be lost.
 								</p>
 							</div>
 

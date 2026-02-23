@@ -3,17 +3,17 @@
  */
 
 import {
-	type SeerrRequestStatus,
-	type SeerrMediaStatus,
-	type SeerrIssueType,
-	type SeerrIssueStatus,
-	SEERR_REQUEST_STATUS,
-	SEERR_REQUEST_STATUS_LABEL,
-	SEERR_MEDIA_STATUS,
-	SEERR_MEDIA_STATUS_LABEL,
-	SEERR_ISSUE_TYPE_LABEL,
 	SEERR_ISSUE_STATUS,
 	SEERR_ISSUE_STATUS_LABEL,
+	SEERR_ISSUE_TYPE_LABEL,
+	SEERR_MEDIA_STATUS,
+	SEERR_MEDIA_STATUS_LABEL,
+	SEERR_REQUEST_STATUS,
+	SEERR_REQUEST_STATUS_LABEL,
+	type SeerrIssueStatus,
+	type SeerrIssueType,
+	type SeerrMediaStatus,
+	type SeerrRequestStatus,
 } from "@arr/shared";
 
 // ============================================================================

@@ -6,9 +6,9 @@
  */
 
 import { HelpCircle } from "lucide-react";
-import { SEMANTIC_COLORS } from "@/lib/theme-gradients";
-import { useThemeGradient } from "@/hooks/useThemeGradient";
 import { Switch } from "@/components/ui";
+import { useThemeGradient } from "@/hooks/useThemeGradient";
+import { SEMANTIC_COLORS } from "@/lib/theme-gradients";
 
 // ============================================================================
 // Tooltip

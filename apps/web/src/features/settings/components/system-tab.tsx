@@ -1,34 +1,30 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-	RefreshCw,
 	AlertTriangle,
-	Info,
-	Database,
-	Server,
+	ChevronDown,
 	Clock,
 	Cpu,
-	Network,
-	Loader2,
-	Save,
-	ChevronDown,
+	Database,
 	Globe,
+	Info,
+	Loader2,
+	Network,
+	RefreshCw,
+	Save,
+	Server,
 } from "lucide-react";
-import { apiRequest } from "../../../lib/api-client/base";
-import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
-import { useThemeGradient } from "../../../hooks/useThemeGradient";
-import {
-	PremiumSection,
-	GlassmorphicCard,
-	PremiumSkeleton,
-} from "../../../components/layout";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
+import { GlassmorphicCard, PremiumSection, PremiumSkeleton } from "../../../components/layout";
 import { Button } from "../../../components/ui/button";
 import { Input } from "../../../components/ui/input";
-import { cn } from "../../../lib/utils";
+import { useThemeGradient } from "../../../hooks/useThemeGradient";
+import { apiRequest } from "../../../lib/api-client/base";
 import { getErrorMessage } from "../../../lib/error-utils";
+import { SEMANTIC_COLORS } from "../../../lib/theme-gradients";
+import { cn } from "../../../lib/utils";
 
 interface SystemSettings {
 	apiPort: number;
@@ -135,16 +131,10 @@ function SystemInfoCard({ icon, label, value, subtitle, animationDelay = 0 }: Sy
 		>
 			{icon}
 			<div className="min-w-0 flex-1">
-				<p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-					{label}
-				</p>
-				<p className="text-sm font-semibold text-foreground mt-0.5 truncate">
-					{value}
-				</p>
+				<p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+				<p className="text-sm font-semibold text-foreground mt-0.5 truncate">{value}</p>
 				{subtitle && (
-					<p className="text-xs text-muted-foreground mt-0.5 font-mono truncate">
-						{subtitle}
-					</p>
+					<p className="text-xs text-muted-foreground mt-0.5 font-mono truncate">{subtitle}</p>
 				)}
 			</div>
 		</div>
@@ -216,7 +206,7 @@ export function SystemTab() {
 		newApiPort: number,
 		newWebPort: number,
 		newListenAddress: string,
-		newExternalUrl: string
+		newExternalUrl: string,
 	) => {
 		const originalApiPort = settings?.data?.apiPort ?? 3001;
 		const originalWebPort = settings?.data?.webPort ?? 3000;
@@ -225,9 +215,9 @@ export function SystemTab() {
 
 		setHasChanges(
 			newApiPort !== originalApiPort ||
-			newWebPort !== originalWebPort ||
-			newListenAddress !== originalListenAddress ||
-			newExternalUrl !== originalExternalUrl
+				newWebPort !== originalWebPort ||
+				newListenAddress !== originalListenAddress ||
+				newExternalUrl !== originalExternalUrl,
 		);
 	};
 
@@ -289,7 +279,11 @@ export function SystemTab() {
 	};
 
 	const handleRestart = () => {
-		if (confirm("Are you sure you want to restart the application? This will temporarily interrupt service.")) {
+		if (
+			confirm(
+				"Are you sure you want to restart the application? This will temporarily interrupt service.",
+			)
+		) {
 			restartMutation.mutate();
 		}
 	};
@@ -412,9 +406,7 @@ export function SystemTab() {
 						<AlertTriangle className="h-5 w-5" style={{ color: SEMANTIC_COLORS.warning.from }} />
 					</div>
 					<div className="flex-1 min-w-0">
-						<p className="font-semibold text-foreground">
-							Restart Required
-						</p>
+						<p className="font-semibold text-foreground">Restart Required</p>
 						<p className="text-sm text-muted-foreground mt-0.5">
 							Changes to port or listen address settings require a container restart to take effect.
 						</p>
@@ -510,11 +502,12 @@ export function SystemTab() {
 								<Info className="h-5 w-5" style={{ color: themeGradient.from }} />
 							</div>
 							<div className="space-y-3 text-sm flex-1">
-								<p className="font-semibold text-foreground">
-									How port configuration works
-								</p>
+								<p className="font-semibold text-foreground">How port configuration works</p>
 								<ul className="text-muted-foreground space-y-1 list-disc list-inside">
-									<li>Change ports here and <strong className="text-foreground">restart the container</strong> to apply</li>
+									<li>
+										Change ports here and{" "}
+										<strong className="text-foreground">restart the container</strong> to apply
+									</li>
 									<li>Environment variables (API_PORT, PORT) override these settings</li>
 									<li>Priority: Environment variable → Database → Default</li>
 								</ul>
@@ -527,10 +520,7 @@ export function SystemTab() {
 									style={{ color: themeGradient.from }}
 								>
 									<ChevronDown
-										className={cn(
-											"h-4 w-4 transition-transform",
-											isDockerInfoOpen && "rotate-180"
-										)}
+										className={cn("h-4 w-4 transition-transform", isDockerInfoOpen && "rotate-180")}
 									/>
 									Docker port mapping info
 								</button>
@@ -538,7 +528,8 @@ export function SystemTab() {
 								{isDockerInfoOpen && (
 									<div className="space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
 										<p className="text-muted-foreground">
-											These are <em>internal</em> container ports (default: 3000). To access on a different host port:
+											These are <em>internal</em> container ports (default: 3000). To access on a
+											different host port:
 										</p>
 										<pre
 											className="text-xs rounded-lg p-3 overflow-x-auto font-mono"
@@ -547,7 +538,7 @@ export function SystemTab() {
 												border: `1px solid ${themeGradient.from}20`,
 											}}
 										>
-{`# Default (access on port 3000)
+											{`# Default (access on port 3000)
 -p 3000:3000
 
 # Custom host port (access on port 8080)
@@ -595,7 +586,7 @@ ports:
 											"border",
 											isSelected
 												? "text-foreground border-transparent"
-												: "text-muted-foreground border-border/50 bg-card/30 hover:border-border hover:text-foreground"
+												: "text-muted-foreground border-border/50 bg-card/30 hover:border-border hover:text-foreground",
 										)}
 										style={
 											isSelected
@@ -655,23 +646,29 @@ ports:
 									border: `1px solid ${SEMANTIC_COLORS.warning.from}30`,
 								}}
 							>
-								<AlertTriangle className="h-5 w-5" style={{ color: SEMANTIC_COLORS.warning.from }} />
+								<AlertTriangle
+									className="h-5 w-5"
+									style={{ color: SEMANTIC_COLORS.warning.from }}
+								/>
 							</div>
 							<div className="space-y-2 text-sm">
-								<p className="font-semibold text-foreground">
-									Important for Docker users
-								</p>
+								<p className="font-semibold text-foreground">Important for Docker users</p>
 								<ul className="text-muted-foreground space-y-1 list-disc list-inside">
 									<li>
-										<code className="text-xs px-1.5 py-0.5 bg-card/50 rounded font-mono">0.0.0.0</code> is{" "}
-										<strong className="text-foreground">required</strong> for Docker containers
+										<code className="text-xs px-1.5 py-0.5 bg-card/50 rounded font-mono">
+											0.0.0.0
+										</code>{" "}
+										is <strong className="text-foreground">required</strong> for Docker containers
 									</li>
 									<li>
-										<code className="text-xs px-1.5 py-0.5 bg-card/50 rounded font-mono">127.0.0.1</code>{" "}
+										<code className="text-xs px-1.5 py-0.5 bg-card/50 rounded font-mono">
+											127.0.0.1
+										</code>{" "}
 										restricts access to localhost only
 									</li>
 									<li>
-										Changing this requires a <strong className="text-foreground">container restart</strong>
+										Changing this requires a{" "}
+										<strong className="text-foreground">container restart</strong>
 									</li>
 								</ul>
 							</div>
@@ -703,7 +700,8 @@ ports:
 							className="bg-card/30 border-border/50"
 						/>
 						<p className="text-xs text-muted-foreground">
-							Leave empty to auto-detect from browser. Set this if you&apos;re behind a reverse proxy.
+							Leave empty to auto-detect from browser. Set this if you&apos;re behind a reverse
+							proxy.
 						</p>
 					</div>
 
@@ -719,9 +717,7 @@ ports:
 								<Info className="h-5 w-5" style={{ color: themeGradient.from }} />
 							</div>
 							<div className="space-y-2 text-sm">
-								<p className="font-semibold text-foreground">
-									When to set this
-								</p>
+								<p className="font-semibold text-foreground">When to set this</p>
 								<ul className="text-muted-foreground space-y-1 list-disc list-inside">
 									<li>Behind a reverse proxy (Nginx, Traefik, Caddy)</li>
 									<li>Using a custom domain name</li>
@@ -747,9 +743,7 @@ ports:
 						background: hasChanges
 							? `linear-gradient(135deg, ${themeGradient.from}, ${themeGradient.to})`
 							: undefined,
-						boxShadow: hasChanges
-							? `0 4px 12px -4px ${themeGradient.glow}`
-							: undefined,
+						boxShadow: hasChanges ? `0 4px 12px -4px ${themeGradient.glow}` : undefined,
 					}}
 				>
 					{updateMutation.isPending ? (

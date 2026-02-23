@@ -12,184 +12,169 @@
 // Core Components (shadcn/ui)
 // ========================================
 
+export { Avatar, AvatarFallback, AvatarImage } from "./avatar";
+export { Badge, badgeVariants } from "./badge";
 export { Button, buttonVariants } from "./button";
 export {
 	Card,
-	CardHeader,
-	CardFooter,
-	CardTitle,
-	CardDescription,
 	CardContent,
+	CardDescription,
+	CardFooter,
+	CardHeader,
+	CardTitle,
 } from "./card";
-export { Input } from "./input";
-export { Textarea } from "./textarea";
-export { Label } from "./label";
-export { Badge, badgeVariants } from "./badge";
 export { Checkbox } from "./checkbox";
-export { Switch } from "./switch";
-
+export { Input } from "./input";
+export { Label } from "./label";
+// Native HTML Select (simple, form-friendly)
+export { NativeSelect, SelectOption } from "./native-select";
+export { Progress } from "./progress";
+export { RadioGroup, RadioGroupItem } from "./radio-group";
 // Radix-based Select (complex dropdown with search, groups, etc.)
 export {
 	Select,
-	SelectGroup,
-	SelectValue,
-	SelectTrigger,
 	SelectContent,
-	SelectLabel,
+	SelectGroup,
 	SelectItem,
-	SelectSeparator,
-	SelectScrollUpButton,
+	SelectLabel,
 	SelectScrollDownButton,
+	SelectScrollUpButton,
+	SelectSeparator,
+	SelectTrigger,
+	SelectValue,
 } from "./select";
-
-// Native HTML Select (simple, form-friendly)
-export { NativeSelect, SelectOption } from "./native-select";
-
-export { RadioGroup, RadioGroupItem } from "./radio-group";
 export { Separator } from "./separator";
-export { Progress } from "./progress";
-export { Avatar, AvatarImage, AvatarFallback } from "./avatar";
+export { Switch } from "./switch";
+export { Textarea } from "./textarea";
 
 // ========================================
 // Layout Components (shadcn/ui)
 // ========================================
 
 export {
+	Accordion,
+	AccordionContent,
+	AccordionItem,
+	AccordionTrigger,
+} from "./accordion";
+export {
 	Dialog,
-	DialogPortal,
-	DialogOverlay,
-	DialogTrigger,
 	DialogClose,
 	DialogContent,
-	DialogHeader,
-	DialogFooter,
-	DialogTitle,
 	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogOverlay,
+	DialogPortal,
+	DialogTitle,
+	DialogTrigger,
 } from "./dialog";
-
 // Legacy Dialog for backward compatibility (supports size prop)
 export {
 	LegacyDialog,
+	LegacyDialogClose,
+	LegacyDialogContent,
+	LegacyDialogDescription,
+	LegacyDialogFooter,
 	LegacyDialogHeader,
 	LegacyDialogTitle,
-	LegacyDialogDescription,
-	LegacyDialogContent,
-	LegacyDialogFooter,
-	LegacyDialogClose,
 } from "./legacy-dialog";
 
+export { Popover, PopoverContent, PopoverTrigger } from "./popover";
+export { ScrollArea, ScrollBar } from "./scroll-area";
 export {
 	Sheet,
-	SheetPortal,
-	SheetOverlay,
-	SheetTrigger,
 	SheetClose,
 	SheetContent,
-	SheetHeader,
-	SheetFooter,
-	SheetTitle,
 	SheetDescription,
+	SheetFooter,
+	SheetHeader,
+	SheetOverlay,
+	SheetPortal,
+	SheetTitle,
+	SheetTrigger,
 } from "./sheet";
-
-export { Popover, PopoverTrigger, PopoverContent } from "./popover";
-
+export { Tabs, TabsContent, TabsList, TabsTrigger } from "./tabs";
 export {
 	Tooltip,
-	TooltipTrigger,
 	TooltipContent,
 	TooltipProvider,
+	TooltipTrigger,
 } from "./tooltip";
-
-export { ScrollArea, ScrollBar } from "./scroll-area";
-
-export {
-	Accordion,
-	AccordionItem,
-	AccordionTrigger,
-	AccordionContent,
-} from "./accordion";
-
-export { Tabs, TabsList, TabsTrigger, TabsContent } from "./tabs";
 
 // ========================================
 // Data Display (shadcn/ui)
 // ========================================
 
 export {
-	Table,
-	TableHeader,
-	TableBody,
-	TableFooter,
-	TableHead,
-	TableRow,
-	TableCell,
-	TableCaption,
-} from "./table";
-
-export {
 	DropdownMenu,
-	DropdownMenuTrigger,
-	DropdownMenuContent,
-	DropdownMenuItem,
 	DropdownMenuCheckboxItem,
-	DropdownMenuRadioItem,
+	DropdownMenuContent,
+	DropdownMenuGroup,
+	DropdownMenuItem,
 	DropdownMenuLabel,
+	DropdownMenuPortal,
+	DropdownMenuRadioGroup,
+	DropdownMenuRadioItem,
 	DropdownMenuSeparator,
 	DropdownMenuShortcut,
-	DropdownMenuGroup,
-	DropdownMenuPortal,
 	DropdownMenuSub,
 	DropdownMenuSubContent,
 	DropdownMenuSubTrigger,
-	DropdownMenuRadioGroup,
+	DropdownMenuTrigger,
 } from "./dropdown-menu";
-
 // Legacy DropdownMenu for backward compatibility (trigger prop pattern)
 export {
 	LegacyDropdownMenu,
-	LegacyDropdownMenuItem,
 	LegacyDropdownMenuDivider,
+	LegacyDropdownMenuItem,
 } from "./legacy-dropdown-menu";
+export {
+	Table,
+	TableBody,
+	TableCaption,
+	TableCell,
+	TableFooter,
+	TableHead,
+	TableHeader,
+	TableRow,
+} from "./table";
 
 // ========================================
 // Feedback (shadcn/ui + custom)
 // ========================================
 
-export { Alert, AlertTitle, AlertDescription } from "./alert";
-export { Skeleton, SkeletonText, SkeletonCard, SkeletonAvatar } from "./skeleton";
+export { Alert, AlertDescription, AlertTitle } from "./alert";
+export { Skeleton, SkeletonAvatar, SkeletonCard, SkeletonText } from "./skeleton";
 
 // ========================================
 // Forms (shadcn/ui)
 // ========================================
 
 export {
-	useFormField,
 	Form,
-	FormItem,
-	FormLabel,
 	FormControl,
 	FormDescription,
-	FormMessage,
 	FormField,
+	FormItem,
+	FormLabel,
+	FormMessage,
+	useFormField,
 } from "./form";
-
-// Simple form field for non-react-hook-form usage
-export { SimpleFormField } from "./simple-form-field";
-
 // Password input with show/hide toggle
 export { PasswordInput } from "./password-input";
+// Simple form field for non-react-hook-form usage
+export { SimpleFormField } from "./simple-form-field";
 
 // ========================================
 // Custom Components (arr-dashboard specific)
 // ========================================
 
-// Keep custom toast using sonner
-export { Toaster, toast } from "./toast";
-
-// Typography
-export { Typography } from "./typography";
-
 // Custom components without shadcn equivalents
 export { EmptyState, type EmptyStateProps } from "./empty-state";
 export { Pagination, type PaginationProps } from "./pagination";
 export { StatCard } from "./stat-card";
+// Keep custom toast using sonner
+export { Toaster, toast } from "./toast";
+// Typography
+export { Typography } from "./typography";

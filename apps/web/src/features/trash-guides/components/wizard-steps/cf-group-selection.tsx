@@ -1,15 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Alert, AlertDescription } from "../../../../components/ui";
+import { ChevronDown, ChevronLeft, ChevronRight, Info, Star } from "lucide-react";
+import { useEffect, useState } from "react";
 import { PremiumSkeleton } from "../../../../components/layout/premium-components";
-import { ChevronRight, ChevronLeft, ChevronDown, Info, Star } from "lucide-react";
+import { Alert, AlertDescription } from "../../../../components/ui";
 import { useThemeGradient } from "../../../../hooks/useThemeGradient";
-import { SanitizedHtml } from "../sanitized-html";
-import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { apiRequest } from "../../../../lib/api-client/base";
+import type { QualityProfileSummary } from "../../../../lib/api-client/trash-guides";
 import { getErrorMessage } from "../../../../lib/error-utils";
+import { SanitizedHtml } from "../sanitized-html";
 
 interface CFGroupSelectionProps {
 	serviceType: "RADARR" | "SONARR";
@@ -135,15 +135,28 @@ export const CFGroupSelection = ({
 			>
 				<h4 className="font-medium text-foreground mb-2">🎯 TRaSH Guides Recommendations</h4>
 				<p className="text-sm text-foreground/70 mb-3">
-					TRaSH Guides has pre-configured this quality profile with specific Custom Format Groups. <strong className="text-foreground">Groups marked as &quot;Recommended&quot; are suggested by TRaSH for optimal results.</strong>
+					TRaSH Guides has pre-configured this quality profile with specific Custom Format Groups.{" "}
+					<strong className="text-foreground">
+						Groups marked as &quot;Recommended&quot; are suggested by TRaSH for optimal results.
+					</strong>
 				</p>
 				<div className="space-y-2 text-sm text-foreground/70 ml-4 mb-3">
-					<div>• <strong className="text-foreground">✅ Enabled CFs</strong> - Will be automatically enabled based on TRaSH recommendations</div>
-					<div>• <strong className="text-foreground">⚪ Available CFs</strong> - Optional formats you can enable in the next step</div>
-					<div>• <strong className="text-foreground">🔒 Required CFs</strong> - Must be enabled for this profile</div>
+					<div>
+						• <strong className="text-foreground">✅ Enabled CFs</strong> - Will be automatically
+						enabled based on TRaSH recommendations
+					</div>
+					<div>
+						• <strong className="text-foreground">⚪ Available CFs</strong> - Optional formats you
+						can enable in the next step
+					</div>
+					<div>
+						• <strong className="text-foreground">🔒 Required CFs</strong> - Must be enabled for
+						this profile
+					</div>
 				</div>
 				<p className="text-xs text-foreground/60 italic">
-					💡 Tip: Start with recommended groups. Expand each group to see exactly which Custom Formats will be enabled.
+					💡 Tip: Start with recommended groups. Expand each group to see exactly which Custom
+					Formats will be enabled.
 				</p>
 			</div>
 
@@ -151,7 +164,8 @@ export const CFGroupSelection = ({
 			<div className="rounded-xl border border-border bg-card p-6">
 				<h3 className="text-lg font-medium text-foreground">{qualityProfile.name}</h3>
 				<p className="mt-2 text-sm text-foreground/70">
-					The following Custom Format Groups are applicable to this quality profile. Select the ones you want to include.
+					The following Custom Format Groups are applicable to this quality profile. Select the ones
+					you want to include.
 				</p>
 				<div className="mt-4 flex items-center gap-2 text-sm text-foreground/60">
 					<Info className="h-4 w-4" />
@@ -184,28 +198,24 @@ export const CFGroupSelection = ({
 				{cfGroups.map((group: any) => {
 					const isSelected = selectedGroups.has(group.trash_id);
 					const isExpanded = expandedGroups.has(group.trash_id);
-					const cfCount = Array.isArray(group.custom_formats)
-						? group.custom_formats.length
-						: 0;
+					const cfCount = Array.isArray(group.custom_formats) ? group.custom_formats.length : 0;
 
 					// Get Custom Format names from the group
-					const customFormats = Array.isArray(group.custom_formats)
-						? group.custom_formats
-						: [];
+					const customFormats = Array.isArray(group.custom_formats) ? group.custom_formats : [];
 
 					// Check if this group is recommended (has positive score)
 					const isRecommended = group.quality_profiles?.score && group.quality_profiles.score > 0;
 
 					// Count required CFs in this group (these MUST be enabled if group is selected)
 					const requiredCFsCount = customFormats.filter((cf: any) => {
-						return typeof cf === 'object' && cf.required === true;
+						return typeof cf === "object" && cf.required === true;
 					}).length;
 
 					// Count how many CFs from this group will be enabled by default
 					const enabledCFsCount = customFormats.filter((cf: any) => {
-						const cfTrashId = typeof cf === 'string' ? cf : cf.trash_id;
-						const isRequired = typeof cf === 'object' && cf.required === true;
-						const isDefault = typeof cf === 'object' && cf.default === true;
+						const cfTrashId = typeof cf === "string" ? cf : cf.trash_id;
+						const isRequired = typeof cf === "object" && cf.required === true;
+						const isDefault = typeof cf === "object" && cf.default === true;
 						const isInProfile = profileFormatIds.includes(cfTrashId);
 						return isRequired || isDefault || isInProfile;
 					}).length;
@@ -214,9 +224,7 @@ export const CFGroupSelection = ({
 						<div
 							key={group.trash_id}
 							className={`rounded-xl border transition ${
-								isSelected
-									? "border-primary bg-primary/10"
-									: "border-border bg-card"
+								isSelected ? "border-primary bg-primary/10" : "border-border bg-card"
 							}`}
 						>
 							<div className="flex items-start gap-4 p-6">
@@ -285,9 +293,7 @@ export const CFGroupSelection = ({
 											className="rounded p-1 text-foreground/60 hover:bg-card hover:text-foreground transition"
 										>
 											<ChevronDown
-												className={`h-5 w-5 transition-transform ${
-													isExpanded ? "rotate-180" : ""
-												}`}
+												className={`h-5 w-5 transition-transform ${isExpanded ? "rotate-180" : ""}`}
 											/>
 										</button>
 									</div>
@@ -300,9 +306,9 @@ export const CFGroupSelection = ({
 											</p>
 											<div className="space-y-1">
 												{customFormats.map((cf: any) => {
-													const cfTrashId = typeof cf === 'string' ? cf : cf.trash_id;
-													const cfName = typeof cf === 'string' ? cf : cf.name;
-													const isRequired = typeof cf === 'object' && cf.required === true;
+													const cfTrashId = typeof cf === "string" ? cf : cf.trash_id;
+													const cfName = typeof cf === "string" ? cf : cf.name;
+													const isRequired = typeof cf === "object" && cf.required === true;
 													const isInProfile = profileFormatIds.includes(cfTrashId);
 													const willBeEnabled = isRequired || isInProfile;
 
@@ -316,9 +322,7 @@ export const CFGroupSelection = ({
 															}`}
 														>
 															<div className="flex items-center gap-2">
-																<span className="text-lg">
-																	{willBeEnabled ? "✅" : "⚪"}
-																</span>
+																<span className="text-lg">{willBeEnabled ? "✅" : "⚪"}</span>
 																<span>{cfName}</span>
 															</div>
 															{isRequired && (
@@ -332,8 +336,7 @@ export const CFGroupSelection = ({
 											</div>
 											<p className="mt-3 text-xs text-foreground/60 italic">
 												✅ Green items will be enabled by default based on TRaSH recommendations
-												<br />
-												⚪ Gray items are available but not recommended for this profile
+												<br />⚪ Gray items are available but not recommended for this profile
 											</p>
 										</div>
 									)}

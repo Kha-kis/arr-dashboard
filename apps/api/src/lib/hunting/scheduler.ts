@@ -1,12 +1,12 @@
 import type { FastifyInstance } from "fastify";
-import { executeHuntWithSdk, type HuntResult } from "./hunt-executor.js";
-import {
-	MIN_MANUAL_HUNT_COOLDOWN_MINS,
-	MIN_INSTANCE_COOLDOWN_MINS,
-	MAX_HUNT_DURATION_MS,
-} from "./constants.js";
 import { loggers } from "../logger.js";
 import { getErrorMessage } from "../utils/error-message.js";
+import {
+	MAX_HUNT_DURATION_MS,
+	MIN_INSTANCE_COOLDOWN_MINS,
+	MIN_MANUAL_HUNT_COOLDOWN_MINS,
+} from "./constants.js";
+import { executeHuntWithSdk, type HuntResult } from "./hunt-executor.js";
 
 const log = loggers.hunting;
 
@@ -322,7 +322,6 @@ class HuntingScheduler {
 		});
 
 		for (const config of configs) {
-
 			// Check if we're over API cap
 			if (config.apiCallsThisHour >= config.hourlyApiCap) {
 				continue;
@@ -431,6 +430,25 @@ class HuntingScheduler {
 					completedAt: new Date(),
 				},
 			});
+
+			// Fire-and-forget notification for hunt results
+			if (result.itemsGrabbed > 0) {
+				this.app.notificationService
+					?.notify({
+						eventType: "HUNT_CONTENT_FOUND",
+						title: `Hunt found ${result.itemsGrabbed} item(s) on ${config.instance.label}`,
+						body: result.message,
+					})
+					.catch(() => {});
+			} else if (result.status === "completed") {
+				this.app.notificationService
+					?.notify({
+						eventType: "HUNT_COMPLETED",
+						title: `Hunt completed on ${config.instance.label}`,
+						body: result.message,
+					})
+					.catch(() => {});
+			}
 
 			// Update config timestamps and API call count (only if we actually made API calls)
 			if (result.status !== "skipped" && result.apiCallsMade > 0) {

@@ -376,7 +376,10 @@ const authRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			return reply.status(401).send({ error: "Unauthorized" });
 		}
 
-		const { username, currentPassword, newPassword, tmdbApiKey } = validateRequest(updateAccountSchema, request.body);
+		const { username, currentPassword, newPassword, tmdbApiKey } = validateRequest(
+			updateAccountSchema,
+			request.body,
+		);
 
 		// Check if OIDC provider is enabled - if so, password changes are disabled
 		if (newPassword) {

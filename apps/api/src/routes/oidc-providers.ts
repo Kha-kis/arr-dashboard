@@ -1,17 +1,17 @@
 import {
+	createOidcProviderSchema,
+	deleteOidcProviderSchema,
 	type ErrorResponse,
 	type OIDCProvider,
 	type OIDCProviderResponse,
-	createOidcProviderSchema,
-	deleteOidcProviderSchema,
 	updateOidcProviderSchema,
 } from "@arr/shared";
-import type { Prisma, OIDCProvider as PrismaOIDCProvider } from "../lib/prisma.js";
 import type { FastifyInstance } from "fastify";
-import { hashPassword } from "../lib/auth/password.js";
 import { normalizeIssuerUrl } from "../lib/auth/oidc-utils.js";
-import { validateRequest } from "../lib/utils/validate.js";
+import { hashPassword } from "../lib/auth/password.js";
+import type { Prisma, OIDCProvider as PrismaOIDCProvider } from "../lib/prisma.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
+import { validateRequest } from "../lib/utils/validate.js";
 
 /**
  * Transform a Prisma OIDCProvider model to the public DTO shape

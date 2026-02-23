@@ -4,10 +4,10 @@ import * as oauth from "oauth4webapi";
 import { z } from "zod";
 import { warmConnectionsForUser } from "../lib/arr/connection-warmer.js";
 import { OIDCProvider } from "../lib/auth/oidc-provider.js";
-import { getSessionMetadata } from "../lib/auth/session-metadata.js";
 import { normalizeIssuerUrl } from "../lib/auth/oidc-utils.js";
-import { validateRequest } from "../lib/utils/validate.js";
+import { getSessionMetadata } from "../lib/auth/session-metadata.js";
 import { getErrorMessage } from "../lib/utils/error-message.js";
+import { validateRequest } from "../lib/utils/validate.js";
 
 /**
  * In-memory storage for OIDC states and nonces (production: use Redis)
