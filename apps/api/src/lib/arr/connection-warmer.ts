@@ -22,6 +22,7 @@ export async function warmConnectionsForUser(app: FastifyInstance, userId: strin
 			where: {
 				userId,
 				enabled: true,
+				service: { not: "SEERR" },
 			},
 		});
 
