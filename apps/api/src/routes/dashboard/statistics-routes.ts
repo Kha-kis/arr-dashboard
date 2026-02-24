@@ -33,9 +33,12 @@ export const statisticsRoutes: FastifyPluginCallback = (app, _opts, done) => {
 			where: { enabled: true, userId: request.currentUser!.id },
 		});
 
+		// Filter to ARR-compatible services only (Seerr uses a separate client with no statistics API)
+		const arrInstances = instances.filter((i) => i.service !== "SEERR");
+
 		// Fetch all instances in parallel for better performance
 		const fetchResults = await Promise.all(
-			instances.map(async (instance) => {
+			arrInstances.map(async (instance) => {
 				const service = instance.service.toLowerCase();
 				const client = app.arrClientFactory.create(instance);
 
