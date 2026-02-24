@@ -7,6 +7,7 @@ import { isArrError, arrErrorToHttpStatus } from "./lib/arr/client-factory.js";
 import { arrClientPlugin } from "./plugins/arr-client.js";
 import backupSchedulerPlugin from "./plugins/backup-scheduler.js";
 import deploymentExecutorPlugin from "./plugins/deployment-executor.js";
+import huntingSchedulerPlugin from "./plugins/hunting-scheduler.js";
 import queueCleanerSchedulerPlugin from "./plugins/queue-cleaner-scheduler.js";
 import librarySyncSchedulerPlugin from "./plugins/library-sync-scheduler.js";
 import lifecyclePlugin from "./plugins/lifecycle.js";
@@ -98,6 +99,7 @@ export const buildServer = (options: ServerOptions = {}): FastifyInstance => {
 	app.register(sessionCleanupPlugin);
 	app.register(trashBackupCleanupPlugin);
 	app.register(trashUpdateSchedulerPlugin);
+	app.register(huntingSchedulerPlugin);
 	app.register(queueCleanerSchedulerPlugin);
 
 	app.decorateRequest("currentUser", null);

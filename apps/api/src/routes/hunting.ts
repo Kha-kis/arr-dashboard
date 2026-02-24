@@ -64,9 +64,6 @@ const huntConfigCreateSchema = z.object({
 });
 
 const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
-	// Initialize scheduler with app reference (enables manual hunts even when scheduler is stopped)
-	getHuntingScheduler().initialize(app);
-
 	// Get hunting status overview
 	app.get("/hunting/status", async (request, reply) => {
 		const userId = request.currentUser!.id;
