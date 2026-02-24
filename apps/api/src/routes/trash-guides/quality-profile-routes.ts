@@ -17,6 +17,7 @@ import { createCacheManager, CacheCorruptionError } from "../../lib/trash-guides
 import { createTrashFetcher } from "../../lib/trash-guides/github-fetcher.js";
 import { getRepoConfig } from "../../lib/trash-guides/repo-config.js";
 import { createTemplateService } from "../../lib/trash-guides/template-service.js";
+import { resolveUserCustomFormats, USER_CF_PREFIX } from "../../lib/trash-guides/user-cf-resolver.js";
 import { createVersionTracker } from "../../lib/trash-guides/version-tracker.js";
 import { validateRequest } from "../../lib/utils/validate.js";
 
@@ -449,6 +450,7 @@ export async function registerQualityProfileRoutes(
 		// Add selected Custom Formats with user customizations
 		for (const [cfTrashId, selection] of Object.entries(customFormatSelections)) {
 			if (!selection.selected) continue;
+			if (cfTrashId.startsWith(USER_CF_PREFIX)) continue; // Handled by resolveUserCustomFormats
 
 			const customFormat = customFormats.find((cf) => cf.trash_id === cfTrashId);
 			if (customFormat) {
@@ -461,6 +463,12 @@ export async function registerQualityProfileRoutes(
 				});
 			}
 		}
+
+		// Resolve user-created CFs from database (batched single query)
+		const userCFs = await resolveUserCustomFormats(
+			app.prisma, request.currentUser!.id, customFormatSelections, request.log,
+		);
+		templateConfig.customFormats.push(...userCFs);
 
 		// Fetch latest TRaSH Guides commit hash for version tracking
 		let latestCommitHash: string | undefined;
@@ -607,8 +615,8 @@ export async function registerQualityProfileRoutes(
 					conditionsEnabled: selection.conditionsEnabled,
 					originalConfig: customFormat,
 				});
-			} else {
-				// Not in cache — preserve from existing template if available
+			} else if (!cfTrashId.startsWith(USER_CF_PREFIX)) {
+				// Not in cache and not a user CF — preserve from existing template if available
 				const existingCF = existingCFMap.get(cfTrashId);
 				if (existingCF) {
 					templateConfig.customFormats.push({
@@ -617,7 +625,25 @@ export async function registerQualityProfileRoutes(
 						conditionsEnabled: selection.conditionsEnabled,
 					});
 				}
-				// If not in cache AND not in existing template, it's genuinely unknown — skip
+				// If not in cache and not in existing template — genuinely unknown, skip
+			}
+		}
+
+		// Resolve user-created CFs: prefer existing template data, fall back to database
+		const userCFs = await resolveUserCustomFormats(
+			app.prisma, request.currentUser!.id, customFormatSelections, request.log,
+		);
+		for (const userCF of userCFs) {
+			const existingCF = existingCFMap.get(userCF.trashId);
+			if (existingCF) {
+				// Preserve existing template data, apply updated score/conditions
+				templateConfig.customFormats.push({
+					...existingCF,
+					scoreOverride: userCF.scoreOverride,
+					conditionsEnabled: userCF.conditionsEnabled,
+				});
+			} else {
+				templateConfig.customFormats.push(userCF);
 			}
 		}
 

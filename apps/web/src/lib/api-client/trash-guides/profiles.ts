@@ -24,6 +24,12 @@ export type ImportQualityProfilePayload = {
 	templateDescription?: string;
 	syncStrategy?: "auto" | "manual" | "notify";
 	customQualityConfig?: CustomQualityConfig;
+	selectedCFGroups: string[];
+	customFormatSelections: Record<string, {
+		selected: boolean;
+		scoreOverride?: number;
+		conditionsEnabled: Record<string, boolean>;
+	}>;
 };
 
 export type UpdateQualityProfileTemplatePayload = {
@@ -33,6 +39,12 @@ export type UpdateQualityProfileTemplatePayload = {
 	templateName: string;
 	templateDescription?: string;
 	customQualityConfig?: CustomQualityConfig;
+	selectedCFGroups: string[];
+	customFormatSelections: Record<string, {
+		selected: boolean;
+		scoreOverride?: number;
+		conditionsEnabled: Record<string, boolean>;
+	}>;
 };
 
 export type ImportQualityProfileResponse = {

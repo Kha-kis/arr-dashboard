@@ -40,6 +40,8 @@ export const QualityProfileBrowser = ({
 				trashId: selectedProfile.trashId,
 				templateName: templateName.trim(),
 				templateDescription: templateDescription.trim() || undefined,
+				selectedCFGroups: [],
+				customFormatSelections: {},
 			});
 
 			// Show success toast before closing
@@ -50,8 +52,9 @@ export const QualityProfileBrowser = ({
 			setTemplateName("");
 			setTemplateDescription("");
 			onClose();
-		} catch {
-			// Error will be displayed through mutation state
+		} catch (error) {
+			// API errors are surfaced via importMutation.isError state in the UI
+			console.error("[QualityProfileBrowser] Import failed:", error);
 		}
 	};
 
