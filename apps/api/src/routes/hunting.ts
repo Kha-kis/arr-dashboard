@@ -64,6 +64,16 @@ const huntConfigCreateSchema = z.object({
 });
 
 const huntingRoute: FastifyPluginCallback = (app, _opts, done) => {
+	// Check if hunting feature is available
+	app.addHook("preHandler", async (_request, reply) => {
+		if (!app.huntingSchedulerEnabled) {
+			return reply.status(503).send({
+				error: "Hunting feature is unavailable due to initialization error",
+				details: app.huntingSchedulerInitError ?? "Check server logs for details",
+			});
+		}
+	});
+
 	// Get hunting status overview
 	app.get("/hunting/status", async (request, reply) => {
 		const userId = request.currentUser!.id;
